@@ -17,6 +17,7 @@ import { WebpreviewModal } from './WebpreviewModal.jsx';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
+import { formatCost } from '../../usage.js';
 import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview } from './webpreviewState.js';
 import { DraftCraftAnnotator } from '../inspector/DraftCraftAnnotator.jsx';
 import { saveComposerDraftNow } from './composer.js';
@@ -51,15 +52,21 @@ onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refre
 
   const { projectDir, chatId } = props;
 const [FileEditor, setFileEditor] = useState(null);
-// onTranscript(text) — append an inserted transcript to the in-progress
-// composer draft.
+// onTranscript(text, meta) — append an inserted transcript to the in-progress
+// composer draft, and report the run in the chat's status row.
 //
 // The transcript is appended, not merged by word, and the caret is placed
 // after it: dictation is an input method, so the user's existing text is
 // theirs and the next thing they type continues the dictation. Surrounding
 // text is separated by a single space, never a newline — a transcript dropped
 // mid-sentence must not break the paragraph.
-function onTranscript(text) {
+//
+// `meta.cost` is the server's priced result for the run. It goes on the status
+// line because a transcription is not a chat turn: nothing else in the chat
+// totals covers it, so this is the only place the user sees what dictating
+// just cost. An unpriced run (`known: false` — a per-minute model reports no
+// tokens) says nothing extra rather than `$0.00`.
+function onTranscript(text, meta) {
   const el = refs.promptInput.current;
   if (!el) return;
   const at = typeof el.selectionStart === 'number' ? el.selectionStart : el.value.length;
@@ -79,10 +86,19 @@ function onTranscript(text) {
     el.focus({ preventScroll: true });
     el.setSelectionRange(caret, caret);
   } catch { /* a detached textarea cannot take a caret */ }
-  // `setStatus` takes the ref, not the bag of them: passing `refs` made this a
-  // no-op (`ref.current` was undefined), so "dictation added" never reached the
-  // status line under the composer.
-  setStatus(refs.status, 'dictation added', 'success');
+  // `setStatus` takes the ref, not the bag of them: passing `refs` made the
+  // write a no-op (`ref.current` was undefined), which is why the chat's status
+  // row never showed "dictation added" at all (docs/…/dictation.md promises it).
+  setStatus(refs.status, 'dictation added' + dictationCostSuffix(meta), 'success');
+}
+
+// dictationCostSuffix(meta) — " · $0.00012" when the run was priced, and
+// nothing at all when it was not. The chat's status row is one short line under
+// the composer, so an unpriced run must not spend it on `--`.
+function dictationCostSuffix(meta) {
+  const cost = meta && meta.cost;
+  if (!cost || !cost.known || !isFinite(Number(cost.total))) return '';
+  return ' · ' + formatCost(cost.total);
 }
 
 // onDraftCraftAdded(result) — apply a Draft Craft hand-off to this chat's

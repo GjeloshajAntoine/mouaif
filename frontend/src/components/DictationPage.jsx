@@ -34,6 +34,7 @@ import {
   formatDuration,
   kindLabel,
   kindShortLabel,
+  lastRunLine,
   loadDictationModels,
   pickRecorderMime,
   modelBadge,
@@ -41,6 +42,7 @@ import {
   recommendedModels,
   recorderSupported,
   transcribeAudio,
+  transcribeCost,
   transcriptActions
 } from '../dictation.js';
 
@@ -426,7 +428,14 @@ function applyCatalog(catalog, saved, opts) {
         prompt
       });
       setTranscript(out.text || '');
-      setLastRun({ model: out.model, kind: out.kind, bytes: out.bytes, durationMs: out.durationMs });
+      setLastRun({
+      model: out.model,
+      kind: out.kind,
+      bytes: out.bytes,
+      durationMs: out.durationMs,
+      usage: out.usage || null,
+      costLabel: transcribeCost(out).label
+      });
       setStatus('Transcribed with ' + ((out.model && out.model.id) || modelId) + '.');
       setStatusState('success');
     } catch (e) {
@@ -787,13 +796,16 @@ function onPickModel(next) {
           }, action.label))
         )
       ),
+      // What the last run produced *and* what it cost, in one line (the format
+      // lives in dictation.js so it is testable without a media recorder). The
+      // token footprint rides along in the tooltip for the cases where the
+      // provider reported one.
       lastRun
-        ? h('p', { class: 'hint hint--compact' },
-            'Last run: ' + ((lastRun.model && lastRun.model.id) || 'unknown model')
-            + ' · ' + (kindShortLabel(lastRun.kind))
-            + ' · ' + Math.round((lastRun.bytes || 0) / 1024) + ' kB'
-            + ' · ' + Math.round((lastRun.durationMs || 0) / 100) / 10 + 's')
-        : null
+      ? h('p', {
+      class: 'hint hint--compact dictation__last-run',
+      title: lastRunTitle(lastRun)
+      }, lastRunLine(lastRun))
+      : null
     ),
 
     // ---- Status -----------------------------------------------------------
@@ -834,4 +846,18 @@ function scopeNote(project, projectDir) {
 function providerName(id) {
   const def = providerDef(id);
   return (def && def.label) || id;
+}
+
+// lastRunTitle(run) — the tooltip on the run line. The visible line stays one
+// line on a 360px phone, so the token footprint (when the provider reported
+// one) lives here rather than pushing the cost off the screen. The provider
+// report is normalized server-side to prompt/completion tokens, where `prompt`
+// is the audio the request carried.
+function lastRunTitle(run) {
+  const usage = run && run.usage;
+  if (!usage) return 'The provider reported no token counts for this run';
+  const parts = [];
+  if (usage.promptTokens) parts.push('input ' + usage.promptTokens + ' tok');
+  if (usage.completionTokens) parts.push('output ' + usage.completionTokens + ' tok');
+  return parts.length ? 'Provider usage: ' + parts.join(', ') : 'The provider reported no token counts for this run';
 }

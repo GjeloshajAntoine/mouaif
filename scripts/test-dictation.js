@@ -52,8 +52,13 @@ async function checkAsync(name, fn) {
 }
 
 async function loadFrontendModule(rel) {
-  const source = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8')
-    .replace(/^import .*;$/gm, '');
+  const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
+  // `frontend/src/usage.js` is import-free, so it is inlined ahead of the
+  // module under test: `dictation.js` imports `formatCost` from it, and
+  // stripping the import lines would otherwise leave that name undefined (the
+  // module would still load, and only fail when a cost is formatted).
+  const usage = read('frontend/src/usage.js').replace(/^export /gm, '');
+  const source = (usage + '\n' + read(rel)).replace(/^import .*;$/gm, '');
   return import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 }
 
@@ -239,18 +244,20 @@ check('the Gemini request is inline JSON on the per-model action path', () => {
 });
 
 check('parseTranscribeResponse reads both families, including self-hosted spellings', () => {
+  // `usage: null` is part of the contract now (the cost line reads it), so the
+  // cases that carry no report assert the whole object.
   assert.deepEqual(
     transcribe.parseTranscribeResponse('openai-compatible', 200, JSON.stringify({ text: ' hello ' })),
-    { text: 'hello' }
+    { text: 'hello', usage: null }
   );
   assert.deepEqual(
     transcribe.parseTranscribeResponse('openai-compatible', 200, JSON.stringify({ transcript: 'local server' })),
-    { text: 'local server' }
+    { text: 'local server', usage: null }
   );
   const gemini = transcribe.parseTranscribeResponse('gemini', 200, JSON.stringify({
     candidates: [{ content: { parts: [{ text: 'first ' }, { text: 'second' }] } }]
   }));
-  assert.deepEqual(gemini, { text: 'first second' });
+  assert.deepEqual(gemini, { text: 'first second', usage: null });
   // An HTTP failure surfaces the provider's own words, which is the only
   // diagnostic the user gets for a misconfigured endpoint.
   const unauthorised = transcribe.parseTranscribeResponse('openai-compatible', 401, JSON.stringify({
@@ -271,6 +278,60 @@ check('a no-project catalog offers nothing but still names the shapes', () => {
   assert.deepEqual(transcribe.transcriptionCandidates([]), []);
   assert.deepEqual(transcribe.transcriptionCandidates(null), []);
   assert.equal(transcribe.TRANSCRIBE_KINDS.length, 2);
+});
+
+check('usageFromResponse reads both families and never invents a zero', () => {
+  // OpenAI-shaped, which reports tokens on the models that report anything
+  // at all (the gpt-4o transcribe family).
+  assert.deepEqual(
+    transcribe.usageFromResponse('openai-compatible', JSON.stringify({
+      text: 'hi', usage: { type: 'tokens', input_tokens: 210, output_tokens: 12, total_tokens: 222 }
+    })),
+    { promptTokens: 210, completionTokens: 12 },
+    'the type:"tokens" spelling is the one the newer transcription models use'
+  );
+  assert.deepEqual(
+    transcribe.usageFromResponse('openai-compatible', JSON.stringify({
+      text: 'hi', usage: { prompt_tokens: '30', completion_tokens: '4' }
+    })),
+    { promptTokens: 30, completionTokens: 4 },
+    'the classic completions spelling works too, including as strings'
+  );
+  // Gemini reports the audio in the prompt.
+  assert.deepEqual(
+    transcribe.usageFromResponse('gemini', JSON.stringify({
+      candidates: [{ content: { parts: [{ text: 'bonjour' }] } }],
+      usageMetadata: { promptTokenCount: 480, candidatesTokenCount: 6 }
+    })),
+    { promptTokens: 480, completionTokens: 6 }
+  );
+  // Absent means unknown, not zero — `whisper-1` bills per minute and answers
+  // with the transcript alone, and a zero here would price it as free.
+  assert.equal(transcribe.usageFromResponse('openai-compatible', JSON.stringify({ text: 'hi' })), null);
+  assert.equal(transcribe.usageFromResponse('gemini', JSON.stringify({ candidates: [] })), null);
+  // A duration report is not a token report either.
+  assert.equal(transcribe.usageFromResponse('openai-compatible', JSON.stringify({
+    text: 'hi', usage: { type: 'duration', seconds: 8 }
+  })), null);
+  assert.equal(transcribe.usageFromResponse('openai-compatible', '<html>nope</html>'), null);
+});
+
+check('parseTranscribeResponse carries the usage through both families', () => {
+  const openai = transcribe.parseTranscribeResponse('openai-compatible', 200, JSON.stringify({
+    text: ' hello ', usage: { input_tokens: 10, output_tokens: 2 }
+  }));
+  assert.equal(openai.text, 'hello');
+  assert.deepEqual(openai.usage, { promptTokens: 10, completionTokens: 2 });
+  assert.equal(
+    transcribe.parseTranscribeResponse('openai-compatible', 200, JSON.stringify({ text: 'hi' })).usage,
+    null,
+    'no report stays null so the cost line can say --'
+  );
+  const gemini = transcribe.parseTranscribeResponse('gemini', 200, JSON.stringify({
+    candidates: [{ content: { parts: [{ text: 'bonjour' }] } }],
+    usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 1 }
+  }));
+  assert.deepEqual(gemini.usage, { promptTokens: 5, completionTokens: 1 });
 });
 
 check('mimeTypeFor maps the containers a MediaRecorder produces', () => {
@@ -383,6 +444,45 @@ check('mimeTypeFor maps the containers a MediaRecorder produces', () => {
     assert.deepEqual(dictation.recommendedModels(rows, 1).map((m) => m.id), ['whisper-large-v3'], 'the cap holds');
     assert.deepEqual(dictation.recommendedModels([{ id: 'gpt-5' }]), [], 'nothing worth recommending stays empty');
     assert.deepEqual(dictation.recommendedModels(null), []);
+  });
+
+  check('transcribeCost renders -- for every unknown, never a fake $0.00', () => {
+    // The known case: the server priced the run.
+    assert.deepEqual(
+      dictation.transcribeCost({ cost: { known: true, total: 0.00055, input: 0.0003, output: 0.00025, currency: 'USD' } }),
+      { known: true, total: 0.00055, label: '$0.00055' }
+    );
+    // A per-minute model reports no tokens, so the server sends known:false.
+    assert.deepEqual(dictation.transcribeCost({ usage: null, cost: { known: false, total: 0, currency: 'USD' } }),
+      { known: false, total: 0, label: '--' });
+    // An old server (or a non-JSON body) sends no cost at all.
+    assert.deepEqual(dictation.transcribeCost({ text: 'hi' }), { known: false, total: 0, label: '--' });
+    assert.deepEqual(dictation.transcribeCost(null), { known: false, total: 0, label: '--' });
+    // A known-but-nonsensical total is unknown, not a wrong number.
+    assert.equal(dictation.transcribeCost({ cost: { known: true, total: 'lots' } }).label, '--');
+    // Definitely-priced zero stays a real zero (`formatCost` renders $0.00).
+    assert.equal(dictation.transcribeCost({ cost: { known: true, total: 0 } }).label, '$0.00');
+  });
+
+  check('lastRunLine reports the run and its cost in one line', () => {
+    assert.equal(
+      dictation.lastRunLine({
+        model: { id: 'gemini-2.5-flash' }, kind: 'gemini', bytes: 4096, durationMs: 812,
+        costLabel: '$0.00055'
+      }),
+      'Last run: gemini-2.5-flash · Gemini · 4 kB · 0.8s · cost $0.00055'
+    );
+    // An unpriced run still reports the run — with `--`, so the number is
+    // visibly missing rather than silently absent.
+    assert.equal(
+      dictation.lastRunLine({ model: { id: 'whisper-1' }, kind: 'openai-compatible', bytes: 0, durationMs: 0, costLabel: '--' }),
+      'Last run: whisper-1 · OpenAI-shaped · 0 kB · 0s · cost --'
+    );
+    assert.equal(
+      dictation.lastRunLine({}).startsWith('Last run: unknown model'),
+      true,
+      'a run with no model record still says something rather than crashing'
+    );
   });
 
   check('pickerModels reshapes rows for the shared model picker', () => {

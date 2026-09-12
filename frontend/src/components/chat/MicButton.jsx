@@ -28,7 +28,8 @@ import {
   loadDictationModels,
   pickRecorderMime,
   recorderSupported,
-  transcribeAudio
+  transcribeAudio,
+  transcribeCost
 } from '../../dictation.js';
 
 // rememberDictationChoice() — nothing to persist here: the page owns the
@@ -116,8 +117,16 @@ export function MicButton(props) {
         setBusy(false);
         return;
       }
-      if (onTranscript) onTranscript(text, { model: out.model, kind: out.kind });
-      say('Added to the composer — review it, then send.', 'success');
+      if (onTranscript) onTranscript(text, { model: out.model, kind: out.kind, usage: out.usage || null, cost: out.cost || null });
+      // The chat's status row is the visible report (Chat.jsx writes
+      // "dictation added" plus the cost there); this button's own line is the
+      // tooltip/aria-label. Both stay quiet when the run is unpriced: a
+      // `$0.00` would read as "free" for a per-minute model that simply does
+      // not report tokens.
+      const label = transcribeCost(out).label;
+      say(label === '--'
+      ? 'Added to the composer — review it, then send.'
+      : 'Added to the composer (' + label + ') — review it, then send.', 'success');
     } catch (e) {
       say((e && e.message) || 'Transcription failed', 'error');
     } finally {

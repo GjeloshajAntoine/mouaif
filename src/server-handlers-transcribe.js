@@ -31,6 +31,15 @@ const {
 
 const transcribe = require('./transcribe.js');
 const modelList = require('./modelList.js');
+const usageMetrics = require('./usage.js');
+
+// UNKNOWN_COST — what a run with no usage report, or a model with no pricing,
+// returns. `known: false` is the app's existing convention for "render `--`"
+// (docs/decisions.md §14); a `$0.00` here would claim the run was free, which
+// is exactly the lie the convention exists to avoid. A transcription is often
+// unpriced for a real reason: `whisper-1` bills per minute of audio and
+// reports no tokens at all.
+const UNKNOWN_COST = Object.freeze({ input: 0, output: 0, total: 0, currency: 'USD', known: false });
 
 // AUDIO_BASE64_MAX — the JSON body cap. base64 inflates by ~4/3, so this is
 // the HTTP-layer twin of transcribe.MAX_AUDIO_BYTES (20 MB of audio).
@@ -252,20 +261,33 @@ async function handleTranscribe(req, res, parsed) {
 
     const parsedUpstream = transcribe.parseTranscribeResponse(kind, upstream.status, text);
     if (parsedUpstream.error) {
-      return sendJSON(res, statusFor(parsedUpstream.code), {
-        error: parsedUpstream.error,
-        code: parsedUpstream.code,
-        upstreamStatus: upstream.status,
-        model: { id: model.id, provider: model.provider },
-        kind
-      });
-    }
-    return sendJSON(res, 200, {
-      text: parsedUpstream.text,
+    return sendJSON(res, statusFor(parsedUpstream.code), {
+      error: parsedUpstream.error,
+      code: parsedUpstream.code,
+      upstreamStatus: upstream.status,
       model: { id: model.id, provider: model.provider },
-      kind,
-      bytes: decoded.audio.length,
-      durationMs: Date.now() - startedAt
+      kind
+    });
+    }
+    // What the run cost, priced at the same rates the chat uses: the model's
+    // own `pricing` block, the app-level table, then the built-in defaults
+    // (docs/decisions.md §14). Everything needed is already resolved — the model
+    // record comes from resolveModel, which folds a live catalog entry's
+    // provider pricing in. A provider that reports no tokens costs nothing to
+    // guess at, so it stays unknown rather than zero.
+    const cost = parsedUpstream.usage
+    ? usageMetrics.computeCost({ model, usage: parsedUpstream.usage, app: settings.getApp() })
+    : UNKNOWN_COST;
+    return sendJSON(res, 200, {
+    text: parsedUpstream.text,
+    model: { id: model.id, provider: model.provider },
+    kind,
+    bytes: decoded.audio.length,
+    durationMs: Date.now() - startedAt,
+    // null (not {}) when the provider said nothing, so the client can tell
+    // "no report" from "zero tokens".
+    usage: parsedUpstream.usage || null,
+    cost
     });
   }
 

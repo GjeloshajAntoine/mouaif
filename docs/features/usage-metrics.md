@@ -79,9 +79,12 @@ The header Total uses an authoritative cost snapshot paired with the exclusive `
 
 The client adds only newer rows and optimistic/live costs not covered by that snapshot. Tail reconciliation replaces optimistic segments before advancing the cost baseline, including when no extra DOM rows are appended. Loading older history and saving metadata never advance the baseline, preventing double counting during an active turn. Older servers without this field retain the loaded-message sum fallback.
 
+**Dictation reuses the same pricing, without joining the sums.** `POST /api/ai/transcribe` prices the provider's token report with this same `computeCost` and resolution order, and returns `{ usage, cost }` so the dictation page and the composer microphone can show what a run cost. A transcription is not a chat turn, so it is deliberately absent from the header Total, the chat list and the project total — the number is printed where the run happens instead of being attributed to a chat. It also does not add transcription ids to the built-in table: speech-to-text is normally billed per minute of audio, which the per-1K-token shape cannot express, so those runs render `--`. See [dictation.md](./dictation.md).
+
 ## Related
 
 - [docs/features/ai-client.md](./ai-client.md) — `usage` events on `done`.
 - [docs/features/chat-ui.md](./chat-ui.md) — chat composer, message rendering, and SSE hook points.
+- [docs/features/dictation.md](./dictation.md) — the transcription run's own `usage`/`cost`, priced from this table.
 - [docs/features/app-and-project-settings.md](./app-and-project-settings.md) — `app.modelPricing` lives in the same SQLite store.
 - Decision: [docs/decisions.md §14](../decisions.md) (this feature) and §10 (AI client usage events).

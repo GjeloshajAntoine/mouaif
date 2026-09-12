@@ -99,11 +99,14 @@ async function fetchJson(url, init) {
 
 // The helper module the page imports. It is loaded as a real ES module (so
 // `resolveDefaultModel` and friends are the shipped implementations) with its
-// one dependency — the app's `fetchJson` — injected first.
+// two dependencies supplied first: the app's `fetchJson` as a global, and
+// `frontend/src/usage.js` (import-free, so it inlines) for `formatCost`.
 globalThis.__mouaifDictationFetch = fetchJson;
+const usageSource = read('usage.js').replace(/^export /gm, '');
 const dictation = await import('data:text/javascript;base64,' + Buffer.from(
   'const fetchJson = globalThis.__mouaifDictationFetch;\n'
-  + read('dictation.js').replace(/^import .*api\.js';$/m, '')
+  + usageSource + '\n'
+  + read('dictation.js').replace(/^import .*';$/gm, '')
 ).toString('base64'));
 
 // ---- The render harness -------------------------------------------------
@@ -266,6 +269,9 @@ function useCase(caseOptions) {
     assert.equal(node.attrs.disabled, true, 'nothing is offered before there is anything to act on');
   }
   assert.equal(picker(nodes).placeholder, 'Loading models…', 'the picker says it is loading');
+  // Nothing has run yet, so nothing claims a cost: the run line only exists
+  // once there is a run to report.
+  assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__last-run')), null);
 }
 
 // ---- After the catalog resolves ----------------------------------------

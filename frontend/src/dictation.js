@@ -12,6 +12,7 @@
 // credential and performs the upstream call (docs/decisions.md section 10).
 
 import { fetchJson } from './api.js';
+import { formatCost } from './usage.js';
 
 // ---- Recorder capabilities ---------------------------------------------
 
@@ -133,10 +134,14 @@ export function blobToBase64(blob) {
 
 // ---- Transcription client ----------------------------------------------
 
-// transcribeAudio(options) -> { text, model, kind, bytes, durationMs }
+// transcribeAudio(options) -> { text, model, kind, bytes, durationMs, usage, cost }
 //
 // options: { projectDir, modelId, providerId, audioBase64, mimeType,
 //            filename, language, prompt }
+//
+// `usage` is the provider's own token report (null when it made none) and
+// `cost` is the server's priced result for it, in the shape
+// `transcribeCost()` formats; the browser never resolves pricing itself.
 //
 // Throws an Error carrying `.code` (the server's typed code) and `.status`,
 // so the caller can tell "pick a model" apart from "the key was rejected"
@@ -358,6 +363,46 @@ export function modelBadge(row) {
     && row.inputModalities.some((x) => String(x).toLowerCase() === 'audio');
   if (row.source === 'live') return audio ? 'from provider · audio in' : 'from provider';
   return '';
+}
+
+// transcribeCost(result) -> { known, total, label }
+//
+// What a transcription cost, as the two surfaces that report a run need it.
+// `--` covers both unknowns — a model with no pricing record and a provider
+// that reported no tokens (a per-minute model like `whisper-1` reports
+// neither) — because the chat's cost line uses exactly that convention and a
+// fabricated `$0.00` would claim the run was free.
+//
+// The number itself is computed server-side (src/usage.js) next to the same
+// pricing table the chat prices with, so the page never has to know about
+// pricing resolution; it only formats what it was handed.
+export function transcribeCost(result) {
+  const cost = result && result.cost;
+  const total = cost ? Number(cost.total) : NaN;
+  const known = !!(cost && cost.known) && isFinite(total) && total >= 0;
+  return { known, total: known ? total : 0, label: known ? formatCost(total) : '--' };
+}
+
+// lastRunLine(run) -> string
+//
+// The one-line report under the transcript: what the last transcription used,
+// how big the recording was, how long it took, and what it cost. Extracted
+// from the page so the format is testable without a media recorder: the cost
+// is the only number here the user cannot get back from anywhere else
+// (a transcription is not a chat turn, so no chat or project total covers it),
+// and it must read `--` rather than `$0.00` when the run was unpriced.
+//
+// `run`: { model: { id }, kind, bytes, durationMs, costLabel, usage }
+export function lastRunLine(run) {
+  const r = run || {};
+  const parts = [
+    (r.model && r.model.id) || 'unknown model',
+    kindShortLabel(r.kind),
+    Math.round((r.bytes || 0) / 1024) + ' kB',
+    (Math.round((r.durationMs || 0) / 100) / 10) + 's',
+    'cost ' + (r.costLabel || '--')
+  ];
+  return 'Last run: ' + parts.join(' · ');
 }
 
 // transcriptActions(props) — the taps offered under a transcript, as data.

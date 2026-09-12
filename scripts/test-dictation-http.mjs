@@ -245,6 +245,11 @@ try {
   assert.equal(ok.body.kind, 'openai-compatible');
   assert.equal(ok.body.bytes, audio.length);
   assert.deepEqual(ok.body.model, { id: 'whisper-1', provider: 'openai-compatible' });
+  // The mock answers with a transcript and no token report, which is what
+  // `whisper-1` really does (it bills per minute of audio). The cost must be
+  // reported as unknown — `known: false` renders `--` — never as a free run.
+  assert.equal(ok.body.usage, null);
+  assert.deepEqual(ok.body.cost, { input: 0, output: 0, total: 0, currency: 'USD', known: false });
 
   const sent = upstream.requests[upstream.requests.length - 1];
   assert.equal(sent.method, 'POST');
@@ -276,6 +281,75 @@ try {
   assert.equal(geminiBody.contents[0].parts[1].inline_data.data, audio.toString('base64'));
   // The per-model language default applies when the request does not set one.
   assert.ok(geminiBody.contents[0].parts.some((p) => typeof p.text === 'string' && p.text.includes('"fr"')));
+
+  // ---- A run the provider reported tokens for is priced ----------------
+  //
+  // Gemini counts the audio in the prompt, so its `usageMetadata` is a real
+  // token report and the cost is computed at the same rates the chat uses:
+  // `gemini-2.5-flash` is in the built-in table at $0.0003 / 1K in and
+  // $0.0025 / 1K out, so 1000 in + 100 out is $0.0003 + $0.00025.
+  upstream.reply = {
+    status: 200,
+    body: {
+      candidates: [{ content: { parts: [{ text: 'bonjour' }] } }],
+      usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 100 }
+    }
+  };
+  const priced = await request('/api/ai/transcribe', jsonInit('POST', {
+    projectDir,
+    modelId: 'gemini-2.5-flash',
+    audioBase64: audio.toString('base64'),
+    mimeType: 'audio/webm'
+  }));
+  assert.equal(priced.status, 200, JSON.stringify(priced.body));
+  assert.deepEqual(priced.body.usage, { promptTokens: 1000, completionTokens: 100 });
+  assert.equal(priced.body.cost.known, true, 'a report plus a priced model is a known cost');
+  assert.equal(Math.round(priced.body.cost.total * 1e8) / 1e8, 0.00055);
+  assert.equal(priced.body.cost.currency, 'USD');
+
+  // A per-model `pricing` block on the project record wins over the built-in
+  // table, which is the escape hatch for a model the defaults do not know.
+  await request('/api/settings/project', jsonInit('PUT', {
+    projectDir,
+    models: [{ id: 'gemini-2.5-flash', provider: 'openai-compatible', transcription: { kind: 'gemini' }, pricing: { inputPer1K: 2, outputPer1K: 4 } }]
+  }));
+  const overridden = await request('/api/ai/transcribe', jsonInit('POST', {
+    projectDir,
+    modelId: 'gemini-2.5-flash',
+    audioBase64: audio.toString('base64'),
+    mimeType: 'audio/webm'
+  }));
+  assert.equal(overridden.body.cost.total, 2 + 0.4, 'the project pricing block is used');
+  // …and a model with no pricing anywhere stays unknown rather than zero.
+  await request('/api/settings/project', jsonInit('PUT', {
+    projectDir,
+    models: [{ id: 'my-self-hosted-asr', provider: 'openai-compatible' }]
+  }));
+  upstream.reply = {
+    status: 200,
+    body: { text: 'local', usage: { type: 'tokens', input_tokens: 40, output_tokens: 5 } }
+  };
+  const unpriced = await request('/api/ai/transcribe', jsonInit('POST', {
+    projectDir,
+    modelId: 'my-self-hosted-asr',
+    providerId: 'openai-compatible',
+    audioBase64: audio.toString('base64'),
+    mimeType: 'audio/webm'
+  }));
+  assert.deepEqual(unpriced.body.usage, { promptTokens: 40, completionTokens: 5 }, 'the OpenAI-shaped report is read');
+  assert.equal(unpriced.body.cost.known, false, 'no pricing record anywhere means -- , not $0.00');
+  assert.equal(unpriced.body.cost.total, 0);
+  // Put the project back the way the transcription cases above configured it:
+  // the failure cases below look up `whisper-1` and the Gemini record, and a
+  // missing model is a 404 rather than the failure under test.
+  await request('/api/settings/project', jsonInit('PUT', {
+    projectDir,
+    models: [
+      { id: 'gpt-5', provider: 'openai-compatible' },
+      { id: 'whisper-1', provider: 'openai-compatible' },
+      { id: 'gemini-2.5-flash', provider: 'openai-compatible', transcription: { kind: 'gemini', language: 'fr' } }
+    ]
+  }));
 
   // ---- Failures ---------------------------------------------------------
   const noAudio = await request('/api/ai/transcribe', jsonInit('POST', { projectDir, modelId: 'whisper-1' }));

@@ -20,7 +20,10 @@
 //                           family (which covers Groq, Mistral, OpenRouter and
 //                           any OpenAI-shaped endpoint), raw bytes for Gemini.
 //   parseTranscribeResponse(kind, status, text)
-//                         — { text } on success, { error, code } otherwise.
+//                         — { text, usage } on success, { error, code }
+//                           otherwise. `usage` is the provider's own token
+//                           report (or null when it reports none), which the
+//                           HTTP layer prices with src/usage.js.
 //
 // The audio never leaves the machine except in this one proxied request, and
 // the key stays server-side: the browser POSTs base64 to /api/ai/transcribe
@@ -318,6 +321,44 @@ function extensionFor(mimeType) {
 
 // ---- Response parsing ---------------------------------------------------
 
+// usageFromResponse(kind, text) -> { promptTokens, completionTokens } | null
+//
+// What the provider says the request cost, in the shape src/usage.js
+// `computeCost` prices (`promptTokens` / `completionTokens`, i.e. the whole
+// input — a transcription has no cache buckets). Two report styles ship today:
+//
+//   * OpenAI-shaped: `usage: { type: "tokens", input_tokens, output_tokens }`
+//     on the models that report it at all (`gpt-4o-transcribe`, `whisper-1`
+//     historically answers with the transcript and nothing else);
+//   * Gemini: `usageMetadata: { promptTokenCount, candidatesTokenCount }` on
+//     generateContent, where the audio rides in the prompt.
+//
+// `null` means "the provider did not say", which is different from zero: the
+// cost line renders `--` rather than a fabricated `$0.00`. That matters here
+// more than in chat, because the transcription models that bill by the minute
+// (`whisper-1`) report no tokens at all.
+function usageFromResponse(kind, text) {
+  let parsed;
+  try { parsed = JSON.parse(text || '{}'); } catch { return null; }
+  const raw = kind === 'gemini' ? parsed.usageMetadata : parsed.usage;
+  if (!raw || typeof raw !== 'object') return null;
+  const prompt = num(raw.promptTokenCount, raw.input_tokens, raw.prompt_tokens);
+  const completion = num(raw.candidatesTokenCount, raw.output_tokens, raw.completion_tokens);
+  if (prompt === null && completion === null) return null;
+  // A provider that reports one side only still tells us something usable.
+  return { promptTokens: prompt || 0, completionTokens: completion || 0 };
+}
+
+// num(...values) — the first of these that reads as a non-negative number, else
+// null. Absent and zero are different answers here (see usageFromResponse).
+function num(...values) {
+  for (const v of values) {
+    if (typeof v === 'number' && isFinite(v) && v >= 0) return v;
+    if (typeof v === 'string' && v.trim() !== '' && isFinite(Number(v)) && Number(v) >= 0) return Number(v);
+  }
+  return null;
+}
+
 // unwrapGeminiText(text) — concatenate the text parts of a generateContent
 // response, skipping the safety/usage noise.
 function unwrapGeminiText(text) {
@@ -353,7 +394,8 @@ function upstreamErrorMessage(kind, text) {
 
 // parseTranscribeResponse(kind, status, text)
 //
-// -> { text }                          on success
+// -> { text, usage }                   on success (`usage` is null when the
+//                                      provider reported no token counts)
 // -> { error, code }                   on failure (the HTTP layer maps this
 //                                      to a status it can explain)
 function parseTranscribeResponse(kind, status, text) {
@@ -365,19 +407,20 @@ function parseTranscribeResponse(kind, status, text) {
       status
     };
   }
+  const usage = usageFromResponse(kind, text);
   if (kind === 'gemini') {
     const transcript = unwrapGeminiText(text);
     if (!transcript) return { error: 'The provider returned no transcript', code: 'EEMPTY' };
-    return { text: transcript };
+    return { text: transcript, usage };
   }
   let parsed;
   try { parsed = JSON.parse(text || '{}'); } catch {
     return { error: 'The provider returned an unreadable response', code: 'EBADUPSTREAM' };
   }
-  if (typeof parsed.text === 'string') return { text: parsed.text.trim() };
+  if (typeof parsed.text === 'string') return { text: parsed.text.trim(), usage };
   // Some self-hosted servers answer with { transcript } or { result }.
-  if (typeof parsed.transcript === 'string') return { text: parsed.transcript.trim() };
-  if (typeof parsed.result === 'string') return { text: parsed.result.trim() };
+  if (typeof parsed.transcript === 'string') return { text: parsed.transcript.trim(), usage };
+  if (typeof parsed.result === 'string') return { text: parsed.result.trim(), usage };
   if (parsed.error) return { error: upstreamErrorMessage(kind, text), code: 'EUPSTREAM' };
   return { error: 'The provider returned no transcript', code: 'EEMPTY' };
 }
@@ -395,6 +438,7 @@ module.exports = {
   mimeTypeFor,
   buildTranscribeRequest,
   parseTranscribeResponse,
+  usageFromResponse,
   extensionFor,
   resolveUrl
 };

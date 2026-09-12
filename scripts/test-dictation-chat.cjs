@@ -15,9 +15,12 @@
 //   2. the transcript lands in the composer draft (and is persisted), not in
 //      the transcript or nowhere;
 //   3. the draft is persisted, not shown only;
-//   4. the transcript is reported to the chat itself: the status line under the
-//      composer gets "dictation added", which is the only feedback the user has
-//      that the hand-off happened.
+//   4. the run's cost reaches the chat's status line — a transcription is not a
+//      chat turn, so no chat or project total covers it, and the status line is
+//      the only place the user sees what dictating cost;
+//   5. an unpriced run (`whisper-1` bills per minute and reports no tokens)
+//      says nothing about cost rather than `$0.00`, and the button never claims
+//      a price it was not given.
 //
 // All bundles stay in memory; only a fresh about:blank target is touched. Fetch
 // is fully stubbed (unknown requests fail), with CDP blocking real network as a
@@ -193,6 +196,23 @@ function installFixture(data) {
   if (!navigator.mediaDevices) Object.defineProperty(navigator, 'mediaDevices', { value: {} });
   navigator.mediaDevices.getUserMedia = async () => stream;
 
+  // Every write to the chat's status line, recorded as it happens. The line is
+  // written imperatively (Preact does not own its text), so a later re-render
+  // can wipe it — recording the mutations is what makes the check about "the
+  // chat was told" rather than about whatever survived the last paint.
+  test.statusWrites = [];
+  test.watchStatus = () => {
+    if (!document.querySelector('.chat-view__status')) return false;
+    // Observed on document.body, not on the status element: if Preact ever
+    // replaces the element the ref points at, an observer attached to the old
+    // node would miss every later write and blame the feature.
+    new MutationObserver(() => {
+      const el = document.querySelector('.chat-view__status');
+      test.statusWrites.push({ text: el ? el.textContent : null, state: el ? el.getAttribute('data-state') : null });
+    }).observe(document.body, { childList: true, characterData: true, subtree: true });
+    return true;
+  };
+
   test.snapshot = () => {
     const mic = document.querySelector('.chat-view__mic-btn');    const status = document.querySelector('.chat-view__status');
     const composer = document.querySelector('#chatComposer');
@@ -291,6 +311,7 @@ async function withPage(bundleText, width, run) {
       await evaluate(bundleText.js);
       await waitFor(`document.querySelector('.chat-view__mic-btn') && document.querySelector('#chatComposer')`,
       'real ChatView rendered with the composer mic');
+      assert.ok(await evaluate('dictationTest.watchStatus()'), 'the chat status line exists to watch');
       await settle();
       await run({ evaluate, waitFor, settle, tap });
       assert.deepEqual(await evaluate('dictationTest.unexpected'), [], 'all fetches matched explicit fixture routes');
@@ -334,19 +355,37 @@ async function main() {
 
     // ---- Stop: the transcript goes to the composer, the cost to the status
     await tap('.chat-view__mic-btn');
-    await waitFor(`document.querySelector('.chat-view__status').textContent === 'dictation added'`, 'transcription lands');
+    await waitFor(`document.querySelector('.chat-view__status').textContent.indexOf('dictation added') === 0`, 'transcription lands');
     const done = await read();
-    check('the chat status line says the dictation landed', done.status === 'dictation added');
+    check('the chat status line reports what the run cost', done.status === 'dictation added · $0.00055');
+    check('the chat was told as it happened, not only in the DOM now',
+    await evaluate(`dictationTest.statusWrites.some(w => w.text === 'dictation added · $0.00055' && w.state === 'success')`));
     check('the transcript is appended to the composer draft',
       done.composer === 'This is a dictated sentence about mouaif.');
     check('the draft is persisted, not only shown',
       await evaluate(`dictationTest.draftPatches.some(p => String(p.draft).indexOf('dictated sentence') >= 0)`));
     check('the model came from the app-level dictation choice, not the chat',
       await evaluate(`dictationTest.transcribeBodies[0].modelId === 'gemini-2.5-flash' && dictationTest.transcribeBodies[0].providerId === 'gemini'`));
-    check('and the button describes what it did',
-      done.title === 'Added to the composer — review it, then send.');
+    check('and the button keeps the same figure for its tooltip',
+      done.title === 'Added to the composer ($0.00055) — review it, then send.');
     check('the microphone was released after the run', await evaluate('dictationTest.streamStopped === 1'));
-    check('one tap pair, one upstream call', await evaluate('dictationTest.runs === 1'));
+
+    // ---- An unpriced run says nothing rather than $0.00 --------------
+    //
+    // The realistic case: `whisper-1` bills per minute of audio and answers
+    // with the transcript alone, so the server sends `cost.known: false`.
+    await evaluate(`dictationTest.cost = 'unpriced'`);
+    await tap('.chat-view__mic-btn');
+    await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'true'`, 'second recording starts');
+    await tap('.chat-view__mic-btn');
+    await waitFor(`dictationTest.runs === 2 && document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'false'`, 'second transcription lands');
+    const unpriced = await read();
+    check('an unpriced run adds no figure to the status line', unpriced.status === 'dictation added');
+    check('and the composer got the second transcript too',
+      unpriced.composer === 'This is a dictated sentence about mouaif. Second dictated sentence.');
+    check('the button does not claim a price either',
+      unpriced.title === 'Added to the composer — review it, then send.');
+    check('two runs, two upstream calls', await evaluate('dictationTest.runs === 2'));
   });
   console.log('\nDictation composer regressions passed (' + checks + ' checks). No production files or live app data touched.');
 }
