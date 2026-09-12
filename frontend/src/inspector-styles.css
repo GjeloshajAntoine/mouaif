@@ -381,48 +381,11 @@ font-size: 0.82rem;
 color: var(--muted);
 line-height: 1.4;
 }
-/* The quick-add chips *wrap* rather than scroll sideways. They were briefly a
-horizontal scroller to save a line, but a horizontal scroller sitting inside a
-vertical list is a trap on a phone: the row hides ~260 px of its own content,
-and a slightly diagonal swipe — the normal case when scrolling a long list —
-pans it instead of the list. Wrapping shows every chip at once and keeps the
-vertical gesture vertical. The "Add" label rides on the first line. */
-.inspector__styles-add {
-display: flex;
-flex-wrap: wrap;
-gap: 6px;
-align-items: center;
-}
-.inspector__styles-add-label {
-flex: 0 0 auto;
-font-size: 0.68rem;
-color: var(--muted-2);
-text-transform: uppercase;
-letter-spacing: 0.04em;
-background: var(--surface);
-}
-.inspector__styles-chip { flex: 0 0 auto; }
-.inspector__styles-chip {
-  font: inherit;
-  font-size: 0.8rem;
-  color: var(--fg-soft);
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  min-height: var(--tap);
-  padding: 0 14px;
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-  -webkit-tap-highlight-color: transparent;
-}
-.inspector__styles-chip:hover { background: var(--surface-3); color: var(--fg); }
-.inspector__styles-chip:active { transform: scale(0.98); }
-/* A chip whose property is already declared on the element: it re-opens the
-existing value rather than starting blank, and reads as "already set". */
-.inspector__styles-chip.is-set {
-color: var(--accent-hi);
-border-color: var(--accent);
-}
+/* The quick-add chip row used to live here: six bare property chips above the
+declared list. It is gone — the touch control surface (inspector-touch.css) and
+its "Add property" card sheet carry the same properties with a description, a
+picture and their current value, and the old chips were a fourth way to reach the
+same editor. The rules went with the markup rather than lingering as dead CSS. */
 /* Pinned block. The element header and the element preview are one sticky
 child of the panel's scroller: they stay at the top while the "Declared
 styles" and "Computed" rows below scroll. An opaque background is required

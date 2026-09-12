@@ -7,6 +7,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Chat backward pagination](features/chat-backward-pagination.md) — long chats load the newest page immediately, then eagerly load all older history in the background.
 - [Draft Craft](features/draft-craft.md) — add selected code or annotated Inspector images to any chat draft.
 - [Inspector Styles](features/inspector-styles.md) — tap to select an element and edit its CSS in the Inspector.
+- [Inspector touch controls](features/inspector-touch-controls.md) — change the selected element's CSS with chips, sliders, a box model and swatches.
 - [Inspector Chrome profiles](features/inspector-profiles.md) — switch which Chrome user profile the Inspector attaches to.
 - [Inspector target-origin model](features/inspector-target-origin.md) — which element, which rule and where an edit lands, as read inside the Styles panel.
 - [Inspector value types](features/inspector-value-types.md) — switch a value between length, number, percentage and keyword, with the cost stated.

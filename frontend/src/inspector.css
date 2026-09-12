@@ -23,7 +23,8 @@
    10. inspector-value-kinds.css         — Inspector per-kind value views
    11. inspector-intent.css              — Inspector intent + receipt
    12. inspector-value-type.css          — Inspector value-type switch
-   13. inspector-styles.css              — Inspector Styles panel
+13. inspector-touch.css               — Inspector touch-first style surface
+14. inspector-styles.css              — Inspector Styles panel
 */
 
 @import './inspector-chrome.css';
@@ -38,4 +39,5 @@
 @import './inspector-value-kinds.css';
 @import './inspector-intent.css';
 @import './inspector-value-type.css';
+@import './inspector-touch.css';
 @import './inspector-styles.css';

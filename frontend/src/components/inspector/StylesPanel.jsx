@@ -41,6 +41,8 @@ import { stepFor, snapValue, stepValue as stepValuePure } from './snapping.js';
 import { Suggestions } from './Suggestions.jsx';
 import { ValueRail } from './ValueRail.jsx';
 import { ValueKindsView } from './ValueKindsView.jsx';
+import { StyleControls } from './StyleControls.jsx';
+import { AddPropertySheet } from './AddPropertySheet.jsx';
 import { valueShape } from './valueShapes.js';
 import { writtenNames } from './shorthand.js';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
@@ -252,15 +254,16 @@ return Number.isFinite(n) ? Math.round(n) + 'px' : v;
 return (box.width ? round(box.width) : '—') + ' × ' + (box.height ? round(box.height) : '—');
 }
 
-// COMMON_CSS — a short list of commonly-edited properties shown as quick
-// "add a property" chips. Tapping one opens the editor with that property
-// pre-filled. Kept intentionally small; the user can type any property in
-// the editor's property field.
+// COMMON_CSS — the suggested properties at the top of the "Add property" sheet:
+// the six a person reaches for first, each with a one-line description and the
+// short label its chip carries. Kept intentionally small — the sheet's card list
+// and its search field are the way to everything else, and any property can still
+// be typed in the editor's own property field.
 //
 // Each entry is [property, description, chip label]. The label is deliberately
-// shorter than the property: the row wraps rather than scrolling sideways, so
-// `background-color` at 129 px was enough to push the row onto a third line for
-// one word. The full property name is what gets applied, and it is in the
+// shorter than the property: the chip row wraps rather than scrolling sideways,
+// so `background-color` at 129 px was enough to push the row onto a third line
+// for one word. The full property name is what gets applied, and it is in the
 // chip's title and accessible name.
 const COMMON_CSS = [
 ['color', 'text color', 'color'],
@@ -814,6 +817,10 @@ const [model, setModel] = useState(null);
 const [loading, setLoading] = useState(false);
 const [error, setError] = useState('');
 const [edit, setEdit] = useState(null); // { prop, value } when editing
+// addOpen — whether the "Add property" card sheet is up. The sheet is the browse
+// step between the touch surface's primary button and the edit sheet: it chooses
+// a *property*, then hands it to the same editor a declared row opens.
+const [addOpen, setAddOpen] = useState(false);
 const [selValue, setSelValue] = useState('');
 // shot — the pinned element preview: a clipped screenshot of the selected
 // element (data URL) plus its device-pixel size. Shown at the top of the
@@ -1291,6 +1298,18 @@ markWritten(prop);
 // in the still-open edit sheet.
 captureShot();
 }
+// applyControl — the touch surface's write path. A thin wrapper around applyEdit,
+// for one reason: a control reports a failure in the panel's own error line
+// instead of as an unhandled rejection. The write itself is unchanged, so a
+// slider release and a typed Apply produce the same receipt entry, the same
+// changed-first highlight and the same undo.
+async function applyControl(prop, value) {
+try {
+await applyEdit(prop, value);
+} catch (e) {
+setError((e && e.message) || ('Could not set ' + prop));
+}
+}
 async function removeEdit(prop) {
 if (!props.removeInlineStyleProperty) throw new Error('not connected');
 const objId = modelRef.current && modelRef.current.objectId;
@@ -1350,6 +1369,9 @@ setShotBusy(false);
 setTree(null);
 setRules(null);
 setEdit(null);
+// The card sheet names a property to add *to this element*, so with no element
+// there is nothing for it to add to.
+setAddOpen(false);
 setError('');
 // The receipt describes edits made to the element that was selected, and the
 // Inspector owns it: with no selection there is nothing to undo, so it is
@@ -1413,6 +1435,13 @@ error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null
 }
 
 const label = elementLabel(model.node);
+// unitCtx — the real base font sizes the touch surface's unit chips convert with
+// (rem from the root, em and % from the parent), read once with the element's
+// styles. Without them a `rem` chip would have to guess 16px, and the surface
+// falls back to writing px instead (see toUnit).
+const unitCtx = model.bases
+? { rootFontSize: model.bases.root, parentFontSize: model.bases.parent, fontSize: model.bases.self }
+: {};
 const inlineRows = (model.inlineProps || []);
 const computedRows = (model.computed || []);
 // The value index: what values and tokens this page uses per property, built
@@ -1645,6 +1674,36 @@ tree.childCount > tree.children.length
 : null
 )
 : null,
+// Touch-first control surface. Everything below this section can write any
+// property, but only with a keyboard: the rows here are the properties a phone
+// user actually reaches for, as chips, sliders, a box model and swatches (see
+// StyleControls.jsx). It sits above "Declared styles" because it is the *first*
+// answer to "change this element" — the declared list is the exhaustive one, kept
+// for anything the surface does not name, and both write through applyEdit, so a
+// slider release and a typed value produce the same receipt entry and the same
+// undo.
+h('div', { class: 'inspector__styles-section' },
+h('h3', { class: 'inspector__styles-h' }, 'Style controls'),
+h(StyleControls, {
+// Keyed by element: a new selection remounts the surface, which is what resets
+// its group tab to what the new element needs and its box-model edge to the
+// padding top (see defaultGroup).
+key: 'touch-' + ((model && model.objectId) || 'none'),
+ctx: { declared: inlineRows, computed: computedRows },
+unitCtx,
+label,
+// The colours this page already uses for a property, one tap away — the panel's
+// value index answers it, so the swatches cost no page read.
+swatchesFor: (prop) => valuesFor(valueIndex, prop, 6).map((r) => r.value),
+onApply: applyControl,
+// The value button and the colour swatch open the same editor a declared row
+// opens: exact typing, the value-type switch, the unit row and the page's own
+// suggestions live there, and no touch control replaces them.
+onEdit: (prop, value) => setEdit({ prop, value }),
+onAddProperty: () => setAddOpen(true),
+disabled: loading
+})
+),
 h('div', { class: 'inspector__styles-section' },
 h('h3', { class: 'inspector__styles-h' }, 'Declared styles'),
 inlineRows.length
@@ -1675,26 +1734,7 @@ h('span', { class: 'inspector__styles-val' }, row.value || '')
 )
 ))
 )
-: h('p', { class: 'inspector__styles-none' }, 'No inline styles yet.', h('br'), 'Tap a chip below to add one.'),
-h('div', { class: 'inspector__styles-add' },
-h('span', { class: 'inspector__styles-add-label' }, 'Add'),
-COMMON_CSS.map(([prop, desc, short]) => {
-// A chip for a property that is already declared re-opens it with its
-// current value. Opening it blank forced the value to be retyped from
-// memory, and an accidental Apply wrote an empty value (which drops the
-// declaration).
-const current = inlineRows.find((x) => x.prop === prop);
-return h('button', {
-class: 'inspector__styles-chip' + (current ? ' is-set' : ''),
-type: 'button',
-title: current ? prop + ' — set to ' + current.value : desc + ' (' + prop + ')',
-'aria-label': current
-? 'Edit ' + desc + ' (' + prop + '), currently ' + current.value
-: 'Add ' + desc + ' (' + prop + ')',
-onClick: () => setEdit({ prop, value: current ? current.value : '' })
-}, short || prop);
-})
-)
+: h('p', { class: 'inspector__styles-none' }, 'No inline styles yet.', h('br'), 'Tap Add property above to set one.')
 ),
 h('div', { class: 'inspector__styles-section' },
 h(MatchedRulesSection, {
@@ -1888,6 +1928,20 @@ onApply: applyEdit,
 onRemove: removeEdit,
 onDone: () => setEdit(null),
 onCancel: () => setEdit(null)
-}) : null
+}) : null,
+// The card sheet that chooses *which* property to edit. Rendered from the same
+// panel state as the editor, so picking a card closes one sheet and opens the
+// other in a single render — there is no frame in which neither is up, which is
+// what makes the browse → set-value hand-off feel like one motion.
+h(AddPropertySheet, {
+open: addOpen,
+ctx: { declared: inlineRows, computed: computedRows },
+suggestions: COMMON_CSS,
+onClose: () => setAddOpen(false),
+onPick: (row) => {
+setAddOpen(false);
+setEdit({ prop: row.prop, value: row.isSet ? row.value : '' });
+}
+})
 );
 }

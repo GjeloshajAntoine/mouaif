@@ -216,8 +216,13 @@ check('the panel still clears its own highlight when an entry is reversed',
 && /function noteUndone\(prop\)[\s\S]{0,600}unmarkChanged/.test(stylesSource));
 check('a new selection resets the receipt through the owner',
   /if \(props\.onSelectionReset\) props\.onSelectionReset\(\);/.test(stylesSource));
+// The window is the function's own length rather than a tight bound: clearPick
+// has grown around this call twice (the adopt mark that keeps the retained id
+// from bringing the element back, and the sheet close the touch surface added),
+// and a bound tuned to the current line count reports "the call is missing" the
+// next time the function gains a comment.
 check('clearing the selection resets it through the owner too',
-  /function clearPick\(\)[\s\S]{0,420}props\.onSelectionReset/.test(stylesSource));
+  /function clearPick\(\)[\s\S]{0,1200}props\.onSelectionReset/.test(stylesSource));
 check('the panel re-reads the element after an undo it did not perform',
   /if \(!props\.receiptNonce\) return/.test(stylesSource));
 check('the sheet is told how many declarations are kept',

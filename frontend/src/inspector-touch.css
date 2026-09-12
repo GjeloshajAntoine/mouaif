@@ -1,0 +1,738 @@
+/* Inspector touch-first style surface — split out of inspector-styles.css.
+
+   The Styles panel's control surface (see styleControls.js): the widgets that
+   change a style without a keyboard. It is its own part because every rule here
+   is a *touch affordance* rather than a panel layout — the panel's own rules can
+   be re-read without them, and the 44 px floor this file enforces is the one
+   invariant a future layout pass must not quietly break.
+
+   Three rules hold for everything below:
+
+     1. **44 px floor.** Every interactive element is at least `--tap` in height
+        (and in width where it is glyph-only: the − / + steppers, the swatches,
+        the box-model edges). A control that *looks* tappable and is not is the
+        bug this surface exists to remove.
+     2. **No horizontal scrollers.** Every chip row wraps. The panel is already a
+        vertical scroller inside the page's scroller, so a sideways scroller here
+        would hide its own content and drag the panel sideways on a slightly
+        diagonal swipe — the invariant scripts/test-inspector-styles.js guards.
+     3. **No hover-only affordances.** `:hover` is a nicety on top of a control
+        that already works on tap, never the way a value is revealed.
+
+   Mobile first: the single-column phone layout is the default, and the two
+   width-based blocks at the end only *relax* the spacing on a tablet, where the
+   same rows are read from further away. */
+
+/* ---- the surface --------------------------------------------------- */
+.inspector__touch {
+display: flex;
+flex-direction: column;
+gap: 10px;
+min-width: 0;
+}
+/* Group chips. Wrapped, never a sideways scroller: six chips at 360 px land on
+   two rows, and a row that can be swiped sideways is how the panel gets dragged
+   off-centre. */
+.inspector__touch-tabs {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+}
+.inspector__touch-tab {
+position: relative;
+flex: 0 1 auto;
+min-height: var(--tap);
+padding: 0 12px;
+font: inherit;
+font-size: 0.76rem;
+color: var(--fg-soft);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-pill);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__touch-tab:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__touch-tab:active { transform: scale(0.98); }
+.inspector__touch-tab.is-on {
+color: var(--on-accent);
+background: var(--accent);
+border-color: var(--accent);
+font-weight: 600;
+}
+.inspector__touch-tab.is-set::after {
+content: '';
+display: inline-block;
+width: 6px;
+height: 6px;
+margin-left: 6px;
+border-radius: 50%;
+background: var(--accent);
+vertical-align: middle;
+}
+.inspector__touch-tab.is-on.is-set::after { background: var(--on-accent); }
+/* One control, one card. A card per control is what keeps the surface readable
+   at a glance: the label row, the widget, and (where the property has one) the
+   footer's unit / step chips belong visibly to the same property. */
+.inspector__touch-row {
+display: flex;
+flex-direction: column;
+gap: 8px;
+padding: 8px;
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+min-width: 0;
+}
+.inspector__touch-head {
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 8px;
+min-width: 0;
+}
+.inspector__touch-label {
+display: flex;
+flex-wrap: wrap;
+align-items: baseline;
+gap: 6px;
+min-width: 0;
+}
+.inspector__touch-name {
+font-size: 0.82rem;
+font-weight: 600;
+color: var(--fg);
+}
+.inspector__touch-prop {
+font-family: var(--font-mono);
+font-size: 0.64rem;
+color: var(--muted);
+background: var(--surface);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+padding: 0 4px;
+}
+.inspector__touch-set {
+font-size: 0.6rem;
+font-weight: 700;
+letter-spacing: 0.04em;
+text-transform: uppercase;
+color: var(--accent-hi);
+background: var(--accent-soft);
+border-radius: var(--r-pill);
+padding: 0 6px;
+}
+/* The value is the second way into every control: the one that takes a value the
+   widget cannot express (an exact px, a token, a keyword). It is a button, not a
+   read-out, and it is a full tap target — the row's labels are what it replaces. */
+.inspector__touch-value {
+flex: 0 0 auto;
+max-width: 46%;
+min-width: var(--tap);
+min-height: var(--tap);
+padding: 0 10px;
+font-family: var(--font-mono);
+font-size: 0.74rem;
+color: var(--fg);
+background: var(--surface);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__touch-value:hover { background: var(--surface-3); }
+.inspector__touch-value.is-set {
+color: var(--accent-hi);
+border-color: var(--accent);
+}
+.inspector__touch-value:disabled { opacity: 0.5; }
+.inspector__touch-note {
+margin: 0;
+font-size: 0.68rem;
+line-height: 1.35;
+color: var(--fg-soft);
+}
+.inspector__touch-none {
+margin: 0;
+font-size: 0.72rem;
+color: var(--fg-soft);
+}
+
+/* ---- numeric rows: − / +, slider, read-out ------------------------- */
+/* Two lines: the steppers and the slider, then the read-out. The read-out has to
+   be its own line because it shows the *draft* while a finger is down, and a
+   draft that replaces the row's own header value would move the header's width
+   under the finger. */
+.inspector__touch-range {
+display: grid;
+grid-template-columns: var(--tap) minmax(0, 1fr) var(--tap);
+align-items: center;
+gap: 6px;
+min-width: 0;
+}
+.inspector__touch-step {
+width: var(--tap);
+min-width: var(--tap);
+height: var(--tap);
+font: inherit;
+font-size: 1.1rem;
+line-height: 1;
+color: var(--fg);
+background: var(--surface);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__touch-step:hover { background: var(--surface-3); }
+.inspector__touch-step:active { transform: scale(0.96); }
+.inspector__touch-step:disabled { opacity: 0.4; }
+/* The slider is a native range input with the whole 44 px row as its hit area:
+   the track stays 8 px so it reads as a slider, the element around it is what a
+   thumb actually lands on. `touch-action: pan-y` keeps a vertical swipe scrolling
+   the panel and gives the horizontal drag to the thumb. */
+.inspector__touch-slider {
+-webkit-appearance: none;
+appearance: none;
+width: 100%;
+min-width: 0;
+height: var(--tap);
+margin: 0;
+background: transparent;
+cursor: pointer;
+touch-action: pan-y;
+}
+.inspector__touch-slider::-webkit-slider-runnable-track {
+height: 8px;
+border-radius: var(--r-pill);
+background: var(--surface-3);
+border: 1px solid var(--border);
+}
+.inspector__touch-slider::-webkit-slider-thumb {
+-webkit-appearance: none;
+appearance: none;
+width: 26px;
+height: 26px;
+margin-top: -10px;
+border-radius: 50%;
+background: var(--accent);
+border: 2px solid var(--surface);
+box-shadow: var(--shadow-sm);
+}
+.inspector__touch-slider::-moz-range-track {
+height: 8px;
+border-radius: var(--r-pill);
+background: var(--surface-3);
+border: 1px solid var(--border);
+}
+.inspector__touch-slider::-moz-range-thumb {
+width: 22px;
+height: 22px;
+border-radius: 50%;
+background: var(--accent);
+border: 2px solid var(--surface);
+}
+.inspector__touch-slider:disabled { opacity: 0.45; }
+.inspector__touch-readout {
+grid-column: 1 / -1;
+font-family: var(--font-mono);
+font-size: 0.72rem;
+color: var(--accent-hi);
+text-align: center;
+}
+.inspector__touch-foot {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 6px;
+}
+.inspector__touch-chips {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+min-width: 0;
+}
+.inspector__touch-chip {
+min-width: var(--tap);
+min-height: var(--tap);
+padding: 0 12px;
+font: inherit;
+font-size: 0.72rem;
+color: var(--fg-soft);
+background: var(--surface);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-pill);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__touch-chip:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__touch-chip:active { transform: scale(0.98); }
+.inspector__touch-chip.is-on {
+color: var(--on-accent);
+background: var(--accent);
+border-color: var(--accent);
+font-weight: 600;
+}
+.inspector__touch-chip:disabled { opacity: 0.45; }
+
+/* ---- segmented enums ---------------------------------------------- */
+/* `auto-fit` with a 76 px floor: three or four segments share a phone line, five
+   wrap to two — so `align-items` and `justify-content` never need a sideways
+   swipe to reach the sixth possibility. */
+.inspector__touch-seg {
+display: grid;
+grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+gap: 6px;
+min-width: 0;
+}
+.inspector__touch-segbtn {
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: center;
+gap: 2px;
+min-height: var(--tap);
+padding: 4px 6px;
+font: inherit;
+color: var(--fg-soft);
+background: var(--surface);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__touch-segbtn:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__touch-segbtn:active { transform: scale(0.98); }
+.inspector__touch-segbtn.is-on {
+color: var(--on-accent);
+background: var(--accent);
+border-color: var(--accent);
+}
+.inspector__touch-segbtn.is-unknown {
+border-style: dashed;
+color: var(--warning);
+}
+.inspector__touch-segbtn:disabled { cursor: default; }
+.inspector__touch-segglyph { font-size: 0.92rem; line-height: 1; }
+.inspector__touch-seglabel {
+font-size: 0.62rem;
+line-height: 1.1;
+text-align: center;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+max-width: 100%;
+}
+
+/* ---- colour rows -------------------------------------------------- */
+.inspector__touch-colour {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 8px;
+min-width: 0;
+}
+/* The swatch is drawn over a checkerboard so `transparent` and a very dark colour
+   are distinguishable — the one case where "no colour" and "a colour" look the
+   same in a swatch. */
+.inspector__touch-stroke,
+.inspector__touch-swatch {
+width: var(--tap);
+min-width: var(--tap);
+height: var(--tap);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+background-image: linear-gradient(45deg, rgba(255,255,255,0.12) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.12) 75%),
+linear-gradient(45deg, rgba(255,255,255,0.12) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.12) 75%);
+background-size: 12px 12px;
+background-position: 0 0, 6px 6px;
+}
+.inspector__touch-stroke { width: 56px; min-width: 56px; }
+.inspector__touch-stroke:active,
+.inspector__touch-swatch:active { transform: scale(0.96); }
+
+/* ---- box model ---------------------------------------------------- */
+/* The nesting *is* the information: margin outside, padding inside, the element
+   in the middle. Both rings are 3x3 grids so each edge button sits where the
+   property it writes applies, which is the whole reason a picture beats four
+   rows of `padding-top`/`padding-right`/… */
+.inspector__touch-boxes {
+display: flex;
+flex-direction: column;
+gap: 4px;
+min-width: 0;
+}
+/* `auto` side columns rather than `1fr`: the edge buttons carry their own
+   `min-width: var(--tap)`, so the middle column is whatever is left over and can
+   never squeeze an edge below a thumb — which is exactly what the nested padding
+   ring did when both rings were three equal fractions of 350 px (29 px edges).
+   The middle cell shrinks instead, and the tag inside it ellipsizes. */
+.inspector__touch-box {
+display: grid;
+grid-template-columns: auto minmax(0, 1fr) auto;
+grid-template-areas:
+'. top .'
+'left mid right'
+'. bottom .';
+gap: 4px;
+min-width: 0;
+padding: 4px;
+border-radius: var(--r-md);
+}
+.inspector__touch-box--margin {
+background: var(--surface);
+border: 1px dashed var(--border-strong);
+}
+.inspector__touch-box--padding {
+background: var(--accent-soft);
+border: 1px dashed var(--accent);
+}
+.inspector__touch-edge {
+min-height: var(--tap);
+min-width: var(--tap);
+padding: 2px;
+font-family: var(--font-mono);
+font-size: 0.66rem;
+color: var(--fg-soft);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__touch-edge:hover { color: var(--fg); border-color: var(--accent); }
+.inspector__touch-edge.is-set { color: var(--accent-hi); }
+.inspector__touch-edge.is-on {
+color: var(--on-accent);
+background: var(--accent);
+border-color: var(--accent);
+font-weight: 600;
+}
+.inspector__touch-boxmid {
+display: flex;
+align-items: center;
+justify-content: center;
+min-width: 0;
+min-height: var(--tap);
+overflow: hidden;
+}
+.inspector__touch-boxname {
+font-size: 0.6rem;
+letter-spacing: 0.04em;
+text-transform: uppercase;
+color: var(--muted);
+}
+.inspector__touch-boxtag {
+max-width: 100%;
+padding: 2px 8px;
+font-size: 0.64rem;
+font-weight: 600;
+color: var(--accent-hi);
+background: var(--surface);
+border: 1px solid var(--accent);
+border-radius: var(--r-pill);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+
+/* ---- the primary action ------------------------------------------ */
+.inspector__touch-add {
+display: flex;
+align-items: center;
+justify-content: center;
+gap: 8px;
+width: 100%;
+min-height: 48px;
+font: inherit;
+font-size: 0.86rem;
+font-weight: 600;
+color: var(--on-accent);
+background: var(--accent);
+border: 1px solid var(--accent);
+border-radius: var(--r-md);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__touch-add:hover { background: var(--accent-press); }
+.inspector__touch-add:active { transform: scale(0.99); }
+.inspector__touch-add:disabled { opacity: 0.5; }
+.inspector__touch-addglyph { font-size: 1rem; line-height: 1; }
+.inspector__touch-footnote {
+margin: 0;
+font-size: 0.66rem;
+line-height: 1.35;
+color: var(--muted);
+}
+
+/* ---- the Add-property sheet -------------------------------------- */
+.inspector__sheet--addprop { max-height: 86dvh; }
+.inspector__addprop-body {
+display: flex;
+flex-direction: column;
+gap: 10px;
+}
+.inspector__addprop-search {
+min-height: var(--tap);
+font-size: 0.86rem;
+}
+.inspector__addprop-tabs {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+}
+.inspector__addprop-suggest {
+display: flex;
+flex-direction: column;
+gap: 6px;
+}
+.inspector__addprop-h {
+margin: 0;
+font-size: 0.68rem;
+font-weight: 700;
+letter-spacing: 0.04em;
+text-transform: uppercase;
+color: var(--fg-soft);
+}
+.inspector__addprop-list {
+list-style: none;
+margin: 0;
+padding: 0;
+display: flex;
+flex-direction: column;
+gap: 6px;
+}
+.inspector__addprop-card {
+display: flex;
+align-items: center;
+gap: 10px;
+width: 100%;
+min-height: calc(var(--tap) + 20px);
+padding: 8px;
+text-align: left;
+font: inherit;
+color: var(--fg);
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__addprop-card:hover { background: var(--surface-3); }
+.inspector__addprop-card:active { transform: scale(0.995); }
+.inspector__addprop-card.is-set { border-color: var(--accent); }
+.inspector__addprop-text {
+display: flex;
+flex-direction: column;
+gap: 1px;
+min-width: 0;
+flex: 1 1 auto;
+}
+.inspector__addprop-name { font-size: 0.82rem; font-weight: 600; }
+.inspector__addprop-prop {
+font-family: var(--font-mono);
+font-size: 0.62rem;
+color: var(--muted);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.inspector__addprop-blurb {
+font-size: 0.68rem;
+color: var(--fg-soft);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.inspector__addprop-action {
+display: flex;
+flex-direction: column;
+align-items: flex-end;
+gap: 4px;
+flex: 0 0 auto;
+}
+.inspector__addprop-value {
+font-family: var(--font-mono);
+font-size: 0.64rem;
+color: var(--accent-hi);
+max-width: 96px;
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.inspector__addprop-badge {
+font-size: 0.64rem;
+font-weight: 600;
+color: var(--accent-hi);
+background: var(--accent-soft);
+border: 1px solid var(--accent);
+border-radius: var(--r-pill);
+padding: 3px 10px;
+min-height: 28px;
+line-height: 20px;
+}
+.inspector__addprop-note {
+margin: 0;
+font-size: 0.66rem;
+line-height: 1.35;
+color: var(--muted);
+}
+
+/* ---- the card pictures ------------------------------------------- */
+/* Each `preview` kind in styleControls.js draws the property's effect in CSS: a
+   box, its inside, and one mark that says which property the card is about. The
+   pictures are abstract on purpose — they answer "is this the spacing one or the
+   border one?", which is the only question a card has to answer before the tap. */
+.inspector__preview {
+position: relative;
+flex: 0 0 auto;
+display: flex;
+align-items: center;
+justify-content: center;
+width: 52px;
+height: 52px;
+padding: 6px;
+background: var(--surface);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+overflow: hidden;
+}
+.inspector__preview-box,
+.inspector__preview-mark {
+position: absolute;
+border-radius: 4px;
+}
+.inspector__preview-glyph {
+font-size: 0.62rem;
+font-weight: 700;
+color: var(--fg-soft);
+}
+.inspector__preview--none .inspector__preview-box,
+.inspector__preview--none .inspector__preview-mark,
+.inspector__preview--text .inspector__preview-box,
+.inspector__preview--text .inspector__preview-mark,
+.inspector__preview--weight .inspector__preview-box,
+.inspector__preview--weight .inspector__preview-mark { display: none; }
+.inspector__preview--text .inspector__preview-glyph { font-size: 0.86rem; color: var(--fg); }
+.inspector__preview--weight .inspector__preview-glyph { font-size: 0.86rem; font-weight: 800; color: var(--fg); }
+.inspector__preview--padding .inspector__preview-box {
+inset: 6px;
+background: var(--accent-soft);
+border: 1px solid var(--accent);
+}
+.inspector__preview--padding .inspector__preview-mark {
+inset: 14px;
+background: var(--surface-3);
+border: 1px dashed var(--accent);
+}
+.inspector__preview--margin .inspector__preview-box {
+inset: 14px;
+background: var(--surface-3);
+border: 1px solid var(--border-strong);
+}
+.inspector__preview--margin .inspector__preview-mark {
+inset: 4px;
+border: 1px dashed var(--accent);
+}
+.inspector__preview--gap .inspector__preview-box {
+inset: 12px 6px;
+background: repeating-linear-gradient(90deg, var(--accent) 0 8px, transparent 8px 16px);
+}
+.inspector__preview--radius .inspector__preview-box {
+inset: 8px;
+background: var(--surface-3);
+border: 2px solid var(--accent);
+border-radius: 50%;
+}
+.inspector__preview--shadow .inspector__preview-box {
+inset: 14px 16px 20px 12px;
+background: var(--surface-3);
+border: 1px solid var(--border-strong);
+box-shadow: 4px 6px 10px rgba(0, 0, 0, 0.55);
+}
+.inspector__preview--border .inspector__preview-box {
+inset: 10px;
+border: 3px solid var(--accent);
+}
+.inspector__preview--colour .inspector__preview-box {
+inset: 8px 20px 20px 8px;
+background: var(--accent);
+}
+.inspector__preview--colour .inspector__preview-mark {
+inset: 18px 8px 8px 18px;
+background: var(--warning);
+}
+.inspector__preview--size .inspector__preview-box {
+inset: 12px 6px;
+background: var(--surface-3);
+border-left: 2px solid var(--accent);
+border-right: 2px solid var(--accent);
+}
+.inspector__preview--size .inspector__preview-mark {
+left: 50%;
+top: 50%;
+width: 22px;
+height: 2px;
+margin: -1px 0 0 -11px;
+background: var(--accent);
+}
+.inspector__preview--flex .inspector__preview-box {
+inset: 10px;
+background: repeating-linear-gradient(90deg, var(--accent) 0 10px, transparent 10px 16px);
+}
+.inspector__preview--position .inspector__preview-box {
+inset: 4px;
+border: 1px dashed var(--border-strong);
+}
+.inspector__preview--position .inspector__preview-mark {
+left: 50%;
+top: 50%;
+width: 12px;
+height: 12px;
+margin: -6px 0 0 -6px;
+background: var(--accent);
+border-radius: 50%;
+}
+.inspector__preview--opacity .inspector__preview-box {
+inset: 10px;
+background: var(--accent);
+opacity: 0.35;
+}
+.inspector__preview--overflow .inspector__preview-box {
+inset: 12px 18px;
+background: var(--surface-3);
+border: 1px solid var(--border-strong);
+}
+.inspector__preview--overflow .inspector__preview-mark {
+left: 26px;
+right: 2px;
+top: 24px;
+height: 6px;
+background: var(--warning);
+border-radius: 3px;
+}
+
+/* ---- wider screens ------------------------------------------------ */
+/* Tablet and desktop are "the phone UI with extra room": the rows get more air
+   and two cards fit side by side, but nothing moves into a multi-pane layout and
+   no control changes shape. */
+@media (min-width: 560px) {
+.inspector__touch {
+gap: 12px;
+}
+.inspector__touch-row {
+padding: 10px;
+}
+.inspector__addprop-list {
+display: grid;
+grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+}
