@@ -133,18 +133,33 @@
 }
 /* ---- Inspector: viewport size dropdown -------------------------- */
 /* A compact dropdown in the Preview panel header. The trigger shows the
-current preset label + chevron; tapping opens a listbox of presets with
-their pixel dimensions. Uses the same popover idiom as the target-row
-and actions menus, sized for a 360 px phone. */
+   current preset label + chevron; tapping opens a listbox of presets with
+   their pixel dimensions. Uses the same popover idiom as the target-row
+   and actions menus, sized for a 360 px phone.
+
+   It is the smallest control in the panel head on purpose. The head is a
+   single row at 360 px carrying the label button, this dropdown, and the
+   full-screen / refresh / type / eye icons, so every pixel the trigger
+   takes comes out of the label button or pushes the actions to a second
+   row. Measured in Chrome at 360 px (Preview panel, device widths from
+   the VIEWPORT_PRESETS list):
+
+     padding 0 12px, font 0.78rem, gap 4px  →  Auto 72px, Laptop 89px
+     padding 0  8px, font 0.74rem, gap 3px  →  Auto 64px, Laptop 76px
+
+   The label is set at 0.74rem rather than 0.78rem so the widest preset
+   ("Laptop", six characters) clears the pill's padding; the chevron drops
+   to 12px to match the other 12-14px header glyphs. Both dimensions stay
+   at the 44px --tap minimum — only the horizontal footprint shrank. */
 .inspector__size {
   position: relative;
 }
 .inspector__size-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 600;
   color: var(--fg-soft);
   background: transparent;
@@ -153,7 +168,7 @@ and actions menus, sized for a 360 px phone. */
   cursor: pointer;
   min-height: var(--tap);
   min-width: var(--tap);
-  padding: 0 12px;
+  padding: 0 8px;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
   -webkit-tap-highlight-color: transparent;
 }
@@ -163,7 +178,9 @@ and actions menus, sized for a 360 px phone. */
   color: var(--fg);
   border-color: var(--border-strong);
 }
-.inspector__size-btn svg { display: block; }
+/* The chevron matches the other header glyphs (12-14px) instead of the
+   14px default inline SVG size, which is what the shrink above bought. */
+.inspector__size-btn svg { display: block; width: 12px; height: 12px; }
 .inspector__size-pop {
   position: absolute;
   top: calc(100% + 4px);
