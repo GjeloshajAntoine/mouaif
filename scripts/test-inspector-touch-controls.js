@@ -366,7 +366,7 @@ check('the box model renders a margin ring and a nested padding ring',
 check('the card sheet has a search field and category tabs',
   /type: 'search'/.test(sheetSource) && /LIBRARY_GROUPS\.map/.test(sheetSource));
 check('the card sheet draws a picture per card',
-  /inspector__preview--' \+ \(props\.kind/.test(sheetSource));
+/inspector__propcard--' \+ \(props\.kind/.test(sheetSource));
 check('the card sheet says what a card will do before the tap',
   /row\.action/.test(sheetSource) && /inspector__addprop-value/.test(sheetSource));
 
@@ -429,9 +429,22 @@ check('the slider keeps a vertical swipe for the panel',
 check('no control is hover-only: the slider and the box edges style :active or :disabled',
   /\.inspector__touch-step:active/.test(css) && /\.inspector__touch-edge:hover/.test(css));
 check('the surface is single-column on a phone and only relaxes above 560 px',
-  /@media \(min-width: 560px\)/.test(touchCss)
-  && touchCss.indexOf('@media (min-width: 560px)')
-    > touchCss.indexOf('.inspector__addprop-card'));
+/@media \(min-width: 560px\)/.test(touchCss)
+&& touchCss.indexOf('@media (min-width: 560px)')
+> touchCss.indexOf('.inspector__addprop-card'));
+// The card picture is NOT `.inspector__preview`: that name belongs to the live
+// page preview in PreviewPanel. This sheet is imported AFTER inspector-targets.css,
+// so a shared name turned the preview into a 52x52 card — and, because that card
+// rule declares `overflow: hidden` and a 52px width, it also clipped the preview
+// frame to a ~38px column. One CSS section silently re-laid out a different
+// panel. The namespaced `.inspector__propcard` is what keeps them apart, and
+// this check is what stops the collision coming back.
+check('the card picture does not reuse the page preview class',
+!/inspector__preview\b/.test(touchCss)
+&& /\.inspector__propcard\b/.test(touchCss)
+&& !/inspector__preview\b/.test(sheetSource)
+&& /inspector__propcard\b/.test(sheetSource));
+
 
 // rules(css, selector) — every rule body for a selector, concatenated. The
 // selectors here are used by more than one rule (base + state), so a single

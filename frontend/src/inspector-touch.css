@@ -591,7 +591,7 @@ color: var(--muted);
    box, its inside, and one mark that says which property the card is about. The
    pictures are abstract on purpose — they answer "is this the spacing one or the
    border one?", which is the only question a card has to answer before the tap. */
-.inspector__preview {
+.inspector__propcard {
 position: relative;
 flex: 0 0 auto;
 display: flex;
@@ -605,78 +605,78 @@ border: 1px solid var(--border);
 border-radius: var(--r-sm);
 overflow: hidden;
 }
-.inspector__preview-box,
-.inspector__preview-mark {
+.inspector__propcard-box,
+.inspector__propcard-mark {
 position: absolute;
 border-radius: 4px;
 }
-.inspector__preview-glyph {
+.inspector__propcard-glyph {
 font-size: 0.62rem;
 font-weight: 700;
 color: var(--fg-soft);
 }
-.inspector__preview--none .inspector__preview-box,
-.inspector__preview--none .inspector__preview-mark,
-.inspector__preview--text .inspector__preview-box,
-.inspector__preview--text .inspector__preview-mark,
-.inspector__preview--weight .inspector__preview-box,
-.inspector__preview--weight .inspector__preview-mark { display: none; }
-.inspector__preview--text .inspector__preview-glyph { font-size: 0.86rem; color: var(--fg); }
-.inspector__preview--weight .inspector__preview-glyph { font-size: 0.86rem; font-weight: 800; color: var(--fg); }
-.inspector__preview--padding .inspector__preview-box {
+.inspector__propcard--none .inspector__propcard-box,
+.inspector__propcard--none .inspector__propcard-mark,
+.inspector__propcard--text .inspector__propcard-box,
+.inspector__propcard--text .inspector__propcard-mark,
+.inspector__propcard--weight .inspector__propcard-box,
+.inspector__propcard--weight .inspector__propcard-mark { display: none; }
+.inspector__propcard--text .inspector__propcard-glyph { font-size: 0.86rem; color: var(--fg); }
+.inspector__propcard--weight .inspector__propcard-glyph { font-size: 0.86rem; font-weight: 800; color: var(--fg); }
+.inspector__propcard--padding .inspector__propcard-box {
 inset: 6px;
 background: var(--accent-soft);
 border: 1px solid var(--accent);
 }
-.inspector__preview--padding .inspector__preview-mark {
+.inspector__propcard--padding .inspector__propcard-mark {
 inset: 14px;
 background: var(--surface-3);
 border: 1px dashed var(--accent);
 }
-.inspector__preview--margin .inspector__preview-box {
+.inspector__propcard--margin .inspector__propcard-box {
 inset: 14px;
 background: var(--surface-3);
 border: 1px solid var(--border-strong);
 }
-.inspector__preview--margin .inspector__preview-mark {
+.inspector__propcard--margin .inspector__propcard-mark {
 inset: 4px;
 border: 1px dashed var(--accent);
 }
-.inspector__preview--gap .inspector__preview-box {
+.inspector__propcard--gap .inspector__propcard-box {
 inset: 12px 6px;
 background: repeating-linear-gradient(90deg, var(--accent) 0 8px, transparent 8px 16px);
 }
-.inspector__preview--radius .inspector__preview-box {
+.inspector__propcard--radius .inspector__propcard-box {
 inset: 8px;
 background: var(--surface-3);
 border: 2px solid var(--accent);
 border-radius: 50%;
 }
-.inspector__preview--shadow .inspector__preview-box {
+.inspector__propcard--shadow .inspector__propcard-box {
 inset: 14px 16px 20px 12px;
 background: var(--surface-3);
 border: 1px solid var(--border-strong);
 box-shadow: 4px 6px 10px rgba(0, 0, 0, 0.55);
 }
-.inspector__preview--border .inspector__preview-box {
+.inspector__propcard--border .inspector__propcard-box {
 inset: 10px;
 border: 3px solid var(--accent);
 }
-.inspector__preview--colour .inspector__preview-box {
+.inspector__propcard--colour .inspector__propcard-box {
 inset: 8px 20px 20px 8px;
 background: var(--accent);
 }
-.inspector__preview--colour .inspector__preview-mark {
+.inspector__propcard--colour .inspector__propcard-mark {
 inset: 18px 8px 8px 18px;
 background: var(--warning);
 }
-.inspector__preview--size .inspector__preview-box {
+.inspector__propcard--size .inspector__propcard-box {
 inset: 12px 6px;
 background: var(--surface-3);
 border-left: 2px solid var(--accent);
 border-right: 2px solid var(--accent);
 }
-.inspector__preview--size .inspector__preview-mark {
+.inspector__propcard--size .inspector__propcard-mark {
 left: 50%;
 top: 50%;
 width: 22px;
@@ -684,15 +684,15 @@ height: 2px;
 margin: -1px 0 0 -11px;
 background: var(--accent);
 }
-.inspector__preview--flex .inspector__preview-box {
+.inspector__propcard--flex .inspector__propcard-box {
 inset: 10px;
 background: repeating-linear-gradient(90deg, var(--accent) 0 10px, transparent 10px 16px);
 }
-.inspector__preview--position .inspector__preview-box {
+.inspector__propcard--position .inspector__propcard-box {
 inset: 4px;
 border: 1px dashed var(--border-strong);
 }
-.inspector__preview--position .inspector__preview-mark {
+.inspector__propcard--position .inspector__propcard-mark {
 left: 50%;
 top: 50%;
 width: 12px;
@@ -701,17 +701,17 @@ margin: -6px 0 0 -6px;
 background: var(--accent);
 border-radius: 50%;
 }
-.inspector__preview--opacity .inspector__preview-box {
+.inspector__propcard--opacity .inspector__propcard-box {
 inset: 10px;
 background: var(--accent);
 opacity: 0.35;
 }
-.inspector__preview--overflow .inspector__preview-box {
+.inspector__propcard--overflow .inspector__propcard-box {
 inset: 12px 18px;
 background: var(--surface-3);
 border: 1px solid var(--border-strong);
 }
-.inspector__preview--overflow .inspector__preview-mark {
+.inspector__propcard--overflow .inspector__propcard-mark {
 left: 26px;
 right: 2px;
 top: 24px;

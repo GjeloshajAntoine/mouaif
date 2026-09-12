@@ -26,10 +26,10 @@ import { LIBRARY_GROUPS, searchLibrary, libraryRow } from './styleControls.js';
 // its shadow, not a rendering of the user's page, which no static diagram could
 // be honest about.
 function PropertyPreview(props) {
-return h('span', { class: 'inspector__preview inspector__preview--' + (props.kind || 'none'), 'aria-hidden': 'true' },
-h('span', { class: 'inspector__preview-box' }),
-h('span', { class: 'inspector__preview-mark' }),
-h('span', { class: 'inspector__preview-glyph' }, props.glyph || 'Aa')
+return h('span', { class: 'inspector__propcard inspector__propcard--' + (props.kind || 'none'), 'aria-hidden': 'true' },
+h('span', { class: 'inspector__propcard-box' }),
+h('span', { class: 'inspector__propcard-mark' }),
+h('span', { class: 'inspector__propcard-glyph' }, props.glyph || 'Aa')
 );
 }
 
