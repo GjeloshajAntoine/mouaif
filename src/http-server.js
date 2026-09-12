@@ -68,6 +68,7 @@ const { handleSettings } = require('./server-handlers-settings.js');
 const { handleChats } = require('./server-handlers-chats.js');
 const { handleProjects, handleFileEditor } = require('./server-handlers-projects.js');
 const { handleAI } = require('./server-handlers-ai.js');
+const { handleTranscribe } = require('./server-handlers-transcribe.js');
 const { handleAuth, handleOAuthCallback, handleOAuthCallbackPost } = require('./server-handlers-auth.js');
 const { handleAccess } = require('./server-handlers-access.js');
 const { handlePush } = require('./server-handlers-push.js');
@@ -211,8 +212,17 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   }
 
   // AI proxy (server-side call to upstream providers; SSE stream back)
+  //
+  // Dictation's transcription proxy is mounted *before* the generic /api/ai/
+  // branch: it is a different product with a different shape (one JSON-response
+  // round-trip, one audio payload) and its own handler module, so keeping it a
+  // sibling of `/api/ai/chat` rather than a case inside handleAI keeps both
+  // readable. See src/server-handlers-transcribe.js.
+  if (urlPath === '/api/ai/transcribe' || urlPath.startsWith('/api/ai/transcribe/')) {
+  return handleTranscribe(req, res, parsed);
+  }
   if (urlPath.startsWith('/api/ai/')) {
-    return handleAI(req, res, parsed);
+  return handleAI(req, res, parsed);
   }
 
   // Auth API (account list, sign-out, status polling, sign-in)

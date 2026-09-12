@@ -104,6 +104,10 @@ const ROUTES = [
   exact('settings', () => ({ name: 'settings' })),
   exact('settings/access', () => ({ name: 'settingsAccess' })),
   exact('inspector', () => ({ name: 'inspector' })),
+  // Dictation — the speech-to-text page. A fixed route with no parameters:
+  // which model it dictates with is a choice made on the page (and remembered
+  // app-wide), not a value that belongs in the URL.
+  exact('dictation', () => ({ name: 'dictation' })),
   exact('settings/projects', () => ({ name: 'settingsProjects' })),
   exact('settings/defaults', () => ({ name: 'settingsDefaults' })),
   exact('settings/notifications', () => ({ name: 'settingsNotifications' })),

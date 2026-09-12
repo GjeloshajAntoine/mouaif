@@ -442,7 +442,10 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
 
 .app__tablist {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Repeat count is generated from `nTabs` on the tab list, so adding a tab
+     is one entry in App.jsx's `tabs` array and nothing here. The fallback of
+     3 keeps an older cached bundle (no `nTabs`) laying out correctly. */
+  grid-template-columns: repeat(var(--tab-count, 3), 1fr);
   align-items: stretch;
   gap: 0;
   margin: 0;
@@ -450,10 +453,9 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   list-style: none;
 }
 /* Above the phone breakpoint the bar paints to the frame edges but the
-   three tabs keep a comfortable width, instead of stretching one label
-   across ~380px of a 1152px frame. Below 720px the grid stays full-bleed
-   so a phone (and a landscape phone) keeps every pixel of the bar
-   tappable. */
+   tabs keep a comfortable width, instead of stretching one label across
+   ~380px of a 1152px frame. Below 720px the grid stays full-bleed so a
+   phone (and a landscape phone) keeps every pixel of the bar tappable. */
 @media (min-width: 720px) {
   .app__tablist {
     max-width: 32rem;

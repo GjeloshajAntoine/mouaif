@@ -56,6 +56,7 @@ These features exist or are planned. Keep this list in sync with the codebase as
 - **Providers global, models per project** — provider connections and credentials live in the app SQLite store; model IDs are user-defined in project settings and reference a provider. No pre-made model list. See [docs/decisions.md](../docs/decisions.md) §3.
 - **AI providers** — six ship today: OpenAI-compatible (any OpenAI-shaped endpoint), Anthropic (key or OAuth), Google Gemini (key), Ollama (no key), **OpenRouter** (key or PKCE sign-in, OpenAI-shaped, OpenRouter model slugs as `id`), and GitHub Copilot (OAuth-only, reserved). Adding a new provider is a localized change: a `buildRequest` + `parseEvent` in [src/ai.js](../src/ai.js), a row in [frontend/src/api.js](../frontend/src/api.js) `SETTINGS_PROVIDERS`, and (if the auth shape differs) an entry in [src/auth.js](../src/auth.js) `AI_TO_AUTH_PROVIDER`. Providers that need their own sign-in flow (PKCE / OAuth / device code) add a `src/oauth-<name>.js` module that exports `register()` and call it from [src/index.js](../src/index.js) at startup. See [docs/features/ai-client.md](../docs/features/ai-client.md) and [docs/features/openrouter.md](../docs/features/openrouter.md).
 - **MCP OAuth sign-in** — HTTP MCP servers support authorization-code PKCE, dynamic registration or pre-registered public clients, and keychain-backed tokens with refresh. See [docs/features/mcp-oauth.md](../docs/features/mcp-oauth.md).
+- **Dictation** — speech-to-text with a per-app model choice: the `#/dictation` page (record, transcribe, edit, copy / insert / send) and a microphone button in the chat composer. The recording is posted to `POST /api/ai/transcribe`, so the provider credential stays server-side. See [docs/features/dictation.md](../docs/features/dictation.md).
 - **Custom prompts** — user-authored system/role prompts, stored per project. See [docs/features/custom-prompts.md](../docs/features/custom-prompts.md).
 - **Three prompt-size profiles**:
   - `very-small`: tool names with short descriptions, no full schemas.
@@ -68,7 +69,7 @@ These features exist or are planned. Keep this list in sync with the codebase as
 - **App-level vs project-level settings** — settings can live globally (app SQLite store) or in a per-project `.mouaif.json`; project overrides app. See [docs/decisions.md](../docs/decisions.md) §1–§2.
 - **Project-grouped chat list** — chats are grouped under a project card; the chat list scrolls inside the card, not the page.
 - **Tabbed mobile UI with custom DevTools-style inspector**:
-  - Tabs: **Chats**, **Inspector** (rebuilt from scratch on top of Chrome DevTools data — not a thin wrapper), **Settings**.
+  - Tabs: **Chats**, **Dictate**, **Inspector** (rebuilt from scratch on top of Chrome DevTools data — not a thin wrapper), **Settings**.
   - The inspector must be a from-scratch mobile-friendly UI, not the default Chrome panel embedded in an iframe.
   - Data source: Chrome DevTools Protocol (CDP) over WebSocket. See [docs/decisions.md](../docs/decisions.md) §6.
   - Scaffold: **Preact + Vite**, served by `mouaif serve` at `/` (frontend in the `frontend/` dir at the repo root). See [docs/decisions.md](../docs/decisions.md) §7.

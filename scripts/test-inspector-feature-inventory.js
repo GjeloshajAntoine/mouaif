@@ -64,22 +64,38 @@ function check(name, condition, detail) {
 }
 
 // ---- 1. App tabs -------------------------------------------------------
-// The layout work never touches Chats or Settings, but a stray edit to
+// The layout work never touches the other tabs, but a stray edit to
 // BottomNav would be invisible to every other test.
+//
+// The bar is no longer a fixed trio: Dictation added a fourth entry. What
+// must not change is the *contract* the inspector depends on — it stays a
+// tab route with its own label — and that the labels in the bar match the
+// order declared here.
 
 const tabsBlock = /const tabs = \[([\s\S]*?)\];/.exec(app);
 check('App.jsx declares a tab list', !!tabsBlock);
 if (tabsBlock) {
   const entries = [...tabsBlock[1].matchAll(/to:\s*'([^']+)',\s*name:\s*'([^']+)',\s*label:\s*'([^']+)'/g)]
     .map((m) => ({ to: m[1], name: m[2], label: m[3] }));
-  check('exactly three app tabs', entries.length === 3, 'found ' + entries.length);
-  check('tabs are Chats / Inspector / Settings',
-    entries.map((t) => t.name).join(',') === 'chats,inspector,settings',
+  // Every tab must route somewhere distinct and be labelled.
+  check('every tab is distinct and labelled',
+    entries.length >= 3
+    && new Set(entries.map((t) => t.to)).size === entries.length
+    && entries.every((t) => t.label && t.name),
     entries.map((t) => t.name).join(','));
-  check('tab labels unchanged',
-    entries.map((t) => t.label).join(',') === 'Chats,Inspector,Settings',
+  check('the core tabs are still present',
+    ['chats', 'inspector', 'settings'].every((name) => entries.some((t) => t.name === name)),
+    entries.map((t) => t.name).join(','));
+  check('the tab labels start with the core labels',
+    entries[0].label === 'Chats' && entries[entries.length - 1].label === 'Settings',
     entries.map((t) => t.label).join(','));
   check('Inspector tab routes to #/inspector', entries.some((t) => t.to === 'inspector'));
+  // The grid's column count is generated from the array, so a new tab is one
+  // entry. A hard-coded `repeat(N, 1fr)` in the stylesheet is the failure this
+  // guards: it silently squeezes the last tab off screen.
+  const tablistCss = read('frontend/src/layout.css');
+  check('the tab grid tracks the tab count',
+    /repeat\(var\(--tab-count/.test(tablistCss) && /--tab-count/.test(app));
 }
 // The inspector is a tab route: it must stay OUT of FULL_PAGE_ROUTES, or the
 // tab bar would disappear while inspecting.

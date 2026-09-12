@@ -17,6 +17,7 @@
    10. chat-cards.css  — tools card, agent files card
    11. chat-markdown.css — markdown content, reasoning, tables
    12. chat-composer.css — composer, file toolbar, tool popup, send button
+   12b. dictation.css  — the dictation page and the composer mic button
    13. chat-at-mention.css — @-mention popup, arg bar
    14. tool-cards.css  — tool_call/result, ask_user, subagent, progress, previews
    15. draft-craft.css — draft handoff picker and image annotator
@@ -49,6 +50,7 @@
 @import './chat-cards.css';
 @import './chat-markdown.css';
 @import './chat-composer.css';
+@import './dictation.css';
 @import './chat-at-mention.css';
 @import './tool-cards.css';
 @import './draft-craft.css';

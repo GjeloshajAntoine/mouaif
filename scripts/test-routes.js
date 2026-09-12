@@ -224,10 +224,10 @@ function check(name, fn) {
       '#/settings/actions', '#/settings/actions/a', '#/settings/projects', '#/settings/defaults',
       '#/settings/notifications', '#/settings/pricing', '#/settings/prompts', '#/settings/prompts/p',
       '#/settings/mcp', '#/settings/mcp/registry', '#/settings/mcp/new', '#/settings/mcp/s', '#/settings/tags',
-      '#/settings/about', '#/chat/c', '#/projects/new']) {
+      '#/settings/about', '#/dictation', '#/chat/c', '#/projects/new']) {
       names.add(parseHash(h).name);
     }
-    assert.equal(names.size, 27, Array.from(names).sort().join(','));
+    assert.equal(names.size, 28, Array.from(names).sort().join(','));
     assert.ok(mod.ROUTE_PATHS >= names.size, 'the table is not smaller than its distinct routes');
   });
 

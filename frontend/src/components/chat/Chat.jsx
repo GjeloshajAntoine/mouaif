@@ -16,10 +16,11 @@ import { WebpreviewDock } from './WebpreviewDock.jsx';
 import { WebpreviewModal } from './WebpreviewModal.jsx';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
-import { requestWebpreview } from '../../api.js';
+import { requestWebpreview, setStatus } from '../../api.js';
 import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview } from './webpreviewState.js';
 import { DraftCraftAnnotator } from '../inspector/DraftCraftAnnotator.jsx';
 import { saveComposerDraftNow } from './composer.js';
+import { MicButton } from './MicButton.jsx';
 import {
 annotatedAttachment,
 annotationReset,
@@ -50,6 +51,40 @@ onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refre
 
   const { projectDir, chatId } = props;
 const [FileEditor, setFileEditor] = useState(null);
+// onTranscript(text) — append an inserted transcript to the in-progress
+// composer draft.
+//
+// The transcript is appended, not merged by word, and the caret is placed
+// after it: dictation is an input method, so the user's existing text is
+// theirs and the next thing they type continues the dictation. Surrounding
+// text is separated by a single space, never a newline — a transcript dropped
+// mid-sentence must not break the paragraph.
+function onTranscript(text) {
+  const el = refs.promptInput.current;
+  if (!el) return;
+  const at = typeof el.selectionStart === 'number' ? el.selectionStart : el.value.length;
+  const before = el.value.slice(0, at);
+  const after = el.value.slice(at);
+  // Separate the transcript from surrounding text with a single space, not a
+  // newline: a dictation dropped mid-sentence should not break the paragraph.
+  const lead = before && !/\s$/.test(before) ? ' ' : '';
+  const tail = after && !/^\s/.test(after) ? ' ' : '';
+  const next = before + lead + text + tail + after;
+  syncComposer(next);
+  if (updateChat) {
+    saveComposerDraftNow(next, refs, updateChat).catch(() => {});
+  }
+  const caret = (before + lead + text).length;
+  try {
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(caret, caret);
+  } catch { /* a detached textarea cannot take a caret */ }
+  setStatus(refs, 'dictation added', 'success');
+}
+
+// onDraftCraftAdded(result) — apply a Draft Craft hand-off to this chat's
+// pending draft (text + image attachments). The status line is the chat's own,
+// not the button's: the button reports what it did in its title.
 function onDraftCraftAdded(result) {
 if (!result || result.projectDir !== projectDir || result.chatId !== chatId || !result.chat) return;
 const chat = result.chat;
@@ -392,6 +427,7 @@ onRefreshCustomActions: refreshCustomActions
           )
         ),
         h('input', { ref: refs.imageInput, class: 'chat-view__image-input', type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, onChange: onImagePickerChange }),
+h(MicButton, { projectDir, onTranscript }),
         h('textarea', { ref: refs.promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey, onPaste: onComposerPaste, onInput: onComposerInput }),
         runningVisible
           ? h('button', { ref: refs.stopBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: onCancelRunning, 'aria-label': 'Stop' },

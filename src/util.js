@@ -85,7 +85,14 @@ function safeDecode(value) {
 // listed here, instead of silently flowing through.
 const PROJECT_MODEL_FIELDS = [
   'id', 'provider', 'label', 'contextWindow', 'pricing',
-  'thinking', 'thinkingLevel', 'maxOutputTokens', 'maxTokens'
+  'thinking', 'thinkingLevel', 'maxOutputTokens', 'maxTokens',
+  // Dictation. A transcription model carries its own descriptor — the request
+  // family, an optional non-conventional endpoint path, a language hint, a
+  // prompt, or the plain `true` that marks it as a dictation choice. Without
+  // it in this allow-list the field would be stripped before the request
+  // builder ever sees it, and every model would fall back to the inferred
+  // family.
+  'transcription'
 ];
 
 function projectModelRecord(record) {
