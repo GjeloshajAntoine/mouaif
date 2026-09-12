@@ -134,7 +134,7 @@ export function formatToolArgs(args, toolName) {
       : '';
     return (args.path || args.file || '') + range;
   }
-  if (name === 'list_files') return args.pattern || 'all text files';
+  if (name === 'list_files') return args.pattern || 'all text and image files';
   if (name === 'search_files') return [args.path, args.query].filter(Boolean).join(': ');
   if (name === 'write_file' || name === 'edit_file') return args.path || args.file || '';
   if (name === 'subagent') return args.task || '';
@@ -167,6 +167,18 @@ export function coerceToolResult(r, name) {
   return r;
 }
 
+// formatBytes(n) -> "70 B" / "12 KB" / "1.4 MB"
+//
+// Shared by the collapsed card summary and the read_file image preview so a
+// size never reads differently in the two places.
+export function formatBytes(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v < 0) return String(n);
+  if (v < 1024) return v + ' B';
+  if (v < 1024 * 1024) return Math.round(v / 1024) + ' KB';
+  return (Math.round((v / (1024 * 1024)) * 10) / 10) + ' MB';
+}
+
 // formatResultSummary(name, r) -> string | null
 //
 // Ultra-compact one-line summary shown in the collapsed card head
@@ -181,6 +193,10 @@ export function formatResultSummary(name, r) {
     return parts.join(' ');
   }
   if (n === 'read_file') {
+    if (r.kind === 'image') {
+      const kind = String(r.mimeType || 'image').replace(/^image\//, '').toUpperCase();
+      return r.bytes != null ? kind + ' · ' + formatBytes(r.bytes) : kind;
+    }
     if (r.lines != null) return r.lines + ' line' + (r.lines === 1 ? '' : 's');
     if (r.chars != null) return r.chars + ' chars';
     if (r.size != null && r.size < 1024) return r.size + 'B';
@@ -258,7 +274,10 @@ export function parsePlainFileToolResult(text) {
     if ((m = line.match(/^# File: (.*)$/))) out.relPath = m[1];
     else if ((m = line.match(/^# Lines: (\d+)-(\d+)(?: \/ (\d+))?/))) {
       out.startLine = Number(m[1]); out.endLine = Number(m[2]); if (m[3]) out.totalLines = Number(m[3]);
-    } else if ((m = line.match(/^# Listing: (.*)$/))) out.pattern = m[1] === '<all text files>' ? '' : m[1];
+    } else if ((m = line.match(/^# Listing: (.*)$/))) out.pattern = /^<all text/.test(m[1]) ? '' : m[1];
+    else if ((m = line.match(/^# Kind: image \((.*), (\d+) bytes\)$/))) {
+      out.kind = 'image'; out.mimeType = m[1]; out.bytes = Number(m[2]);
+    }
     else if ((m = line.match(/^# Search: (.*)$/))) out.query = m[1];
     else if ((m = line.match(/^# Wrote: (.*)$/))) out.relPath = m[1];
     else if ((m = line.match(/^# Count: (\d+)(?: \(capped at (\d+)\))?/))) {
@@ -294,8 +313,13 @@ function parseListEntriesBody(body) {
     if (line.startsWith('# ')) {
       dir = line.slice(2).replace(/\/+$/, '');
     } else if (line.trim()) {
-      const name = line.trim();
-      entries.push({ path: dir ? dir + '/' + name : name });
+      let name = line.trim();
+      let image = false;
+      // An image row is flagged by the tool (`dot.png (image)`); keep the
+      // flag so the replayed card renders the same row the live result did.
+      if (name.endsWith(' (image)')) { image = true; name = name.slice(0, -8); }
+      const entryPath = dir ? dir + '/' + name : name;
+      entries.push(image ? { path: entryPath, image: true } : { path: entryPath });
     }
   }
   return entries;

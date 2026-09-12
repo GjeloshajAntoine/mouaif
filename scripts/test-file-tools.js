@@ -388,6 +388,63 @@ function writeFile(p, content) {
   });
   assert(wSet.ok === false && wSet.result.error.code === 'ETOOL_CAP', 'read_file respects fileReadMaxLines override');
 
+  // ---- read_file: images -------------------------------------------
+  // A 1x1 PNG. The tool must hand back the picture (a `content` block with
+  // the base64 payload) instead of decoding pixels to text, and the
+  // model-facing string must stay a small header.
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==', 'base64');
+  const root3 = tmpdir('ft3-');
+  writeFile(path.join(root3, 'assets', 'shot.png'), PNG);
+  writeFile(path.join(root3, 'logo.svg'), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+  writeFile(path.join(root3, 'notes.txt'), 'hello\n');
+
+  const rImg = await files.runFileTool('read_file', { projectDir: root3, args: { path: 'assets/shot.png' } });
+  assert(rImg.ok === true, 'read_file image ok');
+  assert(rImg.result.kind === 'image', 'read_file image result is flagged kind=image');
+  assert(rImg.result.mimeType === 'image/png', 'read_file image mimeType from the extension');
+  assert(rImg.result.bytes === PNG.length, 'read_file image bytes');
+  assert(Array.isArray(rImg.result.content) && rImg.result.content.length === 1
+    && rImg.result.content[0].type === 'image' && rImg.result.content[0].mimeType === 'image/png',
+    'read_file image returns one MCP-shaped image content block');
+  assert(Buffer.from(rImg.result.content[0].data, 'base64').equals(PNG), 'the attached bytes are the file bytes');
+  assert(rImg.content.startsWith('# File: assets/shot.png\n# Kind: image (image/png, ' + PNG.length + ' bytes)'),
+    'read_file image model-facing header names the mime type and size');
+  assert(!rImg.content.includes(PNG.toString('base64').slice(0, 24)), 'the base64 never rides in the model-facing text');
+
+  // Line slicing is meaningless for a picture; the image result stands.
+  const rImgSlice = await files.runFileTool('read_file', { projectDir: root3, args: { path: 'assets/shot.png', startLine: 1, endLine: 2 } });
+  assert(rImgSlice.ok === true && rImgSlice.result.kind === 'image', 'an image ignores startLine/endLine');
+
+  // `.svg` is text in the tool (its markup is what a model can use).
+  const rSvg = await files.runFileTool('read_file', { projectDir: root3, args: { path: 'logo.svg' } });
+  assert(rSvg.ok === true && !rSvg.result.kind && rSvg.result.body.includes('<svg'), 'read_file keeps .svg on the text path');
+
+  // Size cap.
+  const rImgCap = await files.runFileTool('read_file', {
+    projectDir: root3,
+    args: { path: 'assets/shot.png' },
+    settings: { fileReadMaxImageBytes: 10 }
+  });
+  assert(rImgCap.ok === false && rImgCap.result.error.code === 'ETOOL_CAP', 'read_file image respects fileReadMaxImageBytes');
+  assert(files.DEFAULT_READ_MAX_IMAGE_BYTES === 4 * 1024 * 1024, 'read_file image default cap is 4 MB');
+
+  // Path safety is unchanged for images.
+  const rImgOut = await files.runFileTool('read_file', { projectDir: root3, args: { path: '../shot.png' } });
+  assert(rImgOut.ok === false && rImgOut.result.error.code === 'EOUTSIDE_PROJECT', 'read_file image EOUTSIDE_PROJECT');
+
+  // list_files now surfaces pictures so the model can find one to open.
+  const rList3 = await files.runFileTool('list_files', { projectDir: root3, args: {} });
+  const paths3 = rList3.result.entries.map((e) => e.path);
+  assert(paths3.indexOf('assets/shot.png') >= 0, 'list_files includes image files');
+  const pngEntry = rList3.result.entries.find((e) => e.path === 'assets/shot.png');
+  assert(pngEntry && pngEntry.image === true, 'list_files flags image entries');
+  assert(rList3.content.includes('  shot.png (image)'), 'list_files text marks image rows');
+  assert(!rList3.content.includes('<all text files>'), 'list_files header no longer claims text-only');
+
+  const rListPng = await files.runFileTool('list_files', { projectDir: root3, args: { pattern: '**/*.png' } });
+  assert(rListPng.result.entries.length === 1 && rListPng.result.entries[0].path === 'assets/shot.png',
+    'list_files glob can target images');
+
   // ---- End --------------------------------------------------------
   console.log('---');
   console.log('file tools: ' + passed + ' passed, ' + failed + ' failed');

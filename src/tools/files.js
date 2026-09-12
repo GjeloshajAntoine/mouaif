@@ -7,6 +7,13 @@
 // inside the project directory, with the same authorization gate and
 // path-safety rules as the rest of the tool surface (decisions §16, §17).
 //
+// `read_file` also opens images: a path whose extension is a picture
+// (`.png`, `.jpg`, `.gif`, `.webp`, `.bmp`, `.ico`) comes back as an
+// `image` content block instead of a decoded text body, so the model
+// actually sees the picture and the chat card renders a thumbnail. The
+// block rides the same `toolResultImageParts` path MCP image results use
+// (src/ai-stream.js). See docs/features/read-file-images.md.
+//
 // Public surface:
 //   SPECS                       : { 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file' }
 //                                 each value is an OpenAI-compatible function spec
@@ -27,6 +34,7 @@
 // Defaults:
 //   fileReadMaxLines     = 10000   (whole-file reads cap by line count; use startLine/endLine for larger files)
 //   fileReadDefaultLines = 2000    (default window when the model asks for a slice)
+//   fileReadMaxImageBytes = 4 MB   (cap on an image attached to the result)
 //   fileListMaxEntries   = 1000    (cap on list_files result rows)
 //   fileSearchMaxMatches = 200     (cap on search_files matches)
 //   fileSearchMaxBytes   = 2 MB    (cap on total bytes read by one search call)
@@ -37,10 +45,16 @@ const fsp = require('fs/promises');
 const path = require('path');
 const hideFileContent = require('../hideFileContent.js');
 
+// Image extension knowledge (and the ext -> MIME map) lives in src/files.js
+// — the same list the file editor previews with — so `read_file` and the
+// editor never disagree about what counts as an image.
+const { isImageExt, mimeForExt } = require('../files.js');
+
 // ---- Constants ---------------------------------------------------------
 
 const DEFAULT_READ_MAX_LINES = 10000;
 const DEFAULT_READ_LINES = 2000;
+const DEFAULT_READ_MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4 MiB
 const DEFAULT_LIST_MAX_ENTRIES = 1000;
 const DEFAULT_SEARCH_MAX_MATCHES = 200;
 const DEFAULT_SEARCH_MAX_BYTES = 2 * 1024 * 1024;
@@ -162,6 +176,12 @@ function toAbsInside(root, rel) {
 
 // Read a file. Optional `startLine` / `endLine` (1-indexed, inclusive) pin
 // a window. Whole-file reads over the line cap are refused with ETOOL_CAP.
+//
+// Images are the exception: a picture extension (`.png`, `.jpg`, `.jpeg`,
+// `.gif`, `.webp`, `.bmp`, `.ico`) comes back as an `image` content block
+// instead of decoded text, so the model gets the pixels and the chat card
+// renders a thumbnail. `.svg` stays text — its markup is what a model can
+// use, and the extension is on the text allowlist.
 async function runReadFile(opts) {
   const { projectDir, args, settings } = opts;
   const root = resolveSandbox(projectDir);
@@ -170,6 +190,10 @@ async function runReadFile(opts) {
 
   const st = await fsp.stat(abs);
   if (!st.isFile()) throw err('ENOTFILE', 'Not a file: ' + rel);
+  const ext = path.extname(abs).toLowerCase();
+  if (isImageExt(ext) && !TEXT_EXTS.has(ext)) {
+    return await readImageFile(rel, abs, st, settings);
+  }
 
   // The cap only applies to whole-file reads. A bounded slice always
   // succeeds, no matter how large the file is.
@@ -221,7 +245,61 @@ async function runReadFile(opts) {
   };
 }
 
+// ---- read_file: images -------------------------------------------------
+
+// readImageFile(rel, abs, st, settings) -> image result
+//
+// Reads a picture as base64 and returns it in the `content` array shape the
+// MCP image path already uses (`[{ type: 'image', data, mimeType }]`), so
+// src/ai-stream.js forwards it to a vision model as a real image part and the
+// chat card can render it. The bytes are never decoded to text: a model
+// handed 400 KB of base64 as a `tool` message learns nothing, and the text
+// body would blow the tool-feedback budget.
+//
+// Cap: `fileReadMaxImageBytes` (default 4 MB). Bigger pictures are refused
+// with ETOOL_CAP — the model can downscale with the shell tool and read
+// again, and the transcript does not grow by tens of megabytes.
+async function readImageFile(rel, abs, st, settings) {
+  const capBytes = (settings && Number.isInteger(settings.fileReadMaxImageBytes) && settings.fileReadMaxImageBytes > 0)
+    ? settings.fileReadMaxImageBytes
+    : DEFAULT_READ_MAX_IMAGE_BYTES;
+  if (st.size > capBytes) {
+    throw err('ETOOL_CAP', 'image is ' + formatBytes(st.size) + ', exceeds cap ' + formatBytes(capBytes)
+      + ' (downscale it — e.g. with the shell tool — then read it again)', { size: st.size, cap: capBytes });
+  }
+  let buf;
+  try { buf = await fsp.readFile(abs); }
+  catch (e) {
+    if (e.code === 'EACCES') throw err('EACCES', e.message, { path: abs });
+    throw e;
+  }
+  const mime = mimeForExt(path.extname(abs).toLowerCase());
+  return {
+    relPath: rel,
+    kind: 'image',
+    mimeType: mime,
+    bytes: buf.length,
+    // The model-facing summary. The pixels ride in `content` below and reach
+    // the model as a vision message part attached after the tool result.
+    note: 'The picture is attached to this tool result as an image part.',
+    content: [{ type: 'image', data: buf.toString('base64'), mimeType: mime }]
+  };
+}
+
+// formatBytes(n) -> "12 KB" / "1.4 MB" (approximate, for headers only).
+function formatBytes(n) {
+  if (!Number.isFinite(n) || n < 0) return String(n);
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+  return (Math.round((n / (1024 * 1024)) * 10) / 10) + ' MB';
+}
+
 function formatReadFileResult(r) {
+  if (r && r.kind === 'image') {
+    return '# File: ' + r.relPath
+      + '\n# Kind: image (' + r.mimeType + ', ' + r.bytes + ' bytes)'
+      + '\n# ' + (r.note || 'The picture is attached to this tool result as an image part.');
+  }
   const header = '# File: ' + r.relPath
     + '\n# Lines: ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : '')
     + (r.truncated ? '\n# Truncated: yes' : '');
@@ -292,11 +370,13 @@ async function runListFiles(opts) {
       if (!ent.isFile()) { skipped++; continue; }
       // Pattern filter.
       if (re && !re.test(childRel)) continue;
-      // Extension allowlist — keeps the result list to text files the
-      // model can actually read.
+      // Extension allowlist — text files the model can read, plus pictures
+      // it can now open with `read_file`. Images are flagged in the entry so
+      // the model knows which read returns pixels instead of a body.
       const ext = path.extname(ent.name).toLowerCase();
-      if (!TEXT_EXTS.has(ext)) { skipped++; continue; }
-      out.push({ path: childRel });
+      const image = !TEXT_EXTS.has(ext) && isImageExt(ext);
+      if (!TEXT_EXTS.has(ext) && !image) { skipped++; continue; }
+      out.push(image ? { path: childRel, image: true } : { path: childRel });
     }
   }
   await walk(root, '');
@@ -304,7 +384,7 @@ async function runListFiles(opts) {
 }
 
 function formatListFilesResult(r) {
-  const header = '# Listing: ' + (r.pattern || '<all text files>') + '\n# Count: ' + r.entries.length + (r.truncated ? ' (capped at ' + r.cap + ')' : '') + (r.skipped ? '\n# Skipped: ' + r.skipped : '');
+  const header = '# Listing: ' + (r.pattern || '<all text and image files>') + '\n# Count: ' + r.entries.length + (r.truncated ? ' (capped at ' + r.cap + ')' : '') + (r.skipped ? '\n# Skipped: ' + r.skipped : '');
   if (!r.entries.length) return header + '\n\n(no matching files)';
 
   // Group by directory, emitting one #-prefixed directory header per
@@ -322,7 +402,7 @@ function formatListFilesResult(r) {
       if (dir !== '.') lines.push('# ' + dir + '/');
       currentDir = dir;
     }
-    lines.push('  ' + name);
+    lines.push(e.image ? ('  ' + name + ' (image)') : ('  ' + name));
   }
   return header + '\n\n' + lines.join('\n');
 }
@@ -1067,7 +1147,7 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read a text file from the project directory. Returns the file body with a header that shows the path, line range, and char count. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; whole-file reads over 10000 lines are refused.',
+      description: 'Read a text file from the project directory, or open an image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.ico`) by attaching its pixels as an image part so a vision model can see it. A text read returns the file body with a header that shows the path, line range, and total line count. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; whole-file reads over 10000 lines are refused. An image read returns a header (path, MIME type, size) plus the picture; images over 4 MB are refused — downscale first.',
       parameters: {
         type: 'object',
         properties: {
@@ -1084,7 +1164,7 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'list_files',
-      description: 'List text files in the project directory. Honors a simple glob pattern ("src/**/*.js", "**/*.test.*", "README.md"). Skips node_modules, .git, .mouaif, dist, build. Result is capped at 1000 entries.',
+      description: 'List text and image files in the project directory. Honors a simple glob pattern ("src/**/*.js", "**/*.test.*", "README.md"). Image files are marked "(image)" — read them with read_file to see the picture. Skips node_modules, .git, .mouaif, dist, build. Result is capped at 1000 entries.',
       parameters: {
         type: 'object',
         properties: {
@@ -1163,6 +1243,7 @@ module.exports = {
   // constants
   DEFAULT_READ_MAX_LINES,
   DEFAULT_READ_LINES,
+  DEFAULT_READ_MAX_IMAGE_BYTES,
   DEFAULT_LIST_MAX_ENTRIES,
   DEFAULT_SEARCH_MAX_MATCHES,
   DEFAULT_SEARCH_MAX_BYTES,

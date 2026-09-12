@@ -7,6 +7,7 @@
 
 import {
   coerceToolResult,
+  formatBytes,
   formatReadableToolResult,
   normalizeToolName,
   parsePlainFileToolResult
@@ -111,18 +112,93 @@ function resourceImageBlock(block) {
 }
 
 // renderReadFileToolResult(body, r)
+//
+// Text reads show the body. An image read shows the picture itself: the
+// tool attaches the file's pixels as an `image` content block, so the card
+// renders exactly what the model received. Tapping it opens a full-screen
+// lightbox — the inline thumbnail is capped at 220 px, which is too small
+// to read a screenshot on a phone.
 function renderReadFileToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--file');
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
   const meta = [];
   meta.push(r.relPath || r.path);
+  if (r.kind === 'image') {
+    meta.push(r.mimeType || 'image');
+    if (r.bytes != null) meta.push(formatBytes(r.bytes));
+    renderToolMeta(body, meta);
+    return renderReadFileImage(body, r);
+  }
   if (r.startLine != null && r.endLine != null) {
     meta.push('lines ' + r.startLine + '-' + r.endLine + (r.totalLines ? ' / ' + r.totalLines : ''));
   }
   if (r.truncated) meta.push('truncated');
   renderToolMeta(body, meta);
   renderPreviewPre(body, r.body || '', 'tool-preview__pre tool-preview__pre--content');
+}
+
+// renderReadFileImage(body, r)
+//
+// The pixels live in the result's `content` array (the same block shape an
+// MCP image result uses). When the result reached the UI as plain text —
+// subagent-nested rows, a replayed transcript — the base64 is gone, so the
+// card says so instead of pretending the picture is there.
+function renderReadFileImage(body, r) {
+  const block = Array.isArray(r.content)
+    ? r.content.find((c) => c && (c.type === 'image' || c.mimeType))
+    : null;
+  const img = block ? imageBlockToElement(block) : null;
+  if (!img) {
+    return renderPreviewPre(body, 'Image bytes are not part of this result.', 'tool-preview__pre');
+  }
+  img.alt = 'Image ' + (r.relPath || '');
+  img.className = 'tool-card__image tool-card__image--zoomable';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'tool-card__image-button';
+  button.setAttribute('aria-label', 'Open ' + (r.relPath || 'image') + ' full screen');
+  button.appendChild(img);
+  button.addEventListener('click', () => openImageLightbox(img.src, img.alt));
+  body.appendChild(button);
+  const note = document.createElement('div');
+  note.className = 'tool-preview__image-note';
+  note.textContent = 'Sent to the model as an image.';
+  body.appendChild(note);
+}
+
+// openImageLightbox(src, alt)
+//
+// Full-screen viewer for a tool-card image, plain DOM so it works from the
+// transcript's hot path. Closes on the button, on Escape, and on a tap
+// outside the picture; the close target is 44 px so it works one-handed.
+function openImageLightbox(src, alt) {
+  if (!src) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'image-lightbox';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', alt || 'Image');
+  const picture = document.createElement('img');
+  picture.className = 'image-lightbox__image';
+  picture.src = src;
+  picture.alt = alt || '';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'image-lightbox__close';
+  close.setAttribute('aria-label', 'Close image');
+  close.textContent = '✕';
+  const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
+  function dismiss() {
+    document.removeEventListener('keydown', onKey);
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+  }
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss(); });
+  close.addEventListener('click', dismiss);
+  document.addEventListener('keydown', onKey);
+  overlay.appendChild(picture);
+  overlay.appendChild(close);
+  document.body.appendChild(overlay);
 }
 
 // renderListFilesToolResult(body, r)
@@ -135,7 +211,7 @@ function renderListFilesToolResult(body, r) {
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
   const meta = [];
-  meta.push(r.pattern ? ('pattern ' + r.pattern) : 'all text files');
+  meta.push(r.pattern ? ('pattern ' + r.pattern) : 'all text and image files');
   if (Array.isArray(r.entries)) {
     meta.push(r.entries.length + ' shown');
     if (r.total != null && r.total !== r.entries.length) meta.push(r.total + ' total'); // legacy results only
@@ -171,7 +247,7 @@ function renderListFilesToolResult(body, r) {
     }
     const row = document.createElement('div');
     row.className = 'tool-preview__file';
-    row.textContent = name;
+    row.textContent = e.image ? (name + ' (image)') : name;
     list.appendChild(row);
   }
   body.appendChild(wrap);
@@ -499,6 +575,8 @@ export {
   imageBlockToElement,
   renderShellToolResult,
   renderReadFileToolResult,
+  renderReadFileImage,
+  openImageLightbox,
   renderListFilesToolResult,
   renderSearchFilesToolResult,
   renderEditFileToolResult,

@@ -701,3 +701,65 @@ padding-right: 10px;
 .tool-preview--webpreview {
   padding: 0;
 }
+
+/* ---- read_file image result ----------------------------------------- */
+/* Opening a picture (read_file on a .png / .jpg / …) paints the exact bytes
+   the model received. The thumbnail reuses `.tool-card__image` (220 px cap),
+   so the picture is wrapped in a button to make the whole thumbnail a tap
+   target with the 44 px minimum height. */
+.tool-card__image-button {
+  display: block;
+  align-self: flex-start;
+  max-width: 100%;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.tool-card__image--zoomable { display: block; }
+.tool-preview__image-note {
+  font-size: 0.66rem;
+  color: var(--muted);
+  padding-top: 2px;
+}
+
+/* Full-screen viewer for that thumbnail: the picture contained in the
+   viewport, a tap anywhere outside it closing the overlay, and a 44 px
+   close button pinned inside the top safe area. */
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--sheet-z, 60) + 5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--safe-top, 0px) + 8px) 8px calc(var(--safe-bottom, 0px) + 8px);
+  background: rgba(4, 6, 10, 0.92);
+  animation: mouaif-overlay-fade-in 120ms ease-out;
+}
+.image-lightbox__image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--r-sm);
+}
+.image-lightbox__close {
+  position: absolute;
+  top: calc(var(--safe-top, 0px) + 4px);
+  right: 4px;
+  width: var(--tap);
+  height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--fg);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.image-lightbox__close:active { background: var(--surface-3); }
