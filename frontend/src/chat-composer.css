@@ -207,44 +207,82 @@ flex: 0 0 auto;
    highlight lands on top of it. */
 .file-toolbar--orb .file-toolbar__trigger::before {
 background:
-/* tight specular hotspot, up and left of centre */
-radial-gradient(circle at 33% 23%,
-rgba(255, 255, 255, 0.98) 0%,
-rgba(255, 255, 255, 0.42) 13%,
-rgba(255, 255, 255, 0) 38%),
-/* broad glossy sheen down the left */
-radial-gradient(72% 64% at 24% 28%,
-rgba(255, 255, 255, 0.34) 0%,
-rgba(214, 232, 255, 0.13) 44%,
-rgba(255, 255, 255, 0) 100%),
-/* cool bounce along the lower-inner edge */
-radial-gradient(88% 76% at 62% 118%,
-rgba(178, 210, 255, 0.50) 0%,
-rgba(178, 210, 255, 0.16) 42%,
-rgba(178, 210, 255, 0) 76%),
-/* the ball's own shadow, hanging on its lower-right */
-radial-gradient(118% 118% at 72% 116%,
-rgba(0, 0, 0, 0.62) 0%,
-rgba(0, 0, 0, 0.26) 38%,
-rgba(0, 0, 0, 0) 68%),
-/* the glass body: cool, and darker at the bottom than the top */
-linear-gradient(166deg, #46557a 0%, #26314b 48%, #121a2b 100%);
-border-color: rgba(196, 214, 255, 0.30);
+/* tight specular blob, up and slightly right of centre — the small hard
+reflection of the light source itself */
+radial-gradient(circle at 56% 19%,
+rgba(255, 255, 255, 0.96) 0%,
+rgba(255, 255, 255, 0.34) 11%,
+rgba(255, 255, 255, 0) 32%),
+/* the window: a broad, soft reflection sweeping the upper-left of the ball.
+This is the layer that makes the ball read as *glass* rather than as a
+shaded disc — a solid sphere lit this way has one gradient, a transparent
+one has a second, sharper reflection of its surroundings on top of it. */
+radial-gradient(104% 84% at 20% 18%,
+rgba(255, 255, 255, 0.50) 0%,
+rgba(230, 241, 255, 0.20) 40%,
+rgba(255, 255, 255, 0) 72%),
+/* refracted light hugging the lower-left inner wall: light enters the top
+left, crosses the glass and brightens the far inside of the curve. */
+radial-gradient(94% 80% at 18% 98%,
+rgba(202, 224, 255, 0.55) 0%,
+rgba(196, 218, 255, 0.20) 44%,
+rgba(198, 220, 255, 0) 78%),
+/* the limb: the glass is thickest at the edge, so the lower-right quarter
+falls away to near-black. */
+radial-gradient(128% 128% at 76% 116%,
+rgba(0, 0, 0, 0.74) 0%,
+rgba(0, 0, 0, 0.34) 38%,
+rgba(0, 0, 0, 0) 70%),
+/* the body of the glass: cool steel blue, light at the top-left where the
+light enters and denser toward the bottom-right. */
+linear-gradient(163deg,
+#8ba6d4 0%,
+#6280b0 38%,
+#3c5279 68%,
+#1b2740 100%);
+border-color: rgba(214, 230, 255, 0.52);
 box-shadow:
 /* the lit upper-left edge and its dark counter-edge */
-inset 1.5px 1.5px 0 -0.5px rgba(255, 255, 255, 0.46),
-inset -1.5px -2.5px 1px -1.5px rgba(0, 0, 0, 0.70),
-inset 0 5px 8px -5px rgba(255, 255, 255, 0.40),
-inset 0 -8px 12px -7px rgba(0, 0, 0, 0.72),
+inset 1.5px 1.5px 0 -0.5px rgba(255, 255, 255, 0.72),
+inset -1.5px -2.5px 1.5px -1.5px rgba(2, 8, 20, 0.70),
+inset 0 5px 8px -5px rgba(255, 255, 255, 0.42),
+inset 0 -8px 12px -7px rgba(0, 0, 0, 0.60),
 /* outer rim light: the reference render has a bright meniscus all the way
-  round the ball, and it is what keeps the silhouette readable where the
-  sphere's own dark lower half meets its drop shadow (the two are within
-  ~2/255 of each other without it). */
-0 0 0 1px rgba(150, 190, 255, 0.16),
+round the ball, and it is what keeps the silhouette readable where the
+sphere's own dark lower half meets its drop shadow (the two are within
+~2/255 of each other without it). */
+0 0 0 1px rgba(168, 202, 255, 0.26),
 /* the bloom: the ball is lit, so it spills */
-0 0 11px -2px rgba(140, 185, 255, 0.28),
+0 0 12px -2px rgba(146, 188, 255, 0.34),
 0 5px 15px -6px rgba(0, 0, 0, 0.80);
 transition: background 80ms ease, border-color 80ms ease, box-shadow 80ms ease;
+}
+/* The chevrons are the brightest thing on the ball in the reference render —
+white, with a dark under-edge where the bar turns away from the light. The
+flat trigger inherits `--fg-soft` (a grey), which sits within a couple of
+points of the glass sheen behind it and vanishes; the orb draws each bar as
+its own two-path solid instead (see `chevron()` in FileToolbar.jsx). */
+.file-toolbar--orb .file-toolbar__chevron {
+overflow: visible;
+/* A hairline of the rim's dark tone around the whole bar, plus the 1px
+thickness under it. The bar crosses the window reflection at the top of the
+ball, where a bare white bar measured 2.78:1 — the silhouette is what keeps
+it readable there. */
+filter: drop-shadow(0 0 0.6px rgba(10, 18, 34, 0.85)) drop-shadow(0 1px 0.4px rgba(10, 18, 34, 0.55));
+}
+.file-toolbar--orb .file-toolbar__chevron-face {
+fill: #ffffff;
+/* The lit top edge of the bar, so it reads as milled rather than stamped. */
+filter: drop-shadow(0 -0.5px 0 rgba(255, 255, 255, 0.75));
+}/* The bar's thickness: the same silhouette, 1px lower, in the rim's own dark
+tone. It is what gives the bar an edge over the *light* half of the sphere —
+measured at 1.36:1 for a bare white bar, because the up-chevron crosses the
+window reflection at the top of the ball. */
+.file-toolbar--orb .file-toolbar__chevron-side {
+fill: rgba(18, 28, 48, 0.88);
+/* In the SVG's user units: the viewBox is 12x6 drawn at 11x6 px, so one
+unit is ~0.92px of extrusion at the button's real size. */
+transform: translateY(1px);
 }
 /* Hover / open brighten the sheen in place. The flat trigger's own hover rules
    would otherwise replace every gradient with a flat --surface-3. */
@@ -344,25 +382,29 @@ position: absolute;
 inset: 0;
 /* Sized to the folder silhouette (20x17), so the radius follows its corners
 rather than a bigger rectangle's. */
-border-radius: 4px;
+border-radius: 5px;
 background:
 /* its own top-edge highlight, so the slab catches the same light as the ball */
-linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 46%),
-radial-gradient(120% 120% at 26% 14%, rgba(226, 238, 255, 0.46) 0%, rgba(0, 0, 0, 0) 66%),
-/* The tile itself is *light*, and translucent: the reference's centre panel
-is a pale frosted slab you can still see the ball through, not an opaque
-white card (which reads as a sticker) and not a dark tile (which hides the
-folder and leaves the counts as the only thing in the button). */
-linear-gradient(160deg,
-rgba(226, 234, 250, 0.90) 0%,
-rgba(196, 208, 232, 0.82) 52%,
-rgba(158, 173, 205, 0.78) 100%);
+linear-gradient(180deg, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0) 44%),
+radial-gradient(120% 120% at 26% 10%, rgba(236, 244, 255, 0.40) 0%, rgba(0, 0, 0, 0) 62%),
+/* The tile is *cooler and darker than the folder*, which is the whole
+reason the folder silhouette exists on screen. The first pass made this
+slab nearly white and the folder's face nearly white too — a white folder
+on a white tile is one white blob, and the tab, the extrusion and the
+pocket all disappeared into it (the button read as "a card with two
+numbers"). The pane the reference draws behind its folder is a mid-tone
+frosted blue-grey, so the near-white solid in front of it separates on
+every edge without needing an outline. */
+linear-gradient(158deg,
+rgba(140, 160, 198, 0.82) 0%,
+rgba(104, 124, 166, 0.80) 54%,
+rgba(64, 80, 116, 0.78) 100%);
 box-shadow:
-inset 0 1px 0 rgba(255, 255, 255, 0.92),
-inset 0 -1px 0 rgba(255, 255, 255, 0.34),
-inset 1px 0 0 rgba(255, 255, 255, 0.40),
-inset -1px 0 0 rgba(120, 140, 180, 0.30),
-0 2px 5px -1px rgba(0, 0, 0, 0.55);
+inset 0 1px 0 rgba(255, 255, 255, 0.50),
+inset 0 -1px 0 rgba(16, 26, 46, 0.38),
+inset 1px 0 0 rgba(255, 255, 255, 0.26),
+inset -1px 0 0 rgba(16, 26, 46, 0.30),
+0 2px 5px -1px rgba(0, 0, 0, 0.60);
 /* The frost is what makes the tile read as glass rather than paper — the
 ball's own sheen shows through it. Without `backdrop-filter` the fallback
 below keeps the tile lighter than the sphere so the folder still separates,
@@ -394,8 +436,8 @@ the sphere either way, which is what keeps the folder separated from it. */
 @supports not (backdrop-filter: blur(1px)) {
 .file-toolbar--orb .file-toolbar__plate-face {
 background:
-linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 46%),
-linear-gradient(160deg, rgba(223, 231, 248, 0.94) 0%, rgba(160, 176, 208, 0.90) 100%);
+linear-gradient(180deg, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0) 44%),
+linear-gradient(158deg, rgba(150, 170, 206, 0.90) 0%, rgba(86, 104, 142, 0.86) 100%);
 }
 }
 
@@ -453,7 +495,9 @@ filter: blur(1.5px);
 }
 .file-toolbar__folder-side {
 z-index: 1;
-transform: translateY(2px);
+/* The visible thickness of the solid. One step, not two: the reference's
+folder is a thin slab, and a 2px side on a 17px glyph reads as a box. */
+transform: translateY(1px);
 }
 .file-toolbar--orb .file-toolbar__folder-side path {
 fill: url(#fileToolbarFolderSide);
@@ -478,8 +522,17 @@ fill: url(#fileToolbarFolderShade);
 z-index: 4;
 filter: drop-shadow(0 1px 0.6px rgba(0, 0, 0, 0.55));
 }
+/* The face's own silhouette outline. The pale solid sits on a mid-tone pane
+now, and a hairline of the pane's darkest tone traced around the outline is
+what makes the tab, the flap and the pocket read as *edges* at 1x instead of
+as one pale field. `paint-order: stroke` puts the hairline behind the fill,
+so only its outer half shows and the face does not shrink. */
 .file-toolbar--orb .file-toolbar__folder-face path {
 fill: url(#fileToolbarFolderFace);
+stroke: rgba(40, 54, 86, 0.55);
+stroke-width: 0.6;
+paint-order: stroke;
+stroke-linejoin: round;
 }
 /* Diagonal specular streak across the flap, masked by the silhouette. */
 .file-toolbar__folder-sheen {
@@ -489,8 +542,8 @@ pointer-events: none;
 .file-toolbar--orb .file-toolbar__folder-sheen path {
 fill: url(#fileToolbarFolderSheen);
 }
-/* Crisp rim light along the top edges and the pocket fold. Additive, so it can
-   only brighten the edge it traces and never darkens the face. */
+/* Crisp rim light along the top edges of the solid. Additive, so it can only
+brighten the edge it traces and never darkens the face. */
 .file-toolbar__folder-shine {
 z-index: 6;
 pointer-events: none;
@@ -498,10 +551,10 @@ pointer-events: none;
 .file-toolbar--orb .file-toolbar__folder-shine path {
 fill: none;
 stroke: #fff;
-stroke-width: 1.3;
+stroke-width: 1;
 stroke-linecap: round;
 stroke-linejoin: round;
-opacity: 0.9;
+opacity: 0.72;
 mix-blend-mode: screen;
 }
 
@@ -544,6 +597,18 @@ font-size: var(--orb-count, 5.5px);
 font-weight: 800;
 letter-spacing: -0.01em;
 }
+/* The orb's counts are one step brighter than the flat button's: they are
+embossed into a lit solid with a dark under-copy and a white lip around
+them, and #006600 reads as near-black inside that treatment. Both tones
+are validated against the same pale bed the flat pair is (`#eceaf1`, here
+the folder face) — measured 5.1:1 for the green and 5.5:1 for the red on
+the rendered button, against the 4.5:1 the small-text budget asks for. */
+.file-toolbar--orb .file-toolbar__git-additions {
+color: #087a1c;
+}
+.file-toolbar--orb .file-toolbar__git-deletions {
+color: #c11b1b;
+}
 .file-toolbar--orb .file-toolbar__git-additions,
 .file-toolbar--orb .file-toolbar__git-deletions {
 position: static;
@@ -568,7 +633,7 @@ position: relative;
 position: absolute;
 left: 0.115em;
 top: 0.115em;
-color: rgba(2, 6, 14, 0.82);
+color: rgba(2, 6, 14, 0.62);
 }
 .file-toolbar__count-face {
 position: relative;
@@ -594,17 +659,17 @@ whole tile turned into a coloured cloud with unreadable digits inside it,
 which is the "smear" the button was showing. */
 .file-toolbar--orb .file-toolbar__git-additions .file-toolbar__count-face {
 text-shadow:
-0 -0.07em 0 rgba(0, 40, 0, 0.55),
-0 0.1em 0 rgba(255, 255, 255, 0.72),
-0 0 0.14em rgba(0, 210, 70, 0.55),
-0 0 0.3em rgba(0, 175, 55, 0.30);
+0 -0.06em 0 rgba(0, 34, 0, 0.46),
+0 0.1em 0 rgba(255, 255, 255, 0.56),
+0 0 0.12em rgba(0, 200, 64, 0.50),
+0 0 0.26em rgba(0, 165, 50, 0.26);
 }
 .file-toolbar--orb .file-toolbar__git-deletions .file-toolbar__count-face {
 text-shadow:
-0 -0.07em 0 rgba(60, 0, 0, 0.55),
-0 0.1em 0 rgba(255, 255, 255, 0.68),
-0 0 0.14em rgba(235, 55, 55, 0.55),
-0 0 0.3em rgba(200, 25, 25, 0.30);
+0 -0.06em 0 rgba(52, 0, 0, 0.46),
+0 0.1em 0 rgba(255, 255, 255, 0.52),
+0 0 0.12em rgba(236, 46, 46, 0.50),
+0 0 0.26em rgba(200, 22, 22, 0.26);
 }
 
 /* The SVG gradients the folder faces reference. Zero-sized and unreferenced

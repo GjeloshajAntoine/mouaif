@@ -2,7 +2,7 @@
 
 ## Overview
 
-Settings → App defaults → Chat defaults has a **Glass orb file button** switch. With it off (the default) the button beside the message box is the flat circle the composer has always used. With it on, the same button is drawn as a shaded glass sphere: the up-chevron, the folder and the down-chevron sit inside it as 3D objects, the folder and its `+N` / `−N` counts ride a frosted glass tile a few px in front of the chevrons, and the whole pictogram turns slowly on two axes while a highlight drifts across the ball.
+Settings → App defaults → Chat defaults has a **Glass orb file button** switch. With it off (the default) the button beside the message box is the flat circle the composer has always used. With it on, the same button is drawn as a glass ball: a window reflection sweeps its upper-left, refracted light runs along its lower-inner wall and its lower-right falls away to a dark limb ringed by a bright meniscus. Inside it, the up-chevron, the folder and the down-chevron sit as 3D objects — white bevelled bars above and below a pale extruded folder on a cool frosted pane, with the `+N` / `−N` counts embossed into the folder. The whole pictogram turns slowly on two axes while a highlight drifts across the ball.
 
 The option changes **how the button is painted, never what it does**. Same 44 × 44 tap target, same `aria-label`, same menu.
 
@@ -16,8 +16,10 @@ Turn it back off to return to the flat circle. Nothing else about the composer m
 
 | Setting | Off (default) | On |
 |---------|---------------|-----|
-| Painted circle | Flat `--surface-2` with a 1px border | Shaded sphere: sheen, specular hotspot, cool bounce along the lower edge, outer bloom |
-| Folder | One flat silhouette | Extruded solid: deep side, lit face, ambient occlusion, rim light, specular streak |
+| Painted circle | Flat `--surface-2` with a 1px border | Glass ball: a window reflection sweeping the upper-left, a hard specular blob, refracted light along the lower-inner wall, a dark limb and a bright meniscus round the rim |
+| Chevrons | One `currentColor` bar each | White bars with a dark under-edge, so they read over both the lit and the dark half of the ball |
+| Folder | One flat silhouette | Extruded solid: a 1px dark side, a near-white face with a hairline silhouette outline, ambient occlusion, and a rim light along its top edges |
+| Tile | — | A cool frosted pane *behind* the folder, so the pale solid separates from it on every edge |
 | Counts | Flat colored glyphs at a fixed `0.46rem` | Embossed, and sized per render from the longest count drawn (7px down to 5px) |
 | Motion | None | Orbit on two axes, the slab breathing in Z, the sphere sheen drifting, the folder streak breathing |
 | Tap target | `44 × 44` | `44 × 44` (unchanged) |
@@ -64,11 +66,12 @@ export function fileOrbFromApp(snapshot) {
 The string forms are accepted because the app store holds a TEXT blob: a hand-edited `store.sqlite` can legitimately hand back `'true'`.
 
 ### The depth is built
-Four techniques, in the order they contribute:
-1. **The sphere** is one pseudo-element. `::before` is inherited from the flat trigger (`inset: 2px`, `--surface-2`, a 1px border, the inherited corner radius), and the variant re-declares only the paint: five stacked gradients back-to-front (dark lower-right, cool inner bounce, broad left sheen, tight hotspot, glass body), a bright upper-left inset edge with a dark counter-edge, and an outer rim-light plus bloom ring.
-2. **The orbit** is a real 3D rotation, not a 2D wobble. The stack sits inside `perspective(520px)` and rotates on both axes, so the chevrons genuinely turn in depth. The rest pose is already a 3/4 view (`-9deg` / `6deg`) rather than front-on, because a slab seen straight from the front has no depth to read.
-3. **The tile** (`__plate`) is a pale, *translucent* glass slab that floats `--orb-depth` in front of the chevrons, with a `backdrop-filter` frost so the ball's own sheen shows through it. It is deliberately not opaque white — an opaque white tile under a white folder is one white blob, and it hides the sphere behind it, which is most of what the button is made of. A dark tile fails the other way: the folder vanishes into it. The tile is lighter than the glass behind it and lets that glass through, which is what makes the folder read as a separate object sitting on a lit pane.
-4. **The folder** is an extruded solid built from stacked silhouettes of one shared path — a contact shadow on the tile, the deep side 2px lower, the mid-tone body 1px lower, ambient occlusion, the lit face, a diagonal specular streak, and a rim light along the top edges and the pocket fold. At 20 × 17 this stacking is what reads as thickness; a folder glyph has no volume of its own to push in Z.
+Five techniques, in the order they contribute:
+1. **The sphere** is one pseudo-element. `::before` is inherited from the flat trigger (`inset: 2px`, `--surface-2`, a 1px border, the inherited corner radius), and the variant re-declares only the paint: five stacked gradients back-to-front (the dark limb at the lower-right, light refracted along the lower-inner wall, the broad window reflection sweeping the upper-left, the hard specular blob, and the cool steel body), a bright upper-left inset edge with a dark counter-edge, and an outer rim-light plus bloom ring. The three light layers are what make the ball read as *glass* rather than as a shaded disc: a solid sphere lit this way has one gradient, a transparent one has a second, sharper reflection of its surroundings on top of it. Because the top of the ball is genuinely light, everything drawn on it needed its own dark edge — see the chevrons below.
+2. **The chevrons** are two-path solids rather than one `currentColor` bar. The flat button's grey (`--fg-soft`) sits within a couple of points of the ball's sheen and vanished into it (measured 1.36:1); the reference's bars are white, so each bar is drawn as a white face over a dark copy offset 1px down, plus a hairline outline (`drop-shadow(0 0 0.6px …)`) so its silhouette survives where it crosses the light. The dark copy is what gives the bar an edge against the *window reflection*, where a bare white bar still only measured 2.6:1.
+3. **The orbit** is a real 3D rotation, not a 2D wobble. The stack sits inside `perspective(520px)` and rotates on both axes, so the chevrons genuinely turn in depth. The rest pose is already a 3/4 view (`-9deg` / `6deg`) rather than front-on, because a slab seen straight from the front has no depth to read.
+4. **The tile** (`__plate`) is a cool, *translucent* pane that floats `--orb-depth` in front of the chevrons, with a `backdrop-filter` frost so the ball's own sheen shows through it. It is deliberately **darker than the folder**, which is the one thing that makes the folder silhouette visible at all: a white solid on a white tile is one white blob with two numbers on it, and the tab, the extrusion and the pocket all disappear into it (this was the first pass, and it read as "a card with two numbers"). An opaque dark tile fails the other way — the folder vanishes into it — so the pane is a mid-tone blue-grey between the near-white folder and the dark limb of the ball.
+5. **The folder** is an extruded solid built from stacked silhouettes of one shared path: a contact shadow on the tile, the dark side 1px lower, the mid-tone body, shallow ambient occlusion, a near-white face with a hairline silhouette outline and a soft drop shadow, and a rim light along its top edges. At 20 × 17 this stacking is what reads as thickness; a folder glyph has no volume of its own to push in Z. The **fold line** that used to be stroked across the middle of the silhouette is gone on purpose: the counts are laid out top/bottom on this plate, so at 1x it landed across the red count's cap and read as a stray rule rather than as a fold. The face's gradient also holds near-white across the middle and only models at the very edge, so the counts keep the pale bed they are tuned against; the depth the old darker ramp was buying comes from the outline and the extrusion instead.
 
 ### The proportions are the effect, and they are pinned
 The single biggest thing that made the first version read as "a white sticker on a disc" rather than as the reference render was **scale**. The first pass drew 14 × 7 chevrons over a 28 × 22 folder — a 38px pictogram inside a 40px painted sphere. There was no glass left around the artwork, the chevrons touched the rim, and the ball stopped reading as a ball. A sphere is recognizable mainly by the gradient around its edge; fill that edge with icon and the sphere is gone.
@@ -81,7 +84,7 @@ The sizes are therefore declared as ratios of the painted sphere rather than as 
 `scripts/test-file-orb.mjs` asserts both ceilings — the stack may not exceed 70% of the sphere's width or 85% of its height — so a future tweak that fattens the icon fails the suite instead of quietly eating the glass again.
 Two consequences worth knowing:
 - The **count text is HTML**, not SVG, and it is laid out against the tile box. So the plate's size in `FileToolbar.jsx` and in the CSS has to be the *same number*; the test asserts that equality, because otherwise the sizer's width/height budgets describe a rectangle that no longer exists.
-- The whole pictogram is only ~31px tall, so the extrusion offsets (1px and 2px) are a meaningful fraction of the glyph. That is why the bevel is visible at all; scale the pictogram back up and those same offsets become invisible edges.
+- the whole pictogram is only ~31px tall, so the extrusion offsets (1px) are a meaningful fraction of the glyph. That is why the bevel is visible at all; scale the pictogram back up and those same offsets become invisible edges.
 
 The counts are embossed, and the emboss has **four** stacked shadows per glyph. Read top to bottom as light travels over a raised letter:
 
@@ -92,7 +95,9 @@ The counts are embossed, and the emboss has **four** stacked shadows per glyph. 
 
 The **echo** — a near-black copy of the whole count, offset down-right — is drawn *under* the glyph by `__count-echo`. It is the letterpress shadow the raised glyph casts on the tile, and the bloom radii are deliberately kept small enough (see below) that it stays visible.
 
-The bloom is a glow rather than a different ink, so the 6:1 contrast (`#006600` / `#b30000` on the light tile) is unchanged. Pushing it harder is a mistake worth recording: at a higher opacity the fill lifts toward pastel and the saturated hues the colors are chosen for are lost — measured, the glyph core read `rgb(39,134,45)` instead of `#006600`'s `rgb(0,102,0)`. Trimmed back, the same glyph reads `rgb(34,100,40)`.
+The bloom is a glow rather than a different ink, so the contrast the colors are chosen for is unchanged. Pushing it harder is a mistake worth recording: at a higher opacity the fill lifts toward pastel and the saturated hues the colors are chosen for are lost — measured, the glyph core read `rgb(39,134,45)` instead of `#006600`'s `rgb(0,102,0)`. Trimmed back, the same glyph reads `rgb(34,100,40)`.
+
+The **ink is per-variant**. `#006600` / `#b30000` were chosen for a flat glyph on `--fg`; embossed into a lit solid with a dark under-copy and a white lip they read as near-black, so the orb carries its own, measurably lighter pair (`#087a1c` / `#c11b1b`). Both still clear the 4.5:1 small-text budget on the pale bed they sit on — the rendered button measures 5.1:1 (green) and 5.5:1 (red) against the folder face — while the flat pair is asserted to be untouched, because the orb is a skin and the flat button's contrast notes are pinned to those two values.
 
 ### The count size is adaptive, and it has to be
 The formatter ([`gitCount.js`](../../frontend/src/components/chat/gitCount.js)) can emit anything from 2 glyphs (`+0`) to 5 (`+995k`), and one fixed size cannot serve both inside the tile:
@@ -171,7 +176,10 @@ Every gradient-fill rule therefore carries the variant class:
 - the plumbing — the key is in `DEFAULTS`, in the client allowlist, and round-trips through the real `settings.js` + `settingsForClient()` against a throwaway store;
 - the render — running the actual `FileToolbar` component through a hook-harness in both modes, asserting the orb layers exist only when asked, every referenced gradient is defined, the decorative echo copies are `aria-hidden`, and both modes emit an identical `aria-label` and `title`;
 - the count sizer — monotonic steps, clamping for inputs the formatter cannot emit (`undefined` would drop the whole `font-size` declaration and silently fall back to the inherited size), every step clearing both the width and the height budget, and each width-bound step being maximal;
-- the CSS invariants — no unprefixed gradient fill, the orb paint is variant-scoped, the animation lives inside `prefers-reduced-motion: no-preference`, no keyframe animates a layout property, the emboss is in `em` rather than fixed px, and the rest pose carries a perspective and a base tilt.
+- the CSS invariants — no unprefixed gradient fill, the orb paint is variant-scoped, the animation lives inside `prefers-reduced-motion: no-preference`, no keyframe animates a layout property, the emboss is in `em` rather than fixed px, and the rest pose carries a perspective and a base tilt;
+- the *material* invariants — the orb emits a white chevron face plus a dark side (and the flat button emits neither), the tile's composited tone stays well clear of the folder face, and the orb's count inks are lighter than the flat pair while both clear 4.5:1 on the pale bed.
+
+The last group is what keeps the button reading like the reference rather than like a shaded disc again: each one is a relationship between declared tones rather than a pinned hex value, so the palette can still be tuned.
 
 It is wired into `npm run lint` and `npm test`.
 

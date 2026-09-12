@@ -381,13 +381,148 @@ check('the animation is opt-in under no-preference and holds a frame otherwise',
 });
 
 check('the rest pose is a full 3/4 view, not a flat front-on frame', () => {
-  // With reduced motion (and before the first animation tick) the base rule is
-  // what the user sees, so it must already carry a tilt.
-  const m = css.match(/\.file-toolbar--orb \.file-toolbar__stack \{[^}]*transform:([^;]+);/);
-  assert.ok(m, 'the stack has a base transform');
-  assert.match(m[1], /perspective\(/, 'the base transform sets a perspective');
-  assert.match(m[1], /-9deg/, 'a base rotateX offset');
-  assert.match(m[1], /6deg/, 'a base rotateY offset');
+// With reduced motion (and before the first animation tick) the base rule is
+// what the user sees, so it must already carry a tilt.
+const m = css.match(/\.file-toolbar--orb \.file-toolbar__stack \{[^}]*transform:([^;]+);/);
+assert.ok(m, 'the stack has a base transform');
+assert.match(m[1], /perspective\(/, 'the base transform sets a perspective');
+assert.match(m[1], /-9deg/, 'a base rotateX offset');
+assert.match(m[1], /6deg/, 'a base rotateY offset');
+});
+
+// ---- 5. the orb reads as glass, not as a shaded disc ---------------------
+// Four things carry the reference's look, and each one is a place the render
+// can silently regress to the flat-looking button it replaced. They are
+// asserted as *relationships* between the declared tones rather than as
+// literal hex values, so the palette can still be tuned.
+const LIGHTNESS = (hex) => {
+  const m = String(hex).match(/^#([0-9a-f]{6})$/i);
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+};
+const gradientStops = (from, to) => {
+  const a = component.indexOf("'" + from + "'");
+  const b = component.indexOf("'" + to + "'");
+  if (a < 0 || b <= a) return [];
+  return [...component.slice(a, b).matchAll(/'stop-color':\s*'(#[0-9a-f]{6})'/gi)].map((m) => m[1]);
+};
+
+check('the chevrons are drawn as a bevelled solid, not one currentColor path', async () => {
+  // The bar crosses the ball's own sheen, where a bare `currentColor` bar
+  // (--fg-soft, a grey) measured under 1.4:1 and disappeared. The orb must
+  // therefore emit a white face *and* a dark side copy per chevron, while the
+  // flat variant keeps exactly the single path it always had.
+  const orbNodes = await renderToolbar(true);
+  const flatNodes = await renderToolbar(false);
+  assert.equal(cls(orbNodes, 'file-toolbar__chevron').length, 2, 'one SVG per chevron');
+  assert.equal(cls(orbNodes, 'file-toolbar__chevron--up').length, 1, 'the up bar is addressable');
+  assert.equal(cls(orbNodes, 'file-toolbar__chevron--down').length, 1, 'the down bar is addressable');
+  assert.equal(cls(orbNodes, 'file-toolbar__chevron-face').length, 2, 'a lit face per bar');
+  assert.equal(cls(orbNodes, 'file-toolbar__chevron-side').length, 2, 'a dark side per bar');
+  assert.equal(cls(flatNodes, 'file-toolbar__chevron').length, 0, 'the flat button is untouched');
+  assert.equal(cls(flatNodes, 'file-toolbar__chevron-face').length, 0, 'the flat button sheds no skin');
+  // The face must not be left to inherit: it is the only thing that makes the
+  // bar visible over the lit half of the sphere.
+  assert.match(css, /\.file-toolbar--orb \.file-toolbar__chevron-face \{[^}]*fill:\s*#ffffff/, 'the bar face is white');
+  assert.match(css, /\.file-toolbar--orb \.file-toolbar__chevron-side \{[^}]*fill:\s*rgba\(/, 'the bar side is a dark tone');
+});
+
+// Every `linear-gradient(…)` in a declaration block, each captured with its
+// own parens balanced. A greedy `[^;]*` cannot do this: one gradient's closing
+// paren is a valid match for the next one's, so the whole block collapses into
+// a single "gradient" and the stops of every layer get mixed together.
+function linearGradients(text) {
+  const out = [];
+  const marker = 'linear-gradient(';
+  let from = 0;
+  for (;;) {
+    const at = text.indexOf(marker, from);
+    if (at < 0) return out;
+    let depth = 0;
+    let i = at + marker.length - 1;
+    for (; i < text.length; i++) {
+      if (text[i] === '(') depth += 1;
+      else if (text[i] === ')') {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    out.push(text.slice(at, i + 1));
+    from = i + 1;
+  }
+}
+
+check('the tile is darker than the folder face, so the silhouette separates', () => {
+  // This is the invariant that keeps the folder readable as an *object*: a
+  // pale solid on a pale tile is one white blob with two numbers on it. The
+  // tile is painted as rgba stops, so its tones are read out of the gradient
+  // and composited over the sphere before comparing. Only the tile's own
+  // `linear-gradient` counts — the rule also carries the box-shadow's insets,
+  // which are darker than any tile tone and would otherwise be picked up as
+  // the "darkest stop".
+  const tileRule = css.match(/\.file-toolbar--orb \.file-toolbar__plate-face \{([^}]*)\}/);
+  assert.ok(tileRule, 'found the tile rule');
+  // The rule carries more than one gradient (a top-edge highlight and a
+  // corner reflection sit above the tile itself), so the tile's own body is
+  // the stop-richest of them rather than simply the first or last.
+  const gradients = linearGradients(tileRule[1]);
+  const withStops = gradients
+    .map((g) => ({ g, stops: [...g.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/g)] }))
+    .sort((a, b) => b.stops.length - a.stops.length);
+  const tileStops = withStops.length ? withStops[0].stops : [];
+  assert.ok(tileStops.length >= 3, 'the tile is a multi-stop gradient');
+  const darkest = tileStops
+    .map((m) => ({ l: LIGHTNESS('#' + [1, 2, 3].map((i) => Number(m[i]).toString(16).padStart(2, '0')).join('')), a: Number(m[4]) }))
+    .sort((a, b) => a.l - b.l)[0];
+  // Composited over the sphere's own mid-tone (~#2a3450) at the tile's alpha.
+  const sphere = LIGHTNESS('#2a3450');
+  const effective = darkest.l * darkest.a + sphere * (1 - darkest.a);
+  const faceStops = gradientStops('fileToolbarFolderFace', 'fileToolbarFolderShade').map(LIGHTNESS).filter((n) => n !== null);
+  assert.ok(faceStops.length >= 4, 'the face is a five-stop ramp');
+  const faceDarkest = Math.min(...faceStops);
+  const faceLightest = Math.max(...faceStops);
+  assert.ok(faceDarkest > effective + 0.2,
+    'the folder face (' + faceDarkest.toFixed(2) + ') must stay well clear of the tile (' + effective.toFixed(2) + ')');
+  // And the face has to hold near-white across its middle, or the counts lose
+  // the pale bed they are tuned against (the red count sits on the lower half).
+  assert.ok(faceLightest > 0.9, 'the face is near-white at the top');
+});
+
+check('the orb counts are the brighter validated pair', () => {
+  // #006600 was chosen for a flat glyph on --fg. Embossed into a lit solid
+  // with a dark under-copy and a white lip it reads as near-black, so the orb
+  // carries its own, measurably *lighter* pair — and both must still clear the
+  // 4.5:1 small-text budget against the pale bed they actually sit on. The
+  // flat pair must NOT move: the orb is a skin, and the flat button's
+  // contrast notes are pinned to #006600 / #b30000.
+  const orbAdd = css.match(/\.file-toolbar--orb \.file-toolbar__git-additions \{[^}]*color:\s*(#[0-9a-f]{6})/i);
+  const orbDel = css.match(/\.file-toolbar--orb \.file-toolbar__git-deletions \{[^}]*color:\s*(#[0-9a-f]{6})/i);
+  const flatAdd = css.match(/\.file-toolbar__git-additions \{[^}]*color:\s*(#[0-9a-f]{6})/i);
+  const flatDel = css.match(/\.file-toolbar__git-deletions \{[^}]*color:\s*(#[0-9a-f]{6})/i);
+  assert.ok(orbAdd && orbDel, 'the orb overrides both inks');
+  assert.equal(flatAdd[1].toLowerCase(), '#006600', 'the flat green is unchanged');
+  assert.equal(flatDel[1].toLowerCase(), '#b30000', 'the flat red is unchanged');
+  const chan = (v) => {
+    const s = v / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const lum = (hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    return 0.2126 * chan((n >> 16) & 255) + 0.7152 * chan((n >> 8) & 255) + 0.0722 * chan(n & 255);
+  };
+  const contrast = (a, b) => {
+    const la = lum(a); const lb = lum(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  };
+  const bed = '#eceaf1';   // the face's pale bed, the same tone the flat pair uses
+  for (const [name, orb, flat] of [['green', orbAdd[1], flatAdd[1]], ['red', orbDel[1], flatDel[1]]]) {
+    assert.ok(lum(orb) > lum(flat),
+      'the orb ' + name + ' (' + orb + ') must be lighter than the flat ' + flat + ' it replaced');
+    assert.ok(contrast(orb, bed) >= 4.5,
+      'orb ' + name + ' ' + orb + ' is ' + contrast(orb, bed).toFixed(2) + ':1 on ' + bed + ', needs 4.5:1');
+    assert.ok(contrast(flat, bed) >= 4.5, 'the flat ' + name + ' must keep its own budget');
+  }
 });
 
 // Run them in order; the first failure rejects and stops the file.

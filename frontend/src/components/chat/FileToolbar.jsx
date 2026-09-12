@@ -38,6 +38,11 @@ const FOLDER_PATH = 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0
 // 40px circle. The pictogram then ran to the sphere's rim on every side and
 // the ball stopped reading as a ball: there was no glass left around the
 // artwork, which is what the reference is mostly made of.
+// The two chevron silhouettes: an up bar and a down bar, each a stroked
+// outline that fills as a flat bar with a notch. They are the same paths in
+// both variants — the orb only adds the extruded side copy below them.
+const CHEVRON_PATH_UP = 'M0.5 5.5 6 1 11.5 5.5 10 6 6 2.5 2 6Z';
+const CHEVRON_PATH_DOWN = 'M0.5 0.5 6 5 11.5 0.5 10 0 6 3.5 2 0Z';
 const ORB_CHEVRON_W = 11;
 const ORB_CHEVRON_H = 6;
 const ORB_FOLDER_W = 20;
@@ -180,6 +185,39 @@ const showDeletions = hasStats && (deleted > 0 || added === 0);
 const statsLabel = hasStats
 ? added + (added === 1 ? ' line added, ' : ' lines added, ') + deleted + (deleted === 1 ? ' line deleted' : ' lines deleted')
 : '';
+// One chevron, in whichever style the variant uses.
+//
+// Flat keeps the single `currentColor` path it always had. The orb draws the
+// bar twice: a dark copy 1px lower (the bar's thickness, seen from the light
+// above) under a white top face. A single white path cannot work on the orb —
+// the bar crosses the sphere's own sheen, and white-on-sheen measured 1.36:1,
+// which is why the chevrons disappeared into the ball. The dark under-copy
+// gives every edge of the bar something to separate from, whatever part of
+// the sphere it happens to cross.
+//
+// The copy deliberately overflows the 6px SVG box rather than being laid out
+// inside it: the bar's box is what the stack's height budget is computed from
+// (`scripts/test-file-orb.mjs`), and the folder's plate is drawn in front of
+// it anyway, so the 1px of thickness behind the plate is occluded exactly
+// where the reference occludes it.
+function chevron(dir) {
+const d = dir === 'up' ? CHEVRON_PATH_UP : CHEVRON_PATH_DOWN;
+if (!orb) {
+return h('svg', { viewBox: '0 0 12 6', width: 14, height: 7 },
+h('path', { d, fill: 'currentColor' })
+);
+}
+return h('svg', {
+class: 'file-toolbar__chevron file-toolbar__chevron--' + dir,
+viewBox: '0 0 12 6',
+width: ORB_CHEVRON_W,
+height: ORB_CHEVRON_H,
+'aria-hidden': 'true'
+},
+h('path', { class: 'file-toolbar__chevron-side', d }),
+h('path', { class: 'file-toolbar__chevron-face', d })
+);
+}
 // The folder glyph + its counts, in two shapes:
 //
 //   flat (default) — one silhouette filled with --fg, counts on top.
@@ -236,8 +274,14 @@ const orbFolderLayers = [
 ['face', h('path', { d: FOLDER_PATH })],
 ['sheen', h('path', { d: FOLDER_PATH })],
 ['shine', h('path', {
+/* The lit top edges and the pocket fold, as one stroked outline. The fold
+line that used to run across the middle of the silhouette is gone: the
+counts are laid out top/bottom on this plate, so at 1x that line landed
+straight across the red count's cap and read as a stray rule rather than
+as a fold. The reference render has no such line — its card carries its
+edges only. */
 d: 'M2.6 4.2a1.6 1.6 0 0 1 1.6-1.6h3.5l1.7 1.7h6.4a1.6 1.6 0 0 1 1.6 1.6'
-}), h('path', { d: 'M2.8 12.6h14.4' })]
+})]
 ];
 const folderGlyph = orb
 ? h('span', { class: 'file-toolbar__plate' },
@@ -256,9 +300,13 @@ counts(true, orbFont)
 ),
 h('svg', { class: 'file-toolbar__defs', viewBox: '0 0 0 0', 'aria-hidden': 'true' },
 h('linearGradient', { id: 'fileToolbarFolderSide', x1: '0', y1: '0', x2: '0.3', y2: '1' },
-h('stop', { offset: '0', 'stop-color': '#8d93ab' }),
-h('stop', { offset: '0.35', 'stop-color': '#3b4258' }),
-h('stop', { offset: '1', 'stop-color': '#141a29' })
+/* The extruded edge, seen from the light above: lit at the top-left of the
+step, falling to near-black where the side turns away. Kept one stop
+lighter than the first pass, which read as a dark plastron under the
+folder at 1x. */
+h('stop', { offset: '0', 'stop-color': '#a7add0' }),
+h('stop', { offset: '0.35', 'stop-color': '#4a5578' }),
+h('stop', { offset: '1', 'stop-color': '#1d2740' })
 ),
 h('linearGradient', { id: 'fileToolbarFolderBody', x1: '0.12', y1: '0', x2: '0.7', y2: '1' },
 h('stop', { offset: '0', 'stop-color': '#eef0fb' }),
@@ -266,20 +314,25 @@ h('stop', { offset: '0.4', 'stop-color': '#c9ccdd' }),
 h('stop', { offset: '1', 'stop-color': '#8d92ab' })
 ),
 h('linearGradient', { id: 'fileToolbarFolderFace', x1: '0.1', y1: '0', x2: '0.62', y2: '1' },
-/* A glossy solid does not ramp evenly: it holds near-white across the
-   crown of the dome, then falls off quickly past the terminator. The
-   near-flat 0 -> 0.62 zone is that crown; the last two stops are the
-   fast fall-off. */
+/* The face is the *bed the counts are read on*, so it stays pale almost
+all the way across and only models at the very edge. The first pass
+ramped it all the way down to #9ba1ba, which put the red count on a
+mid-tone — the ink then sat at ~3.5:1 and the digits went muddy. The
+depth that ramp was buying is bought back by the extrusion and the
+silhouette outline instead (see `.file-toolbar__folder-face path`). */
 h('stop', { offset: '0', 'stop-color': '#ffffff' }),
-h('stop', { offset: '0.44', 'stop-color': '#fdfdff' }),
-h('stop', { offset: '0.62', 'stop-color': '#ebeCF6' }),
-h('stop', { offset: '0.82', 'stop-color': '#c6c9dc' }),
-h('stop', { offset: '1', 'stop-color': '#9ba1ba' })
+h('stop', { offset: '0.5', 'stop-color': '#fbfcff' }),
+h('stop', { offset: '0.74', 'stop-color': '#eef1f9' }),
+h('stop', { offset: '0.9', 'stop-color': '#d9dfee' }),
+h('stop', { offset: '1', 'stop-color': '#c2cadf' })
 ),
 h('radialGradient', { id: 'fileToolbarFolderShade', cx: '0.7', cy: '0.86', r: '0.82' },
-h('stop', { offset: '0', 'stop-color': '#464d6b', 'stop-opacity': '0.72' }),
-h('stop', { offset: '0.42', 'stop-color': '#4d5474', 'stop-opacity': '0.34' }),
-h('stop', { offset: '0.78', 'stop-color': '#5b6280', 'stop-opacity': '0.08' }),
+/* Ambient occlusion only — deliberately shallow, because the red count
+lands inside it. Enough to round the lower-right corner, not enough to
+take the contrast out from under the ink. */
+h('stop', { offset: '0', 'stop-color': '#464d6b', 'stop-opacity': '0.40' }),
+h('stop', { offset: '0.42', 'stop-color': '#4d5474', 'stop-opacity': '0.17' }),
+h('stop', { offset: '0.78', 'stop-color': '#5b6280', 'stop-opacity': '0.04' }),
 h('stop', { offset: '1', 'stop-color': '#5b6280', 'stop-opacity': '0' })
 ),
 h('linearGradient', { id: 'fileToolbarFolderSheen', x1: '0', y1: '0', x2: '0.35', y2: '0.85' },
@@ -308,13 +361,9 @@ title: 'File, git, and CLI tools' + (statsLabel ? ' — ' + statsLabel : '')
 },
 orb ? h('span', { class: 'file-toolbar__sheen', 'aria-hidden': 'true' }) : null,
 h('span', { class: 'file-toolbar__stack', 'aria-hidden': 'true' },
-h('svg', { viewBox: '0 0 12 6', width: orb ? ORB_CHEVRON_W : 14, height: orb ? ORB_CHEVRON_H : 7 },
-h('path', { d: 'M0.5 5.5 6 1 11.5 5.5 10 6 6 2.5 2 6Z', fill: 'currentColor' })
-),
+chevron('up'),
 folderGlyph,
-h('svg', { viewBox: '0 0 12 6', width: orb ? ORB_CHEVRON_W : 14, height: orb ? ORB_CHEVRON_H : 7 },
-h('path', { d: 'M0.5 0.5 6 5 11.5 0.5 10 0 6 3.5 2 0Z', fill: 'currentColor' })
-)
+chevron('down')
 )
 ),
     menuOpen && h('div', { ref: menuRef, class: 'file-toolbar__menu', role: 'menu' },
