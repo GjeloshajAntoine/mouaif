@@ -109,7 +109,19 @@ window.fetch = async (input, options = {}) => {
     const payload = JSON.parse(options.body || '{}');
     window.fixture.recorded.push(payload);
     if (window.fixture.failTranscribe) { status = 401; body = { error: 'Incorrect API key provided', code: 'ENOAUTH' }; }
-    else body = { text: 'This is a dictated sentence about mouaif and the MediaRecorder API.', model: { id: payload.modelId, provider: payload.providerId || 'openai-compatible' }, kind: 'openai-compatible', bytes: 4096, durationMs: 812 };
+    // A priced run, so the page's "Last run" line shows what the feature does
+    // with a real answer (a provider report plus a known price). Setting
+    // fixture.unpriced = true in the console shows the unknown case, which is
+    // what a per-minute model really returns.
+    else body = {
+    text: 'This is a dictated sentence about mouaif and the MediaRecorder API.',
+    model: { id: payload.modelId, provider: payload.providerId || 'openai-compatible' },
+    kind: 'openai-compatible', bytes: 4096, durationMs: 812,
+    usage: { promptTokens: 1000, completionTokens: 100 },
+    cost: window.fixture.unpriced
+      ? { input: 0, output: 0, total: 0, currency: 'USD', known: false }
+      : { input: 0.0003, output: 0.00025, total: 0.00055, currency: 'USD', known: true }
+    };
   } else if (url.pathname === '/api/chats') {
     body = { chats: [{ id: 'chat-1', title: 'Dictation fixture chat', draft: 'existing draft' }], total: 1 };
   } else if (url.pathname.startsWith('/api/chats/')) {
