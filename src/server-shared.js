@@ -194,15 +194,35 @@ const RESETTABLE_APP_KEYS = Object.freeze(
 new Set([...Object.keys(settings.DEFAULTS), 'modelPricing', 'githubCopilot', 'dictation'])
 );
 
+// Allowlist projection for the APP-level store only. Project payloads must
+// use projectForClient() below — see the note there for why.
 function settingsForClient(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const safe = {};
-  for (const key of CLIENT_SETTINGS_KEYS) {
-    if (Object.prototype.hasOwnProperty.call(value, key)) safe[key] = value[key];
-  }
-  if (Array.isArray(safe.providers)) safe.providers = safe.providers.map(connectionForClient);
-  if (Array.isArray(safe.models)) safe.models = safe.models.map(modelForClient);
-  return safe;
+if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+const safe = {};
+for (const key of CLIENT_SETTINGS_KEYS) {
+if (Object.prototype.hasOwnProperty.call(value, key)) safe[key] = value[key];
+}
+if (Array.isArray(safe.providers)) safe.providers = safe.providers.map(connectionForClient);
+if (Array.isArray(safe.models)) safe.models = safe.models.map(modelForClient);
+return safe;
+}
+// Project settings are user-authored and open-ended: `<projectDir>/.mouaif.json`
+// is hand-editable and every feature that lands there adds a key (`name`,
+// `agents`, `skills`, `agentFiles`, `hideFileContent`, `tags`,
+// `customActions`, `totalCost`, ...). Filtering them through the app-level
+// allowlist above dropped all of those from the wire, which made the
+// Technical-details raw editor incomplete and froze project-scoped UI state
+// (e.g. the hidden-file count, the agent-files / skills switches) at its
+// default. So project payloads are sent whole and only two things are
+// removed: secrets (no project file may carry an `apiKey` — see
+// docs/decisions.md §3) and the internal `__dbBacked` storage marker.
+function projectForClient(value) {
+if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+const safe = { ...value };
+delete safe.__dbBacked;
+if (Array.isArray(safe.providers)) safe.providers = safe.providers.map(connectionForClient);
+if (Array.isArray(safe.models)) safe.models = safe.models.map(modelForClient);
+return safe;
 }
 
 // ---- SSE ----------------------------------------------------------------
@@ -704,6 +724,7 @@ module.exports = {
   modelForClient,
   sanitizeClientEntries,
   settingsForClient,
+  projectForClient,
   handleSSE,
   broadcast,
   parseCookies,

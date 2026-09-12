@@ -4,6 +4,24 @@
 
 `mouaif` manages settings through a three-layer hierarchy: **built-in defaults → global app settings → project-level settings**. Project values override app-level defaults when they conflict, giving you shared defaults across your environment while allowing fine-grained customization per codebase.
 
+## API shapes (`GET /api/settings/project`, `GET /api/settings/resolved`)
+
+The app-level and project-level payloads are projected differently, because the two stores hold different kinds of data:
+
+- `GET /api/settings` (app + defaults) is **allowlisted**: only the keys the web UI consumes are sent, so server-only bookkeeping such as in-flight OAuth state (`authPending`) or the CDP debugger URL can never leak into the browser.
+- The project-scoped endpoints send the **whole project object**, minus secrets and the internal storage marker. `.mouaif.json` is hand-editable and every feature that lands there adds a key (`name`, `agents`, `skills`, `agentFiles`, `hideFileContent`, `tags`, `customActions`, `totalCost`, `models`, ...), so an allowlist would silently hide user data and freeze project-scoped UI at its default.
+
+```json
+// GET /api/settings/project?projectDir=/abs/path
+{
+  "project": { "name": "app", "skills": true, "agentFiles": false, "tags": ["web"] },
+  "path": "/abs/path/.mouaif.json",
+  "dbBacked": false
+}
+```
+
+Two fields are always removed: `__dbBacked` (internal storage bookkeeping, never part of the user's settings) and `apiKey` on any `providers` / `models` entry, which is replaced by a response-only `hasApiKey` boolean. Credentials belong in the app store only — see [docs/decisions.md](../decisions.md) §3.
+
 ## How settings work
 
 - **Global app settings** — configured once in the **Settings** tab. These include connected AI provider credentials, global model pricing, default prompt styles, and default tool permissions.

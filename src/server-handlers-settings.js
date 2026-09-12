@@ -10,6 +10,7 @@ const {
   qs,
   readJsonOr400,
   settingsForClient,
+  projectForClient,
   sanitizeClientEntries,
   connectionForClient,
   modelForClient,
@@ -37,7 +38,7 @@ async function handleSettings(req, res, parsed) {
     const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
     try {
-      return sendJSON(res, 200, { resolved: settingsForClient(settings.getResolved(dir)) });
+      return sendJSON(res, 200, { resolved: projectForClient(settings.getResolved(dir)) });
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
       return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
@@ -53,7 +54,7 @@ async function handleSettings(req, res, parsed) {
     try {
       const dbBacked = settings.isDbBacked(dir);
       return sendJSON(res, 200, {
-        project: settingsForClient(settings.getProject(dir)),
+        project: projectForClient(settings.getProject(dir)),
         path: dbBacked ? null : settings.getProjectPath(dir),
         dbBacked
       });
@@ -98,9 +99,9 @@ async function handleSettings(req, res, parsed) {
       if (Array.isArray(unset) && unset.length) next = settings.unsetProjectKeys(projectDir, unset);
       const dbBacked = settings.isDbBacked(projectDir);
       return sendJSON(res, 200, {
-        project: settingsForClient(next),
-        path: dbBacked ? null : settings.getProjectPath(projectDir),
-        dbBacked
+      project: projectForClient(next),
+      path: dbBacked ? null : settings.getProjectPath(projectDir),
+      dbBacked
       });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
@@ -350,9 +351,9 @@ async function handleSettings(req, res, parsed) {
       }
       const dbBacked = settings.isDbBacked(projectDir);
       return sendJSON(res, 200, {
-        dbBacked,
-        project: settingsForClient(settings.getProject(projectDir)),
-        path: dbBacked ? null : settings.getProjectPath(projectDir)
+      dbBacked,
+      project: projectForClient(settings.getProject(projectDir)),
+      path: dbBacked ? null : settings.getProjectPath(projectDir)
       });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
