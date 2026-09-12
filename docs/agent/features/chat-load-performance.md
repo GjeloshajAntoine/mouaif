@@ -16,6 +16,19 @@
 
 Only assistant messages with `cost.known === true` and a finite non-negative total affect metadata. The original cost object remains persisted on the message for traceability.
 
+### Chat list rows are summaries (`src/chatdb.js` → `LIST_COLUMNS`, `rowToChatSummary`)
+
+`listChats` used `SELECT *`, which pulled the two unbounded TEXT columns of `chat_store` — `draft` and `draft_attachments` (JSON with up to 8 base64 data URLs, each capped at 12 MB by `frontend/src/components/chat/annotation.js`) — for every row of the page, JSON-parsed the attachments, and shipped them to the client. One picture in one draft made every `/api/chats` page megabytes.
+
+`listChats` now selects an explicit column list:
+
+- `substr(draft, 1, 400) AS draft_snippet` — the card preview only.
+- `(draft_attachments IS NOT NULL) AS has_draft_image` — SQLite answers this from the record header (`OPFLAG_TYPEOFARG`), so the JSON body is never materialized.
+
+`rowToChatSummary` maps those into `draftSnippet` / `hasDraftImage` and drops `draft`; `rowToChat` is untouched, so `getChat`, `createChat` and `updateChat` still return the full record and `GET /api/chats/:id` remains the only way to read a draft body. `chats.clearPromptId` and `chats.recomputeProjectTotalCost` iterate `listChats` but only read `id` / `promptId`, and `updateChat` merges over the persisted row, so summaries never overwrite a draft.
+
+Client consumers of the list: `frontend/src/components/Projects.jsx` (card preview; an image-only draft renders `Image draft`), `frontend/src/components/chat/useChatState.js#loadChatListForSwitcher`, `frontend/src/components/DraftCraftSheet.jsx` and `frontend/src/components/SettingsProject.jsx` (ids/titles only). `frontend/src/components/DictationPage.jsx#appendToLatestChat` used to read `chat.draft` straight off the list row — it now resolves the chat id from the list and reads the body from `GET /api/chats/:id`. Regression test: `scripts/test-chat-list-draft-payload.js`.
+
 ### Transcript cursor (`src/messages.js`, `src/chatdb.js`, `GET /api/chats/:id/revision`)
 The client's "another tab is running this chat" poll and the post-stream reconciliation use a single append-only cursor instead of a fuzzy count/timestamp marker. The endpoint returns `{ nextSeq, running }`, where `nextSeq` is the first persisted transcript row the client may not have merged yet. The `running` flag rides the same response so the poll is a single request per tick.
 ### Incremental transcript sync (`frontend/src/components/chat/stream.js` → `syncToNextSeq`, `transcript.js` → `syncTranscriptAppend`)

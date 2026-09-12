@@ -161,10 +161,18 @@ const titleStr = (c.title && c.title.trim()) ? c.title : 'New chat';
 // A chat with no persisted messages but a non-empty composer draft is a
 // "draft-only" chat. The project card surfaces the start of the draft and
 // a yellow (warning) indicator — the inverse of the blue "running" accent.
+//
+// The list payload carries `draftSnippet` (a bounded head of the draft) and
+// `hasDraftImage` instead of the `draft` / `draftAttachments` bodies: a
+// pending picture is up to 8 base64 data URLs, and shipping them for every
+// row made the whole Chats tab slow. Nothing here needs the body — only the
+// first line and "is there also a picture?".
 const msgCount = typeof c.messageCount === 'number' ? c.messageCount : 0;
-const draftOnly = !c.running && msgCount === 0 && typeof c.draft === 'string' && c.draft.trim().length > 0;
+const draftText = typeof c.draftSnippet === 'string' ? c.draftSnippet : '';
+const hasDraftImage = c.hasDraftImage === true;
+const draftOnly = !c.running && msgCount === 0 && (draftText.trim().length > 0 || hasDraftImage);
 const draftSnippet = draftOnly
-? c.draft.replace(/\s+/g, ' ').trim().slice(0, 120)
+? (draftText.replace(/\s+/g, ' ').trim().slice(0, 120) || 'Image draft')
 : '';
 const chatPrompt = c.promptId ? prompts.find((prompt) => prompt.id === c.promptId) : null;
 return h('li', {

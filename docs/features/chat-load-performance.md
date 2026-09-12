@@ -10,6 +10,21 @@ No user-visible controls — the behavior is automatic. Open any chat (especiall
 
 Returning to the Chats tab reads only the visible page of chat metadata and its persisted cost totals. Projects with long histories and active or very large transcripts therefore do not delay the visible project chat list.
 
+## Chat list payload
+
+A chat's composer draft can hold up to eight images as base64 data URLs (each bounded at 12 MB — `frontend/src/components/chat/annotation.js`), so `chat_store.draft_attachments` is an unbounded TEXT column. The list endpoint used to read and ship it for every row of the page, which made the Chats tab, the chat switcher and the Draft Craft picker slow as soon as one chat had a picture in its draft: the JSON was megabytes per picture and every row had to be parsed before a single card could render.
+
+`GET /api/chats` now returns a summary per row (`src/chatdb.js#LIST_COLUMNS`):
+
+| Field | Meaning |
+| --- | --- |
+| `draftSnippet` | First 400 characters of the text draft, for the one-line card preview. |
+| `hasDraftImage` | `true` when a pending image draft exists; the images themselves are never sent. |
+
+`draft` and `draftAttachments` are absent from list rows. Anything that needs the bodies — restoring the composer, appending a dictation transcript, Draft Craft hand-off — reads the single chat with `GET /api/chats/:id`, which is unchanged.
+
+Measured on a page of ten chats, three of them holding a 2 MB draft image: the list response is **3.7 KB** where `SELECT *` pulled **6.0 MB** of draft bodies out of SQLite for the same page.
+
 ## Latest-first transcript rendering
 
 A long transcript paints its newest rows first and backfills older history above them, one animation frame at a time, so the first frame is bounded regardless of length. Two rules keep that pass and the live/reconcile tail sync from interfering:

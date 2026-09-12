@@ -140,6 +140,50 @@ if (row.tools !== null) {
   return chat;
 }
 
+// ---- Chat list projection -------------------------------------------------
+//
+// `chat_store` has two unbounded TEXT columns: `draft` (whatever the composer
+// holds) and `draft_attachments` (the pending image draft — up to 8 base64
+// data URLs, each bounded at 12 MB by frontend/src/components/chat/annotation.js).
+// A `SELECT *` list therefore reads those bodies out of SQLite, JSON-parses
+// them, and ships them for every row of the page, although the chat list only
+// needs a one-line preview of the draft. With an image in a draft that is
+// megabytes per row — the difference between an instant Chats tab and a
+// multi-second one.
+//
+// The list query therefore never touches the attachment body. It reads:
+//   - `draft_snippet` — a bounded head of the text draft, for the card preview;
+//   - `has_draft_image` — whether `draft_attachments` is non-NULL. SQLite
+//     answers `IS NOT NULL` from the record header (OPFLAG_TYPEOFARG), so the
+//     JSON body is never materialized.
+// The full `draft` / `draftAttachments` pair still comes back from getChat() /
+// GET /api/chats/:id, which is what the composer restores from.
+const DRAFT_SNIPPET_CHARS = 400;
+
+const LIST_COLUMNS = `
+  project_dir, id, title, created_at, last_opened_at, trace, prompt_size,
+  prompt_id, provider_id, model_id, thinking_level, max_output_tokens,
+  substr(draft, 1, ${DRAFT_SNIPPET_CHARS}) AS draft_snippet,
+  (draft_attachments IS NOT NULL) AS has_draft_image,
+  tools, agent_id, agent_files, skills, auto_retry,
+  total_cost, cost_known_count
+`;
+
+// rowToChatSummary(row) -> chat list entry.
+//
+// Same shape as rowToChat() minus the two unbounded columns: `draft` is
+// replaced by `draftSnippet` and `hasDraftImage` reports whether an image
+// draft exists without transferring it. Anything that needs the whole draft
+// must call getChat().
+function rowToChatSummary(row) {
+  if (!row) return null;
+  const chat = rowToChat(Object.assign({}, row, { draft: '', draft_attachments: null }));
+  delete chat.draft;
+  chat.draftSnippet = typeof row.draft_snippet === 'string' ? row.draft_snippet : '';
+  chat.hasDraftImage = row.has_draft_image === 1;
+  return chat;
+}
+
 function chatToRow(projectDir, chat) {
   return {
     project_dir: projectDir,
@@ -228,11 +272,12 @@ function listChats(projectDir, options = {}) {
   const offset = Number.isInteger(options.offset) && options.offset > 0 ? options.offset : 0;
   const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 0;
   const order = 'ORDER BY COALESCE(last_opened_at, created_at) DESC, id DESC';
+  // List rows are summaries, never the draft bodies: see LIST_COLUMNS.
   const rows = limit > 0
-    ? d.prepare(`SELECT * FROM chat_store WHERE project_dir = ? ${order} LIMIT ? OFFSET ?`)
+    ? d.prepare(`SELECT ${LIST_COLUMNS} FROM chat_store WHERE project_dir = ? ${order} LIMIT ? OFFSET ?`)
       .all(projectDir, limit, offset)
-    : d.prepare(`SELECT * FROM chat_store WHERE project_dir = ? ${order}`).all(projectDir);
-  return rows.map(rowToChat);
+    : d.prepare(`SELECT ${LIST_COLUMNS} FROM chat_store WHERE project_dir = ? ${order}`).all(projectDir);
+  return rows.map(rowToChatSummary);
 }
 
 function countChats(projectDir) {

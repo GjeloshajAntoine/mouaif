@@ -89,6 +89,12 @@ const total = limit > 0 ? chats.countChats(dir) : page.length;
 // `messageCount` is a per-page bulk COUNT (one indexed GROUP BY), so the
 // project card can flag a draft-only chat — persisted messages === 0 —
 // without any N+1 query and without sending transcript text down.
+//
+// List rows are summaries (src/chatdb.js#LIST_COLUMNS): a chat's
+// `draftSnippet` + `hasDraftImage` stand in for the `draft` and
+// `draftAttachments` bodies, which can run to megabytes when a picture sits
+// in the composer. The card only previews the draft, so the bodies stay in
+// SQLite until a single-chat read (GET /api/chats/:id) asks for them.
 const pageCounts = messages.projectMessageCounts(dir, page.map((c) => c.id));
 for (const c of page) {
 if (runningChats.has(runningKey(dir, c.id))) c.running = true;

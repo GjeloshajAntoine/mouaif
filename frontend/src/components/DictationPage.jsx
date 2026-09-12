@@ -472,11 +472,20 @@ function applyCatalog(catalog, saved, opts) {
     }
     setBusy(true);
     try {
+      // The list picks the most recent chat; the draft body itself comes from
+      // the single-chat record. List rows are summaries and carry only a
+      // `draftSnippet` (a bounded head of the draft — see
+      // src/chatdb.js#LIST_COLUMNS), so appending to that would silently
+      // truncate the draft the user already had.
       const listed = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(dir) + '&limit=1');
       if (listed.status !== 200) throw new Error((listed.body && listed.body.error) || ('HTTP ' + listed.status));
       const chat = (listed.body && listed.body.chats && listed.body.chats[0]) || null;
       if (!chat) throw new Error('This project has no chat yet — start one in the Chats tab.');
-      const previous = typeof chat.draft === 'string' ? chat.draft : '';
+      const record = await fetchJson('/api/chats/' + encodeURIComponent(chat.id) + '?projectDir=' + encodeURIComponent(dir));
+      if (record.status !== 200 || !record.body || !record.body.chat) {
+      throw new Error((record.body && record.body.error) || ('HTTP ' + record.status));
+      }
+      const previous = typeof record.body.chat.draft === 'string' ? record.body.chat.draft : '';
       const joined = previous.trim() ? previous.replace(/\s+$/, '') + '\n' + transcript : transcript;
       const patched = await fetchJson('/api/chats/' + encodeURIComponent(chat.id), {
         method: 'PATCH',
