@@ -22,6 +22,26 @@ import { orbCountFont } from './fileOrb.js';
 // shape offset down as the extruded side, then the light top face — so both
 // copies come from this constant rather than two hand-kept strings.
 const FOLDER_PATH = 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z';
+// Pictogram geometry, in CSS px. These are the numbers the reference is
+// proportioned to, and `frontend/src/chat-composer.css` repeats them —
+// changing one without the other detaches the paint from the boxes it
+// paints, so `scripts/test-file-orb.mjs` asserts the two agree.
+//
+// The sizes are *ratios of the painted sphere*, which is 40px (a 44px tap
+// target with the flat trigger's 2px inset):
+//
+//   chevron  11 x 6   = 28% of the diameter   (reference: ~21%)
+//   folder   20 x 17  = 50% of the diameter   (reference: ~36%)
+//   stack    31 tall  = 78% of the diameter   (reference: ~71%)
+//
+// The first pass drew 14x7 chevrons over a 28x22 folder — a 38px stack in a
+// 40px circle. The pictogram then ran to the sphere's rim on every side and
+// the ball stopped reading as a ball: there was no glass left around the
+// artwork, which is what the reference is mostly made of.
+const ORB_CHEVRON_W = 11;
+const ORB_CHEVRON_H = 6;
+const ORB_FOLDER_W = 20;
+const ORB_FOLDER_H = 17;
 
 function parseNumstat(stdout) {
   let additions = 0;
@@ -204,32 +224,34 @@ const orbMaxLen = orb && hasStats
 ? Math.max(showAdditions ? ('+' + formatCount(added)).length : 0, showDeletions ? ('−' + formatCount(deleted)).length : 0)
 : 0;
 const orbFont = orbMaxLen ? orbCountFont(orbMaxLen) : null;
-
+// The extruded folder: six stacked copies of one silhouette, in a fixed
+// z-order (side, body, shade, face, sheen, shine — see the CSS for what each
+// layer is). They share one viewBox and are scaled together, so the stack
+// stays registered at any size; the bevel steps live in CSS, in px, because
+// a 2px extrusion is a 2px extrusion whatever the glyph is scaled to.
+const orbFolderLayers = [
+['side', h('path', { d: FOLDER_PATH })],
+['body', h('path', { d: FOLDER_PATH })],
+['shade', h('path', { d: FOLDER_PATH })],
+['face', h('path', { d: FOLDER_PATH })],
+['sheen', h('path', { d: FOLDER_PATH })],
+['shine', h('path', {
+d: 'M2.6 4.2a1.6 1.6 0 0 1 1.6-1.6h3.5l1.7 1.7h6.4a1.6 1.6 0 0 1 1.6 1.6'
+}), h('path', { d: 'M2.8 12.6h14.4' })]
+];
 const folderGlyph = orb
 ? h('span', { class: 'file-toolbar__plate' },
 h('span', { class: 'file-toolbar__plate-face' },
 h('span', { class: 'file-toolbar__cast', 'aria-hidden': 'true' }),
 h('span', { class: 'file-toolbar__folder file-toolbar__folder--3d' },
 h('span', { class: 'file-toolbar__folder-ground', 'aria-hidden': 'true' }),
-h('svg', { class: 'file-toolbar__folder-side', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
-h('path', { d: FOLDER_PATH })
-),
-h('svg', { class: 'file-toolbar__folder-body', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
-h('path', { d: FOLDER_PATH })
-),
-h('svg', { class: 'file-toolbar__folder-shade', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
-h('path', { d: FOLDER_PATH })
-),
-h('svg', { class: 'file-toolbar__folder-face', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
-h('path', { d: FOLDER_PATH })
-),
-h('svg', { class: 'file-toolbar__folder-sheen', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
-h('path', { d: FOLDER_PATH })
-),
-h('svg', { class: 'file-toolbar__folder-shine', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
-h('path', { d: 'M2.6 4.2a1.6 1.6 0 0 1 1.6-1.6h3.5l1.7 1.7h6.4a1.6 1.6 0 0 1 1.6 1.6' }),
-h('path', { d: 'M2.8 12.6h14.4' })
-),
+...orbFolderLayers.map(([name, ...kids]) => h('svg', {
+class: 'file-toolbar__folder-' + name,
+viewBox: '0 0 20 16',
+width: ORB_FOLDER_W,
+height: ORB_FOLDER_H,
+'aria-hidden': 'true'
+}, kids)),
 counts(true, orbFont)
 ),
 h('svg', { class: 'file-toolbar__defs', viewBox: '0 0 0 0', 'aria-hidden': 'true' },
@@ -286,11 +308,11 @@ title: 'File, git, and CLI tools' + (statsLabel ? ' — ' + statsLabel : '')
 },
 orb ? h('span', { class: 'file-toolbar__sheen', 'aria-hidden': 'true' }) : null,
 h('span', { class: 'file-toolbar__stack', 'aria-hidden': 'true' },
-h('svg', { viewBox: '0 0 12 6', width: 14, height: 7 },
+h('svg', { viewBox: '0 0 12 6', width: orb ? ORB_CHEVRON_W : 14, height: orb ? ORB_CHEVRON_H : 7 },
 h('path', { d: 'M0.5 5.5 6 1 11.5 5.5 10 6 6 2.5 2 6Z', fill: 'currentColor' })
 ),
 folderGlyph,
-h('svg', { viewBox: '0 0 12 6', width: 14, height: 7 },
+h('svg', { viewBox: '0 0 12 6', width: orb ? ORB_CHEVRON_W : 14, height: orb ? ORB_CHEVRON_H : 7 },
 h('path', { d: 'M0.5 0.5 6 5 11.5 0.5 10 0 6 3.5 2 0Z', fill: 'currentColor' })
 )
 )

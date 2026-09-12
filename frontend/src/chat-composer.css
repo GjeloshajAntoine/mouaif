@@ -329,42 +329,53 @@ transition: transform 90ms ease-out;
 .file-toolbar--orb .file-toolbar__plate {
 position: relative;
 display: block;
-/* 28x22 rather than 30x24: the folder GLYPH is only 28x22 inside a 34-wide
-   viewBox, so a wider plate paints glass where the folder is not, and the
-   digits then overhang the solid. Matching the plate to the silhouette keeps
-   the counts on the folder. */
-width: 28px;
-height: 22px;
-transform: translateZ(var(--orb-depth)) scale(1.06);
+/* Matches ORB_FOLDER_W/H in FileToolbar.jsx. The plate is the folder
+silhouette's box, so the glass tile and the solid behind it register
+exactly; the counts are positioned against this box in CSS px, which is why
+the two files have to agree on the number. */
+width: 20px;
+height: 17px;
+transform: translateZ(var(--orb-depth)) scale(1.12);
 transform-style: preserve-3d;
 will-change: transform;
 }
 .file-toolbar--orb .file-toolbar__plate-face {
 position: absolute;
 inset: 0;
-/* Sized to the folder silhouette (28x22), so a small radius follows its
-  corners rather than a bigger rectangle's. */
-border-radius: 3px;
+/* Sized to the folder silhouette (20x17), so the radius follows its corners
+rather than a bigger rectangle's. */
+border-radius: 4px;
 background:
 /* its own top-edge highlight, so the slab catches the same light as the ball */
-linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 40%),
-radial-gradient(120% 120% at 26% 18%, rgba(190, 214, 255, 0.20) 0%, rgba(0, 0, 0, 0) 62%),
+linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 46%),
+radial-gradient(120% 120% at 26% 14%, rgba(226, 238, 255, 0.46) 0%, rgba(0, 0, 0, 0) 66%),
+/* The tile itself is *light*, and translucent: the reference's centre panel
+is a pale frosted slab you can still see the ball through, not an opaque
+white card (which reads as a sticker) and not a dark tile (which hides the
+folder and leaves the counts as the only thing in the button). */
 linear-gradient(160deg,
-rgba(22, 30, 50, 0.62) 0%,
-rgba(10, 15, 28, 0.52) 100%);
+rgba(226, 234, 250, 0.90) 0%,
+rgba(196, 208, 232, 0.82) 52%,
+rgba(158, 173, 205, 0.78) 100%);
 box-shadow:
-inset 0 1px 0 rgba(255, 255, 255, 0.30),
-inset 0 -1px 0 rgba(0, 0, 0, 0.50),
-0 3px 6px -2px rgba(0, 0, 0, 0.55);
-backdrop-filter: blur(1px);
+inset 0 1px 0 rgba(255, 255, 255, 0.92),
+inset 0 -1px 0 rgba(255, 255, 255, 0.34),
+inset 1px 0 0 rgba(255, 255, 255, 0.40),
+inset -1px 0 0 rgba(120, 140, 180, 0.30),
+0 2px 5px -1px rgba(0, 0, 0, 0.55);
+/* The frost is what makes the tile read as glass rather than paper — the
+ball's own sheen shows through it. Without `backdrop-filter` the fallback
+below keeps the tile lighter than the sphere so the folder still separates,
+which is all the effect actually needs. */
+backdrop-filter: blur(1.5px) saturate(1.1);
 display: flex;
 align-items: center;
 justify-content: center;
 backface-visibility: hidden;
 }
 /* Contact shadow pooled on the sphere under the slab. Drawn on the plate (not
-   the face) so it sits between the ball and the glass, which is where the
-   occlusion would actually fall. */
+the face) so it sits between the ball and the glass, which is where the
+occlusion would actually fall. */
 .file-toolbar__cast {
 position: absolute;
 left: -4px;
@@ -378,12 +389,13 @@ filter: blur(2px);
 pointer-events: none;
 }
 /* No backdrop-filter on the fallback path (Firefox without the flag) just
-   means a slightly crisper tile — nothing breaks. */
+means a slightly crisper tile — nothing breaks. The tile stays lighter than
+the sphere either way, which is what keeps the folder separated from it. */
 @supports not (backdrop-filter: blur(1px)) {
 .file-toolbar--orb .file-toolbar__plate-face {
 background:
-linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 40%),
-linear-gradient(160deg, rgba(20, 28, 48, 0.88) 0%, rgba(9, 13, 26, 0.86) 100%);
+linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 46%),
+linear-gradient(160deg, rgba(223, 231, 248, 0.94) 0%, rgba(160, 176, 208, 0.90) 100%);
 }
 }
 
@@ -396,8 +408,11 @@ linear-gradient(160deg, rgba(20, 28, 48, 0.88) 0%, rgba(9, 13, 26, 0.86) 100%);
 .file-toolbar__folder--3d {
 position: relative;
 display: block;
-width: 28px;
-height: 22px;
+/* Matches ORB_FOLDER_W/H in FileToolbar.jsx: the six stacked SVG copies are
+each this box, so the extrusion offsets in CSS px below land on the same
+silhouette. */
+width: 20px;
+height: 17px;
 }
 .file-toolbar__folder-side,
 .file-toolbar__folder-face,
@@ -503,28 +518,29 @@ mix-blend-mode: screen;
 .file-toolbar--orb .file-toolbar__git-stats {
 z-index: 4;
 inset: 0;
-/* Top pad clears the folder's flap, which is the lowest part of the
-   silhouette's top edge. */
-padding: 2px 2px 1px;
+/* Inset off the tile's own edges. At `inset: 0` + `space-between` the two
+counts were pinned to the *outer* corners of the plate, where the "+N" ran
+into the folder's flap and both ran to the rim of the glass — the reference
+sets them well inside the tile's body, which is what leaves the pale slab
+visible around them. 2px horizontally and 3/2 vertically is also the box the
+count sizer's two budgets are computed from (see fileOrb.js), so the number
+and the padding have to move together. */
+padding: 2px 2px 2px;
 display: flex;
 flex-direction: column;
 justify-content: space-between;
-/* Two stacked counts share the folder's ~20px content box, so the line box is
-   the binding constraint, not just the glyph width: at line-height 1 a 12px
-   pair needs 24px and `overflow: hidden` silently cuts the bottom of every
-   glyph (measured 4.3px off the descender side), which is what stripped the
-   texture off the digits. 0.85 is tight enough to fit two lines while still
-   clearing the cap height — the counts are `+`/`-` and digits, so there is no
-   descender to collide with. */
+/* Two stacked counts share the tile's content box, so the line box is the
+binding constraint, not just the glyph width: at line-height 1 a 12px pair
+needs 24px and `overflow: hidden` silently cuts the bottom of every glyph
+(measured 4.3px off the descender side), which is what stripped the texture
+off the digits. 0.85 is tight enough to fit two lines while still clearing
+the cap height — the counts are `+`/`-` and digits, so there is no descender
+to collide with. */
 line-height: 0.85;
 /* `--orb-count` is set inline by FileToolbar from the longest count actually
-   drawn — 14px for `+0`, down to 7.5px for `+995k` — because one fixed size
-   cannot serve a 2-glyph and a 5-glyph count inside a 28x22 folder. Sized for
-   the worst case the digits are ~9px, where the emboss is sub-pixel mush;
-   sized for the common case they are chunky enough to read as a solid. The
-   fallback is the widest step, so a render without the inline style (or a
-   future caller that forgets it) is small rather than overflowing. */
-font-size: var(--orb-count, 7.5px);
+drawn. The fallback is the widest step, so a render without the inline style
+(or a future caller that forgets it) is small rather than overflowing. */
+font-size: var(--orb-count, 5.5px);
 font-weight: 800;
 letter-spacing: -0.01em;
 }
@@ -557,35 +573,38 @@ color: rgba(2, 6, 14, 0.82);
 .file-toolbar__count-face {
 position: relative;
 }
-/* Five stacked shadows per glyph, and the ORDER is the material. Read top to
-   bottom as the light travels over a raised letter:
-     1. the bevel: a dark bite along the glyph's top-inner edge, where a
-        raised solid turns away from an overhead light. This is the shadow
-        that makes the digits look milled rather than printed, and it is the
-        one the flat version had none of.
-     2. the lip: a bright edge on the far side, where the solid's base meets
-        the plate.
-     3. the bloom, in the glyph's own hue. Deliberately modest — at a higher
-        opacity it lifts the fill toward pastel and the saturated green/red
-        the colors are chosen for is lost (measured: the glyph core read
-        rgb(39,134,45) instead of #006600's rgb(0,102,0)).
-     4. a wide, soft halo so the glow reaches the plate rather than stopping
-        at the glyph's edge. */
+/* Four stacked shadows per glyph, and the ORDER is the material. Read top to
+bottom as the light travels over a raised letter:
+1. the bevel: a dark bite along the glyph's top-inner edge, where a
+raised solid turns away from an overhead light. This is the shadow
+that makes the digits look milled rather than printed, and it is the
+one the flat version had none of.
+2. the lip: a bright edge on the far side, where the solid's base meets
+the plate.
+3. the bloom, in the glyph's own hue. Deliberately modest — at a higher
+opacity it lifts the fill toward pastel and the saturated green/red
+the colors are chosen for is lost (measured: the glyph core read
+rgb(39,134,45) instead of #006600's rgb(0,102,0)).
+4. a soft halo, one radius out, so the glow reaches the plate instead of
+stopping at the glyph's edge.
+The bloom and halo radii are in `em`, so they scale with the digits — but
+they are capped well below a full glyph width. The previous 0.8em halo was
+19px across on a 24px tile: the two counts' glows met in the middle and the
+whole tile turned into a coloured cloud with unreadable digits inside it,
+which is the "smear" the button was showing. */
 .file-toolbar--orb .file-toolbar__git-additions .file-toolbar__count-face {
 text-shadow:
-0 -0.055em 0 rgba(0, 40, 0, 0.55),
+0 -0.07em 0 rgba(0, 40, 0, 0.55),
 0 0.1em 0 rgba(255, 255, 255, 0.72),
-0 0 0.2em rgba(0, 210, 70, 0.6),
-0 0 0.42em rgba(0, 190, 60, 0.42),
-0 0 0.8em rgba(0, 170, 50, 0.28);
+0 0 0.14em rgba(0, 210, 70, 0.55),
+0 0 0.3em rgba(0, 175, 55, 0.30);
 }
 .file-toolbar--orb .file-toolbar__git-deletions .file-toolbar__count-face {
 text-shadow:
-0 -0.055em 0 rgba(60, 0, 0, 0.55),
+0 -0.07em 0 rgba(60, 0, 0, 0.55),
 0 0.1em 0 rgba(255, 255, 255, 0.68),
-0 0 0.2em rgba(235, 55, 55, 0.6),
-0 0 0.42em rgba(215, 35, 35, 0.42),
-0 0 0.8em rgba(190, 20, 20, 0.28);
+0 0 0.14em rgba(235, 55, 55, 0.55),
+0 0 0.3em rgba(200, 25, 25, 0.30);
 }
 
 /* The SVG gradients the folder faces reference. Zero-sized and unreferenced

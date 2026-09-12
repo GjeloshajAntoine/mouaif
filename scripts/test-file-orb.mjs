@@ -245,12 +245,28 @@ check('orbCountFont is clamped, never undefined', () => {
 });
 
 check('every step clears the folder on BOTH axes', () => {
-  // The two budgets the sizer has to satisfy, from the CSS and from widths
-  // measured in the running app at weight 800 with tabular figures. Width is
-  // per-string rather than per-glyph: `.` is far narrower than a digit, so
-  // `+9.9k` (2.63em) is wider than `+995k` at the size it is drawn.
-  const CONTENT_W = 25.7;
-  const CONTENT_H = 20.6;
+  // The two budgets the sizer has to satisfy: the plate (ORB_FOLDER_W/H in
+  // FileToolbar.jsx, mirrored by `.file-toolbar__plate` in chat-composer.css)
+  // less the 2px inset `.file-toolbar--orb .file-toolbar__git-stats` applies
+  // on every side. They are read out of the two files rather than pinned
+  // here, so shrinking the plate cannot leave the sizer silently overshooting
+  // it. Width is per-string rather than per-glyph: `.` is far narrower than a
+  // digit, so `+9.9k` (2.63em) is wider than `+995k` at the size it is drawn.
+  // The em widths are measured in the running app at weight 800 with tabular
+  // figures.
+  const INSET = 2;
+  const plate = {
+    w: Number(component.match(/const ORB_FOLDER_W = (\d+(?:\.\d+)?);/)[1]),
+    h: Number(component.match(/const ORB_FOLDER_H = (\d+(?:\.\d+)?);/)[1])
+  };
+  const cssPlate = css.match(/\.file-toolbar--orb \.file-toolbar__plate \{([^}]*)\}/);
+  assert.ok(cssPlate, 'found the plate rule');
+  const CSS_PLATE_W = Number(cssPlate[1].match(/width:\s*(\d+(?:\.\d+)?)px/)[1]);
+  const CSS_PLATE_H = Number(cssPlate[1].match(/height:\s*(\d+(?:\.\d+)?)px/)[1]);
+  assert.equal(CSS_PLATE_W, plate.w, 'the plate width matches ORB_FOLDER_W');
+  assert.equal(CSS_PLATE_H, plate.h, 'the plate height matches ORB_FOLDER_H');
+  const CONTENT_W = plate.w - INSET * 2;
+  const CONTENT_H = plate.h - INSET * 2;
   const LINE_HEIGHT = 0.85;
   const WIDTH_EM = { 2: 1.19, 3: 1.77, 4: 2.63, 5: 2.92 };
   const label = { 2: '+0', 3: '+99', 4: '+9.9k', 5: '+995k' };
@@ -293,8 +309,8 @@ check('the emboss scales with the font instead of being a fixed length', () => {
 });
 
 // ---- 4. the CSS invariants ---------------------------------------------
-
 const css = read('frontend/src/chat-composer.css');
+const component = read('frontend/src/components/chat/FileToolbar.jsx');
 
 check('every orb gradient fill out-specifies the flat folder rule', () => {
   // The flat rule is `.file-toolbar__folder > svg path` = (0,1,2). Each orb
@@ -311,10 +327,31 @@ check('every orb gradient fill out-specifies the flat folder rule', () => {
 });
 
 check('the orb paint is scoped to the orb class', () => {
-  // Nothing in the orb block may leak onto the flat button.
-  assert.match(css, /\.file-toolbar--orb \.file-toolbar__trigger::before \{/, 'sphere is variant-scoped');
-  assert.match(css, /\.file-toolbar--orb \.file-toolbar__stack \{/, 'orbit is variant-scoped');
-  assert.match(css, /\.file-toolbar--orb \.file-toolbar__plate \{/, 'slab is variant-scoped');
+// Nothing in the orb block may leak onto the flat button.
+assert.match(css, /\.file-toolbar--orb \.file-toolbar__trigger::before \{/, 'sphere is variant-scoped');
+assert.match(css, /\.file-toolbar--orb \.file-toolbar__stack \{/, 'orbit is variant-scoped');
+assert.match(css, /\.file-toolbar--orb \.file-toolbar__plate \{/, 'slab is variant-scoped');
+});
+check('the pictogram fits inside the painted sphere, with glass left over', () => {
+// The button is 44px with the flat trigger's 2px inset, so the painted
+// sphere is 40px. The stack is chevron + folder + chevron; the folder is the
+// widest thing and the six stacked SVG copies all share its box.
+const CHEV = 2;   // the stack's 1px flex gap, twice
+const chevronW = Number(component.match(/const ORB_CHEVRON_W = (\d+(?:\.\d+)?);/)[1]);
+const chevronH = Number(component.match(/const ORB_CHEVRON_H = (\d+(?:\.\d+)?);/)[1]);
+const folderW = Number(component.match(/const ORB_FOLDER_W = (\d+(?:\.\d+)?);/)[1]);
+const folderH = Number(component.match(/const ORB_FOLDER_H = (\d+(?:\.\d+)?);/)[1]);
+const SPHERE = 44 - 2 * 2;
+const stackW = Math.max(chevronW, folderW);
+const stackH = chevronH * 2 + folderH + CHEV;
+assert.ok(stackW <= SPHERE * 0.70,
+'stack width ' + stackW + 'px is ' + (100 * stackW / SPHERE).toFixed(0) + '% of the ' + SPHERE + 'px sphere; over 70% there is no glass left around the artwork');
+assert.ok(stackH <= SPHERE * 0.85,
+'stack height ' + stackH + 'px is ' + (100 * stackH / SPHERE).toFixed(0) + '% of the ' + SPHERE + 'px sphere; over 85% the chevrons reach the rim');
+// And the plate the counts are laid out on has to be the folder's box, or the
+// sizer's budgets (computed from ORB_FOLDER_W/H) describe the wrong rectangle.
+// That equality is asserted in the sizer check above.
+assert.ok(folderW >= 16, 'the folder must stay wide enough for a legible count');
 });
 
 check('the animation is opt-in under no-preference and holds a frame otherwise', () => {

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Settings → App defaults → Chat defaults has a **Glass orb file button** switch. With it off (the default) the button beside the message box is the flat circle the composer has always used. With it on, the same button is drawn as a shaded glass sphere: the up-chevron, the folder and the down-chevron sit inside it as 3D objects, the folder and its `+N` / `−N` counts ride a slab 7px in front of the chevrons, and the whole pictogram turns slowly on two axes while a highlight drifts across the ball.
+Settings → App defaults → Chat defaults has a **Glass orb file button** switch. With it off (the default) the button beside the message box is the flat circle the composer has always used. With it on, the same button is drawn as a shaded glass sphere: the up-chevron, the folder and the down-chevron sit inside it as 3D objects, the folder and its `+N` / `−N` counts ride a frosted glass tile a few px in front of the chevrons, and the whole pictogram turns slowly on two axes while a highlight drifts across the ball.
 
 The option changes **how the button is painted, never what it does**. Same 44 × 44 tap target, same `aria-label`, same menu.
 
@@ -18,7 +18,7 @@ Turn it back off to return to the flat circle. Nothing else about the composer m
 |---------|---------------|-----|
 | Painted circle | Flat `--surface-2` with a 1px border | Shaded sphere: sheen, specular hotspot, cool bounce along the lower edge, outer bloom |
 | Folder | One flat silhouette | Extruded solid: deep side, lit face, ambient occlusion, rim light, specular streak |
-| Counts | Flat colored glyphs at a fixed `0.46rem` | Embossed, and sized per render from the longest count drawn (11.5px down to 8.5px) |
+| Counts | Flat colored glyphs at a fixed `0.46rem` | Embossed, and sized per render from the longest count drawn (7px down to 5px) |
 | Motion | None | Orbit on two axes, the slab breathing in Z, the sphere sheen drifting, the folder streak breathing |
 | Tap target | `44 × 44` | `44 × 44` (unchanged) |
 | `aria-label` | Exact counts in words | Exact counts in words (unchanged) |
@@ -63,55 +63,59 @@ export function fileOrbFromApp(snapshot) {
 
 The string forms are accepted because the app store holds a TEXT blob: a hand-edited `store.sqlite` can legitimately hand back `'true'`.
 
-### How the depth is built
-
+### The depth is built
 Four techniques, in the order they contribute:
-
 1. **The sphere** is one pseudo-element. `::before` is inherited from the flat trigger (`inset: 2px`, `--surface-2`, a 1px border, the inherited corner radius), and the variant re-declares only the paint: five stacked gradients back-to-front (dark lower-right, cool inner bounce, broad left sheen, tight hotspot, glass body), a bright upper-left inset edge with a dark counter-edge, and an outer rim-light plus bloom ring.
 2. **The orbit** is a real 3D rotation, not a 2D wobble. The stack sits inside `perspective(520px)` and rotates on both axes, so the chevrons genuinely turn in depth. The rest pose is already a 3/4 view (`-9deg` / `6deg`) rather than front-on, because a slab seen straight from the front has no depth to read.
-3. **The slab** (`__plate`) is a soft dark glass tile that floats `--orb-depth` in front of the chevrons. It is deliberately *not* white: a white folder on a white slab is one white blob, and the counts would lose the dark backing their contrast is tuned against. The slab only darkens and diffuses what is behind it, which is what makes the lighter folder read as a separate object in front.
-4. **The folder** is an extruded solid built from stacked silhouettes of one shared path — a contact shadow on the slab, the deep side 2px lower, the mid-tone body 1px lower, ambient occlusion, the lit face, a diagonal specular streak, and a rim light along the top edges and the pocket fold. At 28 × 22 this stacking is what reads as thickness; a folder glyph has no volume of its own to push in Z.
+3. **The tile** (`__plate`) is a pale, *translucent* glass slab that floats `--orb-depth` in front of the chevrons, with a `backdrop-filter` frost so the ball's own sheen shows through it. It is deliberately not opaque white — an opaque white tile under a white folder is one white blob, and it hides the sphere behind it, which is most of what the button is made of. A dark tile fails the other way: the folder vanishes into it. The tile is lighter than the glass behind it and lets that glass through, which is what makes the folder read as a separate object sitting on a lit pane.
+4. **The folder** is an extruded solid built from stacked silhouettes of one shared path — a contact shadow on the tile, the deep side 2px lower, the mid-tone body 1px lower, ambient occlusion, the lit face, a diagonal specular streak, and a rim light along the top edges and the pocket fold. At 20 × 17 this stacking is what reads as thickness; a folder glyph has no volume of its own to push in Z.
 
-The counts are embossed, and the emboss has **five** stacked shadows per glyph. Read top to bottom as light travels over a raised letter:
+### The proportions are the effect, and they are pinned
+The single biggest thing that made the first version read as "a white sticker on a disc" rather than as the reference render was **scale**. The first pass drew 14 × 7 chevrons over a 28 × 22 folder — a 38px pictogram inside a 40px painted sphere. There was no glass left around the artwork, the chevrons touched the rim, and the ball stopped reading as a ball. A sphere is recognizable mainly by the gradient around its edge; fill that edge with icon and the sphere is gone.
+The sizes are therefore declared as ratios of the painted sphere rather than as taste, and they live in one place (`FileToolbar.jsx`) which `chat-composer.css` mirrors:
+| Element | Size | Share of the 40px sphere |
+|---------|------|--------------------------|
+| Chevron | 11 × 6 | 28% wide |
+| Folder / tile | 20 × 17 | 50% wide |
+| Whole stack | 31 tall | 78% tall |
+`scripts/test-file-orb.mjs` asserts both ceilings — the stack may not exceed 70% of the sphere's width or 85% of its height — so a future tweak that fattens the icon fails the suite instead of quietly eating the glass again.
+Two consequences worth knowing:
+- The **count text is HTML**, not SVG, and it is laid out against the tile box. So the plate's size in `FileToolbar.jsx` and in the CSS has to be the *same number*; the test asserts that equality, because otherwise the sizer's width/height budgets describe a rectangle that no longer exists.
+- The whole pictogram is only ~31px tall, so the extrusion offsets (1px and 2px) are a meaningful fraction of the glyph. That is why the bevel is visible at all; scale the pictogram back up and those same offsets become invisible edges.
+
+The counts are embossed, and the emboss has **four** stacked shadows per glyph. Read top to bottom as light travels over a raised letter:
 
 1. the **bevel** — a dark bite along the glyph's top-inner edge, where a raised solid turns away from an overhead light. This is the shadow that makes the digits look milled rather than printed;
-2. the **lip** — a bright edge on the far side, where the solid's base meets the plate;
+2. the **lip** — a bright edge on the far side, where the solid's base meets the tile;
 3. the **bloom**, in the glyph's own hue, kept modest on purpose;
-4. a wide soft **halo**, so the glow reaches the plate rather than stopping at the glyph's edge;
-5. the **echo** — a near-black copy of the whole count offset down-right, the letterpress shadow the raised glyph casts on the plate.
+4. a soft **halo**, one radius out, so the glow reaches the tile rather than stopping at the glyph's edge.
 
-The bloom is a glow rather than a different ink, so the 6:1 contrast (`#006600` / `#b30000` on the light face) is unchanged. Pushing it harder is a mistake worth recording: at a higher opacity the fill lifts toward pastel and the saturated hues the colors are chosen for are lost — measured, the glyph core read `rgb(39,134,45)` instead of `#006600`'s `rgb(0,102,0)`. Trimmed back, the same glyph reads `rgb(34,100,40)`.
+The **echo** — a near-black copy of the whole count, offset down-right — is drawn *under* the glyph by `__count-echo`. It is the letterpress shadow the raised glyph casts on the tile, and the bloom radii are deliberately kept small enough (see below) that it stays visible.
+
+The bloom is a glow rather than a different ink, so the 6:1 contrast (`#006600` / `#b30000` on the light tile) is unchanged. Pushing it harder is a mistake worth recording: at a higher opacity the fill lifts toward pastel and the saturated hues the colors are chosen for are lost — measured, the glyph core read `rgb(39,134,45)` instead of `#006600`'s `rgb(0,102,0)`. Trimmed back, the same glyph reads `rgb(34,100,40)`.
 
 ### The count size is adaptive, and it has to be
-
-The formatter ([`gitCount.js`](../../frontend/src/components/chat/gitCount.js)) can emit anything from 2 glyphs (`+0`) to 5 (`+995k`), and one fixed size cannot serve both inside a 28 × 22 folder:
-
-- sized for the 5-glyph worst case, the digits render at ~9px, where every emboss offset is sub-pixel and melts into mush — this is exactly the "no depth, no texture" the first fixed size produced. `+995k` also measured **26.9px against a 23.7px box**, so the worst case was being *clipped*, not merely drawn small;
-- sized for `+0` / `−0` — by far the common case, and the state the reference render shows — there is room for genuinely chunky digits.
-
-So `orbCountFont(maxLen)` picks the step from the longest count actually drawn, and `FileToolbar` passes it in as the `--orb-count` custom property. Each step has to clear **two** budgets:
-
+The formatter ([`gitCount.js`](../../frontend/src/components/chat/gitCount.js)) can emit anything from 2 glyphs (`+0`) to 5 (`+995k`), and one fixed size cannot serve both inside the tile:
+- sized for the 5-glyph worst case, the digits render small enough that every emboss offset is sub-pixel and melts into mush — this is exactly the "no depth, no texture" the first fixed size produced — and `+995k` overflowed its box rather than merely being small;
+- sized for `+0` / `−0` — by far the common case, and the state the reference render shows — there is room for a genuinely chunky digit.
+So `orbCountFont(maxLen)` picks the step from the longest count actually drawn, and `FileToolbar` passes it in as the `--orb-count` custom property. Each step has to clear **two** budgets, both derived from the plate rather than pinned as literals:
 | Budget | Constraint | Binds at |
 |--------|-----------|----------|
-| Width | the widest string of `maxLen` glyphs inside the 25.7px content box | 4–5 glyphs |
-| Height | two stacked line boxes at `line-height: 0.85` inside the 20.6px content box | 2–3 glyphs |
-
+| Width | the widest string of `maxLen` glyphs inside the 16px content box | 4–5 glyphs |
+| Height | two stacked line boxes at `line-height: 0.85` inside the 13px content box | 2–3 glyphs |
+The budgets are the plate (`ORB_FOLDER_W/H` in `FileToolbar.jsx`, mirrored by `.file-toolbar__plate`) less the 2px inset `.file-toolbar--orb .file-toolbar__git-stats` applies on every side. `scripts/test-file-orb.mjs` reads both numbers out of the source and asserts the two files agree, so resizing the plate cannot leave the sizer silently overshooting it.
 Width is per-**string**, not per-glyph — `.` is far narrower than a digit, so `+9.9k` (2.63em) is wider than `+995k` (2.92em) would be at the same size. The measured em widths, at weight 800 with tabular figures:
-
 ```text
 +0      1.19em      +9.9k   2.63em
 +99     1.77em      +995k   2.92em
 ```
-
 Which gives:
-
 ```js
-const ORB_FONT_STEPS = Object.freeze({ 2: 11.5, 3: 11, 4: 9.5, 5: 8.5 });
+const ORB_FONT_STEPS = Object.freeze({ 2: 7, 3: 7, 4: 6, 5: 5 });
 ```
-
-The height budget is the one that is easy to miss, and missing it is invisible in a screenshot: two 12px lines need 24px but the content box is only 20.6px, and `overflow: hidden` then silently cuts ~4.3px off the descender side of both counts. That is what stripped the texture off the digits before the line-height was tightened. Each step is also checked to be *maximal* — the next 0.5px up has to bust its budget — so the sizer is not leaving chunkiness on the table.
-
-Every emboss offset is in `em`, so it scales with the chosen size: a 1.5px extrusion on 11.5px digits becomes 1.1px on 8.5px ones. The echo was previously a fixed `0.6px`, which is a visible bevel at one end of the range and an invisible smear at the other — tuning that single rule could never have reached the chunky case.
+The height budget is the one that is easy to miss, and missing it is invisible in a screenshot: two 12px lines need 24px but the content box is only 13px, and `overflow: hidden` then silently cuts ~4.3px off the descender side of both counts. That is what stripped the texture off the digits before the line-height was tightened. Each step is also checked to be *maximal* — the next 0.5px up has to bust its budget — so the sizer is not leaving chunkiness on the table. The 2- and 3-glyph steps are 7px rather than the 7.6px the height budget alone would allow, because the two line boxes also have to leave a *visible* gap: at 7.5px they summed to 12.75 of the 13px available and `justify-content: space-between` had 0.25px left to separate them, which measured as only 1.4px of clear space between the green and red ink. At 7px it measures 2px.
+Every emboss offset is in `em`, so it scales with the chosen size: a 1.5px extrusion on 7px digits becomes ~1px on 5px ones. The echo was previously a fixed `0.6px`, which is a visible bevel at one end of the range and an invisible smear at the other — tuning that single rule could never have reached the chunky case.
+The **bloom** is capped for the same reason, and getting this wrong is what made the button look smeared rather than embossed. The two coloured halos used to reach `0.8em`, i.e. 19px across on a 20px tile: the green and red glows met in the middle and the whole tile turned into a coloured cloud. They are now two stops at `0.14em` and `0.3em`, which keeps the glow inside the glyph's own corner of the tile.
 
 ### One animated number
 
