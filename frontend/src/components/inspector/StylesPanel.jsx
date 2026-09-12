@@ -38,6 +38,8 @@ import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessa
 import { alternatives, unitOptions, classify, seedValue } from './valueKinds.js';
 import { buildValueIndex, scaleFor, tokensFor, scaleNote, valuesFor } from './valueIndex.js';
 import { stepFor, snapValue, stepValue as stepValuePure } from './snapping.js';
+import { validateDeclaration } from './declaration.js';
+import { ConfirmSheet } from './ConfirmSheet.jsx';
 import { Suggestions } from './Suggestions.jsx';
 import { ValueRail } from './ValueRail.jsx';
 import { ValueKindsView } from './ValueKindsView.jsx';
@@ -336,6 +338,21 @@ setApplied(false);
 setFormat(null);
 }, [props.prop, props.value]);
 const propName = (prop || '').trim();
+// Live validation of the field, run on every keystroke so the sheet can say
+// "that is not a value for padding" *before* Apply, instead of the write being
+// silently discarded by the CSSOM and the row vanishing afterwards (see
+// declaration.js). The capability check is injected because it only exists in a
+// browser; without it the shape checks below still run.
+const check = useMemo(() => validateDeclaration(
+prop,
+value,
+typeof CSS !== 'undefined' && CSS.supports ? (p, v) => CSS.supports(p, v) : null
+), [prop, value]);
+// The hint is shown only once the user has something to be wrong about: an
+// error on a field they have not finished typing is noise, not help. `dirty`
+// flips on the first edit in this sheet session.
+const [dirty, setDirty] = useState(false);
+const showCheck = dirty && !check.ok;
 // The sibling read. Guarded on the property (and on the panel actually giving us
 // a reader) so opening the sheet for a property the page cannot answer for costs
 // nothing. The reader is held in a ref rather than in the effect's dependencies:
@@ -355,6 +372,21 @@ if (live) setSiblings(Array.isArray(rows) ? rows : []);
 }).catch(() => { if (live) setSiblings([]); });
 return () => { live = false; };
 }, [propName]);
+// dismiss — leave the sheet, but never silently throw away typed work. The
+// sheet is a one-property editor that stays open across several applies, so
+// `dirty` (an edit made since the last write) is the only honest signal that
+// there is something to lose. Cancel and a tap on the overlay both route
+// through here; an unedited sheet — and one whose last edit was already
+// applied — closes immediately, which is the common case and must not gain a
+// dialogue.
+const [confirmDiscard, setConfirmDiscard] = useState(false);
+function dismiss() {
+if (busy) return;
+// `applied` means the field was written and kept: there is nothing pending,
+// even though it is still "dirty" relative to the value it opened with.
+if (dirty && !applied && check.ok) { setConfirmDiscard(true); return; }
+props.onCancel();
+}
 // The page's own step for this property, when it has one: the steppers move by
 // 4px on a 4px design scale instead of by 1, which is what makes −/+ land on
 // values the rest of the page actually uses (see snapping.js). The precision
@@ -484,13 +516,15 @@ if (alive.current) setBusy(false);
 }
 }
 async function apply() {
-if (!propName) { setError('Property is required.'); return; }
-const v = (value || '').trim();
-// An empty value is not a no-op: `style.setProperty(p, '')` drops the
-// declaration, so "Apply" with a blank field would silently unset the
-// property the user came here to change. Removal is explicit (Remove).
-if (!v) { setError('Value is required — use Remove to drop the property.'); return; }
-await commit(propName, v);
+// Same validator as the inline hint, so the button and the message under the
+// field can never disagree.
+const verdict = validateDeclaration(
+prop,
+value,
+typeof CSS !== 'undefined' && CSS.supports ? (p, v) => CSS.supports(p, v) : null
+);
+if (!verdict.ok) { setError(verdict.error); return; }
+await commit(verdict.prop, verdict.value);
 }
 // Steppers apply immediately: on a phone, tapping + while watching the
 // pinned preview is the fastest way to size something.
@@ -513,7 +547,7 @@ setError((e && e.message) || 'Could not remove ' + propName);
 setBusy(false);
 }
 }
-return h('div', { class: 'inspector__overlay', onClick: busy ? undefined : props.onCancel },
+return h('div', { class: 'inspector__overlay', onClick: busy ? undefined : dismiss },
 h('div', {
 class: 'inspector__sheet inspector__sheet--style',
 role: 'dialog',
@@ -523,7 +557,7 @@ onClick: (e) => e.stopPropagation()
 },
 h('div', { class: 'inspector__sheet-head' },
 h('strong', { class: 'inspector__sheet-title' }, propName ? 'Edit ' + propName : 'Add style'),
-h('button', { class: 'btn inspector__sheet-close', type: 'button', onClick: props.onCancel }, applied ? 'Done' : 'Cancel')
+h('button', { class: 'btn inspector__sheet-close', type: 'button', onClick: dismiss }, applied ? 'Done' : 'Cancel')
 ),
 h('div', { class: 'inspector__sheet-body inspector__sheet-body--style' },
 // Pinned element preview — the reason the sheet can stay open. Tap it to
@@ -549,7 +583,7 @@ placeholder: 'e.g. background-color',
 autocapitalize: 'off',
 autocorrect: 'off',
 spellcheck: 'false',
-onInput: (e) => { setProp(e.currentTarget.value); setApplied(false); }
+onInput: (e) => { setProp(e.currentTarget.value); setApplied(false); setDirty(true); }
 }),
 h('label', { class: 'label' }, 'Value'),
 // The value-type switch sits directly above the value field: it changes the
@@ -604,7 +638,7 @@ placeholder: 'e.g. #ffcc00',
 autocapitalize: 'off',
 autocorrect: 'off',
 spellcheck: 'false',
-onInput: (e) => { setValue(e.currentTarget.value); setApplied(false); }
+onInput: (e) => { setValue(e.currentTarget.value); setApplied(false); setDirty(true); }
 }),
 h('button', {
 class: 'inspector__style-step',
@@ -651,12 +685,19 @@ h('p', { class: 'inspector__scope-note inspector__scope-kept' }, 'Every other de
 );
 })(),
 applied ? h('p', { class: 'inspector__style-applied', role: 'status' }, 'Applied — keep editing or tap Done') : null,
+// The live verdict from declaration.js. Shown in place of the post-write error
+// while the user is still typing, so an invalid value is named *before*
+// Apply — the write path itself would silently discard it (see declaration.js).
+showCheck && !error ? h('p', { class: 'inspector__style-error', role: 'status' }, check.error) : null,
 error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null,
 h('div', { class: 'inspector__sheet-actions' },
 h('button', {
 class: 'btn inspector__style-apply',
 type: 'button',
-disabled: busy || !propName || !(value || '').trim(),
+// Disabled on an invalid field as well as a busy one: a button that is
+// guaranteed to fail should not be tappable. The hint above says why.
+disabled: busy || !check.ok,
+title: check.ok ? 'Apply this declaration to the element' : check.error,
 onClick: apply
 }, busy ? 'Applying…' : 'Apply'),
 props.isRemove
@@ -668,7 +709,22 @@ onClick: remove
 }, 'Remove')
 : null
 )
-)
+),
+// Discard guard for typed-but-unapplied work. Reuses the Inspector's own
+// in-app sheet (not window.confirm, which some embedded web views suppress —
+// see ConfirmSheet's header), so it appears where the user is looking and
+// keeps both buttons at the tap minimum.
+confirmDiscard
+? h(ConfirmSheet, {
+open: true,
+title: 'Discard this change?',
+message: 'Your edit to ' + (propName || 'this property') + ' has not been applied. Leaving now keeps the value the element has.',
+confirmLabel: 'Discard',
+cancelLabel: 'Keep editing',
+onCancel: () => setConfirmDiscard(false),
+onConfirm: () => { setConfirmDiscard(false); props.onCancel(); }
+})
+: null
 )
 );
 }

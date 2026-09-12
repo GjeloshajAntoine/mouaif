@@ -879,17 +879,44 @@ return buildNodeModel(objectId);
   // inline style via Runtime.callFunctionOn. This is the live-edit primitive
   // for the Styles panel: it always lands on the element regardless of whether
   // it already had an inline style or inherited the property from a class.
+  //
+  // The write verifies itself. `element.style.setProperty()` does not throw on a
+  // declaration the CSSOM does not understand — it silently discards it — so the
+  // in-page function reads the style back and reports whether anything actually
+  // changed. Without that read-back an invalid value was reported to the panel as
+  // a success: the optimistic merge put the row on screen, the receipt recorded a
+  // change, and then the post-write re-read came back without the property, so the
+  // row vanished and the user was left with an Undo entry for a write that never
+  // happened. Cross-checked here rather than only in the sheet because this is the
+  // browser's real verdict, including the shorthand expansion no client-side
+  // `CSS.supports` check can predict (`padding: 30px` is stored as its longhands,
+  // so reading the typed name back returns '' on a *successful* write).
   async function setInlineStyleProperty(objectId, prop, value) {
-    if (!objectId) throw new Error('element not resolved');
-    const r = await cdpSend('Runtime.callFunctionOn', {
-      objectId,
-      functionDeclaration: 'function(p, v){ try { this.style.setProperty(p, v); return { ok:true }; } catch (e) { return { ok:false, error:String(e) }; } }',
-      arguments: [{ value: String(prop) }, { value: String(value) }],
-      returnByValue: true
-    });
-    const out = r && r.result && r.result.value;
-    if (out && !out.ok) throw new Error(out.error || 'setProperty failed');
-    return true;
+  if (!objectId) throw new Error('element not resolved');
+  const r = await cdpSend('Runtime.callFunctionOn', {
+  objectId,
+  functionDeclaration: 'function(p, v){'
+  + ' var s = this.style;'
+  + ' try {'
+  + '  var before = s.cssText;'
+  + '  s.setProperty(p, v);'
+  + '  var read = s.getPropertyValue(p);'
+  + '  var applied = read !== "" || s.cssText !== before;'
+  + '  return { ok: true, applied: applied, read: String(read) };'
+  + ' } catch (e) { return { ok: false, error: String(e) }; }'
+  + '}',
+  arguments: [{ value: String(prop) }, { value: String(value) }],
+  returnByValue: true
+  });
+  const out = r && r.result && r.result.value;
+  if (out && !out.ok) throw new Error(out.error || 'setProperty failed');
+  // No answer at all (an old target, or a returnByValue the agent dropped): the
+  // write was issued and there is nothing to contradict it, so it stands.
+  if (out && out.applied === false) {
+  throw new Error('“' + String(value) + '” is not a valid value for ' + String(prop)
+  + ' — the browser rejected it, so nothing was changed.');
+  }
+  return true;
   }
   // removeInlineStyleProperty — drop one CSS property from the element's
   // inline style (returns the element to whatever a class/stylesheet gives it).
