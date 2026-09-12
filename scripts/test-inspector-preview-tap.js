@@ -97,11 +97,16 @@ async function main() {
   // Find the frame's onClick handler (the preview frame is the div with
   // class inspector__preview-frame). Simulate the tap.
   const frameNodeOut = nodes.find((n) => n.attrs && n.attrs.class === 'inspector__preview-frame');
-  assert.ok(frameNodeOut, 'preview frame rendered');
-  assert.ok(typeof frameNodeOut.attrs.onClick === 'function', 'frame has an onClick handler');
-  frameNodeOut.attrs.onClick({ clientX, clientY });
+assert.ok(frameNodeOut, 'preview frame rendered');
+assert.ok(typeof frameNodeOut.attrs.onClick === 'function', 'frame has an onClick handler');
+// A tap is a press that does not move. The frame now requires the pointer-down
+// to survive the gesture (see the tap-vs-pan guard), so the harness presses
+// first — exactly like a finger does before the browser fires `click`.
+assert.ok(typeof frameNodeOut.attrs.onPointerDown === 'function', 'frame tracks pointer-down');
+frameNodeOut.attrs.onPointerDown({ button: 0, clientX, clientY });
+frameNodeOut.attrs.onClick({ clientX, clientY });
+assert.ok(clicked, 'clickAt was called');
 
-  assert.ok(clicked, 'clickAt was called');
   // The corrected mapping must land on the tapped page point (NOT double-counted).
   assert.ok(Math.abs(clicked.x - correctX) < 1, 'x maps to the tapped page point (got ' + clicked.x + ', want ~' + correctX + ')');
   assert.ok(Math.abs(clicked.y - correctY) < 1, 'y maps to the tapped page point (got ' + clicked.y + ', want ~' + correctY + ')');
@@ -111,7 +116,32 @@ async function main() {
   // Assert the old, buggy behaviour is gone: the click must not have been
   // shifted a full extra scrollTop down.
   assert.ok(clicked.y !== buggyY, 'click is not double-counting the frame scroll');
+// Scenario 2: a pan must NOT click the page. Dragging the preview scrolls it,
+// and the browser still fires a `click` on whatever the finger lifted over —
+// which forwarded a real click into the inspected page at the end of every
+// scroll. The guard must drop that click.
+clicked = null;
+frameNodeOut.attrs.onPointerDown({ button: 0, clientX, clientY });
+frameNodeOut.attrs.onPointerMove({ clientX: clientX + 40, clientY: clientY + 40 });
+frameNodeOut.attrs.onClick({ clientX: clientX + 40, clientY: clientY + 40 });
+assert.equal(clicked, null, 'a drag that scrolled the frame must not click the page');
+// A frame that scrolls without a pointermove (momentum, a trackpad, a
+// scrollbar drag) must be dropped too.
+frameNodeOut.attrs.onPointerDown({ button: 0, clientX, clientY });
+frameNodeOut.attrs.onScroll();
+frameNodeOut.attrs.onClick({ clientX, clientY });
+assert.equal(clicked, null, 'a scroll cancels the pending tap even with no pointermove');
+// And pointercancel — the browser taking the gesture over for a scroll —
+// must drop it as well.
+frameNodeOut.attrs.onPointerDown({ button: 0, clientX, clientY });
+frameNodeOut.attrs.onPointerCancel();
+frameNodeOut.attrs.onClick({ clientX, clientY });
+assert.equal(clicked, null, 'pointercancel drops the pending tap');
+// A fresh tap after all that still works: the guard resets per gesture.
+frameNodeOut.attrs.onPointerDown({ button: 0, clientX, clientY });
+frameNodeOut.attrs.onClick({ clientX, clientY });
+assert.ok(clicked, 'the next real tap still reaches the page');
+console.log('PASS preview tap-to-page maps correctly after panning the frame');
 
-  console.log('PASS preview tap-to-page maps correctly after panning the frame');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

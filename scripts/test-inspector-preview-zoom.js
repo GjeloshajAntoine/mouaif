@@ -32,9 +32,10 @@ function newHarness({ storedSeed = {}, naturalWidth = 1280, frameW = 366 } = {})
     URL: { createObjectURL: () => { throw new Error('not expected'); }, revokeObjectURL: () => {} },
     setTimeout: () => 0, clearTimeout: () => {},
     localStorage: {
-      getItem: (k) => (k in stored ? stored[k] : null),
-      setItem: (k, v) => { stored[k] = String(v); }
-    },
+getItem: (k) => (k in stored ? stored[k] : null),
+setItem: (k, v) => { stored[k] = String(v); },
+removeItem: (k) => { delete stored[k]; }
+},
     document: { body: {}, addEventListener() {}, removeEventListener() {} },
     useRef: (initial) => {
       const i = cursor++;
@@ -97,23 +98,34 @@ async function main() {
   img = h1.zoomImg(nodes);
   assert.equal(img.attrs.class, 'inspector__preview-img inspector__preview-img--size',
     'toggling to natural size adds the --size modifier');
-  assert.equal(h1.stored['mouaif:inspector:previewZoom'], 'size', 'zoom preference persisted');
+  assert.equal(h1.stored['mouaif:inspector:previewZoom2'], 'size', 'an explicit toggle is persisted (v2 key)');
 
   h1.zoomBtn(nodes).attrs.onClick();
   nodes = h1.render();
   img = h1.zoomImg(nodes);
   assert.equal(img.attrs.class, 'inspector__preview-img', 'returns to fit on second toggle');
-  assert.equal(h1.stored['mouaif:inspector:previewZoom'], 'fit', 'fit preference persisted');
+  assert.equal(h1.stored['mouaif:inspector:previewZoom2'], 'fit', 'the fit choice is persisted too');
 
   // Scenario 2: stored 'size' — boots straight into natural-size mode.
-  const h2 = newHarness({ storedSeed: { 'mouaif:inspector:previewZoom': 'size' } });
+  const h2 = newHarness({ storedSeed: { 'mouaif:inspector:previewZoom2': 'size' } });
   const nodes2 = h2.render();
   const img2 = h2.zoomImg(nodes2);
   assert.ok(img2, 'preview image rendered from stored size');
   assert.equal(img2.attrs.class, 'inspector__preview-img inspector__preview-img--size',
     'a stored "size" preference boots to natural-size mode');
 
-  // Scenario 3: auto-fit decision (pure helper). A wide page (1280px) in a
+  // Scenario 2b (regression): the v1 key was also written by the auto-fit path
+// while the Touch stylesheet was collapsing the preview frame, which pinned a
+// derived, not a chosen, `size`. It must be dropped rather than honoured, so a
+// user whose preview was stuck in panned natural-size mode lands back on fit.
+const h2b = newHarness({ storedSeed: { 'mouaif:inspector:previewZoom': 'size' } });
+const nodes2b = h2b.render();
+const img2b = h2b.zoomImg(nodes2b);
+assert.equal(img2b.attrs.class, 'inspector__preview-img',
+'a legacy v1 "size" is dropped instead of pinning the preview to natural size');
+assert.equal('mouaif:inspector:previewZoom' in h2b.stored, false,
+'the legacy key is cleared so it cannot poison a later session');
+// Scenario 3: auto-fit decision (pure helper). A wide page (1280px) in a
   // 366px frame has a fit-scale ~0.29 (< 0.6) -> natural size, so text is
   // readable instead of squashed to a thumbnail. The default is now dpr 1,
   // which keeps these single-source dpr=1 assertions intact.

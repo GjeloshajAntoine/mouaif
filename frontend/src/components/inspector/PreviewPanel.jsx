@@ -91,13 +91,35 @@ const [note, setNote] = useState('capturing…');
 // capture at its natural device->CSS scale (so a wide page shows readable
 // text and pans horizontally). Wide viewport presets (e.g. Laptop 1280px)
 // are otherwise squashed to ~30% of the frame and become unreadable.
-// Persisted so the preference survives reconnects, like the size preset.
+//
+// Only an explicit tap on the zoom toggle is persisted. The auto-fit
+// heuristic below is deliberately NOT written to storage: it is derived from
+// the frame's measured width and the capture's width, so freezing it turns a
+// decision that should be re-evaluated per viewport preset into a permanent
+// user preference.
+//
+// The key is versioned. The v1 key was written by the auto-fit path as well
+// as by the toggle, and while the Touch stylesheet was collapsing the preview
+// frame to a ~38px column (see inspector-touch.css) auto-fit saw a
+// permanently "too wide" frame and wrote `size` on every connect. That value
+// is indistinguishable from a real preference and would leave the preview
+// stuck in panned natural-size mode, so v1 is read once, migrated when it
+// still describes the current frame, and never written again.
 const ZOOM_STATE_KEY = 'mouaif:inspector:previewZoom';
+const ZOOM_STATE_KEY_V2 = 'mouaif:inspector:previewZoom2';
 const zoomInitial = (() => {
-  if (typeof localStorage === 'undefined') return 'fit';
-  try { return localStorage.getItem(ZOOM_STATE_KEY) === 'size' ? 'size' : 'fit'; } catch { return 'fit'; }
+if (typeof localStorage === 'undefined') return 'fit';
+try {
+if (localStorage.getItem(ZOOM_STATE_KEY_V2) === 'size') return 'size';
+// A legacy `fit` was never written by auto-fit in a way that matters (it is
+// also the default), so migrating it is a no-op the reader can keep. A legacy
+// `size` is dropped: it is the value the collapse produced.
+localStorage.removeItem(ZOOM_STATE_KEY);
+} catch { /* storage unavailable — fall back to fit */ }
+return 'fit';
 })();
 const [zoom, setZoom] = useState(zoomInitial);
+
 // Natural size of the capture currently on screen, in device pixels (the
 // image's intrinsic size). Kept in state so the render below can pin the
 // natural-size width; `dimsRef` mirrors it so the capture loop can compare
@@ -114,7 +136,7 @@ function toggleZoom() {
 autoZoomRef.current = true;
 setZoom((v) => {
 const next = v === 'fit' ? 'size' : 'fit';
-try { localStorage.setItem(ZOOM_STATE_KEY, next); } catch { /* ignore */ }
+try { localStorage.setItem(ZOOM_STATE_KEY_V2, next); } catch { /* ignore */ }
 return next;
 });
 }
@@ -164,6 +186,33 @@ if (value) setLiveTitle(value);
 // the page's intrinsic size is essentially constant between captures,
 // so the previous frame's natural size is a safe approximation.
 const lastDims = useRef({ w: 0, h: 0 });
+// isTapRef — whether the pointer gesture that is about to produce a `click`
+// was a tap rather than a pan of the scroll container. Set on pointer-down,
+// cleared once the finger moves past TAP_SLOP_PX or the frame scrolls. See
+// onPreviewClick for why the distinction matters on a phone.
+const isTapRef = useRef(false);
+const tapOriginRef = useRef({ x: 0, y: 0 });
+// A thumb is sloppy and a scroll container starts moving a frame or two after
+// the finger does, so anything past this many CSS pixels counts as a pan.
+const TAP_SLOP_PX = 10;
+function onPreviewPointerDown(ev) {
+// Only a primary press can become a tap; a second finger is a pinch/pan.
+if (ev.button != null && ev.button !== 0) { isTapRef.current = false; return; }
+isTapRef.current = true;
+tapOriginRef.current = { x: ev.clientX, y: ev.clientY };
+}
+function onPreviewPointerMove(ev) {
+if (!isTapRef.current) return;
+const dx = ev.clientX - tapOriginRef.current.x;
+const dy = ev.clientY - tapOriginRef.current.y;
+if (Math.abs(dx) > TAP_SLOP_PX || Math.abs(dy) > TAP_SLOP_PX) isTapRef.current = false;
+}
+// A scroll can begin without a pointermove landing on the frame (momentum, a
+// trackpad, a scrollbar drag), so the scroll itself also cancels the tap.
+function onPreviewScroll() { isTapRef.current = false; }
+// pointercancel fires when the browser takes the gesture over for a scroll —
+// exactly the case that must not become a click.
+function onPreviewPointerCancel() { isTapRef.current = false; }
 const latestImage = useRef(null);
 // Base64 payload of the capture that is currently on screen. A page that
 // did not change between two captures yields a byte-identical PNG, and
@@ -181,9 +230,9 @@ sizeRef.current = { presets: props.sizePresets, id: props.sizeId };
 
 
   useEffect(() => {
-    if (!props.capture) return;
-    let stop = false;
-    let inFlight = false;
+if (!props.capture) return;
+let stop = false;
+let inFlight = false;
 let pendingTimer = null;
 let streamTimer = null;
 let lastCaptureAt = 0;
@@ -194,6 +243,17 @@ let lastCaptureEndAt = 0;
 let captureSerial = 0;
 let pendingFrameAck = null;
 let pendingAckAfter = 0;
+// Minimum gap between two full-page captures. A screencast frame is emitted
+// for *every* visual change (each animation frame of a transition, each
+// hover state, each keystroke), and each capture re-encodes a full-page PNG
+// — the expensive step — then re-decodes it in the <img>. Pacing at 100 ms
+// let a busy page drive that loop at the same rate the encoder could keep
+// up, which is the hitch a user reads as "the preview stutters while I
+// scroll". 250 ms is still live to the eye (4 fps of *content* change) while
+// leaving the main thread three quarters of the time to handle the user's
+// own gestures.
+const MIN_CAPTURE_GAP_MS = 250;
+
     // Keep one event-driven capture queued while Chrome is already taking
     // a screenshot. Reload emits frameNavigated before the new document is
     // ready, then frameStoppedLoading while that first capture can still be
@@ -311,12 +371,16 @@ setDims(dimsRef.current);
 // below ~60% of the frame width in fit mode (text unreadable), switch to
 // natural size automatically. Only applies before the user toggles; the
 // manual toggle clears the gate so the user's choice always wins.
+//
+// This is a rendered-mode decision, not a preference: it is derived from
+// the frame's live width, so it is intentionally NOT persisted. Persisting
+// it is what let a collapsed frame (see the versioned ZOOM_STATE_KEY above)
+// pin the preview to `size` across sessions.
 if (!autoZoomRef.current && cur.naturalWidth && frameRef.current) {
 const frameW = frameRef.current.clientWidth || frameRef.current.offsetWidth;
 const dpr = currentDeviceScaleFactor(sizeRef.current.presets, sizeRef.current.id);
 if (frameW && previewZoomForWidth(cur.naturalWidth, frameW, dpr) === 'size') {
 setZoom('size');
-try { localStorage.setItem(ZOOM_STATE_KEY, 'size'); } catch { /* ignore */ }
 }
 autoZoomRef.current = true;
 }
@@ -413,7 +477,7 @@ if (stop || !frame || frame.sessionId == null || !props.ackFrame) return;
 pendingFrameAck = frame.sessionId;
 pendingAckAfter = captureSerial + 1;
 if (streamTimer) return;
-const wait = Math.max(0, 100 - (Date.now() - lastCaptureEndAt));
+const wait = Math.max(0, MIN_CAPTURE_GAP_MS - (Date.now() - lastCaptureEndAt));
 streamTimer = setTimeout(() => {
 streamTimer = null;
 if (!stop) runCapture('stream');
@@ -488,10 +552,18 @@ for (const off of subs) { try { off(); } catch { /* listener map gone */ } }
 // user scrolls. Omitting it maps the visible pixel to the right spot
 // whether or not the frame has been panned.
   function onPreviewClick(ev, targetImg) {
-    const img = targetImg || imgRef.current;
-    if (!img || !props.clickAt) return;
-    const rect = img.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
+  const img = targetImg || imgRef.current;
+  if (!img || !props.clickAt) return;
+  // A tap is not a swipe. The frame is a scroll container, so on a phone every
+  // pan of the page ends with a `click` on the element the finger lifted over —
+  // which forwarded a real click into the inspected page at the end of every
+  // scroll. Dragging the preview therefore activated whatever link or button
+  // happened to be under the finger. `tap` is set on pointer-down and cleared
+  // as soon as the pointer moves past a thumb's slop or the frame scrolls, and
+  // only a surviving tap reaches the page.
+  if (!isTapRef.current) return;
+  const rect = img.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
     // Prefer the live image's natural size; if the most recent
     // screenshot is still mid-decode, fall back to the previous
     // frame's dimensions (cached in lastDims) so the tap still
@@ -554,6 +626,13 @@ ref: frameRef,
 class: 'inspector__preview-frame',
 role: 'group',
 'aria-label': 'Live page preview, scrollable',
+// A tap pokes the page; a pan scrolls this frame. These handlers are what
+// tell the two apart — see onPreviewClick.
+onPointerDown: onPreviewPointerDown,
+onPointerMove: onPreviewPointerMove,
+onPointerUp: onPreviewPointerMove,
+onPointerCancel: onPreviewPointerCancel,
+onScroll: onPreviewScroll,
 onClick: (ev) => onPreviewClick(ev)
 },
 // A single <img> node is mounted once and its src is swapped on
@@ -746,6 +825,13 @@ ref: fsFrameRef,
 class: 'inspector__preview-fs-frame' + (props.pickMode ? ' is-picking' : ''),
 role: 'group',
 'aria-label': 'Live page preview, scrollable',
+// Same tap-vs-pan guard as the in-panel frame: an overlay that is one big
+// scroll container would otherwise click the page at the end of every pan.
+onPointerDown: onPreviewPointerDown,
+onPointerMove: onPreviewPointerMove,
+onPointerUp: onPreviewPointerMove,
+onPointerCancel: onPreviewPointerCancel,
+onScroll: onPreviewScroll,
 onClick: (ev) => onPreviewClick(ev, fsImgRef.current)
 },
 // Pick-mode banner, same contract as the in-panel one: the overlay is a
