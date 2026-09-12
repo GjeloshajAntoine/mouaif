@@ -674,14 +674,36 @@ function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
+// Deep copy of a settings value. Used by deepMerge so the resolved object is a
+// fresh tree.
+function cloneSettingValue(value) {
+  if (Array.isArray(value)) return value.map(cloneSettingValue);
+  if (isPlainObject(value)) {
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = cloneSettingValue(value[key]);
+    return out;
+  }
+  return value;
+}
+
 // Deep-merge for plain objects only. Arrays and primitives are replaced, not
 // concatenated. Project values win on conflict.
+//
+// The result never aliases `base` or `override`. That matters because
+// `getResolved()` merges the frozen DEFAULTS object as its base: keys absent
+// from the override used to be carried over by reference, so
+// `getResolved(dir).toolOutput` WAS `DEFAULTS.toolOutput` and a single
+// mutation downstream (the resolve a caller is allowed to edit before use)
+// poisoned the in-code defaults for every project until restart.
 function deepMerge(base, override) {
-  if (!isPlainObject(base)) return override;
-  if (!isPlainObject(override)) return override;
-  const out = { ...base };
-  for (const k of Object.keys(override)) {
-    out[k] = deepMerge(base[k], override[k]);
+  if (!isPlainObject(base)) return cloneSettingValue(override);
+  if (!isPlainObject(override)) return cloneSettingValue(override);
+  const out = {};
+  for (const key of Object.keys(base)) out[key] = cloneSettingValue(base[key]);
+  for (const key of Object.keys(override)) {
+    out[key] = isPlainObject(base[key]) && isPlainObject(override[key])
+      ? deepMerge(base[key], override[key])
+      : cloneSettingValue(override[key]);
   }
   return out;
 }
