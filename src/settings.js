@@ -30,6 +30,9 @@ const PROJECT_FILE = '.mouaif.json';
 const APP_DB = 'store.sqlite';
 const APP_KV_TABLE = 'app_kv';
 const APP_KEY = 'settings';
+// Row key prefix for an unreadable app-settings blob that was moved aside
+// instead of being silently replaced by defaults. See getAppRaw().
+const APP_QUARANTINE_PREFIX = 'settings.corrupt-';
 // Per-project MCP tool caches. Keyed by `${projectDir}::${serverId}` so the
 // bulky last-known tool schemas live in the app store instead of the
 // hand-editable, project-committed <projectDir>/.mcp.json.
@@ -548,9 +551,48 @@ function getDb() {
 }
 
 function getAppRaw() {
-  const row = db().prepare(`SELECT value FROM ${APP_KV_TABLE} WHERE key = ?`).get(APP_KEY);
+  const d = db();
+  const row = d.prepare(`SELECT value FROM ${APP_KV_TABLE} WHERE key = ?`).get(APP_KEY);
   if (!row) return {};
-  try { return JSON.parse(row.value); } catch { return {}; }
+  try {
+    const parsed = JSON.parse(row.value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('app settings must be a JSON object');
+    }
+    return parsed;
+  } catch (e) {
+    // A corrupt app-settings blob used to resolve to {}: every provider,
+    // registered project, prompt and pricing entry vanished from the UI, and
+    // the next write persisted that emptiness over the only copy. Move the
+    // unreadable value aside instead — it stays in the store under a
+    // quarantine key, the live row is reset, and the failure is reported.
+    const quarantineKey = APP_QUARANTINE_PREFIX + new Date().toISOString().replace(/[:.]/g, '-')
+      + '-' + crypto.randomBytes(3).toString('hex');
+    try {
+      d.transaction(() => {
+        d.prepare(`INSERT OR REPLACE INTO ${APP_KV_TABLE} (key, value) VALUES (?, ?)`)
+          .run(quarantineKey, row.value);
+        d.prepare(`DELETE FROM ${APP_KV_TABLE} WHERE key = ?`).run(APP_KEY);
+      })();
+      console.error('[settings] app settings were unreadable (' + e.message
+        + '); the stored value was preserved as ' + quarantineKey
+        + ' and settings start from defaults. See listQuarantinedAppSettings().');
+    } catch (quarantineError) {
+      console.error('[settings] app settings were unreadable (' + e.message
+        + ') and could not be quarantined: ' + quarantineError.message);
+    }
+    return {};
+  }
+}
+
+// Every unreadable app-settings value the store has moved aside, oldest key
+// first. Each entry is the raw stored text, so a user can recover entries by
+// hand (`sqlite3 ~/.mouaif/store.sqlite "SELECT value FROM app_kv WHERE key='...'"`)
+// instead of losing them to a silent reset.
+function listQuarantinedAppSettings() {
+  return db()
+    .prepare(`SELECT key, value FROM ${APP_KV_TABLE} WHERE key LIKE ? ORDER BY key`)
+    .all(APP_QUARANTINE_PREFIX + '%');
 }
 
 function getApp() {
@@ -793,6 +835,7 @@ module.exports = {
   getApp,
   setApp,
   setAppReplace,
+  listQuarantinedAppSettings,
   // project
   getProjectPath,
   getProject,

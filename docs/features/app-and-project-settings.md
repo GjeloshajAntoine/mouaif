@@ -22,6 +22,25 @@ The app-level and project-level payloads are projected differently, because the 
 
 Two fields are always removed: `__dbBacked` (internal storage bookkeeping, never part of the user's settings) and `apiKey` on any `providers` / `models` entry, which is replaced by a response-only `hasApiKey` boolean. Credentials belong in the app store only — see [docs/decisions.md](../decisions.md) §3.
 
+## Where the app store lives
+
+App-level settings are stored as one JSON object in the `app_kv` row of `~/.mouaif/store.sqlite` (key `settings`), next to the purpose-built tables for project settings, the MCP tool cache and recent models.
+
+Because every route reads that row, an unreadable value must not take the server down — but it must not destroy the user's data either. If the stored blob does not parse (or is not a JSON object), the server:
+
+1. moves the stored text to a quarantine row keyed `settings.corrupt-<timestamp>-<random>`;
+2. deletes the unreadable live row, so the app starts from the built-in defaults;
+3. logs the quarantine key on stderr.
+
+The result is the same empty-but-working store the old silent `{}` fallback produced, except the original bytes are still in the database:
+
+```bash
+sqlite3 ~/.mouaif/store.sqlite \
+  "SELECT key, value FROM app_kv WHERE key LIKE 'settings.corrupt-%'"
+```
+
+`settings.listQuarantinedAppSettings()` returns the same rows from Node. Restore an entry by copying its value back into the `settings` row once you have repaired the JSON.
+
 ## How settings work
 
 - **Global app settings** — configured once in the **Settings** tab. These include connected AI provider credentials, global model pricing, default prompt styles, and default tool permissions.
