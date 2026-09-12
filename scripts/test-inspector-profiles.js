@@ -32,6 +32,9 @@ const settings = require('../src/settings.js');
 const inspector = require('../src/inspector.js');
 const profiles = require('../src/inspectorProfiles.js');
 
+// Chrome metadata filename, referenced by the fixture writers below.
+const LOCAL_STATE_NAME = 'Local State';
+
 let passed = 0;
 let failed = 0;
 function check(name, cond, detail) {
@@ -213,6 +216,28 @@ check('buildProfileList reports the global and default URLs',
   built.globalUrl === 'http://127.0.0.1:9222' && built.defaultUrl === inspector.defaultDebuggerUrl());
 check('buildProfileList reports the scanned dirs',
   Array.isArray(built.dirs) && built.dirs[0] === UDD);
+
+// A discovered user-data-dir with no profiles is real: a Chrome that was
+// started once and never asked to create a profile leaves a `Local State`
+// with no info_cache and no `Default/`. It must stay labelled as
+// scanner-found — deriving "added" from "has no profiles" gave it a Remove
+// button for a directory the user never registered.
+const emptyUdd = path.join(TMP, 'chrome-empty');
+fs.mkdirSync(emptyUdd, { recursive: true });
+fs.writeFileSync(path.join(emptyUdd, LOCAL_STATE_NAME), JSON.stringify({ signin: {} }));
+const emptyDesc = profiles.readUserDataDir(emptyUdd, 'auto');
+check('a user-data-dir with no profiles is still discovered',
+  !!emptyDesc && emptyDesc.profiles.length === 0);
+const emptyList = profiles.buildProfileList([emptyDesc], {}, { globalUrl: 'http://127.0.0.1:9222' });
+check('a profile-less discovered dir is listed',
+  emptyList.dirs.includes(emptyUdd), JSON.stringify(emptyList.dirs));
+check('a profile-less discovered dir is NOT reported as user-added',
+  !emptyList.addedDirs.includes(emptyUdd), JSON.stringify(emptyList.addedDirs));
+const customDesc = profiles.readUserDataDir(UDD, 'custom');
+check('kind: custom is what marks a dir as user-added',
+  profiles.buildProfileList([customDesc], {}, {}).addedDirs.includes(UDD));
+check('addedDirs is always an array',
+  Array.isArray(built.addedDirs) && Array.isArray(profiles.buildProfileList([], {}, {}).addedDirs));
 const overridden = profiles.buildProfileList([descriptor], {
   endpoints: { [UDD + '::Default']: 'http://127.0.0.1:9333' },
   activeId: 'Default'
@@ -338,6 +363,9 @@ async function main() {
       JSON.stringify(list.body.profiles && list.body.profiles.length));
     check('the list carries the global url', typeof list.body.globalUrl === 'string');
     check('the list carries the scanned dirs', Array.isArray(list.body.dirs) && list.body.dirs.includes(UDD));
+    check('the list carries addedDirs',
+    Array.isArray(list.body.addedDirs) && list.body.addedDirs.includes(UDD),
+    JSON.stringify(list.body.addedDirs));
     check('every profile row has an id, key, dir and url',
       list.body.profiles.every((p) => p.id && p.key && p.dir && p.url));
     check('the HTTP row shape matches the module',

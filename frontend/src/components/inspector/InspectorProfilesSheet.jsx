@@ -63,7 +63,11 @@ export function InspectorProfilesSheet(props) {
   const list = props.list || null;
   const profiles = (list && Array.isArray(list.profiles)) ? list.profiles : [];
   const dirs = (list && Array.isArray(list.dirs)) ? list.dirs : [];
-  const builtinDirs = new Set(profiles.filter((p) => p.kind !== 'custom').map((p) => p.dir));
+  // "Added" comes from the server, not from "this dir has no profiles":
+  // a discovered user-data-dir can legitimately have zero profiles, and
+  // inferring from profile presence mislabelled it as user-added and gave
+  // it a Remove button that could not do anything.
+  const addedDirs = new Set((list && Array.isArray(list.addedDirs)) ? list.addedDirs : []);
   const activeId = (list && list.activeId) || '';
 
   function openEndpoint(row) {
@@ -121,14 +125,26 @@ export function InspectorProfilesSheet(props) {
           : null,
 
         !props.loading && !profiles.length && !props.error
-          ? h('div', { class: 'inspector__profiles-empty' },
-              h('p', null, 'No Chrome profiles found on this machine.'),
-              h('p', { class: 'inspector__profiles-empty-hint' },
-                'Add the folder you passed to ',
-                h('code', null, '--user-data-dir'),
-                ' below, or just paste a debugger URL by hand.')
-            )
-          : null,
+  ? h('div', { class: 'inspector__profiles-empty' },
+      dirs.length
+        ? h(Fragment, null,
+            h('p', null, 'No profiles in the Chrome folders found on this machine.'),
+            h('p', { class: 'inspector__profiles-empty-hint' },
+              'Each folder below has no ', h('code', null, 'Default'),
+              ' or ', h('code', null, 'Profile N'),
+              ' yet — Chrome creates one the first time you open it with that ',
+              h('code', null, '--user-data-dir'),
+              '. Point the debugger URL at a running Chrome below, or add another folder.')
+          )
+        : h(Fragment, null,
+            h('p', null, 'No Chrome profiles found on this machine.'),
+            h('p', { class: 'inspector__profiles-empty-hint' },
+              'Add the folder you passed to ',
+              h('code', null, '--user-data-dir'),
+              ' below, or just paste a debugger URL by hand.')
+          )
+    )
+  : null,
 
         profiles.map((row) => {
           const active = !!row.active || row.id === activeId;
@@ -196,7 +212,7 @@ export function InspectorProfilesSheet(props) {
         h('p', { class: 'inspector__profiles-hint' },
           'Chrome stores profiles in a user-data-dir. These are scanned automatically.'),
         dirs.map((dir) => {
-          const custom = !builtinDirs.has(dir);
+          const custom = addedDirs.has(dir);
           return h('div', { class: 'inspector__profile-dir', key: dir },
             h('span', { class: 'inspector__profile-dir-path' }, dir),
             h('span', { class: 'inspector__profile-dir-kind' }, custom ? 'added' : 'found'),

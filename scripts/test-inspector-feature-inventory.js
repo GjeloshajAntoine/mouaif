@@ -324,6 +324,10 @@ check('the profiles sheet part is imported by the entry point',
   /@import '\.\/inspector-profiles\.css'/.test(fs.readFileSync(path.join(root, 'frontend/src/inspector.css'), 'utf8')));
 check('discovery never writes outside the app store',
   !/fs\.writeFileSync/.test(profilesModule) && !/fs\.mkdirSync/.test(profilesModule));
+check('the "added" flag comes from the server, not from profile count',
+  /addedDirs/.test(profilesModule)
+  && /addedDirs/.test(profilesSheet)
+  && !/builtinDirs/.test(profilesSheet));
 check('the server exposes the profiles, switch, endpoint and dirs routes',
   ['/api/inspector/profiles\'', '/api/inspector/profiles/switch', '/api/inspector/profiles/endpoint', '/api/inspector/profiles/dirs']
     .every((r) => server.includes(r)));

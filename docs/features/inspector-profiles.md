@@ -47,7 +47,7 @@ A saved endpoint is remembered for that profile only, and is used the next time 
 
 Profiles live in a Chrome *user-data-dir*. mouaif scans the standard locations for Chrome, Chromium, Brave, and Edge on macOS, Windows, and Linux.
 
-For a portable Chrome or a profile tree somewhere else, tap **Add profile folder** and give the path. The folder must actually look like a Chrome user-data-dir (it contains a `Local State` file or a `Default` directory), so a typo is rejected at the door instead of silently showing an empty list. Added folders appear under **Profile folders** and can be removed again.
+For a portable Chrome or a profile tree somewhere else, tap **Add profile folder** and give the path. The folder must actually look like a Chrome user-data-dir (it contains a `Local State` file or a `Default` directory), so a typo is rejected at the door instead of silently showing an empty list. Added folders appear under **Profile folders** and can be removed again; folders mouaif found on its own are marked **found** and have no Remove action.
 
 ### When a manual URL wins
 
@@ -68,6 +68,7 @@ mouaif never launches or stops Chrome. The Inspector attaches to a browser you s
 - **Names** come from Chrome's own metadata: `Local State` → `profile.info_cache[<dir>].name` first, then `local_profile_name`, then `Preferences` → `profile.name`, and finally the directory name.
 - **Directories on disk are the floor.** The info cache can be stale; a profile directory that exists is always listed even when the cache does not mention it.
 - A malformed `Local State` degrades to "no metadata" rather than throwing, because Chrome may be caught mid-write.
+- **A user-data-dir with zero profiles is a normal state.** A Chrome that was started once and never asked to create a profile leaves a `Local State` with no `info_cache` and no `Default/` directory. The response therefore carries `addedDirs` — the dirs the user registered themselves — as a separate field, so the UI never has to infer "did the user add this?" from "does it have profiles?". Inferring it that way mislabelled such a directory as user-added and gave it a **Remove** button that could not do anything.
 
 `id` is the *directory* name (`Default`, `Profile 1`), not the GUID Chrome keeps internally: the directory name is what the user recognises and what a command line names (`--profile-directory="Profile 1"`). The storage key is `<user-data-dir>::<id>`, so two user-data-dirs may each have a `Default` without colliding.
 
@@ -92,7 +93,7 @@ Removing an added folder also drops the endpoint overrides for profiles that liv
 
 | Method | Path | Body / query | Returns |
 | --- | --- | --- | --- |
-| `GET` | `/api/inspector/profiles` | — | `{ activeId, globalUrl, defaultUrl, dirs, profiles }` |
+| `GET` | `/api/inspector/profiles` | — | `{ activeId, globalUrl, defaultUrl, dirs, addedDirs, profiles }` |
 | `POST` | `/api/inspector/profiles/switch` | `{ id }` | `{ url, profile: { id, key, label } }` |
 | `POST` | `/api/inspector/profiles/endpoint` | `{ id, url }` | `{ url, profile }` |
 | `POST` | `/api/inspector/profiles/dirs` | `{ dir }` | `{ dir, profiles }` |

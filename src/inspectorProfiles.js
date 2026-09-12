@@ -307,6 +307,15 @@ function buildProfileList(descriptors, store, globals) {
     globalUrl,
     defaultUrl: inspector.defaultDebuggerUrl(),
     dirs: (descriptors || []).map((d) => d.dir),
+    // Which of those dirs the user registered themselves. The UI needs
+    // this to decide whether to offer "Remove": a directory the scanner
+    // found on its own cannot be un-registered, so offering Remove for it
+    // (or labelling it "added") would be a lie. Deriving it from "does
+    // this dir have profiles" instead is wrong — a real user-data-dir can
+    // legitimately have zero profiles, e.g. a Chrome that was started
+    // once and never asked to create one, which then gets mislabelled as
+    // user-added and cannot be removed.
+    addedDirs: (descriptors || []).filter((d) => d && d.kind === 'custom').map((d) => d.dir),
     profiles
   };
 }
