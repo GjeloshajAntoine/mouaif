@@ -160,209 +160,233 @@ flex: 0 0 auto;
 /*
   The orb is the same 44px trigger with the same 40px painted circle and the
   same stacked ▲ / folder / ▼ glyph. Only the *paint* changes — the hit area,
-  the chevrons and the counts never move — and two things carry the depth:
+  the chevrons and the counts never move — and four things carry the depth:
 
-    · the SPHERE: a shaded ball, not a flat disc. A dark rim all round, a
-      bright bounce along the lower-inner edge, a broad sheen up the left
-      side, a tight specular hotspot, and a soft outer bloom so the ball
-      lifts off the row. Everything is a radial/linear gradient on `::before`
-      plus a pair of inset shadows, so no image and no extra node is needed.
-    · the PLATE: the chevrons stay on the sphere, the folder + counts ride a
-      glass slab that floats above it (`translateZ`) and tilts on two axes.
-      The slab's rim is a darkened copy of itself extruded downward, which is
-      what reads as thickness at 28×22; the folder on top is extruded the same
-      way, and each digit is duplicated as a dark under-copy offset 0.5px
-      down-right so the glyphs look pressed into the face.
+    · the SPHERE. A shaded glass ball, not a flat disc: a dark green-blue rim
+      all round, a broad sheen up the left side, a tight specular hotspot, a
+      cool bounce along the lower-inner edge where light comes back up off the
+      row, and a soft outer bloom that lifts it off the surface.
+    · the ORBIT. The pictogram sits inside `perspective()`, and the stack is
+      rotated on both axes. Those chevrons genuinely are 3D shapes turning in
+      space, which is what the reference render shows — the reference is not a
+      flat icon with a shadow, it is an object with an attitude.
+    · the SLAB. The folder + counts ride 7px in front of the chevrons. That Z
+      offset is what makes the folder read as *in front of* the sphere rather
+      than printed on it.
+    · the FOLDER. An extruded solid: a deep dark side 2px down, a contact
+      shadow under it, a face with a five-stop lit gradient (near-white at the
+      top-left crease, mid at the body, cool shade at the bottom-right), an
+      unlit inner pocket, a crisp rim light along every top edge, and a
+      diagonal specular streak across the flap.
+    · the COUNTS. Embossed: a dark under-copy 0.6px down-right, the colored
+      face above it, a white lip directly under the face for a lit top edge,
+      and a two-stop colored bloom. That is what makes them look pressed into
+      a solid rather than typed over a picture.
 
   Four rules keep this honest:
 
-  1. The stack keeps its 38px box and is only ever rotated about the button's
-     own centre — rotate about any other origin and the 44px circle clips the
-     glyph.
+  1. The stack keeps its 38px box and only ever rotates about the button's own
+     centre — any other origin and the 44px circle clips the glyph.
   2. The animation only uses `transform`, `opacity` and `filter`. No layout
      property is animated, so the composer never reflows and the whole effect
      stays on the compositor (see docs/features/chat-streaming-performance.md
      for why that matters on a phone).
-  3. The timing is one shared keyframe set on `--orb-tilt`, so the sphere's
-     sheen, the plate's tilt and the folder's counter-tilt stay in phase by
-     construction rather than by three tuned durations.
-  4. The variant still renders under `prefers-reduced-motion: reduce` — it
-     just holds a single frame, so the setting never costs a control style.
+  3. One number drives it: `--orb-tilt` is the only animated custom property,
+     and the plate derives its own angle and its own Z from it. The orbits can
+     never drift out of phase because there is only one phase.
+  4. The variant still renders under `prefers-reduced-motion: reduce` — it just
+     holds one frame (the rest pose, which is a full 3/4 view), so the setting
+     never costs the user a control style.
 */
 
-/* ---- The sphere ----------------------------------------------------- */
+/* ---- The sphere ------------------------------------------------------ */
 /* Painted on `::before`, which the flat trigger already defines (inset 2px,
    --surface-2, 1px border, inherited corner radius). Only the paint is
-   re-declared: the geometry, radius and stacking stay shared.
-   Gradient order is back-to-front, so the dark rim is laid down first and
-   every highlight lands on top of it. */
+   re-declared: geometry, radius and stacking stay shared with the flat look.
+   Gradient order is back-to-front, so the dark rim goes down first and every
+   highlight lands on top of it. */
 .file-toolbar--orb .file-toolbar__trigger::before {
 background:
-/* specular hotspot, upper-left of centre */
-radial-gradient(circle at 34% 25%,
-rgba(255, 255, 255, 0.90) 0%,
-rgba(255, 255, 255, 0.30) 16%,
-rgba(255, 255, 255, 0) 42%),
-/* broad sheen down the left side */
-radial-gradient(70% 62% at 26% 30%,
-rgba(255, 255, 255, 0.30) 0%,
-rgba(255, 255, 255, 0.10) 46%,
+/* tight specular hotspot, up and left of centre */
+radial-gradient(circle at 33% 23%,
+rgba(255, 255, 255, 0.98) 0%,
+rgba(255, 255, 255, 0.42) 13%,
+rgba(255, 255, 255, 0) 38%),
+/* broad glossy sheen down the left */
+radial-gradient(72% 64% at 24% 28%,
+rgba(255, 255, 255, 0.34) 0%,
+rgba(214, 232, 255, 0.13) 44%,
 rgba(255, 255, 255, 0) 100%),
-/* bright bounce along the lower-inner edge (light bouncing back up) */
-radial-gradient(84% 74% at 58% 116%,
-rgba(174, 206, 255, 0.42) 0%,
-rgba(174, 206, 255, 0.12) 44%,
-rgba(174, 206, 255, 0) 78%),
-/* darkened lower half — the ball's own shadow */
-radial-gradient(120% 120% at 74% 118%,
-rgba(0, 0, 0, 0.58) 0%,
-rgba(0, 0, 0, 0.22) 40%,
-rgba(0, 0, 0, 0) 70%),
-/* the glass body, slightly cool so it reads as glass rather than grey */
-linear-gradient(168deg, #3d4763 0%, #222a3e 52%, #131a2a 100%);
-border-color: rgba(255, 255, 255, 0.22);
+/* cool bounce along the lower-inner edge */
+radial-gradient(88% 76% at 62% 118%,
+rgba(178, 210, 255, 0.50) 0%,
+rgba(178, 210, 255, 0.16) 42%,
+rgba(178, 210, 255, 0) 76%),
+/* the ball's own shadow, hanging on its lower-right */
+radial-gradient(118% 118% at 72% 116%,
+rgba(0, 0, 0, 0.62) 0%,
+rgba(0, 0, 0, 0.26) 38%,
+rgba(0, 0, 0, 0) 68%),
+/* the glass body: cool, and darker at the bottom than the top */
+linear-gradient(166deg, #46557a 0%, #26314b 48%, #121a2b 100%);
+border-color: rgba(196, 214, 255, 0.30);
 box-shadow:
-/* the glass edge catching light from above-left, and its dark counter-edge */
-inset 1px 1px 0 rgba(255, 255, 255, 0.34),
-inset -1px -2px 1px -1px rgba(0, 0, 0, 0.62),
-inset 0 4px 7px -4px rgba(255, 255, 255, 0.34),
-inset 0 -7px 10px -6px rgba(0, 0, 0, 0.66),
-/* outer bloom: the ball lifts off the row */
-0 0 10px -2px rgba(150, 190, 255, 0.22),
-0 5px 14px -6px rgba(0, 0, 0, 0.75);
+/* the lit upper-left edge and its dark counter-edge */
+inset 1.5px 1.5px 0 -0.5px rgba(255, 255, 255, 0.46),
+inset -1.5px -2.5px 1px -1.5px rgba(0, 0, 0, 0.70),
+inset 0 5px 8px -5px rgba(255, 255, 255, 0.40),
+inset 0 -8px 12px -7px rgba(0, 0, 0, 0.72),
+/* outer rim light: the reference render has a bright meniscus all the way
+  round the ball, and it is what keeps the silhouette readable where the
+  sphere's own dark lower half meets its drop shadow (the two are within
+  ~2/255 of each other without it). */
+0 0 0 1px rgba(150, 190, 255, 0.16),
+/* the bloom: the ball is lit, so it spills */
+0 0 11px -2px rgba(140, 185, 255, 0.28),
+0 5px 15px -6px rgba(0, 0, 0, 0.80);
 transition: background 80ms ease, border-color 80ms ease, box-shadow 80ms ease;
 }
-/* Hover / open brighten the sheen in place — the flat trigger's own hover
-   rules would otherwise replace the gradients with a flat --surface-3. */
+/* Hover / open brighten the sheen in place. The flat trigger's own hover rules
+   would otherwise replace every gradient with a flat --surface-3. */
 .file-toolbar--orb .file-toolbar__trigger:hover::before,
 .file-toolbar--orb .file-toolbar__trigger[aria-expanded="true"]::before {
-border-color: rgba(255, 255, 255, 0.34);
+border-color: rgba(210, 226, 255, 0.44);
 box-shadow:
-inset 1px 1px 0 rgba(255, 255, 255, 0.44),
-inset -1px -2px 1px -1px rgba(0, 0, 0, 0.58),
-inset 0 4px 8px -4px rgba(255, 255, 255, 0.44),
-inset 0 -7px 10px -6px rgba(0, 0, 0, 0.60),
-0 0 14px -2px rgba(150, 190, 255, 0.34),
-0 5px 14px -6px rgba(0, 0, 0, 0.72);
+inset 1.5px 1.5px 0 -0.5px rgba(255, 255, 255, 0.58),
+inset -1.5px -2.5px 1px -1.5px rgba(0, 0, 0, 0.64),
+inset 0 5px 9px -5px rgba(255, 255, 255, 0.52),
+inset 0 -8px 12px -7px rgba(0, 0, 0, 0.66),
+0 0 15px -2px rgba(140, 185, 255, 0.42),
+0 5px 15px -6px rgba(0, 0, 0, 0.76);
 }
-/* A press darkens the ball's lower half and pulls the bloom in, so the button
-   reads as pushed into the row. */
+/* A press flattens the lit upper edge and drops the bloom — the ball reads as
+   pushed into the row. */
 .file-toolbar--orb .file-toolbar__trigger:active::before {
-border-color: rgba(255, 255, 255, 0.18);
+border-color: rgba(180, 200, 240, 0.22);
 box-shadow:
-inset 1px 1px 0 rgba(255, 255, 255, 0.22),
-inset -1px -2px 1px -1px rgba(0, 0, 0, 0.70),
-inset 0 6px 9px -5px rgba(0, 0, 0, 0.55),
-0 2px 7px -4px rgba(0, 0, 0, 0.80);
+inset 1px 1px 0 -1px rgba(255, 255, 255, 0.24),
+inset -1px -2px 1px -1px rgba(0, 0, 0, 0.76),
+inset 0 7px 10px -6px rgba(0, 0, 0, 0.60),
+0 2px 8px -4px rgba(0, 0, 0, 0.85);
 }
-/* Focus ring, drawn on the orb's own border. */
+/* Focus ring, drawn on the orb's own border so it never fights the sheen. */
 .file-toolbar--orb .file-toolbar__trigger:focus-visible::before {
 border-color: var(--accent);
 box-shadow:
 0 0 0 2px var(--accent-soft),
-inset 1px 1px 0 rgba(255, 255, 255, 0.30),
-inset -1px -2px 1px -1px rgba(0, 0, 0, 0.60);
+inset 1.5px 1.5px 0 -0.5px rgba(255, 255, 255, 0.40),
+inset -1.5px -2.5px 1px -1.5px rgba(0, 0, 0, 0.68);
 }
 
-/* Highlight disc that slides across the ball. Static here — parked at the
-   upper left, where the sphere's own specular hotspot is, so the reduced-motion
-   frame and the first animation frame are the same picture. The animation
-   itself is added in the `no-preference` block below. */
+/* Highlight disc that slides across the ball. Static here — parked over the
+   sphere's own specular hotspot, so the reduced-motion frame and the first
+   animation frame are the same picture. The animation is added in the
+   `no-preference` block below. */
 .file-toolbar--orb .file-toolbar__sheen {
 position: absolute;
-inset: 2px;
-z-index: 0;
+inset: 3px;
+z-index: 1;
 border-radius: inherit;
 pointer-events: none;
 background: radial-gradient(circle at 50% 50%,
-rgba(255, 255, 255, 0.42) 0%,
-rgba(255, 255, 255, 0.10) 34%,
-rgba(255, 255, 255, 0) 62%);
-filter: blur(3px);
-transform: translate3d(-9%, -7%, 0) scale(1.06);
-opacity: 0.78;
+rgba(255, 255, 255, 0.50) 0%,
+rgba(255, 255, 255, 0.12) 32%,
+rgba(255, 255, 255, 0) 60%);
+filter: blur(4px);
+transform: translate3d(-30%, -34%, 0) scale(1.05);
+opacity: 0.8;
 }
 
-/* ---- The stack: perspective + a shared tilt ------------------------- */
-/* `--orb-tilt` is ONE number the keyframes write. Everything that turns reads
-   it, with its own factor and phase, so the sphere, the plate and the folder
-   can never drift out of step. `--orb-depth` is the plate's Z offset. */
+/* ---- The orbit: real 3D, not a 2D wobble ---------------------------- */
+/* `perspective()` on the stack (not a distant ancestor) is what gives the
+   rotation a vanishing point close enough to read as depth rather than as a
+   skew. The pictogram is deliberately *small* on screen, so 520px gives a
+   visible but not distorted divergence between the chevrons and the slab. */
 .file-toolbar--orb .file-toolbar__stack {
 --orb-tilt: 0deg;
 --orb-depth: 7px;
 position: relative;
-z-index: 1;
+z-index: 2;
+transform: perspective(520px)
+rotateX(calc(-9deg + var(--orb-tilt) * 0.85))
+rotateY(calc(6deg + var(--orb-tilt) * -0.7));
 transform-style: preserve-3d;
 backface-visibility: hidden;
 }
-/* On press the plate sinks into the sphere and flattens — the feedback a
-   touch screen needs, since there is no hover to lean on. */
+/* On press the plate sinks into the sphere and the orbit flattens. */
 .file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__plate {
-transform: translateZ(2px) translateY(1px) scale(0.93);
+transform: translateZ(2px) translateY(1px) scale(0.92);
 transition: transform 90ms ease-out;
 }
 
-/* ---- The glass plate under the folder + counts ---------------------- */
+/* ---- The slab the folder floats in front of ------------------------- */
+/* Deliberately *not* a white plate. Nudging the whole slab white was the first
+   attempt and it erased the folder silhouette — a white folder on a white slab
+   is one white blob, and the counts lose the dark backing they are tuned
+   against. So the slab is a soft dark glass tile that only darkens and
+   diffuses what is behind it, which is what makes the folder read as a
+   separate, lighter object in front. */
 .file-toolbar--orb .file-toolbar__plate {
 position: relative;
 display: block;
 width: 30px;
 height: 24px;
-margin-top: 1px;
-/* Base is a slight 3/4 view (-6deg / +4deg), not dead-on: a slab seen straight
-   from the front has no depth to read. The animated angle is added on top, so
-   the plate keeps that 3/4 attitude right through the loop. */
-transform:
-translateZ(var(--orb-depth))
-rotateX(calc(-6deg + var(--orb-tilt) * 0.7))
-rotateY(calc(4deg + var(--orb-tilt) * -0.5));
+transform: translateZ(var(--orb-depth)) scale(1.06);
 transform-style: preserve-3d;
 will-change: transform;
 }
-/* Rim: the same slab, extruded downward, darkened. It is the visible
-   *thickness* of the glass — the edge you would see if you turned it. */
-.file-toolbar--orb .file-toolbar__plate-rim {
-position: absolute;
-inset: 0;
-border-radius: 4px;
-background: linear-gradient(180deg, #4a5470 0%, #2a3145 46%, #171d2b 100%);
-box-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
-transform: translateZ(calc(var(--orb-depth) - 2.5px)) translateY(1.5px);
-}
-/* Face: the lit surface. Nearly the same light tone as the flat icon (so the
-   counts keep the contrast they are tuned for) but with its own gradient, a
-   crisp top-edge highlight and a translucent sheen. */
 .file-toolbar--orb .file-toolbar__plate-face {
 position: absolute;
 inset: 0;
-border-radius: 4px;
-/* The folder is 28x22 inside a 30x24 face: centring keeps the icon optically
-   on the slab instead of hugging its top-left corner. */
+border-radius: 5px;
+background:
+/* its own top-edge highlight, so the slab catches the same light as the ball */
+linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 40%),
+radial-gradient(120% 120% at 26% 18%, rgba(190, 214, 255, 0.20) 0%, rgba(0, 0, 0, 0) 62%),
+linear-gradient(160deg,
+rgba(22, 30, 50, 0.62) 0%,
+rgba(10, 15, 28, 0.52) 100%);
+box-shadow:
+inset 0 1px 0 rgba(255, 255, 255, 0.30),
+inset 0 -1px 0 rgba(0, 0, 0, 0.50),
+0 3px 6px -2px rgba(0, 0, 0, 0.55);
+backdrop-filter: blur(1px);
 display: flex;
 align-items: center;
 justify-content: center;
-background:
-linear-gradient(180deg,
-rgba(255, 255, 255, 0.30) 0%,
-rgba(255, 255, 255, 0) 34%),
-linear-gradient(158deg, #fbfaff 0%, #e2e2ee 58%, #c3c4d6 100%);
-box-shadow:
-inset 0 1px 0 rgba(255, 255, 255, 0.95),
-inset 0 -1px 0 rgba(58, 64, 90, 0.45),
-inset 0 0 6px rgba(255, 255, 255, 0.45);
-transform: translateZ(var(--orb-depth));
-}
-.file-toolbar--orb .file-toolbar__plate-rim,
-.file-toolbar--orb .file-toolbar__plate-face {
 backface-visibility: hidden;
 }
+/* Contact shadow pooled on the sphere under the slab. Drawn on the plate (not
+   the face) so it sits between the ball and the glass, which is where the
+   occlusion would actually fall. */
+.file-toolbar__cast {
+position: absolute;
+left: -4px;
+right: -4px;
+bottom: -5px;
+height: 9px;
+z-index: -1;
+border-radius: 50%;
+background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0.18) 62%, rgba(0, 0, 0, 0) 100%);
+filter: blur(2px);
+pointer-events: none;
+}
+/* No backdrop-filter on the fallback path (Firefox without the flag) just
+   means a slightly crisper tile — nothing breaks. */
+@supports not (backdrop-filter: blur(1px)) {
+.file-toolbar--orb .file-toolbar__plate-face {
+background:
+linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 40%),
+linear-gradient(160deg, rgba(20, 28, 48, 0.88) 0%, rgba(9, 13, 26, 0.86) 100%);
+}
+}
 
-/* ---- The 3D folder on the plate ------------------------------------- */
-/* The extrusion here is *two stacked silhouettes* rather than a Z offset: a
-   folder glyph has no volume, so a dark underneath-layer 1.5px lower plus a
-   bright face is what reads as thickness. The face also carries a vertical
-   gradient (lit top, shaded bottom) and a specular streak across the pocket
-   flap, which is what stops it looking like a flat white sticker. */
+/* ---- The extruded folder -------------------------------------------- */
+/* Depth at 28x22 comes from *stacked silhouettes*, not from a Z offset: the
+   glyph has no volume of its own, so a near-black copy 2px lower (the side you
+   would see if you turned the object) plus a lit face is the whole trick. The
+   face then carries a five-stop vertical/diagonal gradient and an unlit pocket,
+   which is what stops a white folder looking like a white sticker. */
 .file-toolbar__folder--3d {
 position: relative;
 display: block;
@@ -376,82 +400,147 @@ height: 22px;
 position: absolute;
 inset: 0;
 }
-.file-toolbar__folder-side {
+/* The stack, bottom to top — the order here IS the material:
+     0. `__folder-ground`  contact shadow pooled on the slab under the folder
+     1. `__folder-side`    the deep extruded edge, 2px lower
+     2. `__folder-body`    the mid-tone solid, one stop darker than the face
+     3. `__folder-shade`   ambient occlusion in the lower-right of the solid
+     4. `__folder-face`    the lit top surface
+     5. `__folder-sheen`   diagonal specular streak across the flap
+     6. `__folder-shine`   crisp rim light on the top edges + the pocket fold
+   The face sits on the body and the body on the side, so the 2px offset shows
+   as a continuous bevelled edge rather than a detached copy. */
+.file-toolbar__folder-side,
+.file-toolbar__folder-body,
+.file-toolbar__folder-shade,
+.file-toolbar__folder-face,
+.file-toolbar__folder-sheen,
+.file-toolbar__folder-shine {
+position: absolute;
+inset: 0;
+}
+.file-toolbar__folder-ground {
+position: absolute;
+left: -1px;
+right: -1px;
+bottom: -3px;
+height: 6px;
 z-index: 0;
-transform: translateY(1.5px);
-filter: brightness(0.34) saturate(0.6);
+border-radius: 50%;
+background: radial-gradient(closest-side, rgba(0, 0, 0, 0.62) 0%, rgba(0, 0, 0, 0.22) 60%, rgba(0, 0, 0, 0) 100%);
+filter: blur(1.5px);
+}
+.file-toolbar__folder-side {
+z-index: 1;
+transform: translateY(2px);
+}
+.file-toolbar--orb .file-toolbar__folder-side path {
+fill: url(#fileToolbarFolderSide);
+}
+.file-toolbar__folder-body {
+z-index: 2;
+transform: translateY(1px);
+}
+.file-toolbar--orb .file-toolbar__folder-body path {
+fill: url(#fileToolbarFolderBody);
+}
+/* Ambient occlusion: the fold, the pocket interior and the lower-right corner
+   all sit further from the light, so the solid is darker there. Painted with
+   the shared silhouette as its own mask. */
+.file-toolbar__folder-shade {
+z-index: 3;
+}
+.file-toolbar--orb .file-toolbar__folder-shade path {
+fill: url(#fileToolbarFolderShade);
 }
 .file-toolbar__folder-face {
-z-index: 1;
-filter: drop-shadow(0 0.5px 0.5px rgba(0, 0, 0, 0.45));
+z-index: 4;
+filter: drop-shadow(0 1px 0.6px rgba(0, 0, 0, 0.55));
 }
-/* The gradient is painted with the SVG itself as a mask: `fill` stays the
-   token the flat icon uses, and the vertical shading rides on top of it so
-   the two can never disagree about the silhouette. */
-.file-toolbar__folder-face path {
+.file-toolbar--orb .file-toolbar__folder-face path {
 fill: url(#fileToolbarFolderFace);
 }
-.file-toolbar__folder-side path {
-fill: var(--fg);
-}
+/* Diagonal specular streak across the flap, masked by the silhouette. */
 .file-toolbar__folder-sheen {
-z-index: 2;
+z-index: 5;
 pointer-events: none;
 }
-.file-toolbar__folder-sheen path {
+.file-toolbar--orb .file-toolbar__folder-sheen path {
 fill: url(#fileToolbarFolderSheen);
 }
+/* Crisp rim light along the top edges and the pocket fold. Additive, so it can
+   only brighten the edge it traces and never darkens the face. */
 .file-toolbar__folder-shine {
-z-index: 3;
+z-index: 6;
 pointer-events: none;
 }
-.file-toolbar__folder-shine path {
+.file-toolbar--orb .file-toolbar__folder-shine path {
 fill: none;
 stroke: #fff;
-stroke-width: 1.2;
+stroke-width: 1.3;
 stroke-linecap: round;
 stroke-linejoin: round;
-opacity: 0.7;
+opacity: 0.9;
 mix-blend-mode: screen;
 }
 
-/* ---- The counts: embossed on the face ------------------------------- */
-/* Each count is a light face over a dark under-copy offset 0.5px down-right.
-   That one pixel of displacement is the whole emboss — it is what makes the
-   digits sit *in* the plate instead of floating on it. The colored bloom is
-   a second shadow in the glyph's own hue, which widens the shape at 7px
-   without changing its colour, so the 6:1 contrast above is untouched. */
+/* ---- The counts: embossed into the face ----------------------------- */
+/* Four layers, in this order, per count:
+     1. `__count-echo` — the same glyph, 0.6px down-right, near-black. This is
+        the shadow that makes the letterpress read.
+     2. the colored face itself.
+     3. a white lip directly *under* the face (0 1px), so light catches the
+        bottom of the glyph as if it were cut into the solid.
+     4. a two-stop bloom in the glyph's own hue, which widens the shape at 8px
+        without changing its color — the 6:1 contrast documented above is
+        untouched because the bloom is a glow, not a different ink. */
 .file-toolbar--orb .file-toolbar__git-stats {
 z-index: 4;
+inset: 0;
+padding: 4px 3px 3px;
+display: flex;
+flex-direction: column;
+justify-content: space-between;
+/* The reference render's digits fill the folder. 0.56rem = 8.96px, up from
+   7.36px in the flat look, which is as large as two 3-digit counts can be
+   before they collide. */
+font-size: 0.56rem;
+font-weight: 800;
+letter-spacing: -0.005em;
+}
+.file-toolbar--orb .file-toolbar__git-additions,
+.file-toolbar--orb .file-toolbar__git-deletions {
+position: static;
+max-width: none;
+display: block;
 }
 .file-toolbar__count--3d {
 position: relative;
 }
 .file-toolbar__count-echo {
 position: absolute;
-left: 0.5px;
-top: 0.5px;
-color: rgba(8, 12, 22, 0.55);
+left: 0.6px;
+top: 0.6px;
+color: rgba(4, 8, 16, 0.72);
 }
 .file-toolbar__count-face {
 position: relative;
 }
 .file-toolbar--orb .file-toolbar__git-additions .file-toolbar__count-face {
 text-shadow:
-0 1px 0 rgba(255, 255, 255, 0.55),
-0 0 4px rgba(0, 220, 80, 0.85),
-0 0 7px rgba(0, 190, 60, 0.45);
+0 1px 0 rgba(255, 255, 255, 0.65),
+0 0 3px rgba(0, 255, 90, 0.95),
+0 0 6px rgba(0, 210, 70, 0.60);
 }
 .file-toolbar--orb .file-toolbar__git-deletions .file-toolbar__count-face {
 text-shadow:
-0 1px 0 rgba(255, 255, 255, 0.5),
-0 0 4px rgba(255, 70, 70, 0.85),
-0 0 7px rgba(220, 40, 40, 0.45);
+0 1px 0 rgba(255, 255, 255, 0.60),
+0 0 3px rgba(255, 80, 80, 0.95),
+0 0 6px rgba(230, 40, 40, 0.60);
 }
 
-/* The SVG gradients the folder faces reference. Kept in the toolbar block so
-   the flat variant pays nothing: nothing references them unless the orb
-   markup is rendered. */
+/* The SVG gradients the folder faces reference. Zero-sized and unreferenced
+   unless the orb markup renders, so the flat variant pays nothing for them. */
 .file-toolbar__defs {
 position: absolute;
 width: 0;
@@ -460,14 +549,21 @@ overflow: hidden;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-/* ONE animated custom property, consumed by everything that turns. Browsers
-  that cannot interpolate a registered custom property fall back to the
-  discrete steps below, which still reads as a slow 3D wobble rather than a
-  frozen button. */
+/* TWO registered properties, because both are animated and neither interpolates
+  as a plain custom property: `--orb-tilt` as an angle, `--orb-depth` as a
+  length. Without the `@property` registrations the keyframes flip between
+  their endpoint values instead of tweening — the orbit would jump rather than
+  turn. Browsers that ignore `@property` still get the discrete steps, which
+  read as a slow 3D wobble rather than a frozen button. */
 @property --orb-tilt {
 syntax: '<angle>';
 inherits: true;
 initial-value: 0deg;
+}
+@property --orb-depth {
+syntax: '<length>';
+inherits: true;
+initial-value: 7px;
 }
 @keyframes file-orb-tilt {
 0%   { --orb-tilt: -7deg; }
@@ -475,32 +571,50 @@ initial-value: 0deg;
 100% { --orb-tilt: -7deg; }
 }
 .file-toolbar--orb .file-toolbar__stack {
-animation: file-orb-tilt 5.2s ease-in-out infinite;
+animation: file-orb-tilt 6.4s ease-in-out infinite;
 }
-/* The specular hotspot drifts across the sphere on its own, slower period —
-  without it the ball looks like it stopped moving whenever the glyph is at
-  a still point of its ease curve. */
+/* The slab also breathes in Z, so it visibly floats in front of the sphere
+   instead of sitting on it. `--orb-depth` is the same token the plate's
+   resting transform reads, so this re-uses one number. */
+@keyframes file-orb-float {
+0%, 100% { --orb-depth: 4.5px; }
+50%      { --orb-depth: 9px; }
+}
+.file-toolbar--orb .file-toolbar__plate {
+animation: file-orb-float 4.6s ease-in-out infinite;
+}
+/* The sheen drifts across the ball on its own, slower period. Without it the
+   sphere looks like it stopped moving whenever the glyph reaches a still point
+   of its ease curve. */
 @keyframes file-orb-sheen {
 0%, 100% {
-transform: translate3d(-9%, -7%, 0) scale(1.06);
-opacity: 0.78;
+transform: translate3d(-36%, -40%, 0) scale(1.02);
+opacity: 0.72;
 }
 50% {
-transform: translate3d(7%, 5%, 0) scale(0.98);
+transform: translate3d(26%, 30%, 0) scale(0.94);
 opacity: 1;
 }
 }
-/* The specular hotspot cannot drift on the pseudo-element itself — one pseudo,
-   one paint — so the drift rides the sibling `--sheen` disc declared above. */
+/* The hotspot cannot drift on the pseudo-element itself — one pseudo, one
+   paint — so the drift rides the sibling `__sheen` disc declared above. */
 .file-toolbar--orb .file-toolbar__sheen {
-animation: file-orb-sheen 6.1s ease-in-out infinite;
+animation: file-orb-sheen 9.3s ease-in-out infinite;
 }
-/* The plate needs no keyframes of its own: it reads the same `--orb-tilt` as
-   the stack through its own factors, in the rule above. ONE animated number
-   for the whole pictogram is what keeps every phase matched. */
-/* Pausing on press stops the wobble fighting the :active sink. */
+/* The specular streak breathes across the flap, phase-offset from the sheen so
+   the ball and the icon never peak together. */
+@keyframes file-orb-folder-sheen {
+0%, 100% { opacity: 0.35; }
+50%      { opacity: 0.85; }
+}
+.file-toolbar--orb .file-toolbar__folder-sheen {
+animation: file-orb-folder-sheen 7.1s ease-in-out infinite;
+}
+/* Pausing on press stops the orbit fighting the :active sink. */
 .file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__stack,
-.file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__sheen {
+.file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__plate,
+.file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__sheen,
+.file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__folder-sheen {
 animation-play-state: paused;
 }
 }

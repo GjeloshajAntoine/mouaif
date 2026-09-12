@@ -25,7 +25,7 @@ export const FILE_ORB_KEY = 'fileOrbButton';
 
 // Off by default. The flat button is the conservative default: it matches the
 // other composer controls, and the orb is an opt-in flourish.
-export const FILE_ORB_DEFAULT = true; // TEMP visual check
+export const FILE_ORB_DEFAULT = false;
 
 // fileOrbFromApp(snapshot) -> boolean
 //

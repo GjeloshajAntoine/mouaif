@@ -28,6 +28,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Routing](features/routing.md) — every hash the app answers, its query parameters, and the old names that still work.
 - [Modal sheets](features/modal-sheets.md) — Escape, Tab and focus behave the same in every full-screen sheet, including stacked ones.
 - [Dictation](features/dictation.md) — speech-to-text on a page of its own and from the chat composer, with a chosen model.
+- [File button: glass orb](features/file-button-orb.md) — render the composer's file/git button as an animated 3D glass orb, from Settings → Chat defaults.
 
 ## Build the documentation
 

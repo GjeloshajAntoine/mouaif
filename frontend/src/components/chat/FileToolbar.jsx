@@ -192,10 +192,17 @@ h('span', { class: 'file-toolbar__count-face' }, '−' + formatCount(deleted))
 
 const folderGlyph = orb
 ? h('span', { class: 'file-toolbar__plate' },
-h('span', { class: 'file-toolbar__plate-rim', 'aria-hidden': 'true' }),
 h('span', { class: 'file-toolbar__plate-face' },
+h('span', { class: 'file-toolbar__cast', 'aria-hidden': 'true' }),
 h('span', { class: 'file-toolbar__folder file-toolbar__folder--3d' },
+h('span', { class: 'file-toolbar__folder-ground', 'aria-hidden': 'true' }),
 h('svg', { class: 'file-toolbar__folder-side', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
+h('path', { d: FOLDER_PATH })
+),
+h('svg', { class: 'file-toolbar__folder-body', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
+h('path', { d: FOLDER_PATH })
+),
+h('svg', { class: 'file-toolbar__folder-shade', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
 h('path', { d: FOLDER_PATH })
 ),
 h('svg', { class: 'file-toolbar__folder-face', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
@@ -205,20 +212,37 @@ h('svg', { class: 'file-toolbar__folder-sheen', viewBox: '0 0 20 16', width: 28,
 h('path', { d: FOLDER_PATH })
 ),
 h('svg', { class: 'file-toolbar__folder-shine', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
-h('path', { d: 'M2.6 4.2a1.6 1.6 0 0 1 1.6-1.6h3.5l1.7 1.7h6.4a1.6 1.6 0 0 1 1.6 1.6' })
+h('path', { d: 'M2.6 4.2a1.6 1.6 0 0 1 1.6-1.6h3.5l1.7 1.7h6.4a1.6 1.6 0 0 1 1.6 1.6' }),
+h('path', { d: 'M2.8 12.6h14.4' })
 ),
 counts(true)
 ),
 h('svg', { class: 'file-toolbar__defs', viewBox: '0 0 0 0', 'aria-hidden': 'true' },
-h('linearGradient', { id: 'fileToolbarFolderFace', x1: '0.1', y1: '0', x2: '0.5', y2: '1' },
-h('stop', { offset: '0', 'stop-color': '#ffffff' }),
-h('stop', { offset: '0.45', 'stop-color': '#e6e5f0' }),
-h('stop', { offset: '1', 'stop-color': '#b3b6ca' })
+h('linearGradient', { id: 'fileToolbarFolderSide', x1: '0', y1: '0', x2: '0.3', y2: '1' },
+h('stop', { offset: '0', 'stop-color': '#8d93ab' }),
+h('stop', { offset: '0.35', 'stop-color': '#3b4258' }),
+h('stop', { offset: '1', 'stop-color': '#141a29' })
 ),
-h('linearGradient', { id: 'fileToolbarFolderSheen', x1: '0', y1: '0', x2: '0.25', y2: '0.75' },
-h('stop', { offset: '0', 'stop-color': '#ffffff', 'stop-opacity': '0.85' }),
-h('stop', { offset: '0.34', 'stop-color': '#ffffff', 'stop-opacity': '0.12' }),
-h('stop', { offset: '0.62', 'stop-color': '#ffffff', 'stop-opacity': '0' })
+h('linearGradient', { id: 'fileToolbarFolderBody', x1: '0.12', y1: '0', x2: '0.7', y2: '1' },
+h('stop', { offset: '0', 'stop-color': '#eef0fb' }),
+h('stop', { offset: '0.4', 'stop-color': '#c9ccdd' }),
+h('stop', { offset: '1', 'stop-color': '#8d92ab' })
+),
+h('linearGradient', { id: 'fileToolbarFolderFace', x1: '0.1', y1: '0', x2: '0.55', y2: '1' },
+h('stop', { offset: '0', 'stop-color': '#ffffff' }),
+h('stop', { offset: '0.34', 'stop-color': '#f4f4fb' }),
+h('stop', { offset: '0.72', 'stop-color': '#d8dae8' }),
+h('stop', { offset: '1', 'stop-color': '#a7acc2' })
+),
+h('radialGradient', { id: 'fileToolbarFolderShade', cx: '0.62', cy: '0.72', r: '0.72' },
+h('stop', { offset: '0', 'stop-color': '#5b6280', 'stop-opacity': '0.55' }),
+h('stop', { offset: '0.55', 'stop-color': '#5b6280', 'stop-opacity': '0.16' }),
+h('stop', { offset: '1', 'stop-color': '#5b6280', 'stop-opacity': '0' })
+),
+h('linearGradient', { id: 'fileToolbarFolderSheen', x1: '0', y1: '0', x2: '0.35', y2: '0.85' },
+h('stop', { offset: '0', 'stop-color': '#ffffff', 'stop-opacity': '0.95' }),
+h('stop', { offset: '0.28', 'stop-color': '#ffffff', 'stop-opacity': '0.20' }),
+h('stop', { offset: '0.55', 'stop-color': '#ffffff', 'stop-opacity': '0' })
 )
 )
 )
