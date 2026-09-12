@@ -17,6 +17,7 @@
 3. **Project Customizations** — open project settings to configure rules, instruction files (such as `AGENTS.md` or `CLAUDE.md`), and tool permissions for that project.
 4. **Database-backed settings (Clean tree)** — by default, project settings are stored next to your code in `.mouaif.json`. If you prefer to keep your working directory untouched by tooling files, enable **Store settings in app DB** in project settings.
 5. **Chat defaults** — open **Settings → App defaults → Chat defaults** to set the default prompt style and two composer toggles (Enter inserts a newline; Auto-retry failed sends). All three save automatically as soon as you change them; there is no Save button. Each setting is a row card with a per-row status line that confirms the change.
+6. **Dictation** — open **Settings → App defaults → Dictation** to pick the speech-to-text model. The choice is stored under the app-level `dictation` key (`{ modelId, providerId }`) and is read by the Dictation page and the chat composer's microphone alike, so both agree on which model a recording is sent to (see [Dictation](./dictation.md)).
 
 ## Related
 

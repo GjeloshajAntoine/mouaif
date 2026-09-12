@@ -20,6 +20,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const transcribe = require('../src/transcribe.js');
@@ -343,7 +344,60 @@ check('mimeTypeFor maps the containers a MediaRecorder produces', () => {
   assert.equal(transcribe.mimeTypeFor(''), 'application/octet-stream');
 });
 
-// ---- 2. Browser helpers -------------------------------------------------
+// ---- 2. App settings plumbing -------------------------------------------
+//
+// The remembered dictation model is app-level state, so it travels through
+// two allowlists on the server before any surface can read it: the client
+// snapshot (`settingsForClient`, which drops every key it does not know) and
+// the reset endpoint's key set. A key that is stored but stripped is
+// indistinguishable from a key that was never saved — the picker came up on
+// "Pick a model" on every visit and the composer microphone answered "No
+// dictation model yet" however often a model had been chosen. Both halves are
+// pinned here, the second one by exercising the real modules against a
+// throwaway store rather than pattern matching.
+
+check('the dictation choice is allowlisted for the client', () => {
+const shared = fs.readFileSync(path.join(__dirname, '..', 'src/server-shared.js'), 'utf8');
+const listStart = shared.indexOf('const CLIENT_SETTINGS_KEYS = Object.freeze([');
+assert.ok(listStart > -1, 'CLIENT_SETTINGS_KEYS block found');
+const listEnd = shared.indexOf(']);', listStart);
+assert.match(
+shared.slice(listStart, listEnd),
+/'dictation'/,
+'a stored-but-stripped key is a key the UI never reads back'
+);
+});
+
+check('the running server hands the remembered model back', () => {
+const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-dictation-'));
+const priorHome = process.env.MOUAIF_HOME;
+process.env.MOUAIF_HOME = home;
+try {
+// Fresh module registry so settings.js captures the temp home.
+const settings = require(path.join(__dirname, '..', 'src/settings.js'));
+const { settingsForClient, RESETTABLE_APP_KEYS } = require(path.join(__dirname, '..', 'src/server-shared.js'));
+const choice = { modelId: 'whisper-1', providerId: 'openai-compatible' };
+settings.setApp({ dictation: choice });
+assert.deepEqual(settings.getApp().dictation, choice, 'the app store keeps the pair');
+assert.deepEqual(
+settingsForClient(settings.getApp()).dictation,
+choice,
+'GET /api/settings must carry it, or the pick is invisible to the page and the microphone'
+);
+// Reset is the other side of the same coin: an app key the UI can never
+// clear outlives the settings it belongs to.
+assert.ok(RESETTABLE_APP_KEYS.has('dictation'), 'reset must be able to drop the key');
+// A store that has never dictated resolves to nothing rather than to a
+// stale model, and the page treats that as "no choice yet".
+assert.equal(settingsForClient({}).dictation, undefined);
+} finally {
+if (priorHome === undefined) delete process.env.MOUAIF_HOME;
+else process.env.MOUAIF_HOME = priorHome;
+try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ }
+}
+});
+
+// ---- 3. Browser helpers -------------------------------------------------
 
 (async () => {
   const dictation = await loadFrontendModule('frontend/src/dictation.js');

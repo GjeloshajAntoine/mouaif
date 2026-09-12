@@ -165,7 +165,15 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
 'enterForNewline', // composer keyboard default (Enter newline vs send)
 'autoRetry',      // auto-retry failed turns before the stream starts
 'fileOrbButton',  // composer file button renders as the animated glass orb
-  'prompts',        // app-level custom prompts
+// The remembered dictation choice: `{ modelId, providerId }`, written by the
+// dictation page and read by every surface that dictates — the page's picker
+// and the composer microphone. No secret, but it must be allowlisted here:
+// a key that is stored and then stripped on the way out is a key the UI can
+// never read back, which made the pick look unsaved and left the microphone
+// saying "No dictation model yet" however often one was chosen.
+// See docs/features/dictation.md.
+'dictation',
+'prompts',        // app-level custom prompts
   'githubCopilot',  // { clientId } for the custom OAuth app
   'modelPricing',   // per-model cost table
   'authAccounts',   // non-secret OAuth account index
@@ -180,9 +188,10 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
 // store. The DEFAULTS keys are the baseline; the extras are additive app
 // keys that have no in-code default (their absence IS the default) but
 // that the UI must still be able to clear — otherwise "reset" silently
-// can't reach settings like the custom pricing table.
+// can't reach settings like the custom pricing table or the remembered
+// dictation model.
 const RESETTABLE_APP_KEYS = Object.freeze(
-  new Set([...Object.keys(settings.DEFAULTS), 'modelPricing', 'githubCopilot'])
+new Set([...Object.keys(settings.DEFAULTS), 'modelPricing', 'githubCopilot', 'dictation'])
 );
 
 function settingsForClient(value) {

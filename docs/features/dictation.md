@@ -227,6 +227,12 @@ chat cannot appear here unless it can transcribe. See
 - **The choice is remembered app-wide**, under the `dictation` key in the app
   store, and written back on every change — including clearing it. That is what
   makes the composer microphone and a later visit agree with the page.
+  Remembering it takes two server-side registrations, not one: the key must be
+  in the client snapshot allowlist (`CLIENT_SETTINGS_KEYS`), or the store keeps
+  it and the response drops it, which reads exactly like a pick that never
+  saved — the page came up on "Pick a model" on every visit and the microphone
+  answered "No dictation model yet" however often a model was chosen. It is
+  also in `RESETTABLE_APP_KEYS`, so **Settings → About → Reset** can clear it.
 - **There is no request-shape control.** The dialect a model is sent with is a
   property of its provider connection, and the two families are not
   interchangeable — a Gemini connection pointed at `/audio/transcriptions`, or
@@ -306,13 +312,19 @@ chat cannot appear here unless it can transcribe. See
 - `frontend/src/dictation.css` — the page and the microphone button. Mobile
   first: one column, a 56px primary control, ≥44px taps, `dvh` for the iOS
   keyboard, and a `prefers-reduced-motion` branch for the pulse.
+- `src/server-shared.js` — `'dictation'` in `CLIENT_SETTINGS_KEYS` (the
+  allowlist every `/api/settings` response is filtered through) and in
+  `RESETTABLE_APP_KEYS`. The app store holds the key either way; without the
+  allowlist entry the choice exists in SQLite and is invisible to both
+  surfaces that read it.
 - The audio body is JSON base64 (`audioBase64`), capped at ~20 MB of audio,
   so one code path owns reading the body, its size limit and its error shape.
 
 ### Tests
 
 ```bash
-node scripts/test-dictation.js        # request/response shapes + helper rules
+node scripts/test-dictation.js        # request/response shapes, helper rules,
+  # and the app-store allowlists the choice needs
 node scripts/test-dictation-http.mjs  # the real serve handlers, mock upstream
 node scripts/test-dictation-page.mjs  # the page rendered against a fake API
 node scripts/test-dictation-ui.mjs    # a browser fixture: prints a URL, or
