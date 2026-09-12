@@ -116,6 +116,8 @@ connection, which is the only thing that knows how to address it.
 
 The **Dictation model** picker lists the union of both sources, and the
 read-only line under it names the dialect the selected model will be sent in.
+The choice is remembered app-wide in the app store under the `dictation` key,
+so the next session — and the composer microphone — use the same model.
 
 ## Behavior
 
@@ -142,6 +144,9 @@ read-only line under it names the dialect the selected model will be sent in.
   answer are still offered.
 - **Nothing is preselected when the choice is real.** With one candidate it is
   selected; with two, the picker asks.
+- **The choice is remembered app-wide**, under the `dictation` key in the app
+  store, and written back on every change — including clearing it. That is what
+  makes the composer microphone and a later visit agree with the page.
 - **There is no request-shape control.** The dialect a model is sent with is a
   property of its provider connection, and the two families are not
   interchangeable — a Gemini connection pointed at `/audio/transcriptions`, or

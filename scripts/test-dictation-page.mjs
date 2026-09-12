@@ -109,9 +109,10 @@ const dictation = await import('data:text/javascript;base64,' + Buffer.from(
 // ---- The render harness -------------------------------------------------
 
 function createView(options) {
-  const opt = options || {};
-  const states = [];
-  let cursor = 0;
+const opt = options || {};
+const states = [];
+const saved = [];
+let cursor = 0;
   let first = true;
   let effects = [];
   let nodes = [];
@@ -128,7 +129,9 @@ function createView(options) {
     // props are read back off the recorded node by pickerNodes().
     ModelPickerField: 'model-picker',
     fetchJson,
-    saveApp: async () => {},
+    // Recorded rather than applied: the assertion that matters is *what* the
+    // page writes to the app store when a model is picked.
+    saveApp: async (patch) => { saved.push(patch); },
     useState: (initial) => {
       const i = cursor++;
       if (first) states[i] = typeof initial === 'function' ? initial() : initial;
@@ -161,7 +164,12 @@ function createView(options) {
     effects.forEach((effect) => effect());
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  return { render, settle, states };
+  // settle() without re-running the effects: for waiting on a call the *user*
+  // triggered (a pick, a save) rather than on a paint pass.
+  async function flush() {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return { render, settle, flush, saved, states };
 }
 
 const find = (nodes, predicate) => nodes.find(predicate) || null;
@@ -472,6 +480,33 @@ function useCase(caseOptions) {
   assert.deepEqual(picker(nodes).models.map((m) => m.id), ['gemini-2.5-flash', 'gemini-2.5-pro']);
   assert.equal(selectionOf(pickerNodes(nodes)[0]), null);
   assert.deepEqual(kindReadouts(nodes), [], 'nothing is reported before a model is picked');
+}
+
+// ---- Picking a model is remembered app-wide ----------------------------
+//
+// The composer microphone reads the same app-level `dictation` key, so a pick
+// that is not written back is a pick the next visit — and the mic button —
+// never see: the page would come up on "Pick a model" and the mic would say
+// "No dictation model yet" no matter how many times the model was chosen.
+{
+  const view = useCase({ projectDir: '/fixture/project' });
+  view.render();
+  await view.settle();
+  picker(view.render()).onChange({ providerId: 'gemini', modelId: 'gemini-2.5-flash' });
+  await view.flush();
+  const written = view.saved.at(-1);
+  // Spread into this realm: an object literal built inside the VM has a
+  // different Object prototype, so deepStrictEqual would reject it.
+  assert.deepEqual({ ...written.dictation }, { modelId: 'gemini-2.5-flash', providerId: 'gemini' },
+    'the picked model is written to the app store under `dictation`');
+  // …and the selection is live in the same session, without waiting for a
+  // catalog pass to come back.
+  assert.deepEqual(selectionOf(pickerNodes(view.render())[0]), { providerId: 'gemini', modelId: 'gemini-2.5-flash' });
+  // Clearing the pick is written back too, so the mic button can say it has no
+  // model instead of dictating with a deleted one.
+  picker(view.render()).onChange(null);
+  await view.flush();
+  assert.deepEqual({ ...view.saved.at(-1).dictation }, { modelId: '', providerId: '' });
 }
 
 // ---- The preselect rule on its own -------------------------------------

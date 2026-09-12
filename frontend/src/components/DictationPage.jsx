@@ -470,14 +470,25 @@ async function refreshCatalog() {
 }
 
 function onPickModel(next) {
-  setModelId(next ? next.modelId : '');
-  setProviderId(next ? next.providerId : '');
+  const nextModelId = next ? next.modelId : '';
+  const nextProviderId = next ? next.providerId : '';
+  // Recorded in the ref as well as in state: the catalog callbacks compare
+  // against the ref, and a state update would not be visible to a response
+  // that is already in flight — without this a slow live pass can overwrite
+  // the model the user just picked.
+  modelIdRef.current = nextModelId;
+  setModelId(nextModelId);
+  setProviderId(nextProviderId);
   setStatus('');
   setStatusState('');
+  // App-level, and best-effort: the composer microphone reads this same key
+  // (see chat/MicButton.jsx), so a pick that is not written back is a pick the
+  // next page load — and the mic button — never see.
+  remember({ modelId: nextModelId, providerId: nextProviderId });
 }
 
   // Persisting the choice is best-effort: a failure to remember the model must
-  // never look like a failure to record.
+  // never look like a failure to record, so nothing here reports an error.
   async function remember(patch) {
     try {
       const app = await fetchJson('/api/settings');
