@@ -153,10 +153,13 @@ configure anything for the first one:
 
 1. **Models from your providers.** Every connected provider in Settings →
   Providers is asked for its current catalog — the speech-to-text slice of it
-  where the provider publishes one (OpenRouter) — and the entries that can
-  transcribe are listed. `Refresh` re-reads them (the list is cached
-  server-side for an hour). This is what makes a fresh install work with no
-  setup: connect a Gemini key and `gemini-2.5-flash` is offered.
+  where the provider publishes one (OpenRouter), *and* the chat slice for
+  OpenRouter, because that is where its Google models live — and the entries
+  that can be dictated with are listed. `Refresh` re-reads them (the lists are
+  cached server-side for an hour). This is what makes a fresh install work with
+  no setup: connect a Gemini key and `gemini-2.5-flash` is offered; connect an
+  OpenRouter key and `google/gemini-3.5-flash` is offered alongside
+  `openai/whisper-large-v3`.
 2. **Models from the project.** A model id in `.mouaif.json` is the way to
    describe something the provider's catalog cannot: a self-hosted endpoint, a
    per-model language default, or a specific OpenRouter slug. A project record
@@ -186,57 +189,105 @@ Five signals decide whether a model is **offered**, most trustworthy first:
 | --- | --- |
 | `transcription` is set | `"transcription": { "kind": "gemini" }` |
 | the provider reports `transcription` output | `openai/whisper-1` in OpenRouter's transcription catalog |
+| the model can be sent audio over the chat route (see below) | `google/gemini-3.5-flash`, `openai/gpt-audio` on OpenRouter |
 | the id looks like speech-to-text | `whisper-1`, `mistralai/voxtral-…`, `parakeet` |
 | it resolves to the Gemini family | `gemini-2.5-flash` |
 | the provider reports audio input, and no output report | `meta/muse-spark-1.3` on a provider that reports inputs only |
 
 The provider's output report settles the question in both directions. A row
 whose outputs include `transcription` is a transcriber whatever its name says
-(`google/chirp-3`, `deepgram/nova-3`); a row whose outputs are reported and
-*exclude* it is not one, however much audio it accepts — `openai/gpt-audio`
-and `google/gemini-2.5-flash` both take audio input and both answer
-`/audio/transcriptions` with `400 Model … does not exist`. Only when there is
-no output report at all does the filter fall back to names and capabilities.
+(`google/chirp-3`, `deepgram/nova-3`); a row whose outputs are *reported* and
+exclude it is a transcriber only if the chat route can carry its audio (next
+section) — otherwise it is not one, however much audio it accepts. Only when
+there is no output report at all does the filter fall back to names and
+capabilities.
 
 When none of them matches, everything is offered rather than nothing — a
 self-hosted `my-asr` is exactly the case nothing can infer. A catalog the
-provider *did* classify, where none of the rows produces transcripts, is a
-different answer rather than a gap: those rows are the ones the endpoint
-rejects, so the picker offers none of them instead of all.
+provider *did* classify, where no row can be dictated with, is a different
+answer rather than a gap: the picker offers none of them instead of all.
+
+#### Two OpenAI-shaped routes, and which one a row takes
+
+A model that can hear has two ways in, and picking the wrong one is a provider
+error rather than a preference:
+
+| Route | Endpoint | For |
+| --- | --- | --- |
+| `openai-compatible` | `POST /audio/transcriptions` (multipart) | every model that has an entry there: `openai/whisper-large-v3`, `google/chirp-3`, `mistralai/voxtral-mini-transcribe` |
+| `openai-audio` | `POST /chat/completions` (inline `input_audio`) | a model with no such entry that the provider reports as taking audio: `google/gemini-3.5-flash`, `~google/gemini-flash-latest`, `openai/gpt-audio` |
+| `gemini` | `POST /v1beta/models/{model}:generateContent` | the native Gemini connection |
+
+The second route exists because of **OpenRouter's Google models**, and that is
+the bug it fixes. OpenRouter slices `GET /api/v1/models` by output modality, and
+a Google Gemini row is filed under `output_modalities: ["text"]` — so
+`google/gemini-3.5-flash` is in the *chat* catalog, is absent from the
+transcription slice (`?output_modalities=transcription`, whose one Google row is
+`google/chirp-3`), and is answered by `/audio/transcriptions` with
+`400 Model google/gemini-3.5-flash does not exist`. Reading only the
+transcription slice therefore left the picker with no Google chat model at all,
+which reads from the phone as "Google models are not available on OpenRouter".
+The model was always there and always able to transcribe; the catalog was asking
+the wrong endpoint. The same audio, sent as an `input_audio` part on a chat
+completion, comes back with the transcript and a billed `usage` report.
+
+A row takes the chat route when **all** of these hold:
+
+- its connection is OpenAI-shaped (so `/chat/completions` is what it speaks);
+- the provider reports `audio` among its input modalities — a report we do not
+  have is not evidence, so an unclassified row keeps the multipart default;
+- its reported outputs do **not** already include `transcription` — such a row
+  has a real multipart entry, which is the cheaper, purpose-built call;
+- its id does not name itself a transcriber (`whisper-…`, `…-transcribe`,
+  `voxtral-…`, `parakeet-…`);
+- its id is not a `:batch` row (`google/gemini-3.8-flash:batch`). Those share
+  their interactive twin's capability report but are served by the Batch API —
+  submit a job, poll it — which a microphone tap cannot do.
+
+The picker shows which route the selected row will use under **Sends as**
+(`OpenAI chat` for this one), and the choice travels with the request, so what
+the user was shown is what is sent.
+
+#### Gemini's two transcript shapes
+
+The native Gemini connection has two ways to answer a transcription, and which
+one you get depends on the model:
+
+- a **general** model (`gemini-3.8-flash`) replies in `parts[].text` — the audio
+  is just another input and the transcript just another answer;
+- a **transcription** model (`gemini-3.5-transcribe`) replies in
+  `parts[].audioTranscription.text`, with `parts[].text` present but *empty*.
+
+Both are read. Parsing only `text` turned the second shape into `EEMPTY` — "the
+provider returned no transcript" — for a response that contained one, which is
+what made the dedicated transcription models look broken.
 
 The **request shape** follows from the first of these that applies:
 
 | Signal | Example | Shape |
 | --- | --- | --- |
 | `transcription.kind` is set | `"transcription": { "kind": "gemini" }` | as declared |
+| the row was classified as audio-in on an OpenAI-shaped connection | `google/gemini-3.5-flash` | OpenAI-shaped, inline audio on `/chat/completions` |
 | the provider is one we ship | `gemini-2.5-flash` on `gemini` | the connection decides: Gemini on `gemini`, OpenAI-shaped on every other shipped provider |
 | the provider is unknown and the id starts with `google/` | `google/gemini-2.5-flash` on a custom gateway | Gemini |
-| nothing matches | — | OpenAI-shaped |
+| nothing matches | — | OpenAI-shaped, multipart |
 
-The last two matter on OpenRouter, whose chat catalog carries no speech-to-text
-model at all: `/models` is sliced by output modality and defaults to
-`output_modalities=text`, so `openai/whisper-1` and the other 20 transcribers
-live in a *different* slice of the same endpoint that only the dictation
-catalog asks for. What the chat list does carry is a family of audio-*input*
-chat models (`openai/gpt-audio`, `google/gemini-2.5-flash`,
-`mistralai/voxtral-small-24b-2507`), and every one of those is rejected by
-`/audio/transcriptions`. The catalog therefore selects on the provider's
-reported outputs, and the picker labels an audio-capable chat row
-`from provider · audio in`.
-
-When none of them matches the model is still offered, and "is this a Gemini
-model" is decided by the **provider** (and, for a provider we do not ship, by a
-`google/` slug prefix) — never by a substring of the id. A substring test looked
-harmless and was not: it swept up dozens of OpenRouter entries whose names merely
-contain "gemini", which sent them to an endpoint that does not exist there.
+"Is this a Gemini model" is decided by the **provider** (and, for a provider we
+do not ship, by a `google/` slug prefix) — never by a substring of the id. A
+substring test looked harmless and was not: it swept up dozens of OpenRouter
+entries whose names merely contain "gemini", which sent them to an endpoint that
+does not exist there.
 
 There is no request-shape control: the shape follows from the model's provider
-connection, which is the only thing that knows how to address it.
+connection *and the provider's capability report*, which between them are the
+only things that know how to address it.
 
 | Provider | Model id example | Request shape used |
 | --- | --- | --- |
-| OpenAI, Groq, Mistral, OpenRouter, self-hosted `/v1` | `whisper-1`, `whisper-large-v3`, `voxtral-mini-latest` | OpenAI-shaped (multipart) |
-| Google Gemini | `gemini-2.5-flash` | Gemini (inline audio) |
+| OpenAI, Groq, Mistral, self-hosted `/v1` | `whisper-1`, `whisper-large-v3` | OpenAI-shaped (multipart) |
+| OpenRouter, speech-to-text row | `openai/whisper-large-v3`, `google/chirp-3`, `deepgram/nova-3` | OpenAI-shaped (multipart) |
+| OpenRouter, audio-in chat row | `google/gemini-3.5-flash`, `~google/gemini-flash-latest`, `openai/gpt-audio` | OpenAI-shaped (inline audio) |
+| Google Gemini | `gemini-2.5-flash`, `gemini-3.5-transcribe` | Gemini (inline audio) |
 
 The **Dictation model** picker lists the union of both sources, and the
 read-only line under it names the dialect the selected model will be sent in.
@@ -310,7 +361,15 @@ chat cannot appear here unless it can transcribe. See
   *take audio* are not in it: OpenRouter answers `400 Model openai/gpt-audio
   does not exist` for the model its own chat catalog advertises. The catalog
   trusts what the provider reports about a model's output over what its name
-  suggests.
+  suggests — and routes a model that *can* hear to the endpoint that accepts it
+  rather than dropping it. See "Two OpenAI-shaped routes" above.
+- **Both of OpenRouter's catalogs are read for OpenRouter.** Its transcription
+  slice serves the purpose-built speech-to-text rows and its chat slice is where
+  its Google models live, because upstream files a Google Gemini row under
+  `output_modalities: ["text"]`. Reading only the transcription slice is what
+  made dictation offer no Google chat model at all on that connection —
+  "Google models are not available on OpenRouter" — while the models themselves
+  were always able to transcribe.
 - **A model is classed as Gemini only when it really is one** (its provider, or
   a `google/…` slug). Classifying by id substring looked harmless and was not:
   it swept up dozens of OpenRouter entries whose names merely contain
@@ -318,6 +377,11 @@ chat cannot appear here unless it can transcribe. See
   family is on the candidate list by definition — filtered every other
   provider's models out of the list, so dictation appeared to offer Google
   models only.
+- **Both of Gemini's transcript shapes are read.** `parts[].text` for the
+  general models and `parts[].audioTranscription.text` for the dedicated
+  transcription models (`gemini-3.5-transcribe`), whose `text` is empty.
+  Parsing only the first reported a successful transcription as "the provider
+  returned no transcript".
 - **One unreachable provider does not empty the list.** Its failure is reported
   with the provider's own message, and the rows from the providers that did
   answer are still offered.
@@ -341,10 +405,12 @@ chat cannot appear here unless it can transcribe. See
   answered "No dictation model yet" however often a model was chosen. It is
   also in `RESETTABLE_APP_KEYS`, so **Settings → About → Reset** can clear it.
 - **There is no request-shape control.** The dialect a model is sent with is a
-  property of its provider connection, and the two families are not
-  interchangeable — a Gemini connection pointed at `/audio/transcriptions`, or
-  an OpenRouter connection pointed at `/v1beta/models/…:generateContent`, is a
-  404. The page reports the shape it will use instead of letting it be set.
+  property of its provider connection *and* of what the provider reports about
+  the model, and the shapes are not interchangeable — a Gemini connection
+  pointed at `/audio/transcriptions`, or an OpenRouter connection pointed at
+  `/v1beta/models/…:generateContent`, is a 404. The page reports the shape it
+  will use instead of letting it be set, and echoes it back with the request so
+  the read-out and the call cannot disagree.
 - **Failures name their cause.** A rejected key surfaces the provider's own
   message with HTTP 401, an unreachable provider is 502, a stalled one is 504
   after 60s, and a recording that is too long is 413.
@@ -371,11 +437,15 @@ chat cannot appear here unless it can transcribe. See
 
 ## Implementation notes
 
-- `src/transcribe.js` — the two request families, the response parsers, the
-  family inference, and the candidate filter. Pure: multipart bodies are built
-  by hand (not with `FormData`) so the wire shape can be asserted byte-for-byte
-  in a test. `usageFromResponse` reads the provider's token report for both
-  families; `parseTranscribeResponse` carries it through as `usage` (or `null`).
+- `src/transcribe.js` — the request families, the response parsers, the family
+  inference, and the candidate filter. Pure: multipart bodies and the inline
+  JSON bodies are built by hand (not with `FormData`) so the wire shape can be
+  asserted byte-for-byte in a test. `audioChatModel` decides the chat route for
+  an audio-input row that has no `/audio/transcriptions` entry, and
+  `audioFormatFor` names the container the way the `input_audio` field wants it
+  (`webm`, not `audio/webm;codecs=opus`). `usageFromResponse` reads the
+  provider's token report for every family; `parseTranscribeResponse` carries it
+  through as `usage` (or `null`) and reads both of Gemini's transcript shapes.
 - `src/usage.js` prices a run: the handler calls the same `computeCost` the chat
   uses, with the resolved model record (which already carries a live catalog
   entry's provider pricing) so a per-model override applies identically. No
@@ -390,20 +460,27 @@ chat cannot appear here unless it can transcribe. See
   `listTranscriptionModels` adapter, which reads
   `/models?output_modalities=transcription`: the chat list cannot be filtered
   into a dictation catalog there, because the 21 speech-to-text models are not
-  in it and the audio-input chat models that are in it cannot transcribe.
+  in it. The dictation catalog reads **both** slices for OpenRouter: that one
+  for the purpose-built transcribers, and the chat slice for the audio-input
+  rows (every Google Gemini model), which is where a model that can hear but
+  has no `/audio/transcriptions` entry is reachable at all.
 - `src/server-handlers-transcribe.js` — `GET /api/ai/transcribe/models` and
   `POST /api/ai/transcribe`. Resolves the model through the shared
   `resolveModel`, injects the credential server-side, applies the 60s deadline,
   prices the provider's usage report, and maps typed codes onto HTTP statuses.
   Mounted before the generic
   `/api/ai/` branch in `src/http-server.js`. The catalog merges the project
-  models with the live lists — read as the provider's *transcription* slice,
-  which is cached under its own key so the chat picker and this one cannot
-  serve each other's rows; `?live=0` serves the project models alone (the
-  page's fast first paint) and `?refresh=1` bypasses the live cache.
+  models with the live lists — read as the provider's *transcription* slice
+  (cached under its own key so the chat picker and this one cannot serve each
+  other's rows), plus the *chat* slice for OpenRouter, where its Google models
+  live; `?live=0` serves the project models alone (the page's fast first paint)
+  and `?refresh=1` bypasses the live cache.
   `POST /api/ai/transcribe` answers `{ text, model, kind, bytes, durationMs,
   usage, cost }` — `usage: null` and `cost.known: false` when the provider
-  reported nothing.
+  reported nothing. The route is decided from the live capability report the
+  catalog selected on, read back from the same cache `resolveModel` prices from
+  (a live row is rebuilt from its id and provider, so the report is not on it);
+  a `kind` echoed by the picker wins over that re-derivation.
 - `src/modelList.js` — the per-provider live model fetch and its hour-long
   cache, extracted from the `/api/ai/models/live` handler so the dictation
   catalog and the chat picker share one fetch and one set of typed errors.
@@ -464,18 +541,27 @@ chat cannot appear here unless it can transcribe. See
 
 ```bash
 node scripts/test-dictation.js        # request/response shapes, helper rules,
-  # the live-take join and slot ordering, and the app-store allowlists the
-  # choice needs
-node scripts/test-dictation-http.mjs  # the real serve handlers, mock upstream
+  # the live-take join and slot ordering, the audio-chat route decision and
+  # format naming, both Gemini transcript shapes, and the app-store allowlists
+  # the choice needs
+node scripts/test-dictation-http.mjs  # the real serve handlers, mock upstream —
+  # including the inline-audio chat route and the `audioTranscription` shape
 node scripts/test-dictation-page.mjs  # the page rendered against a fake API
-node scripts/test-dictation-catalog-live.mjs  # the candidate filter against
-  # the two real OpenRouter catalogs, replayed from scripts/fixtures/
-  # dictation-openrouter-models.json (chat) and -stt-models.json
-  # (transcription); `--record` refreshes both from the live API
+node scripts/test-dictation-catalog-live.mjs  # the candidate filter and the
+  # route decision against the two real OpenRouter catalogs, replayed from
+  # scripts/fixtures/dictation-openrouter-models.json (chat) and
+  # -stt-models.json (transcription); `--record` refreshes both from the live
+  # API. It asserts every audio-input chat row is routed to /chat/completions
+  # (and a `:batch` or name-hinted row is not), and that the Google Gemini rows
+  # dictation now offers are absent from the transcription slice — which is why
+  # both slices are read.
 node scripts/test-dictation-ui.mjs    # a browser fixture: prints a URL, or
   # `--write <dir>` emits it to serve statically. Its fake recorder emits a
   # chunk every 250 ms, so the composer-mic scenario shows a live take end to
-  # end — the draft filling in, then settling — in a couple of seconds.
+  # end — the draft filling in, then settling — in a couple of seconds. The
+  # mixed scenario carries both routes at once (an `openai-audio` Google row
+  # beside `openai-compatible` transcribers), so the picker's "Sends as" line
+  # can be seen saying `OpenAI chat` for one and `OpenAI-shaped` for another.
 node scripts/test-dictation-chat.cjs  # the composer mic inside the real
   # ChatView (needs debug Chrome; see CDP_URL below). Its fake recorder is
   # stop-driven, so this is the *non-live* path: one request, appended once.

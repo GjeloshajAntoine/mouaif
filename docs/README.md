@@ -29,7 +29,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Content Security Policy](features/content-security-policy.md) — the policy the app shell ships with, directive by directive.
 - [Routing](features/routing.md) — every hash the app answers, its query parameters, and the old names that still work.
 - [Modal sheets](features/modal-sheets.md) — Escape, Tab and focus behave the same in every full-screen sheet, including stacked ones.
-- [Dictation](features/dictation.md) — speech-to-text from a page under Settings (App defaults) and from the chat composer, which transcribes while you speak; with a chosen model and a per-run cost.
+- [Dictation](features/dictation.md) — speech-to-text from a page under Settings (App defaults) and from the chat composer, which transcribes while you speak; with a chosen model, three request families (multipart, inline-audio chat, Gemini) and a per-run cost.
 - [File button: glass orb](features/file-button-orb.md) — render the composer's file/git button as an animated 3D glass orb, from Settings → Chat defaults.
 
 ## Build the documentation

@@ -32,6 +32,8 @@ const {
 const transcribe = require('./transcribe.js');
 const modelList = require('./modelList.js');
 const usageMetrics = require('./usage.js');
+const serverShared = require('./server-shared.js');
+const KIND_IDS = transcribe.KIND_IDS;
 
 // UNKNOWN_COST — what a run with no usage report, or a model with no pricing,
 // returns. `known: false` is the app's existing convention for "render `--`"
@@ -44,6 +46,29 @@ const UNKNOWN_COST = Object.freeze({ input: 0, output: 0, total: 0, currency: 'U
 // AUDIO_BASE64_MAX — the JSON body cap. base64 inflates by ~4/3, so this is
 // the HTTP-layer twin of transcribe.MAX_AUDIO_BYTES (20 MB of audio).
 const AUDIO_BASE64_MAX = Math.ceil(transcribe.MAX_AUDIO_BYTES * 4 / 3) + 1024;
+
+// cachedModelRecord(provider, modelId) -> the live catalog row, or null.
+//
+// resolveModel rebuilds a live-catalog model from its id and provider (the
+// picker deliberately does not persist them into the project's model list), so
+// the capability report the catalog offered it on is not on the resolved
+// record. The report is what decides the request family for a model that can
+// hear but has no /audio/transcriptions entry, so it is read back from the same
+// cache resolveModel prices from. Both slices are consulted: the transcription
+// slice serves the purpose-built speech-to-text rows, and the chat slice is
+// where OpenRouter files a Google Gemini model.
+function cachedModelRecord(provider, modelId) {
+  if (!provider || !modelId) return null;
+  for (const purpose of ['transcription', 'chat']) {
+    const entry = serverShared.MODEL_LIST_CACHE.get(
+      serverShared.modelListCacheKey(provider, serverShared.credHashFor(provider), purpose)
+    );
+    if (!entry || !Array.isArray(entry.models)) continue;
+    const hit = entry.models.find((m) => m && m.id === modelId);
+    if (hit) return hit;
+  }
+  return null;
+}
 
 // audioBufferFrom(base64) — decode, with the two failures that actually
 // happen: a body that is not valid base64 at all, and a body that decodes to
@@ -173,13 +198,30 @@ async function handleTranscribe(req, res, parsed) {
 
     const liveFailures = [];
     if (wantLive && connectedIds.length) {
-      // The live half is read as the provider's *transcription* slice where it
-      // publishes one (OpenRouter: /models defaults to `output_modalities=text`,
-      // so its speech-to-text models are not in the chat list at all, while the
-      // audio-input chat models that are there are rejected by
-      // /audio/transcriptions). Providers without such a slice hand back their
-      // chat list, which the candidate filter below narrows as before.
-      const { list, failures } = await modelList.liveModelsForMany(connectedIds, { force, purpose: 'transcription' });
+    // The live half is read as the provider's *transcription* slice where it
+    // publishes one (OpenRouter: /models defaults to `output_modalities=text`,
+    // so its speech-to-text models are not in the chat list at all, while the
+    // audio-input chat models that are there are rejected by
+    // /audio/transcriptions). Providers without such a slice hand back their
+    // chat list, which the candidate filter below narrows as before.
+    //
+    // OpenRouter is the one provider where *both* slices are needed, which is
+    // why the transcription read cannot stand alone. Its transcription slice
+    // is the purpose-built speech-to-text catalogue (whisper, voxtral,
+    // `google/chirp-3`, … — 21 rows), and the models most people expect to
+    // dictate with are simply not in it: `google/gemini-3.5-flash` and every
+    // other Google Gemini row is a *chat* model that can hear, filed upstream
+    // under `output_modalities: ["text"]`. Reading only the transcription
+    // slice therefore left the picker with no Google chat model at all, which
+    // is what "Google models are not available on OpenRouter" looked like
+    // from the phone. The chat slice is read too, and the candidate filter
+    // keeps the rows that can actually take audio (see
+    // transcribe.audioChatModel) — served over /chat/completions rather than
+    // over the endpoint that answers `400 Model … does not exist` for them.
+    const reads = [{ purpose: 'transcription' }];
+    if (connectedIds.includes('openrouter')) reads.push({ purpose: 'chat' });
+    for (const read of reads) {
+      const { list, failures } = await modelList.liveModelsForMany(connectedIds, { force, ...read });
       liveFailures.push(...failures);
       const seen = new Set(rows.map((r) => r.provider + '\u0000' + r.id));
       for (const m of list) {
@@ -197,13 +239,14 @@ async function handleTranscribe(req, res, parsed) {
       connected: true
       };
       // Carry the capability report through, so the picker can say *why* a
-// model is on the list when its name does not: the input modalities are
-// the "takes audio" half, the output modalities the "really produces a
-// transcript" half (which is what the dictation slice is built from).
-if (Array.isArray(m.inputModalities)) row.inputModalities = m.inputModalities;
-if (Array.isArray(m.outputModalities)) row.outputModalities = m.outputModalities;
-rows.push(row);
+  // model is on the list when its name does not: the input modalities are
+  // the "takes audio" half, the output modalities the "really produces a
+  // transcript" half (which is what the dictation slice is built from).
+  if (Array.isArray(m.inputModalities)) row.inputModalities = m.inputModalities;
+  if (Array.isArray(m.outputModalities)) row.outputModalities = m.outputModalities;
+  rows.push(row);
       }
+    }
     }
 
     return sendJSON(res, 200, {
@@ -238,6 +281,26 @@ rows.push(row);
     } catch (e) {
       return sendJSON(res, statusFor(e.code), { error: e.message, code: e.code || 'EBADMODEL' });
     }
+
+    // A live catalog row is not a project record: `resolveModel` rebuilds it
+    // from the id and the provider alone, so the capability report the catalog
+    // selected on (`inputModalities` / `outputModalities`, carried by
+    // src/ai-endpoints.js) is not on it. Fold it back from the same cache
+    // resolveModel just read, so the route is decided by the same evidence the
+    // picker offered the row on. Without this, an audio chat model the catalog
+    // correctly listed would be sent to /audio/transcriptions — the endpoint
+    // that answers `400 Model … does not exist` for it.
+    const cached = cachedModelRecord(model.provider, model.id);
+    if (cached) {
+      model = Object.assign({}, model, {
+        inputModalities: cached.inputModalities,
+        outputModalities: cached.outputModalities,
+        kind: cached.kind
+      });
+    }
+    // The picker's own decision wins when it is on the request: it read the
+    // capability report directly and the user chose the model on that basis.
+    if (KIND_IDS.includes(body.kind)) model.kind = body.kind;
 
     const kind = transcribe.kindForModel(model);
     const descriptor = model.transcription && typeof model.transcription === 'object' ? model.transcription : {};

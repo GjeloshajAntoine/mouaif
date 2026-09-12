@@ -92,22 +92,28 @@ check('isTranscriptionModel recognises the five signals', () => {
 // 1. explicitly marked
 assert.equal(transcribe.isTranscriptionModel({ id: 'my-asr', transcription: true }), true);
 // 2. the provider says what the model produces. `transcription` output is
-//    the definitive yes, and a report without it is the definitive no —
-//    whichever name the model has. This is the rule that keeps the models
-//    OpenRouter *does* carry out of the chat catalog while the ones
-//    /audio/transcriptions accepts stay in.
+//    the definitive yes; a report *without* it is a yes only when the model
+//    can be sent audio over the chat route (see audioChatModel). This is the
+//    rule that keeps the models OpenRouter *does* carry out of the chat
+//    catalog while the ones /audio/transcriptions accepts stay in — and the
+//    rule that lets an audio-input Google chat model be dictated with at all,
+//    since OpenRouter files it under `output_modalities: ["text"]` and so
+//    keeps it out of the transcription slice entirely.
 assert.equal(transcribe.isTranscriptionModel({
 id: 'openai/whisper-1', provider: 'openrouter', outputModalities: ['transcription']
 }), true);
 assert.equal(transcribe.isTranscriptionModel({
 id: 'openai/gpt-audio', provider: 'openrouter', inputModalities: ['text', 'audio'], outputModalities: ['text', 'audio']
-}), false, 'a chat model that takes audio produces text, not transcripts');
+}), true, 'reported as audio in: dictated through /chat/completions, not /audio/transcriptions');
 assert.equal(transcribe.isTranscriptionModel({
 id: 'google/gemini-2.5-flash', provider: 'openrouter', inputModalities: ['text', 'audio'], outputModalities: ['text']
-}), false, 'and the provider rejecting it is exactly what the user saw');
+}), true, 'the Google row the user could not dictate with: audio in, /audio/transcriptions rejects it, chat route accepts it');
 assert.equal(transcribe.isTranscriptionModel({
 id: 'mistralai/voxtral-small-24b-2507', provider: 'openrouter', outputModalities: ['text']
 }), false, 'a name hint does not outvote the provider — the STT sibling has its own id');
+assert.equal(transcribe.isTranscriptionModel({
+id: 'anthropic/claude-opus-4.8', provider: 'openrouter', inputModalities: ['text', 'audio'], outputModalities: ['text']
+}), true, 'audio in is the rule on any OpenAI-shaped connection, not a Google special case');
 // 3. the id looks like speech-to-text — only where nothing reported outputs
 assert.equal(transcribe.isTranscriptionModel({ id: 'whisper-1', provider: 'openai-compatible' }), true);
 assert.equal(transcribe.isTranscriptionModel({ id: 'openai/whisper-large-v3', provider: 'openrouter' }), true);
@@ -185,15 +191,16 @@ check('transcriptionCandidates unions marked models with id hints, else offers e
 const all = transcribe.transcriptionCandidates([{ id: 'a' }, { id: 'b' }]);
 assert.deepEqual(all.map((m) => m.id), ['a', 'b']);
 assert.deepEqual(transcribe.transcriptionCandidates(null), []);
-// …but a catalog the provider *classified* and where none of it transcribes
-// is an answer, not a gap: those rows are rejected by the transcription
-// endpoint, so offering them would be the provider error the filter exists to
-// prevent. This is the OpenRouter chat catalog in one assertion.
+// The classified catalog: every row reports `text` output and one of them has
+// no audio input at all. The audio rows *are* offered now — through the chat
+// route — and the one that cannot hear is not.
 const classified = transcribe.transcriptionCandidates([
 { id: 'openai/gpt-audio', provider: 'openrouter', inputModalities: ['text', 'audio'], outputModalities: ['text', 'audio'] },
-{ id: 'google/gemini-2.5-flash', provider: 'openrouter', inputModalities: ['text', 'audio'], outputModalities: ['text'] }
+{ id: 'google/gemini-2.5-flash', provider: 'openrouter', inputModalities: ['text', 'audio'], outputModalities: ['text'] },
+{ id: 'deepseek/deepseek-v4-flash', provider: 'openrouter', inputModalities: ['text'], outputModalities: ['text'] }
 ]);
-assert.deepEqual(classified, []);
+assert.deepEqual(classified.map((m) => m.id), ['openai/gpt-audio', 'google/gemini-2.5-flash'],
+'a classified audio row is offered on the chat route; a classified text-only row is not');
 // A single unclassified row keeps the fallback alive for the rest: the
 // self-hosted model the user wrote by hand must not be hidden by the rows a
 // provider happened to describe.
@@ -202,6 +209,7 @@ const mixed = transcribe.transcriptionCandidates([
 { id: 'my-asr', provider: 'openai-compatible' }
 ]);
 assert.deepEqual(mixed.map((m) => m.id), ['openai/gpt-audio', 'my-asr']);
+
 });
 
 check('the OpenAI-shaped request is multipart with file + model', () => {
@@ -230,6 +238,85 @@ check('the OpenAI-shaped request is multipart with file + model', () => {
   assert.ok(body.endsWith('--' + boundary + '--\r\n'), 'body is terminated');
   // The audio bytes survive the encode/decode round trip.
   assert.ok(built.body.includes(audio), 'audio bytes are present verbatim');
+});
+
+check('the inline-audio chat request carries the recording as an input_audio part', () => {
+  const audio = Buffer.from([0x1a, 0x45, 0xdf, 0xa3]);
+  const built = transcribe.buildTranscribeRequest({
+    kind: 'openai-audio',
+    model: { id: 'google/gemini-3.5-flash', provider: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' },
+    apiKey: 'sk-or-test',
+    audio,
+    mimeType: 'audio/webm',
+    filename: 'take.webm',
+    language: 'fr',
+    prompt: 'mouaif'
+  });
+  assert.equal(built.method, 'POST');
+  // /chat/completions, never /audio/transcriptions: that endpoint answers
+  // `400 Model … does not exist` for every one of these models.
+  assert.equal(built.url, 'https://openrouter.ai/api/v1/chat/completions');
+  assert.equal(built.headers.Authorization, 'Bearer sk-or-test');
+  assert.equal(built.headers['Content-Type'], 'application/json');
+  const body = JSON.parse(built.body.toString('utf8'));
+  assert.equal(body.model, 'google/gemini-3.5-flash');
+  assert.equal(body.messages.length, 1);
+  assert.equal(body.messages[0].role, 'user');
+  const [text, part, language] = body.messages[0].content;
+  assert.equal(text.type, 'text');
+  assert.equal(text.text, 'mouaif', 'an explicit prompt is sent verbatim');
+  // The container is named by label, not by MIME type: `audio/webm;codecs=opus`
+  // is not a value this field accepts.
+  assert.deepEqual(part, { type: 'input_audio', input_audio: { data: audio.toString('base64'), format: 'webm' } });
+  assert.equal(language.type, 'text', 'the language hint is a third part, not a field');
+  assert.equal(language.text.includes('"fr"'), true, 'no language field exists, so the hint rides the prompt');
+  // A bare recording still gets the instruction — with no prompt these models
+  // answer "that is a pangram" instead of the sentence.
+  const bare = JSON.parse(transcribe.buildTranscribeRequest({
+    kind: 'openai-audio',
+    model: { id: 'x', baseUrl: 'https://example.test/v1' },
+    audio
+  }).body.toString('utf8'));
+  assert.equal(bare.messages[0].content[0].text, transcribe.DEFAULT_TRANSCRIBE_PROMPT);
+  assert.equal(bare.messages[0].content.length, 2, 'no language part unless asked');
+});
+
+check('audioFormatFor names the container the way the field wants it', () => {
+  assert.equal(transcribe.audioFormatFor('audio/webm;codecs=opus'), 'webm');
+  assert.equal(transcribe.audioFormatFor('audio/ogg;codecs=opus'), 'ogg');
+  assert.equal(transcribe.audioFormatFor('audio/mp4'), 'm4a');
+  assert.equal(transcribe.audioFormatFor('audio/mpeg'), 'mp3');
+  assert.equal(transcribe.audioFormatFor('audio/wav'), 'wav');
+  assert.equal(transcribe.audioFormatFor('audio/flac'), 'flac');
+  // Unknown falls back to what every Chromium MediaRecorder produces, and a
+  // missing type is decided by the file name rather than guessed at.
+  assert.equal(transcribe.audioFormatFor(''), 'webm');
+  assert.equal(transcribe.audioFormatFor('', 'take.mp3'), 'mp3');
+});
+
+check('audioChatModel routes an audio-input chat row to the chat endpoint', () => {
+  // The Google rows this whole change is about: reported as producing `text`,
+  // so not transcription models, and rejected by /audio/transcriptions.
+  assert.equal(transcribe.audioChatModel({
+    id: 'google/gemini-3.5-flash', provider: 'openrouter', inputModalities: ['text', 'audio', 'image'], outputModalities: ['text']
+  }), true);
+  assert.equal(transcribe.kindForModel({
+    id: 'google/gemini-3.5-flash', provider: 'openrouter', kind: 'openai-audio'
+  }), 'openai-audio', 'the kind the catalog decided wins over the connection default');
+  // A row with a real /audio/transcriptions entry keeps the multipart route,
+  // which is cheaper and purpose-built.
+  assert.equal(transcribe.audioChatModel({
+    id: 'google/chirp-3', provider: 'openrouter', inputModalities: ['audio'], outputModalities: ['transcription']
+  }), false);
+  // A name that says where it belongs is not second-guessed.
+  assert.equal(transcribe.audioChatModel({
+    id: 'openai/whisper-large-v3', provider: 'openrouter', inputModalities: ['audio']
+  }), false);
+  // No report, no reroute: the multipart default is unchanged for everything
+  // the provider did not describe.
+  assert.equal(transcribe.audioChatModel({ id: 'my-asr', provider: 'openai-compatible' }), false);
+  assert.equal(transcribe.audioChatModel({ id: 'gemini-2.5-flash', provider: 'gemini', inputModalities: ['audio'] }), false,
+    'Gemini has its own inline shape and is not OpenAI-shaped');
 });
 
 check('a baseUrl with a trailing slash does not double it, and path is overridable', () => {
@@ -299,6 +386,34 @@ check('parseTranscribeResponse reads both families, including self-hosted spelli
     candidates: [{ content: { parts: [{ text: 'first ' }, { text: 'second' }] } }]
   }));
   assert.deepEqual(gemini, { text: 'first second', usage: null });
+  // The 2026 Gemini transcription models answer in `audioTranscription.text`
+  // with `part.text` present but EMPTY. Reading only `part.text` turned a
+  // successful transcription into `EEMPTY` — "the provider returned no
+  // transcript" — for a body that contained one.
+  const geminiTranscribe = transcribe.parseTranscribeResponse('gemini', 200, JSON.stringify({
+    candidates: [{ content: { parts: [{ text: '', audioTranscription: { text: 'spoken words' } }] } }]
+  }));
+  assert.deepEqual(geminiTranscribe, { text: 'spoken words', usage: null },
+    'the dedicated transcription shape parses');
+  // A part carrying both is emitted once, not twice.
+  assert.equal(transcribe.parseTranscribeResponse('gemini', 200, JSON.stringify({
+    candidates: [{ content: { parts: [{ text: 'once', audioTranscription: { text: 'once' } }] } }]
+  })).text, 'once');
+  // The inline-audio chat shape answers with a completion.
+  const chat = transcribe.parseTranscribeResponse('openai-audio', 200, JSON.stringify({
+    choices: [{ message: { role: 'assistant', content: '  a transcript  ', reasoning: 'thinking…' } }],
+    usage: { prompt_tokens: 162, completion_tokens: 63 }
+  }));
+  assert.deepEqual(chat, { text: 'a transcript', usage: { promptTokens: 162, completionTokens: 63 } });
+  assert.equal(transcribe.parseTranscribeResponse('openai-audio', 200, JSON.stringify({
+    choices: [{ message: { content: [{ type: 'text', text: 'part one ' }, { type: 'text', text: 'part two' }] } }]
+  })).text, 'part one part two', 'the array-of-parts content form parses');
+  // Reasoning is never the transcript, and an empty completion is EEMPTY
+  // rather than a crash.
+  assert.equal(transcribe.parseTranscribeResponse('openai-audio', 200, JSON.stringify({
+    choices: [{ message: { content: '', reasoning: 'I cannot hear this' } }]
+  })).code, 'EEMPTY');
+  assert.equal(transcribe.parseTranscribeResponse('openai-audio', 200, '<html>nope</html>').code, 'EBADUPSTREAM');
   // An HTTP failure surfaces the provider's own words, which is the only
   // diagnostic the user gets for a misconfigured endpoint.
   const unauthorised = transcribe.parseTranscribeResponse('openai-compatible', 401, JSON.stringify({
@@ -318,7 +433,7 @@ check('a no-project catalog offers nothing but still names the shapes', () => {
   // read-out under the picker names.
   assert.deepEqual(transcribe.transcriptionCandidates([]), []);
   assert.deepEqual(transcribe.transcriptionCandidates(null), []);
-  assert.equal(transcribe.TRANSCRIBE_KINDS.length, 2);
+  assert.equal(transcribe.TRANSCRIBE_KINDS.length, 3, 'multipart, inline-audio chat, and Gemini');
 });
 
 check('usageFromResponse reads both families and never invents a zero', () => {

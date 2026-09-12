@@ -104,7 +104,7 @@ try {
   assert.equal(catalog.body.models.find((m) => m.id === 'whisper-1').kind, 'openai-compatible');
   assert.equal(catalog.body.models.find((m) => m.id === 'gemini-2.5-flash').kind, 'gemini');
   assert.ok(catalog.body.models.every((m) => m.connected), 'the provider connection is reported');
-  assert.deepEqual(catalog.body.kinds.map((k) => k.id), ['openai-compatible', 'gemini']);
+  assert.deepEqual(catalog.body.kinds.map((k) => k.id), ['openai-compatible', 'openai-audio', 'gemini']);
   assert.equal(catalog.body.total, 3, 'the filter is reported against the full model list');
 
   const noProject = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root));
@@ -339,6 +339,74 @@ try {
   assert.equal(geminiBody.contents[0].parts[1].inline_data.data, audio.toString('base64'));
   // The per-model language default applies when the request does not set one.
   assert.ok(geminiBody.contents[0].parts.some((p) => typeof p.text === 'string' && p.text.includes('"fr"')));
+
+  // ---- The inline-audio chat route -------------------------------------
+  //
+  // A model that can hear but has no /audio/transcriptions entry. This is the
+  // OpenRouter Google case: the chat catalog offers it, the transcription slice
+  // never lists it, and the multipart endpoint answers `400 Model … does not
+  // exist` for it.
+  upstream.reply = {
+    status: 200,
+    body: {
+      choices: [{ message: { role: 'assistant', content: ' hello from the chat route ' } }],
+      usage: { prompt_tokens: 20, completion_tokens: 5 }
+    }
+  };
+  const audioChat = await request('/api/ai/transcribe', jsonInit('POST', {
+    projectDir,
+    modelId: 'google/gemini-3.5-flash',
+    providerId: 'openai-compatible',
+    kind: 'openai-audio',
+    audioBase64: audio.toString('base64'),
+    mimeType: 'audio/webm'
+  }));
+  assert.equal(audioChat.status, 200, JSON.stringify(audioChat.body));
+  assert.equal(audioChat.body.text, 'hello from the chat route');
+  assert.equal(audioChat.body.kind, 'openai-audio');
+  const chatSent = upstream.requests[upstream.requests.length - 1];
+  assert.equal(chatSent.url, '/v1/chat/completions', 'the chat endpoint, not /audio/transcriptions');
+  assert.equal(chatSent.headers.authorization, 'Bearer test-key');
+  const chatBody = JSON.parse(chatSent.body.toString('utf8'));
+  assert.equal(chatBody.model, 'google/gemini-3.5-flash');
+  assert.deepEqual(chatBody.messages[0].content[1], {
+    type: 'input_audio',
+    input_audio: { data: audio.toString('base64'), format: 'webm' }
+  });
+  assert.deepEqual(audioChat.body.usage, { promptTokens: 20, completionTokens: 5 },
+    'a chat completion reports tokens, so the run is priced rather than unknown');
+
+  // The kind the catalog classified the row under is what the request does: a
+  // project record for the same id that asked for the multipart family is not
+  // second-guessed into the chat route.
+  const explicitMultipart = await request('/api/ai/transcribe', jsonInit('POST', {
+    projectDir,
+    modelId: 'openai/whisper-large-v3',
+    providerId: 'openai-compatible',
+    kind: 'openai-compatible',
+    audioBase64: audio.toString('base64'),
+    mimeType: 'audio/webm'
+  }));
+  assert.equal(explicitMultipart.body.kind, 'openai-compatible');
+  assert.equal(upstream.requests[upstream.requests.length - 1].url, '/v1/audio/transcriptions');
+
+  // ---- The Gemini transcription shape ----------------------------------
+  //
+  // The 2026 transcription models answer in `audioTranscription.text` with
+  // `part.text` empty; reading only `part.text` reported a successful
+  // transcription as EEMPTY.
+  upstream.reply = {
+    status: 200,
+    body: { candidates: [{ content: { parts: [{ text: '', audioTranscription: { text: 'spoken words' } }] } }] }
+  };
+  const geminiTranscribe = await request('/api/ai/transcribe', jsonInit('POST', {
+    projectDir,
+    modelId: 'gemini-2.5-flash',
+    audioBase64: audio.toString('base64'),
+    mimeType: 'audio/webm'
+  }));
+  assert.equal(geminiTranscribe.status, 200, JSON.stringify(geminiTranscribe.body));
+  assert.equal(geminiTranscribe.body.text, 'spoken words');
 
   // ---- A run the provider reported tokens for is priced ----------------
   //

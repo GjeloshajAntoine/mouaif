@@ -118,32 +118,59 @@ assert.ok(sttRows.some((m) => m.id === 'openai/whisper-1'),
 
 // ---- An audio *input* report is not a transcription signal --------------
 
-// The chat catalog's audio models are the ones that used to be offered and
-// then rejected by the provider. Not one of them may be a transcriber.
+// The chat catalog's audio models used to be offered and then rejected by the
+// provider, because the catalog sent every one of them to
+// /audio/transcriptions. The ones that can hear are offered now — through the
+// chat route, which is the endpoint that accepts them — and the ones that
+// cannot be dictated with at all are not.
+//
+// A row is not offered for dictation when either of two things is true:
+//   * `:batch` — served by the Batch API (submit a job, poll it), which a
+//     microphone tap cannot reach; or
+//   * its *name* says it belongs to /audio/transcriptions (`whisper-…`,
+//     `voxtral-…`). Those ids have a sibling in the transcription slice
+//     (`mistralai/voxtral-small-24b-2507-stt`) or a real entry there, and the
+//     purpose-built multipart call is the right one for them.
+const HINT = /whisper|transcribe|voxtral|parakeet/;
 const audioChatRows = chatRows.filter((m) => Array.isArray(m.inputModalities) && m.inputModalities.includes('audio'));
 assert.ok(audioChatRows.length > 0, 'the chat catalog has audio-input models to check');
 for (const row of audioChatRows) {
-  if (row.outputModalities.includes('transcription')) continue; // would belong in the STT slice
-  assert.equal(transcribe.isTranscriptionModel(row), false,
-    row.id + ' takes audio input but produces ' + row.outputModalities.join('+')
-    + ': /audio/transcriptions rejects it, so it must not be offered');
+  if (row.outputModalities.includes('transcription')) continue; // belongs in the STT slice
+  if (row.id.endsWith(':batch')) {
+    assert.equal(transcribe.isTranscriptionModel(row), false,
+      row.id + ' is only callable through the Batch API, which cannot answer a dictation');
+    continue;
+  }
+  if (HINT.test(row.id)) {
+    assert.equal(transcribe.kindForModel(row), 'openai-compatible',
+      row.id + ' names itself a transcriber, so it keeps the multipart route');
+    continue;
+  }
+  assert.equal(transcribe.isTranscriptionModel(row), true,
+    row.id + ' takes audio input, so it is dictated with — through /chat/completions');
+  assert.equal(transcribe.kindForModel(row), 'openai-audio',
+    row.id + ' must be sent to the endpoint that accepts it, not /audio/transcriptions');
 }
-for (const id of ['openai/gpt-audio', 'mistralai/voxtral-small-24b-2507']) {
+for (const id of ['openai/gpt-audio', 'google/gemini-2.5-flash']) {
   const row = chatRows.find((m) => m.id === id);
   if (!row) continue;
-  assert.equal(transcribe.isTranscriptionModel(row), false,
-    id + ' is the name-plausible chat model this whole check exists for');
+  assert.equal(transcribe.kindForModel(row), 'openai-audio',
+    id + ' is one of the audio-in chat models the chat route exists for');
 }
 assert.ok(sttRows.some((m) => m.id === 'mistralai/voxtral-small-24b-2507-stt'),
   'the speech-to-text sibling of the voxtral chat model is in the transcription slice');
 
-// The fallback in transcriptionCandidates ("offer everything rather than
-// nothing") is for catalogs that say nothing. A chat catalog where the provider
-// reported outputs for every row is a catalog that said no, and the dictation
-// handler reads the transcription slice instead — so the chat list must not
-// quietly turn into a candidate list.
-assert.equal(chatRows.filter(transcribe.isTranscriptionModel).length, 0,
-  'the chat catalog contains no transcriber once the provider output reports are read');
+// The Google chat models are the reason this test grew a second half. They are
+// filed upstream under `output_modalities: ["text"]`, so the transcription slice
+// never lists them — reading only that slice is what left the dictation picker
+// with no Google chat model at all.
+const googleChatAudio = audioChatRows.filter((m) => /^google\//.test(m.id) && !m.id.endsWith(':batch'));
+if (googleChatAudio.length) {
+  assert.ok(googleChatAudio.every((m) => transcribe.kindForModel(m) === 'openai-audio'),
+    'every Google chat model that can hear is dictated with over the chat route');
+  assert.ok(!sttRows.some((m) => /^google\/gemini/.test(m.id)),
+    'and none of them is in the transcription slice, which is why the chat slice is read too');
+}
 
 // ---- The transcription slice is what dictation may offer ----------------
 
@@ -192,6 +219,12 @@ if (lookalikes.length) {
 }
 
 const googleCount = candidates.filter((c) => /^google\//.test(c.id)).length;
-console.log('PASS openrouter catalog: ' + chatRows.length + ' chat models -> 0 candidates, '
-  + sttRows.length + ' transcription models -> ' + candidates.length + ' candidates ('
-  + googleCount + ' google, ' + nonGoogle.length + ' other), modality signals carried through');
+// The two slices are read together for dictation now, so the summary reports
+// both: the chat slice's audio-input rows are candidates too, over the chat
+// route.
+const chatCandidates = chatRows.filter(transcribe.isTranscriptionModel);
+const chatAudioRoute = chatCandidates.filter((m) => transcribe.kindForModel(m) === 'openai-audio').length;
+console.log('PASS openrouter catalog: ' + sttRows.length + ' transcription models -> ' + candidates.length
+  + ' candidates (' + googleCount + ' google, ' + nonGoogle.length + ' other) over /audio/transcriptions, '
+  + 'plus ' + chatAudioRoute + ' of the ' + chatRows.length + ' chat models over /chat/completions'
+  + ' (the audio-input ones, which the transcription slice never lists), modality signals carried through');

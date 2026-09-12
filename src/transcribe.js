@@ -29,10 +29,20 @@
 // the key stays server-side: the browser POSTs base64 to /api/ai/transcribe
 // and never sees the credential (docs/decisions.md section 10).
 
-// Family ids. `openai` is the default because it is the most widely
-// implemented shape (OpenAI, Groq, Mistral, OpenRouter, LM Studio, ...).
+// Family ids — the request shapes dictation can send. Adding one is a builder
+// branch, a parser branch, and a label; the picker reads the list, so a new
+// shape shows up in the UI without a frontend change.
+//
+//   openai-compatible  multipart POST /audio/transcriptions (OpenAI, Groq,
+//                      Mistral, OpenRouter's speech-to-text slice, LM Studio…)
+//   openai-audio       POST /chat/completions with an inline `input_audio`
+//                      part. The route for a model that can hear but has no
+//                      /audio/transcriptions entry — see audioChatModel.
+//   gemini             POST /v1beta/models/{model}:generateContent with the
+//                      audio inline as a base64 `inline_data` part.
 const TRANSCRIBE_KINDS = Object.freeze([
   { id: 'openai-compatible', label: 'OpenAI-compatible (multipart /audio/transcriptions)' },
+  { id: 'openai-audio',      label: 'OpenAI-compatible (inline audio /chat/completions)' },
   { id: 'gemini',            label: 'Gemini (inline audio)' }
 ]);
 
@@ -44,6 +54,36 @@ const DEFAULT_KIND = 'openai-compatible';
 // a hand-rolled request cannot hand 100 MB to a provider.
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 60 * 1000;
+
+// DEFAULT_TRANSCRIBE_PROMPT — what the inline-audio shapes ask the model to do.
+// A multipart /audio/transcriptions call needs no instruction (the endpoint
+// exists to transcribe), but an inline-audio call is a *chat* request, so the
+// prompt is the difference between a transcript and a remark about the audio:
+// with no prompt, OpenRouter's Google models answer "That is a variation of the
+// classic English pangram…" instead of the sentence itself.
+const DEFAULT_TRANSCRIBE_PROMPT = 'Transcribe this audio recording verbatim. Return only the transcript text, with punctuation, and no commentary.';
+
+// audioFormatFor(mimeType, filename) -> 'wav' | 'mp3' | 'ogg' | 'webm' | 'flac' | 'm4a'
+//
+// The OpenAI chat API names an inline audio part's container with a bare label,
+// not a MIME type. Anything unrecognised falls back to `webm`, which is what
+// every Chromium browser's MediaRecorder produces — the only shape this app
+// records in practice.
+function audioFormatFor(mimeType, filename) {
+  const type = String(mimeType || '').toLowerCase() || String(mimeTypeFor(filename) || '').toLowerCase();
+  // Container first: `audio/webm;codecs=opus` is a WebM file that happens to
+  // carry Opus, and must not be labelled `ogg` just because the codec is named.
+  if (type.includes('webm')) return 'webm';
+  if (type.includes('ogg') || type.includes('oga')) return 'ogg';
+  if (type.includes('wav') || type.includes('wave')) return 'wav';
+  if (type.includes('mpeg') || type.includes('mp3')) return 'mp3';
+  if (type.includes('mp4') || type.includes('m4a') || type.includes('aac')) return 'm4a';
+  if (type.includes('flac')) return 'flac';
+  // A bare Opus stream, with no container named, is served as Ogg by every
+  // provider that accepts one.
+  if (type.includes('opus')) return 'ogg';
+  return 'webm';
+}
 
 // MODEL_HINTS — model-id substrings that mean "this is a transcription
 // model", used only to decide the default family when the user has not
@@ -64,9 +104,14 @@ const OPENAI_SHAPED_PROVIDERS = [
 //      for an endpoint that is not the convention — a self-hosted server that
 //      really does serve Gemma behind a generateContent path, say. It is the
 //      only thing that overrides the connection.
-//   2. the *provider connection*: `gemini` speaks Gemini, everything else in
+//   2. a `kind` the *live catalog* already decided (the dictation catalog
+//      stamps one per row; see transcribe.audioChatModel below).
+//   3. a model that can *hear* but has no /audio/transcriptions entry: an
+//      OpenAI-shaped connection whose capability report names audio input
+//      routes through /chat/completions instead. See audioChatModel.
+//   4. the *provider connection*: `gemini` speaks Gemini, everything else in
 //      the shipped registry speaks the OpenAI shape.
-//   3. only when the provider is unknown, the id: `google/…` means Gemini.
+//   5. only when the provider is unknown, the id: `google/…` means Gemini.
 //
 // The order matters, and getting it wrong is not cosmetic. An earlier version
 // keyed off the id first, so an OpenRouter model called `google/gemini-2.5-flash`
@@ -80,11 +125,62 @@ function kindForModel(model) {
     ? m.transcription.kind
     : '';
   if (KIND_IDS.includes(explicit)) return explicit;
+  if (KIND_IDS.includes(m.kind)) return m.kind;
+  if (audioChatModel(m)) return 'openai-audio';
   if (m.provider === 'gemini') return 'gemini';
   if (OPENAI_SHAPED_PROVIDERS.includes(m.provider)) return 'openai-compatible';
   const id = String(m.id || '').toLowerCase();
   if (id.startsWith('google/')) return 'gemini';
   return DEFAULT_KIND;
+}
+
+// audioChatModel(model) -> boolean
+//
+// Does this model have to be transcribed through /chat/completions with an
+// inline audio part, rather than through /audio/transcriptions?
+//
+// OpenRouter is the reason this exists, and the reason is structural rather
+// than cosmetic. Its /models catalog is sliced by output modality, and a Google
+// chat model is filed under `output_modalities: ["text"]` — the transcription
+// slice does not list it. So `google/gemini-3.5-flash` is offered by the chat
+// picker, reports `audio` among its input modalities, answers a transcription
+// with a perfect transcript through /chat/completions… and is answered by
+// /audio/transcriptions with `400 Model … does not exist`, because that
+// endpoint serves only the 21 rows of the transcription slice (`google/chirp-3`
+// among them). "Google models are not available on OpenRouter" for dictation is
+// exactly this: the Google models that can hear are all on the chat route.
+//
+// The signal is the provider's own capability report — audio in, and not
+// already a declared transcriber (those go to the multipart route, which is
+// what the speech-to-text slice is for):
+//
+//   * `outputModalities` naming `transcription` -> not this: it has a real
+//     /audio/transcriptions entry, and that is the cheaper, purpose-built call;
+//   * `inputModalities` naming `audio` -> this, when the connection is
+//     OpenAI-shaped. A provider whose report we do have said the words, so it
+//     is an answer rather than a guess;
+//   * an id the hint list recognises (`…-transcribe`, `whisper-…`) -> not
+//     this: the name says where it belongs, and the name predates the report.
+//
+// Nothing here decides what is *offered* — that is isTranscriptionModel — only
+// which of the two OpenAI-shaped routes the offered row is sent down.
+//
+// One id shape is refused outright: OpenRouter's `:batch` rows (`google/gemini-3.8-flash:batch`,
+// and 76 like it). They are in the chat catalog with the same capability report
+// as their interactive twins, and every one of them answers
+// `404 This model is only available through the Batch API. Use the
+// /api/beta/batches endpoint instead.` — the *endpoint* is a different product,
+// reachable by submitting a job file and polling it, which is not something a
+// microphone tap can do. Suffix-matching here (never on the vendor prefix) is
+// the provider's own naming, so it is a report rather than a guess.
+function audioChatModel(model) {
+  const m = model || {};
+  if (!OPENAI_SHAPED_PROVIDERS.includes(m.provider)) return false;
+  if (/:batch$/.test(String(m.id || '').toLowerCase())) return false;
+  if (hintedById(m)) return false;
+  const outputs = reportedOutputModalities(m);
+  if (outputs && outputs.includes('transcription')) return false;
+  return acceptsAudioInput(m);
 }
 
 // markedForTranscription(model) — the user said so, either with the short form
@@ -138,7 +234,7 @@ function isTranscriptionModel(model) {
   if (!model) return false;
   if (markedForTranscription(model)) return true;
   const outputs = reportedOutputModalities(model);
-  if (outputs) return outputs.includes('transcription');
+  if (outputs) return outputs.includes('transcription') || audioChatModel(model);
   if (hintedById(model) || kindForModel(model) === 'gemini') return true;
   return acceptsAudioInput(model);
 }
@@ -175,6 +271,15 @@ function acceptsAudioInput(model) {
 //      filter exists to prevent. Only rows the provider left unclassified
 //      keep the fallback.
 //
+// `openai/gpt-audio` and `google/gemini-2.5-flash` are the two rows that used
+// to sit on the wrong side of both halves and therefore read as "Google models
+// are not available on OpenRouter": reported as producing `text`, so not
+// transcription models, and offered by nobody. They are *not* rejected by the
+// provider — only by /audio/transcriptions, the endpoint they were never
+// supposed to take. Their report says `audio` goes in, which is enough to route
+// them through /chat/completions instead (see audioChatModel), so isTranscriptionModel
+// accepting them is the fix rather than a regression.
+//
 // The fallback in step 2 exists because a self-hosted endpoint (`…/v1` with a
 // model called `parakeet` or `my-asr`) is perfectly valid and nothing here can
 // recognise it — the user picks. Step 1 is deliberately *narrow*: a live
@@ -209,7 +314,9 @@ const { joinUrl } = require('./util.js');
 // defaultPathFor(kind) — the conventional endpoint appended to a baseUrl when
 // the model record does not carry one.
 function defaultPathFor(kind) {
-  return kind === 'gemini' ? '/v1beta/models/{model}:generateContent' : '/audio/transcriptions';
+  if (kind === 'gemini') return '/v1beta/models/{model}:generateContent';
+  if (kind === 'openai-audio') return '/chat/completions';
+  return '/audio/transcriptions';
 }
 
 // resolveUrl(kind, model) — the upstream URL. A model record may carry
@@ -298,7 +405,7 @@ function buildTranscribeRequest(options) {
       contents: [{
         role: 'user',
         parts: [
-          { text: prompt || 'Transcribe this audio recording verbatim. Return only the transcript text, with punctuation, and no commentary.' },
+          { text: prompt || DEFAULT_TRANSCRIBE_PROMPT },
           { inline_data: { mime_type: opts.mimeType || 'audio/webm', data: Buffer.from(audio).toString('base64') } }
         ]
       }],
@@ -312,7 +419,50 @@ function buildTranscribeRequest(options) {
     return { url, method: 'POST', headers, body: Buffer.from(JSON.stringify(body)) };
   }
 
-  // OpenAI-shaped: multipart/form-data with `file` + `model`, optional
+  // OpenAI-shaped inline audio: an ordinary chat completion whose user message
+  // carries the recording as an `input_audio` part. This is the route for a
+  // model that can hear but has no /audio/transcriptions entry — on OpenRouter
+  // that is every Google chat model (`google/gemini-3.5-flash`, `~google/…`),
+  // which that endpoint rejects with `400 Model … does not exist`.
+  //
+  // The audio rides base64 in a JSON body (that is the only shape the OpenAI
+  // chat API defines for it), and the format is named by label rather than by
+  // MIME type: the field accepts `wav`/`mp3`/`ogg`/`webm`/`flac`/`m4a`, not
+  // `audio/webm;codecs=opus`. `audioFormatFor` does that mapping, and the bytes
+  // themselves are sniffed upstream, so a label that disagrees with the
+  // container is tolerated (verified against OpenRouter: `webm` bytes labelled
+  // `mp3` still transcribe).
+  if (kind === 'openai-audio') {
+    const body = {
+      model: model.id || '',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt || DEFAULT_TRANSCRIBE_PROMPT },
+          {
+            type: 'input_audio',
+            input_audio: {
+              data: Buffer.from(audio).toString('base64'),
+              format: audioFormatFor(opts.mimeType, opts.filename)
+            }
+          }
+        ]
+      }]
+    };
+    if (language) {
+      // No `language` field exists on this shape, so the instruction is part of
+      // the prompt instead — the model is a language model, and it obeys.
+      body.messages[0].content.push({
+        type: 'text',
+        text: 'The recording is in the language with code "' + language + '". Transcribe it in that language.'
+      });
+    }
+    const headers = { 'Content-Type': 'application/json' };
+    if (opts.apiKey) headers['Authorization'] = 'Bearer ' + opts.apiKey;
+    return { url, method: 'POST', headers, body: Buffer.from(JSON.stringify(body)) };
+  }
+
+  // OpenAI-shaped multipart: multipart/form-data with `file` + `model`,
   // `language` and `prompt`. The field is named `file` (not `audio`) as the
   // OpenAI media API documents; some self-hosted servers also accept `audio`,
   // but `file` is the interoperable spelling.
@@ -365,6 +515,11 @@ function usageFromResponse(kind, text) {
   try { parsed = JSON.parse(text || '{}'); } catch { return null; }
   const raw = kind === 'gemini' ? parsed.usageMetadata : parsed.usage;
   if (!raw || typeof raw !== 'object') return null;
+  // An inline-audio chat completion reports its own `cost` alongside the token
+  // counts (OpenRouter's authoritative billed figure). It cannot ride in the
+  // `{ promptTokens, completionTokens }` shape the cost layer prices, so it is
+  // dropped here and the built-in table prices the run instead — the number is
+  // still on the response if a caller ever wants to prefer it.
   const prompt = num(raw.promptTokenCount, raw.input_tokens, raw.prompt_tokens);
   const completion = num(raw.candidatesTokenCount, raw.output_tokens, raw.completion_tokens);
   if (prompt === null && completion === null) return null;
@@ -382,8 +537,22 @@ function num(...values) {
   return null;
 }
 
-// unwrapGeminiText(text) — concatenate the text parts of a generateContent
+// unwrapGeminiText(text) — concatenate the transcript out of a generateContent
 // response, skipping the safety/usage noise.
+//
+// Two response shapes carry a transcript, and a model uses one or the other:
+//
+//   * a general model (`gemini-3.8-flash`) answers in `part.text` — the audio
+//     is just another input and the transcript is just another reply;
+//   * a purpose-built transcription model (`gemini-3.5-transcribe`) answers in
+//     `part.audioTranscription.text`, with `part.text` present but **empty**.
+//
+// Reading only `part.text` made the second shape look like a provider failure:
+// HTTP 200, a real transcript in the body, and `EEMPTY` — "the provider
+// returned no transcript" — for the user. Both fields are read here, in
+// candidate order, so either shape parses. A part may carry both (a model that
+// both answers and labels its audio); `text` wins for that part so one sentence
+// is never emitted twice.
 function unwrapGeminiText(text) {
   let parsed;
   try { parsed = JSON.parse(text || '{}'); } catch { return ''; }
@@ -394,10 +563,41 @@ function unwrapGeminiText(text) {
       ? candidate.content.parts
       : [];
     for (const part of parts) {
-      if (part && typeof part.text === 'string') out.push(part.text);
+      if (!part) continue;
+      if (typeof part.text === 'string' && part.text) { out.push(part.text); continue; }
+      const spoken = part.audioTranscription && part.audioTranscription.text;
+      if (typeof spoken === 'string' && spoken) out.push(spoken);
     }
   }
   return out.join('').trim();
+}
+
+// unwrapOpenAIChatText(text) -> string | null
+//
+// The transcript out of an OpenAI-shaped chat completion. `content` may be a
+// plain string or the newer array-of-parts form (`[{ type: 'text', text }]`),
+// and models that think put the transcript in `content` with the reasoning
+// beside it — so only `content` is read, never `reasoning`.
+//
+// `null` means the body was not a chat completion at all (the caller reports
+// it as unreadable); `''` means a completion with nothing in it (no
+// transcript). The two are different failures and the messages differ.
+function unwrapOpenAIChatText(text) {
+  let parsed;
+  try { parsed = JSON.parse(text || '{}'); } catch { return null; }
+  const choices = Array.isArray(parsed.choices) ? parsed.choices : null;
+  if (!choices || !choices.length) return null;
+  const message = (choices[0] && choices[0].message) || null;
+  if (!message) return null;
+  const content = message.content;
+  if (typeof content === 'string') return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (part && typeof part.text === 'string' ? part.text : ''))
+      .join('')
+      .trim();
+  }
+  return '';
 }
 
 // upstreamErrorMessage(kind, text) — the provider's own words, falling back to
@@ -436,6 +636,15 @@ function parseTranscribeResponse(kind, status, text) {
     if (!transcript) return { error: 'The provider returned no transcript', code: 'EEMPTY' };
     return { text: transcript, usage };
   }
+  // The inline-audio chat shape answers with a completion, not a transcript
+  // object: `choices[0].message.content`. Read before the multipart branch,
+  // which expects `{ text }` and would call this response unreadable.
+  if (kind === 'openai-audio') {
+    const content = unwrapOpenAIChatText(text);
+    if (content === null) return { error: 'The provider returned an unreadable response', code: 'EBADUPSTREAM' };
+    if (!content) return { error: 'The provider returned no transcript', code: 'EEMPTY' };
+    return { text: content, usage };
+  }
   let parsed;
   try { parsed = JSON.parse(text || '{}'); } catch {
     return { error: 'The provider returned an unreadable response', code: 'EBADUPSTREAM' };
@@ -454,12 +663,15 @@ module.exports = {
   DEFAULT_KIND,
   MAX_AUDIO_BYTES,
   DEFAULT_TIMEOUT_MS,
+  DEFAULT_TRANSCRIBE_PROMPT,
   kindForModel,
+  audioChatModel,
   transcriptionCandidates,
   isTranscriptionModel,
   reportedOutputModalities,
   acceptsAudioInput,
   mimeTypeFor,
+  audioFormatFor,
   buildTranscribeRequest,
   parseTranscribeResponse,
   usageFromResponse,

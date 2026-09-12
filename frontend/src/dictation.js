@@ -136,8 +136,14 @@ export function blobToBase64(blob) {
 
 // transcribeAudio(options) -> { text, model, kind, bytes, durationMs, usage, cost }
 //
-// options: { projectDir, modelId, providerId, audioBase64, mimeType,
+// options: { projectDir, modelId, providerId, kind, audioBase64, mimeType,
 //            filename, language, prompt }
+//
+// `kind` is the request family the catalog offered the row under (the picker's
+// "Sends as" read-out). It is echoed back so the request cannot disagree with
+// what the user was shown: the server re-derives it from the live capability
+// report, but a row the catalog classified is authoritative. An empty value
+// leaves the decision to the server.
 //
 // `usage` is the provider's own token report (null when it made none) and
 // `cost` is the server's priced result for it, in the shape
@@ -152,6 +158,9 @@ export async function transcribeAudio(options) {
     projectDir: opts.projectDir || '',
     modelId: opts.modelId || '',
     providerId: opts.providerId || '',
+    // The family the row was offered under, so the picker's read-out is what
+    // the request does. The server ignores an unknown value and re-derives.
+    kind: opts.kind || '',
     audioBase64: opts.audioBase64 || '',
     // A blob with no type reports ''; the server falls back to
     // application/octet-stream and the extension carries the container.
@@ -363,6 +372,7 @@ export function kindLabel(kinds, id) {
 // wrap to three lines.
 export function kindShortLabel(id) {
   if (id === 'gemini') return 'Gemini';
+  if (id === 'openai-audio') return 'OpenAI chat';
   if (id === 'openai-compatible') return 'OpenAI-shaped';
   return id || 'unknown';
 }

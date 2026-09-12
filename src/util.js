@@ -92,7 +92,13 @@ const PROJECT_MODEL_FIELDS = [
   // it in this allow-list the field would be stripped before the request
   // builder ever sees it, and every model would fall back to the inferred
   // family.
-  'transcription'
+  'transcription',
+  // The request family the dictation catalog classified a live row under
+  // (`openai-audio` for a model that can hear but has no
+  // /audio/transcriptions entry). It rides the same path as `transcription`
+  // and is honoured by transcribe.kindForModel, so the picker's "Sends as"
+  // read-out is what the request does.
+  'kind'
 ];
 
 function projectModelRecord(record) {

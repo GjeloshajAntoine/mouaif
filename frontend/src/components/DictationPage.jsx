@@ -442,6 +442,9 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
         projectDir,
         modelId,
         providerId,
+        // The family the picker shows under "Sends as" — echoed so the request
+        // is the shape the user was told it would be.
+        kind: (selectedRow && selectedRow.kind) || '',
         audioBase64,
         mimeType: recordingMime || recordingBlob.type || 'audio/webm',
         filename: dictationFilename(recordingMime || recordingBlob.type, startedAtRef.current),

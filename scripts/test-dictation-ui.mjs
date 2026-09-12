@@ -45,6 +45,7 @@ const MODELS = [
 ];
 const KINDS = [
   { id: 'openai-compatible', label: 'OpenAI-compatible (multipart /audio/transcriptions)' },
+  { id: 'openai-audio', label: 'OpenAI-compatible (inline audio /chat/completions)' },
   { id: 'gemini', label: 'Gemini (inline audio)' }
 ];
 // Two scenarios, switchable from the page. The 'project' scenario has its own
@@ -82,7 +83,14 @@ const LIVE_ONLY = [
 // Gemini models — the connection, not the name, decides the transport — next
 // to a provider that reports what each model produces. deepgram/nova-3 is the
 // row whose name says nothing and that only the output report identifies.
+//
+// The Google Gemini rows are the *fix* this scenario now also covers: they are
+// audio-in chat models with no /audio/transcriptions entry, so they are offered
+// on the chat route (kind 'openai-audio') and previously could not be dictated
+// with at all. Both routes are on this list together, which is the point — the
+// picker has to show which one a row will use.
 const MIXED = [
+{ id: 'google/gemini-3.5-flash', provider: 'openrouter', label: 'Google: Gemini 3.5 Flash', kind: 'openai-audio', source: 'live', connected: true, inputModalities: ['audio', 'text', 'image'], outputModalities: ['text'] },
 { id: 'google/chirp-3', provider: 'openrouter', label: 'Google: Chirp 3', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['audio'], outputModalities: ['transcription'] },
 { id: 'openai/whisper-large-v3', provider: 'openrouter', label: 'OpenAI: Whisper Large V3', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['audio'], outputModalities: ['transcription'] },
 { id: 'nvidia/parakeet-tdt-0.6b-v3', provider: 'openrouter', label: 'nvidia/parakeet-tdt-0.6b-v3', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['audio'], outputModalities: ['transcription'] },
