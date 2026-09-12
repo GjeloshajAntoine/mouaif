@@ -132,6 +132,14 @@ let cursor = 0;
     // Recorded rather than applied: the assertion that matters is *what* the
     // page writes to the app store when a model is picked.
     saveApp: async (patch) => { saved.push(patch); },
+    // The chat picker's bookmark helpers. The page only passes their results
+    // through to <ModelPickerField>, which this harness replaces with a tag, so
+    // an empty stand-in is enough: the pin/recent behaviour itself is pinned by
+    // the chat picker's own tests.
+    loadPinned: () => new Set(),
+    loadRecent: () => [],
+    loadRecentFromServer: async () => false,
+    togglePin: () => false,
     useState: (initial) => {
       const i = cursor++;
       if (first) states[i] = typeof initial === 'function' ? initial() : initial;
@@ -265,10 +273,21 @@ function useCase(caseOptions) {
   // behind, and each row carries the shape its own connection speaks.
   assert.deepEqual(picker(nodes).models.map((m) => m.id), ['whisper-1', 'gemini-2.5-flash'],
     'the whole catalog is offered, in the order the server sent it');
-  assert.equal(selectionOf(pickerNodes(nodes)[0]), null, 'two candidates is a decision the user makes');
-  // Nothing is picked, so there is nothing to report about the transport: the
-  // read-out must not repeat the picker's own placeholder.
-  assert.deepEqual(kindReadouts(nodes), []);
+  // Two candidates, but only one of them has a name that says it transcribes,
+  // so there is no decision to make: the page answers its own question rather
+  // than sending the user into the picker on every visit.
+  assert.deepEqual(selectionOf(pickerNodes(nodes)[0]), { providerId: 'openai-compatible', modelId: 'whisper-1' },
+    'the only row whose name says "transcribe" is adopted');
+  // The sections the picker shows above the provider list, and the bookmarks
+  // they share with the chat picker.
+  assert.deepEqual(picker(nodes).recommended.map((r) => ({ id: r.id, provider: r.provider })),
+    [{ id: 'whisper-1', provider: 'openai-compatible' }],
+    'the recommended rows are the ones worth reaching first');
+  assert.ok(picker(nodes).pinned instanceof Set, 'the chat picker pins are passed through');
+  assert.deepEqual([...picker(nodes).recent], [], 'and so are the recent models');
+  assert.equal(typeof picker(nodes).onTogglePin, 'function', 'a row can be pinned from here');
+  // The read-out reports the transport of the model that was adopted.
+  assert.deepEqual(kindReadouts(nodes).map((n) => n.children.join('')), ['OpenAI-shaped']);
   // The read order matters: settings once, then the fast project pass, then
   // the live pass. The page must not block its first paint on the live list,
   // and it must not re-read settings for it.
@@ -511,24 +530,48 @@ function useCase(caseOptions) {
 
 // ---- The preselect rule on its own -------------------------------------
 {
-  const { resolveDefaultModel, modelsForKind } = dictation;
-  assert.equal(resolveDefaultModel([], { modelId: 'x' }, 'openai-compatible'), null);
-  assert.equal(resolveDefaultModel([], {}, 'openai-compatible'), null);
+  const { resolveDefaultModel, defaultDictationModel } = dictation;
+  assert.equal(resolveDefaultModel([], { modelId: 'x' }), null);
+  assert.equal(resolveDefaultModel([], {}), null);
   assert.deepEqual(
-    resolveDefaultModel([{ id: 'a', provider: 'p', kind: 'openai-compatible' }], {}, 'openai-compatible'),
+    resolveDefaultModel([{ id: 'a', provider: 'p', kind: 'openai-compatible' }], {}),
     { modelId: 'a', providerId: 'p' }
   );
   assert.equal(
-    resolveDefaultModel([{ id: 'a', kind: 'gemini' }, { id: 'b', kind: 'gemini' }], {}, 'gemini'),
+    resolveDefaultModel([{ id: 'a', kind: 'gemini' }, { id: 'b', kind: 'gemini' }], {}),
     null,
-    'two candidates in the family is a decision the user makes'
+    'two candidates is a decision the user makes'
   );
   // A remembered model that moved provider is still found by id alone.
   assert.deepEqual(
-    resolveDefaultModel([{ id: 'a', provider: 'p2', kind: 'gemini' }], { modelId: 'a', providerId: 'p1' }, 'gemini'),
+    resolveDefaultModel([{ id: 'a', provider: 'p2', kind: 'gemini' }], { modelId: 'a', providerId: 'p1' }),
     { modelId: 'a', providerId: 'p2' }
   );
-  assert.deepEqual(modelsForKind([{ id: 'a', kind: 'gemini' }], 'gemini').map((m) => m.id), ['a']);
+  // …and the dictation-only step on top of it: one named transcriber is a
+  // suggestion, two of them (or a catalog where the names say nothing) is a
+  // question for the user.
+  assert.deepEqual(
+    defaultDictationModel([
+      { id: 'whisper-1', provider: 'openai-compatible' },
+      { id: 'gpt-5', provider: 'openai-compatible' }
+    ], {}),
+    { modelId: 'whisper-1', providerId: 'openai-compatible' }
+  );
+  assert.equal(
+    defaultDictationModel([{ id: 'whisper-1', provider: 'a' }, { id: 'whisper-large-v3', provider: 'b' }], {}),
+    null,
+    'two rows that both look like transcribers is the user\'s call'
+  );
+  assert.equal(
+    defaultDictationModel([{ id: 'gemini-2.5-flash', provider: 'gemini' }, { id: 'gemini-2.5-pro', provider: 'gemini' }], {}),
+    null,
+    'an audio-capable Gemini row is a candidate, not an answer'
+  );
+  assert.deepEqual(
+    defaultDictationModel([{ id: 'gemini-2.5-flash', provider: 'gemini' }], { modelId: 'gone', providerId: 'x' }),
+    { modelId: 'gemini-2.5-flash', providerId: 'gemini' },
+    'a deleted memory falls through to the one candidate'
+  );
 }
 
 console.log('PASS dictation page: cold paint, catalog load, preselect rules, project-less and empty states');

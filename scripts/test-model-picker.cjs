@@ -197,6 +197,43 @@ window.pickerTest = { h, render, ModelPickerField };`,
       document.querySelector('.mp__close').focus({ preventScroll: true });`);
     await wait();
     await check('background ancestor scroll followed by focus cannot reposition open dialog', `document.querySelector('.mp__pop').getBoundingClientRect().top === openTop`);
+
+    // ---- Recommended rows ------------------------------------------------
+    // The dictation page passes the rows worth reaching first (see
+    // recommendedModels). They get their own section above the provider
+    // sections, and a row that Pinned/Recent already shows is not repeated.
+    //
+    // Self-contained: the cases above leave an open dialog, a re-parented
+    // fixture and their own catalog behind, and the scroll case above leaves
+    // the trigger off-screen, so this one starts from a fresh fixture and draws
+    // its own two models rather than inheriting any of it.
+    await evaluate(`{
+    document.body.innerHTML = '<div id="fixture"></div>';
+    draw({ models: [{ id: 'alpha', provider: 'one' }, { id: 'beta', provider: 'two' }],
+      recommended: [{ id: 'beta', provider: 'two' }], pinned: new Set(['one\u0000alpha']) });
+    }`);
+    await wait();
+    await tap('.mp__trigger');
+    await check('recommended rows get their own section, in the caller\'s order', `(() => {
+    const titles = Array.from(document.querySelectorAll('.mp__section-title')).map(el => el.textContent);
+    return titles[0] === 'Recommended' && titles[1] === 'Pinned';
+    })()`);
+    await check('recommended drops rows the pinned section already shows', `(() => {
+    const sections = Array.from(document.querySelectorAll('.mp__section'));
+    const ids = section => Array.from(section.querySelectorAll('.mp__row-id')).map(el => el.textContent);
+    const recommended = sections.find(s => s.querySelector('.mp__section-title').textContent === 'Recommended');
+    const pinnedSection = sections.find(s => s.querySelector('.mp__section-title').textContent === 'Pinned');
+    return ids(recommended).join(',') === 'beta' && ids(pinnedSection).join(',') === 'alpha';
+    })()`);
+    // A query narrows the list to matches, and a "worth reaching first" section
+    // over a deliberately narrowed list would be noise rather than help.
+    await evaluate(`query('bet');`);
+    await wait();
+    await check('recommended hides while a search is narrowing the list', `(() => {
+    const titles = Array.from(document.querySelectorAll('.mp__section-title')).map(el => el.textContent);
+    return !titles.includes('Recommended') && titles.includes('two');
+    })()`);
+    await evaluate(`query('');`);
     console.log('\nModel picker browser regressions passed.');
   } finally {
     ws.close();

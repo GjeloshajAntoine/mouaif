@@ -99,6 +99,9 @@ function PinIcon({ pinned }) {
 //   pinned          — Set<string> of "providerId\0modelId" bookmarks
 //   onTogglePin     — (model) => void, shown when provided (pin button)
 //   recent          — Array<{ provider, id, ts }> recency, newest first
+//   recommended     — Array<{ id, provider }> rows to show first, in this
+//                     order, above Pinned/Recent. Rows already pinned or
+//                     recent are dropped so nothing is listed twice.
 //   extraProviders  — Array<string> provider ids to show as chips even
 //                     when they currently have zero models
 //   onOpen          — () => void, called when the sheet opens
@@ -124,6 +127,7 @@ export function ModelPickerField(props) {
     pinned,
     onTogglePin,
     recent,
+    recommended,
     extraProviders,
     onOpen,
     children
@@ -451,6 +455,9 @@ export function ModelPickerField(props) {
         },
 h('span', { class: 'mp__clear-id' }, clearLabel)
 ) : null,
+        showingFullList && recommended
+        ? renderBookmarkSection('Recommended', recommendedRows(list, recommended, pinned, recent))
+        : null,
         showingFullList && pinned ? renderBookmarkSection('Pinned', list.filter((m) => pinned.has(keyOf(m)))) : null,
         showingFullList && recent ? renderRecentSection(recent, list, pinned) : null,
         !groups.length ? h('div', { class: 'mp__empty' },
@@ -535,6 +542,22 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
         );
       })
     );
+  }
+
+  // recommendedRows(list, refs, pinnedSet, recentItems) — the caller's rows, in
+  // the caller's order, resolved against the normalized list. Rows that the
+  // Pinned/Recent sections below already show are dropped: the whole point of a
+  // short list is that it is short, and a row listed twice reads as a bug.
+  function recommendedRows(list, refs, pinnedSet, recentItems) {
+    const elsewhere = new Set((recentItems || []).map((r) => (r.provider || '') + '\u0000' + r.id));
+    const out = [];
+    for (const ref of (refs || [])) {
+      const key = (ref.provider || '') + '\u0000' + ref.id;
+      if (elsewhere.has(key) || (pinnedSet && pinnedSet.has(key))) continue;
+      const found = list.find((m) => keyOf(m) === key);
+      if (found) out.push(found);
+    }
+    return out;
   }
 
   function renderRecentSection(recentItems, fullList, pinnedSet) {

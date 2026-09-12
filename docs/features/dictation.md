@@ -119,6 +119,30 @@ read-only line under it names the dialect the selected model will be sent in.
 The choice is remembered app-wide in the app store under the `dictation` key,
 so the next session — and the composer microphone — use the same model.
 
+### Choosing from the list
+
+A connected provider's catalog is a chat catalog: hundreds of rows, rendered
+provider by provider and alphabetically within each. Two things keep the
+dictation list usable:
+
+- **Recommended** — a short section at the top of the sheet holding the rows
+  worth reaching first, in this order: ids that say they transcribe
+  (`whisper-*`, `voxtral-*`, `parakeet-*`), then rows the provider reports as
+  taking audio input, then Gemini models. Rows that Pinned or Recent already
+  show are not repeated. The section only appears on the unfiltered list, so a
+  search or a provider chip leaves just the matches.
+- **A default worth adopting.** The remembered model wins; failing that, a
+  single candidate, or a single row whose name says it transcribes, is adopted
+  automatically. Two `whisper-*` rows from two providers (or rows whose names
+  say nothing at all) leave the picker asking, because a wrong guess is a
+  provider error, not a cosmetic surprise.
+
+**Pinned** and **Recently used** come from the same places the chat picker uses
+— pins per project in `localStorage`, recents from the server — so a model
+pinned while chatting is offered first when dictating, and a model chosen in a
+chat cannot appear here unless it can transcribe. See
+[Model bookmarks](model-bookmarks.md).
+
 ## Behavior
 
 - **Recording is capped at 2:00** (`MAX_RECORDING_MS`) and stops itself rather
@@ -142,8 +166,15 @@ so the next session — and the composer microphone — use the same model.
 - **One unreachable provider does not empty the list.** Its failure is reported
   with the provider's own message, and the rows from the providers that did
   answer are still offered.
-- **Nothing is preselected when the choice is real.** With one candidate it is
-  selected; with two, the picker asks.
+- **Nothing is preselected when the choice is real.** A lone candidate, or a
+  lone row whose name says it transcribes, is adopted; with two of either the
+  picker asks.
+- **The list is ordered for dictation, not for chat.** `recommendedModels`
+  ranks rows by how much they say about themselves (`dictationRank`: name hint
+  > audio input or Gemini > the user's own record > everything else) and the
+  picker shows that short list above the provider sections, which stay
+  alphabetical. The rank is display only — the transport is still the server's
+  `kind`.
 - **The choice is remembered app-wide**, under the `dictation` key in the app
   store, and written back on every change — including clearing it. That is what
   makes the composer microphone and a later visit agree with the page.
@@ -185,13 +216,20 @@ so the next session — and the composer microphone — use the same model.
   `liveModelsForMany` is the best-effort fan-out used by dictation: one
   provider failing yields a `liveFailures` entry, not an empty list.
 - `frontend/src/dictation.js` — the browser half: recorder capability probing,
-  the clock, base64 encoding, the model-selection rules (`resolveDefaultModel`),
-  and the transcript action set. Pure enough to unit-test.
+  the clock, base64 encoding, the model-selection rules (`resolveDefaultModel`,
+  `dictationRank`, `recommendedModels`, `defaultDictationModel`), and the
+  transcript action set. Pure enough to unit-test.
+- `frontend/src/components/ModelPickerField.jsx` — the shared picker, which
+  takes an optional `recommended` list of rows to show above Pinned/Recent, and
+  already owned the `pinned`/`onTogglePin`/`recent` props. The chat head and the
+  dictation page are the same control with different props.
 - `frontend/src/components/DictationPage.jsx` — the Dictation page
   (`#/settings/dictation`; `#/dictation` is the legacy alias), reached from
   Settings → App defaults, and `frontend/src/components/chat/MicButton.jsx` — the
   composer microphone. Both use the same helper module, so the two surfaces
-  cannot disagree about the model or the dialect it is sent in.
+  cannot disagree about the model or the dialect it is sent in. The page reuses
+  `chat/modelPicker.js` for its pins and recents rather than reimplementing
+  them, so a pin means the same thing on both surfaces.
 - `frontend/src/dictation.css` — the page and the microphone button. Mobile
   first: one column, a 56px primary control, ≥44px taps, `dvh` for the iOS
   keyboard, and a `prefers-reduced-motion` branch for the pulse.

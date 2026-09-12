@@ -215,63 +215,111 @@ export function kindShortLabel(id) {
   return id || 'unknown';
 }
 
-// autoKindId(kinds, models) — which family the <select> should start on.
-// The most common family among the project's dictation models wins, so a
-// project with three Gemini models does not open on the OpenAI shape. The
-// list of `kinds` decides the tie-break order (its own order, which puts the
-// OpenAI family first).
-export function autoKindId(kinds, models) {
-  const ids = (kinds || []).map((k) => k && k.id).filter(Boolean);
-  const counts = new Map();
-  for (const model of (models || [])) {
-    if (!model || !model.kind) continue;
-    counts.set(model.kind, (counts.get(model.kind) || 0) + 1);
-  }
-  let best = '';
-  let bestCount = 0;
-  for (const id of ids) {
-    const count = counts.get(id) || 0;
-    if (count > bestCount) { best = id; bestCount = count; }
-  }
-  if (best) return best;
-  if (ids.length && counts.size === 0) return ids[0];
-  if (ids.length) return ids[0];
-  return '';
+// ---- Which model to dictate with -----------------------------------------
+//
+// Choosing a dictation model is a different problem from choosing a chat
+// model: a chat catalog is full of rows that cannot transcribe at all, and a
+// provider's live list can carry hundreds of them. The server already decides
+// what is *offered* (src/transcribe.js), but what is offered is still a flat
+// list rendered provider by provider, alphabetically — so these three helpers
+// decide what to show first and what to select before the user has said
+// anything.
+
+// DICTATION_ID_HINTS — model ids that say "I transcribe". Deliberately the
+// same short list the server filters on (src/transcribe.js OPENAI_MODEL_HINTS)
+// so the picker cannot recommend something the catalog would not have offered.
+const DICTATION_ID_HINTS = ['whisper', 'transcribe', 'transcription', 'voxtral', 'parakeet'];
+
+// acceptsAudioInput(row) — the provider reported audio among the model's input
+// modalities (OpenRouter's `architecture.input_modalities`). Absent means
+// "unknown", never "no".
+export function acceptsAudioInput(row) {
+const list = row && row.inputModalities;
+return Array.isArray(list) && list.some((x) => String(x).toLowerCase() === 'audio');
 }
 
-// modelsForKind(models, kind) — the rows for the family currently selected.
-// `kind === 'all'` (or empty) shows everything.
-export function modelsForKind(models, kind) {
-  const list = Array.isArray(models) ? models : [];
-  if (!kind || kind === 'all') return list;
-  return list.filter((m) => m && m.kind === kind);
+// dictationRank(row) — how good a dictation model a row looks like, strongest
+// signal first:
+//
+//   3 — the name says it (`whisper-large-v3`, `voxtral-mini`, `parakeet`);
+//   2 — it takes audio, or it is a Gemini model (there is no separate Gemini
+//       speech-to-text product: audio is an inline part on the general models);
+//   1 — the user wrote the record themselves, so it is intentional even when
+//       the name says nothing (`my-self-hosted-asr`);
+//   0 — it is only here because a project with nothing recognisable gets
+//       everything rather than nothing.
+//
+// This is a *display* rank. It never decides what is addressable: the server's
+// `kind` still owns the transport.
+export function dictationRank(row) {
+if (!row) return 0;
+const id = String(row.id || '').toLowerCase();
+if (DICTATION_ID_HINTS.some((hint) => id.includes(hint))) return 3;
+if (row.kind === 'gemini' || acceptsAudioInput(row)) return 2;
+if (row.source === 'project') return 1;
+return 0;
 }
 
-// resolveDefaultModel(models, saved, kind) -> { modelId, providerId } | null
+// recommendedModels(models, limit) -> rows, best first, capped
+//
+// What the picker shows under a "Recommended" heading. Rank-3 rows when there
+// are any, because a name that says "whisper" is worth more than any guess:
+// when the catalog has none of those (a Gemini-only or OpenRouter-only setup,
+// where the names say nothing), the audio-capable rows are the best signal
+// left. Ties keep the catalog's own order — the project's own records come
+// first from the server.
+export function recommendedModels(models, limit) {
+const max = limit || 5;
+const ranked = (Array.isArray(models) ? models : [])
+.map((row, index) => ({ row, index, rank: dictationRank(row) }))
+.filter((entry) => entry.rank >= 2)
+.sort((a, b) => (b.rank - a.rank) || (a.index - b.index));
+const strong = ranked.filter((entry) => entry.rank >= 3);
+const worth = strong.length ? strong : ranked;
+return worth.slice(0, max).map((entry) => entry.row);
+}
+
+// resolveDefaultModel(models, saved) -> { modelId, providerId } | null
 //
 // Which model a surface should dictate with before the user has picked one in
-// this session. In order:
+// this session, in order:
 //
 //   1. the remembered `{ modelId, providerId }`, if it is still in the list
 //      (a deleted or renamed model must not be sent to the server);
-//   2. the only model in the family currently selected — with one candidate
-//      there is no decision to make, and demanding one is a dead end;
+//   2. the only model on offer — with one candidate there is no decision to
+//      make, and demanding one is a dead end;
 //   3. otherwise nothing, and the picker is the user's first step.
 //
 // Returning `null` rather than a guess is deliberate: sending a chat model to a
 // transcription endpoint produces a provider error, which is a worse first
 // experience than an empty picker with a "pick a model" placeholder.
-export function resolveDefaultModel(models, saved, kind) {
-  const list = Array.isArray(models) ? models : [];
-  const want = saved || {};
-  if (want.modelId) {
-    const exact = list.find((m) => m && m.id === want.modelId && (m.provider || '') === (want.providerId || ''));
-    const byId = exact || list.find((m) => m && m.id === want.modelId);
-    if (byId) return { modelId: byId.id, providerId: byId.provider || '' };
-  }
-  const family = modelsForKind(list, kind);
-  if (family.length === 1) return { modelId: family[0].id, providerId: family[0].provider || '' };
-  return null;
+export function resolveDefaultModel(models, saved) {
+const list = Array.isArray(models) ? models : [];
+const want = saved || {};
+if (want.modelId) {
+const exact = list.find((m) => m && m.id === want.modelId && (m.provider || '') === (want.providerId || ''));
+const byId = exact || list.find((m) => m && m.id === want.modelId);
+if (byId) return { modelId: byId.id, providerId: byId.provider || '' };
+}
+if (list.length === 1) return { modelId: list[0].id, providerId: list[0].provider || '' };
+return null;
+}
+
+// defaultDictationModel(models, saved) -> { modelId, providerId } | null
+//
+// The two surfaces' one entry point: `resolveDefaultModel`, plus one more step
+// that is only safe for dictation — when exactly one row's name says it
+// transcribes and nothing else does, adopting it is not a decision, it is a
+// suggestion the user can override in one tap. Two `whisper-*` rows from two
+// providers (or none) still leaves the picker asking, because a wrong guess
+// here is a provider error rather than a cosmetic surprise.
+export function defaultDictationModel(models, saved) {
+const rows = Array.isArray(models) ? models : [];
+const remembered = resolveDefaultModel(rows, saved);
+if (remembered) return remembered;
+const strong = rows.filter((row) => dictationRank(row) >= 3);
+if (strong.length === 1) return { modelId: strong[0].id, providerId: strong[0].provider || '' };
+return null;
 }
 
 // pickerModels(models) — the rows reshaped for <ModelPickerField>: the picker

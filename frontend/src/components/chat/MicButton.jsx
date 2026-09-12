@@ -21,14 +21,13 @@ import { fetchJson } from '../../api.js';
 import { nav } from '../../router.js';
 import {
   MAX_RECORDING_MS,
-  autoKindId,
   blobToBase64,
+  defaultDictationModel,
   dictationFilename,
   formatDuration,
   loadDictationModels,
   pickRecorderMime,
   recorderSupported,
-  resolveDefaultModel,
   transcribeAudio
 } from '../../dictation.js';
 
@@ -85,12 +84,14 @@ export function MicButton(props) {
     say('Transcribing…', 'busy');
     try {
       // Model choice: the remembered app-level dictation choice if it is still
-      // in this project's list, otherwise the only candidate in the family.
-      // `resolveDefaultModel` owns that order, so this button and the dictation
-      // page cannot disagree about which model a tap uses.
-      const app = await fetchJson('/api/settings');      const saved = (app.status === 200 && app.body && app.body.app && app.body.app.dictation) || {};
+      // in this project's list, else the one candidate, else the single row
+      // whose name says it transcribes. `defaultDictationModel` owns that
+      // order, so this button and the dictation page cannot disagree about
+      // which model a tap uses.
+      const app = await fetchJson('/api/settings');
+      const saved = (app.status === 200 && app.body && app.body.app && app.body.app.dictation) || {};
       const catalog = await loadDictationModels(props.projectDir || '');
-      const picked = resolveDefaultModel(catalog.models, saved, saved.kind || autoKindId(catalog.kinds, catalog.models));
+      const picked = defaultDictationModel(catalog.models, saved);
       const match = picked
       ? catalog.models.find((m) => m.id === picked.modelId && (m.provider || '') === picked.providerId) || null
       : null;

@@ -345,27 +345,44 @@ check('mimeTypeFor maps the containers a MediaRecorder produces', () => {
     await assert.rejects(() => dictation.blobToBase64(null), /Nothing recorded/);
   });
 
-  check('autoKindId picks the family the project actually uses', () => {
-    const kinds = [{ id: 'openai-compatible' }, { id: 'gemini' }];
-    assert.equal(dictation.autoKindId(kinds, [
-      { id: 'gemini-2.5-flash', kind: 'gemini' },
-      { id: 'gemini-2.5-pro', kind: 'gemini' },
-      { id: 'whisper-1', kind: 'openai-compatible' }
-    ]), 'gemini');
-    // A tie resolves to the order of `kinds`, which puts OpenAI first.
-    assert.equal(dictation.autoKindId(kinds, [
-      { id: 'a', kind: 'gemini' }, { id: 'b', kind: 'openai-compatible' }
-    ]), 'openai-compatible');
-    assert.equal(dictation.autoKindId(kinds, []), 'openai-compatible');
-    assert.equal(dictation.autoKindId([], []), '');
+  check('dictationRank weighs a row by how much its name says', () => {
+    // A name that says "transcribe" is the strongest signal there is.
+    assert.equal(dictation.dictationRank({ id: 'whisper-large-v3', provider: 'groq' }), 3);
+    assert.equal(dictation.dictationRank({ id: 'mistralai/voxtral-small-24b-2507', provider: 'openrouter' }), 3);
+    assert.equal(dictation.dictationRank({ id: 'parakeet-tdt-0.6b', provider: 'openai-compatible' }), 3);
+    // Audio input, or a Gemini model, is capable but says nothing about being
+    // a transcriber — `openai/gpt-audio` chats about audio.
+    assert.equal(dictation.dictationRank({
+      id: 'openai/gpt-audio', provider: 'openrouter', inputModalities: ['text', 'audio']
+    }), 2);
+    assert.equal(dictation.dictationRank({ id: 'gemini-2.5-flash', provider: 'gemini', kind: 'gemini' }), 2);
+    // The user's own record ranks below both, but above a row that is only
+    // here because nothing could be recognised.
+    assert.equal(dictation.dictationRank({ id: 'my-self-hosted-asr', source: 'project' }), 1);
+    assert.equal(dictation.dictationRank({ id: 'gpt-5', provider: 'openai-compatible', source: 'live' }), 0);
+    assert.equal(dictation.dictationRank(null), 0);
+    assert.equal(dictation.acceptsAudioInput({ inputModalities: ['TEXT', 'Audio'] }), true, 'case-insensitive');
+    assert.equal(dictation.acceptsAudioInput({ inputModalities: 'audio' }), false, 'a string is not a list');
   });
 
-  check('modelsForKind filters the rows and passes everything through on all/empty', () => {
-    const models = [{ id: 'a', kind: 'gemini' }, { id: 'b', kind: 'openai-compatible' }];
-    assert.deepEqual(dictation.modelsForKind(models, 'gemini').map((m) => m.id), ['a']);
-    assert.deepEqual(dictation.modelsForKind(models, 'all').map((m) => m.id), ['a', 'b']);
-    assert.deepEqual(dictation.modelsForKind(models, '').map((m) => m.id), ['a', 'b']);
-    assert.deepEqual(dictation.modelsForKind(null, 'gemini'), []);
+  check('recommendedModels puts the named transcribers first, then what can take audio', () => {
+    const rows = [
+      { id: 'gpt-5', provider: 'openai-compatible' },
+      { id: 'whisper-large-v3', provider: 'groq' },
+      { id: 'openai/gpt-audio', provider: 'openrouter', inputModalities: ['text', 'audio'] },
+      { id: 'whisper-1', provider: 'openai-compatible' },
+      { id: 'my-self-hosted-asr', source: 'project' }
+    ];
+    assert.deepEqual(dictation.recommendedModels(rows).map((m) => m.id), ['whisper-large-v3', 'whisper-1'],
+      'a named transcriber beats an audio-capable chat model, in catalog order');
+    assert.deepEqual(
+      dictation.recommendedModels([{ id: 'gemini-2.5-flash', kind: 'gemini' }, { id: 'gemini-2.5-pro', kind: 'gemini' }]).map((m) => m.id),
+      ['gemini-2.5-flash', 'gemini-2.5-pro'],
+      'with no named transcriber the audio-capable rows are the best signal left'
+    );
+    assert.deepEqual(dictation.recommendedModels(rows, 1).map((m) => m.id), ['whisper-large-v3'], 'the cap holds');
+    assert.deepEqual(dictation.recommendedModels([{ id: 'gpt-5' }]), [], 'nothing worth recommending stays empty');
+    assert.deepEqual(dictation.recommendedModels(null), []);
   });
 
   check('pickerModels reshapes rows for the shared model picker', () => {

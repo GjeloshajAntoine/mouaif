@@ -25,9 +25,11 @@ import { h, Fragment } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { fetchJson, activeProject, saveApp } from '../api.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
+import { loadPinned, loadRecent, loadRecentFromServer, togglePin } from './chat/modelPicker.js';
 import {
   MAX_RECORDING_MS,
   blobToBase64,
+  defaultDictationModel,
   dictationFilename,
   formatDuration,
   kindLabel,
@@ -36,8 +38,8 @@ import {
   pickRecorderMime,
   modelBadge,
   pickerModels,
+  recommendedModels,
   recorderSupported,
-  resolveDefaultModel,
   transcribeAudio,
   transcriptActions
 } from '../dictation.js';
@@ -153,9 +155,10 @@ function applyCatalog(catalog, saved, opts) {
   setKinds(catalog.kinds);
   setLiveFailures(Array.isArray(catalog.liveFailures) ? catalog.liveFailures : []);
   setCatalogProviders(Array.isArray(catalog.providers) ? catalog.providers : []);
-  // The remembered model wins if it still exists; otherwise a lone candidate is
-  // adopted; otherwise the picker asks.
-  const fallback = resolveDefaultModel(rows, saved);
+  // The remembered model wins if it still exists; otherwise a lone candidate or
+  // a lone model whose name says it transcribes is adopted; otherwise the
+  // picker asks. `defaultDictationModel` owns that order (see dictation.js).
+  const fallback = defaultDictationModel(rows, saved);
   if (fallback && (!onlyIfEmpty || !modelIdRef.current)) {
     setModelId(fallback.modelId);
     setProviderId(fallback.providerId);
@@ -195,6 +198,48 @@ function applyCatalog(catalog, saved, opts) {
     })();
     return () => { cancelled = true; };
   }, [projectDir]);
+
+  // ---- Model bookmarks ----------------------------------------------------
+  //
+  // The dictation picker is the same picker the chat head uses, so it shows the
+  // same two sections: pins (per project, in localStorage) and recents (one
+  // server list per project). Sharing them is the point — a model pinned while
+  // chatting is offered first when dictating, and the rows that cannot
+  // transcribe are filtered out of the list the sections are resolved against,
+  // so a chat recents entry never appears here.
+  //
+  // The helpers in chat/modelPicker.js take the chat state object as their first
+  // argument because the chat head owns them; dictation only has to supply the
+  // two fields they read, which is cheaper than a second implementation that
+  // could drift from it.
+  const bookmarkStateRef = useRef(null);
+  const [pinned, setPinned] = useState(() => new Set());
+  const [recent, setRecent] = useState([]);
+
+  function bookmarkState() {
+    const state = bookmarkStateRef.current || { props: { projectDir: '' }, recentModels: [] };
+    bookmarkStateRef.current = state;
+    state.props.projectDir = projectDir;
+    return state;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    // A pin is a localStorage read, so it is there on the first paint; the
+    // recents are a server read and arrive a moment later.
+    setPinned(loadPinned(bookmarkState()));
+    setRecent(loadRecent(bookmarkState()));
+    loadRecentFromServer(bookmarkState()).then((ok) => {
+      if (!cancelled && ok) setRecent(loadRecent(bookmarkState()));
+    });
+    return () => { cancelled = true; };
+  }, [projectDir]);
+
+  function onTogglePin(model) {
+    const state = bookmarkState();
+    togglePin(state, model.provider || '', model.id);
+    setPinned(loadPinned(state));
+  }
 
   // ---- Recorder lifecycle -------------------------------------------------
   const clearTimers = useCallback(() => {
@@ -443,6 +488,9 @@ function applyCatalog(catalog, saved, opts) {
 // One list, no family filter: every row can be transcribed, and each row
 // carries the shape its own connection speaks.
 const pickerList = pickerModels(models);
+// The first rows the picker shows: the ones whose name or capability says they
+// transcribe, in that order (see recommendedModels in dictation.js).
+const recommendedIds = recommendedModels(models).map((m) => ({ id: m.id, provider: m.provider || '' }));
 const selection = modelId ? { providerId, modelId } : null;
 const actions = transcriptActions({ text: transcript, chatId: projectDir, hasRecording: !!recordingBlob });
 // The note above the picker distinguishes the two sources it merges.
@@ -564,12 +612,21 @@ function onPickModel(next) {
         h('div', { class: 'dictation__field' },
         h('span', { class: 'label' }, 'Dictation model'),
         h(ModelPickerField, {
-          models: pickerList,
-          value: selection,
-          onChange: onPickModel,
-          onOpen: () => { /* the catalog is already loaded */ },
-          placeholder: catalogBusy ? 'Loading models…' : (emptyHint(models) || 'Pick a model'),
-          ariaLabel: 'Pick dictation model',
+        models: pickerList,
+        value: selection,
+        onChange: onPickModel,
+        onOpen: () => { /* the catalog is already loaded */ },
+        placeholder: catalogBusy ? 'Loading models…' : (emptyHint(models) || 'Pick a model'),
+        ariaLabel: 'Pick dictation model',
+        // The rows worth reaching first, in order of how much their name says
+        // (see recommendedModels): a long live catalog is otherwise an
+        // alphabetical wall in which `whisper-large-v3` sits wherever its id
+        // happens to fall.
+        recommended: recommendedIds,
+        // Same bookmarks as the chat picker — see the note on bookmarkState.
+        pinned,
+        onTogglePin,
+        recent,
           // 'sheet' rather than 'dropdown': on a phone the dropdown popup
           // renders in flow and covers the transcript directly beneath it,
           // while the sheet variant uses the same mobile viewport modal the
