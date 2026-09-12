@@ -57,17 +57,27 @@ window.fixture = {
   // Derived from the hash, not only from the click handler: opening
   // #live-only directly (the normal way to look at one scenario) has to select
   // it too.
-  scenario: location.hash.indexOf('live-only') >= 0 ? 'live' : 'project',
+  scenario: location.hash.indexOf('live-only') >= 0 ? 'live'
+    : (location.hash.indexOf('mixed') >= 0 ? 'mixed' : 'project'),
   // The live scenario starts with nothing remembered, which is the state a
   // fresh install is in: the page has to adopt a model from the live rows.
-  settings: { dictation: location.hash.indexOf('live-only') >= 0
+  settings: { dictation: (location.hash.indexOf('live-only') >= 0)
     ? {}
     : { modelId: 'whisper-1', providerId: 'openai-compatible', kind: 'openai-compatible' } }
 };
 const LIVE_ONLY = [
   { id: 'gemini-2.5-flash', provider: 'gemini', label: 'Gemini 2.5 Flash', kind: 'gemini', source: 'live', connected: true },
-  { id: 'gemini-2.5-pro', provider: 'gemini', label: 'Gemini 2.5 Pro', kind: 'gemini', source: 'live', connected: true },
-  { id: 'gpt-4o', provider: 'gemini', label: 'GPT-4o (chat model)', kind: 'gemini', source: 'live', connected: true }
+  { id: 'gemini-2.5-pro', provider: 'gemini', label: 'Gemini 2.5 Pro', kind: 'gemini', source: 'live', connected: true }
+];
+// The mixed case the "only Google models" report was about: one OpenRouter
+// connection whose catalog offers audio-capable models with names that say
+// nothing about transcription, plus the Google rows.
+const MIXED = [
+  { id: 'google/gemini-2.5-flash', provider: 'openrouter', label: 'google/gemini-2.5-flash', kind: 'gemini', source: 'live', connected: true, inputModalities: ['text', 'audio', 'image'] },
+  { id: 'openai/gpt-audio', provider: 'openrouter', label: 'openai/gpt-audio', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['text', 'audio'] },
+  { id: 'mistralai/voxtral-small-24b-2507', provider: 'openrouter', label: 'mistralai/voxtral-small-24b-2507', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['text', 'audio', 'file'] },
+  { id: 'meta/muse-spark-1.3', provider: 'openrouter', label: 'meta/muse-spark-1.3', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['text', 'audio'] },
+  { id: 'whisper-1', provider: 'groq', label: 'Whisper 1', kind: 'openai-compatible', source: 'live', connected: true }
 ];
 
 window.fetch = async (input, options = {}) => {
@@ -83,7 +93,11 @@ window.fetch = async (input, options = {}) => {
     }
   } else if (url.pathname === '/api/ai/transcribe/models') {
     const live = url.searchParams.get('live') !== '0';
-    if (window.fixture.scenario === 'live') {
+    if (window.fixture.scenario === 'mixed') {
+      body = live
+        ? { models: MIXED, kinds: KINDS, total: 0, providers: ['openrouter', 'groq'], liveFailures: [] }
+        : { models: [], kinds: KINDS, total: 0, providers: ['openrouter', 'groq'], liveFailures: [] };
+    } else if (window.fixture.scenario === 'live') {
       // The fast pass has nothing; the live pass supplies the models.
       body = live
         ? { models: LIVE_ONLY, kinds: KINDS, total: 0, providers: ['gemini'], liveFailures: [] }
@@ -131,10 +145,14 @@ function Host() {
   const [micStatus, setMicStatus] = useState('');
   return h('div', { class: 'fixture' },
     h('nav', { class: 'fixture__switch' },
-      ['page', 'composer', 'live-only'].map((name) => h('button', {
+      ['page', 'composer', 'live-only', 'mixed'].map((name) => h('button', {
         key: name, type: 'button', class: 'btn' + (view === name ? ' btn--primary' : ''),
-        onClick: () => { window.fixture.scenario = name === 'live-only' ? 'live' : 'project'; location.hash = name; setView(name); }
-      }, name === 'page' ? 'Dictation page' : (name === 'composer' ? 'Composer mic' : 'No project models')))
+        onClick: () => {
+          window.fixture.scenario = name === 'live-only' ? 'live' : (name === 'mixed' ? 'mixed' : 'project');
+          location.hash = name;
+          setView(name);
+        }
+      }, name === 'page' ? 'Dictation page' : (name === 'composer' ? 'Composer mic' : (name === 'mixed' ? 'Provider models' : 'No project models'))))
     ),
     view === 'composer'
       ? h('section', { class: 'chat-view' },

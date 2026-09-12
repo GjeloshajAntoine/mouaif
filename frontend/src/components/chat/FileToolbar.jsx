@@ -162,38 +162,72 @@ const statsLabel = hasStats
 // The folder glyph + its counts, in two shapes:
 //
 //   flat (default) — one silhouette filled with --fg, counts on top.
-//   orb            — the same silhouette drawn twice for 3D depth (a
-//                    darkened copy extruded 1px down, then the light top
-//                    face) with an additive rim highlight along the pocket
-//                    edge, and a soft glow behind each count.
+//   orb            — a 3D "glass plate" pictogram:
+//                    · `__plate`  the extruded slab the whole glyph sits on
+//                      (a rim layer plus a bright top face, offset in Z),
+//                    · `__folder` the folder silhouette extruded 1.5px with
+//                      a lit top face and a shaded under-edge,
+//                    · `__sheen`  a specular streak across the top face,
+//                    · `__shine`  an additive rim light along the pocket fold,
+//                    · `__stats`  the counts, each duplicated as a dark
+//                      under-copy (`__echo`) offset down-right for an emboss.
 //
-// The counts are *siblings* of the SVG in both shapes, never children:
-// they are HTML text (so the browser can color and letter-space them) and
-// the stats box is positioned over the folder box by CSS.
+// The counts are *siblings* of the SVG in both shapes, never children: they
+// are HTML text (so the browser can color and letter-space them) and the
+// stats box is positioned over the folder box by CSS.
+function counts(glow) {
+if (!hasStats) return null;
+const suffix = glow ? ' file-toolbar__count--3d' : '';
+return h('span', { class: 'file-toolbar__git-stats' },
+showAdditions ? h('span', { class: 'file-toolbar__git-additions' + suffix },
+glow ? h('span', { class: 'file-toolbar__count-echo', 'aria-hidden': 'true' }, '+' + formatCount(added)) : null,
+h('span', { class: 'file-toolbar__count-face' }, '+' + formatCount(added))
+) : null,
+showDeletions ? h('span', { class: 'file-toolbar__git-deletions' + suffix },
+glow ? h('span', { class: 'file-toolbar__count-echo', 'aria-hidden': 'true' }, '−' + formatCount(deleted)) : null,
+h('span', { class: 'file-toolbar__count-face' }, '−' + formatCount(deleted))
+) : null
+);
+}
+
 const folderGlyph = orb
-? h('span', { class: 'file-toolbar__folder file-toolbar__folder--3d' },
-h('svg', { class: 'file-toolbar__folder-face file-toolbar__folder-face--side', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
+? h('span', { class: 'file-toolbar__plate' },
+h('span', { class: 'file-toolbar__plate-rim', 'aria-hidden': 'true' }),
+h('span', { class: 'file-toolbar__plate-face' },
+h('span', { class: 'file-toolbar__folder file-toolbar__folder--3d' },
+h('svg', { class: 'file-toolbar__folder-side', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
 h('path', { d: FOLDER_PATH })
 ),
 h('svg', { class: 'file-toolbar__folder-face', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
 h('path', { d: FOLDER_PATH })
 ),
+h('svg', { class: 'file-toolbar__folder-sheen', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
+h('path', { d: FOLDER_PATH })
+),
 h('svg', { class: 'file-toolbar__folder-shine', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
 h('path', { d: 'M2.6 4.2a1.6 1.6 0 0 1 1.6-1.6h3.5l1.7 1.7h6.4a1.6 1.6 0 0 1 1.6 1.6' })
 ),
-hasStats ? h('span', { class: 'file-toolbar__git-stats' },
-showAdditions ? h('span', { class: 'file-toolbar__git-additions file-toolbar__git-additions--glow' }, '+' + formatCount(added)) : null,
-showDeletions ? h('span', { class: 'file-toolbar__git-deletions file-toolbar__git-deletions--glow' }, '−' + formatCount(deleted)) : null
-) : null
+counts(true)
+),
+h('svg', { class: 'file-toolbar__defs', viewBox: '0 0 0 0', 'aria-hidden': 'true' },
+h('linearGradient', { id: 'fileToolbarFolderFace', x1: '0.1', y1: '0', x2: '0.5', y2: '1' },
+h('stop', { offset: '0', 'stop-color': '#ffffff' }),
+h('stop', { offset: '0.45', 'stop-color': '#e6e5f0' }),
+h('stop', { offset: '1', 'stop-color': '#b3b6ca' })
+),
+h('linearGradient', { id: 'fileToolbarFolderSheen', x1: '0', y1: '0', x2: '0.25', y2: '0.75' },
+h('stop', { offset: '0', 'stop-color': '#ffffff', 'stop-opacity': '0.85' }),
+h('stop', { offset: '0.34', 'stop-color': '#ffffff', 'stop-opacity': '0.12' }),
+h('stop', { offset: '0.62', 'stop-color': '#ffffff', 'stop-opacity': '0' })
+)
+)
+)
 )
 : h('span', { class: 'file-toolbar__folder' },
 h('svg', { viewBox: '0 0 20 16', width: 28, height: 22 },
 h('path', { d: FOLDER_PATH, fill: 'currentColor' })
 ),
-hasStats ? h('span', { class: 'file-toolbar__git-stats' },
-showAdditions ? h('span', { class: 'file-toolbar__git-additions' }, '+' + formatCount(added)) : null,
-showDeletions ? h('span', { class: 'file-toolbar__git-deletions' }, '−' + formatCount(deleted)) : null
-) : null
+counts(false)
 );
 return h('div', { class: 'file-toolbar' + (orb ? ' file-toolbar--orb' : '') },
 h('button', {
@@ -205,6 +239,7 @@ onClick: handleTrigger,
 'aria-expanded': String(menuOpen),
 title: 'File, git, and CLI tools' + (statsLabel ? ' — ' + statsLabel : '')
 },
+orb ? h('span', { class: 'file-toolbar__sheen', 'aria-hidden': 'true' }) : null,
 h('span', { class: 'file-toolbar__stack', 'aria-hidden': 'true' },
 h('svg', { viewBox: '0 0 12 6', width: 14, height: 7 },
 h('path', { d: 'M0.5 5.5 6 1 11.5 5.5 10 6 6 2.5 2 6Z', fill: 'currentColor' })

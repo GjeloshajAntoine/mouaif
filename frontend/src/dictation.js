@@ -276,22 +276,39 @@ export function resolveDefaultModel(models, saved, kind) {
 
 // pickerModels(models) — the rows reshaped for <ModelPickerField>: the picker
 // needs { id, provider, label } and keys a selection on provider+id, which is
-// exactly the pair the transcribe endpoint needs. `label` carries the row's
-// origin for a live catalog entry, so the picker's second line says where the
-// model came from instead of repeating the provider id.
+// exactly the pair the transcribe endpoint needs.
+//
+// The picker renders `label` as the row's second line under the id, so it gets
+// whichever of the two is more informative: a real display name when the
+// provider gave one (`Whisper large v3`), otherwise the badge explaining why
+// the row is here (`from provider · audio in`). A live OpenRouter row's label
+// is just its slug repeated, which is why it does not win.
 export function pickerModels(models) {
   return (Array.isArray(models) ? models : []).map((m) => ({
     id: m.id,
     provider: m.provider || '',
-    label: m.label || ''
+    label: (m.label && m.label !== m.id) ? m.label : modelBadge(m)
   }));
 }
 
-// sourceLabel(row) — where a catalog row came from, for the picker's subtitle.
-// A live row is not a project model, and saying so is what tells the user why
-// it will disappear if the provider connection is removed.
-export function sourceLabel(row) {
-  if (row && row.source === 'live') return 'from provider';
+// modelBadge(row) — the short reason a catalog row is on the list, used as the
+// picker's second line when the model's name says nothing. Two cases are worth
+// naming:
+//
+//   * 'from provider' — a live row is not a project model, so it disappears
+//                       with the provider connection;
+//   * 'audio in'      — the provider reports audio input but the id reads like
+//                       a chat model (`openai/gpt-audio`, `meta/muse-spark`),
+//                       which is exactly where the user would otherwise wonder
+//                       why it is being offered at all.
+//
+// An empty string means "nothing to add", and the picker falls back to showing
+// the provider id.
+export function modelBadge(row) {
+  if (!row) return '';
+  const audio = Array.isArray(row.inputModalities)
+    && row.inputModalities.some((x) => String(x).toLowerCase() === 'audio');
+  if (row.source === 'live') return audio ? 'from provider · audio in' : 'from provider';
   return '';
 }
 

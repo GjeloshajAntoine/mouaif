@@ -47,26 +47,36 @@ const DEFAULT_TIMEOUT_MS = 60 * 1000;
 // declared one. Checked in order; the first hit wins.
 const OPENAI_MODEL_HINTS = ['whisper', 'transcribe', 'transcription', 'voxtral', 'parakeet'];
 
-// kindForModel(model) — the dialect for one project model record. Explicit
+// kindForModel(model) — the dialect for one model record. Explicit
 // configuration always wins over inference:
 //
 //   model.transcription = { kind: 'gemini', language: 'fr', prompt: '…' }
+//
+// Otherwise the family comes from the provider, then from the id:
+//
+//   * a Gemini *provider* (`gemini`) is the Gemini family;
+//   * an OpenRouter slug for a Google model (`google/…`) is the Gemini family,
+//     because OpenRouter routes it to the same API;
+//   * the OpenAI family's id hints (whisper, voxtral, …);
+//   * the OpenAI shape otherwise, because it is the only shape that works
+//     against an arbitrary base URL.
+//
+// Deliberately NOT a substring match on "gemini" anywhere in the id. That
+// looked harmless and was not: OpenRouter carries dozens of Google/Fireworks
+// entries whose ids contain it (…-gemini-…, gemini-flash-lite-latest, …), which
+// re-classified them as Gemini. A slug that is not `google/…` is not a Gemini
+// model this client can address, however its name reads.
 function kindForModel(model) {
-  const m = model || {};
-  const explicit = m.transcription && typeof m.transcription.kind === 'string'
-    ? m.transcription.kind
-    : '';
-  if (KIND_IDS.includes(explicit)) return explicit;
-  // Inference: Gemini's inline-audio form is only ever the Gemini API, so a
-  // gemini provider/model means that family unless the user said otherwise.
-  if (m.provider === 'gemini') return 'gemini';
-  const id = String(m.id || '').toLowerCase();
-  if (id.includes('gemini')) return 'gemini';
-  if (OPENAI_MODEL_HINTS.some((hint) => id.includes(hint))) return 'openai-compatible';
-  // Fall back to the OpenAI shape: it is what a self-hosted or
-  // OpenAI-compatible endpoint implements, and it is the only shape that
-  // works against an arbitrary baseUrl.
-  return DEFAULT_KIND;
+const m = model || {};
+const explicit = m.transcription && typeof m.transcription.kind === 'string'
+? m.transcription.kind
+: '';
+if (KIND_IDS.includes(explicit)) return explicit;
+if (m.provider === 'gemini') return 'gemini';
+const id = String(m.id || '').toLowerCase();
+if (id.startsWith('google/')) return 'gemini';
+if (OPENAI_MODEL_HINTS.some((hint) => id.includes(hint))) return 'openai-compatible';
+return DEFAULT_KIND;
 }
 
 // markedForTranscription(model) — the user said so, either with the short form
@@ -86,20 +96,45 @@ function hintedById(model) {
   return OPENAI_MODEL_HINTS.some((hint) => id.includes(hint));
 }
 
-// isTranscriptionModel(model) — this model plausibly transcribes. Three signals:
+// isTranscriptionModel(model) — this model plausibly transcribes. Four signals,
+// cheapest first:
 //
 //   1. it is explicitly marked (`transcription: true|{…}`);
 //   2. its id looks like a speech-to-text model (whisper, voxtral, …);
 //   3. it resolves to the Gemini family — there is no separate Gemini
 //      speech-to-text product; audio is an inline part on the general
-//      multimodal models, so any Gemini model is a candidate.
+//      multimodal models, so the whole Gemini catalog counts;
+//   4. the provider says it accepts audio input (`inputModalities` from
+//      OpenRouter's `architecture` block).
+//
+// Signal 3 is why the family inference has to be precise (see kindForModel): a
+// loose `id.includes('gemini')` test made every Google-ish row on OpenRouter "a
+// Gemini model", so a 445-model catalog filtered down to little but Google
+// entries — which reads as "there are only Google models".
+//
+// Signal 4 is what keeps the answer honest where signal 2 cannot help. Half of
+// what can transcribe does not say so in its id: `openai/gpt-audio` and
+// `mistralai/voxtral-small-24b-2507` are audio models, `meta/muse-spark` and
+// `nvidia/nemotron-…-omni` are omni models that happen to take audio, and none
+// of them match a name hint. When a provider reports modalities we trust the
+// report; when it does not, we fall back to names.
 //
 // This is a *filter*, never a guarantee: the fallback in
 // transcriptionCandidates means a project whose models are all unrecognisable
 // still gets offered everything, and the user picks.
 function isTranscriptionModel(model) {
   if (!model) return false;
-  return markedForTranscription(model) || hintedById(model) || kindForModel(model) === 'gemini';
+  if (markedForTranscription(model) || hintedById(model)) return true;
+  if (kindForModel(model) === 'gemini') return true;
+  return acceptsAudioInput(model);
+}
+
+// acceptsAudioInput(model) — the provider listed `audio` among the model's
+// input modalities. Absent (most providers, and every project model) means
+// "unknown", never "no".
+function acceptsAudioInput(model) {
+  const list = model && model.inputModalities;
+  return Array.isArray(list) && list.some((x) => String(x).toLowerCase() === 'audio');
 }
 
 // transcriptionCandidates(models) — the models a dictation picker should
@@ -112,8 +147,9 @@ function isTranscriptionModel(model) {
 //
 // The fallback in step 2 exists because a self-hosted endpoint (`…/v1` with a
 // model called `parakeet` or `my-asr`) is perfectly valid and nothing here can
-// recognise it — the user picks. Step 1 exists so a project that also has chat
-// models does not get a list where almost nothing can transcribe.
+// recognise it — the user picks. Step 1 is deliberately *narrow*: a live
+// catalog is hundreds of chat models, and offering all of them would bury the
+// handful that transcribe.
 function transcriptionCandidates(models) {
   const list = (Array.isArray(models) ? models : []).filter((m) => m && m.id);
   const recognisable = list.filter(isTranscriptionModel);
@@ -350,6 +386,7 @@ module.exports = {
   kindForModel,
   transcriptionCandidates,
   isTranscriptionModel,
+  acceptsAudioInput,
   mimeTypeFor,
   buildTranscribeRequest,
   parseTranscribeResponse,

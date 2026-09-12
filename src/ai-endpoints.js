@@ -450,6 +450,18 @@ function parseOpenAIShapedModels(body, thinkingFor) {
     // crash.
     const pricing = openRouterPricingFromModel(m);
     if (pricing) rec.pricing = pricing;
+    // OpenRouter also advertises each model's input modalities
+    // (`architecture.input_modalities`, e.g. ["text","audio","file"]). Carry
+    // that through so the dictation catalog can select models that accept
+    // audio *by capability* instead of by guessing at their names — the only
+    // reliable signal it has, since (for example) OpenRouter carries no
+    // `whisper-*` at all but does carry `mistralai/voxtral-…` and
+    // `openai/gpt-audio`, whose names say nothing about a transcription
+    // endpoint.
+    const modalities = Array.isArray(m.architecture && m.architecture.input_modalities)
+    ? m.architecture.input_modalities.filter((x) => typeof x === 'string')
+    : null;
+    if (modalities && modalities.length) rec.inputModalities = modalities;
     const thinking = typeof thinkingFor === 'function' ? thinkingFor(m) : undefined;
     if (thinking) rec.thinking = thinking;
     out.push(rec);

@@ -70,14 +70,28 @@ anything for the first one:
 }
 ```
 
-Which entries are offered is inferred: `gemini` for a Gemini provider, the
-OpenAI shape for model ids that look like speech-to-text (`whisper`,
-`transcribe`, `voxtral`, `parakeet`), and the OpenAI shape otherwise — it is the
-only shape that works against an arbitrary base URL. `transcription: true` (or
-any object) marks a model as a candidate and is the only way to name a
-transcriber whose id says nothing. A project with no recognisable models is
-offered all of them rather than none, because a self-hosted `my-asr` is exactly
-the case nothing can infer.
+Four signals decide whether a model is offered, and the request shape follows
+from the first of them that applies:
+
+| Signal | Example | Shape |
+| --- | --- | --- |
+| `transcription` is set | `"transcription": { "kind": "gemini" }` | as declared |
+| the provider is Gemini, or the id is `google/…` | `gemini-2.5-flash` | Gemini |
+| the id looks like speech-to-text | `whisper-1`, `mistralai/voxtral-…`, `parakeet` | OpenAI-shaped |
+| the provider reports audio input | `openai/gpt-audio`, `meta/muse-spark-1.3` | OpenAI-shaped |
+| nothing matches | — | OpenAI-shaped |
+
+The last two matter on OpenRouter, which carries **no `whisper-*` at all**: its
+transcribable models are ones whose names say nothing (`openai/gpt-audio`,
+`mistralai/voxtral-small-24b-2507`, `meta/muse-spark`, `nvidia/nemotron-…-omni`).
+It advertises each model's input modalities, so the catalog selects on that
+capability instead of guessing from the name, and the picker labels such a row
+`from provider · audio in`.
+
+A project with no recognisable models is offered all of them rather than none,
+because a self-hosted `my-asr` is exactly the case nothing can infer. Note that
+"is this a Gemini model" is decided by the **provider** and the `google/` slug
+prefix — never by a substring of the id; see the test note below.
 
 `Request shape` overrides the inference per run: tap **Gemini** for a model that
 would otherwise be sent as multipart, or the reverse. The shape follows the
@@ -106,6 +120,13 @@ use the same one.
   (filtered to the ones that can plausibly transcribe) and the connected
   providers' live catalogs (filtered the same way, and labelled as coming from
   the provider). A project record for an id wins over the live row for it.
+- **A model is classed as Gemini only when it really is one** (its provider, or
+  a `google/…` slug). Classifying by id substring looked harmless and was not:
+  it swept up dozens of OpenRouter entries whose names merely contain
+  "gemini", which both sent them to the wrong endpoint and — because the Gemini
+  family is on the candidate list by definition — filtered every other
+  provider's models out of the list, so dictation appeared to offer Google
+  models only.
 - **One unreachable provider does not empty the list.** Its failure is reported
   with the provider's own message, and the rows from the providers that did
   answer are still offered.
@@ -127,9 +148,13 @@ use the same one.
 
 ## Implementation notes
 
-- `src/transcribe.js` — the two request families, the response parsers, and the
-  family inference. Pure: multipart bodies are built by hand (not with
-  `FormData`) so the wire shape can be asserted byte-for-byte in a test.
+- `src/transcribe.js` — the two request families, the response parsers, the
+  family inference, and the candidate filter. Pure: multipart bodies are built
+  by hand (not with `FormData`) so the wire shape can be asserted byte-for-byte
+  in a test.
+- `src/ai-endpoints.js` carries OpenRouter's `architecture.input_modalities`
+  through to the model record as `inputModalities`. That is the capability
+  signal the candidate filter uses for models whose names say nothing.
 - `src/server-handlers-transcribe.js` — `GET /api/ai/transcribe/models` and
   `POST /api/ai/transcribe`. Resolves the model through the shared
   `resolveModel`, injects the credential server-side, applies the 60s deadline,

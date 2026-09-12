@@ -166,7 +166,16 @@ try {
     ai.listModels = realListModels;
     ai.listModels = async () => [
       { id: 'whisper-1', label: 'Whisper 1' },
-      { id: 'gpt-4o', label: 'GPT-4o' }
+      { id: 'gpt-4o', label: 'GPT-4o' },
+      // An audio model that does not look like one by name, plus an omni model
+      // that happens to take audio. Only the provider's modality report says
+      // so, so they are the check that the capability signal is wired through
+      // (this is the shape OpenRouter returns for `openai/gpt-audio` and
+      // `meta/muse-spark-*`).
+      { id: 'openai/gpt-audio', label: 'openai/gpt-audio', inputModalities: ['text', 'audio'] },
+      { id: 'meta/muse-spark-1.3', label: 'meta/muse-spark-1.3', inputModalities: ['text', 'audio', 'image'] },
+      // Reported without audio: must stay out even though it is a live row.
+      { id: 'meta/plain-chat', label: 'meta/plain-chat', inputModalities: ['text'] }
     ];
     await request('/api/settings/project', jsonInit('PUT', {
       projectDir: root,
@@ -181,6 +190,16 @@ try {
     assert.equal(whisperRows[0].source, 'project', 'the project record wins');
     assert.ok(merged.body.models.every((m) => m.id !== 'gpt-5'), 'a non-transcribing project model is filtered out');
     assert.equal(merged.body.total, 2, 'total is the raw project model count');
+    // The capability signal, which is what keeps the list from reading as
+    // "only the Gemini/Google models".
+    const ids = merged.body.models.map((m) => m.id);
+    assert.ok(ids.includes('openai/gpt-audio'),
+      'a model the provider reports as accepting audio is offered: ' + ids.join(','));
+    assert.ok(ids.includes('meta/muse-spark-1.3'), 'so is an audio-capable omni model');
+    assert.ok(!ids.includes('meta/plain-chat'), 'a live row without audio input is not');
+    const audioRow = merged.body.models.find((m) => m.id === 'openai/gpt-audio');
+    assert.deepEqual(audioRow.inputModalities, ['text', 'audio'],
+      'the capability report is carried through so the UI can explain the row');
 
     // An unreachable provider is reported per-provider and does not empty the
     // catalog: the still-good rows stay.

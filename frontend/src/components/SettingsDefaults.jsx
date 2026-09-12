@@ -1,12 +1,13 @@
 // mouaif web — SettingsDefaultsView
 //
-// Renders Settings → App defaults → Chat defaults. Three settings:
+// Renders Settings → App defaults → Chat defaults. Four settings:
 //
 //   - Default prompt style     (very-small / average / extensive)
 //   - Enter inserts a newline  (boolean switch)
 //   - Auto-retry failed sends  (boolean switch)
+//   - Glass orb file button    (boolean switch)
 //
-// All three auto-save on change via the shared `saveApp` helper, matching
+// All four auto-save on change via the shared `saveApp` helper, matching
 // the rest of the app (Settings → Project toggles, Settings → Agents, etc.).
 // No Save button: the previous version required a manual commit, which was
 // inconsistent and an extra tap for the user.
@@ -19,6 +20,7 @@
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { loadApp, saveApp } from '../api.js';
+import { fileOrbFromApp } from './chat/fileOrb.js';
 
 const PROMPT_SIZE_OPTIONS = [
   { value: 'very-small', label: 'Very small — tool names only, no schemas' },
@@ -37,6 +39,7 @@ export function SettingsDefaultsView() {
   const [promptSize, setPromptSize] = useState('average');
   const [enterForNewline, setEnterForNewline] = useState(true);
   const [autoRetry, setAutoRetry] = useState(true);
+const [fileOrb, setFileOrb] = useState(false);
 
   // Per-row status messages, mirroring SettingsProject's
   // `promptSizeStatusMsg` / `chatTraceStatusMsg` pattern. Empty string hides
@@ -44,6 +47,7 @@ export function SettingsDefaultsView() {
   const [promptSizeMsg, setPromptSizeMsg] = useState('');
   const [enterMsg, setEnterMsg] = useState('');
   const [retryMsg, setRetryMsg] = useState('');
+const [fileOrbMsg, setFileOrbMsg] = useState('');
 
   // Bail flag for late save() responses if the component unmounts mid-save
   // (e.g. user navigates back). Mirrors the same pattern other views use.
@@ -53,7 +57,7 @@ export function SettingsDefaultsView() {
   // Track in-flight saves per field so a fast toggle flip doesn't race
   // an earlier in-flight request. Latest write wins; older writes' status
   // messages are dropped so the user only sees the most recent outcome.
-  const inflight = useRef({ promptSize: 0, enterForNewline: 0, autoRetry: 0 });
+  const inflight = useRef({ promptSize: 0, enterForNewline: 0, autoRetry: 0, fileOrbButton: 0 });
 
   useEffect(() => {
     (async () => {
@@ -63,6 +67,7 @@ export function SettingsDefaultsView() {
         setPromptSize((app.app && app.app.promptSize) || 'average');
         setEnterForNewline(app.app && typeof app.app.enterForNewline === 'boolean' ? app.app.enterForNewline : true);
         setAutoRetry(app.app && typeof app.app.autoRetry === 'boolean' ? app.app.autoRetry : true);
+        setFileOrb(fileOrbFromApp(app));
       } catch (e) {
         if (aliveRef.current) setPromptSizeMsg('load failed: ' + e.message);
       }
@@ -99,10 +104,16 @@ export function SettingsDefaultsView() {
   }
 
   function onAutoRetryChange(e) {
-    const v = e.currentTarget.checked;
-    setAutoRetry(v);
-    saveField('autoRetry', { autoRetry: v }, setRetryMsg, v ? 'auto-retry on' : 'auto-retry off');
-  }
+const v = e.currentTarget.checked;
+setAutoRetry(v);
+saveField('autoRetry', { autoRetry: v }, setRetryMsg, v ? 'auto-retry on' : 'auto-retry off');
+}
+function onFileOrbChange(e) {
+const v = e.currentTarget.checked;
+setFileOrb(v);
+saveField('fileOrbButton', { fileOrbButton: v }, setFileOrbMsg,
+v ? 'the file button is now a glass orb (open a chat to see it)' : 'the file button is back to the flat circle');
+}
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
@@ -184,15 +195,44 @@ export function SettingsDefaultsView() {
                 'aria-checked': String(autoRetry),
                 checked: autoRetry,
                 onChange: onAutoRetryChange
-              }),
-              h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+                }),
+                h('span', { class: 'switch__track', 'aria-hidden': 'true' },
                 h('span', { class: 'switch__thumb' })
+                )
+                )
               )
-            )
-          )
-        )
-      ),
-      // Trailing hint about chat storage, kept outside the row list so the
+              ),
+              // ---- Glass orb file button: switch-in-a-card ---------------
+              h('li', { class: 'settings-project__item settings-project__item--col' },
+              h('div', { class: 'settings-project__item-row' },
+                h('div', { class: 'settings-project__item-main' },
+                h('label', { class: 'settings-project__item-title', for: 'sd-file-orb' },
+                'Glass orb file button'),
+                h('div', { class: 'settings-project__item-note' },
+                'Draws the button beside the message box as a shaded glass orb: the file and git ' +
+                'counts sit on a 3D folder that tilts slowly, and the sphere picks up a moving ' +
+                'highlight. It opens the same Files / Preview / Git / Cli menu either way, and the ' +
+                'tap target is unchanged. Off keeps the flat circle that matches the other ' +
+                'composer buttons.'),
+                h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileOrbMsg)
+                ),
+                h('label', { class: 'switch' },
+                h('input', {
+                id: 'sd-file-orb',
+                type: 'checkbox',
+                role: 'switch',
+                'aria-checked': String(fileOrb),
+                checked: fileOrb,
+                onChange: onFileOrbChange
+                }),
+                h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+                h('span', { class: 'switch__thumb' })
+                )
+                )
+              )
+              )
+              ),
+              // Trailing hint about chat storage, kept outside the row list so the
       // cards stay clean (matches SettingsProject's "Chats and messages…"
       // placement at the foot of the tools section).
       h('p', { class: 'hint hint--compact' },

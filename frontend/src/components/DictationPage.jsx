@@ -36,6 +36,7 @@ import {
   loadDictationModels,
   modelsForKind,
   pickRecorderMime,
+  modelBadge,
   pickerModels,
   recorderSupported,
   resolveDefaultModel,
@@ -524,6 +525,9 @@ function onPickModel(next) {
   }
 
   const selectedRow = models.find((m) => m.id === modelId && (m.provider || '') === providerId) || null;
+  // Why the selected model is on the list, when its name does not say. Shown
+  // under the catalog note so a row like `openai/gpt-audio` is explained.
+  const selectedBadge = selectedRow && selectedRow.source === 'live' ? modelBadge(selectedRow) : '';
   // While the user has not touched the control, the shape is the selected
   // model's own: that is what the request will actually use. After a tap, the
   // chip is the user's answer and wins — including when it disagrees with the
@@ -671,6 +675,10 @@ function onPickModel(next) {
           }, liveBusy ? 'Refreshing…' : 'Refresh')
         : null
       ),
+      selectedBadge
+        ? h('p', { class: 'hint hint--compact dictation__selected-badge' },
+            selectedRow.id + ' — ' + selectedBadge)
+        : null,
       catalogError
         ? h('p', { class: 'hint hint--compact dictation__error' }, 'Could not read the model list: ' + catalogError)
         : null,

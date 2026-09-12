@@ -82,20 +82,49 @@ check('an explicit transcription.kind always wins over inference', () => {
   }), 'openai-compatible');
 });
 
-check('isTranscriptionModel recognises the three signals', () => {
+check('isTranscriptionModel recognises the four signals', () => {
   // 1. explicitly marked
   assert.equal(transcribe.isTranscriptionModel({ id: 'my-asr', transcription: true }), true);
   // 2. the id looks like speech-to-text
   assert.equal(transcribe.isTranscriptionModel({ id: 'whisper-1', provider: 'openai-compatible' }), true);
   assert.equal(transcribe.isTranscriptionModel({ id: 'openai/whisper-large-v3', provider: 'openrouter' }), true);
-  // 3. any Gemini model: audio is an inline part on the general models, so
+  // 3. the Gemini family: audio is an inline part on the general models, so
   //    there is no separate Gemini speech-to-text product to match on.
   assert.equal(transcribe.isTranscriptionModel({ id: 'gemini-2.5-flash', provider: 'gemini' }), true);
-  assert.equal(transcribe.isTranscriptionModel({ id: 'gemini-2.5-flash', provider: 'openai-compatible' }), true);
+  // 4. the provider reports audio input. This is the signal that catches the
+  //    models whose names say nothing: an audio model, or an omni model that
+  //    happens to take audio.
+  assert.equal(transcribe.isTranscriptionModel({
+    id: 'openai/gpt-audio', provider: 'openrouter', inputModalities: ['text', 'audio']
+  }), true);
+  assert.equal(transcribe.isTranscriptionModel({
+    id: 'meta/muse-spark-1.3', provider: 'openrouter', inputModalities: ['text', 'audio', 'image']
+  }), true);
+  assert.equal(transcribe.isTranscriptionModel({ id: 'meta/muse-spark-1.3', provider: 'openrouter' }), false,
+    'without a modality report the name is all we have');
   // A plain chat model on a non-Gemini provider is not a candidate.
   assert.equal(transcribe.isTranscriptionModel({ id: 'gpt-5', provider: 'openai-compatible' }), false);
   assert.equal(transcribe.isTranscriptionModel({ id: 'claude-sonnet-4', provider: 'anthropic' }), false);
   assert.equal(transcribe.isTranscriptionModel(null), false);
+  assert.equal(transcribe.acceptsAudioInput({ inputModalities: ['TEXT', 'Audio'] }), true, 'case-insensitive');
+  assert.equal(transcribe.acceptsAudioInput({ inputModalities: 'audio' }), false, 'a string is not a list');
+});
+
+check('kindForModel only calls a model Gemini when it really is one', () => {
+  // The provider decides.
+  assert.equal(transcribe.kindForModel({ id: 'x', provider: 'gemini' }), 'gemini');
+  // An OpenRouter slug for a Google model routes to the same API.
+  assert.equal(transcribe.kindForModel({ id: 'google/gemini-2.5-flash', provider: 'openrouter' }), 'gemini');
+  // Regression: an id that merely *contains* "gemini" is not a Gemini model.
+  // A substring test here classified dozens of OpenRouter rows (Fireworks'
+  // naruto-…-gemini-…, gemini-flash-lite-latest, …) as Gemini, which both sent
+  // them to the wrong endpoint and — because the Gemini family is on the
+  // candidate list by definition — filtered everything else out of the
+  // dictation catalog, so the list looked Google-only.
+  assert.equal(transcribe.kindForModel({ id: 'fireworks/naruto-x-gemini-y', provider: 'openrouter' }), 'openai-compatible');
+  assert.equal(transcribe.kindForModel({ id: 'gemini-flash-lite-latest', provider: 'openrouter' }), 'openai-compatible');
+  // …but the names that *are* our hints still resolve.
+  assert.equal(transcribe.kindForModel({ id: 'mistralai/voxtral-small-24b-2507', provider: 'openrouter' }), 'openai-compatible');
 });
 
 check('transcriptionCandidates unions marked models with id hints, else offers everything', () => {

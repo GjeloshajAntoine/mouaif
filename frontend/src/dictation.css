@@ -182,9 +182,11 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  /* Flex-basis 0 + a 160px minimum: one field per row on a 360px phone, two
-     per row from ~360px of content width up. No fixed widths anywhere. */
-  flex: 1 1 160px;
+  /* Full width on a phone: the request-shape control (`OpenAI-shaped` +
+     `Gemini` chips) needs ~176px, and sharing a 390px row with the model
+     picker leaves it ~158px, which clipped the second chip. Two-up is the
+     wider-screen layout, not the default — mobile first. */
+  flex: 1 1 100%;
   min-width: 0;
 }
 
@@ -324,4 +326,16 @@
     max-width: 680px;
     margin: 0 auto;
   }
+  /* Two fields per row once there is room for the wider of the two. */
+  .dictation__field {
+    flex: 1 1 260px;
+  }
+}
+
+/* Explains why the selected model is on the list, when its name does not say
+   (a live row with audio input but a chat-model-looking id). Monospace for the
+   id so it is unambiguous which model is being described. */
+.dictation__selected-badge {
+  font-family: var(--font-mono);
+  word-break: break-all;
 }

@@ -159,19 +159,23 @@ async function handleTranscribe(req, res, parsed) {
       liveFailures.push(...failures);
       const seen = new Set(rows.map((r) => r.provider + '\u0000' + r.id));
       for (const m of list) {
-        if (!transcribe.isTranscriptionModel(m)) continue;
-        const key = (m.provider || '') + '\u0000' + m.id;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        rows.push({
-          id: m.id,
-          provider: m.provider || '',
-          label: m.label || '',
-          kind: transcribe.kindForModel(m),
-          auth: 'apikey',
-          source: 'live',
-          connected: true
-        });
+      if (!transcribe.isTranscriptionModel(m)) continue;
+      const key = (m.provider || '') + '\u0000' + m.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const row = {
+      id: m.id,
+      provider: m.provider || '',
+      label: m.label || '',
+      kind: transcribe.kindForModel(m),
+      auth: 'apikey',
+      source: 'live',
+      connected: true
+      };
+      // Carry the capability report through, so the picker can say *why* a
+      // model is on the list when its name does not (audio input).
+      if (Array.isArray(m.inputModalities)) row.inputModalities = m.inputModalities;
+      rows.push(row);
       }
     }
 
