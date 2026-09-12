@@ -104,10 +104,15 @@ const ROUTES = [
   exact('settings', () => ({ name: 'settings' })),
   exact('settings/access', () => ({ name: 'settingsAccess' })),
   exact('inspector', () => ({ name: 'inspector' })),
-  // Dictation — the speech-to-text page. A fixed route with no parameters:
-  // which model it dictates with is a choice made on the page (and remembered
-  // app-wide), not a value that belongs in the URL.
-  exact('dictation', () => ({ name: 'dictation' })),
+  // Dictation — the speech-to-text page. App-level, so it lives under
+  // Settings (`Settings → App defaults → Dictation`) rather than in the
+  // bottom tab bar. A fixed route with no parameters: which model it dictates
+  // with is a choice made on the page (and remembered app-wide), not a value
+  // that belongs in the URL. `#/dictation` was the page's hash while it had
+  // its own tab, so it stays as a legacy alias for bookmarks and installed
+  // PWAs (both hashes build the same route).
+  exact('settings/dictation', () => ({ name: 'settingsDictation' })),
+  exact('dictation', () => ({ name: 'settingsDictation' })),
   exact('settings/projects', () => ({ name: 'settingsProjects' })),
   exact('settings/defaults', () => ({ name: 'settingsDefaults' })),
   exact('settings/notifications', () => ({ name: 'settingsNotifications' })),

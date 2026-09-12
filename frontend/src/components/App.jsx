@@ -10,7 +10,6 @@ import { AccessSettingsView } from './AccessAuth.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
 import { ChatView } from './chat/Chat.jsx';
-import { DictationView } from './DictationPage.jsx';
 // Lazy-load every heavyweight, rarely-opened settings sub-page so its
 // code is excluded from the entry bundle that every chat session loads.
 // The chat / projects path only ever reaches the settings tab and the
@@ -41,12 +40,14 @@ const SettingsMcpRegistryView = lazyNamed(() => import('./SettingsMcpRegistry.js
 const SettingsTagsView = lazyNamed(() => import('./SettingsTags.jsx'), 'SettingsTagsView');
 const SettingsPricingView = lazyNamed(() => import('./SettingsPricing.jsx'), 'SettingsPricingView');
 const SettingsProjectsView = lazyNamed(() => import('./SettingsProjects.jsx'), 'SettingsProjectsView');
+const DictationView = lazyNamed(() => import('./DictationPage.jsx'), 'DictationView');
 const ROUTES = {
 chats: [ProjectsView],
-// Dictation is as cheap to reach as the chat list, so it is eager rather
-// than lazy: the same module also owns the composer's mic-recording logic,
-// and the chat path already pays for that import.
-dictation: [DictationView],
+// Dictation is a settings sub-page now (Settings → App defaults → Dictation),
+// so it is lazy like the rest of them: the mic-recording helpers the chat
+// composer shares live in `frontend/src/dictation.js`, not here, so the chat
+// path no longer pays for this page's code.
+settingsDictation: [DictationView],
 inspector: [InspectorView],
 picker: [ProjectPickerView, ({ dir }) => ({ dir })],
 chat: [ChatView, ({ chatId, projectDir }) => ({ chatId, projectDir })],
@@ -82,7 +83,7 @@ const FULL_PAGE_ROUTES = new Set([
 // Only these need a <Suspense> boundary; the eager views resolve
 // synchronously so the fallback never paints for them.
 const LAZY_ROUTE_NAMES = new Set([
-'inspector',
+'inspector', 'settingsDictation',
 'settingsProviders', 'settingsProviderNew', 'settingsProviderEdit',
 'settingsProject', 'settingsProjectTechnical', 'settingsProjectOutput', 'settingsProjectPreview', 'settingsProjectHide',
 'settingsDefaults', 'settingsNotifications', 'settingsAbout',
@@ -114,11 +115,7 @@ const TabIcon = {
   chats: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
     h('path', { d: 'M2 5a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H9.5l-3.72 3.72A1 1 0 0 1 4 22.56V18H5a3 3 0 0 1-3-3V5Z', fill: 'currentColor' })),
   inspector: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
-    h('path', { d: 'M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm0 3v2h16V7H4Zm0 4v2h7v-2H4Zm0 4v2h7v-2H4Zm9 0v2h7v-2h-7Z', fill: 'currentColor' })),
-  // A microphone: capsule + stand. The capsule is the same shape as the
-  // composer's mic button, so the tab and the button read as one feature.
-  dictation: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
-    h('path', { d: 'M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Zm7 9a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.92V21H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-3.08A7 7 0 0 0 19 11Z', fill: 'currentColor' })),
+  h('path', { d: 'M4 4h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm0 3v2h16V7H4Zm0 4v2h7v-2H4Zm0 4v2h7v-2H4Zm9 0v2h7v-2h-7Z', fill: 'currentColor' })),
   settings: h('svg', { viewBox: '0 0 24 24', width: 22, height: 22, 'aria-hidden': 'true' },
     h('path', { d: 'M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7Z', fill: 'currentColor' }))
 };
@@ -126,13 +123,9 @@ const TabIcon = {
 function BottomNav() {
   const view = route.value;
   const tabs = [
-    { to: 'projects', name: 'chats', label: 'Chats' },
-    // Dictation sits between Chats and Settings: it is an input surface used
-    // while chatting (dictate a prompt, hand the text to a chat), so it belongs
-    // in the thumb-reachable left half of the bar, with a full 44px+ target.
-    { to: 'dictation', name: 'dictation', label: 'Dictate' },
-    { to: 'inspector', name: 'inspector', label: 'Inspector' },
-    { to: 'settings', name: 'settings', label: 'Settings' }
+  { to: 'projects', name: 'chats', label: 'Chats' },
+  { to: 'inspector', name: 'inspector', label: 'Inspector' },
+  { to: 'settings', name: 'settings', label: 'Settings' }
   ];
   return h('nav', { class: 'app__tabbar', 'aria-label': 'Primary' },
   h('ul', {

@@ -202,13 +202,31 @@ function useCase(caseOptions) {
   return createView(caseOptions);
 }
 
+// ---- Where the page lives: Settings, not the tab bar -------------------
+// Dictation used to be a bottom tab of its own. It is a Settings sub-page now
+// (Settings → App defaults → Dictation), so the regressions worth pinning are
+// the places that made it a tab: the tab array, the route map, the Settings
+// row, and the composer's "go pick one" link. These are source invariants, not
+// render ones, so they run before (and independently of) the rendering cases
+// below. The hash plumbing itself is test-routes.js's job.
+{
+  const app = read('components/App.jsx');
+  const tabs = /const tabs = \[([\s\S]*?)\];/.exec(app);
+  assert.ok(tabs, 'the tab array is still declared in App.jsx');
+  assert.ok(!/to: 'dictation'/.test(tabs[1]), 'dictation is no longer a bottom tab');
+  assert.ok(/settingsDictation: \[DictationView\]/.test(app), 'the route renders the dictation page');
+  assert.ok(/\n'inspector', 'settingsDictation',/.test(app), 'the lazy route is wrapped in <Suspense>');
+  assert.ok(/settings\/dictation/.test(read('components/SettingsHome.jsx')), 'Settings → App defaults links to the page');
+  assert.ok(/nav\('settings\/dictation'\)/.test(read('components/chat/MicButton.jsx')), 'the composer mic links to the page');
+}
+
 // ---- First paint, before the catalog resolves ---------------------------
 
 {
   const view = useCase({ projectDir: '/fixture/project' });
   const nodes = view.render();
   assert.equal(find(nodes, (n) => n.tag === 'h2').children.join(''), 'Dictation', 'the page is titled');
-  assert.equal(find(nodes, (n) => buttonClass(n) === 'view-back').attrs.href, '#/projects', 'the back link points at the chat list');
+  assert.equal(find(nodes, (n) => buttonClass(n) === 'view-back').attrs.href, '#/settings', 'the back link returns to Settings');
   const record = find(nodes, (n) => n.tag === 'button' && buttonClass(n).startsWith('dictation__record'));
   assert.equal(record.attrs['aria-label'], 'Record', 'the primary control is labelled');
   assert.equal(record.attrs.type, 'button', 'the record control is a real button');

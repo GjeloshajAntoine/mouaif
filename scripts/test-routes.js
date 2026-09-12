@@ -79,6 +79,7 @@ function check(name, fn) {
       ['#/settings', 'settings'],
       ['#/settings/access', 'settingsAccess'],
       ['#/inspector', 'inspector'],
+      ['#/settings/dictation', 'settingsDictation'],
       ['#/settings/projects', 'settingsProjects'],
       ['#/settings/defaults', 'settingsDefaults'],
       ['#/settings/notifications', 'settingsNotifications'],
@@ -86,6 +87,11 @@ function check(name, fn) {
       ['#/settings/about', 'settingsAbout']
     ];
     for (const [hash, name] of cases) eq(hash, { name });
+  });
+
+  check('legacy #/dictation still resolves to the dictation page', () => {
+    eq('#/dictation', { name: 'settingsDictation' });
+    eq('#/settings/dictation', parseHash('#/dictation'));
   });
 
   // ---- Providers ------------------------------------------------------
@@ -224,7 +230,7 @@ function check(name, fn) {
       '#/settings/actions', '#/settings/actions/a', '#/settings/projects', '#/settings/defaults',
       '#/settings/notifications', '#/settings/pricing', '#/settings/prompts', '#/settings/prompts/p',
       '#/settings/mcp', '#/settings/mcp/registry', '#/settings/mcp/new', '#/settings/mcp/s', '#/settings/tags',
-      '#/settings/about', '#/dictation', '#/chat/c', '#/projects/new']) {
+      '#/settings/about', '#/settings/dictation', '#/dictation', '#/chat/c', '#/projects/new']) {
       names.add(parseHash(h).name);
     }
     assert.equal(names.size, 28, Array.from(names).sort().join(','));

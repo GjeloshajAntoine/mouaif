@@ -1,4 +1,4 @@
-// mouaif web — DictationView (the `#/dictation` page)
+// mouaif web — DictationView (the `#/settings/dictation` page)
 //
 // One screen for "speak, get text, do something with it":
 //
@@ -66,11 +66,12 @@ export function DictationView() {
 
   // The project whose models are on offer, and whose newest chat the hand-off
   // targets. Normally that is the active project (the chat route is its
-  // authoritative writer), but the Dictate tab is also reachable directly —
-  // after a cold start, or from an installed PWA launch — where nothing has
-  // written the signal yet. Falling back to the first registered project keeps
-  // the tab useful instead of showing an empty picker, and the group title
-  // names which project it settled on so nothing is ambiguous.
+  // authoritative writer), but the page is also reachable directly — deep
+  // linked under Settings, after a cold start, or from an installed PWA
+  // launch — where nothing has written the signal yet. Falling back to the
+  // first registered project keeps the page useful instead of showing an
+  // empty picker, and the group title names which project it settled on so
+  // nothing is ambiguous.
   const [project, setProject] = useState(() => ({
     dir: (activeProject.value && activeProject.value.dir) || '',
     name: (activeProject.value && activeProject.value.name) || ''
@@ -544,7 +545,7 @@ function onPickModel(next) {
 
   return h('section', { class: 'dictation' },
     h('div', { class: 'view-head' },
-      h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to chats' }, '←'),
+      h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
       h('h2', { class: 'view-title' }, 'Dictation')
     ),
 

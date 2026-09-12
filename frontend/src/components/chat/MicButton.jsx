@@ -95,7 +95,7 @@ export function MicButton(props) {
       ? catalog.models.find((m) => m.id === picked.modelId && (m.provider || '') === picked.providerId) || null
       : null;
       if (!match) {
-      say('No dictation model yet — open the Dictate tab and pick one.', 'error');
+      say('No dictation model yet — open Settings → App defaults → Dictation and pick one.', 'error');
       setBusy(false);
       return;
       }
@@ -229,11 +229,12 @@ export function MicButton(props) {
 // configured, exported so the chat view (and its test) can reuse the exact
 // wording, and so the "go pick one" affordance and the message cannot drift.
 export function dictationPageHint() {
-  return 'Open the Dictate tab to pick a dictation model.';
+  return 'Open Settings → App defaults → Dictation to pick a dictation model.';
 }
 
-// goDictate() — navigate to the dictation page. Exported for the empty-state
-// action; `nav` is the app's one hash writer.
+// goDictate() — navigate to the dictation page, which lives under Settings
+// (App defaults) rather than in the bottom tab bar. Exported for the
+// empty-state action; `nav` is the app's one hash writer.
 export function goDictate() {
-  nav('dictation');
+  nav('settings/dictation');
 }

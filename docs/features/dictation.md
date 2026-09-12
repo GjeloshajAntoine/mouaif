@@ -3,17 +3,18 @@
 ## Overview
 
 Dictation turns speech into text using a model the user picks, and hands that
-text to the app rather than sending it. It has two surfaces: a **Dictate** tab
-that records, transcribes and shows an editable transcript, and a **microphone
-button in the chat composer** that records and drops the transcript into the
-draft. The provider credential never reaches the browser: the recording is
-posted to `POST /api/ai/transcribe` and the server performs the upstream call.
+text to the app rather than sending it. It has two surfaces: a **Dictation**
+page under Settings that records, transcribes and shows an editable
+transcript, and a **microphone button in the chat composer** that records and
+drops the transcript into the draft. The provider credential never reaches the
+browser: the recording is posted to `POST /api/ai/transcribe` and the server
+performs the upstream call.
 
 ## Usage
 
-### The Dictate tab
+### The Dictation page
 
-1. Open **Dictate** in the bottom tab bar.
+1. Open **Settings → App defaults → Dictation** (or `#/settings/dictation`).
 2. Pick a **dictation model** (a model from the active project) and, if the
    model's provider uses a different dialect, the **request shape**.
 3. Tap **Record**. The timer and the level meter confirm the microphone is
@@ -35,12 +36,12 @@ Inside a chat, the microphone button next to the image button records and
 transcribes with the same remembered model, appending the text at the caret of
 the draft. Nothing is sent: dictation produces a draft, and sending stays a
 user decision. If no dictation model has been chosen yet, the button says so
-and points at the Dictate tab.
+and points at **Settings → App defaults → Dictation**.
 
 ### Configuring a model
 
-The **Dictate** tab lists two kinds of model, and you do not have to configure
-anything for the first one:
+The **Dictation** page lists two kinds of model, and you do not have to
+configure anything for the first one:
 
 1. **Models from your providers.** Every connected provider in Settings →
    Providers is asked for its current catalog, and the entries that can
@@ -141,7 +142,7 @@ use the same one.
 - **Dictation is not a security boundary or a background service.** It records
   only while the button says it is recording, and it stops the microphone on
   unmount.
-- **The Dictate tab works without an active project** — it adopts the first
+- **The Dictation page works without an active project** — it adopts the first
   registered project (and names it in the Model group's title) so the model
   picker is not empty after a cold start or a PWA launch. With no registered
   project at all, it says so and only Copy is available on a transcript.
@@ -170,8 +171,9 @@ use the same one.
 - `frontend/src/dictation.js` — the browser half: recorder capability probing,
   the clock, base64 encoding, the model-selection rules (`resolveDefaultModel`),
   and the transcript action set. Pure enough to unit-test.
-- `frontend/src/components/DictationPage.jsx` — the **Dictate** page
-  (`#/dictation`), and `frontend/src/components/chat/MicButton.jsx` — the
+- `frontend/src/components/DictationPage.jsx` — the Dictation page
+  (`#/settings/dictation`; `#/dictation` is the legacy alias), reached from
+  Settings → App defaults, and `frontend/src/components/chat/MicButton.jsx` — the
   composer microphone. Both use the same helper module, so the two surfaces
   cannot disagree about the model or the request shape.
 - `frontend/src/dictation.css` — the page and the microphone button. Mobile
@@ -200,7 +202,7 @@ whose models come entirely from the provider's live list.
 - [Model picker](model-picker.md) — where the models come from.
 - [App and project settings](app-and-project-settings.md) — the `dictation`
   app-level key and the project `models` array.
-- [Routing](routing.md) — the `#/dictation` route.
+- [Routing](routing.md) — the `#/settings/dictation` route (and its `#/dictation` alias).
 - Source: [`src/transcribe.js`](../../src/transcribe.js),
   [`src/server-handlers-transcribe.js`](../../src/server-handlers-transcribe.js),
   [`frontend/src/dictation.js`](../../frontend/src/dictation.js),
