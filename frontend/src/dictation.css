@@ -195,6 +195,54 @@ font-size: 0.9rem;
 color: var(--muted-2);
 }
 
+/* The per-run hints, folded away. The row is a real touch target (44px) and
+  reads as a summary line rather than a form control: the label, whatever is
+  set, and a caret. Folding it keeps the transcript — the point of the page —
+  within a thumb's reach on a 360px screen. */
+.dictation__options {
+padding: 2px 10px 0;
+}
+.dictation__options-toggle {
+display: flex;
+align-items: center;
+gap: 8px;
+width: 100%;
+min-height: 44px;
+padding: 0 2px;
+font: inherit;
+font-size: 0.82rem;
+font-weight: 600;
+letter-spacing: 0.02em;
+color: var(--muted-2);
+background: transparent;
+border: 0;
+cursor: pointer;
+text-align: left;
+}
+.dictation__options-toggle:active {
+color: var(--fg);
+}
+.dictation__options-label {
+text-transform: uppercase;
+flex: 0 0 auto;
+}
+.dictation__options-summary {
+font-weight: 400;
+text-transform: none;
+letter-spacing: 0;
+color: var(--fg);
+/* One line: a long vocabulary hint must not reflow the row it summarizes. */
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+min-width: 0;
+}
+.dictation__options-caret {
+margin-left: auto;
+font-size: 0.7rem;
+flex: 0 0 auto;
+}
+
 /* The catalog note: how many models, where they came from, and the refresh
    action. One row that wraps on a narrow phone (the label takes the line, the
    button follows) and sits on one line from ~380px up. */
@@ -230,6 +278,19 @@ color: var(--muted-2);
 
 .dictation__error {
   color: var(--danger);
+}
+
+/* Catalog failures: one line per provider that could not answer, then the one
+   action that fixes them. The message stays red (it *is* a failure) while the
+   "what to do" line stays quiet, so the eye lands on the cause first. */
+.dictation__failures {
+  padding: 2px 10px 4px;
+}
+.dictation__failures p {
+  margin: 2px 0;
+}
+.dictation__failure-action a {
+  color: var(--accent);
 }
 
 /* ---- Transcript ----------------------------------------------------- */

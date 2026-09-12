@@ -16,15 +16,18 @@ performs the upstream call.
 
 1. Open **Settings → App defaults → Dictation** (or `#/settings/dictation`).
 2. Pick a **dictation model** (a model from the active project, or one the
-  connected providers offer). The dialect it will be sent in is shown
-  underneath, read-only.
+  connected providers offer) under **Dictation model**; the dialect it will be
+  sent in is shown underneath, read-only. There is usually nothing to pick: a
+  remembered model, a lone candidate, or a lone row whose name says it
+  transcribes is selected for you.
 3. Tap **Record**. The timer and the level meter confirm the microphone is
    live. Recording stops on the second tap, or automatically at 2:00.
 4. Tap **Transcribe**. The transcript appears in an editable field.
 5. Choose what happens to it: **Copy**, **Insert in chat** (fills the newest
    chat's draft), **Send to chat** (same, labelled for a send), or **Clear**.
 
-Optional per-run hints sit above the transcript:
+Optional per-run hints sit under the picker, folded away behind an **Options**
+row (it shows whatever is set, so a value the user typed never looks lost):
 
 - **Language** — an ISO-639-1 or BCP-47 code (`en`, `fr`, `de`), passed to the
   provider so it biases decoding instead of guessing.
@@ -38,6 +41,17 @@ transcribes with the same remembered model, appending the text at the caret of
 the draft. Nothing is sent: dictation produces a draft, and sending stays a
 user decision. If no dictation model has been chosen yet, the button says so
 and points at **Settings → App defaults → Dictation**.
+
+### The layout of the page
+
+One column, mobile first: the recorder, the model, the folded **Options** row,
+then the transcript. The group title names the control (*Dictation model*) rather
+than labelling it a second time under itself, and the note beside it appears only
+when it has something to say: the page adopts the first registered project on a
+cold start or a PWA launch, the models then come from *that* project, and naming
+it is the difference between "where did these come from" and a named source. When
+the active project's catalog is already the one on offer, the note is empty rather
+than a "this project" that restates the obvious.
 
 ### Configuring a model
 
@@ -186,6 +200,13 @@ chat cannot appear here unless it can transcribe. See
 - **Failures name their cause.** A rejected key surfaces the provider's own
   message with HTTP 401, an unreachable provider is 502, a stalled one is 504
   after 60s, and a recording that is too long is 413.
+- **A provider that could not list its models is named and explained.** The
+  connection is called what Settings calls it (*OpenAI compatible*, not
+  `openai-compatible`), the provider's own message is kept because it is the
+  only thing that says *why* (`upstream 401 Unauthorized`), and the line is
+  followed by the link that fixes it: **Check the connection in Settings →
+  Providers**. Those rows are missing from the picker; the providers that did
+  answer still are not.
 - **Dictation is not a security boundary or a background service.** It records
   only while the button says it is recording, and it stops the microphone on
   unmount.

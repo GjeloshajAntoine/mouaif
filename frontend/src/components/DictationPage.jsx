@@ -23,7 +23,7 @@
 // actions off-screen (style notes live in dictation.css).
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
-import { fetchJson, activeProject, saveApp } from '../api.js';
+import { fetchJson, activeProject, providerDef, saveApp } from '../api.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { loadPinned, loadRecent, loadRecentFromServer, togglePin } from './chat/modelPicker.js';
 import {
@@ -58,6 +58,9 @@ export function DictationView() {
   const [providerId, setProviderId] = useState('');
   const [language, setLanguage] = useState('');
   const [prompt, setPrompt] = useState('');
+  // The two hint inputs are the exception rather than the rule, so they live
+  // behind a disclosure (see the Options row below the picker).
+  const [showHints, setShowHints] = useState(false);
   const [catalogBusy, setCatalogBusy] = useState(true);
   const [catalogError, setCatalogError] = useState('');
 
@@ -554,6 +557,12 @@ function onPickModel(next) {
   // see what a given model will do rather than choose it.
   const effectiveKind = (selectedRow && selectedRow.kind) || '';
 
+  // The per-run hints as one line, for the collapsed Options row: a value the
+  // user set must stay visible when the fields are folded away.
+  const hintSummary = [language.trim(), prompt.trim()].filter(Boolean).join(' · ');
+  // The project whose models these are, when it is worth naming (see scopeNote).
+  const scope = scopeNote(project, projectDir);
+
   // The record button's own caption. Recording beats every other state, then
   // "stop is available" beats "transcribe".
   const recordLabel = recording ? 'Stop' : (elapsedMs ? 'Record again' : 'Record');
@@ -607,116 +616,150 @@ function onPickModel(next) {
 
     // ---- 2. Model ---------------------------------------------------------
     h('div', { class: 'group' },
-      h('div', { class: 'group__title' }, 'Model', h('span', { class: 'group__title-note' }, projectDir ? (project.name || 'this project') : 'no project')),
+      // The group title names the control, so the field under it does not
+      // repeat the label. The note earns its place only when the page adopted a
+      // project that is not the active one (cold start, installed PWA): the
+      // models come from *that* project, and naming it is the difference
+      // between "where did these come from" and a named source.
+      h('div', { class: 'group__title' }, 'Dictation model',
+      scope ? h('span', { class: 'group__title-note' }, scope) : null),
       h('div', { class: 'dictation__fields' },
         h('div', { class: 'dictation__field' },
-        h('span', { class: 'label' }, 'Dictation model'),
-        h(ModelPickerField, {
-        models: pickerList,
-        value: selection,
-        onChange: onPickModel,
-        onOpen: () => { /* the catalog is already loaded */ },
-        placeholder: catalogBusy ? 'Loading models…' : (emptyHint(models) || 'Pick a model'),
-        ariaLabel: 'Pick dictation model',
-        // The rows worth reaching first, in order of how much their name says
-        // (see recommendedModels): a long live catalog is otherwise an
-        // alphabetical wall in which `whisper-large-v3` sits wherever its id
-        // happens to fall.
-        recommended: recommendedIds,
-        // Same bookmarks as the chat picker — see the note on bookmarkState.
-        pinned,
-        onTogglePin,
-        recent,
-          // 'sheet' rather than 'dropdown': on a phone the dropdown popup
-          // renders in flow and covers the transcript directly beneath it,
-          // while the sheet variant uses the same mobile viewport modal the
-          // chat head's picker does (and the same desktop card).
-          variant: 'sheet',
-          refreshEmpty: 'No dictation models'
-        })
+          h(ModelPickerField, {
+            models: pickerList,
+            value: selection,
+            onChange: onPickModel,
+            onOpen: () => { /* the catalog is already loaded */ },
+            placeholder: catalogBusy ? 'Loading models…' : (emptyHint(models) || 'Pick a model'),
+            ariaLabel: 'Pick dictation model',
+            // The rows worth reaching first, in order of how much their name
+            // says (see recommendedModels): a long live catalog is otherwise an
+            // alphabetical wall in which `whisper-large-v3` sits wherever its id
+            // happens to fall.
+            recommended: recommendedIds,
+            // Same bookmarks as the chat picker — see the note on bookmarkState.
+            pinned,
+            onTogglePin,
+            recent,
+            // 'sheet' rather than 'dropdown': on a phone the dropdown popup
+            // renders in flow and covers the transcript directly beneath it,
+            // while the sheet variant uses the same mobile viewport modal the
+            // chat head's picker does (and the same desktop card).
+            variant: 'sheet',
+            refreshEmpty: 'No dictation models'
+          })
         ),
-        // Read-only. The shape a transcription will use is not a user choice:
-        // it follows from the model's provider connection (Gemini speaks
+        // Read-only. The shape a transcription will use is not a user choice: it
+        // follows from the model's provider connection (Gemini speaks
         // generateContent, every other provider speaks the OpenAI multipart
         // form), and the two are not interchangeable — pointing a Gemini
         // connection at /audio/transcriptions, or an OpenRouter connection at
-        // /v1beta/models/…:generateContent, is a 404. Showing it means the
-        // user can see what a given model will do; letting them set it only
-        // offered a way to break it.
+        // /v1beta/models/…:generateContent, is a 404. Showing it means the user
+        // can see what a given model will do; letting them set it only offered a
+        // way to break it.
         //
-        // With no model picked there is nothing to report — the picker's own
-        // placeholder already says what the first step is, and repeating it in
-        // a second row read as a broken control.
+        // With no model picked there is nothing to report: the picker's own
+        // placeholder already says what the first step is, and repeating it in a
+        // second row read as a broken control.
         selectedRow && effectiveKind
-        ? h('div', { class: 'dictation__field' },
-        h('span', { class: 'label' }, 'Sends as'),
-        h('span', {
-        class: 'dictation__kind-readout',
-        title: kindLabel(kinds, effectiveKind) || effectiveKind
-        }, kindShortLabel(effectiveKind))
-        )
-        : null
+          ? h('div', { class: 'dictation__field' },
+            h('span', { class: 'label' }, 'Sends as'),
+            h('span', {
+              class: 'dictation__kind-readout',
+              title: kindLabel(kinds, effectiveKind) || effectiveKind
+            }, kindShortLabel(effectiveKind))
+          )
+          : null
       ),
-      h('div', { class: 'dictation__fields' },
-        h('div', { class: 'dictation__field' },
-        h('label', { class: 'label', for: 'dictation-language' }, 'Language (optional)'),
-        h('input', {
-          class: 'input', id: 'dictation-language', type: 'text',
-          placeholder: 'en, fr, de…',
-          value: language,
-          onInput: (e) => setLanguage(e.target.value.slice(0, 20))
-        })
+      // Per-run hints, behind a disclosure. They are the exception rather than
+      // the rule — most takes use neither — and two empty inputs sitting between
+      // the record button and the transcript pushed the result, which is what
+      // the user came for, off a phone screen.
+      h('div', { class: 'dictation__options' },
+        h('button', {
+          class: 'dictation__options-toggle',
+          type: 'button',
+          'aria-expanded': showHints ? 'true' : 'false',
+          onClick: () => setShowHints(!showHints)
+        },
+        h('span', { class: 'dictation__options-label' }, 'Options'),
+        hintSummary ? h('span', { class: 'dictation__options-summary' }, hintSummary) : null,
+        h('span', { class: 'dictation__options-caret', 'aria-hidden': 'true' }, showHints ? '▾' : '▸')
         ),
-        h('div', { class: 'dictation__field' },
-        h('label', { class: 'label', for: 'dictation-prompt' }, 'Vocabulary hint (optional)'),
-        h('input', {
-          class: 'input', id: 'dictation-prompt', type: 'text',
-          placeholder: 'mouaif, MediaRecorder, SSE…',
-          value: prompt,
-          onInput: (e) => setPrompt(e.target.value.slice(0, 400))
-        })
-        )
+        showHints
+          ? h('div', { class: 'dictation__fields' },
+            h('div', { class: 'dictation__field' },
+              h('label', { class: 'label', for: 'dictation-language' }, 'Language (optional)'),
+              h('input', {
+                class: 'input', id: 'dictation-language', type: 'text',
+                placeholder: 'en, fr, de…',
+                value: language,
+                onInput: (e) => setLanguage(e.target.value.slice(0, 20))
+              })
+            ),
+            h('div', { class: 'dictation__field' },
+              h('label', { class: 'label', for: 'dictation-prompt' }, 'Vocabulary hint (optional)'),
+              h('input', {
+                class: 'input', id: 'dictation-prompt', type: 'text',
+                placeholder: 'mouaif, MediaRecorder, SSE…',
+                value: prompt,
+                onInput: (e) => setPrompt(e.target.value.slice(0, 400))
+              })
+            )
+          )
+          : null
       ),
       // Where the rows came from, and the one action that can add more. The
       // live catalogs are memoized server-side for an hour, so a provider that
       // just gained a model needs this tap to show up.
       h('div', { class: 'dictation__catalog-note' },
         h('span', { class: 'hint hint--compact' },
-        liveBusy
-          ? 'Looking for models from your providers…'
-          : (projectCount
-            ? projectCount + (projectCount === 1 ? ' project model' : ' project models')
-            + (hasLive ? ', plus models from your provider' : '')
-            : (hasLive ? 'Models from your provider connections' : 'No models'))),
+          liveBusy
+            ? 'Looking for models from your providers…'
+            : (projectCount
+              ? projectCount + (projectCount === 1 ? ' project model' : ' project models')
+              + (hasLive ? ', plus models from your provider' : '')
+              : (hasLive ? 'Models from your provider connections' : 'No models'))),
         projectDir && providers.length
-        ? h('button', {
-          class: 'dictation__refresh',
-          type: 'button',
-          disabled: liveBusy || catalogBusy,
-          onClick: refreshCatalog,
-          'aria-label': 'Refresh the model list from the provider'
+          ? h('button', {
+            class: 'dictation__refresh',
+            type: 'button',
+            disabled: liveBusy || catalogBusy,
+            onClick: refreshCatalog,
+            'aria-label': 'Refresh the model list from the provider'
           }, liveBusy ? 'Refreshing…' : 'Refresh')
-        : null
+          : null
       ),
       selectedBadge
         ? h('p', { class: 'hint hint--compact dictation__selected-badge' },
-            selectedRow.id + ' — ' + selectedBadge)
+          selectedRow.id + ' — ' + selectedBadge)
         : null,
       catalogError
         ? h('p', { class: 'hint hint--compact dictation__error' }, 'Could not read the model list: ' + catalogError)
         : null,
       // A provider that could not answer is reported per-provider: one
       // unreachable or badly-keyed connection must not look like "no models".
+      // The provider's own message is kept — it is the only thing that says
+      // *why* — but it is attributed to the connection by name and followed by
+      // the action that fixes it: "openai-compatible: upstream 401 Unauthorized"
+      // is a log line, not an instruction.
       liveFailures.length
-        ? h('p', { class: 'hint hint--compact dictation__error' },
-          liveFailures.map((f) => f.provider + ': ' + f.error).join(' · '))
+        ? h('div', { class: 'dictation__failures' },
+          liveFailures.map((f) => h('p', {
+            key: f.provider,
+            class: 'hint hint--compact dictation__error'
+          }, 'No models from ' + providerName(f.provider) + ' — ' + f.error)),
+          h('p', { class: 'hint hint--compact dictation__failure-action' },
+            h('a', { href: '#/settings/providers' }, 'Check the connection in Settings → Providers'),
+            ', then tap Refresh.')
+        )
         : null,
       !catalogBusy && !liveBusy && !models.length
         ? h('p', { class: 'hint hint--compact' }, providers.length
           ? 'Your providers returned no usable models. Check the connection in Settings → Providers, then tap Refresh.'
           : 'No models yet, and no provider connection to list them from. Connect a provider in Settings → Providers (or add a model to this project in .mouaif.json), then come back.')
         : null
-      ),
+    ),
 
     // ---- 3. Transcript ----------------------------------------------------
     h('div', { class: 'group' },
@@ -770,4 +813,25 @@ function onPickModel(next) {
 function emptyHint(models) {
   if (models && models.length) return '';
   return 'No models in this project';
+}
+
+// scopeNote(project, projectDir) — the note next to the group title. The models
+// come from the project whose catalog was read, so the note only has something
+// to say when that is *not* the active project — the page adopts the first
+// registered one on a cold start or a PWA launch — or when there is no project
+// at all. A "this project" that restates the obvious was the third label on one
+// control.
+function scopeNote(project, projectDir) {
+  if (!projectDir) return 'no project';
+  const active = (activeProject.value && activeProject.value.dir) || '';
+  if (active && active === projectDir) return '';
+  return (project && project.name) || '';
+}
+
+// providerName(id) — what Settings → Providers calls this connection. A failure
+// that says "openai-compatible" names a key in the app store; a failure that
+// says "OpenAI compatible" names the row the user has to go and fix.
+function providerName(id) {
+  const def = providerDef(id);
+  return (def && def.label) || id;
 }

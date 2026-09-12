@@ -132,6 +132,13 @@ let cursor = 0;
     // Recorded rather than applied: the assertion that matters is *what* the
     // page writes to the app store when a model is picked.
     saveApp: async (patch) => { saved.push(patch); },
+    // The provider labels the page attributes a failed catalog with. Two rows
+    // are enough for a fixture whose providers are openai-compatible and gemini;
+    // the real table lives in frontend/src/api.js.
+    providerDef: (id) => ({
+    'openai-compatible': { label: 'OpenAI compatible' },
+    gemini: { label: 'Google Gemini' }
+    }[id] || null),
     // The chat picker's bookmark helpers. The page only passes their results
     // through to <ModelPickerField>, which this harness replaces with a tag, so
     // an empty stand-in is enough: the pin/recent behaviour itself is pinned by
@@ -468,8 +475,14 @@ function useCase(caseOptions) {
   await view.settle();
   const nodes = view.render();
   const errors = all(nodes, (n) => buttonClass(n).includes('dictation__error')).map((n) => n.children.join(''));
-  assert.ok(errors.some((t) => t.includes('gemini') && t.includes('fetch failed')),
-    'the failing provider is reported with its own message: ' + JSON.stringify(errors));
+  assert.ok(errors.some((t) => t.includes('Google Gemini') && t.includes('fetch failed')),
+    'the failing provider is named the way Settings names it, with its own message: ' + JSON.stringify(errors));
+  // …and the failure says what to do about it, because "upstream 401" is not an
+  // instruction. The provider id never reaches the screen.
+  const action = find(nodes, (n) => buttonClass(n).includes('dictation__failure-action'));
+  assert.ok(action, 'a failed catalog offers the fix');
+  assert.equal(find(action.children, (n) => n && n.tag === 'a').attrs.href, '#/settings/providers');
+  assert.ok(!errors.some((t) => t.includes('gemini:')), 'the raw provider id is not shown');
   // The good rows are still offered: one bad provider must not empty the list.
   assert.ok(picker(nodes).models.length > 0);
 }
@@ -526,6 +539,58 @@ function useCase(caseOptions) {
   picker(view.render()).onChange(null);
   await view.flush();
   assert.deepEqual({ ...view.saved.at(-1).dictation }, { modelId: '', providerId: '' });
+}
+
+// ---- The model section says each thing once ----------------------------
+//
+// The section used to carry three labels for one control (`MODEL`, `this
+// project`, `Dictation model`) and to print `Pick a model` a second time under
+// the trigger, which reads as a control that failed to load rather than as a
+// prompt.
+{
+  const view = useCase({ projectDir: '/fixture/project' });
+  view.render();
+  await view.settle();
+  const nodes = view.render();
+
+  const titles = all(nodes, (n) => buttonClass(n) === 'group__title');
+  assert.equal(titles.length, 2, 'Model and Transcript');
+  assert.equal(titles[0].children[0], 'Dictation model', 'the group title is the label');
+  assert.equal(
+    all(nodes, (n) => n.tag === 'span' && buttonClass(n) === 'label' && String(n.children.join('')).includes('Dictation model')).length,
+    0,
+    'the field under it does not repeat the label'
+  );
+  // The active project is the implied source, so the note is empty rather than
+  // a "this project" that tells the user nothing (adoption and project-less
+  // cases assert their own note below).
+  assert.ok(!titles[0].children.some((child) => child && child.attrs && buttonClass(child) === 'group__title-note'),
+    'no note for the active project');
+
+  // The per-run hints are folded away: the transcript is what the page is for,
+  // and two empty inputs above it pushed it off a phone screen.
+  assert.equal(find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-language'), null);
+  const toggle = find(nodes, (n) => buttonClass(n).includes('dictation__options-toggle'));
+  assert.equal(toggle.attrs['aria-expanded'], 'false');
+  assert.deepEqual(toggle.children[0].children, ['Options']);
+
+  toggle.attrs.onClick();
+  const open = view.render();
+  const languageInput = find(open, (n) => n.attrs && n.attrs.id === 'dictation-language');
+  assert.ok(languageInput, 'the hint fields appear on tap');
+  assert.equal(find(open, (n) => n.attrs && n.attrs.id === 'dictation-prompt').attrs.placeholder, 'mouaif, MediaRecorder, SSE…');
+  languageInput.attrs.onInput({ target: { value: 'fr' } });
+
+  const closing = find(view.render(), (n) => buttonClass(n).includes('dictation__options-toggle'));
+  closing.attrs.onClick();
+  const collapsed = view.render();
+  assert.equal(find(collapsed, (n) => n.attrs && n.attrs.id === 'dictation-language'), null, 'and fold away again');
+  // A hint that is set stays visible while the fields are folded: a value the
+  // user typed must not look lost.
+  assert.deepEqual(
+    find(collapsed, (n) => buttonClass(n).includes('dictation__options-summary')).children,
+    ['fr']
+  );
 }
 
 // ---- The preselect rule on its own -------------------------------------
