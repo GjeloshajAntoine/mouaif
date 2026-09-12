@@ -116,7 +116,7 @@ line-height: 1.4;
 /* Tap-to-select button: the primary action in the empty state. A large
 touch target that shows a crosshair glyph + label; when pick mode is
 on it turns accent and reads "Selecting…". */
-.inspector__styles-pick {
+.inspector__styles-tap {
 display: inline-flex;
 align-items: center;
 justify-content: center;
@@ -135,16 +135,16 @@ cursor: pointer;
 transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__styles-pick svg { display: block; }
-.inspector__styles-pick:hover { background: var(--surface-3); }
-.inspector__styles-pick:disabled {
+.inspector__styles-tap svg { display: block; }
+.inspector__styles-tap:hover { background: var(--surface-3); }
+.inspector__styles-tap:disabled {
 opacity: 0.55;
 cursor: default;
 background: var(--surface-2);
 color: var(--muted);
 border-color: var(--border);
 }
-.inspector__styles-pick.is-on {
+.inspector__styles-tap.is-on {
 color: var(--on-accent);
 background: var(--accent);
 border-color: var(--accent);
@@ -165,46 +165,63 @@ min-width: 64px;
 padding: 0 12px;
 font-size: 0.82rem;
 }
-/* Selected-element action row: clear (X) on the left, refresh + pick tools
-on the right. The header buttons are compact (.icon-btn--labeled) so the
-whole row stays on one line. The element's identity is *not* here any more:
-it is the panel header's element button (see .inspector__panel-elem in
-inspector-chrome.css), because a third flexible column between three
-labelled buttons left the label that answers "what am I editing?" about
-100 px wide at 360 px. `margin-left: auto` is what keeps the two tools at
-the far end now that nothing separates them from Clear. */
-.inspector__styles-head {
-display: flex;
-align-items: center;
-gap: 8px;
-}
-.inspector__styles-clear {
-flex-shrink: 0;
-}
-/* Selected-element header icon buttons (clear ✕, refresh, and pick
-mode) get full-size 44 px touch targets rather than the 32 px
-glyph-only accessory size. The header pick button carries the
-empty-state `.inspector__styles-pick` class too, so scope this to the
-`.icon-btn` variant — the empty-state pill keeps its own sizing. When
-the button also has the `.icon-btn--labeled` variant the label expands
-it, so the fixed `--tap` sizing only applies to the glyph-only form. */
-.icon-btn.inspector__styles-clear:not(.icon-btn--labeled),
-.icon-btn.inspector__styles-refresh:not(.icon-btn--labeled),
-.icon-btn.inspector__styles-pick:not(.icon-btn--labeled) {
+/* Selected-element header icon buttons (clear ✕, refresh, and pick mode)
+get full-size 44 px touch targets rather than the 32 px glyph-only accessory
+size, because this row puts four of them side by side and each one is a
+panel-wide action. They are glyph-only, like every other control in the
+card header, so `aria-label` + `title` carry their meaning. */
+.icon-btn.inspector__styles-clear,
+.icon-btn.inspector__styles-refresh,
+.icon-btn.inspector__styles-pick {
 width: var(--tap);
 min-width: var(--tap);
 height: var(--tap);
 min-height: var(--tap);
 }
-.inspector__styles-tools {
-margin-left: auto;
-display: flex;
-align-items: center;
-gap: 4px;
-flex-shrink: 0;
-}
-.inspector__styles-pick[aria-pressed="true"] {
+.inspector__styles-pick.is-on {
 color: var(--accent);
+}
+/* The selected element's identity, first row of the Styles card body: the
+`tag#id.class` label with its box size at the end, full width, tapping to
+copy the selector. It used to be a chip in the card header, published upward
+because the row it shared with three labelled buttons (Clear / Refresh /
+Pick) left it ~100 px and it ellipsized first. Those buttons are in the card
+header now, so the identity owns this row: one line, untruncated at 360 px,
+and `min-height: --tap` keeps it a full tap target. The name still
+ellipsizes rather than wrapping, so a pathological label costs nothing
+below. */
+.inspector__styles-elem {
+display: flex;
+align-items: baseline;
+gap: 8px;
+width: 100%;
+min-height: var(--tap);
+padding: 6px 10px;
+font: inherit;
+font-family: var(--font-mono);
+text-align: left;
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+color: var(--fg);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__styles-elem:hover { background: var(--surface-3); }
+.inspector__styles-elem-name {
+min-width: 0;
+font-size: 0.72rem;
+font-weight: 700;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+}
+.inspector__styles-elem-size {
+flex: 0 0 auto;
+margin-left: auto;
+font-size: 0.62rem;
+color: var(--muted-2);
+white-space: nowrap;
 }
 .inspector__styles-section {
 display: flex;

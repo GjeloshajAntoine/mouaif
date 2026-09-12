@@ -260,12 +260,17 @@ check('styles: declared styles list', /Declared styles/.test(styles));
 check('styles: computed list + filter', /Computed/.test(styles) && /inspector__computed-filter/.test(styles));
 check('styles: matched rules section', /MatchedRulesSection/.test(styles));
 check('styles: pinned element preview', /inspector__styles-shot/.test(styles));
-// The element's identity is the panel header's own chip, not a column of the
-// Styles action row: the header chip is the inventory entry now, and it taps to
-// copy the selector (the only way the label leaves the inspector).
-check('styles: element identity is the panel header chip', /inspector__panel-elem/.test(inspector) && /inspector__panel-elem/.test(css));
-check('styles: the header chip copies the selector', /onCopyElement/.test(inspector) && /copyElementSelector/.test(inspector));
-check('styles: the panel action row is actions only', /inspector__styles-head/.test(styles) && !/inspector__styles-elem/.test(styles));
+// The element's identity is the first row *inside* the Styles card body — a
+// chip that taps to copy the selector — and the three card-wide actions
+// (Clear / Refresh / Pick) live in the card header, next to the panel's eye.
+// That is the split the row's history settled on: the actions are panel chrome,
+// the identity is what the user is reading, and sharing one line left the
+// identity ellipsizing first at 360 px.
+check('styles: element identity is the card-body chip', /inspector__styles-elem/.test(styles) && /inspector__styles-elem/.test(css));
+check('styles: the body chip copies the selector', /onCopyElement/.test(styles) && /onCopyElement/.test(inspector) && /copyElementSelector/.test(inspector));
+check('styles: the card header carries clear / refresh / pick', /inspector__styles-clear/.test(inspector) && /inspector__styles-refresh/.test(inspector) && /inspector__styles-pick/.test(inspector));
+check('styles: the identity is no longer a header chip', !/inspector__panel-elem/.test(inspector) && !/inspector__panel-elem/.test(css));
+check('styles: the body action row is gone', !/inspector__styles-head/.test(styles) && !/inspector__styles-tools/.test(styles));
 check('styles: clearing the selection drops the retained element', /onCleared/.test(styles) && /onCleared/.test(inspector));
 check('styles: inline edit sheet', /StyleEditSheet/.test(styles));
 check('styles: quick-add chips', /COMMON_CSS/.test(styles));

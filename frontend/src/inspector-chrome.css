@@ -255,58 +255,6 @@ align-items: center;
 gap: 8px;
 min-width: 0;
 }
-/* Element button — the selected element's identity in the panel header, e.g.
-`div.translate-options` over `1131px × 272px`. It is the button form of the
-chip the Styles panel used to carry in its own action row; that row is shared
-with three labelled buttons (Clear / Refresh / Pick) and at the 360 px minimum
-the label answering "what am I editing?" was the first thing to ellipsize,
-while the card header had empty space. Tapping it copies the selector.
-
-It is a two-line column, not one line: the widest element label at 360 px
-(`div.translate-options`) plus its box size is ~257 px, and the header has
-~220 px for it once the panel label and the 44 px eye button have their space
-— on one line the identity would ellipsize to `div.translate-…`, which is the
-one thing this chip exists to answer. Stacked, the widest of the two lines
-(146 px) fits with room to spare, and both stay fully readable. The name still
-ellipsizes rather than wrapping, so a pathological label costs height only if
-it is genuinely longer than the space available, and the 44 px `--tap` floor
-keeps the header at exactly the height the eye button already set. */
-.inspector__panel-elem {
-  flex: 0 1 auto;
-  min-width: 0;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 1px;
-  min-height: var(--tap);
-  padding: 2px 8px;
-  overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
-  color: var(--fg);
-  font-family: var(--font-mono);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.inspector__panel-elem:hover { background: var(--surface-3); }
-.inspector__panel-elem-name {
-  max-width: 100%;
-  font-size: 0.72rem;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.inspector__panel-elem-size {
-  max-width: 100%;
-  font-size: 0.62rem;
-  color: var(--muted-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .inspector__panel-label {
 flex: 0 0 auto;
 font-size: 0.72rem;

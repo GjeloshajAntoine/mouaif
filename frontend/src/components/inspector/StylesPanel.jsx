@@ -49,6 +49,7 @@ import { valueShape } from './valueShapes.js';
 import { writtenNames } from './shorthand.js';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
 import { ORIGIN_LABEL } from './matchedRules.js';
+import { cleanSize } from './targetBar.js';
 
 // valueSwatch — a colour value gets a swatch in front of its text. `rgb(255,
 // 230, 0)` is the same length as three other colours at this row size, and the
@@ -1153,15 +1154,20 @@ return () => { if (props.pickHandlerRef) props.pickHandlerRef.current = null; };
 useEffect(() => {
 if (!props.onSelectionChange) return;
 props.onSelectionChange({
-  label: model ? elementLabel(model.node) : '',
-  size: boxSummary(model && model.box),
-  objectId: (model && model.objectId) || '',
-  declared: (model && model.inlineProps) || [],
-  rules: rules || null,
-  tree: tree || null,
-  changed: changed || [],
-  receipt: receipt || [],
-  editing: edit ? edit.prop : ''
+label: model ? elementLabel(model.node) : '',
+size: boxSummary(model && model.box),
+objectId: (model && model.objectId) || '',
+declared: (model && model.inlineProps) || [],
+rules: rules || null,
+tree: tree || null,
+changed: changed || [],
+receipt: receipt || [],
+editing: edit ? edit.prop : '',
+// busy — a read of this element is in flight (a selection, a refresh, a
+// re-read after an undo). The panel's own header buttons live in the card
+// header now, so this is how that header knows to disable Refresh while the
+// read it would duplicate is already running.
+busy: !!loading
 });
 // Clear the published snapshot on unmount. The Inspector keeps its own copy so
 // the target bar and the receipt survive this panel being switched off — which
@@ -1169,7 +1175,7 @@ props.onSelectionChange({
 // longer has a panel behind it, or the bar would describe an element the panel
 // is no longer tracking.
 return () => { if (props.onSelectionChange) props.onSelectionChange(null); };
-}, [model, rules, tree, changed, receipt, edit]);
+}, [model, rules, tree, changed, receipt, edit, loading]);
 // Expose the panel's own actions to the TargetBar above it, so the bar's
 // header buttons and breadcrumb are shortcuts into this panel rather than a
 // second implementation. The selection stays owned here (with the highlight,
@@ -1189,7 +1195,13 @@ props.panelHandlesRef.current = {
     return selectAncestor(levels);
   },
   clear: () => clearPick(),
-  refresh: () => refreshStyles()
+  refresh: () => refreshStyles(),
+  // Pick mode — the parent owns the flag (it routes the preview tap), and
+  // this panel owns the side effects (a stale selection is dropped when the
+  // mode is armed, the highlight is dropped when it is disarmed). The header
+  // button asks through this handle so there is one implementation of the
+  // flip rather than a second one that only remembered to set the flag.
+  togglePick: () => togglePickMode()
 };
 return () => { if (props.panelHandlesRef) props.panelHandlesRef.current = null; };
 });
@@ -1457,7 +1469,7 @@ props.pickMode
 previewHidden ? 'The Preview panel is hidden — use a selector below.' : 'Now tap the element in the live preview.')
 : null,
 h('button', {
-class: 'inspector__styles-pick' + (props.pickMode ? ' is-on' : ''),
+class: 'inspector__styles-tap' + (props.pickMode ? ' is-on' : ''),
 type: 'button',
 'aria-pressed': String(!!props.pickMode),
 disabled: previewHidden && !props.pickMode,
@@ -1497,6 +1509,10 @@ error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null
 }
 
 const label = elementLabel(model.node);
+// boxSize — the identity chip's second line. `cleanSize` drops the `— × —`
+// a node with no measurable box produces (a display:none pickup, a detached
+// node), because printing that next to the tag is noise pretending to be data.
+const boxSize = cleanSize(boxSummary(model.box));
 // unitCtx — the real base font sizes the touch surface's unit chips convert with
 // (rem from the root, em and % from the parent), read once with the element's
 // styles. Without them a `rem` chip would have to guess 16px, and the surface
@@ -1536,62 +1552,31 @@ const computedPageLimit = pageLimit(computedVisible.length, computedSteps);
 const computedPage = computedVisible.slice(0, computedPageLimit);
 const computedMore = moreRows(computedVisible.length, computedSteps);
 return h('div', { class: 'inspector__styles', role: 'group', 'aria-label': 'Element styles' },
-// Sticky block: the action row and the pinned preview stay at the top
-// of the panel's scroller while the property list below scrolls. Without
-// this the header (and the only read-out of the edit's result) scrolled
-// away as soon as the user reached the "Declared styles" rows.
+// Sticky block: the selected element's identity and the pinned preview stay
+// at the top of the panel's scroller while the property list below scrolls.
+// Without this the read-out of the edit's result scrolled away as soon as
+// the user reached the "Declared styles" rows.
 //
-// The action row deliberately carries *only* the three actions (clear,
-// refresh, pick). The selected element's identity — `tag#id.class` plus its
-// box size — used to be a third, flexible column wedged between them, and on
-// a 360 px screen the three labels left it about 100 px, so the label that
-// answers "what am I editing?" was the first thing to ellipsize. It is
-// published upward instead (see onSelectionChange) and rendered as the panel
-// header's own element button (Inspector.jsx PanelCard), where the row had
-// empty space and the identity is on screen even when this panel's scroller
-// has been moved: one row of the pinned block, not two.
+// The **actions** (clear, refresh, pick) are not here: they moved up into the
+// card header (Inspector.jsx PanelCard), next to the panel's eye, exactly
+// where the other panels keep their own controls. That leaves this row to the
+// element's identity — `tag#id.class` plus its box size — which is what the
+// row was crowding: three labelled buttons (Clear / Refresh / Pick) on a
+// 360 px screen left the identity about 100 px and it ellipsized first, in the
+// row the user reads to answer "what am I editing?". One row wide it is
+// untruncated, and it is still a button: tapping it copies the selector
+// (props.onCopyElement reports the outcome in the status pill above the
+// panels), so the label is also how it leaves the inspector.
 h('div', { class: 'inspector__styles-pin' },
-h('div', { class: 'inspector__styles-head' },
 h('button', {
-class: 'icon-btn icon-btn--labeled inspector__styles-clear',
+class: 'inspector__styles-elem',
 type: 'button',
-'aria-label': 'Clear selection',
-title: 'Clear selection',
-onClick: clearPick
+title: 'Copy the selector ' + label + (boxSize ? ' · ' + boxSize : ''),
+'aria-label': 'Copy selector ' + label,
+onClick: () => { if (props.onCopyElement) props.onCopyElement(label); }
 },
-h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round' })
-),
-h('span', { class: 'icon-btn__label' }, 'Clear')
-),
-h('div', { class: 'inspector__styles-tools' },
-h('button', {
-class: 'icon-btn icon-btn--labeled inspector__styles-refresh',
-type: 'button',
-'aria-label': 'Refresh styles',
-title: 'Refresh styles',
-disabled: loading,
-onClick: refreshStyles
-},
-h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-h('path', { d: 'M12 4V1L7 6l5 5V7c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8Z', fill: 'currentColor' })
-),
-h('span', { class: 'icon-btn__label' }, 'Refresh')
-),
-h('button', {
-class: 'icon-btn icon-btn--labeled inspector__styles-pick' + (props.pickMode ? ' is-on' : ''),
-type: 'button',
-'aria-pressed': String(!!props.pickMode),
-'aria-label': props.pickMode ? 'Stop picking — tap the preview to select' : 'Pick an element from the preview',
-title: props.pickMode ? 'Stop picking — tap the preview to select' : 'Pick an element from the preview',
-onClick: togglePickMode
-},
-h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-h('path', { d: 'M5 3l14 7-6.5 1.5L10 19 5 3Z', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linejoin': 'round' })
-),
-h('span', { class: 'icon-btn__label' }, props.pickMode ? 'Stop' : 'Pick')
-)
-)
+h('span', { class: 'inspector__styles-elem-name' }, label),
+boxSize ? h('span', { class: 'inspector__styles-elem-size' }, boxSize) : null
 ),
 error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null,
 // Pinned element preview: a clipped screenshot of the selected element, so

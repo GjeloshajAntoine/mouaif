@@ -325,35 +325,61 @@ class: 'inspector__panel' + (props.grow ? ' inspector__panel--grow' : '') + (pro
 h('div', { class: 'inspector__panel-head' },
 h('div', { class: 'inspector__panel-head-left' },
 labelNode,
-// Element button — the selected element's identity (`div#id.class` plus
-// its box size) as a compact button in the card header, where the row had
-// empty space. It used to be a third, flexible column inside the Styles
-// panel's own action row, competing for a 360 px line with three labelled
-// buttons (Clear / Refresh / Pick), which left it about 100 px and made
-// the one label that answers "what am I editing?" the first thing to
-// ellipsize. Tapping it copies the selector, which is how the label
-// leaves the inspector and reaches an editor: it is the header's
-// read-out *and* the shortest way to reuse it, and it does not duplicate
-// any of the three buttons below. The result is reported in the status
-// pill above the panels (props.onCopyElement), so a refused clipboard
-// write is visible instead of silent.
-props.element && props.element.label
-? h('button', {
-class: 'inspector__panel-elem',
-type: 'button',
-title: 'Copy the selector ' + props.element.label + (props.element.size ? ' · ' + props.element.size : ''),
-'aria-label': 'Copy selector ' + props.element.label,
-onClick: (e) => { e.stopPropagation(); if (props.onCopyElement) props.onCopyElement(props.element.label); }
-},
-h('span', { class: 'inspector__panel-elem-name' }, props.element.label),
-props.element.size
-? h('span', { class: 'inspector__panel-elem-size' }, props.element.size)
-: null
-)
-: null,
 props.onSizeChange ? h(SizeDropdown, { sizeId: props.sizeId, onChange: props.onSizeChange }) : null
 ),
-      h('div', { class: 'inspector__panel-head-actions' },
+h('div', { class: 'inspector__panel-head-actions' },
+// Styles panel actions — Clear / Refresh / Pick, the three controls the
+// Styles card used to carry in its own action row inside the card body.
+// They belong here: this row is the *panel's* chrome (it is where the
+// Preview panel keeps its full-screen, refresh, type and eye buttons), and
+// they are card-wide actions rather than a property of the element being
+// read. Lifting them out is what gives the element's identity — a chip the
+// body now carries at full width, tap to copy its selector — the room to
+// stop ellipsizing at the 360 px minimum, which is the whole reason the
+// three labels were crowding it. Glyph-only, with `aria-label` + `title`,
+// like every other control in this row: `.inspector__styles-clear` and
+// friends keep them at a 44 px tap target (inspector-styles.css).
+props.stylesActions
+? h(Fragment, null,
+h('button', {
+class: 'icon-btn inspector__styles-clear',
+type: 'button',
+'aria-label': 'Clear selection',
+title: 'Clear selection',
+disabled: !props.stylesActions.hasElement,
+onClick: (e) => { e.stopPropagation(); props.stylesActions.onClear(); }
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round' })
+)
+),
+h('button', {
+class: 'icon-btn inspector__styles-refresh',
+type: 'button',
+'aria-label': 'Refresh styles',
+title: 'Refresh styles',
+disabled: !props.stylesActions.hasElement || props.stylesActions.busy,
+onClick: (e) => { e.stopPropagation(); props.stylesActions.onRefresh(); }
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+h('path', { d: 'M12 4V1L7 6l5 5V7c3.3 0 6 2.7 6 6s-2.7 6-6 6-6-2.7-6-6H4c0 4.4 3.6 8 8 8s8-3.6 8-8-3.6-8-8-8Z', fill: 'currentColor' })
+)
+),
+h('button', {
+class: 'icon-btn inspector__styles-pick' + (props.stylesActions.pickMode ? ' is-on' : ''),
+type: 'button',
+'aria-pressed': String(!!props.stylesActions.pickMode),
+'aria-label': props.stylesActions.pickLabel,
+title: props.stylesActions.pickLabel,
+disabled: !!props.stylesActions.pickDisabled,
+onClick: (e) => { e.stopPropagation(); props.stylesActions.onPick(); }
+},
+h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+h('path', { d: 'M5 3l14 7-6.5 1.5L10 19 5 3Z', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linejoin': 'round' })
+)
+)
+)
+: null,
 props.onDraftCraft
 ? h('button', {
 class: 'icon-btn inspector__panel-draft-craft',
@@ -1678,6 +1704,12 @@ readSiblingValues: handlers ? handlers.readSiblingValues : null,
     previewVisible: visiblePanels.has('preview'),
     pickHandlerRef: stylesPickRef,
     panelHandlesRef: stylesHandlesRef,
+    // The identity chip in the card body taps to copy the selector. The write
+    // (and its fallback) lives in the Inspector because the outcome is reported
+    // in the status pill above the panels — the same pill that reports every
+    // other result in this view — and because a refused clipboard write has to
+    // be visible rather than silent.
+    onCopyElement: copyElementSelector,
     // The objectId the Inspector retained, so a freshly mounted panel re-adopts
     // the element that is still shown above rather than coming up empty.
     restoreObjectId: (selectionStore && selectionStore.objectId) || '',
@@ -1718,14 +1750,36 @@ readSiblingValues: handlers ? handlers.readSiblingValues : null,
   // The `…` button mirrors the same overflow pattern used by the
   // target rows in TargetMenu and the project cards in Projects.jsx.
 
-  // elementInfo — the Styles panel's element as the panel header button needs
-  // it. Read through selectionAcrossModes so the header shows the retained
-  // element while that panel is switched off, and `null` when nothing is
-  // selected, which simply leaves the header without a chip.
-  const stylesElement = selectionAcrossModes(stylesSelection, selectionStore);
-  const elementInfo = (stylesElement && String(stylesElement.label || '').trim())
-  ? { label: stylesElement.label, size: stylesElement.size || '' }
-  : null;
+// stylesActions — the Styles panel's three card-wide actions (Clear, Refresh,
+// Pick), rendered in that card's header by PanelCard.
+//
+// They used to be a labelled action row inside the card body, sharing one line
+// with the selected element's identity; the identity lost that fight at 360 px
+// and ellipsized first. The header is where the *panel's* chrome lives (the
+// Preview panel keeps full-screen / refresh / type / eye there), so the
+// actions moved up and the identity stayed in the body with the row to
+// itself. The handlers go through the panel's published handles
+// (panelHandlesRef) rather than re-implementing clear/refresh/pick here, so
+// arming pick mode still drops the stale selection and disarming it still
+// drops the page highlight. `hasElement` and `busy` read the panel's own
+// published snapshot, which is what keeps the two buttons honest about
+// whether there is anything to act on and whether a read is already running.
+// Pick mode needs the live preview to tap, so the pick button is disabled
+// while that panel is hidden, which is exactly what the panel's empty state
+// says in words.
+const stylesElement = selectionAcrossModes(stylesSelection, selectionStore);
+const stylesActions = {
+hasElement: !!(stylesElement && String(stylesElement.label || '').trim()),
+busy: !!(stylesSelection && stylesSelection.busy),
+pickMode: stylesActive,
+pickLabel: stylesActive
+? 'Stop picking — tap the preview to select'
+: 'Pick an element from the preview',
+pickDisabled: !visiblePanels.has('preview') && !stylesActive,
+onClear: () => { const acts = stylesHandlesRef.current; if (acts && acts.clear) acts.clear(); },
+onRefresh: () => { const acts = stylesHandlesRef.current; if (acts && acts.refresh) acts.refresh(); },
+onPick: () => { const acts = stylesHandlesRef.current; if (acts && acts.togglePick) acts.togglePick(); }
+};
   return h(Fragment, null,
     h('div', { class: 'view-head inspector__viewhead' },
       h('a', { href: '#/inspector', class: 'view-back', 'aria-label': 'Back to targets', onClick: (e) => { e.preventDefault(); disconnect(); setPhase('targets'); rerender(); } }, '←'),
@@ -1874,13 +1928,10 @@ INTENT_SURFACE && intentOpen
               solo: visibleIds.length === 1,
               isVisible: visiblePanels.has(id),
               onToggle: togglePanel,
-              // The Styles panel header's element button: the identity of
-              // whatever that panel has selected, read from the snapshot it
-              // publishes (falling back to the retained copy, so a remount of
-              // the panel — or a chip tap that switches it back on — shows the
-              // element that is still selected rather than an empty header).
-              element: id === 'styles' ? elementInfo : null,
-              onCopyElement: id === 'styles' ? copyElementSelector : null,
+              // The Styles panel header's actions: Clear / Refresh /
+              // Pick, wired to that panel's own handles. Null for every
+              // other panel, so only the Styles card grows them.
+              stylesActions: id === 'styles' ? stylesActions : null,
               sizeId: viewportId,
 onSizeChange: id === 'preview' ? applyViewport : null,
 onRefresh: id === 'preview' ? () => previewRefreshRef.current && previewRefreshRef.current() : null,

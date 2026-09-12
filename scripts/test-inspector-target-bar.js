@@ -480,13 +480,14 @@ check('the published snapshot carries label, size, rules, tree and declared',
   && /rules: rules \|\| null/.test(stylesSource)
   && /tree: tree \|\| null/.test(stylesSource)
   && /declared: \(model && model\.inlineProps\) \|\| \[\]/.test(stylesSource));
-check('the snapshot is republished when the selection, the cascade or the receipt changes',
-/\}, \[model, rules, tree, changed, receipt, edit\]\);/.test(stylesSource));
-check('the panel exposes its own clear / refresh / ancestor actions',
-  /panelHandlesRef/.test(stylesSource)
-  && /clear: \(\) => clearPick\(\)/.test(stylesSource)
-  && /refresh: \(\) => refreshStyles\(\)/.test(stylesSource)
-  && /selectAncestor: \(crumb\)/.test(stylesSource));
+check('the snapshot is republished when the selection, the cascade, the receipt or a read changes',
+/}, \[model, rules, tree, changed, receipt, edit, loading\]\);/.test(stylesSource));
+check('the panel exposes its own clear / refresh / pick / ancestor actions',
+/panelHandlesRef/.test(stylesSource)
+&& /clear: \(\) => clearPick\(\)/.test(stylesSource)
+&& /refresh: \(\) => refreshStyles\(\)/.test(stylesSource)
+&& /togglePick: \(\) => togglePickMode\(\)/.test(stylesSource)
+&& /selectAncestor: \(crumb\)/.test(stylesSource));
 check('the parent passes the selection change callback and the handles ref',
   /onSelectionChange: \(info\) => setStylesSelection\(info\)/.test(inspectorSource)
   && /panelHandlesRef: stylesHandlesRef/.test(inspectorSource));
