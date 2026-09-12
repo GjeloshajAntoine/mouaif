@@ -128,6 +128,15 @@ async function handleTranscribe(req, res, parsed) {
   // the live list is what makes a fresh install usable without hand-editing
   // `.mouaif.json`.
   //
+  // The live half is read as the provider's *transcription* slice where it has
+  // one. For OpenRouter that matters more than it sounds: its /models is sliced
+  // by output modality and defaults to `text`, so `openai/whisper-1` and the
+  // other 20 speech-to-text models are simply not in the chat catalog, while the
+  // audio-input *chat* rows that are (`openai/gpt-audio`,
+  // `google/gemini-2.5-flash`) are answered by `/audio/transcriptions` with
+  // `400 Model … does not exist`. A catalog built from the chat list could
+  // therefore offer only models that cannot transcribe.
+  //
   // `?live=0` serves the project models alone: the catalog read is on the
   // critical path of the page's first paint, and the live lists cost one
   // upstream round trip per connected provider (cached for an hour
@@ -164,7 +173,13 @@ async function handleTranscribe(req, res, parsed) {
 
     const liveFailures = [];
     if (wantLive && connectedIds.length) {
-      const { list, failures } = await modelList.liveModelsForMany(connectedIds, { force });
+      // The live half is read as the provider's *transcription* slice where it
+      // publishes one (OpenRouter: /models defaults to `output_modalities=text`,
+      // so its speech-to-text models are not in the chat list at all, while the
+      // audio-input chat models that are there are rejected by
+      // /audio/transcriptions). Providers without such a slice hand back their
+      // chat list, which the candidate filter below narrows as before.
+      const { list, failures } = await modelList.liveModelsForMany(connectedIds, { force, purpose: 'transcription' });
       liveFailures.push(...failures);
       const seen = new Set(rows.map((r) => r.provider + '\u0000' + r.id));
       for (const m of list) {
@@ -182,9 +197,12 @@ async function handleTranscribe(req, res, parsed) {
       connected: true
       };
       // Carry the capability report through, so the picker can say *why* a
-      // model is on the list when its name does not (audio input).
-      if (Array.isArray(m.inputModalities)) row.inputModalities = m.inputModalities;
-      rows.push(row);
+// model is on the list when its name does not: the input modalities are
+// the "takes audio" half, the output modalities the "really produces a
+// transcript" half (which is what the dictation slice is built from).
+if (Array.isArray(m.inputModalities)) row.inputModalities = m.inputModalities;
+if (Array.isArray(m.outputModalities)) row.outputModalities = m.outputModalities;
+rows.push(row);
       }
     }
 

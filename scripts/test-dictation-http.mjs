@@ -199,7 +199,65 @@ try {
     assert.ok(!ids.includes('meta/plain-chat'), 'a live row without audio input is not');
     const audioRow = merged.body.models.find((m) => m.id === 'openai/gpt-audio');
     assert.deepEqual(audioRow.inputModalities, ['text', 'audio'],
-      'the capability report is carried through so the UI can explain the row');
+    'the capability report is carried through so the UI can explain the row');
+    // ---- The dictation catalog reads the transcription slice ----------------
+    //
+    // A provider that publishes a separate speech-to-text catalog is asked for
+    // that slice, not for the chat list: OpenRouter's /models is sliced by output
+    // modality and defaults to `text`, so its transcribers are absent from the
+    // chat list while the audio-input chat models that *are* in it are rejected by
+    // /audio/transcriptions. The two slices are cached apart — serving one to the
+    // other's reader is the bug.
+    const realListTranscription = ai.listTranscriptionModels;
+    let chatReads = 0;
+    let transcriptionReads = 0;
+    ai.listModels = async () => {
+    chatReads++;
+    return [
+    { id: 'openai/gpt-audio', label: 'openai/gpt-audio', inputModalities: ['text', 'audio'], outputModalities: ['text', 'audio'] },
+    { id: 'openai/whisper-1', label: 'Whisper 1' }
+    ];
+    };
+    ai.listTranscriptionModels = async (provider) => {
+    transcriptionReads++;
+    if (provider !== 'openai-compatible') return null;
+    return [
+    { id: 'openai/whisper-large-v3', label: 'Whisper large v3', outputModalities: ['transcription'] },
+    { id: 'google/chirp-3', label: 'Chirp 3', outputModalities: ['transcription'], inputModalities: ['audio'] },
+    // Reported as producing text: a chat row that slipped into the slice must
+    // still be filtered out.
+    { id: 'meta/plain-chat', label: 'plain chat', outputModalities: ['text'] }
+    ];
+    };
+    const sliced = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root) + '&refresh=1');
+    assert.equal(sliced.status, 200, JSON.stringify(sliced.body));
+    // The project's own record comes first (it is the user's), then the slice.
+    assert.deepEqual(sliced.body.models.map((m) => m.id), ['whisper-1', 'openai/whisper-large-v3', 'google/chirp-3'],
+    'the catalog offers the transcription slice, not the chat list');
+    assert.deepEqual(sliced.body.models[1].outputModalities, ['transcription'],
+    'the output report reaches the client, which ranks a reported transcriber first');
+    assert.equal(transcriptionReads, 1, 'the slice is read once');
+    assert.equal(chatReads, 0, 'and the chat list is not consulted for it');
+    // The chat reader keeps its own entry: it must not receive the transcribers.
+    const chatLive = await request('/api/ai/models/live?provider=openai-compatible&_bust=1');
+    assert.deepEqual(chatLive.body.models.map((m) => m.id), ['openai/gpt-audio', 'openai/whisper-1'],
+    'the chat picker still reads the chat list');
+    // Cached, not re-fetched: the same slice on the next page paint.
+    const cachedSlice = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root));
+    assert.deepEqual(cachedSlice.body.models.map((m) => m.id), ['whisper-1', 'openai/whisper-large-v3', 'google/chirp-3']);
+    assert.equal(transcriptionReads, 1, 'the transcription slice is cached under its own key');
+    ai.listTranscriptionModels = realListTranscription;
+    ai.listModels = async () => [
+    { id: 'whisper-1', label: 'Whisper 1' },
+    { id: 'openai/gpt-audio', label: 'openai/gpt-audio', inputModalities: ['text', 'audio'] },
+    { id: 'meta/muse-spark-1.3', label: 'meta/muse-spark-1.3', inputModalities: ['text', 'audio', 'image'] },
+    { id: 'meta/plain-chat', label: 'meta/plain-chat', inputModalities: ['text'] }
+    ];
+    // Providers with no separate slice (the stub above returns null for every
+    // other provider) fall back to the chat list, filtered exactly as before.
+    const fallback = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root) + '&refresh=1');
+    assert.deepEqual(fallback.body.models.map((m) => m.id), ['whisper-1', 'openai/gpt-audio', 'meta/muse-spark-1.3'],
+    'a provider without a transcription slice still gets its chat list filtered');
 
     // An unreachable provider is reported per-provider and does not empty the
     // catalog: the still-good rows stay.

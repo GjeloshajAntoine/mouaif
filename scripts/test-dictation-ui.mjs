@@ -70,14 +70,16 @@ const LIVE_ONLY = [
   { id: 'gemini-2.5-pro', provider: 'gemini', label: 'Gemini 2.5 Pro', kind: 'gemini', source: 'live', connected: true }
 ];
 // The mixed case the "only Google models" report was about: one OpenRouter
-// connection whose catalog offers audio-capable models with names that say
-// nothing about transcription, plus the Google rows.
+// connection whose row ids are namespaced with a google/ prefix without being
+// Gemini models — the connection, not the name, decides the transport — next
+// to a provider that reports what each model produces. deepgram/nova-3 is the
+// row whose name says nothing and that only the output report identifies.
 const MIXED = [
-  { id: 'google/gemini-2.5-flash', provider: 'openrouter', label: 'google/gemini-2.5-flash', kind: 'gemini', source: 'live', connected: true, inputModalities: ['text', 'audio', 'image'] },
-  { id: 'openai/gpt-audio', provider: 'openrouter', label: 'openai/gpt-audio', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['text', 'audio'] },
-  { id: 'mistralai/voxtral-small-24b-2507', provider: 'openrouter', label: 'mistralai/voxtral-small-24b-2507', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['text', 'audio', 'file'] },
-  { id: 'meta/muse-spark-1.3', provider: 'openrouter', label: 'meta/muse-spark-1.3', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['text', 'audio'] },
-  { id: 'whisper-1', provider: 'groq', label: 'Whisper 1', kind: 'openai-compatible', source: 'live', connected: true }
+{ id: 'google/chirp-3', provider: 'openrouter', label: 'Google: Chirp 3', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['audio'], outputModalities: ['transcription'] },
+{ id: 'openai/whisper-large-v3', provider: 'openrouter', label: 'OpenAI: Whisper Large V3', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['audio'], outputModalities: ['transcription'] },
+{ id: 'nvidia/parakeet-tdt-0.6b-v3', provider: 'openrouter', label: 'nvidia/parakeet-tdt-0.6b-v3', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['audio'], outputModalities: ['transcription'] },
+{ id: 'deepgram/nova-3', provider: 'openrouter', label: 'deepgram/nova-3', kind: 'openai-compatible', source: 'live', connected: true, inputModalities: ['audio'], outputModalities: ['transcription'] },
+{ id: 'whisper-1', provider: 'groq', label: 'Whisper 1', kind: 'openai-compatible', source: 'live', connected: true }
 ];
 
 window.fetch = async (input, options = {}) => {

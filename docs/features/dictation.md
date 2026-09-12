@@ -101,10 +101,11 @@ The **Dictation** page lists two kinds of model, and you do not have to
 configure anything for the first one:
 
 1. **Models from your providers.** Every connected provider in Settings →
-   Providers is asked for its current catalog, and the entries that can
-   transcribe are listed. `Refresh` re-reads them (the list is cached
-   server-side for an hour). This is what makes a fresh install work with no
-   setup: connect a Gemini key and `gemini-2.5-flash` is offered.
+  Providers is asked for its current catalog — the speech-to-text slice of it
+  where the provider publishes one (OpenRouter) — and the entries that can
+  transcribe are listed. `Refresh` re-reads them (the list is cached
+  server-side for an hour). This is what makes a fresh install work with no
+  setup: connect a Gemini key and `gemini-2.5-flash` is offered.
 2. **Models from the project.** A model id in `.mouaif.json` is the way to
    describe something the provider's catalog cannot: a self-hosted endpoint, a
    per-model language default, or a specific OpenRouter slug. A project record
@@ -128,17 +129,29 @@ configure anything for the first one:
 }
 ```
 
-Four signals decide whether a model is **offered**, cheapest first:
+Five signals decide whether a model is **offered**, most trustworthy first:
 
 | Signal | Example |
 | --- | --- |
 | `transcription` is set | `"transcription": { "kind": "gemini" }` |
+| the provider reports `transcription` output | `openai/whisper-1` in OpenRouter's transcription catalog |
 | the id looks like speech-to-text | `whisper-1`, `mistralai/voxtral-…`, `parakeet` |
 | it resolves to the Gemini family | `gemini-2.5-flash` |
-| the provider reports audio input | `openai/gpt-audio`, `meta/muse-spark-1.3` |
+| the provider reports audio input, and no output report | `meta/muse-spark-1.3` on a provider that reports inputs only |
+
+The provider's output report settles the question in both directions. A row
+whose outputs include `transcription` is a transcriber whatever its name says
+(`google/chirp-3`, `deepgram/nova-3`); a row whose outputs are reported and
+*exclude* it is not one, however much audio it accepts — `openai/gpt-audio`
+and `google/gemini-2.5-flash` both take audio input and both answer
+`/audio/transcriptions` with `400 Model … does not exist`. Only when there is
+no output report at all does the filter fall back to names and capabilities.
 
 When none of them matches, everything is offered rather than nothing — a
-self-hosted `my-asr` is exactly the case nothing can infer.
+self-hosted `my-asr` is exactly the case nothing can infer. A catalog the
+provider *did* classify, where none of the rows produces transcripts, is a
+different answer rather than a gap: those rows are the ones the endpoint
+rejects, so the picker offers none of them instead of all.
 
 The **request shape** follows from the first of these that applies:
 
@@ -149,11 +162,15 @@ The **request shape** follows from the first of these that applies:
 | the provider is unknown and the id starts with `google/` | `google/gemini-2.5-flash` on a custom gateway | Gemini |
 | nothing matches | — | OpenAI-shaped |
 
-The last two matter on OpenRouter, which carries **no `whisper-*` at all**: its
-transcribable models are ones whose names say nothing (`openai/gpt-audio`,
-`mistralai/voxtral-small-24b-2507`, `meta/muse-spark`, `nvidia/nemotron-…-omni`).
-It advertises each model's input modalities, so the catalog selects on that
-capability instead of guessing from the name, and the picker labels such a row
+The last two matter on OpenRouter, whose chat catalog carries no speech-to-text
+model at all: `/models` is sliced by output modality and defaults to
+`output_modalities=text`, so `openai/whisper-1` and the other 20 transcribers
+live in a *different* slice of the same endpoint that only the dictation
+catalog asks for. What the chat list does carry is a family of audio-*input*
+chat models (`openai/gpt-audio`, `google/gemini-2.5-flash`,
+`mistralai/voxtral-small-24b-2507`), and every one of those is rejected by
+`/audio/transcriptions`. The catalog therefore selects on the provider's
+reported outputs, and the picker labels an audio-capable chat row
 `from provider · audio in`.
 
 When none of them matches the model is still offered, and "is this a Gemini
@@ -178,15 +195,18 @@ so the next session — and the composer microphone — use the same model.
 ### Choosing from the list
 
 A connected provider's catalog is a chat catalog: hundreds of rows, rendered
-provider by provider and alphabetically within each. Two things keep the
+provider by provider and alphabetically within each — except on a provider that
+publishes a separate transcription catalog (OpenRouter's 21 speech-to-text
+models), where the list *is* the transcription slice. Two things keep the
 dictation list usable:
 
 - **Recommended** — a short section at the top of the sheet holding the rows
-  worth reaching first, in this order: ids that say they transcribe
-  (`whisper-*`, `voxtral-*`, `parakeet-*`), then rows the provider reports as
-  taking audio input, then Gemini models. Rows that Pinned or Recent already
-  show are not repeated. The section only appears on the unfiltered list, so a
-  search or a provider chip leaves just the matches.
+  worth reaching first, in this order: rows the provider reports as producing
+  transcripts, then ids that say they transcribe (`whisper-*`, `voxtral-*`,
+  `parakeet-*`), then rows the provider reports as taking audio input, then
+  Gemini models. Rows that Pinned or Recent already show are not repeated. The
+  section only appears on the unfiltered list, so a search or a provider chip
+  leaves just the matches.
 - **A default worth adopting.** The remembered model wins; failing that, a
   single candidate, or a single row whose name says it transcribes, is adopted
   automatically. Two `whisper-*` rows from two providers (or rows whose names
@@ -216,7 +236,15 @@ chat cannot appear here unless it can transcribe. See
 - **The model list is the union of two sources**: the project's `models`
   (filtered to the ones that can plausibly transcribe) and the connected
   providers' live catalogs (filtered the same way, and labelled as coming from
-  the provider). A project record for an id wins over the live row for it.
+  the provider; a provider that publishes a separate transcription catalog is
+  read from that slice instead of from its chat list). A project record for an
+  id wins over the live row for it.
+- **A provider that cannot transcribe a row is not offered it.** A speech-to-text
+  endpoint accepts a small, specific set of models, and the ones that merely
+  *take audio* are not in it: OpenRouter answers `400 Model openai/gpt-audio
+  does not exist` for the model its own chat catalog advertises. The catalog
+  trusts what the provider reports about a model's output over what its name
+  suggests.
 - **A model is classed as Gemini only when it really is one** (its provider, or
   a `google/…` slug). Classifying by id substring looked harmless and was not:
   it swept up dozens of OpenRouter entries whose names merely contain
@@ -231,8 +259,9 @@ chat cannot appear here unless it can transcribe. See
   lone row whose name says it transcribes, is adopted; with two of either the
   picker asks.
 - **The list is ordered for dictation, not for chat.** `recommendedModels`
-  ranks rows by how much they say about themselves (`dictationRank`: name hint
-  > audio input or Gemini > the user's own record > everything else) and the
+  ranks rows by how much they say about themselves (`dictationRank`: the
+  provider's transcription report or a name hint > audio input or Gemini > the
+  user's own record > everything else) and the
   picker shows that short list above the provider sections, which stay
   alphabetical. The rank is display only — the transport is still the server's
   `kind`.
@@ -287,23 +316,33 @@ chat cannot appear here unless it can transcribe. See
   transcription ids are added to the built-in table: speech-to-text is usually
   billed per minute of audio, which `inputPer1K` / `outputPer1K` cannot express,
   and inventing a token price for it would be worse than `--`.
-- `src/ai-endpoints.js` carries OpenRouter's `architecture.input_modalities`
-  through to the model record as `inputModalities`. That is the capability
-  signal the candidate filter uses for models whose names say nothing.
+- `src/ai-endpoints.js` carries OpenRouter's
+  `architecture.input_modalities` / `architecture.output_modalities` through to
+  the model record as `inputModalities` / `outputModalities`. Those are the
+  capability reports the candidate filter uses, for and against a model whose
+  name says nothing. The same file owns OpenRouter's optional
+  `listTranscriptionModels` adapter, which reads
+  `/models?output_modalities=transcription`: the chat list cannot be filtered
+  into a dictation catalog there, because the 21 speech-to-text models are not
+  in it and the audio-input chat models that are in it cannot transcribe.
 - `src/server-handlers-transcribe.js` — `GET /api/ai/transcribe/models` and
   `POST /api/ai/transcribe`. Resolves the model through the shared
   `resolveModel`, injects the credential server-side, applies the 60s deadline,
   prices the provider's usage report, and maps typed codes onto HTTP statuses.
   Mounted before the generic
   `/api/ai/` branch in `src/http-server.js`. The catalog merges the project
-  models with the live lists; `?live=0` serves the project models alone (the
+  models with the live lists — read as the provider's *transcription* slice,
+  which is cached under its own key so the chat picker and this one cannot
+  serve each other's rows; `?live=0` serves the project models alone (the
   page's fast first paint) and `?refresh=1` bypasses the live cache.
   `POST /api/ai/transcribe` answers `{ text, model, kind, bytes, durationMs,
   usage, cost }` — `usage: null` and `cost.known: false` when the provider
   reported nothing.
 - `src/modelList.js` — the per-provider live model fetch and its hour-long
   cache, extracted from the `/api/ai/models/live` handler so the dictation
-  catalog and the chat picker share one cache and one set of typed errors.
+  catalog and the chat picker share one fetch and one set of typed errors.
+  `opts.purpose` selects the slice (`chat` by default, `transcription` for
+  dictation) and `modelListCacheKey` keeps the two apart.
   `liveModelsForMany` is the best-effort fan-out used by dictation: one
   provider failing yields a `liveFailures` entry, not an empty list.
 - `frontend/src/dictation.js` — the browser half: recorder capability probing,
@@ -349,6 +388,10 @@ node scripts/test-dictation.js        # request/response shapes, helper rules,
   # and the app-store allowlists the choice needs
 node scripts/test-dictation-http.mjs  # the real serve handlers, mock upstream
 node scripts/test-dictation-page.mjs  # the page rendered against a fake API
+node scripts/test-dictation-catalog-live.mjs  # the candidate filter against
+  # the two real OpenRouter catalogs, replayed from scripts/fixtures/
+  # dictation-openrouter-models.json (chat) and -stt-models.json
+  # (transcription); `--record` refreshes both from the live API
 node scripts/test-dictation-ui.mjs    # a browser fixture: prints a URL, or
   # `--write <dir>` emits it to serve statically
 node scripts/test-dictation-chat.cjs  # the composer mic inside the real
@@ -379,5 +422,6 @@ opening the microphone. It needs a debug Chrome (`CDP_URL`, default
 - [Routing](routing.md) — the `#/settings/dictation` route (and its `#/dictation` alias).
 - Source: [`src/transcribe.js`](../../src/transcribe.js),
   [`src/server-handlers-transcribe.js`](../../src/server-handlers-transcribe.js),
+  [`src/ai-endpoints.js`](../../src/ai-endpoints.js) (`listTranscriptionModels`),
   [`frontend/src/dictation.js`](../../frontend/src/dictation.js),
   [`frontend/src/components/DictationPage.jsx`](../../frontend/src/components/DictationPage.jsx).

@@ -15,9 +15,9 @@
 //   src/ai-chat.js       — non-streaming convenience wrapper (chat).
 //
 // The public surface is unchanged: streamChat, chat, runSingleToolCall,
-// ENDPOINTS, listModels, plus the test-facing helpers parseSSEFrame /
-// readSSE / readNDJSON / BUILDERS / PARSERS / copilotCacheClear. See the
-// module-level comment below for the request/response contract.
+// ENDPOINTS, listModels, listTranscriptionModels, plus the test-facing helpers
+// parseSSEFrame / readSSE / readNDJSON / BUILDERS / PARSERS / copilotCacheClear.
+// See the module-level comment below for the request/response contract.
 //
 // Implements docs/decisions.md section 10: server-side proxy with SSE
 // streaming for the configured providers. The mobile UI never holds an
@@ -36,22 +36,24 @@
 // failed). Usage is reported in `{ promptTokens, completionTokens }`.
 
 const {
-  ENDPOINTS,
-  listModels,
-  BUILDERS,
-  PARSERS,
-  copilotCacheClear
+ENDPOINTS,
+listModels,
+listTranscriptionModels,
+BUILDERS,
+PARSERS,
+copilotCacheClear
 } = require('./ai-endpoints.js');
 const { streamChat, runSingleToolCall, parseSSEFrame, readSSE, readNDJSON } = require('./ai-stream.js');
 const { chat } = require('./ai-chat.js');
 
 module.exports = {
-  // public
-  streamChat,
-  chat,
-  runSingleToolCall,
-  ENDPOINTS,
-  listModels,
+// public
+streamChat,
+chat,
+runSingleToolCall,
+ENDPOINTS,
+listModels,
+listTranscriptionModels,
   // exposed for tests
   parseSSEFrame,
   readSSE,

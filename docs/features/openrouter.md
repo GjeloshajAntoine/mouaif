@@ -57,6 +57,7 @@ No special path. The chat composer posts to `/api/chats/:id/messages/stream`, wh
 - **Separate secure storage** — OpenRouter credentials live in their own dedicated keyring and app store namespace, keeping them strictly isolated from standard OpenAI keys.
 - **Unified sign-in** — the authorization callback returns automatically to mouaif across popup windows, mobile tabs, and standalone PWA modes.
 - **Model identifiers** — model slugs (`anthropic/claude-3.5-sonnet`, `meta-llama/llama-3-70b-instruct`, etc.) are passed directly as provided by OpenRouter.
+- **Two catalogues behind one `/models`.** OpenRouter slices `GET /api/v1/models` by output modality and defaults to `output_modalities=text`, so the chat list contains no speech-to-text model: `openai/whisper-1`, `openai/gpt-4o-transcribe`, `google/chirp-3` and 18 more are only in `GET /api/v1/models?output_modalities=transcription`. The dictation catalog reads that slice; the chat picker reads the default one, and the two are cached separately. This matters because the audio-input chat models in the default slice (`openai/gpt-audio`, `google/gemini-2.5-flash`) are *rejected* by `POST /audio/transcriptions` with `400 Model … does not exist` — see [Dictation](dictation.md).
 - **Live balance & pricing** — live model prices and account credit balances are queried directly from OpenRouter so per-turn costs reflect your actual tier.
 
 ## Related

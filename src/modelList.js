@@ -14,11 +14,24 @@
 // catalog treats a provider that cannot answer as "no extra models" — one
 // unreachable provider must not empty the whole picker.
 
-const { ai, credentialForProvider, hashShort, MODEL_LIST_CACHE, MODEL_LIST_TTL_MS, MODEL_LIST_TIMEOUT_MS } = require('./server-shared.js');
+const { ai, credentialForProvider, hashShort, modelListCacheKey, MODEL_LIST_CACHE, MODEL_LIST_TTL_MS, MODEL_LIST_TIMEOUT_MS } = require('./server-shared.js');
 
 // liveModelsFor(provider, opts) -> { models, fetchedAt, cached }
 //
 // opts.force — bypass the cache (the chat picker's explicit refresh).
+//
+// opts.purpose — which slice of the provider's catalog to read:
+//   'chat'          (default) the list the model picker offers;
+//   'transcription' the speech-to-text slice, read through the provider's
+//                   `listTranscriptionModels` adapter when it has one
+//                   (OpenRouter's /models is sliced by output modality and
+//                   defaults to `text`, so none of its 21 speech-to-text
+//                   models are in the chat list at all), and otherwise the
+//                   chat list, for the caller to filter.
+//
+// The two slices live under different cache keys. They are different upstream
+// questions, and answering one with the other is exactly how dictation came to
+// offer chat models that /audio/transcriptions rejects.
 //
 // `cached` reports whether the returned list came from the in-memory cache,
 // which the HTTP layer echoes to the client; it must reflect the actual hit,
@@ -33,13 +46,14 @@ async function liveModelsFor(provider, opts) {
     e.code = 'EUNKNOWN_PROVIDER';
     throw e;
   }
+  const purpose = opts && opts.purpose === 'transcription' ? 'transcription' : 'chat';
   let cred = null;
   try { cred = credentialForProvider(provider); }
   catch { /* the adapter surfaces ENO_APIKEY when a credential is required */ }
 
-  // Keyed by provider + credential hash so rotating a key cannot serve the
-  // previous account's list.
-  const cacheKey = provider + ':' + (cred ? hashShort(cred) : '-');
+  // Keyed by provider + credential hash + slice so rotating a key cannot serve
+  // the previous account's list, and so the two slices cannot cross over.
+  const cacheKey = modelListCacheKey(provider, cred ? hashShort(cred) : '-', purpose);
   const now = Date.now();
   if (opts && opts.force) MODEL_LIST_CACHE.delete(cacheKey);
   const cached = MODEL_LIST_CACHE.get(cacheKey);
@@ -52,7 +66,13 @@ async function liveModelsFor(provider, opts) {
   let timedOut = false;
   const timer = setTimeout(() => { timedOut = true; ac.abort(); }, MODEL_LIST_TIMEOUT_MS);
   try {
-    const models = await ai.listModels(...(cred ? [provider, cred, ac.signal] : [provider, null, ac.signal]));
+    // A provider with a separate speech-to-text catalog answers this slice;
+    // every other provider returns null here and the chat list is filtered by
+    // the caller instead.
+    const sliced = purpose === 'transcription'
+      ? await ai.listTranscriptionModels(provider, cred || null, ac.signal)
+      : null;
+    const models = sliced || await ai.listModels(provider, cred || null, ac.signal);
     clearTimeout(timer);
     // Discard the late result: the caller already saw the timeout.
     if (timedOut) {

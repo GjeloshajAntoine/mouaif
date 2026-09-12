@@ -88,32 +88,55 @@ check('an explicit transcription.kind always wins over inference', () => {
   }), 'openai-compatible');
 });
 
-check('isTranscriptionModel recognises the four signals', () => {
-  // 1. explicitly marked
-  assert.equal(transcribe.isTranscriptionModel({ id: 'my-asr', transcription: true }), true);
-  // 2. the id looks like speech-to-text
-  assert.equal(transcribe.isTranscriptionModel({ id: 'whisper-1', provider: 'openai-compatible' }), true);
-  assert.equal(transcribe.isTranscriptionModel({ id: 'openai/whisper-large-v3', provider: 'openrouter' }), true);
-  // 3. the Gemini family: audio is an inline part on the general models, so
-  //    there is no separate Gemini speech-to-text product to match on.
-  assert.equal(transcribe.isTranscriptionModel({ id: 'gemini-2.5-flash', provider: 'gemini' }), true);
-  // 4. the provider reports audio input. This is the signal that catches the
-  //    models whose names say nothing: an audio model, or an omni model that
-  //    happens to take audio.
-  assert.equal(transcribe.isTranscriptionModel({
-    id: 'openai/gpt-audio', provider: 'openrouter', inputModalities: ['text', 'audio']
-  }), true);
-  assert.equal(transcribe.isTranscriptionModel({
-    id: 'meta/muse-spark-1.3', provider: 'openrouter', inputModalities: ['text', 'audio', 'image']
-  }), true);
-  assert.equal(transcribe.isTranscriptionModel({ id: 'meta/muse-spark-1.3', provider: 'openrouter' }), false,
-    'without a modality report the name is all we have');
-  // A plain chat model on a non-Gemini provider is not a candidate.
-  assert.equal(transcribe.isTranscriptionModel({ id: 'gpt-5', provider: 'openai-compatible' }), false);
-  assert.equal(transcribe.isTranscriptionModel({ id: 'claude-sonnet-4', provider: 'anthropic' }), false);
-  assert.equal(transcribe.isTranscriptionModel(null), false);
-  assert.equal(transcribe.acceptsAudioInput({ inputModalities: ['TEXT', 'Audio'] }), true, 'case-insensitive');
-  assert.equal(transcribe.acceptsAudioInput({ inputModalities: 'audio' }), false, 'a string is not a list');
+check('isTranscriptionModel recognises the five signals', () => {
+// 1. explicitly marked
+assert.equal(transcribe.isTranscriptionModel({ id: 'my-asr', transcription: true }), true);
+// 2. the provider says what the model produces. `transcription` output is
+//    the definitive yes, and a report without it is the definitive no —
+//    whichever name the model has. This is the rule that keeps the models
+//    OpenRouter *does* carry out of the chat catalog while the ones
+//    /audio/transcriptions accepts stay in.
+assert.equal(transcribe.isTranscriptionModel({
+id: 'openai/whisper-1', provider: 'openrouter', outputModalities: ['transcription']
+}), true);
+assert.equal(transcribe.isTranscriptionModel({
+id: 'openai/gpt-audio', provider: 'openrouter', inputModalities: ['text', 'audio'], outputModalities: ['text', 'audio']
+}), false, 'a chat model that takes audio produces text, not transcripts');
+assert.equal(transcribe.isTranscriptionModel({
+id: 'google/gemini-2.5-flash', provider: 'openrouter', inputModalities: ['text', 'audio'], outputModalities: ['text']
+}), false, 'and the provider rejecting it is exactly what the user saw');
+assert.equal(transcribe.isTranscriptionModel({
+id: 'mistralai/voxtral-small-24b-2507', provider: 'openrouter', outputModalities: ['text']
+}), false, 'a name hint does not outvote the provider — the STT sibling has its own id');
+// 3. the id looks like speech-to-text — only where nothing reported outputs
+assert.equal(transcribe.isTranscriptionModel({ id: 'whisper-1', provider: 'openai-compatible' }), true);
+assert.equal(transcribe.isTranscriptionModel({ id: 'openai/whisper-large-v3', provider: 'openrouter' }), true);
+// 4. the Gemini family: audio is an inline part on the general models, so
+//    there is no separate Gemini speech-to-text product to match on.
+assert.equal(transcribe.isTranscriptionModel({ id: 'gemini-2.5-flash', provider: 'gemini' }), true);
+// 5. the provider reports audio input without reporting outputs. This is the
+//    signal that catches the models whose names say nothing when the provider
+//    has no output report to trust.
+assert.equal(transcribe.isTranscriptionModel({
+id: 'openai/gpt-audio', provider: 'openrouter', inputModalities: ['text', 'audio']
+}), true);
+assert.equal(transcribe.isTranscriptionModel({
+id: 'meta/muse-spark-1.3', provider: 'openrouter', inputModalities: ['text', 'audio', 'image']
+}), true);
+assert.equal(transcribe.isTranscriptionModel({ id: 'meta/muse-spark-1.3', provider: 'openrouter' }), false,
+'without a modality report the name is all we have');
+// A plain chat model on a non-Gemini provider is not a candidate.
+assert.equal(transcribe.isTranscriptionModel({ id: 'gpt-5', provider: 'openai-compatible' }), false);
+assert.equal(transcribe.isTranscriptionModel({ id: 'claude-sonnet-4', provider: 'anthropic' }), false);
+assert.equal(transcribe.isTranscriptionModel(null), false);
+assert.equal(transcribe.acceptsAudioInput({ inputModalities: ['TEXT', 'Audio'] }), true, 'case-insensitive');
+assert.equal(transcribe.acceptsAudioInput({ inputModalities: 'audio' }), false, 'a string is not a list');
+// reportedOutputModalities: absent (and malformed) is "unknown", never "no".
+assert.deepEqual(transcribe.reportedOutputModalities({ outputModalities: ['Text', 'TRANSCRIPTION'] }),
+['text', 'transcription']);
+assert.equal(transcribe.reportedOutputModalities({ outputModalities: [] }), null);
+assert.equal(transcribe.reportedOutputModalities({ outputModalities: 'transcription' }), null);
+assert.equal(transcribe.reportedOutputModalities({}), null);
 });
 
 check('kindForModel only calls a model Gemini when it really is one', () => {
@@ -158,10 +181,27 @@ check('transcriptionCandidates unions marked models with id hints, else offers e
   assert.deepEqual(hinted.map((m) => m.id), ['whisper-large-v3', 'openai/whisper-large-v3']);
 
   // Nothing recognisable -> offer everything, because a self-hosted endpoint
-  // is unidentifiable by name and the user still has to be able to pick it.
-  const all = transcribe.transcriptionCandidates([{ id: 'a' }, { id: 'b' }]);
-  assert.deepEqual(all.map((m) => m.id), ['a', 'b']);
-  assert.deepEqual(transcribe.transcriptionCandidates(null), []);
+// is unidentifiable by name and the user still has to be able to pick it.
+const all = transcribe.transcriptionCandidates([{ id: 'a' }, { id: 'b' }]);
+assert.deepEqual(all.map((m) => m.id), ['a', 'b']);
+assert.deepEqual(transcribe.transcriptionCandidates(null), []);
+// …but a catalog the provider *classified* and where none of it transcribes
+// is an answer, not a gap: those rows are rejected by the transcription
+// endpoint, so offering them would be the provider error the filter exists to
+// prevent. This is the OpenRouter chat catalog in one assertion.
+const classified = transcribe.transcriptionCandidates([
+{ id: 'openai/gpt-audio', provider: 'openrouter', inputModalities: ['text', 'audio'], outputModalities: ['text', 'audio'] },
+{ id: 'google/gemini-2.5-flash', provider: 'openrouter', inputModalities: ['text', 'audio'], outputModalities: ['text'] }
+]);
+assert.deepEqual(classified, []);
+// A single unclassified row keeps the fallback alive for the rest: the
+// self-hosted model the user wrote by hand must not be hidden by the rows a
+// provider happened to describe.
+const mixed = transcribe.transcriptionCandidates([
+{ id: 'openai/gpt-audio', provider: 'openrouter', outputModalities: ['text'] },
+{ id: 'my-asr', provider: 'openai-compatible' }
+]);
+assert.deepEqual(mixed.map((m) => m.id), ['openai/gpt-audio', 'my-asr']);
 });
 
 check('the OpenAI-shaped request is multipart with file + model', () => {
@@ -461,23 +501,37 @@ try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ 
   });
 
   check('dictationRank weighs a row by how much its name says', () => {
-    // A name that says "transcribe" is the strongest signal there is.
-    assert.equal(dictation.dictationRank({ id: 'whisper-large-v3', provider: 'groq' }), 3);
-    assert.equal(dictation.dictationRank({ id: 'mistralai/voxtral-small-24b-2507', provider: 'openrouter' }), 3);
-    assert.equal(dictation.dictationRank({ id: 'parakeet-tdt-0.6b', provider: 'openai-compatible' }), 3);
-    // Audio input, or a Gemini model, is capable but says nothing about being
-    // a transcriber — `openai/gpt-audio` chats about audio.
-    assert.equal(dictation.dictationRank({
-      id: 'openai/gpt-audio', provider: 'openrouter', inputModalities: ['text', 'audio']
-    }), 2);
-    assert.equal(dictation.dictationRank({ id: 'gemini-2.5-flash', provider: 'gemini', kind: 'gemini' }), 2);
-    // The user's own record ranks below both, but above a row that is only
-    // here because nothing could be recognised.
-    assert.equal(dictation.dictationRank({ id: 'my-self-hosted-asr', source: 'project' }), 1);
-    assert.equal(dictation.dictationRank({ id: 'gpt-5', provider: 'openai-compatible', source: 'live' }), 0);
-    assert.equal(dictation.dictationRank(null), 0);
-    assert.equal(dictation.acceptsAudioInput({ inputModalities: ['TEXT', 'Audio'] }), true, 'case-insensitive');
-    assert.equal(dictation.acceptsAudioInput({ inputModalities: 'audio' }), false, 'a string is not a list');
+  // The provider reporting `transcription` output is the strongest signal
+  // there is — stronger than a name, because it cannot be a coincidence.
+  assert.equal(dictation.dictationRank({ id: 'google/chirp-3', provider: 'openrouter', outputModalities: ['transcription'] }), 3);
+  // A name that says "transcribe" is next.
+  assert.equal(dictation.dictationRank({ id: 'whisper-large-v3', provider: 'groq' }), 3);
+  assert.equal(dictation.dictationRank({ id: 'mistralai/voxtral-small-24b-2507', provider: 'openrouter' }), 3);
+  assert.equal(dictation.dictationRank({ id: 'parakeet-tdt-0.6b', provider: 'openai-compatible' }), 3);
+  // Audio input, or a Gemini model, is capable but says nothing about being
+  // a transcriber — `openai/gpt-audio` chats about audio.
+  assert.equal(dictation.dictationRank({
+  id: 'openai/gpt-audio', provider: 'openrouter', inputModalities: ['text', 'audio']
+  }), 2);
+  assert.equal(dictation.dictationRank({ id: 'gemini-2.5-flash', provider: 'gemini', kind: 'gemini' }), 2);
+  // The user's own record ranks below both, but above a row that is only
+  // here because nothing could be recognised.
+  assert.equal(dictation.dictationRank({ id: 'my-self-hosted-asr', source: 'project' }), 1);
+  assert.equal(dictation.dictationRank({ id: 'gpt-5', provider: 'openai-compatible', source: 'live' }), 0);
+  assert.equal(dictation.dictationRank(null), 0);
+  assert.equal(dictation.acceptsAudioInput({ inputModalities: ['TEXT', 'Audio'] }), true, 'case-insensitive');
+  assert.equal(dictation.acceptsAudioInput({ inputModalities: 'audio' }), false, 'a string is not a list');
+  assert.equal(dictation.reportsTranscription({ outputModalities: ['Transcription'] }), true, 'case-insensitive');
+  assert.equal(dictation.reportsTranscription({ outputModalities: ['text'] }), false);
+  assert.equal(dictation.reportsTranscription({}), false, 'absent is not a no');
+  // The badge: a reported transcriber needs no explaining; an audio-input chat
+  // row does.
+  assert.equal(dictation.modelBadge({
+  id: 'openai/whisper-1', source: 'live', inputModalities: ['audio'], outputModalities: ['transcription']
+  }), 'from provider');
+  assert.equal(dictation.modelBadge({
+  id: 'meta/muse-spark-1.3', source: 'live', inputModalities: ['text', 'audio'], outputModalities: ['text']
+  }), 'from provider · audio in');
   });
 
   check('recommendedModels puts the named transcribers first, then what can take audio', () => {

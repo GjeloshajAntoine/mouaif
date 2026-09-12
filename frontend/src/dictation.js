@@ -239,14 +239,27 @@ const DICTATION_ID_HINTS = ['whisper', 'transcribe', 'transcription', 'voxtral',
 // modalities (OpenRouter's `architecture.input_modalities`). Absent means
 // "unknown", never "no".
 export function acceptsAudioInput(row) {
-const list = row && row.inputModalities;
-return Array.isArray(list) && list.some((x) => String(x).toLowerCase() === 'audio');
+  const list = row && row.inputModalities;
+  return Array.isArray(list) && list.some((x) => String(x).toLowerCase() === 'audio');
+}
+
+// reportsTranscription(row) — the provider reported `transcription` among the
+// model's output modalities. This is the strongest signal there is: the row's
+// job *is* speech-to-text (`openai/whisper-1`, `google/chirp-3`, …), and it is
+// what the server offers the dictation slice for. The mirror image matters
+// just as much — a reported output list without `transcription` means the row
+// is a chat model that merely takes audio, and the server's catalog leaves
+// those out.
+export function reportsTranscription(row) {
+  const list = row && row.outputModalities;
+  return Array.isArray(list) && list.some((x) => String(x).toLowerCase() === 'transcription');
 }
 
 // dictationRank(row) — how good a dictation model a row looks like, strongest
 // signal first:
 //
-//   3 — the name says it (`whisper-large-v3`, `voxtral-mini`, `parakeet`);
+//   3 — the provider reports `transcription` output, or the name says it
+//       (`whisper-large-v3`, `voxtral-mini`, `parakeet`);
 //   2 — it takes audio, or it is a Gemini model (there is no separate Gemini
 //       speech-to-text product: audio is an inline part on the general models);
 //   1 — the user wrote the record themselves, so it is intentional even when
@@ -257,22 +270,23 @@ return Array.isArray(list) && list.some((x) => String(x).toLowerCase() === 'audi
 // This is a *display* rank. It never decides what is addressable: the server's
 // `kind` still owns the transport.
 export function dictationRank(row) {
-if (!row) return 0;
-const id = String(row.id || '').toLowerCase();
-if (DICTATION_ID_HINTS.some((hint) => id.includes(hint))) return 3;
-if (row.kind === 'gemini' || acceptsAudioInput(row)) return 2;
-if (row.source === 'project') return 1;
-return 0;
+  if (!row) return 0;
+  const id = String(row.id || '').toLowerCase();
+  if (reportsTranscription(row) || DICTATION_ID_HINTS.some((hint) => id.includes(hint))) return 3;
+  if (row.kind === 'gemini' || acceptsAudioInput(row)) return 2;
+  if (row.source === 'project') return 1;
+  return 0;
 }
 
 // recommendedModels(models, limit) -> rows, best first, capped
 //
 // What the picker shows under a "Recommended" heading. Rank-3 rows when there
-// are any, because a name that says "whisper" is worth more than any guess:
-// when the catalog has none of those (a Gemini-only or OpenRouter-only setup,
-// where the names say nothing), the audio-capable rows are the best signal
-// left. Ties keep the catalog's own order — the project's own records come
-// first from the server.
+// are any, because the provider telling us the model's output is a transcript
+// — or a name that says so — is worth more than any guess: when the catalog
+// has none of those (a Gemini-only setup, or a provider that reports neither
+// names nor outputs), the audio-capable rows are the best signal left. Ties
+// keep the catalog's own order — the project's own records come first from the
+// server.
 export function recommendedModels(models, limit) {
 const max = limit || 5;
 const ranked = (Array.isArray(models) ? models : [])
@@ -349,19 +363,21 @@ export function pickerModels(models) {
 // naming:
 //
 //   * 'from provider' — a live row is not a project model, so it disappears
-//                       with the provider connection;
+//                       with the provider connection. A row the provider
+//                       itself reports as producing transcripts needs nothing
+//                       more than that;
 //   * 'audio in'      — the provider reports audio input but the id reads like
-//                       a chat model (`openai/gpt-audio`, `meta/muse-spark`),
-//                       which is exactly where the user would otherwise wonder
-//                       why it is being offered at all.
+//                       a chat model (`meta/muse-spark`), which is where the
+//                       user would otherwise wonder why it is offered.
 //
 // An empty string means "nothing to add", and the picker falls back to showing
 // the provider id.
 export function modelBadge(row) {
   if (!row) return '';
-  const audio = Array.isArray(row.inputModalities)
-    && row.inputModalities.some((x) => String(x).toLowerCase() === 'audio');
-  if (row.source === 'live') return audio ? 'from provider · audio in' : 'from provider';
+  const audio = acceptsAudioInput(row);
+  if (row.source === 'live') {
+    return (audio && !reportsTranscription(row)) ? 'from provider · audio in' : 'from provider';
+  }
   return '';
 }
 

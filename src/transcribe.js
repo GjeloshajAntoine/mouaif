@@ -104,37 +104,53 @@ function hintedById(model) {
   return OPENAI_MODEL_HINTS.some((hint) => id.includes(hint));
 }
 
-// isTranscriptionModel(model) — this model plausibly transcribes. Four signals,
-// cheapest first:
+// isTranscriptionModel(model) — this model plausibly transcribes. Five signals,
+// most trustworthy first:
 //
-//   1. it is explicitly marked (`transcription: true|{…}`);
-//   2. its id looks like a speech-to-text model (whisper, voxtral, …);
-//   3. it resolves to the Gemini family — there is no separate Gemini
+//   1. the user marked it (`transcription: true|{…}`);
+//   2. the provider said what the model *produces* and `transcription` is in
+//      that report. This settles the question in both directions: a report
+//      that names outputs and not `transcription` is a no, however much audio
+//      the row accepts — `openai/gpt-audio` and `google/gemini-2.5-flash` on
+//      OpenRouter both take audio input and are both answered by
+//      /audio/transcriptions with `400 Model … does not exist`. Only where
+//      there is no report at all does the filter guess from names;
+//   3. its id looks like a speech-to-text model (whisper, voxtral, …);
+//   4. it resolves to the Gemini family — there is no separate Gemini
 //      speech-to-text product; audio is an inline part on the general
 //      multimodal models, so the whole Gemini catalog counts;
-//   4. the provider says it accepts audio input (`inputModalities` from
-//      OpenRouter's `architecture` block).
+//   5. the provider says the model accepts audio input (`inputModalities` from
+//      OpenRouter's `architecture` block) without saying what it produces.
 //
-// Signal 3 is why the family inference has to be precise (see kindForModel): a
+// Signal 4 is why the family inference has to be precise (see kindForModel): a
 // loose `id.includes('gemini')` test made every Google-ish row on OpenRouter "a
 // Gemini model", so a 445-model catalog filtered down to little but Google
 // entries — which reads as "there are only Google models".
 //
-// Signal 4 is what keeps the answer honest where signal 2 cannot help. Half of
-// what can transcribe does not say so in its id: `openai/gpt-audio` and
-// `mistralai/voxtral-small-24b-2507` are audio models, `meta/muse-spark` and
-// `nvidia/nemotron-…-omni` are omni models that happen to take audio, and none
-// of them match a name hint. When a provider reports modalities we trust the
-// report; when it does not, we fall back to names.
+// Signals 3 and 5 are what keep the answer honest where signal 2 cannot help: a
+// provider that reports nothing but names (`whisper-1`) or nothing but input
+// modalities (`mistralai/voxtral-small-24b-2507`) still gets its rows offered.
 //
 // This is a *filter*, never a guarantee: the fallback in
 // transcriptionCandidates means a project whose models are all unrecognisable
 // still gets offered everything, and the user picks.
 function isTranscriptionModel(model) {
   if (!model) return false;
-  if (markedForTranscription(model) || hintedById(model)) return true;
-  if (kindForModel(model) === 'gemini') return true;
+  if (markedForTranscription(model)) return true;
+  const outputs = reportedOutputModalities(model);
+  if (outputs) return outputs.includes('transcription');
+  if (hintedById(model) || kindForModel(model) === 'gemini') return true;
   return acceptsAudioInput(model);
+}
+
+// reportedOutputModalities(model) — what the provider says this model produces
+// (`architecture.output_modalities` upstream, carried onto the record as
+// `outputModalities` by src/ai-endpoints.js), lowercased, or null when the
+// provider said nothing. Absent is "unknown", never "no".
+function reportedOutputModalities(model) {
+  const list = model && model.outputModalities;
+  if (!Array.isArray(list) || !list.length) return null;
+  return list.map((x) => String(x).toLowerCase());
 }
 
 // acceptsAudioInput(model) — the provider listed `audio` among the model's
@@ -151,7 +167,13 @@ function acceptsAudioInput(model) {
 //   1. every model that looks like it can transcribe (see
 //      isTranscriptionModel) — the union, so marking one model *adds* it
 //      rather than hiding the rest;
-//   2. otherwise, every model.
+//   2. otherwise, every model — *unless* the provider reported what each of
+//      them produces and none of them transcribes. That is an answer, not a
+//      gap: a catalog of chat models that accept audio (`openai/gpt-audio`,
+//      `google/gemini-2.5-flash`) is rejected wholesale by
+//      /audio/transcriptions, so offering it is the provider error the
+//      filter exists to prevent. Only rows the provider left unclassified
+//      keep the fallback.
 //
 // The fallback in step 2 exists because a self-hosted endpoint (`…/v1` with a
 // model called `parakeet` or `my-asr`) is perfectly valid and nothing here can
@@ -159,9 +181,10 @@ function acceptsAudioInput(model) {
 // catalog is hundreds of chat models, and offering all of them would bury the
 // handful that transcribe.
 function transcriptionCandidates(models) {
-  const list = (Array.isArray(models) ? models : []).filter((m) => m && m.id);
-  const recognisable = list.filter(isTranscriptionModel);
-  return recognisable.length ? recognisable : list;
+const list = (Array.isArray(models) ? models : []).filter((m) => m && m.id);
+const recognisable = list.filter(isTranscriptionModel);
+if (recognisable.length) return recognisable;
+return list.some((m) => !reportedOutputModalities(m)) ? list : [];
 }
 
 // mimeTypeFor(filename) — best-effort content type from the recorder's file
@@ -434,6 +457,7 @@ module.exports = {
   kindForModel,
   transcriptionCandidates,
   isTranscriptionModel,
+  reportedOutputModalities,
   acceptsAudioInput,
   mimeTypeFor,
   buildTranscribeRequest,

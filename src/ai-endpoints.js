@@ -7,9 +7,9 @@
 // API key — it POSTs to /api/ai/chat and reads the SSE stream back.
 //
 // This module owns the provider definitions (ENDPOINTS), the model-list
-// adapters (listModels), the request builders (BUILDERS), and the event
-// parsers (PARSERS). The multi-turn streaming loop lives in
-// src/ai-stream.js; the public facade is src/ai.js.
+// adapters (listModels / listTranscriptionModels), the request builders
+// (BUILDERS), and the event parsers (PARSERS). The multi-turn streaming loop
+// lives in src/ai-stream.js; the public facade is src/ai.js.
 //
 // Adding a provider is a localized change: an ENDPOINTS entry here, a
 // BUILDERS + PARSERS entry at the bottom, and (if the auth shape
@@ -191,12 +191,28 @@ const ENDPOINTS = {
     // errors are surfaced as EUPSTREAM with the upstream status, and
     // a network failure is EUNREACHABLE (handled like the others).
     listModels: async (cred, signal) => openAIShapedListModels({
-      name: 'openrouter',
-      url: ENDPOINTS.openrouter.baseUrl + '/models',
-      authHeader: ENDPOINTS.openrouter.authHeader,
-      thinkingFor: thinkingForOpenRouterModel,
-      requireCred: false
-    }, cred, signal),
+name: 'openrouter',
+url: ENDPOINTS.openrouter.baseUrl + '/models',
+authHeader: ENDPOINTS.openrouter.authHeader,
+thinkingFor: thinkingForOpenRouterModel,
+requireCred: false
+}, cred, signal),
+// POST {baseUrl}/audio/transcriptions takes only the *speech-to-text*
+// models, and they are not in the list above. /models is sliced by
+// output modality and defaults to `output_modalities=text`, so the 21
+// transcription models (`openai/whisper-1`, `openai/gpt-4o-transcribe`,
+// `google/chirp-3`, `mistralai/voxtral-mini-transcribe`, …) are absent
+// from the chat catalog — asking for one of the chat models it *does*
+// carry (an audio-input chat row such as `openai/gpt-audio`) answers
+// `400 Model openai/gpt-audio does not exist`. The dictation catalog
+// therefore reads this slice instead of filtering the chat one.
+listTranscriptionModels: async (cred, signal) => openAIShapedListModels({
+name: 'openrouter',
+url: ENDPOINTS.openrouter.baseUrl + '/models?output_modalities=transcription',
+authHeader: ENDPOINTS.openrouter.authHeader,
+thinkingFor: thinkingForOpenRouterModel,
+requireCred: false
+}, cred, signal),
     staticHeaders: {
       'HTTP-Referer': 'https://mouaif.local',
       // The current OpenRouter API uses `X-OpenRouter-Title` as the
@@ -309,6 +325,12 @@ function resolveOpenRouterStaticHeaders() {
 // that returns a normalized [{ id, label, contextWindow? }]. Curated
 // catalogs (Copilot) are listed inline so the picker still works when the
 // upstream has no public list endpoint.
+//
+// A provider may also carry an optional listTranscriptionModels(cred): the
+// slice of its catalog that can transcribe, when that is not simply "the
+// same list, filtered" (OpenRouter slices /models by output modality). The
+// dictation catalog prefers it and falls back to listModels + filtering, so
+// only a provider that really needs the distinction pays for one.
 
 const COPILOT_MODEL_CATALOG = [
   { id: 'gpt-4o',           label: 'GPT-4o',                      contextWindow: 128000 },
@@ -450,18 +472,25 @@ function parseOpenAIShapedModels(body, thinkingFor) {
     // crash.
     const pricing = openRouterPricingFromModel(m);
     if (pricing) rec.pricing = pricing;
-    // OpenRouter also advertises each model's input modalities
-    // (`architecture.input_modalities`, e.g. ["text","audio","file"]). Carry
-    // that through so the dictation catalog can select models that accept
-    // audio *by capability* instead of by guessing at their names — the only
-    // reliable signal it has, since (for example) OpenRouter carries no
-    // `whisper-*` at all but does carry `mistralai/voxtral-…` and
-    // `openai/gpt-audio`, whose names say nothing about a transcription
-    // endpoint.
-    const modalities = Array.isArray(m.architecture && m.architecture.input_modalities)
-    ? m.architecture.input_modalities.filter((x) => typeof x === 'string')
-    : null;
-    if (modalities && modalities.length) rec.inputModalities = modalities;
+    // OpenRouter advertises each model's input *and* output modalities
+    // (`architecture.input_modalities` / `architecture.output_modalities`).
+    // Both are carried through because the dictation catalog selects on them:
+    //
+    //   * `output_modalities: ["transcription"]` is the definitive "this is a
+    //     speech-to-text model" — and those rows only exist in a *sliced* view
+    //     of /models that the chat list never sees (see the openrouter
+    //     `listTranscriptionModels` adapter);
+    //   * a reported output list *without* `transcription` is the definitive
+    //     "this is not one", however much audio the row accepts
+    //     (`openai/gpt-audio`, `google/gemini-2.5-flash`). Sending one of those
+    //     to /audio/transcriptions answers `400 Model … does not exist`, which
+    //     is exactly what a picker selecting on audio input alone offered;
+    //   * `input_modalities` stays as the fallback capability signal for a
+    //     provider that reports what goes in but not what comes out.
+    const inputs = modalityList(m, 'input_modalities');
+    if (inputs) rec.inputModalities = inputs;
+    const outputs = modalityList(m, 'output_modalities');
+    if (outputs) rec.outputModalities = outputs;
     const thinking = typeof thinkingFor === 'function' ? thinkingFor(m) : undefined;
     if (thinking) rec.thinking = thinking;
     out.push(rec);
@@ -469,6 +498,20 @@ function parseOpenAIShapedModels(body, thinkingFor) {
   return out;
 }
 
+// modalityList(m, key) — one of `architecture.input_modalities` /
+// `architecture.output_modalities` as a lowercased, validated string list, or
+// null when the provider said nothing. Absent is "unknown", never "no": the
+// dictation filter treats a report it *did* get as authoritative and falls
+// back to name/capability guessing only when there is none.
+function modalityList(m, key) {
+const arch = m && m.architecture;
+const list = arch && arch[key];
+if (!Array.isArray(list)) return null;
+const out = list
+.filter((x) => typeof x === 'string')
+.map((x) => x.toLowerCase());
+return out.length ? out : null;
+}
 // openRouterPricingFromModel(m) -> { inputPer1K, outputPer1K, cacheReadFactor?, cacheWriteFactor? } | undefined
 //
 // OpenRouter's GET /api/v1/models returns, per model:
@@ -606,26 +649,46 @@ function parseCuratedModels(catalog, thinkingFor) {
   });
 }
 
+// normalizeModelList(out) — stable, friendly order (by id ascending) and
+// deduped. Both model-list entry points go through it so a caller cannot tell
+// the chat catalog from the speech-to-text one by shape alone.
+function normalizeModelList(out) {
+const seen = new Set();
+const dedup = [];
+for (const m of (Array.isArray(out) ? out : []).sort((a, b) => a.id.localeCompare(b.id))) {
+if (!m || !m.id || seen.has(m.id)) continue;
+seen.add(m.id);
+dedup.push(m);
+}
+return dedup;
+}
 // listModels(provider, cred, signal) -> Promise<[{ id, label, contextWindow? }]>
 // Returns the live list for a provider; throws on upstream error so the
 // caller can surface a typed error to the chat UI.
 async function listModels(provider, cred, signal) {
-  const def = ENDPOINTS[provider];
-  if (!def || typeof def.listModels !== 'function') {
-    const e = new Error('no listModels for provider: ' + provider);
-    e.code = 'ENO_LIST';
-    throw e;
-  }
-  const out = await def.listModels(cred, signal);
-  // Stable, friendly order: by id ascending. Dedupe.
-  const seen = new Set();
-  const dedup = [];
-  for (const m of out.sort((a, b) => a.id.localeCompare(b.id))) {
-    if (!m || !m.id || seen.has(m.id)) continue;
-    seen.add(m.id);
-    dedup.push(m);
-  }
-  return dedup;
+const def = ENDPOINTS[provider];
+if (!def || typeof def.listModels !== 'function') {
+const e = new Error('no listModels for provider: ' + provider);
+e.code = 'ENO_LIST';
+throw e;
+}
+return normalizeModelList(await def.listModels(cred, signal));
+}
+// listTranscriptionModels(provider, cred, signal)
+//   -> Promise<[...] | null>
+//
+// The slice of a provider's catalog that can transcribe, when that is not
+// simply "the chat list, filtered": OpenRouter's /models is sliced by output
+// modality and defaults to `text`, so its 21 speech-to-text models are absent
+// from the chat list and /audio/transcriptions rejects the audio-input chat
+// models that *are* in it. `null` means "this provider has no separate
+// speech-to-text catalog" — the caller filters the chat list instead, which is
+// what every provider but OpenRouter needs. Throws the same typed errors as
+// listModels.
+async function listTranscriptionModels(provider, cred, signal) {
+const def = ENDPOINTS[provider];
+if (!def || typeof def.listTranscriptionModels !== 'function') return null;
+return normalizeModelList(await def.listTranscriptionModels(cred, signal));
 }
 
 function endpointFor(model) {
@@ -1697,9 +1760,10 @@ function* parseOllamaNDJSON(_eventName, data) {
 }
 
 module.exports = {
-  ENDPOINTS,
-  listModels,
-  endpointFor,
+ENDPOINTS,
+listModels,
+listTranscriptionModels,
+endpointFor,
   requireApiKey,
   BUILDERS,
   PARSERS,

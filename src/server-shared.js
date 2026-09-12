@@ -419,7 +419,7 @@ function resolveModel(modelId, projectDir, providerId) {
   // best-effort built-in table. Project-level records keep their own
   // `pricing` (most specific) — only the live path is enriched here.
   if (liveCatalogModel && !m.pricing) {
-    const cached = MODEL_LIST_CACHE.get(m.provider + ':' + credHashFor(m.provider));
+    const cached = MODEL_LIST_CACHE.get(modelListCacheKey(m.provider, credHashFor(m.provider), 'chat'));
     if (cached && Array.isArray(cached.models)) {
       const live = cached.models.find((x) => x && x.id === modelId);
       if (live && live.pricing && typeof live.pricing === 'object') {
@@ -479,11 +479,24 @@ function hashShort(s) {
   return h.toString(16);
 }
 
+// modelListCacheKey(provider, credHash, purpose) — the cache key for one slice
+// of a provider's model list.
+//
+// The same provider is asked more than one question — the chat catalog and the
+// speech-to-text catalog — and the answers must not share an entry: serving
+// the chat list to the dictation picker is what made every OpenRouter
+// dictation attempt fail with `400 Model … does not exist`. The chat slice
+// keeps the two-part key its existing callers (resolveModel, the test seeding
+// hook, the live-list route) already use; any other slice appends its name.
+function modelListCacheKey(provider, credHash, purpose) {
+const p = purpose && purpose !== 'chat' ? ':' + purpose : '';
+return provider + ':' + credHash + p;
+}
 // seedModelListCache(provider, models) — test-only hook: pre-fill the
 // in-memory live model cache so resolveModel can pick up per-model
 // pricing without a live upstream call.
 function seedModelListCache(provider, models) {
-  if (provider) MODEL_LIST_CACHE.set(provider + ':' + credHashFor(provider), { models, fetchedAt: Date.now() });
+if (provider) MODEL_LIST_CACHE.set(modelListCacheKey(provider, credHashFor(provider), 'chat'), { models, fetchedAt: Date.now() });
 }
 
 // ---- App access authentication helpers ----------------------------------
@@ -654,6 +667,7 @@ module.exports = {
   liveChat,
   store,
   MODEL_LIST_CACHE,
+  modelListCacheKey,
   // domain modules (re-exported so handlers + http-server share one instance)
   settings,
   projects,
