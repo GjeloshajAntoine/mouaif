@@ -192,6 +192,39 @@
   min-height: 1.2em;
 }
 
+/* The catalog note: how many models, where they came from, and the refresh
+   action. One row that wraps on a narrow phone (the label takes the line, the
+   button follows) and sits on one line from ~380px up. */
+.dictation__catalog-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 2px 10px 6px;
+}
+
+.dictation__refresh {
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  /* The project's tap floor is 44px and this is a real touch target, so it
+     gets the full height even though the row it sits in is dense. */
+  min-height: 44px;
+  padding: 0 14px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+
+.dictation__refresh:hover:not(:disabled)  { background: var(--surface-2); border-color: var(--border-strong); }
+.dictation__refresh:active:not(:disabled) { background: var(--surface-3); }
+.dictation__refresh:disabled { opacity: 0.55; cursor: not-allowed; }
+
 /* The placeholder that replaces the request-shape control when there is
    nothing to choose between. Muted and left-aligned so the row keeps the
    height of the control it stands in for, instead of collapsing. */

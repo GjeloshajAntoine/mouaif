@@ -169,20 +169,33 @@ export async function transcribeAudio(options) {
   return r.body || {};
 }
 
-// loadDictationModels(projectDir) -> { models, kinds, total }
+// loadDictationModels(projectDir, opts) -> { models, kinds, total, providers, liveFailures }
 //
-// `models` is what this project can dictate with, each entry already carrying
-// the request family (`kind`) it will use and whether a provider connection
-// exists for it (`connected`). `kinds` is the family list the page's <select>
-// renders. A failure resolves to an empty list instead of throwing: the
-// dictation page's first paint must not depend on a settings read.
-export async function loadDictationModels(projectDir) {
-  const r = await fetchJson('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(projectDir || ''));
-  if (r.status !== 200) return { models: [], kinds: [], total: 0, error: r.body };
+// `models` is what this project can dictate with: the project's own model
+// records plus the connected providers' live catalogs, each entry already
+// carrying the request family (`kind`) it will use, whether a provider
+// connection exists for it (`connected`), and which of the two it came from
+// (`source`: 'project' | 'live'). `kinds` is the family list the page's shape
+// control renders.
+//
+// opts.live === false skips the live catalogs (a faster paint); opts.refresh
+// forces them even when the server has a cached copy.
+//
+// A failure resolves to an empty list instead of throwing: the dictation
+// page's first paint must not depend on a settings read.
+export async function loadDictationModels(projectDir, opts) {
+  const options = opts || {};
+  const query = new URLSearchParams({ projectDir: projectDir || '' });
+  if (options.live === false) query.set('live', '0');
+  if (options.refresh) query.set('refresh', '1');
+  const r = await fetchJson('/api/ai/transcribe/models?' + query.toString());
+  if (r.status !== 200) return { models: [], kinds: [], total: 0, providers: [], liveFailures: [], error: r.body };
   return {
     models: Array.isArray(r.body && r.body.models) ? r.body.models : [],
     kinds: Array.isArray(r.body && r.body.kinds) ? r.body.kinds : [],
-    total: (r.body && r.body.total) || 0
+    total: (r.body && r.body.total) || 0,
+    providers: Array.isArray(r.body && r.body.providers) ? r.body.providers : [],
+    liveFailures: Array.isArray(r.body && r.body.liveFailures) ? r.body.liveFailures : []
   };
 }
 
@@ -261,15 +274,25 @@ export function resolveDefaultModel(models, saved, kind) {
   return null;
 }
 
-// pickerModels(models, kind) — the rows reshaped for <ModelPickerField>:
-// the picker needs { id, provider, label } and keys a selection on
-// provider+id, which is exactly the pair the transcribe endpoint needs.
+// pickerModels(models) — the rows reshaped for <ModelPickerField>: the picker
+// needs { id, provider, label } and keys a selection on provider+id, which is
+// exactly the pair the transcribe endpoint needs. `label` carries the row's
+// origin for a live catalog entry, so the picker's second line says where the
+// model came from instead of repeating the provider id.
 export function pickerModels(models) {
   return (Array.isArray(models) ? models : []).map((m) => ({
     id: m.id,
     provider: m.provider || '',
     label: m.label || ''
   }));
+}
+
+// sourceLabel(row) — where a catalog row came from, for the picker's subtitle.
+// A live row is not a project model, and saying so is what tells the user why
+// it will disappear if the provider connection is removed.
+export function sourceLabel(row) {
+  if (row && row.source === 'live') return 'from provider';
+  return '';
 }
 
 // transcriptActions(props) — the taps offered under a transcript, as data.

@@ -34,6 +34,19 @@ const mockServer = http.createServer((req, res) => {
       headers: req.headers,
       body: Buffer.concat(chunks)
     });
+    // The OpenAI-shaped model list the live catalog reads. It intentionally
+    // contains chat models too: the dictation filter has to drop them.
+    if (req.method === 'GET' && req.url.endsWith('/models')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        data: [
+          { id: 'gpt-4o' },
+          { id: 'whisper-1' },
+          { id: 'gpt-4o-mini' }
+        ]
+      }));
+      return;
+    }
     res.writeHead(upstream.reply.status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(upstream.reply.body));
   });
@@ -96,6 +109,106 @@ try {
 
   const noProject = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root));
   assert.deepEqual(noProject.body.models, [], 'a project with no models offers none');
+
+  // ---- The catalog merges the providers' live lists ---------------------
+  //
+  // This is the fresh-install path: no project models at all, one connected
+  // provider. Without the live merge the Dictate tab is unusable until the
+  // user hand-edits .mouaif.json, because the app has no model editor.
+  //
+  // `ai.listModels` is stubbed for this section rather than answered by the
+  // mock server: the shipped adapters fetch a *hard-coded* base URL for the
+  // OpenAI-shaped providers (see the note in the summary), so the mock
+  // upstream's connection address is not what they would talk to. The merge
+  // logic under test is the handler's, and it is reached the same way either
+  // way.
+  const ai = require('../src/ai.js');
+  const realListModels = ai.listModels;
+  ai.listModels = async (provider) => {
+    if (provider !== 'openai-compatible') {
+      const e = new Error('fetch failed');
+      e.code = 'EUNREACHABLE';
+      throw e;
+    }
+    // Intentionally includes chat models: the dictation filter must drop them.
+    return [
+      { id: 'gpt-4o', label: 'GPT-4o' },
+      { id: 'whisper-1', label: 'Whisper 1' },
+      { id: 'gpt-4o-mini', label: 'GPT-4o mini' }
+    ];
+  };
+  try {
+    const live = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root)
+      + '&refresh=1');
+    assert.equal(live.status, 200, JSON.stringify(live.body));
+    assert.deepEqual(live.body.providers, ['openai-compatible']);
+    const liveIds = live.body.models.map((m) => m.id);
+    assert.deepEqual(liveIds, ['whisper-1'], 'only transcribable live models are offered: ' + liveIds);
+    const liveRow = live.body.models[0];
+    assert.equal(liveRow.source, 'live');
+    assert.equal(liveRow.provider, 'openai-compatible');
+    assert.equal(liveRow.kind, 'openai-compatible');
+    assert.equal(liveRow.connected, true, 'a live row implies a connection');
+    assert.equal(liveRow.label, 'Whisper 1', 'the upstream label is carried through');
+    assert.equal(live.body.total, 0, 'total still counts project models, not live rows');
+
+    // `live=0` is the fast first paint: project models only, no upstream call.
+    let upstreamCalls = 0;
+    ai.listModels = async () => { upstreamCalls++; return []; };
+    const fast = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root) + '&live=0');
+    assert.equal(fast.status, 200);
+    assert.deepEqual(fast.body.models, [], 'live=0 serves the project models alone');
+    assert.equal(upstreamCalls, 0, 'live=0 makes no upstream request');
+    assert.deepEqual(fast.body.providers, ['openai-compatible'], 'the provider list is still reported');
+
+    // A project model of the same id wins over the live row, and keeps its
+    // descriptor (a hand-configured model must not be shadowed by the catalog).
+    ai.listModels = realListModels;
+    ai.listModels = async () => [
+      { id: 'whisper-1', label: 'Whisper 1' },
+      { id: 'gpt-4o', label: 'GPT-4o' }
+    ];
+    await request('/api/settings/project', jsonInit('PUT', {
+      projectDir: root,
+      models: [
+        { id: 'whisper-1', provider: 'openai-compatible', transcription: { language: 'fr' } },
+        { id: 'gpt-5', provider: 'openai-compatible' }
+      ]
+    }));
+    const merged = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root) + '&refresh=1');
+    const whisperRows = merged.body.models.filter((m) => m.id === 'whisper-1');
+    assert.equal(whisperRows.length, 1, 'the project row replaces the live row for the same id');
+    assert.equal(whisperRows[0].source, 'project', 'the project record wins');
+    assert.ok(merged.body.models.every((m) => m.id !== 'gpt-5'), 'a non-transcribing project model is filtered out');
+    assert.equal(merged.body.total, 2, 'total is the raw project model count');
+
+    // An unreachable provider is reported per-provider and does not empty the
+    // catalog: the still-good rows stay.
+    ai.listModels = async (provider) => {
+      if (provider === 'gemini') { const e = new Error('fetch failed'); e.code = 'EUNREACHABLE'; throw e; }
+      return [{ id: 'whisper-large-v3', label: 'Whisper large v3' }];
+    };
+    await request('/api/settings/app', jsonInit('PUT', {
+      providers: [
+        { id: 'openai-compatible', baseUrl: mockBase, apiKey: 'test-key', auth: 'apikey' },
+        { id: 'gemini', baseUrl: 'http://127.0.0.1:1', apiKey: 'AIza-bad', auth: 'apikey' }
+      ]
+    }));
+    const partial = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root) + '&refresh=1');
+    assert.equal(partial.status, 200, 'one bad provider must not fail the catalog');
+    assert.ok(partial.body.models.some((m) => m.id === 'whisper-1'), 'the reachable provider still contributes');
+    assert.equal(partial.body.liveFailures.length, 1, 'the failure is reported');
+    assert.equal(partial.body.liveFailures[0].provider, 'gemini');
+    assert.equal(partial.body.liveFailures[0].code, 'EUNREACHABLE');
+    await request('/api/settings/app', jsonInit('PUT', {
+      providers: [{ id: 'openai-compatible', baseUrl: mockBase, apiKey: 'test-key', auth: 'apikey' }]
+    }));
+    // Put the project back to no models so the transcription cases below start
+    // from a known state.
+    await request('/api/settings/project', jsonInit('PUT', { projectDir: root, models: [] }));
+  } finally {
+    ai.listModels = realListModels;
+  }
 
   // ---- A successful transcription --------------------------------------
   const audio = Buffer.from('not-really-audio-but-bytes-are-bytes');

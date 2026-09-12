@@ -103,6 +103,16 @@ export function DictationView() {
   const [statusState, setStatusState] = useState('');
   const [lastRun, setLastRun] = useState(null);
 
+  // Live copies of the two pieces of state `applyCatalog` has to read without
+  // becoming an effect dependency: the shape the user has explicitly picked,
+  // and the model currently selected. Reading state directly would work but
+  // would also close the catalog effect over stale values on its second pass.
+  const kindTouchedRef = useRef(false);
+  const kindIdRef = useRef('');
+  kindIdRef.current = kindId;
+  const modelIdRef = useRef('');
+  modelIdRef.current = modelId;
+
   const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
   const chunksRef = useRef([]);
@@ -115,10 +125,70 @@ export function DictationView() {
   const levelBufferRef = useRef(null);
 
   // ---- Catalog load -------------------------------------------------------
+  //
+  // Two passes, because the two sources have very different costs:
+  //
+  //   1. the project's own models (`live=0`) — a settings read, so it resolves
+  //      in milliseconds and the picker can paint the user's own records
+  //      immediately;
+  //   2. the connected providers' live catalogs (`refresh`), which cost one
+  //      upstream round trip each on a cold cache and are then memoized for an
+  //      hour. Those rows are appended without disturbing a selection the user
+  //      made in the meantime.
+  //
+  // A project with no models at all is the normal fresh-install state and is
+  // exactly why pass 2 exists: without it the page is unusable until the user
+  // hand-edits `.mouaif.json`.
+  const [liveBusy, setLiveBusy] = useState(false);
+const [liveFailures, setLiveFailures] = useState([]);
+const [catalogProviders, setCatalogProviders] = useState([]);
+
+  // applyCatalog(catalog, saved, opts) — fold one catalog response into the page
+// state.
+//
+// Which request shape is selected is decided here, once, from three inputs in
+// priority order:
+//
+//   1. the shape the user picked in this session (they are looking at the
+//      chips; nothing may move under them);
+//   2. the shape that actually has models — this is what the second, live pass
+//      usually changes, because the project's own rows may have been empty;
+//   3. `saved.kind`, the shape remembered from a previous session.
+//
+// `opts.onlyIfEmpty` additionally protects a model the user has picked since
+// the first pass resolved, so a slow live response cannot overwrite it.
+function applyCatalog(catalog, saved, opts) {
+  const onlyIfEmpty = !!(opts && opts.onlyIfEmpty);
+  const rows = catalog.models;
+  setModels(rows);
+  setKinds(catalog.kinds);
+  setTotalModels(catalog.total);
+  setLiveFailures(Array.isArray(catalog.liveFailures) ? catalog.liveFailures : []);
+  setCatalogProviders(Array.isArray(catalog.providers) ? catalog.providers : []);
+
+  // The family to show. `autoKindId` weighs the models by family, so a
+  // project whose models are all Gemini opens on Gemini rather than on the
+  // first entry of the family list. A remembered shape is only honoured when
+  // it still has rows — an empty `preferred` must fall through, not "match"
+  // every row.
+  const preferred = (saved && saved.kind) || '';
+  const remembered = preferred && modelsForKind(rows, preferred).length ? preferred : '';
+  const family = remembered || autoKindId(catalog.kinds, rows);
+  const nextKind = kindTouchedRef.current ? (kindIdRef.current || family) : family;
+  setKindId(nextKind);
+
+  const fallback = resolveDefaultModel(rows, saved, nextKind);
+  if (fallback && (!onlyIfEmpty || !modelIdRef.current)) {
+    setModelId(fallback.modelId);
+    setProviderId(fallback.providerId);
+  }
+}
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setCatalogBusy(true);
+      setCatalogError('');
       let saved = {};
       try {
         const app = await fetchJson('/api/settings');
@@ -126,21 +196,24 @@ export function DictationView() {
       } catch { /* a settings read failure must not block the recorder */ }
       let catalog = { models: [], kinds: [], total: 0 };
       try {
-        catalog = await loadDictationModels(projectDir);
+        catalog = await loadDictationModels(projectDir, { live: false });
       } catch (e) {
         if (!cancelled) setCatalogError(e && e.message ? e.message : 'Could not load models');
       }
       if (cancelled) return;
-      setModels(catalog.models);
-      setKinds(catalog.kinds);
-      setTotalModels(catalog.total);
-      setKindId(saved.kind || autoKindId(catalog.kinds, catalog.models));
-      // Never leave the page with a "Pick a model" prompt when the project has
-      // exactly one model in the family: preselect the remembered model, or the
-      // only candidate. `resolveDefaultModel` refuses to guess beyond that.
-      const fallback = resolveDefaultModel(catalog.models, saved, saved.kind || autoKindId(catalog.kinds, catalog.models));
-      if (fallback) { setModelId(fallback.modelId); setProviderId(fallback.providerId); }
+      applyCatalog(catalog, saved);
+      // With no connected provider there is nothing to fetch, and with no
+      // project there is no query to make.
+      const hasProviders = Array.isArray(catalog.providers) && catalog.providers.length > 0;
       setCatalogBusy(false);
+      if (!projectDir || !hasProviders) return;
+      setLiveBusy(true);
+      try {
+        const live = await loadDictationModels(projectDir);
+        if (!cancelled) applyCatalog(live, saved, { onlyIfEmpty: true });
+      } catch { /* the project rows already painted; live is a bonus */ } finally {
+        if (!cancelled) setLiveBusy(false);
+      }
     })();
     return () => { cancelled = true; };
   }, [projectDir]);
@@ -389,17 +462,40 @@ export function DictationView() {
   }
 
   // ---- Derived ------------------------------------------------------------
-  const kindModels = modelsForKind(models, kindId);
-  const pickerList = pickerModels(kindModels);
-  const selection = modelId ? { providerId, modelId } : null;
-  const actions = transcriptActions({ text: transcript, chatId: projectDir, hasRecording: !!recordingBlob });
+const kindModels = modelsForKind(models, kindId);
+const pickerList = pickerModels(kindModels);
+const selection = modelId ? { providerId, modelId } : null;
+const actions = transcriptActions({ text: transcript, chatId: projectDir, hasRecording: !!recordingBlob });
+// The note above the picker distinguishes the two sources it merges.
+const projectCount = models.filter((m) => m.source !== 'live').length;
+const hasLive = models.some((m) => m.source === 'live');
+const providers = Array.isArray(catalogProviders) ? catalogProviders : [];
 
-  function onPickModel(next) {
-    setModelId(next ? next.modelId : '');
-    setProviderId(next ? next.providerId : '');
-    setStatus('');
-    setStatusState('');
+// refreshCatalog() — re-read both passes with the server's cache bypassed.
+// The live list is memoized for an hour, so without this a model added to a
+// provider account would not appear until the cache aged out.
+async function refreshCatalog() {
+  if (liveBusy || catalogBusy) return;
+  setLiveBusy(true);
+  setStatus('');
+  setStatusState('');
+  try {
+    const catalog = await loadDictationModels(projectDir, { refresh: true });
+    applyCatalog(catalog, { kind: kindId, modelId, providerId }, { onlyIfEmpty: false });
+  } catch (e) {
+    setStatus((e && e.message) || 'Could not refresh the model list.');
+    setStatusState('error');
+  } finally {
+    setLiveBusy(false);
   }
+}
+
+function onPickModel(next) {
+  setModelId(next ? next.modelId : '');
+  setProviderId(next ? next.providerId : '');
+  setStatus('');
+  setStatusState('');
+}
 
   // Persisting the choice is best-effort: a failure to remember the model must
   // never look like a failure to record.
@@ -412,17 +508,27 @@ export function DictationView() {
   }
 
   function onPickKind(next) {
+    // Recorded in the ref as well as in state: the catalog callbacks compare
+    // against the ref, and a state update would not be visible to a response
+    // that is already in flight.
+    kindTouchedRef.current = true;
     setKindTouched(true);
     setKindId(next);
     // The row list is filtered by family, so a model from the previous family
     // can silently vanish. Clearing it makes the empty picker honest instead
     // of leaving a stale id that no longer has a row.
+    modelIdRef.current = '';
     setModelId('');
     setProviderId('');
     remember({ kind: next });
   }
 
   const selectedRow = models.find((m) => m.id === modelId && (m.provider || '') === providerId) || null;
+  // While the user has not touched the control, the shape is the selected
+  // model's own: that is what the request will actually use. After a tap, the
+  // chip is the user's answer and wins — including when it disagrees with the
+  // model they then pick, which is exactly how a mis-inferred model gets
+  // overridden.
   const effectiveKind = kindTouched
     ? kindId
     : ((selectedRow && selectedRow.kind) || kindId);
@@ -483,74 +589,103 @@ export function DictationView() {
       h('div', { class: 'group__title' }, 'Model', h('span', { class: 'group__title-note' }, projectDir ? (project.name || 'this project') : 'no project')),
       h('div', { class: 'dictation__fields' },
         h('div', { class: 'dictation__field' },
-          h('span', { class: 'label' }, 'Dictation model'),
-          h(ModelPickerField, {
-            models: pickerList,
-            value: selection,
-            onChange: onPickModel,
-            onOpen: () => { /* the catalog is already loaded */ },
-            placeholder: catalogBusy ? 'Loading models…' : (emptyHint(kindModels, totalModels) || 'Pick a model'),
-            ariaLabel: 'Pick dictation model',
-            // 'sheet' rather than 'dropdown': on a phone the dropdown popup
-            // renders in flow and covers the transcript directly beneath it,
-            // while the sheet variant uses the same mobile viewport modal the
-            // chat head's picker does (and the same desktop card).
-            variant: 'sheet',
-            refreshEmpty: 'No dictation models'
-          })
+        h('span', { class: 'label' }, 'Dictation model'),
+        h(ModelPickerField, {
+          models: pickerList,
+          value: selection,
+          onChange: onPickModel,
+          onOpen: () => { /* the catalog is already loaded */ },
+          placeholder: catalogBusy ? 'Loading models…' : (emptyHint(kindModels, totalModels) || 'Pick a model'),
+          ariaLabel: 'Pick dictation model',
+          // 'sheet' rather than 'dropdown': on a phone the dropdown popup
+          // renders in flow and covers the transcript directly beneath it,
+          // while the sheet variant uses the same mobile viewport modal the
+          // chat head's picker does (and the same desktop card).
+          variant: 'sheet',
+          refreshEmpty: 'No dictation models'
+        })
         ),
         h('div', { class: 'dictation__field' },
-          h('span', { class: 'label' }, 'Request shape'),
-          kinds.length
+        h('span', { class: 'label' }, 'Request shape'),
+        kinds.length
           ? h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Transcription request shape' },
-          kinds.map((k) =>
-          h('label', { key: k.id, class: 'seg__item' + (effectiveKind === k.id ? ' seg__item--on' : '') },
-            h('input', {
-            type: 'radio',
-            name: 'dictation-kind',
-            value: k.id,
-            checked: effectiveKind === k.id,
-            onChange: () => onPickKind(k.id)
-            }),
-            h('span', { class: 'seg__pill', title: k.label }, kindShortLabel(k.id))
-          )
-          )
+            kinds.map((k) =>
+            h('label', { key: k.id, class: 'seg__item' + (effectiveKind === k.id ? ' seg__item--on' : '') },
+              h('input', {
+              type: 'radio',
+              name: 'dictation-kind',
+              value: k.id,
+              checked: effectiveKind === k.id,
+              onChange: () => onPickKind(k.id)
+              }),
+              h('span', { class: 'seg__pill', title: k.label }, kindShortLabel(k.id))
+            )
+            )
           )
           // With no catalog there is no shape to choose between, so the
           // control is replaced by a dash rather than a single fake
           // "unknown" chip — a one-option radio group is just decoration.
           : h('span', { class: 'dictation__kind-empty' }, '—'),
-          h('span', { class: 'hint hint--compact dictation__kind-hint' },
+        h('span', { class: 'hint hint--compact dictation__kind-hint' },
           kinds.length ? (kindLabel(kinds, effectiveKind) || 'Pick a request shape') : 'No request shape to choose')
         )
       ),
       h('div', { class: 'dictation__fields' },
         h('div', { class: 'dictation__field' },
-          h('label', { class: 'label', for: 'dictation-language' }, 'Language (optional)'),
-          h('input', {
-            class: 'input', id: 'dictation-language', type: 'text',
-            placeholder: 'en, fr, de…',
-            value: language,
-            onInput: (e) => setLanguage(e.target.value.slice(0, 20))
-          })
+        h('label', { class: 'label', for: 'dictation-language' }, 'Language (optional)'),
+        h('input', {
+          class: 'input', id: 'dictation-language', type: 'text',
+          placeholder: 'en, fr, de…',
+          value: language,
+          onInput: (e) => setLanguage(e.target.value.slice(0, 20))
+        })
         ),
         h('div', { class: 'dictation__field' },
-          h('label', { class: 'label', for: 'dictation-prompt' }, 'Vocabulary hint (optional)'),
-          h('input', {
-            class: 'input', id: 'dictation-prompt', type: 'text',
-            placeholder: 'mouaif, MediaRecorder, SSE…',
-            value: prompt,
-            onInput: (e) => setPrompt(e.target.value.slice(0, 400))
-          })
+        h('label', { class: 'label', for: 'dictation-prompt' }, 'Vocabulary hint (optional)'),
+        h('input', {
+          class: 'input', id: 'dictation-prompt', type: 'text',
+          placeholder: 'mouaif, MediaRecorder, SSE…',
+          value: prompt,
+          onInput: (e) => setPrompt(e.target.value.slice(0, 400))
+        })
         )
+      ),
+      // Where the rows came from, and the one action that can add more. The
+      // live catalogs are memoized server-side for an hour, so a provider that
+      // just gained a model needs this tap to show up.
+      h('div', { class: 'dictation__catalog-note' },
+        h('span', { class: 'hint hint--compact' },
+        liveBusy
+          ? 'Looking for models from your providers…'
+          : (projectCount
+            ? projectCount + (projectCount === 1 ? ' project model' : ' project models')
+            + (hasLive ? ', plus models from your provider' : '')
+            : (hasLive ? 'Models from your provider connections' : 'No models'))),
+        projectDir && providers.length
+        ? h('button', {
+          class: 'dictation__refresh',
+          type: 'button',
+          disabled: liveBusy || catalogBusy,
+          onClick: refreshCatalog,
+          'aria-label': 'Refresh the model list from the provider'
+          }, liveBusy ? 'Refreshing…' : 'Refresh')
+        : null
       ),
       catalogError
         ? h('p', { class: 'hint hint--compact dictation__error' }, 'Could not read the model list: ' + catalogError)
         : null,
-      !catalogBusy && !models.length
-        ? h('p', { class: 'hint hint--compact' }, 'No models in this project yet. Add one in Settings → Project → Models (for example a Whisper, Voxtral or Gemini model), then come back.')
+      // A provider that could not answer is reported per-provider: one
+      // unreachable or badly-keyed connection must not look like "no models".
+      liveFailures.length
+        ? h('p', { class: 'hint hint--compact dictation__error' },
+          liveFailures.map((f) => f.provider + ': ' + f.error).join(' · '))
+        : null,
+      !catalogBusy && !liveBusy && !models.length
+        ? h('p', { class: 'hint hint--compact' }, providers.length
+          ? 'Your providers returned no usable models. Check the connection in Settings → Providers, then tap Refresh.'
+          : 'No models yet, and no provider connection to list them from. Connect a provider in Settings → Providers (or add a model to this project in .mouaif.json), then come back.')
         : null
-    ),
+      ),
 
     // ---- 3. Transcript ----------------------------------------------------
     h('div', { class: 'group' },

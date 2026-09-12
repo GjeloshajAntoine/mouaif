@@ -39,19 +39,18 @@ and points at the Dictate tab.
 
 ### Configuring a model
 
-Model ids are user-defined (see [model-picker.md](model-picker.md)); the
-provider connection decides the credential. Any of these work:
+The **Dictate** tab lists two kinds of model, and you do not have to configure
+anything for the first one:
 
-| Provider | Model id example | Request shape used |
-| --- | --- | --- |
-| OpenAI, Groq, Mistral, OpenRouter, self-hosted `/v1` | `whisper-1`, `whisper-large-v3`, `voxtral-mini-latest` | OpenAI-shaped (multipart) |
-| Google Gemini | `gemini-2.5-flash` | Gemini (inline audio) |
-
-The shape is inferred: `gemini` for a Gemini provider, the OpenAI shape for
-model ids that look like speech-to-text (`whisper`, `transcribe`, `voxtral`,
-`parakeet`), and the OpenAI shape otherwise — it is the only shape that works
-against an arbitrary base URL. A project model can override the inference and
-supply per-model defaults in `.mouaif.json`:
+1. **Models from your providers.** Every connected provider in Settings →
+   Providers is asked for its current catalog, and the entries that can
+   transcribe are listed. `Refresh` re-reads them (the list is cached
+   server-side for an hour). This is what makes a fresh install work with no
+   setup: connect a Gemini key and `gemini-2.5-flash` is offered.
+2. **Models from the project.** A model id in `.mouaif.json` is the way to
+   describe something the provider's catalog cannot: a self-hosted endpoint, a
+   per-model language default, or a specific OpenRouter slug. A project record
+   for an id wins over the live entry for the same id.
 
 ```json
 {
@@ -71,9 +70,24 @@ supply per-model defaults in `.mouaif.json`:
 }
 ```
 
-`transcription: true` (or any object) also marks a model as a dictation
-candidate, which matters only when the project has models the id-inference
-cannot recognise.
+Which entries are offered is inferred: `gemini` for a Gemini provider, the
+OpenAI shape for model ids that look like speech-to-text (`whisper`,
+`transcribe`, `voxtral`, `parakeet`), and the OpenAI shape otherwise — it is the
+only shape that works against an arbitrary base URL. `transcription: true` (or
+any object) marks a model as a candidate and is the only way to name a
+transcriber whose id says nothing. A project with no recognisable models is
+offered all of them rather than none, because a self-hosted `my-asr` is exactly
+the case nothing can infer.
+
+`Request shape` overrides the inference per run: tap **Gemini** for a model that
+would otherwise be sent as multipart, or the reverse. The shape follows the
+selected model until you touch the control, after which your choice wins and is
+remembered along with the model.
+
+| Provider | Model id example | Request shape used |
+| --- | --- | --- |
+| OpenAI, Groq, Mistral, OpenRouter, self-hosted `/v1` | `whisper-1`, `whisper-large-v3`, `voxtral-mini-latest` | OpenAI-shaped (multipart) |
+| Google Gemini | `gemini-2.5-flash` | Gemini (inline audio) |
 
 The chosen model and request shape are remembered app-wide in the app store
 under the `dictation` key, so the next session — and the composer microphone —
@@ -88,12 +102,18 @@ use the same one.
   wins, and the recorder's own `mimeType` is used afterwards.
 - **Nothing is auto-sent.** The composer hand-off fills a draft; the dictate
   page fills the newest chat's draft.
-- **The model list is the project's models**, filtered to the ones that can
-  plausibly transcribe: explicitly marked models plus id hints, or every project
-  model when nothing is recognisable. The page states how many models were
-  filtered out (`total` vs the rows shown) only through its empty state.
+- **The model list is the union of two sources**: the project's `models`
+  (filtered to the ones that can plausibly transcribe) and the connected
+  providers' live catalogs (filtered the same way, and labelled as coming from
+  the provider). A project record for an id wins over the live row for it.
+- **One unreachable provider does not empty the list.** Its failure is reported
+  with the provider's own message, and the rows from the providers that did
+  answer are still offered.
 - **Nothing is preselected when the choice is real.** With one candidate in the
   selected shape it is selected; with two, the picker asks.
+- **The request shape follows the models**, not the order of the family list:
+  in a project whose only dictation models are Gemini, the control starts on
+  Gemini even if the project's first model is OpenAI-shaped.
 - **Failures name their cause.** A rejected key surfaces the provider's own
   message with HTTP 401, an unreachable provider is 502, a stalled one is 504
   after 60s, and a recording that is too long is 413.
@@ -114,7 +134,14 @@ use the same one.
   `POST /api/ai/transcribe`. Resolves the model through the shared
   `resolveModel`, injects the credential server-side, applies the 60s deadline,
   and maps typed codes onto HTTP statuses. Mounted before the generic
-  `/api/ai/` branch in `src/http-server.js`.
+  `/api/ai/` branch in `src/http-server.js`. The catalog merges the project
+  models with the live lists; `?live=0` serves the project models alone (the
+  page's fast first paint) and `?refresh=1` bypasses the live cache.
+- `src/modelList.js` — the per-provider live model fetch and its hour-long
+  cache, extracted from the `/api/ai/models/live` handler so the dictation
+  catalog and the chat picker share one cache and one set of typed errors.
+  `liveModelsForMany` is the best-effort fan-out used by dictation: one
+  provider failing yields a `liveFailures` entry, not an empty list.
 - `frontend/src/dictation.js` — the browser half: recorder capability probing,
   the clock, base64 encoding, the model-selection rules (`resolveDefaultModel`),
   and the transcript action set. Pure enough to unit-test.
@@ -134,8 +161,13 @@ use the same one.
 node scripts/test-dictation.js        # request/response shapes + helper rules
 node scripts/test-dictation-http.mjs  # the real serve handlers, mock upstream
 node scripts/test-dictation-page.mjs  # the page rendered against a fake API
-node scripts/test-dictation-ui.mjs    # a browser fixture (prints a URL)
+node scripts/test-dictation-ui.mjs    # a browser fixture: prints a URL, or
+  # `--write <dir>` emits it to serve statically
 ```
+
+The UI fixture has two scenarios, selected from its top bar (or by opening
+`#live-only`): a project with its own model records, and a project with none
+whose models come entirely from the provider's live list.
 
 ## Related
 

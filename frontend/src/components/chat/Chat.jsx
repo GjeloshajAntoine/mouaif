@@ -34,9 +34,9 @@ toPublicImageAttachments
 export function ChatView(props) {
   const s = useChatState(props);
   const {
-    refs,
-    imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
-mcpStartBusy,
+  refs,
+  imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
+  mcpStartBusy, fileOrb,
 chatSwitcherOpen, chatSwitcherList, chatSwitcherLoading, customActions,
 setFileEditorOpen,
     setImageAttachments,
@@ -411,6 +411,7 @@ h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {
 projectDir,
+orb: fileOrb,
 onOpenFileEditor: () => setFileEditorOpen(true),
 onOpenPreview: () => setPreviewPromptOpen(true),
 customActions,

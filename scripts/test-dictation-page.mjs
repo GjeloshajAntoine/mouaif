@@ -31,17 +31,46 @@ const asScript = (file) => stripImports(read(file)).replace(/^export /gm, '');
 
 // ---- The fake server ----------------------------------------------------
 
+const KINDS = [
+  { id: 'openai-compatible', label: 'OpenAI-compatible (multipart /audio/transcriptions)' },
+  { id: 'gemini', label: 'Gemini (inline audio)' }
+];
+
+// Two responses, because the page reads the catalog twice: the project models
+// first (`live=0`, a fast settings read), then the merged list with the
+// providers' live catalogs appended.
+const PROJECT_MODELS = [
+  { id: 'whisper-1', provider: 'openai-compatible', label: 'Whisper 1', kind: 'openai-compatible', source: 'project', connected: true },
+  { id: 'gemini-2.5-flash', provider: 'gemini', label: 'Gemini 2.5 Flash', kind: 'gemini', source: 'project', connected: true }
+];
 const CATALOG = {
-  models: [
-    { id: 'whisper-1', provider: 'openai-compatible', label: 'Whisper 1', kind: 'openai-compatible', connected: true },
-    { id: 'gemini-2.5-flash', provider: 'gemini', label: 'Gemini 2.5 Flash', kind: 'gemini', connected: true }
-  ],
-  kinds: [
-    { id: 'openai-compatible', label: 'OpenAI-compatible (multipart /audio/transcriptions)' },
-    { id: 'gemini', label: 'Gemini (inline audio)' }
-  ],
-  total: 3
+  models: PROJECT_MODELS,
+  kinds: KINDS,
+  total: 3,
+  providers: ['openai-compatible', 'gemini'],
+  liveFailures: []
 };
+
+// The response the *fast* pass gets, and the one the *live* pass gets.
+// `current.project` defaults to CATALOG so a case that does not care about the
+// split sees the same list twice.
+function catalogFor(live) {
+  if (!live) {
+    return {
+      // The fast pass serves the project's own records; a case that needs the
+      // two passes to differ overrides `projectModels`.
+      models: current.projectModels || PROJECT_MODELS,
+      kinds: KINDS,
+      total: current.projectTotal === undefined ? CATALOG.total : current.projectTotal,
+      // The provider list comes from the app store, so both passes agree on
+      // it — the fast pass is what tells the page whether the live pass is
+      // worth making.
+      providers: (current.liveCatalog || CATALOG).providers || [],
+      liveFailures: []
+    };
+  }
+  return current.liveCatalog || CATALOG;
+}
 
 // `current` is the case the dispatcher answers for. Reassigned per case before
 // any render, so one `fetchJson` can serve the page's settings read and the
@@ -61,7 +90,8 @@ async function fetchJson(url, init) {
     return { status: 200, body: { projects: current.projects || [] } };
   }
   if (endpoint === '/api/ai/transcribe/models') {
-    return { status: 200, body: current.catalog || CATALOG };
+    const live = new URL(url, 'http://fixture').searchParams.get('live') !== '0';
+    return { status: 200, body: catalogFor(live) };
   }
   throw new AssertionError('unexpected dependency: ' + endpoint);
 }
@@ -161,7 +191,11 @@ const statusText = (nodes) => (find(nodes, (n) => buttonClass(n).includes('dicta
 function useCase(caseOptions) {
   current = {
     app: caseOptions.app || {},
-    catalog: caseOptions.catalog || CATALOG,
+    // `catalog` overrides the *live* response; `projectTotal` overrides the
+    // raw project model count the fast pass reports.
+    liveCatalog: caseOptions.catalog || CATALOG,
+    projectModels: caseOptions.projectModels,
+    projectTotal: caseOptions.projectTotal,
     projects: caseOptions.projects || []
   };
   calls.length = 0;
@@ -213,9 +247,14 @@ function useCase(caseOptions) {
   assert.equal(shape[0].children[1].attrs.title, CATALOG.kinds[0].label, 'the full label survives as the tooltip');
   assert.ok(buttonClass(shape[0]).includes('seg__item--on'), 'the auto-picked family is the checked one');
   assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__kind-hint')).children.join(''), CATALOG.kinds[0].label);
-  // Both files read the settings once, and only through fetchJson.
-  assert.deepEqual(calls.map((c) => new URL(c.url, 'http://fixture').pathname),
-    ['/api/settings', '/api/ai/transcribe/models'], 'the page reads settings once, then the catalog');
+  // The read order matters: settings once, then the fast project pass, then
+  // the live pass. The page must not block its first paint on the live list,
+  // and it must not re-read settings for it.
+  assert.deepEqual(calls.map((c) => new URL(c.url, 'http://fixture').pathname + new URL(c.url, 'http://fixture').search),
+    ['/api/settings',
+      '/api/ai/transcribe/models?projectDir=%2Ffixture%2Fproject&live=0',
+      '/api/ai/transcribe/models?projectDir=%2Ffixture%2Fproject'],
+    'settings once, then the fast catalog pass, then the live pass');
 }
 
 // ---- One candidate preselects itself -----------------------------------
@@ -223,7 +262,7 @@ function useCase(caseOptions) {
 {
   const view = useCase({
     projectDir: '/fixture/project',
-    catalog: { models: [CATALOG.models[0]], kinds: CATALOG.kinds, total: 1 }
+    catalog: { models: [CATALOG.models[0]], kinds: KINDS, total: 1, providers: ['openai-compatible'], liveFailures: [] }
   });
   view.render();
   await view.settle();
@@ -236,7 +275,8 @@ function useCase(caseOptions) {
 {
   const view = useCase({
     projectDir: '/fixture/project',
-    app: { dictation: { modelId: 'gemini-2.5-flash', providerId: 'gemini', kind: 'gemini' } }
+    app: { dictation: { modelId: 'gemini-2.5-flash', providerId: 'gemini', kind: 'gemini' } },
+    projectModels: []
   });
   view.render();
   await view.settle();
@@ -253,7 +293,8 @@ function useCase(caseOptions) {
   const view = useCase({
     projectDir: '/fixture/project',
     app: { dictation: { modelId: 'whisper-deleted', providerId: 'openai-compatible' } },
-    catalog: { models: [CATALOG.models[1]], kinds: CATALOG.kinds, total: 1 }
+    projectModels: [],
+    catalog: { models: [CATALOG.models[1]], kinds: KINDS, total: 0, providers: ['gemini'], liveFailures: [] }
   });
   view.render();
   await view.settle();
@@ -300,15 +341,142 @@ function useCase(caseOptions) {
 // ---- An empty catalog explains itself ----------------------------------
 
 {
-  const view = useCase({ projectDir: '/fixture/project', catalog: { models: [], kinds: CATALOG.kinds, total: 0 } });
+  // No project models and a connected provider that returned nothing usable.
+  const view = useCase({
+    projectDir: '/fixture/project',
+    projectModels: [],
+    catalog: { models: [], kinds: KINDS, total: 0, providers: ['openai-compatible'], liveFailures: [] }
+  });
   view.render();
   await view.settle();
   const nodes = view.render();
   const hints = all(nodes, (n) => n.tag === 'p' && buttonClass(n).includes('hint')).map((n) => n.children.join(''));
-  assert.ok(hints.some((text) => text.includes('No models in this project yet')),
-    'an empty project says how to fix it: ' + JSON.stringify(hints));
+  assert.ok(hints.some((text) => text.includes('Your providers returned no usable models')),
+    'an empty catalog with a provider points at the connection: ' + JSON.stringify(hints));
   assert.equal(picker(nodes).placeholder, 'No models in this project');
   assert.equal(statusText(nodes), '', 'nothing is reported as an error before the user acts');
+  // The refresh action only exists when there is something to refresh.
+  assert.ok(find(nodes, (n) => buttonClass(n).includes('dictation__refresh')));
+}
+
+// ---- No provider at all ------------------------------------------------
+
+{
+  const view = useCase({
+    projectDir: '/fixture/project',
+    projectModels: [],
+    catalog: { models: [], kinds: KINDS, total: 0, providers: [], liveFailures: [] }
+  });
+  view.render();
+  await view.settle();
+  const nodes = view.render();
+  const hints = all(nodes, (n) => n.tag === 'p' && buttonClass(n).includes('hint')).map((n) => n.children.join(''));
+  assert.ok(hints.some((text) => text.includes('no provider connection to list them from')),
+    'with nothing connected the copy says so: ' + JSON.stringify(hints));
+  assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__refresh')), null,
+    'there is nothing to refresh without a provider');
+  // With no providers the live pass is skipped entirely: one catalog read.
+  assert.equal(calls.filter((c) => String(c.url).includes('/api/ai/transcribe/models')).length, 1,
+    'no provider means no live round trip');
+}
+
+// ---- A live row is labelled as coming from the provider ----------------
+
+{
+  const view = useCase({
+    projectDir: '/fixture/project',
+    catalog: {
+      models: [
+        { id: 'whisper-1', provider: 'openai-compatible', kind: 'openai-compatible', source: 'project', connected: true },
+        { id: 'whisper-large-v3', provider: 'groq', label: 'Whisper large v3', kind: 'openai-compatible', source: 'live', connected: true }
+      ],
+      kinds: KINDS, total: 1, providers: ['openai-compatible', 'groq'], liveFailures: []
+    }
+  });
+  view.render();
+  await view.settle();
+  const nodes = view.render();
+  assert.deepEqual(picker(nodes).models.map((m) => m.id), ['whisper-1', 'whisper-large-v3'],
+    'project and live rows in the same family are both offered');
+  const note = find(nodes, (n) => buttonClass(n).includes('dictation__catalog-note'));
+  const text = note.children.length ? JSON.stringify(note.children) : '';
+  assert.ok(text.includes('1 project model') && text.includes('plus models from your provider'),
+    'the note distinguishes the two sources: ' + text);
+}
+
+// ---- A provider that failed is named, not fatal ------------------------
+
+{
+  const view = useCase({
+    projectDir: '/fixture/project',
+    catalog: {
+      models: PROJECT_MODELS,
+      kinds: KINDS, total: 2, providers: ['openai-compatible', 'gemini'],
+      liveFailures: [{ provider: 'gemini', code: 'EUNREACHABLE', error: 'fetch failed' }]
+    }
+  });
+  view.render();
+  await view.settle();
+  const nodes = view.render();
+  const errors = all(nodes, (n) => buttonClass(n).includes('dictation__error')).map((n) => n.children.join(''));
+  assert.ok(errors.some((t) => t.includes('gemini') && t.includes('fetch failed')),
+    'the failing provider is reported with its own message: ' + JSON.stringify(errors));
+  // The good rows are still offered: one bad provider must not empty the list.
+  assert.ok(picker(nodes).models.length > 0);
+}
+
+// ---- The case that made the page unusable: no project models at all ----
+//
+// A fresh install: nothing in .mouaif.json, one connected provider. The first
+// (fast) pass has no rows, so it must not lock the request shape to the first
+// family in the list — the live pass supplies Gemini rows, and the shape has
+// to follow them.
+{
+  const view = useCase({
+    projectDir: '/fixture/project',
+    projectModels: [],
+    catalog: {
+      models: [
+        { id: 'gemini-2.5-flash', provider: 'gemini', label: 'Gemini 2.5 Flash', kind: 'gemini', source: 'live', connected: true },
+        { id: 'gemini-2.5-pro', provider: 'gemini', label: 'Gemini 2.5 Pro', kind: 'gemini', source: 'live', connected: true }
+      ],
+      kinds: KINDS, total: 0, providers: ['gemini'], liveFailures: []
+    }
+  });
+  view.render();
+  await view.settle();
+  const nodes = view.render();
+  const shape = radios(nodes);
+  assert.ok(buttonClass(shape[1]).includes('seg__item--on'),
+    'the shape follows the only family with models, not the order of the family list');
+  assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__kind-hint')).children.join(''),
+    'Gemini (inline audio)');
+  // Two candidates in the family, so the model itself is still the user's
+  // call — but the list is no longer empty.
+  assert.deepEqual(picker(nodes).models.map((m) => m.id), ['gemini-2.5-flash', 'gemini-2.5-pro']);
+  assert.equal(selectionOf(pickerNodes(nodes)[0]), null);
+}
+
+// ---- A remembered shape survives the live pass -------------------------
+
+{
+  const view = useCase({
+    projectDir: '/fixture/project',
+    projectModels: [],
+    app: { dictation: { kind: 'gemini' } },
+    catalog: {
+      models: [
+        { id: 'gemini-2.5-flash', provider: 'gemini', kind: 'gemini', source: 'live', connected: true },
+        { id: 'whisper-large-v3', provider: 'groq', kind: 'openai-compatible', source: 'live', connected: true }
+      ],
+      kinds: KINDS, total: 0, providers: ['gemini', 'groq'], liveFailures: []
+    }
+  });
+  view.render();
+  await view.settle();
+  const nodes = view.render();
+  assert.ok(buttonClass(radios(nodes)[1]).includes('seg__item--on'),
+    'the shape remembered from the last session wins over the first family');
 }
 
 // ---- The preselect rule on its own -------------------------------------

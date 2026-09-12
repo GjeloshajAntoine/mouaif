@@ -70,6 +70,12 @@ enterForNewline: true,
 // re-sends a user message once if the request fails before a stream
 // starts (network error or an HTTP rejection other than 409).
 autoRetry: true,
+// Composer file button ("File tools") style. When false the trigger is the
+// flat circle that matches the rest of the composer; when true it renders as
+// the animated glass "orb" — a shaded sphere with the git counts on a 3D
+// folder glyph inside. App-level: a display preference, so it applies to
+// every project. See docs/features/file-button-orb.md.
+fileOrbButton: false,
   // App-level custom prompts. Empty by default.
   prompts: [],
   // Tool output profile for file/result text fed back to the model. `size`

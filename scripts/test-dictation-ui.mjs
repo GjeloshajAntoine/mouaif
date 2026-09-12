@@ -13,7 +13,14 @@
 // and `getUserMedia` returns a fake stream with stop()-able tracks so the
 // unmount cleanup is exercised too.
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
 import { build } from 'esbuild';
+
+const INDEX_HTML = '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
+  + '<link rel="stylesheet" href="/app.css"></head>'
+  + '<body><main id="root" class="app__main app__main--flush"></main>'
+  + '<script type="module" src="/app.js"></script></body></html>';
 
 const bundle = await build({
   stdin: {
@@ -40,7 +47,28 @@ const KINDS = [
   { id: 'openai-compatible', label: 'OpenAI-compatible (multipart /audio/transcriptions)' },
   { id: 'gemini', label: 'Gemini (inline audio)' }
 ];
-window.fixture = { failTranscribe: false, recorded: [], settings: { dictation: { modelId: 'whisper-1', providerId: 'openai-compatible', kind: 'openai-compatible' } } };
+// Two scenarios, switchable from the page. The 'project' scenario has its own
+// model records; the 'live' scenario is the fresh-install case this page had to
+// be fixed for — no project models at all, one connected provider answering the
+// catalog.
+window.fixture = {
+  failTranscribe: false,
+  recorded: [],
+  // Derived from the hash, not only from the click handler: opening
+  // #live-only directly (the normal way to look at one scenario) has to select
+  // it too.
+  scenario: location.hash.indexOf('live-only') >= 0 ? 'live' : 'project',
+  // The live scenario starts with nothing remembered, which is the state a
+  // fresh install is in: the page has to adopt a model from the live rows.
+  settings: { dictation: location.hash.indexOf('live-only') >= 0
+    ? {}
+    : { modelId: 'whisper-1', providerId: 'openai-compatible', kind: 'openai-compatible' } }
+};
+const LIVE_ONLY = [
+  { id: 'gemini-2.5-flash', provider: 'gemini', label: 'Gemini 2.5 Flash', kind: 'gemini', source: 'live', connected: true },
+  { id: 'gemini-2.5-pro', provider: 'gemini', label: 'Gemini 2.5 Pro', kind: 'gemini', source: 'live', connected: true },
+  { id: 'gpt-4o', provider: 'gemini', label: 'GPT-4o (chat model)', kind: 'gemini', source: 'live', connected: true }
+];
 
 window.fetch = async (input, options = {}) => {
   const url = new URL(input, location.origin);
@@ -54,7 +82,15 @@ window.fetch = async (input, options = {}) => {
       body = { app: window.fixture.settings, defaults: {}, home: '/tmp/mouaif' };
     }
   } else if (url.pathname === '/api/ai/transcribe/models') {
-    body = { models: MODELS, kinds: KINDS, total: MODELS.length + 4 };
+    const live = url.searchParams.get('live') !== '0';
+    if (window.fixture.scenario === 'live') {
+      // The fast pass has nothing; the live pass supplies the models.
+      body = live
+        ? { models: LIVE_ONLY, kinds: KINDS, total: 0, providers: ['gemini'], liveFailures: [] }
+        : { models: [], kinds: KINDS, total: 0, providers: ['gemini'], liveFailures: [] };
+    } else {
+      body = { models: MODELS, kinds: KINDS, total: MODELS.length + 4, providers: ['openai-compatible', 'groq', 'gemini'], liveFailures: [] };
+    }
   } else if (url.pathname === '/api/ai/transcribe') {
     const payload = JSON.parse(options.body || '{}');
     window.fixture.recorded.push(payload);
@@ -95,10 +131,10 @@ function Host() {
   const [micStatus, setMicStatus] = useState('');
   return h('div', { class: 'fixture' },
     h('nav', { class: 'fixture__switch' },
-      ['page', 'composer'].map((name) => h('button', {
+      ['page', 'composer', 'live-only'].map((name) => h('button', {
         key: name, type: 'button', class: 'btn' + (view === name ? ' btn--primary' : ''),
-        onClick: () => { location.hash = name; setView(name); }
-      }, name === 'page' ? 'Dictation page' : 'Composer mic'))
+        onClick: () => { window.fixture.scenario = name === 'live-only' ? 'live' : 'project'; location.hash = name; setView(name); }
+      }, name === 'page' ? 'Dictation page' : (name === 'composer' ? 'Composer mic' : 'No project models')))
     ),
     view === 'composer'
       ? h('section', { class: 'chat-view' },
@@ -111,7 +147,7 @@ function Host() {
           ),
           h('p', { class: 'status' }, micStatus)
         )
-      : h(DictationView, null)
+      : h(DictationView, { key: view + window.fixture.scenario })
   );
 }
 render(h(Host), document.getElementById('root'));
@@ -146,17 +182,27 @@ const files = Object.fromEntries(bundle.outputFiles.map((file) => [
   file.text
 ]));
 
+// `--write <dir>` emits the bundle instead of serving it, so the fixture can be
+// served by any static server. That matters in this workspace: a long-lived
+// node child started from a non-interactive shell gets reaped, while a python
+// http.server survives, and the point of this fixture is to be *opened*.
+const writeDirIndex = process.argv.indexOf('--write');
+if (writeDirIndex !== -1) {
+  const dir = process.argv[writeDirIndex + 1] || '/tmp/mouaif-dictation-ui';
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [name, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), text);
+  fs.writeFileSync(path.join(dir, 'index.html'), INDEX_HTML);
+  console.log('Dictation UI fixture written to ' + dir);
+} else {
 const server = http.createServer((req, res) => {
   if (files[req.url]) {
     res.writeHead(200, { 'Content-Type': req.url.endsWith('.css') ? 'text/css' : 'text/javascript' });
     res.end(files[req.url]);
   } else {
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
-      + '<link rel="stylesheet" href="/app.css"></head>'
-      + '<body><main id="root" class="app__main app__main--flush"></main>'
-      + '<script type="module" src="/app.js"></script></body></html>');
+    res.end(INDEX_HTML);
   }
 });
 server.listen(0, '127.0.0.1', () => console.log('Dictation UI fixture: http://127.0.0.1:' + server.address().port));
 setTimeout(() => { server.closeAllConnections(); server.close(); }, 10 * 60 * 1000);
+}

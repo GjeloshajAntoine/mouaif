@@ -9,14 +9,11 @@ const {
   readJsonOr400,
   resolveModel,
   credentialForProvider,
-  hashShort,
-  MODEL_LIST_CACHE,
-  MODEL_LIST_TTL_MS,
-  MODEL_LIST_TIMEOUT_MS,
   settings,
   projects,
   ai
 } = require('./server-shared.js');
+const modelList = require('./modelList.js');
 
 async function handleAI(req, res, parsed) {
   const urlPath = parsed.pathname;
@@ -48,76 +45,37 @@ async function handleAI(req, res, parsed) {
   // memory for an hour so opening many chats does not re-hit the
   // upstream. The chat UI calls this from the refresh button next to
   // the model <select>.
+  //
+  // The fetch + cache live in src/modelList.js, because the dictation
+  // catalog needs the same answer filtered differently. `_bust=1` forces a
+  // reload (the picker's explicit refresh).
   if (urlPath === '/api/ai/models/live' && method === 'GET') {
     const provider = typeof parsed.query.provider === 'string' ? parsed.query.provider : '';
     if (!provider || !ai.ENDPOINTS[provider]) {
       return sendJSON(res, 400, { error: 'unknown provider', provider });
     }
-    // Look up the app-level provider connection. Missing connection
-    // is fine — OpenAI/OpenRouter/Gemini allow unauthenticated list
-    // calls (rate-limited but useful), Ollama/Copilot don't need one.
-    let cred = null;
-    try { cred = credentialForProvider(provider); }
-    catch { /* listModels will surface ENO_APIKEY if the provider requires a credential */ }
-    // 1h cache keyed by `${provider}:${credHash}`.
-    const cacheKey = provider + ':' + (cred ? hashShort(cred) : '-');
-    const now = Date.now();
-
-    // If _bust is provided, remove the entry from cache to force reload
-    if (parsed.query._bust) {
-      MODEL_LIST_CACHE.delete(cacheKey);
+    try {
+    const result = await modelList.liveModelsFor(provider, { force: !!parsed.query._bust });
+    return sendJSON(res, 200, { models: result.models, fetchedAt: result.fetchedAt, cached: result.cached });
+    } catch (err) {
+      // Map typed error codes to HTTP statuses. 502 is reserved for
+      // "upstream answered with a non-2xx" (EUPSTREAM) — anything
+      // that isn't a recognized failure shape falls through to a
+      // generic 502 so a regression in the adapter still surfaces
+      // somewhere observable. Distinct failure modes get distinct
+      // statuses so the chat UI can show a useful next step.
+      const code = err && err.code;
+      let status;
+      if (code === 'ENO_LIST')       status = 400;
+      else if (code === 'ENO_APIKEY') status = 400;
+      else if (code === 'EUNREACHABLE') status = 503;
+      else if (code === 'ETIMEOUT') status = 504;
+      else if (code === 'EUPSTREAM' && typeof err.status === 'number') status = err.status;
+      else                            status = 502;
+      const body = { error: String((err && err.message) || err), code: code || 'ELIVE', provider };
+      if (code === 'EUPSTREAM' && typeof err.status === 'number') body.upstreamStatus = err.status;
+      return sendJSON(res, status, body);
     }
-
-    const cached = MODEL_LIST_CACHE.get(cacheKey);
-    if (cached && (now - cached.fetchedAt) < MODEL_LIST_TTL_MS) {
-      return sendJSON(res, 200, { models: cached.models, fetchedAt: cached.fetchedAt, cached: true });
-    }
-    // Bound the call so a slow upstream cannot hang the server. The
-    // per-call AbortController is passed through to listModels so the
-    // adapter can distinguish "user-configured" errors (ENO_APIKEY,
-    // EUNREACHABLE, EUPSTREAM) from "we hit MODEL_LIST_TIMEOUT_MS and
-    // cancelled" (EABORTED, surfaced as 504 Gateway Timeout).
-    const ac = new AbortController();
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      ac.abort();
-    }, MODEL_LIST_TIMEOUT_MS);
-    // Pass signal through if the adapter accepts it.
-    const args = cred ? [provider, cred, ac.signal] : [provider, null, ac.signal];
-    ai.listModels(...args)
-      .then((models) => {
-        clearTimeout(timer);
-        if (timedOut) {
-          // Discard the late result: the client already saw 504.
-          return;
-        }
-        MODEL_LIST_CACHE.set(cacheKey, { models, fetchedAt: Date.now() });
-        return sendJSON(res, 200, { models, fetchedAt: Date.now(), cached: false });
-      })
-      .catch((err) => {
-        clearTimeout(timer);
-        if (timedOut) {
-          return sendJSON(res, 504, { error: 'Timed out after ' + Math.round(MODEL_LIST_TIMEOUT_MS / 1000) + 's waiting for ' + provider + ' upstream', code: 'EABORTED', provider });
-        }
-        // Map typed error codes to HTTP statuses. 502 is reserved for
-        // "upstream answered with a non-2xx" (EUPSTREAM) — anything
-        // that isn't a recognized failure shape falls through to a
-        // generic 502 so a regression in the adapter still surfaces
-        // somewhere observable. Distinct failure modes get distinct
-        // statuses so the chat UI can show a useful next step.
-        const code = err && err.code;
-        let status;
-        if (code === 'ENO_LIST')       status = 400;
-        else if (code === 'ENO_APIKEY') status = 400;
-        else if (code === 'EUNREACHABLE') status = 503;
-        else if (code === 'EUPSTREAM' && typeof err.status === 'number') status = err.status;
-        else                            status = 502;
-        const body = { error: String((err && err.message) || err), code: code || 'ELIVE', provider };
-        if (code === 'EUPSTREAM' && typeof err.status === 'number') body.upstreamStatus = err.status;
-        return sendJSON(res, status, body);
-      });
-    return;  // response is sent in the .then/.catch above.
   }
 
   // GET /api/ai/provider-credit?provider=<id> -> { supported, remaining? }

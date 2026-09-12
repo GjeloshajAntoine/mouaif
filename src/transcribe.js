@@ -86,22 +86,37 @@ function hintedById(model) {
   return OPENAI_MODEL_HINTS.some((hint) => id.includes(hint));
 }
 
-// transcriptionCandidates(models) — the models a dictation picker should
-// offer, in the order the project declares them:
+// isTranscriptionModel(model) — this model plausibly transcribes. Three signals:
 //
-//   1. models the user explicitly marked (`transcription: true|{…}`) and
-//      models whose id looks like a transcription model — the union, so
-//      marking one model *adds* it rather than hiding the rest;
-//   2. otherwise, every project model.
+//   1. it is explicitly marked (`transcription: true|{…}`);
+//   2. its id looks like a speech-to-text model (whisper, voxtral, …);
+//   3. it resolves to the Gemini family — there is no separate Gemini
+//      speech-to-text product; audio is an inline part on the general
+//      multimodal models, so any Gemini model is a candidate.
+//
+// This is a *filter*, never a guarantee: the fallback in
+// transcriptionCandidates means a project whose models are all unrecognisable
+// still gets offered everything, and the user picks.
+function isTranscriptionModel(model) {
+  if (!model) return false;
+  return markedForTranscription(model) || hintedById(model) || kindForModel(model) === 'gemini';
+}
+
+// transcriptionCandidates(models) — the models a dictation picker should
+// offer, in the order given:
+//
+//   1. every model that looks like it can transcribe (see
+//      isTranscriptionModel) — the union, so marking one model *adds* it
+//      rather than hiding the rest;
+//   2. otherwise, every model.
 //
 // The fallback in step 2 exists because a self-hosted endpoint (`…/v1` with a
 // model called `parakeet` or `my-asr`) is perfectly valid and nothing here can
-// recognise it — the user picks, and the choice is remembered on the chat.
-// Step 1 exists so a project that also has chat models does not get a 40-row
-// list of things that cannot transcribe.
+// recognise it — the user picks. Step 1 exists so a project that also has chat
+// models does not get a list where almost nothing can transcribe.
 function transcriptionCandidates(models) {
   const list = (Array.isArray(models) ? models : []).filter((m) => m && m.id);
-  const recognisable = list.filter((m) => markedForTranscription(m) || hintedById(m));
+  const recognisable = list.filter(isTranscriptionModel);
   return recognisable.length ? recognisable : list;
 }
 
@@ -334,6 +349,7 @@ module.exports = {
   DEFAULT_TIMEOUT_MS,
   kindForModel,
   transcriptionCandidates,
+  isTranscriptionModel,
   mimeTypeFor,
   buildTranscribeRequest,
   parseTranscribeResponse,

@@ -17,6 +17,10 @@ import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { formatCount } from './gitCount.js';
+// The folder silhouette, as one path. Orb mode draws it twice — the same
+// shape offset down as the extruded side, then the light top face — so both
+// copies come from this constant rather than two hand-kept strings.
+const FOLDER_PATH = 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z';
 
 function parseNumstat(stdout) {
   let additions = 0;
@@ -52,7 +56,7 @@ async function fetchGitStats(projectDir) {
 }
 
 export function FileToolbar(props) {
-const { projectDir, onOpenFileEditor, onOpenPreview, customActions, onRunCustomAction, onRefreshCustomActions } = props;
+const { projectDir, onOpenFileEditor, onOpenPreview, customActions, onRunCustomAction, onRefreshCustomActions, orb } = props;
 const [menuOpen, setMenuOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [cliOpen, setCliOpen] = useState(false);
@@ -153,10 +157,45 @@ const hasStats = gitStats != null;
 const showAdditions = hasStats && (added > 0 || deleted === 0);
 const showDeletions = hasStats && (deleted > 0 || added === 0);
 const statsLabel = hasStats
-  ? added + (added === 1 ? ' line added, ' : ' lines added, ') + deleted + (deleted === 1 ? ' line deleted' : ' lines deleted')
-  : '';
-
-return h('div', { class: 'file-toolbar' },
+? added + (added === 1 ? ' line added, ' : ' lines added, ') + deleted + (deleted === 1 ? ' line deleted' : ' lines deleted')
+: '';
+// The folder glyph + its counts, in two shapes:
+//
+//   flat (default) — one silhouette filled with --fg, counts on top.
+//   orb            — the same silhouette drawn twice for 3D depth (a
+//                    darkened copy extruded 1px down, then the light top
+//                    face) with an additive rim highlight along the pocket
+//                    edge, and a soft glow behind each count.
+//
+// The counts are *siblings* of the SVG in both shapes, never children:
+// they are HTML text (so the browser can color and letter-space them) and
+// the stats box is positioned over the folder box by CSS.
+const folderGlyph = orb
+? h('span', { class: 'file-toolbar__folder file-toolbar__folder--3d' },
+h('svg', { class: 'file-toolbar__folder-face file-toolbar__folder-face--side', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
+h('path', { d: FOLDER_PATH })
+),
+h('svg', { class: 'file-toolbar__folder-face', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
+h('path', { d: FOLDER_PATH })
+),
+h('svg', { class: 'file-toolbar__folder-shine', viewBox: '0 0 20 16', width: 28, height: 22, 'aria-hidden': 'true' },
+h('path', { d: 'M2.6 4.2a1.6 1.6 0 0 1 1.6-1.6h3.5l1.7 1.7h6.4a1.6 1.6 0 0 1 1.6 1.6' })
+),
+hasStats ? h('span', { class: 'file-toolbar__git-stats' },
+showAdditions ? h('span', { class: 'file-toolbar__git-additions file-toolbar__git-additions--glow' }, '+' + formatCount(added)) : null,
+showDeletions ? h('span', { class: 'file-toolbar__git-deletions file-toolbar__git-deletions--glow' }, '−' + formatCount(deleted)) : null
+) : null
+)
+: h('span', { class: 'file-toolbar__folder' },
+h('svg', { viewBox: '0 0 20 16', width: 28, height: 22 },
+h('path', { d: FOLDER_PATH, fill: 'currentColor' })
+),
+hasStats ? h('span', { class: 'file-toolbar__git-stats' },
+showAdditions ? h('span', { class: 'file-toolbar__git-additions' }, '+' + formatCount(added)) : null,
+showDeletions ? h('span', { class: 'file-toolbar__git-deletions' }, '−' + formatCount(deleted)) : null
+) : null
+);
+return h('div', { class: 'file-toolbar' + (orb ? ' file-toolbar--orb' : '') },
 h('button', {
 class: 'file-toolbar__trigger',
 type: 'button',
@@ -170,20 +209,12 @@ h('span', { class: 'file-toolbar__stack', 'aria-hidden': 'true' },
 h('svg', { viewBox: '0 0 12 6', width: 14, height: 7 },
 h('path', { d: 'M0.5 5.5 6 1 11.5 5.5 10 6 6 2.5 2 6Z', fill: 'currentColor' })
 ),
-h('span', { class: 'file-toolbar__folder' },
-h('svg', { viewBox: '0 0 20 16', width: 28, height: 22 },
-h('path', { d: 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z', fill: 'currentColor' })
-),
-hasStats ? h('span', { class: 'file-toolbar__git-stats' },
-showAdditions ? h('span', { class: 'file-toolbar__git-additions' }, '+' + formatCount(added)) : null,
-showDeletions ? h('span', { class: 'file-toolbar__git-deletions' }, '−' + formatCount(deleted)) : null
-) : null
-),
+folderGlyph,
 h('svg', { viewBox: '0 0 12 6', width: 14, height: 7 },
 h('path', { d: 'M0.5 0.5 6 5 11.5 0.5 10 0 6 3.5 2 0Z', fill: 'currentColor' })
 )
 )
-    ),
+),
     menuOpen && h('div', { ref: menuRef, class: 'file-toolbar__menu', role: 'menu' },
 customActions && customActions.length ? [
 ...customActions.map((action) =>

@@ -30,6 +30,7 @@ const {
 } = require('./server-shared.js');
 
 const transcribe = require('./transcribe.js');
+const modelList = require('./modelList.js');
 
 // AUDIO_BASE64_MAX — the JSON body cap. base64 inflates by ~4/3, so this is
 // the HTTP-layer twin of transcribe.MAX_AUDIO_BYTES (20 MB of audio).
@@ -110,8 +111,22 @@ async function handleTranscribe(req, res, parsed) {
   const method = req.method;
 
   // GET /api/ai/transcribe/models?projectDir=<abs>
+  //
+  // The dictation catalog: project models plus whatever the connected
+  // providers currently offer. Both are needed because the app has no model
+  // editor — a project model is the *only* way to describe a model the live
+  // list cannot (a self-hosted endpoint, a per-model language default), while
+  // the live list is what makes a fresh install usable without hand-editing
+  // `.mouaif.json`.
+  //
+  // `?live=0` serves the project models alone: the catalog read is on the
+  // critical path of the page's first paint, and the live lists cost one
+  // upstream round trip per connected provider (cached for an hour
+  // afterwards). `?refresh=1` forces that work even when it is cached.
   if (urlPath === '/api/ai/transcribe/models' && method === 'GET') {
     const projectDir = typeof parsed.query.projectDir === 'string' ? parsed.query.projectDir : '';
+    const wantLive = parsed.query.live !== '0';
+    const force = parsed.query.refresh === '1';
     let resolved;
     try {
       resolved = settings.getResolved(projectDir || null);
@@ -119,22 +134,59 @@ async function handleTranscribe(req, res, parsed) {
       return sendJSON(res, 422, { error: e.message, code: e.code || 'EBADPROJECT' });
     }
     const all = Array.isArray(resolved.models) ? resolved.models : [];
-    const candidates = transcribe.transcriptionCandidates(all);
-    const models = candidates.map((m) => ({
+    const projectModels = transcribe.transcriptionCandidates(all);
+
+    const app = settings.getApp();
+    const connections = Array.isArray(app.providers) ? app.providers : [];
+    const connectedIds = connections.map((p) => p && p.id).filter(Boolean);
+
+    // Project models always come first: they are the user's own records, they
+    // carry their descriptor, and a hand-configured model must win over the
+    // upstream's entry for the same id (see the merge below).
+    const rows = projectModels.map((m) => ({
       id: m.id,
       provider: m.provider || '',
       label: m.label || '',
       kind: transcribe.kindForModel(m),
-      auth: m.auth || 'apikey'
+      auth: m.auth || 'apikey',
+      source: 'project',
+      connected: connectedIds.includes(m.provider)
     }));
-    const app = settings.getApp();
-    const connections = Array.isArray(app.providers) ? app.providers : [];
-    // `connected` lets the mobile UI say "no provider connection yet" instead
-    // of offering a model whose request is guaranteed to 404 on the server.
-    for (const model of models) {
-      model.connected = connections.some((p) => p && p.id === model.provider);
+
+    const liveFailures = [];
+    if (wantLive && connectedIds.length) {
+      const { list, failures } = await modelList.liveModelsForMany(connectedIds, { force });
+      liveFailures.push(...failures);
+      const seen = new Set(rows.map((r) => r.provider + '\u0000' + r.id));
+      for (const m of list) {
+        if (!transcribe.isTranscriptionModel(m)) continue;
+        const key = (m.provider || '') + '\u0000' + m.id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push({
+          id: m.id,
+          provider: m.provider || '',
+          label: m.label || '',
+          kind: transcribe.kindForModel(m),
+          auth: 'apikey',
+          source: 'live',
+          connected: true
+        });
+      }
     }
-    return sendJSON(res, 200, { models, kinds: transcribe.TRANSCRIBE_KINDS, total: all.length });
+
+    return sendJSON(res, 200, {
+      models: rows,
+      kinds: transcribe.TRANSCRIBE_KINDS,
+      // `total` stays the project model count: it is what the picker's empty
+      // state reports as "filtered out", and it must not change meaning
+      // because a provider happened to be reachable.
+      total: all.length,
+      providers: connectedIds,
+      // One unreachable provider must not empty the picker, so its failure is
+      // reported here instead of being turned into a request-level error.
+      liveFailures
+    });
   }
 
   // POST /api/ai/transcribe

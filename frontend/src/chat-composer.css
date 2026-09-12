@@ -153,10 +153,197 @@ bottom: 0;
 color: #b30000;
 }
 .file-toolbar__stack svg {
-  display: block;
-  flex: 0 0 auto;
+display: block;
+flex: 0 0 auto;
+}
+/* ---- Glass orb variant (Settings → Chat defaults) ------------------- */
+/*
+  The orb is the same 44px trigger with the same 40px painted circle and the
+  same stacked ▲ / folder / ▼ glyph. Only the *paint* changes: the circle is
+  shaded like a sphere, and the folder is drawn in 3D, while the whole
+  pictogram tilts slowly on two axes.
+
+  Three rules keep this honest:
+
+  1. The stack keeps its 38px box and shifts 1px for the parallax, so the
+    chevrons and the counts do not move relative to each other. The orb's
+    tilt is a rotation *of the stack about the button's centre* — rotate
+    about any other origin and the 44px circle clips the glyph.
+  2. The animation only uses `transform`, `opacity` and `filter`. No layout
+    property is animated, so the composer never reflows and the button
+    stays on the compositor (see docs/features/chat-streaming-performance.md
+    for why that matters on a phone).
+  3. The whole variant is inside `prefers-reduced-motion: no-preference`.
+    With reduced motion the orb still renders — it just holds a single
+    frame, so the setting never costs the user a control style.
+*/
+
+/* Sphere shading. The base circle is --surface-2, so the orb still reads as
+  the same button; three sheens do the modelling — a wide glow at the upper
+  left, a tight specular hotspot inside it, and a darkened lower lip that
+  pins the sphere to the row. `::before` is inherited from the flat trigger
+  (inset 2px, --surface-2, 1px border, inherited corner radius), so only the
+  background/border are re-declared here. */
+.file-toolbar--orb .file-toolbar__trigger::before {
+background:
+radial-gradient(120% 120% at 76% 116%,
+rgba(0, 0, 0, 0.42) 0%,
+rgba(0, 0, 0, 0.16) 42%,
+rgba(0, 0, 0, 0) 68%),
+radial-gradient(26% 20% at 40% 26%,
+rgba(255, 255, 255, 0.55) 0%,
+rgba(255, 255, 255, 0) 72%),
+radial-gradient(66% 58% at 31% 21%,
+rgba(255, 255, 255, 0.20) 0%,
+rgba(255, 255, 255, 0.05) 52%,
+rgba(255, 255, 255, 0) 100%),
+var(--surface-2);
+border-color: rgba(255, 255, 255, 0.20);
+box-shadow:
+inset 0 3px 5px -3px rgba(255, 255, 255, 0.30),
+inset 0 -5px 8px -5px rgba(0, 0, 0, 0.55),
+0 4px 12px -6px rgba(0, 0, 0, 0.65);
+transition: background 80ms ease, border-color 80ms ease, box-shadow 80ms ease;
+}
+/* Hover / open brighten the sheen rather than replacing the background, so
+  the sphere keeps its shape in every interactive state. The flat trigger's
+  own hover rules set a flat --surface-3 — overridden here. */
+.file-toolbar--orb .file-toolbar__trigger:hover::before,
+.file-toolbar--orb .file-toolbar__trigger[aria-expanded="true"]::before {
+background-color: var(--surface-3);
+border-color: rgba(255, 255, 255, 0.28);
+}
+.file-toolbar--orb .file-toolbar__trigger:active::before {
+background-color: var(--surface);
+}
+/* Focus ring for the orb, which paints its own border. */
+.file-toolbar--orb .file-toolbar__trigger:focus-visible::before {
+border-color: var(--accent);
+box-shadow:
+0 0 0 2px var(--accent-soft),
+inset 0 3px 5px -3px rgba(255, 255, 255, 0.30),
+inset 0 -5px 8px -5px rgba(0, 0, 0, 0.55);
 }
 
+/* The pictogram carries the 3D animation. The resting transform is a single
+  number (`--orb-tilt`) consumed twice, so the two axes always move together
+  and the orbit is a clean loop rather than a drift. */
+
+/* A tap pushes the pictogram into the sphere and flattens the tilt — the
+  feedback a touch screen needs, since there is no hover to lean on. */
+/* The resting transform is a single number (`--orb-tilt`) consumed twice, so
+   the two axes always move together and the orbit is one clean loop rather
+   than a drift that needs re-tuning. Two axes, not one: a pure rotateY reads
+   as a spinning sticker, a pure rotateX as a nodding card. */
+.file-toolbar--orb .file-toolbar__stack {
+  --orb-tilt: 0deg;
+  transform: perspective(190px) rotateX(var(--orb-tilt)) rotateY(calc(var(--orb-tilt) * -0.4));
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  will-change: transform;
+}
+/* A tap pushes the pictogram into the sphere and flattens the tilt — the
+  feedback a touch screen needs, since there is no hover to lean on. */
+.file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__stack {
+transform: perspective(190px) translateZ(-2px) rotateX(0deg) rotateY(0deg) scale(0.94);
+transition: transform 90ms ease-out;
+}
+
+/* The counts glow instead of sitting flat on the folder: they are on the
+  front face of a lit object now. The halo is the same hue as the glyph, so
+  the 6:1 contrast documented above is unchanged — the glow only widens the
+  shape at 7px. Indexes 1 / 2 put the halo *over* the folder faces, which
+  the SVG elements leave at z-index 0. */
+.file-toolbar--orb .file-toolbar__git-stats {
+z-index: 2;
+}
+.file-toolbar--orb .file-toolbar__git-additions {
+text-shadow: 0 0 3px rgba(0, 200, 70, 0.75);
+}
+.file-toolbar--orb .file-toolbar__git-deletions {
+text-shadow: 0 0 3px rgba(255, 60, 60, 0.75);
+}
+
+/* 3D folder. The extrusion is a literal second silhouette 1px lower, not a
+  `translateZ` on a box: a folder glyph has no volume, so the light top face
+  plus a dark under-edge is what reads as depth at 28×22. */
+.file-toolbar__folder--3d {
+transform: translateZ(6px);
+}
+.file-toolbar__folder-face {
+position: absolute;
+inset: 0;
+z-index: 0;
+filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55));
+}
+.file-toolbar__folder-face path {
+fill: var(--fg);
+}
+.file-toolbar__folder-face--side {
+transform: translateY(1px);
+filter: brightness(0.42);
+}
+/* Rim light along the top edge of the pocket — additive, so it can only
+  brighten the fold it traces, never darken the top face. */
+.file-toolbar__folder-shine {
+position: absolute;
+inset: 0;
+z-index: 1;
+pointer-events: none;
+}
+.file-toolbar__folder-shine path {
+fill: none;
+stroke: #fff;
+stroke-width: 1.1;
+stroke-linecap: round;
+stroke-linejoin: round;
+opacity: 0.55;
+mix-blend-mode: screen;
+}
+.file-toolbar--orb .file-toolbar__folder-face {
+transform: translateZ(0px);
+}
+.file-toolbar--orb .file-toolbar__folder--3d {
+transform-style: preserve-3d;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+/* The two axes are deliberately out of phase (3.6s vs 4.7s): a symmetric
+  loop reads as a mechanism, two different periods read as a floating
+  object. Amplitudes stay inside ±6.5°, the angle at which the 38px stack
+  still clears the 44px button box at every frame. */
+@keyframes file-orb-tilt-x {
+0%, 100% { transform: perspective(190px) rotateX(-5.5deg) rotateY(2.2deg); }
+50%      { transform: perspective(190px) rotateX(5.5deg) rotateY(-2.2deg); }
+}
+@keyframes file-orb-tilt-y {
+0%, 100% { transform: perspective(190px) rotateX(2.4deg) rotateY(-6deg) scale(1.01); }
+50%      { transform: perspective(190px) rotateX(-2.4deg) rotateY(6deg) scale(1.01); }
+}
+/* Two alternating animations: the x-axis loop and a slower combined tilt.
+  Compositing one `transform` per element is what keeps this cheap, so the
+  two loops are the whole effect. */
+.file-toolbar--orb .file-toolbar__stack {
+animation: file-orb-tilt-x 3.6s ease-in-out infinite;
+}
+.file-toolbar--orb .file-toolbar__folder--3d {
+animation: file-orb-tilt-y 4.7s ease-in-out infinite;
+}
+/* Specular hotspot drifts across the sphere over the slowest period, so the
+  ball never looks like it stopped moving while the glyph pauses. */
+@keyframes file-orb-sheen {
+0%, 100% { opacity: 0.85; }
+50%      { opacity: 1; }
+}
+.file-toolbar--orb .file-toolbar__trigger::before {
+animation: file-orb-sheen 5.3s ease-in-out infinite;
+}
+/* Pausing on press stops the tilt fighting the :active flatten, and gives
+  the sphere a "held" feel. */
+.file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__stack {
+animation-play-state: paused;
+}
+}
 /* Dropdown menu — opens above the composer */
 .file-toolbar__menu {
   position: absolute;

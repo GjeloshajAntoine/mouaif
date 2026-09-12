@@ -36,6 +36,7 @@ import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runC
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.js';
+import { fileOrbFromApp, FILE_ORB_DEFAULT } from './fileOrb.js';
 import { createPager, recordInitialPage, shouldLoadOlder } from './pagination.js';
 import { costSnapshot } from './costSummary.js';
 
@@ -200,6 +201,10 @@ const enterForNewlineRef = useRef(true);
 // App-level "auto-retry failed sends" default (on by default). Read
 // on the send hot path so failed turns can re-run without a render.
 const autoRetryRef = useRef(true);
+// App-level composer file-button style ("glass orb" vs the flat circle).
+// Read by the FileToolbar on render, so it lives in render state
+// (the initial load below seeds it from the app settings).
+const [fileOrb, setFileOrb] = useState(FILE_ORB_DEFAULT);
   // Track which tools have been called in this chat session.
   // Used to auto-check tools in the visibility tree.
   const usedTools = useRef(new Set());
@@ -747,6 +752,7 @@ state.enterForNewline = typeof appSettings.enterForNewline === 'boolean' ? appSe
 state.autoRetry = typeof c.autoRetry === 'boolean'
 ? c.autoRetry
 : (typeof appSettings.autoRetry === 'boolean' ? appSettings.autoRetry : true);
+setFileOrb(fileOrbFromApp(app));
 persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
 messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
 state.costSnapshot = rMsgs.status === 200 ? costSnapshot(rMsgs.body) : null;
@@ -1312,6 +1318,7 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
   return {
     state, refs,
     imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp, customActions,
+    fileOrb,
     // Server id being started from a tool tree's reload control (null when
     // idle) — the tools popup renders busy state from it.
     mcpStartBusy,

@@ -82,6 +82,22 @@ check('an explicit transcription.kind always wins over inference', () => {
   }), 'openai-compatible');
 });
 
+check('isTranscriptionModel recognises the three signals', () => {
+  // 1. explicitly marked
+  assert.equal(transcribe.isTranscriptionModel({ id: 'my-asr', transcription: true }), true);
+  // 2. the id looks like speech-to-text
+  assert.equal(transcribe.isTranscriptionModel({ id: 'whisper-1', provider: 'openai-compatible' }), true);
+  assert.equal(transcribe.isTranscriptionModel({ id: 'openai/whisper-large-v3', provider: 'openrouter' }), true);
+  // 3. any Gemini model: audio is an inline part on the general models, so
+  //    there is no separate Gemini speech-to-text product to match on.
+  assert.equal(transcribe.isTranscriptionModel({ id: 'gemini-2.5-flash', provider: 'gemini' }), true);
+  assert.equal(transcribe.isTranscriptionModel({ id: 'gemini-2.5-flash', provider: 'openai-compatible' }), true);
+  // A plain chat model on a non-Gemini provider is not a candidate.
+  assert.equal(transcribe.isTranscriptionModel({ id: 'gpt-5', provider: 'openai-compatible' }), false);
+  assert.equal(transcribe.isTranscriptionModel({ id: 'claude-sonnet-4', provider: 'anthropic' }), false);
+  assert.equal(transcribe.isTranscriptionModel(null), false);
+});
+
 check('transcriptionCandidates unions marked models with id hints, else offers everything', () => {
   // A marked model and a hinted model both count; marking one must not hide
   // the other.
@@ -212,6 +228,15 @@ check('parseTranscribeResponse reads both families, including self-hosted spelli
   assert.equal(empty.code, 'EEMPTY');
   const unreadable = transcribe.parseTranscribeResponse('openai-compatible', 200, '<html>nope</html>');
   assert.equal(unreadable.code, 'EBADUPSTREAM');
+});
+
+check('a no-project catalog offers nothing but still names the shapes', () => {
+  // Covered by the http test's project-less case; here the pure part: an
+  // empty model list must not lose the family list, which is what the
+  // "Request shape" control renders.
+  assert.deepEqual(transcribe.transcriptionCandidates([]), []);
+  assert.deepEqual(transcribe.transcriptionCandidates(null), []);
+  assert.equal(transcribe.TRANSCRIBE_KINDS.length, 2);
 });
 
 check('mimeTypeFor maps the containers a MediaRecorder produces', () => {

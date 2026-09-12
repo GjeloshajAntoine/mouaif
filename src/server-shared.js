@@ -164,6 +164,7 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
   'promptSize',     // default prompt-size profile
 'enterForNewline', // composer keyboard default (Enter newline vs send)
 'autoRetry',      // auto-retry failed turns before the stream starts
+'fileOrbButton',  // composer file button renders as the animated glass orb
   'prompts',        // app-level custom prompts
   'githubCopilot',  // { clientId } for the custom OAuth app
   'modelPricing',   // per-model cost table
