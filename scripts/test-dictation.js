@@ -693,6 +693,167 @@ try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ 
     assert.equal(seam.text(), 'please read the note that matters', 'longest run first');
   });
 
+  // ---- The recorder half of a live take ---------------------------------
+  //
+  // `createSegmentRecorder` rotates the recorder so that every segment handed
+  // over is a complete file. A timeslice cannot do that (in Chrome, the second
+  // slice of a WebM take carries no container header at all), so the rotation —
+  // and the order it runs in — is pinned here rather than only through a
+  // browser.
+  check('createSegmentRecorder hands over one complete recording per rotation', () => {
+    const created = [];
+    const timers = new Map();
+    const segments = [];
+    let timerId = 0;
+    let ends = 0;
+    class FakeRecorder {
+      constructor(stream, options) {
+        this.stream = stream;
+        this.mimeType = (options && options.mimeType) || 'audio/webm';
+        this.state = 'inactive';
+        this.startArgs = null;
+        created.push(this);
+      }
+      start(...args) { this.state = 'recording'; this.startArgs = args; }
+      // The browser flushes the audio it captured before `onstop`, followed by
+      // the empty tail chunk it emits while tearing the recorder down.
+      stop() {
+        this.state = 'inactive';
+        this.ondataavailable({ data: new Blob([new Uint8Array(4096)], { type: this.mimeType }) });
+        this.ondataavailable({ data: new Blob([]) });
+        this.onstop();
+      }
+    }
+
+    const rotator = dictation.createSegmentRecorder({
+      recorder: FakeRecorder,
+      stream: { id: 'stream' },
+      mimeType: 'audio/webm;codecs=opus',
+      segmentMs: 3000,
+      onSegment: (blob, type) => segments.push({ blob, type }),
+      onEnd: () => { ends += 1; },
+      setTimeout: (fn, ms) => { const id = String(++timerId); timers.set(id, { fn, ms }); return id; },
+      clearTimeout: (id) => { timers.delete(id); }
+    });
+    // fireRotation() — run the one armed rotation, the way its timer would.
+    function fireRotation() {
+      const entry = Array.from(timers.entries())[0];
+      assert.ok(entry, 'a rotation is armed');
+      timers.delete(entry[0]);
+      entry[1].fn();
+    }
+
+    assert.equal(rotator.recording(), false, 'a rotator that was never started is idle');
+    rotator.start();
+    rotator.start();
+    assert.equal(created.length, 1, 'a second start does not open a second recorder');
+    assert.equal(rotator.recording(), true);
+    assert.equal(created[0].state, 'recording');
+    // The take is cut by *time*, not by a timeslice: `start()` is called with
+    // no argument, which is the whole point — that argument is what makes the
+    // recorder slice its output into fragments.
+    assert.deepEqual(created[0].startArgs, []);
+    assert.equal(timers.size, 1, 'one rotation is armed');
+    assert.equal(Array.from(timers.values())[0].ms, 3000, 'after LIVE_CHUNK_MS');
+
+    // ---- A rotation: one segment, and the take keeps going ----
+    fireRotation();
+    assert.equal(segments.length, 1);
+    assert.equal(segments[0].type, 'audio/webm;codecs=opus', 'the requested container is asked for again');
+    assert.equal(segments[0].blob.size, 4096, 'exactly the audio the recorder flushed');
+    assert.equal(created[0].state, 'inactive', 'the rotated recorder was stopped');
+    assert.equal(created.length, 2, 'and the next segment starts immediately');
+    assert.equal(rotator.recording(), true, 'the take is still open');
+    assert.equal(ends, 0, 'the take is not reported as over');
+    assert.equal(timers.size, 1, 'the next rotation is armed');
+
+    // ---- Stop: the segment in progress is the last one, not a dropped one ----
+    fireRotation();
+    assert.equal(created.length, 3);
+    assert.equal(segments.length, 2);
+    rotator.stop();
+    assert.equal(segments.length, 3, 'the segment in progress was handed over');
+    assert.equal(segments[2].blob.size, 4096);
+    assert.equal(ends, 1, 'the take is reported as over exactly once');
+    assert.equal(rotator.recording(), false);
+    assert.equal(timers.size, 0, 'nothing is left armed');
+    assert.equal(created.length, 3, 'and no further recorder is started');
+    rotator.stop();
+    assert.equal(ends, 1, 'stopping twice does not report a second end');
+  });
+
+  check('createSegmentRecorder survives a container it cannot record, and ends on an error', () => {
+    const created = [];
+    const segments = [];
+    const errors = [];
+    let ends = 0;
+    class PickyRecorder {
+      constructor(stream, options) {
+        // The requested container is a preference: a browser that cannot record
+        // it records its own default, so the retry without the option succeeds.
+        if (options && options.mimeType) throw new Error('unsupported mime type');
+        this.stream = stream;
+        this.mimeType = 'audio/ogg;codecs=opus';
+        this.state = 'inactive';
+        created.push(this);
+      }
+      start() { this.state = 'recording'; }
+      buffered() { this.ondataavailable({ data: new Blob([new Uint8Array(1024)], { type: this.mimeType }) }); }
+      fail() { this.state = 'inactive'; this.buffered(); this.onerror(new Error('the device went away')); }
+    }
+    const rotator = dictation.createSegmentRecorder({
+      recorder: PickyRecorder,
+      stream: {},
+      mimeType: 'audio/nonsense',
+      segmentMs: 10,
+      onSegment: (blob, type) => segments.push({ blob, type }),
+      onEnd: () => { ends += 1; },
+      onError: (err) => errors.push(err),
+      setTimeout: () => 1,
+      clearTimeout: () => {}
+    });
+    rotator.start();
+    assert.equal(created.length, 1, 'the retry without the requested container is what succeeds');
+    assert.equal(segments.length, 0);
+    // A recorder error ends the take, and whatever it captured before failing
+    // is still sent: the audio was recorded, so it is worth a request.
+    created[0].fail();
+    assert.equal(errors.length, 1, 'the caller is told');
+    assert.equal(ends, 1, 'and the take is over');
+    assert.equal(rotator.recording(), false);
+    assert.equal(segments.length, 1, 'what the recorder did capture is still sent');
+    assert.equal(segments[0].type, 'audio/ogg;codecs=opus', 'labelled with what the browser actually produced');
+  });
+
+  check('createSegmentRecorder hands over nothing rather than an empty recording', () => {
+    const segments = [];
+    let ends = 0;
+    class SilentRecorder {
+      constructor() { this.state = 'inactive'; this.mimeType = 'audio/webm'; }
+      start() { this.state = 'recording'; }
+      stop() {
+        this.state = 'inactive';
+        // Only the tail chunk the browser emits while it tears the recorder
+        // down: no audio, so there is nothing worth a request.
+        this.ondataavailable({ data: new Blob([]) });
+        this.onstop();
+      }
+    }
+    const rotator = dictation.createSegmentRecorder({
+      recorder: SilentRecorder,
+      stream: {},
+      segmentMs: 10,
+      onSegment: (blob) => segments.push(blob),
+      onEnd: () => { ends += 1; },
+      setTimeout: () => 1,
+      clearTimeout: () => {}
+    });
+    rotator.start();
+    rotator.stop();
+    assert.deepEqual(segments, [], 'an empty segment is not sent');
+    assert.equal(ends, 1, 'but the take still ends');
+  });
+
   check('liveTakeCost sums a take from its chunks, and says nothing when none is priced', () => {    // One chunk, one priced request: the take's figure is their sum, because a
     // live take is billed per chunk and no single chunk is the take. Compared
     // with an epsilon because the sum is floating point, like the chat totals.

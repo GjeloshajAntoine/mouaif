@@ -7,7 +7,7 @@ text to the app rather than sending it. It has two surfaces: a **Dictation**
 page under Settings that records, transcribes and shows an editable
 transcript, and a **microphone button in the chat composer** that transcribes
 *while the user speaks* and grows the draft as the words arrive. The provider
-credential never reaches the browser: the recording — or each chunk of it — is
+credential never reaches the browser: the recording — or each segment of it — is
 posted to `POST /api/ai/transcribe` and the server performs the upstream call.
 
 ## Usage
@@ -42,10 +42,11 @@ row (it shows whatever is set, so a value the user typed never looks lost):
 
 ### The composer microphone
 
-Inside a chat, the microphone button dictates **as you speak**. The recorder is
-given a 3-second timeslice, every chunk is posted as it arrives, and the
-transcript appears in the draft at the caret while the take is still running.
-Nothing is sent: dictation produces a draft, and sending stays a user decision.
+Inside a chat, the microphone button dictates **as you speak**. The take is cut
+into 3-second **segments**, each one a complete recording, and every finished
+segment is posted as it arrives — so the transcript appears in the draft at the
+caret while the take is still running. Nothing is sent: dictation produces a
+draft, and sending stays a user decision.
 The chat's status line under the composer is the live indicator (`12 words so
 far — tap the mic to stop.`), the button's tooltip carries the running clock
 (`Stop dictation (0:14)`), and the second tap closes the take and reports it
@@ -55,7 +56,7 @@ far — tap the mic to stop.`), the button's tooltip carries the running clock
 page's **Options** row (Settings → App defaults → Dictation). With it off the
 composer mic behaves the way it always did: one recording, one request, one
 transcript when the button is tapped a second time. Turn it off for a model
-that bills per minute or that rejects a chunk of audio on its own.
+that bills per minute or that rejects a short recording on its own.
 
 The model is resolved **before** the microphone opens, so a chat with no
 dictation model configured reports the reason in that same status line —
@@ -67,38 +68,54 @@ has none.
 
 #### How a live take is put together
 
-The recorder's timeslices are contiguous, so each one is transcribed as if it
-were a small recording and the answers are concatenated in speaking order.
-Three rules make that read as one transcript:
+A live take is a **series of complete recordings**, not one recording sliced up,
+and each one is transcribed as if it were a take from the dictation page:
 
-- **Spoken order, not arrival order.** Each chunk's transcript is kept under
-  the index the recorder gave it, so a chunk that is answered after a later one
-  is still spliced in where it was spoken.
-- **A seam is not repeated.** A provider restarts its context at every chunk,
+- **A segment is a file.** The take rotates the recorder every 3 seconds
+  (`LIVE_CHUNK_MS`), so the browser's own muxer writes each segment — container
+  header, tracks and timestamps included — and stops it cleanly. A
+  `MediaRecorder` *timeslice* cannot do this: it cuts the byte stream wherever
+  the flush lands, so only the first slice carries the container header and
+  every later slice is a raw continuation of a cluster. A provider's decoder
+  gets no header, no tracks and no timestamps from a fragment like that, so it
+  answers with an error or with nothing at all — a live take used to transcribe
+  only its first ~3 s, which is why the same words read far worse in the
+  composer than on this page.
+- **A boundary is a few milliseconds.** Rotating costs a gap between two
+  recordings (measured in Chrome on the order of 2 ms) instead of a broken file,
+  and the final, partial segment is still sent when the user stops — a take is
+  never left with its last words unsent.
+
+Three rules then make the segments read as one transcript:
+
+- **Spoken order, not arrival order.** Each segment's transcript is kept under
+  the index the recorder produced it in, so a segment that is answered after a
+  later one is still spliced in where it was spoken.
+- **A seam is not repeated.** A provider restarts its context at every segment,
   so the words at the boundary are commonly written twice (`… please save the
   note` / `note is saved`). The join drops the longest repeated run between two
   consecutive segments — words, not characters, so a sentence ending and the
   next one starting on the same word is repaired while `within` / `income` is
   not.
-- **A failure is not data loss.** A chunk that fails is skipped, and the next
+- **A failure is not data loss.** A segment that fails is skipped, and the next
   answer is the transcript of the whole live region rather than of its own
   words, so nothing said during the failure is lost. The status line says
-  `a chunk could not be transcribed; still listening…` while it happens, and the
-  take closes with `Added to the composer — part of what you said could not be
-  transcribed.` if it never recovered.
+  `part of what you said could not be transcribed; still listening…` while it
+  happens, and the take closes with `Added to the composer — part of what you
+  said could not be transcribed.` if it never recovered.
 
 The tail is *replaced*, never appended to twice: the chat view remembers where
 the live region starts, so the user's own text before the caret is untouched,
 the caret stays at the end of the growing transcript, and a take that is
 finished rewrites that region once with the final text.
 
-A live take reports **no cost per chunk**. Each chunk is a partial run of the
-audio, not the whole dictation, so pricing one would be a guess and the status
-line for a live take therefore says what happened to the take while it runs.
-When the take ends, however, its chunks have each been billed — so the take
-**settles with the sum of the prices its chunks answered with**, and that is the
-figure the status line reports and the number attributed to the chat. A live
-take whose chunks were all unpriced reports nothing at all. The dictation page
+A live take reports **no cost per segment**. Each segment is a partial run of
+the audio, not the whole dictation, so pricing one would be a guess and the
+status line for a live take therefore says what happened to the take while it
+runs. When the take ends, however, its segments have each been billed — so the
+take **settles with the sum of the prices its segments answered with**, and that
+is the figure the status line reports and the number attributed to the chat. A
+live take whose segments were all unpriced reports nothing at all. The dictation page
 (one request, one priced run) keeps its full `Last run` line either way.
 
 ### What a run cost
@@ -111,11 +128,11 @@ it — with one deliberate exception:
   (`dictation added · $0.00055`) and repeats it in the button's tooltip, **and
   attributes the priced run to the chat**, so the header Total, the chat list
   row and the project total all move by it (see below);
-- a **live take** reports no figure while it runs — a chunk is a partial run and
-  the take has no price yet — but the take **settles with the sum of its
-  chunks' prices** (`liveTakeCost`) once every one has answered, so a finished
+- a **live take** reports no figure while it runs — a segment is a partial run
+  and the take has no price yet — but the take **settles with the sum of its
+  segments' prices** (`liveTakeCost`) once every one has answered, so a finished
   live take reports and attributes its cost exactly like a one-request take; a
-  live take whose chunks were all unpriced reports nothing.
+  live take whose segments were all unpriced reports nothing.
 
 The number is resolved server-side with the same pricing table the chat uses —
 the model record's own `pricing`, then the app-level table, then the built-in
@@ -334,18 +351,19 @@ chat cannot appear here unless it can transcribe. See
 
 - **Recording is capped at 2:00** (`MAX_RECORDING_MS`) and stops itself rather
   than dropping the tail.
-- **A live take stops being live when the take stops.** Chunks still in flight
-  when the user taps are awaited before the take is closed — the last words are
-  the ones most likely to be in a request — and nothing is published after the
+- **A live take stops being live when the take stops.** Segments still in flight
+  when the user taps are awaited before the take is closed, the segment that was
+  being recorded is sent as the last one, and nothing is published after the
   take settles.
-- **Live dictation needs a recorder that timeslices.** `recorder.start(ms)` is
-  the one API the live path rests on; when the browser's recorder does not take
-  a timeslice, the take silently uses the one-request-on-stop path instead of
-  sending a single chunk as if it were the whole recording.
-- **A provider that wants a whole file still works.** A chunk is a valid
-  container on its own (every timeslice of a MediaRecorder stream is), so the
-  same `/audio/transcriptions` and Gemini call paths serve it; a model that
-  cannot handle short audio is the reason the switch exists.
+- **Live dictation needs a recorder that can be restarted, not one that
+  timeslices.** The live path builds a fresh `MediaRecorder` per segment and
+  stops it, so the browser writes each segment as a complete file; it never
+  calls `recorder.start(ms)`, whose only effect is to cut the byte stream into
+  fragments that no decoder can read.
+- **A provider that wants a whole file gets one.** A segment is a valid
+  container on its own, byte-for-byte what this page uploads, so the same
+  `/audio/transcriptions` and Gemini call paths serve it; a model that cannot
+  handle short audio is the reason the switch exists.
 - **The container follows the browser.** Opus-in-WebM on Chromium, Ogg/Opus on
   Firefox, MP4/AAC on Safari; the first type the browser reports as supported
   wins, and the recorder's own `mimeType` is used afterwards.
@@ -356,7 +374,7 @@ chat cannot appear here unless it can transcribe. See
   only feedback a phone shows — its own report is a `title`. It also resolves
   the model *before* opening the microphone, so a chat with nothing configured
   says so instead of recording a take it cannot send. In a live take the line
-  counts the words as they land, says when a chunk failed, and names what
+  counts the words as they land, says when a segment failed, and names what
   survived (`Added to the composer — part of what you said could not be
   transcribed.`) — the transcript itself is never rolled back over a failure.
 - **The model list is the union of two sources**: the project's `models`
@@ -529,8 +547,8 @@ previous one, so the last thing the user changed is what survives.
   the clock, base64 encoding, the model-selection rules (`resolveDefaultModel`,
   `dictationRank`, `recommendedModels`, `defaultDictationModel`), the live-take
   helpers (`LIVE_CHUNK_MS`, `joinTranscript`, `seamOverlap`,
-  `createLiveSegments`, `liveTakeCost`, `liveDictationEnabled`), and the
-  transcript action set. `transcribeAudio` forwards an optional `chatId`, which
+  `createLiveSegments`, `createSegmentRecorder`, `liveTakeCost`,
+  `liveDictationEnabled`), and the transcript action set. `transcribeAudio` forwards an optional `chatId`, which
   is what makes a run attributed to a chat. Pure enough to unit-test: the join,
   the slot-ordering rules and the take's summed price are decided from values
   alone, which is why they are not asserted through a recorder.
@@ -544,16 +562,18 @@ previous one, so the last thing the user changed is what survives.
   composer microphone. Both use the same helper module, so the two surfaces
   cannot disagree about the model or the dialect it is sent in. The page reuses
   `chat/modelPicker.js` for its pins and recents rather than reimplementing
-  them, so a pin means the same thing on both surfaces. `MicButton` starts the
-  recorder *with* a timeslice exactly when the app-level choice says live and
-  the recorder supports it; a recorder whose `start` takes no timeslice falls
-  back to the one-request-on-stop path rather than sending a single chunk as if
-  it were the whole take. It sends `chatId` on every request, which is what
-  attributes the run to the chat; the page does not send one.
+  them, so a pin means the same thing on both surfaces. `MicButton` records a
+  live take by rotating `MediaRecorder` — via `createSegmentRecorder` — exactly
+  when the app-level choice says live; with live off it keeps the
+  one-request-on-stop path (one recorder, one request when the button is tapped
+  a second time). It never hands the recorder a timeslice, and it sends
+  `chatId` on every request, which is what attributes the run to the chat; the
+  page does not send one.
 - `frontend/src/components/chat/Chat.jsx` — owns the chat's status line, so the
   microphone takes an `onStatus(message, state)` callback and writes its
   progress and failures there (`Chat.jsx` → `setStatus`). It also owns the
-  draft, so a live chunk is written through `onTranscript(text, { live: true })`
+  draft, so a live segment is written through
+  `onTranscript(text, { live: true })`
   — `live` tells `onTranscript` that this write owns a *tail* of the composer
   and the next one replaces it instead of appending again (the tail is found by
   the offset it recorded, and replaced at the caret when the user has edited it
@@ -603,15 +623,21 @@ node scripts/test-dictation-catalog-live.mjs  # the candidate filter and the
   # dictation now offers are absent from the transcription slice — which is why
   # both slices are read.
 node scripts/test-dictation-ui.mjs    # a browser fixture: prints a URL, or
-  # `--write <dir>` emits it to serve statically. Its fake recorder emits a
-  # chunk every 250 ms, so the composer-mic scenario shows a live take end to
-  # end — the draft filling in, then settling — in a couple of seconds. The
-  # mixed scenario carries both routes at once (an `openai-audio` Google row
-  # beside `openai-compatible` transcribers), so the picker's "Sends as" line
-  # can be seen saying `OpenAI chat` for one and `OpenAI-shaped` for another.
+  # `--write <dir>` emits it to serve statically. Its fake recorder is
+  # stop-driven (one recorder per segment), and it counts what it was asked
+  # for, so the composer-mic scenario shows the real rotation: leave the mic on
+  # past two 3-second segments and the draft fills in as they are answered
+  # (`fixture.recorders` grows by one per rotation, `fixture.startArgs` stays
+  # zero-argument). The mixed scenario carries both routes at once (an
+  # `openai-audio` Google row beside `openai-compatible` transcribers), so the
+  # picker's "Sends as" line can be seen saying `OpenAI chat` for one and
+  # `OpenAI-shaped` for another.
 node scripts/test-dictation-chat.cjs  # the composer mic inside the real
-  # ChatView (needs debug Chrome; see CDP_URL below). Its fake recorder is
-  # stop-driven, so this is the *non-live* path: one request, appended once.
+  # ChatView (needs debug Chrome; see CDP_URL below): the model comes from the
+  # app store, the draft is persisted, the cost is attributed, a live take is
+  # recorded by *rotating* (several segments, stitched in speaking order, cost
+  # settled as their sum) and no take ever asks the recorder for a timeslice.
+  # The fixture's fetch is fully stubbed, so nothing reaches a provider.
 ```
 
 The UI fixture has two scenarios, selected from its top bar (or by opening
@@ -624,14 +650,17 @@ stylesheet, then taps the composer microphone twice. It pins the things only
 that path can break: the model comes from the app-level `dictation` key (not
 from the chat), the transcript is appended to the draft *and* persisted, the
 run's cost reaches the chat's status line, an unpriced run adds no figure at
-all, and a tap with nothing configured reports why in that same line without
-opening the microphone. It needs a debug Chrome (`CDP_URL`, default
+all, a tap with nothing configured reports why in that same line without
+opening the microphone, and a live take is a sequence of whole recordings —
+one request per rotation, spliced in speaking order, settled with the sum of
+their prices, with the partial last segment still sent. It needs a debug Chrome (`CDP_URL`, default
 `http://127.0.0.1:9222`), like the model-picker browser tests.
 
-The live path is covered by `test-dictation.js` (the join, the seam and the
-slot ordering — the parts a recorder cannot decide) and by the UI fixture's
-composer-mic scenario (the wiring: a chunk write replacing the tail, the take
-settling once).
+The live path is covered on both sides: `test-dictation.js` decides the join,
+the seam, the slot ordering and the rotation itself (with a fake recorder and
+fake timers), and `test-dictation-chat.cjs` drives the real button in a real
+browser, where the rotation runs on its own clock and the segments are answered
+by a stubbed provider.
 
 ## Related
 

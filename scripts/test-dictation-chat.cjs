@@ -85,6 +85,16 @@ render(h(App), document.getElementById('app'));`,
 function installFixture(data) {
   const test = window.dictationTest = {
     requests: [], unexpected: [], errors: [], transcribeBodies: [], draftPatches: [],
+    // Every `start(...)` argument any take asked for. A live take rotates
+    // complete recordings, so this must never carry a timeslice (see
+    // createSegmentRecorder) — that is what the check near the end asserts.
+    timeslices: [],
+    // When set, a request is answered with the entry that follows the requests
+    // already made (`segmentAnswerBase`), rather than with the one canned
+    // sentence: that is how a take made of several segments is read back as one
+    // stitched transcript.
+    segmentAnswers: null,
+    segmentAnswerBase: 0,
     runs: 0, cost: 'priced'
   };
   addEventListener('error', (event) => test.errors.push(event.message));
@@ -130,8 +140,15 @@ function installFixture(data) {
       test.transcribeBodies.push(JSON.parse(init.body || '{}'));
       test.runs += 1;
       const priced = test.cost === 'priced';
+      const answers = test.segmentAnswers;
+      // A live take is one request per segment, answered in speaking order:
+      // the fixture mirrors that so a stitched transcript can be read back.
+      const nth = test.transcribeBodies.length - 1 - (test.segmentAnswerBase || 0);
+      const text = answers && answers.length
+        ? answers[Math.max(0, Math.min(nth, answers.length - 1))]
+        : (priced ? 'This is a dictated sentence about mouaif.' : 'Second dictated sentence.');
       return reply({
-        text: priced ? 'This is a dictated sentence about mouaif.' : 'Second dictated sentence.',
+        text,
         model: { id: 'gemini-2.5-flash', provider: 'gemini' },
         kind: 'gemini',
         bytes: 4096,
@@ -197,7 +214,14 @@ function installFixture(data) {
       this.state = 'inactive';
     }
     static isTypeSupported(type) { return type.indexOf('mp4') < 0; }
-    start() { this.state = 'recording'; if (this.onstart) this.onstart(); }
+    start(timeslice) {
+      this.state = 'recording';
+      test.timeslices.push(timeslice);
+      if (this.onstart) this.onstart();
+    }
+    // `stop()` is what makes a segment: the fake hands over a non-empty
+    // recording the way the browser flushes what it captured, then reports the
+    // stop. One recorder per segment, exactly as the rotation drives it.
     stop() {
       this.state = 'inactive';
       if (this.ondataavailable) this.ondataavailable({ data: new Blob([new Uint8Array(2048)], { type: this.mimeType }) });
@@ -290,8 +314,11 @@ async function withPage(bundleText, width, run) {
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
       return result.result.value;
     };
-    const waitFor = async (expression, label) => {
-    for (let attempt = 0; attempt < 100; attempt++) {
+    // `budget` is in 50 ms polls. The default is generous for a render or a
+    // fetch; a check that has to watch a live take rotate needs more, because
+    // the button rotates on its own schedule (LIVE_CHUNK_MS).
+    const waitFor = async (expression, label, budget = 100) => {
+    for (let attempt = 0; attempt < budget; attempt++) {
       if (await evaluate(expression)) return;
       await sleep(50);
     }
@@ -421,6 +448,50 @@ async function main() {
       unpriced.title === 'Added to the composer — review it, then send.');
     check('two runs, two upstream calls', await evaluate('dictationTest.runs === 2'));
 
+    // ---- A live take that rotates: several complete recordings -------------
+    //
+    // The regression this pins: a live take used to be cut with
+    // MediaRecorder's *timeslice*, whose later slices carry no container
+    // header (the EBML header is in the first slice alone), so the provider
+    // was handed fragments and only the take's first ~3 s were ever
+    // transcribed. A live take now rotates whole recordings: one request per
+    // rotation, in speaking order, settled with the sum of their prices — and
+    // the last, partial segment is still sent rather than dropped.
+    await evaluate(`dictationTest.cost = 'priced';
+      dictationTest.segmentAnswerBase = dictationTest.transcribeBodies.length;
+      dictationTest.segmentAnswers = ['The build is red.', 'And the note is saved.', 'So the release waits.'];`);
+    const runsBefore = await evaluate('dictationTest.runs');
+    const draftBefore = (await read()).composer;
+    await tap('.chat-view__mic-btn');
+    await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'true'`, 'the rotating take starts');
+    // Two rotations happen while the take runs, so this check does not have to
+    // know how long a segment is: LIVE_CHUNK_MS is the button's business.
+    await waitFor(`dictationTest.runs >= ${runsBefore + 2}`, 'the take rotates while the user is still speaking', 300);
+    const midTake = await read();
+    check('a live take posts a completed recording while the user is still speaking',
+      (await evaluate('dictationTest.runs')) >= runsBefore + 2);
+    check('and the chat says how many words have landed so far',
+      / words so far — tap the mic to stop\.$/.test(String(midTake.status)), 'status: ' + midTake.status);
+    check('and the first segment is already in the draft at the caret',
+      String(midTake.composer).indexOf('The build is red.') > 0 &&
+      String(midTake.composer).indexOf(draftBefore) === 0, 'composer: ' + midTake.composer);
+    await tap('.chat-view__mic-btn');
+    await waitFor(`document.querySelector('.chat-view__status').textContent.indexOf('dictation added') === 0`,
+      'the rotating take settles');
+    const rotated = await read();
+    const segmentCount = (await evaluate('dictationTest.transcribeBodies.length')) - runsBefore;
+    check('a live take sends one request per rotation, and the last (partial) segment too',
+      segmentCount >= 3, segmentCount + ' segment request(s)');
+    check('every segment carried the dictation model and this chat',
+      await evaluate(`dictationTest.transcribeBodies.slice(${runsBefore}).every(b => b.modelId === 'gemini-2.5-flash' && b.providerId === 'gemini' && b.chatId === ${JSON.stringify(CHAT_ID)})`));
+    check('the segments are stitched into the draft in speaking order',
+      rotated.composer === draftBefore + ' The build is red. And the note is saved. So the release waits.',
+      'composer: ' + JSON.stringify(rotated.composer));
+    check('and the take settles with the sum of its segments\' prices',
+      rotated.status === 'dictation added · $' + new Intl.NumberFormat('en-US', {
+        useGrouping: false, minimumFractionDigits: 2, maximumFractionDigits: 5
+      }).format(0.00055 * segmentCount), 'status: ' + rotated.status);
+
     // ---- A tap with nothing configured must say so, and must not record ----
     //
     // The state a fresh install is in: nothing remembered under the app-level
@@ -431,6 +502,8 @@ async function main() {
     // carries the reason, and that the microphone is never opened for a take
     // that cannot be sent.
     const streamsBefore = await evaluate('dictationTest.streamStopped');
+    const runsBeforeNoModel = await evaluate('dictationTest.runs');
+    const composerBeforeNoModel = (await read()).composer;
     await evaluate('dictationTest.dictationChoice = null; dictationTest.catalogModels = [];');
     await tap('.chat-view__mic-btn');
     await waitFor(`document.querySelector('.chat-view__status').textContent.indexOf('No dictation model yet') === 0`,
@@ -441,9 +514,15 @@ async function main() {
     check('and marks the line as an error', noModel.statusState === 'error');
     check('the recorder never started', noModel.recording === 'false');
     check('the microphone was never opened', await evaluate('dictationTest.streamStopped') === streamsBefore);
-    check('and no transcription was attempted', await evaluate('dictationTest.runs === 2'));
-    check('the draft the user already had is untouched',
-      noModel.composer === 'This is a dictated sentence about mouaif. Second dictated sentence.');
+    check('and no transcription was attempted', await evaluate(`dictationTest.runs === ${runsBeforeNoModel}`));
+    check('the draft the user already had is untouched', noModel.composer === composerBeforeNoModel);
+
+    // ---- No take slices the recorder -------------------------------------
+    //
+    // The one-line guard for the bug above: a take that asks for a timeslice
+    // gets slices, and only the first of them is a file the provider can read.
+    check('no take ever asked the recorder for a timeslice',
+      (await evaluate('dictationTest.timeslices')).every((arg) => !arg));
   });
   console.log('\nDictation composer regressions passed (' + checks + ' checks). No production files or live app data touched.');
 }

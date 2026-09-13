@@ -194,28 +194,32 @@ export async function transcribeAudio(options) {
 // ---- Live (as-you-speak) transcription ---------------------------------
 //
 // The composer's microphone can send audio *while* the user is still talking:
-// the recorder is given a timeslice, every chunk it emits is POSTed to the
-// same `/api/ai/transcribe`, and the answers are stitched into one transcript
-// that lands in the draft as it grows. Three facts shape the helpers below and
-// the component that uses them:
+// the take is cut into segments, each completed segment is POSTed to the same
+// `/api/ai/transcribe`, and the answers are stitched into one transcript that
+// lands in the draft as it grows. Three facts shape the helpers below and the
+// component that uses them:
 //
-//   * a chunk is transcribed as if it were a whole recording, so a chunk is a
-//     *segment* of the take — the transcript is the concatenation of the
-//     segments, in the order the audio was spoken, which is why the component
-//     keeps one slot per chunk index instead of pushing results as they land
-//     (two in-flight chunks can finish out of order);
-//   * the browser emits a final chunk while the recorder is being torn down
-//     and it carries no audio — a container header at best. Sending it costs a
-//     request and answers with an empty string, so the component drops the
-//     tail chunk rather than transcribing it;
-//   * nothing is repeated. Consecutive results from one microphone often share
-//     the words at the seam (the model hears the boundary twice), so the join
-//     drops a repeated prefix/suffix before appending.
+//   * a segment is a *complete recording* — the browser's own muxer writes it,
+//     container header and all — so it is the same kind of upload a take from
+//     the dictation page produces. `createSegmentRecorder` is what produces
+//     that, and its header explains why a timeslice cannot: only the first
+//     timeslice is ever a file, which is why a chat take transcribed far worse
+//     than the same words on the page;
+//   * a segment is transcribed as if it were a whole recording, so the
+//     transcript is the concatenation of the segments, in the order the audio
+//     was spoken, which is why the component keeps one slot per segment index
+//     instead of pushing results as they land (two in-flight segments can
+//     finish out of order);
+//   * the words at a boundary are the ones no single request heard whole.
+//     Consecutive results from one microphone often share them (the model
+//     hears the boundary from both sides), so the join drops a repeated
+//     prefix/suffix before appending.
 
 // LIVE_CHUNK_MS — how much audio one live request carries. Three seconds is a
-// compromise the provider catalogue forces: a chunk is standalone, so it has to
-// be long enough to hold a couple of words with context, and short enough that
-// the model does not tidy up a sentence across the gap. `MAX_RECORDING_MS`
+// compromise the provider catalogue forces: a segment is standalone, so it has
+// to be long enough to hold a couple of words with context and short enough
+// that the model does not tidy up a sentence across the gap — while still
+// short enough that the draft grows as the user speaks. `MAX_RECORDING_MS`
 // caps the take at two minutes, so this is at most ~40 requests.
 export const LIVE_CHUNK_MS = 3000;
 
@@ -356,6 +360,136 @@ return Math.max(0, (Number(issued) || 0) - slots.size);
 // an empty draft check this rather than `text()`.
 answered() {
 return slots.size;
+}
+};
+}
+
+// createSegmentRecorder(options) -> { start(), stop(), recording() }
+//
+// The recorder half of a live take: one MediaRecorder at a time on one stream,
+// rotated so that **every segment handed over is a file**.
+//
+//   * `onSegment(blob, mimeType)` — one complete recording, in speaking order.
+//     Called for every rotation, and once more when the take ends, so the
+//     segment in progress is never dropped.
+//   * `onEnd()` — the take is over: no further `onSegment` can arrive.
+//   * `onError(event)` — the recorder failed; whatever it captured has already
+//     been handed over, and the caller owns the wording of the failure.
+//
+// Why not `MediaRecorder.start(LIVE_CHUNK_MS)`: a timeslice cuts the *byte
+// stream* at whatever offset the flush happens to land on. Only the first
+// slice carries the container header, so every later slice is a fragment —
+// measured in Chrome, slice 0 of a WebM take starts with the EBML magic
+// `1a 45 df a3`, slice 1 starts with the size field of a block whose element
+// id was the previous slice's last byte, and a boundary can fall anywhere at
+// all. A fragment is not a container: the decoder gets no header, no tracks
+// and no timestamps, so the provider answers with an error, with nothing, or
+// with something invented. That is why a live take used to transcribe far
+// worse in the composer than the same words on the dictation page — only the
+// take's first ~3 s were ever a valid recording.
+//
+// Rotating costs a boundary and buys a decodable file in whatever container
+// this browser records (WebM/Opus, Ogg/Opus, MP4/AAC): measured in Chrome, the
+// next recorder is capturing within ~2 ms of the previous one's last audio
+// block, and each segment carries its full `segmentMs` of audio. The provider
+// still restarts its context at every segment, which is what the seam rule in
+// `joinTranscript` is for.
+//
+// Everything it needs from the environment is injected — the constructor, the
+// timers, the Blob factory — so the rotation can be tested without a browser
+// and without waiting three seconds.
+export function createSegmentRecorder(options) {
+const o = options || {};
+const Recorder = o.recorder;
+const setTimer = o.setTimeout || ((fn, ms) => setTimeout(fn, ms));
+const clearTimer = o.clearTimeout || ((timer) => clearTimeout(timer));
+const wait = Number(o.segmentMs) > 0 ? Number(o.segmentMs) : LIVE_CHUNK_MS;
+// The container the recorder was asked for. Cleared when the constructor
+// rejects it, so the retry (and every later segment) lets the browser choose.
+let mimeType = o.mimeType || '';
+let current = null;
+let parts = [];
+let timer = null;
+// `active` is the caller's intent, not the recorder's state: a rotation runs
+// while it stays true, and turning it false is what makes the segment in
+// progress the last one.
+let active = false;
+function makeBlob(chunks, type) {
+if (o.createBlob) return o.createBlob(chunks, type);
+return new Blob(chunks, { type });
+}
+function typeOf(recorder) {
+return recorder.mimeType || mimeType || 'audio/webm';
+}
+// build() — a recorder wired to this take, remembering what it is given. The
+// container we ask for is a preference, never a requirement: a browser that
+// rejects it records its own default, and the type follows what it did.
+function build() {
+let recorder;
+try {
+recorder = mimeType ? new Recorder(o.stream, { mimeType }) : new Recorder(o.stream);
+} catch {
+mimeType = '';
+recorder = new Recorder(o.stream);
+}
+parts = [];
+recorder.ondataavailable = (event) => {
+if (event && event.data && event.data.size) parts.push(event.data);
+};
+recorder.onstop = () => hand(recorder, typeOf(recorder));
+recorder.onerror = (event) => fail(recorder, typeOf(recorder), event);
+return recorder;
+}
+// hand(recorder, type) — hand this recorder's audio over, then either start the
+// next segment (the take is still running) or report the end of the take.
+function hand(recorder, type) {
+const chunks = parts;
+parts = [];
+if (current === recorder) current = null;
+if (timer) { clearTimer(timer); timer = null; }
+if (chunks.length && o.onSegment) o.onSegment(makeBlob(chunks, type), type);
+if (active) { begin(); return; }
+if (o.onEnd) o.onEnd();
+}
+function fail(recorder, type, event) {
+// A recorder error ends the take: what it did capture is still worth sending,
+// which is what `hand` does before `onEnd` reports the take as finished.
+active = false;
+hand(recorder, type);
+if (o.onError) o.onError(event || new Error('The recorder stopped unexpectedly.'));
+}
+function rotate() {
+timer = null;
+const recorder = current;
+if (!recorder || recorder.state === 'inactive') return;
+try { recorder.stop(); } catch { /* already stopping */ }
+}
+function begin() {
+current = build();
+timer = setTimer(rotate, wait);
+current.start();
+}
+return {
+start() {
+if (active || !Recorder) return;
+active = true;
+begin();
+},
+// stop() — end the take. `active` is cleared *before* the recorder is stopped,
+// so the segment that comes back is the last one whether the browser delivers
+// `onstop` on a later task (it does) or inside `stop()` itself.
+stop() {
+if (!active) return;
+active = false;
+if (timer) { clearTimer(timer); timer = null; }
+const recorder = current;
+if (!recorder) { if (o.onEnd) o.onEnd(); return; }
+try { recorder.stop(); } catch { hand(recorder, typeOf(recorder)); }
+},
+// recording() — whether a take is open. Read by the caller's unmount path and
+// by the tests; the button tracks how it should look by itself.
+recording() {
+return active;
 }
 };
 }

@@ -55,13 +55,12 @@ const KINDS = [
 window.fixture = {
   failTranscribe: false,
   recorded: [],
-  // The composer-mic scenario transcribes as you speak: the fake recorder
-  // hands over a chunk every liveChunkMs (a stand-in for the real 3 s), and
-  // the first two answers repeat the word 'sentence' at the seam so the join
-  // rule is visible in the draft.
+  // The composer-mic scenario transcribes as you speak: the button rotates a
+  // *complete* recording every LIVE_CHUNK_MS (3 s — its own constant, not a
+  // fixture knob), so leaving the mic on for more than six seconds shows two
+  // rotations. The first two answers repeat the word 'sentence' at the seam,
+  // which is what makes the join rule visible in the draft.
   liveTakes: true,
-  liveChunkMs: 250,
-  liveChunks: 2,
   transcribeCount: 0,
   // Derived from the hash, not only from the click handler: opening
   // #live-only directly (the normal way to look at one scenario) has to select
@@ -158,41 +157,31 @@ window.fetch = async (input, options = {}) => {
 
 // ---- Fake microphone ---------------------------------------------------
 //
-// The recorder hands over audio on its timeslice, which is the whole of what
-// "live" means from the browser's side: start(ms) emits a chunk every ms,
-// and stop() emits the final (empty) one the real recorder also produces.
-// The fake drives that on a short timer rather than waiting 3 seconds, so the
-// composer-mic scenario shows the as-you-speak path in a couple of seconds.
+// One recorder per segment, the way the rotation drives it: start() begins
+// recording, stop() hands over what it captured and reports the stop, and the
+// button builds the next recorder. Nothing here slices its output: a live take
+// rotates *complete* recordings (see createSegmentRecorder), so a fake that
+// emitted fragments would be demonstrating the bug rather than the feature.
+// The counters below make that visible in the console: fixture.recorders
+// grows by one per rotation, and fixture.startArgs records that no take ever
+// asked for a timeslice.
 class FakeMediaRecorder {
   constructor(stream, options = {}) {
     this.stream = stream;
     this.mimeType = options.mimeType || 'audio/webm';
     this.state = 'inactive';
-    this.chunks = 0;
-    this.timer = null;
     window.fixture.lastRecorder = this;
+    window.fixture.recorders = (window.fixture.recorders || 0) + 1;
   }
   static isTypeSupported(type) { return type.indexOf('mp4') < 0; }
-  start(timeslice) {
+  start(...args) {
+    window.fixture.startArgs = (window.fixture.startArgs || []).concat(args.length);
     this.state = 'recording';
     if (this.onstart) this.onstart();
-    if (timeslice) {
-      this.timer = setInterval(() => {
-        if (this.state !== 'recording') return;
-        // A handful of timeslices, then the recorder stops being fed audio —
-        // the same shape as a real take that ends without the user tapping.
-        if (this.chunks >= (window.fixture.liveChunks || 2)) { clearInterval(this.timer); this.timer = null; return; }
-        this.chunks += 1;
-        if (this.ondataavailable) this.ondataavailable({ data: new Blob([new Uint8Array(2048)], { type: this.mimeType }) });
-      }, window.fixture.liveChunkMs || 250);
-    }
   }
   stop() {
     this.state = 'inactive';
-    if (this.timer) { clearInterval(this.timer); this.timer = null; }
-    // The recorder's final chunk carries no audio.
-    if (this.ondataavailable) this.ondataavailable({ data: new Blob([], { type: this.mimeType }) });
-    if (this.ondataavailable && !this.chunks) this.ondataavailable({ data: new Blob([new Uint8Array(2048)], { type: this.mimeType }) });
+    if (this.ondataavailable) this.ondataavailable({ data: new Blob([new Uint8Array(2048)], { type: this.mimeType }) });
     if (this.onstop) this.onstop();
   }
 }
