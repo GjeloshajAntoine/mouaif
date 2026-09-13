@@ -405,14 +405,31 @@ chat cannot appear here unless it can transcribe. See
   alphabetical. The rank is display only — the transport is still the server's
   `kind`.
 - **The choice is remembered app-wide**, under the `dictation` key in the app
-  store, and written back on every change — including clearing it. That is what
-  makes the composer microphone and a later visit agree with the page.
-  Remembering it takes two server-side registrations, not one: the key must be
-  in the client snapshot allowlist (`CLIENT_SETTINGS_KEYS`), or the store keeps
-  it and the response drops it, which reads exactly like a pick that never
-  saved — the page came up on "Pick a model" on every visit and the microphone
-  answered "No dictation model yet" however often a model was chosen. It is
-  also in `RESETTABLE_APP_KEYS`, so **Settings → About → Reset** can clear it.
+store, and written back on every change — including clearing it. That is what
+makes the composer microphone and a later visit agree with the page.
+Remembering it takes two server-side registrations, not one: the key must be
+in the client snapshot allowlist (`CLIENT_SETTINGS_KEYS`), or the store keeps
+it and the response drops it, which reads exactly like a pick that never
+saved — the page came up on "Pick a model" on every visit and the microphone
+answered "No dictation model yet" however often a model was chosen. It is
+also in `RESETTABLE_APP_KEYS`, so **Settings → About → Reset** can clear it.
+- **A remembered model is not overridden by the fast catalog pass.** The page
+reads its catalog in two passes — the project's own records first (the fast
+first paint), then the providers' live lists. A model that lives on a provider
+connection is absent from the first pass, so letting that pass resolve a
+fallback left the picker on the project's default and the `onlyIfEmpty` live
+pass then declined to correct it — the model reverted on every visit and looked
+like it had never saved. The "already chosen" flag the live pass consults is
+now written **only** by an explicit pick, so a fast-pass fallback never counts
+as one.
+- **Every write carries the whole record, and writes are serialized.** The
+`dictation` record holds several fields (the model pair, `live`, the two
+per-run hints) and `PUT /api/settings/app` merges shallowly, so each change
+has to send the full record. Two changes made close together used to race:
+both read the same "before", and the slower response landed last carrying the
+older field — the first change appeared to be forgotten, most visibly the
+model. The page now keeps the pending record and chains each write behind the
+previous one, so the last thing the user changed is what survives.
 - **There is no request-shape control.** The dialect a model is sent with is a
   property of its provider connection *and* of what the provider reports about
   the model, and the shapes are not interchangeable — a Gemini connection

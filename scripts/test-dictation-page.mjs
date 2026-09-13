@@ -90,8 +90,14 @@ async function fetchJson(url, init) {
     return { status: 200, body: { projects: current.projects || [] } };
   }
   if (endpoint === '/api/ai/transcribe/models') {
-    const live = new URL(url, 'http://fixture').searchParams.get('live') !== '0';
-    return { status: 200, body: catalogFor(live) };
+  const live = new URL(url, 'http://fixture').searchParams.get('live') !== '0';
+  // The two passes are deliberately far apart in cost: the project read is a
+  // settings lookup, while the live read is one upstream round trip per
+  // connected provider. A fixture that resolves both at the same instant never
+  // exercises the render that happens *between* them, which is where a
+  // fast-pass fallback used to claim the selection.
+  if (live) await new Promise((resolve) => setTimeout(resolve, 15));
+  return { status: 200, body: catalogFor(live) };
   }
   throw new AssertionError('unexpected dependency: ' + endpoint);
 }
@@ -114,6 +120,7 @@ const dictation = await import('data:text/javascript;base64,' + Buffer.from(
 function createView(options) {
 const opt = options || {};
 const states = [];
+const refs = [];
 const saved = [];
 let cursor = 0;
   let first = true;
@@ -156,7 +163,14 @@ let cursor = 0;
       return [states[i], (value) => { states[i] = typeof value === 'function' ? value(states[i]) : value; }];
     },
     useEffect: (effect) => { effects.push(effect); },
-    useRef: (initial) => ({ current: initial === undefined ? null : initial }),
+// Persist across renders like Preact's refs: `userPickRef` is the flag the
+// catalog passes consult, so a fresh object per render would hide the very
+// bug the "fast pass rewrites a remembered model" case exists to pin.
+useRef: (initial) => {
+const i = cursor++;
+if (!refs[i]) refs[i] = { current: initial === undefined ? null : initial };
+return refs[i];
+},
     useCallback: (fn) => fn,
     h: (tag, attrs, ...children) => {
       const node = { tag, attrs: attrs || {}, children: children.flat() };
@@ -177,11 +191,21 @@ let cursor = 0;
     return nodes;
   }
   // One paint cycle: run the effects the render registered, then let the
-  // catalog promise settle before the next render reads the state.
-  async function settle() {
-    effects.forEach((effect) => effect());
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
+// catalog promise settle before the next render reads the state.
+//
+// The re-render between the two catalog passes is part of the contract: the
+// fast pass sets state, Preact re-renders, and only then does the live pass
+// resolve. Body-level statements that re-sync a ref from state on every
+// render therefore *do* run in between — which is exactly how a fast-pass
+// fallback used to claim the selection before the complete list arrived.
+async function settle() {
+effects.forEach((effect) => effect());
+render();
+await new Promise((resolve) => setTimeout(resolve, 10));
+render();
+await new Promise((resolve) => setTimeout(resolve, 15));
+render();
+}
   // settle() without re-running the effects: for waiting on a call the *user*
   // triggered (a pick, a save) rather than on a paint pass.
   async function flush() {
@@ -347,6 +371,80 @@ function useCase(caseOptions) {
   const readouts = kindReadouts(nodes);
   assert.equal(readouts[0].children.join(''), 'Gemini');
   assert.equal(readouts[0].attrs.title, 'Gemini (inline audio)');
+}
+
+// ---- A remembered model survives the fast catalog pass -----------------
+//
+// The fast pass (`live=0`) serves the project's own records only, so a model
+// picked from a provider's live catalog is absent from it. When the fallback
+// that pass resolved counted as "the user already chose", the `onlyIfEmpty`
+// live pass refused to apply the remembered model that only it contains — so
+// the page came up on the project's default on every visit and the choice
+// looked like it had never saved.
+{
+const view = useCase({
+projectDir: '/fixture/project',
+app: { dictation: { modelId: 'gemini-2.5-pro', providerId: 'gemini' } },
+// The fast pass knows only the project's own whisper row.
+projectModels: [{ id: 'whisper-1', provider: 'openai-compatible', kind: 'openai-compatible', source: 'project', connected: true }],
+// The live pass adds the remembered row, and only there does it exist.
+catalog: {
+models: [
+{ id: 'whisper-1', provider: 'openai-compatible', kind: 'openai-compatible', source: 'project', connected: true },
+{ id: 'gemini-2.5-pro', provider: 'gemini', label: 'Gemini 2.5 Pro', kind: 'gemini', source: 'live', connected: true }
+],
+kinds: KINDS, total: 1, providers: ['gemini', 'openai-compatible'], liveFailures: []
+}
+});
+view.render();
+await view.settle();
+assert.deepEqual(selectionOf(pickerNodes(view.render())[0]), { providerId: 'gemini', modelId: 'gemini-2.5-pro' },
+'the remembered live model is not replaced by the fast pass fallback');
+// The fallback still applies once the complete list has been read and the
+// remembered model is really gone.
+const gone = useCase({
+projectDir: '/fixture/project',
+app: { dictation: { modelId: 'gemini-deleted', providerId: 'gemini' } },
+projectModels: [{ id: 'whisper-1', provider: 'openai-compatible', kind: 'openai-compatible', source: 'project', connected: true }],
+catalog: {
+models: [{ id: 'whisper-1', provider: 'openai-compatible', kind: 'openai-compatible', source: 'project', connected: true }],
+kinds: KINDS, total: 1, providers: ['openai-compatible'], liveFailures: []
+}
+});
+gone.render();
+await gone.settle();
+assert.deepEqual(selectionOf(pickerNodes(gone.render())[0]), { providerId: 'openai-compatible', modelId: 'whisper-1' },
+'a deleted memory still falls through to the lone candidate');
+}
+
+// ---- Two quick dictation changes both survive --------------------------
+//
+// The `dictation` app record holds several fields and every write sends the
+// whole record, so two changes made close together used to race: both read
+// the same "before", and the slower response landed last with the older
+// field. Whichever change was made first appeared to be forgotten — most
+// visibly the model, which read as "it always defaults to the same".
+{
+const view = useCase({ projectDir: '/fixture/project' });
+view.render();
+await view.settle();
+// A model pick and a Live toggle, without waiting for the first write.
+picker(view.render()).onChange({ providerId: 'gemini', modelId: 'gemini-2.5-flash' });
+const openOptions = all(view.render(), (n) => buttonClass(n).includes('dictation__options-toggle'))[0];
+openOptions.attrs.onClick();
+const liveBox = find(view.render(), (n) => n.attrs && n.attrs.id === 'dictation-live');
+liveBox.attrs.onChange({ target: { checked: false } });
+await view.flush();
+const written = view.saved.at(-1);
+assert.deepEqual({ ...written.dictation }, { modelId: 'gemini-2.5-flash', providerId: 'gemini', live: false },
+'both the model and the live flag are in the final write');
+// Every write the page made carries the model: an earlier write that drops it
+// is a write that can win the race and revert the pick.
+for (const patch of view.saved) {
+if (!patch.dictation) continue;
+assert.equal(patch.dictation.modelId, 'gemini-2.5-flash',
+'no write drops the model the user picked');
+}
 }
 
 // ---- A model that no longer exists is never preselected ----------------

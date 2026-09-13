@@ -126,12 +126,14 @@ export function DictationView() {
   const [statusState, setStatusState] = useState('');
   const [lastRun, setLastRun] = useState(null);
 
-  // Live copies of the two pieces of state `applyCatalog` has to read without
-  // becoming an effect dependency: the shape the user has explicitly picked,
-  // and the model currently selected. Reading state directly would work but
-  // would also close the catalog effect over stale values on its second pass.
-  const modelIdRef = useRef('');
-  modelIdRef.current = modelId;
+  // The model the *user* has explicitly picked in this session, or '' when they
+  // have not picked one yet. Only `onPickModel` writes it. It must not be
+  // synced from `modelId` on every render: the fast catalog pass (`live=0`)
+  // resolves a fallback from the project's own records, and if that fallback
+  // counted as a pick the `onlyIfEmpty` live pass would refuse to apply the
+  // remembered model that only the complete list contains — the remembered
+  // model then looked like it reverted to the project's default on every visit.
+  const userPickRef = useRef('');
 
   const mediaRecorderRef = useRef(null);
   const streamRef = useRef(null);
@@ -169,9 +171,12 @@ const [catalogProviders, setCatalogProviders] = useState([]);
 // There is no request shape to choose: the shape follows from the model's
 // provider connection (see kindForModel on the server), which is the only
 // thing that knows how to address it. So a catalog response only has to pick a
-// sensible default model — `opts.onlyIfEmpty` protects a model the user has
-// picked since the first pass resolved, so a slow live response cannot
-// overwrite it.
+// sensible default model — `opts.onlyIfEmpty` protects a selection the *user*
+// has made since the first pass resolved, so a slow live response cannot
+// overwrite it. It is keyed on `userPickRef`, not on the current selection:
+// the fast pass (`live=0`) resolves a fallback from the project's records
+// alone, and if that counted as the user's choice the complete pass would
+// refuse to apply the remembered model that only it contains.
 function applyCatalog(catalog, saved, opts) {
   const onlyIfEmpty = !!(opts && opts.onlyIfEmpty);
   const rows = catalog.models;
@@ -183,7 +188,7 @@ function applyCatalog(catalog, saved, opts) {
   // a lone model whose name says it transcribes is adopted; otherwise the
   // picker asks. `defaultDictationModel` owns that order (see dictation.js).
   const fallback = defaultDictationModel(rows, saved);
-  if (fallback && (!onlyIfEmpty || !modelIdRef.current)) {
+  if (fallback && (!onlyIfEmpty || !userPickRef.current)) {
     setModelId(fallback.modelId);
     setProviderId(fallback.providerId);
   }
@@ -569,7 +574,7 @@ function onPickModel(next) {
   // against the ref, and a state update would not be visible to a response
   // that is already in flight — without this a slow live pass can overwrite
   // the model the user just picked.
-  modelIdRef.current = nextModelId;
+  userPickRef.current = nextModelId;
   setModelId(nextModelId);
   setProviderId(nextProviderId);
   setStatus('');
@@ -582,12 +587,32 @@ function onPickModel(next) {
 
   // Persisting the choice is best-effort: a failure to remember the model must
   // never look like a failure to record, so nothing here reports an error.
+  //
+  // The merge is optimistic *and* serialized. `dictation` is one app-store
+  // record holding several fields (the model pair, `live`, the two per-run
+  // hints), and every write sends the whole record because the endpoint merges
+  // shallowly. Two changes made close together therefore used to race — both
+  // read the same "before", and the slower response landed last carrying the
+  // older field, so the first change appeared to be forgotten (most visibly the
+  // model, which read as "it always defaults to the same"). The record and the
+  // write chain live in a ref: both have to outlive a render, because a state
+  // update happens between the two changes.
+  const dictationWriteRef = useRef({ record: null, chain: Promise.resolve() });
   async function remember(patch) {
+  const state = dictationWriteRef.current;
+  state.record = Object.assign({}, state.record, patch);
+  state.chain = state.chain.then(async () => {
   try {
   const app = await fetchJson('/api/settings');
-  const current = (app.status === 200 && app.body && app.body.app && app.body.app[APP_KEY]) || {};
-  await saveApp({ [APP_KEY]: Object.assign({}, current, patch) });
+  const stored = (app.status === 200 && app.body && app.body.app && app.body.app[APP_KEY]) || {};
+  // Anything the server knows that this session does not is kept: another
+  // tab may own a field this page never touched.
+  const next = Object.assign({}, stored, state.record);
+  state.record = next;
+  await saveApp({ [APP_KEY]: next });
   } catch { /* the picker still works for this session */ }
+  });
+  return state.chain;
   }
   // onToggleLive(next) — the chat's live dictation, remembered next to the model
   // it applies to. The switch moves immediately (it is a preference, not a
