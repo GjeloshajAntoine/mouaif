@@ -239,6 +239,12 @@ const chipLabels = (nodes) => buttons(nodes)
   .filter((n) => buttonClass(n).startsWith('btn'))
   .map((n) => n.children.join(''));
 const statusText = (nodes) => (find(nodes, (n) => buttonClass(n).includes('dictation__status')) || { children: [''] }).children.join('');
+// The catalog read-out under the picker: its sentence, and the spinner that
+// sits in front of it while a pass is still in flight (read as elements, since
+// the spinner is a real node rather than a CSS background).
+const catalogLine = (nodes) => find(nodes, (n) => buttonClass(n).includes('dictation__catalog-line'));
+const catalogText = (node) => node.children.filter((c) => typeof c === 'string').join('');
+const catalogSpinner = (node) => node.children.find((c) => c && typeof c === 'object' && buttonClass(c) === 'dictation__spinner');
 
 function useCase(caseOptions) {
   current = {
@@ -293,6 +299,20 @@ function useCase(caseOptions) {
     assert.equal(node.attrs.disabled, true, 'nothing is offered before there is anything to act on');
   }
   assert.equal(picker(nodes).placeholder, 'Loading models…', 'the picker says it is loading');
+  // …and the read-out under it says the same thing, in words *and* with a
+  // spinner. This is the first paint of a fresh install — before either pass
+  // has answered — and the note used to read "No models" here, which is the
+  // one conclusion a request that is still in flight must not invite.
+  const coldNote = catalogLine(nodes);
+  assert.ok(coldNote, 'the catalog read-out renders while it loads');
+  assert.ok(catalogSpinner(coldNote), 'the loading line leads with a spinner');
+  assert.equal(coldNote.attrs['aria-busy'], 'true', 'and is announced as busy, not only animated');
+  assert.equal(catalogText(coldNote), 'Loading models…', 'the sentence names the wait');
+  // Nothing else spins on a cold page: the record button is idle, and its dot
+  // is still the dot (the spinner replaces it only for the hand-off state).
+  assert.equal(find(nodes, (n) => buttonClass(n) === 'dictation__record-dot') !== null, true,
+    'an idle record button keeps its dot');
+  assert.equal(record.attrs['aria-busy'], undefined, 'and is not reported as busy');
   // Nothing has run yet, so nothing claims a cost: the run line only exists
   // once there is a run to report.
   assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__last-run')), null);
@@ -325,6 +345,13 @@ function useCase(caseOptions) {
   assert.equal(typeof picker(nodes).onTogglePin, 'function', 'a row can be pinned from here');
   // The read-out reports the transport of the model that was adopted.
   assert.deepEqual(kindReadouts(nodes).map((n) => n.children.join('')), ['OpenAI-shaped']);
+  // With both passes in, the read-out stops loading: no spinner, no
+  // `aria-busy`, and the sentence is now about what answered.
+  const settledNote = catalogLine(nodes);
+  assert.equal(catalogSpinner(settledNote), undefined, 'the spinner is gone once the catalog has answered');
+  assert.equal(settledNote.attrs['aria-busy'], undefined, 'and the region is no longer busy');
+  assert.ok(catalogText(settledNote).includes('project model'),
+    'the note reports what answered: ' + catalogText(settledNote));
   // The read order matters: settings once, then the fast project pass, then
   // the live pass. The page must not block its first paint on the live list,
   // and it must not re-read settings for it.

@@ -172,6 +172,50 @@ it is the difference between "where did these come from" and a named source. Whe
 the active project's catalog is already the one on offer, the note is empty rather
 than a "this project" that restates the obvious.
 
+### What the surfaces show while they work
+
+Dictation is a chain of waits — two catalog reads before the microphone opens, a
+transcription after it closes, a hand-off that writes a chat's draft — and each
+one leaves the user looking at a screen that has not changed yet. So every wait
+is *reported*, on the control that was tapped and next to the thing that is
+being waited on, and the report is the same one a screen reader gets:
+
+- the **catalog read-out** under the model picker leads with a spinner and says
+  what it is waiting for (`Loading models…`, then `Looking for models from your
+  providers…` while the provider pass runs), with `aria-busy` on the line.
+  Before this, the first paint of a fresh install said **No models** — the one
+  conclusion a request that has not answered yet must not invite;
+- the **Transcribe** button holds a spinner and an `aria-busy` while its
+  request is in flight, and the **Record** button takes the spinner for a
+  hand-off (that is what its `Working…` label was already reporting), so the
+  ring is always on the control the user tapped rather than on the one next to
+  it;
+- the **composer microphone** shows a spinner in place of its glyph and is
+  reported as busy (`aria-busy`) while it resolves the model *before* opening
+  the microphone, and while it transcribes — a greyed-out mic with an unchanged
+  glyph read as "the tap did nothing". The chat's status line says
+  `Preparing dictation…` for the resolve step and `Transcribing…` for the run,
+  and a live take keeps counting words there instead.
+
+The two decisions behind those affordances are pure functions in
+`frontend/src/dictation.js`, so the wording and the phase cannot drift from the
+state that produces them:
+
+```js
+// What the read-out says, and whether it is a spinner or a sentence.
+catalogNote({ catalogBusy, liveBusy, projectCount, hasLive })
+// -> { text: 'Loading models…', loading: true }
+// Which wait is in flight; a long wait (the catalog) wins over a short one.
+busyPhase({ catalogBusy, liveBusy, transcribing, handoff })
+// -> '' | 'catalog' | 'live' | 'transcribe' | 'handoff'
+```
+
+Every spinner is decoration over a sentence or an `aria-busy`, and it is a
+`currentColor` ring so it inherits the accent inside a primary button and the
+muted tone inside the mic button. Under `prefers-reduced-motion: reduce` the
+animation stops but the ring stays — a static ring with its coloured top arc
+still reads as "working", and the words beside it are unaffected.
+
 ### Configuring a model
 
 The **Dictation** page lists two kinds of model, and you do not have to
@@ -609,7 +653,8 @@ previous one, so the last thing the user changed is what survives.
 node scripts/test-dictation.js        # request/response shapes, helper rules,
   # the live-take join and slot ordering, the take's summed price, the
   # audio-chat route decision and format naming, both Gemini transcript shapes,
-  # and the app-store allowlists the choice needs
+  # the loading wording and the busy phase, and the app-store allowlists the
+  # choice needs
 node scripts/test-dictation-http.mjs  # the real serve handlers, mock upstream —
   # including the inline-audio chat route, the `audioTranscription` shape, and
   # the attribution of a chat-attributed run to the chat and project totals
@@ -636,7 +681,9 @@ node scripts/test-dictation-chat.cjs  # the composer mic inside the real
   # ChatView (needs debug Chrome; see CDP_URL below): the model comes from the
   # app store, the draft is persisted, the cost is attributed, a live take is
   # recorded by *rotating* (several segments, stitched in speaking order, cost
-  # settled as their sum) and no take ever asks the recorder for a timeslice.
+  # settled as their sum), no take ever asks the recorder for a timeslice, and
+  # a tap that is still resolving the model reports that wait on the button
+  # (spinner, `aria-busy`) and in the chat's line rather than looking dead.
   # The fixture's fetch is fully stubbed, so nothing reaches a provider.
 ```
 

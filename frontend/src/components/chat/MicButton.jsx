@@ -421,7 +421,13 @@ say(failed ? 'Transcription failed' : 'Nothing was recognised — try again a li
 // transcribe is a take the user should not be asked to record. `busy` is held
 // across the two reads so a double tap cannot start two recorders while the
 // catalog is in flight.
+//
+// The two reads are reported, because this is the one wait with no audio
+// behind it: nothing has been recorded yet and the button's spinner is small.
+// The line is replaced by "Recording — …" a moment later, and by the reason
+// when nothing is configured, so it never lingers over a finished take.
 setBusy(true);
+say('Preparing dictation…', 'busy');
 let resolved = null;
 try {
 resolved = await resolveModel();
@@ -610,6 +616,13 @@ modelRef.current = resolved.row;
   void tick;
   const elapsed = recording ? formatDuration(Date.now() - startedAtRef.current) : '';
   const label = recording ? 'Stop dictation (' + elapsed + ')' : 'Dictate';
+  // `busy` covers both waits a tap can put the button in: resolving the model
+  // *before* the microphone opens (two reads, and the live catalog can be a
+  // slow one) and the transcription after it closes. Both used to look the
+  // same as an idle button — a static mic, greyed out — which on a phone reads
+  // as "the tap did nothing". The spinner is the button saying it is working,
+  // and it is why the glyph is chosen before the svg below.
+  const waiting = busy;
 
   const svg = recording
     // A filled square: the same "stop" glyph the send button uses while a
@@ -621,16 +634,19 @@ modelRef.current = resolved.row;
     });
 
   return h('button', {
-    class: 'chat-view__mic-btn' + (recording ? ' is-recording' : ''),
+    class: 'chat-view__mic-btn' + (recording ? ' is-recording' : '') + (waiting ? ' is-busy' : ''),
     type: 'button',
     onClick,
     disabled: busy,
     title: status || 'Dictate',
-    'aria-label': label,
+    'aria-label': waiting ? 'Working…' : label,
     'aria-pressed': recording ? 'true' : 'false',
+    'aria-busy': waiting ? 'true' : undefined,
     'data-state': statusState || undefined
   },
-    h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' }, svg)
+    waiting
+      ? h('span', { class: 'dictation__spinner dictation__spinner--mic', 'aria-hidden': 'true' })
+      : h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' }, svg)
   );
 }
 

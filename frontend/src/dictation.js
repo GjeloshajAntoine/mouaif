@@ -680,6 +680,58 @@ export function pickerModels(models) {
   }));
 }
 
+// catalogNote(state) -> { text, loading }
+//
+// The read-out under the model picker: what is on offer, or what is still on
+// its way. The page reads its catalog in two passes of very different cost — a
+// project settings lookup, then a round trip per connected provider (memoized
+// an hour server-side) — so "still loading" is a state the page genuinely
+// spends time in, and it is the state the old inline expression got wrong: on
+// the first paint `models` is empty and the note claimed **No models**, which
+// is the one conclusion a request that has not answered yet must not invite.
+//
+// `loading` is what the page turns into a spinner and an `aria-busy` group, so
+// the same fact reaches a screen reader as reaches the eye. The text is built
+// here, out of the render body, because it is decided from values alone.
+//
+//   { catalogBusy, liveBusy, projectCount, hasLive }
+export function catalogNote(state) {
+const s = state || {};
+if (s.catalogBusy) return { text: 'Loading models…', loading: true };
+if (s.liveBusy) return { text: 'Looking for models from your providers…', loading: true };
+const projectCount = Number(s.projectCount) || 0;
+const hasLive = !!s.hasLive;
+if (projectCount) {
+return {
+text: projectCount + (projectCount === 1 ? ' project model' : ' project models')
++ (hasLive ? ', plus models from your provider' : ''),
+loading: false
+};
+}
+return { text: hasLive ? 'Models from your provider connections' : 'No models', loading: false };
+}
+
+// busyPhase(state) -> '' | 'catalog' | 'live' | 'transcribe' | 'handoff'
+//
+// Which of the page's four waits is in flight, as one word. The page has one
+// `busy` flag for the two request-shaped waits (a transcription and the
+// transcript hand-off to a chat) because both must block the same taps, but
+// they are different things to *report*: a spinner on the Transcribe button
+// for a run that is actually filling a chat's draft would name the wrong
+// operation. A long-lived wait (the catalog) wins over a short one, because it
+// is the one the user is looking at the page to resolve.
+//
+// Returns '' when nothing is in flight, which is what every loading affordance
+// is rendered from — nothing here reads a timer or a DOM.
+export function busyPhase(state) {
+const s = state || {};
+if (s.catalogBusy) return 'catalog';
+if (s.liveBusy) return 'live';
+if (s.transcribing) return 'transcribe';
+if (s.handoff) return 'handoff';
+return '';
+}
+
 // modelBadge(row) — the short reason a catalog row is on the list, used as the
 // picker's second line when the model's name says nothing. Two cases are worth
 // naming:

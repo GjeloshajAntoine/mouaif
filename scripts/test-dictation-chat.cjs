@@ -27,7 +27,12 @@
 //      is a real billed request and no single chunk is the take;
 //   7. a tap with nothing configured reports *why* in the chat's status row and
 //      never opens the microphone — the button's own report is a `title`, which
-//      no phone displays, so this state used to look like a dead button.
+//      no phone displays, so this state used to look like a dead button;
+//   8. a tap that is resolving the model says so while it waits (a spinner in
+//      place of the glyph, `aria-busy`, and `Preparing dictation…` in the chat
+//      line) instead of sitting greyed out and unchanged — the fixture holds
+//      its answers for that check, since two stubbed reads are otherwise
+//      finished in less than a frame.
 //
 // All bundles stay in memory; only a fresh about:blank target is touched. Fetch
 // is fully stubbed (unknown requests fail), with CDP blocking real network as a
@@ -95,7 +100,11 @@ function installFixture(data) {
     // stitched transcript.
     segmentAnswers: null,
     segmentAnswerBase: 0,
-    runs: 0, cost: 'priced'
+    runs: 0, cost: 'priced',
+    // A hold on every fixture response, so a wait that is normally shorter
+    // than one frame can be watched: the mic's "resolving the model" step is
+    // two fetches and would otherwise never be visible to a check.
+    holdMs: 0
   };
   addEventListener('error', (event) => test.errors.push(event.message));
   addEventListener('unhandledrejection', (event) => test.errors.push(String(event.reason)));
@@ -127,11 +136,18 @@ function installFixture(data) {
   // offered) without a second page load.
   test.dictationChoice = { modelId: 'gemini-2.5-flash', providerId: 'gemini' };
   test.catalogModels = dictationCatalog.models;
+  // Puts the two halves back where they started, for a check that runs after
+  // the "nothing configured" state has been installed.
+  test.restoreDictation = () => {
+    test.dictationChoice = { modelId: 'gemini-2.5-flash', providerId: 'gemini' };
+    test.catalogModels = dictationCatalog.models;
+  };
 
   window.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url, 'https://fixture.invalid');
     const method = (init.method || input.method || 'GET').toUpperCase();
     test.requests.push({ url: url.pathname + url.search, method });
+    if (test.holdMs) await new Promise((resolve) => setTimeout(resolve, test.holdMs));
     if (url.origin !== 'https://fixture.invalid') {
       test.unexpected.push(method + ' ' + url.href);
       throw new Error('Unstubbed origin: ' + url.href);
@@ -258,6 +274,11 @@ function installFixture(data) {
       label: mic ? mic.getAttribute('aria-label') : null,
       recording: mic ? mic.getAttribute('aria-pressed') : null,
       title: mic ? mic.getAttribute('title') : null,
+      // The loading affordances: `aria-busy` is what a screen reader gets, and
+      // the spinner is what replaced the glyph (so "waiting" is never a greyed
+      // out mic that looks like a dead button).
+      busy: mic ? mic.getAttribute('aria-busy') : null,
+      spinner: mic ? !!mic.querySelector('.dictation__spinner') : false,
       status: status ? status.textContent : null,
       statusState: status ? status.getAttribute('data-state') : null,
       // The header Total pill: where an attributed dictation run must land, not
@@ -523,6 +544,34 @@ async function main() {
     // gets slices, and only the first of them is a file the provider can read.
     check('no take ever asked the recorder for a timeslice',
       (await evaluate('dictationTest.timeslices')).every((arg) => !arg));
+
+    // ---- A tap reports the wait before the microphone opens ---------------
+    //
+    // Resolving the model is two reads (`/api/settings`, then the catalog) and
+    // happens *before* the microphone opens, so it is the one wait with no
+    // audio and no status of its own: the button used to sit greyed out and
+    // unchanged for it, which on a phone reads as a tap that did nothing. The
+    // fixture holds its answers so the window can be looked at; the state is
+    // restored first because the case above emptied the catalog on purpose.
+    await evaluate('dictationTest.restoreDictation(); dictationTest.holdMs = 500;');
+    await tap('.chat-view__mic-btn');
+    await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-busy') === 'true'`,
+      'the model resolve is reported on the button');
+    const waiting = await read();
+    check('a tap says it is working before the microphone opens', waiting.label === 'Working…');
+    check('and swaps its glyph for a spinner rather than sitting greyed out', waiting.spinner === true);
+    check('and the chat line names the step, not just "busy"', waiting.status === 'Preparing dictation…');
+    check('and nothing is recorded during it', waiting.recording === 'false');
+    await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'true'`,
+      'recording starts once the model resolves');
+    const resumed = await read();
+    check('the spinner gives way to the recorder when the wait is over',
+      resumed.spinner === false && resumed.busy === null && /^Stop dictation/.test(resumed.label));
+    // Close the take and let the page settle, so nothing is left running.
+    await tap('.chat-view__mic-btn');
+    await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'false'`,
+      'the take is closed again');
+    await evaluate('dictationTest.holdMs = 0;');
   });
   console.log('\nDictation composer regressions passed (' + checks + ' checks). No production files or live app data touched.');
 }

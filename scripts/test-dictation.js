@@ -1016,6 +1016,54 @@ try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ 
     assert.equal(dictation.kindLabel([], 'gemini'), 'gemini');
   });
 
+  // ---- Loading states ---------------------------------------------------
+  //
+  // The page reads its catalog in two passes, so it spends real time with an
+  // empty `models` array. What the read-out says in that window is the whole
+  // point: a request that has not answered is *loading*, never "No models" —
+  // the sentence a user acts on by going to check a provider that was fine.
+  check('catalogNote says it is loading until a pass has answered', () => {
+    const cold = dictation.catalogNote({ catalogBusy: true, liveBusy: false, projectCount: 0, hasLive: false });
+    assert.deepEqual(cold, { text: 'Loading models…', loading: true });
+    // …and the live pass is named as the provider read it is, so the two
+    // passes are not one vague "loading" either.
+    const live = dictation.catalogNote({ catalogBusy: false, liveBusy: true, projectCount: 2, hasLive: false });
+    assert.deepEqual(live, { text: 'Looking for models from your providers…', loading: true });
+  });
+
+  check('catalogNote reports what answered, and claims nothing while it waits', () => {
+    // The fast pass answered with the project's own rows and no provider list
+    // to ask: this is a finished state, so nothing here is `loading`.
+    const settled = dictation.catalogNote({ catalogBusy: false, liveBusy: false, projectCount: 1, hasLive: false });
+    assert.deepEqual(settled, { text: '1 project model', loading: false });
+    const both = dictation.catalogNote({ catalogBusy: false, liveBusy: false, projectCount: 3, hasLive: true });
+    assert.equal(both.text, '3 project models, plus models from your provider');
+    assert.equal(both.loading, false);
+    assert.equal(dictation.catalogNote({ catalogBusy: false, liveBusy: false, projectCount: 0, hasLive: true }).text,
+      'Models from your provider connections');
+    // "No models" is only ever said once both passes are in and there is
+    // still nothing to offer.
+    assert.equal(dictation.catalogNote({ catalogBusy: false, liveBusy: false, projectCount: 0, hasLive: false }).text,
+      'No models');
+    assert.equal(dictation.catalogNote().loading, false, 'no state is not a state to spin for');
+  });
+
+  check('busyPhase names which wait is in flight, and long beats short', () => {
+    assert.equal(dictation.busyPhase({}), '', 'idle');
+    assert.equal(dictation.busyPhase({ catalogBusy: true }), 'catalog');
+    assert.equal(dictation.busyPhase({ liveBusy: true }), 'live');
+    assert.equal(dictation.busyPhase({ transcribing: true }), 'transcribe');
+    assert.equal(dictation.busyPhase({ handoff: true }), 'handoff');
+    // The catalog is what the page is on screen to resolve, so it wins over a
+    // short operation the user just triggered.
+    assert.equal(dictation.busyPhase({ catalogBusy: true, handoff: true }), 'catalog');
+    assert.equal(dictation.busyPhase({ liveBusy: true, transcribing: true }), 'live');
+    // A transcription outranks the hand-off: a take in flight is the longer
+    // wait of the two request-shaped ones.
+    assert.equal(dictation.busyPhase({ transcribing: true, handoff: true }), 'transcribe');
+    assert.equal(dictation.busyPhase(null), '', 'a missing state is idle, not a crash');
+  });
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   if (fail) process.exit(1);
 })().catch((err) => {

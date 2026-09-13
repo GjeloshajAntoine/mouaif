@@ -29,6 +29,8 @@ import { loadPinned, loadRecent, loadRecentFromServer, togglePin } from './chat/
 import {
   MAX_RECORDING_MS,
   blobToBase64,
+  busyPhase,
+  catalogNote,
   defaultDictationModel,
   dictationFilename,
   formatDuration,
@@ -121,7 +123,14 @@ export function DictationView() {
 
   // ---- Transcription ------------------------------------------------------
   const [transcript, setTranscript] = useState('');
+  // One flag, two waits. A transcription and the hand-off of a transcript to a
+  // chat must block the same taps (neither may run twice), but they are
+  // different operations to *report*: the spinner belongs on the control the
+  // user tapped, and "Transcribing…" on a run that is actually filling a chat's
+  // draft would name the wrong thing. `busy` decides what is blocked,
+  // `busyKind` decides what is shown.
   const [busy, setBusy] = useState(false);
+  const [busyKind, setBusyKind] = useState('');
   const [status, setStatus] = useState('');
   const [statusState, setStatusState] = useState('');
   const [lastRun, setLastRun] = useState(null);
@@ -439,6 +448,7 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
       return;
     }
     setBusy(true);
+    setBusyKind('transcribe');
     setStatus('Transcribing with ' + modelId + '…');
     setStatusState('busy');
     try {
@@ -472,6 +482,7 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
       setStatusState('error');
     } finally {
       setBusy(false);
+      setBusyKind('');
     }
   }
 
@@ -500,6 +511,7 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
       return;
     }
     setBusy(true);
+    setBusyKind('handoff');
     try {
       // The list picks the most recent chat; the draft body itself comes from
       // the single-chat record. List rows are summaries and carry only a
@@ -531,6 +543,7 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
       setStatusState('error');
     } finally {
       setBusy(false);
+      setBusyKind('');
     }
   }
 
@@ -547,6 +560,18 @@ const actions = transcriptActions({ text: transcript, chatId: projectDir, hasRec
 const projectCount = models.filter((m) => m.source !== 'live').length;
 const hasLive = models.some((m) => m.source === 'live');
 const providers = Array.isArray(catalogProviders) ? catalogProviders : [];
+// What the page is waiting on, and what the catalog read-out says about it
+// (see catalogNote / busyPhase in dictation.js — both are decided from values
+// alone, so the two loading affordances cannot drift from the state they
+// describe: the note's spinner for a catalog read, and the spinner on the
+// control the user tapped for a transcription or a hand-off).
+const phase = busyPhase({
+catalogBusy,
+liveBusy,
+transcribing: busy && busyKind === 'transcribe',
+handoff: busy && busyKind === 'handoff'
+});
+const note = catalogNote({ catalogBusy, liveBusy, projectCount, hasLive });
 
 // refreshCatalog() — re-read both passes with the server's cache bypassed.
 // The live list is memoized for an hour, so without this a model added to a
@@ -663,10 +688,16 @@ function onPickModel(next) {
       type: 'button',
       disabled: !supported || busy,
       onClick: recording ? stopRecording : startRecording,
-      'aria-label': recording ? 'Stop recording' : recordLabel
+      // The one wait this button can be in is the hand-off (filling a chat's
+      // draft), and it may last a round trip or two: a spinner on the control
+      // that was *not* tapped would point at the wrong one.
+      'aria-busy': phase === 'handoff' ? 'true' : undefined,
+      'aria-label': recording ? 'Stop recording' : (phase === 'handoff' ? 'Working…' : recordLabel)
       },
-      h('span', { class: 'dictation__record-dot', 'aria-hidden': 'true' }),
-      h('span', { class: 'dictation__record-label' }, busy && !recordingBlob ? 'Working…' : recordLabel)
+      phase === 'handoff'
+      ? h('span', { class: 'dictation__spinner', 'aria-hidden': 'true' })
+      : h('span', { class: 'dictation__record-dot', 'aria-hidden': 'true' }),
+      h('span', { class: 'dictation__record-label' }, phase === 'handoff' ? 'Working…' : recordLabel)
       ),
       // The transcribe action only exists while there is an untranscribed
       // recording: a permanently disabled button would suggest the feature is
@@ -680,8 +711,12 @@ function onPickModel(next) {
         type: 'button',
         disabled: !canTranscribe,
         onClick: runTranscription,
+        'aria-busy': phase === 'transcribe' ? 'true' : undefined,
         'aria-label': 'Transcribe the recording'
-        }, busy ? 'Transcribing…' : 'Transcribe')
+        }, phase === 'transcribe'
+        ? h('span', { class: 'dictation__spinner dictation__spinner--on-accent', 'aria-hidden': 'true' })
+        : null,
+        phase === 'transcribe' ? 'Transcribing…' : 'Transcribe')
       )
       : null,
       !supported
@@ -807,13 +842,17 @@ function onPickModel(next) {
       // live catalogs are memoized server-side for an hour, so a provider that
       // just gained a model needs this tap to show up.
       h('div', { class: 'dictation__catalog-note' },
-        h('span', { class: 'hint hint--compact' },
-          liveBusy
-            ? 'Looking for models from your providers…'
-            : (projectCount
-              ? projectCount + (projectCount === 1 ? ' project model' : ' project models')
-              + (hasLive ? ', plus models from your provider' : '')
-              : (hasLive ? 'Models from your provider connections' : 'No models'))),
+        // The spinner and the sentence are one fact: a read that has not
+        // answered yet is *loading*, not "no models". `aria-busy` carries the
+        // same thing to a screen reader, which never sees the animation.
+        h('span', {
+        class: 'hint hint--compact dictation__catalog-line',
+        'aria-busy': note.loading ? 'true' : undefined
+        },
+          note.loading
+            ? h('span', { class: 'dictation__spinner', 'aria-hidden': 'true' })
+            : null,
+          note.text),
         projectDir && providers.length
           ? h('button', {
             class: 'dictation__refresh',
@@ -858,7 +897,13 @@ function onPickModel(next) {
     // ---- 3. Transcript ----------------------------------------------------
     h('div', { class: 'group' },
       h('div', { class: 'group__title' }, 'Transcript'),
-      h('div', { class: 'dictation__transcript' },
+      // The transcript is the region both waits rewrite: a transcription
+      // replaces the text and a hand-off reads it out to a chat. `aria-busy`
+      // says so, since neither wait is visible in this region's own markup.
+      h('div', {
+      class: 'dictation__transcript',
+      'aria-busy': (phase === 'transcribe' || phase === 'handoff') ? 'true' : undefined
+      },
         h('textarea', {
           class: 'input dictation__textarea',
           rows: 6,
