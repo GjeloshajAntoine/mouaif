@@ -14,8 +14,9 @@
 //   fixture.live()         mount the live ask card (3 options)
 //   fixture.long()         mount a card with long option descriptions
 //   fixture.many()         mount a card with 8 options
-//   fixture.pair()         append the persisted ask_user tool_call card and
-//                          then the live card for the SAME call id
+//   fixture.pair()         call card then the live card for the SAME call id
+//                          (two raw cards: the app's caller de-dupes first —
+//                          see the note in the scenario)
 //   fixture.dismissed()    a question the user dismissed (the frame is ok:false)
 //   fixture.cancel()       the Stop path: removePendingAuthorizationCards()
 //   fixture.measure()      geometry of every ask card and option row
@@ -156,12 +157,20 @@ function Host() {
     pair: async () => {
     reset();
     const id = 'call_dup_fixture';
-    // The persisted row the transcript rebuild writes for a tool call ...
+    // Both primitives for one call id, in the order the transcript rebuild
+    // writes them: the persisted call row first ...
     appendToolCallCard({ id, name: 'ask_user', args: { question: 'Which branch should the release be cut from?', options: OPTIONS, multiSelect: false } }, refs, true);
-    // ... and the live card the pending queue mounts for the same call.
+    // ... then the live card the pending queue mounts.
     mount(OPTIONS, null, id);
     bump();
     await frame();
+    // NOTE: two cards is this scenario's raw output, not what the app shows.
+    // appendToolCallCard is called directly here, so the caller's de-dup never
+    // runs; in the app this order is caught earlier, by renderMessageRow, which
+    // skips the call row when a card already carries that data-tool-id — and an
+    // ask_user overlay card carries both ids. The resolve() scenario is the
+    // order that reaches appendToolCallCard (the question is up, then the call
+    // frames arrive) and is where "one card must survive" is checked.
     },
     // The live order: the question is on screen, then the call's own
     // tool_call / tool_result frames arrive because the answer was submitted
