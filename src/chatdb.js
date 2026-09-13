@@ -624,6 +624,47 @@ function chatTotalCostDb(projectDir, chatId) {
   };
 }
 
+// addChatCost(projectDir, chatId, amount) -> { total, known, currency, knownCount } | null
+//
+// Attribute one *known* priced run to a chat's persisted total without writing
+// a message row. This is the second writer of `total_cost` /
+// `cost_known_count` (appendMessage is the first) and it exists because
+// dictation is billed work that is not a chat turn: the transcription's cost
+// belongs in the chat and project totals, but no assistant message carries it
+// (docs/features/dictation.md).
+//
+// The chat row and the registered project's total move together, in one
+// transaction, exactly like the message path — the two must never disagree.
+// Returns null when the chat does not exist, so a caller that has already
+// performed (and billed) the upstream call can ignore attribution instead of
+// failing the run.
+function addChatCost(projectDir, chatId, amount) {
+  const delta = Number(amount);
+  if (!projectDir || !chatId || !Number.isFinite(delta) || delta < 0) return null;
+  ensureTables();
+  const d = require('./settings.js').getDb();
+  let updated = false;
+  const tx = d.transaction(() => {
+    const info = d.prepare(`
+      UPDATE chat_store
+      SET total_cost = total_cost + ?, cost_known_count = cost_known_count + 1
+      WHERE project_dir = ? AND id = ?
+    `).run(delta, projectDir, chatId);
+    if (info.changes !== 1) return;
+    require('./projects.js').adjustProjectTotalCost(projectDir, delta, 1);
+    updated = true;
+  });
+  tx();
+  if (!updated) return null;
+  const row = readChatCostRow(d, projectDir, chatId);
+  return {
+    total: row.total,
+    known: row.knownCount > 0,
+    currency: 'USD',
+    knownCount: row.knownCount
+  };
+}
+
 // ---- Import from JSON files ------------------------------------------------
 //
 // Legacy one-shot import from `.mouaif.messages.*.json` transcripts and the
@@ -715,6 +756,7 @@ messageCursorDb,
 // Cost aggregation
 projectCostTotals,
 chatTotalCostDb,
+addChatCost,
   // Legacy import
   importFromJson,
   // Exported so settings migrations can create the tables before their ALTERs.

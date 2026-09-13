@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 (async () => {
-  const { costSnapshot, summarizeChatUsage: summarize } = await import('../frontend/src/components/chat/costSummary.js');
+  const { costSnapshot, summarizeChatUsage: summarize, attributedCostAfter } = await import('../frontend/src/components/chat/costSummary.js');
   const { mergeServerRows, nextServerMessageIndex } = await import('../frontend/src/components/chat/msgMerge.js');
   const cost = (total) => ({ total, known: true });
   const row = (seq, total) => ({ role: 'assistant', content: String(total), seq, cost: cost(total) });
@@ -24,6 +24,27 @@ const vm = require('node:vm');
   assert.equal(summarize([row(0, 2)], null).totalCost, 2); // older-server fallback
   assert.equal(costSnapshot({ totalCost: cost(10) }), null);
   assert.equal(summarize([{ ...row(199, 1), usage: { promptTokens: 50 } }], baseline).latestContext, 50);
+  // An attributed non-turn run (dictation) rides on top of the snapshot, since
+  // it writes no message row the snapshot could cover…
+  assert.equal(summarize(page, baseline, null, 0.5).totalCost, 10.5);
+  assert.equal(summarize(page, baseline, null, 0.5).hasKnownCost, true);
+  assert.equal(summarize([], costSnapshot({ nextSeq: 0, totalCost: { total: 0, known: false } }), null, 0.5).hasKnownCost, true);
+  // …and nothing else moves when there is none.
+  assert.equal(summarize(page, baseline, null, 0).totalCost, 10);
+  assert.equal(summarize(page, baseline, null, undefined).totalCost, 10);
+  // The accumulator keys on the snapshot object, so runs pile up while one
+  // snapshot is authoritative and restart once a rebase installs a fresh one
+  // (which already covers them — the number is never added twice).
+  {
+    const first = attributedCostAfter(null, baseline, 0.5);
+    assert.deepEqual(first, { snapshot: baseline, total: 0.5 });
+    const second = attributedCostAfter(first, baseline, 0.25);
+    assert.deepEqual(second, { snapshot: baseline, total: 0.75 });
+    const rebased = attributedCostAfter(second, costSnapshot({ nextSeq: 201, totalCost: cost(11) }), 0.25);
+    assert.equal(rebased.total, 0.25, 'a new snapshot starts the accumulator over');
+    assert.equal(attributedCostAfter(null, baseline, 0), null);
+    assert.equal(attributedCostAfter(null, baseline, 'lots'), null);
+  }
   console.log('PASS paginated totals, live segments, subagent costs, unknown/zero costs and fallback');
 
   // Run actual tail-sync code: replacement-only merges must rebase and repaint.
@@ -34,14 +55,17 @@ const vm = require('node:vm');
     mergeServerRows, nextServerMessageIndex, costSnapshot,
     fetchMessagesFromSeq: async () => ({ messages: [row(200, 2)], nextSeq: 201, totalCost: cost(12) }),
     syncTranscriptAppend() {},
-    updateUsageSummary: (state) => { painted = summarize(state.messages, state.costSnapshot).totalCost; }
+    updateUsageSummary: (state) => { painted = summarize(state.messages, state.costSnapshot, null, state.attributedCost).totalCost; }
   });
   vm.runInContext(syncSource + ';this.sync = syncToNextSeq;', context);
-  const state = { props: { projectDir: '/test', chatId: 'test' }, messages: [...page, row(undefined, 2)], seenSeqs: new Set([198, 199]), transcriptNextSeq: 200, costSnapshot: baseline };
+  const state = { props: { projectDir: '/test', chatId: 'test' }, messages: [...page, row(undefined, 2)], seenSeqs: new Set([198, 199]), transcriptNextSeq: 200, costSnapshot: baseline, attributedCost: 0.5 };
   await context.sync(state, {}, 201);
   assert.equal(painted, 12);
   assert.equal(state.messages.length, 3);
   assert.equal(state.costSnapshot.nextSeq, 201);
+  // The refreshed snapshot already covers the attributed run, so the session
+  // delta is rebased away in the same step — the 12 above is not 12.5.
+  assert.equal(state.attributedCost, 0);
   console.log('PASS reconciliation replaces optimistic cost without double counting');
 
   // Exercise the real HTTP handler and SQLite totals, not a CLI/server restart.

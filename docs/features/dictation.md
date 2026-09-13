@@ -92,11 +92,14 @@ the live region starts, so the user's own text before the caret is untouched,
 the caret stays at the end of the growing transcript, and a take that is
 finished rewrites that region once with the final text.
 
-A live take reports **no cost**. A chunk is a partial run of the audio, not the
-whole dictation, and pricing it would be a guess; the status line for a live
-take therefore says what happened to the take, while the dictation page (one
-request, one priced run) keeps its full `Last run` line. Use the page when you
-want to see what a transcription cost.
+A live take reports **no cost per chunk**. Each chunk is a partial run of the
+audio, not the whole dictation, so pricing one would be a guess and the status
+line for a live take therefore says what happened to the take while it runs.
+When the take ends, however, its chunks have each been billed — so the take
+**settles with the sum of the prices its chunks answered with**, and that is the
+figure the status line reports and the number attributed to the chat. A live
+take whose chunks were all unpriced reports nothing at all. The dictation page
+(one request, one priced run) keeps its full `Last run` line either way.
 
 ### What a run cost
 
@@ -104,12 +107,15 @@ A transcription is billed work, so the page and the composer both account for
 it — with one deliberate exception:
 
 - the **Dictation page** ends its "Last run" line with `cost $0.00055`;
-- the **composer microphone** appends it to the chat's status line for a take
-  transcribed in one request (`dictation added · $0.00055`) and repeats it in
-  the button's tooltip;
-- a **live take** (see the composer microphone below) reports no figure at all.
-  Its cost is per chunk and unknowable until the take ends, and a fabricated
-  price is worse than none.
+- the **composer microphone** appends it to the chat's status line
+  (`dictation added · $0.00055`) and repeats it in the button's tooltip, **and
+  attributes the priced run to the chat**, so the header Total, the chat list
+  row and the project total all move by it (see below);
+- a **live take** reports no figure while it runs — a chunk is a partial run and
+  the take has no price yet — but the take **settles with the sum of its
+  chunks' prices** (`liveTakeCost`) once every one has answered, so a finished
+  live take reports and attributes its cost exactly like a one-request take; a
+  live take whose chunks were all unpriced reports nothing.
 
 The number is resolved server-side with the same pricing table the chat uses —
 the model record's own `pricing`, then the app-level table, then the built-in
@@ -129,11 +135,14 @@ the audio counts as input: Gemini's `usageMetadata` (audio rides in the prompt)
 and the OpenAI-shaped `usage` block are both understood. A run that reports
 nothing stays `null` all the way to the UI rather than becoming `0`.
 
-**Dictation cost is not part of any chat or project total.** It is not a chat
-turn, so the chat header's Total, the chat list and the project total are
-unchanged by dictating — which is why the cost is printed at the point of use
-instead. (Folding it into those sums would mean attributing a dictation run to a
-chat, and is deliberately not done here.)
+**A dictation run taken in a chat joins that chat's Total.** The composer
+microphone attributes the run to the chat it happened in, so the priced run is
+added to the chat header's Total, the chat list row and the registered project
+total — the same persisted counters an assistant turn updates. It is not a chat
+turn: no message row is written, the transcript lands in the composer draft, and
+the status line still prints the figure at the moment it happened. A run taken
+on the **Dictation page** belongs to no chat and stays point-of-use only, and a
+run whose cost is unknown (`--`) adds nothing to any total anywhere.
 
 ### The layout of the page
 
@@ -480,7 +489,18 @@ chat cannot appear here unless it can transcribe. See
   reported nothing. The route is decided from the live capability report the
   catalog selected on, read back from the same cache `resolveModel` prices from
   (a live row is rebuilt from its id and provider, so the report is not on it);
-  a `kind` echoed by the picker wins over that re-derivation.
+  a `kind` echoed by the picker wins over that re-derivation. The optional
+  `chatId` on the body is what makes a run **attributed**: the handler calls
+  `messages.addChatCost(projectDir, chatId, cost.total)` for a known, positive
+  cost, which moves the chat row's `total_cost` / `cost_known_count` and the
+  registered project's total in one transaction — the same counters
+  `appendMessage` maintains. It is best-effort (a chat deleted mid-take must not
+  turn a transcript into an error) and it never runs for an unknown or zero
+  cost, so `--` runs stay out of every total.
+- `src/chatdb.js` — `addChatCost(projectDir, chatId, amount)`, the second writer
+  of the persisted cost counters and the only one that does not write a message.
+  It is exported on `src/messages.js` as `addChatCost` for the transcribe
+  handler.
 - `src/modelList.js` — the per-provider live model fetch and its hour-long
   cache, extracted from the `/api/ai/models/live` handler so the dictation
   catalog and the chat picker share one fetch and one set of typed errors.
@@ -492,9 +512,11 @@ chat cannot appear here unless it can transcribe. See
   the clock, base64 encoding, the model-selection rules (`resolveDefaultModel`,
   `dictationRank`, `recommendedModels`, `defaultDictationModel`), the live-take
   helpers (`LIVE_CHUNK_MS`, `joinTranscript`, `seamOverlap`,
-  `createLiveSegments`, `liveDictationEnabled`), and the transcript action set.
-  Pure enough to unit-test: the join and the slot-ordering rules are decided
-  from values alone, which is why they are not asserted through a recorder.
+  `createLiveSegments`, `liveTakeCost`, `liveDictationEnabled`), and the
+  transcript action set. `transcribeAudio` forwards an optional `chatId`, which
+  is what makes a run attributed to a chat. Pure enough to unit-test: the join,
+  the slot-ordering rules and the take's summed price are decided from values
+  alone, which is why they are not asserted through a recorder.
 - `frontend/src/components/ModelPickerField.jsx` — the shared picker, which
   takes an optional `recommended` list of rows to show above Pinned/Recent, and
   already owned the `pinned`/`onTogglePin`/`recent` props. The chat head and the
@@ -509,7 +531,8 @@ chat cannot appear here unless it can transcribe. See
   recorder *with* a timeslice exactly when the app-level choice says live and
   the recorder supports it; a recorder whose `start` takes no timeslice falls
   back to the one-request-on-stop path rather than sending a single chunk as if
-  it were the whole take.
+  it were the whole take. It sends `chatId` on every request, which is what
+  attributes the run to the chat; the page does not send one.
 - `frontend/src/components/chat/Chat.jsx` — owns the chat's status line, so the
   microphone takes an `onStatus(message, state)` callback and writes its
   progress and failures there (`Chat.jsx` → `setStatus`). It also owns the
@@ -536,16 +559,23 @@ chat cannot appear here unless it can transcribe. See
   surfaces that read it.
 - The audio body is JSON base64 (`audioBase64`), capped at ~20 MB of audio,
   so one code path owns reading the body, its size limit and its error shape.
+- **Attribution is one extra write on the success path.** The handler only calls
+  `messages.addChatCost` when the request carried a `chatId` *and* the priced
+  cost is known and positive, so an unpriced run (`--`), a page run (no
+  `chatId`) and a failed run all leave every total untouched. It is wrapped in a
+  `try`/`catch`: the upstream call is already paid for, and a chat deleted
+  mid-take must not turn a transcript into an error.
 
 ### Tests
 
 ```bash
 node scripts/test-dictation.js        # request/response shapes, helper rules,
-  # the live-take join and slot ordering, the audio-chat route decision and
-  # format naming, both Gemini transcript shapes, and the app-store allowlists
-  # the choice needs
+  # the live-take join and slot ordering, the take's summed price, the
+  # audio-chat route decision and format naming, both Gemini transcript shapes,
+  # and the app-store allowlists the choice needs
 node scripts/test-dictation-http.mjs  # the real serve handlers, mock upstream —
-  # including the inline-audio chat route and the `audioTranscription` shape
+  # including the inline-audio chat route, the `audioTranscription` shape, and
+  # the attribution of a chat-attributed run to the chat and project totals
 node scripts/test-dictation-page.mjs  # the page rendered against a fake API
 node scripts/test-dictation-catalog-live.mjs  # the candidate filter and the
   # route decision against the two real OpenRouter catalogs, replayed from

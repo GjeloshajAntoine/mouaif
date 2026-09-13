@@ -137,13 +137,18 @@ export function blobToBase64(blob) {
 // transcribeAudio(options) -> { text, model, kind, bytes, durationMs, usage, cost }
 //
 // options: { projectDir, modelId, providerId, kind, audioBase64, mimeType,
-//            filename, language, prompt }
+//            filename, language, prompt, chatId }
 //
 // `kind` is the request family the catalog offered the row under (the picker's
 // "Sends as" read-out). It is echoed back so the request cannot disagree with
 // what the user was shown: the server re-derives it from the live capability
 // report, but a row the catalog classified is authoritative. An empty value
 // leaves the decision to the server.
+//
+// `chatId` is optional and is what makes the run *attributed*: the composer
+// microphone sends it, so the server adds the priced run to that chat's Total
+// and to the project total (it is not a chat turn, so no message is written).
+// The Dictation page sends none — its runs are point-of-use only.
 //
 // `usage` is the provider's own token report (null when it made none) and
 // `cost` is the server's priced result for it, in the shape
@@ -167,7 +172,10 @@ export async function transcribeAudio(options) {
     mimeType: opts.mimeType || 'audio/webm',
     filename: opts.filename || '',
     language: opts.language || '',
-    prompt: opts.prompt || ''
+    prompt: opts.prompt || '',
+    // A chat-attributed run joins that chat's persisted Total. Empty for the
+    // dictation page, whose runs belong to no chat.
+    chatId: opts.chatId || ''
   };
   const r = await fetchJson('/api/ai/transcribe', {
     method: 'POST',
@@ -278,6 +286,29 @@ export function joinTranscript(segments) {
     if (rest) out += ' ' + rest;
   }
   return out;
+}
+
+// liveTakeCost(costs) -> { total, currency, known } | null
+//
+// A live take is billed once per chunk, so the take's price is the sum of the
+// prices its chunks were answered with. Only *known* figures count — an
+// unpriced chunk (a per-minute model reports no tokens) contributes nothing
+// rather than a fabricated zero — and a take whose chunks were all unpriced
+// returns `null`, which is the same "say nothing rather than `$0.00`"
+// convention `transcribeCost` renders as `--`. Pure, so the arithmetic is
+// decided from values alone and can be asserted without a recorder.
+export function liveTakeCost(costs) {
+  const list = Array.isArray(costs) ? costs : [];
+  let total = 0;
+  let known = false;
+  for (const cost of list) {
+    if (!cost || cost.known !== true) continue;
+    const amount = Number(cost.total);
+    if (!isFinite(amount) || amount <= 0) continue;
+    total += amount;
+    known = true;
+  }
+  return known ? { total, currency: 'USD', known: true } : null;
 }
 
 // liveDictationEnabled(saved) — whether a take should be transcribed as the

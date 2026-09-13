@@ -15,13 +15,17 @@
 //   2. the transcript lands in the composer draft (and is persisted), not in
 //      the transcript or nowhere;
 //   3. the draft is persisted, not shown only;
-//   4. the run's cost reaches the chat's status line — a transcription is not a
-//      chat turn, so no chat or project total covers it, and the status line is
-//      the only place the user sees what dictating cost;
+//   4. the run's cost reaches the chat's status line *and* the header Total —
+//      a transcription writes no message row, so the server attributes the
+//      priced run to the chat (this file pins that the request carries the
+//      `chatId` the server needs) and the status line keeps reporting the same
+//      figure at the moment it happened;
 //   5. an unpriced run (`whisper-1` bills per minute and reports no tokens)
 //      says nothing about cost rather than `$0.00`, and the button never claims
 //      a price it was not given;
-//   6. a tap with nothing configured reports *why* in the chat's status row and
+//   6. a live take settles with the *sum* of its chunks' prices, since a chunk
+//      is a real billed request and no single chunk is the take;
+//   7. a tap with nothing configured reports *why* in the chat's status row and
 //      never opens the microphone — the button's own report is a `title`, which
 //      no phone displays, so this state used to look like a dead button.
 //
@@ -232,6 +236,19 @@ function installFixture(data) {
       title: mic ? mic.getAttribute('title') : null,
       status: status ? status.textContent : null,
       statusState: status ? status.getAttribute('data-state') : null,
+      // The header Total pill: where an attributed dictation run must land, not
+      // only the status line under the composer.
+      total: (() => {
+      const value = document.querySelector('.chat-view__usage-summary-value');
+      const pills = document.querySelectorAll('.chat-view__usage-summary-label');
+      for (let i = 0; i < pills.length; i++) {
+      if (pills[i].textContent === 'Total') {
+        const el = pills[i].parentElement.querySelector('.chat-view__usage-summary-value');
+        return el ? el.textContent : null;
+      }
+      }
+      return value ? value.textContent : null;
+      })(),
       composer: composer ? composer.value : null
     };
   };
@@ -376,7 +393,12 @@ async function main() {
     check('the model came from the app-level dictation choice, not the chat',
       await evaluate(`dictationTest.transcribeBodies[0].modelId === 'gemini-2.5-flash' && dictationTest.transcribeBodies[0].providerId === 'gemini'`));
     check('and the button keeps the same figure for its tooltip',
-      done.title === 'Added to the composer ($0.00055) — review it, then send.');
+    done.title === 'Added to the composer ($0.00055) — review it, then send.');
+    check('and the cost reaches the chat header Total, not only the status line',
+    done.total === '$0.00055',
+    'Total pill reads ' + JSON.stringify(done.total));
+    check('the run was attributed to this chat, so the server can persist it',
+    await evaluate(`dictationTest.transcribeBodies[0].chatId === ${JSON.stringify(CHAT_ID)}`));
     check('the microphone was released after the run', await evaluate('dictationTest.streamStopped === 1'));
 
     // ---- An unpriced run says nothing rather than $0.00 --------------
@@ -390,6 +412,9 @@ async function main() {
     await waitFor(`dictationTest.runs === 2 && document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'false'`, 'second transcription lands');
     const unpriced = await read();
     check('an unpriced run adds no figure to the status line', unpriced.status === 'dictation added');
+    check('and leaves the header Total where the priced run left it',
+    unpriced.total === '$0.00055',
+    'Total pill reads ' + JSON.stringify(unpriced.total));
     check('and the composer got the second transcript too',
       unpriced.composer === 'This is a dictated sentence about mouaif. Second dictated sentence.');
     check('the button does not claim a price either',

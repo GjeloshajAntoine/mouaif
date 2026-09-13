@@ -139,6 +139,15 @@ return getChatDb().replaceMessages(projectDir, chatId, out);
 function clearMessages(projectDir, chatId) {
 return getChatDb().clearMessages(projectDir, chatId);
 }
+// addChatCost(projectDir, chatId, amount) -> { total, known, currency, knownCount } | null
+//
+// Attribute a priced run that is not a chat turn to a chat's persisted total
+// (dictation — see docs/features/dictation.md). No message row is written: the
+// run produced a draft, not a turn, and the chat and project totals are the
+// only places it belongs.
+function addChatCost(projectDir, chatId, amount) {
+return getChatDb().addChatCost(projectDir, chatId, amount);
+}
 // ---- Reconstruct upstream history (unchanged) -----------------------------
 function reconstructUpstreamHistory(list, contentForMessage, options) {
 const source = Array.isArray(list) ? list : [];
@@ -224,5 +233,6 @@ messageCursor,
 appendMessage,
 replaceMessages,
 clearMessages,
+addChatCost,
 reconstructUpstreamHistory
 };

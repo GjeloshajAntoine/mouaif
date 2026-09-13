@@ -21,6 +21,8 @@ import { formatCost } from '../../usage.js';
 import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview } from './webpreviewState.js';
 import { DraftCraftAnnotator } from '../inspector/DraftCraftAnnotator.jsx';
 import { saveComposerDraftNow } from './composer.js';
+import { updateUsageSummary } from './usage.js';
+import { attributedCostAfter } from './costSummary.js';
 import { MicButton } from './MicButton.jsx';
 import {
 annotatedAttachment,
@@ -51,6 +53,16 @@ onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refre
 } = s;
 
   const { projectDir, chatId } = props;
+// dictationCostRef — the running total of dictation runs attributed to this
+// chat since the last authoritative cost snapshot, keyed by *which* snapshot it
+// was accumulated against. A transcription is billed work that writes no
+// message row (it lands in the composer draft), so the server adds it to the
+// persisted chat and project totals and this ref keeps the header Total honest
+// between that write and the next snapshot. The key is the snapshot object
+// itself: a rebase (tail sync or reload) installs a fresh object that already
+// covers every attributed run, so the accumulator starts from zero again
+// instead of adding the earlier runs a second time.
+const dictationCostRef = useRef(null);
 const [FileEditor, setFileEditor] = useState(null);
 // dictationTailRef — the live region of the composer, as the last dictation
 // write left it: where it started and what it said. A second write for the
@@ -71,11 +83,12 @@ const dictationTailRef = useRef(null);
 // mid-sentence must not break the paragraph.
 //
 // `meta.cost` is the server's priced result for the run. It goes on the status
-// line because a transcription is not a chat turn: nothing else in the chat
-// totals covers it, so this is the only place the user sees what dictating
-// just cost. An unpriced run (`known: false` — a per-minute model reports no
-// tokens) says nothing extra rather than `$0.00` — which is why a live chunk,
-// whose price nobody knows until the take ends, passes `null`.
+// line so the user sees what dictating just cost at the moment it happened; a
+// priced run is also attributed to this chat by the server (see
+// dictationCostRef below), which is where the header Total picks it up. An
+// unpriced run (`known: false` — a per-minute model reports no tokens) says
+// nothing extra rather than `$0.00` — which is why a live chunk, whose price
+// nobody knows until the take ends, passes `null`.
 function onTranscript(text, meta) {
   const el = refs.promptInput.current;
   if (!el) return;
@@ -116,6 +129,19 @@ function onTranscript(text, meta) {
   syncComposer(next);
   if (updateChat) {
     saveComposerDraftNow(next, refs, updateChat).catch(() => {});
+  }
+  // A priced, non-live run is attributed to this chat by the server (it wrote
+  // the same number into the chat's persisted Total and the project total).
+  // Fold it into the visible Total now, so the header agrees with the chat list
+  // without waiting for a reload; the next cost snapshot rebases this away.
+  const attributed = meta && !meta.live ? meta.cost : null;
+  if (attributed && attributed.known && Number.isFinite(Number(attributed.total))) {
+    const next = attributedCostAfter(dictationCostRef.current, s.state.costSnapshot, attributed.total);
+    if (next) {
+      dictationCostRef.current = next;
+      s.state.attributedCost = next.total;
+      updateUsageSummary(s.state, null, refs);
+    }
   }
   const caret = (before + lead + text).length;
   try {
@@ -513,7 +539,7 @@ onRefreshCustomActions: refreshCustomActions
           )
         ),
         h('input', { ref: refs.imageInput, class: 'chat-view__image-input', type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, onChange: onImagePickerChange }),
-        h(MicButton, { projectDir, promptRef: refs.promptInput, onTranscript, onStatus: onMicStatus, onProgress: onMicProgress }),
+        h(MicButton, { projectDir, chatId, promptRef: refs.promptInput, onTranscript, onStatus: onMicStatus, onProgress: onMicProgress }),
         h('textarea', { ref: refs.promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey, onPaste: onComposerPaste, onInput: onComposerInput }),
         runningVisible
           ? h('button', { ref: refs.stopBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: onCancelRunning, 'aria-label': 'Stop' },

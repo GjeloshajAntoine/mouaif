@@ -756,6 +756,7 @@ setFileOrb(fileOrbFromApp(app));
 persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
 messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
 state.costSnapshot = rMsgs.status === 200 ? costSnapshot(rMsgs.body) : null;
+state.attributedCost = 0;
 // Seed the backward-pagination cursor from the windowed first page.
 // Only the newest PAGE is in memory; older pages load on scroll-up.
 msgPager.current = createPager();

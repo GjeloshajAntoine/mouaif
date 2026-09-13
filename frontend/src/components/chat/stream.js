@@ -564,6 +564,9 @@ async function fullRebuildFromServer(state, refs, nextSeq) {
   if (!body) return null;
   state.messages = body.messages;
   state.costSnapshot = costSnapshot(body);
+  // A refreshed snapshot already covers every attributed run, so the client's
+  // session delta is rebased away here rather than counted twice.
+  state.attributedCost = 0;
   state.seenSeqs = new Set(body.messages.filter((m) => typeof m.seq === 'number').map((m) => m.seq));
   state.transcriptNextSeq = typeof body.nextSeq === 'number' ? body.nextSeq : nextSeq;
   if (state._renderTranscript) state._renderTranscript();
@@ -593,7 +596,10 @@ async function syncToNextSeq(state, refs, serverNextSeq) {
   // Rebase only after optimistic segments have been replaced by server
   // rows. Metadata saves and older-page loads must not advance this cursor.
   const snapshot = costSnapshot(body);
-  if (snapshot) state.costSnapshot = snapshot;
+  if (snapshot) {
+    state.costSnapshot = snapshot;
+    state.attributedCost = 0;
+  }
   updateUsageSummary(state, null, refs);
   return result;
 }

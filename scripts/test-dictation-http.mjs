@@ -15,6 +15,10 @@ import { createRequire } from 'node:module';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-dictation-http-'));
 process.env.MOUAIF_HOME = path.join(root, 'home');
+// The temp "project" lives outside the user's home, so registering it (the
+// attributed-cost case below) needs the same opt-out the other HTTP tests use.
+// Set before src/projects.js is first required: it reads the flag at load.
+process.env.MOUAIF_ALLOW_ANY_ROOT = '1';
 const projectDir = path.join(root, 'project');
 fs.mkdirSync(projectDir, { recursive: true });
 
@@ -432,6 +436,48 @@ try {
   assert.equal(priced.body.cost.known, true, 'a report plus a priced model is a known cost');
   assert.equal(Math.round(priced.body.cost.total * 1e8) / 1e8, 0.00055);
   assert.equal(priced.body.cost.currency, 'USD');
+
+  // ---- An attributed run joins the chat and the project total -----------
+  //
+  // The composer microphone sends `chatId`. A transcription writes no message
+  // row — it lands in the composer draft — so the server adds the priced run to
+  // the chat's persisted Total and to the registered project total instead: the
+  // same counters the assistant-message path maintains. The runs above sent no
+  // chatId (the Dictation page), which is why they must be absent from both.
+  const chats = require('../src/chats.js');
+  const projects = require('../src/projects.js');
+  projects.registerProject(projectDir);
+  const chat = chats.createChat(projectDir, { title: 'attributed dictation' });
+  assert.equal(chats.getChat(projectDir, chat.id).totalCost.total, 0, 'an unattributed run leaves the chat total alone');
+
+  const attributed = await request('/api/ai/transcribe', jsonInit('POST', {
+    projectDir,
+    chatId: chat.id,
+    modelId: 'gemini-2.5-flash',
+    audioBase64: audio.toString('base64'),
+    mimeType: 'audio/webm'
+  }));
+  assert.equal(attributed.status, 200, JSON.stringify(attributed.body));
+  assert.equal(Math.round(attributed.body.cost.total * 1e8) / 1e8, 0.00055);
+  const chatTotal = chats.getChat(projectDir, chat.id).totalCost;
+  assert.equal(Math.round(chatTotal.total * 1e8) / 1e8, 0.00055, 'the run joins the chat total');
+  assert.equal(chatTotal.known, true);
+  assert.equal(chatTotal.knownCount, 1, 'one priced run, one known-cost unit');
+  const projectTotal = projects.listProjects().find((p) => p.path === projectDir).totalCost;
+  assert.equal(Math.round(projectTotal.total * 1e8) / 1e8, 0.00055, 'and the registered project total');
+
+  // A chat that vanished mid-take must not turn a transcript into an error:
+  // the upstream call is already paid for, so attribution is best-effort.
+  const ghost = await request('/api/ai/transcribe', jsonInit('POST', {
+    projectDir,
+    chatId: 'aaaaaaaa',
+    modelId: 'gemini-2.5-flash',
+    audioBase64: audio.toString('base64'),
+    mimeType: 'audio/webm'
+  }));
+  assert.equal(ghost.status, 200, 'an unknown chatId is ignored, not rejected');
+  assert.ok(typeof ghost.body.text === 'string');
+  assert.equal(chats.getChat(projectDir, chat.id).totalCost.knownCount, 1, 'and nothing was attributed to anyone');
 
   // A per-model `pricing` block on the project record wins over the built-in
   // table, which is the escape hatch for a model the defaults do not know.

@@ -86,7 +86,7 @@ export function updateUsageSummary(state, liveInfo, refs) {
   const el = refs.usageSummary.current;
   if (!el) return;
   const { latestContext, totalCost, hasKnownCost } = summarizeChatUsage(
-    state.messages, state.costSnapshot, liveInfo
+    state.messages, state.costSnapshot, liveInfo, state.attributedCost
   );
   el.innerHTML = '';
   // Each value is rendered as a pill (label + number) so the head

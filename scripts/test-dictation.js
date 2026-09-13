@@ -693,6 +693,27 @@ try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ 
     assert.equal(seam.text(), 'please read the note that matters', 'longest run first');
   });
 
+  check('liveTakeCost sums a take from its chunks, and says nothing when none is priced', () => {    // One chunk, one priced request: the take's figure is their sum, because a
+    // live take is billed per chunk and no single chunk is the take. Compared
+    // with an epsilon because the sum is floating point, like the chat totals.
+    const summed = dictation.liveTakeCost([{ known: true, total: 0.0003 }, { known: true, total: 0.00025 }]);
+    assert.equal(Math.round(summed.total * 1e8) / 1e8, 0.00055);
+    assert.equal(summed.known, true);
+    assert.equal(summed.currency, 'USD');
+    // An unpriced chunk contributes nothing: `whisper-1` bills per minute and
+    // reports no tokens, and a zero here would read as "free".
+    assert.equal(
+    Math.round(dictation.liveTakeCost([{ known: true, total: 0.00055 }, { known: false, total: 0 }]).total * 1e8) / 1e8,
+    0.00055
+    );
+    assert.equal(dictation.liveTakeCost([{ known: false, total: 0 }]), null);
+    assert.equal(dictation.liveTakeCost([]), null);
+    assert.equal(dictation.liveTakeCost(undefined), null);
+    // A malformed figure is not evidence of a price either.
+    assert.equal(dictation.liveTakeCost([{ known: true, total: 'lots' }]), null);
+    assert.equal(dictation.liveTakeCost([{ known: true, total: 0 }]), null);
+  });
+
   await checkAsync('blobToBase64 uses FileReader when present and arrayBuffer otherwise', async () => {
     const bytes = Buffer.from([1, 2, 3, 250]);
     const expected = bytes.toString('base64');

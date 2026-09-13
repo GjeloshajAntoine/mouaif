@@ -25,6 +25,11 @@
 //     the whole transcript of the live region (not just its own words), so the
 //     words said during a failure come back with the following one.
 //
+// A take is billed work, so the priced runs it produces are attributed to the
+// chat it happened in (`chatId` on the request): the server adds them to that
+// chat's Total and the project total, since a transcription writes no message
+// row. The button only reports the figure; the totals are the server's.
+//
 // Which model transcribes is *not* chosen here. The app-wide dictation choice
 // (Settings-free, remembered in the app store under `dictation`, picked on the
 // dictation page) is honoured the same way the chat picker remembers a model;
@@ -40,6 +45,7 @@ import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { nav } from '../../router.js';
+import { formatCost } from '../../usage.js';
 import {
   LIVE_CHUNK_MS,
   MAX_RECORDING_MS,
@@ -49,6 +55,7 @@ import {
   dictationFilename,
   formatDuration,
   liveDictationEnabled,
+  liveTakeCost,
   loadDictationModels,
   pickRecorderMime,
   recorderSupported,
@@ -95,6 +102,13 @@ const liveBaseRef = useRef('');
 const issuedRef = useRef(0);
 const failedRef = useRef(false);
 const liveRef = useRef(false);
+// costRef — every chunk's own priced answer for the take in progress. A chunk
+// is billed work even though nobody can price the *take* until it ends, so the
+// sum is the honest figure for the finished take: the chunks are contiguous
+// timeslices of it, and a chunk that failed contributed nothing to the list.
+// `liveTakeCost` owns the arithmetic; it is what `settleTake` reports, and
+// therefore what the chat adds to its Total (the chat-attributed cost).
+const costRef = useRef([]);
 // recordingRef mirrors the `recording` state for the async paths: a chunk's
 // answer arrives after the recorder's events, and whether the take is still
 // open decides both what is published and whether it may be closed.
@@ -153,8 +167,9 @@ return { draft: base + lead + text, text, base: base + lead, caret: (base + lead
 // publishLive() — put the current transcript in the draft without closing the
 // turn. `live: true` is what tells the chat view that this write owns a *tail*
 // of the draft and the next one replaces it rather than appending again (see
-// onTranscript in Chat.jsx); `cost: null` because a chunk is not a priced run
-// and the status line must not print `$0.00` for a take still in progress.
+// onTranscript in Chat.jsx); `cost: null` because the take is still running and
+// has no price yet — the sum of its chunks' prices is reported once, when it
+// settles.
 function publishLive() {
 if (!onTranscript) return;
 const live = liveDraft();
@@ -175,6 +190,9 @@ takeRef.current = null;
 liveBaseRef.current = '';
 issuedRef.current = 0;
 failedRef.current = false;
+// The next take starts from zero: this ref accumulates across the chunks of
+// one take only.
+costRef.current = [];
 if (!text || !onTranscript) return;
 onTranscript(text, {
 model: modelRef.current ? { id: modelRef.current.id, provider: modelRef.current.provider || '' } : null,
@@ -208,6 +226,10 @@ const audioBase64 = await blobToBase64(blob);
 if (!takeRef.current) return;
 const out = await transcribeAudio({
 projectDir: props.projectDir || '',
+// The chat this take happens in. It is what makes the run *attributed*: the
+// server adds the priced run to this chat's Total and the project total, since
+// a transcription writes no message row. The dictation page omits it.
+chatId: props.chatId || '',
 modelId: match.id,
 providerId: match.provider || '',
 kind: match.kind || '',
@@ -219,6 +241,10 @@ language
 if (!takeRef.current) return;
 failedRef.current = false;
 takeRef.current.set(index, (out.text || '').trim());
+// Remember this chunk's price, so the take can settle with the sum of them
+// (liveTakeCost). An unpriced chunk (a per-minute model reports no tokens)
+// contributes nothing rather than a fabricated zero.
+if (out.cost) costRef.current.push(out.cost);
 // Only while recording: once the user has stopped, the take is published by
 // `maybeSettle` as the finished transcript, and publishing it here as well
 // would move the caret twice for one answer.
@@ -230,9 +256,10 @@ failedRef.current = true;
 maybeSettle();
 }
 // maybeSettle() — close the take once the recorder has stopped *and* nothing
-// is outstanding. The cost cannot be reported for a live take (a chunk is a
-// partial run of the audio, not billed as the whole dictation), so the chat's
-// status line says what happened to the take instead of inventing a price.
+// is outstanding. The cost reported is the sum of the chunks that answered:
+// each one was a real, billed request, so the finished take has a price even
+// though no single chunk does. A take whose chunks were all unpriced reports
+// `null` and the status line says nothing about money rather than `$0.00`.
 function maybeSettle() {
 const take = takeRef.current;
 if (!take) return;
@@ -253,13 +280,20 @@ return;
 if (take.pending(issuedRef.current) > 0) return;
 const failed = failedRef.current;
 const text = take.text();
-settleTake(null);
+const summed = liveTakeCost(costRef.current);
+settleTake(summed);
 if (text && failed) {
 say('Added to the composer — part of what you said could not be transcribed.', 'error');
 return;
 }
 if (text) {
-sayLocal('Added to the composer — review it, then send.', 'success');
+// Same convention as the one-request path: report the figure when the take
+// had one, and say nothing about money when it did not (a `$0.00` would read
+// as "free" rather than "not reported").
+const summedLabel = summed ? formatCost(summed.total) : '--';
+sayLocal(summedLabel === '--'
+? 'Added to the composer — review it, then send.'
+: 'Added to the composer (' + summedLabel + ') — review it, then send.', 'success');
 return;
 }
 say(failed ? 'Transcription failed' : 'Nothing was recognised — try again a little closer to the mic.', 'error');
@@ -302,6 +336,7 @@ say(failed ? 'Transcription failed' : 'Nothing was recognised — try again a li
       const audioBase64 = await blobToBase64(blob);
       const out = await transcribeAudio({
         projectDir: props.projectDir || '',
+        chatId: props.chatId || '',
         modelId: match.id,
         providerId: match.provider || '',
         kind: match.kind || '',
@@ -417,6 +452,7 @@ liveStartRef.current = promptEl && typeof promptEl.selectionStart === 'number'
 liveBaseRef.current = promptEl ? promptEl.value.slice(0, liveStartRef.current) : '';
 issuedRef.current = 0;
 failedRef.current = false;
+costRef.current = [];
 takeRef.current = createLiveSegments();
 // Live only when the user asked for it *and* this recorder hands over audio
 // as it goes: the timeslice-capable arm of MediaRecorder. The other arm keeps

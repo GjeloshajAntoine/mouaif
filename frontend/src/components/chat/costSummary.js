@@ -6,7 +6,24 @@ export function costSnapshot(body) {
   return { nextSeq: body.nextSeq, total: cost.total, known: !!cost.known };
 }
 
-export function summarizeChatUsage(messages, snapshot, liveInfo) {
+// attributedCostAfter(held, snapshot, amount) -> { snapshot, total }
+//
+// Accumulate a non-turn run attributed to this chat (dictation) on top of an
+// authoritative cost snapshot. `held` is what the caller kept from last time —
+// `{ snapshot, total }` — and the snapshot *object* is the key: a rebase (tail
+// sync or reload) hands over a fresh snapshot that already covers every
+// attributed run, so the accumulator restarts from zero instead of adding the
+// earlier runs a second time. Returns null when the amount is not a usable
+// price, so a caller can skip the write entirely.
+export function attributedCostAfter(held, snapshot, amount) {
+  const delta = Number(amount);
+  if (!Number.isFinite(delta) || delta <= 0) return null;
+  const key = snapshot || null;
+  const base = held && held.snapshot === key && Number.isFinite(held.total) ? held.total : 0;
+  return { snapshot: key, total: base + delta };
+}
+
+export function summarizeChatUsage(messages, snapshot, liveInfo, attributedCost) {
   let latestContext = null;
   let totalCost = snapshot ? snapshot.total : 0;
   let hasKnownCost = snapshot ? snapshot.known : false;
@@ -15,6 +32,15 @@ export function summarizeChatUsage(messages, snapshot, liveInfo) {
       totalCost += cost.total;
       hasKnownCost = true;
     }
+  }
+  // Non-turn runs attributed to this chat mid-session: dictation is billed work
+  // that writes no message row, so the snapshot (which covers persisted rows)
+  // cannot know about it until the page reloads. The server writes the same
+  // number to the persisted chat and project totals, so this only covers the
+  // window between the run and the next snapshot.
+  if (Number.isFinite(attributedCost) && attributedCost > 0) {
+    totalCost += attributedCost;
+    hasKnownCost = true;
   }
   for (const message of messages || []) {
     if (!message || message.role !== 'assistant') continue;

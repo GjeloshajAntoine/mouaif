@@ -9,8 +9,14 @@
 //
 //   POST /api/ai/transcribe
 //        body: { projectDir, modelId, providerId?, audioBase64, mimeType?,
-//                filename?, language?, prompt? }
-//        -> { text, model: { id, provider }, kind, bytes, durationMs }
+//                filename?, language?, prompt?, chatId?, kind? }
+//        -> { text, model: { id, provider }, kind, bytes, durationMs,
+//             usage, cost }
+//
+// `chatId` is optional and is what makes a run *attributed*: the composer
+// microphone sends it, so the priced run joins that chat's Total and the
+// project total (messages.addChatCost). The Dictation page sends none, and its
+// runs stay point-of-use only.
 //
 // Both are proxies, for the same reason the chat endpoint is one
 // (docs/decisions.md section 10): the browser holds no provider credential.
@@ -26,6 +32,7 @@ const {
   readJsonOr400,
   resolveModel,
   credentialForProvider,
+  messages,
   settings
 } = require('./server-shared.js');
 
@@ -359,6 +366,20 @@ async function handleTranscribe(req, res, parsed) {
     const cost = parsedUpstream.usage
     ? usageMetrics.computeCost({ model, usage: parsedUpstream.usage, app: settings.getApp() })
     : UNKNOWN_COST;
+    // Attribute the run to the chat that asked for it, when there is one.
+    // A chat-attributed run is not a chat turn (no message is written — the
+    // transcript lands in the composer draft), but it is billed work, so its
+    // cost joins the chat's Total and the project total through the same
+    // persisted counters the message path maintains. The Dictation page sends
+    // no chatId: its runs stay point-of-use only, which is why the composer
+    // microphone and the page can report differently without disagreeing.
+    // Attribution never fails the run: the upstream call is already paid for,
+    // and a chat that vanished mid-take must not turn a transcript into an
+    // error.
+    const chatId = typeof body.chatId === 'string' ? body.chatId : '';
+    if (chatId && cost.known && Number.isFinite(cost.total) && cost.total > 0) {
+    try { messages.addChatCost(projectDir, chatId, cost.total); } catch { /* non-fatal */ }
+    }
     return sendJSON(res, 200, {
     text: parsedUpstream.text,
     model: { id: model.id, provider: model.provider },
