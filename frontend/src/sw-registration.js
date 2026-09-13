@@ -10,6 +10,13 @@ export const updateAvailable = signal(false);
 let registration = null;
 let waitingWorker = null;
 let applyingUpdate = false;
+// Set when this page posts SKIP_WAITING because the user tapped Reload on the
+// update banner. The controller that arrives afterwards replaces the bundle the
+// page is running, so the `controllerchange` listener must reload for it — even
+// on a first session, where `controllerWasSet` is false for the document's whole
+// life because the first install claimed a page that loaded uncontrolled. See
+// sw-controller-reload.js.
+let acceptedUpdate = false;
 // Sample ONCE, before the worker can claim this page: whether a controller was
 // already running this document when it loaded. `clients.claim()` on a first
 // install flips this from null to a worker, and the difference is what
@@ -53,6 +60,10 @@ export function applyUpdate() {
   const worker = (registration && registration.waiting) || waitingWorker;
   if (applyingUpdate || !worker) return;
   applyingUpdate = true;
+  // The user asked for this update. Record the intent BEFORE the worker can
+  // activate: the `controllerchange` it produces has to reload even when this
+  // page loaded uncontrolled (a first session claimed by the first install).
+  acceptedUpdate = true;
   worker.postMessage({ type: 'SKIP_WAITING' });
 }
 
@@ -102,19 +113,24 @@ export function registerServiceWorker() {
 
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-  // A controller change is only a reason to reload when this page was ALREADY
-  // controlled when it loaded and something has replaced that controller. The
-  // first visit to an origin is the case that used to reload for nothing: the
-  // worker's activate handler calls clients.claim(), which controllerchanges
-  // the page that just painted, and the old code threw that page away — a white
-  // flash plus a second document load and a second chat fetch. A claimed first
-  // load is running the only bundle that exists, so there is nothing to pick up.
-  if (!shouldReloadOnControllerChange({
-  controllerWasSet,
-  hasController: !!navigator.serviceWorker.controller
-  })) return;
-  if (refreshing) return;
-  refreshing = true;
-  window.location.reload();
+    // A controller change is only a reason to reload when this page was ALREADY
+    // controlled when it loaded AND something has replaced that controller, or
+    // when the user accepted the update this session offered. The first visit to
+    // an origin is the case that used to reload for nothing: the worker's
+    // activate handler calls clients.claim(), which controllerchanges the page
+    // that just painted, and the old code threw that page away — a white flash
+    // plus a second document load and a second chat fetch. A claimed first load
+    // is running the only bundle that exists, so there is nothing to pick up.
+    // `acceptedUpdate` is what keeps that from also refusing the reload the
+    // banner's Reload button promised, on a first session's page. The decision
+    // itself lives in sw-controller-reload.js.
+    if (!shouldReloadOnControllerChange({
+      controllerWasSet,
+      hasController: !!navigator.serviceWorker.controller,
+      acceptedUpdate
+    })) return;
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
   });
 }
