@@ -88,7 +88,7 @@ function listPending(projectDir, chatId) {
   if (!session || !session.pending.size) return [];
   return Array.from(session.pending.entries()).map(([callId, pending]) => {
     const request = pending && pending.request && typeof pending.request === 'object' ? pending.request : {};
-    return Object.assign({ callId, pendingId: callId, tool: pending.tool }, request);
+    return Object.assign({ callId, tool: pending.tool }, request);
   });
 }
 
@@ -554,7 +554,6 @@ async function authorize(input) {
   if (input.flow === 'retry') wait.catch(() => {});
   const publicResult = {
     decision: 'prompt',
-    pendingId: callId,
     timeoutMs: clampTimeout(input.timeoutMs, config),
     wait
   };

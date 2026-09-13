@@ -869,7 +869,9 @@ export function handleSubagentStreamEvent(ev, data, refs) {
 // Render a tool_result event. If a matching tool_call card is on
 // screen, update it; otherwise append a fresh card so the user can
 // see the result regardless of order. Tap the header row to expand.
-export function appendToolResultCard(toolResult, refs, isReplay) {
+// Unlike the call card, a result has no "still waiting" state to
+// render, so it takes no replay flag.
+export function appendToolResultCard(toolResult, refs) {
   if (!refs.transcript.current) return;
   // Adopt the id of an unidentified call card when this result has none of
   // its own. Without this the two sides disagree on the key and the call
@@ -1498,7 +1500,7 @@ appendToolResultCard({
 id: m.toolCallId, name: m.name, ok: m.ok,
 args: m.args || (normalizeToolName(m.name) === 'write_file' ? toolCallArgsFor(state, m) : null),
 result: m.content || ''
-}, refs, true);
+}, refs);
 } else if (isPersistedTurnError(m)) {
 const payload = retryPayloadForError(state.messages, m);
 appendErrorCard(m.content, refs, state, {
