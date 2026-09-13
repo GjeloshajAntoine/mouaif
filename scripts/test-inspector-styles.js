@@ -218,6 +218,46 @@ async function main() {
   const empty = await handlers.captureElementShot('obj-1');
   assert.strictEqual(empty, null, 'a zero-size element yields no shot');
 
+  // The live re-capture — the Styles panel's pinned preview following the page
+  // instead of only what this panel did last. It asks for the element *where it
+  // is* (`scroll: false`): this runs while the user reads and edits, and a loop
+  // that re-centred the page on every tick would drag the page around under the
+  // finger. The clip is in document space, so an element below the fold still
+  // captures correctly; a target that forces viewport-only captures (a PDF
+  // viewer) cannot answer that, so a live capture is refused there rather than
+  // returning the wrong pixels — while the manual routes keep their centring.
+  respond.set('Runtime.callFunctionOn', (p) => {
+    if (/getBoundingClientRect/.test(p.functionDeclaration)) {
+      return Promise.resolve({ result: { value: { x: 4, y: 900, width: 300, height: 120, sx: 0, sy: 0, dpr: 1 } } });
+    }
+    return Promise.resolve({ result: { value: modelValue() } });
+  });
+  const beforeLive = calls.length;
+  const liveShot = await handlers.captureElementShot('obj-1', { scroll: false });
+  assert.ok(liveShot, 'a live capture still returns a shot');
+  const liveCalls = calls.slice(beforeLive);
+  const liveRead = liveCalls.find((c) => c.method === 'Runtime.callFunctionOn');
+  assert.ok(!/scrollIntoView/.test(liveRead.params.functionDeclaration),
+    'a live capture does not scroll the page');
+  assert.ok(/getBoundingClientRect/.test(liveRead.params.functionDeclaration),
+    'a live capture still measures the element');
+  const liveClip = liveCalls.find((c) => c.method === 'Page.captureScreenshot').params.clip;
+  assert.strictEqual(liveClip.y, 884, 'a live capture clips in document coordinates without scrolling');
+  // Viewport-only target: the refusal costs no round-trip, and the manual
+  // paths (pick, edit, tap-to-refresh, card-header Refresh) are untouched.
+  const vp = makeState();
+  vp.state.captureBeyondViewport = false;
+  const vpHandlers = context.createEventHandlers(vp.state);
+  assert.strictEqual(await vpHandlers.captureElementShot('obj-1', { scroll: false }), null,
+    'a viewport-only target refuses a live capture');
+  assert.strictEqual(vp.calls.length, 0, 'the refusal is decided before any CDP call');
+  vp.respond.set('Runtime.callFunctionOn', () => Promise.resolve({
+    result: { value: { x: 4, y: 300, width: 300, height: 120, sx: 0, sy: 200, dpr: 1 } }
+  }));
+  vp.respond.set('Page.captureScreenshot', () => Promise.resolve({ data: 'BASE64PNG' }));
+  assert.ok(await vpHandlers.captureElementShot('obj-1'),
+    'the manual capture still centres and captures on a viewport-only target');
+
   // Element tree navigation — readElementTree / selectAncestorNode /
   // selectChildNode. Walking the DOM from the selected element is what makes
   // the Styles panel usable on a phone: re-picking on the live preview for
@@ -596,7 +636,27 @@ async function main() {
   assert.ok(/if \(modelRef\.current\) return;[\s\S]{0,120}adoptedRef\.current = objectId/.test(panelSrc),
     'a panel that has just mounted still takes the element back on');
 
-  console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview + element tree + matched rules)');
+  // --- The pinned preview follows the page --------------------------------
+  // The pinned capture used to be a snapshot: it re-captured when the *panel*
+  // acted (a selection, an edit, a tap on the image) and never otherwise, so
+  // anything that changed the page outside the panel — typing into a field, the
+  // page's own script, a stylesheet swap — left a stale image until the user
+  // refreshed by hand. The panel now runs a paced re-capture loop whose policy
+  // lives in liveShot.js (covered by scripts/test-inspector-live-shot.js).
+  assert.ok(/createLiveShot\(\{[\s\S]{0,240}capture: captureShotLive/.test(panelSrc),
+    'the panel runs the live re-capture loop with its own capture');
+  assert.ok(/loop\.start\(\)/.test(panelSrc) && /loop\.stop\(\)/.test(panelSrc),
+    'the loop is started with the selection and stopped when it goes away');
+  assert.ok(/captureShotLive\(\)[\s\S]{0,800}scroll: false/.test(panelSrc),
+    'a live capture never re-centres the page under the user');
+  assert.ok(!/captureShotLive\(\)[\s\S]{0,900}setShotBusy\(true\)/.test(panelSrc),
+    'an automatic tick never shows "Updating…" or disables the tap target');
+  assert.ok(/r\.data === lastShotData\.current/.test(panelSrc),
+    'a capture whose bytes are unchanged is dropped before it reaches the DOM');
+  assert.ok(/'Live element preview — tap to refresh'/.test(panelSrc),
+    'the caption says the preview is live, not only tappable');
+
+  console.log('PASS inspector styles CDP wiring (tap-to-select + selector + inline-style edit + pinned element preview + element tree + matched rules + live preview)');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

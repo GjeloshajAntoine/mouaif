@@ -718,15 +718,31 @@ return model;
 // window shows its beginning rather than its middle. Returns
 // { data, width, height } in device pixels, or null when the element has no
 // usable box (display:none, detached node, zero-size).
+//
+// `opts.scroll === false` captures the element *where it is* instead of
+// centring it first. That is what the Styles panel's live re-capture uses: it
+// runs while the user is reading and editing, and scrolling the page under
+// them every tick to photograph an element that is already photographed
+// identically (the clip is in document space, so an off-screen element
+// captures fine) would be a page that fights the finger. Live captures are
+// refused outright on targets that force viewport-only captures (a PDF viewer)
+// because there a region outside the viewport cannot be captured faithfully —
+// the manual routes keep their centring and still work there.
 async function captureElementShot(objectId, opts) {
 if (!objectId) return null;
 const pad = Math.max(0, Math.min(48, (opts && opts.pad) || 16));
 const maxWidth = Math.max(64, (opts && opts.maxWidth) || 480);
+const centring = !opts || opts.scroll !== false;
+if (!centring && state.captureBeyondViewport === false) return null;
 let rect = null;
 try {
 const r = await cdpSend('Runtime.callFunctionOn', {
 objectId,
-functionDeclaration: 'function(){ if(!this.getBoundingClientRect) return null; try { this.scrollIntoView({ block: "center", inline: "nearest" }); } catch (e) { try { this.scrollIntoView(); } catch (e2) { return null; } } var b = this.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height, sx: window.scrollX || 0, sy: window.scrollY || 0, dpr: window.devicePixelRatio || 1 }; }',
+functionDeclaration: 'function(){ if(!this.getBoundingClientRect) return null;'
++ (centring
+? ' try { this.scrollIntoView({ block: "center", inline: "nearest" }); } catch (e) { try { this.scrollIntoView(); } catch (e2) { return null; } }'
+: '')
++ ' var b = this.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height, sx: window.scrollX || 0, sy: window.scrollY || 0, dpr: window.devicePixelRatio || 1 }; }',
 returnByValue: true
 }, 8000);
 rect = r && r.result && r.result.value;

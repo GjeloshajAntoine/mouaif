@@ -45,6 +45,7 @@ import { ValueRail } from './ValueRail.jsx';
 import { ValueKindsView } from './ValueKindsView.jsx';
 import { StyleControls } from './StyleControls.jsx';
 import { AddPropertySheet } from './AddPropertySheet.jsx';
+import { createLiveShot } from './liveShot.js';
 import { valueShape } from './valueShapes.js';
 import { writtenNames } from './shorthand.js';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
@@ -999,6 +1000,21 @@ setComputedView((v) => ({ ...v, steps: Math.max(0, steps) }));
 // and manual refreshes can overlap, and a slow capture for a previously
 // selected element must not replace the current element's preview.
 const shotSerial = useRef(0);
+// lastShotData — the raw base64 of the capture that is on screen. The live
+// re-capture below compares against it and drops a byte-identical image before
+// it reaches the DOM: an unchanged element costs no decode, no layout and no
+// scroll write, exactly like the Preview panel's own unchanged-frame drop. It
+// is also what makes "the preview is live" free on an idle page.
+const lastShotData = useRef('');
+// manualShotBusy — whether a *user-asked* capture (a pick, an edit, a tap on
+// the image, the card header's Refresh) is in flight. The live loop stands down
+// while one is: the manual capture is the one the user is waiting for, and it
+// may have been asked for *because* the page changed outside the panel.
+const manualShotBusy = useRef(false);
+// shotLiveBusy — an automatic capture in flight. Cheap guard, but it is what
+// keeps a slow page from stacking ticks (the loop also schedules the next one
+// only after the previous finished).
+const shotLiveBusy = useRef(false);
 // captureShot — grab a clipped screenshot of the currently selected
 // element. Never throws: a failed capture leaves the previous preview in
 // place rather than blanking the panel.
@@ -1006,17 +1022,70 @@ async function captureShot() {
 const objectId = modelRef.current && modelRef.current.objectId;
 if (!objectId || !props.captureElementShot) return;
 const serial = ++shotSerial.current;
+manualShotBusy.current = true;
 setShotBusy(true);
 try {
 const r = await props.captureElementShot(objectId);
 if (serial !== shotSerial.current) return;
 if (r && r.data) {
+lastShotData.current = r.data;
 setShot({ src: 'data:image/png;base64,' + r.data, width: r.width, height: r.height });
 }
 } catch { /* keep the previous preview */ } finally {
+manualShotBusy.current = false;
 if (serial === shotSerial.current) setShotBusy(false);
 }
 }
+// captureShotLive — the loop's capture. Same clipped screenshot, three
+// deliberate differences from `captureShot` above:
+//
+//   1. `scroll: false` — it never centres the element, because it runs while
+//      the user reads and edits (an element off screen still captures: the clip
+//      is in document space).
+//   2. it never touches `shotBusy`, so an automatic tick cannot make the
+//      caption flash "Updating…" or disable the tap-to-refresh button under the
+//      user's finger; the size readout on the caption is what moves.
+//   3. it does not take a `shotSerial`, so a tick can never cancel a capture the
+//      user asked for; instead it drops its own result when a manual capture
+//      started (or the selection moved) while it was in flight.
+//
+// A capture that returns nothing (an element with no box, a detached node, a
+// target that refuses viewport-only clips) leaves the previous image alone.
+async function captureShotLive() {
+const objectId = modelRef.current && modelRef.current.objectId;
+if (!objectId || !props.captureElementShot) return;
+if (manualShotBusy.current) return;
+if (shotLiveBusy.current) return;
+shotLiveBusy.current = true;
+try {
+const r = await props.captureElementShot(objectId, { scroll: false });
+if (!r || !r.data) return;
+if (manualShotBusy.current) return;
+if (r.data === lastShotData.current) return;
+const cur = modelRef.current;
+if (!cur || cur.objectId !== objectId) return;
+lastShotData.current = r.data;
+setShot({ src: 'data:image/png;base64,' + r.data, width: r.width, height: r.height });
+} catch { /* keep the previous preview */ } finally {
+shotLiveBusy.current = false;
+}
+}
+// The live preview loop. While an element is selected, the pinned capture is
+// kept in step with the page instead of only reflecting what this panel did
+// last: an edit typed into the page, a field filled from the Preview panel's
+// type bar, an animation, or the page's own script all show up here without a
+// tap. The pacing (one capture at a time, paused in the background, standing
+// down for a manual capture) lives in liveShot.js so it is testable on its own.
+useEffect(() => {
+const objectId = model && model.objectId;
+if (!objectId || !props.captureElementShot) return;
+const loop = createLiveShot({
+capture: captureShotLive,
+isHidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden'
+});
+loop.start();
+return () => loop.stop();
+}, [model && model.objectId, props.captureElementShot]);
 // loadTree — read the selected element's ancestors and children for the
 // breadcrumb / child chips. Best-effort and non-blocking: the property
 // lists must not wait on it, and a target that can't answer leaves the tree
@@ -1061,6 +1130,11 @@ const prevId = modelRef.current && modelRef.current.objectId;
 if (!m || m.objectId !== prevId) { setChanged([]); if (props.onSelectionReset) props.onSelectionReset(); }
 setModelBoth(m);
 shotSerial.current++;
+// The previous element's capture is meaningless for this one, in the cache as
+// well as on screen: the live loop compares against `lastShotData`, so leaving
+// it behind would drop the new element's first capture when the two happen to
+// be byte-identical (two identical buttons, a repeated card).
+lastShotData.current = '';
 setShot(null);
 setShotBusy(false);
 captureShot();
@@ -1607,7 +1681,7 @@ draggable: 'false'
 })
 ),
 h('p', { class: 'inspector__styles-shot-note', role: 'status' },
-h('span', null, shotBusy ? 'Updating…' : 'Element preview — tap to refresh'),
+h('span', null, shotBusy ? 'Updating…' : 'Live element preview — tap to refresh'),
 h('span', { class: 'inspector__styles-shot-dims' },
 shot.width && shot.height ? shot.width + '×' + shot.height : '')
 )
