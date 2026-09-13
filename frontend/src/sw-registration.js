@@ -5,11 +5,19 @@
 // update availability, and applies an update after the user taps Reload.
 
 import { signal } from '@preact/signals';
-
+import { shouldReloadOnControllerChange } from './sw-controller-reload.js';
 export const updateAvailable = signal(false);
 let registration = null;
 let waitingWorker = null;
 let applyingUpdate = false;
+// Sample ONCE, before the worker can claim this page: whether a controller was
+// already running this document when it loaded. `clients.claim()` on a first
+// install flips this from null to a worker, and the difference is what
+// distinguishes "a first install adopted us" (no reload) from "an accepted
+// update replaced the bundle we are running" (reload). See
+// sw-controller-reload.js.
+const controllerWasSet = !!(typeof navigator !== 'undefined'
+&& navigator.serviceWorker && navigator.serviceWorker.controller);
 const observedWorkers = new WeakSet();
 const UPDATE_CHECK_INTERVAL_MS = 60 * 1000;
 
@@ -94,8 +102,19 @@ export function registerServiceWorker() {
 
   let refreshing = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (refreshing) return;
-    refreshing = true;
-    window.location.reload();
+  // A controller change is only a reason to reload when this page was ALREADY
+  // controlled when it loaded and something has replaced that controller. The
+  // first visit to an origin is the case that used to reload for nothing: the
+  // worker's activate handler calls clients.claim(), which controllerchanges
+  // the page that just painted, and the old code threw that page away — a white
+  // flash plus a second document load and a second chat fetch. A claimed first
+  // load is running the only bundle that exists, so there is nothing to pick up.
+  if (!shouldReloadOnControllerChange({
+  controllerWasSet,
+  hasController: !!navigator.serviceWorker.controller
+  })) return;
+  if (refreshing) return;
+  refreshing = true;
+  window.location.reload();
   });
 }
