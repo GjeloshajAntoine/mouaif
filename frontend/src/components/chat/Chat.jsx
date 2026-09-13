@@ -486,6 +486,7 @@ onToggleTool: s.state._toggleTool,
             onToggleToolGroup: s.state._toggleToolGroup,
             onToggleAgentFiles: s.state._toggleAgentFiles,
             onToggleSkills: s.state._toggleSkills,
+            onToggleSkill: s.state._toggleSkill,
             onSaveToolAuth: s.state._saveToolAuth,
             onSaveMcpAuth: s.state._saveMcpAuth,
             // Start a stopped-but-enabled MCP server from the tree's "…"

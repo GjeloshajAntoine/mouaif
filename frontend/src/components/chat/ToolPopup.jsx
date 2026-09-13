@@ -3,7 +3,7 @@
 // A small trigger button in the chat top bar that opens a popup
 // with the same hierarchical tool tree shown in the transcript's
 // tools card. Changes are persisted immediately via the existing
-// toggleTool / toggleToolGroup / toggleAgentFiles
+// toggleTool / toggleToolGroup / toggleAgentFiles / toggleSkill
 // callbacks. The popup re-uses the Preact ToolTree component and
 // mirrors the state from the chat's tools/agentFiles/mcpServers
 // objects.
@@ -47,6 +47,7 @@ export function ToolPopup(props) {
     onToggleToolGroup,
     onToggleAgentFiles,
     onToggleSkills,
+    onToggleSkill,
     onSaveToolAuth,
     onSaveMcpAuth,
     onReloadMcpServer,
@@ -165,7 +166,9 @@ files: 'file'
       return;
     }
     if (groupId === 'skills') {
-      if (onToggleSkills) onToggleSkills(checked);
+      // A row switch stays on its row; the group checkbox above is
+      // the all-on / all-off shortcut (handleToggleGroup).
+      if (onToggleSkill) onToggleSkill(toolId, checked);
       return;
     }
     if (onToggleTool) onToggleTool(toolId, checked);
@@ -194,11 +197,18 @@ files: 'file'
 
   const sk = skills || { items: [], enabled: true, projectLocked: false };
   if (sk.items.length) {
+    // Group checkbox follows the ToolTree convention (see buildToolGroups):
+    // `checked` means every child is on, so a partial selection renders as an
+    // indeterminate dash whose next tap turns the whole family ON. With
+    // `checked: sk.enabled` a half-selected group showed a dash but flipped
+    // everything OFF on tap — the opposite of what the dash promises.
+    const selectable = sk.items.filter((s) => !s.disabled);
+    const allOn = selectable.length > 0 && selectable.every((s) => !s.chatDisabled);
     groups.push({
       id: 'skills',
       name: 'Skills',
       description: sk.enabled ? 'available metadata' : 'off',
-      checked: sk.enabled,
+      checked: !!sk.enabled && allOn,
       disabled: !!sk.projectLocked,
       disabledReason: sk.projectLocked ? 'Locked off by Settings → Project.' : '',
       alwaysExpanded: true,
@@ -206,7 +216,7 @@ files: 'file'
         id: s.id,
         name: s.name,
         description: s.description || '',
-        checked: sk.enabled && !s.disabled,
+        checked: sk.enabled && !s.disabled && !s.chatDisabled,
         disabled: !!sk.projectLocked || !!s.disabled,
         disabledReason: s.disabled ? 'Disabled in Settings → Project' : ''
       }))

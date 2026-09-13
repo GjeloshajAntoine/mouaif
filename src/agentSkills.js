@@ -71,13 +71,33 @@ function discover(projectDir) {
   return entries.filter((e) => e.isDirectory()).map((e) => safeSkillFile(projectDir, root, e)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// normalizeDisabledSkills(raw) -> Set<string>
+//
+// Both the project and the chat carry a `disabledSkills` list of skill
+// ids/names. Anything that is not a string list is treated as empty so a
+// hand-edited `.mouaif.json` (or a legacy row) can never take discovery down.
+function normalizeDisabledSkills(raw) {
+  if (!Array.isArray(raw)) return new Set();
+  return new Set(raw.map((n) => String(n)).filter(Boolean));
+}
+
+// resolve({ chat, projectDir }) -> {
+//   enabled, projectEnabled, disabled, projectDisabled, chatDisabled, skills
+// }
+//
+// `disabled` is the union used for filtering (catalog + activate_skill).
+// The two halves are kept separate so the chat UI can tell a skill the
+// project switched off (locked, with a reason) from one the user
+// unchecked in this chat (a plain per-chat opt-out).
 function resolve({ chat, projectDir }) {
-  let project = {};
-  try { project = settings.getProject(projectDir) || {}; } catch { /* defaults */ }
-  const projectEnabled = project.skills !== false;
-  const enabled = projectEnabled && !(chat && chat.skills === false);
-  const disabled = new Set(Array.isArray(project.disabledSkills) ? project.disabledSkills.map(String) : []);
-  return { enabled, projectEnabled, disabled, skills: discover(projectDir) };
+let project = {};
+try { project = settings.getProject(projectDir) || {}; } catch { /* defaults */ }
+const projectEnabled = project.skills !== false;
+const enabled = projectEnabled && !(chat && chat.skills === false);
+const projectDisabled = normalizeDisabledSkills(project.disabledSkills);
+const chatDisabled = normalizeDisabledSkills(chat && chat.disabledSkills);
+const disabled = new Set([...projectDisabled, ...chatDisabled]);
+return { enabled, projectEnabled, disabled, projectDisabled, chatDisabled, skills: discover(projectDir) };
 }
 
 function available(projectDir, chat) {

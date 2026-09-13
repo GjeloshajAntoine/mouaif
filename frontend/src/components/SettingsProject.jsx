@@ -725,7 +725,7 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
       id: 'skills',
       name: 'Skills',
       description: 'Inject matching project skills into chats',
-      title: 'Agent Skills stored in .agents/skills/*/SKILL.md. Off locks them out of every chat; on lets each chat opt out.',
+      title: 'Agent Skills stored in .agents/skills/*/SKILL.md. Off locks them out of every chat; on lets each chat opt out, skill by skill.',
       checked: skillsOn,
       tools: [{
         id: 'skills',

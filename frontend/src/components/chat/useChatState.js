@@ -24,7 +24,7 @@ import {
 import {
 renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
 } from './transcript.js';
-import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills } from './cards.js';
+import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills, toggleSkill } from './cards.js';
 import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
@@ -562,6 +562,13 @@ await sendTurn(state, refs, {
     toggleSkills(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs));
     setToolDataStamp((v) => v + 1);
   }, [updateChatBound]);
+  // One skill row, one skill: the family toggle above stays available for
+  // "all on / all off", but a row switch must never move its siblings.
+  const onToggleSkill = useCallback((id, next) => {
+    if (!id) return;
+    toggleSkill(id, next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs));
+    setToolDataStamp((v) => v + 1);
+  }, [updateChatBound]);
   const onCancelRunning = useCallback(() => cancelRunningChat(state, refs), [projectDir, chatId]);
   const onPickerPickBound = useCallback((selection, legacyModelId) => {
     const providerId = selection && typeof selection === 'object' ? selection.providerId : selection;
@@ -600,6 +607,7 @@ await sendTurn(state, refs, {
   state._toggleToolGroup = onToggleToolGroup;
   state._toggleAgentFiles = onToggleAgentFiles;
   state._toggleSkills = onToggleSkills;
+  state._toggleSkill = onToggleSkill;
 
   // Save tool authorization (Off/Ask/Allow) directly to the server.
   // Used by the inline segment control in the chat tools card.
@@ -814,9 +822,24 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
           projectLocked: projectGate === false  // project has it off → toggle locked
         };
         const skillGate = rSys.status === 200 ? rSys.body.projectSkills : true;
+        // Each item carries two independent reasons to be off:
+        //   disabled     — the project switched that skill off (locked row)
+        //   chatDisabled — this chat's own `disabledSkills` opt-out, which
+        //                  the row's checkbox toggles on its own
+        const rawSkills = (rSys.status === 200 && Array.isArray(rSys.body.skills)) ? rSys.body.skills : [];
         skills.current = {
-          items: (rSys.status === 200 && Array.isArray(rSys.body.skills)) ? rSys.body.skills : [],
-          enabled: skillGate !== false && c.skills !== false,
+          items: rawSkills.map((s) => ({
+            id: s.id,
+            name: s.name,
+            description: s.description,
+            disabled: !!s.disabled,
+            chatDisabled: !!s.chatDisabled
+          })),
+          // Server truth first: it already folded in the project gate,
+          // the chat flag, and a prompt preset that forces skills on.
+          enabled: skillGate !== false && (typeof rSys.body.skillsEnabled === 'boolean'
+            ? rSys.body.skillsEnabled
+            : c.skills !== false),
           projectLocked: skillGate === false
         };
         mcpServers.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];

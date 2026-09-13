@@ -282,9 +282,11 @@ function buildAgentFilesCard(state) {
 // buildSkillsCard(state)
 //
 // Shows discovered Agent Skills below the tools/agent-files cards.
-// Skill activation is currently a chat-level family toggle: checking
-// any available skill enables the skills catalog for the next turn,
-// and unchecking any available skill disables the family for the chat.
+// Each row is that skill's own switch for this chat: unchecking one
+// leaves the others alone and stores the id in the chat's
+// `disabledSkills` list. A chat whose family toggle is off shows every
+// row unchecked; checking any row turns the chat's skills back on with
+// only that skill selected (see toggleSkill below).
 function buildSkillsCard(state) {
 const sk = state.skills || { items: [], enabled: true, projectLocked: false };
 const card = document.createElement('div');
@@ -300,7 +302,7 @@ note.className = 'chat-view__skills-note';
 if (sk.projectLocked) {
 note.textContent = 'off (locked by project setting) — enable in Settings → Project';
 } else {
-note.textContent = sk.enabled ? 'on — metadata applies next turn' : 'off — tap to enable';
+note.textContent = sk.enabled ? 'on — tap a skill to scope it' : 'off — tap a skill to enable';
 }
 head.appendChild(title); head.appendChild(note);
 card.appendChild(head);
@@ -315,7 +317,8 @@ const list = document.createElement('div');
 list.className = 'chat-view__skills-list';
 for (const skill of sk.items) {
 const disabledByProject = !!skill.disabled;
-const checked = !!(sk.enabled && !disabledByProject);
+const disabledForChat = !!skill.chatDisabled;
+const checked = !!(sk.enabled && !disabledByProject && !disabledForChat);
 const disabled = !!sk.projectLocked || disabledByProject;
 const row = document.createElement('label');
 row.className = 'chat-view__skills-row';
@@ -325,7 +328,9 @@ checkbox.className = 'checkbox checkbox--sm';
 checkbox.checked = checked;
 checkbox.disabled = disabled;
 checkbox.setAttribute('aria-label', 'Use skill ' + (skill.name || skill.id));
-checkbox.addEventListener('change', () => state._toggleSkills && state._toggleSkills(checkbox.checked));
+checkbox.addEventListener('change', () => {
+if (state._toggleSkill) state._toggleSkill(skill.id, checkbox.checked);
+});
 const body = document.createElement('span');
 body.className = 'chat-view__skills-body';
 const name = document.createElement('span');
@@ -444,14 +449,71 @@ export async function toggleAgentFiles(next, state, refs, updateChat, refreshSys
 
 // toggleSkills(next, state, refs, updateChat, refreshSysPrompt)
 //
-// Flip the chat-level skills catalog toggle and persist it. Individual
-// project-disabled skills remain disabled; this only decides whether
-// the remaining skills are exposed to the model for the next turn.
+// Flip the chat-level skills catalog toggle and persist it — the
+// all-skills-on / all-skills-off shortcut used by the composer popup's
+// group row. Turning the family on clears this chat's per-skill
+// opt-outs, because "on" here means every available skill; individual
+// switches go through toggleSkill below.
 export async function toggleSkills(next, state, refs, updateChat, refreshSysPrompt) {
   const cur = state.skills || { items: [], enabled: true, projectLocked: false };
-  state.skills = Object.assign({}, cur, { enabled: next });
+  const items = Array.isArray(cur.items) ? cur.items : [];
+  state.skills = Object.assign({}, cur, {
+    enabled: next,
+    items: items.map((s) => Object.assign({}, s, {
+      chatDisabled: s.disabled ? !!s.chatDisabled : !next
+    }))
+  });
   updateSkillsCard(refs, state);
-  await updateChat({ skills: next });
+  // "off" also lists every selectable skill as a per-chat opt-out: a prompt
+  // preset can force the family flag back on for a turn, and the individual
+  // opt-outs are what keep the catalog empty in that case.
+  const selectable = items.filter((s) => !s.disabled);
+  await updateChat({
+    skills: next,
+    disabledSkills: next || !selectable.length ? null : selectable.map((s) => s.id)
+  });
+  if (typeof refreshSysPrompt === 'function') await refreshSysPrompt();
+}
+
+// toggleSkill(id, next, state, refs, updateChat, refreshSysPrompt)
+//
+// Flip ONE skill for this chat and persist the resulting opt-out list on
+// the chat record (`disabledSkills`). The family toggle is materialized
+// on the way: a chat that had skills switched off shows nothing checked,
+// so turning a single skill on writes the family flag on AND every other
+// skill into `disabledSkills`. Without that step the first tap on one row
+// would bring the whole catalog back — the behaviour this replaced.
+export async function toggleSkill(id, next, state, refs, updateChat, refreshSysPrompt) {
+  const cur = state.skills || { items: [], enabled: true, projectLocked: false };
+  const items = Array.isArray(cur.items) ? cur.items : [];
+  // Project-disabled skills are not part of the choice: they stay off
+  // however the user moves the rows, and are never written as a per-chat
+  // opt-out (that would leak a project decision into the chat record).
+  const selectable = items.filter((s) => !s.disabled);
+  const base = cur.enabled
+    ? new Set(selectable.filter((s) => !s.chatDisabled).map((s) => s.id))
+    : new Set();
+  if (next) base.add(id);
+  else base.delete(id);
+  const chatDisabled = selectable.filter((s) => !base.has(s.id)).map((s) => s.id);
+  // Nothing left on is the same state as the family toggle off, and the
+  // family flag is the one thing the server reads for "inject no catalog".
+  const enabled = base.size > 0;
+  const patch = {
+    skills: enabled,
+    // Same reasoning as toggleSkills: when the user turns the last skill off
+    // the opt-out list has to survive, so a prompt preset that forces skills
+    // on cannot resurrect a catalog the user switched off row by row.
+    disabledSkills: enabled ? (chatDisabled.length ? chatDisabled : null) : chatDisabled
+  };
+  state.skills = Object.assign({}, cur, {
+    enabled,
+    items: items.map((s) => Object.assign({}, s, {
+      chatDisabled: s.disabled ? !!s.chatDisabled : !base.has(s.id)
+    }))
+  });
+  updateSkillsCard(refs, state);
+  await updateChat(patch);
   if (typeof refreshSysPrompt === 'function') await refreshSysPrompt();
 }
 

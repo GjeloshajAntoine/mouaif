@@ -385,14 +385,23 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
         agentFilesAvailable,
         agentFileNames,
         projectAgentFiles,
+        // `disabled` is the project lock (rendered locked with a reason);
+        // `chatDisabled` is this chat's own per-skill opt-out, which the
+        // transcript row can turn back on without touching the project.
         skills: skillState.skills.map((s) => ({
 id: s.id,
 name: s.name,
 description: s.description,
 enabled: skillState.enabled && !skillState.disabled.has(s.id),
-disabled: skillState.disabled.has(s.id)
+disabled: skillState.projectDisabled.has(s.id),
+chatDisabled: skillState.chatDisabled.has(s.id)
 })),
         projectSkills: skillState.projectEnabled,
+        // The family flag as the STREAM resolves it, which is not always the
+        // persisted `chat.skills`: a prompt preset with `skills: true` rides
+        // on the chat for the turn (see prompts.effectivePresetConfig). The
+        // transcript card must show what the model will actually get.
+        skillsEnabled: skillState.enabled,
         prompt,
         text: parts.join('\n\n')
       });

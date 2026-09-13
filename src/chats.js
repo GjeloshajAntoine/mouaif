@@ -72,6 +72,9 @@ thinkingLevel: opts && typeof opts.thinkingLevel === 'string' ? opts.thinkingLev
 maxOutputTokens: opts && typeof opts.maxOutputTokens === 'string' ? opts.maxOutputTokens : '',
 promptId: opts && typeof opts.promptId === 'string' && opts.promptId ? opts.promptId : null,
 skills: opts && typeof opts.skills === 'boolean' ? opts.skills : undefined,
+disabledSkills: opts && Array.isArray(opts.disabledSkills) && opts.disabledSkills.length
+  ? opts.disabledSkills.map((n) => String(n)).filter(Boolean)
+  : undefined,
 autoRetry: opts && typeof opts.autoRetry === 'boolean' ? opts.autoRetry : undefined,
 tools: opts && Array.isArray(opts.tools) ? opts.tools : undefined
 };
@@ -124,6 +127,15 @@ if (patch && Object.prototype.hasOwnProperty.call(patch, 'skills')) {
 dbPatch.skills = (patch.skills === null || patch.skills === undefined)
 ? undefined
 : patch.skills === true;
+}
+// Per-skill opt-outs for this one chat. `null` (or an empty list)
+// clears them; anything that is not a list is ignored so a malformed
+// PATCH cannot wipe the field.
+if (patch && Object.prototype.hasOwnProperty.call(patch, 'disabledSkills')) {
+const list = Array.isArray(patch.disabledSkills)
+? Array.from(new Set(patch.disabledSkills.map((n) => String(n)).filter(Boolean)))
+: [];
+dbPatch.disabledSkills = list.length ? list : null;
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'autoRetry')) {
 dbPatch.autoRetry = patch.autoRetry === true;

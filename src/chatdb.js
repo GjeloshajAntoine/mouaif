@@ -36,6 +36,7 @@ const CREATE_CHAT_TABLE = `
 agent_id      TEXT,
 agent_files   INTEGER,
 skills        INTEGER,
+disabled_skills TEXT,
 auto_retry    INTEGER NOT NULL DEFAULT 1,
 total_cost    REAL NOT NULL DEFAULT 0,
 cost_known_count INTEGER NOT NULL DEFAULT 0,
@@ -93,6 +94,12 @@ d.exec('ALTER TABLE chat_store ADD COLUMN cost_known_count INTEGER NOT NULL DEFA
 if (!chatColumns.some((column) => column.name === 'auto_retry')) {
 d.exec('ALTER TABLE chat_store ADD COLUMN auto_retry INTEGER NOT NULL DEFAULT 1');
 }
+// Per-chat skill opt-outs (JSON array of skill ids). NULL means "no
+// per-skill opt-outs", which is what every chat written before this
+// column existed has.
+if (!chatColumns.some((column) => column.name === 'disabled_skills')) {
+d.exec('ALTER TABLE chat_store ADD COLUMN disabled_skills TEXT');
+}
 d.exec(INDEX_SQL);
 }
 
@@ -115,6 +122,10 @@ function rowToChat(row) {
     draft: row.draft || '',
     agentFiles: row.agent_files === null ? undefined : (row.agent_files === 1),
 skills: row.skills === null ? undefined : (row.skills === 1),
+// disabledSkills: NULL -> undefined (no per-chat opt-outs); otherwise the
+// JSON array of skill ids this chat switched off one by one. A chat can
+// carry this list while the family flag above stays unset/true — that is
+// what a per-skill switch means.
 autoRetry: row.auto_retry !== 0,
 totalCost: {
       total: typeof row.total_cost === 'number' ? row.total_cost : 0,
@@ -134,6 +145,14 @@ totalCost: {
 // tools: null/undefined -> all tools; [] -> advertise none; [names] -> filter
 if (row.tools !== null) {
     try { chat.tools = JSON.parse(row.tools); } catch { /* keep undefined */ }
+  }
+  if (row.disabled_skills) {
+    try {
+      const parsed = JSON.parse(row.disabled_skills);
+      if (Array.isArray(parsed) && parsed.length) {
+        chat.disabledSkills = parsed.map((n) => String(n)).filter(Boolean);
+      }
+    } catch { /* keep undefined */ }
   }
   // Drop undefined tools so the caller can distinguish "not set" from "empty array"
   if (chat.tools === undefined) delete chat.tools;
@@ -206,6 +225,11 @@ function chatToRow(projectDir, chat) {
     agent_id: null,
 agent_files: chat.agentFiles === undefined ? null : (chat.agentFiles ? 1 : 0),
 skills: chat.skills === undefined ? null : (chat.skills ? 1 : 0),
+// An empty list is written as NULL so "no per-skill opt-outs" has a
+// single representation in the store instead of two.
+disabled_skills: (Array.isArray(chat.disabledSkills) && chat.disabledSkills.length)
+  ? JSON.stringify(chat.disabledSkills.map((n) => String(n)).filter(Boolean))
+  : null,
 auto_retry: chat.autoRetry === undefined ? 1 : (chat.autoRetry ? 1 : 0),
 total_cost: chat.totalCost && typeof chat.totalCost.total === 'number' ? chat.totalCost.total : 0,
     cost_known_count: chat.totalCost && chat.totalCost.known
@@ -303,10 +327,10 @@ function createChat(projectDir, chat) {
   d.prepare(`
 INSERT INTO chat_store (project_dir, id, title, created_at, last_opened_at,
 trace, prompt_size, prompt_id, provider_id, model_id, thinking_level, max_output_tokens, draft, draft_attachments, tools,
-agent_id, agent_files, skills, auto_retry, total_cost, cost_known_count)
+agent_id, agent_files, skills, disabled_skills, auto_retry, total_cost, cost_known_count)
 VALUES (@project_dir, @id, @title, @created_at, @last_opened_at,
 @trace, @prompt_size, @prompt_id, @provider_id, @model_id, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
-@agent_id, @agent_files, @skills, @auto_retry, @total_cost, @cost_known_count)
+@agent_id, @agent_files, @skills, @disabled_skills, @auto_retry, @total_cost, @cost_known_count)
 `).run(row);
   return rowToChat(d.prepare(
     'SELECT * FROM chat_store WHERE project_dir = ? AND id = ?'
@@ -332,7 +356,8 @@ model_id = @model_id, thinking_level = @thinking_level,
 max_output_tokens = @max_output_tokens,
 draft = @draft, draft_attachments = @draft_attachments, tools = @tools,
 agent_id = @agent_id, agent_files = @agent_files,
-skills = @skills, auto_retry = @auto_retry, total_cost = @total_cost,
+skills = @skills, disabled_skills = @disabled_skills,
+auto_retry = @auto_retry, total_cost = @total_cost,
 cost_known_count = @cost_known_count
 WHERE project_dir = @project_dir AND id = @id
 `).run(row);
