@@ -649,6 +649,12 @@ previous one, so the last thing the user changed is what survives.
 
 ### Tests
 
+`npm run test:dictation` runs everything below except the two fixtures, which
+print a URL and stay up instead of exiting (`test-dictation-ui.mjs` is only
+syntax-checked there; `test-dictation-chat.cjs` needs a debug Chrome of its own
+and runs by hand). `test-dictation-chat.cjs` runs as part of `test:dictation`:
+it starts its own browser target and exits on its own.
+
 ```bash
 node scripts/test-dictation.js        # request/response shapes, helper rules,
   # the live-take join and slot ordering, the take's summed price, the
