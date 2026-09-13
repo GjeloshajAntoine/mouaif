@@ -30,9 +30,15 @@
 //      no phone displays, so this state used to look like a dead button;
 //   8. a tap that is resolving the model says so while it waits (a spinner in
 //      place of the glyph, `aria-busy`, and `Preparing dictation…` in the chat
-//      line) instead of sitting greyed out and unchanged — the fixture holds
-//      its answers for that check, since two stubbed reads are otherwise
-//      finished in less than a frame.
+//      line) — *after* the resolve has outlasted `MIC_WAIT_DELAY_MS`, and never
+//      for a tap that answers inside it: the resolve is two local reads, so
+//      reporting it unconditionally painted a spinner for one frame on every
+//      tap. The fixture holds the settings read for that check, and holds it for
+//      nothing for the counter-check.
+//   9. the mic-wait decision is watched on both sides of the delay:
+//      `scripts/test-dictation.js` pins `micWaitPhase` as a pure function, and
+//      this file pins the button with the reads held slow (spinner) and fast
+//      (no spinner at all).
 //
 // All bundles stay in memory; only a fresh about:blank target is touched. Fetch
 // is fully stubbed (unknown requests fail), with CDP blocking real network as a
@@ -101,9 +107,13 @@ function installFixture(data) {
     segmentAnswers: null,
     segmentAnswerBase: 0,
     runs: 0, cost: 'priced',
-    // A hold on every fixture response, so a wait that is normally shorter
-    // than one frame can be watched: the mic's "resolving the model" step is
-    // two fetches and would otherwise never be visible to a check.
+    // A hold on the *settings* read, so the mic's "resolving the model" step can
+    // be watched: on a healthy connection it is two local reads answered inside a
+    // frame, which is exactly why the button only reports it after
+    // MIC_WAIT_DELAY_MS. Holding **only** `/api/settings` (not every response) is
+    // what makes the two checks below meaningful: the same delay is either watched
+    // (settings read held) or absent (held for nothing), where a global hold would
+    // keep the resolve slow either way.
     holdMs: 0
   };
   addEventListener('error', (event) => test.errors.push(event.message));
@@ -147,7 +157,7 @@ function installFixture(data) {
     const url = new URL(typeof input === 'string' ? input : input.url, 'https://fixture.invalid');
     const method = (init.method || input.method || 'GET').toUpperCase();
     test.requests.push({ url: url.pathname + url.search, method });
-    if (test.holdMs) await new Promise((resolve) => setTimeout(resolve, test.holdMs));
+    if (test.holdMs && url.pathname === '/api/settings') await new Promise((resolve) => setTimeout(resolve, test.holdMs));
     if (url.origin !== 'https://fixture.invalid') {
       test.unexpected.push(method + ' ' + url.href);
       throw new Error('Unstubbed origin: ' + url.href);
@@ -545,34 +555,67 @@ async function main() {
     check('no take ever asked the recorder for a timeslice',
       (await evaluate('dictationTest.timeslices')).every((arg) => !arg));
 
-    // ---- A tap reports the wait before the microphone opens ---------------
+    // ---- A tap reports the wait before the microphone opens, but not every tap --
     //
     // Resolving the model is two reads (`/api/settings`, then the catalog) and
-    // happens *before* the microphone opens, so it is the one wait with no
-    // audio and no status of its own: the button used to sit greyed out and
-    // unchanged for it, which on a phone reads as a tap that did nothing. The
-    // fixture holds its answers so the window can be looked at; the state is
-    // restored first because the case above emptied the catalog on purpose.
-    await evaluate('dictationTest.restoreDictation(); dictationTest.holdMs = 500;');
+    // happens *before* the microphone opens, so it is the one wait with no audio
+    // behind it — but on a healthy connection both reads answer inside a frame, and
+    // the button used to paint a spinner and `Preparing dictation…` for that single
+    // frame on every single tap. A loading state that shows and is already gone is
+    // not useful; the two checks below pin both halves of the delay
+    // (`MIC_WAIT_DELAY_MS`, decided by `micWaitPhase`):
+    //
+    //   * with the settings read held for 1.2 s, the resolve has outlasted the
+    //     delay, so the button takes the spinner and the chat line names the step;
+    //   * with it held for nothing, the same tap must never render a working state
+    //     at all — which is the difference the delay exists to make.
+    //
+    // The state is restored first because the case above emptied the catalog on
+    // purpose.
+    await evaluate('dictationTest.restoreDictation(); dictationTest.holdMs = 1200;');
     await tap('.chat-view__mic-btn');
     await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-busy') === 'true'`,
-      'the model resolve is reported on the button');
+    'the model resolve is reported on the button');
     const waiting = await read();
-    check('a tap says it is working before the microphone opens', waiting.label === 'Working…');
+    check('a slow resolve says it is working before the microphone opens', waiting.label === 'Working…');
     check('and swaps its glyph for a spinner rather than sitting greyed out', waiting.spinner === true);
     check('and the chat line names the step, not just "busy"', waiting.status === 'Preparing dictation…');
     check('and nothing is recorded during it', waiting.recording === 'false');
     await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'true'`,
-      'recording starts once the model resolves');
+    'recording starts once the model resolves');
     const resumed = await read();
     check('the spinner gives way to the recorder when the wait is over',
-      resumed.spinner === false && resumed.busy === null && /^Stop dictation/.test(resumed.label));
+    resumed.spinner === false && resumed.busy === null && /^Stop dictation/.test(resumed.label));
     // Close the take and let the page settle, so nothing is left running.
     await tap('.chat-view__mic-btn');
     await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'false'`,
-      'the take is closed again');
+    'the take is closed again');
+    await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-busy') !== 'true' ||
+    document.querySelector('.chat-view__mic-btn').getAttribute('aria-busy') === null`, 'nothing is left busy');
+    // ---- A fast resolve does not flash a working state ---------------------
+    //
+    // The half that makes the spinner *useful*: with the reads held for nothing,
+    // the same tap must not render `Working…`/`aria-busy` for the frame the old
+    // code showed it in. The watchdog samples on every animation frame, so a state
+    // that lasted one frame would still be caught.
     await evaluate('dictationTest.holdMs = 0;');
-  });
+    await evaluate(`window.__micBusySeen = 0; window.__micWatch = setInterval(() => {
+      const mic = document.querySelector('.chat-view__mic-btn');
+      if (mic && mic.getAttribute('aria-busy') === 'true') window.__micBusySeen += 1;
+    }, 16);`);
+    await tap('.chat-view__mic-btn');
+    await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'true'`,
+    'a fast tap still starts recording');
+    await evaluate('clearInterval(window.__micWatch);');
+    check('a resolve inside the delay never shows a working state at all',
+    (await evaluate('window.__micBusySeen')) === 0, 'busy frames seen: ' + (await evaluate('window.__micBusySeen')));
+    const fast = await read();
+    check('and it goes straight to recording', /^Stop dictation/.test(fast.label) && fast.busy === null);
+    await tap('.chat-view__mic-btn');
+    await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'false'`,
+    'the fast take is closed');
+    await evaluate('dictationTest.holdMs = 0;');
+    });
   console.log('\nDictation composer regressions passed (' + checks + ' checks). No production files or live app data touched.');
 }
 

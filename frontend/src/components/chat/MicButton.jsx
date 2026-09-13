@@ -42,6 +42,14 @@
 // microphone opens, so the user is never asked to record a take that cannot be
 // sent. One place decides, every surface obeys.
 //
+// That resolve is two requests, and on a healthy connection they answer inside
+// a frame — so the button reports it only once it has outlasted
+// MIC_WAIT_DELAY_MS (`micWaitPhase`): before that a tap looks like a tap, and a
+// spinner that is painted and gone again is a loading state that shows without
+// ever being readable. A resolve that *does* run long (a cold provider catalog
+// is a round trip per connection) takes the spinner, `aria-busy`, and the
+// chat's `Preparing dictation…` line like any other wait.
+//
 // The server owns the credential: this component records locally and POSTs
 // base64 to /api/ai/transcribe (docs/decisions.md section 10).
 
@@ -51,21 +59,23 @@ import { fetchJson } from '../../api.js';
 import { nav } from '../../router.js';
 import { formatCost } from '../../usage.js';
 import {
-  LIVE_CHUNK_MS,
-  MAX_RECORDING_MS,
-  blobToBase64,
-  createLiveSegments,
-  createSegmentRecorder,
-  defaultDictationModel,
-  dictationFilename,
-  formatDuration,
-  liveDictationEnabled,
-  liveTakeCost,
-  loadDictationModels,
-  pickRecorderMime,
-  recorderSupported,
-  transcribeAudio,
-  transcribeCost
+LIVE_CHUNK_MS,
+MAX_RECORDING_MS,
+blobToBase64,
+createLiveSegments,
+createSegmentRecorder,
+defaultDictationModel,
+dictationFilename,
+formatDuration,
+liveDictationEnabled,
+liveTakeCost,
+loadDictationModels,
+MIC_WAIT_DELAY_MS,
+micWaitPhase,
+pickRecorderMime,
+recorderSupported,
+transcribeAudio,
+transcribeCost
 } from '../../dictation.js';
 
 // NO_MODEL_MESSAGE — the one wording for "nothing is configured", shared by the
@@ -83,7 +93,24 @@ const { language = '', onTranscript, onStatus, onProgress, promptRef } = props;
 const [recording, setRecording] = useState(false);
 const [status, setStatus] = useState('');
 const [statusState, setStatusState] = useState('');
-const [busy, setBusy] = useState(false);
+// Busy is *two* facts, not one: `resolving` is the model being resolved before
+// the microphone opens, `sending` is a request in flight after it closed. Only
+// `sending` blocks a tap immediately — the resolve is two reads the user must
+// never see flash a "Working…" for (see `micWaitPhase`). `busy` below is the
+// union, for the callers that only need "the button is not idle".
+const [resolving, setResolving] = useState(false);
+const [sending, setSending] = useState(false);
+const busy = resolving || sending;
+// Which rendering of the resolve's delay the state actually is: `0` while it is
+// inside `MIC_WAIT_DELAY_MS`, the delay itself once it has outlasted it — the
+// answer to "has this wait been long enough to be worth a spinner?"
+// (`micWaitPhase`'s `delayMs`). One timer, started with the resolve and cleared
+// with it, flips it at exactly the delay, so a fast tap never renders a working
+// state at all rather than rendering one for a frame.
+const [resolveDelayMs, setResolveDelayMs] = useState(0);
+// Where the phase last left the button's own line, so the resolve is announced
+// once rather than rewritten on every render.
+const lastPhaseRef = useRef('');
 const recorderRef = useRef(null);
 const streamRef = useRef(null);
 const chunksRef = useRef([]);
@@ -337,9 +364,21 @@ say(failed ? 'Transcription failed' : 'Nothing was recognised — try again a li
   return () => clearInterval(timer);
   }, [recording]);
 
+  // The resolve's own timer: from the moment it starts, one timeout that flips
+  // the button into its working state if the resolve is *still* running at
+  // MIC_WAIT_DELAY_MS. Cleared when the resolve answers, which is what makes a
+  // fast tap render nothing at all — the delay is the point of the state, not a
+  // repaint schedule.
+  useEffect(() => {
+  if (!resolving) return undefined;
+  const timer = setTimeout(() => setResolveDelayMs(MIC_WAIT_DELAY_MS), MIC_WAIT_DELAY_MS);
+  return () => { clearTimeout(timer); setResolveDelayMs(0); };
+  }, [resolving]);
+
+
 
   async function transcribe(blob, mime) {
-  setBusy(true);
+  setSending(true);
   say('Transcribing…', 'busy');
   try {
   // The row resolved when recording started; the fallback covers a take that
@@ -347,7 +386,7 @@ say(failed ? 'Transcription failed' : 'Nothing was recognised — try again a li
   const match = modelRef.current || await resolveModel();
   if (!match) {
   say(NO_MODEL_MESSAGE, 'error');
-  setBusy(false);
+  setSending(false);
   return;
   }
       const audioBase64 = await blobToBase64(blob);
@@ -363,11 +402,11 @@ say(failed ? 'Transcription failed' : 'Nothing was recognised — try again a li
         language
       });
       const text = (out.text || '').trim();
-      if (!text) {
-        say('Nothing was recognised — try again a little closer to the mic.', 'error');
-        setBusy(false);
-        return;
-      }
+if (!text) {
+say('Nothing was recognised — try again a little closer to the mic.', 'error');
+setSending(false);
+return;
+}
       if (onTranscript) onTranscript(text, { model: out.model, kind: out.kind, usage: out.usage || null, cost: out.cost || null });
       // The chat's status row is the visible report (Chat.jsx writes
       // "dictation added" plus the cost there); this button's own line is the
@@ -383,11 +422,11 @@ say(failed ? 'Transcription failed' : 'Nothing was recognised — try again a li
       ? 'Added to the composer — review it, then send.'
       : 'Added to the composer (' + label + ') — review it, then send.', 'success');
     } catch (e) {
-      say((e && e.message) || 'Transcription failed', 'error');
-    } finally {
-      setBusy(false);
-    }
-  }
+say((e && e.message) || 'Transcription failed', 'error');
+} finally {
+setSending(false);
+}
+}
 
   // resolveModel() — the row this take will be sent to, and how the take should
   // be transcribed.
@@ -418,25 +457,32 @@ say(failed ? 'Transcription failed' : 'Nothing was recognised — try again a li
   return;
   }
   // The model is resolved *before* the microphone opens: a take the app cannot
-// transcribe is a take the user should not be asked to record. `busy` is held
-// across the two reads so a double tap cannot start two recorders while the
-// catalog is in flight.
+// transcribe is a take the user should not be asked to record. The resolve is
+// held across the two reads so a double tap cannot start two recorders while
+// the catalog is in flight.
 //
-// The two reads are reported, because this is the one wait with no audio
-// behind it: nothing has been recorded yet and the button's spinner is small.
-// The line is replaced by "Recording — …" a moment later, and by the reason
-// when nothing is configured, so it never lingers over a finished take.
-setBusy(true);
-say('Preparing dictation…', 'busy');
+// The two reads are the one wait with no audio behind it, and on a healthy
+// connection they are two local requests answered in a few milliseconds — so
+// they are reported *only* once they have outlasted `MIC_WAIT_DELAY_MS`
+// (`micWaitPhase`, watched at 250 ms by the effect above). Before that a tap
+// looks exactly like a tap, which is the honest thing: nothing has happened
+// yet, and a spinner that is painted and gone inside a frame reads as a
+// glitch. Once the resolve *has* taken long enough — a cold provider catalog
+// is a round trip per connection — the button holds a spinner, reports
+// `aria-busy`, and the chat's line says `Preparing dictation…` until the
+// microphone opens. The wording is then replaced by "Recording — …", or by
+// the reason when nothing is configured, so it never lingers over a finished
+// take.
+setResolving(true);
 let resolved = null;
 try {
 resolved = await resolveModel();
 } catch (e) {
-setBusy(false);
+setResolving(false);
 say((e && e.message) || 'Could not load the dictation model list.', 'error');
 return;
 }
-setBusy(false);
+setResolving(false);
 if (!resolved) {
 say(NO_MODEL_MESSAGE, 'error');
 return;
@@ -603,51 +649,61 @@ modelRef.current = resolved.row;
 
 
   function onClick() {
-    if (busy) return;
-    if (recording) { stop(); return; }
-    // A first-run user has to pick a model somewhere. The page is one tap
-    // away and explains the choice; failing silently here would look like a
-    // broken microphone.
-    start();
-  }
-
-  // The 1 Hz `tick` is read here: it is what makes the label below advance while
-  // recording. `void` documents that the value itself is not used.
-  void tick;
-  const elapsed = recording ? formatDuration(Date.now() - startedAtRef.current) : '';
-  const label = recording ? 'Stop dictation (' + elapsed + ')' : 'Dictate';
-  // `busy` covers both waits a tap can put the button in: resolving the model
-  // *before* the microphone opens (two reads, and the live catalog can be a
-  // slow one) and the transcription after it closes. Both used to look the
-  // same as an idle button — a static mic, greyed out — which on a phone reads
-  // as "the tap did nothing". The spinner is the button saying it is working,
-  // and it is why the glyph is chosen before the svg below.
-  const waiting = busy;
-
-  const svg = recording
-    // A filled square: the same "stop" glyph the send button uses while a
-    // turn streams, so the two stoppable states look alike.
-    ? h('path', { d: 'M7 7h10v10H7Z', fill: 'currentColor' })
-    : h('path', {
-      d: 'M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Zm7 9a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.92V21H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-3.08A7 7 0 0 0 19 11Z',
-      fill: 'currentColor'
-    });
-
-  return h('button', {
-    class: 'chat-view__mic-btn' + (recording ? ' is-recording' : '') + (waiting ? ' is-busy' : ''),
-    type: 'button',
-    onClick,
-    disabled: busy,
-    title: status || 'Dictate',
-    'aria-label': waiting ? 'Working…' : label,
-    'aria-pressed': recording ? 'true' : 'false',
-    'aria-busy': waiting ? 'true' : undefined,
-    'data-state': statusState || undefined
-  },
-    waiting
-      ? h('span', { class: 'dictation__spinner dictation__spinner--mic', 'aria-hidden': 'true' })
-      : h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' }, svg)
-  );
+if (busy) return;
+if (recording) { stop(); return; }
+// A first-run user has to pick a model somewhere. The page is one tap
+// away and explains the choice; failing silently here would look like a
+// broken microphone.
+start();
+}
+// What the button is waiting on, as the one word the loading affordances are
+// rendered from (`micWaitPhase` in dictation.js). A resolve that has not yet
+// outlasted MIC_WAIT_DELAY_MS is deliberately '' — see `start`: painting a
+// spinner for a wait that is over inside a frame is how a loading state ends
+// up showing on every tap and being useful on none.
+const phase = micWaitPhase({ preparing: resolving, transcribing: sending, delayMs: resolveDelayMs });
+// Announce the resolve on the button's own line once it has earned the spinner.
+// The chat's visible status row is written by onStatus inside `say`; only the
+// resolve announces itself here, because a transcription's line belongs to
+// `transcribe` and a re-render must not overwrite it.
+useEffect(() => {
+if (phase === lastPhaseRef.current) return;
+lastPhaseRef.current = phase;
+if (phase === 'prepare') say('Preparing dictation…', 'busy');
+}, [phase]);
+// The 1 Hz `tick` is read here: it is what makes the label below advance while
+// recording. `void` documents that the value itself is not used.
+void tick;
+const elapsed = recording ? formatDuration(Date.now() - startedAtRef.current) : '';
+const label = recording ? 'Stop dictation (' + elapsed + ')' : 'Dictate';
+// `working` is the phase that has earned its spinner: a resolve that has gone
+// past the delay, or a request in flight after the take closed. A tap that is
+// still inside the delay is not shown as busy at all — the older behaviour
+// showed `Working…` on every single tap, always for less than a frame.
+const working = phase === 'prepare' || phase === 'transcribe';
+const svg = recording
+// A filled square: the same "stop" glyph the send button uses while a
+// turn streams, so the two stoppable states look alike.
+? h('path', { d: 'M7 7h10v10H7Z', fill: 'currentColor' })
+: h('path', {
+d: 'M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Zm7 9a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.92V21H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-3.08A7 7 0 0 0 19 11Z',
+fill: 'currentColor'
+});
+return h('button', {
+class: 'chat-view__mic-btn' + (recording ? ' is-recording' : '') + (working ? ' is-busy' : ''),
+type: 'button',
+onClick,
+disabled: busy,
+title: status || 'Dictate',
+'aria-label': working ? 'Working…' : label,
+'aria-pressed': recording ? 'true' : 'false',
+'aria-busy': working ? 'true' : undefined,
+'data-state': statusState || undefined
+},
+working
+? h('span', { class: 'dictation__spinner dictation__spinner--mic', 'aria-hidden': 'true' })
+: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' }, svg)
+);
 }
 
 // dictationPageHint() — the copy shown when the mic is tapped with no model

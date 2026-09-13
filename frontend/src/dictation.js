@@ -223,6 +223,19 @@ export async function transcribeAudio(options) {
 // caps the take at two minutes, so this is at most ~40 requests.
 export const LIVE_CHUNK_MS = 3000;
 
+// MIC_WAIT_DELAY_MS — how long a tap waits before it admits it is *preparing*.
+//
+// The composer mic resolves its model in two reads before the microphone opens,
+// and on a normal connection both are answered in a few milliseconds — so
+// `Preparing dictation…` used to be written and wiped on every single tap
+// without ever being readable: a loading state that shows but is never useful.
+// The wait is still real (a cold provider catalog is a round trip per
+// connection), so it is not dropped — after this delay the button reports it,
+// and a tap that is already through it never flashes the spinner at all. The
+// state is decidable from values alone, so `micWaitPhase` owns it and the
+// fixture that slows the reads down watches it (scripts/test-dictation-chat.cjs).
+export const MIC_WAIT_DELAY_MS = 400;
+
 // LIVE_OVERLAP_WORDS — the shortest repeated run, in words, that is treated as
 // a seam between two chunks rather than as the speaker genuinely repeating
 // themselves. One: contiguous timeslices are transcribed as separate
@@ -729,6 +742,29 @@ if (s.catalogBusy) return 'catalog';
 if (s.liveBusy) return 'live';
 if (s.transcribing) return 'transcribe';
 if (s.handoff) return 'handoff';
+return '';
+}
+
+// micWaitPhase(state) -> 'prepare' | 'transcribe' | ''
+//
+// Which wait the *composer microphone* is in, and therefore which one it
+// reports. The button's one wait today is the model resolve (`preparing`),
+// which happens before the microphone opens; a pending segment of a live take
+// (`transcribing`) will read here too once it has something to say, so the
+// two decisions cannot drift apart. A tap that is *both* reports the resolve —
+// no transcription can be in flight before one has been resolved.
+//
+// `preparing` is deliberately the delayed half of the resolve: the reads are
+// two requests and normally answer in milliseconds, so reporting them
+// unconditionally is how the spinner ended up flashing on every tap and never
+// being readable. `delayMs` is how long the caller has been resolving, and
+// `MIC_WAIT_DELAY_MS` is the point past which the wait is worth a word. The
+// value is passed in rather than read here, so the decision stays a pure
+// function of its arguments (and testable without timers).
+export function micWaitPhase(state) {
+const s = state || {};
+if (s.preparing && Number(s.delayMs) >= MIC_WAIT_DELAY_MS) return 'prepare';
+if (s.transcribing) return 'transcribe';
 return '';
 }
 

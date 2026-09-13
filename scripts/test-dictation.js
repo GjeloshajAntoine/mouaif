@@ -1049,20 +1049,44 @@ try { fs.rmSync(home, { recursive: true, force: true }); } catch { /* ignore */ 
   });
 
   check('busyPhase names which wait is in flight, and long beats short', () => {
-    assert.equal(dictation.busyPhase({}), '', 'idle');
-    assert.equal(dictation.busyPhase({ catalogBusy: true }), 'catalog');
-    assert.equal(dictation.busyPhase({ liveBusy: true }), 'live');
-    assert.equal(dictation.busyPhase({ transcribing: true }), 'transcribe');
-    assert.equal(dictation.busyPhase({ handoff: true }), 'handoff');
-    // The catalog is what the page is on screen to resolve, so it wins over a
-    // short operation the user just triggered.
-    assert.equal(dictation.busyPhase({ catalogBusy: true, handoff: true }), 'catalog');
-    assert.equal(dictation.busyPhase({ liveBusy: true, transcribing: true }), 'live');
-    // A transcription outranks the hand-off: a take in flight is the longer
-    // wait of the two request-shaped ones.
-    assert.equal(dictation.busyPhase({ transcribing: true, handoff: true }), 'transcribe');
-    assert.equal(dictation.busyPhase(null), '', 'a missing state is idle, not a crash');
-  });
+assert.equal(dictation.busyPhase({}), '', 'idle');
+assert.equal(dictation.busyPhase({ catalogBusy: true }), 'catalog');
+assert.equal(dictation.busyPhase({ liveBusy: true }), 'live');
+assert.equal(dictation.busyPhase({ transcribing: true }), 'transcribe');
+assert.equal(dictation.busyPhase({ handoff: true }), 'handoff');
+// The catalog is what the page is on screen to resolve, so it wins over a
+// short operation the user just triggered.
+assert.equal(dictation.busyPhase({ catalogBusy: true, handoff: true }), 'catalog');
+assert.equal(dictation.busyPhase({ liveBusy: true, transcribing: true }), 'live');
+// A transcription outranks the hand-off: a take in flight is the longer
+// wait of the two request-shaped ones.
+assert.equal(dictation.busyPhase({ transcribing: true, handoff: true }), 'transcribe');
+assert.equal(dictation.busyPhase(null), '', 'a missing state is idle, not a crash');
+});
+
+check('micWaitPhase only reports a resolve once it has outlasted the delay', () => {
+// The composer mic's whole loading problem: the model resolve is two local
+// reads, so it is normally over inside a frame, and a spinner that is
+// painted and gone again is a loading state that shows on every tap and is
+// useful on none.
+assert.equal(dictation.micWaitPhase({}), '', 'idle');
+assert.equal(dictation.micWaitPhase({ preparing: true, delayMs: 0 }), '',
+'a resolve still inside the delay renders nothing');
+assert.equal(dictation.micWaitPhase({ preparing: true, delayMs: dictation.MIC_WAIT_DELAY_MS - 1 }), '',
+'the frame before the delay is still nothing');
+assert.equal(dictation.micWaitPhase({ preparing: true, delayMs: dictation.MIC_WAIT_DELAY_MS }), 'prepare',
+'the delay itself is the point the wait earns a word');
+assert.equal(dictation.micWaitPhase({ preparing: true, delayMs: 5000 }), 'prepare');
+// A request in flight after the take closed is the other wait, and it is
+// reported whatever the resolve timer happens to say.
+assert.equal(dictation.micWaitPhase({ transcribing: true }), 'transcribe');
+// A tap that is both reports the resolve: there is no transcription before a
+// model has been resolved.
+assert.equal(dictation.micWaitPhase({ preparing: true, transcribing: true, delayMs: 5000 }), 'prepare');
+assert.equal(dictation.micWaitPhase({ preparing: true, transcribing: true, delayMs: 0 }), 'transcribe');
+assert.equal(dictation.micWaitPhase(null), '', 'a missing state is idle, not a crash');
+});
+
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   if (fail) process.exit(1);
