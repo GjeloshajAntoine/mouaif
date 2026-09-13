@@ -14,6 +14,7 @@ import {
   normalizeToolName,
   formatToolArgs,
   formatResultSummary,
+  isExpectedToolFailure,
   coerceToolResult,
   formatReadableToolResult
 } from './tools.js';
@@ -517,7 +518,7 @@ function fillSubagentToolRow(row, name, raw, args, okHint) {
     status.className = 'tool-card__pill ' + (ok ? 'tool-card__pill--ok' : 'tool-card__pill--err');
     status.textContent = ok ? 'ok' : 'error';
   }
-  const summary = ok ? formatResultSummary(name, r) : null;
+  const summary = (ok || isExpectedToolFailure(name, r, ok)) ? formatResultSummary(name, r) : null;
   if (summary) {
     let summaryEl = row.querySelector('.tool-card__result-summary');
     if (!summaryEl) {
@@ -880,7 +881,9 @@ export function appendToolResultCard(toolResult, refs, isReplay) {
   const pillClass = toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
   const pillText = toolResult.ok ? 'ok' : 'error';
 const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
-const summary = toolResult.ok ? formatResultSummary(toolResult && toolResult.name, rawR) : null;
+const summary = (toolResult.ok || isExpectedToolFailure(toolResult && toolResult.name, rawR, toolResult.ok))
+  ? formatResultSummary(toolResult && toolResult.name, rawR)
+  : null;
 // Publish a successful capture immediately. Tool result bodies are lazy and
 // usually stay collapsed, so relying on renderToolResultBody would delay the
 // dock until the user expanded a transcript card.

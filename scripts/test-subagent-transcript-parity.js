@@ -175,6 +175,7 @@ function loadTranscript(globals) {
     isSubagentTool: () => true,
     formatToolArgs: (args) => (args && typeof args === 'object' ? JSON.stringify(args) : String(args == null ? '' : args)),
     formatResultSummary: (name, r) => (r && r.lines != null ? r.lines + ' lines' : null),
+    isExpectedToolFailure: () => false,
     cssEscape: (s) => String(s == null ? '' : s).replace(/["\\]/g, '\\$&'),
     afterTranscriptAppend() {},
     scrollToolBodyToBottom() {},

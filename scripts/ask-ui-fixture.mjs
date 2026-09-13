@@ -16,6 +16,7 @@
 //   fixture.many()         mount a card with 8 options
 //   fixture.pair()         append the persisted ask_user tool_call card and
 //                          then the live card for the SAME call id
+//   fixture.dismissed()    a question the user dismissed (the frame is ok:false)
 //   fixture.cancel()       the Stop path: removePendingAuthorizationCards()
 //   fixture.measure()      geometry of every ask card and option row
 //   fixture.html()         the transcript's outerHTML
@@ -181,6 +182,20 @@ function Host() {
     await frame();
     },
     cancel: async () => { removePendingAuthorizationCards(refs); bump(); await frame(); },
+    // A question the user DISMISSED: the runner answers it with ok:false and
+    // cancelled:true, so the collapsed card has to report the dismissal
+    // instead of leaving it as a bare error (see isExpectedToolFailure).
+    dismissed: async () => {
+      reset();
+      const id = 'call_dismiss_fixture';
+      appendToolCallCard({ id, name: 'ask_user', args: { question: 'Which branch?', options: OPTIONS, multiSelect: false } }, refs, true);
+      appendToolResultCard({
+        id, name: 'ask_user', ok: false,
+        result: { answered: false, choice: '', extra: '', options: OPTIONS.map((o) => ({ label: o.label, value: o.value })), multiSelect: false, cancelled: true }
+      }, refs, true);
+      bump();
+      await frame();
+    },
     reset: async () => { reset(); bump(); await frame(); },
     frame, measure, html: () => refs.transcript.current.outerHTML
   };

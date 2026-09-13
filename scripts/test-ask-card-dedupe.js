@@ -201,6 +201,28 @@ function installDom() {
 }
 
 // ---- Module loader ---------------------------------------------------
+//
+// `tools.js` is pure (no imports, no DOM), so the real `isExpectedToolFailure`
+// is loaded through a data: URL rather than re-implemented here. A copy would
+// agree with itself and hide a regression in the predicate.
+function realIsExpectedToolFailure() {
+  const source = fs.readFileSync(
+    path.join(__dirname, '../frontend/src/components/chat/tools.js'), 'utf8')
+    .replace(/^export /gm, '');
+  const context = { console, JSON, Math, String, Boolean, Array, Object, Number };
+  // `typeof` keeps a tools.js without the predicate from throwing a
+  // ReferenceError, so the message below is what the run reports.
+  const mod = vm.runInNewContext(
+    source + '; ({ isExpectedToolFailure: typeof isExpectedToolFailure === "function" ? isExpectedToolFailure : undefined })',
+    context);
+  if (typeof mod.isExpectedToolFailure !== 'function') {
+    throw new Error('frontend/src/components/chat/tools.js exports no isExpectedToolFailure: '
+      + 'a non-ok ask_user result (a dismissed question) cannot be told apart from a failure, '
+      + 'so the collapsed card reports it as an error.');
+  }
+  return mod.isExpectedToolFailure;
+}
+
 function loadModule(file, exportsList, globals) {
   const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/', file), 'utf8');
   const body = source
@@ -216,6 +238,10 @@ function loadModule(file, exportsList, globals) {
     isSubagentTool: (name) => String(name || '').replace(/^functions\./, '') === 'subagent',
     coerceToolResult: (result) => (result && typeof result === 'object' ? result : { text: String(result || '') }),
     formatResultSummary: () => 'summary',
+    // The real predicate, not a stub: whether a non-ok result still gets a
+    // summary is exactly what this file's dismissal case asserts, and a stub
+    // would pass whatever transcript.js did with it.
+    isExpectedToolFailure: realIsExpectedToolFailure(),
     formatToolArgs: () => 'args',
     buildToolCardHead: () => createElement('div'),
     isPersistedTurnError: () => false,
@@ -261,6 +287,17 @@ function makeRefs(transcriptEl) {
 
 function toolCards(el) {
   return el.children.filter((c) => c.classList.contains('tool-card'));
+}
+
+// summaryOf(card) -> string | null
+//
+// The collapsed card's trailing slot, as the DOM stub exposes it. Mirrors the
+// `.tool-card__result-summary` lookup the transcript code performs.
+function summaryOf(card) {
+  if (!card || !card._root) { /* the stub keeps children on every node */ }
+  const found = (card.querySelectorAll ? card.querySelectorAll('.tool-card__result-summary') : []);
+  const el = found && found[0];
+  return el && el.textContent ? el.textContent : null;
 }
 
 // mountOverlayCard() is not under test here (it defers through
@@ -311,6 +348,51 @@ function main() {
     check('no card is left behind on "running"',
       toolCards(el)[0].classList.contains('tool-card--result')
       && !toolCards(el)[0].classList.contains('tool-card--call'));
+  }
+
+  // ---- 1b. a dismissed question reports the dismissal ----------------
+  //
+  // The runner answers Dismiss with `ok: false` and `cancelled: true`
+  // (src/tools/ask.js buildResult), so both call sites suppressed the
+  // summary and the card read as a plain red error. `formatResultSummary`
+  // has reported this result as `dismissed` since the same commit that added
+  // the summary; nothing reached it. The stub above returns a fixed string
+  // for the formatter, so what is pinned here is the GATE: a non-ok result
+  // the user chose must still be summarised, an error must not be.
+  {
+    const el = createElement('div');
+    el._root = true;
+    const refs = makeRefs(el);
+    const DISMISSED = {
+      answered: false, choice: '', extra: '',
+      options: [{ label: 'main', value: 'main' }],
+      multiSelect: false, cancelled: true
+    };
+    transcript.appendToolCallCard({ id: 'call_dis', name: 'ask_user', args: ASK_ARGS }, refs);
+    transcript.appendToolResultCard({ id: 'call_dis', name: 'ask_user', ok: false, result: DISMISSED }, refs);
+    check('a dismissed question is summarised, not left as a bare error',
+      summaryOf(toolCards(el)[0]) === 'summary', 'summary=' + summaryOf(toolCards(el)[0]));
+
+    const el2 = createElement('div');
+    el2._root = true;
+    const refs2 = makeRefs(el2);
+    transcript.appendToolCallCard({ id: 'call_err', name: 'ask_user', args: ASK_ARGS }, refs2);
+    transcript.appendToolResultCard({
+      id: 'call_err', name: 'ask_user', ok: false,
+      result: { error: { code: 'EBADINPUT', message: 'options required' } }
+    }, refs2);
+    check('a real failure still shows no summary',
+      summaryOf(toolCards(el2)[0]) === null, 'summary=' + summaryOf(toolCards(el2)[0]));
+
+    const el3 = createElement('div');
+    el3._root = true;
+    const refs3 = makeRefs(el3);
+    transcript.appendToolCallCard({ id: 'call_sh', name: 'shell', args: { cmd: 'false' } }, refs3);
+    transcript.appendToolResultCard({
+      id: 'call_sh', name: 'shell', ok: false, result: { exitCode: 1, stderr: 'boom' }
+    }, refs3);
+    check("another tool's failure is unaffected",
+      summaryOf(toolCards(el3)[0]) === null, 'summary=' + summaryOf(toolCards(el3)[0]));
   }
 
   // ---- 2. an unrelated call does not touch a standing question -----

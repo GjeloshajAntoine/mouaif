@@ -164,6 +164,7 @@ function loadTranscript(globals) {
     isSubagentTool: (name) => normalize(name) === 'subagent',
     coerceToolResult: (result) => (result && typeof result === 'object' ? result : { text: String(result || '') }),
     formatResultSummary: () => 'summary',
+    isExpectedToolFailure: () => false,
     formatToolArgs: () => 'args',
     buildToolCardHead: () => createElement('div'),
     isPersistedTurnError: () => false,

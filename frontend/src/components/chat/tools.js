@@ -15,6 +15,26 @@ export function normalizeToolName(name) {
   return String(name || '').replace(/^functions\./, '');
 }
 
+// isExpectedToolFailure(name, r, ok) -> boolean
+//
+// True when a tool result that was NOT reported as ok is still not a failure,
+// because the user chose it: the only such result today is `ask_user` answered
+// with Dismiss. The runner builds that result with `ok: false` on purpose
+// (src/tools/ask.js `buildResult`), and `formatResultSummary` already reports
+// it as `dismissed` — but both call sites only ask for a summary when the frame
+// says ok, so a dismissed question rendered as a red error card with no
+// summary. The `dismissed` branch was unreachable and the collapsed card read
+// as a failure for something the user deliberately did.
+//
+// This does not change the error dot: a dismissal is still not success. It
+// decides whether the *summary* is reported for a non-ok result, so the card
+// reads "dismissed" the way docs/features/ask-user-tool.md describes.
+export function isExpectedToolFailure(name, r, ok) {
+  if (ok) return false;
+  if (normalizeToolName(name) !== 'ask_user') return false;
+  return !!(r && typeof r === 'object' && r.cancelled === true);
+}
+
 // parseToolArgs(text) -> object | null
 //
 // Converts user-typed argument text into a JSON object. Tries two
