@@ -28,6 +28,10 @@ When the model decides to ask, the chat pauses and renders a dedicated **the mod
 - an **Add an extra answer** textarea (always available, never required)
 - two buttons: **Send answer** and **Dismiss**
 
+Presets, when the model supplies them, render as chips above the option list: tapping one submits that answer immediately, without showing the options.
+
+Once the call settles, the persisted transcript shows it as a collapsed tool card whose head line is the question and whose trailing slot is the recorded answer (`main`, `2 choices`, or `dismissed`).
+
 The user picks one option (or several, when `multiSelect: true`) and may attach a free-form note in the "extra" box. Tapping **Send answer** posts the selection + extra to the server, the chat continues, and the model receives a `tool` message shaped like:
 
 ```json
@@ -70,7 +74,11 @@ When a nested `subagent` call invokes `ask_user`, the same `ask_user_required` e
 ## Behavior
 
 - **Always prompts.** A call always renders the question card and waits for the user. There is no `allow` mode — the model never decides on the user's behalf.
+- **One card per question.** The question card is mounted outside the message flow (SSE frame, follower live stream, pending-auth poll), and the call's own `tool_call` / `tool_result` frames are persisted rows. Answering from the OS notification or from a second tab means the mounted card never sees the click, so the call frame used to append a *second* card under the same tool id — the same question on screen twice, with the `tool_result` folded into the first match while the other stayed on "running". `appendToolCallCard` now removes any standing `ask_user` / `authorization` overlay card carrying that call id before it appends, so the call card always supersedes the prompt it answers.
 - **Rendered once, at the correct position.** `ask_user_required` and `authorization_required` share the same pending queue that the reconcile poll drains, so the chat UI de-dupes by `callId` and never mounts a card twice (an SSE frame and a later poll could otherwise render duplicates). Both card types also wait for any in-flight chunked transcript render before mounting, so the card always lands at the bottom of the presented rows instead of being stranded mid-transcript — ask_user and the generic authorization card move together.
+- **Cancel clears every prompt.** The chat's **Stop** path drops both card kinds — previously it only removed authorization cards, so an unanswered question stayed on screen after a cancel and could then be rendered a second time next to its own call card.
+- **Option rows keep their height.** The option list is a capped, scrollable column (`max-height: 13.5rem`), so its rows are explicitly non-shrinkable (`flex: 0 0 auto`). Without that, a list taller than the cap squashed every row to fit the cap instead of scrolling: a label + description row collapsed, its description overflowed the row (and the list), and because the overflow was painted rather than laid out it never raised `scrollHeight` — the text could not even be scrolled into view.
+- **Collapsed cards read as the question.** The persisted card's head line is the question (`formatToolArgs`) and its summary slot is the recorded answer — `main`, `2 choices` for a multi-select pick, or `dismissed`. Without a formatter for `ask_user` the head line was the raw `JSON.stringify` of `args`, truncated at 220 chars in the middle of an option description.
 - **Binary authorization mode.** The mode enum is `{ off, ask }`. A hand-edited project file with a legacy `allow` or `allowlist` value is **clamped to `ask`** by the normalizer, so a future migration can't bypass the prompt.
 - **Always-on extra answer.** The "extra" textarea is always present, never collapsed, and never optional in the UI — the user can attach a free-form note to their pick, refine it ("prefer `trunk`, but use `main` for releases"), or just write a sentence when the offered options don't fit.
 - **2+ options, no upper bound.** The model must provide at least 2 options; fewer is rejected with `EBADINPUT`. There is no maximum — the card caps the visible list at roughly 4.5 options and scrolls the rest (`max-height: 13.5rem; overflow-y: auto` on `.tool-card__ask-options`), so a long list never pushes the extra textarea and action buttons off screen. Duplicate `value`s are rejected — `value` is the canonical answer the model sees, and duplicates would collapse options silently.
@@ -81,6 +89,19 @@ When a nested `subagent` call invokes `ask_user`, the same `ask_user_required` e
 - **Multi-turn loop.** The result is fed back to the model as a `tool` message, so the model can chain calls (ask a question, read the answer, ask a follow-up, finish). There is no fixed tool-turn limit; cancellation comes from the user dismissing the card.
 - **Audit log.** Every decision is appended to the per-chat NDJSON trace (decision §5) as a `system event` line (`{ type: 'auth_decision', tool: 'ask_user', callId, decision }`) when tracing is on. The audit line is not forwarded to the upstream.
 - **No new runtime dependencies.** The runner is a plain function; the chat UI handles the input side. No third-party form libraries, no new SSE machinery — the existing `authorization_required` pipeline carries the question payload through a dedicated `ask_user_required` event.
+
+## Implementation notes
+
+The question payload is validated and clamped in [src/tools/ask.js](../../src/tools/ask.js); the answer rides the existing authorization-decision channel (`payload: { choice, extra }`) and is folded into the `tool` message by the dispatcher in [src/ai-stream.js](../../src/ai-stream.js). The card itself is built in `askUserCard()` ([frontend/src/components/chat/cards.js](../../frontend/src/components/chat/cards.js)).
+
+Checks that cover this feature:
+
+```bash
+npm run test:ask-user      # payload shape, gate semantics, card de-dupe, head line
+npm run fixture:ask-ui     # writes the card fixture to /tmp/mouaif-ask-ui
+```
+
+`fixture:ask-ui` renders the real card against the real stylesheet with a stubbed transcript, and exposes `window.fixture` (`live()`, `wrap()`, `many()`, `pair()`, `resolve()`, `cancel()`, `measure()`). Serve the written directory with any static server and open it at 390 px: `measure()` returns each option row's height, whether it sits inside the scroll container, and whether its description is clipped, which is how the row-shrink defect above is checked by eye.
 
 ## Related
 

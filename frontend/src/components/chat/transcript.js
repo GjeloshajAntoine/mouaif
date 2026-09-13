@@ -646,6 +646,19 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
   const empty = refs.transcript.current.querySelector('.chat-view__empty');
   if (empty) empty.remove();
   const id = toolCall.id || ('call_' + Math.random().toString(36).slice(2, 10));
+  // A call card supersedes the ask_user / authorization overlay card that
+  // was mounted for the same call. The overlay card only removes itself
+  // when the user answers it IN THIS TAB — answering from the OS
+  // notification, or from another tab, leaves this one standing. The
+  // tool_call frame then arrived as a second card with the same tool id,
+  // so one question was on screen twice and the tool_result was folded
+  // into the first match (the overlay card) while the call card sat on
+  // "running" forever.
+  if (toolCall.id) {
+    for (const stale of refs.transcript.current.querySelectorAll(OVERLAY_CARD_SELECTOR)) {
+      if (stale.dataset.authCallId === String(toolCall.id)) stale.remove();
+    }
+  }
   const card = document.createElement('div');
   card.className = 'tool-card tool-card--call';
   card.dataset.toolId = id;

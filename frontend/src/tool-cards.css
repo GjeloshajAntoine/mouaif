@@ -184,6 +184,15 @@ color: var(--fg-soft);
   text-align: left;
   gap: 1px;
   min-height: 40px;
+  /* The list above is a column flex box capped at 13.5rem. Without
+     `flex: 0 0 auto` the rows are shrinkable flex items, so a list taller
+     than the cap squashed every row to fit the cap instead of scrolling:
+     a label + description row collapsed to ~40px, the description then
+     overflowed the row (and the list), and because the overflow was
+     painted — not laid out — it never raised scrollHeight, so the text
+     could not even be scrolled into view. Rows keep their natural height;
+     the list scrolls, which is its documented behaviour. */
+  flex: 0 0 auto;
   padding: 6px 8px;
   background: var(--surface);
   border: 1px solid var(--border);

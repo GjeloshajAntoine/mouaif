@@ -579,9 +579,17 @@ export async function toggleTool(name, next, state, refs, updateChat) {
 // resolve with the user's decision. The chat's runner pauses until
 // the user picks; `resume()` is called for any non-deny decision so
 // the original tool call can be retried with the same callId.
+// removePendingAuthorizationCards(refs) — drop every prompt card the
+// chat is parked on: the generic authorization card AND the ask_user
+// question card. Both are mounted outside the message flow, so a
+// cancel that only removed one kind left the other standing: after
+// "Stop" the answered-looking question stayed in the transcript, and
+// the next turn (or the same call's own tool_call card) rendered it a
+// second time beside the new one.
 export function removePendingAuthorizationCards(refs) {
   if (!refs || !refs.transcript || !refs.transcript.current) return;
-  for (const card of refs.transcript.current.querySelectorAll('.tool-card--authorization[data-auth-call-id]')) {
+  const selector = '.tool-card--authorization[data-auth-call-id], .tool-card--ask-user[data-auth-call-id]';
+  for (const card of refs.transcript.current.querySelectorAll(selector)) {
     card.remove();
   }
 }

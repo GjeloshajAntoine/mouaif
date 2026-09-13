@@ -31,6 +31,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Modal sheets](features/modal-sheets.md) — Escape, Tab and focus behave the same in every full-screen sheet, including stacked ones.
 - [Dictation](features/dictation.md) — speech-to-text from a page under Settings (App defaults) and from the chat composer, which transcribes while you speak; with a chosen model, three request families (multipart, inline-audio chat, Gemini), a per-run cost, and a chat take that joins that chat's Total.
 - [File button: glass orb](features/file-button-orb.md) — render the composer's file/git button as an animated 3D glass orb, from Settings → Chat defaults.
+- [Ask the user tool](features/ask-user-tool.md) — the model pauses the chat to ask a structured question with options, presets and a free-form extra answer; one card per question, and the answer is folded back as a `tool` message.
 
 ## Build the documentation
 

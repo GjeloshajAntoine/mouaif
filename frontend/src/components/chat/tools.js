@@ -138,6 +138,7 @@ export function formatToolArgs(args, toolName) {
   if (name === 'search_files') return [args.path, args.query].filter(Boolean).join(': ');
   if (name === 'write_file' || name === 'edit_file') return args.path || args.file || '';
   if (name === 'subagent') return args.task || '';
+  if (name === 'ask_user') return args.question || '';
   if (name === 'task') return (args.action || '') + (args.title ? ': ' + args.title : '');
 if (name === 'webpreview') return args.url || '';
 if (name === 'restart_app') return args.reason || '';
@@ -223,6 +224,14 @@ export function formatResultSummary(name, r) {
     if (r.bytesWritten != null) return r.bytesWritten + 'B';
     if (r.size != null) return r.size + 'B';
     return null;
+  }
+  if (n === 'ask_user') {
+    // The question is already the card's head line; what the user needs on
+    // the collapsed card is the answer that was recorded for it.
+    if (r.cancelled) return 'dismissed';
+    const choice = Array.isArray(r.choice) ? r.choice.filter(Boolean) : (r.choice ? [r.choice] : []);
+    if (!choice.length) return null;
+    return choice.length > 1 ? choice.length + ' choices' : String(choice[0]);
   }
   if (n === 'task') {
     if (r.action === 'completed' && r.task) return r.task.title + ' ✓';
