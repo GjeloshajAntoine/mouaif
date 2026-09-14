@@ -492,6 +492,12 @@ cursor: pointer;
 .inspector__touch-add:hover { background: var(--accent-press); }
 .inspector__touch-add:active { transform: scale(0.99); }
 .inspector__touch-add:disabled { opacity: 0.5; }
+/* Open state of the disclosure: the browser below is showing, so the button that
+   opened it says so instead of looking like it has not been tapped yet. */
+.inspector__touch-add.is-open {
+background: var(--surface-3);
+border-color: var(--border-strong);
+}
 .inspector__touch-addglyph { font-size: 1rem; line-height: 1; }
 .inspector__touch-footnote {
 margin: 0;
@@ -500,15 +506,46 @@ line-height: 1.35;
 color: var(--muted);
 }
 
-/* ---- the Add-property sheet -------------------------------------- */
-/* `vh` then `dvh`, like .inspector__sheet: a browser without `dvh` support must
-still get a ceiling, or this sheet (31 cards) grows past the viewport and its
-header + Close go off screen with it. See the note on .inspector__sheet. */
-.inspector__sheet--addprop { max-height: 86vh; max-height: 86dvh; }
-.inspector__addprop-body {
+/* ---- the Add-property browser ------------------------------------ */
+/* A section of the Styles card, directly under the ＋ Add property button that
+   opens it — *not* a sheet. It began as one (`.inspector__sheet--addprop`, with
+   an 86 dvh ceiling): a viewport-sized sheet with a backdrop covers the pinned
+   element preview and the identity row, which are the context every card is
+   being compared against, and, rendered inside `.inspector__styles` — a
+   scroller nested in the page's own scroller — the sheet could be laid out and
+   clipped against that scroller instead of the viewport, putting its head, its
+   Close button and its search field off screen and out of reach (measured on a
+   393 x 852 viewport: overlay 497 px tall instead of 960, sheet head at
+   `top -1053`, `elementFromPoint` at Close → null).
+   As a plain block the panel's own scroller is the only scroller: the search
+   field, the chip row, the cards and the Close button all scroll with the
+   panel, and nothing is clipped or fixed. */
+.inspector__addprop {
 display: flex;
 flex-direction: column;
 gap: 10px;
+padding: 10px;
+background: var(--surface-2);
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+}
+.inspector__addprop-head {
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 8px;
+}
+/* Deliberately not sticky. The panel's sticky block (element identity + pinned
+   preview, z-index 3) and the group chip row (z-index 4) already choreograph the
+   two rows that must stay put; a third pinned row would push the cards into a
+   ~250 px band of a 52 dvh scroller. The head scrolls with the list, and the
+   browser brings it back into view itself when the group or the search changes
+   (see revealHead). */
+.inspector__addprop-close {
+min-height: var(--tap);
+padding: 0 14px;
+font-size: 0.8rem;
+flex: 0 0 auto;
 }
 .inspector__addprop-search {
 min-height: var(--tap);
@@ -550,7 +587,10 @@ padding: 8px;
 text-align: left;
 font: inherit;
 color: var(--fg);
-background: var(--surface-2);
+/* `--surface`, not `--surface-2`: the block itself is now `--surface-2`, so the
+   card has to sit *on* it rather than blend into it. Hover steps up to
+   `--surface-3`, which is the same one-step lift the old sheet had. */
+background: var(--surface);
 border: 1px solid var(--border);
 border-radius: var(--r-md);
 cursor: pointer;

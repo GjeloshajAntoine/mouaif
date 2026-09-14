@@ -496,10 +496,18 @@ disabled
 })
 : h('p', { class: 'inspector__touch-none' }, 'No controls in this group for this element.'),
 h('button', {
-class: 'inspector__touch-add',
+class: 'inspector__touch-add' + (props.addOpen ? ' is-open' : ''),
 type: 'button',
 disabled,
-title: 'Browse CSS properties and add one to this element',
+// The property browser is a block in this same panel, not a sheet, so this
+// button is a *disclosure*: it opens the list, and tapping it again closes the
+// list. `aria-expanded` is what tells a screen reader which state it is in —
+// without it the button reads as an action that has already happened.
+'aria-expanded': String(!!props.addOpen),
+'aria-controls': 'inspector-addprop',
+title: props.addOpen
+? 'Hide the property list'
+: 'Browse CSS properties and add one to this element',
 onClick: onAddProperty
 },
 h('span', { class: 'inspector__touch-addglyph', 'aria-hidden': 'true' }, '＋'),

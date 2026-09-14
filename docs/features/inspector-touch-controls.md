@@ -4,7 +4,7 @@
 
 The **Style controls** section of the Inspector's Styles tab is a surface of
 finger-sized widgets — segmented chips, sliders with − / + steppers, a tappable
-box model, colour swatches and an **Add property** card sheet — for changing the
+box model, colour swatches and an **Add property** browser — for changing the
 selected element's CSS without a keyboard. It exists because the property rows
 that come before it can write anything but assume you already know that `display`
 takes `flex`, that `gap` is a length, and that `justify-content` wants
@@ -51,20 +51,24 @@ selection leads to.
    value-type switch, the unit row, the value rail and the page's own suggestions.
    A control never replaces it, and nothing here can express anything the editor
    cannot.
-5. **Add a property** — **＋ Add property** opens the card sheet: search every
-property, filter by category (All / Layout / Spacing / Size / Type / Colour /
-Effects), or tap one of the suggested chips. Each card draws a small picture of
-what the property does and says **Choose**, or **Edit** with the value the
-element has now. Picking a card opens the value editor on that property.
-  Switching category, or typing in the search field, brings the sheet back to
-  its top: both replace every card below the controls, and the chip row and
-  search field are what you need in view to choose again. The sheet's header
-  (**Add a property** / **Close**) is pinned at the top of the sheet and stays
-  there while the cards scroll.
+5. **Add a property** — **＋ Add property** opens the property browser *inside the
+panel*, directly under the button: search every property, filter by category
+(All / Layout / Spacing / Size / Type / Colour / Effects), or tap one of the
+suggested chips. Each card draws a small picture of what the property does and
+says **Choose**, or **Edit** with the value the element has now. Picking a card
+opens the value editor on that property and closes the browser. It stays in the
+panel — the pinned element preview and the controls you already set stay on
+screen, because those are what each card is being compared against — and the
+panel scrolls it, so the header (**Add a property** / **Close**) is always one
+short scroll away. Since it is a disclosure rather than a new screen, the
+**＋ Add property** button closes it again.
+Switching category, or typing in the search field, brings the browser's own
+controls — the search field and the chip row — back into view: both replace
+every card below them, and they are what you need in view to choose again.
 6. **Check and undo** — the receipt above the controls lists every change with the
-   value it replaced. Each row's ↺ restores it; **Undo all** reverses the session.
-   **Refresh** re-reads the element after an outside change, and **Clear** drops
-   the selection (and closes the card sheet).
+value it replaced. Each row's ↺ restores it; **Undo all** reverses the session.
+**Refresh** re-reads the element after an outside change, and **Clear** drops
+the selection (and closes the property browser).
 
 ```text
 Layout    display · position · (flex) direction, align items, justify, gap
@@ -104,75 +108,97 @@ Effects   opacity · shadow · border style · border width
 ## Implementation notes
 
 - **Files.** [`frontend/src/components/inspector/styleControls.js`](../../frontend/src/components/inspector/styleControls.js)
-  is the pure model — the control catalog, the range specs, value parsing, the
-  step/percent maths, the unit conversions, the box-model edges and the
-  add-property library (no Preact, no DOM, no CDP).
-  [`frontend/src/components/inspector/StyleControls.jsx`](../../frontend/src/components/inspector/StyleControls.jsx)
-  renders it;
-  [`frontend/src/components/inspector/AddPropertySheet.jsx`](../../frontend/src/components/inspector/AddPropertySheet.jsx)
-  is the card sheet;
-  [`frontend/src/inspector-touch.css`](../../frontend/src/inspector-touch.css) is
-  the styling, imported by `frontend/src/inspector.css`.
+is the pure model — the control catalog, the range specs, value parsing, the
+step/percent maths, the unit conversions, the box-model edges and the
+add-property library (no Preact, no DOM, no CDP).
+[`frontend/src/components/inspector/StyleControls.jsx`](../../frontend/src/components/inspector/StyleControls.jsx)
+renders it;
+[`frontend/src/components/inspector/AddPropertyBrowser.jsx`](../../frontend/src/components/inspector/AddPropertyBrowser.jsx)
+is the property browser — a section of the Styles card, not a sheet;
+[`frontend/src/inspector-touch.css`](../../frontend/src/inspector-touch.css) is
+the styling, imported by `frontend/src/inspector.css`.
+- **The property browser is a section of the panel, not a sheet.** It began as a
+bottom sheet (`.inspector__sheet--addprop`, an 86 dvh overlay with a backdrop),
+and that was wrong twice over. It covered the element the cards are *about*: the
+pinned preview, the identity row and the controls already set are the context for
+every card, and a viewport-sized sheet with a scrim put all of it behind the
+question. And, rendered inside `.inspector__styles` — a scroller nested in the
+page's own scroller — a sheet could be laid out and clipped against that scroller
+instead of the viewport, which put its head, its **Close** and its search field
+off screen and out of reach (measured at 393 × 852 with the containing block
+forced: overlay 497 px tall instead of 960, head at `top -1053`,
+`elementFromPoint` at **Close** → `null`). Both are answered by rendering the
+cards as a normal block between **Style controls** and **Declared styles**,
+directly under the **＋ Add property** button: the panel's own scroller is the
+only scroller, nothing is fixed or clipped, and the trigger is a disclosure
+(`aria-expanded` + `aria-controls="inspector-addprop"`) so the same tap closes the
+list again. The five remaining overlays — the style editor, the detail sheet, the
+confirm sheet and the Chrome profiles sheet — are portalled to `document.body`
+(see [Inspector Styles panel](./inspector-styles.md) and the implementation notes).
 - **The card picture is `inspector__propcard`, not `inspector__preview`.** The
-  card sheet's thumbnail was originally `.inspector__preview` — the name the
-  Preview panel already uses for its live page screenshot. Because
-  `inspector-touch.css` is imported *after* `inspector-targets.css`, the card
-  rule won: the live preview became a 52 × 52 card, and its
-  `overflow: hidden` clipped the preview frame to a ~38 px column — which in
-  turn collapsed the type bar into a 20 px input and pushed its Send button off
-  the left edge of the panel, and tripped the preview's auto-fit heuristic into
-  permanently choosing natural (panned) size. One stylesheet section silently
-  re-laid out a different panel. The classes are namespaced
-  (`.inspector__propcard`, `-box`, `-mark`, `-glyph`) so the two surfaces cannot
-  collide again, and `scripts/test-inspector-touch-controls.js` asserts that the
-  touch sheet contains no `.inspector__preview` selector at all.
-- **Choosing a category returns the sheet to its top, and the sheet keeps a
-  height ceiling without `dvh`.** Two independent layout bugs in this sheet, both
-  measured in Chrome at 360 × 667 and both now guarded by
-  `scripts/test-inspector-touch-controls.js`. *The scroll one:* switching
-  category (or typing a search) replaces every card below the controls, and a
-  scroller keeps its offset across that swap — clamped to the new list's maximum.
-  With the **All** list read to its end (`scrollTop 2208/2208`), tapping **Type**
-  left the body at `183/183`, i.e. scrolled to the end of the new six-card list,
-  with the chip row at `top 63` against a body top of `156` — the new list and the
-  chips you had just tapped were both out of view, so the sheet read as empty and
-  changing category twice meant scrolling back up. The body now returns to
-  `scrollTop 0` whenever the group or the query changes, because the search field
-  and the chips live at the top of that scroller. *The ceiling one:* every sheet
-  `max-height` was `dvh`-only. A browser that does not understand `dvh` (iOS
-  Safari before 15.4, older WebViews) drops the declaration, leaving the sheet
-  with no ceiling at all and sized by its content; with `align-items: flex-end` on
-  the overlay that pushes the sheet's top **off screen**. Measured on this sheet
-  with `dvh` dropped: 757 px tall in a 667 px viewport, top at `-90`, header and
-  **Close** both off screen — hit-testing the Close button's centre returned
-  `null`, and neither the space above nor below the sheet belonged to the overlay,
-  so there was nothing left to tap to dismiss it. Each sheet now declares a `vh`
-  fallback before its `dvh` value, the same pattern `base.css` uses on
-  `html`/`body`, so the header and the way out survive an unsupported unit.
-- **Every inspector sheet is mounted at the document root.** The sheets used to
-  render where the panel that owns them renders, so this one — and the style
-  editor — were mounted *inside* `.inspector__styles`: a scroll container
-  (`overflow-y: auto`) nested in the page's own scroller. `position: fixed`
-  normally escapes an ancestor like that, but where the scrolling ancestor
-  becomes the overlay's containing block, `inset: 0` resolves against the
-  scroller's box and the overlay is clipped by that scroller's overflow, so the
-  sheet's own header, its **Close** button and the search field and suggested
-  chips at the top of its body were off screen and unreachable — only the body
-  scrolls, and the backdrop covered just the panel body, so the rest of the app
-  still looked live. Reproduced on a 393 × 852 viewport by forcing the
-  containing block the way a phone hands it to a fixed descendant of a scroller
-  (`.inspector__styles { transform: translateZ(0) }`): the overlay went from
-  960 px (the viewport) to 497 px (the scroller box, top `-725`), and the 826 px
-  sheet anchored to its bottom put the header at `top -1053` with
-  `elementFromPoint` at **Close**'s centre returning `null`. Each sheet now
-  returns `sheetPortal(node)`
-  (`frontend/src/components/inspector/sheetPortal.js`), which is
-  `createPortal(node, document.body)` with a no-DOM guard — the same root
-  mounting `DraftCraftAnnotator.jsx` uses for its modal — so the overlay, its
-  backdrop and its `dvh` ceilings are measured against the viewport again.
-  `scripts/test-inspector-touch-controls.js` asserts that every file rendering an
-  `.inspector__overlay` imports the helper and portals **every** overlay it
-  renders.
+card thumbnail was originally `.inspector__preview` — the name the
+Preview panel already uses for its live page screenshot. Because
+`inspector-touch.css` is imported *after* `inspector-targets.css`, the card
+rule won: the live preview became a 52 × 52 card, and its
+`overflow: hidden` clipped the preview frame to a ~38 px column — which in
+turn collapsed the type bar into a 20 px input and pushed its Send button off
+the left edge of the panel, and tripped the preview's auto-fit heuristic into
+permanently choosing natural (panned) size. One stylesheet section silently
+re-laid out a different panel. The classes are namespaced
+(`.inspector__propcard`, `-box`, `-mark`, `-glyph`) so the two surfaces cannot
+collide again, and `scripts/test-inspector-touch-controls.js` asserts that the
+touch sheet contains no `.inspector__preview` selector at all.
+- **Switching category or search brings the browser's own controls back into
+view.** Switching group (or typing a search) replaces every card below the
+controls, and the panel's scroller keeps its offset across that swap — clamped to
+the new list's maximum. With the **All** list read to its end (measured in the
+sheet this replaced, at 360 × 667: `scrollTop 2208/2208`), tapping **Type** left
+the list `183/183`, i.e. scrolled to the end of the new six-card list, with the
+chip row 93 px above the visible region: the new list and the chips just tapped
+were both out of view, so the surface read as empty and changing category twice
+meant scrolling back up first. The browser now asks the *panel* to bring its head
+— search field first, chip row under it — into view whenever the group or the
+query changes, and when it opens, through the same `revealInPanel` helper the
+group chip row uses, so the panel's sticky identity/preview block is measured and
+never overlapped. Re-measured after the change at 375 px: switching from the end
+of **All** (`scrollTop 4248`) to **Layout** landed at `1443` with the head, the
+search field and the chip row all hit-testing to themselves.
+- **The `vh` → `dvh` ceilings still matter for the remaining sheets.** Every
+sheet `max-height` that is `dvh`-only loses its ceiling on a browser that does not
+understand `dvh` (iOS Safari before 15.4, older WebViews) and is then sized by its
+content; with `align-items: flex-end` on the overlay that pushes the sheet's top
+**off screen**. Measured on the old Add-property sheet with `dvh` dropped: 757 px
+tall in a 667 px viewport, top at `-90`, header and **Close** both off screen —
+hit-testing **Close**'s centre returned `null`, and neither the space above nor
+below the sheet belonged to the overlay, so there was nothing left to tap to
+dismiss it. Every sheet that is still an overlay declares a `vh` fallback before
+its `dvh` value, the same pattern `base.css` uses on `html`/`body`. The
+Add-property browser has no ceiling to get wrong: it is a block in the panel.
+
+- **Every sheet that is still an overlay is mounted at the document root.** The
+style editor is owned by the Styles panel, so it used to be mounted *inside*
+`.inspector__styles` — a scroll container (`overflow-y: auto`) nested in the page's
+own scroller — and the detail / confirm / profiles sheets inside the (also
+scrollable) panel stack. `position: fixed` normally escapes an ancestor like that,
+but where the scrolling ancestor becomes the overlay's containing block, `inset: 0`
+resolves against the scroller's box and the overlay is clipped by that scroller's
+overflow, so the sheet's own header and **Close** were off screen and unreachable
+— only the body scrolls, and the backdrop covered just the panel body, so the rest
+of the app still looked live. Reproduced on a 393 × 852 viewport by forcing the
+containing block the way a phone hands it to a fixed descendant of a scroller
+(`.inspector__styles { transform: translateZ(0) }`): the overlay went from
+960 px (the viewport) to 497 px (the scroller box, top `-725`), and the 826 px
+sheet anchored to its bottom put the header at `top -1053` with
+`elementFromPoint` at **Close**'s centre returning `null`. Each such sheet now
+returns `sheetPortal(node)`
+(`frontend/src/components/inspector/sheetPortal.js`), which is
+`createPortal(node, document.body)` with a no-DOM guard — the same root
+mounting `DraftCraftAnnotator.jsx` uses for its modal — so the overlay, its
+backdrop and its `dvh` ceilings are measured against the viewport again.
+`scripts/test-inspector-touch-controls.js` asserts that every file rendering an
+`.inspector__overlay` imports the helper and portals **every** overlay it
+renders, and — the other way round — that the Add-property cards render **no**
+overlay and no portal, because they are a section of the panel.
 - **Ranges and steps** live in `RANGE_SPECS` (per property, side longhands
   resolving to their shorthand), and `specForValue` handles the one property whose
   authored and resolved forms disagree: `line-height` is written as a multiplier
@@ -203,8 +229,9 @@ Effects   opacity · shadow · border style · border width
   surface, and the panel handing the surface the lists it renders. Run it with
   `npm run test:inspector`.
 - **The six bare quick-add chips are gone.** They were a fourth way into the same
-  editor; the card sheet carries the same properties with a description, a picture
-  and their current value. The dead CSS went with the markup in the same commit.
+  editor; the property browser carries the same properties with a description, a
+  picture and their current value. The dead CSS went with the markup in the same
+  commit.
 
 ## Related
 

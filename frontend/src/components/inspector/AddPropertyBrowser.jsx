@@ -1,11 +1,11 @@
-// Inspector StylesPanel — the "Add property" sheet.
+// Inspector Styles panel — the "Add property" browser.
 //
-// The step the images call "Choose what to add": a touch-first browse of CSS
-// properties, grouped, searchable, and drawn as *cards with a picture* rather
-// than as rows of property names. Two reasons it exists at all:
+// This is the step the images call "Choose what to add": a touch-first browse of
+// CSS properties, grouped, searchable, and drawn as *cards with a picture*
+// rather than as rows of property names. Two reasons it exists at all:
 //
 //   1. The panel's declared list only shows what the element already declares, so
-//      before this sheet the only way to add the *first* style to an element was
+//      before this browser the only way to add the *first* style to an element was
 //      the six quick chips or knowing a property name to type. Neither is a
 //      browse.
 //   2. A property name is not a description. `overflow` and `object-fit` look
@@ -15,12 +15,46 @@
 //
 // Picking a card hands the property to the panel, which opens the same edit sheet
 // a declared row opens (pre-filled with the value the element has, or the family's
-// neutral value when it has none). So this sheet adds a *choice*, never a second
+// neutral value when it has none). So this browser adds a *choice*, never a second
 // editing path.
+//
+// Why it is a section of the Styles card and not a sheet
+// -----------------------------------------------------
+// It started as a bottom sheet (`AddPropertySheet.jsx`) rendered by the panel.
+// Two things were wrong with that, and only the second was a bug:
+//
+//   - It covered the element. Choosing a property is a question about *this*
+//     element — the pinned preview, the element's identity and the controls that
+//     are already set are the context for every card — and a viewport-sized sheet
+//     with a backdrop put all of that behind a scrim, on the one screen where the
+//     user is comparing a card against what the element already has.
+//   - Rendered inside `.inspector__styles` — a scroller nested in the page's own
+//     scroller — the sheet could be laid out and clipped against that scroller
+//     instead of the viewport, which put its own head, its Close button and its
+//     search field off screen and out of reach (measured: overlay 497 px tall
+//     instead of 960, head at `top -1053`, `elementFromPoint` at Close → null).
+//
+// Both are answered by the same change: the cards are now a normal block inside
+// the panel's scroller, between **Style controls** and **Declared styles**, right
+// under the **＋ Add property** button that opens it. Nothing is fixed, nothing is
+// clipped, and the panel — with its sticky identity/preview block — is the surface
+// that scrolls. See docs/features/inspector-touch-controls.md.
+//
+// The scrolling it does own
+// -------------------------
+// Switching group (or typing a search) replaces every card below the controls,
+// so the list under the finger becomes a different list. The panel's scroller
+// keeps its offset across that swap, which used to leave the new group rendered
+// past its own end, with the chip row 2 192 px above the viewport: the tap read
+// as "the panel emptied". The browser therefore asks for its own head — the
+// search field and the chip row, which are what the user needs to choose again —
+// to be brought into view after the swap, using the panel's shared
+// `revealInPanel` helper so the sticky block above the scroller is accounted for.
+// The same reveal runs when the browser is opened.
 import { h } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { LIBRARY_GROUPS, searchLibrary, libraryRow } from './styleControls.js';
-import { sheetPortal } from './sheetPortal.js';
+import { revealInPanel } from './StyleControls.jsx';
 
 // PropertyPreview — the card's picture, drawn in CSS from the property's family
 // (see LIBRARY's `preview`). Deliberately abstract: a mini box, its padding or
@@ -34,60 +68,56 @@ h('span', { class: 'inspector__propcard-glyph' }, props.glyph || 'Aa')
 );
 }
 
-// AddPropertySheet — the card list. `open` gates it so the panel can mount it
+// AddPropertyBrowser — the card list. `open` gates it so the panel can mount it
 // unconditionally; `ctx` is the same declared+computed pair the rest of the panel
 // reads, which is what lets a card say the value the element has ("Already added
 // · 16px") instead of only "already added".
-export function AddPropertySheet(props) {
+export function AddPropertyBrowser(props) {
 const [query, setQuery] = useState('');
 const [group, setGroup] = useState('all');
-// bodyRef — the sheet's own scroller. Its offset has to be reset when the list
-// under it is replaced, and only the DOM node knows the current offset.
-const bodyRef = useRef(null);
-// A fresh open starts from the whole list: a search left over from the last time
-// would hide the cards the user came back for.
+// rootRef — the browser's own block, which is what the reveal measures and
+// scrolls to. It is also how the scroller is found: the block lives inside
+// `.inspector__styles`, so `closest` reads the panel's scroller without the
+// panel having to hand it down (and without a second ref that could point at a
+// different element than the one on screen).
+const rootRef = useRef(null);
+// revealHead — bring the search field and the chip row back into view. It runs
+// after the DOM has the new list (an effect, keyed on the two inputs that swap
+// it: the group and the query) and after the block is mounted, never from the
+// tap handler, because the offset has to be measured against the height the tap
+// produced.
+function revealHead() {
+const node = rootRef.current;
+if (!node) return;
+revealInPanel(node.closest('.inspector__styles'), node);
+}
+// A fresh open starts from the whole list — a search left over from the last
+// time would hide the cards the user came back for — and brings the head into
+// view, because the block renders *below* the Add-property button the user just
+// tapped and the panel may have been scrolled anywhere.
 useEffect(() => {
-if (props.open) { setQuery(''); setGroup('all'); }
+if (!props.open) return;
+setQuery('');
+setGroup('all');
+revealHead();
 }, [props.open]);
-// Picking a category (or typing a search) *replaces* every card below the
-// controls, and the body keeps its `scrollTop` across that swap — clamped to
-// whatever maximum the new, shorter list has. Measured against the styles
-// fixture at 360 x 667: reading the end of the All list (`scrollTop 2208/2208`)
-// and tapping **Type** left the body at `183/183` — scrolled to the end of the
-// new list — with the group chip row at `top 63`, i.e. 93 px *above* the body's
-// own top edge and completely out of view. The new list therefore looked empty
-// and the chips you had just tapped were gone, so changing category twice meant
-// scrolling back up first.
-//
-// The controls live at the top of this scroller, so returning to `scrollTop 0`
-// puts the search field, the chips and the first cards back in view — which is
-// what the tap was asking for. Keyed on the group and the query because those
-// are exactly the two inputs that swap the list out.
 useEffect(() => {
-const body = bodyRef.current;
-if (body) body.scrollTop = 0;
+if (!props.open) return;
+revealHead();
 }, [group, query]);
 if (!props.open) return null;
 const rows = searchLibrary(query, group).map((entry) => libraryRow(entry, props.ctx || {}));
 const suggestions = (props.suggestions || []).map(([prop, desc, short]) => ({ prop, desc, short }));
-// Portalled to the document root: this sheet is mounted by the Styles panel,
-// i.e. inside `.inspector__styles` — a scroller nested in the page's own
-// scroller — where a fixed overlay is contained and clipped on a phone (see
-// sheetPortal.js). At the root the backdrop covers the whole viewport and the
-// head, Close and search field stay reachable.
-return sheetPortal(h('div', { class: 'inspector__overlay', onClick: props.onClose },
-h('div', {
-class: 'inspector__sheet inspector__sheet--addprop',
-role: 'dialog',
-'aria-modal': 'true',
-'aria-label': 'Add a CSS property',
-onClick: (e) => e.stopPropagation()
-},
-h('div', { class: 'inspector__sheet-head' },
-h('strong', { class: 'inspector__sheet-title' }, 'Add a property'),
-h('button', { class: 'btn inspector__sheet-close', type: 'button', onClick: props.onClose }, 'Close')
+return h('div', { class: 'inspector__addprop', id: 'inspector-addprop', ref: rootRef, role: 'region', 'aria-label': 'Add a property' },
+h('div', { class: 'inspector__addprop-head' },
+h('h3', { class: 'inspector__styles-h' }, 'Add a property'),
+h('button', {
+class: 'btn inspector__addprop-close',
+type: 'button',
+title: 'Close the property list',
+onClick: props.onClose
+}, 'Close')
 ),
-h('div', { class: 'inspector__sheet-body inspector__addprop-body', ref: bodyRef },
 h('label', { class: 'label', for: 'inspector-addprop-search' }, 'Search every property'),
 h('input', {
 class: 'input inspector__addprop-search',
@@ -97,7 +127,7 @@ value: query,
 placeholder: 'padding, colour, shadow…',
 autocapitalize: 'off',
 autocorrect: 'off',
-spellcheck: 'false',
+spellcheck: false,
 enterkeyhint: 'search',
 onInput: (e) => setQuery(e.currentTarget.value)
 }),
@@ -161,7 +191,5 @@ h('span', { class: 'inspector__addprop-badge' }, row.action)
 h('p', { class: 'inspector__addprop-note' },
 'Any property can be set — pick a card for the guided value editor, or type a name in the editor\'s own property field.'
 )
-)
-)
-));
+);
 }

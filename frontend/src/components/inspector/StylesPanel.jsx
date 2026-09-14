@@ -44,7 +44,7 @@ import { Suggestions } from './Suggestions.jsx';
 import { ValueRail } from './ValueRail.jsx';
 import { ValueKindsView } from './ValueKindsView.jsx';
 import { StyleControls } from './StyleControls.jsx';
-import { AddPropertySheet } from './AddPropertySheet.jsx';
+import { AddPropertyBrowser } from './AddPropertyBrowser.jsx';
 import { createLiveShot } from './liveShot.js';
 import { sheetPortal } from './sheetPortal.js';
 import { valueShape } from './valueShapes.js';
@@ -1989,7 +1989,11 @@ onApply: applyControl,
 // opens: exact typing, the value-type switch, the unit row and the page's own
 // suggestions live there, and no touch control replaces them.
 onEdit: (prop, value) => setEdit({ prop, value }),
-onAddProperty: () => setAddOpen(true),
+// A disclosure, not an action: the property browser is a block in this panel,
+// so the same tap that opens it closes it (see the aria-expanded wiring in
+// StyleControls).
+onAddProperty: () => setAddOpen((open) => !open),
+addOpen,
 disabled: loading,
 // The panel scrolls the chip row back into view when the group changes; the
 // surface publishes the row and its own post-render reveal (see revealRef).
@@ -1998,6 +2002,23 @@ revealRef,
 onGroupChange: setTouchGroup
 })
 ),
+// The Add-property browser: a section of this card, rendered directly under the
+// ＋ Add property button that opens it, *not* a sheet over the app. Choosing a
+// property is a question about the element the panel is showing — the pinned
+// preview, its identity and the controls already set are the context for every
+// card — so covering them with a scrim put the answer behind the question. As a
+// block inside the panel's own scroller it is also clipped by nothing: the panel
+// is the surface that scrolls. See AddPropertyBrowser.jsx.
+h(AddPropertyBrowser, {
+open: addOpen,
+ctx: { declared: inlineRows, computed: computedRows },
+suggestions: COMMON_CSS,
+onClose: () => setAddOpen(false),
+onPick: (row) => {
+setAddOpen(false);
+setEdit({ prop: row.prop, value: row.isSet ? row.value : '' });
+}
+}),
 h('div', { class: 'inspector__styles-section' },
 h('h3', { class: 'inspector__styles-h' }, 'Declared styles'),
 inlineRows.length
@@ -2233,20 +2254,6 @@ onApply: applyEdit,
 onRemove: removeEdit,
 onDone: () => setEdit(null),
 onCancel: () => setEdit(null)
-}) : null,
-// The card sheet that chooses *which* property to edit. Rendered from the same
-// panel state as the editor, so picking a card closes one sheet and opens the
-// other in a single render — there is no frame in which neither is up, which is
-// what makes the browse → set-value hand-off feel like one motion.
-h(AddPropertySheet, {
-open: addOpen,
-ctx: { declared: inlineRows, computed: computedRows },
-suggestions: COMMON_CSS,
-onClose: () => setAddOpen(false),
-onPick: (row) => {
-setAddOpen(false);
-setEdit({ prop: row.prop, value: row.isSet ? row.value : '' });
-}
-})
+}) : null
 );
 }

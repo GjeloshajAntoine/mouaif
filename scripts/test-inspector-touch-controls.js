@@ -35,7 +35,7 @@ const { readInspectorCss } = require('./inspector-css.js');
 const kindsSource = strip(read('frontend/src/components/inspector/valueKinds.js'));
 const controlsSource = strip(read('frontend/src/components/inspector/styleControls.js'));
 const surfaceSource = read('frontend/src/components/inspector/StyleControls.jsx');
-const sheetSource = read('frontend/src/components/inspector/AddPropertySheet.jsx');
+const browserSource = read('frontend/src/components/inspector/AddPropertyBrowser.jsx');
 const portalSource = read('frontend/src/components/inspector/sheetPortal.js');
 const panelSource = read('frontend/src/components/inspector/StylesPanel.jsx');
 const css = readInspectorCss();
@@ -344,14 +344,20 @@ check('a control\'s value button opens the same editor a declared row opens',
   /onEdit: \(prop, value\) => setEdit\(\{ prop, value \}\)/.test(panelSource));
 check('the value index answers the colour swatches, so they cost no page read',
   /swatchesFor: \(prop\) => valuesFor\(valueIndex, prop, 6\)/.test(panelSource));
-check('the primary button opens the card sheet',
-  /onAddProperty: \(\) => setAddOpen\(true\)/.test(panelSource));
-check('the card sheet is rendered by the panel with its suggestions',
-  /h\(AddPropertySheet, \{/.test(panelSource) && /suggestions: COMMON_CSS,/.test(panelSource));
-check('picking a card closes the sheet and opens the value editor on that property',
-  /onPick: \(row\) => \{[\s\S]{0,160}setAddOpen\(false\);[\s\S]{0,160}setEdit\(\{ prop: row\.prop, value: row\.isSet \? row\.value : '' \}\)/.test(panelSource));
-check('clearing the selection closes the card sheet',
-  /setEdit\(null\);[\s\S]{0,200}setAddOpen\(false\)/.test(panelSource));
+check('the primary button opens the property browser',
+/onAddProperty: \(\) => setAddOpen\(\(open\) => !open\)/.test(panelSource));
+check('the primary button is a disclosure: aria-expanded and a toggling title',
+  /'aria-expanded': String\(!!props\.addOpen\)/.test(surfaceSource)
+&& /'aria-controls': 'inspector-addprop'/.test(surfaceSource)
+&& /addOpen,/.test(panelSource));
+check('the browser carries the id its trigger points at',
+/id: 'inspector-addprop'/.test(browserSource));
+check('the property browser is rendered by the panel with its suggestions',
+/h\(AddPropertyBrowser, \{/.test(panelSource) && /suggestions: COMMON_CSS,/.test(panelSource));
+check('picking a card closes the browser and opens the value editor on that property',
+/onPick: \(row\) => \{[\s\S]{0,160}setAddOpen\(false\);[\s\S]{0,160}setEdit\(\{ prop: row\.prop, value: row\.isSet \? row\.value : '' \}\)/.test(panelSource));
+check('clearing the selection closes the property browser',
+/setEdit\(null\);[\s\S]{0,200}setAddOpen\(false\)/.test(panelSource));
 check('the surface uses a native range, so a phone already knows how to drag it',
 /type: 'range'/.test(surfaceSource) && /class: 'inspector__touch-slider'/.test(surfaceSource));
 // ---- group-tab navigation must not strand the user ---------------------
@@ -437,41 +443,71 @@ check('every control has a value button into the exact editor',
 check('the box model renders a margin ring and a nested padding ring',
   /box: 'margin'/.test(surfaceSource) && /box: 'padding'/.test(surfaceSource)
   && /inspector__touch-boxes/.test(surfaceSource));
-check('the card sheet has a search field and category tabs',
-/type: 'search'/.test(sheetSource) && /LIBRARY_GROUPS\.map/.test(sheetSource));
+check('the property browser has a search field and category tabs',
+/type: 'search'/.test(browserSource) && /LIBRARY_GROUPS\.map/.test(browserSource));
+// The browser is a *section of the Styles card*, not a sheet: no overlay, no
+// portal, nothing fixed. It renders directly under the ＋ Add property button
+// that opens it, inside the panel's own scroller, so its cards, the element's
+// pinned preview above and the controls already set are all readable in one
+// scroll and nothing is clipped or covered by a scrim.
+check('the property browser renders inline, with no overlay or portal',
+!/inspector__overlay/.test(browserSource)
+&& !/sheetPortal/.test(browserSource)
+&& /class: 'inspector__addprop'/.test(browserSource));
+check('the browser sits inside the panel, between the controls and the declarations',
+(() => {
+const controls = panelSource.indexOf("h('h3', { class: 'inspector__styles-h' }, 'Style controls')");
+const browser = panelSource.indexOf('h(AddPropertyBrowser, {');
+const declared = panelSource.indexOf("h('h3', { class: 'inspector__styles-h' }, 'Declared styles')");
+return controls >= 0 && browser > controls && declared > browser;
+})());
+check('the browser offers a way out from the panel itself, not only from a backdrop',
+/class: 'btn inspector__addprop-close'/.test(browserSource)
+&& /onClick: props\.onClose/.test(browserSource));
+check('the inline browser is not fixed, so the panel is its only scroller',
+!/position:\s*fixed/.test(rule(css, '.inspector__addprop') || '')
+&& !/inset:\s*0/.test(rule(css, '.inspector__addprop') || ''));
 // Switching category (or typing a search) replaces every card under the
-// controls, and a scroller keeps its offset across that swap — so the new list
-// rendered *past* its own end and the chip row you had just tapped sat above the
-// body's top edge. Measured at 360 x 667: All scrolled to `2208/2208`, tap Type,
-// body still at `183/183` with the chips at `top 63` against a body top of `156`.
-// The chips and the search field live at the top of this scroller, so the reset
-// is what makes the tap read as "I changed category".
-check('switching category or search returns the card sheet to its top',
-/const bodyRef = useRef\(null\)/.test(sheetSource)
-&& /bodyRef\.current/.test(sheetSource)
-&& /\[group, query\]/.test(sheetSource)
-&& /inspector__addprop-body', ref: bodyRef/.test(sheetSource));
+// controls, and the panel's scroller keeps its offset across that swap — so the
+// new list rendered *past* its own end with the chip row you had just tapped far
+// above the visible region. Measured in the sheet that came before this browser
+// at 360 x 667: All read to its end (`scrollTop 2208/2208`), tap Type, body still
+// at `183/183` with the chips at `top 63` against a body top of `156`. The chips
+// and the search field are the controls you need in view to choose again, so the
+// swap brings them back: the browser asks the *panel* — through the shared
+// revealInPanel helper, which measures the panel's sticky block first — to bring
+// its own head into view.
+check('switching category or search brings the browser\'s controls back into view',
+/const rootRef = useRef\(null\)/.test(browserSource)
+&& /function revealHead\(\)/.test(browserSource)
+&& /revealInPanel\(node\.closest\('\.inspector__styles'\), node\)/.test(browserSource)
+&& /\}, \[group, query\]\)/.test(browserSource)
+&& /import \{ revealInPanel \} from '\.\/StyleControls\.jsx';/.test(browserSource));
+check('opening the browser reveals it and starts from the whole list',
+/open: addOpen,/.test(panelSource)
+&& /if \(!props\.open\) return;[\s\S]{0,120}setQuery\(''\);[\s\S]{0,60}setGroup\('all'\);[\s\S]{0,60}revealHead\(\);/.test(browserSource));
 // The imported hooks have to match what the file uses. `.jsx` is not covered by
 // `node -c` (see the note in this file's header), so a missing import builds
-// cleanly and then throws on first render, taking the sheet down.
+// cleanly and then throws on first render, taking the panel down.
 {
-const hooks = new Set([...sheetSource.matchAll(/\b(use[A-Z][A-Za-z]*)\s*\(/g)].map((m) => m[1]));
+const hooks = new Set([...browserSource.matchAll(/\b(use[A-Z][A-Za-z]*)\s*\(/g)].map((m) => m[1]));
 const imported = new Set(
-(/from 'preact\/hooks';/.test(sheetSource)
-? (/import\s*\{([^}]*)\}\s*from 'preact\/hooks';/.exec(sheetSource) || [, ''])[1]
+(/from 'preact\/hooks';/.test(browserSource)
+? (/import\s*\{([^}]*)\}\s*from 'preact\/hooks';/.exec(browserSource) || [, ''])[1]
 : '').split(',').map((s) => s.trim()).filter(Boolean)
 );
 const missing = [...hooks].filter((hh) => !imported.has(hh));
-check('the card sheet imports every preact hook it calls', missing.length === 0, missing.join(', '));
+check('the property browser imports every preact hook it calls', missing.length === 0, missing.join(', '));
 }
 // A sheet whose max-height is `dvh`-only loses its ceiling on a browser that
-// does not understand `dvh`, and is then sized by its content: the Add-property
-// sheet grew to 757 px in a 667 px viewport, and `align-items: flex-end` pushed
-// its header and Close off screen with nothing left tappable to dismiss it
-// (measured: hit-test at the Close button's centre returned null, and neither the
-// space above nor below the sheet belonged to the overlay). Every sheet ceiling
+// does not understand `dvh`, and is then sized by its content: a sheet grew to
+// 757 px in a 667 px viewport, and `align-items: flex-end` pushed its header and
+// Close off screen with nothing left tappable to dismiss it (measured: hit-test
+// at the Close button's centre returned null, and neither the space above nor
+// below the sheet belonged to the overlay). Every remaining sheet ceiling
 // therefore states a `vh` fallback first, the same pattern base.css uses on
-// html/body.
+// html/body. The Add-property cards are no longer a sheet at all — they are a
+// block inside the panel's scroller, where there is no ceiling to get wrong.
 {
 const sheetsCss = read('frontend/src/inspector-sheets.css');
 const baseSheet = rule(sheetsCss, '.inspector__sheet');
@@ -479,7 +515,6 @@ check('the shared sheet ceiling has a vh fallback before dvh',
 !!baseSheet && /max-height:\s*80vh;[\s\S]*max-height:\s*80dvh;/.test(baseSheet),
 baseSheet ? baseSheet.replace(/\s+/g, ' ').slice(0, 90) : 'rule missing');
 for (const [file, sel] of [
-['frontend/src/inspector-touch.css', '.inspector__sheet--addprop'],
 ['frontend/src/inspector-profiles.css', '.inspector__sheet--profiles'],
 ['frontend/src/inspector-sheets.css', '.inspector__sheet--confirm']
 ]) {
@@ -488,54 +523,66 @@ check(sel + ' keeps a vh fallback', !!body
 && /max-height:\s*[0-9.]+vh;/.test(body) && /max-height:\s*[0-9.]+dvh;/.test(body),
 body ? body.replace(/\s+/g, ' ').slice(0, 90) : 'rule missing');
 }
+check('the add-property sheet is gone, with its ceiling and its body wrapper',
+(() => {
+// Comments stripped: this very change documents the removed sheet names in the
+// CSS, and a regex over the raw text would match the explanation.
+const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+return !/\.inspector__sheet--addprop\b/.test(bare) && !/\.inspector__addprop-body\b/.test(bare);
+})());
 }
-check('the card sheet draws a picture per card',
-/inspector__propcard--' \+ \(props\.kind/.test(sheetSource));
-check('the card sheet says what a card will do before the tap',
-  /row\.action/.test(sheetSource) && /inspector__addprop-value/.test(sheetSource));
+check('the property browser draws a picture per card',
+/inspector__propcard--' \+ \(props\.kind/.test(browserSource));
+check('the property browser says what a card will do before the tap',
+/row\.action/.test(browserSource) && /inspector__addprop-value/.test(browserSource));
 
 // ---- a sheet must not be mounted inside a scroller ----------------------
 // The overlays used to render where the panel that owns them renders, so the
-// Add-property card sheet and the style editor were mounted inside
-// `.inspector__styles` — a scroller nested in the page's own scroller — and the
-// detail / confirm / profiles sheets inside the (also scrollable) panel stack.
-// When such an ancestor becomes a `position: fixed` box's containing block
-// (WebKit's behaviour for a fixed descendant of a scroller), `inset: 0`
-// resolves against the *scroller*, the overlay is clipped by that scroller's
-// overflow, and only the sheet's body scrolls — so a header and Close button
-// pushed above the scroller's top are unreachable and the backdrop only covers
-// the panel body. Reproduced on a 393 x 852 viewport by forcing the containing
-// block with `.inspector__styles { transform: translateZ(0) }`: the overlay
-// went from 960 px (viewport) to 497 px (the scroller's box, top -725), the
-// 826 px sheet's head landed at top -1053, and `elementFromPoint` at Close's
-// centre returned null. Portalling to `document.body` is the fix, and these
-// checks keep every sheet portalled rather than only the two that were
-// measured.
+// style editor was mounted inside `.inspector__styles` — a scroller nested in
+// the page's own scroller — and the detail / confirm / profiles sheets inside
+// the (also scrollable) panel stack. When such an ancestor becomes a
+// `position: fixed` box's containing block (WebKit's behaviour for a fixed
+// descendant of a scroller), `inset: 0` resolves against the *scroller*, the
+// overlay is clipped by that scroller's overflow, and only the sheet's body
+// scrolls — so a header and Close button pushed above the scroller's top are
+// unreachable and the backdrop only covers the panel body. Reproduced on a
+// 393 x 852 viewport by forcing the containing block with
+// `.inspector__styles { transform: translateZ(0) }`: the overlay went from
+// 960 px (viewport) to 497 px (the scroller's box, top -725), the 826 px
+// sheet's head landed at top -1053, and `elementFromPoint` at Close's centre
+// returned null. Portalling to `document.body` is the fix for every *sheet*,
+// and these checks keep them all portalled.
+//
+// The Add-property cards are the one surface that must NOT be portalled: they
+// are a section of the panel itself (see AddPropertyBrowser.jsx), so they are
+// checked for the opposite — no overlay, no portal, and no surrounding sheet.
 check('the portal helper mounts at the document root, not in a panel',
-  /createPortal\(node, document\.body\)/.test(portalSource)
-  && /typeof document === 'undefined'/.test(portalSource));
+/createPortal\(node, document\.body\)/.test(portalSource)
+&& /typeof document === 'undefined'/.test(portalSource));
 for (const file of [
-  'AddPropertySheet.jsx',
-  'ConfirmSheet.jsx',
-  'DetailSheet.jsx',
-  'InspectorProfilesSheet.jsx',
-  'StylesPanel.jsx'
+'ConfirmSheet.jsx',
+'DetailSheet.jsx',
+'InspectorProfilesSheet.jsx',
+'StylesPanel.jsx'
 ]) {
-  const src = read('frontend/src/components/inspector/' + file);
-  const overlays = (src.match(/class: 'inspector__overlay'/g) || []).length;
-  const portalled = (src.match(/sheetPortal\(h\('div', \{\s*class: 'inspector__overlay'/g) || []).length;
-  check(file + ' imports the portal helper', /import \{ sheetPortal \} from '\.\/sheetPortal\.js';/.test(src));
-  check(file + ' portals every overlay it renders',
-    overlays > 0 && portalled === overlays,
-    overlays + ' overlay(s), ' + portalled + ' portalled');
+const src = read('frontend/src/components/inspector/' + file);
+const overlays = (src.match(/class: 'inspector__overlay'/g) || []).length;
+const portalled = (src.match(/sheetPortal\(h\('div', \{\s*class: 'inspector__overlay'/g) || []).length;
+check(file + ' imports the portal helper', /import \{ sheetPortal \} from '\.\/sheetPortal\.js';/.test(src));
+check(file + ' portals every overlay it renders',
+overlays > 0 && portalled === overlays,
+overlays + ' overlay(s), ' + portalled + ' portalled');
 }
 // A sheet is a child of the overlay, so the render shape `sheetPortal(h('div',
 // { class: 'inspector__overlay' …` is the only one that can be portalled at the
 // root. Assert the helper is not called anywhere else in a way that would wrap
 // an unrelated node.
 check('no sheet overlay is left rendering inline in the panel stack',
-  !/return h\('div', \{ class: 'inspector__overlay'/.test(sheetSource)
-  && !/return h\('div', \{ class: 'inspector__overlay'/.test(panelSource));
+!/return h\('div', \{ class: 'inspector__overlay'/.test(panelSource));
+check('the add-property cards are not portalled and not a sheet',
+!/sheetPortal/.test(browserSource)
+&& !/inspector__overlay/.test(browserSource)
+&& !/role: 'dialog'/.test(browserSource));
 
 // ---- CSS invariants ----------------------------------------------------
 
@@ -619,8 +666,8 @@ check('the surface is single-column on a phone and only relaxes above 560 px',
 check('the card picture does not reuse the page preview class',
 !/inspector__preview\b/.test(touchCss)
 && /\.inspector__propcard\b/.test(touchCss)
-&& !/inspector__preview\b/.test(sheetSource)
-&& /inspector__propcard\b/.test(sheetSource));
+&& !/inspector__preview\b/.test(browserSource)
+&& /inspector__propcard\b/.test(browserSource));
 
 
 // rules(css, selector) — every rule body for a selector, concatenated. The
