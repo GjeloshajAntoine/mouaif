@@ -302,8 +302,32 @@ check('device preset choice persists', /VIEWPORT_STATE_KEY/.test(inspector));
 // horizontal scrolling inside the styles panel.
 
 check('--tap token is defined', /--tap:\s*44px/.test(read('frontend/src/base.css')));
-check('styles panel clips horizontal overflow', /overflow-x:\s*hidden/.test(css));
-check('styles panel contains its overscroll', /overscroll-behavior:\s*contain/.test(css));
+// ruleBody(css, selector) — the declaration block of one rule, comments
+// stripped. A bare `overscroll-behavior: contain` regex used to stand in for
+// the assertion below, and it matched this panel's *prose* as happily as a real
+// declaration: when the panel's containment was removed the check kept passing
+// off the comment explaining the removal. Scope every CSS assertion to the
+// selector it is about, and strip comments before matching.
+function ruleBody(source, selector) {
+  const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '');
+  const at = withoutComments.indexOf(selector + ' {');
+  if (at < 0) return null;
+  const open = withoutComments.indexOf('{', at);
+  const close = withoutComments.indexOf('}', open);
+  return open < 0 || close < 0 ? null : withoutComments.slice(open + 1, close);
+}
+const stylesPanelRule = ruleBody(css, '.inspector__panel-body .inspector__styles');
+check('styles panel rule is found for the layout assertions', !!stylesPanelRule);
+check('styles panel clips horizontal overflow', /overflow-x:\s*hidden/.test(stylesPanelRule || ''));
+// The panel is a scroller *inside* `.app__main`, so a `contain` here swallows
+// the gesture and the page underneath can never be scrolled back. Measured at
+// 360 x 667 with the page scrolled down: three drag-down gestures over the
+// panel left `.app__main.scrollTop` at 614 (unmoved, ← Back unreachable);
+// chaining (`auto`) moved it 614 -> 439 -> 264. Guard the axis and the value,
+// so a future `contain` on either axis fails here.
+check('styles panel lets the scroll gesture chain to the page scroller',
+  /overscroll-behavior-y:\s*auto/.test(stylesPanelRule || '')
+  && !/overscroll-behavior(-y)?:\s*contain/.test(stylesPanelRule || ''));
 check('panel chips are labelled on screen (not icon-only)',
 /inspector__panelchip-label/.test(inspector) && /inspector__panelchip-label/.test(css));
 // ---- 5c. History navigation -------------------------------------------

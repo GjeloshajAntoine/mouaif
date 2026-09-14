@@ -32,12 +32,24 @@ flex: 0 0 auto;
 height: 52dvh;
 min-height: 320px;
 overflow-y: auto;
-/* The panel is a scroller *inside* the page's own scroller (.app__main). With
-the default `auto`, reaching the end of a property list chains the gesture to
-the page underneath, so the view jumps by a whole panel the moment the list
-runs out — the worst part of reading a long list on a phone. `contain` keeps
-the gesture inside the panel: it stops and stays put. */
-overscroll-behavior: contain;
+/* The panel is a scroller *inside* the page's own scroller (.app__main), and
+the gesture must be allowed to *chain* between them.
+This used to be `contain`, to stop the page from jumping by a whole panel when
+a property list ran out. The cost was much worse than the thing it prevented:
+`contain` swallows the gesture outright, so while the finger starts on the
+panel the page underneath cannot be scrolled at all — and the panel is 52 dvh,
+so at 360 x 667 it covers 308 px of the 564 px page view. Measured with the page
+scrolled down (so the ← Back link was 551 px above the viewport): three
+drag-down gestures over the panel left `.app__main` at `scrollTop 614` —
+unmoved, and the Back link unreachable. With `auto` the same three gestures
+moved the page `614 → 439 → 264`, and dragging up over a panel that was already
+at its own end moved it to 175. The panel keeps its own offset in both cases;
+chaining only starts once the panel has nowhere left to go, which is the
+standard nested-scroller behaviour and the only way back to the top of the
+Inspector. The "jump" is now also far smaller than it was: the panel is taller
+than a property list's remaining tail and `overscroll-behavior-y: contain` on
+`.app__main` stops the chain at the page's own end. */
+overscroll-behavior-y: auto;
 padding: 6px 8px;
 background: var(--surface);
 border: 1px solid var(--border);
