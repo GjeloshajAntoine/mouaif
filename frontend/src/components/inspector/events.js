@@ -284,12 +284,53 @@ export function createEventHandlers(state) {
   // and for the panel's own pacing decisions; nothing in the UI reads it.
   function captureDepth() { return captureChain.depth; }
   function queueCapture(run) {
-    captureChain.depth++;
-    const result = captureChain.tail.then(run, run);
-    // Keep the chain alive whatever the capture did: a rejected link must not
-    // poison every later capture on this connection.
-    captureChain.tail = result.then(() => { captureChain.depth--; }, () => { captureChain.depth--; });
-    return result;
+  captureChain.depth++;
+  const result = captureChain.tail.then(run, run);
+  // Keep the chain alive whatever the capture did: a rejected link must not
+  // poison every later capture on this connection.
+  captureChain.tail = result.then(() => { captureChain.depth--; }, () => { captureChain.depth--; });
+  return result;
+  }
+  // ---- The viewport a clipped capture leaves behind -------------------------
+  //
+  // `Page.captureScreenshot` with a `clip` renders by sizing the inspected page to
+  // the clip rect, and it does not put the page back afterwards. Measured in the
+  // running app: the inspected page's own innerHeight alternated 295 <-> 397 —
+  // the heights of the two different clips the Inspector asks for — about twice a
+  // second while the previews ran, and the page reported real `resize` events.
+  // Each loop was therefore photographing the page at the *other* loop's size, so
+  // both previews alternated between two pictures. That is the blink.
+  //
+  // The Inspector always knows the viewport it wants: the user's Size preset,
+  // applied through `setViewportSize`. Re-asserting it after every clipped capture
+  // puts the page back before the next capture can observe it. It is queued with
+  // the captures themselves, so it can never land in the middle of one.
+  //
+  // Best-effort by design: `Emulation` is unavailable on some targets, and a
+  // failed restore must not fail the capture it belongs to.
+  let wantedViewport;
+  function reassertViewport() {
+  if (wantedViewport === undefined) return Promise.resolve();
+  const preset = wantedViewport;
+  // `null` means "native size", which is what clearing the override restores.
+  if (!preset) return cdpSend('Emulation.clearDeviceMetricsOverride', {}, 8000);
+  return cdpSend('Emulation.setDeviceMetricsOverride', {
+  width: preset.width,
+  height: preset.height,
+  deviceScaleFactor: preset.deviceScaleFactor || 1,
+  mobile: !!preset.mobile,
+  screenWidth: preset.width,
+  screenHeight: preset.height
+  }, 8000);
+  }
+  // runCapture — one capture, serialized, with the viewport restored afterwards
+  // when the capture carried a clip.
+  async function runCapture(params) {
+  const shot = await queueCapture(() => cdpSend('Page.captureScreenshot', params, 8000));
+  if (params.clip) {
+  try { await queueCapture(() => reassertViewport()); } catch { /* target has no Emulation domain */ }
+  }
+  return shot;
   }
   function captureScreenshot(opts) {
   const params = {
@@ -305,7 +346,7 @@ export function createEventHandlers(state) {
   // for the selected element's box only, so a full-page PNG (megabytes on a
   // real page) is never produced or decoded just to show one card.
   if (opts && opts.clip) params.clip = opts.clip;
-  return queueCapture(() => cdpSend('Page.captureScreenshot', params, 8000));
+  return runCapture(params);
   }
 
   // A small screencast acts as an event-driven repaint signal. Its frame
@@ -335,20 +376,25 @@ export function createEventHandlers(state) {
   // override is a live CDP emulation, so it also changes how the page
   // reflows — media queries, breakpoints, and responsive layout all
   // respond as if the browser were that size.
-  async function setViewportSize(preset) {
-    if (!preset) {
-      await cdpSend('Emulation.clearDeviceMetricsOverride');
-      return;
-    }
-    await cdpSend('Emulation.setDeviceMetricsOverride', {
-      width: preset.width,
-      height: preset.height,
-      deviceScaleFactor: preset.deviceScaleFactor || 1,
-      mobile: !!preset.mobile,
-      screenWidth: preset.width,
-      screenHeight: preset.height
-    });
-  }
+//
+// The chosen preset is also recorded in `wantedViewport`, because a clipped
+// capture leaves the page sized to its clip and every later capture has to put
+// it back (see reassertViewport above).
+async function setViewportSize(preset) {
+wantedViewport = preset && preset.width ? preset : null;
+if (!preset) {
+await cdpSend('Emulation.clearDeviceMetricsOverride');
+return;
+}
+await cdpSend('Emulation.setDeviceMetricsOverride', {
+width: preset.width,
+height: preset.height,
+deviceScaleFactor: preset.deviceScaleFactor || 1,
+mobile: !!preset.mobile,
+screenWidth: preset.width,
+screenHeight: preset.height
+});
+}
   // viewportCoords — convert a tap point in the full-page screenshot
   // (device-pixel coordinates, computed by PreviewPanel from the image's
   // naturalWidth/naturalHeight) into a viewport CSS coordinate pair that CDP
@@ -816,13 +862,13 @@ if (!Number.isFinite(scale) || scale <= 0.05) scale = 0.05;
 let shot = null;
 try {
 // Routed through the same queue as the Preview panel's captures: this is the
-// other beyond-viewport capture on this target, and overlap is what corrupts
-// both (see the screenshot queue above captureScreenshot).
-const r = await queueCapture(() => cdpSend('Page.captureScreenshot', {
+// other clipped capture on this target, and it is also what leaves the page
+// sized to its clip unless the viewport is put back (see runCapture).
+const r = await runCapture({
 format: 'png',
 captureBeyondViewport: beyond,
 clip: { x, y, width, height, scale }
-}, 8000));
+});
 shot = r && r.data;
 } catch { return null; }
 if (!shot) return null;

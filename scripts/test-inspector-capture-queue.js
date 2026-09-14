@@ -74,6 +74,35 @@ function makeState(options) {
   return { state, events, stats: () => ({ maxInFlight }) };
 }
 
+// makeStateV — a state whose cdpSend records every command, for the viewport
+// restore assertions (the capture itself returns a PNG; Emulation can be made
+// to fail, as it does on targets without that domain).
+function makeStateV(options) {
+  const opts = options || {};
+  const calls = [];
+  const state = {
+    captureBeyondViewport: true,
+    consoleEntries: { current: [] },
+    networkEntries: { current: [] },
+    reqMap: new Map(),
+    consoleVL: { current: null },
+    networkVL: { current: null },
+    rerender: () => {},
+    cdpSend: async (method, params) => {
+      calls.push({ method, params });
+      if (method === 'Page.captureScreenshot') return { data: 'PNG' };
+      if (method === 'Emulation.setDeviceMetricsOverride' || method === 'Emulation.clearDeviceMetricsOverride') {
+        if (opts.failEmulation) throw new Error('Emulation domain unavailable');
+      }
+      if (/getBoundingClientRect/.test(params && params.functionDeclaration || '')) {
+        return { result: { value: { x: 10, y: 20, width: 200, height: 100, sx: 0, sy: 0, dpr: 1 } } };
+      }
+      return {};
+    }
+  };
+  return { state, calls };
+}
+
 async function main() {
   const context = makeContext();
 
@@ -172,15 +201,61 @@ async function main() {
     assert.equal(events.filter((e) => e.start).length, 3, 'three captures were actually issued');
   }
 
+  // --- a clipped capture leaves the page resized, so the viewport is restored
+  // A `clip` renders by sizing the inspected page to the clip rect, and Chrome
+  // does not put it back. Measured in the running app, the inspected page's own
+  // innerHeight alternated 295 <-> 397 (the two clips' heights) about twice a
+  // second while the previews ran, so each loop photographed the page at the
+  // other loop's size — the blink. The Inspector always knows the viewport it
+  // wants (the Size preset), so it re-asserts it after every clipped capture.
+  {
+    const { state, calls } = makeStateV();
+    const handlers = context.createEventHandlers(state);
+    await handlers.setViewportSize({ width: 390, height: 700, mobile: true, deviceScaleFactor: 2 });
+    calls.length = 0;
+    await handlers.captureElementShot('obj-1');
+    const after = calls.map((c) => c.method);
+    assert.deepEqual(after.filter((m) => m === 'Page.captureScreenshot'), ['Page.captureScreenshot'],
+      'the element shot ran once');
+    const restore = calls.find((c) => c.method === 'Emulation.setDeviceMetricsOverride');
+    assert.ok(restore, 'a clipped capture is followed by restoring the wanted viewport');
+    assert.equal(restore.params.width, 390, 'the restore re-asserts the preset width');
+    assert.equal(restore.params.height, 700, 'the restore re-asserts the preset height');
+    assert.equal(restore.params.deviceScaleFactor, 2, 'the restore keeps the retina scale factor');
+    assert.equal(restore.params.mobile, true, 'the restore keeps the mobile flag');
+    assert.ok(calls.indexOf(restore) > calls.findIndex((c) => c.method === 'Page.captureScreenshot'),
+      'the restore lands after the capture, not in the middle of it');
+    // An unclipped capture sizes nothing, so it must not pay for a restore.
+    calls.length = 0;
+    await handlers.captureScreenshot();
+    assert.equal(calls.filter((c) => c.method === 'Emulation.setDeviceMetricsOverride').length, 0,
+      'an unclipped capture does not restore a viewport it never changed');
+    // "Auto" is the native size: restoring it means clearing the override.
+    await handlers.setViewportSize(null);
+    calls.length = 0;
+    await handlers.captureElementShot('obj-1');
+    assert.ok(calls.some((c) => c.method === 'Emulation.clearDeviceMetricsOverride'),
+      'the native preset is restored by clearing the override');
+    // A target with no Emulation domain must not lose its capture to a failed
+    // restore.
+    const noEmulation = makeStateV({ failEmulation: true });
+    const h2 = context.createEventHandlers(noEmulation.state);
+    // setViewportSize itself throws here (the target has no Emulation domain),
+    // which is exactly the case the restore has to survive.
+    try { await h2.setViewportSize({ width: 390, height: 700 }); } catch { /* no Emulation domain */ }
+    const shot = await h2.captureElementShot('obj-1');
+    assert.ok(shot && shot.data, 'a failed viewport restore does not fail the capture');
+  }
+
   // --- the CSS/JS companions still expose the same surface ----------------
   const eventsSrc = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/events.js'), 'utf8');
-  assert.ok(/queueCapture\(\(\) => cdpSend\('Page\.captureScreenshot'/.test(eventsSrc),
-    'the full-page capture is queued');
-  assert.ok(/queueCapture\(\(\) => cdpSend\('Page\.captureScreenshot', \{\s*captureBeyondViewport: beyond/.test(eventsSrc)
-    || /await queueCapture\(\(\) => cdpSend\('Page\.captureScreenshot', \{\nformat: 'png',\ncaptureBeyondViewport: beyond/.test(eventsSrc),
-    'the element shot is queued too — it is the other beyond-viewport capture on the target');
+  assert.ok(/runCapture\(params\)/.test(eventsSrc), 'the full-page capture goes through the serialized runCapture');
+  assert.ok(/if \(params\.clip\) \{[\s\S]{0,200}reassertViewport\(\)/.test(eventsSrc),
+    'the viewport is restored only after a capture that carried a clip');
+  assert.ok(/wantedViewport = preset && preset\.width \? preset : null;/.test(eventsSrc),
+    'the chosen Size preset is what gets restored');
 
-  console.log('PASS screenshot serialization (one capture at a time per target, FIFO, failure-safe, per connection)');
+  console.log('PASS screenshot serialization (one capture at a time per target, FIFO, failure-safe, per connection, clipped captures restore the viewport)');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });
