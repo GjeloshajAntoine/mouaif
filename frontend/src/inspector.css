@@ -25,6 +25,9 @@
    12. inspector-value-type.css          — Inspector value-type switch
 13. inspector-touch.css               — Inspector touch-first style surface
 14. inspector-styles.css              — Inspector Styles panel
+15. inspector-fullscreen.css          — Inspector full-screen panel surface
+The last entry is last on purpose: it overrides the per-panel heights declared
+in the parts above it (see the header comment in that file).
 */
 
 @import './inspector-chrome.css';
@@ -41,3 +44,4 @@
 @import './inspector-value-type.css';
 @import './inspector-touch.css';
 @import './inspector-styles.css';
+@import './inspector-fullscreen.css';

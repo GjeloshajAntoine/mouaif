@@ -11,6 +11,7 @@
 // the Inspector tab is opened.
 import '../inspector.css';
 import { h, Fragment } from 'preact';
+import { createPortal } from 'preact/compat';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, StylesPanel, DetailSheet, ConfirmSheet, createCdpConnection } from './inspector/index.js';
@@ -300,26 +301,47 @@ function SizeDropdown(props) {
 function PanelCard(props) {
 const isVisible = props.isVisible;
 const toggleAria = isVisible ? 'Hide ' + props.label + ' panel' : 'Show ' + props.label + ' panel';
-// The Preview panel swaps its text label for an icon-only full-screen
-// button so the header stays one row: tapping it opens the live preview
-// in a viewport-spanning overlay (see PreviewPanel's fullscreen portal).
-// It mirrors the adjacent refresh/eye icon buttons. The button's
-// accessible label carries the "Preview" context since the text is gone.
-const labelNode = props.onFullscreen
-? h('button', {
-class: 'icon-btn inspector__panel-label--fs',
+// The panel's *name* is no longer printed in its header. It is replaced by the
+// full-screen button in the same slot, on every card — the pattern the Preview
+// card already shipped with, extended to the rest.
+//
+// The name is not lost, it is moved: the chip in the pinned switcher above
+// already names the panel in words, and the button carries the same name in its
+// `aria-label` + `title`, so nothing on screen becomes unnameable for assistive
+// tech. What the header gains is the row's only wide slot turned into an
+// action: a panel body is 32–54 dvh on a phone, which is under half the
+// viewport, and this is the one-tap answer for the 470-row computed list, the
+// request log and the console.
+//
+// Two destinations share the one button, because the two cards that have a
+// "fuller" surface already own it: Preview opens its viewport-spanning overlay
+// (a second screenshot surface with its own header, size presets and type bar),
+// and every other card expands into the region below. That is the existing
+// Preview behaviour, kept rather than replaced.
+const labelNode = h('button', {
+class: 'icon-btn inspector__panel-fs' + (props.focused ? ' is-on' : ''),
 type: 'button',
-'aria-label': 'Open ' + props.label + ' full screen',
-title: 'Open ' + props.label + ' full screen',
+'aria-label': props.focused
+? 'Exit full screen for ' + props.label
+: 'Open ' + props.label + ' full screen',
+title: props.focused ? 'Exit full screen' : 'Open ' + props.label + ' full screen',
+disabled: !isVisible,
 onClick: (e) => { e.stopPropagation(); props.onFullscreen(); }
 },
-h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'currentColor' },
+props.focused
+? h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'currentColor' },
+h('path', { d: 'M9 4v5H4V7h3V4h2Zm6 0h2v3h3v2h-5V4ZM4 15h5v5H7v-3H4v-2Zm11 0h5v2h-3v3h-2v-5Z' })
+)
+: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'currentColor' },
 h('path', { d: 'M4 9V4h5v2H6v3H4Zm11-5h5v5h-2V6h-3V4ZM6 15v3h3v2H4v-5h2Zm12 0h2v5h-5v-2h3v-3Z' })
 )
-)
-: h('span', { class: 'inspector__panel-label' }, props.label);
+);
 return h('div', {
-class: 'inspector__panel' + (props.grow ? ' inspector__panel--grow' : '') + (props.span ? ' inspector__panel--span' : '') + (props.solo ? ' inspector__panel--solo' : ''),
+class: 'inspector__panel'
++ (props.grow ? ' inspector__panel--grow' : '')
++ (props.span ? ' inspector__panel--span' : '')
++ (props.solo ? ' inspector__panel--solo' : '')
++ (props.focused ? ' inspector__panel--fullscreen' : ''),
 'data-panel': props.id
 },
 h('div', { class: 'inspector__panel-head' },
@@ -452,6 +474,43 @@ h('div', { class: 'inspector__panel-body' },
 isVisible ? props.children : null
 )
 );
+}
+// EscapeToExit — mount a keydown listener that calls `onExit` for one Escape
+// press. Registered on `document` in the *bubble* phase (no capture flag), so
+// a sheet opened from inside the focused panel — the Styles edit sheet, the
+// Add-property browser's confirm, a detail sheet — handles the key first via
+// useModal's capture-phase listener and stops it there. Without that ordering
+// a single Escape would close the sheet *and* the full-screen panel under it.
+//
+// Deliberately not useModal: that hook is for a modal overlay (it traps Tab,
+// restores focus, claims a slot on the modal stack). Full screen here is not a
+// modal — the surface below already carries `role="dialog"` and its own Escape
+// path, and the only thing this adds is a key handler that is not tied to a
+// sheet's mount.
+function EscapeToExit(props) {
+const exitRef = useRef(props.onExit);
+exitRef.current = props.onExit;
+useEffect(() => {
+function onKeyDown(event) {
+if (event.key !== 'Escape' || event.defaultPrevented) return;
+if (exitRef.current) exitRef.current();
+}
+document.addEventListener('keydown', onKeyDown);
+return () => document.removeEventListener('keydown', onKeyDown);
+}, []);
+return null;
+}
+// FocusBody — render a panel body inside the full-screen surface.
+//
+// Kept as a component (rather than calling `render` directly in the overlay's
+// JSX) because the body is a *remount*: it is a different DOM node from the one
+// in the stacked layout, and Preact needs a stable vnode type for it. It holds
+// no state of its own, so the panels' own effects — the console's virtual list,
+// the Styles panel's pinned-stack measurement, the preview's capture loop — run
+// against this node for as long as the overlay is up, which is what makes the
+// overlay a working surface rather than a screenshot of one.
+function FocusBody(props) {
+return props.render(props.id);
 }
 
 // StatusPill — colored leading-dot pill that surfaces the current
@@ -626,6 +685,46 @@ const [draftCraftImage, setDraftCraftImage] = useState(null);
 // it so the viewport-spanning overlay opens on tap, keeping the full-screen
 // state (and the portal) inside PreviewPanel.
 const previewFullscreenRef = useRef(null);
+// fullscreenOverlayRef — whether that viewport-spanning overlay is open.
+// PreviewPanel owns the state and mirrors it here, because the card's full
+// screen and the overlay are two destinations for one header button across all
+// five cards, and the overlay has to win: it covers the whole viewport, so
+// expanding the card *under* it would reveal a state the user never asked for
+// the moment the overlay closed.
+const fullscreenOverlayRef = useRef({ open: false });
+// focusPanelId — which panel is in full screen, or '' for the normal stacked
+// layout.
+//
+// Full screen is the *card* filling the region, not a second overlay: the set of
+// full-screen surfaces in this view is already crowded (the Preview overlay
+// above, Draft Craft, the sheets, the profile manager), and adding one more
+// layer would mean one more z-index and one more Escape rule to keep in order.
+// Instead the id is set here and the class is the card's own state marker
+// (`.inspector__panel--fullscreen` in inspector-chrome.css, which carries the
+// declaration): the surface below is a second mount of this card, and the
+// marker is what says which one is the full-screen one. 470 computed rows in the
+// viewport instead of ~350 px of a 667 px phone.
+//
+// Deliberately not persisted: a reload (or a reconnect) comes back to the
+// stacked layout, because a full-screen card is a momentary reading mode and a
+// remembered one would greet the next session with a screen the user cannot
+// explain.
+const [focusPanelId, setFocusPanelId] = useState('');
+// A hidden card cannot be the full-screen card: its body is not mounted, so the
+// mode would render an empty region with one header row in it. Closing the last
+// visible panel is already refused in togglePanel, but `showAllPanels` and
+// `loadPanelState` are both independent of this state, so the invariant is
+// enforced here rather than assumed.
+useEffect(() => {
+if (focusPanelId && !visiblePanels.has(focusPanelId)) setFocusPanelId('');
+}, [focusPanelId, visiblePanels]);
+// The Preview overlay taking over ends the card mode — see fullscreenOverlayRef.
+// The effect is unconditional (no dependency array) because the only way to learn
+// that the overlay closed is to re-render, and the ref is written during the
+// child's render, which is exactly a render of this component.
+useEffect(() => {
+if (fullscreenOverlayRef.current.open && focusPanelId) setFocusPanelId('');
+});
 // previewTypeBarRef — the Preview panel assigns a small handle ({ open })
 // to this ref on mount so the panel header can toggle the "type into
 // page" bar on demand (focus the input, scroll it into view). Keeps the
@@ -989,6 +1088,10 @@ useEffect(() => {
   conn.current = null;
   eventHandlers.current = null;
   setCdpReady(false);
+  // Full screen is a mode of a live session, so detaching leaves it: the region
+  // is about to render the targets list, and a remembered focus id would hide
+  // every card of the next attach as soon as the panels came back.
+  if (focusPanelId) exitPanelFullscreen();
   reqMap.current.clear();
   setCurrentTarget(null);
   // The history snapshot belongs to the tab that was attached; a new attach
@@ -1738,6 +1841,10 @@ return stepAttachedHistory('forward');
   let next;
   if (prev.has(id)) {
   if (prev.size === 1) return; // keep at least one visible
+  // Hiding the focused card ends full screen, and the mode is cleared *before*
+  // the visibility set is written: leaving it one render longer would show the
+  // overlay of a panel the user just switched off.
+  if (focusPanelId === id) setFocusPanelId('');
   next = new Set(prev);
   next.delete(id);
   } else {
@@ -1759,8 +1866,40 @@ return stepAttachedHistory('forward');
     savePanelState(all);
     setVisiblePanels(all);
     rerender();
-  }
-  // PanelCard — one optional panel rendered as a card. The header
+    }
+    // togglePanelFullscreen — the panel header's full-screen button, for every card
+    // except Preview (whose button keeps opening that panel's own viewport-spanning
+    // overlay, because Preview's full screen already exists and is the fuller one:
+    // a second screenshot surface with its own header, size presets and type bar).
+    //
+    // What it does is *one* state write. The card mode is an overlay rendered at the
+    // document root (see `.inspector__fs` in inspector-fullscreen.css and the render
+    // below), which is what makes it independent of the in-flow panel heights: the
+    // Styles body is 52 dvh and the console/network bodies 32 dvh, and a mode that
+    // only stretched them in place would still be capped by `.app__main`'s own
+    // box — the list would be as tall as the region, but the region is exactly what
+    // has the dead space in it. It also means the stacked layout underneath is
+    // untouched (same scroll offsets, same mounted panels), so leaving full screen
+    // is exactly the state the user left.
+    //
+    // Not persisted, on purpose: a reload comes back to the stacked layout, because
+    // the mode is a momentary reading surface and a remembered one would greet the
+    // next session with a screen the user cannot account for.
+    function togglePanelFullscreen(id) {
+    setFocusPanelId((prev) => (prev === id ? '' : id));
+    rerender();
+    }
+    // exitPanelFullscreen — leave the card mode. Called from the places that end the
+// session it belongs to (hiding the focused panel, detaching the target) rather
+// than from the button, which is `togglePanelFullscreen` above. Exported for
+// those callers; the button's own "leave" is the toggle reaching the same state.
+function exitPanelFullscreen() {
+setFocusPanelId('');
+rerender();
+}
+    // Entering the Preview card's overlay full screen leaves the stacked layout
+    // behind — see the `fullscreenOverlayRef` effect above.
+    // PanelCard — one optional panel rendered as a card. The header
   // shows the panel label + a live eye toggle (showing the next
   // state, not the current one: open eye = "currently visible",
   // closed eye = "tap to hide"). The body is a flex child that
@@ -1804,8 +1943,12 @@ return stepAttachedHistory('forward');
     subscribe: conn.current && conn.current.cdpOn,
     ackFrame: handlers && handlers.ackPreviewFrame,
     refreshRef: previewRefreshRef,
-    fullscreenRef: previewFullscreenRef,
-    typeBarRef: previewTypeBarRef,
+fullscreenRef: previewFullscreenRef,
+// The overlay's own state, mirrored up: the card's full screen stands down
+// when it is open (see fullscreenOverlayRef), and the card's header button
+// drives it through `open` below.
+fullscreenOpenRef: fullscreenOverlayRef,
+typeBarRef: previewTypeBarRef,
     draftCraftRef: previewDraftCraftRef,
     onInsert: handlers ? handlers.insertText : null,
     onEnter: handlers ? handlers.pressEnter : null,
@@ -2103,37 +2246,98 @@ INTENT_SURFACE && intentOpen
     : null,
     noPanelsVisible
     ? h('div', { class: 'inspector__panels-empty', role: 'status' },
-            h('p', null, 'No panels visible.'),
-            h('p', { class: 'inspector__panels-empty-hint' }, 'Tap a panel name above to show it.'),
-            h('button', { class: 'btn', type: 'button', onClick: showAllPanels }, 'Show all panels')
-          )
-        : h('div', { class: 'inspector__panels' },
-            visibleIds.map((id, idx) => h(PanelCard, {
-              id,
-              label: PANELS.find((p) => p.id === id).label,
-              grow: idx === 0,
-              // Only panel visible: the page below it is otherwise empty, so
-              // the body should take the height it has been given instead of
-              // sitting at the shared 52 dvh and leaving a blank half-screen
-              // under a scroller that is needlessly short.
-              solo: visibleIds.length === 1,
-              isVisible: visiblePanels.has(id),
-              onToggle: togglePanel,
-              // The Styles panel header's actions: Clear / Refresh /
-              // Pick, wired to that panel's own handles. Null for every
-              // other panel, so only the Styles card grows them.
-              stylesActions: id === 'styles' ? stylesActions : null,
-              sizeId: viewportId,
-onSizeChange: id === 'preview' ? applyViewport : null,
-onRefresh: id === 'preview' ? () => previewRefreshRef.current && previewRefreshRef.current() : null,
-onFullscreen: id === 'preview' ? () => previewFullscreenRef.current && previewFullscreenRef.current() : null,
-onTypeBar: id === 'preview' ? () => previewTypeBarRef.current && previewTypeBarRef.current.open() : null,
-onDraftCraft: id === 'preview' ? () => previewDraftCraftRef.current && previewDraftCraftRef.current() : null,
-key: id
-}, renderPanelBody(id)))
-          )
+    h('p', null, 'No panels visible.'),
+    h('p', { class: 'inspector__panels-empty-hint' }, 'Tap a panel name above to show it.'),
+    h('button', { class: 'btn', type: 'button', onClick: showAllPanels }, 'Show all panels')
+    )
+    : h('div', { class: 'inspector__panels' },
+    visibleIds.map((id, idx) => h(PanelCard, {
+    id,
+    label: PANELS.find((p) => p.id === id).label,
+    // The first visible card takes the leftover height. Full screen does not
+    // change that: the overlay below is a separate surface, so the stacked
+    // layout the user returns to after closing it is exactly the one they
+    // left, with this same card grown.
+    grow: idx === 0,
+    // Only panel visible: the page below it is otherwise empty, so
+    // the body should take the height it has been given instead of
+    // sitting at the shared 52 dvh and leaving a blank half-screen
+    // under a scroller that is needlessly short.
+    solo: visibleIds.length === 1,
+    isVisible: visiblePanels.has(id),
+    focused: focusPanelId === id,
+    onToggle: togglePanel,
+    // The Styles panel header's actions: Clear / Refresh /
+    // Pick, wired to that panel's own handles. Null for every
+    // other panel, so only the Styles card grows them.
+    stylesActions: id === 'styles' ? stylesActions : null,
+    sizeId: viewportId,
+    onSizeChange: id === 'preview' ? applyViewport : null,
+    onRefresh: id === 'preview' ? () => previewRefreshRef.current && previewRefreshRef.current() : null,
+    // The card's full-screen button. Preview keeps its viewport-spanning
+    // overlay — Preview's full screen already exists and is the fuller
+    // surface (its own header, size presets, type bar), so replacing it
+    // would be a regression dressed up as consistency. Every other card
+    // expands into the full-screen overlay below.
+    onFullscreen: id === 'preview'
+    ? () => { if (previewFullscreenRef.current) previewFullscreenRef.current(); }
+    : () => togglePanelFullscreen(id),
+    onTypeBar: id === 'preview' ? () => previewTypeBarRef.current && previewTypeBarRef.current.open() : null,
+    onDraftCraft: id === 'preview' ? () => previewDraftCraftRef.current && previewDraftCraftRef.current() : null,
+    key: id
+    }, renderPanelBody(id)))
+    )
     ),
-    draftCraftImage ? h(DraftCraftAnnotator, {
+    // The full-screen surface itself.
+    //
+    // One node, mounted at the document root, holding a *second* PanelCard for the
+    // focused panel and the body renderer for it. Rendering the card twice is
+    // deliberate: one panel body cannot be in two places at once — moving it would
+    // have to move its virtual-list scroller and its scroll offset with it (the
+    // console and network panels build their lists against the DOM node they own,
+    // and the Styles panel publishes its pin height and re-adopts its element on
+    // mount) — so the state that matters is either derived per render or stored
+    // above the panel (the Inspector owns the receipt, the selection, the target
+    // and the CDP handlers, which is exactly why those live there).
+    //
+    // The body is remounted, not reused: `key` on the card is the panel id plus a
+    // mode marker, so the same panel can never be mounted in both places under one
+    // key, and closing the overlay leaves the in-flow card exactly as it was —
+    // including the Styles panel's scroll position, which is its own node's.
+    focusPanelId
+    ? createPortal(
+    h('div', {
+class: 'inspector__fs',
+role: 'dialog',
+'aria-modal': 'true',
+'aria-label': (PANELS.find((p) => p.id === focusPanelId) || {}).label + ' panel, full screen'
+},
+h(PanelCard, {
+id: focusPanelId,
+label: (PANELS.find((p) => p.id === focusPanelId) || {}).label,
+grow: true,
+solo: true,
+focused: true,
+isVisible: true,
+onToggle: togglePanel,
+stylesActions: focusPanelId === 'styles' ? stylesActions : null,
+sizeId: viewportId,
+onSizeChange: null,
+onRefresh: null,
+onFullscreen: () => togglePanelFullscreen(focusPanelId),
+key: 'fs-' + focusPanelId
+}, h(FocusBody, { id: focusPanelId, render: renderPanelBody })),
+// Escape leaves full screen without a trip back to the header. Registered in
+// the bubble phase on purpose, so a sheet opened from inside this surface (the
+// Styles edit sheet, a detail sheet) gets the key first through useModal's
+// capture-phase listener and stops it there — one Escape closes the sheet, not
+// the sheet and the surface under it.
+h(EscapeToExit, { onExit: () => togglePanelFullscreen(focusPanelId) })
+),
+document.body
+)
+: null,
+draftCraftImage ? h(DraftCraftAnnotator, {
 image: draftCraftImage,
 pageTitle: t && t.title,
 pageUrl: t && t.url,

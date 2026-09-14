@@ -79,11 +79,18 @@ submitType(typeValue, false);
   const fsFrameRef = useRef(null);
   const fsImgRef = useRef(null);
   const [fullscreen, setFullscreen] = useState(false);
-// The full-screen overlay is a sheet like the webpreview / Git / CLI modals,
-// so Escape, the Tab cycle and focus restore come from the shared hook
-// (frontend/src/hooks/useModal.js). It is only active while open, so the
-// capture loop and the rest of the Inspector keep normal key handling.
-const fsSheetRef = useModal({ onClose: () => setFullscreen(false), active: fullscreen });
+  // fullscreenOpenRef — a small ref the parent reads to know whether the
+  // *overlay* full screen below is open. The Preview card's header button is
+  // shared with the in-region full screen the other cards use (both cards' buttons
+  // live in PanelCard), and only this panel knows which of the two its own button
+  // reached — so the answer is published here rather than mirrored as a second
+  // flag in the parent, which could drift.
+  if (props.fullscreenOpenRef) props.fullscreenOpenRef.current.open = fullscreen;
+  // The full-screen overlay is a sheet like the webpreview / Git / CLI modals,
+  // so Escape, the Tab cycle and focus restore come from the shared hook
+  // (frontend/src/hooks/useModal.js). It is only active while open, so the
+  // capture loop and the rest of the Inspector keep normal key handling.
+  const fsSheetRef = useModal({ onClose: () => setFullscreen(false), active: fullscreen });
 const [imgSrc, setImgSrc] = useState('');
 const [note, setNote] = useState('capturing…');
 // Zoom mode for the preview. 'fit' scales the screenshot to the frame's

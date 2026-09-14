@@ -1,0 +1,84 @@
+/* Inspector full screen — one panel expanded over the whole viewport.
+Imported LAST by inspector.css, and that position is load-bearing: the rules
+below have to beat the per-panel height declarations that live in
+inspector-chrome.css and inspector-styles.css (`.inspector__panel-body
+.inspector__scroller { height: 32dvh }`, `.inspector__panel--solo
+.inspector__panel-body .inspector__styles { height: 72dvh }`, ...). Some of
+those selectors are three classes deep, exactly like the ones here, so only
+cascade order can settle it — do not move this import above the panel parts.
+See docs/features/inspector-fullscreen.md.
+Why a second surface rather than a stretched card
+-------------------------------------------------
+The stacked cards are sized in the flow, inside `.app__main`. Expanding one of
+them there only ever reaches the bottom of the *region*: the region is the box
+that has the dead space in it, so a 470-row computed list would fill the same
+~350 px it always did. This overlay is a separate node mounted at the document
+root — the same remedy the sheets and the Draft Craft annotator use — so the
+focused panel gets the viewport.
+The stacked layout is left mounted and untouched underneath: the same scroll
+offsets, the same panel bodies. Closing full screen is therefore exactly the
+state the user left, with no restore path to get wrong. */
+/* The surface. `z-index: 90` is the app's top modal band — the same value
+Draft Craft and the Preview card's own overlay use — and full screen is never
+open at the same time as either of those (they are entered from their own panel
+headers, and entering one is what closes this). */
+.inspector__fs {
+position: fixed;
+inset: 0;
+z-index: 90;
+display: flex;
+flex-direction: column;
+background: var(--bg);
+/* The overlay sits outside the safe-area-padded app shell, so it pads the
+insets out itself rather than inheriting them. */
+padding: var(--safe-top, 0px) 0 var(--safe-bottom, 0px);
+animation: mouaif-overlay-fade-in 120ms ease-out;
+}
+/* The card is the whole surface here, so it drops the stacked layout's rounded
+border: on a phone the frame edge is the screen edge, and a 1px border at 0px
+from the edge reads as a clipped card rather than as a full screen. The slot the
+overlay renders into is the flex column itself, so the card's own `flex: 1 1
+auto` is what makes it fill the viewport. */
+.inspector__fs .inspector__panel {
+flex: 1 1 auto;
+min-height: 0;
+border: 0;
+border-radius: 0;
+background: var(--surface);
+}
+/* The body is the card's last child and the scroller inside it is the only
+thing that should absorb the leftover height (see the fill-mode rule below), so
+the body itself only passes it down. */
+.inspector__fs .inspector__panel-body {
+flex: 1 1 auto;
+min-height: 0;
+}
+/* Fill mode, for both body shapes.
+`.inspector__scroller` (console, network) and `.inspector__preview` are
+`flex: 0 0 auto` with a dvh height in the stacked layout, because they share the
+region with the other cards. Here there is nothing else to share with, so each
+takes the leftover height instead — the console's virtual list is what this mode
+exists for, and it has to be the thing that scrolls, not the surface around it.
+`.inspector__styles` is the third shape: a scroller with a 52 dvh / 72 dvh
+`height` in the panel parts, which is why this file is imported after them. */
+.inspector__fs .inspector__panel-body .inspector__scroller,
+.inspector__fs .inspector__panel-body .inspector__preview,
+.inspector__fs .inspector__panel-body .inspector__styles {
+flex: 1 1 auto;
+height: auto;
+min-height: 0;
+}
+/* The Styles panel's own ceiling (78 dvh on a grown panel) is a guard against
+`.app__main` letting the scroller size to its ~400 rows and push the rest of the
+inspector off the page — a hazard that does not exist here, where the card is
+the last child of a fixed, full-height surface with its own scroller. */
+.inspector__fs .inspector__panel--grow .inspector__panel-body .inspector__styles {
+max-height: none;
+}
+/* The element preview in the Styles panel is capped at 132 px in the stacked
+layout to leave property rows on a 360 px phone. Full screen is the mode where
+that trade is not needed: the cap was about the *stacked* card's height, and
+here the panel has the viewport. */
+.inspector__fs .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) .inspector__styles-shot-img {
+max-height: 30dvh;
+}

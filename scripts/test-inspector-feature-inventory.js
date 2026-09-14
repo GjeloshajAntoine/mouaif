@@ -212,6 +212,8 @@ const CONTROLS = [
   ['capture loop + fallback poll', /startPreviewStream/],
   ['screencast frame ack', /ackPreviewFrame/],
   ['full-screen preview', /previewFullscreenRef/],
+['full-screen panel surface', /inspector__fs/],
+['full-screen header button', /inspector__panel-fs/],
   ['type into page', /previewTypeBarRef/],
   ['draft craft annotation', /DraftCraftAnnotator/],
   ['tap-to-click the page', /clickAt/],

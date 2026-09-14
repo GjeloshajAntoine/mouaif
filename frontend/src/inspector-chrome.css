@@ -276,14 +276,43 @@ align-items: center;
 gap: 8px;
 min-width: 0;
 }
-.inspector__panel-label {
-flex: 0 0 auto;
-font-size: 0.72rem;
-font-weight: 700;
-letter-spacing: 0.06em;
-text-transform: uppercase;
-color: var(--fg-soft);
+/* The card that is in full screen carries its state in this class, in the
+surface's mount and (because the button reads `props.focused`) in the stacked
+layout's copy alike. It is a marker, not a size: the surface is fixed and
+full-height (inspector-fullscreen.css), so nothing here has to stretch the node.
+The accent edge is what tells the user which card the glyph in the header
+belongs to. */
+.inspector__panel--fullscreen {
+border-color: var(--accent);
 }
+/* The panel header's full-screen button, in the slot the panel's *name* used to
+occupy. It is the row's only wide slot, and a panel body is 32–54 dvh on a
+phone, so this is the one-tap way to read a 470-row computed list or a long
+request log without scrolling inside a half-height box.
+Every panel's name is still on screen in words: the chip in the pinned switcher
+above labels it, and the button carries it in `aria-label` + `title` — the same
+glyph-only + labelled-for-assistive-tech rule the rest of this row follows. */
+.inspector__panel-fs {
+flex: 0 0 auto;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+width: var(--tap);
+min-width: var(--tap);
+height: var(--tap);
+min-height: var(--tap);
+padding: 0;
+background: transparent;
+color: var(--muted);
+border: 0;
+border-radius: var(--r-sm);
+cursor: pointer;
+transition: background 120ms ease, color 120ms ease;
+-webkit-tap-highlight-color: transparent;
+}
+.inspector__panel-fs:hover { background: var(--surface-3); color: var(--fg); }
+.inspector__panel-fs:disabled { opacity: 0.5; cursor: not-allowed; }
+.inspector__panel-fs.is-on { color: var(--accent); }
 .inspector__panel-head-actions {
   display: flex;
   align-items: center;

@@ -148,30 +148,11 @@ width: auto;
 height: auto;
 max-width: none;
 }
-/* The Preview panel header replaces its text label with an icon-only
-full-screen button. It mirrors the adjacent refresh/eye icon buttons
-(full-size 44 px tap targets) so the header stays one balanced row;
-tapping it opens the viewport-spanning preview overlay below. The
-button carries the "Preview" label context in its accessible name. */
-.inspector__panel-label--fs {
-  flex: 0 0 auto;
-  width: var(--tap);
-  min-width: var(--tap);
-  height: var(--tap);
-  min-height: var(--tap);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background: transparent;
-  color: var(--muted);
-  border: 0;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
-  -webkit-tap-highlight-color: transparent;
-}
-.inspector__panel-label--fs:hover { background: var(--surface-3); color: var(--fg); }
+/* The Preview panel header used to replace its text label with an icon-only
+full-screen button (this `.inspector__panel-label--fs`). Every card now does
+that through `.inspector__panel-fs` in inspector-chrome.css — same slot, same
+glyph, same 44 px floor — so the Preview-only twin was folded into it and this
+class is no longer rendered. */
 /* "Type into page" bar — a compact text input + Send (and optional Enter)
 row that forwards typed text to the focused element in the inspected page
 via CDP Input.insertText. Sits between the preview frame and the status
