@@ -567,10 +567,20 @@ The Parents path is *one line* that scrolls sideways (see
 four 44 px lines of pills, which is worse than the gesture it avoided, because
 that space comes straight out of the property rows. The child chips still wrap —
 they are a collapsed-by-default disclosure read all at once, not a path. */
-/* One row of the Element tree: a direction label ("↑ Parents" / "▸ ↓ Children
-  13") on its own line, then the chips that belong to it. The label is what
-  keeps "go up" and "go down" from reading as one undifferentiated list of
-  pills — the two rows used to look identical. */
+/* One sentence of orientation under the "Element tree" heading. The section
+names two directions and a count; what they *do* (every chip selects, the
+accent one is current) is not visible from the labels, and this is the one line
+that says it. Muted and compact — it is a caption, not a row of the tree. */
+.inspector__styles-tree-hint {
+margin: 0;
+font-size: 0.68rem;
+line-height: 1.35;
+color: var(--muted);
+}
+/* One row of the Element tree: a direction label ("↑ Parents" / "▸ ↓ 3 children")
+on its own line, then the chips that belong to it. The label is what keeps
+"go up" and "go down" from reading as one undifferentiated list of pills — the
+two rows used to look identical. */
 .inspector__styles-tree-row {
 display: block;
 min-width: 0;
@@ -593,6 +603,19 @@ gap: 6px;
 .inspector__styles-tree-row--parents .inspector__styles-tree-label {
 flex: 0 0 auto;
 }
+/* Positioning context for the off-screen marker: a flex row so the marker can
+sit *beside* the path rather than over it. The strip is the scroller, so a
+marker drawn inside it would slide away with the crumbs, and one absolutely
+positioned over the strip lands on top of whichever chip the auto-scroll cut in
+half at the 360 px edge — measured on the repo's own fixture that chip read
+`late-options` for `div.translate-options`, and an overlay on top of it made the
+cut *less* readable, not more. */
+.inspector__styles-crumbs-wrap {
+display: flex;
+align-items: center;
+min-width: 0;
+flex: 1 1 auto;
+}
 .inspector__styles-tree-row--parents .inspector__styles-crumbs {
 flex: 1 1 auto;
 flex-wrap: nowrap;
@@ -613,6 +636,29 @@ display: none;
 .inspector__styles-tree-row--parents .inspector__styles-crumb,
 .inspector__styles-tree-row--parents .inspector__styles-crumb-sep {
 flex: 0 0 auto;
+}
+/* "The parents continue off screen" — shown only while the path is scrolled away
+from its root. It sits in the gap *between* the "↑ Parents" label and the strip,
+never over the crumbs: the strip opens on its end (the selected element), so a
+deep path opens on a chip the 360 px edge has cut in half — measured on the
+repo's own fixture the leftmost visible chip read `late-options` for
+`div.translate-options`, which reads as an element with that name rather than as
+the tail of a scrolled path.
+Two candidates were rendered at 360 px before this one. Drawing a `…` *on top*
+of the strip covered the very chip the marker exists to explain (`…e-options`),
+and a leading `…` *beside* the strip was read as part of that chip's own label
+(`…e-options`, i.e. a name that starts with an ellipsis) because it sat in the
+same line and the same weight as the crumb text. A chevron pointing the way the
+hidden crumbs lie is not a valid label character, so it cannot be read as one,
+and it points left towards the root the way the `↑` in the label points up. */
+.inspector__styles-crumbs-more {
+flex: 0 0 auto;
+padding-right: 4px;
+font-size: 0.9rem;
+line-height: 1;
+font-weight: 700;
+color: var(--fg-soft);
+pointer-events: none;
 }
 .inspector__styles-tree-label {
 display: inline-flex;
@@ -639,8 +685,8 @@ min-width: 0;
 margin-top: 6px;
 }
 /* The chevron between two crumbs turns a row of equal chips into a readable
-  path: html › body › div#app. Decorative, so it is never announced and has no
-  tap target of its own. */
+path: html › body › div#app. Decorative, so it is never announced and has no
+tap target of its own. */
 .inspector__styles-crumb-sep {
 flex: 0 0 auto;
 font-size: 0.72rem;
@@ -653,11 +699,15 @@ max-width: 100%;
 height: var(--tap);
 padding: 0 12px;
 font: inherit;
-font-size: 0.72rem;
+/* 0.72rem mono at 360 px is the smallest text in the panel for the row that
+answers "where am I", and a `tag#id.class` label is the one string here that is
+read character by character. Slightly larger and non-uppercase, matching the
+child chips it lists. */
+font-size: 0.76rem;
 font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-color: var(--fg-soft);
+color: var(--fg);
 background: var(--surface-2);
-border: 1px solid var(--border);
+border: 1px solid var(--border-strong);
 border-radius: 999px;
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
@@ -678,9 +728,10 @@ reads as a static accent chip rather than a button. */
 color: var(--on-accent);
 background: var(--accent);
 border-color: var(--accent);
-font-weight: 600;
+font-weight: 700;
 cursor: default;
 }
+
 /* Child chips: one tap into a child element. They share the "Element tree"
 section with the breadcrumb above them, and wrap for the same reason — a
 horizontal strip inside a vertical list steals the vertical gesture. */
@@ -715,22 +766,11 @@ width: 10px;
 font-size: 0.62rem;
 color: var(--muted-2);
 }
-.inspector__styles-kids-n {
-padding: 1px 6px;
-font-size: 0.62rem;
-font-weight: 600;
-font-variant-numeric: tabular-nums;
-color: var(--fg-soft);
-background: var(--surface-3);
-border-radius: 999px;
-}
 .inspector__styles-kids-label {
 flex: 0 0 auto;
-font-size: 0.62rem;
+font-size: 0.68rem;
 font-weight: 600;
-letter-spacing: 0.06em;
-text-transform: uppercase;
-color: var(--muted-2);
+color: var(--fg-soft);
 }
 .inspector__styles-kid {
 flex: 0 1 auto;

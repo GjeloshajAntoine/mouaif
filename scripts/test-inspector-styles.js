@@ -549,7 +549,55 @@ async function main() {
     'the Parents row renders with that modifier');
   const kidsRule = /\.inspector__styles-kids\s*\{([^}]*)\}/.exec(panelCss);
   assert.ok(kidsRule && /flex-wrap:\s*wrap/.test(kidsRule[1]),
-    'the child chips still wrap');
+  'the child chips still wrap');
+  // --- the Element tree explains itself ---------------------------------
+  // The section used to be a heading, a `↑ Parents` row and a `▸ ↓ Children 1`
+  // row, with nothing saying that the chips are tap targets, that the accent
+  // chip is already the selection, or what the bare `1` counted. The help is the
+  // hint line, the direction words on both rows, and the count spelled with its
+  // noun — and the count has to be the toggle's *visible* text, because that
+  // phrase is also its accessible name.
+  const hintRule = /\.inspector__styles-tree-hint\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(hintRule, 'the tree hint has its own rule');
+  assert.ok(/inspector__styles-tree-hint/.test(panelJsx) && /Tap a chip to select that element/.test(panelJsx),
+  'the section says what tapping a chip does');
+  assert.ok(/'aria-current':\s*'true'/.test(panelJsx),
+  'the current element is marked for AssistiveTech, not only by the accent fill');
+  assert.ok(/\?\s*'1 child'\s*:\s*tree\.childCount \+ ' children'/.test(panelJsx),
+  'the child count is spelled with its noun, in both singular and plural');
+  assert.ok(!/inspector__styles-kids-n\b/.test(panelJsx) && !/\.inspector__styles-kids-n\s*\{/.test(panelCss),
+  'the bare count badge is gone — the count is a phrase now, not a number next to a label');
+  assert.ok(/aria-label': \(kidsOpen \? 'Hide' : 'Show'\)/.test(panelJsx),
+  'the toggle still names the element it discloses');
+  // --- a scrolled path says that it was scrolled ------------------------
+  // The strip opens on its *end* (the current element), so a path wider than the
+  // panel opens on a chip the viewport edge has cut mid-word: measured on this
+  // repo's own fixture the leftmost visible chip read `late-options` for
+  // `div.translate-options`, which reads as an element with that name. A marker
+  // in the gap between the label and the strip says the path continues; it must
+  // not be drawn *over* the crumbs (an overlay covered the very chip it was
+  // explaining) and it must not be a `…` (beside a cut chip an ellipsis read as
+  // part of that chip's own label). A chevron is not a label character.
+  const moreRule = /\.inspector__styles-crumbs-more\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(moreRule, 'the off-screen path marker has its own rule');
+  assert.ok(!/position:\s*absolute/.test(moreRule[1]),
+  'the marker sits beside the crumbs, not over them — an overlay hides the chip it explains');
+  const wrapRule = /\.inspector__styles-crumbs-wrap\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(wrapRule, 'the strip wrapper has its own rule');
+  assert.ok(!/position:\s*absolute/.test(wrapRule[1]),
+  'the strip wrapper is not a positioning context for an overlay');
+  assert.ok(/crumbsClipped/.test(panelJsx),
+  'whether the path is scrolled is tracked in the panel');
+  assert.ok(/setCrumbsClipped\(strip\.scrollLeft > 1\)/.test(panelJsx),
+  'the marker is set from the same auto-scroll that hides the root');
+  assert.ok(/onScroll:\s*onCrumbsScroll/.test(panelJsx) && /function onCrumbsScroll/.test(panelJsx),
+  'the marker follows the user swiping the path back towards the root');
+  assert.ok(/prev === clipped \? prev : clipped/.test(panelJsx),
+  'the scroll handler writes state only when the flag actually changes, not once per frame');
+  assert.ok(/'inspector__styles-crumbs-more', 'aria-hidden': 'true' \}, '‹'/.test(panelJsx),
+  'the marker is a decorative chevron, never a `…` that could read as part of a cut chip');
+  assert.ok(/\.inspector__styles-crumbs-more[\s\S]{0,400}pointer-events:\s*none/.test(panelCss),
+  'the marker is not a tap target of its own');
 
   // --- tap targets: a row that *looks* 44 px must *be* 44 px ------------
   // The declared-styles row is a 44 px card whose button sat at its own 18 px

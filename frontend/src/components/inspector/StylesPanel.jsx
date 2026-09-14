@@ -1001,11 +1001,27 @@ const treeSerial = useRef(0);
 // a round-trip after the selection does.
 const crumbsRef = useRef(null);
 const crumbsKey = (model && model.objectId) || '';
+// crumbsClipped — whether the path strip is scrolled away from its root, so the
+// panel can say that the parents continue above. Without it a deep path opens
+// on a *partial* chip (`late-options` instead of `div.translate-options`),
+// which reads as a broken or renamed element rather than as the tail of
+// `html › body › … › you`. The strip is scrolled to its end on every selection,
+// so this is set from the same place that scrolls it and then kept in step
+// while the user swipes back towards the root.
+const [crumbsClipped, setCrumbsClipped] = useState(false);
 useEffect(() => {
 const strip = crumbsRef.current;
 if (!strip) return;
 strip.scrollLeft = strip.scrollWidth;
+setCrumbsClipped(strip.scrollLeft > 1);
 }, [crumbsKey, tree]);
+// onCrumbsScroll — the marker follows the user's own swipes in the path. The
+// boolean is state, so it is only written when it actually changes: scrolling
+// the strip would otherwise re-render the whole panel once per frame.
+function onCrumbsScroll(e) {
+const clipped = e.currentTarget.scrollLeft > 1;
+setCrumbsClipped((prev) => (prev === clipped ? prev : clipped));
+}
 // panelRef — this panel's own scroller, and the handle every reveal below uses.
 // The panel scrolls itself rather than the page: the panels are stacked in
 // `.app__main`, and scrolling that instead would drag the whole Inspector —
@@ -1924,6 +1940,13 @@ onEditRow: (row) => setEdit({ prop: row.prop, value: row.to })
 (tree && ((tree.ancestors && tree.ancestors.length) || (tree.children && tree.children.length)))
 ? h('div', { class: 'inspector__styles-section' },
 h('h3', { class: 'inspector__styles-h' }, 'Element tree'),
+// One sentence on what the section *does*, because the two rows below are
+// otherwise a set of names and a number to anyone who has not used the desktop
+// DevTools tree: "Parents" and "Children 1" say what the chips *are*, not that
+// every chip is a tap target or that the accent one is already selected.
+h('p', { class: 'inspector__styles-tree-hint' },
+'Tap a chip to select that element — the highlighted chip is this one.'
+),
 // Parents — one labelled row ("↑ Parents") with a chevron between the
 // crumbs, so the row reads as the path `html › body › div#app` instead of
 // as a set of equal chips whose order the user has to work out. The last
@@ -1943,7 +1966,32 @@ h('span', { class: 'inspector__styles-tree-label' },
 h('span', { class: 'inspector__styles-tree-arrow', 'aria-hidden': 'true' }, '↑'),
 'Parents'
 ),
-h('div', { class: 'inspector__styles-crumbs', ref: crumbsRef, role: 'group', 'aria-label': 'Parent elements, root first' },
+// The strip is wrapped so a "the path continues" marker can sit *beside* it
+// (see .inspector__styles-crumbs-more). Without that marker the row opened on
+// whatever chip the auto-scroll had cut in half at 360 px — measured on this
+// repo's own fixture, the visible leftmost chip read `late-options` for
+// `div.translate-options`, which looks like an element with that name rather
+// than the tail of a scrolled path.
+h('div', { class: 'inspector__styles-crumbs-wrap' },
+// Decorative: screen readers hear the path in order, and the strip is
+// swipeable, so the marker only has to say "the path continues above".
+// The glyph is a chevron and not a `…`: beside a cut chip
+// (`late-options` for `div.translate-options`) an ellipsis read as part of
+// that chip's own label, while a chevron cannot be a label character and
+// points left, the way the hidden crumbs lie.
+crumbsClipped
+? h('span', { class: 'inspector__styles-crumbs-more', 'aria-hidden': 'true' }, '‹')
+: null,
+h('div', {
+class: 'inspector__styles-crumbs',
+ref: crumbsRef,
+onScroll: onCrumbsScroll,
+role: 'group',
+'aria-label': 'Parent elements, root first',
+// `aria-current` names the chip that is the selection: the accent fill and
+// the panel header say so visually, and AssistiveTech gets the same answer
+// from the element it lands on rather than from the paragraph above.
+},
 tree.ancestors.slice().reverse().reduce((nodes, a) => nodes.concat([
 h('button', {
 class: 'inspector__styles-crumb',
@@ -1957,16 +2005,28 @@ h('span', { class: 'inspector__styles-crumb-label' }, a.label)
 ),
 h('span', { class: 'inspector__styles-crumb-sep', 'aria-hidden': 'true', key: 'sep-' + a.levels }, '›')
 ]), []).concat([
-h('span', { class: 'inspector__styles-crumb is-here', key: 'here' },
+h('span', {
+class: 'inspector__styles-crumb is-here',
+key: 'here',
+'aria-current': 'true',
+title: 'This element: ' + label
+},
 h('span', { class: 'inspector__styles-crumb-label' }, label)
 )
 ]))
 )
+)
 : null,
-// Children — a labelled disclosure ("▸ Children 13") with its chips in
-// their own wrapped row below it. The chips are collapsed by default;
-// separating the label from the chips keeps "go up" and "go down" from
-// looking like one undifferentiated list of pills.
+// Children — a labelled disclosure ("▸ ↓ 3 children") with its chips in their
+// own wrapped row below it. The chips are collapsed by default; separating the
+// label from the chips keeps "go up" and "go down" from looking like one
+// undifferentiated list of pills.
+//
+// The visible text is one plain phrase — `↓ 3 children` — rather than a
+// `Children` label followed by a bare `3` badge. That pairing left the only
+// thing on screen saying the element has children at all reading as a heading
+// and an unexplained number; the phrase is also the toggle's accessible name,
+// so there is one wording rather than two.
 tree.children && tree.children.length
 ? h('div', { class: 'inspector__styles-tree-row' },
 h('button', {
@@ -1975,13 +2035,13 @@ type: 'button',
 'aria-expanded': String(kidsOpen),
 'aria-label': (kidsOpen ? 'Hide' : 'Show') + ' the ' + tree.childCount + ' child element'
 + (tree.childCount === 1 ? '' : 's') + ' of ' + label,
-title: kidsOpen ? 'Hide children' : 'Show children',
+title: kidsOpen ? 'Hide the children' : 'Show the children',
 onClick: () => setKidsOpen(!kidsOpen)
 },
 h('span', { class: 'inspector__styles-kids-caret', 'aria-hidden': 'true' }, kidsOpen ? '▾' : '▸'),
 h('span', { class: 'inspector__styles-tree-arrow', 'aria-hidden': 'true' }, '↓'),
-h('span', { class: 'inspector__styles-kids-label' }, 'Children'),
-h('span', { class: 'inspector__styles-kids-n', 'aria-hidden': 'true' }, String(tree.childCount))
+h('span', { class: 'inspector__styles-kids-label' },
+tree.childCount === 1 ? '1 child' : tree.childCount + ' children')
 ),
 kidsOpen
 ? h('div', { class: 'inspector__styles-kids', role: 'group', 'aria-label': 'Child elements' },
