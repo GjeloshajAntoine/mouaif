@@ -542,9 +542,19 @@ const touchCss = read('frontend/src/inspector-touch.css').replace(/\/\*[\s\S]*?\
 check('no rule in the touch sheet scrolls sideways',
   !/overflow-x:\s*(auto|scroll)/.test(touchCss));
 for (const cls of ['.inspector__touch-tabs', '.inspector__touch-chips', '.inspector__addprop-tabs']) {
-  const body = rule(touchCss, cls);
-  check(cls + ' wraps', !!body && /flex-wrap:\s*wrap/.test(body));
+const body = rule(touchCss, cls);
+check(cls + ' wraps', !!body && /flex-wrap:\s*wrap/.test(body));
 }
+// The group chips are the only index of the touch surface: once a user has
+// scrolled deep into a group's cards, switching to a different group needs the
+// chip row to be reachable (the JS reveal only fires on a *tap*, so it can't
+// help a chip that's off screen). Pinning the row inside the Styles scroller
+// is what keeps navigation available while reading content.
+check('.inspector__touch-tabs is pinned inside the Styles scroller',
+  /position:\s*sticky/.test(rule(touchCss, '.inspector__touch-tabs') || '')
+  && /top:\s*0/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
+check('.inspector__touch-tabs covers the panel padding so chips read flush',
+  /margin:\s*0\s+-8px/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
 check('the segment grid auto-fits instead of overflowing',
   /grid-template-columns:\s*repeat\(auto-fit, minmax\(76px, 1fr\)\)/.test(touchCss));
 check('the slider keeps a vertical swipe for the panel',

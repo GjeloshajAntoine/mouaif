@@ -32,11 +32,38 @@ min-width: 0;
 }
 /* Group chips. Wrapped, never a sideways scroller: six chips at 360 px land on
    two rows, and a row that can be swiped sideways is how the panel gets dragged
-   off-centre. */
+   off-centre. Pinned inside the Styles panel's scroller so the user can always
+   switch groups no matter how deep they have read: the reveal-on-tap only fires
+   *after* a tap, so the row needs to stay reachable while reading the cards
+   below it (otherwise scrolling past the chips strands the user on the only
+   group on screen).
+
+   Stacks above `.inspector__styles-pin` (which is also sticky to the same
+   scroller, with `z-index: 3`) by sitting *later* in DOM and at a higher
+   `z-index` — when both are pinned simultaneously the chip row replaces the
+   pin at the top of the panel. The pin already served its purpose during the
+   first screenful of the panel (the element identity, the preview, "what am
+   I editing"), and once the user has scrolled deep enough that the chip row
+   also wants to stick, they are reading content and the visible affordance is
+   "navigate to another group", not "what element is this". The pin scrolls
+   back into view the moment they scroll up again.
+
+   `top: 0` plus the negative-margin trick spans the panel's own 8 px padding
+   so the chip row sits flush against the panel's edges (the row's left and
+   right padding keeps the chips off those edges). `background` must match the
+   panel surface so the cards scrolling underneath are hidden. The
+   `border-bottom` separates the row from the cards it sits over. */
 .inspector__touch-tabs {
 display: flex;
 flex-wrap: wrap;
 gap: 6px;
+position: sticky;
+top: 0;
+z-index: 4;
+background: var(--surface);
+margin: 0 -8px;
+padding: 6px 8px 8px;
+border-bottom: 1px solid var(--border);
 }
 .inspector__touch-tab {
 position: relative;
