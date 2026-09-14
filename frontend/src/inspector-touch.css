@@ -474,7 +474,10 @@ color: var(--muted);
 }
 
 /* ---- the Add-property sheet -------------------------------------- */
-.inspector__sheet--addprop { max-height: 86dvh; }
+/* `vh` then `dvh`, like .inspector__sheet: a browser without `dvh` support must
+still get a ceiling, or this sheet (31 cards) grows past the viewport and its
+header + Close go off screen with it. See the note on .inspector__sheet. */
+.inspector__sheet--addprop { max-height: 86vh; max-height: 86dvh; }
 .inspector__addprop-body {
 display: flex;
 flex-direction: column;

@@ -18,7 +18,7 @@
 // neutral value when it has none). So this sheet adds a *choice*, never a second
 // editing path.
 import { h } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef } from 'preact/hooks';
 import { LIBRARY_GROUPS, searchLibrary, libraryRow } from './styleControls.js';
 
 // PropertyPreview — the card's picture, drawn in CSS from the property's family
@@ -40,11 +40,32 @@ h('span', { class: 'inspector__propcard-glyph' }, props.glyph || 'Aa')
 export function AddPropertySheet(props) {
 const [query, setQuery] = useState('');
 const [group, setGroup] = useState('all');
+// bodyRef — the sheet's own scroller. Its offset has to be reset when the list
+// under it is replaced, and only the DOM node knows the current offset.
+const bodyRef = useRef(null);
 // A fresh open starts from the whole list: a search left over from the last time
 // would hide the cards the user came back for.
 useEffect(() => {
 if (props.open) { setQuery(''); setGroup('all'); }
 }, [props.open]);
+// Picking a category (or typing a search) *replaces* every card below the
+// controls, and the body keeps its `scrollTop` across that swap — clamped to
+// whatever maximum the new, shorter list has. Measured against the styles
+// fixture at 360 x 667: reading the end of the All list (`scrollTop 2208/2208`)
+// and tapping **Type** left the body at `183/183` — scrolled to the end of the
+// new list — with the group chip row at `top 63`, i.e. 93 px *above* the body's
+// own top edge and completely out of view. The new list therefore looked empty
+// and the chips you had just tapped were gone, so changing category twice meant
+// scrolling back up first.
+//
+// The controls live at the top of this scroller, so returning to `scrollTop 0`
+// puts the search field, the chips and the first cards back in view — which is
+// what the tap was asking for. Keyed on the group and the query because those
+// are exactly the two inputs that swap the list out.
+useEffect(() => {
+const body = bodyRef.current;
+if (body) body.scrollTop = 0;
+}, [group, query]);
 if (!props.open) return null;
 const rows = searchLibrary(query, group).map((entry) => libraryRow(entry, props.ctx || {}));
 const suggestions = (props.suggestions || []).map(([prop, desc, short]) => ({ prop, desc, short }));
@@ -60,7 +81,7 @@ h('div', { class: 'inspector__sheet-head' },
 h('strong', { class: 'inspector__sheet-title' }, 'Add a property'),
 h('button', { class: 'btn inspector__sheet-close', type: 'button', onClick: props.onClose }, 'Close')
 ),
-h('div', { class: 'inspector__sheet-body inspector__addprop-body' },
+h('div', { class: 'inspector__sheet-body inspector__addprop-body', ref: bodyRef },
 h('label', { class: 'label', for: 'inspector-addprop-search' }, 'Search every property'),
 h('input', {
 class: 'input inspector__addprop-search',

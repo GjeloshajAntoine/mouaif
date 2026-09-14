@@ -24,6 +24,18 @@
 .inspector__sheet {
   background: var(--surface-2);
   border-radius: var(--r-lg) var(--r-lg) 0 0;
+  /* `vh` first, then `dvh`: the same fallback base.css uses for html/body. A
+     browser that does not understand `dvh` (iOS Safari before 15.4, older
+     WebViews) drops the second declaration, and with no ceiling at all the
+     sheet is sized by its content. Measured on the Add-property sheet with
+     `dvh` dropped: the sheet grew to 757 px in a 667 px viewport and
+     `align-items: flex-end` on the overlay pushed its top to -90, taking the
+     header and the Close button off screen — hit-test at the Close button's
+     centre returned null, and neither the space above nor below the sheet was
+     part of the overlay, so there was nothing left to tap to dismiss it. The
+     sheet's own height ceiling is load-bearing chrome, not a nicety: it is what
+     keeps its sticky header reachable. */
+  max-height: 80vh;
   max-height: 80dvh;
   width: 100%;
   max-width: 480px;
@@ -127,6 +139,7 @@ short message + two 44 px tap targets fits the sheet on the smallest
 phones without scrolling. The cancel button uses --surface to stay
 neutral against the confirm button's --danger variant. */
 .inspector__sheet--confirm {
+max-height: 50vh;
 max-height: 50dvh;
 }
 .inspector__sheet-body--confirm {

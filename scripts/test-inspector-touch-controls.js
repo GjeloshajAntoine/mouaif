@@ -437,7 +437,57 @@ check('the box model renders a margin ring and a nested padding ring',
   /box: 'margin'/.test(surfaceSource) && /box: 'padding'/.test(surfaceSource)
   && /inspector__touch-boxes/.test(surfaceSource));
 check('the card sheet has a search field and category tabs',
-  /type: 'search'/.test(sheetSource) && /LIBRARY_GROUPS\.map/.test(sheetSource));
+/type: 'search'/.test(sheetSource) && /LIBRARY_GROUPS\.map/.test(sheetSource));
+// Switching category (or typing a search) replaces every card under the
+// controls, and a scroller keeps its offset across that swap — so the new list
+// rendered *past* its own end and the chip row you had just tapped sat above the
+// body's top edge. Measured at 360 x 667: All scrolled to `2208/2208`, tap Type,
+// body still at `183/183` with the chips at `top 63` against a body top of `156`.
+// The chips and the search field live at the top of this scroller, so the reset
+// is what makes the tap read as "I changed category".
+check('switching category or search returns the card sheet to its top',
+/const bodyRef = useRef\(null\)/.test(sheetSource)
+&& /bodyRef\.current/.test(sheetSource)
+&& /\[group, query\]/.test(sheetSource)
+&& /inspector__addprop-body', ref: bodyRef/.test(sheetSource));
+// The imported hooks have to match what the file uses. `.jsx` is not covered by
+// `node -c` (see the note in this file's header), so a missing import builds
+// cleanly and then throws on first render, taking the sheet down.
+{
+const hooks = new Set([...sheetSource.matchAll(/\b(use[A-Z][A-Za-z]*)\s*\(/g)].map((m) => m[1]));
+const imported = new Set(
+(/from 'preact\/hooks';/.test(sheetSource)
+? (/import\s*\{([^}]*)\}\s*from 'preact\/hooks';/.exec(sheetSource) || [, ''])[1]
+: '').split(',').map((s) => s.trim()).filter(Boolean)
+);
+const missing = [...hooks].filter((hh) => !imported.has(hh));
+check('the card sheet imports every preact hook it calls', missing.length === 0, missing.join(', '));
+}
+// A sheet whose max-height is `dvh`-only loses its ceiling on a browser that
+// does not understand `dvh`, and is then sized by its content: the Add-property
+// sheet grew to 757 px in a 667 px viewport, and `align-items: flex-end` pushed
+// its header and Close off screen with nothing left tappable to dismiss it
+// (measured: hit-test at the Close button's centre returned null, and neither the
+// space above nor below the sheet belonged to the overlay). Every sheet ceiling
+// therefore states a `vh` fallback first, the same pattern base.css uses on
+// html/body.
+{
+const sheetsCss = read('frontend/src/inspector-sheets.css');
+const baseSheet = rule(sheetsCss, '.inspector__sheet');
+check('the shared sheet ceiling has a vh fallback before dvh',
+!!baseSheet && /max-height:\s*80vh;[\s\S]*max-height:\s*80dvh;/.test(baseSheet),
+baseSheet ? baseSheet.replace(/\s+/g, ' ').slice(0, 90) : 'rule missing');
+for (const [file, sel] of [
+['frontend/src/inspector-touch.css', '.inspector__sheet--addprop'],
+['frontend/src/inspector-profiles.css', '.inspector__sheet--profiles'],
+['frontend/src/inspector-sheets.css', '.inspector__sheet--confirm']
+]) {
+const body = rule(read(file), sel);
+check(sel + ' keeps a vh fallback', !!body
+&& /max-height:\s*[0-9.]+vh;/.test(body) && /max-height:\s*[0-9.]+dvh;/.test(body),
+body ? body.replace(/\s+/g, ' ').slice(0, 90) : 'rule missing');
+}
+}
 check('the card sheet draws a picture per card',
 /inspector__propcard--' \+ \(props\.kind/.test(sheetSource));
 check('the card sheet says what a card will do before the tap',

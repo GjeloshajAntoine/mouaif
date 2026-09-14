@@ -38,7 +38,7 @@
 /* The sheet is content-driven and can outgrow 80 dvh with several
    profiles, so the body is the single scroller (the shared
    .inspector__sheet-body already owns overflow-y). */
-.inspector__sheet--profiles { max-height: 85dvh; }
+.inspector__sheet--profiles { max-height: 85vh; max-height: 85dvh; }
 .inspector__sheet-body--profiles { padding: 8px 12px calc(16px + var(--safe-bottom, 0px)) 12px; }
 .inspector__profiles-lead {
   margin: 4px 2px 10px;

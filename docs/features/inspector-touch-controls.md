@@ -49,10 +49,15 @@ selection leads to.
    A control never replaces it, and nothing here can express anything the editor
    cannot.
 5. **Add a property** — **＋ Add property** opens the card sheet: search every
-   property, filter by category (All / Layout / Spacing / Size / Type / Colour /
-   Effects), or tap one of the suggested chips. Each card draws a small picture of
-   what the property does and says **Choose**, or **Edit** with the value the
-   element has now. Picking a card opens the value editor on that property.
+property, filter by category (All / Layout / Spacing / Size / Type / Colour /
+Effects), or tap one of the suggested chips. Each card draws a small picture of
+what the property does and says **Choose**, or **Edit** with the value the
+element has now. Picking a card opens the value editor on that property.
+  Switching category, or typing in the search field, brings the sheet back to
+  its top: both replace every card below the controls, and the chip row and
+  search field are what you need in view to choose again. The sheet's header
+  (**Add a property** / **Close**) is pinned at the top of the sheet and stays
+  there while the cards scroll.
 6. **Check and undo** — the receipt above the controls lists every change with the
    value it replaced. Each row's ↺ restores it; **Undo all** reverses the session.
    **Refresh** re-reads the element after an outside change, and **Clear** drops
@@ -118,6 +123,29 @@ Effects   opacity · shadow · border style · border width
   (`.inspector__propcard`, `-box`, `-mark`, `-glyph`) so the two surfaces cannot
   collide again, and `scripts/test-inspector-touch-controls.js` asserts that the
   touch sheet contains no `.inspector__preview` selector at all.
+- **Choosing a category returns the sheet to its top, and the sheet keeps a
+  height ceiling without `dvh`.** Two independent layout bugs in this sheet, both
+  measured in Chrome at 360 × 667 and both now guarded by
+  `scripts/test-inspector-touch-controls.js`. *The scroll one:* switching
+  category (or typing a search) replaces every card below the controls, and a
+  scroller keeps its offset across that swap — clamped to the new list's maximum.
+  With the **All** list read to its end (`scrollTop 2208/2208`), tapping **Type**
+  left the body at `183/183`, i.e. scrolled to the end of the new six-card list,
+  with the chip row at `top 63` against a body top of `156` — the new list and the
+  chips you had just tapped were both out of view, so the sheet read as empty and
+  changing category twice meant scrolling back up. The body now returns to
+  `scrollTop 0` whenever the group or the query changes, because the search field
+  and the chips live at the top of that scroller. *The ceiling one:* every sheet
+  `max-height` was `dvh`-only. A browser that does not understand `dvh` (iOS
+  Safari before 15.4, older WebViews) drops the declaration, leaving the sheet
+  with no ceiling at all and sized by its content; with `align-items: flex-end` on
+  the overlay that pushes the sheet's top **off screen**. Measured on this sheet
+  with `dvh` dropped: 757 px tall in a 667 px viewport, top at `-90`, header and
+  **Close** both off screen — hit-testing the Close button's centre returned
+  `null`, and neither the space above nor below the sheet belonged to the overlay,
+  so there was nothing left to tap to dismiss it. Each sheet now declares a `vh`
+  fallback before its `dvh` value, the same pattern `base.css` uses on
+  `html`/`body`, so the header and the way out survive an unsupported unit.
 - **Ranges and steps** live in `RANGE_SPECS` (per property, side longhands
   resolving to their shorthand), and `specForValue` handles the one property whose
   authored and resolved forms disagree: `line-height` is written as a multiplier
