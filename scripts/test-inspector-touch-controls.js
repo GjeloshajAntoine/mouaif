@@ -352,7 +352,80 @@ check('picking a card closes the sheet and opens the value editor on that proper
 check('clearing the selection closes the card sheet',
   /setEdit\(null\);[\s\S]{0,200}setAddOpen\(false\)/.test(panelSource));
 check('the surface uses a native range, so a phone already knows how to drag it',
-  /type: 'range'/.test(surfaceSource) && /class: 'inspector__touch-slider'/.test(surfaceSource));
+/type: 'range'/.test(surfaceSource) && /class: 'inspector__touch-slider'/.test(surfaceSource));
+// ---- group-tab navigation must not strand the user ---------------------
+// Switching group *replaces* every card below the chip row while the panel's
+// own scroller keeps its offset. Measured on a 360 x 667 phone against a real
+// debug target: after reading the bottom of the Text group and tapping Spacing,
+// the chip row and the whole new group sat 2 192 px above the panel, leaving an
+// empty panel on screen — the tap read as "the panel emptied". These pin the
+// three pieces that fix it: the panel asks, the surface exposes the one node
+// that must stay in view, and the ask happens only on a real group change.
+check('a group tap reports the new group up to the panel',
+/if \(props\.onGroupChange\) props\.onGroupChange\(g\.id\)/.test(surfaceSource));
+check('re-tapping the group already on is not a group change',
+/p\.id !== group\) return;/.test(surfaceSource) || /g\.id === group\) return;/.test(surfaceSource));
+check('the surface publishes its chip row through the caller\'s ref',
+/ref: props\.tabsRef/.test(surfaceSource));
+check('the surface exposes a reveal that reads the caller\'s ref, not one of its own',
+/props\.revealRef\.current = \(\) => revealInPanel\(/.test(surfaceSource)
+&& /props\.tabsRef && props\.tabsRef\.current/.test(surfaceSource));
+check('the panel owns the group state so it can scroll after the render',
+/const \[touchGroup, setTouchGroup\] = useState\(''\)/.test(panelSource));
+check('the reveal runs from an effect keyed on the group change',
+/useEffect\(\(\) => \{[\s\S]{0,400}revealRef\.current[\s\S]{0,80}\}, \[touchGroup\]\)/.test(panelSource));
+check('an untouched panel never reveals',
+/if \(!touchGroup\) return;/.test(panelSource));
+check('the panel wires the surface\'s ref, reveal and change reporter',
+/tabsRef,/.test(panelSource) && /revealRef,/.test(panelSource) && /onGroupChange: setTouchGroup/.test(panelSource));
+// The reveal must account for the panel's sticky block: it is opaque chrome
+// welded to the top of the scroller, so a node aligned to the scroller's top
+// edge lands *under* it and is invisible.
+check('the reveal starts below the panel\'s sticky block, not at the scroller top',
+/querySelector\('\.inspector__styles-pin'\)/.test(surfaceSource)
+&& /Math\.max\(bounds\.top, pinBox\.bottom\)/.test(surfaceSource));
+check('the reveal refuses to move a panel with no visible height',
+/if \(!bounds\.height\) return;/.test(surfaceSource));
+check('the reveal leaves an already-visible node alone',
+/box\.top >= top \+ pad && box\.bottom <= bounds\.bottom - pad\) return;/.test(surfaceSource));
+// A hook used but not imported fails at *runtime*, not at build time: the
+// missing-import version of this surface built cleanly and then threw on the
+// first render (Preact's `useRef` was undefined), taking the whole panel down.
+// Nothing in the toolchain catches it — .jsx files are not part of `npm run
+// lint` — so the import list is checked against actual use here.
+for (const [file, src] of [['StyleControls.jsx', surfaceSource], ['StylesPanel.jsx', panelSource]]) {
+  const imported = (/import \{([^}]*)\} from 'preact\/hooks'/.exec(src) || [, ''])[1]
+    .split(',').map((s) => s.trim()).filter(Boolean);
+  const used = Array.from(new Set((src.match(/\b(use[A-Z][A-Za-z]*)\s*\(/g) || [])
+    .map((m) => m.replace(/[\s(]/g, ''))))
+    .filter((name) => /^use(State|Effect|Ref|Memo|Callback|Context|Reducer|LayoutEffect)$/.test(name));
+  const missing = used.filter((name) => !imported.includes(name));
+  check(file + ' imports every preact hook it uses',
+    missing.length === 0, missing.length ? 'missing: ' + missing.join(', ') : used.sort().join(','));
+}
+
+// ---- an element hop must reveal the element it landed on ---------------
+// Every tree hop re-reads the element, its tree and its rules, so the panel
+// grows; an offset measured against the old element is stale by definition. The
+// same measurement as above left a new selection's identity, pinned preview and
+// chip row 2 193 px above the viewport.
+check('a new element scrolls the panel back to its sticky block',
+/const \[panelRef\]|panelRef = useRef\(null\)/.test(panelSource)
+&& /revealedRef\.current = objectId;/.test(panelSource)
+&& /if \(panel\) panel\.scrollTop = 0;/.test(panelSource));
+check('re-reading the same element does not move the panel',
+/revealedRef\.current === objectId\) return;/.test(panelSource));
+check('a cleared panel forgets what it had revealed',
+/revealedRef\.current = ''; return;/.test(panelSource));
+// The error line is what a *failed* hop reports through, and a failed hop is
+// exactly the case where the user is scrolled deep in the panel — so it lives
+// with the element it is about, inside the sticky block.
+check('a failed hop reports inside the sticky block, where the user is looking',
+(() => {
+  const pin = panelSource.indexOf("h('div', { class: 'inspector__styles-pin' },");
+  const alert = panelSource.indexOf("role: 'alert'", pin);
+  return pin >= 0 && alert > pin && alert - pin < 1200;
+})());
 check('a drag previews locally and writes once on release',
   /onInput: \(e\) => setDraft/.test(surfaceSource) && /onChange: \(e\) => \{ setDraft\(null\); commitPct/.test(surfaceSource));
 check('the surface offers Fine and Coarse steps',

@@ -335,6 +335,44 @@ disabled
 })
 );
 }
+// revealInPanel — bring a node inside the panel's own scroller into view, the
+// way a tap on a panel chip brings that card into view in the Inspector's page
+// scroller (see togglePanel in Inspector.jsx).
+//
+// The group chips are the only index of the touch surface, and switching group
+// *replaces* every card below the chip row. The panel's scroller keeps its
+// offset across that swap, so a user who had scrolled down to read a group's
+// last card landed past the end of the new, shorter group: measured on a
+// 360 x 667 phone against a real target, tapping Spacing after reading the end
+// of the Text group left the whole group — and the chip row with it — 2192 px
+// above the viewport, with an empty panel on screen. The same happens after
+// every element-tree hop, where the panel re-reads the element and the tree and
+// grows (so the offset is always stale). One helper serves both.
+//
+// `scroller` may be null: the surface also renders under the Edit sheet, which
+// has its own scroller and no `.inspector__styles` to look up.
+export function revealInPanel(scroller, node) {
+if (!scroller || !node) return;
+// `bounds` is what the *user* sees: a zero height (a panel that is off screen)
+// has nothing to bring anything into, and must not move the scroller.
+const bounds = scroller.getBoundingClientRect();
+if (!bounds.height) return;
+// The panel's sticky block (element identity + pinned preview) never scrolls, so
+// it is opaque chrome welded to the top of the scroller — anything aligned to
+// `bounds.top` lands *under* it and is invisible. The visible region therefore
+// starts at the pin's bottom edge, and the pin is measured fresh every time
+// because its height changes with the element's own capture (a one-line element
+// is ~60 px, a tall one is capped at 132 px plus its caption).
+const pin = scroller.querySelector('.inspector__styles-pin');
+const pinBox = pin && pin.getBoundingClientRect();
+const top = pinBox && pinBox.height ? Math.max(bounds.top, pinBox.bottom) : bounds.top;
+if (top >= bounds.bottom) return; // the pin fills the scroller; nothing is visible
+const inset = 6; // flush against the pin reads as clipped, not as a header
+const pad = 8;   // the panel's own 8 px horizontal padding, for symmetry
+const box = node.getBoundingClientRect();
+if (box.top >= top + pad && box.bottom <= bounds.bottom - pad) return;
+scroller.scrollTop += box.top - top - inset;
+}
 
 // StyleControls — the surface itself: the group chips, the rows of the group in
 // force, and the primary "Add property" button that opens the card sheet.
@@ -342,10 +380,35 @@ disabled
 // `key` is passed by the panel as the element's objectId, so a new selection
 // remounts the surface and the group resets to what the new element needs
 // (`defaultGroup`: Layout for a flex container, Spacing otherwise).
+//
+// Two props exist for the *panel's* scrolling rather than for this surface's
+// own layout, and both are optional so the surface still renders standalone:
+//
+//   - `tabsRef` — the group chip row. Switching group replaces every card below
+//     the row, so the panel scrolls the row to the top of its own scroller; the
+//     row is the thing that must stay put for the tap to read as "I changed
+//     group" instead of "the panel emptied". The surface owns the node, the
+//     panel owns the scroll (see revealInPanel in StylesPanel.jsx).
+//   - `onGroupChange` — fired only on a *tap*, never on mount or from an effect.
+//     A new element remounts this surface and picks its own default group, and
+//     that must not fight the panel's scroll-to-the-new-element.
 export function StyleControls(props) {
 const { ctx, unitCtx, onApply, onEdit, onAddProperty, disabled, swatchesFor, label } = props;
 const [group, setGroup] = useState(() => defaultGroup(ctx));
 const [selected, setSelected] = useState({ box: 'padding', side: 'top' });
+// revealRef — hand the panel a closure that scrolls the group chip row into
+// view. It reads the *caller's* `tabsRef`, not a ref of its own: the row is
+// rendered with `ref: props.tabsRef`, so the caller's ref is the one Preact
+// actually fills. (A ref kept here and never put on an element stays null, and
+// the reveal then silently does nothing — which is exactly how this shipped the
+// first time.) Reassigned every render so it always measures the group on
+// screen.
+if (props.revealRef) {
+props.revealRef.current = () => revealInPanel(
+document.querySelector('.inspector__styles'),
+props.tabsRef && props.tabsRef.current
+);
+}
 const edges = boxEdges(ctx);
 const controls = controlsFor(group, ctx);
 // A group's chip carries a dot when the element declares a property in it: on a
@@ -357,14 +420,26 @@ return controlsFor(id, ctx).some((c) => (c.kind === 'box'
 : isDeclared(c.prop, ctx)));
 }
 return h('div', { class: 'inspector__touch' },
-h('div', { class: 'inspector__touch-tabs', role: 'group', 'aria-label': 'Style groups' },
+h('div', {
+class: 'inspector__touch-tabs',
+ref: props.tabsRef,
+role: 'group',
+'aria-label': 'Style groups'
+},
 GROUPS.map((g) => h('button', {
 class: 'inspector__touch-tab' + (group === g.id ? ' is-on' : '') + (groupHasSet(g.id) ? ' is-set' : ''),
 type: 'button',
 key: g.id,
 'aria-pressed': String(group === g.id),
 title: g.label + ' styles' + (groupHasSet(g.id) ? ' — something here is set on this element' : ''),
-onClick: () => setGroup(g.id)
+onClick: () => {
+// A tap on the group that is already on is not a change, so it must not
+// scroll: re-tapping the current chip while reading the bottom of its own
+// list would yank the panel back to the top for nothing.
+if (g.id === group) return;
+setGroup(g.id);
+if (props.onGroupChange) props.onGroupChange(g.id);
+}
 }, g.label))
 ),
 controls.length

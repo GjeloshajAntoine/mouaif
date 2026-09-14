@@ -955,6 +955,56 @@ const strip = crumbsRef.current;
 if (!strip) return;
 strip.scrollLeft = strip.scrollWidth;
 }, [crumbsKey, tree]);
+// panelRef — this panel's own scroller, and the handle every reveal below uses.
+// The panel scrolls itself rather than the page: the panels are stacked in
+// `.app__main`, and scrolling that instead would drag the whole Inspector —
+// panel bar, status pill and every other panel — while the user is working
+// inside one card.
+const panelRef = useRef(null);
+// tabsRef — the touch surface's group chip row, published by StyleControls (it
+// owns the node; this panel owns the scrolling).
+const tabsRef = useRef(null);
+// revealRef — the surface's own reveal, called back *after* the new group has
+// rendered. The chip row is the one node that has to stay put across a group
+// change: switching group replaces every card below it, so a user who had
+// scrolled down to read a group's last card would otherwise land past the end of
+// the new one and see an empty panel. Doing it from an effect (rather than in
+// the tap handler) means the offset is measured against the cards the tap
+// actually produced.
+const revealRef = useRef(null);
+// touchGroup — which group the touch surface is showing, owned here as well as
+// in the surface so *this* panel can scroll the chip row back into view once the
+// new group has rendered (see revealRef). It is only ever set by a tap on a chip
+// and the surface remounts per element, so it never has to survive a selection.
+const [touchGroup, setTouchGroup] = useState('');
+// The chip row is scrolled into view *after* the new group has rendered: this
+// effect runs post-render, so the cards below the row already belong to the
+// group the user tapped and the measurement is against the new height.
+useEffect(() => {
+// An empty `touchGroup` means "no group has been tapped yet" — including on the
+// panel's first mount, where revealing would scroll down to a chip row the user
+// has not touched.
+if (!touchGroup) return;
+const reveal = revealRef.current;
+if (reveal) reveal();
+}, [touchGroup]);
+// revealElement — a new selection scrolls this panel back to its top, which is
+// where the element's identity, its pinned preview and the Style controls row
+// are. Walking the element tree makes this plainest: the tree and the preview
+// both live in the sticky block, so without it a hop from a node read at the
+// bottom of the panel (a 2 600 px scroller on the fixture below) landed on the
+// new element with its own preview and chip row 2 193 px above the viewport.
+// Only a *new* element reveals: re-reading the same one (a write, a Refresh, the
+// live preview loop) must leave the user where they were reading.
+const revealedRef = useRef('');
+useEffect(() => {
+const objectId = (model && model.objectId) || '';
+if (!objectId) { revealedRef.current = ''; return; }
+if (revealedRef.current === objectId) return;
+revealedRef.current = objectId;
+const panel = panelRef.current;
+if (panel) panel.scrollTop = 0;
+}, [crumbsKey]);
 // rules — the cascade, read-only: every rule that matches the selected
 // element, plus the rules it inherits from its ancestors. Answering "which
 // class put this value here" is what makes the editable list above
@@ -1625,7 +1675,12 @@ changedNames
 const computedPageLimit = pageLimit(computedVisible.length, computedSteps);
 const computedPage = computedVisible.slice(0, computedPageLimit);
 const computedMore = moreRows(computedVisible.length, computedSteps);
-return h('div', { class: 'inspector__styles', role: 'group', 'aria-label': 'Element styles' },
+return h('div', {
+class: 'inspector__styles',
+ref: panelRef,
+role: 'group',
+'aria-label': 'Element styles'
+},
 // Sticky block: the selected element's identity and the pinned preview stay
 // at the top of the panel's scroller while the property list below scrolls.
 // Without this the read-out of the edit's result scrolled away as soon as
@@ -1652,7 +1707,16 @@ onClick: () => { if (props.onCopyElement) props.onCopyElement(label); }
 h('span', { class: 'inspector__styles-elem-name' }, label),
 boxSize ? h('span', { class: 'inspector__styles-elem-size' }, boxSize) : null
 ),
-error ? h('p', { class: 'inspector__style-error', role: 'alert' }, error) : null,
+// The error line belongs *inside* the sticky block, with the element it is
+// about. The tree steps (selectAncestor / selectChild) and a failed selector
+// both report through here, and they are exactly the actions that can land the
+// user scrolled deep into the panel — where an error rendered below the pinned
+// block was off screen, so a failed "go to parent" looked like a tap that did
+// nothing. No error, no row: the block keeps its height when there is nothing
+// wrong.
+error
+? h('p', { class: 'inspector__style-error', role: 'alert' }, error)
+: null,
 // Pinned element preview: a clipped screenshot of the selected element, so
 // the result of an edit is readable without scrolling back to the Preview
 // panel. Hidden until the first capture lands.
@@ -1828,7 +1892,12 @@ onApply: applyControl,
 // suggestions live there, and no touch control replaces them.
 onEdit: (prop, value) => setEdit({ prop, value }),
 onAddProperty: () => setAddOpen(true),
-disabled: loading
+disabled: loading,
+// The panel scrolls the chip row back into view when the group changes; the
+// surface publishes the row and its own post-render reveal (see revealRef).
+tabsRef,
+revealRef,
+onGroupChange: setTouchGroup
 })
 ),
 h('div', { class: 'inspector__styles-section' },
