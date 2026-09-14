@@ -22,7 +22,8 @@ import {
   loadPinned, togglePin, modelsForPicker, loadRecent, loadRecentFromServer
 } from './modelPicker.js';
 import {
-renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
+renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender,
+showTranscriptLoading, clearTranscriptLoading, showTranscriptLoadError
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills, toggleSkill } from './cards.js';
 import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll } from './scroll.js';
@@ -720,8 +721,14 @@ await sendTurn(state, refs, {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      if (!projectDir || !chatId) return;
-      try {
+    if (!projectDir || !chatId) return;
+    // Paint the transcript's loading placeholder before the first await.
+    // Everything below this line — the chat record, the message window, the
+    // prompt/tool/agent catalogues — is one batched round trip, and until it
+    // lands the transcript is an empty box. The placeholder is removed by the
+    // first rebuild (or replaced by the error sentence if the batch failed).
+    if (!cancelled) showTranscriptLoading(refs);
+    try {
         const [rChat, rModels, rProviders, rMsgs, rPrompts, rSys, rMcp, rAgents, rActions, app] = await Promise.all([
 fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir)),
 loadModels(projectDir),
@@ -746,9 +753,10 @@ loadApp({ force: true }).catch(() => null)
         // catalog resolves below.
         if (cancelled) return;
         if (rChat.status !== 200) {
-          if (status.current) status.current.textContent = 'chat not found';
-          syncPickerState();
-          return;
+        if (status.current) status.current.textContent = 'chat not found';
+        showTranscriptLoadError(refs, 'This chat could not be found. It may have been deleted.');
+        syncPickerState();
+        return;
         }
         const c = rChat.body.chat;
         state.chat = c;
@@ -980,7 +988,10 @@ setRunningVisible(false);
         updateSetupVisibility(state, refs);
         updateSwitch(activeProfileId(state), refs);
       } catch (err) {
-        if (status.current) status.current.textContent = 'load failed';
+      if (status.current) status.current.textContent = 'load failed';
+      // A superseded load must not paint its failure into the chat the
+      // user already moved to.
+      if (!cancelled) showTranscriptLoadError(refs, 'Could not load this chat. Check the connection and reopen it.');
       }
     }
     load();
@@ -1205,6 +1216,10 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
     // Cancel any in-flight chunked transcript render so a navigate-away
     // can't write into a detached transcript.
     if (typeof cancelTranscriptRender === 'function') cancelTranscriptRender(refs);
+    // A load that never starts (no projectDir on the outgoing route) or is
+    // superseded would otherwise leave its loading placeholder standing in
+    // the transcript of the chat the user moved to.
+    clearTranscriptLoading(refs);
   }, [projectDir, chatId]);
 
   // Preload the chat switcher list so the dropdown opens instantly

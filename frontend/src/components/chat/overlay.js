@@ -51,7 +51,8 @@ if (!refs.transcript || !refs.transcript.current) return;
 if (!authCardGuard(refs, callId)) return;
 const t = refs.transcript.current;
 const hasContent = t.children.length > 0
-&& !(t.children.length === 1 && t.querySelector(':scope > .chat-view__empty'));
+&& !(t.children.length === 1 && t.querySelector(':scope > .chat-view__empty'))
+&& !(t.children.length === 1 && t.querySelector(':scope > .chat-view__loading'));
 if (!hasContent) {
 // The transcript hasn't painted yet (chat still loading, or a rebuild
 // is about to wipe it). Mounting now would lose the card; the

@@ -1552,6 +1552,66 @@ child.remove();
 }
 }
 
+// LOADING_SELECTOR / showTranscriptLoading / clearTranscriptLoading
+//
+// The chat load effect awaits a batch of requests before it can render a
+// single row, and the transcript it renders into is mounted empty. On a slow
+// link — or the first open after a cold start — that reads as a broken view:
+// the header paints (it comes from the same response, later) but the
+// conversation area is blank with no sign that anything is happening.
+//
+// The loader fills that gap: one centred ring plus a sentence, mounted the
+// moment a chat load starts and removed by the rebuild that replaces it
+// (clearTranscriptRows drops it, like any other non-overlay row). It is a
+// plain DOM row rather than a React value because the transcript stays
+// imperative — every other row is written the same way.
+const LOADING_SELECTOR = '.chat-view__loading';
+
+export function showTranscriptLoading(refs, label) {
+  const root = refs && refs.transcript && refs.transcript.current;
+  if (!root) return;
+  clearTranscriptRows(root);
+  const box = document.createElement('div');
+  box.className = 'chat-view__loading';
+  // `aria-busy` names the state for a screen reader; the ring itself is
+  // decoration and the sentence beside it carries the meaning.
+  box.setAttribute('role', 'status');
+  box.setAttribute('aria-busy', 'true');
+  const spinner = document.createElement('span');
+  spinner.className = 'chat-view__loading-spinner';
+  spinner.setAttribute('aria-hidden', 'true');
+  const text = document.createElement('p');
+  text.className = 'chat-view__loading-text';
+  text.textContent = label || 'Loading conversation…';
+  box.appendChild(spinner);
+  box.appendChild(text);
+  root.appendChild(box);
+}
+
+export function clearTranscriptLoading(refs) {
+  const root = refs && refs.transcript && refs.transcript.current;
+  if (!root) return;
+  for (const el of root.querySelectorAll(LOADING_SELECTOR)) el.remove();
+}
+
+// showTranscriptLoadError(refs, message) — the same placeholder, without the
+// ring, so a load that never answered leaves a sentence on screen instead of
+// an empty area next to a status line nobody reads. It is the load path's
+// failure card, not a turn error: nothing retries it but reopening the chat.
+export function showTranscriptLoadError(refs, message) {
+  const root = refs && refs.transcript && refs.transcript.current;
+  if (!root) return;
+  clearTranscriptRows(root);
+  const box = document.createElement('div');
+  box.className = 'chat-view__loading chat-view__loading--error';
+  box.setAttribute('role', 'status');
+  const text = document.createElement('p');
+  text.className = 'chat-view__loading-text';
+  text.textContent = message || 'Could not load this chat.';
+  box.appendChild(text);
+  root.appendChild(box);
+}
+
 
 // renderTranscriptChunked — latest-first progressive render.
 //
@@ -1878,6 +1938,7 @@ for (let i = 0; i < el.children.length; i++) {
 const child = el.children[i];
 if (child.classList && child.classList.contains('chat-view__setup')) continue;
 if (child.classList && child.classList.contains('chat-view__empty')) continue;
+if (child.classList && child.classList.contains('chat-view__loading')) continue;
 if (child.dataset && (child.dataset.sysPrompt || child.dataset.toolsCard || child.dataset.agentFilesCard || child.dataset.skillsCard)) continue;
 return child;
 }
