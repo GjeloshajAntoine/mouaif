@@ -256,6 +256,41 @@ export function createEventHandlers(state) {
     pushNetwork();
   }
 
+  // ---- Screenshot serialization -------------------------------------------
+  //
+  // Every screenshot in the Inspector goes through ONE queue, because two
+  // concurrent `captureBeyondViewport` captures on the same target corrupt each
+  // other. Chrome serves a beyond-viewport capture by temporarily resizing the
+  // viewport on the inspected side and restoring it afterwards; a second capture
+  // that starts during that window renders the page at the wrong size and returns
+  // a different picture. Measured on a static page with a fixed clip: serialized
+  // captures are byte-identical (1 distinct payload), overlapping ones are not
+  // (2 distinct payloads).
+  //
+  // That was visible to the user as *both* previews blinking: the Preview panel's
+  // full-page loop and the Styles panel's live element shot were running at the
+  // same time on one target (~4 and ~1.25 captures per second), each one resizing
+  // the viewport under the other. The two panels have no way to coordinate — they
+  // do not know about each other — so the ordering is enforced here, where every
+  // capture already converges.
+  //
+  // The queue is deliberately a strict FIFO with no coalescing: each caller gets
+  // the frame it asked for (a live tick that is superseded is dropped by its own
+  // caller, which is the only place that knows whether the frame is still
+  // wanted). A queued capture whose wait exceeds the timeout still runs — the
+  // timeout guards a wedged target, not a busy queue.
+  const captureChain = { tail: Promise.resolve(), depth: 0 };
+  // captureDepth — how many captures are queued or in flight. Exposed for tests
+  // and for the panel's own pacing decisions; nothing in the UI reads it.
+  function captureDepth() { return captureChain.depth; }
+  function queueCapture(run) {
+    captureChain.depth++;
+    const result = captureChain.tail.then(run, run);
+    // Keep the chain alive whatever the capture did: a rejected link must not
+    // poison every later capture on this connection.
+    captureChain.tail = result.then(() => { captureChain.depth--; }, () => { captureChain.depth--; });
+    return result;
+  }
   function captureScreenshot(opts) {
   const params = {
   // Lossless PNG preserves small text, colored edges, and fine UI detail.
@@ -270,7 +305,7 @@ export function createEventHandlers(state) {
   // for the selected element's box only, so a full-page PNG (megabytes on a
   // real page) is never produced or decoded just to show one card.
   if (opts && opts.clip) params.clip = opts.clip;
-  return cdpSend('Page.captureScreenshot', params, 8000);
+  return queueCapture(() => cdpSend('Page.captureScreenshot', params, 8000));
   }
 
   // A small screencast acts as an event-driven repaint signal. Its frame
@@ -780,11 +815,14 @@ let scale = Math.min(2, maxWidth / width);
 if (!Number.isFinite(scale) || scale <= 0.05) scale = 0.05;
 let shot = null;
 try {
-const r = await cdpSend('Page.captureScreenshot', {
+// Routed through the same queue as the Preview panel's captures: this is the
+// other beyond-viewport capture on this target, and overlap is what corrupts
+// both (see the screenshot queue above captureScreenshot).
+const r = await queueCapture(() => cdpSend('Page.captureScreenshot', {
 format: 'png',
 captureBeyondViewport: beyond,
 clip: { x, y, width, height, scale }
-}, 8000);
+}, 8000));
 shot = r && r.data;
 } catch { return null; }
 if (!shot) return null;
