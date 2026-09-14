@@ -489,7 +489,8 @@ check('the panel exposes its own clear / refresh / pick / ancestor actions',
 && /togglePick: \(\) => togglePickMode\(\)/.test(stylesSource)
 && /selectAncestor: \(crumb\)/.test(stylesSource));
 check('the parent passes the selection change callback and the handles ref',
-  /onSelectionChange: \(info\) => setStylesSelection\(info\)/.test(inspectorSource)
+  /onSelectionChange: \(info\) => \{/.test(inspectorSource)
+  && /setStylesSelection\(info\)/.test(inspectorSource)
   && /panelHandlesRef: stylesHandlesRef/.test(inspectorSource));
 // The parent no longer builds or renders the bar above the panels — it read as
 // a second navigation block on a phone and duplicated the panel. What is left
@@ -506,7 +507,8 @@ check('the collapse state and its storage key went with the bar',
 check('nothing walks the tree from above the panels',
   !/onSelectAncestor/.test(inspectorSource) && !/onRuleTap/.test(inspectorSource));
 check('the pick control toggles the same pick mode the preview uses',
-  /onPickModeChange: setStylesActive/.test(inspectorSource)
+  /onPickModeChange: \(on\) => \{/.test(inspectorSource)
+  && /setStylesActive\(on\)/.test(inspectorSource)
   && /if \(!props\.onPickModeChange\) return;/.test(stylesSource));
 check('clearing the selection clears the panel through the handles ref',
   /stylesHandlesRef\.current\.clear\(\)|clearPick\(\)/.test(stylesSource));

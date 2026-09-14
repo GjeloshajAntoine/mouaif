@@ -19,6 +19,12 @@ The **Inspector** tab provides a mobile-first DevTools experience for inspecting
 
 You can toggle each of the four panels on and off to customize your workspace. The panel switcher (the **Preview / Styles / Console / Network / Info** chip row) is **pinned to the top of the inspect view while you scroll**: the view is a scroller that also nests each panel's own scroller, so scrolling down into a long Styles list used to carry the switcher off screen and leave no way to change panels without scrolling all the way back up. It now sticks to the top so the navigation stays on screen the whole time.
 
+Because the switcher stays put while the cards scroll away under it, a card the user is not looking at can be a screen away — with all five panels on at 375 × 667 the Styles card sat ~800 px below the pinned chip row. So **every action that answers in a card brings that card into view first**, under the switcher, in one instant jump (no animation, so it reads as a consequence of the tap rather than the page moving on its own):
+
+- **Showing a panel** scrolls its card's header to just under the switcher. Hiding one leaves the page where it is — the cards below move up on their own.
+- **A new selection** (a pick in the preview, the selector field, an element-tree hop from another panel's retained element) reveals the Styles card the same way. Re-reading the *same* element (a write, a Refresh, the live preview loop) never moves the page.
+- **Arming pick mode** reveals the **Preview** card *bottom-aligned* instead: the mode's instruction is "tap an element in the page", so the tap surface itself has to be in view, not just the card's header. Disarming leaves the page where the user left it.
+
 ### 1. Preview panel
 - **Live page preview** — captures full-height snapshots of the active page. For Chrome's built-in PDF viewer, the Inspector automatically switches to a viewport capture so Chrome includes the separately composited PDF pages instead of showing only the empty viewer UI shell.
 - **Pick-mode banner** — while the Styles panel has *pick mode* armed, the preview shows a **Pick: tap an element in the page** banner over the screenshot with a **Cancel** button, the tap surface is outlined in the accent colour, and the cursor is a crosshair. The same banner appears in the full-screen overlay. A selection disarms pick mode; a tap that hits nothing selectable keeps it armed. See [Inspector Styles panel](./inspector-styles.md) and [Inspector touch controls](./inspector-touch-controls.md).

@@ -294,7 +294,14 @@ check('panel visibility persists under a stable key',
 check('persisted state is read back', /loadPanelState/.test(inspector) && /savePanelState/.test(inspector));
 check('an all-hidden state resets instead of trapping the user',
   /next\.size \? next : new Set/.test(inspector));
-check('hiding the last panel is refused', /next\.size === 1/.test(inspector));
+check('hiding the last panel is refused', /(?:prev|next)\.size === 1/.test(inspector));
+// The pinned switcher stays on screen while the cards scroll away under it, so
+// an action that answers in a card has to bring that card into view or its
+// outcome lands off screen (see revealPanelCard in Inspector.jsx).
+check('showing a panel reveals its card under the pinned switcher',
+  /function revealPanelCard\(id, align\)/.test(inspector) && /revealPanelCard\(id, 'top'\)/.test(inspector));
+check('a new selection and an armed pick reveal the card they answer in',
+  /revealPanelCard\('styles', 'top'\)/.test(inspector) && /revealPanelCard\('preview', 'bottom'\)/.test(inspector));
 check('device preset choice persists', /VIEWPORT_STATE_KEY/.test(inspector));
 
 // ---- 5b. Mobile-first invariants --------------------------------------

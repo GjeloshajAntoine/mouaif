@@ -650,6 +650,11 @@ const [stylesActive, setStylesActive] = useState(false);
 // tells the store that the live read is gone and the retained copy is all there
 // is (see selectionAcrossModes in targetBar.js).
 const [stylesSelection, setStylesSelection] = useState(null);
+// revealedSelectionRef — the objectId the last Styles-card reveal answered.
+// The panel publishes its snapshot on every read (a refresh, an undo re-read),
+// and only a *new* element should move the page scroller; re-reading the same
+// one must leave the user where they were reading.
+const revealedSelectionRef = useRef('');
 // selectionStore — the retained snapshot. Written only from a live selection,
 // never from the unmount clear, so switching Styles off keeps the element on
 // screen while the user reads Console output.
@@ -1675,24 +1680,75 @@ return stepAttachedHistory('forward');
     setDetailItem(item);
     rerender();
   }
+  // revealPanelCard — bring one panel card into view inside the page
+  // scroller (.app__main), under the pinned switcher. The panelbar is
+  // `position: sticky; top: 0` on that scroller, so it stays on screen
+  // while the cards scroll away under it: with all five panels on, the
+  // Styles card can sit 800 px below the fold (measured at 375 x 667:
+  // the chip row pinned at the top while the card's top was at +809).
+  // A chip tap, a new selection or an armed pick mode all answer in a
+  // card the user may not be looking at, so each of those reveals the
+  // card it acts on instead of leaving the outcome off screen.
+  //
+  // `align: 'top'` puts the card's header just under the switcher —
+  // showing a panel means showing its head. `align: 'bottom'` puts the
+  // card's *bottom* edge at the bottom of the visible region instead,
+  // which is what pick mode wants: the preview the user has to tap is
+  // the first card's body, and aligning its top would leave the tap
+  // surface below the fold.
+  //
+  // The scroll is instant, not smooth: a reveal is a consequence of the
+  // tap the user just made, and an animated jump reads as the page
+  // moving on its own. The sticky switcher is subtracted from the
+  // visible region so a revealed card is never tucked underneath it.
+  function revealPanelCard(id, align) {
+  requestAnimationFrame(() => {
+  const main = document.querySelector('.app__main');
+  const card = document.querySelector('.inspector__panel[data-panel="' + id + '"]');
+  if (!main || !card) return;
+  const bounds = main.getBoundingClientRect();
+  if (!bounds.height) return; // the view is not on screen; nothing to reveal into
+  const bar = document.querySelector('.inspector__panelbar');
+  const barBox = bar ? bar.getBoundingClientRect() : null;
+  const top = barBox && barBox.height ? Math.max(bounds.top, barBox.bottom) : bounds.top;
+  if (top >= bounds.bottom) return;
+  const box = card.getBoundingClientRect();
+  const pad = 6;
+  if (align === 'bottom') {
+  if (box.bottom <= bounds.bottom - pad && box.top >= top) return;
+  main.scrollTop += box.bottom - (bounds.bottom - pad);
+  return;
+  }
+  if (box.top >= top - pad && box.bottom <= bounds.bottom) return;
+  main.scrollTop += box.top - top - pad;
+  });
+  }
   // togglePanel — flip a panel's visibility. The user's choice is
   // persisted to localStorage so it survives a reload and a new
   // target. If the user hides the last visible panel we keep it
   // visible (loadPanelState would also re-default on next load;
   // doing it here keeps the UI from being empty for a frame).
+  // Showing a panel reveals its card: the tap that turned it on is a
+  // request to look at it, and the card may be a screen away (see
+  // revealPanelCard). Hiding one leaves the page where it is — the
+  // cards below move up on their own and nothing new needs the eye.
   function togglePanel(id) {
-    setVisiblePanels((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        if (next.size === 1) return prev; // keep at least one visible
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      savePanelState(next);
-      return next;
-    });
-    rerender();
+  const prev = visiblePanels;
+  let shown = false;
+  let next;
+  if (prev.has(id)) {
+  if (prev.size === 1) return; // keep at least one visible
+  next = new Set(prev);
+  next.delete(id);
+  } else {
+  next = new Set(prev);
+  next.add(id);
+  shown = true;
+  }
+  savePanelState(next);
+  setVisiblePanels(next);
+  rerender();
+  if (shown) revealPanelCard(id, 'top');
   }
   // showAllPanels — reset to the default "everything visible".
   // Wired to a button in the empty-state hint and to the toolbar's
@@ -1829,10 +1885,29 @@ readSiblingValues: handlers ? handlers.readSiblingValues : null,
     onCleared: () => { setStylesSelection(null); setSelectionStore(null); },
     // The Styles panel publishes its selection snapshot here so an unmount can
     // be told apart from a cleared selection. Optional on the panel side:
-    // without it the Styles panel is exactly what it was before.
-    onSelectionChange: (info) => setStylesSelection(info),
+    // without it the Styles panel is exactly what it was before. A *new*
+    // element also reveals the Styles card: a selection made from the Preview
+    // panel (a pick, or the selector field) answers in a card that can be a
+    // screen away under the pinned switcher (see revealPanelCard).
+    onSelectionChange: (info) => {
+    setStylesSelection(info);
+    const objectId = (info && info.objectId) || '';
+    if (objectId && objectId !== revealedSelectionRef.current) {
+      revealedSelectionRef.current = objectId;
+      revealPanelCard('styles', 'top');
+    }
+    if (!objectId) revealedSelectionRef.current = '';
+    },
     pickMode: stylesActive,
-    onPickModeChange: setStylesActive
+    // Arming pick mode reveals the Preview card: the mode's whole instruction
+    // is "tap an element in the page", and the page is the preview's body —
+    // off screen it is a mode that cannot be used. Bottom-aligned so the tap
+    // surface itself is in view, not just the card's header. Disarming leaves
+    // the page where the user left it.
+    onPickModeChange: (on) => {
+    setStylesActive(on);
+    if (on) revealPanelCard('preview', 'bottom');
+    }
   });
   if (id === 'console') return h(ConsolePanel, { onRowTap: (ev) => onListTap('console', ev), onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); }, onEvaluate: (code) => { if (handlers) handlers.evaluateExpression(code); }, getEval: (desc, params) => { if (conn.current) return conn.current.cdpSend('Runtime.evaluate', params); return Promise.reject(new Error('not connected')); } });
   if (id === 'network') return h(NetworkPanel, { onRowTap: (ev) => onListTap('network', ev), onReady: (vl) => { networkVL.current = vl; if (handlers) handlers.pushNetwork(); } });
