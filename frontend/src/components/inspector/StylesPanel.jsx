@@ -318,6 +318,20 @@ const [applied, setApplied] = useState(false);
 // survives a drag on one of the colour rails: writing the value back in the
 // format the user picked is the difference between a view and a converter.
 const [format, setFormat] = useState(null);
+// priority — whether this declaration should be written as `!important`.
+//
+// It opens with whatever the element already stores for the property, so the
+// toggle reflects reality instead of always starting normal: a property the
+// page holds as `!important` shows as such, and changing its value keeps the
+// priority unless the user turns it off. Two reasons it matters. An inline
+// write cannot beat a *stylesheet's* `!important` rule, and the rule wins
+// silently — `getPropertyValue` on the inline style returns the value just
+// written while `getComputedStyle` still reports the rule's (measured; see
+// setInlineStyleProperty). Writing with a priority is how a user overrides such
+// a rule. And without carrying the priority across a write, editing the value
+// of a declaration the user had already marked important would quietly demote
+// it, which changes the cascade far from where the edit was made.
+const [priority, setPriority] = useState(props.priority === 'important' ? 'important' : '');
 // siblings — what the element's *peers* use for the property being edited
 // ("the 2nd section.input-section uses 16px"). Read once per property, because
 // it is one page round-trip and only the property in the sheet is interesting;
@@ -339,6 +353,12 @@ setApplied(false);
 // they start from whatever format the page itself uses.
 setFormat(null);
 }, [props.prop, props.value]);
+// The priority is reset alongside the field, and from the same source the row
+// carries: this effect re-runs when the sheet is handed another property, and a
+// priority left over from the previous one would be written onto this one.
+useEffect(() => {
+setPriority(props.priority === 'important' ? 'important' : '');
+}, [props.prop, props.value, props.priority]);
 const propName = (prop || '').trim();
 // Live validation of the field, run on every keystroke so the sheet can say
 // "that is not a value for padding" *before* Apply, instead of the write being
@@ -504,7 +524,7 @@ if (busy || !props.onApply) return;
 setBusy(true);
 setError('');
 try {
-await props.onApply(p, v);
+await props.onApply(p, v, priority);
 if (!alive.current) return;
 setApplied(true);
 // The element's box can change size with the property (padding, font
@@ -660,6 +680,35 @@ pageStep && snap
 snap.offScale && snap.nearest ? ' · nearest ' + snap.nearest.value : ''
 )
 : null,
+// Priority — the `!important` toggle, as one 44 px hit target.
+//
+// It is a toggle rather than a checkbox so the state is the label: the button
+// reads "normal" or "!important", and the accessible name says which one a tap
+// will produce. This is the control that makes an edit stick against a
+// stylesheet rule marked `!important`, and the only way for the panel to say
+// that a declaration it is showing carries priority — which is why it sits with
+// the value rather than behind an overflow: a priority the user cannot see is a
+// cascade outcome they cannot explain.
+h('div', { class: 'inspector__style-priorityrow' },
+h('span', { class: 'inspector__style-prioritylabel' }, 'Priority'),
+h('button', {
+class: 'inspector__style-priority' + (priority === 'important' ? ' is-on' : ''),
+type: 'button',
+'aria-pressed': String(priority === 'important'),
+'aria-label': priority === 'important'
+? 'Priority important — tap to use a normal declaration'
+: 'Priority normal — tap to mark this declaration important',
+title: priority === 'important'
+? 'Written as !important — it beats other declarations on this element'
+: 'Normal declaration — a stylesheet rule marked !important will still win',
+onClick: () => setPriority(priority === 'important' ? '' : 'important')
+}, priority === 'important' ? '!important' : 'normal'),
+h('span', { class: 'inspector__style-priorityhint' },
+priority === 'important'
+? 'Beats other declarations on this element'
+: 'A stylesheet !important rule still wins — tap to override it'
+)
+),
 // The scope block states what Apply will and will not do, in numbers computed
 // from the element's real declarations (see scopeSummary): one property
 // changes, the rest are kept, no stylesheet rule is touched and no other
@@ -1372,15 +1421,15 @@ setModel(next);
 // parent holds the authoritative objectId; here we simply merge the new
 // value into the existing list (or add it), and bump a `rev` so the key
 // changes and Preact re-renders the row.
-function upsertLocal(prop, value) {
+function upsertLocal(prop, value, priority) {
 const prev = modelRef.current;
 if (!prev) return;
 let found = false;
 const list = (prev.inlineProps || []).map((x) => {
-if (x.prop === prop) { found = true; return { prop, value }; }
+if (x.prop === prop) { found = true; return { prop, value, priority: priority || '' }; }
 return x;
 });
-if (!found) list.push({ prop, value });
+if (!found) list.push({ prop, value, priority: priority || '' });
 setModelBoth({ ...prev, inlineProps: list, rev: (prev.rev || 0) + 1 });
 }
 // changedNamesFor — the property names an edit of `prop` wrote, as the
@@ -1420,6 +1469,7 @@ return next;
 function applyInlineSnapshot(snapshot) {
 if (!snapshot || !snapshot.inline) return;
 const inline = snapshot.inline || {};
+const priorities = snapshot.priorities || {};
 const resolved = snapshot.computed || {};
 // The base font sizes come back on the same answer (see events.js
 // readElementStyles). They are what makes the value-type switch's rem/em and
@@ -1428,7 +1478,14 @@ const resolved = snapshot.computed || {};
 const bases = snapshot.bases || null;
 const prev = modelRef.current;
 if (!prev) return;
-const inlineProps = Object.keys(inline).map((prop) => ({ prop, value: String(inline[prop] || '') }));
+const inlineProps = Object.keys(inline).map((prop) => ({
+prop,
+value: String(inline[prop] || ''),
+// The priority the element stores, read back with the value. Without it a
+// property the user made `!important` came back looking normal the moment
+// anything re-read the page, and the next edit silently dropped the priority.
+priority: priorities[prop] === 'important' ? 'important' : ''
+}));
 const computed = (prev.computed || []).map((row) => (
 Object.prototype.hasOwnProperty.call(resolved, row.prop)
 ? { ...row, value: String(resolved[row.prop] || '') }
@@ -1457,22 +1514,30 @@ const objId = modelRef.current && modelRef.current.objectId;
 if (objId) await loadRules({ objectId: objId });
 }
 
-async function applyEdit(prop, value) {
+async function applyEdit(prop, value, priority) {
 if (!props.setInlineStyleProperty) throw new Error('not connected');
 const objId = modelRef.current && modelRef.current.objectId;
 if (!objId) throw new Error('element not resolved');
 // Read the value this property has *now*, before the write: that is what an
 // undo of this change has to restore. recordChange keeps the earliest value for
 // a property, so a chain of edits on one property still undoes to the original.
-const prevValue = ((modelRef.current && modelRef.current.inlineProps) || [])
-  .filter((x) => x.prop === prop)
-  .map((x) => x.value)[0] || '';
-await props.setInlineStyleProperty(objId, prop, value);
+const prevRow = ((modelRef.current && modelRef.current.inlineProps) || [])
+.filter((x) => x.prop === prop)[0];
+const prevValue = (prevRow && prevRow.value) || '';
+const prevPriority = (prevRow && prevRow.priority) || '';
+// The engine's answer, not the argument: the write reads the priority back off
+// the element (see setInlineStyleProperty), so what the receipt records and what
+// the row shows is what is really stored.
+const out = await props.setInlineStyleProperty(objId, prop, value, priority);
+const applied = (out && out.priority) || '';
 // Record the change ABOVE the panels (see the Inspector's recordReceipt): the
 // entry has to outlive this panel's mount so the target bar can still undo it
-// after the panel is switched off.
-if (props.onRecordChange) props.onRecordChange({ prop, from: prevValue, to: value });
-upsertLocal(prop, value);
+// after the panel is switched off. The priority travels with it so an undo
+// restores the declaration's priority as well as its value.
+if (props.onRecordChange) {
+props.onRecordChange({ prop, from: prevValue, to: value, fromPriority: prevPriority, toPriority: applied });
+}
+upsertLocal(prop, value, applied);
 // Re-read the page so both lists show the value that was just applied (the
 // Computed list is otherwise a snapshot that goes stale after an edit, and a
 // hoisted "changed" row showing the old value is worse than no highlight), and
@@ -1506,15 +1571,18 @@ async function removeEdit(prop) {
 if (!props.removeInlineStyleProperty) throw new Error('not connected');
 const objId = modelRef.current && modelRef.current.objectId;
 if (!objId) throw new Error('element not resolved');
-// A removal is a change too, and the value it dropped is what undo restores.
-const prevValue = ((modelRef.current && modelRef.current.inlineProps) || [])
-  .filter((x) => x.prop === prop)
-  .map((x) => x.value)[0] || '';
+// A removal is a change too, and the value it dropped is what undo restores —
+// along with the priority it was stored with, so undoing a removal of an
+// `!important` declaration brings the priority back with the value.
+const prevRow = ((modelRef.current && modelRef.current.inlineProps) || [])
+.filter((x) => x.prop === prop)[0];
+const prevValue = (prevRow && prevRow.value) || '';
+const prevPriority = (prevRow && prevRow.priority) || '';
 // What this removal takes off the element: read before the write, since the
 // longhands a shorthand wrote are gone from the style the moment it is removed.
 const written = changedNamesFor(prop);
 await props.removeInlineStyleProperty(objId, prop);
-if (props.onRecordChange) props.onRecordChange({ prop, from: prevValue, to: '' });
+if (props.onRecordChange) props.onRecordChange({ prop, from: prevValue, to: '', fromPriority: prevPriority, toPriority: '' });
 // Drop the row entirely so the property returns to its inherited state.
 if (modelRef.current) {
 setModelBoth({ ...modelRef.current, inlineProps: modelRef.current.inlineProps.filter((x) => x.prop !== prop), rev: (modelRef.current.rev || 0) + 1 });
@@ -1921,10 +1989,18 @@ type: 'button',
 'aria-label': (isChanged(changed, row.prop) ? 'Changed. ' : '')
 + (row.value ? 'Edit ' + row.prop + ', value ' + row.value : 'Edit ' + row.prop),
 title: 'Edit ' + row.prop,
-onClick: () => setEdit({ prop: row.prop, value: row.value })
+onClick: () => setEdit({ prop: row.prop, value: row.value, priority: row.priority || '' })
 },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
 isChanged(changed, row.prop) ? h('span', { class: 'inspector__styles-changed', 'aria-hidden': 'true' }, 'changed') : null,
+// A declaration the element stores as `!important` says so on the row. It is a
+// different thing from a normal one — it beats later normal declarations and
+// every stylesheet rule except another `!important` — so hiding it would leave
+// the user unable to explain the cascade, and unable to tell which of their own
+// edits is carrying priority.
+row.priority === 'important'
+? h('span', { class: 'inspector__styles-important', title: 'Stored as !important on this element' }, '!important')
+: null,
 valueSwatch(row.prop, row.value),
 h('span', { class: 'inspector__styles-val' }, row.value || '')
 )
@@ -2074,6 +2150,9 @@ edit ? h(StyleEditSheet, {
 key: 'sheet-' + edit.prop,
 prop: edit.prop,
 value: edit.value,
+// The priority the element stores for this property right now, so the sheet's
+// `!important` toggle opens on the truth and an edit keeps it.
+priority: edit.priority || '',
 isInline: true,
 isRemove: inlineRows.some((x) => x.prop === edit.prop),
 // The element's own box, for the value rail's length range (0…4× its size).

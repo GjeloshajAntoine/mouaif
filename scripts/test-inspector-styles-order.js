@@ -145,7 +145,7 @@ assert.ok(/function markWritten\(prop\)[\s\S]{0,400}setChanged/.test(panel),
 // this test exists to prevent, one layer down.
 assert.ok(/function setModelBoth\(next\)\s*\{\s*modelRef\.current = next;\s*setModel\(next\);\s*\}/.test(panel),
   'the model and the ref are written by one helper');
-assert.ok(/function upsertLocal\(prop, value\)[\s\S]{0,500}setModelBoth\(/.test(panel),
+assert.ok(/function upsertLocal\(prop, value, priority\)[\s\S]{0,500}setModelBoth\(/.test(panel),
   'an optimistic local write updates the ref too');
 assert.ok(/function applyInlineSnapshot\(snapshot\)[\s\S]{0,1600}setModelBoth\(/.test(panel),
   'the post-edit snapshot updates the ref, so the next reader sees the page as it now is');

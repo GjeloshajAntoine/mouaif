@@ -88,41 +88,60 @@ export function recordChange(receipt, change) {
   const list = Array.isArray(receipt) ? receipt.slice() : [];
   const prop = String((change && change.prop) || '').trim();
   if (!prop) return list;
+  // A declaration's priority is part of its identity in the cascade, so it is
+  // tracked with the value: an edit that only adds `!important` to a declaration
+  // that already had that value is a real change (it can start winning a fight it
+  // was losing), and must not be misread as a no-op.
+  const fromPriority = change && change.fromPriority === 'important' ? 'important' : '';
+  const toPriority = change && change.toPriority === 'important' ? 'important' : '';
   const key = prop.toLowerCase();
   const at = list.findIndex((e) => String(e.prop || '').toLowerCase() === key);
   if (at < 0) {
-    const entry = { prop, from: normalize(change.from), to: normalize(change.to) };
-    // Nothing was written, and nothing to undo: a no-op (applying the value the
-    // property already had, or a removal of something that was not there) must
-    // not put an "undo" in front of the user for a change that did not happen.
-    if (entry.from === entry.to) return list;
-    list.push(entry);
-    return list.slice(-MAX_RECEIPT);
+  const entry = { prop, from: normalize(change.from), to: normalize(change.to), fromPriority, toPriority };
+  // Nothing was written, and nothing to undo: a no-op (applying the value the
+  // property already had, or a removal of something that was not there) must
+  // not put an "undo" in front of the user for a change that did not happen.
+  // Same value *and* same priority is that no-op; same value with a different
+  // priority is not.
+  if (entry.from === entry.to && entry.fromPriority === entry.toPriority) return list;
+  list.push(entry);
+  return list.slice(-MAX_RECEIPT);
   }
   const prev = list[at];
-  const next = { prop: prev.prop, from: prev.from, to: normalize(change.to) };
-  // A change that ends where it started is not a change: drop the entry, so
-  // "type 16 then type it back" leaves no line and no undo to offer.
-  if (next.from === next.to) {
-    list.splice(at, 1);
-    return list;
+  // `from`/`fromPriority` are kept from the earliest entry for this property, so
+  // undo reaches the state before the session started rather than before the last
+  // tap; only `to`/`toPriority` move.
+  const next = { prop: prev.prop, from: prev.from, to: normalize(change.to), fromPriority: prev.fromPriority || '', toPriority };
+  // A change that ends where it started — value and priority both — is not a
+  // change: drop the entry, so "type 16 then type it back" leaves no line and no
+  // undo to offer.
+  if (next.from === next.to && (next.fromPriority || '') === next.toPriority) {
+  list.splice(at, 1);
+  return list;
   }
   list[at] = next;
   return list;
-}
+  }
 
 // undoPlan — what to call to reverse one entry.
 //
 // A property that was not set before is removed rather than set to '', because
 // the two are the same to the browser but very different to read in a diff.
+//
+// The plan carries the *priority* to restore as well as the value. An undo that
+// put the value back but not its `!important` would leave the element in a state
+// this session never created — a declaration that used to win now losing to the
+// rule it beat — so the priority the entry recorded before the write travels
+// with it.
 export function undoPlan(entry) {
-  const e = entry || {};
+const e = entry || {};
   const prop = String(e.prop || '');
   const from = normalize(e.from);
+  const priority = e.fromPriority === 'important' ? 'important' : '';
   if (!prop) return null;
   if (from === '') return { kind: 'remove', prop, value: '' };
-  return { kind: 'set', prop, value: from };
-}
+  return { kind: 'set', prop, value: from, priority };
+  }
 
 // undoOrder — the entries to reverse, newest first.
 //

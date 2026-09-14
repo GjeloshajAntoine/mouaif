@@ -361,6 +361,22 @@ color: var(--on-accent);
 background: var(--accent);
 border-radius: 999px;
 }
+/* The priority badge — a declaration the element stores as `!important`.
+Outlined rather than filled, so it never competes with the `changed` chip for
+the same glance: `changed` is about this session, this is about the cascade
+and outlives the session. Fixed-size and non-shrinking, because a squeezed
+badge that reads `!impo` is worse than no badge. */
+.inspector__styles-important {
+flex-shrink: 0;
+padding: 1px 5px;
+font-size: 0.62rem;
+font-weight: 700;
+letter-spacing: 0.01em;
+color: var(--accent);
+background: transparent;
+border: 1px solid var(--accent);
+border-radius: 999px;
+}
 .inspector__styles-val {
 flex: 1 1 auto;
 min-width: 0;
@@ -1104,6 +1120,59 @@ typed value sits on the page's scale. One small line, wrapped rather than
 scrolling, because "why did + jump by 4?" is otherwise unanswerable. */
 .inspector__style-step-note {
 margin: 0;
+font-size: 0.68rem;
+color: var(--muted-2);
+line-height: 1.35;
+}
+/* Priority: the label, the `!important` toggle, and the one line saying what
+the current state does. Laid out as label / button / hint on one wrapping row
+so the hint sits beside the control it explains rather than under a full-width
+button, and wrapping rather than scrolling at 360 px. */
+.inspector__style-priorityrow {
+display: flex;
+align-items: center;
+flex-wrap: wrap;
+gap: 8px;
+margin: 2px 0 0;
+}
+.inspector__style-prioritylabel {
+flex: 0 0 auto;
+font-size: 0.7rem;
+font-weight: 700;
+letter-spacing: 0.06em;
+text-transform: uppercase;
+color: var(--fg-soft);
+}
+/* A 44 px tap target, because it is a control and not a caption. The state is
+the label, so the button is as wide as its own text while still meeting the
+touch minimum on the vertical axis. */
+.inspector__style-priority {
+flex: 0 0 auto;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+min-height: var(--tap);
+padding: 0 12px;
+font: inherit;
+font-size: 0.82rem;
+font-weight: 600;
+color: var(--fg);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.inspector__style-priority:hover { background: var(--surface-3); }
+.inspector__style-priority.is-on {
+color: var(--accent);
+border-color: var(--accent);
+background: var(--surface);
+}
+.inspector__style-priorityhint {
+flex: 1 1 100%;
+min-width: 0;
 font-size: 0.68rem;
 color: var(--muted-2);
 line-height: 1.35;

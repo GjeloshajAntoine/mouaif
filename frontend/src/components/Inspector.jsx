@@ -818,9 +818,12 @@ async function undoEntryFromBar(entry) {
   if (!plan || !objectId || !handlers) return;
   try {
     if (plan.kind === 'remove') {
-      if (handlers.removeInlineStyleProperty) await handlers.removeInlineStyleProperty(objectId, plan.prop);
+    if (handlers.removeInlineStyleProperty) await handlers.removeInlineStyleProperty(objectId, plan.prop);
     } else if (handlers.setInlineStyleProperty) {
-      await handlers.setInlineStyleProperty(objectId, plan.prop, plan.value);
+    // The plan's priority restores the declaration's cascade weight as well as
+    // its value: an undo that put a value back but dropped its `!important`
+    // would leave the element in a state this session never created.
+    await handlers.setInlineStyleProperty(objectId, plan.prop, plan.value, plan.priority);
     }
     setReceipt((prev) => prev.filter((x) => String(x.prop).toLowerCase() !== String(plan.prop).toLowerCase()));
     // Re-read the element so the retained snapshot stays true while the Styles

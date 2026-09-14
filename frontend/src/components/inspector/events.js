@@ -746,13 +746,21 @@ const model = { objectId, node: null, inlineProps: [], computed: [], box: null }
 try {
 const s = await cdpSend('Runtime.callFunctionOn', {
 objectId,
-functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline=[]; for (var i=0;i<this.style.length;i++){ var p=this.style.item(i); inline.push([p, this.style.getPropertyValue(p)]); } var computed=[]; for (var j=0;j<cs.length;j++){ var q=cs.item(j); computed.push([q, cs.getPropertyValue(q)]); } var r=this.getBoundingClientRect(); var cls=(typeof this.className==="string")?this.className:""; var root=null, parent=null; try { root=parseFloat(getComputedStyle(document.documentElement).fontSize)||null; } catch(e){ root=null; } try { var pe=this.parentElement; parent=pe?parseFloat(getComputedStyle(pe).fontSize)||null:null; } catch(e){ parent=null; } if (parent==null) parent=parseFloat(cs.fontSize)||null; return { tag:this.nodeName, id:this.id||"", className:cls, inline:inline, computed:computed, width:r.width, height:r.height, bases:{ root:root, parent:parent, self:parseFloat(cs.fontSize)||null } }; }',
+functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline=[]; for (var i=0;i<this.style.length;i++){ var p=this.style.item(i); inline.push([p, this.style.getPropertyValue(p), this.style.getPropertyPriority(p)]); } var computed=[]; for (var j=0;j<cs.length;j++){ var q=cs.item(j); computed.push([q, cs.getPropertyValue(q)]); } var r=this.getBoundingClientRect(); var cls=(typeof this.className==="string")?this.className:""; var root=null, parent=null; try { root=parseFloat(getComputedStyle(document.documentElement).fontSize)||null; } catch(e){ root=null; } try { var pe=this.parentElement; parent=pe?parseFloat(getComputedStyle(pe).fontSize)||null:null; } catch(e){ parent=null; } if (parent==null) parent=parseFloat(cs.fontSize)||null; return { tag:this.nodeName, id:this.id||"", className:cls, inline:inline, computed:computed, width:r.width, height:r.height, bases:{ root:root, parent:parent, self:parseFloat(cs.fontSize)||null } }; }',
 returnByValue: true
 });
 const v = s && s.result && s.result.value;
 if (v) {
 model.node = { nodeName: v.tag, attributes: [{ name: 'id', value: v.id || '' }, { name: 'class', value: v.className || '' }] };
-model.inlineProps = (v.inline || []).map((x) => ({ prop: x[0], value: String(x[1] || '') }));
+// Each row keeps its CSS priority with it: a declaration the element stores as
+// `!important` is a different thing from a normal one — it beats later normal
+// declarations and every stylesheet rule except another `!important` — so the
+// panel has to show it and keep it on the row rather than flattening it away.
+model.inlineProps = (v.inline || []).map((x) => ({
+prop: x[0],
+value: String(x[1] || ''),
+priority: x[2] === 'important' ? 'important' : ''
+}));
 // Computed styles come back in whatever order the browser iterates
 // CSSStyleDeclaration; sort alphabetically so the long read-only list is
 // scannable (mirrors the desktop DevTools Styles pane).
@@ -893,7 +901,7 @@ if (!objectId) return null;
 // round-trip — it is the same callFunctionOn the post-edit read already makes.
 const r = await cdpSend('Runtime.callFunctionOn', {
 objectId,
-functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline = {}; var computed = {}; for (var i = 0; i < this.style.length; i++) { var p = this.style.item(i); inline[p] = this.style.getPropertyValue(p); computed[p] = cs.getPropertyValue(p); } var root = null, parent = null; try { root = parseFloat(getComputedStyle(document.documentElement).fontSize) || null; } catch (e) { root = null; } try { var pe = this.parentElement; if (pe) parent = parseFloat(getComputedStyle(pe).fontSize) || null; } catch (e) { parent = null; } if (parent == null) parent = parseFloat(cs.fontSize) || null; return { inline: inline, computed: computed, bases: { root: root, parent: parent, self: parseFloat(cs.fontSize) || null } }; }',
+functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline = {}; var priorities = {}; var computed = {}; for (var i = 0; i < this.style.length; i++) { var p = this.style.item(i); inline[p] = this.style.getPropertyValue(p); priorities[p] = this.style.getPropertyPriority(p); computed[p] = cs.getPropertyValue(p); } var root = null, parent = null; try { root = parseFloat(getComputedStyle(document.documentElement).fontSize) || null; } catch (e) { root = null; } try { var pe = this.parentElement; if (pe) parent = parseFloat(getComputedStyle(pe).fontSize) || null; } catch (e) { parent = null; } if (parent == null) parent = parseFloat(cs.fontSize) || null; return { inline: inline, priorities: priorities, computed: computed, bases: { root: root, parent: parent, self: parseFloat(cs.fontSize) || null } }; }',
 returnByValue: true
 }, 8000);
 return (r && r.result && r.result.value) || null;
@@ -991,21 +999,42 @@ return buildNodeModel(objectId);
   // browser's real verdict, including the shorthand expansion no client-side
   // `CSS.supports` check can predict (`padding: 30px` is stored as its longhands,
   // so reading the typed name back returns '' on a *successful* write).
-  async function setInlineStyleProperty(objectId, prop, value) {
+  //
+  // `priority` is the declaration's CSS priority: '' (normal) or 'important'.
+  // The default is '' so every existing caller is unchanged.
+  //
+  // **The read-back above is not sufficient on its own, and that is what this
+  // parameter exists for.** `getPropertyValue` reads the *inline style*, not the
+  // cascade: a plain inline write that a stylesheet's `!important` rule wins
+  // still reads back the value that was written. Measured in-page on a div with
+  // `.x { color: rgb(1, 2, 3) !important }`: after `setProperty('color',
+  // 'rgb(255,0,0)')` the panel's read-back returns `rgb(255, 0, 0)` and its
+  // `applied` check is true, while `getComputedStyle(el).color` is still
+  // `rgb(1, 2, 3)` — so the panel reported success, wrote the row, recorded an
+  // undo entry, and the page never changed. A priority inline write
+  // (`setProperty(prop, value, 'important')`) does land: the same element then
+  // computes `rgb(0, 128, 0)` for a green write. The panel therefore writes with
+  // a priority when the user asks for one, and reads the priority back so it can
+  // show what is actually stored rather than assuming normal.
+  async function setInlineStyleProperty(objectId, prop, value, priority) {
   if (!objectId) throw new Error('element not resolved');
   const r = await cdpSend('Runtime.callFunctionOn', {
   objectId,
-  functionDeclaration: 'function(p, v){'
+  functionDeclaration: 'function(p, v, pr){'
   + ' var s = this.style;'
   + ' try {'
   + '  var before = s.cssText;'
-  + '  s.setProperty(p, v);'
+  + '  s.setProperty(p, v, pr || "");'
   + '  var read = s.getPropertyValue(p);'
   + '  var applied = read !== "" || s.cssText !== before;'
-  + '  return { ok: true, applied: applied, read: String(read) };'
+  + '  return { ok: true, applied: applied, read: String(read), priority: s.getPropertyPriority(p) };'
   + ' } catch (e) { return { ok: false, error: String(e) }; }'
   + '}',
-  arguments: [{ value: String(prop) }, { value: String(value) }],
+  arguments: [
+  { value: String(prop) },
+  { value: String(value) },
+  { value: priority === 'important' ? 'important' : '' }
+  ],
   returnByValue: true
   });
   const out = r && r.result && r.result.value;
@@ -1016,7 +1045,11 @@ return buildNodeModel(objectId);
   throw new Error('“' + String(value) + '” is not a valid value for ' + String(prop)
   + ' — the browser rejected it, so nothing was changed.');
   }
-  return true;
+  // The priority the element now stores, so the panel can reflect it (`''` or
+  // `'important'`). Reported rather than echoed from the argument: the engine
+  // decides, and `setProperty(p, v, 'important')` on a property that already
+  // carries it is still `important`.
+  return { priority: (out && out.priority) === 'important' ? 'important' : '' };
   }
   // removeInlineStyleProperty — drop one CSS property from the element's
   // inline style (returns the element to whatever a class/stylesheet gives it).

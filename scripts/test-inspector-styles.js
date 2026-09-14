@@ -65,9 +65,14 @@ async function main() {
     return Promise.resolve({ result: { type: 'object', subtype: 'node', objectId: 'obj-1', description: 'div#hero.card' } });
   });
   respond.set('Runtime.callFunctionOn', (p) => {
-  // The model builder reads the element; the edit helpers call setProperty /
-  // removeProperty. Return the model for reads and an ok result for edits.
-  if (/setProperty|removeProperty/.test(p.functionDeclaration)) return Promise.resolve({ result: { value: { ok: true } } });
+    // The model builder reads the element; the edit helpers call setProperty /
+    // removeProperty. Return the model for reads and an ok result for edits.
+    // An edit echoes the priority it was handed, because the write now reads
+    // that back off the element.
+    if (/setProperty|removeProperty/.test(p.functionDeclaration)) {
+      const priority = (p.arguments && p.arguments[2] && p.arguments[2].value) || '';
+      return Promise.resolve({ result: { value: { ok: true, applied: true, read: 'red', priority } } });
+    }
   // The pinned-preview read centres the element and reports its box.
   if (/scrollIntoView/.test(p.functionDeclaration)) {
   return Promise.resolve({ result: { value: { x: 20, y: 480, width: 200, height: 100, sx: 0, sy: 400, dpr: 1 } } });
@@ -115,7 +120,27 @@ async function main() {
   await handlers.setInlineStyleProperty('obj-1', 'background-color', '#0af');
   const setCall = calls.slice(before).find((c) => c.method === 'Runtime.callFunctionOn' && /setProperty/.test(c.params.functionDeclaration));
   assert.ok(setCall, 'setInlineStyleProperty dispatch a callFunctionOn');
-  assert.deepStrictEqual(Array.from(setCall.params.arguments.map((a) => a.value)), ['background-color', '#0af']);
+  // Three arguments: the property, the value, and the priority. The priority is
+  // sent as `''` for a normal write so the in-page `setProperty(p, v, pr)`
+  // receives a real string rather than `undefined`, which Chrome rejects.
+  assert.deepStrictEqual(Array.from(setCall.params.arguments.map((a) => a.value)), ['background-color', '#0af', '']);
+  // The priority is an argument of its own, so an `!important` write is a
+  // different call rather than a value with the keyword glued onto it.
+  const beforeImportant = calls.length;
+  await handlers.setInlineStyleProperty('obj-1', 'color', 'red', 'important');
+  const importantCall = calls.slice(beforeImportant).find((c) => c.method === 'Runtime.callFunctionOn' && /setProperty/.test(c.params.functionDeclaration));
+  assert.ok(importantCall, 'an important write dispatches its own callFunctionOn');
+  assert.deepStrictEqual(Array.from(importantCall.params.arguments.map((a) => a.value)), ['color', 'red', 'important']);
+  // The write reports the priority the element now *stores*, read back in-page,
+  // because the engine is the authority on it — and because `getPropertyValue`
+  // alone cannot tell a landed write from one a stylesheet `!important` rule is
+  // overriding. A plain write must not claim priority the element does not have.
+  // (Field-by-field, not deepStrictEqual: the answer crosses a vm realm, so its
+  // prototype is not this realm's Object.prototype.)
+  assert.strictEqual((await handlers.setInlineStyleProperty('obj-1', 'color', 'red')).priority, '',
+    'a plain write reports no priority');
+  assert.strictEqual((await handlers.setInlineStyleProperty('obj-1', 'color', 'red', 'important')).priority, 'important',
+    'an important write reports the priority the element stores');
 
   // removeInlineStyleProperty passes only the property name.
   const beforeRm = calls.length;

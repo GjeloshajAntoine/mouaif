@@ -135,6 +135,45 @@ const DECLARED = [
   check('a removal plan carries no value', removed.value === '');
   check('there is no undo plan without a property', SC.undoPlan({}) === null);
   check('there is no undo plan for null', SC.undoPlan(null) === null);
+  // Priority travels through the receipt. A declaration stored `!important`
+  // outranks normal declarations and every stylesheet rule but another
+  // `!important`, so restoring a value without its priority would leave the
+  // element in a state the session never created: a declaration that used to win
+  // suddenly losing to the rule it was beating.
+  {
+  const normal = SC.undoPlan({ prop: 'color', from: 'red', to: 'blue' });
+  check('an undo of a normal declaration restores no priority', normal.priority === '');
+  const important = SC.undoPlan({ prop: 'color', from: 'red', to: 'blue', fromPriority: 'important' });
+  check('an undo of an important declaration restores the priority', important.priority === 'important');
+  // A removal's undo plan is a removal: there is no value to carry a priority on.
+  const removedImportant = SC.undoPlan({ prop: 'color', from: '', to: 'blue', fromPriority: 'important' });
+  check('a removal plan stays a removal even with a priority recorded', removedImportant.kind === 'remove');
+  // The priority is sticky per property, like the value: an entry keeps the
+  // priority the property had before the session touched it, no matter how many
+  // edits follow.
+  let prio = SC.recordChange([], { prop: 'color', from: 'red', to: 'blue', fromPriority: 'important', toPriority: '' });
+  check('the entry records the priority it replaced', prio[0].fromPriority === 'important' && prio[0].toPriority === '');
+  prio = SC.recordChange(prio, { prop: 'color', from: 'blue', to: 'green', fromPriority: '', toPriority: 'important' });
+  check('a later edit keeps the original priority as the undo target',
+  prio.length === 1 && prio[0].fromPriority === 'important' && prio[0].toPriority === 'important');
+  // Adding priority to a declaration that already has the value is a real change
+  // — it can start winning a fight it was losing — so it must not be swallowed as
+  // a no-op the way a same-value/same-priority write is.
+  const onlyPriority = SC.recordChange([], { prop: 'color', from: 'red', to: 'red', fromPriority: '', toPriority: 'important' });
+  check('marking an existing value important is recorded as a change', onlyPriority.length === 1);
+  check('a same-value same-priority write is still a no-op',
+  SC.recordChange([], { prop: 'color', from: 'red', to: 'red', fromPriority: '', toPriority: '' }).length === 0);
+  // And the reverse: dropping the priority off a value that did not change is a
+  // change too, so it cannot be dropped as a round trip.
+  const dropPriority = SC.recordChange([], { prop: 'color', from: 'red', to: 'red', fromPriority: 'important', toPriority: '' });
+  check('removing priority from an existing value is recorded as a change', dropPriority.length === 1);
+  // But returning to the original value *and* priority is the round trip that
+  // leaves no line and no undo.
+  const roundTrip = SC.recordChange(
+  SC.recordChange([], { prop: 'color', from: 'red', to: 'blue', fromPriority: '', toPriority: 'important' }),
+  { prop: 'color', from: 'blue', to: 'red', fromPriority: 'important', toPriority: '' });
+  check('a round trip back to the original value and priority drops the entry', roundTrip.length === 0);
+  }
 
   const order = SC.undoOrder([{ prop: 'a' }, { prop: 'b' }, { prop: 'c' }]);
   check('undo all runs newest first', order.map((e) => e.prop).join('') === 'cba', order.map((e) => e.prop).join(''));
@@ -194,18 +233,23 @@ check('the panel renders the receipt from a prop, not its own state',
 check('the panel no longer keeps its own receipt state',
   !/const \[receipt, setReceipt\] = useState/.test(stylesSource));
 check('an applied edit reports what it replaced to the owner',
-/if \(props\.onRecordChange\) props\.onRecordChange\(\{ prop, from: prevValue, to: value \}\)/.test(stylesSource));
+/if \(props\.onRecordChange\) \{\s*props\.onRecordChange\(\{ prop, from: prevValue, to: value, fromPriority: prevPriority, toPriority: applied \}\)/.test(stylesSource));
 // The write happens after the read in both paths — the value the property has
 // now is what an undo has to put back, so it has to be captured before the
 // setProperty/removeProperty call. Each path is read on its own: they used to
 // share one loose pattern, which was satisfied by whichever of the two happened
 // to have a short gap and said nothing about the other.
 check('the previous value is read before the write',
-/const prevValue = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,400}await props\.setInlineStyleProperty\(objId, prop, value\)/.test(stylesSource));
+/const prevRow = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,400}await props\.setInlineStyleProperty\(objId, prop, value, priority\)/.test(stylesSource));
 check('the previous value is read before a removal too',
-/const prevValue = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,400}await props\.removeInlineStyleProperty\(objId, prop\)/.test(stylesSource));
+/const prevRow = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,400}await props\.removeInlineStyleProperty\(objId, prop\)/.test(stylesSource));
 check('a removal is reported too',
-/if \(props\.onRecordChange\) props\.onRecordChange\(\{ prop, from: prevValue, to: '' \}\)/.test(stylesSource));
+/if \(props\.onRecordChange\) props\.onRecordChange\(\{ prop, from: prevValue, to: '', fromPriority: prevPriority, toPriority: '' \}\)/.test(stylesSource));
+// The priority has to be read before the write as well as the value: an undo
+// restores both, and a priority captured after the write would be the one the
+// edit just applied rather than the one it replaced.
+check('the previous priority is read before the write',
+/const prevPriority = \(prevRow && prevRow\.priority\) \|\| ''[\s\S]{0,600}await props\.setInlineStyleProperty/.test(stylesSource));
 check('the panel asks the owner to undo rather than writing itself',
 /if \(props\.onUndo\) props\.onUndo\(row\)/.test(stylesSource)
 && /if \(props\.onUndoAll\) props\.onUndoAll\(\)/.test(stylesSource));
