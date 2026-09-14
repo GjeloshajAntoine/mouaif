@@ -192,14 +192,17 @@ being waited on, and the report is the same one a screen reader gets:
   it;
 - the **composer microphone** shows a spinner in place of its glyph and is
 reported as busy (`aria-busy`) while it transcribes — a greyed-out mic with an
-unchanged glyph read as "the tap did nothing". Its *model resolve* (two reads
-before the microphone opens) is reported only once it has outlasted
-`MIC_WAIT_DELAY_MS` (400 ms): on a healthy connection those reads answer inside
-a frame, and a spinner painted and gone again shows without ever being useful.
-Past the delay the button takes the spinner, `aria-busy` and the chat's
-`Preparing dictation…` line exactly like any other wait; the chat's status line
-says `Transcribing…` for the run, and a live take keeps counting words there
-instead.
+unchanged glyph read as "the tap did nothing". That loading state belongs to the
+*transcription request* and to nothing else: a tap's other wait, the **model
+resolve** (two reads before the microphone opens), transcribes nothing and would
+be a spinner for an operation the user has not started, so it is never shown on
+the button. What it gets instead is a sentence in the chat's status line
+(`Preparing dictation…`), and only after it has outlasted `MIC_WAIT_DELAY_MS`
+(400 ms): on a healthy connection those reads answer inside a frame, so a
+sentence painted and gone again is not worth reading, while a cold provider
+catalog (a round trip per connection) is a wait the user is owed a word about.
+The chat's status line says `Transcribing…` for the run, and a live take keeps
+counting words there instead.
 
 The decisions behind those affordances are pure functions in
 `frontend/src/dictation.js`, so the wording and the phase cannot drift from the
@@ -211,15 +214,22 @@ catalogNote({ catalogBusy, liveBusy, projectCount, hasLive })
 // Which wait is in flight; a long wait (the catalog) wins over a short one.
 busyPhase({ catalogBusy, liveBusy, transcribing, handoff })
 // -> '' | 'catalog' | 'live' | 'transcribe' | 'handoff'
-// The composer mic's own wait, and whether it has earned a spinner yet.
-micWaitPhase({ preparing, transcribing, delayMs })
-// -> '' | 'prepare' | 'transcribe'
+// The composer mic's loading state: a transcription request in flight, and
+// nothing else (never the model resolve).
+micWaitPhase({ transcribing })
+// -> '' | 'transcribe'
+// What a tap says while it resolves the model, once that wait is worth a word.
+micResolveNote({ preparing, delayMs })
+// -> '' | 'Preparing dictation…'
 ```
-`micWaitPhase` is where the "shows but is not useful" complaint is fixed: the
-composer's model resolve is two local reads, so a spinner rendered immediately
+`micWaitPhase` and `micResolveNote` are the two halves of one rule: a spinner
+belongs to the request the button is actually processing, and a wait that has no
+request behind it (and no audio) gets words instead. `micResolveNote` is also
+where the "shows but is not useful" complaint is fixed for the resolve: the
+composer's model resolve is two local reads, so a sentence written immediately
 is painted and wiped inside a frame on every tap. The caller passes how long the
-resolve has been running and the delay owns the threshold, so the button's
-loading state is a value, not a race with the network.
+resolve has been running and the delay owns the threshold, so the wording is a
+value, not a race with the network.
 
 Every spinner is decoration over a sentence or an `aria-busy`, and it is a
 `currentColor` ring so it inherits the accent inside a primary button and the
@@ -695,16 +705,17 @@ node scripts/test-dictation-ui.mjs    # a browser fixture: prints a URL, or
   # picker's "Sends as" line can be seen saying `OpenAI chat` for one and
   # `OpenAI-shaped` for another.
 node scripts/test-dictation-chat.cjs  # the composer mic inside the real
-  # ChatView (needs debug Chrome; see CDP_URL below): the model comes from the
-  # app store, the draft is persisted, the cost is attributed, a live take is
-  # recorded by *rotating* (several segments, stitched in speaking order, cost
-  # settled as their sum), no take ever asks the recorder for a timeslice, and
-  # a tap that is still resolving the model reports that wait on the button
-  # (spinner, `aria-busy`) and in the chat's line rather than looking dead —
-  # *after* it has outlasted the delay, with the fixture holding the settings
-  # read for one check and holding it for nothing for the counter-check, so a
-  # fast tap proving it never flashes a working state is watched too.
-  # The fixture's fetch is fully stubbed, so nothing reaches a provider.
+# ChatView (needs debug Chrome; see CDP_URL below): the model comes from the
+# app store, the draft is persisted, the cost is attributed, a live take is
+# recorded by *rotating* (several segments, stitched in speaking order, cost
+# settled as their sum), no take ever asks the recorder for a timeslice, and
+# a tap that is still resolving the model names that wait in the chat's line
+# (`Preparing dictation…`) while the button takes *none* of the loading
+# affordances — no spinner, no `aria-busy`, no `Working…`, since nothing is
+# being transcribed yet — *after* it has outlasted the delay, with the fixture
+# holding the settings read for one check and holding it for nothing for the
+# counter-check, so a fast tap proving it says nothing at all is watched too.
+# The fixture's fetch is fully stubbed, so nothing reaches a provider.
 ```
 
 The UI fixture has two scenarios, selected from its top bar (or by opening
@@ -720,10 +731,11 @@ run's cost reaches the chat's status line, an unpriced run adds no figure at
 all, a tap with nothing configured reports why in that same line without
 opening the microphone, and a live take is a sequence of whole recordings —
 one request per rotation, spliced in speaking order, settled with the sum of
-their prices, with the partial last segment still sent. The mic's own loading
-state is checked on both sides of `MIC_WAIT_DELAY_MS`: the settings read held
-slow shows the spinner and `Preparing dictation…`, held for nothing never
-renders a working state at all. It needs a debug Chrome (`CDP_URL`, default
+their prices, with the partial last segment still sent. The mic's loading state
+is pinned to the transcription request on both sides of `MIC_WAIT_DELAY_MS`: the
+settings read held slow writes `Preparing dictation…` to the chat's line while
+the button keeps its glyph (no spinner, no `aria-busy`), and held for nothing
+the same tap says nothing at all. It needs a debug Chrome (`CDP_URL`, default
 `http://127.0.0.1:9222`), like the model-picker browser tests.
 
 The live path is covered on both sides: `test-dictation.js` decides the join,

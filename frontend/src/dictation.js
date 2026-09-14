@@ -228,12 +228,13 @@ export const LIVE_CHUNK_MS = 3000;
 // The composer mic resolves its model in two reads before the microphone opens,
 // and on a normal connection both are answered in a few milliseconds — so
 // `Preparing dictation…` used to be written and wiped on every single tap
-// without ever being readable: a loading state that shows but is never useful.
-// The wait is still real (a cold provider catalog is a round trip per
-// connection), so it is not dropped — after this delay the button reports it,
-// and a tap that is already through it never flashes the spinner at all. The
-// state is decidable from values alone, so `micWaitPhase` owns it and the
-// fixture that slows the reads down watches it (scripts/test-dictation-chat.cjs).
+// without ever being readable: a report that shows but is never useful. The wait
+// is still real (a cold provider catalog is a round trip per connection), so it
+// is not dropped — after this delay the chat's status row names it, and a tap
+// that is already through it never says anything at all. The state is decidable
+// from values alone, so `micResolveNote` owns it and the fixture that slows the
+// reads down watches it (scripts/test-dictation-chat.cjs). It deliberately does
+// *not* turn the resolve into the button's loading state: see `micWaitPhase`.
 export const MIC_WAIT_DELAY_MS = 400;
 
 // LIVE_OVERLAP_WORDS — the shortest repeated run, in words, that is treated as
@@ -745,26 +746,39 @@ if (s.handoff) return 'handoff';
 return '';
 }
 
-// micWaitPhase(state) -> 'prepare' | 'transcribe' | ''
+// micWaitPhase(state) -> 'transcribe' | ''
 //
-// Which wait the *composer microphone* is in, and therefore which one it
-// reports. The button's one wait today is the model resolve (`preparing`),
-// which happens before the microphone opens; a pending segment of a live take
-// (`transcribing`) will read here too once it has something to say, so the
-// two decisions cannot drift apart. A tap that is *both* reports the resolve —
-// no transcription can be in flight before one has been resolved.
-//
-// `preparing` is deliberately the delayed half of the resolve: the reads are
-// two requests and normally answer in milliseconds, so reporting them
-// unconditionally is how the spinner ended up flashing on every tap and never
-// being readable. `delayMs` is how long the caller has been resolving, and
-// `MIC_WAIT_DELAY_MS` is the point past which the wait is worth a word. The
-// value is passed in rather than read here, so the decision stays a pure
-// function of its arguments (and testable without timers).
+// The *loading state* of the composer microphone, as one word: the button holds
+// a spinner, `aria-busy` and a `Working…` label while a transcription request
+// is in flight (`transcribing`), and for nothing else. The tap has one other
+// wait — the model resolve, before the microphone opens — but that is not a
+// transcription and there is no audio and no request behind it yet, so it must
+// not claim to be one: a spinner on it is the loading state of an operation the
+// user has not asked for, shown while nothing is being transcribed. That wait is
+// reported in words instead, by `micResolveNote`.
 export function micWaitPhase(state) {
 const s = state || {};
-if (s.preparing && Number(s.delayMs) >= MIC_WAIT_DELAY_MS) return 'prepare';
 if (s.transcribing) return 'transcribe';
+return '';
+}
+
+// MIC_RESOLVE_NOTE — what a tap says while it is resolving the model, before
+// the microphone opens. A sentence, not a loading state (see `micWaitPhase`),
+// and owned here so the wording cannot drift from the decision that writes it.
+export const MIC_RESOLVE_NOTE = 'Preparing dictation…';
+
+// micResolveNote(state) -> '' | MIC_RESOLVE_NOTE
+//
+// Whether the model resolve is worth *saying* anything about yet. The resolve is
+// two reads (`/api/settings`, then the catalog) and on a healthy connection both
+// answer inside a frame, so a sentence written and wiped in the same frame is
+// not worth reading: `delayMs` is how long the caller has been resolving and
+// `MIC_WAIT_DELAY_MS` is the point past which it is worth a word. The value is
+// passed in rather than read here, so the decision stays a pure function of its
+// arguments (and testable without timers).
+export function micResolveNote(state) {
+const s = state || {};
+if (s.preparing && Number(s.delayMs) >= MIC_WAIT_DELAY_MS) return MIC_RESOLVE_NOTE;
 return '';
 }
 

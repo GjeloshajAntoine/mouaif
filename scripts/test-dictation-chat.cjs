@@ -28,17 +28,20 @@
 //   7. a tap with nothing configured reports *why* in the chat's status row and
 //      never opens the microphone — the button's own report is a `title`, which
 //      no phone displays, so this state used to look like a dead button;
-//   8. a tap that is resolving the model says so while it waits (a spinner in
-//      place of the glyph, `aria-busy`, and `Preparing dictation…` in the chat
-//      line) — *after* the resolve has outlasted `MIC_WAIT_DELAY_MS`, and never
-//      for a tap that answers inside it: the resolve is two local reads, so
-//      reporting it unconditionally painted a spinner for one frame on every
-//      tap. The fixture holds the settings read for that check, and holds it for
-//      nothing for the counter-check.
-//   9. the mic-wait decision is watched on both sides of the delay:
-//      `scripts/test-dictation.js` pins `micWaitPhase` as a pure function, and
-//      this file pins the button with the reads held slow (spinner) and fast
-//      (no spinner at all).
+//   8. a tap that is resolving the model says so while it waits — but only in
+//      the chat's status line (`Preparing dictation…`), *after* the resolve has
+//      outlasted `MIC_WAIT_DELAY_MS`, and never for a tap that answers inside
+//      it: the resolve is two local reads, so reporting it unconditionally wrote
+//      a sentence for one frame on every tap. The button's own loading state
+//      (spinner, `aria-busy`, `Working…`) is a transcription request in flight
+//      and nothing else — a spinner on the resolve would be the loading state of
+//      a transcription the user has not asked for, before any audio exists. The
+//      fixture holds the settings read for that check, and holds it for nothing
+//      for the counter-check.
+//   9. the decision is watched on both sides of the delay: `scripts/test-dictation.js`
+//      pins `micWaitPhase` and `micResolveNote` as pure functions, and this file
+//      pins the button with the reads held slow (a sentence, no loading state)
+//      and fast (neither).
 //
 // All bundles stay in memory; only a fresh about:blank target is touched. Fetch
 // is fully stubbed (unknown requests fail), with CDP blocking real network as a
@@ -109,11 +112,12 @@ function installFixture(data) {
     runs: 0, cost: 'priced',
     // A hold on the *settings* read, so the mic's "resolving the model" step can
     // be watched: on a healthy connection it is two local reads answered inside a
-    // frame, which is exactly why the button only reports it after
-    // MIC_WAIT_DELAY_MS. Holding **only** `/api/settings` (not every response) is
-    // what makes the two checks below meaningful: the same delay is either watched
-    // (settings read held) or absent (held for nothing), where a global hold would
-    // keep the resolve slow either way.
+    // frame, which is exactly why the chat line only *names* it after
+    // MIC_WAIT_DELAY_MS (and why it never becomes the button's loading state).
+    // Holding **only** `/api/settings` (not every response) is what makes the two
+    // checks below meaningful: the same delay is either watched (settings read
+    // held) or absent (held for nothing), where a global hold would keep the
+    // resolve slow either way.
     holdMs: 0
   };
   addEventListener('error', (event) => test.errors.push(event.message));
@@ -284,9 +288,10 @@ function installFixture(data) {
       label: mic ? mic.getAttribute('aria-label') : null,
       recording: mic ? mic.getAttribute('aria-pressed') : null,
       title: mic ? mic.getAttribute('title') : null,
-      // The loading affordances: `aria-busy` is what a screen reader gets, and
-      // the spinner is what replaced the glyph (so "waiting" is never a greyed
-      // out mic that looks like a dead button).
+      // The loading affordances: `aria-busy` and the spinner are a
+      // transcription *request* in flight, and nothing else — the model resolve
+      // before the microphone opens must leave both untouched while it is named
+      // in the chat line instead.
       busy: mic ? mic.getAttribute('aria-busy') : null,
       spinner: mic ? !!mic.querySelector('.dictation__spinner') : false,
       status: status ? status.textContent : null,
@@ -555,36 +560,39 @@ async function main() {
     check('no take ever asked the recorder for a timeslice',
       (await evaluate('dictationTest.timeslices')).every((arg) => !arg));
 
-    // ---- A tap reports the wait before the microphone opens, but not every tap --
+    // ---- A tap that resolves the model says so, and never claims a transcription ----
     //
-    // Resolving the model is two reads (`/api/settings`, then the catalog) and
-    // happens *before* the microphone opens, so it is the one wait with no audio
-    // behind it — but on a healthy connection both reads answer inside a frame, and
-    // the button used to paint a spinner and `Preparing dictation…` for that single
-    // frame on every single tap. A loading state that shows and is already gone is
-    // not useful; the two checks below pin both halves of the delay
-    // (`MIC_WAIT_DELAY_MS`, decided by `micWaitPhase`):
+    // Two facts are pinned here, and they are the two halves of one rule:
     //
-    //   * with the settings read held for 1.2 s, the resolve has outlasted the
-    //     delay, so the button takes the spinner and the chat line names the step;
-    //   * with it held for nothing, the same tap must never render a working state
-    //     at all — which is the difference the delay exists to make.
+    //   * the model resolve is two reads (`/api/settings`, then the catalog)
+    //     *before* the microphone opens — no audio exists and nothing has been
+    //     asked for yet — so it is never the button's loading state: no spinner,
+    //     no `aria-busy`, no `Working…`, however long it runs. A spinner there is
+    //     the loading state of an operation the user has not started. What the
+    //     wait gets is a sentence in the chat's status row (`Preparing
+    //     dictation…`, decided by `micResolveNote`), because a tap must not look
+    //     dead either;
+    //   * that sentence is delayed by `MIC_WAIT_DELAY_MS`: on a healthy
+    //     connection both reads answer inside a frame, so the same tap with the
+    //     settings read held for nothing must never write it at all.
     //
     // The state is restored first because the case above emptied the catalog on
     // purpose.
     await evaluate('dictationTest.restoreDictation(); dictationTest.holdMs = 1200;');
     await tap('.chat-view__mic-btn');
-    await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-busy') === 'true'`,
-    'the model resolve is reported on the button');
+    await waitFor(`document.querySelector('.chat-view__status').textContent === 'Preparing dictation…'`,
+    'the slow resolve is named in the chat line');
     const waiting = await read();
-    check('a slow resolve says it is working before the microphone opens', waiting.label === 'Working…');
-    check('and swaps its glyph for a spinner rather than sitting greyed out', waiting.spinner === true);
-    check('and the chat line names the step, not just "busy"', waiting.status === 'Preparing dictation…');
+    check('a slow resolve names the step in the chat line', waiting.status === 'Preparing dictation…');
+    check('and marks that line as a wait', waiting.statusState === 'busy');
+    check('but the button takes none of the loading affordances',
+    waiting.busy === null && waiting.spinner === false);
+    check('so it keeps its microphone glyph and its own label', waiting.label === 'Dictate');
     check('and nothing is recorded during it', waiting.recording === 'false');
     await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'true'`,
     'recording starts once the model resolves');
     const resumed = await read();
-    check('the spinner gives way to the recorder when the wait is over',
+    check('the sentence gives way to the recorder when the wait is over',
     resumed.spinner === false && resumed.busy === null && /^Stop dictation/.test(resumed.label));
     // Close the take and let the page settle, so nothing is left running.
     await tap('.chat-view__mic-btn');
@@ -592,16 +600,17 @@ async function main() {
     'the take is closed again');
     await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-busy') !== 'true' ||
     document.querySelector('.chat-view__mic-btn').getAttribute('aria-busy') === null`, 'nothing is left busy');
-    // ---- A fast resolve does not flash a working state ---------------------
+    // ---- A fast resolve never says anything --------------------------------
     //
-    // The half that makes the spinner *useful*: with the reads held for nothing,
-    // the same tap must not render `Working…`/`aria-busy` for the frame the old
-    // code showed it in. The watchdog samples on every animation frame, so a state
-    // that lasted one frame would still be caught.
+    // The half that makes the delayed sentence worth having: with the reads held
+    // for nothing, the same tap must not write `Preparing dictation…` at all, and
+    // must not render a working state either. The watchdog samples on every
+    // animation frame, so a state that lasted one frame would still be caught.
     await evaluate('dictationTest.holdMs = 0;');
-    await evaluate(`window.__micBusySeen = 0; window.__micWatch = setInterval(() => {
-      const mic = document.querySelector('.chat-view__mic-btn');
-      if (mic && mic.getAttribute('aria-busy') === 'true') window.__micBusySeen += 1;
+    await evaluate(`window.__micBusySeen = 0; window.__micStatusFrom = dictationTest.statusWrites.length;
+    window.__micWatch = setInterval(() => {
+    const mic = document.querySelector('.chat-view__mic-btn');
+    if (mic && mic.getAttribute('aria-busy') === 'true') window.__micBusySeen += 1;
     }, 16);`);
     await tap('.chat-view__mic-btn');
     await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-pressed') === 'true'`,
@@ -609,6 +618,9 @@ async function main() {
     await evaluate('clearInterval(window.__micWatch);');
     check('a resolve inside the delay never shows a working state at all',
     (await evaluate('window.__micBusySeen')) === 0, 'busy frames seen: ' + (await evaluate('window.__micBusySeen')));
+    check('and never claims to be preparing dictation',
+    (await evaluate('dictationTest.statusWrites.slice(window.__micStatusFrom)'
+    + '.filter((w) => w.text === "Preparing dictation…").length')) === 0);
     const fast = await read();
     check('and it goes straight to recording', /^Stop dictation/.test(fast.label) && fast.busy === null);
     await tap('.chat-view__mic-btn');

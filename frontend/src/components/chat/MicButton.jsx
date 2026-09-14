@@ -43,12 +43,14 @@
 // sent. One place decides, every surface obeys.
 //
 // That resolve is two requests, and on a healthy connection they answer inside
-// a frame — so the button reports it only once it has outlasted
-// MIC_WAIT_DELAY_MS (`micWaitPhase`): before that a tap looks like a tap, and a
-// spinner that is painted and gone again is a loading state that shows without
-// ever being readable. A resolve that *does* run long (a cold provider catalog
-// is a round trip per connection) takes the spinner, `aria-busy`, and the
-// chat's `Preparing dictation…` line like any other wait.
+// a frame — so a tap *names* it (`micResolveNote`) only once it has outlasted
+// MIC_WAIT_DELAY_MS: before that a tap looks like a tap, and a sentence painted
+// and gone again says nothing worth reading. A resolve that *does* run long (a
+// cold provider catalog is a round trip per connection) is reported in the
+// chat's status row — `Preparing dictation…` — and *not* as the button's
+// loading state: no transcription has been asked for yet, and the spinner,
+// `aria-busy` and `Working…` belong to a request that is actually being
+// processed (`micWaitPhase`, and the loading rules in docs/features/dictation.md).
 //
 // The server owns the credential: this component records locally and POSTs
 // base64 to /api/ai/transcribe (docs/decisions.md section 10).
@@ -71,6 +73,7 @@ liveDictationEnabled,
 liveTakeCost,
 loadDictationModels,
 MIC_WAIT_DELAY_MS,
+micResolveNote,
 micWaitPhase,
 pickRecorderMime,
 recorderSupported,
@@ -95,22 +98,24 @@ const [status, setStatus] = useState('');
 const [statusState, setStatusState] = useState('');
 // Busy is *two* facts, not one: `resolving` is the model being resolved before
 // the microphone opens, `sending` is a request in flight after it closed. Only
-// `sending` blocks a tap immediately — the resolve is two reads the user must
-// never see flash a "Working…" for (see `micWaitPhase`). `busy` below is the
-// union, for the callers that only need "the button is not idle".
+// `sending` is a *loading state* — the resolve is two reads that transcribe
+// nothing, so it never paints the spinner or `aria-busy` (see `micWaitPhase`);
+// it is named in the chat's status row instead, and only once it has outlasted
+// MIC_WAIT_DELAY_MS (`micResolveNote`). `busy` below is the union, for the
+// callers that only need "the button is not idle".
 const [resolving, setResolving] = useState(false);
 const [sending, setSending] = useState(false);
 const busy = resolving || sending;
 // Which rendering of the resolve's delay the state actually is: `0` while it is
 // inside `MIC_WAIT_DELAY_MS`, the delay itself once it has outlasted it — the
-// answer to "has this wait been long enough to be worth a spinner?"
-// (`micWaitPhase`'s `delayMs`). One timer, started with the resolve and cleared
-// with it, flips it at exactly the delay, so a fast tap never renders a working
-// state at all rather than rendering one for a frame.
+// answer to "has this wait been long enough to be worth a word?" (`micResolveNote`'s
+// `delayMs`). One timer, started with the resolve and cleared with it, flips it at
+// exactly the delay, so a fast tap never says anything at all rather than saying
+// something for a frame.
 const [resolveDelayMs, setResolveDelayMs] = useState(0);
-// Where the phase last left the button's own line, so the resolve is announced
+// Where the resolve's note last left the button's own line, so it is announced
 // once rather than rewritten on every render.
-const lastPhaseRef = useRef('');
+const lastNoteRef = useRef('');
 const recorderRef = useRef(null);
 const streamRef = useRef(null);
 const chunksRef = useRef([]);
@@ -364,11 +369,10 @@ say(failed ? 'Transcription failed' : 'Nothing was recognised — try again a li
   return () => clearInterval(timer);
   }, [recording]);
 
-  // The resolve's own timer: from the moment it starts, one timeout that flips
-  // the button into its working state if the resolve is *still* running at
-  // MIC_WAIT_DELAY_MS. Cleared when the resolve answers, which is what makes a
-  // fast tap render nothing at all — the delay is the point of the state, not a
-  // repaint schedule.
+  // The resolve's own timer: from the moment it starts, one timeout that earns the
+  // resolve its sentence if it is *still* running at MIC_WAIT_DELAY_MS. Cleared when
+  // the resolve answers, which is what makes a fast tap say nothing at all — the
+  // delay is the point of the state, not a repaint schedule.
   useEffect(() => {
   if (!resolving) return undefined;
   const timer = setTimeout(() => setResolveDelayMs(MIC_WAIT_DELAY_MS), MIC_WAIT_DELAY_MS);
@@ -463,16 +467,15 @@ setSending(false);
 //
 // The two reads are the one wait with no audio behind it, and on a healthy
 // connection they are two local requests answered in a few milliseconds — so
-// they are reported *only* once they have outlasted `MIC_WAIT_DELAY_MS`
-// (`micWaitPhase`, watched at 250 ms by the effect above). Before that a tap
-// looks exactly like a tap, which is the honest thing: nothing has happened
-// yet, and a spinner that is painted and gone inside a frame reads as a
-// glitch. Once the resolve *has* taken long enough — a cold provider catalog
-// is a round trip per connection — the button holds a spinner, reports
-// `aria-busy`, and the chat's line says `Preparing dictation…` until the
-// microphone opens. The wording is then replaced by "Recording — …", or by
-// the reason when nothing is configured, so it never lingers over a finished
-// take.
+// the chat's line names them *only* once they have outlasted `MIC_WAIT_DELAY_MS`
+// (`micResolveNote`, watched by the effect above). Before that a tap looks
+// exactly like a tap, which is the honest thing: nothing has happened yet, and
+// a sentence painted and gone inside a frame reads as a glitch. Once the
+// resolve *has* taken long enough — a cold provider catalog is a round trip per
+// connection — the chat's line says `Preparing dictation…` until the microphone
+// opens, and the button stays a microphone: a transcription's spinner is not
+// what this wait is. The wording is then replaced by "Recording — …", or by the
+// reason when nothing is configured, so it never lingers over a finished take.
 setResolving(true);
 let resolved = null;
 try {
@@ -657,30 +660,34 @@ if (recording) { stop(); return; }
 start();
 }
 // What the button is waiting on, as the one word the loading affordances are
-// rendered from (`micWaitPhase` in dictation.js). A resolve that has not yet
-// outlasted MIC_WAIT_DELAY_MS is deliberately '' — see `start`: painting a
-// spinner for a wait that is over inside a frame is how a loading state ends
-// up showing on every tap and being useful on none.
-const phase = micWaitPhase({ preparing: resolving, transcribing: sending, delayMs: resolveDelayMs });
-// Announce the resolve on the button's own line once it has earned the spinner.
+// rendered from (`micWaitPhase` in dictation.js): a transcription request in
+// flight, and nothing else. The model resolve before the microphone opens is a
+// different wait — there is no audio and no request behind it yet — so it is
+// reported by `micResolveNote` as a sentence in the chat's status row instead of
+// as a spinner on a button that would then be claiming a transcription.
+const phase = micWaitPhase({ transcribing: sending });
+// The resolve's own sentence, on the same delay: '' until it is worth a word.
+const resolveNote = micResolveNote({ preparing: resolving, delayMs: resolveDelayMs });
+// Announce the resolve on the button's own line once it has earned its sentence.
 // The chat's visible status row is written by onStatus inside `say`; only the
 // resolve announces itself here, because a transcription's line belongs to
 // `transcribe` and a re-render must not overwrite it.
 useEffect(() => {
-if (phase === lastPhaseRef.current) return;
-lastPhaseRef.current = phase;
-if (phase === 'prepare') say('Preparing dictation…', 'busy');
-}, [phase]);
+if (resolveNote === lastNoteRef.current) return;
+lastNoteRef.current = resolveNote;
+if (resolveNote) say(resolveNote, 'busy');
+}, [resolveNote]);
 // The 1 Hz `tick` is read here: it is what makes the label below advance while
 // recording. `void` documents that the value itself is not used.
 void tick;
 const elapsed = recording ? formatDuration(Date.now() - startedAtRef.current) : '';
 const label = recording ? 'Stop dictation (' + elapsed + ')' : 'Dictate';
-// `working` is the phase that has earned its spinner: a resolve that has gone
-// past the delay, or a request in flight after the take closed. A tap that is
-// still inside the delay is not shown as busy at all — the older behaviour
-// showed `Working…` on every single tap, always for less than a frame.
-const working = phase === 'prepare' || phase === 'transcribe';
+// `working` is the loading state: a transcription request in flight, and
+// nothing else. The resolve before the microphone opens deliberately does not
+// earn it — a spinner there is the loading state of an operation the user has
+// not asked for, and the chat's `Preparing dictation…` line is what names that
+// wait instead.
+const working = phase === 'transcribe';
 const svg = recording
 // A filled square: the same "stop" glyph the send button uses while a
 // turn streams, so the two stoppable states look alike.

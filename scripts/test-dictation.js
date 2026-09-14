@@ -1064,27 +1064,36 @@ assert.equal(dictation.busyPhase({ transcribing: true, handoff: true }), 'transc
 assert.equal(dictation.busyPhase(null), '', 'a missing state is idle, not a crash');
 });
 
-check('micWaitPhase only reports a resolve once it has outlasted the delay', () => {
-// The composer mic's whole loading problem: the model resolve is two local
-// reads, so it is normally over inside a frame, and a spinner that is
-// painted and gone again is a loading state that shows on every tap and is
-// useful on none.
+check('micWaitPhase is the loading state of the request, and of nothing else', () => {
+// The composer mic's loading state is one operation: a transcription request
+// in flight. The model resolve that happens before the microphone opens is
+// not a transcription — no audio exists and nothing has been asked for yet —
+// so a spinner on it would be the loading state of an operation the user has
+// not started. It is reported in words instead (`micResolveNote`).
 assert.equal(dictation.micWaitPhase({}), '', 'idle');
-assert.equal(dictation.micWaitPhase({ preparing: true, delayMs: 0 }), '',
-'a resolve still inside the delay renders nothing');
-assert.equal(dictation.micWaitPhase({ preparing: true, delayMs: dictation.MIC_WAIT_DELAY_MS - 1 }), '',
-'the frame before the delay is still nothing');
-assert.equal(dictation.micWaitPhase({ preparing: true, delayMs: dictation.MIC_WAIT_DELAY_MS }), 'prepare',
-'the delay itself is the point the wait earns a word');
-assert.equal(dictation.micWaitPhase({ preparing: true, delayMs: 5000 }), 'prepare');
-// A request in flight after the take closed is the other wait, and it is
-// reported whatever the resolve timer happens to say.
+assert.equal(dictation.micWaitPhase({ preparing: true, delayMs: 5000 }), '',
+'a slow resolve is never the button\'s loading state, however long it runs');
+assert.equal(dictation.micWaitPhase({ preparing: true, transcribing: true, delayMs: 5000 }), 'transcribe',
+'the request in flight is what the button reports');
 assert.equal(dictation.micWaitPhase({ transcribing: true }), 'transcribe');
-// A tap that is both reports the resolve: there is no transcription before a
-// model has been resolved.
-assert.equal(dictation.micWaitPhase({ preparing: true, transcribing: true, delayMs: 5000 }), 'prepare');
-assert.equal(dictation.micWaitPhase({ preparing: true, transcribing: true, delayMs: 0 }), 'transcribe');
 assert.equal(dictation.micWaitPhase(null), '', 'a missing state is idle, not a crash');
+});
+
+check('micResolveNote names the resolve only once it has outlasted the delay', () => {
+// The other half of the same wait: two local reads that normally answer inside
+// a frame, so a sentence written and wiped in the same frame is not worth
+// reading. Past the delay it is worth a word — and a word is all it is.
+assert.equal(dictation.micResolveNote({}), '', 'idle');
+assert.equal(dictation.micResolveNote({ preparing: true, delayMs: 0 }), '',
+'a resolve still inside the delay says nothing');
+assert.equal(dictation.micResolveNote({ preparing: true, delayMs: dictation.MIC_WAIT_DELAY_MS - 1 }), '',
+'the frame before the delay is still nothing');
+assert.equal(dictation.micResolveNote({ preparing: true, delayMs: dictation.MIC_WAIT_DELAY_MS }),
+dictation.MIC_RESOLVE_NOTE, 'the delay itself is the point the wait earns a word');
+assert.equal(dictation.micResolveNote({ preparing: true, delayMs: 5000 }), dictation.MIC_RESOLVE_NOTE);
+assert.equal(dictation.micResolveNote({ transcribing: true, delayMs: 5000 }), '',
+'a transcription in flight is not a resolve to announce');
+assert.equal(dictation.micResolveNote(null), '', 'a missing state is idle, not a crash');
 });
 
 
