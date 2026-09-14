@@ -28,11 +28,14 @@ selection leads to.
    - **Segments** (`display`, `align-items`, `justify-content`, `text-align`,
      `font-weight`, `position`, `border-style`, `box-shadow`) are chips with a
      glyph and a name. Tapping one writes it.
-   - **Sliders** (`gap`, `font-size`, `line-height`, `letter-spacing`, corners,
-     opacity, border width, width, height) drag between 0 and 100 % of the
-     property's span, and are flanked by **− / +** steppers that write on tap.
-     The read-out under the slider follows your finger; the write happens when you
-     let go, so a drag is **one** change and **one** undo.
+  - **Sliders** (`gap`, `font-size`, `line-height`, `letter-spacing`, corners,
+  opacity, border width, width, height) drag between 0 and 100 % of the
+  property's span, and are flanked by **− / +** steppers that write on tap.
+  The row lays out as **`− slider +`**: the `−` stepper, the full-width slider,
+  then the `+` stepper, so the slider takes the whole middle column rather than
+  being squeezed into a corner.
+  The read-out under the slider follows your finger; the write happens when you
+  let go, so a drag is **one** change and **one** undo.
    - **Fine / Coarse** sets the step: Coarse is the design scale (`4px`, `0.1`),
      Fine is a quarter of it (`1px`, `0.05`).
    - **Unit chips** rewrite the value in another unit (`px`, `rem`, `%`) when the

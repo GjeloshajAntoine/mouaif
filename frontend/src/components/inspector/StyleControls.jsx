@@ -63,31 +63,28 @@ onClick: () => props.onEdit(props.prop, props.value)
 );
 }
 
-// StepButtons — the − / + pair that flank every slider. Stepping is the fastest
-// way to size something one-handed, and it is also the only way to move a value
-// the slider cannot reach: the drag covers the span, the steps walk it. A value
-// the row cannot move (`auto`, `calc(...)`) disables both and the row says why.
-function StepButtons(props) {
-return [
-h('button', {
+// StepButton — one − or + stepper that flanks the slider. Stepping is the
+// fastest way to size something one-handed, and it is also the only way to move
+// a value the slider cannot reach: the drag covers the span, the steps walk it.
+// A value the row cannot move (`auto`, `calc(...)`) disables the button and the
+// row says why.
+//
+// The two steppers are rendered *individually* — a down button, then the slider,
+// then an up button — so the range's 3-column grid (`44px 1fr 44px`) lays them
+// out as `− slider +`. Returning both buttons as one fragment put them in the
+// grid's first two columns and squeezed the slider into the last 44 px cell,
+// which is the bug this split fixes.
+function StepButton(props) {
+const target = props.dir < 0 ? props.down : props.up;
+const verb = props.dir < 0 ? 'Decrease ' : 'Increase ';
+return h('button', {
 class: 'inspector__touch-step',
 type: 'button',
-key: 'down',
-disabled: props.disabled || !props.down,
-title: props.down ? 'Decrease ' + props.prop + ' to ' + props.down.css : 'Not a number — use the value editor',
-'aria-label': 'Decrease ' + props.prop,
-onClick: () => props.onStep(props.down)
-}, '−'),
-h('button', {
-class: 'inspector__touch-step',
-type: 'button',
-key: 'up',
-disabled: props.disabled || !props.up,
-title: props.up ? 'Increase ' + props.prop + ' to ' + props.up.css : 'Not a number — use the value editor',
-'aria-label': 'Increase ' + props.prop,
-onClick: () => props.onStep(props.up)
-}, '+')
-];
+disabled: props.disabled || !target,
+title: target ? verb + props.prop + ' to ' + target.css : 'Not a number — use the value editor',
+'aria-label': verb + props.prop,
+onClick: () => props.onStep(target)
+}, props.dir < 0 ? '−' : '+');
 }
 
 // SliderRow — one numeric property: a 44 px value button, a − / + pair, a range
@@ -133,9 +130,9 @@ h(RowHead, {
 label, prop, value, isSet: isDeclared(prop, ctx), disabled, onEdit
 }),
 note ? h('p', { class: 'inspector__touch-note' }, note) : null,
-h('div', { class: 'inspector__touch-range' },
-StepButtons({
-prop, down, up, disabled: disabled || !writable,
+    h('div', { class: 'inspector__touch-range' },
+h(StepButton, {
+dir: -1, prop, down, up, disabled: disabled || !writable,
 onStep: (n) => { if (n) onApply(prop, n.css); }
 }),
 h('input', {
@@ -150,6 +147,10 @@ disabled: disabled || !writable,
 'aria-valuetext': shown,
 onInput: (e) => setDraft(css(Number(e.currentTarget.value) / 100)),
 onChange: (e) => { setDraft(null); commitPct(Number(e.currentTarget.value) / 100); }
+}),
+h(StepButton, {
+dir: 1, prop, down, up, disabled: disabled || !writable,
+onStep: (n) => { if (n) onApply(prop, n.css); }
 }),
 h('span', { class: 'inspector__touch-readout', 'aria-hidden': 'true' }, shown || '—')
 ),
