@@ -172,6 +172,10 @@ assert.ok(arr(FILTERS).every((f) => typeof f.hint === 'string' && f.hint.length 
     'the "show more" label is derived from the remaining rows, not the total');
   assert.ok(/setComputedSteps\(computedSteps \+ 1\)/.test(panel),
     'the control pages forward one step at a time rather than revealing everything');
+  assert.ok(/onScroll: onPanelScroll/.test(panel),
+    'the panel scroller pages the computed list in as the user reads to its end');
+  assert.ok(/computedMoreRef\.current <= 0\) return;/.test(panel),
+    'the scroll handler costs nothing once the list is fully shown');
   assert.ok(/computedPage\.map/.test(panel),
     'the list renders the paged rows, not the whole filtered set');
   assert.ok(/emptyMessage\(\{ query: computedQuery, filter: computedFilter \}\)/.test(panel),

@@ -1086,6 +1086,11 @@ const [computedView, setComputedView] = useState({ query: '', filter: 'all', ste
 const computedQuery = computedView.query;
 const computedFilter = computedView.filter;
 const computedSteps = computedView.steps;
+// computedMoreRef — how many rows one more step would reveal, mirrored
+// into a ref so the panel's scroll handler (defined above the render,
+// where `computedMore` does not exist yet) can read the current value
+// without being re-created on every render.
+const computedMoreRef = useRef(0);
 function setComputedQueryState(query) {
 setComputedView((v) => ({ ...v, query: String(query || ''), steps: 0 }));
 }
@@ -1094,6 +1099,28 @@ setComputedView((v) => ({ ...v, filter, steps: 0 }));
 }
 function setComputedSteps(steps) {
 setComputedView((v) => ({ ...v, steps: Math.max(0, steps) }));
+}
+// onPanelScroll — page the Computed list in as the user reads down to its
+// end. The list renders one page of 60 rows at a time (see computedFilter.js)
+// and the "Show N more" button at its foot reveals the next one — but that
+// button sits at the bottom of a scroller that is ~2 600 px tall for a
+// typical element, so reaching it is itself a 30-row read with nothing to
+// say the list continues. Scrolling to the end of what is rendered now
+// reveals the next page on its own: the same steps counter the button uses,
+// so the button's label stays honest ("Show 60 more of 406" counts what is
+// still hidden) and tapping it still jumps a page ahead from anywhere.
+//
+// The threshold is one row-and-a-bit (~40 px per row): close enough that the
+// next page is on screen before the user hits the hard end, far enough that
+// reading the middle of the list never pages anything in. The guard on
+// `computedMoreRef` means a fully-shown list (or an empty filter result)
+// costs nothing per scroll event.
+function onPanelScroll() {
+const panel = panelRef.current;
+if (!panel || computedMoreRef.current <= 0) return;
+const remaining = panel.scrollHeight - panel.scrollTop - panel.clientHeight;
+if (remaining > 72) return;
+setComputedView((v) => ({ ...v, steps: v.steps + 1 }));
 }
 // shotSerial — only the newest capture may write to state. Picks, applies,
 // and manual refreshes can overlap, and a slow capture for a previously
@@ -1743,11 +1770,13 @@ changedNames
 const computedPageLimit = pageLimit(computedVisible.length, computedSteps);
 const computedPage = computedVisible.slice(0, computedPageLimit);
 const computedMore = moreRows(computedVisible.length, computedSteps);
+computedMoreRef.current = computedMore;
 return h('div', {
 class: 'inspector__styles',
 ref: panelRef,
 role: 'group',
-'aria-label': 'Element styles'
+'aria-label': 'Element styles',
+onScroll: onPanelScroll
 },
 // Sticky block: the selected element's identity and the pinned preview stay
 // at the top of the panel's scroller while the property list below scrolls.
