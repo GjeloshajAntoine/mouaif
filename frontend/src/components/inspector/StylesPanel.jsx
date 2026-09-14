@@ -32,8 +32,9 @@
 //   - Long computed values ellipsize and expand on tap there, rather
 //     than inlining a monospace wall.
 import { h } from 'preact';
-import { useRef, useState, useEffect, useMemo } from 'preact/hooks';
+import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
+import { applyPinHeight, watchPin } from './pinnedStack.js';
 import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage, statusLine } from './computedFilter.js';
 import { alternatives, unitOptions, classify, seedValue } from './valueKinds.js';
 import { buildValueIndex, scaleFor, tokensFor, scaleNote, valuesFor } from './valueIndex.js';
@@ -1011,6 +1012,9 @@ strip.scrollLeft = strip.scrollWidth;
 // panel bar, status pill and every other panel — while the user is working
 // inside one card.
 const panelRef = useRef(null);
+// pinRef — the pinned identity row, measured to know exactly how tall the
+// chrome at the top of the scroller is (see usePinnedStack).
+const pinRef = useRef(null);
 // tabsRef — the touch surface's group chip row, published by StyleControls (it
 // owns the node; this panel owns the scrolling).
 const tabsRef = useRef(null);
@@ -1123,6 +1127,31 @@ const remaining = panel.scrollHeight - panel.scrollTop - panel.clientHeight;
 if (remaining > 72) return;
 setComputedView((v) => ({ ...v, steps: v.steps + 1 }));
 }
+// pinHeight — keep the group chip row pinned directly *under* the identity row
+// rather than on top of it. Both rows are sticky to this panel's scroller, and
+// the chip row's offset is the pin's own height, which only a measurement can
+// answer (the identity row grows an error line when a tree hop fails, and its
+// label wraps differently per element). The height is published as a custom
+// property on the panel element and read by `.inspector__touch-tabs`; the
+// module owns the arithmetic and the observation, this is the wiring.
+//
+// `crumbKey` is the dependency that matters: the pin is remeasured whenever the
+// selected element changes, which is exactly when its content — and therefore
+// its height — is replaced. The ResizeObserver picks up what a render cannot
+// predict (a font loading, a rotation re-wrapping the label).
+//
+// `useLayoutEffect`, not `useEffect`: the property has to be on the element
+// *before* the browser paints, or the chip row is positioned with the 44 px
+// fallback for one frame and lands 9 px inside the 53 px identity row. The
+// module's own fallback is one `--tap` row, so the overlap is small, but it is
+// still the two strips painted on top of each other — the exact defect this
+// wiring exists to remove.
+useLayoutEffect(() => {
+const panel = panelRef.current;
+if (!panel) return undefined;
+const apply = () => applyPinHeight(panel, pinRef.current);
+return watchPin(pinRef.current, apply);
+}, [crumbsKey, error]);
 // shotSerial — only the newest capture may write to state. Picks, applies,
 // and manual refreshes can overlap, and a slow capture for a previously
 // selected element must not replace the current element's preview.
@@ -1779,10 +1808,10 @@ role: 'group',
 'aria-label': 'Element styles',
 onScroll: onPanelScroll
 },
-// Sticky block: the selected element's identity and the pinned preview stay
-// at the top of the panel's scroller while the property list below scrolls.
-// Without this the read-out of the edit's result scrolled away as soon as
-// the user reached the "Declared styles" rows.
+// Sticky block: the selected element's identity stays at the top of the
+// panel's scroller while the rows below scroll. Without this the answer to
+// "what am I editing?" scrolled away as soon as the user reached the
+// "Declared styles" rows.
 //
 // The **actions** (clear, refresh, pick) are not here: they moved up into the
 // card header (Inspector.jsx PanelCard), next to the panel's eye, exactly
@@ -1794,7 +1823,18 @@ onScroll: onPanelScroll
 // untruncated, and it is still a button: tapping it copies the selector
 // (props.onCopyElement reports the outcome in the status pill above the
 // panels), so the label is also how it leaves the inspector.
-h('div', { class: 'inspector__styles-pin' },
+//
+// The **preview is not in here.** It used to be, and the pinned block then
+// measured 178 px on a 360 px phone (identity 53 + preview 125) inside a
+// 353 px scroller — so the group chip row, pinned to the same scroller, had
+// nowhere to pin except `top: 0`, straight on top of it. Measured at
+// `scrollTop 1493` on the repo's own fixture: the chip row sat at
+// `245 → 354`, the preview occupied that exact band, and the first 109 px of
+// the property list were behind it, with the pin's own 178 px still reserved
+// underneath. A third of the panel's visible height showed two layers of
+// chrome and no rows. The preview is the first row of the scroll flow now
+// (below), and the chip row pins directly under this block, which is 53 px.
+h('div', { class: 'inspector__styles-pin', ref: pinRef },
 h('button', {
 class: 'inspector__styles-elem',
 type: 'button',
@@ -1814,10 +1854,15 @@ boxSize ? h('span', { class: 'inspector__styles-elem-size' }, boxSize) : null
 // wrong.
 error
 ? h('p', { class: 'inspector__style-error', role: 'alert' }, error)
-: null,
+: null
+),
 // Pinned element preview: a clipped screenshot of the selected element, so
 // the result of an edit is readable without scrolling back to the Preview
-// panel. Hidden until the first capture lands.
+// panel. It is the *first row of the scroll flow*, immediately under the
+// pinned identity: one screenful of the panel shows identity, preview and the
+// first property rows at once, and once the user reads past it the identity
+// alone stays welded to the top (see the pin above for what two stacked
+// pinned strips cost). Hidden until the first capture lands.
 //
 // The "tap to refresh" hint is a caption *under* the image, not a label on
 // top of it. Drawn over the capture it sat on whatever the element happened
@@ -1848,8 +1893,7 @@ h('span', { class: 'inspector__styles-shot-dims' },
 shot.width && shot.height ? shot.width + '×' + shot.height : '')
 )
 )
-: null
-),
+: null,
 // Element tree — the selected element's ancestors as a breadcrumb and its
 // direct children as chips, so the DOM can be walked without going back to
 // the live preview to tap again. One tap on `main` or `body` beats

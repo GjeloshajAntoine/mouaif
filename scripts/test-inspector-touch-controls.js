@@ -385,12 +385,17 @@ check('an untouched panel never reveals',
 /if \(!touchGroup\) return;/.test(panelSource));
 check('the panel wires the surface\'s ref, reveal and change reporter',
 /tabsRef,/.test(panelSource) && /revealRef,/.test(panelSource) && /onGroupChange: setTouchGroup/.test(panelSource));
-// The reveal must account for the panel's sticky block: it is opaque chrome
+// The reveal must account for the panel's pinned chrome: it is opaque and
 // welded to the top of the scroller, so a node aligned to the scroller's top
-// edge lands *under* it and is invisible.
-check('the reveal starts below the panel\'s sticky block, not at the scroller top',
-/querySelector\('\.inspector__styles-pin'\)/.test(surfaceSource)
-&& /Math\.max\(bounds\.top, pinBox\.bottom\)/.test(surfaceSource));
+// edge lands *under* it and is invisible. Two strips pin there — the identity
+// row and, once the user has read past it, the group chip row — and which one
+// is lowest depends on the scroll offset, so both are measured and the lower
+// edge wins.
+check('the reveal starts below the panel\'s pinned chrome, not at the scroller top',
+/\['\.inspector__styles-pin',\s*'\.inspector__touch-tabs'\]/.test(surfaceSource)
+&& /const top = Math\.max\(bounds\.top, chromeBottom\)/.test(surfaceSource));
+check('the reveal only counts a strip that is actually pinned at the top',
+/if \(box\.height && box\.top <= bounds\.top \+ 1\) return box\.bottom;/.test(surfaceSource));
 check('the reveal refuses to move a panel with no visible height',
 /if \(!bounds\.height\) return;/.test(surfaceSource));
 check('the reveal leaves an already-visible node alone',
@@ -429,9 +434,12 @@ check('a cleared panel forgets what it had revealed',
 // with the element it is about, inside the sticky block.
 check('a failed hop reports inside the sticky block, where the user is looking',
 (() => {
-  const pin = panelSource.indexOf("h('div', { class: 'inspector__styles-pin' },");
+  const pin = panelSource.indexOf("h('div', { class: 'inspector__styles-pin'");
   const alert = panelSource.indexOf("role: 'alert'", pin);
-  return pin >= 0 && alert > pin && alert - pin < 1200;
+  // The error row is the last child of the identity block, so it is found
+  // before the block closes — the preview follows it in the scroll flow now.
+  const blockEnd = panelSource.indexOf("h('div', { class: 'inspector__styles-shotwrap' }", pin);
+  return pin >= 0 && alert > pin && (blockEnd < 0 || alert < blockEnd) && alert - pin < 1200;
 })());
 check('a drag previews locally and writes once on release',
   /onInput: \(e\) => setDraft/.test(surfaceSource) && /onChange: \(e\) => \{ setDraft\(null\); commitPct/.test(surfaceSource));
@@ -641,9 +649,43 @@ check(cls + ' wraps', !!body && /flex-wrap:\s*wrap/.test(body));
 // chip row to be reachable (the JS reveal only fires on a *tap*, so it can't
 // help a chip that's off screen). Pinning the row inside the Styles scroller
 // is what keeps navigation available while reading content.
-check('.inspector__touch-tabs is pinned inside the Styles scroller',
+check('.inspector__touch-tabs is pinned inside the Styles scroller', 
   /position:\s*sticky/.test(rule(touchCss, '.inspector__touch-tabs') || '')
-  && /top:\s*0/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
+  && /top:\s*calc\(var\(--insp-pin-h/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
+// Pinning the chip row at `top: 0` put it directly *over* the pinned identity
+// block, which used to carry the element preview too: at `scrollTop 1493` on the
+// repo's own fixture the chips covered the preview's exact band (`245 → 354`) and
+// the first 109 px of the property rows, while the 178 px block stayed reserved
+// underneath. The row's offset is now the measured height of the block above it,
+// and the block is above the row rather than below it.
+check('.inspector__touch-tabs stacks below the identity row, not over it',
+  /z-index:\s*3/.test(rule(touchCss, '.inspector__touch-tabs') || '')
+  && !/top:\s*0\s*;/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
+check('the identity row wins the overlap with the chip row',
+  /z-index:\s*4/.test(rules(css, '.inspector__panel-body .inspector__styles-pin'))
+  && /z-index:\s*3/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
+// The element preview is the first row of the scroll flow, not a second pinned
+// strip: it is what made the block tall enough that the chip row had nowhere to
+// pin except on top of it.
+check('the element preview is not inside the pinned identity block',
+  (() => {
+    const pin = panelSource.indexOf("h('div', { class: 'inspector__styles-pin'");
+    const shot = panelSource.indexOf("h('div', { class: 'inspector__styles-shotwrap' }");
+    if (pin < 0 || shot < 0) return false;
+    const between = panelSource.slice(pin, shot);
+    // The block closes before the preview opens: exactly one top-level `),`
+    // separator and no shotwrap markup between them.
+    return shot > pin && !/shotwrap/.test(between) && /z-index|class: 'inspector__styles-pin'/.test(between);
+  })());
+check('the preview spans the panel padding as the first row of the flow',
+  /margin:\s*0\s+-8px/.test(rules(css, '.inspector__styles-shotwrap')));
+// The pin's height is measured, not hard-coded: the identity row grows an error
+// line when a tree hop fails, so a fixed offset drifts into the overlap again.
+check('the pin publishes its measured height as a custom property',
+  /applyPinHeight\(panel, pinRef\.current\)/.test(panelSource)
+  && /PIN_HEIGHT_VAR = '--insp-pin-h'/.test(read('frontend/src/components/inspector/pinnedStack.js')));
+check('the chip row falls back to one tap row before the first measurement',
+  /var\(--insp-pin-h,\s*44px\)/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
 check('.inspector__touch-tabs covers the panel padding so chips read flush',
   /margin:\s*0\s+-8px/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
 check('the segment grid auto-fits instead of overflowing',

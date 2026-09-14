@@ -358,15 +358,26 @@ if (!scroller || !node) return;
 // has nothing to bring anything into, and must not move the scroller.
 const bounds = scroller.getBoundingClientRect();
 if (!bounds.height) return;
-// The panel's sticky block (element identity + pinned preview) never scrolls, so
-// it is opaque chrome welded to the top of the scroller — anything aligned to
-// `bounds.top` lands *under* it and is invisible. The visible region therefore
-// starts at the pin's bottom edge, and the pin is measured fresh every time
-// because its height changes with the element's own capture (a one-line element
-// is ~60 px, a tall one is capped at 132 px plus its caption).
-const pin = scroller.querySelector('.inspector__styles-pin');
-const pinBox = pin && pin.getBoundingClientRect();
-const top = pinBox && pinBox.height ? Math.max(bounds.top, pinBox.bottom) : bounds.top;
+// The panel's pinned chrome — the identity row, and the group chip row that
+// pins directly under it — never scrolls, so it is opaque chrome welded to the
+// top of the scroller: anything aligned to `bounds.top` lands *under* it and is
+// invisible. The visible region therefore starts at the bottom of whichever
+// strip is lowest, measured fresh every time: the identity row's height follows
+// its content (it grows an error line after a failed tree hop), and the chip row
+// only pins once the user has scrolled past it, so a fixed offset is wrong for
+// half of the calls.
+const chromeBottom = ['.inspector__styles-pin', '.inspector__touch-tabs']
+.map((sel) => {
+const node = scroller.querySelector(sel);
+if (!node) return 0;
+const box = node.getBoundingClientRect();
+// A strip that has scrolled away is above the scroller and must not be
+// mistaken for chrome at its top; only a strip actually pinned there counts.
+if (box.height && box.top <= bounds.top + 1) return box.bottom;
+return 0;
+})
+.reduce((a, b) => Math.max(a, b), bounds.top);
+const top = Math.max(bounds.top, chromeBottom);
 if (top >= bounds.bottom) return; // the pin fills the scroller; nothing is visible
 const inset = 6; // flush against the pin reads as clipped, not as a header
 const pad = 8;   // the panel's own 8 px horizontal padding, for symmetry

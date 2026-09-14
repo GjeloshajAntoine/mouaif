@@ -38,28 +38,47 @@ min-width: 0;
    below it (otherwise scrolling past the chips strands the user on the only
    group on screen).
 
-   Stacks above `.inspector__styles-pin` (which is also sticky to the same
-   scroller, with `z-index: 3`) by sitting *later* in DOM and at a higher
-   `z-index` — when both are pinned simultaneously the chip row replaces the
-   pin at the top of the panel. The pin already served its purpose during the
-   first screenful of the panel (the element identity, the preview, "what am
-   I editing"), and once the user has scrolled deep enough that the chip row
-   also wants to stick, they are reading content and the visible affordance is
-   "navigate to another group", not "what element is this". The pin scrolls
-   back into view the moment they scroll up again.
+   It pins **directly below** the panel's identity row (`.inspector__styles-pin`),
+   not on top of it. The row used to pin at `top: 0` and paint over that block,
+   because the block was 178 px tall (identity + element preview) inside a `~353 px`
+   scroller and there was no second offset to pin to — measured at `scrollTop 1493`
+   on the fixture: the chip row occupied `245 → 354`, the element preview occupied
+   the same band, and the top 109 px of the property list sat behind both while the
+   pin's full height stayed reserved underneath. Two layers of chrome, no rows.
 
-   `top: 0` plus the negative-margin trick spans the panel's own 8 px padding
-   so the chip row sits flush against the panel's edges (the row's left and
-   right padding keeps the chips off those edges). `background` must match the
-   panel surface so the cards scrolling underneath are hidden. The
+   The preview moved into the scroll flow (see `.inspector__styles-shotwrap`) and
+   the pin is now one 44 px row, so the row can pin under it:
+
+   ```
+   .inspector__styles-pin  { top: -6px; }
+   .inspector__touch-tabs  { top: calc(var(--insp-pin-h, 44px) - 6px); }
+   ```
+
+   `--insp-pin-h` is the pin's *measured* height, published on the panel element
+   by `pinnedStack.js` (the pin grows an error line when a tree hop fails, so a
+   hard-coded offset would drift straight back into the overlap this replaced).
+   The `-6px` is the panel's top padding, which the pin cancels with its own
+   negative `top`; the chip row pins into the same scrollport, so it subtracts
+   the same 6 px. The fallback is one `--tap` row for the frame before the first
+   measurement.
+
+   `z-index: 3` keeps the row *below* the pin (`z-index: 4`), so a chip row
+   scrolling away with its own section passes under the opaque identity row
+   instead of over it. The negative-margin trick spans the panel's own 8 px
+   padding so the chip row sits flush against the panel's edges (the row's left
+   and right padding keeps the chips off those edges). `background` must match
+   the panel surface so the cards scrolling underneath are hidden. The
    `border-bottom` separates the row from the cards it sits over. */
 .inspector__touch-tabs {
 display: flex;
 flex-wrap: wrap;
 gap: 6px;
 position: sticky;
-top: 0;
-z-index: 4;
+/* One `--tap` row until pinnedStack.js has measured the identity row above this
+   one; `calc()` because the pin cancels the panel's 6 px top padding with its own
+   negative `top`, so both pin into the same scrollport edge. */
+top: calc(var(--insp-pin-h, 44px) - 6px);
+z-index: 3;
 background: var(--surface);
 margin: 0 -8px;
 padding: 6px 8px 8px;

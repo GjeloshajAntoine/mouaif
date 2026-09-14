@@ -415,16 +415,32 @@ declared list. It is gone — the touch control surface (inspector-touch.css) an
 its "Add property" card sheet carry the same properties with a description, a
 picture and their current value, and the old chips were a fourth way to reach the
 same editor. The rules went with the markup rather than lingering as dead CSS. */
-/* Pinned block. The element header and the element preview are one sticky
-child of the panel's scroller: they stay at the top while the "Declared
-styles" and "Computed" rows below scroll. An opaque background is required
-so rows scrolling underneath are hidden rather than showing through, and
-the negative margins let it span the panel's 8 px padding so nothing peeks
-out at the sides. */
+/* Pinned block. The selected element's identity row (plus its error line) is
+the first sticky child of the panel's scroller: it stays at the top while the
+property rows below scroll. An opaque background is required so rows scrolling
+underneath are hidden rather than showing through, and the negative margins let
+it span the panel's 8 px padding so nothing peeks out at the sides.
+
+This block carries the *identity only*. The element preview used to be the
+second half of it, which made the pinned chrome ~178 px on a 360 px phone
+(identity 53 + preview 125) — and the group chip row, pinned separately to the
+same scroller, then had to start at `top: 0` because there was nowhere else to
+put it. Two sticky rows both claiming the top of a 353 px scroller is the bug
+this block now avoids: the chips were painted over the preview (and over the
+first 109 px of the property rows) and the pinned block still occupied its full
+178 px underneath, so a third of the panel's visible height showed two layers
+of chrome and no content at all. The preview is now the first row of the
+*scroll flow* (see `.inspector__styles-shotwrap`), and the chip row stacks
+directly under this block instead of on top of it.
+
+`z-index: 4` is what puts this block *above* the chip row (`.inspector__touch-tabs`
+is 3): both are sticky to the same scroller and they touch by construction,
+so the opaque pin must win any sub-pixel overlap — and a chip row scrolling
+away with its own section has to pass *under* the pin, not over it. */
 .inspector__panel-body .inspector__styles-pin {
 position: sticky;
 top: -6px;
-z-index: 3;
+z-index: 4;
 display: flex;
 flex-direction: column;
 gap: 4px;
@@ -433,12 +449,20 @@ padding: 4px 8px 4px;
 background: var(--surface);
 border-bottom: 1px solid var(--border);
 }
-/* Pinned element preview. A clipped screenshot of the selected element,
-part of the sticky block so it stays visible while the property rows
-scroll — the user reads an edit's result in place instead of scrolling the
-page back to the Preview panel. The image shows the *whole* capture, so the
-element is on screen rather than a middle band of it, and the button keeps a
-44 px floor so a one-line element is still a full tap target. */
+/* Pinned element preview. A clipped screenshot of the selected element, so the
+result of an edit is readable without scrolling back to the Preview panel. The
+image shows the *whole* capture, so the element is on screen rather than a
+middle band of it, and the button keeps a 44 px floor so a one-line element is
+still a full tap target.
+
+It is the **first row of the panel's scroll flow**, welded directly under the
+pinned identity row and spanning the panel's padding the same way that row does
+(`margin: 0 -8px` with the padding added back), so the two read as one block on
+the first screenful. It used to live *inside* the pinned block, which was what
+made the block 178 px tall on a 360 px phone and left the group chip row with
+no choice but to pin at `top: 0` on top of it — see the comment on
+`.inspector__styles-pin`. Reading past it, the preview scrolls under the opaque
+identity row and the pin — one 44 px row — is all the chrome that stays. */
 .inspector__styles-shot {
 display: flex;
 align-items: center;
@@ -510,6 +534,12 @@ display: flex;
 flex-direction: column;
 flex: 0 0 auto;
 gap: 2px;
+/* The preview is the first row of the panel's scroll flow, spanning the same
+8 px the pinned identity row spans, so the identity, the capture and its caption
+read as one block until they scroll apart. */
+margin: 0 -8px;
+padding: 0 8px 4px;
+background: var(--surface);
 }
 .inspector__styles-shot-note {
 display: flex;
