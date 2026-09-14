@@ -273,6 +273,17 @@ button.inspector__crumb:hover { background: var(--surface-2); color: var(--fg); 
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
+  /* Stay reachable while the page scrolls. The inspect view is a scroller
+     (.app__main) that also nests the panels' own scrollers, so scrolling down
+     into a long Styles list used to carry the panel switcher off the top of
+     the screen — leaving no way to switch to Preview / Console / Network
+     without scrolling all the way back up. Pinning the switcher to the top of
+     the scroll container keeps the navigation on screen the whole time. The
+     z-index sits above the panel bodies (which have no stacking context of
+     their own) but below the app tab bar and modal sheets. */
+  position: sticky;
+  top: 0;
+  z-index: 15;
 }
 .inspector__panelchip {
   flex: 1 1 0;

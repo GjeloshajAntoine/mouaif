@@ -17,7 +17,7 @@ The **Inspector** tab provides a mobile-first DevTools experience for inspecting
 
 ## Panels
 
-You can toggle each of the four panels on and off to customize your workspace:
+You can toggle each of the four panels on and off to customize your workspace. The panel switcher (the **Preview / Styles / Console / Network / Info** chip row) is **pinned to the top of the inspect view while you scroll**: the view is a scroller that also nests each panel's own scroller, so scrolling down into a long Styles list used to carry the switcher off screen and leave no way to change panels without scrolling all the way back up. It now sticks to the top so the navigation stays on screen the whole time.
 
 ### 1. Preview panel
 - **Live page preview** — captures full-height snapshots of the active page. For Chrome's built-in PDF viewer, the Inspector automatically switches to a viewport capture so Chrome includes the separately composited PDF pages instead of showing only the empty viewer UI shell.
