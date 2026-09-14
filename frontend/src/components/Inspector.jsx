@@ -557,6 +557,26 @@ export function InspectorView() {
   const [targets, setTargets] = useState([]);
   const [currentTarget, setCurrentTarget] = useState(null);
   const [cdpReady, setCdpReady] = useState(false);
+  // navHistory — the attached tab's session history, as the two history
+  // arrows need it: whether there is an entry behind and ahead of the current
+  // one. Read once after a navigation settles (onTargetNavigated) rather than
+  // on every render, so the arrows stay honest without a per-tick CDP read.
+  // `null` means "not read yet": both arrows stay enabled and the tap falls
+  // back to the server's own verdict, which is what keeps the row usable when
+  // the read fails (an older target, a CDP hiccup).
+  const [navHistory, setNavHistory] = useState(null);
+// navHistoryBusy — serializes the history reads the nav row issues.
+// onTargetNavigated fires for every lifecycle event, and a redirect chain or
+// a history rewrite loop would otherwise stack one CDP round-trip per event;
+// the newest answer is the only one worth having.
+const navHistoryBusy = useRef(false);
+// currentTargetRef — the attached target as the *latest* value, for the
+// helpers that run from callbacks created in an earlier render (the CDP
+// navigation handler, the history read's staleness check). Reading the state
+// variable there would close over whatever target was current when that
+// callback was built.
+const currentTargetRef = useRef(null);
+currentTargetRef.current = currentTarget;
   // visiblePanels: a Set of panel IDs currently rendered. Hydrated from
   // localStorage on mount; updated by the per-panel toggle. The single
   // 'panel' state from the previous design is gone — the new UI does
@@ -906,19 +926,28 @@ useEffect(() => {
   const eventHandlers = useRef(null);
 
   function onTargetNavigated(newUrl, newTitle) {
-    applyViewport(viewportId);
-    if (!newUrl) return;
-    setCurrentTarget((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        url: newUrl,
-        title: newTitle || newUrl
-      };
-    });
-    if (navUrlInput.current) {
-      navUrlInput.current.value = newUrl;
-    }
+  applyViewport(viewportId);
+  if (!newUrl) return;
+  setCurrentTarget((prev) => {
+  if (!prev) return prev;
+  return {
+  ...prev,
+  url: newUrl,
+  title: newTitle || newUrl
+  };
+  });
+  if (navUrlInput.current) {
+  navUrlInput.current.value = newUrl;
+  }
+  // Re-read the session history now that a navigation has landed *and* the
+  // address bar is showing the new URL. This is the only moment the two
+  // history arrows can change: every path that moves the cursor (the arrows
+  // themselves, the Go field, Reload, a link tapped in the preview) ends in
+  // this event. Reading here rather than per render is also what keeps a
+  // page that fires navigations in a burst — a redirect chain, a history
+  // rewrite loop — from issuing one CDP read per event: the read is keyed on
+  // the URL the browser actually settled on.
+  refreshNavHistory(newUrl);
     // Query the page document.title via CDP Runtime.evaluate to get the real title
     if (conn.current && conn.current.cdpSend) {
       conn.current.cdpSend('Runtime.evaluate', { expression: 'document.title', returnByValue: true })
@@ -948,12 +977,16 @@ useEffect(() => {
   }
 
   function disconnect() {
-    if (conn.current) conn.current.disconnect();
-    conn.current = null;
-    eventHandlers.current = null;
-    setCdpReady(false);
-    reqMap.current.clear();
-    setCurrentTarget(null);
+  if (conn.current) conn.current.disconnect();
+  conn.current = null;
+  eventHandlers.current = null;
+  setCdpReady(false);
+  reqMap.current.clear();
+  setCurrentTarget(null);
+  // The history snapshot belongs to the tab that was attached; a new attach
+  // must not inherit the previous tab's back/forward availability.
+  setNavHistory(null);
+  navHistoryBusy.current = false;
     consoleEntries.current = [];
     networkEntries.current = [];
     setDetailItem(null);
@@ -1001,8 +1034,14 @@ useEffect(() => {
         c.cdpSend('DOM.enable').catch(() => { /* styles panel unavailable */ });
         c.cdpSend('CSS.enable').catch(() => { /* computed styles unavailable */ });
         c.cdpSend('Page.enable')
-          .then(() => setCdpReady(true))
-          .catch(() => { /* preview unavailable */ });
+        .then(() => setCdpReady(true))
+        .catch(() => { /* preview unavailable */ });
+        // First history read for the tab we just attached to, so the two arrows
+        // start in the right state — a tab the user arrived at by clicking a link
+        // has an entry behind it, a fresh tab has neither. The read goes through
+        // the server (its own short-lived target socket), so it does not have to
+        // wait for this connection's Page.enable to resolve.
+        refreshNavHistory(null);
         // Restore the user's last preview size (device-metrics override).
         // Runs right after Page.enable so the override is applied before the
         // first screenshot capture. 'auto' clears any previous override.
@@ -1385,29 +1424,82 @@ useEffect(() => {
     setStatus('reloaded');
   }
 
-  // goBackAttachedTarget — navigates the tab being inspected one entry
-  // back in its history (POST /api/inspector/back, CDP
-  // Page.navigateToHistoryEntry on the target). The connection survives
-  // the navigation. `wentBack: false` (no previous entry) is a friendly
-  // no-op, not an error.
-  async function goBackAttachedTarget() {
-    const target = currentTarget;
-    if (!target || !target.id) return;
-    setStatus('going back…');
-    let r;
-    try {
-      r = await fetchJson('/api/inspector/back', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: target.id }) });
-    } catch (e) {
-      setStatus('network error going back');
-      return;
-    }
-    if (r.status !== 200 || !r.body) {
-      const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
-      setStatus('back failed: ' + msg);
-      return;
-    }
-    setStatus(r.body.wentBack ? 'went back' : 'no page to go back to');
-  }
+  // refreshNavHistory — read the attached tab's session history
+// (POST /api/inspector/history, CDP Page.getNavigationHistory on the
+// target) so the nav row knows whether there is an entry behind and ahead
+// of the current one. Two guards keep a burst of navigations from turning
+// into a burst of reads: the call is skipped while the previous read is in
+// flight, and the answer is dropped when the page has already moved on to
+// another URL (`expectedUrl` vs. the live target) — a stale reply would
+// otherwise enable the wrong arrow. A failed read clears the snapshot to
+// `null`, which the arrows read as "unknown": both stay tappable and the
+// server's own verdict answers the tap.
+async function refreshNavHistory(expectedUrl) {
+const target = currentTarget;
+if (!target || !target.id || navHistoryBusy.current || !cdpReady) return;
+navHistoryBusy.current = true;
+try {
+const r = await fetchJson('/api/inspector/history', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: target.id }) });
+if (!r || r.status !== 200 || !r.body || typeof r.body.canGoBack !== 'boolean') {
+setNavHistory(null);
+return;
+}
+if (expectedUrl && movedOffUrl(expectedUrl)) return;
+setNavHistory(r.body);
+} catch (e) {
+setNavHistory(null);
+} finally {
+navHistoryBusy.current = false;
+}
+}
+// movedOffUrl — whether the attached tab has navigated away from `url` while
+// a history read was in flight, i.e. the answer describes a page the user has
+// already left. Read through a ref rather than as a hook dependency so the
+// CDP-event path that calls it does not need `currentTarget` in scope.
+function movedOffUrl(url) {
+const t = currentTargetRef.current;
+return !!(t && t.url && String(t.url) !== String(url));
+}
+// stepAttachedHistory — one arrow of the nav row. Both directions share the
+// request, the error wording and the follow-up read, so back and forward
+// cannot drift apart; only the status line and the "there was nowhere to go"
+// sentence differ. `delta` is -1 for back and +1 for forward.
+async function stepAttachedHistory(dir) {
+const target = currentTarget;
+if (!target || !target.id) return;
+const back = dir === 'back';
+const endpoint = back ? '/api/inspector/back' : '/api/inspector/forward';
+setStatus(back ? 'going back…' : 'going forward…');
+let r;
+try {
+r = await fetchJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId: target.id }) });
+} catch (e) {
+setStatus(back ? 'network error going back' : 'network error going forward');
+return;
+}
+if (r.status !== 200 || !r.body) {
+const msg = (r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status);
+setStatus((back ? 'back' : 'forward') + ' failed: ' + msg);
+return;
+}
+const moved = back ? r.body.wentBack : r.body.wentForward;
+setStatus(moved ? (back ? 'went back' : 'went forward') : (back ? 'no page to go back to' : 'no page to go forward to'));
+// The step itself fires Page.frameNavigated, which re-reads the history —
+// but that event does not arrive when the step moved within the same
+// document (hash navigation), so refresh here too. The in-flight guard
+// makes the duplicate read a no-op.
+if (moved) refreshNavHistory(null);
+}
+// goBackAttachedTarget — the nav row's back arrow. See
+// stepAttachedHistory for the shared request/status handling.
+async function goBackAttachedTarget() {
+return stepAttachedHistory('back');
+}
+// goForwardAttachedTarget — the nav row's forward arrow, for a tab the user
+// has already stepped back from.
+async function goForwardAttachedTarget() {
+return stepAttachedHistory('forward');
+}
 
   // navigateAttachedTarget — navigates the tab being inspected to a new
   // URL (POST /api/inspector/navigate, CDP Page.navigate on the target).
@@ -1792,21 +1884,42 @@ onPick: () => { const acts = stylesHandlesRef.current; if (acts && acts.togglePi
       })
     ),
     h('section', null,
-      h('div', { class: 'inspector__nav' },
-        // Icon-only Back button — navigates the inspected tab one entry
-        // back in its history. Mirrors the reload button's glyph size so
-        // the URL field stays the widest flex child.
-        h('button', {
-          class: 'icon-btn inspector__nav-back',
-          type: 'button',
-          title: 'Go back in this tab\'s history',
-          'aria-label': 'Go back in this tab\'s history',
-          onClick: goBackAttachedTarget
-        },
-          h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-            h('path', { d: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2Z', fill: 'currentColor' })
-          )
-        ),
+    h('div', { class: 'inspector__nav' },
+    // Icon-only Back button — navigates the inspected tab one entry
+    // back in its history. Mirrors the reload button's glyph size so
+    // the URL field stays the widest flex child. Disabled while the
+    // attached tab is known to have nothing behind it (see navHistory),
+    // so "nowhere to go" is visible before the tap instead of being
+    // reported afterwards; an unread history leaves it enabled and the
+    // server's own verdict answers the tap.
+    h('button', {
+    class: 'icon-btn inspector__nav-back',
+    type: 'button',
+    disabled: !!(navHistory && !navHistory.canGoBack),
+    title: 'Go back in this tab\'s history',
+    'aria-label': 'Go back in this tab\'s history',
+    onClick: goBackAttachedTarget
+    },
+    h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+    h('path', { d: 'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2Z', fill: 'currentColor' })
+    )
+    ),
+    // Forward — the other half of history navigation, for a tab the
+    // user stepped back from (followed a link, tapped Back, then wants
+    // the page again). Same 44 px glyph and same rules; the two sit
+    // side by side the way a browser pairs them.
+    h('button', {
+    class: 'icon-btn inspector__nav-forward',
+    type: 'button',
+    disabled: !!(navHistory && !navHistory.canGoForward),
+    title: 'Go forward in this tab\'s history',
+    'aria-label': 'Go forward in this tab\'s history',
+    onClick: goForwardAttachedTarget
+    },
+    h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+    h('path', { d: 'M4 11h12.17l-5.59-5.59L12 4l8 8-8 8-1.41-1.41L16.17 13H4v-2Z', fill: 'currentColor' })
+    )
+    ),
         // Icon-only Reload button. The text-button Reload (a 44 px
         // button labelled "Reload") was moved into the view-head
         // overflow menu (InspectActionsMenu) so the nav row carries

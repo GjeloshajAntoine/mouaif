@@ -432,17 +432,57 @@ async function reloadInspectorTarget(debuggerUrl, targetId) {
 async function navigateInspectorTarget(debuggerUrl, targetId, url) {
   return sendTargetCommand(debuggerUrl, targetId, 'Page.navigate', { url });
 }
-// goBackInspectorTarget — navigates a tab one entry back in its history
-// (Page.getNavigationHistory + Page.navigateToHistoryEntry, target-level).
+// historyInspectorTarget — the attached tab's session history
+// (Page.getNavigationHistory, target-level), shaped for the Inspector's nav
+// row. `canGoBack` / `canGoForward` are what let the two history arrows be
+// *disabled* instead of reporting "no page to go back to" only after the
+// tap. `entries` carries only what a history list needs to draw itself
+// (id, url, title) so a long-lived tab cannot ship a huge payload.
+async function historyInspectorTarget(debuggerUrl, targetId) {
+  const history = await sendTargetCommand(debuggerUrl, targetId, 'Page.getNavigationHistory', {});
+  const list = Array.isArray(history && history.entries) ? history.entries : [];
+  const index = history && typeof history.currentIndex === 'number' ? history.currentIndex : -1;
+  return {
+    index,
+    canGoBack: index > 0 && !!list[index - 1],
+    canGoForward: index >= 0 && !!list[index + 1],
+    // `entryId` is Chrome's own field name (CDP `Page.navigateToHistoryEntry`
+    // takes `{ entryId }`). Only entries carrying a usable id are published:
+    // a missing or non-numeric id would otherwise reach the step below as an
+    // argument Chrome rejects, turning "go back" into a hard failure instead
+    // of the no-op it should be.
+    entries: list
+      .filter((e) => e && Number.isFinite(e.id))
+      .map((e) => ({ entryId: e.id, url: e.url || '', title: e.title || '' }))
+  };
+}
+
+// stepHistory — move the history cursor `delta` entries (negative = back,
+// positive = forward) and report whether it actually moved. One helper for
+// both directions so forward cannot drift from back. A step with nowhere to
+// go is a friendly no-op, not an error: the caller turns `moved: false` into
+// its own wording and no request is sent to Chrome.
+async function stepHistory(debuggerUrl, targetId, delta) {
+  const history = await historyInspectorTarget(debuggerUrl, targetId);
+  const wanted = history.index >= 0 ? history.entries[history.index + delta] : null;
+  if (!wanted) return { ok: true, moved: false };
+  await sendTargetCommand(debuggerUrl, targetId, 'Page.navigateToHistoryEntry', { entryId: wanted.entryId });
+  return { ok: true, moved: true };
+}
+
+// goBackInspectorTarget — navigates a tab one entry back in its history.
 // Returns { ok: true, wentBack: <bool> } so the UI can tell "went back"
 // from "nothing to go back to" without treating the latter as an error.
 async function goBackInspectorTarget(debuggerUrl, targetId) {
-  const history = await sendTargetCommand(debuggerUrl, targetId, 'Page.getNavigationHistory', {});
-  const index = history && typeof history.currentIndex === 'number' ? history.currentIndex : -1;
-  const entries = Array.isArray(history && history.entries) ? history.entries : [];
-  if (index <= 0 || !entries[index - 1]) return { ok: true, wentBack: false };
-  await sendTargetCommand(debuggerUrl, targetId, 'Page.navigateToHistoryEntry', { historyEntryId: entries[index - 1].id });
-  return { ok: true, wentBack: true };
+  const r = await stepHistory(debuggerUrl, targetId, -1);
+  return { ok: true, wentBack: r.moved };
+}
+
+// goForwardInspectorTarget — the same step in the other direction, for a tab
+// the user has already navigated back from. Returns { ok, wentForward }.
+async function goForwardInspectorTarget(debuggerUrl, targetId) {
+  const r = await stepHistory(debuggerUrl, targetId, 1);
+  return { ok: true, wentForward: r.moved };
 }
 // httpRequestJson — httpGetJson generalized to any method (Chrome's
 // /json/new requires PUT). Same typed-error behavior as httpGetJson.
@@ -679,7 +719,9 @@ module.exports = {
   sendTargetCommand,
   reloadInspectorTarget,
   navigateInspectorTarget,
+  historyInspectorTarget,
   goBackInspectorTarget,
+  goForwardInspectorTarget,
   // WS proxy
   handleProxy,
   makeNoServerWss,

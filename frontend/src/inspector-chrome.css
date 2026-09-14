@@ -101,7 +101,8 @@
   background: var(--surface-3);
   color: var(--fg);
 }
-.inspector__nav-back {
+.inspector__nav-back,
+.inspector__nav-forward {
   flex-shrink: 0;
   min-height: var(--tap);
   min-width: var(--tap);
@@ -111,9 +112,29 @@
   background: var(--surface-2);
   color: var(--fg-soft);
 }
-.inspector__nav-back:hover {
+.inspector__nav-back:hover,
+.inspector__nav-forward:hover {
   background: var(--surface-3);
   color: var(--fg);
+}
+/* History arrows with nowhere to go. The tab's session history is read
+  after each navigation (see refreshNavHistory), so an arrow that cannot
+  move anything is *shown* disabled instead of accepting a tap and only
+  then reporting "no page to go back to". Dimmed rather than hidden: the
+  pair keeps its position, so the URL field never jumps sideways when a
+  navigation changes what is available — the row is the same width before
+  and after. Both stay at the 44 px --tap minimum; only the opacity
+  changes. The `disabled` state is also what tells assistive tech the
+  action is unavailable, which a dimmed-but-live button would not. */
+.inspector__nav-back:disabled,
+.inspector__nav-forward:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.inspector__nav-back:disabled:hover,
+.inspector__nav-forward:disabled:hover {
+  background: var(--surface-2);
+  color: var(--fg-soft);
 }
 .inspector__nav-input {
   flex: 1 1 auto;

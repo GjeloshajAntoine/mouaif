@@ -195,7 +195,10 @@ const CONTROLS = [
   ['target row menu', /Target options|TargetMenu/],
   ['close-tab confirmation sheet', /ConfirmSheet/],
   ['back in history', /Page\.navigateToHistoryEntry|goBackAttachedTarget/],
-  ['reload tab', /reloadAttachedTarget/],
+['forward in history', /goForwardAttachedTarget/],
+['history availability read', /refreshNavHistory|api\/inspector\/history/],
+['history arrows disabled when unavailable', /navHistory && !navHistory\.canGoBack|navHistory && !navHistory\.canGoForward/],
+['reload tab', /reloadAttachedTarget/],
   ['URL navigate', /navigateAttachedTarget/],
   ['open page in a new tab', /openAttachedPageInNewTab/],
   ['show all panels', /showAllPanels/],
@@ -302,7 +305,42 @@ check('--tap token is defined', /--tap:\s*44px/.test(read('frontend/src/base.css
 check('styles panel clips horizontal overflow', /overflow-x:\s*hidden/.test(css));
 check('styles panel contains its overscroll', /overscroll-behavior:\s*contain/.test(css));
 check('panel chips are labelled on screen (not icon-only)',
-  /inspector__panelchip-label/.test(inspector) && /inspector__panelchip-label/.test(css));
+/inspector__panelchip-label/.test(inspector) && /inspector__panelchip-label/.test(css));
+// ---- 5c. History navigation -------------------------------------------
+// Back / Forward are the nav row's only way to move through the attached
+// tab's history, and the pair is what a browser's chrome offers. Guard both
+// halves plus the state that makes them honest about what is available: an
+// arrow with nowhere to go is shown disabled, not left tappable so it can
+// report a no-op afterwards. Also guard the contract the disabled state
+// depends on — a history read that is serialized, and dropped when it
+// describes a page the user has already left.
+const chromeCss = read('frontend/src/inspector-chrome.css');
+check('both history arrows render in the nav row',
+/inspector__nav-back/.test(inspector) && /inspector__nav-forward/.test(inspector));
+check('forward is wired to its own handler',
+/goForwardAttachedTarget/.test(inspector) && /stepAttachedHistory/.test(inspector));
+check('the unavailable arrow is disabled, not merely styled',
+/disabled: !!\(navHistory && !navHistory\.canGoBack\)/.test(inspector)
+&& /disabled: !!\(navHistory && !navHistory\.canGoForward\)/.test(inspector));
+check('an unread history leaves the arrows tappable',
+// The disabled state is derived only through `navHistory && …`, so a null
+// snapshot (the read failed, or has not landed yet) leaves both arrows
+// enabled and the server's own verdict answers the tap.
+/disabled: !!\(navHistory && !navHistory\.canGoBack\)/.test(inspector)
+&& !/navHistory && navHistory/.test(inspector));
+check('both history arrows keep the 44 px tap minimum',
+/\.inspector__nav-back,\s*\n\.inspector__nav-forward\s*\{[\s\S]*?min-height: var\(--tap\)/.test(chromeCss)
+&& /\.inspector__nav-back,\s*\n\.inspector__nav-forward\s*\{[\s\S]*?min-width: var\(--tap\)/.test(chromeCss));
+check('the disabled arrow is dimmed rather than removed from the row',
+/\.inspector__nav-back:disabled,\s*\n\.inspector__nav-forward:disabled\s*\{[\s\S]*?opacity/.test(chromeCss));
+check('history reads are serialized',
+/navHistoryBusy\.current/.test(inspector));
+check('a history read the page has outrun is dropped',
+/movedOffUrl/.test(inspector) && /expectedUrl/.test(inspector));
+check('the history snapshot is reset when the tab is detached',
+/setNavHistory\(null\)/.test(inspector));
+check('history is refreshed after a navigation lands, and after a step',
+/refreshNavHistory\(newUrl\)/.test(inspector) && /refreshNavHistory\(null\)/.test(inspector));
 
 // ---- 6. HTTP surface ---------------------------------------------------
 // Every endpoint the inspector frontend calls must exist on the server.
@@ -316,7 +354,39 @@ for (const name of endpoints) {
     'no handler found');
 }
 check('the debugger default port is unchanged (9222)',
-  /9222/.test(inspector) || /9222/.test(read('src/inspector.js')));
+/9222/.test(inspector) || /9222/.test(read('src/inspector.js')));
+// The nav row's two history steps are two routes plus the read that keeps
+// the arrows honest. Guard the shapes the frontend depends on: `{ ok,
+// wentForward }` for the step and the `canGoBack` / `canGoForward` pair for
+// the read, on both sides of the wire.
+const inspectorServer = read('src/inspector.js');
+check('the server exposes the history step routes',
+['/api/inspector/back', '/api/inspector/forward', '/api/inspector/history']
+.every((r) => server.includes(r)));
+check('the module exports both history steps and the read',
+/historyInspectorTarget,/.test(inspectorServer)
+&& /goBackInspectorTarget,/.test(inspectorServer)
+&& /goForwardInspectorTarget,/.test(inspectorServer));
+check('the history read reports back/forward availability',
+/canGoBack:/.test(inspectorServer) && /canGoForward:/.test(inspectorServer));
+check('both steps share one implementation',
+/async function stepHistory\(/.test(inspectorServer)
+&& /stepHistory\(debuggerUrl, targetId, -1\)/.test(inspectorServer)
+&& /stepHistory\(debuggerUrl, targetId, 1\)/.test(inspectorServer));
+check('a step with nowhere to go sends no navigate command',
+/if \(!wanted\) return \{ ok: true, moved: false \}/.test(inspectorServer));
+check('forward is reported as its own flag',
+/wentForward: r\.moved/.test(inspectorServer));
+// Regression: CDP `Page.navigateToHistoryEntry` takes `{ entryId }`. The
+// Back button shipped sending `{ historyEntryId }` and Chrome answered
+// "Invalid parameters", so every tap failed on a route that unit tests had
+// been asserting the *name* of, not the argument it carried. Pin the field
+// name and the id filter that keeps a malformed entry from reaching Chrome.
+check('the history step passes Chrome\'s own argument name',
+/Page\.navigateToHistoryEntry', \{ entryId: wanted\.entryId \}/.test(inspectorServer)
+&& !/historyEntryId/.test(inspectorServer));
+check('history entries without a usable id are not published',
+/Number\.isFinite\(e\.id\)/.test(inspectorServer));
 
 // ---- 7. Chrome profile management --------------------------------------
 // The profile manager is the Inspector's only new surface in this round,

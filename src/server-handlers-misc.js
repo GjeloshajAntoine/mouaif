@@ -469,6 +469,24 @@ async function handleInspector(req, res, parsed) {
       return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });
     }
   }
+  // POST /api/inspector/history  body: { targetId } -> { index, canGoBack, canGoForward, entries }
+// Read-only session history for the attached tab (Page.getNavigationHistory
+  // on the target's WebSocket). The nav row uses it to enable/disable the two
+  // history arrows, so "there is nowhere to go" is visible before the tap
+  // instead of being reported as a no-op afterwards.
+  if (urlPath === '/api/inspector/history' && method === 'POST') {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    if (!body || typeof body.targetId !== 'string' || !body.targetId.trim()) {
+      return sendJSON(res, 400, { error: 'targetId is required' });
+    }
+    try {
+      const result = await inspector.historyInspectorTarget(inspector.getDebuggerUrl(), body.targetId.trim());
+      return sendJSON(res, 200, result);
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });
+    }
+  }
   // POST /api/inspector/back  body: { targetId } -> { ok, wentBack }
   // Navigates a tab one entry back in its history (Page.navigateToHistoryEntry
   // on the target's WebSocket). `wentBack: false` means there was no previous
@@ -481,6 +499,23 @@ async function handleInspector(req, res, parsed) {
     }
     try {
       const result = await inspector.goBackInspectorTarget(inspector.getDebuggerUrl(), body.targetId.trim());
+      return sendJSON(res, 200, result);
+    } catch (e) {
+      return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });
+    }
+  }
+  // POST /api/inspector/forward  body: { targetId } -> { ok, wentForward }
+  // The other direction of the entry above, so a tab the user stepped back
+  // from can be stepped forward again. Same no-op contract: `wentForward:
+  // false` means there was no entry ahead.
+  if (urlPath === '/api/inspector/forward' && method === 'POST') {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    if (!body || typeof body.targetId !== 'string' || !body.targetId.trim()) {
+      return sendJSON(res, 400, { error: 'targetId is required' });
+    }
+    try {
+      const result = await inspector.goForwardInspectorTarget(inspector.getDebuggerUrl(), body.targetId.trim());
       return sendJSON(res, 200, result);
     } catch (e) {
       return sendJSON(res, inspectorErrorStatus(e), { error: e.message, code: e.code || 'EUPSTREAM' });

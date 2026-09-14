@@ -441,7 +441,32 @@ async function main() {
 
     // The debugger default port is untouched by any of this.
     check('the debugger default port is still 9222',
-      inspector.defaultDebuggerUrl().endsWith(':9222'), inspector.defaultDebuggerUrl());
+    inspector.defaultDebuggerUrl().endsWith(':9222'), inspector.defaultDebuggerUrl());
+
+    // The nav row's history surface: the two steps and the read that keeps
+    // the arrows honest. Validation is asserted exactly (a missing targetId
+    // is a 400, with no upstream call attempted); the upstream outcome is
+    // asserted on shape only, because whether the configured debugger
+    // answers — and whether it still knows the target — depends on the
+    // machine running the test. Either way the caller gets a typed body, so
+    // the UI can put a sentence on the status pill instead of showing an
+    // unhandled failure.
+    const histNoId = await request(port, 'POST', '/api/inspector/history', {});
+    check('POST inspector/history without targetId is 400', histNoId.status === 400, 'got ' + histNoId.status);
+    const fwdNoId = await request(port, 'POST', '/api/inspector/forward', {});
+    check('POST inspector/forward without targetId is 400', fwdNoId.status === 400, 'got ' + fwdNoId.status);
+    const backNoId = await request(port, 'POST', '/api/inspector/back', {});
+    check('POST inspector/back without targetId is 400', backNoId.status === 400, 'got ' + backNoId.status);
+    const typedFailure = (r) => (r.status === 404 || r.status === 502) && typeof r.body.code === 'string';
+    const hist = await request(port, 'POST', '/api/inspector/history', { targetId: 'no-such-target' });
+    check('POST inspector/history with an unknown target fails in a typed way',
+    typedFailure(hist), hist.status + ' ' + JSON.stringify(hist.body));
+    const fwd = await request(port, 'POST', '/api/inspector/forward', { targetId: 'no-such-target' });
+    check('POST inspector/forward with an unknown target fails in a typed way',
+    typedFailure(fwd), fwd.status + ' ' + JSON.stringify(fwd.body));
+    const back = await request(port, 'POST', '/api/inspector/back', { targetId: 'no-such-target' });
+    check('POST inspector/back with an unknown target fails in a typed way',
+    typedFailure(back), back.status + ' ' + JSON.stringify(back.body));
   } finally {
     await new Promise((resolve) => { server.close(resolve); destroyOpenSockets(); });
   }
