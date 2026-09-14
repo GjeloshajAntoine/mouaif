@@ -10,6 +10,14 @@
    See docs/features/inspector.md. */
 /* ---- Inspector: detail sheet -------------------------------------- */
 
+/* Every sheet that uses this overlay is mounted at the document root with
+  `sheetPortal` (frontend/src/components/inspector/sheetPortal.js), not inside
+  the panel that opens it. The Styles panel body is a scroller nested in the
+  page's own scroller, and a fixed overlay rendered inside it can be laid out
+  and clipped against that scroller instead of the viewport — which put a
+  sheet's header and Close button off screen with no way back to them. Keep the
+  classes on the sheet itself (they are plain class selectors, no ancestor
+  dependence) and keep the portal: see docs/features/inspector-touch-controls.md. */
 .inspector__overlay {
   position: fixed;
   inset: 0;

@@ -36,6 +36,7 @@ const kindsSource = strip(read('frontend/src/components/inspector/valueKinds.js'
 const controlsSource = strip(read('frontend/src/components/inspector/styleControls.js'));
 const surfaceSource = read('frontend/src/components/inspector/StyleControls.jsx');
 const sheetSource = read('frontend/src/components/inspector/AddPropertySheet.jsx');
+const portalSource = read('frontend/src/components/inspector/sheetPortal.js');
 const panelSource = read('frontend/src/components/inspector/StylesPanel.jsx');
 const css = readInspectorCss();
 
@@ -492,6 +493,49 @@ check('the card sheet draws a picture per card',
 /inspector__propcard--' \+ \(props\.kind/.test(sheetSource));
 check('the card sheet says what a card will do before the tap',
   /row\.action/.test(sheetSource) && /inspector__addprop-value/.test(sheetSource));
+
+// ---- a sheet must not be mounted inside a scroller ----------------------
+// The overlays used to render where the panel that owns them renders, so the
+// Add-property card sheet and the style editor were mounted inside
+// `.inspector__styles` — a scroller nested in the page's own scroller — and the
+// detail / confirm / profiles sheets inside the (also scrollable) panel stack.
+// When such an ancestor becomes a `position: fixed` box's containing block
+// (WebKit's behaviour for a fixed descendant of a scroller), `inset: 0`
+// resolves against the *scroller*, the overlay is clipped by that scroller's
+// overflow, and only the sheet's body scrolls — so a header and Close button
+// pushed above the scroller's top are unreachable and the backdrop only covers
+// the panel body. Reproduced on a 393 x 852 viewport by forcing the containing
+// block with `.inspector__styles { transform: translateZ(0) }`: the overlay
+// went from 960 px (viewport) to 497 px (the scroller's box, top -725), the
+// 826 px sheet's head landed at top -1053, and `elementFromPoint` at Close's
+// centre returned null. Portalling to `document.body` is the fix, and these
+// checks keep every sheet portalled rather than only the two that were
+// measured.
+check('the portal helper mounts at the document root, not in a panel',
+  /createPortal\(node, document\.body\)/.test(portalSource)
+  && /typeof document === 'undefined'/.test(portalSource));
+for (const file of [
+  'AddPropertySheet.jsx',
+  'ConfirmSheet.jsx',
+  'DetailSheet.jsx',
+  'InspectorProfilesSheet.jsx',
+  'StylesPanel.jsx'
+]) {
+  const src = read('frontend/src/components/inspector/' + file);
+  const overlays = (src.match(/class: 'inspector__overlay'/g) || []).length;
+  const portalled = (src.match(/sheetPortal\(h\('div', \{\s*class: 'inspector__overlay'/g) || []).length;
+  check(file + ' imports the portal helper', /import \{ sheetPortal \} from '\.\/sheetPortal\.js';/.test(src));
+  check(file + ' portals every overlay it renders',
+    overlays > 0 && portalled === overlays,
+    overlays + ' overlay(s), ' + portalled + ' portalled');
+}
+// A sheet is a child of the overlay, so the render shape `sheetPortal(h('div',
+// { class: 'inspector__overlay' …` is the only one that can be portalled at the
+// root. Assert the helper is not called anywhere else in a way that would wrap
+// an unrelated node.
+check('no sheet overlay is left rendering inline in the panel stack',
+  !/return h\('div', \{ class: 'inspector__overlay'/.test(sheetSource)
+  && !/return h\('div', \{ class: 'inspector__overlay'/.test(panelSource));
 
 // ---- CSS invariants ----------------------------------------------------
 

@@ -149,6 +149,30 @@ Effects   opacity · shadow · border style · border width
   so there was nothing left to tap to dismiss it. Each sheet now declares a `vh`
   fallback before its `dvh` value, the same pattern `base.css` uses on
   `html`/`body`, so the header and the way out survive an unsupported unit.
+- **Every inspector sheet is mounted at the document root.** The sheets used to
+  render where the panel that owns them renders, so this one — and the style
+  editor — were mounted *inside* `.inspector__styles`: a scroll container
+  (`overflow-y: auto`) nested in the page's own scroller. `position: fixed`
+  normally escapes an ancestor like that, but where the scrolling ancestor
+  becomes the overlay's containing block, `inset: 0` resolves against the
+  scroller's box and the overlay is clipped by that scroller's overflow, so the
+  sheet's own header, its **Close** button and the search field and suggested
+  chips at the top of its body were off screen and unreachable — only the body
+  scrolls, and the backdrop covered just the panel body, so the rest of the app
+  still looked live. Reproduced on a 393 × 852 viewport by forcing the
+  containing block the way a phone hands it to a fixed descendant of a scroller
+  (`.inspector__styles { transform: translateZ(0) }`): the overlay went from
+  960 px (the viewport) to 497 px (the scroller box, top `-725`), and the 826 px
+  sheet anchored to its bottom put the header at `top -1053` with
+  `elementFromPoint` at **Close**'s centre returning `null`. Each sheet now
+  returns `sheetPortal(node)`
+  (`frontend/src/components/inspector/sheetPortal.js`), which is
+  `createPortal(node, document.body)` with a no-DOM guard — the same root
+  mounting `DraftCraftAnnotator.jsx` uses for its modal — so the overlay, its
+  backdrop and its `dvh` ceilings are measured against the viewport again.
+  `scripts/test-inspector-touch-controls.js` asserts that every file rendering an
+  `.inspector__overlay` imports the helper and portals **every** overlay it
+  renders.
 - **Ranges and steps** live in `RANGE_SPECS` (per property, side longhands
   resolving to their shorthand), and `specForValue` handles the one property whose
   authored and resolved forms disagree: `line-height` is written as a multiplier

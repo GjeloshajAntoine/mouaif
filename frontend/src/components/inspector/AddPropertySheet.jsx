@@ -20,6 +20,7 @@
 import { h } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { LIBRARY_GROUPS, searchLibrary, libraryRow } from './styleControls.js';
+import { sheetPortal } from './sheetPortal.js';
 
 // PropertyPreview — the card's picture, drawn in CSS from the property's family
 // (see LIBRARY's `preview`). Deliberately abstract: a mini box, its padding or
@@ -69,7 +70,12 @@ if (body) body.scrollTop = 0;
 if (!props.open) return null;
 const rows = searchLibrary(query, group).map((entry) => libraryRow(entry, props.ctx || {}));
 const suggestions = (props.suggestions || []).map(([prop, desc, short]) => ({ prop, desc, short }));
-return h('div', { class: 'inspector__overlay', onClick: props.onClose },
+// Portalled to the document root: this sheet is mounted by the Styles panel,
+// i.e. inside `.inspector__styles` — a scroller nested in the page's own
+// scroller — where a fixed overlay is contained and clipped on a phone (see
+// sheetPortal.js). At the root the backdrop covers the whole viewport and the
+// head, Close and search field stay reachable.
+return sheetPortal(h('div', { class: 'inspector__overlay', onClick: props.onClose },
 h('div', {
 class: 'inspector__sheet inspector__sheet--addprop',
 role: 'dialog',
@@ -157,5 +163,5 @@ h('p', { class: 'inspector__addprop-note' },
 )
 )
 )
-);
+));
 }

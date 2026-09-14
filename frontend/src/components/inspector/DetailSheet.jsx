@@ -1,6 +1,7 @@
 // Inspector DetailSheet — bottom-sheet detail for a tapped row
 import { h, Fragment } from 'preact';
 import { fmtTime, fmtBytes, fmtDur, statusLabel } from './format.js';
+import { sheetPortal } from './sheetPortal.js';
 
 export function DetailSheet(props) {
   const item = props.item;
@@ -24,7 +25,7 @@ export function DetailSheet(props) {
     );
   }
 
-  return h('div', { class: 'inspector__overlay', onClick: props.onClose },
+  return sheetPortal(h('div', { class: 'inspector__overlay', onClick: props.onClose },
     h('div', { class: 'inspector__sheet', role: 'dialog', 'aria-label': 'Details', onClick: (e) => e.stopPropagation() },
       h('div', { class: 'inspector__sheet-head' },
         h('strong', { class: 'inspector__sheet-title' }, isNet ? (item.method + ' ' + statusLabel(item.status)) : (item.level || 'log').toUpperCase()),
@@ -69,5 +70,5 @@ export function DetailSheet(props) {
             )
       )
     )
-  );
+  ));
 }

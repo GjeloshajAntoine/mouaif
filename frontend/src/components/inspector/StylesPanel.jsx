@@ -46,6 +46,7 @@ import { ValueKindsView } from './ValueKindsView.jsx';
 import { StyleControls } from './StyleControls.jsx';
 import { AddPropertySheet } from './AddPropertySheet.jsx';
 import { createLiveShot } from './liveShot.js';
+import { sheetPortal } from './sheetPortal.js';
 import { valueShape } from './valueShapes.js';
 import { writtenNames } from './shorthand.js';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
@@ -569,7 +570,7 @@ setError((e && e.message) || 'Could not remove ' + propName);
 setBusy(false);
 }
 }
-return h('div', { class: 'inspector__overlay', onClick: busy ? undefined : dismiss },
+return sheetPortal(h('div', { class: 'inspector__overlay', onClick: busy ? undefined : dismiss },
 h('div', {
 class: 'inspector__sheet inspector__sheet--style',
 role: 'dialog',
@@ -777,7 +778,7 @@ onConfirm: () => { setConfirmDiscard(false); props.onCancel(); }
 })
 : null
 )
-);
+));
 }
 
 // MatchedRulesSection — the read-only "where does this value come from"

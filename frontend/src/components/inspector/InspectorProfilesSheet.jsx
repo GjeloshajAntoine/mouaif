@@ -44,6 +44,7 @@
 import { h, Fragment } from 'preact';
 import { useState } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
+import { sheetPortal } from './sheetPortal.js';
 
 // endpointLabel(row) — the port is the part that differs between two
 // profiles on the same host, so it is what the row shows; a non-default
@@ -96,7 +97,7 @@ export function InspectorProfilesSheet(props) {
     setAddingDir(false);
   }
 
-  return h('div', { class: 'inspector__overlay', onClick: props.onClose, role: 'presentation' },
+  return sheetPortal(h('div', { class: 'inspector__overlay', onClick: props.onClose, role: 'presentation' },
     h('div', {
       class: 'inspector__sheet inspector__sheet--profiles',
       role: 'dialog',
@@ -253,5 +254,5 @@ export function InspectorProfilesSheet(props) {
         )
       )
     )
-  );
+  ));
 }

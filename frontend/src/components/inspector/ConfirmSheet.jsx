@@ -41,6 +41,7 @@
 // `resolveClose(bool)` callback so the calling flow can be written
 // straight-line.
 import { h } from 'preact';
+import { sheetPortal } from './sheetPortal.js';
 export function ConfirmSheet(props) {
   if (!props.open) return null;
   const title = props.title || 'Confirm';
@@ -48,7 +49,7 @@ export function ConfirmSheet(props) {
   const confirmLabel = props.confirmLabel || 'Confirm';
   const cancelLabel = props.cancelLabel || 'Cancel';
   const busy = !!props.busy;
-  return h('div', {
+  return sheetPortal(h('div', {
     class: 'inspector__overlay',
     onClick: busy ? undefined : props.onCancel,
     role: 'presentation'
@@ -82,5 +83,5 @@ export function ConfirmSheet(props) {
         )
       )
     )
-  );
+  ));
 }
