@@ -172,8 +172,22 @@ function renderReadFileImage(body, r) {
 // Full-screen viewer for a tool-card image, plain DOM so it works from the
 // transcript's hot path. Closes on the button, on Escape, and on a tap
 // outside the picture; the close target is 44 px so it works one-handed.
+//
+// The overlay lives at the document root, OUTSIDE the chat view, so unmounting
+// the chat does not remove it — and nothing here is owned by Preact. Navigating
+// away with it open (browser Back, a route change) used to leave a fixed,
+// full-viewport cover on top of the next screen with its keydown listener still
+// armed: every later open stacked another overlay and another listener. The
+// teardown is therefore published as a cancelable window event the chat view
+// fires on unmount, so the viewer has no import dependency on the app router.
+const LIGHTBOX_TEARDOWN_EVENT = 'mouaif:teardown-lightbox';
 function openImageLightbox(src, alt) {
   if (!src) return;
+  // Only one lightbox at a time: a second open replaces the first (and drops
+  // the listener with it) instead of covering it.
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    try { window.dispatchEvent(new CustomEvent(LIGHTBOX_TEARDOWN_EVENT)); } catch { /* pre-CustomEvent host */ }
+  }
   const overlay = document.createElement('div');
   overlay.className = 'image-lightbox';
   overlay.setAttribute('role', 'dialog');
@@ -191,14 +205,29 @@ function openImageLightbox(src, alt) {
   const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
   function dismiss() {
     document.removeEventListener('keydown', onKey);
+    if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+      window.removeEventListener(LIGHTBOX_TEARDOWN_EVENT, dismiss);
+    }
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
   }
   overlay.addEventListener('click', (e) => { if (e.target === overlay) dismiss(); });
   close.addEventListener('click', dismiss);
   document.addEventListener('keydown', onKey);
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener(LIGHTBOX_TEARDOWN_EVENT, dismiss);
+  }
   overlay.appendChild(picture);
   overlay.appendChild(close);
   document.body.appendChild(overlay);
+}
+
+// teardownImageLightbox()
+//
+// Drop any open tool-card image viewer. Called by the chat view's unmount
+// cleanup so a viewer left open cannot outlive the transcript that opened it.
+export function teardownImageLightbox() {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  try { window.dispatchEvent(new CustomEvent(LIGHTBOX_TEARDOWN_EVENT)); } catch { /* nothing to tear down */ }
 }
 
 // renderListFilesToolResult(body, r)

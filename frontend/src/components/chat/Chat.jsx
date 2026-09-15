@@ -20,6 +20,7 @@ import { requestWebpreview, setStatus } from '../../api.js';
 import { formatCost } from '../../usage.js';
 import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview } from './webpreviewState.js';
 import { DraftCraftAnnotator } from '../inspector/DraftCraftAnnotator.jsx';
+import { teardownImageLightbox } from './toolRender.js';
 import { saveComposerDraftNow } from './composer.js';
 import { updateUsageSummary } from './usage.js';
 import { attributedCostAfter } from './costSummary.js';
@@ -302,6 +303,14 @@ setWebPreviewPayload(null);
 setWebPreviewOpen(false);
 setPreviewPromptOpen(false);
 }, [projectDir, chatId]);
+
+  useEffect(() => {
+    // The tool-card image viewer is mounted at the document root, outside this
+    // component, so nothing else removes it. Leaving the chat with it open
+    // would park a full-screen overlay over the next screen and leak its
+    // keydown listener; drop it with the view.
+    return () => { teardownImageLightbox(); };
+  }, []);
 
   const atMentionRef = useRef(null);
   const atArgBarRef = useRef(null);
