@@ -5,7 +5,6 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Authentication](features/authentication.md) — connect AI providers and protect app access, with CLI examples.
 - [App abilities](features/app-abilities.md) — projects, chats, coding tools, agents, MCP, and Inspector.
 - [Chat backward pagination](features/chat-backward-pagination.md) — long chats load the newest page immediately, then eagerly load all older history in the background.
-- [Chat loading state](features/chat-loading-state.md) — the placeholder a chat shows while its load batch is in flight, and the two sentences that replace it when it fails.
 - [Draft Craft](features/draft-craft.md) — add selected code or annotated Inspector images to any chat draft.
 - [Inspector Styles](features/inspector-styles.md) — tap to select an element and edit its CSS in the Inspector.
 - [Inspector touch controls](features/inspector-touch-controls.md) — change the selected element's CSS with chips, sliders, a box model and swatches.

@@ -349,52 +349,6 @@
 }
 .chat-view__empty-text { margin: 0; max-width: 36ch; line-height: 1.35; font-size: 0.72rem; }
 
-/* ---- Loading placeholder ------------------------------------------
-   Shown from the moment a chat load starts until the first rebuild
-   replaces it (see showTranscriptLoading in chat/transcript.js). It is a
-   row in the transcript flow, so it sits in the ordinary inner box:
-   full width, the shared measure, centred. The ring is drawn from
-   `currentColor` like the dictation spinner, so this file adds no new
-   colour, and it keeps a coloured top arc when the animation is off, so
-   the reduced-motion fallback still reads as "working". */
-.chat-view__loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 96px;
-  padding: 24px 16px;
-  color: var(--muted);
-  text-align: center;
-}
-.chat-view__loading-spinner {
-  display: block;
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: chat-view-loading-spin 0.8s linear infinite;
-}
-.chat-view__loading-text {
-  margin: 0;
-  font-size: 0.76rem;
-  line-height: 1.35;
-  max-width: 36ch;
-}
-/* The failure sentence is not in progress, so it loses the accent and
-   reads as a plain note under the header. */
-.chat-view__loading--error { color: var(--muted); }
-.chat-view__loading--error .chat-view__loading-text { color: var(--fg-soft); }
-
-@keyframes chat-view-loading-spin { to { transform: rotate(360deg); } }
-
-@media (prefers-reduced-motion: reduce) {
-  .chat-view__loading-spinner { animation: none; }
-}
-
 /* ---- Jump to bottom ---------------------------------------------- */
 
 .chat-view__jump {
