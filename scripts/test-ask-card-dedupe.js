@@ -243,6 +243,7 @@ function loadModule(file, exportsList, globals) {
     // would pass whatever transcript.js did with it.
     isExpectedToolFailure: realIsExpectedToolFailure(),
     formatToolArgs: () => 'args',
+    TOOL_ARGS_PREVIEW_CHARS: 220,
     buildToolCardHead: () => createElement('div'),
     isPersistedTurnError: () => false,
     publishWebPreview() {},

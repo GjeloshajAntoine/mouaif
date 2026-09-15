@@ -471,6 +471,21 @@ color: var(--fg-soft);
   max-height: none;
   min-height: 1.5rem;
 }
+/* The full call arguments above a result, shown when the head had to
+   ellipsize them. Muted relative to the output so the tool's result stays
+   the loudest thing in the expanded card; bound the height so one enormous
+   command cannot push the output off screen (it scrolls instead). */
+.tool-preview__args {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tool-preview__pre--args {
+  max-height: 33dvh;
+  overflow-y: auto;
+  color: var(--muted);
+  background: var(--surface-2);
+}
 
 /* Grouped list/search previews: one dir/file label per group, then
    compact rows — fewer nodes and no repeated path prefixes. */

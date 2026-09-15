@@ -16,7 +16,8 @@ import {
   formatResultSummary,
   isExpectedToolFailure,
   coerceToolResult,
-  formatReadableToolResult
+  formatReadableToolResult,
+  TOOL_ARGS_PREVIEW_CHARS
 } from './tools.js';
 import { renderToolResultBody } from './toolRender.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
@@ -463,10 +464,10 @@ function shortToolText(text, max) {
   return s.slice(0, Math.max(0, max - 1)).trimEnd() + '…';
 }
 
-// One-line argument budget shared by the main tool card head and the
-// nested subagent tool rows: the same call must not be truncated at two
-// different lengths depending on where it is read.
-const TOOL_ARGS_PREVIEW_CHARS = 220;
+// One-line argument budget: the tool card head and the nested subagent
+// rows truncate the same call at the same length. The value lives in
+// tools.js, next to formatToolArgsFull — the full form the expanded card
+// renders — so the two halves of the truncation rule cannot drift.
 
 // buildSubagentToolRow(name, id, argsText, argsObj)
 //
@@ -1056,7 +1057,7 @@ function renderSubagentToolPreview(parent, name, raw, args) {
   const preview = document.createElement('div');
   preview.className = 'tool-card__subagent-preview';
   parent.appendChild(preview);
-  if (toolName === 'shell') return renderShellInPreview(preview, r);
+  if (toolName === 'shell') return renderShellInPreview(preview, r, args);
   if (toolName === 'read_file') return renderReadFileInPreview(preview, r);
   if (toolName === 'list_files') return renderListFilesInPreview(preview, r);
   if (toolName === 'search_files') return renderSearchFilesInPreview(preview, r);
@@ -1077,7 +1078,7 @@ function renderSubagentToolPreview(parent, name, raw, args) {
 // can't import from toolRender.js directly because that module
 // exports renderToolResultBody, which assumes it owns the body
 // element. Here we want to fill an already-created host.
-function renderShellInPreview(host, r) { return renderShellInto(host, r); }
+function renderShellInPreview(host, r, args) { return renderShellInto(host, r, args); }
 function renderReadFileInPreview(host, r) { return renderReadFileInto(host, r); }
 function renderListFilesInPreview(host, r) { return renderListFilesInto(host, r); }
 function renderSearchFilesInPreview(host, r) { return renderSearchFilesInto(host, r); }
@@ -1091,7 +1092,7 @@ function renderPreviewInPreview(host, text, cls) {
   return pre;
 }
 
-function renderShellInto(host, r) { renderShellToolResult(host, r); }
+function renderShellInto(host, r, args) { renderShellToolResult(host, r, args); }
 function renderReadFileInto(host, r) { renderReadFileToolResult(host, r); }
 function renderListFilesInto(host, r) { renderListFilesToolResult(host, r); }
 function renderSearchFilesInto(host, r) { renderSearchFilesToolResult(host, r); }

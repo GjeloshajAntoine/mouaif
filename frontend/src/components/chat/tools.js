@@ -5,6 +5,14 @@
 // when summarised, and how a stringy tool result should be turned
 // into a structured object for the preview renderers.
 
+// TOOL_ARGS_PREVIEW_CHARS
+//
+// One-line argument budget: the tool card head and the nested subagent
+// rows truncate the same call at the same length. An expanded card shows
+// the full arguments instead (see formatToolArgsFull below), so both
+// halves of that rule read this one constant.
+export const TOOL_ARGS_PREVIEW_CHARS = 220;
+
 // normalizeToolName(name) -> string
 //
 // Strip the optional `functions.` prefix that some providers
@@ -165,6 +173,37 @@ if (name === 'restart_app') return args.reason || '';
 try { return JSON.stringify(args, null, 2); }
 
   catch { return String(args); }
+}
+
+// formatToolArgsFull(args, toolName) -> string
+//
+// The complete call arguments, as the expanded tool card renders them.
+// The head deliberately ellipsizes at TOOL_ARGS_PREVIEW_CHARS, which
+// hides most of a long `shell` command (a commit message heredoc, a
+// compound command), so the expanded card is the only place the user can
+// read what the model actually ran. It restores the line breaks the
+// head's one-line formatter collapses, and falls back to pretty JSON for
+// unknown shapes — both forms render inside a <pre>.
+export function formatToolArgsFull(args, toolName) {
+  if (args == null) return '';
+  if (typeof args === 'string') return args;
+  const name = normalizeToolName(toolName);
+  if (name === 'shell') return String(args.cmd || '');
+  if (name === 'read_file') {
+    const range = args.startLine != null || args.endLine != null
+      ? (' lines ' + (args.startLine || 1) + '-' + (args.endLine || 'end'))
+      : '';
+    return String(args.path || args.file || '') + range;
+  }
+  if (name === 'list_files') return String(args.pattern || 'all text and image files');
+  if (name === 'search_files') return [args.path, args.query].filter(Boolean).join(': ');
+  if (name === 'write_file' || name === 'edit_file') return String(args.path || args.file || '');
+  if (name === 'subagent') return String(args.task || '');
+  if (name === 'ask_user') return String(args.question || '');
+  if (name === 'task') return String(args.action || '') + (args.title ? ': ' + args.title : '');
+  if (name === 'webpreview') return String(args.url || '');
+  if (name === 'restart_app') return String(args.reason || '');
+  try { return JSON.stringify(args, null, 2); } catch { return String(args); }
 }
 
 // coerceToolResult(r, name) -> object | string

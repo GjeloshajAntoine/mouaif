@@ -174,6 +174,9 @@ function loadTranscript(globals) {
     normalizeToolName: (n) => n,
     isSubagentTool: () => true,
     formatToolArgs: (args) => (args && typeof args === 'object' ? JSON.stringify(args) : String(args == null ? '' : args)),
+    // The head's one-line budget. transcript.js imports it (from tools.js,
+    // which these harnesses do not load), so the stub must provide it.
+    TOOL_ARGS_PREVIEW_CHARS: 220,
     formatResultSummary: (name, r) => (r && r.lines != null ? r.lines + ' lines' : null),
     isExpectedToolFailure: () => false,
     cssEscape: (s) => String(s == null ? '' : s).replace(/["\\]/g, '\\$&'),

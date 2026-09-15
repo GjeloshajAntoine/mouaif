@@ -9,8 +9,10 @@ import {
   coerceToolResult,
   formatBytes,
   formatReadableToolResult,
+  formatToolArgsFull,
   normalizeToolName,
-  parsePlainFileToolResult
+  parsePlainFileToolResult,
+  TOOL_ARGS_PREVIEW_CHARS
 } from './tools.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
 
@@ -30,13 +32,49 @@ function renderToolMeta(parent, items) {
   parent.appendChild(meta);
 }
 
+// buildToolArgs(parent, args, name) -> Element | null
+//
+// Build the card's complete call arguments when the head could not show
+// them. The head is a single ellipsized line capped at
+// TOOL_ARGS_PREVIEW_CHARS, so a long `shell` command — a commit-message
+// heredoc, a compound `&&` command — is unreadable there and the
+// expanded card is the only place the user can read what ran. Returns
+// null when the head already showed everything, so a short call's
+// expanded card carries no duplicate of its own header.
+function buildToolArgs(args, name) {
+  if (args == null) return null;
+  const full = formatToolArgsFull(args, name);
+  if (!full) return null;
+  const head = full.length > TOOL_ARGS_PREVIEW_CHARS ? full.slice(0, TOOL_ARGS_PREVIEW_CHARS - 1).trimEnd() + '…' : full;
+  if (head === full) return null;
+  const wrap = document.createElement('div');
+  wrap.className = 'tool-preview__args';
+  const label = document.createElement('div');
+  label.className = 'tool-preview__meta';
+  label.textContent = name === 'shell' ? 'Command' : 'Arguments';
+  const pre = createPreviewPre(full, 'tool-preview__pre tool-preview__pre--args');
+  wrap.appendChild(label);
+  wrap.appendChild(pre);
+  return wrap;
+}
+
+// createPreviewPre(text, className)
+//
+// Build a <pre> without appending it, so a renderer can place it in the
+// exact order it wants (an expanded shell card puts the command above the
+// output).
+function createPreviewPre(text, className) {
+  const pre = document.createElement('pre');
+  pre.className = className || 'tool-preview__pre';
+  pre.textContent = text || '';
+  return pre;
+}
+
 // renderPreviewPre(parent, text, className)
 //
 // Render a <pre> with the right class. Shared by every preview.
 function renderPreviewPre(parent, text, className) {
-  const pre = document.createElement('pre');
-  pre.className = className || 'tool-preview__pre';
-  pre.textContent = text || '';
+  const pre = createPreviewPre(text, className);
   parent.appendChild(pre);
   return pre;
 }
@@ -381,11 +419,19 @@ function writeContentPreview(content) {
   return kept + '\n… preview truncated (' + lines.length + ' lines, ' + text.length + ' chars written)';
 }
 
-// renderShellToolResult(body, r)
-function renderShellToolResult(body, r) {
+// renderShellToolResult(body, r, args)
+//
+// `args` is the call's own arguments when the caller has them; the full
+// command is shown above the output when the head's one-line form had to
+// ellipsize it (see buildToolArgs).
+function renderShellToolResult(body, r, args) {
   body.classList.add('tool-preview', 'tool-preview--terminal');
   if (typeof r === 'string') r = coerceToolResult(r, 'shell');
+  // What the model ran, when the collapsed head had to ellipsize it. Built
+  // up front so both branches below can place it above the output.
+  const cmdArgs = buildToolArgs(args, 'shell');
   if (!r || r.error) {
+    if (cmdArgs) body.appendChild(cmdArgs);
     renderToolMeta(body, [r && r.identity, r && r.code, r && r.durationMs != null ? (r.durationMs + 'ms') : null]);
     return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__terminal');
   }
@@ -402,6 +448,7 @@ function renderShellToolResult(body, r) {
     if (r.stdout) out.push('── stderr ──');
     out.push(r.stderr);
   }
+  if (cmdArgs) body.appendChild(cmdArgs);
   renderPreviewPre(body, out.length ? out.join('\n\n') : '(exit ' + (r.exitCode ?? 0) + ', no output)', 'tool-preview__terminal');
 }
 
@@ -563,7 +610,7 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   // them on the toolResult when it has them; the card keeps them too, so a
   // render reached through another path still finds them.
   const args = (toolResult && toolResult.args) || (cardTool && cardTool._toolArgs) || null;
-  if (name === 'shell') return renderShellToolResult(body, r);
+  if (name === 'shell') return renderShellToolResult(body, r, args);
   if (name === 'read_file') return renderReadFileToolResult(body, r);
   if (name === 'list_files') return renderListFilesToolResult(body, r);
   if (name === 'search_files') return renderSearchFilesToolResult(body, r);
