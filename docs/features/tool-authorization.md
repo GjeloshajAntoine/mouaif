@@ -84,6 +84,8 @@ When the gate is `ask` and the model initiates a call, the chat pauses the strea
 
 The user can tap **Allow once**, **Allow for session**, **Always allow**, or **Deny**. **Always allow** persists `mode: "allow"` for that tool family in `.mouaif.json`, so it also applies to new chats and after restart. **Allow for session** remains in memory and is cleared when the chat is reopened.
 
+On a keyboard, `1`–`4` select the four decisions and `Escape` denies. Those shortcuts are scoped to non-text targets: the card hosts the per-run model picker, whose **Search models** field mounts inside it, and a keystroke aimed at that field must never resolve the prompt (previously typing `4` in the search box denied the call). Regression test: [scripts/test-auth-shortcut-scope.js](../../scripts/test-auth-shortcut-scope.js).
+
 For `subagent` calls the card also shows a **model picker**: the user may select which model executes the delegated run, for that one call only. See [Per-run model choice on subagent approval](./auth-model-picker.md).
 
 The composer `/shell` slash command uses the same gate. A `/shell` invocation in `ask` mode shows the same card; the only difference is the source line ("user-typed slash command" instead of "model-initiated call").

@@ -87,6 +87,17 @@ function buildToolsCard(state) {
     state.usedTools || new Set()
   );
 
+  // Seed each MCP group's busy flag from the hook's in-flight server id.
+  // A start can be running across an in-place rebuild (a toggle elsewhere in
+  // the tree, a catalog refresh), and the flag must survive that rebuild or
+  // the row repaints as idle mid-start and the control becomes tappable again.
+  const busyServerId = state._mcpStartBusyServerId;
+  if (busyServerId) {
+    for (const g of groups) {
+      if (g && g.serverId === busyServerId) g.reloadBusy = true;
+    }
+  }
+
   // Inject the shared Off/Ask/Allow authorization control on each known
   // group row, exactly like the project settings page. Every native tool
   // — subagent included — renders the same ToolAuthSeg component from
@@ -160,6 +171,19 @@ function buildToolsCard(state) {
   // rebuild seeds from it instead of collapsing every section again.
   const captureCollapsed = (set) => { state._toolTreeCollapsed = set; };
 
+  // Which MCP server start is in flight, read from `state` rather than kept
+  // only on the group object. `groups` is rebuilt from scratch by every
+  // toggle/refresh, so setting `group.reloadBusy` alone was discarded the
+  // moment the rebuild ran: the row repainted as idle, the spinner never
+  // appeared and the control stayed tappable, letting a second start fire for
+  // the same server. The hook records the in-flight server id (it already
+  // tracks `mcpStartBusy`), and the render below merges it into each group.
+  function markGroupBusy(serverId, busy) {
+    if (!serverId) return;
+    for (const g of groups) {
+      if (g && g.serverId === serverId) g.reloadBusy = busy;
+    }
+  }
   async function onReloadServer(group) {
     // Start the stopped-but-enabled MCP server via the lifecycle
     // endpoint, then refresh the tree so its live tools appear. The
@@ -169,11 +193,16 @@ function buildToolsCard(state) {
     // its control a no-op.
     const id = group && group.serverId;
     if (!id || !state._startMcpServer) return;
-    group.reloadBusy = true;
+    // Re-entrancy guard: ignore a second tap while this server is starting.
+    if (state._mcpStartBusyServerId === id) return;
+    markGroupBusy(id, true);
     if (state._updateToolsCard) state._updateToolsCard();
-    await state._startMcpServer(id);
-    group.reloadBusy = false;
-    if (state._updateToolsCard) state._updateToolsCard();
+    try {
+      await state._startMcpServer(id);
+    } finally {
+      markGroupBusy(id, false);
+      if (state._updateToolsCard) state._updateToolsCard();
+    }
   }
   render(h(ToolTree, {
     groups,
@@ -734,12 +763,26 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
       buttons.push(button);
     }
     // Keyboard shortcuts: 1-4 to select, Esc to deny.
-    function onKey(e) {
-      if (e.key === 'Escape' && buttons[3]) { buttons[3].click(); return; }
-      const b = buttons.find((b) => b.dataset.shortcut === e.key);
-      if (b) { b.click(); }
-    }
-    card.addEventListener('keydown', onKey);
+//
+// Scoped to the card's own controls. The card also hosts the per-run subagent
+// model picker, whose search box mounts in place inside it, so typing "1"-"4"
+// there used to click a decision button — "4" is Deny, which answered a live
+// authorization prompt with a keystroke meant for the model filter. Keys that
+// originate in a text field belong to that field.
+function isTypingTarget(el) {
+if (!el) return false;
+const tag = String(el.tagName || '').toLowerCase();
+return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable === true;
+}
+function onKey(e) {
+// A key that originated in a text field belongs to that field: neither the
+// digits nor Escape may resolve the prompt from under the user's cursor.
+if (isTypingTarget(e.target)) return;
+if (e.key === 'Escape' && buttons[3]) { buttons[3].click(); return; }
+const b = buttons.find((b) => b.dataset.shortcut === e.key);
+if (b) { b.click(); }
+}
+card.addEventListener('keydown', onKey);
     // Auto-focus the first button so keyboard shortcuts work immediately.
     if (buttons[0]) { setTimeout(() => buttons[0].focus(), 100); }
     card.appendChild(head); card.appendChild(detail);
