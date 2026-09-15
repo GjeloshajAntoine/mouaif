@@ -24,7 +24,7 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/
   .replace(/^import .*;$/gm, '').replace(/^export /gm, '');
 const context = vm.createContext({});
 vm.runInContext(source, context);
-const { filterComputed, matchesQuery, pageLimit, moreRows, emptyMessage, statusLine } = context;
+const { filterComputed, matchesQuery, pageLimit, moreRows, pageEnd, moreAfter, familyOf, emptyMessage, statusLine } = context;
 // `FILTERS`, `FILTER_IDS`, and `COMPUTED_PAGE` are top-level `const`s, which a
 // vm script binds lexically rather than exposing as context properties.
 const FILTERS = vm.runInContext('FILTERS', context);
@@ -125,6 +125,60 @@ assert.ok(arr(FILTERS).every((f) => typeof f.hint === 'string' && f.hint.length 
   assert.strictEqual(moreRows(0, 0), 0, 'an empty list reports nothing more');
   assert.strictEqual(pageLimit(400, 0) + moreRows(400, 0), 400, 'the page and the remainder always add up to the total');
 
+  // --- the page cut respects a property family -------------------------
+  //
+  // The bug this exists for: the list is alphabetical, and `background-image`
+  // sorts immediately after `background-color`. On a real element that put it at
+  // index 60 — the first row of page two — so the gradient the element rendered
+  // was invisible on the first page while `background-attachment`,
+  // `background-blend-mode` and `background-clip` all showed, and the list read
+  // as though it had no `background-image` at all.
+  assert.strictEqual(familyOf('background-image'), 'background', 'a dashed name pages as its first segment');
+  assert.strictEqual(familyOf('background'), 'background', 'an undashed name is its own family');
+  assert.strictEqual(familyOf('color'), 'color', 'a family is not a prefix of another name: color is not column');
+  assert.strictEqual(familyOf('column-gap'), 'column', 'each dashed name is judged on its own first segment');
+  assert.strictEqual(familyOf('  Background-Image  '), 'background', 'family matching is case- and space-insensitive');
+  assert.strictEqual(familyOf(''), '', 'a nameless row has no family');
+
+  // A list whose 60th row (`background-color`) starts a family that continues
+  // past the nominal cut. `pageEnd` extends to finish it.
+  const runAt = (n, before) => []
+    .concat(Array.from({ length: before }, (_, i) => ({ prop: 'aaa' + i })))
+    .concat(Array.from({ length: n }, (_, i) => ({ prop: 'background-' + i })));
+  const cutList = runAt(6, COMPUTED_PAGE - 1);
+  assert.strictEqual(pageLimit(cutList.length, 0), COMPUTED_PAGE,
+    'the nominal page is still one page of rows');
+  assert.strictEqual(pageEnd(cutList, 0), COMPUTED_PAGE + 5,
+    'the cut moves past the nominal page to finish the family it landed inside');
+  assert.strictEqual(cutList[pageEnd(cutList, 0) - 1].prop, 'background-5',
+    'the last rendered row is the last row of that family');
+  assert.strictEqual(moreAfter(cutList, 0), 0,
+    'nothing is left over when the extension consumed the rest of the list');
+  assert.ok(moreAfter(cutList, 0) === cutList.length - pageEnd(cutList, 0),
+    'the remainder is measured from the cut that was actually taken, not the nominal page');
+
+  // A cut that already lands on a family boundary is left exactly where it was:
+  // the extension must not make every page a different length.
+  const cleanCut = Array.from({ length: 200 }, (_, i) => ({ prop: 'p' + String(i).padStart(3, '0') }));
+  assert.strictEqual(pageEnd(cleanCut, 0), COMPUTED_PAGE,
+    'a cut already between families is not moved');
+  assert.strictEqual(moreAfter(cleanCut, 0), 200 - COMPUTED_PAGE,
+    'a list with no family spanning the cut reports the plain remainder');
+
+  // A pathologically long family is bounded, because a page that can grow
+  // without limit is not a page.
+  const hugeRun = runAt(400, 0);
+  assert.ok(pageEnd(hugeRun, 0) <= COMPUTED_PAGE + 24,
+    'the extension is capped, so one enormous family cannot drag the page open');
+
+  // Edge cases: a short list and an empty one are never padded past their end.
+  assert.strictEqual(pageEnd(cleanCut.slice(0, 10), 0), 10, 'a list shorter than a page renders whole');
+  assert.strictEqual(pageEnd([], 0), 0, 'an empty list renders nothing');
+  assert.strictEqual(pageEnd(null, 0), 0, 'a missing list renders nothing');
+  assert.strictEqual(moreAfter([], 0), 0, 'an empty list has nothing more');
+  assert.strictEqual(moreAfter(null, 0), 0, 'a missing list has nothing more');
+  assert.strictEqual(pageEnd(cleanCut, 5), 200, 'the extension never pushes past the end of the list');
+
   // --- empty-state copy -----------------------------------------------
   assert.match(emptyMessage({ filter: 'changed' }), /Nothing changed yet/,
     'the changed filter explains itself rather than looking broken');
@@ -166,9 +220,9 @@ assert.ok(arr(FILTERS).every((f) => typeof f.hint === 'string' && f.hint.length 
   'the status line is rendered from the live filter, count and query');
   assert.ok(/filterComputed\(orderedComputed, \{/.test(panel),
     'the computed list is filtered after it is ordered, so changed rows still lead');
-  assert.ok(/pageLimit\(computedVisible\.length, computedSteps\)/.test(panel),
-    'the render cap is applied to the filtered list');
-  assert.ok(/moreRows\(computedVisible\.length, computedSteps\)/.test(panel),
+  assert.ok(/pageEnd\(computedVisible, computedSteps\)/.test(panel),
+    'the render cap is applied to the filtered list, cut on a family boundary');
+  assert.ok(/moreAfter\(computedVisible, computedSteps\)/.test(panel),
     'the "show more" label is derived from the remaining rows, not the total');
   assert.ok(/setComputedSteps\(computedSteps \+ 1\)/.test(panel),
     'the control pages forward one step at a time rather than revealing everything');

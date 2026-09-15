@@ -90,11 +90,62 @@ export function pageLimit(matched, steps) {
   const n = Math.max(0, Math.floor(Number(steps) || 0));
   return Math.min(matched, COMPUTED_PAGE * (n + 1));
 }
+
+// BOUNDARY_RUN — how far past a page end a family is allowed to pull the cut.
+// The extension exists to stop a page ending mid-family, and a family is a
+// handful of rows (`background` has nine); the cap is what keeps a page from
+// being dragged open by a pathological run, which is the property paging
+// actually promises.
+const BOUNDARY_RUN = 24;
+
+// familyOf — the property family a row is paged against: the name up to the
+// first hyphen, so `background-image`, `background-color` and `background-size`
+// are one family while `color` and `column-gap` are their own.
+//
+// Why paging cares: the computed list is alphabetical, and a page cut lands
+// wherever 60 rows happen to end. `background-image` sorts directly after
+// `background-color`, which put it at index 60 — the *first row of page two* —
+// so a gradient the element renders was invisible on the first page while
+// `background-attachment`, `-blend-mode` and `-clip` all showed. The list
+// looked like it had no `background-image` at all, and the fix is not a bigger
+// page but a cut that respects the family the cut fell inside.
+export function familyOf(prop) {
+  const p = String(prop == null ? '' : prop).trim().toLowerCase();
+  if (!p) return '';
+  const at = p.indexOf('-');
+  return at > 0 ? p.slice(0, at) : p;
+}
+
+// pageEnd — how many rows to actually render: the nominal page, extended so the
+// page does not end in the middle of one property family. `rows` is the
+// *filtered* list in render order (see filterComputed), because that is the list
+// the cut is taken from.
+export function pageEnd(rows, steps) {
+  const list = Array.isArray(rows) ? rows : [];
+  const limit = pageLimit(list.length, steps);
+  if (limit <= 0 || limit >= list.length) return limit;
+  const family = familyOf(list[limit - 1] && list[limit - 1].prop);
+  if (!family) return limit;
+  const cap = Math.min(list.length, limit + BOUNDARY_RUN);
+  let end = limit;
+  while (end < cap && familyOf(list[end] && list[end].prop) === family) end++;
+  return end;
+}
+
 // moreRows — how many rows one more step would reveal, or 0 when the list is
 // fully shown. Used for the "Show N more" label so it never promises more
 // rows than exist on the last step.
 export function moreRows(matched, steps) {
   return Math.max(0, matched - pageLimit(matched, steps));
+}
+
+// moreAfter — `moreRows`, but measured from the cut `pageEnd` actually took, so
+// the "Show N more" label stays honest when the page was extended past its
+// nominal end to finish a family. A button that offers 60 more while 61 are
+// hidden is the same bug in a smaller place.
+export function moreAfter(rows, steps) {
+  const list = Array.isArray(rows) ? rows : [];
+  return Math.max(0, list.length - pageEnd(list, steps));
 }
 
 // emptyMessage — why the list is empty, in the user's terms. The three

@@ -35,7 +35,7 @@ import { h } from 'preact';
 import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
 import { applyPinHeight, watchPin } from './pinnedStack.js';
-import { FILTERS, COMPUTED_PAGE, filterComputed, pageLimit, moreRows, emptyMessage, statusLine } from './computedFilter.js';
+import { FILTERS, filterComputed, pageEnd, moreAfter, emptyMessage, statusLine } from './computedFilter.js';
 import { alternatives, unitOptions, classify, seedValue } from './valueKinds.js';
 import { buildValueIndex, scaleFor, tokensFor, scaleNote, valuesFor } from './valueIndex.js';
 import { stepFor, snapValue, stepValue as stepValuePure } from './snapping.js';
@@ -1813,9 +1813,9 @@ filter: computedFilter,
 setNames,
 changedNames
 });
-const computedPageLimit = pageLimit(computedVisible.length, computedSteps);
+const computedPageLimit = pageEnd(computedVisible, computedSteps);
 const computedPage = computedVisible.slice(0, computedPageLimit);
-const computedMore = moreRows(computedVisible.length, computedSteps);
+const computedMore = moreAfter(computedVisible, computedSteps);
 computedMoreRef.current = computedMore;
 return h('div', {
 class: 'inspector__styles',
@@ -2285,14 +2285,14 @@ class: 'inspector__computed-more',
 type: 'button',
 key: 'more',
 onClick: () => setComputedSteps(computedSteps + 1)
-}, 'Show ' + Math.min(COMPUTED_PAGE, computedMore) + ' more of ' + computedVisible.length)
+}, 'Show ' + computedMore + ' more of ' + computedVisible.length)
 : (computedSteps > 0
 ? h('button', {
 class: 'inspector__computed-more',
 type: 'button',
 key: 'less',
 onClick: () => setComputedSteps(0)
-}, 'Collapse to the first ' + Math.min(COMPUTED_PAGE, computedVisible.length))
+}, 'Collapse to the first ' + computedPageLimit)
 : null)
 ]
 : h('p', { class: 'inspector__styles-none', role: 'status' },
