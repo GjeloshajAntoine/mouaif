@@ -873,20 +873,18 @@ function onPickModel(next) {
       // A provider that could not answer is reported per-provider: one
       // unreachable or badly-keyed connection must not look like "no models".
       // The provider's own message is kept — it is the only thing that says
-      // *why* — but it is attributed to the connection by name and followed by
-      // the action that fixes it: "openai-compatible: upstream 401 Unauthorized"
-      // is a log line, not an instruction.
+      // *why* — and it is attributed to the connection by name, so
+      // "OpenAI compatible — upstream 401 Unauthorized" names both the cause
+      // and the connection to fix. No follow-up instruction line: the picker
+      // and the Refresh button are right there.
       liveFailures.length
-        ? h('div', { class: 'dictation__failures' },
-          liveFailures.map((f) => h('p', {
-            key: f.provider,
-            class: 'hint hint--compact dictation__error'
-          }, 'No models from ' + providerName(f.provider) + ' — ' + f.error)),
-          h('p', { class: 'hint hint--compact dictation__failure-action' },
-            h('a', { href: '#/settings/providers' }, 'Check the connection in Settings → Providers'),
-            ', then tap Refresh.')
-        )
-        : null,
+      ? h('div', { class: 'dictation__failures' },
+      liveFailures.map((f) => h('p', {
+        key: f.provider,
+        class: 'hint hint--compact dictation__error'
+      }, 'No models from ' + providerName(f.provider) + ' — ' + f.error))
+      )
+      : null,
       !catalogBusy && !liveBusy && !models.length
         ? h('p', { class: 'hint hint--compact' }, providers.length
           ? 'Your providers returned no usable models. Check the connection in Settings → Providers, then tap Refresh.'

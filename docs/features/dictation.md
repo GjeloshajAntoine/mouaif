@@ -540,11 +540,12 @@ previous one, so the last thing the user changed is what survives.
   for work that was merely not reported.
 - **A provider that could not list its models is named and explained.** The
   connection is called what Settings calls it (*OpenAI compatible*, not
-  `openai-compatible`), the provider's own message is kept because it is the
-  only thing that says *why* (`upstream 401 Unauthorized`), and the line is
-  followed by the link that fixes it: **Check the connection in Settings →
-  Providers**. Those rows are missing from the picker; the providers that did
-  answer still are not.
+  `openai-compatible`) and the provider's own message is kept because it is the
+  only thing that says *why* (`upstream 401 Unauthorized`), so one red line
+  names both the cause and the connection to fix. There is no follow-up
+  instruction line: the picker and the Refresh button sit directly above it.
+  Those rows are missing from the picker; the providers that did answer still
+  are not.
 - **Dictation is not a security boundary or a background service.** It records
   only while the button says it is recording, and it stops the microphone on
   unmount.
