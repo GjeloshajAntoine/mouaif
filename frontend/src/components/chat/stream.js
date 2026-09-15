@@ -59,8 +59,19 @@ export function retryFailedTurn(state, refs, payload) {
 // started (network error or a non-409 HTTP rejection). Honors the
 // per-chat `autoRetry` setting and never fires for a retry itself, so a
 // persistently failing message can't loop forever.
+//
+// `payload.retry` is what marks a retry: the failure sites thread their own
+// `retry` / `manualRetry` flags into the payload they hand to the error card,
+// so a turn that was already a retry arrives here marked and stops. Only a
+// user tap on the error card's Retry button bypasses the guard (it sets
+// `manualRetry`), which is the "retry as many times as you like" half of the
+// documented behaviour. Without the marker the guard below never matched and
+// every failing attempt re-armed the retry, so a server that was simply down
+// looped until the browser died.
 function maybeAutoRetry(state, refs, payload) {
-  if (!state.autoRetry || (payload && payload.retry)) return false;
+  if (!state.autoRetry) return false;
+  if (payload && payload.manualRetry) return false;
+  if (payload && payload.retry) return false;
   setChatStatus(refs, 'auto-retrying…', 'busy');
   send(state, refs, Object.assign({}, payload, { retry: true, manualRetry: false })).catch(() => {});
   return true;
@@ -196,7 +207,14 @@ export async function runAgentCommand(agentName, task, state, refs) {
   refs.promptInput.current.value = '';
   refs._autoresize();
   const args = { task, agent: agentName };
-  appendToolCallCard({ id: 'pending', name: 'subagent', args }, refs);
+  // The server mints this call's id and returns it (`direct_…`). The card is
+  // opened before we know it, so it is re-keyed below once the answer lands:
+  // a placeholder id would never match the tool result, and the result would
+  // then render as a SECOND card while this one sat on "Subagent is
+  // working…" forever. On the error path there is no id to adopt, so the card
+  // is retired instead of left hanging (the error card the same path renders
+  // is the user-facing report).
+  const pendingCard = appendToolCallCard({ id: 'pending', name: 'subagent', args }, refs);
   setChatStatus(refs, 'running agent ' + agentName + '…', 'busy');
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
@@ -208,6 +226,9 @@ export async function runAgentCommand(agentName, task, state, refs) {
       body: JSON.stringify({ projectDir, chatId, task, agent: agentName })
     });
   } catch (err) {
+    // Nothing will ever fold into the placeholder card: retire it so the
+    // transcript is not left with a spinner that can never resolve.
+    if (pendingCard && pendingCard.isConnected) pendingCard.remove();
     appendToolResultCard({ id: null, name: 'subagent', args, ok: false, result: { error: String(err) } }, refs);
     setChatStatus(refs, 'agent error', 'error');
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
@@ -215,6 +236,15 @@ export async function runAgentCommand(agentName, task, state, refs) {
     return;
   }
   const body = r.body || {};
+  // Re-key the placeholder to the id the server actually used, BEFORE the
+  // result is appended: both sides then agree on `data-tool-id` and the
+  // result updates this card in place (head rebuilt with the ok/error pill)
+  // instead of adding a duplicate.
+  const serverId = body.id || (body.toolCall && body.toolCall.id) || null;
+  if (pendingCard && pendingCard.isConnected) {
+    if (serverId) pendingCard.dataset.toolId = String(serverId);
+    else if (!body.ok) pendingCard.remove(); // failed with no id: don't strand it
+  }
   appendToolResultCard({ id: body.id || null, name: 'subagent', ok: !!body.ok, result: body.result || body }, refs);
   // Fold the persisted agent result into the live transcript immediately.
   // Its usage/cost is included so the header Total updates before reload.
@@ -921,7 +951,9 @@ body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachmen
       return;
     }
 const failMsg = 'Network error — could not reach the server. Your message was sent to the transcript but the response never started.';
-const payload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments };
+  // The retry flags ride along so the error card's Retry button keeps them
+  // AND so maybeAutoRetry can see that this turn was already a retry.
+  const payload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments, retry, manualRetry };
     setChatStatus(refs, 'network error', 'error');
     appendErrorCard(failMsg + ' Try again.', refs, state, { onRetry: () => retryFailedTurn(state, refs, payload) });
     state.streaming = false;
@@ -969,7 +1001,7 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       return;
     }
     setChatStatus(refs, errMsg, 'error');
-    const payload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments };
+    const payload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments, retry, manualRetry };
     appendErrorCard(errMsg, refs, state, { onRetry: () => retryFailedTurn(state, refs, payload) });
     state.streaming = false;
     if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
@@ -1251,7 +1283,7 @@ roundCompletionTokens = 0;
 // pill: the user asked for errors to be visible in the chat,
 // and a status line is overwritten by the next update while
 // the bubble stays where the conversation happened.
-const failPayload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments };
+const failPayload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments, retry, manualRetry };
 appendErrorCard((data.message || 'Request failed') + (data.detail ? '\n' + String(data.detail).slice(0, 500) : ''), refs, state, {
 onRetry: () => retryFailedTurn(state, refs, failPayload)
 });
