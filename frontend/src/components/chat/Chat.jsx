@@ -40,7 +40,7 @@ export function ChatView(props) {
   const {
   refs,
   imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp,
-  mcpStartBusy, fileOrb,
+  mcpStartBusy, fileOrb, composerTools,
 chatSwitcherOpen, chatSwitcherList, chatSwitcherLoading, customActions,
 setFileEditorOpen,
     setImageAttachments,
@@ -543,13 +543,25 @@ onRefreshCustomActions: refreshCustomActions
       h('div', { class: 'chat-view__composer' },
         h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),
         h('div', { ref: atArgBarRef, class: 'at-mention__arg-bar', hidden: true }),
-        h('button', { class: 'chat-view__iconbtn chat-view__image-btn', type: 'button', onClick: () => refs.imageInput.current && refs.imageInput.current.click(), 'aria-label': 'Add image', title: 'Add image' },
-          h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-            h('path', { d: 'M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 13.5L9.5 13l3 3 2-2.5 4.5 4.5V6H5v11.5ZM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z', fill: 'currentColor' })
-          )
-        ),
+        composerTools.image
+        ? h('button', { class: 'chat-view__iconbtn chat-view__image-btn', type: 'button', onClick: () => refs.imageInput.current && refs.imageInput.current.click(), 'aria-label': 'Add image', title: 'Add image' },
+        h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+          h('path', { d: 'M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 13.5L9.5 13l3 3 2-2.5 4.5 4.5V6H5v11.5ZM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z', fill: 'currentColor' })
+        )
+        )
+        : null,
+        // The file input is mounted either way. It is the path a pasted image
+        // (and the annotation editor's own capture) travels, so hiding the
+        // button removes a control, never a capability.
         h('input', { ref: refs.imageInput, class: 'chat-view__image-input', type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, onChange: onImagePickerChange }),
-        h(MicButton, { projectDir, chatId, promptRef: refs.promptInput, onTranscript, onStatus: onMicStatus, onProgress: onMicProgress }),
+        // Both of these are optional composer tools (Settings → Chat defaults,
+        // see docs/features/composer-tool-buttons.md). The mic is off for a
+        // user who never dictates, the image button for one who never attaches
+        // a picture — and each is *hidden*, not disabled: nothing else about
+        // the composer changes.
+        composerTools.dictation
+        ? h(MicButton, { projectDir, chatId, promptRef: refs.promptInput, onTranscript, onStatus: onMicStatus, onProgress: onMicProgress })
+        : null,
         h('textarea', { ref: refs.promptInput, class: 'input chat-view__textarea', id: 'chatComposer', rows: 1, placeholder: imageAttachments.length ? 'Add a caption or send' : 'Type a message', 'aria-label': 'Message', onKeydown: onComposerKey, onPaste: onComposerPaste, onInput: onComposerInput }),
         runningVisible
           ? h('button', { ref: refs.stopBtn, class: 'btn btn--primary chat-view__send', type: 'button', onClick: onCancelRunning, 'aria-label': 'Stop' },

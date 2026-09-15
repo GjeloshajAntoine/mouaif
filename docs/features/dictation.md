@@ -66,6 +66,12 @@ dictation model.`, marked as an error and with nothing recorded. Everything the
 button does or fails to do (recording, transcribing, a provider rejection) is
 written there too: the button's own `title` is a hover affordance, and a phone
 has none.
+The whole button can be kept out of the composer row with **Settings → App
+defaults → Chat defaults → Dictation microphone in the composer**. That switch
+(`dictationButton`, on by default) only decides whether the row draws the
+button: the dictation page, the remembered model and `POST /api/ai/transcribe`
+are untouched, so nothing is disabled. See
+[Composer tool buttons](./composer-tool-buttons.md).
 
 #### How a live take is put together
 
@@ -774,6 +780,8 @@ by a stubbed provider.
 - [Model picker](model-picker.md) — where the models come from.
 - [App and project settings](app-and-project-settings.md) — the `dictation`
   app-level key and the project `models` array.
+- [Composer tool buttons](composer-tool-buttons.md) — hiding the composer
+  microphone with the `dictationButton` switch.
 - [Routing](routing.md) — the `#/settings/dictation` route (and its `#/dictation` alias).
 - Source: [`src/transcribe.js`](../../src/transcribe.js),
   [`src/server-handlers-transcribe.js`](../../src/server-handlers-transcribe.js),

@@ -48,6 +48,14 @@
 //      and the chat's line says `Transcribing…` — before this the take went
 //      idle-looking with its stale word count exactly while the user waited on
 //      it — and both are gone once the take settles.
+//  11. the composer microphone can be hidden app-wide (Settings → Chat
+//      defaults → Dictation microphone in the composer, `dictationButton`),
+//      and hiding it is not disabling it. The second page at the end of this
+//      file renders the same ChatView with both optional composer tools turned
+//      off and asserts the row is otherwise intact: no mic, no image button,
+//      and still a text area, a send button, a status line and — because a
+//      pasted image travels through it — the image file input. Source-level
+//      contracts for all of it live in scripts/test-composer-tools.mjs.
 //
 // All bundles stay in memory; only a fresh about:blank target is touched. Fetch
 // is fully stubbed (unknown requests fail), with CDP blocking real network as a
@@ -161,6 +169,10 @@ function installFixture(data) {
   // offered) without a second page load.
   test.dictationChoice = { modelId: 'gemini-2.5-flash', providerId: 'gemini' };
   test.catalogModels = dictationCatalog.models;
+  // The two optional composer tool buttons. Both default to shown, which is the
+  // state every check above runs in; the composer-tools page at the end of this
+  // file turns both off to watch what the row does without them.
+  test.composerTools = { dictationButton: true, imageButton: true };
   // Puts the two halves back where they started, for a check that runs after
   // the "nothing configured" state has been installed.
   test.restoreDictation = () => {
@@ -216,9 +228,13 @@ function installFixture(data) {
         app: {
         providers,
         enterForNewline: true,
-            // Remembered on the dictation page, honoured here. Switchable, so the
-      // "nothing configured" state can be reached without a reload.
-        dictation: test.dictationChoice
+        // Remembered on the dictation page, honoured here. Switchable, so the
+        // "nothing configured" state can be reached without a reload.
+        dictation: test.dictationChoice,
+        // Which optional composer tools the row draws. `false` hides one;
+        // see docs/features/composer-tool-buttons.md.
+        dictationButton: test.composerTools.dictationButton,
+        imageButton: test.composerTools.imageButton
         }
         },
         '/api/ai/models': { models: [{ provider: 'gemini', id: 'gemini-2.5-flash' }] },
@@ -676,6 +692,67 @@ async function main() {
     'the fast take is closed');
     await evaluate('dictationTest.holdMs = 0;');
     });
+
+  // ---- The composer with both optional tools hidden ----------------------
+  //
+  // Settings → Chat defaults can hide the dictation microphone and the image
+  // button (`dictationButton` / `imageButton`, docs/features/composer-tool-buttons.md).
+  // Hiding is not disabling, and it is not "the row minus two controls": the
+  // text area, the send button and the status line have to be untouched, and
+  // the image *file input* has to still be mounted, because a pasted image
+  // travels through it. The other page in this file runs with both shown, so
+  // the pair of pages is the whole check — an unconditional `<input>` or a
+  // button that is merely styled away would pass one and fail the other.
+  console.log('Composer with the optional buttons hidden (real ChatView, ' + width + 'px)');
+  await withPage(bundleText, width, async ({ evaluate, waitFor }) => {
+    await waitFor('dictationTest.composerTools.dictationButton === true && dictationTest.composerTools.imageButton === true',
+      'the fixture starts with both optional tools shown');
+    const shown = await evaluate(`({
+      mic: !!document.querySelector('.chat-view__mic-btn'),
+      imageButton: !!document.querySelector('.chat-view__image-btn'),
+      imageInput: !!document.querySelector('.chat-view__image-input')
+    })`);
+    check('both optional tools are drawn before the user hides them',
+      shown.mic && shown.imageButton);
+
+    // Flip both preferences and reload the route, which is what the next visit
+    // to a chat does (ChatView seeds them from /api/settings when its data
+    // loads).
+    await evaluate(`dictationTest.composerTools.dictationButton = false;
+      dictationTest.composerTools.imageButton = false;
+      location.hash = '#/projects';`);
+    await waitFor(`!document.querySelector('.chat-view__mic-btn') || !document.querySelector('#chatComposer')`,
+      'the chat view is left for the project list');
+    await evaluate(`location.hash = '#/chat/${CHAT_ID}?projectDir=' + encodeURIComponent(${JSON.stringify(PROJECT_DIR)});`);
+    await waitFor(`document.querySelector('#chatComposer') && dictationTest.requests.filter(r => r.url === '/api/settings').length >= 2`,
+      'the chat is opened again and re-reads the app settings');
+    const hidden = await evaluate(`({
+      mic: !!document.querySelector('.chat-view__mic-btn'),
+      imageButton: !!document.querySelector('.chat-view__image-btn'),
+      imageInput: !!document.querySelector('.chat-view__image-input'),
+      imageInputType: (document.querySelector('.chat-view__image-input') || {}).type,
+      composer: !!document.querySelector('#chatComposer'),
+      send: !!document.querySelector('.chat-view__send'),
+      status: !!document.querySelector('.chat-view__status'),
+      row: !!document.querySelector('.chat-view__composer'),
+      dictationPage: location.hash
+    })`);
+    check('a hidden dictation button leaves no microphone in the composer', hidden.mic === false);
+    check('and a hidden image button leaves no image button', hidden.imageButton === false);
+    check('the message box survives both', hidden.composer);
+    check('so does the send button', hidden.send);
+    check('and the status line', hidden.status);
+    check('the composer row itself is still there', hidden.row);
+    check('the image file input stays mounted, so a pasted image still attaches',
+      hidden.imageInput && hidden.imageInputType === 'file');
+    // Nothing is disabled — the routes are not gated on a display preference.
+    check('hiding a button disables nothing: the transcription endpoint is still live',
+      await evaluate(`(async () => (await fetch('/api/ai/transcribe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId: 'gemini-2.5-flash', providerId: 'gemini', data: 'AA==' })
+      })).status)()`) === 200);
+  });
+
   console.log('\nDictation composer regressions passed (' + checks + ' checks). No production files or live app data touched.');
 }
 

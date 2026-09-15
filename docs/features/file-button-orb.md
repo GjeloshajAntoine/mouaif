@@ -186,5 +186,6 @@ It is wired into `npm run lint` and `npm test`.
 ### Related
 
 - [File toolbar](file-toolbar.md) — what the button opens (Files / Preview / Git / Cli) and the `+N` / `−N` counts.
+- [Composer tool buttons](composer-tool-buttons.md) — the neighbouring display preference: hiding the composer's dictation microphone or image button.
 - [Chat UI](chat-ui.md) — the composer row the button sits in.
 - [App and project settings](app-and-project-settings.md) — app-level vs project-level settings.

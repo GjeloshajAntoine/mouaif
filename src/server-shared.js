@@ -165,6 +165,13 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
 'enterForNewline', // composer keyboard default (Enter newline vs send)
 'autoRetry',      // auto-retry failed turns before the stream starts
 'fileOrbButton',  // composer file button renders as the animated glass orb
+// Which optional composer tools are drawn. Same class as the orb: app-level
+// display preferences. A key that is stored but not allowlisted is dropped
+// from every /api/settings response, which looks exactly like a toggle that
+// will not save — and here it would be a button the user hides and the
+// composer keeps showing. See docs/features/composer-tool-buttons.md.
+'dictationButton', // the composer microphone button (`false` hides it)
+'imageButton',    // the composer image-attachment button (`false` hides it)
 // The remembered dictation choice: `{ modelId, providerId }`, written by the
 // dictation page and read by every surface that dictates — the page's picker
 // and the composer microphone. No secret, but it must be allowlisted here:

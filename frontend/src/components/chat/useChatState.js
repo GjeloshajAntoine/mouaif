@@ -37,6 +37,7 @@ import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.js';
 import { fileOrbFromApp, FILE_ORB_DEFAULT } from './fileOrb.js';
+import { composerToolsFromApp, COMPOSER_TOOLS_DEFAULT } from './composerTools.js';
 import { createPager, recordInitialPage, shouldLoadOlder } from './pagination.js';
 import { costSnapshot } from './costSummary.js';
 
@@ -205,6 +206,12 @@ const autoRetryRef = useRef(true);
 // Read by the FileToolbar on render, so it lives in render state
 // (the initial load below seeds it from the app settings).
 const [fileOrb, setFileOrb] = useState(FILE_ORB_DEFAULT);
+// Which optional tools the composer draws (app-level Chat defaults). Render
+// state like `fileOrb`: the composer row's JSX is what reads them, and a
+// switch flipped in Settings must show up when the chat repaints. Defaults to
+// "both shown" until the settings read lands, so a slow fetch never makes a
+// button flicker out and back.
+const [composerTools, setComposerTools] = useState(() => Object.assign({}, COMPOSER_TOOLS_DEFAULT));
   // Track which tools have been called in this chat session.
   // Used to auto-check tools in the visibility tree.
   const usedTools = useRef(new Set());
@@ -768,6 +775,7 @@ state.autoRetry = typeof c.autoRetry === 'boolean'
 ? c.autoRetry
 : (typeof appSettings.autoRetry === 'boolean' ? appSettings.autoRetry : true);
 setFileOrb(fileOrbFromApp(app));
+setComposerTools(composerToolsFromApp(app));
 persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
 messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
 state.costSnapshot = rMsgs.status === 200 ? costSnapshot(rMsgs.body) : null;
@@ -1350,6 +1358,7 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
     state, refs,
     imageAttachments, composerText, fileEditorOpen, runningVisible, authStamp, toolDataStamp, customActions,
     fileOrb,
+    composerTools,
     // Server id being started from a tool tree's reload control (null when
     // idle) — the tools popup renders busy state from it.
     mcpStartBusy,

@@ -1,13 +1,19 @@
 // mouaif web — SettingsDefaultsView
 //
-// Renders Settings → App defaults → Chat defaults. Four settings:
+// Renders Settings → App defaults → Chat defaults. Six settings:
 //
-//   - Default prompt style     (very-small / average / extensive)
-//   - Enter inserts a newline  (boolean switch)
-//   - Auto-retry failed sends  (boolean switch)
-//   - Glass orb file button    (boolean switch)
+//   - Default prompt style       (very-small / average / extensive)
+//   - Enter inserts a newline    (boolean switch)
+//   - Auto-retry failed sends    (boolean switch)
+//   - Glass orb file button      (boolean switch)
+//   - Dictation microphone       (boolean switch — hides the composer mic)
+//   - Image button               (boolean switch — hides the attach button)
 //
-// All four auto-save on change via the shared `saveApp` helper, matching
+// The last two only decide whether the composer *draws* a control: the routes
+// behind them stay open and a pasted image still attaches (see
+// ./chat/composerTools.js and docs/features/composer-tool-buttons.md).
+//
+// All six auto-save on change via the shared `saveApp` helper, matching
 // the rest of the app (Settings → Project toggles, Settings → Agents, etc.).
 // No Save button: the previous version required a manual commit, which was
 // inconsistent and an extra tap for the user.
@@ -21,6 +27,7 @@ import { h, Fragment } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { loadApp, saveApp } from '../api.js';
 import { fileOrbFromApp } from './chat/fileOrb.js';
+import { composerToolsFromApp } from './chat/composerTools.js';
 
 const PROMPT_SIZE_OPTIONS = [
   { value: 'very-small', label: 'Very small — tool names only, no schemas' },
@@ -40,6 +47,8 @@ export function SettingsDefaultsView() {
   const [enterForNewline, setEnterForNewline] = useState(true);
   const [autoRetry, setAutoRetry] = useState(true);
 const [fileOrb, setFileOrb] = useState(false);
+  const [dictationButton, setDictationButton] = useState(true);
+  const [imageButton, setImageButton] = useState(true);
 
   // Per-row status messages, mirroring SettingsProject's
   // `promptSizeStatusMsg` / `chatTraceStatusMsg` pattern. Empty string hides
@@ -48,6 +57,8 @@ const [fileOrb, setFileOrb] = useState(false);
   const [enterMsg, setEnterMsg] = useState('');
   const [retryMsg, setRetryMsg] = useState('');
 const [fileOrbMsg, setFileOrbMsg] = useState('');
+  const [dictationButtonMsg, setDictationButtonMsg] = useState('');
+  const [imageButtonMsg, setImageButtonMsg] = useState('');
 
   // Bail flag for late save() responses if the component unmounts mid-save
   // (e.g. user navigates back). Mirrors the same pattern other views use.
@@ -57,7 +68,7 @@ const [fileOrbMsg, setFileOrbMsg] = useState('');
   // Track in-flight saves per field so a fast toggle flip doesn't race
   // an earlier in-flight request. Latest write wins; older writes' status
   // messages are dropped so the user only sees the most recent outcome.
-  const inflight = useRef({ promptSize: 0, enterForNewline: 0, autoRetry: 0, fileOrbButton: 0 });
+  const inflight = useRef({ promptSize: 0, enterForNewline: 0, autoRetry: 0, fileOrbButton: 0, dictationButton: 0, imageButton: 0 });
 
   useEffect(() => {
     (async () => {
@@ -68,6 +79,11 @@ const [fileOrbMsg, setFileOrbMsg] = useState('');
         setEnterForNewline(app.app && typeof app.app.enterForNewline === 'boolean' ? app.app.enterForNewline : true);
         setAutoRetry(app.app && typeof app.app.autoRetry === 'boolean' ? app.app.autoRetry : true);
         setFileOrb(fileOrbFromApp(app));
+        // Both optional composer tools read from the same snapshot, so the switch and
+        // the chat that obeys it cannot disagree about what the store says.
+        const tools = composerToolsFromApp(app);
+        setDictationButton(tools.dictation);
+        setImageButton(tools.image);
       } catch (e) {
         if (aliveRef.current) setPromptSizeMsg('load failed: ' + e.message);
       }
@@ -113,6 +129,22 @@ const v = e.currentTarget.checked;
 setFileOrb(v);
 saveField('fileOrbButton', { fileOrbButton: v }, setFileOrbMsg,
 v ? 'the file button is now a glass orb (open a chat to see it)' : 'the file button is back to the flat circle');
+}
+
+// The two optional composer tools. Off *hides* the button; nothing behind it
+// is disabled (see composerTools.js), which is what the status line says so
+// the effect of the switch is not something the user has to discover in a chat.
+function onDictationButtonChange(e) {
+const v = e.currentTarget.checked;
+setDictationButton(v);
+saveField('dictationButton', { dictationButton: v }, setDictationButtonMsg,
+v ? 'the composer microphone is shown again' : 'the composer microphone is hidden (open a chat to see it)');
+}
+function onImageButtonChange(e) {
+const v = e.currentTarget.checked;
+setImageButton(v);
+saveField('imageButton', { imageButton: v }, setImageButtonMsg,
+v ? 'the composer image button is shown again' : 'the composer image button is hidden (open a chat to see it)');
 }
 
   return h(Fragment, null,
@@ -230,12 +262,67 @@ v ? 'the file button is now a glass orb (open a chat to see it)' : 'the file but
                 )
                 )
               )
-              )
               ),
-              // Trailing hint about chat storage, kept outside the row list so the
-      // cards stay clean (matches SettingsProject's "Chats and messages…"
-      // placement at the foot of the tools section).
-      h('p', { class: 'hint hint--compact' },
+              // ---- Composer dictation button: switch-in-a-card -----------
+              h('li', { class: 'settings-project__item settings-project__item--col' },
+                h('div', { class: 'settings-project__item-row' },
+                  h('div', { class: 'settings-project__item-main' },
+                    h('label', { class: 'settings-project__item-title', for: 'sd-dictation-button' },
+                      'Dictation microphone in the composer'),
+                    h('div', { class: 'settings-project__item-note' },
+                      'Draws the microphone button beside the message box. Turn it off if you never ' +
+                      'dictate: the composer keeps the button out of the row. Hiding it disables ' +
+                      'nothing — the dictation page and every other surface still work, and the ' +
+                      'dictation model you picked is untouched. On by default.'),
+                    h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, dictationButtonMsg)
+                  ),
+                  h('label', { class: 'switch' },
+                    h('input', {
+                      id: 'sd-dictation-button',
+                      type: 'checkbox',
+                      role: 'switch',
+                      'aria-checked': String(dictationButton),
+                      checked: dictationButton,
+                      onChange: onDictationButtonChange
+                    }),
+                    h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+                      h('span', { class: 'switch__thumb' })
+                    )
+                  )
+                )
+              ),
+              // ---- Composer image button: switch-in-a-card ---------------
+              h('li', { class: 'settings-project__item settings-project__item--col' },
+                h('div', { class: 'settings-project__item-row' },
+                  h('div', { class: 'settings-project__item-main' },
+                    h('label', { class: 'settings-project__item-title', for: 'sd-image-button' },
+                      'Image button in the composer'),
+                    h('div', { class: 'settings-project__item-note' },
+                      'Draws the picture-attachment button beside the message box. Turn it off if you ' +
+                      'never attach images. Hiding it disables nothing: pasting an image into the ' +
+                      'composer still attaches it. On by default.'),
+                    h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, imageButtonMsg)
+                  ),
+                  h('label', { class: 'switch' },
+                    h('input', {
+                      id: 'sd-image-button',
+                      type: 'checkbox',
+                      role: 'switch',
+                      'aria-checked': String(imageButton),
+                      checked: imageButton,
+                      onChange: onImageButtonChange
+                    }),
+                    h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+                      h('span', { class: 'switch__thumb' })
+                    )
+                  )
+                )
+                )
+                ),
+                // Trailing hint about chat storage, kept outside the row list so the
+              // cards stay clean (matches SettingsProject's "Chats and messages…"
+              // placement at the foot of the tools section).
+              h('p', { class: 'hint hint--compact' },
         'Chats and messages are stored in the app database. To keep a chat history you can commit, ' +
         'turn on tracing for that chat in project settings — it writes a project-local trace file you can add to source control.')
     )

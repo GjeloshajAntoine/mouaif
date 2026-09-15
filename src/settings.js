@@ -80,6 +80,15 @@ autoRetry: true,
 // folder glyph inside. App-level: a display preference, so it applies to
 // every project. See docs/features/file-button-orb.md.
 fileOrbButton: false,
+  // Which optional tools the composer draws. Both are display preferences
+  // (app-level, like `fileOrbButton`) and both default to `true`: the
+  // microphone and the image button are the two controls the composer has
+  // always shown, and turning one *off* is how a user keeps a button they
+  // never use out of the way. Hiding is not disabling — the routes behind
+  // them (`/api/ai/transcribe`, image attachments) are untouched. See
+  // docs/features/composer-tool-buttons.md.
+  dictationButton: true,
+  imageButton: true,
   // App-level custom prompts. Empty by default.
   prompts: [],
   // Tool output profile for file/result text fed back to the model. `size`
