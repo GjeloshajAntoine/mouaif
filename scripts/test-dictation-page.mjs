@@ -608,11 +608,12 @@ assert.equal(patch.dictation.modelId, 'gemini-2.5-flash',
   const errors = all(nodes, (n) => buttonClass(n).includes('dictation__error')).map((n) => n.children.join(''));
   assert.ok(errors.some((t) => t.includes('Google Gemini') && t.includes('fetch failed')),
     'the failing provider is named the way Settings names it, with its own message: ' + JSON.stringify(errors));
-  // …and the failure says what to do about it, because "upstream 401" is not an
-  // instruction. The provider id never reaches the screen.
-  const action = find(nodes, (n) => buttonClass(n).includes('dictation__failure-action'));
-  assert.ok(action, 'a failed catalog offers the fix');
-  assert.equal(find(action.children, (n) => n && n.tag === 'a').attrs.href, '#/settings/providers');
+  // …and nothing else: the failure line is the whole report. A follow-up
+  // "open Settings → Providers" sentence was tried and dropped — the picker and
+  // the Refresh button sit directly under the line, so the instruction restated
+  // what the screen already offered. The provider id never reaches the screen.
+  assert.ok(!find(nodes, (n) => buttonClass(n).includes('dictation__failure-action')),
+    'no follow-up instruction line under a catalog failure');
   assert.ok(!errors.some((t) => t.includes('gemini:')), 'the raw provider id is not shown');
   // The good rows are still offered: one bad provider must not empty the list.
   assert.ok(picker(nodes).models.length > 0);
@@ -685,7 +686,11 @@ assert.equal(patch.dictation.modelId, 'gemini-2.5-flash',
   const nodes = view.render();
 
   const titles = all(nodes, (n) => buttonClass(n) === 'group__title');
-  assert.equal(titles.length, 2, 'Model and Transcript');
+  // Settings, then the test, then the result: the model picker has to be
+  // answered before a take *can* be transcribed, so it sits above the record
+  // button rather than between the recording and its transcript.
+  assert.deepEqual(titles.map((t) => t.children[0]), ['Dictation model', 'Test', 'Transcript'],
+    'the page reads settings → test → transcript');
   assert.equal(titles[0].children[0], 'Dictation model', 'the group title is the label');
   assert.equal(
     all(nodes, (n) => n.tag === 'span' && buttonClass(n) === 'label' && String(n.children.join('')).includes('Dictation model')).length,

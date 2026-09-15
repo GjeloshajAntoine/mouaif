@@ -674,57 +674,7 @@ function onPickModel(next) {
       h('h2', { class: 'view-title' }, 'Dictation')
     ),
 
-    // ---- 1. Speak ---------------------------------------------------------
-    h('div', { class: 'dictation__card dictation__card--recorder' },
-      h('div', { class: 'dictation__clock' },
-        h('span', { class: 'dictation__time', 'aria-live': 'polite' }, formatDuration(elapsedMs)),
-        h('span', { class: 'dictation__limit' }, 'max ' + formatDuration(MAX_RECORDING_MS))
-      ),
-      h('div', { class: 'dictation__meter', role: 'meter', 'aria-label': 'Input level', 'aria-valuenow': Math.round(level * 100), 'aria-valuemin': 0, 'aria-valuemax': 100 },
-        h('span', { class: 'dictation__meter-fill', style: { width: Math.round((recording ? level : 0) * 100) + '%' } })
-      ),
-      h('button', {
-      class: 'dictation__record' + (recording ? ' is-recording' : (recordingBlob ? ' is-secondary' : '')),
-      type: 'button',
-      disabled: !supported || busy,
-      onClick: recording ? stopRecording : startRecording,
-      // The one wait this button can be in is the hand-off (filling a chat's
-      // draft), and it may last a round trip or two: a spinner on the control
-      // that was *not* tapped would point at the wrong one.
-      'aria-busy': phase === 'handoff' ? 'true' : undefined,
-      'aria-label': recording ? 'Stop recording' : (phase === 'handoff' ? 'Working…' : recordLabel)
-      },
-      phase === 'handoff'
-      ? h('span', { class: 'dictation__spinner', 'aria-hidden': 'true' })
-      : h('span', { class: 'dictation__record-dot', 'aria-hidden': 'true' }),
-      h('span', { class: 'dictation__record-label' }, phase === 'handoff' ? 'Working…' : recordLabel)
-      ),
-      // The transcribe action only exists while there is an untranscribed
-      // recording: a permanently disabled button would suggest the feature is
-      // broken rather than waiting. When there is one, it is the primary
-      // action and Record steps back to secondary.
-      recordingBlob && !recording
-      ? h('div', { class: 'dictation__recorder-actions' },
-        h('span', { class: 'dictation__ready' }, 'Recording ready'),
-        h('button', {
-        class: 'dictation__transcribe',
-        type: 'button',
-        disabled: !canTranscribe,
-        onClick: runTranscription,
-        'aria-busy': phase === 'transcribe' ? 'true' : undefined,
-        'aria-label': 'Transcribe the recording'
-        }, phase === 'transcribe'
-        ? h('span', { class: 'dictation__spinner dictation__spinner--on-accent', 'aria-hidden': 'true' })
-        : null,
-        phase === 'transcribe' ? 'Transcribing…' : 'Transcribe')
-      )
-      : null,
-      !supported
-        ? h('p', { class: 'hint hint--compact' }, 'This browser cannot record audio. Dictation needs a browser with MediaRecorder and microphone access.')
-        : null
-    ),
-
-    // ---- 2. Model ---------------------------------------------------------
+    // ---- 1. Model ---------------------------------------------------------
     h('div', { class: 'group' },
       // The group title names the control, so the field under it does not
       // repeat the label. The note earns its place only when the page adopted a
@@ -890,6 +840,63 @@ function onPickModel(next) {
           ? 'Your providers returned no usable models. Check the connection in Settings → Providers, then tap Refresh.'
           : 'No models yet, and no provider connection to list them from. Connect a provider in Settings → Providers (or add a model to this project in .mouaif.json), then come back.')
         : null
+    ),
+
+    // ---- 2. Test (speak) --------------------------------------------------
+    h('div', { class: 'group' },
+      // The settings above decide what a take *does*, so they are answered
+      // before the microphone is opened: a phone user picks a model once and
+      // records many times, and the picker used to sit between the recording
+      // and its transcript, pushing the result off the fold.
+      h('div', { class: 'group__title' }, 'Test'),
+      h('div', { class: 'dictation__card dictation__card--recorder' },
+        h('div', { class: 'dictation__clock' },
+          h('span', { class: 'dictation__time', 'aria-live': 'polite' }, formatDuration(elapsedMs)),
+          h('span', { class: 'dictation__limit' }, 'max ' + formatDuration(MAX_RECORDING_MS))
+        ),
+        h('div', { class: 'dictation__meter', role: 'meter', 'aria-label': 'Input level', 'aria-valuenow': Math.round(level * 100), 'aria-valuemin': 0, 'aria-valuemax': 100 },
+          h('span', { class: 'dictation__meter-fill', style: { width: Math.round((recording ? level : 0) * 100) + '%' } })
+        ),
+        h('button', {
+        class: 'dictation__record' + (recording ? ' is-recording' : (recordingBlob ? ' is-secondary' : '')),
+        type: 'button',
+        disabled: !supported || busy,
+        onClick: recording ? stopRecording : startRecording,
+        // The one wait this button can be in is the hand-off (filling a chat's
+        // draft), and it may last a round trip or two: a spinner on the control
+        // that was *not* tapped would point at the wrong one.
+        'aria-busy': phase === 'handoff' ? 'true' : undefined,
+        'aria-label': recording ? 'Stop recording' : (phase === 'handoff' ? 'Working…' : recordLabel)
+        },
+        phase === 'handoff'
+        ? h('span', { class: 'dictation__spinner', 'aria-hidden': 'true' })
+        : h('span', { class: 'dictation__record-dot', 'aria-hidden': 'true' }),
+        h('span', { class: 'dictation__record-label' }, phase === 'handoff' ? 'Working…' : recordLabel)
+        ),
+        // The transcribe action only exists while there is an untranscribed
+        // recording: a permanently disabled button would suggest the feature is
+        // broken rather than waiting. When there is one, it is the primary
+        // action and Record steps back to secondary.
+        recordingBlob && !recording
+        ? h('div', { class: 'dictation__recorder-actions' },
+          h('span', { class: 'dictation__ready' }, 'Recording ready'),
+          h('button', {
+          class: 'dictation__transcribe',
+          type: 'button',
+          disabled: !canTranscribe,
+          onClick: runTranscription,
+          'aria-busy': phase === 'transcribe' ? 'true' : undefined,
+          'aria-label': 'Transcribe the recording'
+          }, phase === 'transcribe'
+          ? h('span', { class: 'dictation__spinner dictation__spinner--on-accent', 'aria-hidden': 'true' })
+          : null,
+          phase === 'transcribe' ? 'Transcribing…' : 'Transcribe')
+        )
+        : null,
+        !supported
+          ? h('p', { class: 'hint hint--compact' }, 'This browser cannot record audio. Dictation needs a browser with MediaRecorder and microphone access.')
+          : null
+      ),
     ),
 
     // ---- 3. Transcript ----------------------------------------------------

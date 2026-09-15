@@ -20,8 +20,9 @@ posted to `POST /api/ai/transcribe` and the server performs the upstream call.
   sent in is shown underneath, read-only. There is usually nothing to pick: a
   remembered model, a lone candidate, or a lone row whose name says it
   transcribes is selected for you.
-3. Tap **Record**. The timer and the level meter confirm the microphone is
-   live. Recording stops on the second tap, or automatically at 2:00.
+3. In the **Test** card below, tap **Record**. The timer and the level meter
+   confirm the microphone is live. Recording stops on the second tap, or
+   automatically at 2:00.
 4. Tap **Transcribe**. The transcript appears in an editable field, and the
   line under it reports the run — model, size, duration and **what it cost**.
 5. Choose what happens to it: **Copy**, **Insert in chat** (fills the newest
@@ -163,8 +164,16 @@ run whose cost is unknown (`--`) adds nothing to any total anywhere.
 
 ### The layout of the page
 
-One column, mobile first: the recorder, the model, the folded **Options** row,
-then the transcript. The group title names the control (*Dictation model*) rather
+One column, mobile first, and the sections are ordered **settings first, test
+below**: *Dictation model* (with the folded **Options** row and the catalog
+note), then *Test* — the record button, timer and level meter — then
+*Transcript*. The model has to be answered before a take can be transcribed at
+all, so it is picked before the microphone is opened; a phone user chooses a
+model once and records many times, and keeping the recorder at the top pushed
+the transcript, which is what the page is for, off the fold. The **Test** group
+title says what the card under it does; the record button keeps its own
+`Record` / `Stop` / `Record again` caption. The group title names the control
+(*Dictation model*) rather
 than labelling it a second time under itself, and the note beside it appears only
 when it has something to say: the page adopts the first registered project on a
 cold start or a PWA launch, the models then come from *that* project, and naming
