@@ -702,18 +702,25 @@ await sendTurn(state, refs, {
   // an `onReloadServer` handler, which left its "…" control doing
   // nothing at all.
   state._startMcpServer = async (serverId) => {
-    const d = projectDir;
-    if (!d || !serverId || mcpStartBusy) return false;
-    setMcpStartBusy(serverId);
-    try {
-      const ok = await state._reloadMcpServer(serverId);
-      // Refresh either way: a failed start still leaves the row showing
-      // why (stopped / no tools) instead of a stale ready state.
-      await state._reloadMcpServerRefresh();
-      return ok;
-    } finally {
-      setMcpStartBusy(null);
-    }
+  const d = projectDir;
+  if (!d || !serverId || mcpStartBusy) return false;
+  setMcpStartBusy(serverId);
+  // Mirror the in-flight id onto `state` as well. The tools card rebuilds its
+  // group list from scratch on every toggle/refresh, so a busy flag living only
+  // on the group object was thrown away mid-start — the row repainted as idle,
+  // the spinner never showed, and a second start could fire for the same server.
+  // The synchronous mirror lets the rebuild seed `reloadBusy` before re-render.
+  state._mcpStartBusyServerId = serverId;
+  try {
+  const ok = await state._reloadMcpServer(serverId);
+  // Refresh either way: a failed start still leaves the row showing
+  // why (stopped / no tools) instead of a stale ready state.
+  await state._reloadMcpServerRefresh();
+  return ok;
+  } finally {
+  state._mcpStartBusyServerId = null;
+  setMcpStartBusy(null);
+  }
   };
 
   // ---- Initial load ----------------------------------------
