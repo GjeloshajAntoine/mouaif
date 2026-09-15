@@ -156,7 +156,7 @@ function loadTranscript(globals) {
     .replace(/^export /gm, '');
   const base = Object.assign({
     console,
-    JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, Promise, Error,
+    JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, WeakMap, Promise, Error,
     isFinite, parseFloat, parseInt, encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout,
     // Real behaviour for the helpers the assertion depends on.
     normalizeToolName: (name) => String(name || '').replace(/^functions\./, ''),

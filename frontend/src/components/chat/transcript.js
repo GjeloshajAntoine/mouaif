@@ -126,6 +126,11 @@ function transcriptInsert(refs, node) {
   const anchor = refs._insertAnchor;
   if (anchor && anchor.parentNode === el) el.insertBefore(node, anchor);
   else el.appendChild(node);
+  // Remember the node just placed. The transcript's row builders all insert
+  // through here, and the reconciler stamps identity from this rather than
+  // guessing "the last message row": the chunked backfill inserts ABOVE its
+  // anchor, so the newest row is not the last one in the child list.
+  refs._lastInsertedRow = node;
 }
 
 // renderImageAttachments(host, attachments)
@@ -1517,6 +1522,34 @@ onRetry: payload && typeof state._retryFailedTurn === 'function'
 } else {
 appendMessageToTranscript(m, false, refs, state);
 }
+// Stamp the row just built with its identity, so the NEXT pass can reuse
+// this exact element instead of destroying and re-creating it — which is
+// what replayed the entry animation and made the transcript flash. Every
+// builder above inserts exactly one node as the transcript's last message
+// row, so the stamp is taken from there rather than threaded back through
+// four different return contracts.
+stampLastTranscriptRow(refs, m);
+}
+
+// stampLastTranscriptRow(refs, m)
+//
+// Record `transcriptRowKey(m)` on the message row a builder just inserted,
+// which is the last message row in the transcript (builders insert at the
+// end, or before the backfill anchor, which never follows a message row).
+// A call row skipped by the de-dup guard above inserts nothing, so the
+// existing card — already keyed by its result — keeps its key: restamping
+// it with the call row's key would make the next pass see one node under
+// two identities.
+function stampLastTranscriptRow(refs, m) {
+const el = refs.transcript.current;
+if (!el) return;
+// transcriptInsert records the node each builder placed; the chunked
+// backfill inserts above its anchor, so "the last message row" would be
+// the wrong element there.
+const last = refs._lastInsertedRow;
+if (!last || last.parentNode !== el) return;
+const key = transcriptRowKey(m);
+if (key) last._rowKey = key;
 }
 
 // isRenderableMessage(m) -> bool
@@ -1804,68 +1837,352 @@ export function syncTranscriptAppend(state, refs, prevCount) {
   updateUsageSummary(state, null, refs);
 }
 
-export function renderTranscript(state, refs) {
-  if (!refs.transcript.current) return;
-  // Preserve expand/collapse across the rebuild below: appending an
-  // element re-runs renderTranscript from disk, which would otherwise
-  // collapse every tool/result card the user had opened.
-  const expanded = snapshotExpandedState(refs.transcript.current);
-  // Cancel any in-flight chunked render before rebuilding — a stream
-  // reconcile can call renderTranscript while the previous chunked
-  // pass is still mid-flight, and without this the two would append
-  // the same rows twice.
-  resetTranscriptRender(refs);
-  // Pending ask_user / authorization overlay cards are NOT part of
-  // state.messages (they're mounted from the pending-auth queue / SSE
-  // events), so the rebuild must carry them across rather than wipe an
-  // unanswered question the user is looking at. clearTranscriptRows
-  // leaves them in place; reanchorOverlayCards moves them back to the
-  // bottom once the rebuild finishes.
-  clearTranscriptRows(refs.transcript.current);
-  // The rows just discarded took their anonymous tool-call registrations
-  // with them; anything re-registered below belongs to the new tree.
-  refs._anonToolCalls = [];
-  refs.setupCard.current = null;
-  if (!state.messages.length) {
-    const card = buildSetupCardForMount(refs, state);
-    refs.transcript.current.appendChild(card);
-    refs.setupCard.current = card;
-    const empty = buildEmptyState();
-    refs.transcript.current.appendChild(empty);
-    renderSystemPromptMessage(refs, state.systemPrompt);
-    mountToolsCard(refs, state);
-    mountAgentFilesCard(refs, state);
-    mountSkillsCard(refs, state);
-    reanchorOverlayCards(refs);
-    return;
+// ---- Row identity + reconciliation ---------------------------------
+//
+// The transcript used to be rebuilt by destroying every child and
+// re-creating it from state.messages on each pass. A re-created row is a
+// NEW element, so it replayed `.chat-msg`'s entry animation
+// (frontend/src/chat-transcript.css) from `opacity: 0` — the "flash" —
+// even when the row's data had not changed at all. On an empty chat that
+// happened on every reconcile tick: the system-prompt row was removed and
+// rebuilt although it was already correct on screen, so the conversation
+// area blinked between paints for no reason.
+//
+// Reconciliation fixes the cause rather than the symptom: the element
+// already on screen is REUSED for a row whose identity is unchanged, and
+// only genuinely new rows are built. A pass over unchanged data then
+// performs no DOM mutation at all — nothing is created, so nothing
+// animates, and the transcript cannot blink.
+
+const _rowKeys = new WeakMap();
+let _rowKeyCounter = 0;
+
+// hasClass(el, name) -> bool
+//
+// `className` is read as a string rather than through `classList` so the
+// transcript's own file-order tests (which drive this module in a VM with
+// a minimal element stub — see scripts/test-transcript-reconcile.js) can
+// exercise the reconciliation logic without a full DOM implementation.
+function hasClass(el, name) {
+  const cls = el && el.className;
+  return typeof cls === 'string' && (' ' + cls + ' ').indexOf(' ' + name + ' ') >= 0;
+}
+
+// isOverlayCard(el) -> bool
+//
+// Authorization / ask_user prompts are NOT transcript rows: they are
+// mounted beside the transcript while a run is parked and must survive
+// every pass (see clearTranscriptRows). The reconciler never matches,
+// moves, or removes them.
+function isOverlayCard(el) {
+  return !!(el && el.dataset && el.dataset.authCallId);
+}
+
+// isMessageRowNode(el) -> bool
+function isMessageRowNode(el) {
+  if (!el || el.nodeType !== 1 || isOverlayCard(el)) return false;
+  return hasClass(el, 'chat-msg') || hasClass(el, 'tool-card');
+}
+
+// firstOverlayCard(el) -> Element | null
+function firstOverlayCard(el) {
+  for (const child of el.children) if (isOverlayCard(child)) return child;
+  return null;
+}
+
+// chatTranscriptKey(state) -> string
+//
+// The identity of the transcript currently mounted. A pass that sees a
+// different key is looking at a different chat, so it must not reconcile
+// against the rows of the chat the user just left.
+function chatTranscriptKey(state) {
+  const p = (state && state.props) || {};
+  return (p.projectDir || '') + '::' + (p.chatId || '');
+}
+
+// transcriptRowKey(m) -> string | null
+//
+// Stable identity for one transcript row across passes:
+//   - a persisted row is identified by its `seq`; the message store is
+//     append-only, so a given seq's content never changes and reusing the
+//     node is always correct;
+//   - a tool row pairs its call id with its phase, because a call and its
+//     result are two messages but two distinct rows;
+//   - anything else — an optimistic user bubble, a live assistant row —
+//     falls back to object identity, which survives the reconcile merge
+//     because mergeServerRows keeps untouched rows by reference.
+export function transcriptRowKey(m) {
+  if (!m || typeof m !== 'object') return null;
+  if (typeof m.seq === 'number' && Number.isFinite(m.seq)) return 'seq:' + m.seq;
+  if (m.role === 'tool' && m.toolCallId) return 'tool:' + m.toolCallId + ':' + (m.phase || '');
+  let key = _rowKeys.get(m);
+  if (!key) {
+    key = 'obj:' + (++_rowKeyCounter);
+    _rowKeys.set(m, key);
   }
-  renderSystemPromptMessage(refs, state.systemPrompt);
-  mountToolsCard(refs, state);
-  mountAgentFilesCard(refs, state);
-  mountSkillsCard(refs, state);
-  // Move the preserved overlay cards below the header cards before any
-  // message row is rendered. Without this they would sit above the
-  // headers for the whole rebuild, and findTranscriptContentStart (used by
-  // the pagination prepend) would treat the leading overlay card as the
-  // first message row and insert older history above the headers.
-  reanchorOverlayCards(refs);
-  // Long transcripts render progressively so the first screen paints
-  // immediately instead of blocking on a full DOM+markdown rebuild.
-  if (state.messages.length >= TRANSCRIPT_CHUNK_THRESHOLD) {
-    renderTranscriptChunked(state, refs, expanded);
-    return;
+  return key;
+}
+
+// hasMessageRows(el) -> bool
+function hasMessageRows(el) {
+  if (!el) return false;
+  for (const child of el.children) if (isMessageRowNode(child)) return true;
+  return false;
+}
+
+// reconcileTranscriptRows(state, refs, order) -> { reused, created, removed }
+//
+// Bring the transcript's message rows in line with `order` — the indices
+// of the renderable messages, in display order — without re-creating a
+// row that is already on screen under the same key. Header cards and
+// overlay cards are left exactly where they are; only message rows take
+// part.
+//
+// The walk keeps a `cursor` at the position the next row must occupy.
+// A reused row that is already exactly at the cursor is left untouched —
+// which is what makes the common case (nothing changed) a genuine no-op,
+// with no insert, no removal and therefore no replayed animation.
+export function reconcileTranscriptRows(state, refs, order) {
+  const el = refs.transcript.current;
+  const stats = { reused: 0, created: 0, removed: 0 };
+  if (!el) return stats;
+
+  // Index the rows already on screen by key. A duplicate key is a leftover
+  // from an earlier overlapping pass: the first is kept, the rest go.
+  const existing = new Map();
+  for (const child of Array.from(el.children)) {
+    if (!isMessageRowNode(child)) continue;
+    const key = child._rowKey;
+    if (!key) continue;
+    if (!existing.has(key)) existing.set(key, child);
+    else { child.remove(); stats.removed++; }
   }
-  for (const m of state.messages) {
-    if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) {
+
+  // The row block sits between the header cards and the overlay cards, so
+  // an insert with no cursor yet belongs just before the first overlay.
+  let cursor = null;
+  for (const child of el.children) {
+    if (isMessageRowNode(child)) { cursor = child; break; }
+    if (isOverlayCard(child)) { cursor = child; break; }
+  }
+
+  const keep = new Set();
+  for (let i = 0; i < order.length; i++) {
+    const m = state.messages[order[i]];
+    const key = transcriptRowKey(m);
+    if (!key) continue;
+    keep.add(key);
+
+    let node = existing.get(key) || null;
+    if (node) {
+      stats.reused++;
+    } else {
+      // Build the row. The row builders insert themselves (appendChild, or
+      // before refs._insertAnchor, which this path never sets), so the new
+      // node is found by diffing the child list immediately after.
+      const before = new Set(el.children);
+      renderMessageRow(state, refs, m);
+      for (const child of el.children) {
+        if (before.has(child) || !isMessageRowNode(child) || child._rowKey) continue;
+        node = child;
+        break;
+      }
+      if (node) stats.created++;
+    }
+    // A tool call row whose card is already owned by its result renders
+    // nothing (see renderMessageRow's de-dup): leave the cursor alone.
+    if (!node) continue;
+    node._rowKey = key;
+
+    if (node === cursor) {
+      cursor = node.nextElementSibling;
       continue;
     }
-    renderMessageRow(state, refs, m);
+    el.insertBefore(node, cursor);
+    cursor = node.nextElementSibling;
   }
-  restoreExpandedState(expanded, refs.transcript.current);
-  reanchorOverlayCards(refs);
-  scrollTranscriptToBottomImpl(refs);
-  updateUsageSummary(state, null, refs);
+
+  // Rows whose key is no longer in the transcript (a deleted chat, a
+  // diverged prefix) are the only nodes this pass removes.
+  for (const child of Array.from(el.children)) {
+    if (!isMessageRowNode(child)) continue;
+    const key = child._rowKey;
+    if (key && keep.has(key)) continue;
+    child.remove();
+    stats.removed++;
+  }
+  return stats;
 }
+
+// ---- Header cards ---------------------------------------------------
+//
+// The four cards above the messages (system prompt, tools, agent files,
+// skills) render from a handful of inputs that usually do not change
+// between passes. Each card records the signature it was built from and
+// is rebuilt only when that signature moves — otherwise the mounted node
+// is left alone, so it cannot be destroyed and re-animated either.
+
+function stableJson(value) {
+  try { return JSON.stringify(value == null ? null : value); } catch { return ''; }
+}
+
+function headerSignatures(state, empty) {
+  const t = state.tools || { catalog: [], filter: null };
+  const af = state.agentFiles || {};
+  const sk = state.skills || {};
+  return {
+    // The setup widget is a creation-time control: an empty chat shows it,
+    // a chat with messages never does.
+    setup: empty ? String((state.chat && state.chat.promptSize) || 'average') : 'hidden',
+    sys: String((state.systemPrompt && state.systemPrompt.text) || ''),
+    tools: stableJson([
+      (t.catalog || []).map((tool) => (tool && tool.name) || ''),
+      t.filter == null ? null : t.filter,
+      state.toolAuth || null,
+      state.mcpAuth || null,
+      state._mcpStartBusyServerId || null,
+      (state.mcpServers || []).map((s) => (s && s.id) + ':' + (s && s.status)),
+      Array.from(state.usedTools || [])
+    ]),
+    agentFiles: stableJson([af.files || [], !!af.enabled, !!af.explicit, !!af.projectLocked]),
+    skills: stableJson([
+      (sk.items || []).map((s) => [s && s.id, !!s.disabled, !!s.chatDisabled]),
+      !!sk.enabled,
+      !!sk.projectLocked
+    ])
+  };
+}
+
+// ensureEmptyState(refs, want)
+//
+// The "Start the conversation" block belongs to an empty chat only. It is
+// kept across passes instead of being rebuilt, so its contents do not
+// re-animate while the chat is still empty.
+function ensureEmptyState(refs, want) {
+  const el = refs.transcript.current;
+  if (!el) return;
+  const existing = el.querySelector ? el.querySelector('.chat-view__empty') : null;
+  if (want) {
+    if (existing && existing.parentNode === el) return;
+    if (existing) existing.remove();
+    el.appendChild(buildEmptyState());
+  } else if (existing && existing.parentNode === el) {
+    existing.remove();
+  }
+}
+
+// syncHeaderCards(state, refs, empty)
+//
+// Mount or refresh the header cards, in the order the transcript expects:
+// [setup] [system prompt] [tools] [agent files] [skills]. A card whose
+// signature and mounted node are both unchanged is skipped entirely.
+function syncHeaderCards(state, refs, empty) {
+  const el = refs.transcript.current;
+  if (!el) return;
+  const sigs = headerSignatures(state, empty);
+  const prev = refs._cardSigs || (refs._cardSigs = {});
+
+  const mounted = (selector) => !!(el.querySelector && el.querySelector(selector));
+
+  // Setup control — removed outright once the chat has any message, which
+  // is the transcript-cleaning contract documented on updateSetupVisibility.
+  if (sigs.setup === 'hidden') {
+    const host = refs.setupCard.current;
+    if (host && host.parentNode) host.remove();
+    refs.setupCard.current = null;
+    prev.setup = '';
+  } else if (prev.setup !== sigs.setup || !refs.setupCard.current || !refs.setupCard.current.parentNode) {
+    if (refs.setupCard.current && refs.setupCard.current.parentNode) refs.setupCard.current.remove();
+    const card = buildSetupCardForMount(refs, state);
+    el.insertBefore(card, el.firstChild);
+    refs.setupCard.current = card;
+    prev.setup = sigs.setup;
+  }
+
+  if (prev.sys !== sigs.sys || !mounted('[data-sys-prompt="1"]')) {
+    renderSystemPromptMessage(refs, state.systemPrompt);
+    prev.sys = sigs.sys;
+  }
+  if (prev.tools !== sigs.tools || !mounted('[data-tools-card="1"]')) {
+    mountToolsCard(refs, state);
+    prev.tools = sigs.tools;
+  }
+  if (prev.agentFiles !== sigs.agentFiles || !mounted('[data-agent-files-card="1"]')) {
+    mountAgentFilesCard(refs, state);
+    prev.agentFiles = sigs.agentFiles;
+  }
+  if (prev.skills !== sigs.skills || !mounted('[data-skills-card="1"]')) {
+    mountSkillsCard(refs, state);
+    prev.skills = sigs.skills;
+  }
+  ensureEmptyState(refs, empty);
+}
+
+export function renderTranscript(state, refs) {
+if (!refs.transcript.current) return;
+// Preserve expand/collapse across the rebuild below: appending an
+// element re-runs renderTranscript from disk, which would otherwise
+// collapse every tool/result card the user had opened.
+const expanded = snapshotExpandedState(refs.transcript.current);
+// Cancel any in-flight chunked render before rebuilding — a stream
+// reconcile can call renderTranscript while the previous chunked
+// pass is still mid-flight, and without this the two would append
+// the same rows twice.
+resetTranscriptRender(refs);
+// A pass for a DIFFERENT chat must not reconcile against the rows of the
+// chat the user just left (same seqs would key onto the wrong rows), and
+// it must drop the per-chat group-expansion memory so the new chat's tree
+// starts collapsed. Everything else about the old transcript goes too:
+// the mounted header-card signatures are keyed to the old chat's data.
+const key = chatTranscriptKey(state);
+if (refs._transcriptKey !== key) {
+  refs._transcriptKey = key;
+  refs._cardSigs = {};
+  refs._toolTreeCollapsed = null;
+  clearTranscriptRows(refs.transcript.current);
+  refs._anonToolCalls = [];
+  refs.setupCard.current = null;
+}
+// Pending ask_user / authorization overlay cards are NOT part of
+// state.messages (they're mounted from the pending-auth queue / SSE
+// events), so a pass must carry them across rather than wipe an
+// unanswered question the user is looking at. The reconciler never
+// matches, moves, or removes them; reanchorOverlayCards puts them back
+// at the bottom once the pass finishes.
+const empty = !state.messages.length;
+// Header cards first, in transcript order. Each is rebuilt only when the
+// inputs it renders from actually changed — an unchanged card keeps the
+// node it already has, so it is never destroyed and re-animated.
+syncHeaderCards(state, refs, empty);
+// Move the standing overlay cards below the header cards before any
+// message row is placed. Without this they would sit above the headers,
+// and findTranscriptContentStart (used by the pagination prepend) would
+// treat the leading overlay card as the first message row and insert
+// older history above the headers.
+reanchorOverlayCards(refs);
+// Rows are reused, not rebuilt. Long transcripts are the one case that
+// cannot be a single pass: their rows are created progressively so the
+// first screen paints immediately instead of blocking on a full
+// DOM+markdown build. Everything already on screen is still reused — the
+// chunked pass only creates the rows it has not reached yet.
+if (state.messages.length >= TRANSCRIPT_CHUNK_THRESHOLD && !hasMessageRows(refs.transcript.current)) {
+renderTranscriptChunked(state, refs, expanded);
+return;
+}
+const order = [];
+for (let i = 0; i < state.messages.length; i++) {
+if (isRenderableMessage(state.messages[i])) order.push(i);
+}
+reconcileTranscriptRows(state, refs, order);
+restoreExpandedState(expanded, refs.transcript.current);
+reanchorOverlayCards(refs);
+// An empty chat creates no rows, so nothing here has changed the viewport:
+// leave the scroll position alone rather than re-pinning it on an idle
+// reconcile tick.
+if (order.length) scrollTranscriptToBottomImpl(refs);
+updateUsageSummary(state, null, refs);
+}
+
 
 
 

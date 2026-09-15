@@ -121,7 +121,7 @@ function loadTranscript(globals) {
     .replace(/^export /gm, '');
   const base = Object.assign({
     console,
-    JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, Promise, Error,
+    JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, WeakMap, Promise, Error,
     isFinite, parseFloat, parseInt, encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout,
     // helpers the module calls; the paths under test do not depend on their
     // behaviour, only on the ordering they participate in.

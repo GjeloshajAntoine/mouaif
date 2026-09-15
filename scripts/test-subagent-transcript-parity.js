@@ -158,7 +158,7 @@ function loadTranscript(globals) {
     .replace(/^export /gm, '');
   const base = Object.assign({
     console,
-    JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, Promise, Error,
+    JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, WeakMap, Promise, Error,
     isFinite, parseFloat, parseInt, encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout,
     // The paths under test only care about the rows this module builds, so
     // the imported helpers are reduced to deterministic stand-ins:

@@ -159,7 +159,7 @@ function findPre(body, className) {
 
 function installContext() {
   const base = {
-    console, JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, Promise, Error,
+    console, JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, WeakMap, Promise, Error,
     isFinite, parseFloat, parseInt, encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout,
     document: {
       createElement: makeNode,
