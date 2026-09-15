@@ -4,20 +4,53 @@
 // single-file http-server.js. Shared helpers live in src/server-shared.js.
 
 const {
-  sendJSON,
-  readJsonOr400,
-  parseCookies,
-  accessCookie,
-  accessRequestOrigin,
-  checkAccessAttempts,
-  recordAccessFailure,
-  clearAccessFailures,
-  publicAccessStatus,
-  ACCESS_COOKIE,
-  accessAuth,
-  qr,
-  safeDecode
+sendJSON,
+readJsonOr400,
+parseCookies,
+accessCookie,
+accessRequestOrigin,
+checkAccessAttempts,
+recordAccessFailure,
+clearAccessFailures,
+publicAccessStatus,
+ACCESS_COOKIE,
+accessAuth,
+qr,
+push,
+settings,
+safeDecode
 } = require('./server-shared.js');
+const { resolveNotificationPrefs } = require('./notifications.js');
+
+// notifyLogin(username, req) — best-effort push that a new browser signed
+// in. Gated by the opt-in `notifications.login` preference (off by
+// default) so it is silent unless the user asked for it. Broadcast to every
+// subscribed endpoint (not the just-issued session, whose subscription list
+// is empty until the page rebinds) so the alert reaches the user's other
+// already-signed-in devices — the whole point of a sign-in notice.
+function notifyLogin(username, req) {
+try {
+let prefs = {};
+try { prefs = resolveNotificationPrefs((settings.getApp() || {}).notifications); } catch { /* defaults apply */ }
+if (prefs.login !== true) return;
+const agent = String((req && req.headers && req.headers['user-agent']) || '');
+const label = /iphone|ipad|ipod/i.test(agent) ? 'iPhone or iPad'
+: /android/i.test(agent) ? 'Android device'
+: /mobile/i.test(agent) ? 'mobile browser'
+: /macintosh|mac os/i.test(agent) ? 'Mac'
+: /windows/i.test(agent) ? 'Windows'
+: /linux/i.test(agent) ? 'Linux'
+: 'this browser';
+push.sendPushToAll({
+title: 'mouaif sign-in',
+body: `New sign-in as ${username || 'user'} from ${label}.`,
+tag: 'mouaif-login',
+data: { kind: 'login', url: '/#/projects' },
+actions: [{ action: 'open', title: 'Open mouaif' }]
+});
+} catch { /* a notification failure must never block sign-in */ }
+}
+
 
 async function handleAccess(req, res, parsed, serverConfig) {
   const urlPath = parsed.pathname;
@@ -43,10 +76,12 @@ async function handleAccess(req, res, parsed, serverConfig) {
       return sendJSON(res, 401, { error: 'User or password is incorrect', code: 'EBADCREDENTIALS' });
     }
     clearAccessFailures(req);
-    const issued = accessAuth.issueSession();
-    res.setHeader('Set-Cookie', accessCookie(issued.token, secure, accessAuth.SESSION_TTL_MS / 1000));
-    return sendJSON(res, 200, { ok: true, user: accessAuth.user().username });
-  }
+const issued = accessAuth.issueSession();
+res.setHeader('Set-Cookie', accessCookie(issued.token, secure, accessAuth.SESSION_TTL_MS / 1000));
+notifyLogin(accessAuth.user().username, req);
+return sendJSON(res, 200, { ok: true, user: accessAuth.user().username });
+}
+
 
   if (urlPath === '/api/access/logout' && method === 'POST') {
     accessAuth.revokeSession(accessToken);
@@ -87,8 +122,10 @@ async function handleAccess(req, res, parsed, serverConfig) {
       accessAuth.setPassword(body.username, body.password);
       if (setupAuthorized && !accessAuth.consumeSetupCode(body.code)) return sendJSON(res, 409, { error: 'Setup code was already used or expired', code: 'ESETUP_CODE' });
       const issued = accessAuth.issueSession();
-      res.setHeader('Set-Cookie', accessCookie(issued.token, secure, accessAuth.SESSION_TTL_MS / 1000));
-      return sendJSON(res, 200, { ok: true, ...publicAccessStatus(serverConfig.authEnabled), authenticated: true });
+res.setHeader('Set-Cookie', accessCookie(issued.token, secure, accessAuth.SESSION_TTL_MS / 1000));
+notifyLogin(accessAuth.user() && accessAuth.user().username, req);
+return sendJSON(res, 200, { ok: true, ...publicAccessStatus(serverConfig.authEnabled), authenticated: true });
+
     } catch (e) {
       return sendJSON(res, 400, { error: e.message, code: e.code || 'EBADINPUT' });
     }
@@ -131,9 +168,11 @@ async function handleAccess(req, res, parsed, serverConfig) {
     try {
       const account = accessAuth.finishAuthentication(body);
       clearAccessFailures(req);
-      const issued = accessAuth.issueSession();
-      res.setHeader('Set-Cookie', accessCookie(issued.token, secure, accessAuth.SESSION_TTL_MS / 1000));
-      return sendJSON(res, 200, { ok: true, user: account.username });
+const issued = accessAuth.issueSession();
+res.setHeader('Set-Cookie', accessCookie(issued.token, secure, accessAuth.SESSION_TTL_MS / 1000));
+notifyLogin(account.username, req);
+return sendJSON(res, 200, { ok: true, user: account.username });
+
     } catch (e) {
       recordAccessFailure(req);
       return sendJSON(res, 401, { error: e.message, code: e.code || 'EWEBAUTHN' });

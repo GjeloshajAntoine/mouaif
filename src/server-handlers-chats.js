@@ -7,52 +7,39 @@
 // src/server-shared.js.
 
 const {
-  sendJSON,
-  qs,
-  readJsonOr400,
-  runningKey,
-  runningChats,
-  runningChatCancels,
-  resolveModel,
-  settings,
-  chats,
-  messages,
-  trace,
-  push,
-  usage,
-  promptProfiles,
-  prompts,
-  agentFiles,
-  agentSkills,
-  agentFeatures,
-  tags,
-  mcp,
-  shellTool,
-  ai,
-  liveChat,
-  safeDecode
+sendJSON,
+qs,
+readJsonOr400,
+runningKey,
+runningChats,
+runningChatCancels,
+resolveModel,
+settings,
+chats,
+messages,
+trace,
+push,
+usage,
+promptProfiles,
+prompts,
+agentFiles,
+agentSkills,
+agentFeatures,
+tags,
+mcp,
+shellTool,
+ai,
+liveChat,
+safeDecode
 } = require('./server-shared.js');
+const { resolveNotificationPrefs } = require('./notifications.js');
 
-// resolveNotificationPrefs(saved) — collapse the persisted notification
-// settings into the current three-key shape { status, authorization,
-// quickActions }, all defaulting to true. New stores hold these keys
-// directly; older stores only had five booleans
-// (progress/completion/errors, askUser/toolAuthorization). Prefer the new
-// key when present, otherwise derive it from the legacy pair. Kept in sync
-// with normalizePreferences() in
-// frontend/src/components/SettingsNotifications.jsx.
-function resolveNotificationPrefs(saved) {
-  const prefs = saved || {};
-  return {
-    status: prefs.status !== undefined
-      ? prefs.status === true
-      : prefs.progress !== false && prefs.completion !== false && prefs.errors !== false,
-    authorization: prefs.authorization !== undefined
-      ? prefs.authorization === true
-      : prefs.askUser !== false && prefs.toolAuthorization !== false,
-    quickActions: prefs.quickActions !== false
-  };
-}
+
+// resolveNotificationPrefs(saved) now lives in src/notifications.js so the
+// access sign-in push and the chat streaming push resolve the same
+// preferences (status, authorization, quickActions, and the opt-in login
+// alert). See that module for the legacy-key fallbacks.
+
 
 async function handleChats(req, res, parsed, sessionToken, lifecycle = {}) {
 const urlPath = parsed.pathname;

@@ -15,7 +15,7 @@ Browser notifications let mouaif follow a running chat when the tab is in the ba
 3. Accept the browser's permission prompt.
 4. Optionally tap **Send test notification**.
 
-The same screen exposes only two notification types: **ASCII chat status** and **Authorization**. Authorization quick actions can be toggled separately. Each preference uses a short summary so the rows remain compact on a phone. iPhone and iPad require the app to be installed on the Home Screen before Web Push can be enabled.
+The same screen exposes the notification types: **ASCII chat status**, **Authorization**, **Authorization actions**, and the opt-in **Sign-in alerts**. Authorization quick actions can be toggled separately. Each preference uses a short summary so the rows remain compact on a phone. iPhone and iPad require the app to be installed on the Home Screen before Web Push can be enabled.
 
 The **Server configuration** group shows the origin used by the notification service, the generated-key status, and the VAPID contact. Opening this screen repairs a missing VAPID pair automatically; there are no keys to copy into the browser. Configuration values and notification-type descriptions wrap on narrow screens so their full contents remain readable.
 
@@ -37,6 +37,7 @@ mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com
 | `authorization_required` | A tool is waiting for approval | Tool name with **Allow once** and **Deny** actions |
 | `done` | A chat turn completes successfully | Chat title + "Response complete" |
 | `error` | A chat turn fails (stream error, upstream error) | Chat title + error message |
+| `login` | A password, setup, or passkey sign-in issues a new session | "New sign-in as `<user>` from `<platform>`" (opt-in, off by default) |
 
 Only two per-chat notification slots are used. Authorization alerts (`ask_user_required` and `authorization_required`) share `chat-{chatId}-attention`; all other chat status (`progress_update`, `done`, and `error`) shares `chat-{chatId}-status` and the same ASCII format. New notifications replace the older notification in their slot, so statuses cannot stack and a question cannot be replaced by ordinary status. The service worker suppresses an alert only when the same chat ID is confirmed visible on screen by a fresh page response, regardless of query-parameter order or whether the open route includes `projectDir`. A page that is focused but hidden — screen locked, another app on top, or an iOS PWA sitting in the background — still delivers the notification. Suppression also clears queued alerts for that chat because their content is already visible.
 
@@ -66,7 +67,8 @@ The app-level `notifications` setting stores:
 {
 "status": true,
 "authorization": true,
-"quickActions": true
+"quickActions": true,
+"login": false
 }
 ```
 

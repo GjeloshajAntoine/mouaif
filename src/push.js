@@ -95,10 +95,19 @@ function ensureTable() {
 }
 
 function listSubscriptions(sessionId) {
-  if (!sessionId) return [];
-  const db = settings.getDb();
-  return db.prepare(`SELECT id, endpoint, p256dh, auth, origin, created_at FROM ${SUB_TABLE} WHERE session_id = ? ORDER BY created_at ASC`).all(sessionId);
+if (!sessionId) return [];
+const db = settings.getDb();
+return db.prepare(`SELECT id, endpoint, p256dh, auth, origin, created_at FROM ${SUB_TABLE} WHERE session_id = ? ORDER BY created_at ASC`).all(sessionId);
 }
+// Every subscription, across sessions — used by the sign-in alert, which
+// must reach the user's other already-signed-in devices. A login mints a
+// brand-new session whose own subscription list is empty until the page
+// rebinds its endpoint, so a per-session send would reach nothing.
+function listAllSubscriptions() {
+const db = settings.getDb();
+return db.prepare(`SELECT id, session_id, endpoint, p256dh, auth, origin, created_at FROM ${SUB_TABLE} ORDER BY created_at ASC`).all();
+}
+
 
 function addSubscription({ sessionId, endpoint, p256dh, auth, origin }) {
   const db = settings.getDb();
@@ -132,9 +141,10 @@ function removeAllSubscriptions(sessionId) {
 
 // ---- Push sending -------------------------------------------------------
 
-function sendPush({ sessionId, title, body, tag, data, chatId, projectDir, actions, requireInteraction }) {
-  const subs = sessionId ? listSubscriptions(sessionId) : [];
-  if (!subs.length) return;
+function sendPush({ sessionId, subs, title, body, tag, data, chatId, projectDir, actions, requireInteraction }) {
+const targets = Array.isArray(subs) ? subs : (sessionId ? listSubscriptions(sessionId) : []);
+if (!targets.length) return;
+
 
   const keys = readVapidKeys();
 
@@ -152,7 +162,7 @@ function sendPush({ sessionId, title, body, tag, data, chatId, projectDir, actio
     requireInteraction: requireInteraction === true
   });
 
-  for (const sub of subs) {
+  for (const sub of targets) {
     const subscription = {
       endpoint: sub.endpoint,
       keys: { p256dh: sub.p256dh, auth: sub.auth }
@@ -176,8 +186,15 @@ function sendPush({ sessionId, title, body, tag, data, chatId, projectDir, actio
 // sendPushToSession — send a push notification to a specific session.
 // Called from handleChatStream for attention, completion, and error events.
 function sendPushToSession(sessionId, { title, body, chatId, projectDir, tag, data, actions, requireInteraction }) {
-  sendPush({ sessionId, title, body, tag, chatId, projectDir, data, actions, requireInteraction });
+sendPush({ sessionId, title, body, tag, chatId, projectDir, data, actions, requireInteraction });
 }
+// sendPushToAll — send to every subscribed endpoint regardless of session.
+// Used by the sign-in alert, which must reach the user's other devices even
+// though the login created a brand-new session.
+function sendPushToAll({ title, body, chatId, projectDir, tag, data, actions, requireInteraction }) {
+sendPush({ subs: listAllSubscriptions(), title, body, tag, chatId, projectDir, data, actions, requireInteraction });
+}
+
 
 // ---- Session ID helpers -------------------------------------------------
 
@@ -195,10 +212,12 @@ module.exports = {
   getPushConfig,
   vapidSubjectForOrigin,
   listSubscriptions,
-  addSubscription,
-  removeSubscription,
-  removeAllSubscriptions,
-  sendPush,
-  sendPushToSession,
-  sessionIdFromToken
+listAllSubscriptions,
+addSubscription,
+removeSubscription,
+removeAllSubscriptions,
+sendPush,
+sendPushToSession,
+sendPushToAll,
+sessionIdFromToken
 };
