@@ -1076,6 +1076,16 @@ assert.equal(dictation.micWaitPhase({ preparing: true, delayMs: 5000 }), '',
 assert.equal(dictation.micWaitPhase({ preparing: true, transcribing: true, delayMs: 5000 }), 'transcribe',
 'the request in flight is what the button reports');
 assert.equal(dictation.micWaitPhase({ transcribing: true }), 'transcribe');
+// The second shape of the same fact: a live take the user has stopped whose
+// last segment has not answered yet. Nothing is `sending` then — the requests
+// were made while the take ran — but the words are not in the draft and the
+// take is not closed, so it is a transcription request in flight and the button
+// must report it (a live take used to go idle-looking here).
+assert.equal(dictation.micWaitPhase({ finishing: true }), 'transcribe',
+'a live take still transcribing its last segment is the loading state too');
+assert.equal(dictation.micWaitPhase({ finishing: true, preparing: true, delayMs: 5000 }), 'transcribe');
+assert.equal(dictation.micWaitPhase({ finishing: false }), '', 'an idle take is idle');
+assert.equal(dictation.MIC_TRANSCRIBE_NOTE, 'Transcribing…', 'the sentence the settle writes is owned here');
 assert.equal(dictation.micWaitPhase(null), '', 'a missing state is idle, not a crash');
 });
 

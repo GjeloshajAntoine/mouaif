@@ -34,6 +34,16 @@
 // chat's Total and the project total, since a transcription writes no message
 // row. The button only reports the figure; the totals are the server's.
 //
+// The loading state (spinner in place of the glyph, `Working…`, `aria-busy`)
+// belongs to a transcription request in flight, and a live take has two such
+// moments: the segments transcribed while the user speaks, and the last segment
+// (or one still in flight) that is transcribed *after* they stop. Both are the
+// same wait — the take is not closed and its words are not in the draft — so
+// both earn the spinner (`micWaitPhase`: `transcribing` for the one-request
+// arm, `finishing` for the live settle) and the chat's row says
+// `Transcribing…` until `dictation added` lands. The resolve before the
+// microphone opens is deliberately not one of them.
+//
 // Which model transcribes is *not* chosen here. The app-wide dictation choice
 // (Settings-free, remembered in the app store under `dictation`, picked on the
 // dictation page) is honoured the same way the chat picker remembers a model;
@@ -72,6 +82,7 @@ formatDuration,
 liveDictationEnabled,
 liveTakeCost,
 loadDictationModels,
+MIC_TRANSCRIBE_NOTE,
 MIC_WAIT_DELAY_MS,
 micResolveNote,
 micWaitPhase,
@@ -105,6 +116,15 @@ const [statusState, setStatusState] = useState('');
 // callers that only need "the button is not idle".
 const [resolving, setResolving] = useState(false);
 const [sending, setSending] = useState(false);
+// `finishing` — a live take the user has stopped, whose last segment (or a
+// segment still in flight) has not answered yet. No request is `sending` then —
+// the take's requests were made while it ran — but the take is not closed and
+// its words are not in the draft, so this is the same wait the spinner is for.
+// Without it a live take that outlasted its last rotation went idle-looking
+// (plain microphone, "N words so far — tap the mic to stop.") while it was in
+// fact transcribing, which is the loading state appearing exactly when it was
+// needed and nowhere else.
+const [finishing, setFinishing] = useState(false);
 const busy = resolving || sending;
 // Which rendering of the resolve's delay the state actually is: `0` while it is
 // inside `MIC_WAIT_DELAY_MS`, the delay itself once it has outlasted it — the
@@ -295,8 +315,14 @@ if (recordingRef.current) publishLive();
 } catch (e) {
 if (!takeRef.current) return;
 failedRef.current = true;
-}
+} finally {
+// A segment's answer ends this segment's request whatever it did — success,
+// failure, or a take that was closed while it was in flight (the early returns
+// above). The live take's `finishing` wait is derived from "stopped and still
+// pending", so it is re-derived here; the sentence and the spinner come from
+// `maybeSettle` and the phase below, not from a second bookkeeping path.
 maybeSettle();
+}
 }
 // maybeSettle() — close the take once the recorder has stopped *and* nothing
 // is outstanding. The cost reported is the sum of the segments that answered:
@@ -321,7 +347,26 @@ if (onProgress) onProgress(message, 'busy');
 else say(message, 'busy');
 return;
 }
-if (take.pending(issuedRef.current) > 0) return;
+if (take.pending(issuedRef.current) > 0) {
+// The user has stopped but a segment is still being transcribed. Held open,
+// this is the one wait a live take ends in, and the button reports it the same
+// way the one-request arm does: spinner, `Working…`, `aria-busy`, and a
+// sentence in the chat's status row. Without this the last rotation's wait
+// looked like an idle microphone with a stale word count. `onProgress` (not
+// `say`) is the status write that must not move the caret, exactly as while
+// recording.
+setFinishing(true);
+const message = failedRef.current
+? 'Finishing dictation — part of what you said could not be transcribed…'
+: MIC_TRANSCRIBE_NOTE;
+if (onProgress) onProgress(message, 'busy');
+else say(message, 'busy');
+return;
+}
+// Nothing outstanding: a `finishing` state (if this take had one) is over. It
+// is cleared in `finally` by every caller, and here for the paths that close
+// the take without going through one.
+setFinishing(false);
 const failed = failedRef.current;
 const text = take.text();
 const summed = liveTakeCost(costRef.current);
@@ -661,11 +706,13 @@ start();
 }
 // What the button is waiting on, as the one word the loading affordances are
 // rendered from (`micWaitPhase` in dictation.js): a transcription request in
-// flight, and nothing else. The model resolve before the microphone opens is a
-// different wait — there is no audio and no request behind it yet — so it is
-// reported by `micResolveNote` as a sentence in the chat's status row instead of
-// as a spinner on a button that would then be claiming a transcription.
-const phase = micWaitPhase({ transcribing: sending });
+// flight and nothing else — the one-request take (`sending`) or a live take
+// whose last segment has not answered yet (`finishing`). The model resolve
+// before the microphone opens is a different wait — there is no audio and no
+// request behind it yet — so it is reported by `micResolveNote` as a sentence in
+// the chat's status row instead of as a spinner on a button that would then be
+// claiming a transcription.
+const phase = micWaitPhase({ transcribing: sending, finishing });
 // The resolve's own sentence, on the same delay: '' until it is worth a word.
 const resolveNote = micResolveNote({ preparing: resolving, delayMs: resolveDelayMs });
 // Announce the resolve on the button's own line once it has earned its sentence.
@@ -683,10 +730,11 @@ void tick;
 const elapsed = recording ? formatDuration(Date.now() - startedAtRef.current) : '';
 const label = recording ? 'Stop dictation (' + elapsed + ')' : 'Dictate';
 // `working` is the loading state: a transcription request in flight, and
-// nothing else. The resolve before the microphone opens deliberately does not
-// earn it — a spinner there is the loading state of an operation the user has
-// not asked for, and the chat's `Preparing dictation…` line is what names that
-// wait instead.
+// nothing else — the one-request take (`sending`) or a live take the user has
+// stopped whose last segment is still being transcribed (`finishing`). The
+// resolve before the microphone opens deliberately does not earn it — a spinner
+// there is the loading state of an operation the user has not asked for, and the
+// chat's `Preparing dictation…` line is what names that wait instead.
 const working = phase === 'transcribe';
 const svg = recording
 // A filled square: the same "stop" glyph the send button uses while a

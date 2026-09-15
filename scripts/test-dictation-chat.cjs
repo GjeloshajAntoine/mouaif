@@ -41,7 +41,13 @@
 //   9. the decision is watched on both sides of the delay: `scripts/test-dictation.js`
 //      pins `micWaitPhase` and `micResolveNote` as pure functions, and this file
 //      pins the button with the reads held slow (a sentence, no loading state)
-//      and fast (neither).
+//      and fast (neither);
+//  10. a live take's *settle* is one of those transcription requests: on stop,
+//      while the last segment (or a segment still in flight) is being
+//      transcribed, the button holds the spinner, `Working…` and `aria-busy`
+//      and the chat's line says `Transcribing…` — before this the take went
+//      idle-looking with its stale word count exactly while the user waited on
+//      it — and both are gone once the take settles.
 //
 // All bundles stay in memory; only a fresh about:blank target is touched. Fetch
 // is fully stubbed (unknown requests fail), with CDP blocking real network as a
@@ -118,7 +124,12 @@ function installFixture(data) {
     // checks below meaningful: the same delay is either watched (settings read
     // held) or absent (held for nothing), where a global hold would keep the
     // resolve slow either way.
-    holdMs: 0
+    holdMs: 0,
+    // A hold on the *transcription* request, so the live take's settle can be
+    // watched: the user stops, the last segment is still in flight, and the
+    // button must say so (spinner, `Working…`, `aria-busy`) rather than going
+    // idle-looking with a stale word count.
+    transcribeHoldMs: 0
   };
   addEventListener('error', (event) => test.errors.push(event.message));
   addEventListener('unhandledrejection', (event) => test.errors.push(String(event.reason)));
@@ -167,8 +178,11 @@ function installFixture(data) {
       throw new Error('Unstubbed origin: ' + url.href);
     }
     if (method === 'POST' && url.pathname === '/api/ai/transcribe') {
-      test.transcribeBodies.push(JSON.parse(init.body || '{}'));
-      test.runs += 1;
+    test.transcribeBodies.push(JSON.parse(init.body || '{}'));
+    test.runs += 1;
+    // Held before anything else is answered, so the take that is *closing*
+    // waits on this request while the fixture watches the button.
+    if (test.transcribeHoldMs) await new Promise((resolve) => setTimeout(resolve, test.transcribeHoldMs));
       const priced = test.cost === 'priced';
       const answers = test.segmentAnswers;
       // A live take is one request per segment, answered in speaking order:
@@ -294,6 +308,9 @@ function installFixture(data) {
       // in the chat line instead.
       busy: mic ? mic.getAttribute('aria-busy') : null,
       spinner: mic ? !!mic.querySelector('.dictation__spinner') : false,
+      // A live take that is closing: `is-busy` is the class the spinner's
+      // styling hangs off, so it is read alongside the ring itself.
+      busyClass: mic ? mic.classList.contains('is-busy') : false,
       status: status ? status.textContent : null,
       statusState: status ? status.getAttribute('data-state') : null,
       // The header Total pill: where an attributed dictation run must land, not
@@ -505,16 +522,47 @@ async function main() {
     await waitFor(`dictationTest.runs >= ${runsBefore + 2}`, 'the take rotates while the user is still speaking', 300);
     const midTake = await read();
     check('a live take posts a completed recording while the user is still speaking',
-      (await evaluate('dictationTest.runs')) >= runsBefore + 2);
+    (await evaluate('dictationTest.runs')) >= runsBefore + 2);
     check('and the chat says how many words have landed so far',
-      / words so far — tap the mic to stop\.$/.test(String(midTake.status)), 'status: ' + midTake.status);
+    / words so far — tap the mic to stop\.$/.test(String(midTake.status)), 'status: ' + midTake.status);
     check('and the first segment is already in the draft at the caret',
-      String(midTake.composer).indexOf('The build is red.') > 0 &&
-      String(midTake.composer).indexOf(draftBefore) === 0, 'composer: ' + midTake.composer);
+    String(midTake.composer).indexOf('The build is red.') > 0 &&
+    String(midTake.composer).indexOf(draftBefore) === 0, 'composer: ' + midTake.composer);
+    // ---- The take's own settle is a transcription request too ----------
+    //
+    // The regression this pins: on a live take the loading state is not only
+    // the request *while* the user speaks. When they tap to stop, the last
+    // segment (or a segment still in flight) is still being transcribed, and
+    // the button has to say so — before this it went back to a plain
+    // microphone and its "N words so far — tap the mic to stop." line while it
+    // was in fact transcribing, so the loading state was missing exactly when
+    // the user was waiting on it. The transcription is held so that the closing
+    // wait is long enough to read; the assertions compare the button with
+    // itself one segment-request later, so how long a segment is, and how many
+    // are still in flight, do not matter.
+    await evaluate('dictationTest.transcribeHoldMs = 1500;');
+    const runsAtStop = await evaluate('dictationTest.runs');
     await tap('.chat-view__mic-btn');
+    await waitFor(`dictationTest.runs > ${runsAtStop}`, 'the last segment is being transcribed');
+    await waitFor(`document.querySelector('.chat-view__mic-btn').getAttribute('aria-label') === 'Working…'`,
+    'the closing take is reported as working');
+    const closing = await read();
+    check('a live take that is still transcribing its last segment shows the loading state',
+    closing.spinner === true && closing.busy === 'true' && closing.busyClass === true,
+    'spinner: ' + closing.spinner + ', aria-busy: ' + closing.busy + ', is-busy: ' + closing.busyClass);
+    check('and says it is transcribing rather than leaving the countdown standing',
+    closing.status === 'Transcribing…' && closing.statusState === 'busy', 'status: ' + closing.status);
+    check('and the running clock is replaced by the working label',
+    closing.label === 'Working…' && closing.recording === 'false');
+    // The spinner is a *request* being processed: it must end when the take
+    // settles, or the button would claim work that is over.
+    await evaluate('dictationTest.transcribeHoldMs = 0;');
     await waitFor(`document.querySelector('.chat-view__status').textContent.indexOf('dictation added') === 0`,
-      'the rotating take settles');
+    'the rotating take settles');
     const rotated = await read();
+    check('the spinner ends when the take settles, so nothing claims work that is over',
+    rotated.spinner === false && rotated.busy === null && rotated.busyClass === false,
+    'spinner: ' + rotated.spinner + ', aria-busy: ' + rotated.busy);
     const segmentCount = (await evaluate('dictationTest.transcribeBodies.length')) - runsBefore;
     check('a live take sends one request per rotation, and the last (partial) segment too',
       segmentCount >= 3, segmentCount + ' segment request(s)');

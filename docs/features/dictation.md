@@ -193,7 +193,14 @@ being waited on, and the report is the same one a screen reader gets:
 - the **composer microphone** shows a spinner in place of its glyph and is
 reported as busy (`aria-busy`) while it transcribes — a greyed-out mic with an
 unchanged glyph read as "the tap did nothing". That loading state belongs to the
-*transcription request* and to nothing else: a tap's other wait, the **model
+*transcription request* and to nothing else, which on a live take is **two**
+moments, not one: the requests made while the user speaks, and the last segment
+(or a segment still in flight) that is still being transcribed *after* they
+tapped to stop. The second one used to be missing — the take went back to a
+plain microphone and its `N words so far — tap the mic to stop.` line while its
+final words were in fact still being transcribed — so the button now holds the
+spinner and `Working…` for the whole settle, and the chat's status row says
+`Transcribing…` until `dictation added` lands. A tap's other wait, the **model
 resolve** (two reads before the microphone opens), transcribes nothing and would
 be a spinner for an operation the user has not started, so it is never shown on
 the button. What it gets instead is a sentence in the chat's status line
@@ -202,7 +209,7 @@ the button. What it gets instead is a sentence in the chat's status line
 sentence painted and gone again is not worth reading, while a cold provider
 catalog (a round trip per connection) is a wait the user is owed a word about.
 The chat's status line says `Transcribing…` for the run, and a live take keeps
-counting words there instead.
+counting words there while it is still listening.
 
 The decisions behind those affordances are pure functions in
 `frontend/src/dictation.js`, so the wording and the phase cannot drift from the
@@ -214,22 +221,24 @@ catalogNote({ catalogBusy, liveBusy, projectCount, hasLive })
 // Which wait is in flight; a long wait (the catalog) wins over a short one.
 busyPhase({ catalogBusy, liveBusy, transcribing, handoff })
 // -> '' | 'catalog' | 'live' | 'transcribe' | 'handoff'
-// The composer mic's loading state: a transcription request in flight, and
-// nothing else (never the model resolve).
-micWaitPhase({ transcribing })
+// The composer mic's loading state: a transcription request in flight, in
+// either of its two shapes — a one-request take (`transcribing`) or a live
+// take still transcribing its last segment (`finishing`) — and nothing else
+// (never the model resolve).
+micWaitPhase({ transcribing, finishing })
 // -> '' | 'transcribe'
+// The sentence the live take's settle writes to the chat's status row.
+MIC_TRANSCRIBE_NOTE // -> 'Transcribing…'
 // What a tap says while it resolves the model, once that wait is worth a word.
 micResolveNote({ preparing, delayMs })
 // -> '' | 'Preparing dictation…'
 ```
 `micWaitPhase` and `micResolveNote` are the two halves of one rule: a spinner
 belongs to the request the button is actually processing, and a wait that has no
-request behind it (and no audio) gets words instead. `micResolveNote` is also
-where the "shows but is not useful" complaint is fixed for the resolve: the
-composer's model resolve is two local reads, so a sentence written immediately
-is painted and wiped inside a frame on every tap. The caller passes how long the
-resolve has been running and the delay owns the threshold, so the wording is a
-value, not a race with the network.
+request behind it (and no audio) gets words instead. `micWaitPhase` reads the
+request itself, not the moment the user tapped: a live take's requests outlive
+the stop that ends it, so `finishing` — "stopped, and a segment has not
+answered" — is the same loading state as `transcribing`.
 
 Every spinner is decoration over a sentence or an `aria-busy`, and it is a
 `currentColor` ring so it inherits the accent inside a primary button and the
@@ -735,8 +744,12 @@ their prices, with the partial last segment still sent. The mic's loading state
 is pinned to the transcription request on both sides of `MIC_WAIT_DELAY_MS`: the
 settings read held slow writes `Preparing dictation…` to the chat's line while
 the button keeps its glyph (no spinner, no `aria-busy`), and held for nothing
-the same tap says nothing at all. It needs a debug Chrome (`CDP_URL`, default
-`http://127.0.0.1:9222`), like the model-picker browser tests.
+the same tap says nothing at all. It also pins the live take's *settle* as one
+of those requests: with the transcription held, stopping a rotating take leaves
+the spinner, `Working…` and `aria-busy` on the button and `Transcribing…` in the
+chat's line until the last segment answers, and both are gone once it settles.
+It needs a debug Chrome (`CDP_URL`, default `http://127.0.0.1:9222`), like the
+model-picker browser tests.
 
 The live path is covered on both sides: `test-dictation.js` decides the join,
 the seam, the slot ordering and the rotation itself (with a fake recorder and

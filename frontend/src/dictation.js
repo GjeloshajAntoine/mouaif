@@ -746,19 +746,35 @@ if (s.handoff) return 'handoff';
 return '';
 }
 
+// MIC_TRANSCRIBE_NOTE — what the chat's status row says while the composer is
+// waiting on a transcription request. Owned here so the live take's settle (the
+// spinner's own sentence) cannot drift from the wording.
+export const MIC_TRANSCRIBE_NOTE = 'Transcribing…';
+
 // micWaitPhase(state) -> 'transcribe' | ''
 //
 // The *loading state* of the composer microphone, as one word: the button holds
 // a spinner, `aria-busy` and a `Working…` label while a transcription request
-// is in flight (`transcribing`), and for nothing else. The tap has one other
-// wait — the model resolve, before the microphone opens — but that is not a
-// transcription and there is no audio and no request behind it yet, so it must
-// not claim to be one: a spinner on it is the loading state of an operation the
-// user has not asked for, shown while nothing is being transcribed. That wait is
-// reported in words instead, by `micResolveNote`.
+// is in flight, and for nothing else. Two shapes of that one fact:
+//
+//   * `transcribing` — the one-request take: the whole recording is being
+//     transcribed after the user stopped (`sending` in the button);
+//   * `finishing` — the live take: the user stopped, but the last segment (or a
+//     segment still in flight) has not answered yet, so the take is not closed
+//     and its words are not in the draft. That is still a transcription request
+//     in flight, and the wait is exactly the one the spinner is for — before
+//     this, a live take that outlasted its last rotation showed a plain
+//     microphone and its "N words so far — tap the mic to stop." line while it
+//     was in fact transcribing.
+//
+// The tap has one other wait — the model resolve, before the microphone opens —
+// but that is not a transcription and there is no audio and no request behind it
+// yet, so it must not claim to be one: a spinner on it is the loading state of
+// an operation the user has not asked for, shown while nothing is being
+// transcribed. That wait is reported in words instead, by `micResolveNote`.
 export function micWaitPhase(state) {
 const s = state || {};
-if (s.transcribing) return 'transcribe';
+if (s.transcribing || s.finishing) return 'transcribe';
 return '';
 }
 
