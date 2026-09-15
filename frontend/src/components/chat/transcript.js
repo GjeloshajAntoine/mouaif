@@ -712,6 +712,10 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
   // Park the minted id when the provider gave us none, so the matching
   // result can adopt it instead of appending a duplicate card.
   if (!toolCall.id) registerAnonToolCall(refs, id, normalizeToolName(toolCall.name), card);
+  // Return the card so a caller that learns the real call id LATER (the
+  // direct @agent dispatch, whose id only exists once the server answers)
+  // can key it to that id instead of stranding a second card beside it.
+  return card;
   }
 
 
