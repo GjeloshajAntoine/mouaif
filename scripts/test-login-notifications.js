@@ -1,6 +1,7 @@
 'use strict';
-// Coverage for the sign-in notification: the opt-in preference resolution
-// and the broadcast that must reach the user's other subscribed devices.
+// Coverage for the sign-in notification: the preference resolution
+// (on by default, silenciable) and the broadcast that must reach the
+// user's other subscribed devices.
 //
 // History: a login mints a brand-new push session, so sending to that
 // session's own subscription list (empty until the page rebinds) would
@@ -25,12 +26,12 @@ const settings = require('../src/settings.js');
 push.ensureTable();
 push.ensureVapidKeys();
 // ---- Preference resolution -------------------------------------------
-assert.equal(notifications.resolveNotificationPrefs(undefined).login, false,
-'a fresh store leaves sign-in alerts off (opt-in)');
+assert.equal(notifications.resolveNotificationPrefs(undefined).login, true,
+'a fresh store enables sign-in alerts by default');
 assert.equal(notifications.resolveNotificationPrefs({ login: true }).login, true,
-'an explicit login:true enables the sign-in alert');
+'an explicit login:true keeps the sign-in alert on');
 assert.equal(notifications.resolveNotificationPrefs({ login: false }).login, false,
-'an explicit login:false keeps it off');
+'an explicit login:false lets the user silence sign-in alerts');
 assert.equal(notifications.resolveNotificationPrefs({ progress: false, completion: false, errors: false }).status, false,
 'legacy status keys still resolve');
 assert.equal(notifications.resolveNotificationPrefs({ askUser: false, toolAuthorization: false }).authorization, false,
@@ -55,7 +56,7 @@ assert.ok(deliveries.every((d) => d.payload.data.url === '/#/projects'), 'tappin
 // ---- The access handler wires the gate ---------------------------------
 const accessSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'server-handlers-access.js'), 'utf8');
 assert.ok(accessSource.includes('function notifyLogin('), 'the access handler defines a sign-in notifier');
-assert.ok(accessSource.includes('prefs.login !== true'), 'the notifier respects the opt-in preference');
+assert.ok(accessSource.includes('prefs.login !== true'), 'the notifier respects the login preference');
 assert.ok(accessSource.includes('push.sendPushToAll('), 'the notifier broadcasts rather than targeting the new session');
 assert.equal((accessSource.match(/notifyLogin\(/g) || []).length, 5,
 'the definition and all three sign-in paths (password, setup, passkey) reference notifyLogin');
@@ -63,6 +64,6 @@ assert.equal((accessSource.match(/notifyLogin\(/g) || []).length, 5,
 const settingsUi = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'components', 'SettingsNotifications.jsx'), 'utf8');
 assert.ok(settingsUi.includes("eventRow('login', 'Sign-in alerts'"), 'the Notifications screen exposes a Sign-in alerts row');
 assert.equal(settings.notifications === undefined, true, 'settings.DEFAULTS exposes notifications through DEFAULTS, not a bare export');
-assert.equal(settings.DEFAULTS.notifications.login, false, 'the server default keeps sign-in alerts off');
+assert.equal(settings.DEFAULTS.notifications.login, true, 'the server default enables sign-in alerts');
 console.log('login notifications: assertions passed');
 fs.rmSync(path.join(process.env.MOUAIF_HOME), { recursive: true, force: true });

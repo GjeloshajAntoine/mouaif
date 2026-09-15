@@ -93,13 +93,13 @@ fileOrbButton: false,
   // OS-level browser notifications have two user-facing channels: one
   // replaceable ASCII status per chat, plus authorization prompts. Quick
   // actions let the user answer or approve without opening the app.
-  // `login` is an opt-in alert on a new sign-in (off by default). See
+  // `login` alerts on a new sign-in and is on by default. See
   // src/notifications.js for the authoritative defaults.
   notifications: {
 status: true,
 authorization: true,
 quickActions: true,
-login: false
+login: true
 },
 
   // Server-side flags. Reserved for future toggles (e.g. enableInspector, port...).

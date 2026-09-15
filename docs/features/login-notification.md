@@ -2,13 +2,13 @@
 
 ## Overview
 
-mouaif can push a browser notification when a new browser signs in to a protected server. The alert names the user and a friendly label for the device or platform that signed in, and tapping it opens the projects list. The channel is **opt-in and off by default**: a chat status is only useful while the tab is away, but a sign-in alert is noise for most users.
+mouaif can push a browser notification when a new browser signs in to a protected server. The alert names the user and a friendly label for the device or platform that signed in, and tapping it opens the projects list. The channel is **on by default** and can be turned off from Settings → Notifications.
 
 ## Usage
 
 1. Enable access authentication for the server (`mouaif serve --auth`, or create the access user from a setup invitation).
 2. Enable Web notifications in **Settings → Notifications** on the devices that should receive the alert.
-3. Turn on **Sign-in alerts** under **Notification types**.
+3. **Sign-in alerts** under **Notification types** is on by default; turn it off to silence the alert.
 4. Sign in from another browser or device. Every subscribed device receives one replaceable `mouaif sign-in` notification such as:
 
 ```text
@@ -32,15 +32,16 @@ The sign-in alert shares one replaceable tag (`mouaif-login`), so repeated sign-
 
 - **Preference resolution** lives in `src/notifications.js` (`resolveNotificationPrefs`). This single server-side normalizer is shared by the chat streaming push and the access sign-in push, so both agree on the default set. It also keeps the legacy five-boolean fallbacks (`progress` / `completion` / `errors` and `askUser` / `toolAuthorization`). The frontend mirror is `normalizePreferences()` in `frontend/src/components/SettingsNotifications.jsx`.
 - **The notifier** is `notifyLogin(username, req)` in `src/server-handlers-access.js`. It reads the app-level `notifications` setting, returns early unless `login === true`, derives the platform label from the request's `User-Agent`, and calls `push.sendPushToAll(...)`. It is wrapped in try/catch: a notification failure must never block sign-in.
+
 - **The broadcast helper** is `push.sendPushToAll({ ... })` plus `push.listAllSubscriptions()` in `src/push.js`. The existing `sendPush` takes an explicit `subs` array or falls back to the per-session list.
-- **The preference key** is `login` inside the app-level `notifications` object, defaulting to `false`. It is allowlisted through `CLIENT_SETTINGS_KEYS` in `src/server-shared.js` (`notifications`), so the web UI reads and writes it through the normal `/api/settings/app` endpoint.
+- **The preference key** is `login` inside the app-level `notifications` object, defaulting to `true`. It is allowlisted through `CLIENT_SETTINGS_KEYS` in `src/server-shared.js` (`notifications`), so the web UI reads and writes it through the normal `/api/settings/app` endpoint.
 
 ```json
 {
   "status": true,
   "authorization": true,
   "quickActions": true,
-  "login": false
+  "login": true
 }
 ```
 

@@ -15,7 +15,7 @@ const DEFAULTS = Object.freeze({
 status: true,
 authorization: true,
 quickActions: true,
-login: false
+login: true
 });
 function normalizePreferences(saved) {
 const prefs = saved || {};
@@ -27,7 +27,6 @@ authorization: prefs.authorization !== undefined
 ? prefs.authorization === true
 : prefs.askUser !== false && prefs.toolAuthorization !== false,
 quickActions: prefs.quickActions !== false,
-// No legacy equivalent: absent means off.
 login: prefs.login !== undefined ? prefs.login === true : DEFAULTS.login
 };
 }

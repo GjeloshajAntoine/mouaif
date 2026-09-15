@@ -37,8 +37,8 @@ const { resolveNotificationPrefs } = require('./notifications.js');
 
 // resolveNotificationPrefs(saved) now lives in src/notifications.js so the
 // access sign-in push and the chat streaming push resolve the same
-// preferences (status, authorization, quickActions, and the opt-in login
-// alert). See that module for the legacy-key fallbacks.
+// preferences (status, authorization, quickActions, and the login alert).
+// See that module for the legacy-key fallbacks.
 
 
 async function handleChats(req, res, parsed, sessionToken, lifecycle = {}) {

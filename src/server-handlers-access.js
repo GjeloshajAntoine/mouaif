@@ -23,11 +23,11 @@ safeDecode
 const { resolveNotificationPrefs } = require('./notifications.js');
 
 // notifyLogin(username, req) — best-effort push that a new browser signed
-// in. Gated by the opt-in `notifications.login` preference (off by
-// default) so it is silent unless the user asked for it. Broadcast to every
-// subscribed endpoint (not the just-issued session, whose subscription list
-// is empty until the page rebinds) so the alert reaches the user's other
-// already-signed-in devices — the whole point of a sign-in notice.
+// in. Gated by the `notifications.login` preference (on by default) so it
+// can be silenced from Settings. Broadcast to every subscribed endpoint
+// (not the just-issued session, whose subscription list is empty until the
+// page rebinds) so the alert reaches the user's other already-signed-in
+// devices — the whole point of a sign-in notice.
 function notifyLogin(username, req) {
 try {
 let prefs = {};

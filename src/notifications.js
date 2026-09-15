@@ -16,10 +16,10 @@ status: true,
 authorization: true,
 // Answer/allow/deny directly from the notification when supported.
 quickActions: true,
-// A sign-in to this server (password or passkey). Opt-in: a chat status
-// is only useful while the tab is away, but a login alert is noise for
-// most users, so it is off unless the user turns it on.
-login: false
+// A sign-in to this server (password or passkey). On by default: a new
+// sign-in is exactly the event a user wants to know about, and it can be
+// turned off from Settings → Notifications.
+login: true
 });
 
 // resolveNotificationPrefs(saved) — collapse the persisted settings into
@@ -35,7 +35,6 @@ authorization: prefs.authorization !== undefined
 ? prefs.authorization === true
 : prefs.askUser !== false && prefs.toolAuthorization !== false,
 quickActions: prefs.quickActions !== false,
-// No legacy equivalent: absent means the documented default (off).
 login: prefs.login !== undefined ? prefs.login === true : DEFAULT_NOTIFICATION_PREFS.login
 };
 }
