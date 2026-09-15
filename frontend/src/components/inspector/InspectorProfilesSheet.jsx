@@ -53,6 +53,10 @@ function hostLabel(url) {
   try { return new URL(url).host; } catch { return url || ''; }
 }
 
+// The whole sheet is unreachable while `PROFILES_ENTRY` in Inspector.jsx is
+// `false`: that flag hides the setup screen's only entry point and also gates
+// this component's own mount. Nothing inside needed to change, so the sheet is
+// left complete for when the flag is flipped back.
 export function InspectorProfilesSheet(props) {
   const [endpointFor, setEndpointFor] = useState(null);
   const [endpointDraft, setEndpointDraft] = useState('');

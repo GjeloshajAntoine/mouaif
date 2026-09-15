@@ -430,10 +430,15 @@ const profilesSheet = read('frontend/src/components/inspector/InspectorProfilesS
 const profilesModule = read('src/inspectorProfiles.js');
 const profilesCss = read('frontend/src/inspector-profiles.css');
 
-check('setup screen offers the Chrome profiles entry point',
-  /inspector__profiles-open/.test(inspector) && /Chrome profiles/.test(inspector));
+check('the Chrome profiles entry point exists and is gated by one flag',
+  /inspector__profiles-open/.test(inspector)
+  && /Chrome profiles/.test(inspector)
+  && /const PROFILES_ENTRY = (true|false);/.test(inspector));
+check('the entry point is hidden by default',
+  /const PROFILES_ENTRY = false;/.test(inspector));
 check('the profiles sheet is mounted from Inspector.jsx',
-  /h\(InspectorProfilesSheet/.test(inspector));
+  /h\(InspectorProfilesSheet/.test(inspector)
+  && /PROFILES_ENTRY && profilesOpen/.test(inspector));
 check('the sheet is a dialog sheet with the shared overlay',
   /inspector__overlay/.test(profilesSheet) && /role: 'dialog'/.test(profilesSheet));
 check('the sheet uses the shared modal behaviour hook',

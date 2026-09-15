@@ -183,6 +183,15 @@ try { localStorage.setItem(INTENT_STATE_KEY, value ? '1' : '0'); } catch { /* ig
 // (IntentPanel + intent.js, scripts/test-inspector-intent.js): flip this to
 // true and the chip and the panel come back exactly as they were.
 const INTENT_SURFACE = false;
+// PROFILES_ENTRY — the "Chrome profiles" button on the setup screen is hidden.
+// It sat between the debugger-URL field and Save & discover, so at 360 px it
+// read as a required step between typing a URL and connecting, while a user
+// with a single Chrome profile only ever pastes a URL there. The feature is
+// unchanged: src/inspectorProfiles.js, the four REST routes, the sheet
+// (InspectorProfilesSheet.jsx) and their tests all stay, and typing a second
+// profile's port by hand still works. Flip this to true and the button — and,
+// with it, the sheet — come back exactly as they were.
+const PROFILES_ENTRY = false;
 // Hoisted sub-components (module scope) so their identity is stable
 // across InspectorView re-renders. Defining them *inside* the render
 // function gave every render a brand-new component type, so Preact
@@ -1231,6 +1240,11 @@ useEffect(() => {
   }
 
   // ---- Chrome profiles -------------------------------------------------
+  // The whole block below is reached only through the setup screen's
+  // PROFILES_ENTRY button, which is hidden by default, and through the
+  // mounted sheet. It is kept intact so the feature can be flipped back on
+  // with one flag instead of being rewritten.
+  //
   // loadProfiles — fetch the discovered profile list. Read-only on the
   // server (it scans user-data-dirs and the settings store); no Chrome
   // needs to be running for this to succeed.
@@ -1679,7 +1693,9 @@ return stepAttachedHistory('forward');
         // the URL field above: the one thing a user with two Chrome profiles
         // needs is "which of my profiles is this port", and that answer is not
         // something a URL field can give.
-        h('div', { class: 'inspector__profiles-row' },
+        // Gated by PROFILES_ENTRY (currently false) — see the note on that
+        // constant for why the row no longer renders by default.
+        PROFILES_ENTRY ? h('div', { class: 'inspector__profiles-row' },
         h('button', {
         class: 'btn inspector__profiles-open',
         type: 'button',
@@ -1691,7 +1707,8 @@ return stepAttachedHistory('forward');
         ? h('span', { class: 'inspector__profiles-active', title: 'Active Chrome profile' },
         'active: ', h('strong', null, activeProfile.label))
         : h('span', { class: 'inspector__profiles-active inspector__profiles-active--none' }, 'no profile selected')
-        ),
+        )
+        : null,
         h('div', { class: 'row row--actions' },
         h(StatusPill, { text: statusText }),
         h('button', { ref: saveBtn, class: 'btn btn--primary', type: 'button', onClick: () => { saveConfig().then(loadTargets); } }, 'Save & discover'),
@@ -1699,7 +1716,7 @@ return stepAttachedHistory('forward');
         )
         ),
         h('p', { class: 'hint hint--compact' }, 'Phone tip: ', h('code', null, 'adb reverse tcp:9222 tcp:9222'), ' then ', h('code', null, 'http://127.0.0.1:9222'), '.'),
-        profilesOpen
+        (PROFILES_ENTRY && profilesOpen)
         ? h(InspectorProfilesSheet, {
         list: profilesList,
         loading: profilesLoading,

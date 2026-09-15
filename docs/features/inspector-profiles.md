@@ -1,5 +1,12 @@
 # Inspector Chrome profiles
 
+> **Status: hidden.** The setup screen's **Chrome profiles** button does not
+> render today — it is gated by `PROFILES_ENTRY` in
+> [frontend/src/components/Inspector.jsx](../../frontend/src/components/Inspector.jsx),
+> which is `false`. Everything below still works if you flip that flag to
+> `true` (or type a profile's port into the debugger URL field directly, which
+> never needed the button). This page documents the feature itself.
+
 ## Overview
 
 The **Inspector** attaches to one Chrome debug endpoint at a time. This feature lets you keep more than one Chrome *user profile* — "Work", "Personal", a clean test profile — and switch which one the Inspector attaches to, without remembering ports or retyping debugger URLs.
