@@ -404,6 +404,58 @@ const d = display(ctx);
 return d === 'grid' || d === 'inline-grid';
 }
 
+// GRADIENT_PRESETS — the gradients a phone user can actually get to.
+//
+// `background-image` is the one property in the surface whose value has no
+// keyboard on-ramp: `linear-gradient(135deg, #f00 0%, #00f 100%)` is thirty-odd
+// characters of punctuation, and typing it on a phone is the exact tax this
+// whole surface exists to remove. So the image control offers a few named
+// directions instead — one tap, one write — and `none` to take the image back
+// off (which is the other thing a user needs and could otherwise only reach by
+// opening the editor and clearing the field).
+//
+// The stops are the two endpoints only, written in the exact form Chrome
+// serialises back: `rgb()` rather than hex, and no `180deg` on a vertical
+// gradient (the browser drops a default direction). That is not cosmetic — the
+// chip row compares the element's value against these strings to decide which
+// preset is in force, and `#ffffff` comes back as `rgb(255, 255, 255)`, so a hex
+// preset would never light up and every tap would look like it did nothing.
+// Verified against Chrome 140: all six below round-trip byte-identical.
+//
+// They are starting points, not a palette: the edit sheet's value field is one
+// tap away for anything else.
+export const GRADIENT_PRESETS = [
+{ id: 'none', label: 'None', value: 'none', hint: 'No background image' },
+{ id: 'down', label: 'Down', value: 'linear-gradient(rgb(255, 255, 255) 0%, rgb(220, 220, 220) 100%)', hint: 'Fade downward' },
+{ id: 'accent', label: 'Accent', value: 'linear-gradient(135deg, rgb(79, 140, 255) 0%, rgb(139, 92, 246) 100%)', hint: 'A two-hue accent wash' },
+{ id: 'warm', label: 'Warm', value: 'linear-gradient(135deg, rgb(255, 179, 71) 0%, rgb(255, 94, 98) 100%)', hint: 'Orange to red' },
+{ id: 'cool', label: 'Cool', value: 'linear-gradient(135deg, rgb(54, 209, 220) 0%, rgb(91, 134, 229) 100%)', hint: 'Teal to blue' },
+{ id: 'fade', label: 'Fade out', value: 'linear-gradient(rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0) 100%)', hint: 'A scrim for text over a photo' }
+];
+
+// imagePresets — the preset chips for the image control, with the one in force
+// marked. `value` matching is normalised (whitespace runs collapsed, lower
+// cased) because the browser re-serialises what it stores: a preset typed as
+// `linear-gradient(135deg, #4f8cff 0%, #8b5cf6 100%)` comes back from the
+// element as the same string, but one written by hand may not.
+export function imagePresets(value) {
+const current = valueKeyOf(value);
+return GRADIENT_PRESETS.map((g) => ({
+value: g.value,
+label: g.label,
+hint: g.hint,
+isOn: valueKeyOf(g.value) === current,
+title: g.isOn ? g.label + ' — the value in force' : 'Set background-image to ' + g.hint.toLowerCase()
+}));
+}
+
+// valueKeyOf — a value's identity for comparing a preset against what the
+// element holds. Local to this module so the control model stays free of the
+// value-index module (they are separate concerns).
+function valueKeyOf(value) {
+return String(value == null ? '' : value).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 // CONTROLS — every control the surface can show, in group order.
 //
 // `when` is a predicate over the element's *current* styles, not a static
@@ -497,6 +549,8 @@ options: [
 hint: 'The type colour' },
 { id: 'background-color', group: 'colour', prop: 'background-color', label: 'Background', kind: 'colour',
 hint: 'Behind the content' },
+{ id: 'background-image', group: 'colour', prop: 'background-image', label: 'Background image', kind: 'image',
+hint: 'A gradient or an image, painted over the background colour' },
 { id: 'border-color', group: 'colour', prop: 'border-color', label: 'Border colour', kind: 'colour',
 hint: 'The border line' },
 { id: 'opacity', group: 'effects', prop: 'opacity', label: 'Opacity', kind: 'range',
@@ -607,6 +661,7 @@ export const LIBRARY = [
 { prop: 'font-family', group: 'text', label: 'Font family', blurb: 'The face the type is set in', preview: 'weight' },
 { prop: 'color', group: 'colour', label: 'Colour', blurb: 'The type colour', preview: 'colour' },
 { prop: 'background-color', group: 'colour', label: 'Background', blurb: 'Behind the content', preview: 'colour' },
+{ prop: 'background-image', group: 'colour', label: 'Background image', blurb: 'A gradient or an image', preview: 'gradient' },
 { prop: 'border-color', group: 'colour', label: 'Border colour', blurb: 'The border line', preview: 'border' },
 { prop: 'opacity', group: 'effects', label: 'Opacity', blurb: 'How see-through it is', preview: 'opacity' },
 { prop: 'box-shadow', group: 'effects', label: 'Box shadow', blurb: 'Depth around the element', preview: 'shadow' },

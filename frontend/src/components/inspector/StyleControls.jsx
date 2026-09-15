@@ -28,7 +28,7 @@ import { useState, useEffect } from 'preact/hooks';
 import {
 GROUPS, SIDE_LABEL, controlsFor, defaultGroup, readValue, isDeclared,
 parseNumber, specForValue, stepChoices, percentFor, valueAtPercent, nudgeValue, unitChoices,
-segmentOptions, boxEdges, toUnit, unitFor, classifyControl
+segmentOptions, boxEdges, toUnit, unitFor, classifyControl, imagePresets
 } from './styleControls.js';
 
 // useDraft — the local value a control previews while a finger is down. Cleared
@@ -275,6 +275,33 @@ control.hint ? h('p', { class: 'inspector__touch-note' }, control.hint) : null
 );
 }
 
+// ImageRow — a background image as preset chips plus the value button. There is
+// no slider here and there never will be: a gradient is not a number. The chips
+// are the phone-sized answer to a property whose value cannot be typed on a
+// phone keyboard (see GRADIENT_PRESETS), and the value button opens the editor,
+// where the image view lists the page's own gradients and images to copy.
+function ImageRow(props) {
+const { control, value, ctx, onApply, onEdit, disabled } = props;
+const rows = imagePresets(value);
+return h('div', { class: 'inspector__touch-row' },
+h(RowHead, {
+label: control.label, prop: control.prop, value, isSet: isDeclared(control.prop, ctx), disabled, onEdit
+}),
+h('div', { class: 'inspector__touch-chips', role: 'group', 'aria-label': 'Background image presets' },
+rows.map((o) => h('button', {
+class: 'inspector__touch-chip' + (o.isOn ? ' is-on' : ''),
+type: 'button',
+key: o.value,
+'aria-pressed': String(!!o.isOn),
+disabled: disabled || o.isOn,
+title: o.title,
+onClick: () => onApply(control.prop, o.value)
+}, o.label))
+),
+control.hint ? h('p', { class: 'inspector__touch-note' }, control.hint) : null
+);
+}
+
 // BoxRing — one ring of the box model: four edge buttons on a 3x3 grid whose
 // middle cell holds whatever is inside this ring (`children`, or the ring's name).
 function BoxRing(props) {
@@ -485,6 +512,9 @@ onApply,
 onEdit,
 disabled
 });
+}
+if (c.kind === 'image') {
+return h(ImageRow, { key: c.id, control: c, value, ctx, onApply, onEdit, disabled });
 }
 // A slider whose value the style family cannot classify (a `var(--x)` or a
 // keyword) still renders — the row then says so and offers the value editor,

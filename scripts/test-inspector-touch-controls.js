@@ -50,9 +50,9 @@ function check(name, condition, detail) {
 const ctx = vm.createContext({});
 vm.runInContext(
   kindsSource + '\n' + controlsSource
-  + '\n;globalThis.TC = { GROUPS, SIDES, BOXES, CONTROLS, LIBRARY, LIBRARY_GROUPS, RANGE_SPECS,'
+  + '\n;globalThis.TC = { GROUPS, SIDES, BOXES, CONTROLS, LIBRARY, LIBRARY_GROUPS, RANGE_SPECS, GRADIENT_PRESETS,'
   + ' baseProp, specFor, specForValue, stepChoices, readValue, readDeclared, foldSides, isDeclared,'
-  + ' parseNumber, pxOf, toUnit, unitFor,'
+  + ' parseNumber, pxOf, toUnit, unitFor, imagePresets,'
   + ' percentFor, quantize, valueAtPercent, nudgeValue, unitChoices, segmentOptions, isFlex, isGrid,'
   + ' controlsFor, defaultGroup, boxEdges, edgeValue, searchLibrary, libraryRow, libraryCounts };\n',
   ctx
@@ -324,6 +324,58 @@ check('a card for a property the element does not declare offers Choose',
 check('a card\'s title says what tapping it will do',
 /Edit Font size/.test(card.title) && /now 1\.25rem/.test(card.title));
 
+// ---- the background image control --------------------------------------
+//
+// `background-image` is the one property in the surface with no keyboard
+// on-ramp: a gradient is thirty-odd characters of punctuation, which is exactly
+// the tax the touch surface exists to remove. It shipped with no control at all
+// — reachable only by typing the property name into the editor — and a gradient
+// the element already rendered was then invisible in the Colour group.
+const imageControl = TC.CONTROLS.find((c) => c.prop === 'background-image');
+check('the Colour group offers a background-image control', !!imageControl);
+check('the background image control is an image-kind control, not a colour or slider',
+imageControl.kind === 'image');
+check('the background image control lives in the Colour group', imageControl.group === 'colour');
+check('the Colour group shows the background image control alongside the colour ones',
+TC.controlsFor('colour', MODEL).map((c) => c.prop)
+.includes('background-image'));
+check('the add-property library offers a background-image card',
+TC.LIBRARY.some((r) => r.prop === 'background-image'));
+check('the background image card is searchable by what it is, not just its CSS name',
+TC.searchLibrary('gradient', 'all').some((r) => r.prop === 'background-image'));
+check('the background image card carries its own preview kind',
+TC.LIBRARY.find((r) => r.prop === 'background-image').preview === 'gradient');
+
+const presets = TC.imagePresets('linear-gradient(135deg, rgb(79, 140, 255) 0%, rgb(139, 92, 246) 100%)');
+check('the image control offers a preset for every direction plus an off switch',
+presets.length === TC.GRADIENT_PRESETS.length
+&& presets.some((p) => p.value === 'none'));
+check('every preset carries a label and a sentence for its tooltip',
+presets.every((p) => p.label && p.hint));
+check('a preset is one tappable write, not a value to type',
+presets.every((p) => typeof p.value === 'string' && p.value.length > 0));
+check('the preset the element already holds is marked as the value in force',
+presets.filter((p) => p.isOn).length === 1
+&& presets.find((p) => p.isOn).value === 'linear-gradient(135deg, rgb(79, 140, 255) 0%, rgb(139, 92, 246) 100%)');
+check('a preset comparison ignores the whitespace the browser re-serialises',
+TC.imagePresets('  LINEAR-GRADIENT(135deg,  RGB(79, 140, 255) 0%, rgb(139, 92, 246) 100%)  ').filter((p) => p.isOn).length === 1);
+check('a hand-written gradient matches no preset rather than lighting one up wrongly',
+TC.imagePresets('radial-gradient(circle, red, blue)').every((p) => !p.isOn));
+check('an element with no background image reads None as the value in force',
+TC.imagePresets('none').filter((p) => p.isOn).length === 1
+&& TC.imagePresets('none').find((p) => p.isOn).value === 'none');
+check('every preset is a valid background-image the browser will accept',
+presets.every((p) => p.value === 'none' || /^linear-gradient\(/.test(p.value)));
+// The chip row decides which preset is in force by comparing strings against
+// what the element reports, and Chrome re-serialises what it stores (hex becomes
+// `rgb()`, a default direction is dropped). A preset written in any other form
+// would therefore never light up, and every tap would look like it did nothing.
+// These are the exact forms Chrome 140 returns — see the control's own comment.
+check('no preset relies on a shorthand the browser rewrites back',
+TC.GRADIENT_PRESETS.every((g) => !/#|deg 0%| 180deg/.test(g.value)));
+check('every preset declares its stops in the form the browser reports them',
+TC.GRADIENT_PRESETS.every((g) => g.value === 'none' || /rgb|rgba/.test(g.value)));
+
 // ---- the surface is wired to the panel --------------------------------
 
 check('the panel renders the touch surface',
@@ -451,6 +503,14 @@ check('every control has a value button into the exact editor',
 check('the box model renders a margin ring and a nested padding ring',
   /box: 'margin'/.test(surfaceSource) && /box: 'padding'/.test(surfaceSource)
   && /inspector__touch-boxes/.test(surfaceSource));
+check('the surface renders an image row and dispatches the image kind to it',
+/function ImageRow/.test(surfaceSource) && /if \(c\.kind === 'image'\)/.test(surfaceSource)
+&& /h\(ImageRow, \{/.test(surfaceSource));
+check('the image row writes a preset through the same apply path as every other control',
+/imagePresets\(value\)/.test(surfaceSource)
+&& /onClick: \(\) => onApply\(control\.prop, o\.value\)/.test(surfaceSource));
+check('the image row is not hover-only: its chips are real buttons',
+/aria-pressed': String\(!!o\.isOn\)/.test(surfaceSource));
 check('the property browser has a search field and category tabs',
 /type: 'search'/.test(browserSource) && /LIBRARY_GROUPS\.map/.test(browserSource));
 // The browser is a *section of the Styles card*, not a sheet: no overlay, no

@@ -759,6 +759,21 @@ background: var(--accent);
 inset: 18px 8px 8px 18px;
 background: var(--warning);
 }
+/* The gradient card — the same two-square composition as the colour card, but
+   the larger square is painted with the accent preset's own gradient. The card
+   is the only place the surface can show what a `background-image` looks like
+   before the tap, which is the whole reason the picture exists. */
+.inspector__propcard--gradient .inspector__propcard-box {
+inset: 6px;
+background: linear-gradient(135deg, #4f8cff 0%, #8b5cf6 100%);
+border-radius: 4px;
+}
+.inspector__propcard--gradient .inspector__propcard-mark {
+inset: 26px 20px 20px 26px;
+background: var(--surface);
+border: 1px solid var(--border-strong);
+border-radius: 3px;
+}
 .inspector__propcard--size .inspector__propcard-box {
 inset: 12px 6px;
 background: var(--surface-3);

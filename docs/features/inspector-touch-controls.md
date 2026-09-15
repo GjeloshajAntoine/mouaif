@@ -46,6 +46,12 @@ selection leads to.
      underneath becomes that edge's.
    - **Colour rows** show a swatch plus the colours this page already uses for
      that property, so "the same green as the rest of the page" is one tap.
+   - **Image rows** (background image) offer named gradient presets —
+     **None / Down / Accent / Warm / Cool / Fade out** — because a gradient is
+     thirty-odd characters of punctuation and typing one on a phone is the exact
+     tax this surface exists to remove. The preset in force is highlighted; the
+     value button opens the editor, where the image view lists the page's own
+     gradients and images to copy.
 4. **Type instead, when you want to** — the value on the right of every row is a
    button that opens the same editor a declared row opens: exact typing, the
    value-type switch, the unit row, the value rail and the page's own suggestions.
@@ -75,7 +81,7 @@ Layout    display · position · (flex) direction, align items, justify, gap
 Spacing   margin · padding box model
 Size      width · height · corners
 Text      font size · weight · line height · tracking · align · colour
-Colour    background · border colour
+Colour    background · background image · border colour
 Effects   opacity · shadow · border style · border width
 ```
 
@@ -101,7 +107,17 @@ Effects   opacity · shadow · border style · border width
   `12px 8px` and the row's `set` chip is honest about it.
 - **A value that is not a number is not lied about.** With `width: auto` the
   slider and both steppers are disabled and the row says so; the value editor, or
-  the **Auto** / **100 %** chips, remain the paths.
+  the **Auto** / **100 %** chips, remain the paths. A gradient is the same
+  honesty in another shape: there is no rail for it and there never will be, so
+  the image row offers presets and hands the rest to the editor.
+- **A preset is written in the form the browser reports it back.** The image row
+  decides which preset is in force by comparing the element's value against the
+  preset strings, and Chrome re-serialises what it stores — `#ffffff` comes back
+  as `rgb(255, 255, 255)`, and a vertical `linear-gradient(180deg, …)` comes back
+  without the `180deg`. Presets are therefore declared in Chrome's own output
+  form (verified round-trip byte-identical on Chrome 140, and asserted in the
+  test), so the chip lights up on the tap that set it instead of silently
+  appearing to have done nothing.
 - **Edits are reversible.** Nothing is written until a tap or a release, and every
   write is one receipt entry with the value it replaced.
 
