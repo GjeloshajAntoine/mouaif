@@ -1506,9 +1506,19 @@ function renderMessageRow(state, refs, m) {
     }
     appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs, true);
 } else if (m.role === 'tool' && m.phase === 'result') {
+// A `tool_result` row carries only the result. Previews that render the
+// model's own payload need the call's arguments, so recover them from the
+// persisted call row whenever they are not on this row. `write_file`
+// renders the written content from them; `shell` renders the command it
+// ran. The lookup used to be gated to `write_file`, so a shell card built
+// from the result side (the chunked latest-first render, a pagination
+// page, a rebuild that lost the stashed args) showed its output with no
+// command — and whether that happened depended on which row was painted
+// first, which is why the command appeared only "sometimes".
+const recoveredArgs = m.args || toolCallArgsFor(state, m);
 appendToolResultCard({
 id: m.toolCallId, name: m.name, ok: m.ok,
-args: m.args || (normalizeToolName(m.name) === 'write_file' ? toolCallArgsFor(state, m) : null),
+args: recoveredArgs,
 result: m.content || ''
 }, refs);
 } else if (isPersistedTurnError(m)) {

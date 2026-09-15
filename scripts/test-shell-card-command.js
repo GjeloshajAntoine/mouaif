@@ -1,28 +1,3 @@
-'use strict';
-// Regression test: an expanded shell card shows the command in full.
-//
-// The collapsed card head is one ellipsized line capped at
-// TOOL_ARGS_PREVIEW_CHARS (220), which is fine for `ls -la` and useless
-// for what the model actually runs most of the time — a heredoc commit
-// message, a compound `&&` chain. The head for one real commit call read
-// `cd /home/ubuntu/mouaif && git commit -q -F - <<'MSG' feat(ch…` and the
-// other 1.7 kB of the command were nowhere on screen: the expanded body
-// showed only the result (the commit hash), because the result renderer
-// painted the tool's output and nothing else.
-//
-// The expanded card now renders the full arguments above that output when
-// — and only when — the head had to truncate them. The tests below pin
-// both halves of that rule:
-//
-//   * a long command is present in the expanded body, in full, with its
-//     line breaks (a shell command's structure is its newlines), and is
-//     placed above the output so the card reads "what ran, then what came
-//     back";
-//   * a short command that the head already showed in full is NOT
-//     repeated in the body, so the expand of an ordinary call is unchanged;
-//   * the failing-result path keeps the same order, since an error card is
-//     auto-expanded and is exactly where the command matters most.
-//
 // toolRender.js is loaded the way the sibling transcript tests load it:
 // the import block is stripped and the body runs in a VM whose globals
 // supply the module's helpers.
@@ -34,7 +9,9 @@ const vm = require('node:vm');
 
 const CHAT_DIR = path.join(__dirname, '../frontend/src/components/chat');
 
-// ---- DOM stub --------------------------------------------------------
+function camelAttr(name) {
+  return String(name).replace(/^data-/, '').replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+}
 
 function makeNode(tag) {
   const classes = new Set();
@@ -46,10 +23,16 @@ function makeNode(tag) {
     dataset: {},
     style: {},
     _text: '',
+    attributes: {},
     classList: {
       add(...names) { for (const n of names) classes.add(n); },
       remove(...names) { for (const n of names) classes.delete(n); },
-      contains(name) { return classes.has(name); }
+      contains(name) { return classes.has(name); },
+      toggle(name) {
+        if (classes.has(name)) { classes.delete(name); return false; }
+        classes.add(name);
+        return true;
+      }
     },
     get className() { return Array.from(classes).join(' '); },
     set className(value) {
@@ -62,6 +45,8 @@ function makeNode(tag) {
       node.children.length = 0;
     },
     get childElementCount() { return node.children.length; },
+    setAttribute(name, value) { node.attributes[name] = String(value); },
+    getAttribute(name) { return Object.prototype.hasOwnProperty.call(node.attributes, name) ? node.attributes[name] : null; },
     appendChild(child) {
       child.parentNode = node;
       node.children.push(child);
@@ -75,10 +60,28 @@ function makeNode(tag) {
       return child;
     },
     removeChild(child) {
-      const at = node.children.indexOf(child);
-      if (at >= 0) node.children.splice(at, 1);
-      child.parentNode = null;
-      return child;
+    const at = node.children.indexOf(child);
+    if (at >= 0) node.children.splice(at, 1);
+    child.parentNode = null;
+    return child;
+    },
+    replaceChild(fresh, old) {
+    const at = node.children.indexOf(old);
+    if (at === -1) return node.appendChild(fresh);
+    fresh.parentNode = node;
+    old.parentNode = null;
+    node.children[at] = fresh;
+    return old;
+    },
+    remove() { if (node.parentNode) node.parentNode.removeChild(node); },
+    matches(selector) { return matchesSelector(node, selector); },
+    closest(selector) {
+      let cur = node.parentNode;
+      while (cur) {
+        if (matchesSelector(cur, selector)) return cur;
+        cur = cur.parentNode;
+      }
+      return null;
     },
     querySelector(selector) { return querySelector(node, selector)[0] || null; },
     querySelectorAll(selector) { return querySelector(node, selector); },
@@ -88,23 +91,47 @@ function makeNode(tag) {
   return node;
 }
 
-// Supports the selectors toolRender.js uses: `.class` and `tag`.
+// Supports the selectors the transcript code actually uses: `.class`,
+// `[data-x="value"]`, and `:scope > .class` (direct children only).
 function matchesSelector(node, selector) {
   const sel = String(selector).trim();
+  if (sel.startsWith(':scope > ')) return false; // handled by the caller
   if (sel.startsWith('.')) return node.classList.contains(sel.slice(1));
+  if (sel.startsWith('[') && sel.endsWith(']')) {
+    const inner = sel.slice(1, -1);
+    const eq = inner.indexOf('=');
+    const name = (eq === -1 ? inner : inner.slice(0, eq)).trim();
+    const raw = eq === -1 ? null : inner.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+    const value = node.dataset[camelAttr(name)];
+    return raw == null ? value != null : value === raw;
+  }
   return node.tagName === sel.toUpperCase();
 }
 
 function querySelector(root, selector) {
+  const sel = String(selector).trim();
+  const direct = sel.startsWith(':scope > ');
+  const target = direct ? sel.slice(':scope > '.length) : sel;
   const out = [];
-  const walk = (node) => {
+  const visit = (node, depth) => {
     for (const child of node.children) {
-      if (matchesSelector(child, selector)) out.push(child);
-      walk(child);
+      if (matchesSelector(child, target) && (!direct || depth === 0)) out.push(child);
+      if (!direct || depth === 0) visit(child, depth + 1);
     }
   };
-  walk(root);
+  visit(root, 0);
   return out;
+}
+
+function textOf(node) {
+  const parts = [];
+  if (node._text) parts.push(node._text);
+  for (const child of node.children) parts.push(textOf(child));
+  return parts.join('\n');
+}
+
+function findPre(body, className) {
+  return querySelector(body, '.tool-preview__pre').find((el) => el.classList.contains(className)) || null;
 }
 
 // ---- Module loader ---------------------------------------------------
@@ -116,14 +143,21 @@ function installContext() {
     document: {
       createElement: makeNode,
       querySelector: () => null,
-      querySelectorAll: () => []
+      querySelectorAll: () => [],
+      addEventListener() {},
+      removeEventListener() {}
     },
+    // Real implementations the render path depends on. The Proxy below
+    // auto-stubs anything else the modules import.
+    cssEscape: (value) => String(value),
     publishWebPreview() {}
   };
   const context = vm.createContext(new Proxy(base, {
     has: () => true,
     get: (target, key) => (key in target ? target[key] : () => undefined)
   }));
+  // tools.js and toolRender.js first: transcript.js resolves their
+  // exports (renderToolResultBody, coerceToolResult, ...) as globals.
   const load = (file) => {
     const source = fs.readFileSync(path.join(CHAT_DIR, file), 'utf8')
       .replace(/^import[\s\S]*?from\s+'[^']+';$/gm, '')
@@ -131,15 +165,30 @@ function installContext() {
     vm.runInContext(source, context, { filename: file });
   };
   load('tools.js');
+  load('toolRender.js');
+  const transcript = fs.readFileSync(path.join(CHAT_DIR, 'transcript.js'), 'utf8')
+    .replace(/^import[\s\S]*?from\s+'[^']+';$/gm, '')
+    .replace(/^export /gm, '');
   vm.runInContext(
-    fs.readFileSync(path.join(CHAT_DIR, 'toolRender.js'), 'utf8')
-      .replace(/^import[\s\S]*?from\s+'[^']+';$/gm, '')
-      .replace(/^export /gm, '')
-    + '; this.renderShellToolResult = renderShellToolResult;',
+    transcript + '; this.appendToolCallCard = appendToolCallCard; this.appendToolResultCard = appendToolResultCard;'
+      + ' this.renderMessageRow = renderMessageRow; this.toolCallArgsFor = toolCallArgsFor;',
     context,
-    { filename: 'toolRender.js' }
+    { filename: 'transcript.js' }
   );
   return context;
+}
+
+// makeRefs() -> the transcript ref object renderMessageRow expects.
+function makeRefs() {
+  const transcript = makeNode('div');
+  transcript.className = 'chat-view__transcript';
+  return {
+    transcript: { current: transcript },
+    pinnedToBottom: { current: true },
+    _insertAnchor: null,
+    _suspendScrollPin: false,
+    _lastInsertedRow: null
+  };
 }
 
 // ---- Assertions ------------------------------------------------------
@@ -163,13 +212,6 @@ const LONG_CMD = [
 
 function classesOf(body) {
   return body.children.map((c) => c.className);
-}
-
-function textOf(node) {
-  const parts = [];
-  if (node._text) parts.push(node._text);
-  for (const child of node.children) parts.push(textOf(child));
-  return parts.join('\n');
 }
 
 function main() {
@@ -259,6 +301,60 @@ function main() {
     }, null);
     check('a result with no arguments does not flag the body',
       !noArgs.classList.contains('tool-preview--with-args'), noArgs.className);
+  }
+
+  // ---- 6. The command survives either render order ------------------
+  //
+  // Regression: the args recovery in renderMessageRow was gated to
+  // `write_file`, so a shell card built from its RESULT row (tail-first
+  // chunked render, a pagination page, a rebuild that lost the stashed
+  // args) had no command to render, while a card built from its CALL row
+  // did. Same data, same chat — different result depending on which row
+  // the render reached first.
+  {
+    const transcriptMod = installContext();
+    const result = {
+      ok: true, stdout: '8e358e08 feat(chat): reuse transcript rows\n', stderr: '',
+      exitCode: 0, identity: 'mouaif shell · linux · bash (/bin/bash)', durationMs: 33
+    };
+    const callRow = { role: 'tool', phase: 'call', toolCallId: 'call_shell_1', name: 'shell', args: { cmd: LONG_CMD } };
+    const resultRow = {
+      role: 'tool', phase: 'result', toolCallId: 'call_shell_1', name: 'shell', ok: 1,
+      content: JSON.stringify(result)
+    };
+    const state = { messages: [callRow, resultRow] };
+
+    const expandAndRead = (refs) => {
+      const card = refs.transcript.current.children[0];
+      if (typeof card._lazyBody === 'function') card._lazyBody();
+      const pre = card.querySelector('.tool-preview__pre--args');
+      return { present: !!pre, full: !!pre && pre.textContent === LONG_CMD, rows: refs.transcript.current.children.length };
+    };
+
+    // Result row first: the call row is still in the backfill when the
+    // card is built, so it has to recover the args from state.messages.
+    {
+      const refs = makeRefs();
+      transcriptMod.renderMessageRow(state, refs, resultRow);
+      const facts = expandAndRead(refs);
+      check('a result-first shell card recovers the command', facts.present && facts.full,
+        JSON.stringify(facts));
+      // The late call row must not add a second, command-less card.
+      transcriptMod.renderMessageRow(state, refs, callRow);
+      check('the late call row still does not duplicate the card',
+        refs.transcript.current.children.length === 1,
+        String(refs.transcript.current.children.length));
+    }
+
+    // Call row first: the live-stream order, which already worked.
+    {
+      const refs = makeRefs();
+      transcriptMod.renderMessageRow(state, refs, callRow);
+      transcriptMod.renderMessageRow(state, refs, resultRow);
+      const facts = expandAndRead(refs);
+      check('a call-first shell card shows the same command', facts.present && facts.full,
+        JSON.stringify(facts));
+    }
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

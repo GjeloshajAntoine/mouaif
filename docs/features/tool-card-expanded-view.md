@@ -39,11 +39,13 @@ The render path is plain DOM (no Preact), so the SSE hot path stays as cheap as 
 
 `buildToolArgs(args, name)` returns `null` when the head already showed the arguments in full. It compares against the same head format rather than a length heuristic, which is why a 20-character command adds nothing to the expanded card while a 1900-character one adds everything.
 
+Where the arguments come from: a `tool_result` row carries only the result, so the call's arguments are recovered by `toolCallArgsFor`, which scans `state.messages` for the matching `call` row. That lookup must run for **every** tool whose preview renders the call payload on the result side — `write_file` (the written content) and `shell` (the command). It used to be gated to `write_file`, which made the command appear only sometimes: a card built from its result row (the chunked latest-first render, a pagination page, a reconcile that had lost the stashed `card._toolArgs`) had nothing to render, while a card built from its call row did. The de-dup guard then skipped the late call row, so the arguments never arrived either. Same chat, same data — different result purely from which row the render reached first.
+
 Mobile-first notes: the arguments block is a `<pre>` with `pre-wrap` so a long command wraps instead of forcing a horizontal scroll on a 360 px screen; its cap is expressed in `dvh` so it tracks the browser chrome; and the whole header row is the tap target, well over the 44 px minimum.
 
 Colour and divider rule: the command block must not be styled as a separate surface. `.tool-preview__pre--args` mirrors the output's background, text colour and font size, and takes NO border of its own. When a command block is present the renderer adds `.tool-preview--with-args` to the body, and CSS drops the output pre's own border too — otherwise the output's top edge sits directly under the command text and reads as a horizontal divider between the two sections. The sections are separated by a 6 px margin, nothing else. The class is added only when the command block actually exists, so a shell card that shows output alone (a short command the head already showed in full) keeps its box.
 
-Covered by `scripts/test-shell-card-command.js`, which pins the full command, its line breaks, its position above the output, the non-duplication of a short command, the flat-body flag, the error path, and the no-arguments case.
+Covered by `scripts/test-shell-card-command.js`, which pins the full command, its line breaks, its position above the output, the non-duplication of a short command, the flat-body flag, the error path, the no-arguments case, and — driving the real `renderMessageRow` through both render orders — that a command survives being built from either side of the call/result pair.
 
 ## Related
 
