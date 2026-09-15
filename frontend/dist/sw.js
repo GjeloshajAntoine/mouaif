@@ -35,7 +35,7 @@
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = 'de7e5fa1';
+const CACHE_VERSION = '660f7f66';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
@@ -253,13 +253,24 @@ self.addEventListener('message', (event) => {
 
 // ---- Push notifications ------------------------------------------------
 
+// Two pushes for the same chat can arrive in the same tick — a completion
+// chasing the last progress update, or a status and an authorization alert
+// from one turn. Both handlers then read `getNotifications()` before either
+// has called `showNotification()`, so neither sees the other's notification
+// and the same-slot prune below has nothing to close: the slot ends up with
+// two OS notifications. Serialize the whole handler so each push prunes
+// against the queue as it stands *after* the previous push was shown.
+// `getNotifications()` is deliberately read inside the serialized section
+// (after any earlier `showNotification`) for the same reason.
+let pushChain = Promise.resolve();
+
 self.addEventListener('push', (event) => {
   let data;
   try { data = event.data ? event.data.json() : {}; } catch { data = {}; }
   const { title, body, tag, renotify, icon, badge, data: payload, actions, requireInteraction } = data;
   if (!title && !body) return;
 
-  event.waitUntil((async () => {
+  const run = pushChain.then(() => (async () => {
     const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     const targetUrl = payload && payload.url ? new URL(payload.url, self.location.origin) : null;
     const freshViews = targetUrl ? await Promise.all(windows.map(queryClientView)) : [];
@@ -314,6 +325,10 @@ if (sameTag || sameStatusSlot || sameAuthorizationSlot) notification.close();
       vibrate: requireInteraction === true ? [150, 80, 150] : [100]
     });
   })());
+  // Advance the serialization chain, swallowing failures so one bad push can
+  // never wedge every later notification behind a rejected promise.
+  pushChain = run.catch(() => {});
+  event.waitUntil(run);
 });
 
 async function openNotificationTarget(data) {
