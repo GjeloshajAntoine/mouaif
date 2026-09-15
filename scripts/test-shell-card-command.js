@@ -232,6 +232,35 @@ function main() {
       !body.querySelector('.tool-preview__pre--args'));
   }
 
+  // ---- 5. The command block is flagged, so the body can go flat -----
+  //
+  // A shell card that shows a command AND its output is one continuous
+  // terminal: no border lines in the body (the CSS keys off
+  // `.tool-preview--with-args`). A card that shows output alone keeps its
+  // box, so the class must be added only when the command block exists.
+  {
+    const withCmd = makeNode('div');
+    mod.renderShellToolResult(withCmd, {
+      ok: true, stdout: 'o\n', stderr: '', exitCode: 0, identity: 'bash'
+    }, { cmd: LONG_CMD });
+    check('a truncated command flags the body as showing arguments',
+      withCmd.classList.contains('tool-preview--with-args'), withCmd.className);
+
+    const shortCmd = makeNode('div');
+    mod.renderShellToolResult(shortCmd, {
+      ok: true, stdout: 'o\n', stderr: '', exitCode: 0, identity: 'bash'
+    }, { cmd: 'ls -la' });
+    check('a short command does not flag the body as showing arguments',
+      !shortCmd.classList.contains('tool-preview--with-args'), shortCmd.className);
+
+    const noArgs = makeNode('div');
+    mod.renderShellToolResult(noArgs, {
+      ok: true, stdout: 'o\n', stderr: '', exitCode: 0, identity: 'bash'
+    }, null);
+    check('a result with no arguments does not flag the body',
+      !noArgs.classList.contains('tool-preview--with-args'), noArgs.className);
+  }
+
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   if (failed) process.exitCode = 1;
 }

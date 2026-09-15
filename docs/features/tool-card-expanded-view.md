@@ -24,7 +24,7 @@ Behavior notes:
 - **A long command is shown above its output**, not buried under it, so the card reads "what ran, then what came back".
 - **A short command is not repeated.** The full-arguments block is rendered only when the collapsed head had to truncate the call, so expanding an ordinary `ls -la` card looks exactly as it did before.
 - **The arguments block scrolls** rather than growing without bound: it is capped at one third of the viewport height, so one enormous command cannot push the tool's output off screen.
-- **A shell card is one terminal.** The command block uses the same background, border, text colour and type size as the output below it — no second colour, no second pane. Only its height differs.
+- **A shell card is one terminal.** The command is not a separate surface: no second colour, and no divider line between the command and its output. The two sections are separated by space alone.
 - **Long output scrolls inside the card**, capped at 40% of the viewport height.
 - **Result bodies build on first expand.** The structured preview is created the first time a card opens and is cached on the element, so a tool-heavy transcript does not pay for DOM it never shows.
 
@@ -41,9 +41,9 @@ The render path is plain DOM (no Preact), so the SSE hot path stays as cheap as 
 
 Mobile-first notes: the arguments block is a `<pre>` with `pre-wrap` so a long command wraps instead of forcing a horizontal scroll on a 360 px screen; its cap is expressed in `dvh` so it tracks the browser chrome; and the whole header row is the tap target, well over the 44 px minimum.
 
-Colour rule: the command block must not be styled as a separate surface. `.tool-preview__pre--args` mirrors `.tool-preview__terminal` (background, border, radius, colour, font size) rather than picking its own tone, so the expanded shell card reads as one terminal instead of two panes. A muted command would also imply the command is secondary to its own output, which is backwards for a failing call.
+Colour and divider rule: the command block must not be styled as a separate surface. `.tool-preview__pre--args` mirrors the output's background, text colour and font size, and takes NO border of its own. When a command block is present the renderer adds `.tool-preview--with-args` to the body, and CSS drops the output pre's own border too — otherwise the output's top edge sits directly under the command text and reads as a horizontal divider between the two sections. The sections are separated by a 6 px margin, nothing else. The class is added only when the command block actually exists, so a shell card that shows output alone (a short command the head already showed in full) keeps its box.
 
-Covered by `scripts/test-shell-card-command.js`, which pins the full command, its line breaks, its position above the output, the non-duplication of a short command, the error path, and the no-arguments case.
+Covered by `scripts/test-shell-card-command.js`, which pins the full command, its line breaks, its position above the output, the non-duplication of a short command, the flat-body flag, the error path, and the no-arguments case.
 
 ## Related
 

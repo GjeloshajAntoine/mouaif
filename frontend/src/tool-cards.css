@@ -446,6 +446,18 @@ color: var(--fg-soft);
 .tool-preview--list { gap: 1px; }
 .tool-preview--diff { gap: 1px; }
 .tool-preview--terminal { gap: 1px; }
+/* A shell card that shows a command AND its output is one continuous
+   terminal: meta, space, the command, space, the output — no border lines
+   anywhere in the body. Stacking the output's own border under the command
+   block read as a divider between them. The class is added only when the
+   command block is actually present, so a card that shows output alone
+   keeps its box. */
+.tool-preview--terminal.tool-preview--with-args .tool-preview__terminal {
+  border: 0;
+  border-radius: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
 .tool-preview__meta {
   font-size: 0.7rem;
   font-weight: 600;
@@ -472,24 +484,26 @@ color: var(--fg-soft);
   min-height: 1.5rem;
 }
 /* The full call arguments above a result, shown when the head had to
-   ellipsize them. It is the SAME surface as the output below it — same
-   background, border, text colour and type size — because a shell card is
-   one terminal. Giving the command its own colour made the card read as
-   two panes, and the muted tone implied the command was secondary to its
-   own output. Only the height differs: the command scrolls at one third
-   of the viewport so one enormous command cannot push the output off
-   screen. */
+   ellipsize them. It is the SAME surface as the output below — same
+   background, text colour and type size, and deliberately NO border of its
+   own — because a shell card is one terminal. A second border stacked on
+   the output's own border read as a divider line between the two, and a
+   separate tone implied the command was secondary to its own output. The
+   two sections are separated by space alone. Only the height differs: the
+   command scrolls at one third of the viewport so one enormous command
+   cannot push the output off screen. */
 .tool-preview__args {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  margin-bottom: 6px;
 }
 .tool-preview__pre--args {
   max-height: 33dvh;
   overflow-y: auto;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
+  border: 0;
+  border-radius: 0;
   color: var(--fg);
   font-size: 0.7rem;
 }

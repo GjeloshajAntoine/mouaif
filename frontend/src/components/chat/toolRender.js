@@ -430,6 +430,12 @@ function renderShellToolResult(body, r, args) {
   // What the model ran, when the collapsed head had to ellipsize it. Built
   // up front so both branches below can place it above the output.
   const cmdArgs = buildToolArgs(args, 'shell');
+  // The command block is only present when the head had to truncate, and
+  // its presence is what makes the body one continuous terminal: the
+  // output's own border is dropped so there is no divider line between the
+  // two sections (see .tool-preview--with-args). A card that shows output
+  // alone keeps its box.
+  if (cmdArgs) body.classList.add('tool-preview--with-args');
   if (!r || r.error) {
     if (cmdArgs) body.appendChild(cmdArgs);
     renderToolMeta(body, [r && r.identity, r && r.code, r && r.durationMs != null ? (r.durationMs + 'ms') : null]);
