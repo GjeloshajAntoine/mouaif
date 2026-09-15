@@ -190,6 +190,33 @@ function Host() {
     bump();
     await frame();
     },
+    // The reverse order, and the duplicate that survived the first fix: the
+    // call card is already up (the answer came from another tab, so this tab
+    // never saw the click) and a LATE mount path — the reconcile poll's
+    // pending snapshot, or a live-replay reconnect — tries to mount the
+    // question again. authCardGuard() must see the call card as that call's
+    // existing representation and refuse, leaving exactly one card.
+    late: async () => {
+    reset();
+    const id = 'call_late_fixture';
+    const args = { question: 'Which branch should the release be cut from?', options: OPTIONS, multiSelect: false };
+    appendToolCallCard({ id, name: 'ask_user', args }, refs, true);
+    appendToolResultCard({
+      id, name: 'ask_user', ok: true,
+      result: { answered: true, choice: 'main', extra: '', options: OPTIONS.map((o) => ({ label: o.label, value: o.value })), multiSelect: false, cancelled: false }
+    }, refs, true);
+    // A real mount attempt through the shared guard (not a direct call), so
+    // what is measured is the production de-dupe, not the fixture's markup.
+    mountOverlayCard(refs, id, () => askUserCard(
+      Object.assign({ callId: id }, cardData(OPTIONS)),
+      '/fixture/project', 'chat_fixture', refs, (txt) => { status = txt; }
+    ));
+    bump();
+    await frame();
+    },
+    // A prompt for a call with nothing on screen must still mount: the
+    // guard must not block the ordinary first render.
+    fresh: async () => { reset(); mount(OPTIONS, null, 'call_fresh_fixture'); bump(); await frame(); },
     cancel: async () => { removePendingAuthorizationCards(refs); bump(); await frame(); },
     // A question the user DISMISSED: the runner answers it with ok:false and
     // cancelled:true, so the collapsed card has to report the dismissal

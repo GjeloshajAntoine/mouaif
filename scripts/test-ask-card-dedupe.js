@@ -428,8 +428,80 @@ function main() {
     check('a settled tool card survives the cancel', left.length === 1);
   }
 
-  console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
-  if (failed) process.exitCode = 1;
+  // ---- 4. a prompt never mounts beside the card of its own call ----
+  //
+  // The two fixes above cover the order "prompt is up, then the call
+  // frames arrive". The reverse order is the one that survived: the call
+  // row (or its result) is already on screen — a tail sync re-rendered it,
+  // or the question was answered from the OS notification / another tab so
+  // this tab never saw the click — and then a *later* mount path runs
+  // (the reconcile poll's pending snapshot, or a live-replay reconnect)
+  // and appends the prompt beside it. authCardGuard() only looked for
+  // another prompt card, so it mounted and one call was on screen twice:
+  // the answered card plus a live, unanswered-looking question for it.
+  //
+  // The guard now treats any tool card carrying that call id as the
+  // existing representation of the call, so the prompt mount is a no-op.
+  {
+    // overlay.js imports whenTranscriptSettled from transcript.js; the loader
+    // strips the import, so supply a settled-immediately stand-in (the real
+    // one only defers to the next animation frame).
+    const overlayGlobals = Object.assign({}, globals, {
+      whenTranscriptSettled: () => Promise.resolve()
+    });
+    const overlay = loadModule('overlay.js', ['mountOverlayCard', 'authCardGuard'], overlayGlobals);
+    const el = createElement('div');
+    el._root = true;
+    const refs = makeRefs(el);
+    // The call card is already on screen for this id ...
+    transcript.appendToolCallCard({ id: 'call_late', name: 'ask_user', args: ASK_ARGS }, refs);
+    check('one call card is up before the late prompt mount', toolCards(el).length === 1);
+    // ... and the prompt mount is attempted afterwards.
+    overlay.mountOverlayCard(refs, 'call_late', () => mountAskOverlay(el, 'call_late'));
+    return new Promise((resolve) => {
+      Promise.resolve().then(() => Promise.resolve()).then(() => {
+        check('a late prompt does not mount beside its own call card',
+          toolCards(el).length === 1, 'cards=' + toolCards(el).length);
+        check('the surviving card is still the call card',
+          toolCards(el)[0].classList.contains('tool-card--call')
+          && !toolCards(el)[0].classList.contains('tool-card--ask-user'));
+
+        // A prompt for a call that has NOTHING on screen still mounts:
+        // the guard must not block the ordinary first render.
+        const el2 = createElement('div');
+        el2._root = true;
+        const refs2 = makeRefs(el2);
+        // A painted row is what mountOverlayCard requires before it mounts.
+        const row = createElement('div');
+        row.className = 'chat-msg chat-msg--user';
+        el2.appendChild(row);
+        overlay.mountOverlayCard(refs2, 'call_fresh', () => mountAskOverlay(el2, 'call_fresh'));
+        return Promise.resolve().then(() => Promise.resolve()).then(() => {
+          check('a prompt for a call with no card still mounts',
+            el2.querySelectorAll('.tool-card--ask-user').length === 1);
+
+          // And an authorization prompt is guarded the same way.
+          const el3 = createElement('div');
+          el3._root = true;
+          const refs3 = makeRefs(el3);
+          transcript.appendToolCallCard({ id: 'call_shell_late', name: 'shell', args: { cmd: 'ls' } }, refs3);
+          overlay.mountOverlayCard(refs3, 'call_shell_late', () => {
+            const auth = createElement('div');
+            auth.className = 'tool-card tool-card--authorization';
+            auth.dataset.authCallId = 'call_shell_late';
+            el3.appendChild(auth);
+          });
+          return Promise.resolve().then(() => Promise.resolve()).then(() => {
+            check('a late authorization prompt does not mount beside its call card',
+              el3.querySelectorAll('.tool-card--authorization').length === 0);
+            console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
+            if (failed) process.exitCode = 1;
+            resolve();
+          });
+        });
+      });
+    });
+  }
 }
 
 try {

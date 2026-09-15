@@ -14,11 +14,23 @@ import { cssEscape } from './utils.js';
 // replay stream, and reconcile poll can all see the same pending request.
 // Both card types stamp `data-auth-call-id` on the card; if a card for
 // this callId is already on screen, skip it.
+//
+// The standing card does not have to be another prompt: a `tool_call` /
+// `tool_result` row card for the same call id counts too (`data-tool-id`
+// on every tool card). That card is already the answer to "one call, one
+// card" — appending the prompt beside it would show the same call twice,
+// which is exactly what the user sees when the question keeps its own
+// card after the call frames have landed (answer submitted from another
+// tab or the OS notification, a tail sync that re-rendered the call row,
+// or a `tool_call` frame that reached the transcript before the pending
+// poll's deferred mount ran).
 export function authCardGuard(refs, callId) {
 if (!callId || !refs.transcript || !refs.transcript.current) return true;
+const id = cssEscape(String(callId));
 const existing = refs.transcript.current.querySelector(
-'.tool-card--authorization[data-auth-call-id="' + cssEscape(String(callId)) + '"],' +
-'.tool-card--ask-user[data-auth-call-id="' + cssEscape(String(callId)) + '"]'
+'.tool-card--authorization[data-auth-call-id="' + id + '"],' +
+'.tool-card--ask-user[data-auth-call-id="' + id + '"],' +
+'[data-tool-id="' + id + '"]'
 );
 return !existing;
 }
