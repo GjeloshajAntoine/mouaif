@@ -468,11 +468,20 @@ if (fileToolsEnabled) {
             }
           }
         }
+        // Per-leaf file overrides (e.g. tools.read_file.mode = "off"
+        // with the `file` family enabled) must drop just that operation,
+        // matching what streamChat advertises to the model.
         for (let i = toolSpecs.length - 1; i >= 0; i--) {
-          const spec = toolSpecs[i];
-          if (!spec || !spec.function || !String(spec.function.name).startsWith('mcp__')) continue;
-          const cfg = authz.effectiveConfig(dir, spec.function.name);
-          if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
+        const spec = toolSpecs[i];
+        if (!spec || !spec.function || !authz.FILE_TOOL_NAMES.has(spec.function.name)) continue;
+        const cfg = authz.effectiveConfig(dir, spec.function.name);
+        if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
+        }
+        for (let i = toolSpecs.length - 1; i >= 0; i--) {
+        const spec = toolSpecs[i];
+        if (!spec || !spec.function || !String(spec.function.name).startsWith('mcp__')) continue;
+        const cfg = authz.effectiveConfig(dir, spec.function.name);
+        if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
         }
       } catch { /* authorization state unreadable; keep every tool advertised */ }
       // Apply the same per-profile reduction the stream applies. For

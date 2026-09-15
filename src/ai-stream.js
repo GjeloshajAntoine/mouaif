@@ -543,6 +543,21 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
           }
         }
       }
+      // Per-leaf file overrides: a single file operation can carry its
+      // own `off` (e.g. tools.read_file.mode = "off") while the `file`
+      // family stays enabled. The family loop above only fires when the
+      // family itself is `off`, so resolve each file-tool spec through
+      // effectiveConfig to honor the leaf. Without this the leaf was
+      // still advertised even though the execution gate rejects it with
+      // ETOOL_DISABLED — the model paid tokens for a tool it could never
+      // use. A family-level `off` still hides every leaf (the loop above
+      // runs first and drops them all).
+      for (let i = toolSpecs.length - 1; i >= 0; i--) {
+      const spec = toolSpecs[i];
+      if (!spec || !spec.function || !authz.FILE_TOOL_NAMES.has(spec.function.name)) continue;
+      const cfg = authz.effectiveConfig(opts.projectDir, spec.function.name);
+      if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
+      }
       // MCP tools resolve through the layered gate (per-tool →
       // per-server → shared, see authorization.mcpLayeredConfig): an
       // `off` at any level hides exactly the mcp__<slug>__<tool> specs
