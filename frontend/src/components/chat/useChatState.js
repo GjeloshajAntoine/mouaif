@@ -40,6 +40,16 @@ import { fileOrbFromApp, FILE_ORB_DEFAULT } from './fileOrb.js';
 import { composerToolsFromApp, COMPOSER_TOOLS_DEFAULT } from './composerTools.js';
 import { createPager, recordInitialPage, shouldLoadOlder } from './pagination.js';
 import { costSnapshot } from './costSummary.js';
+import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings/toolAuth.js';
+
+// chatAuthUrl(projectDir, chatId) — the chat-scoped authorization view.
+// `chatId` makes the response resolve every mode chat-over-project and
+// echo the chat's own override maps under `chat`; without it the same
+// endpoint answers with the project view used by the settings page.
+function chatAuthUrl(projectDir, chatId) {
+  return '/api/tools/authorization?projectDir=' + encodeURIComponent(projectDir)
+    + (chatId ? '&chatId=' + encodeURIComponent(chatId) : '');
+}
 
 // useChatState(props) -> { state, refs, actions, ui }
 //
@@ -389,6 +399,48 @@ setCustomActions(response.body.actions);
 }
 } catch { /* keep the last known action list */ }
   }, [projectDir]);
+
+  // applyChatAuthResponse(body) — fold a chat-scoped authorization view
+  // (GET /api/tools/authorization?chatId=… or the PUT response) into the
+  // `toolAuth` / `mcpAuth` refs the two chat surfaces render from.
+  //
+  // `chat` is the chat's own override map; keeping it on state lets the
+  // card and the popup label a row as pinned by this chat rather than
+  // inherited. The effective modes in `body.tools` / `body.mcp` are what
+  // the segments show, so both surfaces follow chat-over-project
+  // precedence without re-deriving it.
+  function applyChatAuthResponse(body) {
+    if (!body || typeof body !== 'object') return;
+    const chatOverrides = (body.chat && typeof body.chat === 'object') ? body.chat : null;
+    const t = body.tools;
+    if (t && typeof t === 'object') {
+      const auth = {};
+      for (const name of ['shell', 'file', 'subagent', 'task', 'webpreview', 'restart_app', 'report_progress']) {
+        if (!t[name]) continue;
+        auth[name] = {
+          mode: t[name].mode || 'ask',
+          allowlist: Array.isArray(t[name].allowlist) ? t[name].allowlist : []
+        };
+      }
+      // Binary-mode tool: only the off / ask values are meaningful.
+      if (t.ask_user) auth.ask_user = { mode: t.ask_user.mode === 'off' ? 'off' : 'ask' };
+      toolAuth.current = auth;
+    }
+    const m = body.mcp;
+    if (m && typeof m === 'object') {
+      const prev = mcpAuth.current;
+      mcpAuth.current = {
+        mode: m.mode || prev.mode,
+        allowlist: Array.isArray(m.allowlist) ? m.allowlist : prev.allowlist,
+        servers: (m.servers && typeof m.servers === 'object') ? m.servers : prev.servers,
+        tools: (m.tools && typeof m.tools === 'object') ? m.tools : prev.tools
+      };
+    }
+    // Stash the raw per-chat overrides for the surfaces' "this chat only"
+    // affordance. `state`-level (not a ref) because it is display-only.
+    state._chatAuthOverrides = chatOverrides;
+  }
+  state._applyChatAuthResponse = applyChatAuthResponse;
   // patchChatDraft(projectDir, chatId, draft, draftAttachments)
 //
 // PATCH a draft onto a chat identified explicitly, not through the
@@ -616,48 +668,41 @@ await sendTurn(state, refs, {
   state._toggleSkills = onToggleSkills;
   state._toggleSkill = onToggleSkill;
 
-  // Save tool authorization (Off/Ask/Allow) directly to the server.
-  // Used by the inline segment control in the chat tools card.
-  // On success, re-render the tools card so the segment reflects the new mode.
+  // Save tool authorization (Off/Ask/Allow) for THIS CHAT (decisions §17).
+  //
+  // The chat's Tools card and the composer tool popup both write here: the
+  // choice belongs to the chat and is stored on the chat record, never in
+  // the project's `.mouaif.json`. Project-wide modes are changed in
+  // Settings → Project, which is the only writer of the project file.
+  //
+  // `mode: null` clears this chat's override for that tool, so the row
+  // falls back to the project / app value.
   state._saveToolAuth = async (tool, mode, allowlist) => {
     const d = projectDir;
-    if (!d) return;
-    const r = await fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: d, tools: { [tool]: { mode, allowlist: allowlist || [] } } })
-    });
-    if (r.status === 200) {
-      // Sync local auth state.
-      const prev = toolAuth.current;
-      toolAuth.current = Object.assign({}, prev, { [tool]: { mode, allowlist: allowlist || [] } });
-      // Re-render the tools card so the segment reflects the new mode.
+    if (!d || !chatId) return;
+    const entry = mode == null ? null : { mode, allowlist: allowlist || [] };
+    const r = await saveChatToolAuthorization(d, chatId, { native: { [tool]: entry } });
+    if (r.status === 200 && r.body) {
+      // The response is the chat-scoped view of EVERY tool (chat override
+      // layered over the project value), so one save cannot leave the other
+      // rows showing a stale project mode.
+      applyChatAuthResponse(r.body);
       if (state._updateToolsCard) state._updateToolsCard();
       // Re-render the composer ToolPopup (it reads the same auth state).
       setAuthStamp((n) => n + 1);
     }
   };
 
-  // Save MCP authorization ({ mode?, servers?, tools? }) from the tools
-  // card's MCP segments. Mirrors _saveToolAuth: PUT, merge the echoed
-  // state, re-render the card in place.
+  // Save an MCP authorization patch ({ shared?, servers?, tools? }) for
+  // THIS CHAT. A `null` entry clears the chat's override for that
+  // server/tool and restores the project's `.mcp.json` value. Mirrors
+  // _saveToolAuth: PUT, merge the echoed state, re-render the card.
   state._saveMcpAuth = async (patch) => {
     const d = projectDir;
-    if (!d || !patch || typeof patch !== 'object') return;
-    const r = await fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: d, mcp: patch })
-    });
-    if (r.status === 200 && r.body && r.body.mcp) {
-      const m = r.body.mcp;
-      const prev = mcpAuth.current;
-      mcpAuth.current = {
-        mode: (m && m.mode) || prev.mode,
-        allowlist: m && Array.isArray(m.allowlist) ? m.allowlist : prev.allowlist,
-        servers: (m && m.servers && typeof m.servers === 'object') ? m.servers : prev.servers,
-        tools: (m && m.tools && typeof m.tools === 'object') ? m.tools : prev.tools
-      };
+    if (!d || !chatId || !patch || typeof patch !== 'object') return;
+    const r = await saveChatMcpAuthorization(d, chatId, patch);
+    if (r.status === 200 && r.body) {
+      applyChatAuthResponse(r.body);
       if (state._updateToolsCard) state._updateToolsCard();
       // Re-render the composer ToolPopup (it reads the same auth state).
       setAuthStamp((n) => n + 1);
@@ -861,34 +906,15 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
         agents.current = rAgents.status === 200 && Array.isArray(rAgents.body.agents) ? rAgents.body.agents : [];
 setCustomActions(rActions.status === 200 && Array.isArray(rActions.body.actions) ? rActions.body.actions : []);
 
-        // Fetch tool authorization settings for the tools card segments.
+        // Fetch the authorization view for THIS CHAT: the effective modes
+        // (chat override → project → app) plus the raw per-chat maps, which
+        // the tools card and the tool popup use to label a row as pinned by
+        // this chat. A project-scoped read would show the project modes and
+        // silently misreport every chat-level override.
         try {
-          const authRes = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(projectDir));
-          if (authRes.status === 200 && authRes.body && authRes.body.tools) {
-            const t = authRes.body.tools;
-            const auth = {};
-            if (t.shell) auth.shell = { mode: t.shell.mode || 'ask', allowlist: Array.isArray(t.shell.allowlist) ? t.shell.allowlist : [] };
-            if (t.file) auth.file = { mode: t.file.mode || 'ask', allowlist: Array.isArray(t.file.allowlist) ? t.file.allowlist : [] };
-            if (t.subagent) auth.subagent = { mode: t.subagent.mode || 'ask', allowlist: Array.isArray(t.subagent.allowlist) ? t.subagent.allowlist : [] };
-            if (t.task) auth.task = { mode: t.task.mode || 'ask', allowlist: Array.isArray(t.task.allowlist) ? t.task.allowlist : [] };
-if (t.webpreview) auth.webpreview = { mode: t.webpreview.mode || 'ask', allowlist: Array.isArray(t.webpreview.allowlist) ? t.webpreview.allowlist : [] };
-if (t.restart_app) auth.restart_app = { mode: t.restart_app.mode || 'ask', allowlist: Array.isArray(t.restart_app.allowlist) ? t.restart_app.allowlist : [] };
-if (t.report_progress) auth.report_progress = { mode: t.report_progress.mode || 'ask', allowlist: Array.isArray(t.report_progress.allowlist) ? t.report_progress.allowlist : [] };
-
-            if (t.ask_user) auth.ask_user = { mode: t.ask_user.mode === 'off' ? 'off' : 'ask' };
-            toolAuth.current = auth;
-          }
-          // MCP authorization: shared gate + per-server/per-tool maps.
-          if (authRes.status === 200 && authRes.body && authRes.body.mcp) {
-            const m = authRes.body.mcp;
-            mcpAuth.current = {
-              mode: (m && m.mode) || 'ask',
-              allowlist: m && Array.isArray(m.allowlist) ? m.allowlist : [],
-              servers: (m && m.servers && typeof m.servers === 'object') ? m.servers : {},
-              tools: (m && m.tools && typeof m.tools === 'object') ? m.tools : {}
-            };
-          }
-                } catch { /* keep empty auth */ }
+        const authRes = await fetchJson(chatAuthUrl(projectDir, chatId));
+        if (authRes.status === 200) applyChatAuthResponse(authRes.body);
+        } catch { /* keep empty auth */ }
 
         // The authorization fetch above is the last await before we start
         // writing per-chat UI state. If the user switched chat/project

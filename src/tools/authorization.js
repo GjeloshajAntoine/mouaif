@@ -99,6 +99,21 @@ function normalizeConfig(raw, source, enabled, tool) {
   // from a future migration can't bypass the prompt.
   let mode = MODES.has(value.mode) ? value.mode : 'ask';
   if (tool && BINARY_MODE_TOOLS.has(tool) && mode !== 'off' && mode !== 'ask') mode = 'ask';
+  // A per-chat override is a decision the USER just made in this chat
+  // (decisions §17), not a config file that could carry a stale or
+  // hand-edited shape. It is the most specific layer of all.
+  if (source === 'chat') {
+    return {
+      enabled: enabled !== false,
+      mode,
+      allowlist: Array.isArray(value.allowlist) ? value.allowlist.filter((x) => typeof x === 'string') : [],
+      defaultTimeoutMs: Number.isFinite(value.defaultTimeoutMs)
+        ? Math.max(1, Math.min(MAX_TIMEOUT_MS, Math.round(value.defaultTimeoutMs)))
+        : Math.min(DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS),
+      maxTimeoutMs: MAX_TIMEOUT_MS,
+      source
+    };
+  }
   const maxTimeoutMs = Number.isFinite(value.maxTimeoutMs)
     ? Math.max(1, Math.min(MAX_TIMEOUT_MS, Math.round(value.maxTimeoutMs)))
     : MAX_TIMEOUT_MS;
@@ -130,6 +145,133 @@ const BINARY_MODE_TOOLS = new Set(['ask_user']);
 const FILE_TOOL_NAMES = new Set(['read_file', 'list_files', 'search_files', 'write_file', 'edit_file']);
 const MCP_FILE = '.mcp.json';
 
+// ---- Per-chat authorization overrides (decisions §17) --------------------
+//
+// The Off / Ask / Allow segments in the chat's Tools card and in the
+// composer tool popup are CHAT preferences, not project settings: they
+// live on the chat record (`chat.toolAuth`, app SQLite store) and are
+// never written to `.mouaif.json` / `.mcp.json`. Project settings — and
+// only project settings — is where a project-wide gate is changed.
+//
+// Shape (all keys optional, `null`/absent = inherit):
+//   {
+//     native: { shell: { mode, allowlist }, file: { mode }, … },
+//     mcp: {
+//       shared:  { mode, allowlist },      // every MCP call in this chat
+//       servers: { <slug>: { mode } },     // one server  (matched by slug OR id)
+//       tools:   { mcp__<slug>__<t>: { mode } }  // one composed tool
+//     }
+//   }
+//
+// The legacy flat shape (`{ shell: { mode } }`) is still read, so an
+// older writer degrades to a native-only override instead of a crash.
+//
+// `chatId` is accepted for symmetry with the other entry points. Reads
+// resolve the chat through chats.getChat(), which the tool loop already
+// calls for every request, so no extra lookup is added: by the time the
+// advertisement gate runs, the record is in the SQLite page cache.
+function readChatAuthOverrides(projectDir, chatId) {
+  if (!projectDir || !chatId) return null;
+  let chat = null;
+  try { chat = require('../chats.js').getChat(projectDir, chatId); }
+  catch { return null; }
+  const raw = chat && chat.toolAuth;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = { native: {}, mcp: null };
+  let any = false;
+  // Native half: strict `native` key first, then the legacy flat shape
+  // (a raw `mcp` key is never a tool name, so it cannot collide).
+  const nativeSource = (raw.native && typeof raw.native === 'object' && !Array.isArray(raw.native))
+    ? raw.native
+    : raw;
+  for (const name of [...NATIVE_TOOLS, ...FILE_TOOL_NAMES]) {
+    const entry = nativeSource[name];
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    if (typeof entry.mode !== 'string' || !MODES.has(entry.mode)) continue;
+    if (!out.native[name]) out.native[name] = {};
+    out.native[name].mode = entry.mode;
+    if (Array.isArray(entry.allowlist)) out.native[name].allowlist = entry.allowlist.filter((x) => typeof x === 'string');
+    any = true;
+  }
+  // MCP half: shared gate, then per-server / per-tool overrides, in the
+  // same layering order the project gate uses (decisions §18).
+  const m = (raw.mcp && typeof raw.mcp === 'object' && !Array.isArray(raw.mcp)) ? raw.mcp : null;
+  if (m) {
+    const mcp = {};
+    const modeOf = (entry) => (entry && typeof entry === 'object' && !Array.isArray(entry) && typeof entry.mode === 'string' && MODES.has(entry.mode))
+      ? entry.mode
+      : null;
+    const shared = modeOf(m.shared);
+    if (shared) { mcp.shared = { mode: shared }; any = true; }
+    for (const key of ['servers', 'tools']) {
+      const map = (m[key] && typeof m[key] === 'object' && !Array.isArray(m[key])) ? m[key] : null;
+      if (!map) continue;
+      const kept = {};
+      for (const [name, entry] of Object.entries(map)) {
+        const mode = modeOf(entry);
+        if (!mode) continue;
+        kept[name] = Object.assign({}, entry, { mode });
+      }
+      if (Object.keys(kept).length) { mcp[key] = kept; any = true; }
+    }
+    if (any) out.mcp = mcp;
+  }
+  if (!any) return null;
+  return out;
+}
+
+// One native tool's per-chat override, or null. Config-tool names
+// (`read_file` → `file`) resolve to the same family key the project
+// gate uses, so the file operations stay behind one control.
+function chatNativeOverride(projectDir, chatId, tool) {
+  const overrides = readChatAuthOverrides(projectDir, chatId);
+  if (!overrides) return null;
+  const family = configToolName(tool);
+  return overrides.native[family] || overrides.native[tool] || null;
+}
+
+// One MCP tool's per-chat override, or null. `servers` may be keyed by
+// the server's slug OR its display id (the write path stores whatever
+// the UI sent), so both are tried; the chat's own maps are tiny.
+function chatMcpOverride(projectDir, chatId, tool) {
+  const overrides = readChatAuthOverrides(projectDir, chatId);
+  if (!overrides || !overrides.mcp) return null;
+  const mcp = overrides.mcp;
+  const parsed = parseMcpName(tool);
+  if (parsed) {
+    const byTool = mcp.tools && mcp.tools[tool];
+    if (byTool && byTool.mode) return { value: byTool, source: 'chat-tool' };
+    if (mcp.servers) {
+      const direct = mcp.servers[parsed.slug];
+      if (direct && direct.mode) return { value: direct, source: 'chat-server' };
+      for (const [key, entry] of Object.entries(mcp.servers)) {
+        if (!entry || !entry.mode) continue;
+        const keySlug = serverSlugFor(projectDir, key);
+        if (keySlug === parsed.slug) return { value: entry, source: 'chat-server' };
+      }
+    }
+  }
+  if (mcp.shared && mcp.shared.mode) return { value: mcp.shared, source: 'chat' };
+  return null;
+}
+
+// Resolve one registered server's canonical slug from whatever key the
+// caller used. Falls back to the key itself when the registry is
+// unavailable or the key is unknown (a stale override is harmless).
+function serverSlugFor(projectDir, key) {
+  let registry;
+  try { registry = require('../mcp.js').listServers(projectDir); } catch { registry = null; }
+  for (const s of (registry || [])) {
+    if (!s) continue;
+    if (s.id === key && typeof s.slug === 'string') return s.slug;
+    if (s.slug === key) return s.slug;
+  }
+  return key;
+}
+
+// The chat-scoped authorization view the chat UI reads: what THIS chat
+// ends up with (chat override → project → app → default) plus the raw
+// per-chat override maps so the surfaces can label an override.
 function getMcpConfig(projectDir) {
   if (!projectDir || typeof projectDir !== 'string') return {};
   const file = path.join(projectDir, MCP_FILE);
@@ -247,9 +389,14 @@ function mcpServersBySlug(projectDir, servers) {
   return changed ? out : servers;
 }
 
-function effectiveConfig(projectDir, tool) {
+function effectiveConfig(projectDir, tool, chatId) {
   const requestedTool = tool;
   tool = configToolName(tool);
+  // Chat override wins over everything below it — the user made that
+  // choice in this chat's own Tools card, and this is the gate that
+  // decides whether the tool is offered to the model at all.
+  const chatOverride = chatNativeOverride(projectDir, chatId, requestedTool);
+  if (chatOverride) return normalizeConfig(chatOverride, 'chat', true, tool);
   const resolved = settings.getResolved(projectDir);
   const project = settings.getProject(projectDir);
   const app = settings.getApp();
@@ -287,37 +434,49 @@ function effectiveConfig(projectDir, tool) {
     return normalizeConfig(value, source, true, tool);
   }
   if (tool.startsWith('mcp__')) {
+    const chatOverride = chatMcpOverride(projectDir, chatId, tool);
+    if (chatOverride) return normalizeConfig(chatOverride.value, chatOverride.source, true, tool);
     const { value, source } = mcpLayeredConfig(projectDir, project, app, tool);
     return normalizeConfig(value, source, true, tool);
   }
   return normalizeConfig({ mode: 'off' }, 'default', false, tool);
 }
 
-function getAuthorization(projectDir) {
+function getAuthorization(projectDir, chatId) {
   // mcp.servers / mcp.tools mirror the persisted override maps (not the
   // layered result) so the Settings UI can render every configured
   // override, including ones whose tool or server is currently stopped.
   // Override keys are re-keyed onto server slugs so a hand-edited id-keyed
   // override still lines up with the UI's `servers.<slug>` lookups.
   const { servers, tools: toolOverrides } = mcpOverrideMaps(projectDir);
-  const mcp = effectiveConfig(projectDir, 'mcp__any__tool');
-  mcp.servers = mcpServersBySlug(projectDir, servers);
+  const mcp = effectiveConfig(projectDir, 'mcp__any__tool', chatId);
+  mcp.servers = chatId
+    ? Object.assign({}, mcpServersBySlug(projectDir, servers), (readChatAuthOverrides(projectDir, chatId) || {}).mcp
+        ? (readChatAuthOverrides(projectDir, chatId).mcp.servers || {})
+        : {})
+    : mcpServersBySlug(projectDir, servers);
   mcp.tools = toolOverrides;
-  return {
+  const chatOverrides = chatId ? readChatAuthOverrides(projectDir, chatId) : null;
+  const view = {
     tools: {
-      shell: effectiveConfig(projectDir, 'shell'),
-      subagent: effectiveConfig(projectDir, 'subagent'),
-      file: effectiveConfig(projectDir, 'file'),
-      ...Object.fromEntries(Array.from(FILE_TOOL_NAMES, (name) => [name, effectiveConfig(projectDir, name)])),
-      ask_user: effectiveConfig(projectDir, 'ask_user'),
-      report_progress: effectiveConfig(projectDir, 'report_progress'),
-task: effectiveConfig(projectDir, 'task'),
-webpreview: effectiveConfig(projectDir, 'webpreview'),
-restart_app: effectiveConfig(projectDir, 'restart_app')
+      shell: effectiveConfig(projectDir, 'shell', chatId),
+      subagent: effectiveConfig(projectDir, 'subagent', chatId),
+      file: effectiveConfig(projectDir, 'file', chatId),
+      ...Object.fromEntries(Array.from(FILE_TOOL_NAMES, (name) => [name, effectiveConfig(projectDir, name, chatId)])),
+      ask_user: effectiveConfig(projectDir, 'ask_user', chatId),
+      report_progress: effectiveConfig(projectDir, 'report_progress', chatId),
+task: effectiveConfig(projectDir, 'task', chatId),
+webpreview: effectiveConfig(projectDir, 'webpreview', chatId),
+restart_app: effectiveConfig(projectDir, 'restart_app', chatId)
 
     },
     mcp
   };
+  // Chat-scoped reads advertise what this chat has pinned; a project-scoped
+  // read never invents a `chat` block, so project settings cannot mistake a
+  // per-chat override for a project value.
+  if (chatId) view.chat = chatOverrides || null;
+  return view;
 }
 
 // App-level MCP authorization gate. This is layer 4 of `mcpLayeredConfig`
@@ -363,6 +522,76 @@ function mcpPersistShape(cfg) {
   const out = { mode: cfg.mode };
   if (cfg.mode === 'allowlist') out.allowlist = cfg.allowlist;
   return out;
+}
+
+// Write the per-chat authorization overrides (decisions §17). This is the
+// ONLY writer for the chat's Tools card / tool popup controls, and it
+// deliberately never touches `.mouaif.json` or `.mcp.json`: changing a
+// project-wide gate is a job for project settings.
+//
+// Patch shape — every key optional:
+//   { native: { shell: { mode, allowlist } | null, … },
+//     mcp: { shared: { mode } | null,
+//            servers: { <slug|id>: { mode } | null },
+//            tools:   { <composedName>: { mode } | null } } }
+// A `null` entry clears that one override; `null`/omitted sections are
+// left untouched. The whole map is replaced with `null` when the last
+// override is cleared, so "no overrides" keeps a single representation.
+function setChatAuthorization(projectDir, chatId, patch) {
+  if (!projectDir || typeof projectDir !== 'string') throw typedError('EBADINPUT', 'projectDir is required');
+  if (!chatId || typeof chatId !== 'string') throw typedError('EBADINPUT', 'chatId is required');
+  const chats = require('../chats.js');
+  const existing = chats.getChat(projectDir, chatId);
+  if (!existing) throw typedError('ENOTFOUND', 'chat not found');
+  const current = readChatAuthOverrides(projectDir, chatId) || { native: {}, mcp: null };
+  const next = {
+    native: Object.assign({}, current.native),
+    mcp: current.mcp ? JSON.parse(JSON.stringify(current.mcp)) : null
+  };
+  const p = (patch && typeof patch === 'object' && !Array.isArray(patch)) ? patch : {};
+  // Native tools: `patch.native` when present, otherwise treat the patch
+  // itself as the native map (same tolerance as the read path).
+  const nativePatch = (p.native && typeof p.native === 'object' && !Array.isArray(p.native)) ? p.native : p;
+  for (const [name, entry] of Object.entries(nativePatch)) {
+    if (name === 'mcp' || name === 'native') continue;
+    const family = configToolName(name);
+    if (!NATIVE_TOOLS.has(family)) continue;
+    if (entry === null) { delete next.native[family]; continue; }
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const mode = MODES.has(entry.mode) ? entry.mode : 'ask';
+    const shaped = { mode };
+    if (Array.isArray(entry.allowlist)) shaped.allowlist = entry.allowlist.map((x) => String(x)).filter(Boolean);
+    next.native[family] = shaped;
+  }
+  if (p.mcp && typeof p.mcp === 'object' && !Array.isArray(p.mcp)) {
+    const m = next.mcp || {};
+    if (Object.prototype.hasOwnProperty.call(p.mcp, 'shared')) {
+      const entry = p.mcp.shared;
+      if (entry === null) delete m.shared;
+      else if (entry && typeof entry === 'object' && MODES.has(entry.mode)) {
+        m.shared = { mode: entry.mode };
+        if (Array.isArray(entry.allowlist)) m.shared.allowlist = entry.allowlist.map((x) => String(x)).filter(Boolean);
+      }
+    }
+    for (const key of ['servers', 'tools']) {
+      const incoming = p.mcp[key];
+      if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) continue;
+      const map = m[key] || {};
+      for (const [name, entry] of Object.entries(incoming)) {
+        if (typeof name !== 'string' || !name) continue;
+        if (entry === null) { delete map[name]; continue; }
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+        if (!MODES.has(entry.mode)) continue;
+        map[name] = { mode: entry.mode };
+      }
+      if (Object.keys(map).length) m[key] = map;
+      else delete m[key];
+    }
+    next.mcp = Object.keys(m).length ? m : null;
+  }
+  const empty = !Object.keys(next.native).length && !next.mcp;
+  chats.updateChat(projectDir, chatId, { toolAuth: empty ? null : next });
+  return getAuthorization(projectDir, chatId);
 }
 
 function setAuthorization(projectDir, patch) {
@@ -523,7 +752,7 @@ async function authorize(input) {
   if (!projectDir || !chatId || !tool || !callId) {
     throw typedError('EBADINPUT', 'projectDir, chatId, tool, and callId are required');
   }
-  const config = effectiveConfig(projectDir, tool);
+  const config = effectiveConfig(projectDir, tool, chatId);
   if (!config.enabled || config.mode === 'off') throw typedError('ETOOL_DISABLED', tool + ' is disabled');
 
   const session = getSession(projectDir, chatId);
@@ -643,9 +872,11 @@ function recordDecision(projectDir, chatId, callId, decision, payload) {
 }
 
 module.exports = {
-  MODES,
-  FILE_TOOL_NAMES,
-  getAuthorization,
+MODES,
+FILE_TOOL_NAMES,
+readChatAuthOverrides,
+setChatAuthorization,
+getAuthorization,
   setAuthorization,
   getAppMcpAuthorization,
   setAppMcpAuthorization,

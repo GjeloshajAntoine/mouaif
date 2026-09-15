@@ -189,7 +189,7 @@ async function runSingleToolCall(c, cx) {
       // do not read or modify project resources.
       try {
         const authGate = require('./tools/authorization.js');
-        const cfg = authGate.effectiveConfig(opts && opts.projectDir, c.name);
+        const cfg = authGate.effectiveConfig(opts && opts.projectDir, c.name, opts && opts.chatId);
         if (cfg && cfg.mode === 'off') {
           exec = { ok: false, content: JSON.stringify({ ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' }), result: { ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' } };
         }
@@ -532,7 +532,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   try {
     if (opts && opts.projectDir) {
       const authz = require('./tools/authorization.js');
-      const authState = authz.getAuthorization(opts.projectDir);
+      const authState = authz.getAuthorization(opts.projectDir, opts && opts.chatId);
       for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
         const cfg = authState.tools[family];
         if (cfg && cfg.mode === 'off') {
@@ -555,7 +555,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       for (let i = toolSpecs.length - 1; i >= 0; i--) {
       const spec = toolSpecs[i];
       if (!spec || !spec.function || !authz.FILE_TOOL_NAMES.has(spec.function.name)) continue;
-      const cfg = authz.effectiveConfig(opts.projectDir, spec.function.name);
+      const cfg = authz.effectiveConfig(opts.projectDir, spec.function.name, opts && opts.chatId);
       if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
       }
       // MCP tools resolve through the layered gate (per-tool →
@@ -565,10 +565,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // cost. Execution still rejects forged calls with ETOOL_DISABLED
       // through authorize().
       for (let i = toolSpecs.length - 1; i >= 0; i--) {
-        const spec = toolSpecs[i];
-        if (!spec || !spec.function || !String(spec.function.name).startsWith('mcp__')) continue;
-        const cfg = authz.effectiveConfig(opts.projectDir, spec.function.name);
-        if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
+      const spec = toolSpecs[i];
+      if (!spec || !spec.function || !String(spec.function.name).startsWith('mcp__')) continue;
+      const cfg = authz.effectiveConfig(opts.projectDir, spec.function.name, opts && opts.chatId);
+      if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
       }
     }
   } catch { /* authorization state unreadable; keep every tool advertised */ }

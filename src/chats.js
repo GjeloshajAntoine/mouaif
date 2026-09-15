@@ -12,7 +12,7 @@
 //
 // Schema (per chat):
 //   { id, title, createdAt, lastOpenedAt, trace, promptSize, promptId,
-//     providerId, modelId, draft, tools, agentFiles, skills }
+//     providerId, modelId, draft, tools, agentFiles, skills, toolAuth }
 //
 // API enrichment (added by GET /api/chats, NOT persisted):
 //   { totalCost: { total, known, currency } }
@@ -47,6 +47,10 @@ function getChatDb() {
 return require('./chatdb.js');
 }
 // ---- Public surface -------------------------------------------------------
+// Per-chat authorization overrides live directly on the chat record
+// (`chat.toolAuth`), so reading them is just a getChat() — see
+// `readChatAuthOverrides` in src/tools/authorization.js for the shape.
+
 function listChats(projectDir, options) {
 return getChatDb().listChats(projectDir, options);
 }
@@ -76,6 +80,10 @@ disabledSkills: opts && Array.isArray(opts.disabledSkills) && opts.disabledSkill
   ? opts.disabledSkills.map((n) => String(n)).filter(Boolean)
   : undefined,
 autoRetry: opts && typeof opts.autoRetry === 'boolean' ? opts.autoRetry : undefined,
+// Per-chat tool authorization overrides — see updateChat below.
+toolAuth: (opts && opts.toolAuth && typeof opts.toolAuth === 'object' && !Array.isArray(opts.toolAuth) && Object.keys(opts.toolAuth).length)
+? opts.toolAuth
+: undefined,
 tools: opts && Array.isArray(opts.tools) ? opts.tools : undefined
 };
 return getChatDb().createChat(projectDir, chat);
@@ -139,6 +147,57 @@ dbPatch.disabledSkills = list.length ? list : null;
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'autoRetry')) {
 dbPatch.autoRetry = patch.autoRetry === true;
+}
+// Per-chat tool authorization overrides (decisions §17). The shape is the
+// structured one the authorization module owns:
+//   { native: { shell: { mode, allowlist }, … },
+//     mcp: { shared: …, servers: { <slug>: { mode } }, tools: { <name>: { mode } } } }
+// Only `mode` (and a native `allowlist`) are persisted; everything else is
+// dropped so the chat record can never accumulate arbitrary payloads. An
+// empty map is stored as `null`: "no overrides" has exactly one
+// representation. Anything that is not an object is ignored so a malformed
+// PATCH cannot wipe the field.
+if (patch && Object.prototype.hasOwnProperty.call(patch, 'toolAuth')) {
+if (patch.toolAuth === null) {
+dbPatch.toolAuth = undefined;
+} else if (patch.toolAuth && typeof patch.toolAuth === 'object' && !Array.isArray(patch.toolAuth)) {
+const next = {};
+const native = (patch.toolAuth.native && typeof patch.toolAuth.native === 'object' && !Array.isArray(patch.toolAuth.native))
+? patch.toolAuth.native
+: {};
+const nativeOut = {};
+for (const [name, value] of Object.entries(native)) {
+if (typeof name !== 'string' || !name) continue;
+if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+if (typeof value.mode !== 'string' || !value.mode) continue;
+nativeOut[name] = {
+mode: value.mode,
+allowlist: Array.isArray(value.allowlist) ? value.allowlist.map((p) => String(p)).filter(Boolean) : []
+};
+}
+if (Object.keys(nativeOut).length) next.native = nativeOut;
+const m = patch.toolAuth.mcp;
+if (m && typeof m === 'object' && !Array.isArray(m)) {
+const mcpOut = {};
+if (m.shared && typeof m.shared === 'object' && typeof m.shared.mode === 'string' && m.shared.mode) {
+mcpOut.shared = { mode: m.shared.mode };
+}
+for (const key of ['servers', 'tools']) {
+const map = (m[key] && typeof m[key] === 'object' && !Array.isArray(m[key])) ? m[key] : null;
+if (!map) continue;
+const kept = {};
+for (const [name, value] of Object.entries(map)) {
+if (typeof name !== 'string' || !name) continue;
+if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+if (typeof value.mode !== 'string' || !value.mode) continue;
+kept[name] = { mode: value.mode };
+}
+if (Object.keys(kept).length) mcpOut[key] = kept;
+}
+if (Object.keys(mcpOut).length) next.mcp = mcpOut;
+}
+dbPatch.toolAuth = Object.keys(next).length ? next : undefined;
+}
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'lastOpenedAt')) {
 dbPatch.lastOpenedAt = patch.lastOpenedAt;

@@ -33,11 +33,12 @@ const CREATE_CHAT_TABLE = `
     draft         TEXT NOT NULL DEFAULT '',
     draft_attachments TEXT,
     tools         TEXT,
-agent_id      TEXT,
-agent_files   INTEGER,
-skills        INTEGER,
-disabled_skills TEXT,
-auto_retry    INTEGER NOT NULL DEFAULT 1,
+  agent_id      TEXT,
+  agent_files   INTEGER,
+  skills        INTEGER,
+  disabled_skills TEXT,
+  tool_auth     TEXT,
+  auto_retry    INTEGER NOT NULL DEFAULT 1,
 total_cost    REAL NOT NULL DEFAULT 0,
 cost_known_count INTEGER NOT NULL DEFAULT 0,
 PRIMARY KEY (project_dir, id)
@@ -100,6 +101,14 @@ d.exec('ALTER TABLE chat_store ADD COLUMN auto_retry INTEGER NOT NULL DEFAULT 1'
 if (!chatColumns.some((column) => column.name === 'disabled_skills')) {
 d.exec('ALTER TABLE chat_store ADD COLUMN disabled_skills TEXT');
 }
+// Per-chat tool authorization overrides (decisions §17): the Off / Ask /
+// Allow choice made in the chat's own Tools card and composer tool popup.
+// NULL means "inherit the project / app value", which is what every chat
+// written before this column existed has and what a chat goes back to
+// when the user has not touched a tool's mode in this chat.
+if (!chatColumns.some((column) => column.name === 'tool_auth')) {
+d.exec('ALTER TABLE chat_store ADD COLUMN tool_auth TEXT');
+}
 d.exec(INDEX_SQL);
 }
 
@@ -151,6 +160,18 @@ if (row.tools !== null) {
       const parsed = JSON.parse(row.disabled_skills);
       if (Array.isArray(parsed) && parsed.length) {
         chat.disabledSkills = parsed.map((n) => String(n)).filter(Boolean);
+      }
+    } catch { /* keep undefined */ }
+  }
+  // toolAuth: this chat's own Off/Ask/Allow overrides, keyed by tool name
+  // (`shell`, `file`, …) for native tools and by full composed name
+  // (`mcp__<slug>__<tool>`) for MCP ones. NULL/{} -> undefined, meaning
+  // every tool inherits the project / app gate. See decisions §17.
+  if (row.tool_auth) {
+    try {
+      const parsed = JSON.parse(row.tool_auth);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length) {
+        chat.toolAuth = parsed;
       }
     } catch { /* keep undefined */ }
   }
@@ -229,6 +250,11 @@ skills: chat.skills === undefined ? null : (chat.skills ? 1 : 0),
 // single representation in the store instead of two.
 disabled_skills: (Array.isArray(chat.disabledSkills) && chat.disabledSkills.length)
   ? JSON.stringify(chat.disabledSkills.map((n) => String(n)).filter(Boolean))
+  : null,
+// Same single-representation rule as disabled_skills: "no per-chat
+// overrides" is NULL, never "{}".
+tool_auth: (chat.toolAuth && typeof chat.toolAuth === 'object' && !Array.isArray(chat.toolAuth) && Object.keys(chat.toolAuth).length)
+  ? JSON.stringify(chat.toolAuth)
   : null,
 auto_retry: chat.autoRetry === undefined ? 1 : (chat.autoRetry ? 1 : 0),
 total_cost: chat.totalCost && typeof chat.totalCost.total === 'number' ? chat.totalCost.total : 0,
@@ -327,10 +353,10 @@ function createChat(projectDir, chat) {
   d.prepare(`
 INSERT INTO chat_store (project_dir, id, title, created_at, last_opened_at,
 trace, prompt_size, prompt_id, provider_id, model_id, thinking_level, max_output_tokens, draft, draft_attachments, tools,
-agent_id, agent_files, skills, disabled_skills, auto_retry, total_cost, cost_known_count)
+agent_id, agent_files, skills, disabled_skills, tool_auth, auto_retry, total_cost, cost_known_count)
 VALUES (@project_dir, @id, @title, @created_at, @last_opened_at,
 @trace, @prompt_size, @prompt_id, @provider_id, @model_id, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
-@agent_id, @agent_files, @skills, @disabled_skills, @auto_retry, @total_cost, @cost_known_count)
+@agent_id, @agent_files, @skills, @disabled_skills, @tool_auth, @auto_retry, @total_cost, @cost_known_count)
 `).run(row);
   return rowToChat(d.prepare(
     'SELECT * FROM chat_store WHERE project_dir = ? AND id = ?'
@@ -357,6 +383,7 @@ max_output_tokens = @max_output_tokens,
 draft = @draft, draft_attachments = @draft_attachments, tools = @tools,
 agent_id = @agent_id, agent_files = @agent_files,
 skills = @skills, disabled_skills = @disabled_skills,
+tool_auth = @tool_auth,
 auto_retry = @auto_retry, total_cost = @total_cost,
 cost_known_count = @cost_known_count
 WHERE project_dir = @project_dir AND id = @id

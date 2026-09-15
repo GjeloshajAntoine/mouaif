@@ -22,16 +22,20 @@ import { useVisualViewport } from '../../hooks/useVisualViewport.js';
 // component the chat tools card and project settings render, so every
 // tool row (subagent included) is built by one code path.
 function AuthSegment({ toolName, current, onSave }) {
-  if (!current || !current.mode) return null;
-  return h(ToolAuthSeg, {
-    tool: toolName,
-    name: toolName,
-    mode: current.mode,
-    allowlist: Array.isArray(current.allowlist) ? current.allowlist : [],
-    modes: toolName === 'ask_user' ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
-    namePrefix: 'popup-auth',
-    onPick: (mode, allowlist) => { if (onSave) onSave(toolName, mode, allowlist); }
-  });
+if (!current || !current.mode) return null;
+return h(ToolAuthSeg, {
+tool: toolName,
+name: toolName,
+mode: current.mode,
+allowlist: Array.isArray(current.allowlist) ? current.allowlist : [],
+modes: toolName === 'ask_user' ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
+namePrefix: 'popup-auth',
+// Same contract as the transcript tools card: the popup's pick is a
+// per-chat override, so the reset drops this chat's stored value first
+// and the chat falls back to the project's mode (decisions §17).
+onClear: () => { if (onSave) onSave(toolName, null, []); },
+onPick: (mode, allowlist) => { if (onSave) onSave(toolName, mode, allowlist); }
+});
 }
 
 export function ToolPopup(props) {
@@ -124,12 +128,13 @@ files: 'file'
     if (!g.id.startsWith('mcp-')) continue;
     const slug = g.id.slice(4);
     g.control = h(McpAuthSeg, {
-      name: g.name,
-      slug,
-      servers: mcpAuthState.servers,
-      shared: mcpAuthState,
-      namePrefix: 'popup-mcp',
-      onSave: (patch) => onSaveMcpAuth && onSaveMcpAuth(patch)
+    name: g.name,
+    slug,
+    servers: mcpAuthState.servers,
+    shared: mcpAuthState,
+    namePrefix: 'popup-mcp',
+    onClear: () => { if (onSaveMcpAuth) onSaveMcpAuth({ servers: { [slug]: null } }); },
+    onSave: (patch) => onSaveMcpAuth && onSaveMcpAuth(patch)
     });
     // Busy marker for the row's "…" start control. Without it the button
     // looked dead for the whole multi-second MCP cold start.
@@ -283,7 +288,7 @@ h('span', { class: 'switch__thumb' })
 h('span', { class: 'tool-popup__foot-label' }, 'Auto-retry failed sends')
 ),
 h('span', { class: 'tool-popup__foot-note' },
-'Actions run immediately. Tools marked \u25CF have been used in this chat.'
+'Actions run immediately. Off / Ask / Allow here applies to this chat only; project-wide modes live in Settings → Project. Tools marked \u25CF have been used in this chat.'
 )
 )
       )

@@ -457,7 +457,7 @@ if (fileToolsEnabled) {
       } catch { /* no MCP tools */ }
       try {
         const authz = require('./tools/authorization.js');
-        const authState = authz.getAuthorization(dir);
+        const authState = authz.getAuthorization(dir, id);
         for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
           const cfg = authState.tools[family];
           if (cfg && cfg.mode === 'off') {
@@ -474,13 +474,13 @@ if (fileToolsEnabled) {
         for (let i = toolSpecs.length - 1; i >= 0; i--) {
         const spec = toolSpecs[i];
         if (!spec || !spec.function || !authz.FILE_TOOL_NAMES.has(spec.function.name)) continue;
-        const cfg = authz.effectiveConfig(dir, spec.function.name);
+        const cfg = authz.effectiveConfig(dir, spec.function.name, id);
         if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
         }
         for (let i = toolSpecs.length - 1; i >= 0; i--) {
         const spec = toolSpecs[i];
         if (!spec || !spec.function || !String(spec.function.name).startsWith('mcp__')) continue;
-        const cfg = authz.effectiveConfig(dir, spec.function.name);
+        const cfg = authz.effectiveConfig(dir, spec.function.name, id);
         if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
         }
       } catch { /* authorization state unreadable; keep every tool advertised */ }
@@ -814,7 +814,7 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
     // Collect what we need for the feature summary.
     const project = require('./settings.js').getProject(projectDir);
     let authz = null;
-    try { authz = require('./tools/authorization.js').getAuthorization(projectDir); } catch { /* safe default */ }
+    try { authz = require('./tools/authorization.js').getAuthorization(projectDir, effectiveChat && effectiveChat.id); } catch { /* safe default */ }
     let mcpServers = null;
     try { mcpServers = require('./mcp.js').listServers(projectDir); } catch { /* safe default */ }
     const featureMsg = agentFeatures.buildFeatureSummary({ chat: effectiveChat, projectDir, project, authz, mcpServers });

@@ -64,9 +64,18 @@ function buildToolsCard(state) {
   const note = document.createElement('span');
   note.className = 'chat-view__tools-card-note';
   note.textContent = (t.filter == null)
-    ? 'all on — tap to change'
-    : 'applies next turn';
-  head.appendChild(title); head.appendChild(note);
+? 'all on — tap to change'
+: 'applies next turn';
+head.appendChild(title); head.appendChild(note);
+// Which rows carry this chat's own Off/Ask/Allow override, so the scope of
+// the segments is visible at a glance (decisions §17).
+const chatAuth = state._chatAuthOverrides || null;
+if (chatAuth && (Object.keys(chatAuth.native || {}).length || chatAuth.mcp)) {
+const scoped = document.createElement('span');
+scoped.className = 'chat-view__tools-card-scope';
+scoped.textContent = 'Off / Ask / Allow apply to this chat only';
+head.appendChild(scoped);
+}
   card.appendChild(head);
 
   if (!t.catalog.length) {
@@ -124,8 +133,15 @@ function buildToolsCard(state) {
       allowlist: cur.allowlist,
       modes: toolName === 'ask_user' ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
       namePrefix: 'chat-auth',
+      // In the chat, a pick means "use this mode FOR THIS CHAT": the reset
+      // clears the chat's own override first, so the stored value always
+      // reflects the tap and a stale chat override can never shadow the
+      // project's mode afterwards (decisions §17).
+      onClear: () => {
+      if (state._saveToolAuth) state._saveToolAuth(toolName, null, []);
+      },
       onPick: (mode, allowlist) => {
-        if (state._saveToolAuth) state._saveToolAuth(toolName, mode, allowlist);
+      if (state._saveToolAuth) state._saveToolAuth(toolName, mode, allowlist);
       }
     });
   }
@@ -143,6 +159,12 @@ function buildToolsCard(state) {
       servers: mcpAuth.servers,
       shared: mcpAuth,
       namePrefix: 'chat-mcp',
+      // Same as the native rows: a tap pins the mode for this chat; the
+      // reset drops the chat's own override so the server falls back to
+      // the project's `.mcp.json` value.
+      onClear: () => {
+      if (state._saveMcpAuth) state._saveMcpAuth({ servers: { [slug]: null } });
+      },
       onSave: (patch) => state._saveMcpAuth && state._saveMcpAuth(patch)
     });
   }

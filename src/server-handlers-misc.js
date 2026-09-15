@@ -633,8 +633,15 @@ async function handleToolAuthorization(req, res, parsed) {
   const q = parsed.query || {};
   const authGate = require('./tools/authorization.js');
 
-  // GET /api/tools/authorization?projectDir=<abs>
+  // GET /api/tools/authorization?projectDir=<abs>[&chatId=<id>]
   // GET /api/tools/authorization?scope=app  -> the app-level MCP gate only.
+  //
+  // With `chatId` the response is scoped to ONE chat: the effective
+  // modes are the chat's own overrides layered over the project / app
+  // values, and `chat` carries those raw override maps so the chat's
+  // Tools card and tool popup can show what this chat pinned. Without
+  // `chatId` the response is the project view (what project settings
+  // must render and edit) and carries no `chat` block.
   if (urlPath === '/api/tools/authorization' && method === 'GET') {
     if (q.scope === 'app') {
       try {
@@ -645,21 +652,50 @@ async function handleToolAuthorization(req, res, parsed) {
     }
     const dir = qs(q, 'projectDir');
     if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    const chatId = qs(q, 'chatId');
     try {
-      return sendJSON(res, 200, authGate.getAuthorization(dir));
+      if (chatId && !chats.getChat(dir, chatId)) {
+        return sendJSON(res, 404, { error: 'Chat not found', chatId });
+      }
+      return sendJSON(res, 200, authGate.getAuthorization(dir, chatId || undefined));
     } catch (e) {
       return sendJSON(res, 500, { error: e.message });
     }
   }
 
   // PUT /api/tools/authorization
-  // With { scope: 'app', mcp } the app-level shared MCP gate is written
-  // (no projectDir). Otherwise projectDir is required and the project
-  // tools + MCP authorization are written as before.
+  // Body shapes, in order of precedence:
+  //   { chatId, scope: 'chat',   chat }            -> per-chat overrides
+  //   { scope: 'app', mcp }                        -> app-level MCP gate
+  //   { projectDir, tools, mcp }                   -> the project gate
+  //
+  // The chat scope is what the chat view's Tools card and tool popup
+  // write: those controls are per-chat, and they must never touch
+  // `.mouaif.json` / `.mcp.json`. Project settings keeps using the
+  // project scope. See docs/features/tool-authorization.md.
   if (urlPath === '/api/tools/authorization' && method === 'PUT') {
     const body = await readJsonOr400(req, res);
     if (!body) return;
-    const { projectDir, scope, tools, mcp: mcpAuthorization } = body || {};
+    const { projectDir, scope, chatId, chat, tools, mcp: mcpAuthorization } = body || {};
+    if (scope === 'chat') {
+      if (!projectDir || typeof projectDir !== 'string') {
+        return sendJSON(res, 400, { error: 'projectDir is required' });
+      }
+      if (!chatId || typeof chatId !== 'string') {
+        return sendJSON(res, 400, { error: 'chatId is required for the chat scope' });
+      }
+      if (!chats.getChat(projectDir, chatId)) {
+        return sendJSON(res, 404, { error: 'Chat not found', chatId });
+      }
+      try {
+        // `null` keys inside `chat` clear that override (back to the
+        // project value); `chat: null` clears every override at once.
+        const next = authGate.setChatAuthorization(projectDir, chatId, chat);
+        return sendJSON(res, 200, next);
+      } catch (e) {
+        return sendJSON(res, 400, { error: e.message });
+      }
+      }
     if (scope === 'app') {
       try {
         const next = authGate.setAppMcpAuthorization({ mcp: mcpAuthorization });

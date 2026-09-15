@@ -24,6 +24,8 @@ import { fetchJson } from '../../api.js';
 //   modes       — TOOL_MODE_CHOICES (default) or ASK_USER_MODE_CHOICES.
 //   namePrefix  — surface-specific radio-name prefix, so two cards on one
 //                 page never share a radio group.
+//   onClear     — when set, a pick first calls this to drop the surface's
+//                 own override (the chat's 「use project default」 reset).
 //   onPick      — (mode, allowlist) => void.
 export function ToolAuthSeg({
   tool,
@@ -32,7 +34,8 @@ export function ToolAuthSeg({
   allowlist,
   modes = TOOL_MODE_CHOICES,
   namePrefix = 'auth',
-  onPick
+  onPick,
+  onClear
 }) {
   const active = segMode(mode || 'ask');
   const list = Array.isArray(allowlist) ? allowlist : [];
@@ -46,7 +49,8 @@ export function ToolAuthSeg({
           value: m.value,
           checked: active === m.value,
           onChange: () => {
-            if (onPick) onPick(m.value, m.value === 'allow' ? [] : list);
+          if (onClear) onClear();
+          if (onPick) onPick(m.value, m.value === 'allow' ? [] : list);
           }
         }),
         h('span', { class: 'seg__pill' }, m.label)
@@ -86,7 +90,9 @@ export function segMode(mode) {
   return mode === 'allowlist' ? 'ask' : mode;
 }
 
-// Save tool authorization for one tool to the server.
+// Save tool authorization for one tool to the server — PROJECT scope.
+// Project settings only: the chat view writes per-chat overrides through
+// saveChatToolAuthorization instead.
 export async function saveToolAuthorization(projectDir, tool, mode, allowlist) {
   const r = await fetchJson('/api/tools/authorization', {
     method: 'PUT',
@@ -94,6 +100,37 @@ export async function saveToolAuthorization(projectDir, tool, mode, allowlist) {
     body: JSON.stringify({ projectDir, tools: { [tool]: { mode, allowlist } } })
   });
   return r.status === 200;
+}
+
+// Save tool authorization for ONE CHAT (decisions §17). The chat's Tools
+// card and the composer tool popup write here: their Off/Ask/Allow
+// choices belong to the chat, not to the project, and are stored on the
+// chat record (app SQLite store) through the `scope: 'chat'` branch of
+// the endpoint. `.mouaif.json` is never touched — a project-wide gate is
+// changed in project settings, which uses saveToolAuthorization below.
+// `patch` is the chat override map:
+//   { native: { shell: { mode, allowlist } } }  or the legacy flat
+//   { shell: { mode, allowlist } }
+// A `null` entry clears that tool's override, restoring the project value.
+export async function saveChatToolAuthorization(projectDir, chatId, patch) {
+  const r = await fetchJson('/api/tools/authorization', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope: 'chat', projectDir, chatId, chat: patch })
+  });
+  return r;
+}
+
+// Save one MCP authorization patch for ONE CHAT. `patch` is the chat's
+// own MCP override map ({ shared } | { servers } | { tools }), never the
+// project's `.mcp.json` authorization block. Returns the fetchJson result
+// so callers can read the merged chat-scoped response.
+export async function saveChatMcpAuthorization(projectDir, chatId, patch) {
+  return await fetchJson('/api/tools/authorization', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope: 'chat', projectDir, chatId, chat: { mcp: patch } })
+  });
 }
 
 // Save an MCP authorization patch ({ mode?, servers?, tools? }) to the
@@ -131,7 +168,7 @@ export function mcpEffective(servers, slug, shared) {
 //     Picking a mode writes `{ mode, allowlist }`.
 // Picking "Ask" while allowlist patterns exist persists `allowlist`
 // mode so the patterns survive the round-trip.
-export function McpAuthSeg({ name, slug, servers, shared, namePrefix = 'mcp', onSave }) {
+export function McpAuthSeg({ name, slug, servers, shared, namePrefix = 'mcp', onSave, onClear }) {
   const eff = slug ? mcpEffective(servers, slug, shared) : { overridden: false, mode: (shared && shared.mode) || 'ask', allowlist: (shared && shared.allowlist) || [] };
   const active = segMode(eff.mode);
   const seg = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': name + ' authorization' },
@@ -143,14 +180,20 @@ export function McpAuthSeg({ name, slug, servers, shared, namePrefix = 'mcp', on
           value: m.value,
           checked: active === m.value,
           onChange: () => {
-            if (!onSave) return;
-            let mode = m.value;
-            let list = Array.isArray(eff.allowlist) ? eff.allowlist : [];
-            if (mode === 'allow') list = [];
-            else if (mode === 'ask' && list.length) mode = 'allowlist';
-            onSave(slug
-              ? { servers: { [slug]: { mode, allowlist: list } } }
-              : { mode, allowlist: list });
+          if (!onSave) return;
+          let mode = m.value;
+          let list = Array.isArray(eff.allowlist) ? eff.allowlist : [];
+          if (mode === 'allow') list = [];
+          else if (mode === 'ask' && list.length) mode = 'allowlist';
+          // In the chat surfaces the segment carries a 「use project
+          // default」 reset: without it a per-chat override could never
+          // be removed, because every tap writes one. Settings passes
+          // no onClear (its writes go to the project file, and the
+          // project value IS the default).
+          if (onClear) onClear();
+          onSave(slug
+          ? { servers: { [slug]: { mode, allowlist: list } } }
+          : { mode, allowlist: list });
           }
         }),
         h('span', { class: 'seg__pill' }, m.label)
