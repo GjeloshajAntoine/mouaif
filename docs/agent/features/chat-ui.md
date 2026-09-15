@@ -17,10 +17,13 @@
 ## Build and Dev
 
 ```bash
-npm install
-npm run build:web   # writes frontend/dist/
+npm install         # prepare builds frontend/dist/ when it is stale
 node bin/mouaif.js serve
 ```
+
+`npm run build:web` still exists for an explicit rebuild (and is what `prepack`
+and `prepublishOnly` call). The install path no longer needs it — see
+[docs/agent/features/cli-commands.md](./cli-commands.md).
 
 Dev with HMR:
 ```bash

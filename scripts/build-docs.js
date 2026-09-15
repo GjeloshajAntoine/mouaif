@@ -1054,7 +1054,6 @@ const body = `
 <pre><code class="language-bash">git clone &lt;repo-url&gt;
 cd mouaif
 npm install
-npm run build:web
 npm link
 mouaif serve</code></pre>
 <p>Open <code>http://127.0.0.1:5732/</code>, add a project folder, connect a provider in <strong>Settings → Providers</strong>, and create your first chat.</p>

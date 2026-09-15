@@ -13,11 +13,9 @@ mouaif is a mobile-first AI coding assistant for local projects. Connect your pr
 git clone <repo-url>
 cd mouaif
 npm install
-npm run build:web
 npm link
 ```
-
-`npm link` makes the `mouaif` command available in your terminal.
+`npm install` builds the web UI once when its sources are newer than `frontend/dist/` (the Vite toolchain is present in a source checkout), so there is no separate build step. `npm link` makes the `mouaif` command available in your terminal.
 
 ## Run
 

@@ -10,11 +10,12 @@ Install mouaif, start the app, and open its web interface. Node.js 18 or newer i
 git clone <repo-url>
 cd mouaif
 npm install
-npm run build:web
 npm link
 ```
 
-`npm link` makes the `mouaif` command available in your terminal.
+`npm install` builds the web UI once through the package `prepare` script when the Vite toolchain is present, so a fresh clone works even if `frontend/dist/` is missing from the checkout. `npm link` makes the `mouaif` command available in your terminal.
+
+See [CLI commands](./cli-commands.md) for the complete command list and every `mouaif serve` option.
 
 ## Run the app
 
@@ -56,12 +57,12 @@ Provider connections are shared by the app. Project settings control the models 
 ```bash
 git pull
 npm install
-npm run build:web
 ```
 
-Restart your manually started `mouaif serve` process after updating.
+`npm install` rebuilds the web UI when the Vite toolchain is present, so there is no separate build step. Restart your manually started `mouaif serve` process after updating.
 
 ## Next steps
 
+- [CLI commands](./cli-commands.md) — every command and `serve` option.
 - [Authentication](./authentication.md) — connect AI providers and protect app access.
 - [App abilities](./app-abilities.md) — learn what chats, tools, projects, and the Inspector can do.

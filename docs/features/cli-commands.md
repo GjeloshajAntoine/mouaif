@@ -1,0 +1,83 @@
+# CLI commands
+
+## Overview
+
+The `mouaif` command starts the app, prints build information, and imports chats from a legacy storage format. The UI bundle is shipped inside the package (`frontend/dist/`), so a normal installation never builds the frontend — `mouaif serve` serves the committed bundle as-is.
+
+## Usage
+
+### Install
+
+```bash
+git clone <repo-url>
+cd mouaif
+npm install
+npm link
+```
+
+`npm install` also builds the web UI through the package `prepare` script when the Vite toolchain is present, so a fresh clone works even if `frontend/dist/` is missing from the checkout. `npm link` makes the `mouaif` command available in your terminal.
+
+### Serve
+
+Starts the HTTP server for the web UI at `http://127.0.0.1:5732/` and keeps running until `Ctrl+C`.
+
+| Option | Default | Purpose |
+|--------|---------|---------|
+| `-p, --port <port>` | `5732` | Port to listen on. |
+| `-h, --host <host>` | `127.0.0.1` | Host to bind to. Use `0.0.0.0` to reach the app from other devices. |
+| `--public-origin <origin>` | `MOUAIF_PUBLIC_ORIGIN` | Public HTTP(S) origin when the app is served through a proxy. |
+| `-w, --watch` | off | Restart the server when local source files change. |
+| `--auth` | off | Require app access authentication. |
+| `--user <user>` | — | Set the app access user before serving. |
+| `--password <password>` | `MOUAIF_PASSWORD` | Set the app access password before serving. Prefer the environment variable to keep the password out of shell history. |
+| `--auth-setup` | off | Print a one-time setup link, QR code, and short code, then exit. |
+
+```bash
+mouaif serve --port 9000
+mouaif serve --host 0.0.0.0
+mouaif serve --watch
+```
+
+#### Access authentication
+
+```bash
+# One-time setup link, QR code, and short code
+mouaif serve --auth-setup
+
+# Set a user without putting the password in shell history
+MOUAIF_PASSWORD='a-long-password' \
+  mouaif serve --auth --user alice
+```
+
+`--user` and `--password` (or `MOUAIF_PASSWORD`) must be supplied together. After setup, `mouaif serve --auth` requires login on every start. Use HTTPS and `--public-origin` before exposing the app outside the machine that runs it.
+
+### Info
+
+```bash
+mouaif info
+```
+
+Prints the package version, the description, and the default port. It does not start the server.
+
+### Import chats
+
+```bash
+mouaif import-chats <projectDir> [--skip-existing]
+```
+
+Imports chat transcripts from the legacy `.mouaif.messages.*.json` files of one project into the SQLite chat store. `<projectDir>` must be an absolute path to an existing directory; `--skip-existing` imports only chats and messages that are not stored yet. The command reports the number of chats and messages imported and lists per-file errors without aborting.
+
+The automatic startup migration that used to run this import has been retired, so this is the only entry point for a JSON transcript history.
+
+## Implementation notes
+
+- The command surface is defined with `commander` in `bin/mouaif.js`: `serve`, `info`, and `import-chats` (plus `--version` from the package metadata). The default port constant is shared with the server (`src/index.js`).
+- `mouaif serve` always runs as a supervisor process that spawns and respawns a worker. The supervisor keeps the process alive across restarts from `POST /api/restart` and across source changes with `--watch`, so a restart always loads the code currently on disk.
+- The built UI lives at `frontend/dist/` and is served by `src/server-web-static.js`. `npm run build:web` exists for frontend development; it is not a required installation step.
+- The package `files` list (`package.json`) ships `bin/`, `src/`, `frontend/dist/`, and `README.md`, so an installed package contains the whole server and the pre-built UI.
+
+## Related
+
+- [Getting started](./getting-started.md) — install the app and complete first setup.
+- [Authentication](./authentication.md) — connect AI providers and protect app access.
+- [REST and SSE server](./rest-and-sse-server.md) — the HTTP surface that `mouaif serve` exposes.
