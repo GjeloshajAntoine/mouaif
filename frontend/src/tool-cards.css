@@ -472,9 +472,13 @@ color: var(--fg-soft);
   min-height: 1.5rem;
 }
 /* The full call arguments above a result, shown when the head had to
-   ellipsize them. Muted relative to the output so the tool's result stays
-   the loudest thing in the expanded card; bound the height so one enormous
-   command cannot push the output off screen (it scrolls instead). */
+   ellipsize them. It is the SAME surface as the output below it — same
+   background, border, text colour and type size — because a shell card is
+   one terminal. Giving the command its own colour made the card read as
+   two panes, and the muted tone implied the command was secondary to its
+   own output. Only the height differs: the command scrolls at one third
+   of the viewport so one enormous command cannot push the output off
+   screen. */
 .tool-preview__args {
   display: flex;
   flex-direction: column;
@@ -483,8 +487,11 @@ color: var(--fg-soft);
 .tool-preview__pre--args {
   max-height: 33dvh;
   overflow-y: auto;
-  color: var(--muted);
-  background: var(--surface-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--fg);
+  font-size: 0.7rem;
 }
 
 /* Grouped list/search previews: one dir/file label per group, then
