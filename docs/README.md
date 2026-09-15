@@ -7,6 +7,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [App abilities](features/app-abilities.md) — projects, chats, coding tools, agents, MCP, and Inspector.
 - [Chat backward pagination](features/chat-backward-pagination.md) — long chats load the newest page immediately, then eagerly load all older history in the background.
 - [Draft Craft](features/draft-craft.md) — add selected code or annotated Inspector images to any chat draft.
+- [Add Inspector entries to a chat](features/inspector-add-to-chat.md) — send a console log, exception, or network request to a chat draft from the detail sheet.
 - [Inspector Styles](features/inspector-styles.md) — tap to select an element and edit its CSS in the Inspector.
 - [Inspector touch controls](features/inspector-touch-controls.md) — change the selected element's CSS with chips, sliders, a box model and swatches.
 - [Inspector full screen](features/inspector-fullscreen.md) — expand one Inspector panel over the whole viewport from its card header.

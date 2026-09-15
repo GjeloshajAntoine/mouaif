@@ -24,6 +24,8 @@ import { settlePick, pickBannerText } from './inspector/pickMode.js';
 import { createEventHandlers } from './inspector/events.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
 import { DraftCraftAnnotator } from './inspector/DraftCraftAnnotator.jsx';
+import { DraftCraftSheet } from './DraftCraftSheet.jsx';
+import { buildEntryText } from './inspector/entryText.js';
 import { InspectorProfilesSheet } from './inspector/InspectorProfilesSheet.jsx';
 // copyText — write a string to the clipboard, falling back to execCommand for
 // embedded web views that block navigator.clipboard. Returns true on success.
@@ -651,6 +653,11 @@ currentTargetRef.current = currentTarget;
   // not switch between panels, it shows all toggled-on panels stacked.
   const [visiblePanels, setVisiblePanels] = useState(() => loadPanelState());
   const [detailItem, setDetailItem] = useState(null);
+  // detailPayload — the Draft Craft payload built from the entry the detail
+  // sheet is showing, set by its "Add to chat" button. While it is non-null
+  // the DraftCraftSheet is open and the user picks the project + chat; the
+  // entry stays in `detailItem`, so cancelling leaves the sheet where it was.
+  const [detailPayload, setDetailPayload] = useState(null);
 const [draftCraftImage, setDraftCraftImage] = useState(null);
 // closePending — when non-null, the ConfirmSheet is shown and the
   // captured `target` is the page the user is about to close. A small
@@ -1800,6 +1807,25 @@ return stepAttachedHistory('forward');
     setDetailItem(item);
     rerender();
   }
+  // addDetailItemToChat — the detail sheet's "Add to chat" button. Turn the
+  // entry on screen into the Draft Craft text and open the project/chat
+  // picker; the entry remains in `detailItem`, so cancelling the picker
+  // returns to the same sheet. `activeProject()` supplies the default
+  // project, matching how the file editor's Draft Craft opens.
+  function addDetailItemToChat() {
+    if (!detailItem) return;
+    const text = buildEntryText(detailItem, {
+      pageTitle: currentTarget && currentTarget.title,
+      pageUrl: currentTarget && currentTarget.url
+    });
+    if (!text) return;
+    setDetailPayload({
+    projectDir: activeProject(),
+    text,
+    textLabel: 'inspector entry',
+    description: 'Add this Inspector entry to any chat draft.'
+    });
+  }
   // revealPanelCard — bring one panel card into view inside the page
   // scroller (.app__main), under the pinned switcher. The panelbar is
   // `position: sticky; top: 0` on that scroller, so it stays on screen
@@ -2362,9 +2388,24 @@ onClose: () => setDraftCraftImage(null)
 }) : null,
 h(DetailSheet, {
 item: detailItem,
-      onClose: () => { setDetailItem(null); rerender(); },
-      onLoadBody: () => handlers && handlers.loadResponseBody(detailItem)
-    }),
+  onClose: () => { setDetailItem(null); rerender(); },
+  onLoadBody: () => handlers && handlers.loadResponseBody(detailItem),
+  // Add to chat routes through the same Draft Craft picker the file
+  // editor and the Preview annotator use, so there is one project/chat
+  // chooser in the app rather than a second one built for the sheet.
+  onAddToChat: addDetailItemToChat
+  }),
+  detailPayload ? h(DraftCraftSheet, {
+  open: true,
+  payload: detailPayload,
+  placement: 'bottom',
+  onClose: () => setDetailPayload(null),
+  onAdded: () => {
+    setDetailPayload(null);
+    setDetailItem(null);
+    rerender();
+  }
+  }) : null,
     closePending ? h(ConfirmSheet, {
       open: true,
       title: 'Close tab?',

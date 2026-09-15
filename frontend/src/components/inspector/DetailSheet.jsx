@@ -7,6 +7,13 @@ export function DetailSheet(props) {
   const item = props.item;
   if (!item) return null;
   const isNet = item.kind === 'request';
+  // "Add to chat" is offered whenever the Inspector can route the entry to a
+  // draft — the parent supplies onAddToChat only when the app has a chat
+  // surface to hand it to, and a text-less entry would append nothing, so
+  // both gates show up as a disabled button rather than a hidden one.
+  const canAddToChat = typeof props.onAddToChat === 'function';
+  const addDisabled = !canAddToChat || !!props.addToChatDisabled;
+  const addLabel = props.addToChatLabel || 'Add to chat';
 
   function kv(list) {
     return h('dl', { class: 'inspector__kv' }, list.map(([k, v]) =>
@@ -28,8 +35,20 @@ export function DetailSheet(props) {
   return sheetPortal(h('div', { class: 'inspector__overlay', onClick: props.onClose },
     h('div', { class: 'inspector__sheet', role: 'dialog', 'aria-label': 'Details', onClick: (e) => e.stopPropagation() },
       h('div', { class: 'inspector__sheet-head' },
-        h('strong', { class: 'inspector__sheet-title' }, isNet ? (item.method + ' ' + statusLabel(item.status)) : (item.level || 'log').toUpperCase()),
-        h('button', { class: 'btn inspector__sheet-close', type: 'button', onClick: props.onClose }, 'Close')
+      h('strong', { class: 'inspector__sheet-title' }, isNet ? (item.method + ' ' + statusLabel(item.status)) : (item.level || 'log').toUpperCase()),
+      h('div', { class: 'inspector__sheet-head-actions' },
+      // Add to chat — hand this entry to a chat draft. Sits in the sheet
+      // head next to Close so it is reachable without scrolling: the body
+      // of a long stack trace / response body scrolls under it.
+      h('button', {
+        class: 'btn btn--primary inspector__sheet-add-chat',
+        type: 'button',
+        disabled: addDisabled,
+        title: canAddToChat ? 'Add this entry to a chat draft' : 'Chats are unavailable',
+        onClick: (e) => { e.stopPropagation(); if (canAddToChat) props.onAddToChat(); }
+      }, addLabel),
+      h('button', { class: 'btn inspector__sheet-close', type: 'button', onClick: props.onClose }, 'Close')
+      )
       ),
       // Inner scroll wrapper. The sheet itself is overflow:hidden + max-height:80dvh;
       // without this flex child the kv list / headers / response body grew past the

@@ -81,7 +81,32 @@
 .inspector__sheet-title {
   font-size: 0.85rem;
   font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+/* Head actions: "Add to chat" + Close. Both must stay tappable (>= 44px)
+   at 360 px where the sheet title can be long ("GET FAIL", "ERROR"). The
+   row does not shrink and the title ellipsizes instead, so neither button
+   is ever pushed off the edge.
+
+   The class is deliberately NOT `inspector__sheet-actions`: that name is
+   the Styles edit sheet's footer (inspector-styles.css, imported later in
+   the cascade) and its min-width:96px / justify-content:flex-end would
+   leak onto these two buttons. */
+.inspector__sheet-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.inspector__sheet-head-actions .btn {
+  min-height: var(--tap);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.inspector__sheet-add-chat { font-size: 0.78rem; }
 .inspector__sheet-close { font-size: 0.78rem; }
 .inspector__sheet-h {
   font-size: 0.7rem;

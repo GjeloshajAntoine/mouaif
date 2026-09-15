@@ -1,0 +1,71 @@
+# Add Inspector entries to a chat
+
+## Overview
+
+The Inspector's detail sheet — the panel that opens when you tap a console log, an uncaught exception, or a network request — has an **Add to chat** button. It copies that entry into a chat draft as plain text, so you can ask the assistant about a specific failure without retyping the message or the stack trace. Nothing is sent: the text lands in the draft and waits for you.
+
+## Usage
+
+1. Open **Inspector** and attach to a browser tab.
+2. Tap a row in the **Console** or **Network** panel. The detail sheet opens.
+3. Tap **Add to chat** in the sheet's header, next to **Close**.
+4. Choose the **project** and **chat**, then tap **Add to draft**.
+
+The entry is appended to that chat's draft. Open the chat to review and send it.
+
+![The detail sheet with its Add to chat button](./images/inspector-add-to-chat/detail-sheet-360.png)
+
+## Behavior
+
+- **Add to chat** only appears when the app has a chat surface to hand the entry to. Otherwise the button is rendered but disabled, so the feature is never invisible — just unavailable.
+- The button is also disabled when the entry produces no text (a request row captured before its response still produces a header).
+- The button lives in the sheet **header**, not the scrolling body, so a long stack trace or response body cannot push it off screen.
+- The draft is **appended**, never replaced: existing draft text and attachments are preserved.
+- The chat is not opened and no model run is started. Draft Craft never sends.
+
+### What the text looks like
+
+Console log and exception entries:
+
+```text
+Inspector console error — My Page
+18:42:11 ERROR Error: nope
+Source: http://x/app.js:12
+Stack:
+  at f (app.js:12:4)
+```
+
+An uncaught exception is titled `Inspector exception` rather than `Inspector console error`.
+
+Network requests:
+
+```text
+Inspector request POST 404 — My Page
+http://x/api
+XHR · application/json · 2.0 KB · 120 ms
+```
+
+A request that failed to complete adds its cause:
+
+```text
+Inspector request GET FAIL — My Page
+http://x/api
+Error: net::ERR_FAILED
+```
+
+The page name is the inspected page's `document.title`, falling back to its URL, then to `the inspected page`. An HTTP status's own text (`Not Found`) is not labelled an error — the status is already in the header — while a transport failure's `errorText` is.
+
+## Implementation notes
+
+- `frontend/src/components/inspector/entryText.js` — `buildEntryText(item, context)`, a pure function kept out of the component so the draft formatting is unit-testable without a DOM. It never throws on a partial entry.
+- `frontend/src/components/inspector/DetailSheet.jsx` — renders the button in a `.inspector__sheet-head-actions` row. The class is deliberately not `inspector__sheet-actions`, which is the Styles edit sheet's footer and carries `min-width: 96px` / `justify-content: flex-end`.
+- `frontend/src/components/Inspector.jsx` — `addDetailItemToChat()` builds the payload (defaulting to `activeProject()`) and opens the shared `DraftCraftSheet`; the entry stays in `detailItem` so cancelling returns to the same sheet.
+- `frontend/src/components/DraftCraftSheet.jsx` — the project/chat picker is reused unchanged; its subtitle is overridable through `payload.description` so the Inspector does not have to teach the component about a new source.
+- The sheet header is a flex row: the title ellipsizes and the two buttons (`min-height: var(--tap)`, i.e. 44 px) never shrink, so both stay tappable at 360 px.
+- CSS lives in `frontend/src/inspector-sheets.css`; the `@import` order in `frontend/src/inspector.css` is the cascade and was not changed.
+
+## Related
+
+- [Draft Craft](draft-craft.md) — the shared project/chat picker and the annotator.
+- [Inspector](inspector.md) — the panel set and the detail sheet.
+- Source: [entryText.js](../../frontend/src/components/inspector/entryText.js), [DetailSheet.jsx](../../frontend/src/components/inspector/DetailSheet.jsx), [Inspector.jsx](../../frontend/src/components/Inspector.jsx).

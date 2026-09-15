@@ -206,6 +206,7 @@ const CONTROLS = [
   ['empty state when every panel is hidden', /inspector__panels-empty/],
   ['status pill', /StatusPill/],
   ['detail sheet for a row', /DetailSheet/],
+  ['add a detail entry to a chat draft', /onAddToChat|addDetailItemToChat|buildEntryText/],
   ['panel chips with entry counts', /inspector__panelchip-badge/],
   ['device size presets', /VIEWPORT_PRESETS/],
   ['apply viewport override', /applyViewport/],

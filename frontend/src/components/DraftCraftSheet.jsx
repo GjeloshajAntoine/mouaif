@@ -117,6 +117,16 @@ if (!open) return null;
 const hasText = !!(payload && typeof payload.text === 'string' && payload.text.trim());
 const hasImage = !!(payload && payload.image && payload.image.dataUrl);
 const textLabel = payload && payload.textLabel ? payload.textLabel : 'selected code';
+// The subtitle is the sheet's own sentence; callers whose payload is not
+// "selected file code" (the Inspector's Add to chat) describe it themselves
+// rather than making this component learn every source that can reach it.
+const description = payload && payload.description
+  ? payload.description
+  : hasImage && hasText
+    ? 'Add the annotated image and note to any chat draft.'
+    : hasImage
+      ? 'Add the annotated Inspector image to any chat draft.'
+      : 'Add selected file code to any chat draft.';
 
 async function addToDraft() {
 if (!projectDir || !chatId || (!hasText && !hasImage) || saving) return;
@@ -162,7 +172,7 @@ h('div', { class: 'draft-craft__handle', 'aria-hidden': 'true' }),
 h('div', { class: 'draft-craft__head' },
 h('div', null,
 h('h2', { id: 'draftCraftTitle' }, 'Draft Craft'),
-h('p', null, hasImage && hasText ? 'Add the annotated image and note to any chat draft.' : hasImage ? 'Add the annotated Inspector image to any chat draft.' : 'Add selected file code to any chat draft.')
+h('p', null, description)
 ),
 h('button', { class: 'draft-craft__close', type: 'button', onClick: onClose, 'aria-label': 'Close Draft Craft' }, '×')
 ),

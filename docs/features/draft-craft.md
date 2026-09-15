@@ -2,7 +2,7 @@
 
 ## Overview
 
-Draft Craft adds material to a chat draft without sending it: an annotated image, or code selected in the file editor. The draft stays yours to review before you send.
+Draft Craft adds material to a chat draft without sending it: an annotated image, code selected in the file editor, or an Inspector log / network entry. The draft stays yours to review before you send.
 
 ![The Draft Craft annotator over an attached image](./images/draft-craft/annotator-canvas-360.png)
 
@@ -35,6 +35,10 @@ Draft Craft adds material to a chat draft without sending it: an annotated image
 - **Marker dots** lists one row per dot, scrolled inside the panel, so the tools panel keeps its height no matter how many dots you place. Each row holds the dot's label, a text field for that dot, and a delete button; tap a row's dot to select it, and a newly dragged dot scrolls its own row into view.
 - **Reset** appears once the image has an annotation and restores the untouched original.
 - An exported image that is too large is downscaled. An image that cannot be exported leaves the annotator open with an error instead of sending the message without it.
+
+## Add an Inspector entry
+
+The Inspector detail sheet's **Add to chat** button sends a tapped console log, exception, or network request to a draft. See [Add Inspector entries to a chat](inspector-add-to-chat.md) for the exact text it appends.
 
 ## Add selected file code
 
