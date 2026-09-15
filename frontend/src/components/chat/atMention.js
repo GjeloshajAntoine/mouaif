@@ -424,8 +424,16 @@ if (!item || !textarea || !range) return;
     let insert, cursorOffset;
     if (isString) {
       insert = '@' + item.insert + ':' + firstKey + '=`' + desc + '` ';
-      // Cursor right after the opening backtick
-      cursorOffset = before.length + 2 + item.insert.length + 2 + firstKey.length + 2;
+      // Position the caret just past the OPENING backtick so the user types
+      // the argument into the right slot. The prefix '@' + name + ':' + key
+      // + '=' is `item.insert.length + firstKey.length + 3` characters long,
+      // so the opening backtick sits at `before.length + that` and the caret
+      // goes one past it. This matches appendArg's `pos + key.length + 3` for
+      // the same shape. The old arithmetic (`before.length + 2 +
+      // item.insert.length + 2 + firstKey.length + 2`) recounted a prefix it
+      // had already measured and landed the caret two characters into the
+      // description text, so the user's first keystrokes corrupted it.
+      cursorOffset = before.length + item.insert.length + firstKey.length + 4;
     } else {
       insert = '@' + item.insert + ':' + firstKey + '= ';
       cursorOffset = before.length + insert.length - 1;
