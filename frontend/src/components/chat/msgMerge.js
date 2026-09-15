@@ -100,7 +100,37 @@ export function mergeServerRows(state, rows) {
       }
     }
     if (replaceIdx >= 0) out[replaceIdx] = row;
-    else out.push(row);
+    // No seq-less twin to replace. The batch is the persisted record of rows
+    // the client has not merged yet, so put the row at its seq position
+    // rather than blindly pushing it:
+    //
+    //  - `out`'s seq-less trailing optimistics (the live segments) sort LAST,
+    //    because the server has not persisted them yet. Inserting at the
+    //    first persisted row we already hold keeps the tail preserved.
+    //  - A batch can lead with rows belonging BETWEEN persisted rows we hold
+    //    — the common case being the tail fetch on an early turn, where the
+    //    cursor is still 0 and the server returns the WHOLE transcript. The
+    //    optimistic user/assistant rows we do hold replace their twins, but
+    //    the tool call/result rows of that same turn have no twin. Appending
+    //    them placed the tool cards after the assistant answer that followed
+    //    them, and syncTranscriptAppend renders only the appended tail, so
+    //    the DOM order was wrong too.
+    else out.splice(insertionPointFor(out, row.seq), 0, row);
   }
   return out;
+}
+
+// insertionPointFor(out, seq) -> number
+//
+// Index at which a persisted row with `seq` belongs in an array that may end
+// in a run of seq-less optimistic rows. The optimistic tail represents content
+// the server has not persisted yet, so it always sorts after every persisted
+// row: it takes precedence over the seq comparison by being skipped.
+function insertionPointFor(out, seq) {
+  for (let i = 0; i < out.length; i++) {
+    const m = out[i];
+    if (!m || typeof m.seq !== 'number') return i; // start of the optimistic tail
+    if (m.seq > seq) return i;                     // first persisted row that sorts after
+  }
+  return out.length;
 }
