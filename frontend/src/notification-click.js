@@ -8,6 +8,14 @@ const CLICK_DB = 'mouaif-push-click';
 const CLICK_STORE = 'clicks';
 const CLICK_KEY = 'latest';
 const CLICK_TTL_MS = 60 * 1000;
+// How long the freshly loaded page keeps re-reading the click store. A cold
+// launch wakes the service worker from the click itself, so its write can
+// land AFTER this page has already run its startup read (the worker has to
+// boot, then open IndexedDB). Without a short poll that late write is only
+// seen if the user happens to trigger focus/visibilitychange, and the tap
+// silently lands on the chats list.
+const COLD_LAUNCH_POLL_MS = 250;
+const COLD_LAUNCH_POLL_WINDOW_MS = 5000;
 
 function openClickDb() {
   return new Promise((resolve, reject) => {
@@ -69,15 +77,20 @@ export function navigateToNotificationTarget(value) {
 
 export function consumePendingNotificationClick() {
 if (typeof document === 'undefined') return;
-const check = () => {
-if (document.visibilityState !== 'visible') return;
-// Read-and-clear is idempotent: once consumed the store is empty, so
-// a later fire (visibilitychange, pageshow, focus) is a no-op. The
-// page re-checks on focus so an already-open window that a suspended
-// iOS PWA was woken into still picks up a target that the service
-// worker wrote before posting its (possibly dropped) NAVIGATE message.
-readPendingClickTarget().then(navigateToNotificationTarget);
+const initialHash = window.location.hash;
+// consumeOnce() reads the store and navigates when it holds an in-window
+// target. Read-and-clear makes it idempotent: once consumed the store is
+// empty, so a later fire (visibilitychange, pageshow, focus, poll) is a
+// no-op. Resolves true when a target was applied.
+const consumeOnce = () => {
+if (document.visibilityState !== 'visible') return Promise.resolve(false);
+return readPendingClickTarget().then((url) => {
+if (!url) return false;
+navigateToNotificationTarget(url);
+return true;
+});
 };
+const check = () => { consumeOnce(); };
 check();
 document.addEventListener('visibilitychange', check);
 window.addEventListener('pageshow', check);
@@ -90,4 +103,22 @@ window.addEventListener('focus', () => {
 clearTimeout(focusTimer);
 focusTimer = setTimeout(check, 0);
 });
+// Cold-launch late write: the click wakes the worker, so it can store the
+// target a moment after this page's startup read. Poll briefly instead of
+// depending on a focus/visibilitychange that may never come. The poll stops
+// on the first applied target and also as soon as the user has navigated
+// away from where the app launched, so it can never yank a moving user.
+let pollTimer = null;
+const stopPolling = () => {
+if (pollTimer == null) return;
+clearInterval(pollTimer);
+pollTimer = null;
+};
+const poll = () => {
+if (document.visibilityState !== 'visible') return;
+if (window.location.hash !== initialHash) { stopPolling(); return; }
+consumeOnce().then((applied) => { if (applied) stopPolling(); });
+};
+pollTimer = setInterval(poll, COLD_LAUNCH_POLL_MS);
+setTimeout(stopPolling, COLD_LAUNCH_POLL_WINDOW_MS);
 }

@@ -203,7 +203,23 @@ pageVisible = true;
 pageResponds = false;
 await dispatchPush('tool_authorization');
 assert.equal(shownNotifications.length, 2, 'a suspended PWA with stale visible client state does not suppress an authorization push');
-console.log('push notifications: 42 assertions passed');
+
+// ---- Page-side cold-launch recovery -----------------------------------
+//
+// A cold launch wakes the worker from the click, so the worker's IndexedDB
+// write can land AFTER the freshly loaded page has run its startup read. The
+// page must keep re-reading for a short window instead of only on
+// focus/visibilitychange; otherwise the tap silently lands on the chats list.
+const clickSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'notification-click.js'), 'utf8');
+assert.ok(/COLD_LAUNCH_POLL_MS\s*=\s*\d+/.test(clickSource), 'cold-launch consumer defines a poll interval');
+assert.ok(/COLD_LAUNCH_POLL_WINDOW_MS\s*=\s*\d+/.test(clickSource), 'cold-launch consumer bounds the poll window');
+assert.ok(clickSource.includes('pollTimer = setInterval(poll,'), 'cold-launch consumer polls the click store');
+assert.ok(clickSource.includes('setTimeout(stopPolling, COLD_LAUNCH_POLL_WINDOW_MS)'), 'cold-launch poll always ends');
+assert.ok(/const initialHash = window\.location\.hash/.test(clickSource), 'cold-launch poll remembers where the app launched');
+assert.ok(/window\.location\.hash !== initialHash[\s\S]{0,80}stopPolling/.test(clickSource),
+'a user navigation stops the cold-launch poll (no yank away from a chosen view)');
+
+console.log('push notifications: 49 assertions passed');
 })().catch((err) => {
 console.error(err);
 process.exitCode = 1;
