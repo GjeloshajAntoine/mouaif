@@ -37,7 +37,7 @@
 <h2 id="install">Install</h2>
 <p>Run it once without installing anything, straight from the registry:</p>
 <pre><code class="language-bash">npx mouaif serve</code></pre>
-<p><code>npx</code> unpacks the package into its own cache (<code>~/.npm/_npx</code>) and launches the CLI from there, so it never writes to the directory you run it from. The first run downloads the native binaries (<code>better-sqlite3</code>, <code>@napi-rs/keyring</code>) and can take a few minutes; later runs reuse the cache and start immediately.</p>
+<p><code>npx</code> unpacks the package into its own cache (<code>~/.npm/_npx</code>) and launches the CLI from there, so it never writes to the directory you run it from. The first run downloads and unpacks the package, including the prebuilt native binaries (<code>better-sqlite3</code>, <code>@napi-rs/keyring</code>); this is quick on common platforms, but an unusual platform compiles those binaries and can take a few minutes. Later runs reuse the cache and start immediately.</p>
 <p>To pin an exact version, quote the argument. A bare <code>mouaif@0.3.0</code> is read as a glob in <code>zsh</code> and fails with <code>no matches found</code>:</p>
 <pre><code class="language-bash">npx --yes --package &quot;mouaif@0.3.0&quot; mouaif info</code></pre>
 <p>Install the <code>mouaif</code> command globally:</p>
@@ -65,7 +65,7 @@ mouaif serve --host 0.0.0.0
 mouaif info</code></pre>
 <p>When listening on your network, use the address printed by mouaif. Enable access authentication before making the app available to other devices.</p>
 <h2 id="first-setup">First setup</h2>
-<ol><li><p>Open the <strong>Chats</strong> tab.</p></li><li><p>Tap <strong>Add project</strong> and choose a folder.</p></li><li><p>Open <strong>Settings → Providers</strong> and connect an AI provider.</p></li><li><p>Open the project&#39;s settings and add or select a model.</p></li><li><p>Create a chat, select the model, and send a message.</p>
+<ol><li><p>Open the <strong>Chats</strong> tab.</p></li><li><p>Tap the <strong>+</strong> (Add project) button and choose a folder.</p></li><li><p>Open <strong>Settings → Providers</strong> and connect an AI provider.</p></li><li><p>Open the project&#39;s settings and add or select a model.</p></li><li><p>Create a chat, select the model, and send a message.</p>
 <p>Provider connections are shared by the app. Project settings control the models and abilities available in each project.</p></li></ol>
 <h2 id="update-a-source-installation">Update a source installation</h2>
 <pre><code class="language-bash">git pull

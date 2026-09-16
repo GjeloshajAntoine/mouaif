@@ -38,7 +38,7 @@ File tools let the model list, search, read, create, and edit files in the proje
 
 ### Git
 
-Open the Git view from the file toolbar to inspect staged changes, unstaged changes, and recent commits. Git actions remain visible in the chat when the model uses an enabled Git integration.
+Open the Git view from the file toolbar to inspect staged changes, unstaged changes, and recent commits, and to stage, commit, stash, pull, or push yourself. When the model runs git commands, it does so through the shell tool, and those calls appear in the chat like any other shell command.
 
 ### Tasks and progress
 
