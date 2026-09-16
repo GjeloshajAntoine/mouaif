@@ -11,8 +11,7 @@ import {
   formatReadableToolResult,
   formatToolArgsFull,
   normalizeToolName,
-  parsePlainFileToolResult,
-  TOOL_ARGS_PREVIEW_CHARS
+  parsePlainFileToolResult
 } from './tools.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
 
@@ -32,21 +31,25 @@ function renderToolMeta(parent, items) {
   parent.appendChild(meta);
 }
 
-// buildToolArgs(parent, args, name) -> Element | null
+// buildToolArgs(args, name) -> Element | null
 //
-// Build the card's complete call arguments when the head could not show
-// them. The head is a single ellipsized line capped at
-// TOOL_ARGS_PREVIEW_CHARS, so a long `shell` command — a commit-message
-// heredoc, a compound `&&` command — is unreadable there and the
-// expanded card is the only place the user can read what ran. Returns
-// null when the head already showed everything, so a short call's
-// expanded card carries no duplicate of its own header.
+// Build the card's complete call arguments: what the model actually ran or
+// asked for, rendered above the result.
+//
+// Always rendered when there are arguments. It is NOT conditional on the
+// collapsed head having been truncated, because the two are not comparable:
+// the head truncates the ARGUMENT TEXT at TOOL_ARGS_PREVIEW_CHARS (220),
+// while CSS also clips the head to the row width (`flex: 1 1 auto` +
+// `overflow: hidden` + `text-overflow: ellipsis`). On a 390 px screen the
+// visible head is roughly 30–50 characters, so a command of, say, 120
+// characters was "not truncated" by the 220-char test yet read as
+// `cd /home/ubuntu/mouaif && git diff --ca…` — the rest was never
+// displayed anywhere. Treating that as already-shown is what kept the
+// command invisible on most cards.
 function buildToolArgs(args, name) {
   if (args == null) return null;
   const full = formatToolArgsFull(args, name);
   if (!full) return null;
-  const head = full.length > TOOL_ARGS_PREVIEW_CHARS ? full.slice(0, TOOL_ARGS_PREVIEW_CHARS - 1).trimEnd() + '…' : full;
-  if (head === full) return null;
   const wrap = document.createElement('div');
   wrap.className = 'tool-preview__args';
   const label = document.createElement('div');

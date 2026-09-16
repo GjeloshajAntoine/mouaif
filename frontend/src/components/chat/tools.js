@@ -7,10 +7,11 @@
 
 // TOOL_ARGS_PREVIEW_CHARS
 //
-// One-line argument budget: the tool card head and the nested subagent
-// rows truncate the same call at the same length. An expanded card shows
-// the full arguments instead (see formatToolArgsFull below), so both
-// halves of that rule read this one constant.
+// Budget for the collapsed card head's one-line argument text, shared by
+// the main card head and the nested subagent rows so the same call is not
+// truncated at two different lengths. It bounds the TEXT only — CSS also
+// clips the head to the row width — so the expanded card shows the full
+// arguments regardless (see formatToolArgsFull below).
 export const TOOL_ARGS_PREVIEW_CHARS = 220;
 
 // normalizeToolName(name) -> string
@@ -178,12 +179,12 @@ try { return JSON.stringify(args, null, 2); }
 // formatToolArgsFull(args, toolName) -> string
 //
 // The complete call arguments, as the expanded tool card renders them.
-// The head deliberately ellipsizes at TOOL_ARGS_PREVIEW_CHARS, which
-// hides most of a long `shell` command (a commit message heredoc, a
-// compound command), so the expanded card is the only place the user can
-// read what the model actually ran. It restores the line breaks the
-// head's one-line formatter collapses, and falls back to pretty JSON for
-// unknown shapes — both forms render inside a <pre>.
+// The head shows one clipped line — bounded by TOOL_ARGS_PREVIEW_CHARS in
+// text and by the row width in CSS — so a `shell` command (a commit-message
+// heredoc, a compound `&&` chain) is unreadable there and the expanded card
+// is the only place the user can read what the model actually ran. This
+// restores the line breaks the head's one-line formatter collapses, and
+// falls back to pretty JSON for unknown shapes — both render in a <pre>.
 export function formatToolArgsFull(args, toolName) {
   if (args == null) return '';
   if (typeof args === 'string') return args;

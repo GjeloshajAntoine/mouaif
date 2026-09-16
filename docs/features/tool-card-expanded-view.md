@@ -22,7 +22,7 @@ Behavior notes:
 - **Successful cards stay collapsed.** Expanding is always the user's choice.
 - **Failed cards auto-expand**, so the error is visible without a tap.
 - **A long command is shown above its output**, not buried under it, so the card reads "what ran, then what came back".
-- **A short command is not repeated.** The full-arguments block is rendered only when the collapsed head had to truncate the call, so expanding an ordinary `ls -la` card looks exactly as it did before.
+- **An expanded shell card always shows its command.** The block is not conditional on the collapsed head having been truncated. The head clips its text twice — at `TOOL_ARGS_PREVIEW_CHARS` in JS, and at the row width in CSS (`flex: 1 1 auto` + `overflow: hidden` + `text-overflow: ellipsis`) — and on a 390 px screen the CSS clip lands around 30-50 characters. A 50-character command is therefore under the text cap yet still rendered as `cd /home/ubuntu/mouaif && git diff --ca…`, with the rest shown nowhere. In the reference chat all 92 shell heads were visually clipped, so every one of them was hiding part of its command.
 - **The arguments block scrolls** rather than growing without bound: it is capped at one third of the viewport height, so one enormous command cannot push the tool's output off screen.
 - **A shell card is one terminal.** The command is not a separate surface: no second colour, and no divider line between the command and its output. The two sections are separated by space alone.
 - **Long output scrolls inside the card**, capped at 40% of the viewport height.

@@ -239,16 +239,27 @@ function main() {
       order.join(' | '));
   }
 
-  // ---- 2. A short command is not repeated ---------------------------
+  // ---- 2. A command is shown even when the head "fits" ---------------
+  //
+  // The head ellipsizes its TEXT at TOOL_ARGS_PREVIEW_CHARS, but CSS also
+  // clips it to the row width. A 120-character command is under the text
+  // cap yet still renders as `cd /home/ubuntu/mouaif && git diff --ca…` on
+  // a 390 px screen, so deciding "the head already showed it" from the
+  // length alone kept the command hidden on most cards. The block is now
+  // unconditional: if there are arguments, the expanded card shows them.
   {
+    const midCmd = 'y'.repeat(120);
     const body = makeNode('div');
     mod.renderShellToolResult(body, {
       ok: true, stdout: 'a\nb\n', stderr: '', exitCode: 0, identity: 'bash', durationMs: 5
-    }, { cmd: 'ls -la' });
-    check('a command the head showed in full is not duplicated',
-      !body.querySelector('.tool-preview__pre--args'));
+    }, { cmd: midCmd });
+    const pre = body.querySelector('.tool-preview__pre--args');
+    check('a command under the head text cap is still shown in full',
+      !!pre && pre.textContent === midCmd, pre ? String(pre.textContent.length) : 'missing');
     check('its output renders as before',
       /a\nb/.test(textOf(body.querySelector('.tool-preview__terminal'))));
+    check('a shown command still flags the body as flat',
+      body.classList.contains('tool-preview--with-args'), body.className);
   }
 
   // ---- 3. The failing-result path keeps the same order --------------
@@ -279,21 +290,21 @@ function main() {
   // A shell card that shows a command AND its output is one continuous
   // terminal: no border lines in the body (the CSS keys off
   // `.tool-preview--with-args`). A card that shows output alone keeps its
-  // box, so the class must be added only when the command block exists.
+  // box, so the class tracks the presence of the command block.
   {
     const withCmd = makeNode('div');
     mod.renderShellToolResult(withCmd, {
       ok: true, stdout: 'o\n', stderr: '', exitCode: 0, identity: 'bash'
     }, { cmd: LONG_CMD });
-    check('a truncated command flags the body as showing arguments',
+    check('a command flags the body as showing arguments',
       withCmd.classList.contains('tool-preview--with-args'), withCmd.className);
 
     const shortCmd = makeNode('div');
     mod.renderShellToolResult(shortCmd, {
       ok: true, stdout: 'o\n', stderr: '', exitCode: 0, identity: 'bash'
     }, { cmd: 'ls -la' });
-    check('a short command does not flag the body as showing arguments',
-      !shortCmd.classList.contains('tool-preview--with-args'), shortCmd.className);
+    check('a short command also flags the body (the head clips it too)',
+      shortCmd.classList.contains('tool-preview--with-args'), shortCmd.className);
 
     const noArgs = makeNode('div');
     mod.renderShellToolResult(noArgs, {
