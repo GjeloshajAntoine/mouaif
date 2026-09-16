@@ -13,6 +13,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Inspector Styles](features/inspector-styles.md) — tap to select an element and edit its CSS in the Inspector.
 - [Inspector touch controls](features/inspector-touch-controls.md) — change the selected element's CSS with chips, sliders, a box model and swatches.
 - [Inspector full screen](features/inspector-fullscreen.md) — expand one Inspector panel over the whole viewport from its card header.
+- [Inspector JavaScript console](features/inspector-js-console.md) — the editable console under the log, sized for a phone's soft keyboard, with Run and indent buttons.
 - [Inspector Chrome profiles](features/inspector-profiles.md) — switch which Chrome user profile the Inspector attaches to (entry point currently hidden).
 - [Inspector target-origin model](features/inspector-target-origin.md) — which element, which rule and where an edit lands, as read inside the Styles panel.
 - [Inspector value types](features/inspector-value-types.md) — switch a value between length, number, percentage and keyword, with the cost stated.

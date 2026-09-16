@@ -25,8 +25,8 @@
 // `type`, and `info` so the picker reads like DevTools, not a bare
 // word list.
 import { h } from 'preact';
-import { useRef, useEffect } from 'preact/hooks';
-import { EditorState } from '@codemirror/state';
+import { useRef, useEffect, useState } from 'preact/hooks';
+import { EditorState, EditorSelection } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, placeholder } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { bracketMatching, indentOnInput, syntaxHighlighting } from '@codemirror/language';
@@ -269,6 +269,15 @@ export function JsConsole(props) {
   onEvaluateRef.current = props.onEvaluate;
   const getEvalRef = useRef(props.getEval);
   getEvalRef.current = props.getEval;
+  // The strip's two on-screen actions. The editor is created once, in an
+  // effect, but the buttons are rendered by Preact on every render — so the
+  // buttons read the current editor through refs instead of capturing a view
+  // from the first render.
+  const runRef = useRef(null);
+  const indentRef = useRef(null);
+  // Run carries the input's emptiness: the editor starts one line tall, so a
+  // permanently live button would be the only thing suggesting it is not.
+  const [hasInput, setHasInput] = useState(false);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -279,18 +288,43 @@ export function JsConsole(props) {
       return get(desc, params);
     });
 
-  const runCode = (view) => {
-    const code = view.state.doc.toString();
-    if (!code || !code.trim()) return true;
-    const onEval = onEvaluateRef.current;
-    if (onEval) {
-      try { onEval(code); } catch { /* ignore evaluation errors */ }
-    }
-    // Clear the input after a successful dispatch, matching the
-    // DevTools REPL where the entry is consumed on Enter.
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length }, selection: { anchor: 0 } });
-    return true;
-  };
+    const runCode = (view) => {
+      const code = view.state.doc.toString();
+      if (!code || !code.trim()) return true;
+      const onEval = onEvaluateRef.current;
+      if (onEval) {
+        try { onEval(code); } catch { /* ignore evaluation errors */ }
+      }
+      // Clear the input after a successful dispatch, matching the
+      // DevTools REPL where the entry is consumed on Enter.
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length }, selection: { anchor: 0 } });
+      return true;
+    };
+
+    // The same entry point the on-screen Run button uses. It runs whatever the
+    // keymap would have run and leaves the editor focused.
+    runRef.current = () => {
+      const view = viewRef.current;
+      if (!view) return;
+      runCode(view);
+      view.focus();
+    };
+    // Shift+Enter's job on hardware, and the only way to indent on Touch: a
+    // soft keyboard has no Tab key, so the second action button inserts the
+    // same body indent `indentWithTab` would — a newline plus the current
+    // line's own leading whitespace, so a nested line stays nested.
+    indentRef.current = () => {
+    const view = viewRef.current;
+    if (!view) return;
+    const { from, to } = view.state.selection.main;
+    const line = view.state.doc.lineAt(from);
+    const indent = '\n' + /^[ \t]*/.exec(line.text)[0];
+    view.dispatch(view.state.changeByRange((range) => ({
+      changes: { from: range.from, to: range.to, insert: indent },
+      range: EditorSelection.cursor(range.from + indent.length)
+    })));
+    view.focus();
+    };
 
     // Run on Enter. Shift-Enter inserts a newline, matching the real
     // DevTools console and the code editors in the rest of the app.
@@ -335,10 +369,19 @@ export function JsConsole(props) {
         EditorView.lineWrapping,
         placeholder('Evaluate JavaScript in the page…'),
         EditorView.theme({
-          '&': { height: '100%', fontSize: '13px' },
+          '&': { height: 'auto', fontSize: '13px' },
           '.cm-content': { padding: '8px 0', caretColor: '#528bff' },
           '.cm-gutters': { backgroundColor: '#282c34', borderRight: '1px solid #21252b' },
           '.cm-line': { padding: '0 8px' }
+        }),
+        // The card grows with the expression, and Run has to follow it: an
+        // empty editor is one line, a five-line expression is five. Reading the
+        // document's own length (rather than listening to keystrokes) covers
+        // every path that changes it — typing, paste, Run clearing the box.
+        EditorView.updateListener.of((update) => {
+          if (!update.docChanged) return;
+          const filled = update.state.doc.length > 0;
+          setHasInput((prev) => (prev === filled ? prev : filled));
         })
       ]
     });
@@ -349,12 +392,31 @@ export function JsConsole(props) {
     return () => {
       view.destroy();
       viewRef.current = null;
+      runRef.current = null;
+      indentRef.current = null;
     };
   }, []);
 
   return h('div', { class: 'inspector__jsconsole' },
     h('div', { class: 'inspector__jsconsole-bar' },
-      h('span', { class: 'inspector__jsconsole-hint' }, 'Enter to run · Shift+Enter for newline · Ctrl+Space to autocomplete')
+      h('span', { class: 'inspector__jsconsole-hint' }, 'Enter to run · Shift+Enter for newline · Ctrl+Space to autocomplete'),
+      h('div', { class: 'inspector__jsconsole-actions' },
+        h('button', {
+          type: 'button',
+          class: 'inspector__jsconsole-btn',
+          'aria-label': 'Tab — indent the expression',
+          title: 'Tab — indent',
+          onClick: () => { if (indentRef.current) indentRef.current(); }
+        }, '⇥'),
+        h('button', {
+          type: 'button',
+          class: 'inspector__jsconsole-btn inspector__jsconsole-btn--run',
+          'aria-label': 'Run — evaluate in the page',
+          title: 'Run — evaluate in the page',
+          disabled: !hasInput,
+          onClick: () => { if (runRef.current) runRef.current(); }
+        }, 'Run')
+      )
     ),
     h('div', { ref: hostRef, class: 'inspector__jsconsole-editor', 'aria-label': 'JavaScript console' })
   );

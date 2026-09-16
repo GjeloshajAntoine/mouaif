@@ -75,6 +75,21 @@ the last child of a fixed, full-height surface with its own scroller. */
 .inspector__fs .inspector__panel--grow .inspector__panel-body .inspector__styles {
 max-height: none;
 }
+/* Full screen is the one place a fixed editor height is wrong: the surface has
+the whole viewport, and the console's editor is still the *last* child of the
+body — so a body that fills the surface leaves it at the bottom edge, inside the
+home-indicator inset, and the card stretches into empty space around the strip
+instead of using it. The wrapper therefore takes the column, the log stays
+`flex: 0 0 auto` and scrolls, and the editor strip is pushed to the end of the
+card where the thumb expects it; the card itself stays content-high rather than
+stretching, so there is no dead space between the log and the editor. */
+.inspector__fs .inspector__panel-body .inspector__console-wrap {
+flex: 0 1 auto;
+min-height: 0;
+}
+.inspector__fs .inspector__jsconsole {
+margin-top: auto;
+}
 /* The element preview in the Styles panel is capped at 132 px in the stacked
 layout to leave property rows on a 360 px phone. Full screen is the mode where
 that trade is not needed: the cap was about the *stacked* card's height, and

@@ -43,7 +43,7 @@ Because the switcher stays put while the cards scroll away under it, a card the 
 
 ### 2. Console panel
 - **Live logs** — see `console.log`, `info`, `warn`, and `error` messages with timestamps and severity indicators.
-- **Interactive JavaScript Console** — execute JS expressions directly on the page with autocomplete for globals, properties, and element IDs.
+- **Interactive JavaScript Console** — execute JS expressions directly on the page with autocomplete for globals, properties, and element IDs. The editor is one line tall while it is empty and grows with the expression up to ~32 dvh, then scrolls inside itself, so the card is never mostly empty and a long entry is never clipped. Every action is also a button — **Run** (disabled while the box holds only whitespace) and **⇥** for the indent a phone's soft keyboard cannot type. See [Inspector JavaScript console](./inspector-js-console.md).
 - **Stack traces** — tap any log row to inspect formatted stack traces and object details.
 
 ### 3. Network panel
@@ -109,5 +109,8 @@ The previous design used `window.confirm`, which some embedded web views auto-di
 
 ## Related
 
+- [Inspector JavaScript console](./inspector-js-console.md) — the editable console under the log, with Run and indent buttons.
+- [Inspector Styles panel](./inspector-styles.md) — tap an element to edit its CSS.
+- [Add Inspector entries to a chat](./inspector-add-to-chat.md) — send a log row or a request to a draft.
 - [Chrome Debug MCP](./chrome-debug-mcp.md) — letting the AI assistant automate the browser.
 - [Web preview tool](./webpreview.md) — in-chat page preview thumbnails.
