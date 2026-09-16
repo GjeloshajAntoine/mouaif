@@ -223,7 +223,7 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
         allowlist: file && Array.isArray(file.allowlist) ? file.allowlist : []
       });
       setFileToolAuth(Object.fromEntries(
-      ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'image_gen'].map((name) => [name, authz.status === 200 && authz.body.tools && authz.body.tools[name]])
+      ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file'].map((name) => [name, authz.status === 200 && authz.body.tools && authz.body.tools[name]])
       ));
       const sub = authz.status === 200 && authz.body.tools && authz.body.tools.subagent;
       setSubagentAuth({

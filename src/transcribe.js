@@ -94,8 +94,8 @@ const OPENAI_MODEL_HINTS = ['whisper', 'transcribe', 'transcription', 'voxtral',
 // OpenAI-shaped multipart form. This is what decides the transport: which API a
 // base URL speaks is a property of the *connection*, not of the model id.
 //
-// The list itself lives in src/providerShapes.js so this module and
-// src/imagegen.js cannot drift apart on the answer. It no longer carries
+// The list itself lives in src/providerShapes.js, one leaf module both
+// consumers read. It no longer carries
 // `anthropic`: that entry, which only this copy had, claimed the Messages API
 // speaks OpenAI's multipart form, which it does not — pointing a Claude
 // connection at `/audio/transcriptions` is a 404 either way.

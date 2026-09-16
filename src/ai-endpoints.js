@@ -7,8 +7,7 @@
 // API key — it POSTs to /api/ai/chat and reads the SSE stream back.
 //
 // This module owns the provider definitions (ENDPOINTS), the model-list
-// adapters (listModels / listTranscriptionModels / listImageModels), the
-// request builders
+// adapters (listModels / listTranscriptionModels), the request builders
 // (BUILDERS), and the event parsers (PARSERS). The multi-turn streaming loop
 // lives in src/ai-stream.js; the public facade is src/ai.js.
 //
@@ -219,18 +218,6 @@ requireCred: false
 // /models defaults to `output_modalities=text`, so most of the 52 image
 // models are simply not in the chat list at all (`openai/gpt-image-2`,
 // `black-forest-labs/flux.2-max`, the whole Recraft/Seedream/Krea families).
-// The rows that *are* in the chat list are the Gemini-shaped chat models
-// that can also return an image. This slice is the definitive list of what
-// OpenRouter can draw with, and it carries `supported_parameters` per row,
-// which is what tells a text-to-image generator from an editor.
-// Unauthenticated like /models (its docs call it anonymously too).
-listImageModels: async (cred, signal) => openAIShapedListModels({
-name: 'openrouter',
-url: ENDPOINTS.openrouter.baseUrl + '/images/models',
-authHeader: ENDPOINTS.openrouter.authHeader,
-thinkingFor: thinkingForOpenRouterModel,
-requireCred: false
-}, cred, signal),
     staticHeaders: {
       'HTTP-Referer': 'https://mouaif.local',
       // The current OpenRouter API uses `X-OpenRouter-Title` as the
@@ -509,41 +496,11 @@ function parseOpenAIShapedModels(body, thinkingFor) {
     if (inputs) rec.inputModalities = inputs;
     const outputs = modalityList(m, 'output_modalities');
     if (outputs) rec.outputModalities = outputs;
-    // `supported_parameters` is carried through for the same reason the
-    // modalities are: it is the provider's own report of what each model can
-    // be *asked* for, and the image picker needs it to tell a generator from
-    // an editor. OpenRouter is the provider that publishes it; a row that
-    // requires `input_references` cannot draw from a prompt alone, and
-    // offering it in the picture picker is a menu entry that cannot work.
-    // Absent stays absent — unknown is never "no".
-    const supported = supportedParameters(m);
-    if (supported) rec.supportedParameters = supported;
     const thinking = typeof thinkingFor === 'function' ? thinkingFor(m) : undefined;
     if (thinking) rec.thinking = thinking;
     out.push(rec);
   }
   return out;
-}
-
-// supportedParameters(m) — OpenRouter's per-model `supported_parameters` map
-// (parameter name -> its descriptor), carried onto the record so a consumer
-// can consult one parameter without the whole upstream body. Returns null
-// when the provider sent nothing usable.
-function supportedParameters(m) {
-  const raw = m && m.supported_parameters;
-  if (!raw || typeof raw !== 'object') return null;
-  // Some OpenAI-shaped servers send an array of names instead of a map; both
-  // are accepted, and anything else is treated as "said nothing".
-  if (Array.isArray(raw)) {
-    const out = {};
-    for (const name of raw) if (typeof name === 'string') out[name] = {};
-    return Object.keys(out).length ? out : null;
-  }
-  const out = {};
-  for (const key of Object.keys(raw)) {
-    if (typeof key === 'string' && key) out[key] = raw[key];
-  }
-  return Object.keys(out).length ? out : null;
 }
 
 // modalityList(m, key) — one of `architecture.input_modalities` /
@@ -652,28 +609,18 @@ function parseGeminiModels(body) {
   for (const m of arr) {
     if (!m || !m.name) continue;
     const id = String(m.name).replace(/^models\//, '');
-    // Keep a model that can generate content the app can consume: a
-    // text/image chat model answers `generateContent`, and an Imagen model
-    // answers `predict` (its `:predict` image API — the `gemini-predict`
-    // family). Dropping the `predict`-only rows is what kept every Imagen
-    // model (`imagen-3.0-generate-002`, `imagen-4.0-*`) out of the image
-    // picker, even though the feature has a request family built for them.
     const methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
-    const GENERATES = ['generateContent', 'predict', 'predictLongRunning'];
-    if (methods.length && !methods.some((x) => GENERATES.includes(x))) continue;
+    // A model only answers a request the app can send. `generateContent` is
+    // the chat route. The Imagen families answer `predict` /
+    // `predictLongRunning`, which nothing in the app sends (the image tool
+    // that did was removed), so those rows are dropped as unusable rather
+    // than offered as a chat model that cannot chat.
+    if (methods.length && !methods.includes('generateContent')) continue;
     const rec = {
     id,
     label: m.displayName || id,
     contextWindow: typeof m.inputTokenLimit === 'number' ? m.inputTokenLimit : undefined
     };
-    // Carry Gemini's own report of what a model produces so the image
-    // picker can tell an Imagen row (produces an image) from a text model
-    // without guessing on the id alone. A row that answers only `predict`
-    // (Imagen) or names an image product is treated as an image producer.
-    if (/imagen/i.test(id) || /(^|-)image($|-)/i.test(id)
-      || (methods.length && methods.includes('predict') && !methods.includes('generateContent'))) {
-    rec.outputModalities = ['image'];
-    }
     // Gemini 2.5+ models accept generationConfig.thinkingConfig with a
     // raw thinkingBudget token count.
     if (/gemini-(2\.5|[3-9])/.test(id)) rec.thinking = { kind: 'budget' };
@@ -751,20 +698,6 @@ async function listTranscriptionModels(provider, cred, signal) {
 const def = ENDPOINTS[provider];
 if (!def || typeof def.listTranscriptionModels !== 'function') return null;
 return normalizeModelList(await def.listTranscriptionModels(cred, signal));
-}
-
-// listImageModels(provider, cred, signal) -> Promise<[...] | null>
-//
-// The slice of a provider's catalogue that can generate pictures, when that
-// is not "the chat list, filtered": OpenRouter's /models defaults to
-// `output_modalities=text`, so its image catalogue is a different endpoint
-// (`/images/models`) that the chat list never sees. `null` means "this
-// provider has no separate image catalogue" — the caller filters the chat
-// list instead, which is what every provider but OpenRouter needs.
-async function listImageModels(provider, cred, signal) {
-const def = ENDPOINTS[provider];
-if (!def || typeof def.listImageModels !== 'function') return null;
-return normalizeModelList(await def.listImageModels(cred, signal));
 }
 
 function endpointFor(model) {
@@ -1839,15 +1772,13 @@ module.exports = {
 ENDPOINTS,
 listModels,
 listTranscriptionModels,
-listImageModels,
 endpointFor,
   requireApiKey,
   BUILDERS,
   PARSERS,
   parseMiniMaxTextToolCalls,
-  // Exported so scripts/test-image-generation.js can pin that Imagen rows
-  // (which answer `predict`, not `generateContent`) survive the parser and
-  // are tagged as image producers.
+  // Exported so scripts/test-model-lists.js can pin the Gemini catalog
+  // parser.
   parseGeminiModels,
   // Curated catalogs, exported so scripts/test-model-pricing-coverage.js can
   // assert that every model id we *offer* also has a built-in price.

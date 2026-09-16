@@ -229,7 +229,6 @@ async function runSingleToolCall(c, cx) {
       let summary;
       if (c.name === 'shell') summary = (args && args.cmd) || '';
       else if (c.name === 'subagent') summary = (args && args.task) || '';
-      else if (c.name === 'image_gen') summary = (args && args.prompt) || '';
       else if (c.name === 'webpreview') {
         // Show the URL the model wants to open so the user can tell
         // at a glance which site it'll preview — beats the generic
@@ -493,17 +492,6 @@ async function streamChat(opts) {
 catch { /* task tool module unavailable; skip */ }
 try { toolSpecs.push(require('./tools/restart.js').SPEC); }
 catch { /* restart tool module unavailable; skip */ }
-  // Native image generation tool: generate a picture with an image model,
-  // save it as a project file, and attach the picture to the tool result
-  // (so a subagent's generation is what the main agent receives). Off by
-  // default; gated by the `image_gen` authorization mode.
-  try {
-    const img = require('./tools/image.js');
-    let imageModels = [];
-    try { if (opts && opts.projectDir) imageModels = img.imageModelRecords(opts.projectDir); }
-    catch { /* no image models configured */ }
-    toolSpecs.push(img.buildSpec ? img.buildSpec(imageModels) : img.SPEC);
-  } catch { /* image tool module unavailable; skip */ }
 try {
 const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir, opts && opts.chat);
 
@@ -555,18 +543,15 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       }
       }
       }
-      // Per-leaf file overrides: a single file operation (or `image_gen`,
-      // now a File tools leaf) can carry its own `off` (e.g.
-      // tools.read_file.mode = "off") while the `file` family stays
-      // enabled. The family loop above only fires when the family itself
-      // is `off`, so resolve each file-tool spec through effectiveConfig to
-      // honor the leaf. Without this the leaf was still advertised even
-      // though the execution gate rejects it with ETOOL_DISABLED — the
-      // model paid tokens for a tool it could never use. This is also what
-      // keeps `image_gen` off by default: its unconfigured mode is `off`
-      // even while the `file` family defaults to `ask`. A family-level
-      // `off` still hides every leaf (the loop above runs first and drops
-      // them all).
+      // Per-leaf file overrides: a single file operation can carry its own
+      // `off` (e.g. tools.read_file.mode = "off") while the `file` family
+      // stays enabled. The family loop above only fires when the family
+      // itself is `off`, so resolve each file-tool spec through
+      // effectiveConfig to honor the leaf. Without this the leaf was still
+      // advertised even though the execution gate rejects it with
+      // ETOOL_DISABLED — the model paid tokens for a tool it could never
+      // use. A family-level `off` still hides every leaf (the loop above
+      // runs first and drops them all).
       for (let i = toolSpecs.length - 1; i >= 0; i--) {
       const spec = toolSpecs[i];
       if (!spec || !spec.function || !authz.FILE_FAMILY_TOOLS.has(spec.function.name)) continue;
@@ -1316,6 +1301,39 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     return out;
   }
 
+  // rawImageBlocks(result) — the raw `{ type:'image', data, mimeType }`
+  // blocks on a tool result, in the same shape read_file's image path and
+  // MCP image results emit.
+  // Accepts the same `image` / `resource` shapes toolResultImageParts does,
+  // but keeps the blocks as native image content (not `image_url`) so they
+  // can be re-attached to a subagent's result `content` and picked up by the
+  // parent's own toolResultImageParts pass. This is what carries a delegated
+  // picture (e.g. a subagent's read_file or MCP image result) back to the
+  // main agent.
+  function rawImageBlocks(result) {
+    if (!result || !Array.isArray(result.content)) return [];
+    const out = [];
+    for (const block of result.content) {
+      if (!block || typeof block !== 'object') continue;
+      let data = null;
+      let mimeType = null;
+      if (block.type === 'image') {
+        data = block.data || block.base64;
+        mimeType = block.mimeType || block.mime_type || block.mediaType || block.media_type || 'image/png';
+      } else if (block.type === 'resource' && block.resource && typeof block.resource === 'object') {
+        const res = block.resource;
+        const resMime = res.mimeType || res.mime_type || res.mediaType || res.media_type || '';
+        const blob = res.blob || res.data || res.base64;
+        if (typeof blob === 'string' && blob && /^image\//i.test(resMime)) {
+          data = blob;
+          mimeType = resMime;
+        }
+      }
+      if (typeof data === 'string' && data) out.push({ type: 'image', data, mimeType });
+    }
+    return out;
+  }
+
   function firstStringArgument(value) {
     if (!value || typeof value !== 'object') return '';
     for (const item of Object.values(value)) {
@@ -1749,36 +1767,47 @@ promptSize: callOpts && callOpts.promptSize,
       // streamed tool_call / tool_result events back into OpenAI-shaped
       // messages so the chat card can render them.
       const chat = nestedMessages.slice();
+      // Image blocks produced by the subagent's own tool calls (a read_file
+      // image, an MCP image result). Accumulated here so the delegated
+      // result can carry the pixels back up to the parent — see below where
+      // they are set on `r.content`, which the parent's line-387
+      // toolResultImageParts(exec.result) then attaches as a vision message.
+      const nestedImageParts = [];
       {
-        let pendingCalls = [];
-        const flushCalls = () => {
-          if (!pendingCalls.length) return;
-          chat.push({
-            role: 'assistant',
-            content: null,
-            tool_calls: pendingCalls.map((c) => ({
-              id: c.id || undefined,
-              type: 'function',
-              function: { name: c.name, arguments: typeof c.args === 'string' ? c.args : JSON.stringify(c.args || {}) }
-            }))
-          });
-          pendingCalls = [];
-        };
-        for (const ev of nestedToolEvents) {
-          const d = ev.data || {};
-          if (ev.name === 'tool_call') {
-            pendingCalls.push({ id: d.id, name: d.name, args: d.args });
-          } else if (ev.name === 'tool_result') {
-            flushCalls();
-            chat.push({
-              role: 'tool',
-              tool_call_id: d.id || undefined,
-              name: d.name,
-              content: typeof d.result === 'string' ? d.result : JSON.stringify(d.result)
-            });
-          }
-        }
+      let pendingCalls = [];
+      const flushCalls = () => {
+      if (!pendingCalls.length) return;
+      chat.push({
+        role: 'assistant',
+        content: null,
+        tool_calls: pendingCalls.map((c) => ({
+        id: c.id || undefined,
+        type: 'function',
+        function: { name: c.name, arguments: typeof c.args === 'string' ? c.args : JSON.stringify(c.args || {}) }
+        }))
+      });
+      pendingCalls = [];
+      };
+      for (const ev of nestedToolEvents) {
+      const d = ev.data || {};
+      if (ev.name === 'tool_call') {
+        pendingCalls.push({ id: d.id, name: d.name, args: d.args });
+      } else if (ev.name === 'tool_result') {
         flushCalls();
+        chat.push({
+        role: 'tool',
+        tool_call_id: d.id || undefined,
+        name: d.name,
+        content: typeof d.result === 'string' ? d.result : JSON.stringify(d.result)
+        });
+        // webpreview's screenshot is a user-only preview (see line ~387);
+        // never forward it as a model vision part.
+        if (d.name !== 'webpreview') {
+        for (const block of rawImageBlocks(d.result)) nestedImageParts.push(block);
+        }
+      }
+      }
+      flushCalls();
       }
       chat.push({ role: 'assistant', content: text });
       const r = nested && nested.ok
@@ -1790,6 +1819,14 @@ promptSize: callOpts && callOpts.promptSize,
       // it has to ride the result payload or the chat card cannot say which
       // agent answered. Omitted entirely for a generic delegation.
       if (agentName) r.agent = agentName;
+      // Carry the subagent's generated pictures on the result `content`, in
+      // the same `{ type:'image', data, mimeType }` shape read_file's image
+      // path and MCP image results emit, so
+      // the parent's toolResultImageParts(exec.result) (line ~387) attaches
+      // them as a vision message and postToolImageMessages paints the
+      // delegated artwork for the main agent. Without this the pixels lived
+      // only in the nested transcript and the main agent never saw them.
+      if (nestedImageParts.length) r.content = nestedImageParts;
       // Commit the run. The round reports above already billed every nested
       // round, so this only adds what they missed — a run whose rounds
       // never reported usage, or a cost estimate that only became
@@ -1943,29 +1980,6 @@ return out;
 const r = { error: { code: 'EWEBPREVIEW', message: e.message || String(e) } };
 return { ok: false, content: JSON.stringify(r), result: r };
 }
-    }
-
-    // Native image generation tool. Generates one or more pictures with a
-    // project image model, saves each as a file inside the project, and
-    // attaches the pixels to the result. A subagent reaches this same
-    // branch (it shares the dispatcher), so a delegated run's generated
-    // image is a real file plus a real image part in the tool result the
-    // main agent receives.
-    if (name === 'image_gen') {
-    let img;
-    try { img = require('./tools/image.js'); }
-    catch (e) {
-      const r = { error: { code: 'EMODULE', message: 'image tool module unavailable: ' + (e.message || e) } };
-      return { ok: false, content: JSON.stringify(r), result: r };
-    }
-    const out = await img.runImageTool({
-      projectDir: callOpts && callOpts.projectDir,
-      args,
-      settings: opts && opts.appSettings,
-      appSettings: callOpts && callOpts.appSettings,
-      signal: callOpts && callOpts.signal
-    });
-    return out;
     }
 
     // MCP tools (mcp__<serverSlug>__<toolName>).

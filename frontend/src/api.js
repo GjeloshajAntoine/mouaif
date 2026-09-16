@@ -82,7 +82,7 @@ export function invalidateModelsCache() {
 
 export async function fetchLiveModels(provider, { force = false, purpose = '' } = {}) {
   // Convert force to an extra parameter so the server also knows whether to bypass its internal Map cache.
-  // `purpose` ('image' | 'transcription') asks the server for that slice of
+  // `purpose` ('transcription') asks the server for that slice of
   // the provider's catalog instead of the chat list; a provider with no
   // separate slice returns its chat list, so the caller can ask on every
   // provider and union the answers.

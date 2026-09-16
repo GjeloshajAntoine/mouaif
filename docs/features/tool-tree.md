@@ -13,7 +13,7 @@ The tree sits below the system prompt. It shows one group per tool family:
 - **shell** — run terminal commands
 - **subagent** — delegate a task to a nested AI call
 - **ask_user** — pause and ask the user a structured question
-- **File tools** — read_file, list_files, search_files, write_file, edit_file, image_gen
+- **File tools** — read_file, list_files, search_files, write_file, edit_file
 - **One group per MCP server** — configured servers always render, even when stopped; stopped servers fall back to the cached tool list from their last run. The group checkbox flips all the server's tools in the per-chat tool filter at once (there is no server-level on/off); leaf checkboxes flip individual tools.
 
 Each group row has:
@@ -33,4 +33,4 @@ Settings → Project shows the same tree, with each group row carrying its **aut
 
 The settings tree replaces the old "Tool permissions" list — the UI is identical to the chat view so the mental model is the same: one tree, one place to look. Like the chat tree, groups with more than one nested tool start collapsed. The `ToolTree` holds its own collapse state, so a group the user expands stays open across SettingsProject re-renders (a checkbox or segment change only re-renders the tree in place). Because MCP server groups load asynchronously behind the native groups, `ToolTree` seeds any collapsible group that appears *after* its initial collapse set is built — so a late-arriving server group starts collapsed too — while an explicitly expanded group is preserved (the `flip` handler marks it `touched`, so the seed loop skips it).
 
-File tools inherit from the `tools.file` family gate. A leaf checkbox can persist a more-specific `tools.<tool_name>` `off` override, which disables one operation without changing its siblings; stale per-file `ask` entries do not tighten a family-level `allow`. The parent checkbox updates the family and all visible leaves together, so it settles directly on checked or unchecked rather than briefly becoming indeterminate. The authorization segment edits the shared family default while preserving explicit `off` leaf overrides. `image_gen` is a leaf of this group too: its unconfigured leaf mode is `off` (it spends money outside a text model and writes files into the project), so it reports unchecked until the family gate is opened or its own `tools.image_gen.mode` is pinned.
+File tools inherit from the `tools.file` family gate. A leaf checkbox can persist a more-specific `tools.<tool_name>` `off` override, which disables one operation without changing its siblings; stale per-file `ask` entries do not tighten a family-level `allow`. The parent checkbox updates the family and all visible leaves together, so it settles directly on checked or unchecked rather than briefly becoming indeterminate. The authorization segment edits the shared family default while preserving explicit `off` leaf overrides.

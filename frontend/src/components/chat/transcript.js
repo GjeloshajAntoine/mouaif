@@ -461,9 +461,7 @@ const TOOL_VERBS = {
   shell: 'Ran',
   subagent: 'Subagent',
 ask_user: 'Question',
-restart_app: 'Restarted',
-  image_gen: 'Drew'
-
+restart_app: 'Restarted'
 };
 
 function toolCardLabel(toolName) {

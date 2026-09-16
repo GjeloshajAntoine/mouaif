@@ -93,11 +93,6 @@ const PROJECT_MODEL_FIELDS = [
   // builder ever sees it, and every model would fall back to the inferred
   // family.
   'transcription',
-  // Image generation. Same contract as `transcription`: the request family,
-  // an optional non-conventional endpoint path, or the model-level size /
-  // aspect-ratio defaults. A project file that omits the block falls back to
-  // the family inferred from the connection and the id.
-  'imageGeneration',
   // The request family the dictation catalog classified a live row under
   // (`openai-audio` for a model that can hear but has no
   // /audio/transcriptions entry). It rides the same path as `transcription`

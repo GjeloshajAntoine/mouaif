@@ -178,27 +178,19 @@ function compactToolFeedback(options) {
   let content = typeof opts.content === 'string' ? opts.content : safeJson(opts.content, '');
 
   if (name === 'subagent') {
+    // A delegated run can carry the subagent's pictures on `result.content`
+    // (the subagent branch in src/ai-stream.js sets r.content =
+    // nestedImageParts). Those pixels are attached to the following vision
+    // message, so the model-facing tool text must never re-serialize them as
+    // base64. subagentModelResult already reduces the result to
+    // { ok, text, error } — dropping `content` entirely — and
+    // omitImagePayloads is applied defensively for any shape that slips
+    // through with an image block still attached.
     const compact = subagentModelResult(opts.result, content);
-    if (compact) content = safeJson(compact, content);
-  } else if (name === 'image_gen') {
-    // The picture bytes are attached to the following vision message (see
-    // toolResultImageParts in src/ai-stream.js), so the tool text must
-    // carry what the model *acts on*: which files were written, their MIME
-    // type and size, and the model that ran. Serializing the full result
-    // would pay for the base64 once per turn even though the payload is
-    // replaced by a marker.
-    const r = (opts.result && typeof opts.result === 'object') ? opts.result : null;
-    if (r) {
-      const compact = {
-        ok: r.ok !== false,
-        model: r.model || null,
-        images: Array.isArray(r.images)
-          ? r.images.map((i) => ({ relPath: i.relPath, mimeType: i.mimeType, bytes: i.bytes }))
-          : [],
-        note: 'The generated image is attached to this tool result as an image part.'
-      };
-      if (r.error) compact.error = { code: (r.error.code || 'EIMAGE'), message: r.error.message || String(r.error) };
+    if (compact) {
       content = safeJson(compact, content);
+    } else if (opts.result && typeof opts.result === 'object' && Array.isArray(opts.result.content)) {
+      content = safeJson(omitImagePayloads(opts.result), content);
     }
   } else if (opts.result && typeof opts.result === 'object') {
     // Images are already attached to the following vision message by ai.js.

@@ -3,9 +3,9 @@
 // providerShapes — which wire protocol a provider *connection* speaks.
 //
 // This is a leaf module: it requires nothing, so the domain modules that
-// need the answer (src/transcribe.js for dictation, src/imagegen.js for
-// pictures) can pull from it without dragging in the chat provider
-// registry (src/ai-endpoints.js) or creating a require cycle.
+// need the answer (src/transcribe.js for dictation, and any future
+// non-chat model product) can pull from it without dragging in the chat
+// provider registry (src/ai-endpoints.js) or creating a require cycle.
 //
 // The list used to be copy-pasted into each of those two modules, which
 // made adding a provider a three-place edit and let the two copies drift:

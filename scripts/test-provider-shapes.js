@@ -3,9 +3,9 @@
 // src/providerShapes.js — one answer to "does this connection speak the
 // OpenAI shape?".
 //
-// The list used to be copy-pasted into src/transcribe.js and src/imagegen.js,
-// and the two copies had already drifted: transcribe's carried an `anthropic`
-// entry the image module did not. That is not a cosmetic difference — the
+// The list used to be copy-pasted into two consumer modules, and the two
+// copies had already drifted: transcribe's carried an `anthropic` entry the
+// image module did not. That is not a cosmetic difference — the
 // audio path used the list to decide whether to reroute a row to
 // `/chat/completions`, so the extra entry pointed a Claude connection at an
 // endpoint that does not exist. This test pins the list's *content*, not just
@@ -71,14 +71,11 @@ check('the list is frozen so a consumer cannot mutate the shared answer', () => 
   assert.throws(() => { shapes.OPENAI_SHAPED_PROVIDERS.push('anthropic'); }, TypeError);
 });
 
-check('both audio and image modules read the one shared list', () => {
-  // The two consumers must agree, which is the whole point of the module.
+check('the dictation module reads the one shared list', () => {
+  // The list has exactly one consumer left (dictation), and it must still
+  // resolve against this module rather than a private copy.
   const transcribe = require(path.resolve(__dirname, '..', 'src', 'transcribe.js'));
-  const imagegen = require(path.resolve(__dirname, '..', 'src', 'imagegen.js'));
   assert.equal(transcribe.audioChatModel({ id: 'claude-sonnet-5', provider: 'anthropic', inputModalities: ['audio'] }), false);
-  assert.equal(imagegen.kindForModel({ id: 'dall-e-3', provider: 'anthropic' }), 'openai-chat-image',
-    'a non-Gemini provider still falls to the chat route, which is the safe default');
-  assert.equal(imagegen.kindForModel({ id: 'dall-e-3', provider: 'mistral' }), 'openai-image');
 });
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

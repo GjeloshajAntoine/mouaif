@@ -437,12 +437,6 @@ chatDisabled: skillState.chatDisabled.has(s.id)
       try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); } catch { /* skip */ }
       try { toolSpecs.push(require('./tools/webpreview.js').SPEC); } catch { /* skip */ }
 try { toolSpecs.push(require('./tools/restart.js').SPEC); } catch { /* skip */ }
-try {
-  const img = require('./tools/image.js');
-  let imageModels = [];
-  try { imageModels = img.imageModelRecords(dir); } catch { /* no image models configured */ }
-  toolSpecs.push(img.buildSpec ? img.buildSpec(imageModels) : img.SPEC);
-  } catch { /* skip */ }
 if (fileToolsEnabled) {
 
         try {
@@ -475,9 +469,8 @@ if (fileToolsEnabled) {
         }
         }
         // Per-leaf file overrides (e.g. tools.read_file.mode = "off"
-        // with the `file` family enabled) must drop just that operation —
-        // and `image_gen`, a File tools leaf whose unconfigured default is
-        // `off` — matching what streamChat advertises to the model.
+        // with the `file` family enabled) must drop just that operation,
+        // matching what streamChat advertises to the model.
         for (let i = toolSpecs.length - 1; i >= 0; i--) {
         const spec = toolSpecs[i];
         if (!spec || !spec.function || !authz.FILE_FAMILY_TOOLS.has(spec.function.name)) continue;

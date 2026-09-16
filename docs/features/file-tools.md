@@ -4,8 +4,6 @@
 
 `mouaif` ships built-in tools the model can call to read, list, search, create, and safely edit project files — `read_file`, `list_files`, `search_files`, `write_file`, and `edit_file`. They are wired through the same tool pipeline as `shell` (decisions §16), so the model sees them as ordinary function calls and the chat UI renders them as the same tool-call / tool-result cards. Every call is gated by the per-project authorization module (decisions §17) and refuses any path that escapes the project root.
 
-The `image_gen` drawing tool also rides this family's authorization gate (it is a File tools leaf), though its request/response shapes live in [image-generation.md](./image-generation.md).
-
 The tools cover the common "find the file, read the file, edit the file" loop without requiring an MCP server. They are not a replacement for `shell` (a model that wants to run a build, install a dep, or `git diff` still uses `shell`) and they are not a replacement for MCP (third-party tool ecosystems — Postgres, Playwright, GitHub — still come in via `mcp__<server>__<tool>`). They are the boring file primitives every agent needs.
 
 ## Usage
@@ -15,7 +13,6 @@ The tools cover the common "find the file, read the file, edit the file" loop wi
 - Native file tools are always included in the base tool declaration.
 - **Settings → Project → Tools → File tools authorization** controls execution for the family: `ask` by default, `off` to reject calls, or `allow` to run without prompting.
 - Individual file-tool leaf checkboxes can store a per-operation `off` override. They cannot make a family-level `allow` fall back to `ask`.
-- `image_gen` (see [image-generation.md](./image-generation.md)) is a **leaf of this family** even though its spec lives elsewhere: one File tools gate covers it, and its own unconfigured default is `off` (it spends money outside a text model). Opening the family, or pinning `tools.image_gen.mode`, turns it on.
 - Legacy `tools.file.enabled` values remain readable but no longer affect detection.
 
 ### Authorization modes

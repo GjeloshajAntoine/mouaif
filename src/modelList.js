@@ -28,12 +28,6 @@ const { ai, credentialForProvider, hashShort, modelListCacheKey, MODEL_LIST_CACH
 //                   defaults to `text`, so none of its 21 speech-to-text
 //                   models are in the chat list at all), and otherwise the
 //                   chat list, for the caller to filter;
-//   'image'         the image-generation slice, read through the provider's
-//                   `listImageModels` adapter when it has one. Same story
-//                   one product further out: OpenRouter's image catalogue is
-//                   `/images/models`, so `openai/gpt-image-2` and the whole
-//                   Flux/Recraft/Seedream families are absent from the chat
-//                   list entirely.
 //
 // The slices live under different cache keys. They are different upstream
 // questions, and answering one with the other is exactly how dictation came
@@ -54,8 +48,7 @@ async function liveModelsFor(provider, opts) {
     e.code = 'EUNKNOWN_PROVIDER';
     throw e;
   }
-  const purpose = opts && opts.purpose === 'transcription' ? 'transcription'
-    : (opts && opts.purpose === 'image' ? 'image' : 'chat');
+  const purpose = opts && opts.purpose === 'transcription' ? 'transcription' : 'chat';
   let cred = null;
   try { cred = credentialForProvider(provider); }
   catch { /* the adapter surfaces ENO_APIKEY when a credential is required */ }
@@ -80,7 +73,7 @@ async function liveModelsFor(provider, opts) {
     // instead.
     const sliced = purpose === 'transcription'
     ? await ai.listTranscriptionModels(provider, cred || null, ac.signal)
-    : (purpose === 'image' ? await ai.listImageModels(provider, cred || null, ac.signal) : null);
+    : null;
     const models = sliced || await ai.listModels(provider, cred || null, ac.signal);
     clearTimeout(timer);
     // Discard the late result: the caller already saw the timeout.

@@ -687,9 +687,10 @@ previous one, so the last thing the user changed is what survives.
 - The audio body is JSON base64 (`audioBase64`), capped at ~20 MB of audio,
   so one code path owns reading the body, its size limit and its error shape.
 - **"Is this connection OpenAI-shaped?" has one answer.** The list of
-  OpenAI-shaped providers lives in [src/providerShapes.js](../../src/providerShapes.js)
-  and both this module and [src/imagegen.js](../../src/imagegen.js) read it, so
-  the audio and image families cannot disagree about a provider's wire shape.
+  OpenAI-shaped providers lives in [src/providerShapes.js](../../src/providerShapes.js),
+  the one leaf module every consumer reads (it originally existed so this
+  module and the since-removed image module could not disagree; see
+  [decisions §28](../../decisions.md)).
   It names the eight shipped OpenAI-shaped providers (`openai-compatible`,
   `openrouter`, `azure`, `mistral`, `groq`, `deepseek`, `ollama`,
   `github-copilot`). `gemini` is absent because it speaks its own per-model
