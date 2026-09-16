@@ -652,14 +652,28 @@ function parseGeminiModels(body) {
   for (const m of arr) {
     if (!m || !m.name) continue;
     const id = String(m.name).replace(/^models\//, '');
-    // Only show models that can actually generate (text-to-text).
+    // Keep a model that can generate content the app can consume: a
+    // text/image chat model answers `generateContent`, and an Imagen model
+    // answers `predict` (its `:predict` image API — the `gemini-predict`
+    // family). Dropping the `predict`-only rows is what kept every Imagen
+    // model (`imagen-3.0-generate-002`, `imagen-4.0-*`) out of the image
+    // picker, even though the feature has a request family built for them.
     const methods = Array.isArray(m.supportedGenerationMethods) ? m.supportedGenerationMethods : [];
-    if (methods.length && !methods.includes('generateContent')) continue;
+    const GENERATES = ['generateContent', 'predict', 'predictLongRunning'];
+    if (methods.length && !methods.some((x) => GENERATES.includes(x))) continue;
     const rec = {
-      id,
-      label: m.displayName || id,
-      contextWindow: typeof m.inputTokenLimit === 'number' ? m.inputTokenLimit : undefined
+    id,
+    label: m.displayName || id,
+    contextWindow: typeof m.inputTokenLimit === 'number' ? m.inputTokenLimit : undefined
     };
+    // Carry Gemini's own report of what a model produces so the image
+    // picker can tell an Imagen row (produces an image) from a text model
+    // without guessing on the id alone. A row that answers only `predict`
+    // (Imagen) or names an image product is treated as an image producer.
+    if (/imagen/i.test(id) || /(^|-)image($|-)/i.test(id)
+      || (methods.length && methods.includes('predict') && !methods.includes('generateContent'))) {
+    rec.outputModalities = ['image'];
+    }
     // Gemini 2.5+ models accept generationConfig.thinkingConfig with a
     // raw thinkingBudget token count.
     if (/gemini-(2\.5|[3-9])/.test(id)) rec.thinking = { kind: 'budget' };
@@ -1831,6 +1845,10 @@ endpointFor,
   BUILDERS,
   PARSERS,
   parseMiniMaxTextToolCalls,
+  // Exported so scripts/test-image-generation.js can pin that Imagen rows
+  // (which answer `predict`, not `generateContent`) survive the parser and
+  // are tagged as image producers.
+  parseGeminiModels,
   // Curated catalogs, exported so scripts/test-model-pricing-coverage.js can
   // assert that every model id we *offer* also has a built-in price.
   ANTHROPIC_MODEL_CATALOG,

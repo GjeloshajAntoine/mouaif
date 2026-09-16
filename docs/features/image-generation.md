@@ -89,6 +89,8 @@ OpenRouter publishes `/api/v1/images/models` — a separate 52-row catalogue tha
 
 Rows the provider itself declares unable to draw from a prompt alone are dropped from the generation list: a row whose `supported_parameters.input_references` has `min > 0` is an inpainting / style-transfer / vectorizer model, and `image_gen` has no input picture to give it. A model whose parameters the provider does not report stays on the list — absent is *unknown*, never *no*, the same rule the modality filter follows.
 
+Gemini needs one extra rule. Its `GET /v1beta/models` reports a `supportedGenerationMethods` list per model, and an **Imagen** row (`imagen-3.0-generate-002`, `imagen-4.0-*`) answers only `predict`, not `generateContent`. The chat-list parser used to drop every non-`generateContent` row, which silently removed every Imagen model from the image picker even though the feature ships a `gemini-predict` request family built for exactly those. The parser now keeps a row that answers `predict` / `predictLongRunning` and tags an Imagen or `*-image*` row with `outputModalities: ["image"]`, so the modality filter recognises it as an image producer instead of guessing on the id alone.
+
 ## Settings
 
 **Settings → Project → Image generation** carries an **Off / Ask / Allow** authorization segment, **off by default** — this is the one tool that spends money outside a text model and writes files into the project, so a project opts in explicitly. The default itself lives in the authorization module (`DEFAULT_OFF_TOOLS` in [src/tools/authorization.js](../../src/tools/authorization.js)), so an unconfigured project reports `off` rather than `ask`; storing any mode overrides it.

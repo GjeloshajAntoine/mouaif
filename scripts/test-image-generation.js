@@ -66,6 +66,33 @@ function main() {
       imagegen.imageCandidates([{ id: 'a' }, { id: 'b' }]).length === 2);
     check('a classified catalog with no image model yields none',
       imagegen.imageCandidates([{ id: 'a', outputModalities: ['text'] }, { id: 'b', outputModalities: ['text'] }]).length === 0);
+
+    // Gemini's model list drops rows that generate nothing the app can use,
+    // but an Imagen row answers `predict`, not `generateContent`. Dropping it
+    // is what kept every Imagen model out of the picker; pin that it survives
+    // and is tagged as an image producer (so the modality filter offers it).
+    const aiEndpoints = require('../src/ai-endpoints.js');
+    const gem = aiEndpoints.parseGeminiModels({
+      models: [
+        { name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', supportedGenerationMethods: ['generateContent'] },
+        { name: 'models/imagen-4.0-generate-001', displayName: 'Imagen 4', supportedGenerationMethods: ['predict'] },
+        { name: 'models/imagen-3.0-generate-002', displayName: 'Imagen 3', supportedGenerationMethods: ['predictLongRunning'] },
+        { name: 'models/embedding-001', displayName: 'Embed', supportedGenerationMethods: ['embedContent'] }
+      ]
+    });
+    const gemIds = gem.map((m) => m.id);
+    check('parseGeminiModels keeps an Imagen (predict-only) row',
+      gemIds.includes('imagen-4.0-generate-001') && gemIds.includes('imagen-3.0-generate-002'),
+      JSON.stringify(gemIds));
+    check('parseGeminiModels still drops an embedding-only row',
+      !gemIds.includes('embedding-001'), JSON.stringify(gemIds));
+    const imagen4 = gem.find((m) => m.id === 'imagen-4.0-generate-001');
+    check('an Imagen row is tagged as an image producer',
+      imagen4 && Array.isArray(imagen4.outputModalities) && imagen4.outputModalities.includes('image'),
+      JSON.stringify(imagen4));
+    check('the Imagen rows reach the image picker',
+      imagegen.imageCandidates(gem.map((m) => Object.assign({ provider: 'gemini' }, m)))
+        .map((m) => m.id).filter((id) => id.startsWith('imagen')).length === 2);
   }
 
   // ---- 2. request shapes ----------------------------------------------
