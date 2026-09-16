@@ -20,6 +20,12 @@ Run the app without installing, straight from the registry:
 npx mouaif serve
 ```
 
+`npx` unpacks the package into its own cache (`~/.npm/_npx`) and launches the CLI from there, so it never writes to the directory you run it from. The first run downloads the native binaries (`better-sqlite3`, `@napi-rs/keyring`) and can take a few minutes; later runs reuse the cache. To pin an exact version, quote the argument — a bare `mouaif@0.3.0` is a glob to `zsh` and fails with `no matches found`:
+
+```bash
+npx --yes --package "mouaif@0.3.0" mouaif info
+```
+
 Or install from a checkout of this repository:
 
 ```bash
