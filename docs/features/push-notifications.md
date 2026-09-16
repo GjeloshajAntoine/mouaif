@@ -83,7 +83,7 @@ The bar is adapted to the device that receives it: **every phone size**, the **n
 
 **Width follows the screen, continuously.** The number of cells is derived from the measured body line, not from size buckets, so a 320 px phone and a 430 px phone get a different bar, and a desktop window a longer one.
 
-**Style decides the layout.** A collapsed Android notification shows one body line; an iOS banner (15+) shows two; a desktop toast about two. When the platform previews a single line, the bar and its message share that row — `[###---] 40% · Fix push layout` — because a second row would never be seen. When it previews two or more, the bar takes its own row and the message stays intact below it. An empty message leaves the bar alone in both layouts.
+**Style decides the layout.** A collapsed Android notification shows one body line; an iOS banner (15+) shows two; a desktop toast about two. When the platform previews a single line, the bar and the most important fact share that row — `[###---] 40% · Refactoring...` — because a second row would never be seen. When it previews two or more, the bar takes its own row and the facts follow. An empty fact set leaves the bar alone in both layouts.
 
 **OS version sets the fallback.** A device that cannot measure itself (older WebKit, a headless browser) falls back to its platform's known width, and the number of preview lines comes from a version table:
 
@@ -96,16 +96,34 @@ The bar is adapted to the device that receives it: **every phone size**, the **n
 
 The same table bounds a measured value that is implausibly far from what the platform expects at the reported viewport, so a broken measurement cannot produce a bar that overflows the notification card. A device that reports nothing at all is treated as a phone on an unknown platform: one body line, conservative width.
 
-Every status shares one shape:
+**Everything else rides the body, under the bar.** The notification title is always just the chat name — the slot the OS clips first — so the status facts live in the body, where a wider/taller device simply shows more of them. Each fact is a tier, added top-down while it fits the surface's width **and** height:
+
+| Order | Fact | Example |
+|-------|------|---------|
+| 1 | Running message | `Refactoring the composer` |
+| 2 | Position in the work | `2 of 5` |
+| 3 | Turn usage | `12.4K tok · $0.0312` |
+| 4 | Elapsed time | `12s` |
+| 5 | Tool | `shell` |
+| 6 | Model | `gpt-5-mini` |
+
+A one-line surface keeps the bar and its single most important fact; a preview-sized one shows the top three; an expanded notification shows all six. Missing facts simply do not appear, so a plain model round shows only the model and no tool. A slot that would wrap is dropped rather than wrapped, and a path or model id that has to be clipped keeps its tail (`...transcript.js`) rather than its prefix. A completion replaces the counts row (the position is no longer the news), and an error keeps its message plus whatever context the turn had reached.
+
+The notification title carries the chat name and does not change with the device.
+
+Every status shares one shape. A two-line surface:
 
 ```text
 [####------] 40%
-Fix push layout — 2 of 5
+Refactoring the composer
+2 of 5
+12.4K tok · $0.0312
 ```
 
-- **Bar row** — the ASCII bar with the percentage. On a one-line platform this shares the row with the message instead.
-- **Message row(s)** — the task title with its `current of total` counts, the `report_progress` message, `Response complete`, or the error text. Completion uses a full bar (`100%`); an error has no measurable progress, so its bar is empty and unlabelled.
+A one-line surface, where the bar shares its row:
 
-The notification title carries the chat name and the running turn usage (tokens plus price when pricing is known) and does not change with the device.
+```text
+[###---] 40% · Refactoring...
+```
 
 Progress from a nested `subagent` run flows to the same `progress_update` channel as top-level calls, so a delegated agent that reports progress still sends the updatable push and the transcript progress card on the parent chat.

@@ -112,24 +112,91 @@ const unknown = statusBar.statusBarPlan({});
 assert.equal(unknown.os, 'unknown', 'a device that reports nothing is unknown');
 assert.equal(unknown.layout, 'inline', 'an unknown device is assumed to show one line');
 
+// ---- Extra facts in the body -------------------------------------------
+//
+// Everything the status knows lives in the body, under the bar. Different
+// tiers matter on different surfaces, so a narrow device keeps the top tiers
+// and a wide one shows all of them — no separate code path.
+
+assert.equal(statusBar.usageSummary({ tokens: 243 }), '243 tok', 'usage without pricing is just tokens');
+assert.equal(statusBar.usageSummary({ tokens: 12400, costKnown: true, cost: 0.0312 }), '12K tok · $0.0312',
+  'usage adds the price when pricing is known');
+assert.equal(statusBar.usageSummary({ tokens: 0 }), '', 'no usage reported means no usage row');
+assert.equal(statusBar.usageSummary({}), '', 'a missing usage never renders');
+assert.equal(statusBar.formatCost(0.00004), '$0.00004', 'a sub-cent cost keeps its precision rather than reading as free');
+assert.equal(statusBar.formatCost(0.5), '$0.50', 'a normal cost keeps two decimals');
+assert.equal(statusBar.activityLine({ tool: 'shell', model: 'gpt-5-mini', elapsedMs: 12400 }),
+  'shell · gpt-5-mini · 12s', 'the activity line joins tool, model, and elapsed time');
+assert.equal(statusBar.activityLine({ model: 'gpt-5-mini' }), 'gpt-5-mini', 'an activity line with one part is just that part');
+assert.equal(statusBar.activityLine({}), '', 'an empty activity line renders nothing');
+// A path or model id is read from its tail when it has to be clipped.
+assert.equal(statusBar.clipSmart('/a/b/c/transcript.js', 16), '...transcript.js', 'a clipped path keeps the filename');
+assert.equal(statusBar.clipSmart('short', 40), 'short', 'a short value is untouched');
+
+const richInfo = {
+  kind: 'task',
+  message: 'Refactoring the composer',
+  current: 2, total: 5,
+  time: '12s', tool: 'shell', model: 'gpt-5-mini',
+  usage: '12.4K tok · $0.0312'
+};
+const richLines = statusBar.detailLines(ios, 40, richInfo);
+assert.equal(richLines[0], 'Refactoring the composer', 'the running message is the first detail row');
+assert.equal(richLines[1], '2 of 5', 'the position in the work is the next detail row');
+assert.ok(richLines.includes('12.4K tok · $0.0312'), 'the turn usage is a detail row');
+assert.equal(richLines.length, ios.detailLines, 'the detail rows stay within the surface height');
+assert.ok(!richLines.some((l) => l.includes('Fix push layout')), 'a task no longer duplicates its title into the body');
+
+// A taller surface shows the lower tiers; a preview-sized one does not.
+const expandedPlan = statusBar.statusBarPlan({ chars: 34, viewportWidth: 360, os: 'android', osVersion: 13, style: 'expanded' });
+const expandedLines = statusBar.detailLines(expandedPlan, 40, richInfo);
+assert.ok(expandedLines.length > richLines.length, 'an expanded notification shows more facts than a preview');
+assert.ok(expandedLines.some((l) => l.includes('shell')), 'the tool surfaces once the surface is tall enough');
+assert.ok(expandedLines.some((l) => l.includes('gpt-5-mini')), 'the model surfaces once the surface is tall enough');
+assert.ok(!richLines.some((l) => l.includes('gpt-5-mini')), 'a preview-sized surface drops the lowest tier rather than wrapping');
+// A wider body line is what brings the tool and model in on a preview surface.
+const richDesktop = statusBar.detailLines(statusBar.statusBarPlan({ chars: 110, viewportWidth: 1280, os: 'macos', osVersion: 14 }), 40, richInfo);
+assert.ok(richDesktop.length >= richLines.length, 'a wider surface shows at least as many detail rows');
+// A narrower surface drops the lowest tiers instead of wrapping.
+const narrow = statusBar.statusBarPlan({ chars: 26, viewportWidth: 300, os: 'android', osVersion: 13 });
+const narrowLines = statusBar.detailLines(narrow, 40, richInfo);
+assert.ok(narrowLines.length <= narrow.detailLines, 'a narrow surface keeps within its height budget');
+for (const line of narrowLines) assert.ok(line.length <= narrow.chars, 'a narrow detail row fits the body line: ' + line);
+
+// A completion says what happened and leaves the position in the work out.
+const completeLines = statusBar.detailLines(ios, 100, { kind: 'complete', message: 'Response complete', current: 5, total: 5 });
+assert.equal(completeLines[0], 'Response complete', 'a completion leads with its message');
+assert.ok(!completeLines.includes('5 of 5'), 'a completion drops the now-redundant counts row');
+// An error keeps its message and whatever context the turn had.
+const errorLines = statusBar.detailLines(ios, null, { kind: 'error', message: 'Error: upstream error', model: 'gpt-5-mini' });
+assert.equal(errorLines[0], 'Error: upstream error', 'an error leads with its message');
+
 // ---- Body composition --------------------------------------------------
 
-const stackedBody = statusBar.composeStatusBody(ios, 40, [INFO]);
+const stackedBody = statusBar.composeStatusBody(ios, 40, { message: INFO });
 assert.equal(stackedBody.split('\n')[0], statusBar.asciiStatusBar(40, ios.cells), 'the bar row comes first');
 assert.ok(stackedBody.endsWith('\n' + INFO), 'the message row follows intact');
-const inlineBody = statusBar.composeStatusBody(android, 40, [INFO]);
+// A bare string is the one-fact shorthand and behaves the same way.
+assert.equal(statusBar.composeStatusBody(ios, 40, INFO), stackedBody, 'a string is accepted as a lone message');
+const inlineBody = statusBar.composeStatusBody(android, 40, { message: INFO });
 assert.equal(inlineBody.split('\n').length, 1, 'an inline body is a single line');
 assert.ok(inlineBody.startsWith(statusBar.asciiStatusBar(40, android.cells) + statusBar.INLINE_SEPARATOR),
   'an inline body starts with the bar and its separator');
 assert.ok(inlineBody.length <= android.chars, 'an inline body fits the body line');
 // A bar-only body is legal (a progress update with no message).
+assert.equal(statusBar.composeStatusBody(android, 40, {}), statusBar.asciiStatusBar(40, android.cells),
+  'an empty fact set leaves the bar alone');
 assert.equal(statusBar.composeStatusBody(android, 40, []), statusBar.asciiStatusBar(40, android.cells),
-  'an empty message leaves the bar alone');
+  'an empty list leaves the bar alone');
 // If the bar leaves no room for a meaningful message, the bar is the line
 // rather than a two-letter stub.
 const tiny = statusBar.statusBarPlan({ chars: 8, os: 'android', osVersion: 13 });
-assert.ok(!statusBar.composeStatusBody(tiny, 40, [INFO]).includes(statusBar.INLINE_SEPARATOR),
+assert.ok(!statusBar.composeStatusBody(tiny, 40, { message: INFO }).includes(statusBar.INLINE_SEPARATOR),
   'a line too narrow for a message shows the bar only');
+// The stacked body carries every detail row the plan allows.
+const richBody = statusBar.composeStatusBody(ios, 40, richInfo).split('\n');
+assert.equal(richBody[0], statusBar.asciiStatusBar(40, ios.cells), 'the rich body still leads with the bar');
+assert.equal(richBody.length, 1 + richLines.length, 'the rich body carries exactly the planned detail rows');
 assert.equal(statusBar.clip('Fix push layout — 2 of 5', 12), 'Fix push...', 'a clipped message is ellipsized');
 assert.ok(statusBar.clip('Fix push layout — 2 of 5', 12).length <= 12, 'a clipped message fits its budget');
 assert.equal(statusBar.clip('short', 12), 'short', 'a message inside the budget is untouched');
@@ -226,7 +293,10 @@ async function postSubscription(sessionToken, endpoint, subscription) {
     bodyFor: (sub) => {
       const plan = push.statusBar.planForSubscription(sub);
       planBodies.set(sub.endpoint, plan);
-      return push.statusBar.composeStatusBody(plan, 40, [INFO]);
+      return push.statusBar.composeStatusBody(plan, 40, {
+      message: INFO, current: 2, total: 5, kind: 'task',
+      time: '12s', tool: 'shell', model: 'gpt-5-mini', usage: '12.4K tok'
+      });
     },
     tag: 'chat-abcd1234-status',
     chatId: 'abcd1234',
@@ -242,9 +312,21 @@ async function postSubscription(sessionToken, endpoint, subscription) {
     'the one-line Android device gets a single-line body');
   assert.ok(bodies.get('https://android.example').includes(INFO.slice(0, 8)),
     'the one-line Android body still shows the message');
-  // iOS: two body lines, so the bar keeps its own row and the message is intact.
-  assert.equal(bodies.get('https://ios.example'), statusBar.asciiStatusBar(40, planBodies.get('https://ios.example').cells) + '\n' + INFO,
-    'the two-line iOS body stacks the bar over the full message');
+  // iOS: two body lines, so the bar keeps its own row and the facts follow in
+  // the planned order (message, then counts, then usage) — not one long row.
+  const iosBody = bodies.get('https://ios.example');
+  const iosPlan = planBodies.get('https://ios.example');
+  assert.equal(iosBody.split('\n')[0], statusBar.asciiStatusBar(40, iosPlan.cells),
+    'the two-line iOS body keeps the bar on its own row');
+  assert.ok(iosBody.includes(INFO), 'the two-line iOS body still carries the message');
+  assert.ok(iosBody.includes('2 of 5'), 'the two-line iOS body carries the position in the work');
+  assert.ok(iosBody.includes('12.4K tok'), 'the two-line iOS body carries the turn usage');
+  assert.equal(iosBody.split('\n').length, 1 + iosPlan.detailLines, 'the iOS body uses exactly its height budget');
+  // The extra facts ride the body, never the title: the title is the chat name
+  // on every device, however much detail the body shows.
+  const pushPayloads = deliveries.map((d) => d.payload);
+  assert.ok(pushPayloads.every((p) => p.title === 'Chat one'), 'the notification title stays the chat name on every device');
+  assert.ok(pushPayloads.every((p) => !/tok|12\.4K|\$0/.test(p.title)), 'no usage ever leaks into the notification title');
   // Desktop: a wider body line, so a longer bar (up to the readability cap).
   assert.ok(planBodies.get('https://desktop.example').chars > planBodies.get('https://ios.example').chars,
     'the desktop body line is wider than the phone line');
@@ -265,7 +347,7 @@ async function postSubscription(sessionToken, endpoint, subscription) {
     title: 'Chat one',
     bodyFor: (sub) => {
       const plan = push.statusBar.planForSubscription(sub);
-      return push.statusBar.composeStatusBody(plan, null, ['Error: upstream error']);
+      return push.statusBar.composeStatusBody(plan, null, { kind: 'error', message: 'Error: upstream error' });
     },
     tag: 'chat-abcd1234-status',
     chatId: 'abcd1234',

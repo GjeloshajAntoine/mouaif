@@ -97,9 +97,15 @@ assert.ok(deliveries[0].options.vapidDetails.privateKey, 'delivery configures th
 const chatPushSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'server-handlers-chats.js'), 'utf8');
 assert.ok(chatPushSource.includes("const statusPushTag = 'chat-' + chatId + '-status'"), 'chat streams define one shared status push tag');
 assert.ok(!chatPushSource.includes("'-progress'"), 'chat streams do not send progress pushes under a second tag');
-assert.ok(chatPushSource.includes("function statusBody(sub, percent, lines)"), 'chat streams build one per-device ASCII status body');
-assert.ok(chatPushSource.includes("statusBody(sub, 100, ['Response complete'])"), 'completion uses the shared ASCII status format');
-assert.ok(chatPushSource.includes("statusBody(sub, pctNum, infoLines)"), 'generic progress uses the shared ASCII status format');
+assert.ok(chatPushSource.includes("function statusBody(sub, percent, info)"), 'chat streams build one per-device ASCII status body');
+assert.ok(chatPushSource.includes("function statusInfo(data, extra)"), 'chat streams assemble the status facts once');
+assert.ok(/statusInfo\(\{\s*kind: 'complete'/.test(chatPushSource), 'completion uses the shared fact set');
+assert.ok(chatPushSource.includes('statusInfo(data)'), 'progress uses the shared fact set');
+// Every status title is the chat name. The facts (usage, model, tool, time)
+// ride the body, where the OS does not clip them and a wider device shows
+// more; a title that grew with them was the first thing a phone truncated.
+assert.ok(chatPushSource.includes("title: (chat && chat.title) || 'mouaif'"), 'status titles are the plain chat name');
+assert.ok(!chatPushSource.includes('title: usageLabel ?'), 'usage no longer rides the notification title');
 assert.ok(!chatPushSource.includes("'▓'.repeat") && !chatPushSource.includes("'░'.repeat"), 'status avoids Unicode block glyphs');
 // ---- Device-sized ASCII bar (src/statusBar.js) -------------------------
 //
@@ -118,7 +124,7 @@ assert.ok(pushSource.includes('function normalizeStatusBarProfile(value)'), 'the
 // The chat status bodies resolve the plan per subscription, so one push can
 // render differently on each device.
 assert.ok(chatPushSource.includes('push.statusBar.planForSubscription(sub)'), 'the chat handler plans the bar per device');
-assert.ok(chatPushSource.includes('return push.statusBar.composeStatusBody(plan, percent, lines)'), 'the chat handler composes via the shared module');
+assert.ok(chatPushSource.includes('return push.statusBar.composeStatusBody(plan, percent, info)'), 'the chat handler composes via the shared module');
 assert.ok(!chatPushSource.includes("'▓'.repeat") && !chatPushSource.includes("'░'.repeat"), 'status avoids Unicode block glyphs');
 
 // The page reports its own facts rather than the server assuming a device.

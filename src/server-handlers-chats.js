@@ -899,6 +899,13 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
   let turnTokens = 0;
   let turnCost = 0;
   let turnCostKnown = false;
+  // Wall-clock start of this turn, for the status block's elapsed-time row.
+  // Armed on the first streamed delta and cleared on turn end, so it measures
+  // the model's work rather than the user's think time.
+  let turnStartedAt = 0;
+  // The most recent tool this turn ran, for the status block's activity row.
+  // Reset each turn so it never leaks a tool name from the previous turn.
+  let lastToolName = '';
   // Cost already persisted on intermediate segments (assistant_turn_end).
   // The final message must carry only the REMAINING cost so the chat
   // total (segment costs + final cost) equals the true per-round sum —
@@ -915,8 +922,10 @@ function accumulateRoundUsage(roundUsage) {
     const segCost = computeSegmentCost(roundUsage);
     if (segCost && segCost.known) { turnCost += segCost.total; turnCostKnown = true; }
   }
-  // Right-hand side of the task push title: token count plus price when
-  // pricing is known. Returns '' when no usage has been reported yet.
+  // The turn usage as the status block's usage row: token count plus price
+  // when pricing is known ('12.4K tok · $0.0312'), or '' before any usage has
+  // been reported. It rides the notification BODY — never the title, which the
+  // OS shows in a fixed slot and clips first.
   function pushUsageLabel() {
     if (!turnTokens) return '';
     return usage.formatTokens(turnTokens) + ' tok' + (turnCostKnown ? ' · ' + usage.formatCost(turnCost) : '');
@@ -975,18 +984,49 @@ function accumulateRoundUsage(roundUsage) {
   // slot rendered with an ASCII bar, and one authorization/attention slot.
   const statusPushTag = 'chat-' + chatId + '-status';
 
-  // statusBody(sub, percent, lines) -> notification body for one device
+  // statusBody(sub, percent, info) -> notification body for one device
   //
-  // A status notification is the ASCII bar plus the information it belongs
-  // to. The bar's width and the body's layout both come from the receiving
-  // device's plan (src/statusBar.js): the measured body line drives a
-  // continuous cell count, the OS + version pick how many lines the
-  // platform previews, and a one-line style puts the bar and message on one
-  // shared row so the message is visible at all. A device that never
-  // reported itself falls back to the platform's conservative phone plan.
-  function statusBody(sub, percent, lines) {
+  // The whole status lives in the body, under the bar: the running message,
+  // the position in the work, the turn usage, the elapsed time, the tool, and
+  // the model. The notification TITLE stays the chat name — the OS shows it
+  // in a fixed, narrow slot and clips it first, so the facts that used to ride
+  // there are far more useful in the body, where a wider device simply shows
+  // more of them (src/statusBar.js detailLines()).
+  //
+  // `info` is the fact object from report_progress / task, enriched with the
+  // per-turn usage, start time, tool, and model; see statusInfo().
+  function statusBody(sub, percent, info) {
     const plan = push.statusBar.planForSubscription(sub);
-    return push.statusBar.composeStatusBody(plan, percent, lines);
+    return push.statusBar.composeStatusBody(plan, percent, info);
+  }
+
+  // statusInfo(data, extra) -> fact object for statusBody()
+  //
+  // Merges the stream event with this turn's context. Every field is
+  // optional: a fact that is not known yet simply does not appear, so the
+  // first update of a turn is just the bar and the message.
+  function statusInfo(data, extra) {
+    const o = extra || {};
+    const modelName = model.label || model.id
+      ? ((model.provider ? model.provider + '/' : '') + (model.id || model.label || ''))
+      : '';
+    return {
+      title: data && data.title ? String(data.title) : '',
+      message: data && data.message ? String(data.message) : '',
+      kind: o.kind || (data && data.kind) || '',
+      current: data && data.current != null ? data.current : undefined,
+      total: data && data.total != null ? data.total : undefined,
+      // The activity row's parts. A tool the stream named wins over the last
+      // tool this turn ran. The elapsed time stands on its own (it is useful
+      // without a tool), so it does not depend on one.
+      tool: o.tool || lastToolName || '',
+      model: modelName,
+      time: turnStartedAt ? Math.max(1, Math.round((Date.now() - turnStartedAt) / 1000)) + 's' : '',
+      // The title is the chat's own name for a task, which reads as the
+      // notification title it already is; the running usage is the fact
+      // worth a row here.
+      usage: pushUsageLabel()
+    };
   }
 
   function sendChatPush(kind, options = {}) {
@@ -1094,11 +1134,13 @@ promptSize: resolvedProfileId,
     onEvent: (name, data) => {
       if (name === 'message' && typeof data.delta === 'string') {
         if (!streamStartedAt) streamStartedAt = Date.now();
+        if (!turnStartedAt) turnStartedAt = streamStartedAt;
         assistantContent += data.delta;
         try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
         return;
       } else if (name === 'reasoning' && typeof data.delta === 'string') {
         if (!streamStartedAt) streamStartedAt = Date.now();
+        if (!turnStartedAt) turnStartedAt = streamStartedAt;
         assistantReasoning += data.delta;
         try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
         return;
@@ -1155,6 +1197,11 @@ promptSize: resolvedProfileId,
         }));
         return;
       } else if (name === 'tool_call') {
+        // Remember the tool for the status block's activity row: it names
+        // what the model is doing, which is more useful in a progress
+        // notification than a bare percentage.
+        if (data && data.name) lastToolName = String(data.name);
+        if (!turnStartedAt) turnStartedAt = Date.now();
         try {
           messages.appendMessage(projectDir, chatId, {
             role: 'tool', phase: 'call', toolCallId: data.id || '', name: data.name || '',
@@ -1199,38 +1246,33 @@ promptSize: resolvedProfileId,
           requireInteraction: true
         });
       } else if (name === 'progress_update') {
-        // Updatable per-chat push notification for real-time progress.
-        // Uses a stable tag so each new progress_update replaces the
-        // previous OS notification for this chat (no notification spam).
-        const pctNum = data.current != null && data.total != null
-          ? Math.round((Number(data.current) / Math.max(1, Number(data.total))) * 100)
-          : null;
-        // Only the info lines differ between a task update and a plain
-        // report_progress; the bar row and the per-device sizing are shared
-        // so there is one visual status format. Push bodies are plain text
-        // — no markdown — so the em dash is spelled out and every line
-        // reads the same on every platform.
-        const counts = (data.current != null && data.total != null)
-          ? data.current + ' of ' + data.total
-          : (data.message || '');
-        const infoLines = data.kind === 'task'
-          //   title row:  <chat title> · <tokens> · <price>
-          //   bar row:    [####------] 40%
-          //   task row:   <task title> — 2 of 5
-          ? [(data.title || 'Task') + (counts ? ' — ' + counts : '')]
-          : [data.message || data.title || ''];
-        const usageLabel = pushUsageLabel();
-        const chatTitle = (chat && chat.title) || 'mouaif';
-        sendChatPush('progress', {
-          title: usageLabel ? chatTitle + ' · ' + usageLabel : chatTitle,
-          bodyFor: (sub) => statusBody(sub, pctNum, infoLines),
-          tag: statusPushTag
-        });
+      // Updatable per-chat push notification for real-time progress.
+      // Uses a stable tag so each new progress_update replaces the
+      // previous OS notification for this chat (no notification spam).
+      const pctNum = data.current != null && data.total != null
+      ? Math.round((Number(data.current) / Math.max(1, Number(data.total))) * 100)
+      : null;
+      // Everything the status shows rides in the BODY, under the bar, as a
+      // set of optional facts (src/statusBar.js detailLines()): the message,
+      // the position in the work, the turn usage, the elapsed time, the
+      // tool, and the model. The title stays just the chat name — it is the
+      // slot the OS clips first, and a wider device shows more detail rows
+      // without the title changing. A task update is one row of facts, not a
+      // title row plus a separate task row.
+      sendChatPush('progress', {
+      title: (chat && chat.title) || 'mouaif',
+      bodyFor: (sub) => statusBody(sub, pctNum, statusInfo(data)),
+      tag: statusPushTag
+      });
       } else if (name === 'done') {
-        sendChatPush('completion', {
-          bodyFor: (sub) => statusBody(sub, 100, ['Response complete']),
-          tag: statusPushTag
-        });
+      sendChatPush('completion', {
+      title: (chat && chat.title) || 'mouaif',
+      bodyFor: (sub) => statusBody(sub, 100, statusInfo({
+        kind: 'complete',
+        message: 'Response complete'
+      })),
+      tag: statusPushTag
+      });
         // Compute the enrichment once. `cost.known` is true when at
         // least one of the four pricing layers (model, app, builtin)
         // had a non-empty entry for this model id. We always emit
@@ -1334,14 +1376,20 @@ promptSize: resolvedProfileId,
     // marker or the chat would look busy forever after a reload.
     runningChats.delete(runKey);
     runningChatCancels.delete(runKey);
+    // The turn is over (either way), so its status facts stop applying.
+    lastToolName = '';
+    turnStartedAt = 0;
     if (traceStream) trace.close(traceStream);
     const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
     persistStreamError(errPayload);
     try { emit('error', errPayload); } catch { /* socket closed */ }
     liveChat.finishLiveChat(runKey);
     sendChatPush('error', {
-    bodyFor: (sub) => statusBody(sub, null, ['Error: ' + (errPayload.message || 'stream failed')]),
-    tag: statusPushTag
+      title: (chat && chat.title) || 'mouaif',
+      // An error is a fact set too: the message, then whatever usage and
+      // context the turn had reached before it failed.
+      bodyFor: (sub) => statusBody(sub, null, statusInfo({ kind: 'error', message: 'Error: ' + (errPayload.message || 'stream failed') })),
+      tag: statusPushTag
     });
     res.end();
     return;
@@ -1370,13 +1418,17 @@ promptSize: resolvedProfileId,
     persistStreamError(errPayload);
     emit('error', errPayload);
     sendChatPush('error', {
-    bodyFor: (sub) => statusBody(sub, null, ['Error: ' + (errPayload.message || 'upstream error')]),
-    tag: statusPushTag
+      title: (chat && chat.title) || 'mouaif',
+      bodyFor: (sub) => statusBody(sub, null, statusInfo({ kind: 'error', message: 'Error: ' + (errPayload.message || 'upstream error') })),
+      tag: statusPushTag
     });
   }
   if (traceStream) trace.close(traceStream);
   runningChats.delete(runKey);
   runningChatCancels.delete(runKey);
+  // The turn is over, so its status facts stop applying to the next one.
+  lastToolName = '';
+  turnStartedAt = 0;
   liveChat.finishLiveChat(runKey);
   res.end();
 }
