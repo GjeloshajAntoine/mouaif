@@ -317,6 +317,16 @@ check('audioChatModel routes an audio-input chat row to the chat endpoint', () =
   assert.equal(transcribe.audioChatModel({ id: 'my-asr', provider: 'openai-compatible' }), false);
   assert.equal(transcribe.audioChatModel({ id: 'gemini-2.5-flash', provider: 'gemini', inputModalities: ['audio'] }), false,
     'Gemini has its own inline shape and is not OpenAI-shaped');
+  // Anthropic is in the same boat as Gemini: it answers audio over its own
+  // Messages API shape, not OpenAI's `/chat/completions`. It used to be listed
+  // as OpenAI-shaped here (and only here — src/imagegen.js never had it), so a
+  // Claude row that reported audio input was rerouted to a URL that cannot
+  // exist. The shared list in src/providerShapes.js is what keeps the two
+  // modules from disagreeing about this again.
+  assert.equal(transcribe.audioChatModel({ id: 'claude-sonnet-5', provider: 'anthropic', inputModalities: ['audio'] }), false,
+    'Anthropic speaks the Messages API, not the OpenAI chat shape');
+  assert.equal(transcribe.kindForModel({ id: 'claude-sonnet-5', provider: 'anthropic' }), 'openai-compatible',
+    'a non-Gemini provider still falls to the default kind, which the user can override explicitly');
 });
 
 check('a baseUrl with a trailing slash does not double it, and path is overridable', () => {

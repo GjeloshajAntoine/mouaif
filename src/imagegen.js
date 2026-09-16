@@ -66,11 +66,9 @@ const DEFAULT_TIMEOUT_MS = 120 * 1000;
 
 // OPENAI_SHAPED_PROVIDERS — every provider whose base URL speaks the
 // OpenAI-shaped REST surface. Which API a base URL speaks is a property of
-// the *connection*, not of the model id.
-const OPENAI_SHAPED_PROVIDERS = [
-  'openai-compatible', 'openrouter', 'azure', 'mistral', 'groq', 'deepseek',
-  'ollama', 'github-copilot'
-];
+// the *connection*, not of the model id. The list lives in
+// src/providerShapes.js so this module and src/transcribe.js share one answer.
+const { OPENAI_SHAPED_PROVIDERS } = require('./providerShapes.js');
 
 // ID_HINTS — model-id substrings that mean "this model generates pictures".
 // Checked in order; the first hit wins. Used only to decide the *default*

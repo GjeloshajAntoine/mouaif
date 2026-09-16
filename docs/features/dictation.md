@@ -686,6 +686,20 @@ previous one, so the last thing the user changed is what survives.
   surfaces that read it.
 - The audio body is JSON base64 (`audioBase64`), capped at ~20 MB of audio,
   so one code path owns reading the body, its size limit and its error shape.
+- **"Is this connection OpenAI-shaped?" has one answer.** The list of
+  OpenAI-shaped providers lives in [src/providerShapes.js](../../src/providerShapes.js)
+  and both this module and [src/imagegen.js](../../src/imagegen.js) read it, so
+  the audio and image families cannot disagree about a provider's wire shape.
+  It names the eight shipped OpenAI-shaped providers (`openai-compatible`,
+  `openrouter`, `azure`, `mistral`, `groq`, `deepseek`, `ollama`,
+  `github-copilot`). `gemini` is absent because it speaks its own per-model
+  `generateContent` action path; `anthropic` is absent because it speaks the
+  Messages API. The list used to be copy-pasted per module, and this copy had
+  grown an extra `anthropic` entry — which did not affect the multipart default
+  (a non-Gemini provider already falls through to it) but *did* let
+  `audioChatModel` reroute a Claude row to an OpenAI `/chat/completions` URL
+  that cannot exist. [scripts/test-provider-shapes.js](../../scripts/test-provider-shapes.js)
+  pins the list and cross-checks each entry against its `ENDPOINTS` row.
 - **Attribution is one extra write on the success path.** The handler only calls
   `messages.addChatCost` when the request carried a `chatId` *and* the priced
   cost is known and positive, so an unpriced run (`--`), a page run (no

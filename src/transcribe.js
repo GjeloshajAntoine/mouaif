@@ -93,10 +93,13 @@ const OPENAI_MODEL_HINTS = ['whisper', 'transcribe', 'transcription', 'voxtral',
 // OPENAI_SHAPED_PROVIDERS — every provider whose base URL speaks the
 // OpenAI-shaped multipart form. This is what decides the transport: which API a
 // base URL speaks is a property of the *connection*, not of the model id.
-const OPENAI_SHAPED_PROVIDERS = [
-  'openai-compatible', 'openrouter', 'azure', 'mistral', 'groq', 'deepseek',
-  'ollama', 'github-copilot', 'anthropic'
-];
+//
+// The list itself lives in src/providerShapes.js so this module and
+// src/imagegen.js cannot drift apart on the answer. It no longer carries
+// `anthropic`: that entry, which only this copy had, claimed the Messages API
+// speaks OpenAI's multipart form, which it does not — pointing a Claude
+// connection at `/audio/transcriptions` is a 404 either way.
+const { OPENAI_SHAPED_PROVIDERS } = require('./providerShapes.js');
 
 // kindForModel(model) — the dialect for one model record, in strict precedence:
 //
