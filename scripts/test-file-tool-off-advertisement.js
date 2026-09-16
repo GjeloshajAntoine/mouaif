@@ -42,7 +42,7 @@ function check(name, cond, detail) {
 function advertise(specs, dir) {
   const out = specs.slice();
   const authState = authz.getAuthorization(dir);
-  for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
+  for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'image_gen']) {
     const cfg = authState.tools[family];
     if (cfg && cfg.mode === 'off') {
       const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
@@ -127,7 +127,32 @@ try {
   failed++;
   console.log('FAIL  unexpected error -- ' + (error && error.message ? error.message : error));
 } finally {
-  console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
+  
+// ---- image_gen: off by default, hidden while off --------------------
+// The first native family whose *unconfigured* mode is off, because it
+// spends money outside a text model and writes files into the project.
+{
+  const imageProjectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-image-off-proj-'));
+  const imageSpec = require('../src/tools/image.js').SPEC;
+  const before = authz.effectiveConfig(imageProjectDir, 'image_gen');
+  check('an unconfigured project reports image_gen off', before.mode === 'off', String(before.mode));
+  check('read_file still defaults to ask next to it',
+    authz.effectiveConfig(imageProjectDir, 'read_file').mode === 'ask');
+
+  const offSet = advertise([imageSpec], imageProjectDir);
+  check('an off image_gen is not advertised', offSet.length === 0, 'got ' + offSet.length + ' spec(s)');
+
+  authz.setAuthorization(imageProjectDir, { tools: { image_gen: { mode: 'allow' } } });
+  check('a stored mode overrides the off default',
+    authz.effectiveConfig(imageProjectDir, 'image_gen').mode === 'allow',
+    authz.effectiveConfig(imageProjectDir, 'image_gen').mode);
+  check('an allowed image_gen is advertised', advertise([imageSpec], imageProjectDir).length === 1);
+
+  authz.setAuthorization(imageProjectDir, { tools: { image_gen: { mode: 'off' } } });
+  check('an explicit off is honored too', advertise([imageSpec], imageProjectDir).length === 0);
+}
+
+console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   try { settings.close(); } catch { /* already closed */ }
   fs.rmSync(projectDir, { recursive: true, force: true });
   fs.rmSync(HOME, { recursive: true, force: true });
