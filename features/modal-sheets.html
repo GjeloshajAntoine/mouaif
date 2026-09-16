@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Modal sheets — mouaif docs</title>
+  <meta name="description" content="Every full-screen sheet in the app — the CLI, Git, web-preview and MCP-error viewers, the web-preview URL prompt, the agent file picker and the Inspector&#39;s…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="modal-sheets">Modal sheets</h1>
+<h2 id="overview">Overview</h2>
+<p>Every full-screen sheet in the app — the CLI, Git, web-preview and MCP-error viewers, the web-preview URL prompt, the agent file picker and the Inspector&#39;s full-screen preview — shares one behaviour: <strong>Escape dismisses the sheet, Tab stays inside it, and closing it returns focus to the control that opened it.</strong> That behaviour lives in one place (<code>frontend/src/hooks/useModal.js</code>) instead of being re-implemented, slightly differently, in each component.</p>
+<h2 id="usage">Usage</h2>
+<p>Nothing to configure. Open any sheet and:</p>
+<div class="table-wrap"><table><thead><tr><th>Key / gesture</th><th>Result</th></tr></thead><tbody><tr><td><code>Escape</code></td><td>Dismisses the sheet</td></tr><tr><td><code>Tab</code></td><td>Moves to the next control inside the sheet; from the last control it wraps to the first</td></tr><tr><td><code>Shift</code> + <code>Tab</code></td><td>Moves backwards, wrapping from the first control to the last</td></tr><tr><td>Tap the backdrop</td><td>Dismisses the sheet (each sheet&#39;s own overlay handles this)</td></tr><tr><td>Tap the close button</td><td>Dismisses the sheet</td></tr></tbody></table></div>
+<p>When two sheets are stacked — the Git modal with a commit-confirm sheet over it, the Inspector&#39;s full-screen preview over the Inspector — <code>Escape</code> closes <strong>only the top one</strong>, and the sheet underneath takes the keyboard back. Before this was centralised, each sheet registered its own document-level listener, so one <code>Escape</code> ran both handlers and the <em>outer</em> sheet closed first.</p>
+<p>Closing a sheet puts focus back on whatever was focused before it opened, so a keyboard user lands on the button they tapped rather than at the top of the document.</p>
+<h3 id="what-a-sheet-deliberately-does-not-do">What a sheet deliberately does not do</h3>
+<ul><li><p><strong>No background scroll lock.</strong> <code>html, body</code> are already <code>overflow: hidden</code> and the overlay covers the viewport, so the app behind a sheet cannot be scrolled; a second lock would only add a way to get out of sync.</p></li><li><p><strong>No focus jump on open.</strong> Auto-focusing a control when a sheet opens pops the on-screen keyboard on iOS, which is wrong for a sheet the user may only be reading. Pressing <code>Tab</code> moves focus in, and a sheet that <em>does</em> want focus in a field asks for it (<code>initialFocus: &#39;first&#39;</code>) or focuses the field itself (the web-preview prompt focuses its URL input).</p></li><li><p><strong>No click-outside handling.</strong> Each sheet&#39;s overlay owns that, because the markup is per sheet.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><code>frontend/src/hooks/useModal.js</code> — the hook. <code>useModal({ onClose, active })</code> returns a ref to attach to the sheet element:</p></li></ul>
+<pre><code class="language-js">const sheetRef = useModal({ onClose: () =&gt; { if (onClose) onClose(); } });
+return h(&#39;div&#39;, { class: &#39;gm__overlay&#39;, role: &#39;dialog&#39;, &#39;aria-modal&#39;: &#39;true&#39; },
+  h(&#39;div&#39;, { class: &#39;gm__sheet&#39;, ref: sheetRef }, /* … */));</code></pre>
+<p>  It listens on <code>document</code> with capture, calls <code>stopPropagation()</code> on the Escape it consumes (so the key cannot also reach the composer or the transcript behind the sheet), and reads the latest <code>onClose</code> through a ref so a parent re-render cannot leave it holding a stale callback.</p>
+<ul><li><p><code>frontend/src/hooks/modalStack.js</code> — the pure stack that decides which sheet owns the keyboard: <code>openModal</code>/<code>closeModal</code>/<code>isTopModal</code>. A sheet that is not on top ignores <code>Escape</code> and leaves <code>Tab</code> alone, which is what makes nested sheets behave. It is DOM-free so it can be unit-tested (<code>scripts/test-modal-hook.js</code>).</p></li><li><p><code>scripts/test-modal-hook.js</code> — the stack&#39;s semantics (nested push/pop, closing a sheet that is not on top, re-opening a token, a three-sheet unwind) plus a source guard: every component that renders a sheet must import and use the hook, must attach the returned ref, and must not hand-roll a <code>keydown</code> listener for <code>Escape</code>. Adding a sheet means adding a row to that list.</p></li><li><p>Not part of this: the <code>@</code>-mention popup, the tool popup, the composer&#39;s own <code>Escape</code> handling and the model picker. Those are popovers or text surfaces, not modal sheets — a focus trap would be wrong for them. The model picker uses a native <code>&lt;dialog&gt;</code> and already restores focus itself (see <a href="model-picker.html">Model picker</a>).</p></li><li><p>Verified at 360 px in Chrome against the built app: the CLI sheet, the Git sheet, the web-preview URL prompt and the agent file picker all open, take <code>Tab</code> inside, close on <code>Escape</code>, and leave the chat behind them intact; the prompt returns focus to the file-toolbar button that opened it.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

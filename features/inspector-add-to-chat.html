@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Add Inspector entries to a chat — mouaif docs</title>
+  <meta name="description" content="The Inspector&#39;s detail sheet — the panel that opens when you tap a console log, an uncaught exception, or a network request — has an **Add to chat** button.…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="add-inspector-entries-to-a-chat">Add Inspector entries to a chat</h1>
+<h2 id="overview">Overview</h2>
+<p>The Inspector&#39;s detail sheet — the panel that opens when you tap a console log, an uncaught exception, or a network request — has an <strong>Add to chat</strong> button. It copies that entry into a chat draft as plain text, so you can ask the assistant about a specific failure without retyping the message or the stack trace. Nothing is sent: the text lands in the draft and waits for you.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Open <strong>Inspector</strong> and attach to a browser tab.</p></li><li><p>Tap a row in the <strong>Console</strong> or <strong>Network</strong> panel. The detail sheet opens.</p></li><li><p>Tap <strong>Add to chat</strong> in the sheet&#39;s header, next to <strong>Close</strong>.</p></li><li><p>Choose the <strong>project</strong> and <strong>chat</strong>, then tap <strong>Add to draft</strong>.</p>
+<p>The entry is appended to that chat&#39;s draft. Open the chat to review and send it.</p>
+<p><img src="./images/inspector-add-to-chat/detail-sheet-360.png" alt="The detail sheet with its Add to chat button" loading="lazy" /></p></li></ol>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Add to chat</strong> only appears when the app has a chat surface to hand the entry to. Otherwise the button is rendered but disabled, so the feature is never invisible — just unavailable.</p></li><li><p>The button is also disabled when the entry produces no text (a request row captured before its response still produces a header).</p></li><li><p>The button lives in the sheet <strong>header</strong>, not the scrolling body, so a long stack trace or response body cannot push it off screen.</p></li><li><p>The draft is <strong>appended</strong>, never replaced: existing draft text and attachments are preserved.</p></li><li><p>The chat is not opened and no model run is started. Draft Craft never sends.</p></li></ul>
+<h3 id="what-the-text-looks-like">What the text looks like</h3>
+<p>Console log and exception entries:</p>
+<pre><code class="language-text">Inspector console error — My Page
+18:42:11 ERROR Error: nope
+Source: http://x/app.js:12
+Stack:
+  at f (app.js:12:4)</code></pre>
+<p>An uncaught exception is titled <code>Inspector exception</code> rather than <code>Inspector console error</code>.</p>
+<p>Network requests:</p>
+<pre><code class="language-text">Inspector request POST 404 — My Page
+http://x/api
+XHR · application/json · 2.0 KB · 120 ms</code></pre>
+<p>A request that failed to complete adds its cause:</p>
+<pre><code class="language-text">Inspector request GET FAIL — My Page
+http://x/api
+Error: net::ERR_FAILED</code></pre>
+<p>The page name is the inspected page&#39;s <code>document.title</code>, falling back to its URL, then to <code>the inspected page</code>. An HTTP status&#39;s own text (<code>Not Found</code>) is not labelled an error — the status is already in the header — while a transport failure&#39;s <code>errorText</code> is.</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><code>frontend/src/components/inspector/entryText.js</code> — <code>buildEntryText(item, context)</code>, a pure function kept out of the component so the draft formatting is unit-testable without a DOM. It never throws on a partial entry.</p></li><li><p><code>frontend/src/components/inspector/DetailSheet.jsx</code> — renders the button in a <code>.inspector__sheet-head-actions</code> row. The class is deliberately not <code>inspector__sheet-actions</code>, which is the Styles edit sheet&#39;s footer and carries <code>min-width: 96px</code> / <code>justify-content: flex-end</code>.</p></li><li><p><code>frontend/src/components/Inspector.jsx</code> — <code>addDetailItemToChat()</code> builds the payload (defaulting to <code>activeProject()</code>) and opens the shared <code>DraftCraftSheet</code>; the entry stays in <code>detailItem</code> so cancelling returns to the same sheet.</p></li><li><p><code>frontend/src/components/DraftCraftSheet.jsx</code> — the project/chat picker is reused unchanged; its subtitle is overridable through <code>payload.description</code> so the Inspector does not have to teach the component about a new source.</p></li><li><p>The sheet header is a flex row: the title ellipsizes and the two buttons (<code>min-height: var(--tap)</code>, i.e. 44 px) never shrink, so both stay tappable at 360 px.</p></li><li><p>CSS lives in <code>frontend/src/inspector-sheets.css</code>; the <code>@import</code> order in <code>frontend/src/inspector.css</code> is the cascade and was not changed.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="draft-craft.html">Draft Craft</a> — the shared project/chat picker and the annotator.</p></li><li><p><a href="inspector.html">Inspector</a> — the panel set and the detail sheet.</p></li><li><p>Source: <a href="../../frontend/src/components/inspector/entryText.js">entryText.js</a>, <a href="../../frontend/src/components/inspector/DetailSheet.jsx">DetailSheet.jsx</a>, <a href="../../frontend/src/components/Inspector.jsx">Inspector.jsx</a>.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

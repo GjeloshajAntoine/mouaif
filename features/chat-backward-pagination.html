@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat backward pagination — mouaif docs</title>
+  <meta name="description" content="Opening a long, tool-heavy chat no longer blocks on a full transcript transfer. The chat loads only the newest page of messages, pins to the bottom, and then…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="chat-backward-pagination">Chat backward pagination</h1>
+<h2 id="overview">Overview</h2>
+<p>Opening a long, tool-heavy chat no longer blocks on a full transcript transfer. The chat loads only the newest page of messages, pins to the bottom, and then <strong>eagerly fetches every older page in the background</strong> until the whole transcript is in memory. The first screen (and the head summary, which previously iterated every message) is usable immediately on chats with hundreds of rows, and the user can scroll to any point without waiting for a per-page load.</p>
+<h2 id="usage">Usage</h2>
+<p>No user-visible control — the behavior is automatic.</p>
+<ul><li><p>On open, the client fetches <code>GET /api/chats/:id/messages?limit=100</code> and paints the newest page, pinned to the bottom.</p></li><li><p>Immediately after that first page paints, the client keeps fetching older pages (<code>beforeSeq</code> windows) in the background and prepends them above the loaded content, preserving the reading position, until the entire transcript is resident.</p></li><li><p>If a turn is running or the chat changes mid-load, the background drain stops; a manual scroll to the top still falls back to loading a page on demand.</p></li><li><p>Reaching the very first message sets a &quot;no more&quot; state and stops further requests.</p>
+<p>The transcript cursor is the same stable per-chat <code>seq</code> used by the append-only tail sync, so the paginated view and the streaming/append path never disagree.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p><strong>Server-side windowed fetch.</strong> <code>src/chatdb.js</code> adds <code>listMessagesWindow(projectDir, chatId, { limit, beforeSeq })</code>, which returns the <code>limit</code> rows strictly below <code>beforeSeq</code> in chronological order. <code>src/messages.js</code> re-exports it alongside a <code>getMessageCount</code>. <code>GET /api/chats/:id/messages</code> now accepts two modes on one URL:</p>
+<ul><li><p><strong>Tail mode</strong> (unchanged, the stream/recovery hot path): <code>fromSeq</code> returns rows <code>seq &gt;= fromSeq</code> plus <code>nextSeq</code>.</p></li><li><p><strong>Window mode</strong> (new, chat pagination): <code>limit</code> (and optional <code>beforeSeq</code>) returns <code>{ messages, total, hasMore, beforeSeq, nextSeq, base }</code>. <code>hasMore</code> is true when an older page exists; <code>beforeSeq</code> is the smallest seq on the page, i.e. the exclusive upper bound for the next older page.</p>
+<p><strong>Client cursor.</strong> <code>frontend/src/components/chat/pagination.js</code> holds a small per-chat cursor (<code>offset</code>, <code>beforeSeq</code>, <code>hasMore</code>, <code>loading</code>, <code>total</code>, <code>firstSeq</code>) and the pure decision helper <code>shouldLoadOlder(pager, scrollTop)</code>. It is seeded from the first windowed page and advanced by each load. The scroll-up loader in <code>useChatState.js</code> calls <code>shouldLoadOlder</code> on the transcript scroll listener; <code>loadOlderMessages</code> in <code>stream.js</code> fetches the next page, dedupes by seq, prepends it via <code>prependOlderTranscript</code> in <code>transcript.js</code>, and keeps <code>state.messages</code> in sync so a later rebuild does not wipe the loaded history.</p>
+<p><strong>Eager background drain.</strong> <code>loadAllOlderMessages</code> in <code>stream.js</code> (fired once from <code>useChatState.js</code> right after the first page paints) loops <code>fetchAndPrependOlderPage</code> until <code>hasMore</code> is false, so older pages arrive without waiting for a scroll to the top. It latches the pagination cursor for the whole run (so the scroll-up loader and the drainer never double-fetch), yields between pages with a <code>setTimeout(0)</code> so the browser can paint, and bails early if a turn starts (<code>streaming</code>/<code>watchingRun</code>), the transcript unmounts, or <code>state.props</code> drifts to another chat. The latch-free core <code>fetchAndPrependOlderPage</code> is shared by both the single-page loader and the drainer.</p>
+<p><strong>Scroll preservation.</strong> <code>prependOlderTranscript</code> inserts rows before the first non-header content node, suppresses per-row pinning while filling, then bumps <code>scrollTop</code> by exactly the height delta so the rows the user was reading stay in place.</p>
+<p><strong>Progress vs. existence.</strong> A page&#39;s return value reports whether the DOM changed, never whether older history remains. A page can legitimately insert nothing — a reconcile that landed between loads can already hold the rows a page returns — while still advancing <code>beforeSeq</code>. Two places used to conflate the two: the pager cleared <code>hasMore</code> when a page inserted nothing even though the server had reported more, and the drainer stopped on that <code>false</code> return. Together they hid every remaining older page. <code>hasMore</code> now comes only from the server&#39;s own flag, and the drainer decides from cursor advance: a failed fetch leaves <code>beforeSeq</code> untouched (so the drain stops and the next scroll retries), while a no-op page advances it and keeps the drain going. An absent <code>hasMore</code> in the response is read as &quot;a cursor exists&quot;, not as &quot;false&quot;, so legacy responses without the flag cannot latch pagination off.</p>
+<p><code>scripts/test-chat-pagination-drain.js</code> covers the no-op page, the empty page, the failed fetch and the single-page loader&#39;s return contract; <code>scripts/test-chat-pagination.js</code> covers the seeding rules including the absent <code>hasMore</code> case.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./chat-load-performance.html">Chat load performance</a> — the earlier load-time work (cost aggregation, revision cursor, lazy tool results).</p></li><li><p><a href="./chat-ui.html">Chat UI</a> — the transcript shell and <code>/messages</code> endpoint.</p></li><li><p><a href="./chat-streaming-performance.html">Chat streaming performance</a> — the per-token streaming hot path.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

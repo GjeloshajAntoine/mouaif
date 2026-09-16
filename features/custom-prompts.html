@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Custom prompts — mouaif docs</title>
+  <meta name="description" content="Custom prompts let you define reusable system messages that are prepended to every chat turn. Prompts can be configured at two scopes:" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="custom-prompts">Custom prompts</h1>
+<h2 id="overview">Overview</h2>
+<p>Custom prompts let you define reusable system messages that are prepended to every chat turn. Prompts can be configured at two scopes:</p>
+<ul><li><p><strong>App defaults</strong> — stored in the app SQLite database (<code>~/.mouaif/store.sqlite</code>) under <code>prompts</code>, available across all projects.</p></li><li><p><strong>Project-specific</strong> — stored in <code>&lt;projectDir&gt;/.mouaif.json</code> alongside other project settings, committed to version control. Project prompts take precedence over app prompts with the same ID.</p>
+<p>The role is fixed to <code>system</code>: a custom prompt is always the opening system message of the turn, never an injected <code>user</code> or <code>assistant</code> message. Prepending a fake user/assistant message before the transcript would bias the conversation; if you need that, write it into the actual transcript.</p>
+<p>A prompt can additionally define a <strong>preset</strong> (<code>preset.tools</code> + <code>preset.agentFiles</code> + <code>preset.skills</code>). Presets are chat-default packaging: when a chat references the prompt, those tool, agent-file, and skill settings apply to that chat. They are purely additive and never override the project&#39;s authorization gate (see <a href="#presets">Presets</a> below).</p>
+<p>Each prompt also has a safe built-in icon (a set of hand-drawn, stroke-based SVG glyphs). The optional <strong>Add to project card</strong> setting exposes that icon as a one-tap new-chat action on every project card where the prompt is available.</p></li></ul>
+<h2 id="usage">Usage</h2>
+<h3 id="managing-prompts-settings-ui">Managing prompts (Settings UI)</h3>
+<p>Prompts can be managed from two locations in Settings:</p>
+<ol><li><p><strong>Settings → App defaults → Custom prompts</strong> (<code>#/settings/prompts</code>): Manage global custom prompts that apply across all projects.</p></li><li><p><strong>Settings → This project → Custom prompts</strong> (<code>#/settings/prompts?projectDir=...</code>): Manage project-specific prompts and view inherited app-wide prompts.</p>
+<p>The <strong>Prompt</strong> picker lists every saved prompt (with a <code>preset</code> tag for ones that carry a tool/agent-file/skills preset; scope badges only appear on the project screen, where the two scopes are mixed, and are omitted on the single-scope App-defaults screen) plus a <code>+ New prompt</code> entry for a blank form. Below the saved prompts, a <strong>Start from a default</strong> section lists the three built-in prompt-size profiles (<code>Very small</code>, <code>Average</code>, <code>Extensive</code>, each tagged <code>default</code>); tapping one opens a fresh unsaved prompt pre-filled with that profile&#39;s title and <code>systemMessage</code>, ready to edit and Create. This means the picker is never empty even before you have saved anything. It uses an in-app, theme-matched list instead of the platform select overlay, keeping the prompt content visible and avoiding oversized native menus on mobile. On first open the picker defaults to the first saved prompt so the editor is already populated; tapping <strong>New</strong> starts a blank form instead. Pick a prompt to load its title, content, and preset into the editor.</p></li></ol>
+<ul><li><p><strong>Scope</strong> — when creating a new prompt while a project is active, choose between <strong>This project</strong> and <strong>App default</strong>.</p></li><li><p><strong>Title</strong> (optional until saved) and <strong>Prompt content</strong> are edited in place. Toggle <strong>Chat preset</strong> to attach or detach the tool/agent-file/skills bundle.</p></li><li><p><strong>Icon</strong> — choose Sparkles, Code, Search, Writing, Debug, or Research. Enable <strong>Add to project card</strong> to show the icon beside <strong>+ New chat</strong>. Tapping it creates and opens a chat with this prompt already selected. Chats created this way also show the prompt icon in their project-card row.</p></li><li><p><strong>Copy from default</strong> — under the Prompt content field, tap <strong>Copy from default</strong> to reveal the three built-in prompt-size profiles (<code>Very small</code>, <code>Average</code>, <code>Extensive</code>). Tap one to load its <code>systemMessage</code> into the content editor as a starting point, then edit and Save as your own custom prompt.</p></li><li><p>Tap <strong>Save</strong> (or <strong>Create</strong> for a new prompt) to persist. Tap <strong>Delete</strong> to remove the selected prompt — the API cascade-clears <code>promptId</code> on every chat that referenced it.</p></li></ul>
+<h3 id="legacy-deep-links">Legacy deep links</h3>
+<p>Older <code>settings/prompts/:id</code> URLs still resolve to the same screen with the picker pre-selected to that prompt, so saved links keep working.</p>
+<h3 id="defining-a-chat-preset">Defining a chat preset</h3>
+<p>When creating or editing a prompt, toggle <strong>Chat preset</strong> on to attach a preset. The preset uses the same controls as the rest of the settings:</p>
+<ul><li><p>the <strong>tool tree</strong> — the same <code>ToolTree</code> shown by the chat Tools card and Settings → Project. Native tools (<code>shell</code>, <code>file</code>, <code>subagent</code>, <code>report_progress</code>, <code>task</code>, <code>ask_user</code>) and MCP server tools (<code>mcp__&lt;slug&gt;__&lt;tool&gt;</code>) are both listed; the project&#39;s tool catalog drives which rows are shown.</p></li><li><p>a synthetic <strong>Agent files</strong> group at the bottom of the tree. Toggle it to inject <code>AGENTS.md</code> / <code>CLAUDE.md</code> / <code>.github/copilot-instructions.md</code> (the project&#39;s <code>agentFileNames</code> setting) into every chat that uses this prompt.</p></li><li><p>a synthetic <strong>Skills</strong> group. Toggle it to inject <code>.agents/skills/*/SKILL.md</code> (the project&#39;s skill catalog) into every chat that uses this prompt.</p>
+<p>Presets are <strong>additive</strong>: a chat that already inherits all project tools keeps them (the preset never restricts a chat to just its listed tools), and the project&#39;s Off/Ask/Allow gate for each tool stays authoritative — a tool the project turned <code>off</code> remains off even if a preset lists it. The project&#39;s master switches (<code>agentFiles: false</code>, <code>skills: false</code>) lock the matching preset group off, just like the chat&#39;s ToolPopup does; the preset cannot override a project lock. Turning the preset off clears <code>preset</code> from the prompt record. The prompt list shows a short <code>preset: …</code> badge so the attachment is visible at a glance.</p></li></ul>
+<h3 id="using-a-prompt-in-a-chat">Using a prompt in a chat</h3>
+<ol><li><p>Open <strong>Settings → Agents</strong>.</p></li><li><p>Choose a custom prompt on an agent and save its configuration.</p></li><li><p>Select that agent as the project default or from the chat <strong>Agent</strong> card.</p></li><li><p>The prompt is resolved from the selected agent and injected on every stream turn.</p>
+<p>The REST API can still set <code>chat.promptId</code> directly for a chat-specific override. Its precedence is higher than the selected agent&#39;s prompt.</p>
+<p>The prompt is not visible in the transcript — it is prepended server-side when building the upstream message array.</p></li></ol>
+<h3 id="schema">Schema</h3>
+<p>Each prompt is stored as an object:</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;a1b2c3d4&quot;,
+  &quot;title&quot;: &quot;Code reviewer&quot;,
+  &quot;icon&quot;: &quot;code&quot;,
+  &quot;showOnProjectCard&quot;: true,
+  &quot;content&quot;: &quot;You are an expert code reviewer. Be thorough and constructive.&quot;,
+  &quot;role&quot;: &quot;system&quot;,
+  &quot;preset&quot;: {
+    &quot;tools&quot;: [&quot;shell&quot;, &quot;file&quot;, &quot;mcp__chrome_debug__navigate&quot;],
+    &quot;agentFiles&quot;: true,
+    &quot;skills&quot;: true
+  },
+  &quot;createdAt&quot;: &quot;2026-07-15T12:00:00.000Z&quot;,
+  &quot;updatedAt&quot;: &quot;2026-07-15T12:00:00.000Z&quot;
+}</code></pre>
+<p>The <code>icon</code> field is restricted to built-in keys (<code>sparkles</code>, <code>code</code>, <code>search</code>, <code>pencil</code>, <code>bug</code>, or <code>book</code>); unknown values safely fall back to <code>sparkles</code>. <code>showOnProjectCard</code> defaults to <code>false</code> for existing prompts.</p>
+<p>The <code>role</code> field is preserved on disk for forward-compat and hand-edits, but the editor and the validator only accept <code>system</code>. A non-system role in the file is silently coerced to <code>system</code> on read.</p>
+<p><code>preset</code> is optional. It is normalized to <code>{ tools?, agentFiles?, skills? }</code>:</p>
+<ul><li><p><code>tools</code> is a de-duped array of model-facing tool names — the native family names (<code>shell</code>, <code>file</code>, <code>subagent</code>, <code>report_progress</code>, <code>task</code>, <code>ask_user</code>) and MCP tool ids (<code>mcp__&lt;slug&gt;__&lt;tool&gt;</code>). Unknown entries are dropped.</p></li><li><p><code>agentFiles</code> is a boolean: when <code>true</code>, the chat referencing this prompt turns agent-file injection on.</p></li><li><p><code>skills</code> is a boolean: when <code>true</code>, the chat referencing this prompt turns skill injection on.</p>
+<p>A preset whose <code>tools</code> is empty (or missing) AND whose <code>agentFiles</code> and <code>skills</code> are both absent collapses to <code>null</code> (no preset). An explicit <code>agentFiles: false</code> or <code>skills: false</code> is preserved (it sets the per-chat toggle to its off state for chats using this prompt) and is not collapsed.</p></li></ul>
+<h3 id="chat-integration-presets">Chat integration (presets)</h3>
+<p>When the server processes <code>POST /api/chats/:id/messages/stream</code>, if the chat record has a <code>promptId</code> referencing an existing prompt, the server prepends <code>{ role: &#39;system&#39;, content: prompt.content }</code> to the upstream message array before calling <code>ai.streamChat</code>. The prompt is not stored in the chat transcript — it is ephemeral and only sent to the model.</p>
+<p>If the referenced prompt carries a <code>preset</code>, the chat&#39;s <strong>effective</strong> per-chat config for that turn also picks it up (via <code>prompts.effectivePresetConfig</code>):</p>
+<ul><li><p><strong>Tools</strong> (from <code>preset.tools</code>) are unioned onto the chat&#39;s own per-chat tool allowlist (<code>chat.tools</code>). A chat with <strong>no</strong> allowlist already inherits every project tool, so the preset deliberately does <em>not</em> replace it with just the preset&#39;s list — that would downgrade capability to &quot;enable&quot;.</p></li><li><p><strong>Agent files</strong> (<code>preset.agentFiles</code>) become the per-chat toggle value passed to <code>agentFiles.resolveEnabled</code>, so a preset can turn injection on for a chat.</p></li><li><p><strong>Skills</strong> (<code>preset.skills</code>) become the per-chat value passed to <code>agentSkills.resolve</code> and the <code>list_features</code> summary, so a preset can turn skill injection on (or back on for a chat that has it explicitly off) for a chat.</p>
+<p>The preset is merged onto the chat record <strong>in memory only</strong> for that request (<code>effectiveChat</code>); the persisted chat record is never modified. The project&#39;s authorization gate (<code>off</code> / <code>ask</code> / <code>allow</code> per tool, the project-level <code>agentFiles: false</code> lock, and the project-level <code>skills: false</code> lock) is read <em>after</em> the merge and stays authoritative — a project lock overrides a preset&#39;s value.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

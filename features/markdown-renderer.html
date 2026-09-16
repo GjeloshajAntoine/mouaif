@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Markdown renderer — mouaif docs</title>
+  <meta name="description" content="The chat view renders AI responses as HTML using a zero-dependency, server-side-markdown-safe renderer (`frontend/src/markdown.js`). It handles a…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="markdown-renderer">Markdown renderer</h1>
+<h2 id="overview">Overview</h2>
+<p>The chat view renders AI responses as HTML using a zero-dependency, server-side-markdown-safe renderer (<code>frontend/src/markdown.js</code>). It handles a CommonMark-like subset suitable for LLM output without needing a full parser or DOMParser. Output is injected via <code>innerHTML</code> — all HTML special characters are escaped except those produced by recognised patterns.</p>
+<h2 id="supported-syntax">Supported syntax</h2>
+<div class="table-wrap"><table><thead><tr><th>Feature</th><th>Example</th></tr></thead><tbody><tr><td><strong>Fenced code blocks</strong></td><td>`<code> </code>`<code>js … </code>`<code> </code><code> or </code>~<del> … </del>~`</td></tr><tr><td><strong>Inline code</strong></td><td>`<code> </code>code<code> </code>`</td></tr><tr><td><strong>Headings</strong></td><td><code># H1</code> through <code>###### H6</code></td></tr><tr><td><strong>Bold</strong></td><td><code>**bold**</code> or <code>__bold__</code></td></tr><tr><td><strong>Italic</strong></td><td><code>*italic*</code> or <code>_italic_</code></td></tr><tr><td><strong>Strikethrough</strong></td><td><code>~~strikethrough~~</code></td></tr><tr><td><strong>Links</strong></td><td><code><a href="url">text</a></code></td></tr><tr><td><strong>Images</strong></td><td><code><img src="url" alt="alt" loading="lazy" /></code></td></tr><tr><td><strong>Auto-links</strong></td><td>Bare URLs starting with <code>http://</code>, <code>https://</code>, <code>ftp://</code>, <code>www.</code>, or email addresses</td></tr><tr><td><strong>Blockquotes</strong></td><td>Lines starting with <code>&gt;</code></td></tr><tr><td><strong>Unordered lists</strong></td><td>Lines starting with <code>-</code>, <code>*</code>, or <code>+</code></td></tr><tr><td><strong>Ordered lists</strong></td><td>Lines starting with <code>1.</code> etc.</td></tr><tr><td><strong>Task lists</strong></td><td><code>- [ ]</code> / <code>- [x]</code> items (rendered as disabled checkboxes)</td></tr><tr><td><strong>Tables</strong></td><td>Pipe tables with a separator row (e.g. `\</td></tr><tr><td><strong>Horizontal rules</strong></td><td><code>---</code>, <code>***</code>, or <code>___</code> alone in a paragraph block</td></tr><tr><td><strong>Line breaks</strong></td><td>Single newlines inside a paragraph produce <code>&lt;br&gt;</code></td></tr><tr><td><strong>Backslash escapes</strong></td><td><code>\*</code>, <code>\_</code>, <code>\[</code>, etc. produce the literal character</td></tr></tbody></table></div>
+<h2 id="unsupported-intentionally">Unsupported (intentionally)</h2>
+<ul><li><p>HTML passthrough — all <code>&lt;</code> and <code>&gt;</code> are escaped.</p></li><li><p>Reference-style links — only inline <code><a href="url">text</a></code> works.</p></li><li><p>Definition lists, footnotes, embedded HTML tables.</p></li><li><p>Syntax-highlighted code blocks — the language class is set (e.g. <code>class=&quot;language-js&quot;</code>) but the UI does not load a highlighter; code is plain monospace.</p></li></ul>
+<h2 id="safety-model">Safety model</h2>
+<p>The renderer&#39;s output is injected with <code>innerHTML</code> on the app&#39;s own origin<br>(<code>frontend/src/components/chat/transcript.js</code>), so anything it emits is live<br>DOM running with the user&#39;s session. Two rules follow, and both are pinned by<br><code>scripts/test-markdown-safety.mjs</code>:</p>
+<ol><li><p><strong>Escaping happens last.</strong> A backslash escape (<code>\&lt;</code>, <code>\&gt;</code>, <code>\&quot;</code>) is stored<br>   in a placeholder <em>before</em> the HTML-escape pass, so the placeholder is<br>   resolved back to its <em>escaped</em> form (<code>&amp;lt;</code>, <code>&amp;gt;</code>, <code>&amp;quot;</code>) — a literal<br>   character, never live markup.</p></li></ol>
+<pre><code class="language-js">// Writing \&lt;img src=x onerror=alert(1)&gt; renders as text:
+renderMarkdown(&#39;\\&lt;img src=x onerror=alert(1)&gt;&#39;);
+// → &lt;p&gt;&amp;lt;img src=x onerror=alert(1)&amp;gt;&lt;/p&gt;</code></pre>
+<ol><li><p><strong>Link and image targets are scheme-checked.</strong> A target is rendered as a<br>   real <code>href</code>/<code>src</code> only when its scheme is <code>http</code>, <code>https</code>, <code>mailto</code>, <code>ftp</code><br>   or <code>ftps</code>, or when it has no scheme at all (relative path, <code>#fragment</code>,<br>   <code>//host</code>). Everything else — <code>javascript:</code>, <code>data:</code>, <code>vbscript:</code>,<br>   <code>blob:</code>, <code>file:</code> — falls back to plain text.</p></li></ol>
+<pre><code class="language-js">renderMarkdown(&#39;[click](javascript:alert(1))&#39;);      // → click (text)
+renderMarkdown(&#39;[click](&amp;#106;avascript:alert(1))&#39;); // → click (text)
+renderMarkdown(&#39;[docs](https://example.com/a?b=1)&#39;); // → live link</code></pre>
+<p>   Entity-encoded and whitespace-split schemes (<code>java&amp;Tab;script:</code>,<br>   <code>java\tscript:</code>) are rejected too: control characters are collapsed the way<br>   a browser collapses them, and a candidate whose pre-colon text contains <code>&amp;</code><br>   is refused rather than guessed at.</p>
+<p>Urls that address the app&#39;s own SPA routes (<code>…/#/chat/&lt;id&gt;</code>) are deliberately<br>rendered as plain text, so a stray tap on tool output cannot navigate the app<br>away from the current chat.</p>
+<h2 id="mobile-considerations">Mobile considerations</h2>
+<ul><li><p>Tables are wrapped in <code>overflow-x: auto</code> on the <code>&lt;table&gt;</code> itself so narrow viewports can scroll horizontally rather than breaking layout.</p></li><li><p>Code blocks use <code>overflow-x: auto</code> and a compact <code>font-size: 0.7rem</code> to fit more text on small screens.</p></li><li><p>Touch targets (checkboxes, links) are at least 44×44 px.</p></li><li><p>No hover-only affordances — everything works on tap.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./chat-ui.html">Chat UI</a> — where rendered markdown is displayed.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

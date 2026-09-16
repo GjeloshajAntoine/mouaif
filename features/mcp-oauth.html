@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCP OAuth sign-in — mouaif docs</title>
+  <meta name="description" content="HTTP MCP servers can use authorization-code OAuth with PKCE instead of a manually entered bearer token. Mouaif discovers the authorization server using the…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="mcp-oauth-sign-in">MCP OAuth sign-in</h1>
+<h2 id="overview">Overview</h2>
+<p>HTTP MCP servers can use authorization-code OAuth with PKCE instead of a manually entered bearer token. Mouaif discovers the authorization server using the installed MCP SDK, stores credentials in the OS keychain, and refreshes access tokens when the server requests authorization again.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Open <strong>Settings → MCP servers</strong>, then add or edit an <strong>HTTP</strong> server.</p></li><li><p>Set <strong>Authentication → OAuth sign-in (PKCE)</strong>.</p></li><li><p>Leave <strong>Client ID</strong> empty for automatic dynamic client registration. If the authorization server does not support registration, enter a pre-registered <strong>public client</strong> ID. Confidential clients requiring a client secret are not supported.</p></li><li><p>Optionally enter space-separated OAuth scopes. These are a fallback when the server does not advertise required scopes; the SDK gives server-advertised scopes priority.</p></li><li><p><strong>Save</strong>, then reopen the server and tap <strong>Sign in</strong>.</p></li><li><p>Tap <strong>Open sign-in page</strong>, approve access, then return to mouaif. The editor checks sign-in status automatically, including after returning from another browser tab. Tap <strong>Start</strong> in the server list to connect and discover tools.</p>
+<p>The separate sign-in link works with mobile browsers and PWAs without depending on an automatically opened popup. Pending requests expire after ten minutes. If the request is declined or expires, start sign-in again.</p>
+<p>For manual client registration, use the callback URL shown in the editor: your mouaif origin followed by <code>/oauth/mcp/callback</code>. Remote access must use HTTPS, including the configured <code>publicOrigin</code> when behind a reverse proxy. Plain HTTP is allowed only on loopback (<code>localhost</code>, <code>127.0.0.1</code>, or <code>::1</code>). An HTTP LAN origin needs HTTPS before OAuth can be used.</p>
+<p><strong>Disconnect</strong> removes the local client registration and tokens, cancels pending sign-in, and stops that server&#39;s OAuth sessions. It does not revoke the grant remotely; revoke access at the provider if required. App-wide server credentials are shared across projects; project-scoped servers have independent credentials. Changing the endpoint, client ID, scopes, or authentication mode invalidates the previous credentials and requires signing in again.</p>
+<p>Manual HTTP headers remain available, but OAuth takes precedence over any <code>Authorization</code> header. Other custom headers are sent only to the MCP endpoint, not to OAuth discovery, registration, or token endpoints.</p></li></ol>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><code>src/oauth-mcp.js</code> implements the SDK OAuth provider, guarded HTTP requests, pending state, and keychain adapter. No additional dependency is required.</p></li><li><p>The OS keychain service is <code>mouaif/mcp-oauth</code>. Identity includes the canonical project path (or app scope), server ID, endpoint, and OAuth settings. Tokens, refresh tokens, and dynamic client credentials never enter <code>.mcp.json</code>, app settings, or REST responses. A working OS keychain is required; there is no plaintext fallback.</p></li><li><p>The configuration contains only <code>oauth: { enabled: true, clientId: &quot;&quot;, scope: &quot;&quot; }</code> for HTTP servers. Omit it or send <code>null</code> to use manual headers again.</p></li><li><p>The SDK handles protected-resource discovery (including <code>WWW-Authenticate</code> metadata URLs and scopes), authorization-server metadata, dynamic registration, PKCE S256, token exchange, and refresh. Pre-registered public clients are also supported. MCP OAuth is independent of AI-provider account sign-in.</p></li><li><p>The callback accepts a single-use, cryptographically random state tied to the exact server configuration and PKCE verifier. Expired, cancelled, replayed, or configuration-mismatched requests are rejected. In-flight credential writes cannot undo a disconnect.</p></li><li><p>Callback pages are public so a mobile browser can return without app cookies; the start/status/disconnect APIs still pass the app access and browser-origin gates. Callback pages and OAuth API responses are not cached. Provider error bodies and codes are never reflected in callback HTML.</p></li><li><p>OAuth endpoint requests require HTTPS except on loopback, reject credential-bearing URLs and redirects, and have a 30-second request timeout. Servers that depend on redirecting their OAuth endpoints must publish their final URLs.</p></li><li><p>Legacy SSE transport, client-credentials grants, confidential-client secrets, and remote token revocation are not implemented.</p></li></ul>
+<h3 id="rest-endpoints">REST endpoints</h3>
+<div class="table-wrap"><table><thead><tr><th>Method</th><th>Path</th><th>Request / response</th></tr></thead><tbody><tr><td><code>POST</code></td><td><code>/api/mcp/servers/:id/oauth/start</code></td><td><code>{ projectDir? }</code> → <code>{ authorizationUrl, redirectUrl, expiresAt }</code>; uses the saved server configuration</td></tr><tr><td><code>GET</code></td><td><code>/api/mcp/servers/:id/oauth?projectDir=…</code></td><td><code>{ connected, pending, redirectUrl }</code>; no credential values</td></tr><tr><td><code>DELETE</code></td><td><code>/api/mcp/servers/:id/oauth?projectDir=…</code></td><td><code>{ ok: true }</code>; disconnect and cancel pending sign-in</td></tr><tr><td><code>GET</code></td><td><code>/oauth/mcp/callback?state=…&amp;code=…</code></td><td>Public, state/PKCE-protected callback; HTML completion page</td></tr></tbody></table></div>
+<p>Failures use <code>EBADINPUT</code> (400), <code>EMCP_AUTH</code> (409), or <code>EKEYRING</code> (503); unknown servers return 404. The callback returns 400 for an invalid, expired, declined, or failed exchange.</p>
+<h3 id="verification">Verification</h3>
+<pre><code class="language-bash">node scripts/test-mcp-arguments.mjs
+node scripts/test-mcp-oauth.js
+node scripts/test-mcp-http-transport.js</code></pre>
+<p>The OAuth integration test runs a local authorization server and real MCP HTTP transport, replacing only the keychain adapter with an in-memory test vault. No third-party account or real credential is required.</p>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

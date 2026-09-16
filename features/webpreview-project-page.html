@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Web preview page (project settings) — mouaif docs</title>
+  <meta name="description" content="Web preview page (project settings)" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="web-preview-page-project-settings">Web preview page (project settings)</h1>
+<h2 id="overview">Overview</h2>
+<p>Project Settings → More settings gains a <strong>Web preview</strong> link that opens a dedicated page for capturing a web URL and viewing the screenshot, without needing to open a chat first. It reuses the same <code>webpreview</code> capture endpoint and the full-screen viewer used by the chat&#39;s File toolbar &quot;Preview&quot; item, so the two surfaces behave identically.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>In Settings → project → <strong>More settings</strong>, tap <strong>Web preview</strong>.</p></li><li><p>Tap <strong>Capture…</strong> and enter an http(s) URL.</p></li><li><p>The page captures the page in the Inspector debug Chrome and opens the full-screen viewer (title with a short host sub-line, a <strong>Refresh</strong> button, the <strong>Size</strong> dropdown, capture time and resolution in the footer, and an Open-in-new-tab link).</p></li><li><p>The captured thumbnail stays on the page; tapping it re-opens the viewer. Changing the size in the viewer re-captures the same URL at the chosen resolution.</p></li></ol>
+<h3 id="authorization">Authorization</h3>
+<p>The capture goes through <code>POST /api/tools/webpreview</code>, which honors the project&#39;s <code>webpreview</code> authorization gate. In <strong>Allow</strong> mode the capture runs straight through. In <strong>Ask</strong> mode the endpoint returns <code>409 EAUTH_REQUIRED</code>; because there is no chat transcript here, the page shows a hint (&quot;approve it in the chat to capture&quot;) rather than mounting the chat&#39;s authorization card.</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><code>frontend/src/components/SettingsProject.jsx</code> renders the new <code>page === &#39;preview&#39;</code> branch and reuses <code>PreviewUrlPrompt.jsx</code> (URL entry) and <code>WebpreviewModal.jsx</code> (full-screen viewer).</p></li><li><p>Capture runs through <code>requestWebpreview()</code> (the same client helper the chat viewer uses) from <code>frontend/src/api.js</code>.</p></li><li><p>The endpoint is scoped to a chat for the authorization session and trace. The page resolves a chat quietly: it prefers the chat it was opened from (via <code>?chatId=</code>), otherwise the most recently opened chat for the project (<code>GET /api/chats?projectDir=...&amp;limit=1</code>).</p></li><li><p><code>frontend/src/routes.js</code> maps <code>#/settings/project/preview</code> to <code>settingsProjectPreview</code>; <code>frontend/src/components/App.jsx</code> routes it to <code>SettingsProjectView</code> with <code>page: &#39;preview&#39;</code>.</p></li><li><p><code>frontend/src/settings.css</code> adds <code>.settings-project__preview-*</code> styles for the capture thumbnail.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./webpreview.html">Web preview tool</a> — the <code>webpreview</code> tool the AI uses to refresh a capture.</p></li><li><p><a href="./file-toolbar.html">File toolbar</a> — the chat-side &quot;Preview&quot; item.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

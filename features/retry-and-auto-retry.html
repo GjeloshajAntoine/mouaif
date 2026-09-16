@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Retry and auto-retry — mouaif docs</title>
+  <meta name="description" content="Failed turns get two recoveries. Every inline error card in a chat now carries a **Retry** button that re-sends the failed user message. A per-chat…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="retry-and-auto-retry">Retry and auto-retry</h1>
+<h2 id="overview">Overview</h2>
+<p>Failed turns get two recoveries. Every inline error card in a chat now<br>carries a <strong>Retry</strong> button that re-sends the failed user message. A<br>per-chat <strong>auto-retry</strong> toggle additionally re-sends a message once,<br>transparently, when it fails before a response starts (a network error<br>or an HTTP rejection other than an already-running <code>409</code>).</p>
+<h2 id="usage">Usage</h2>
+<h3 id="manual-retry">Manual retry</h3>
+<ul><li><p>Send a message that fails. The red error bubble in the transcript<br>  includes a <strong>Retry</strong> button.</p></li><li><p>Retry re-posts the same user message the model was working on. The<br>  failed response stays visible above the new attempt, so nothing is<br>  silently discarded.</p></li></ul>
+<h3 id="auto-retry">Auto-retry</h3>
+<ul><li><p>Open a chat and tap the tools button, then toggle <strong>Auto-retry failed<br>  sends</strong> in the footer.</p></li><li><p>The app-level default lives in <strong>Settings → App defaults</strong>, where it<br>  defaults to on. A per-chat choice overrides the app default.</p></li><li><p>When a turn fails before any response starts, the client immediately<br>  resends it once and shows an <code>auto-retrying…</code> status. Retried sends<br>  are themselves never auto-retried again, so a persistently failing<br>  message cannot loop.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><code>frontend/src/components/chat/stream.js</code> owns <code>retryFailedTurn</code> and<br>  <code>maybeAutoRetry</code>. Retry posts a fresh user turn (<code>retry: true</code>) so the<br>  failed output is preserved and no duplicate optimistic user bubble is<br>  drawn.</p></li><li><p>The one-shot guard reads the retry markers <strong>from the payload</strong>:<br>  <code>maybeAutoRetry</code> returns early when <code>payload.retry</code> is set (a retry) or<br>  <code>payload.manualRetry</code> is set (a user tap on the error card&#39;s Retry<br>  button). Both failure sites therefore thread the current turn&#39;s<br>  <code>retry</code> / <code>manualRetry</code> flags into the payload they hand to<br>  <code>appendErrorCard</code>, so a retry that fails again arrives already marked<br>  and stops. Without that threading the guard never matched and every<br>  failing attempt re-armed the retry — a server that was simply down<br>  looped until the browser died. Regression test:<br>  <a href="../scripts/test-chat-auto-retry-once.js">scripts/test-chat-auto-retry-once.js</a>.</p></li><li><p><code>frontend/src/components/chat/transcript.js</code> renders the error card&#39;s<br>  <strong>Retry</strong> button via an optional <code>onRetry</code> argument to<br>  <code>appendErrorCard</code>. When a persisted error bubble is restored, the UI<br>  rebuilds the retry payload from the preceding user turn, so retry stays<br>  available after navigating away from the chat or reloading the app.</p></li><li><p>The setting is persisted as a <code>chat_store.auto_retry</code> column<br>  (<code>src/chatdb.js</code>) and read as <code>chat.autoRetry</code> in<br>  <code>frontend/src/components/chat/useChatState.js</code>, falling back to the<br>  app-level <code>autoRetry</code> default from <code>src/settings.js</code>.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Assistant server &amp; CLI — mouaif docs</title>
+  <meta name="description" content="mouaif runs as a local background process and CLI that hosts the mobile web interface, orchestrates AI provider requests, and manages real-time conversational…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="assistant-server-cli">Assistant server &amp; CLI</h1>
+<h2 id="overview">Overview</h2>
+<p>mouaif runs as a local background process and CLI that hosts the mobile web interface, orchestrates AI provider requests, and manages real-time conversational streaming.</p>
+<h2 id="usage">Usage</h2>
+<p>Start the server using the default port (<code>5732</code>):</p>
+<pre><code class="language-bash">mouaif serve</code></pre>
+<h3 id="options">Options</h3>
+<pre><code class="language-bash">mouaif serve --port 9000       # use a custom port
+mouaif serve --watch           # restart automatically on local source changes
+mouaif info                    # show package version and default port</code></pre>
+<p>Once running, open <code>http://127.0.0.1:5732/</code> in any browser on your machine or phone.</p>
+<h2 id="request-error-handling">Request error handling</h2>
+<p>The route table (<code>src/http-server.js</code>) is fail-closed: <code>handleRequest</code> wraps<br><code>dispatchRequest</code>, so a handler that throws synchronously or rejects<br>asynchronously is logged and answered instead of escaping. Handlers are<br><code>async</code> and are called without <code>await</code>, so an uncaught rejection would<br>otherwise become an <code>unhandledRejection</code> — and Node&#39;s default<br><code>--unhandled-rejections=throw</code> turns that into a process exit, dropping<br>every connected client over one bad request.</p>
+<ul><li><p>The failure is logged as <code>[mouaif] request failed: &lt;METHOD&gt; &lt;url&gt;</code>.</p></li><li><p>If nothing has been written yet, the client gets a <code>500</code> with<br>  <code>{&quot;error&quot;:&quot;Internal server error&quot;,&quot;code&quot;:&quot;EINTERNAL&quot;}</code>.</p></li><li><p>If the response already started (an SSE stream), the socket is<br>  destroyed so the client sees a truncation rather than a hang.</p></li><li><p><code>mouaif serve</code> also installs <code>unhandledRejection</code> / <code>uncaughtException</code><br>  breadcrumbs for failures that originate outside a request.</p>
+<p>Path ids are decoded with <code>safeDecode()</code> (<code>src/util.js</code>), a<br><code>decodeURIComponent</code> that returns the raw segment instead of throwing a<br><code>URIError</code>:</p></li></ul>
+<pre><code class="language-js">const { safeDecode } = require(&#39;./util.js&#39;);
+
+safeDecode(&#39;%zz&#39;);  // &#39;%zz&#39;  — malformed escape, no throw
+safeDecode(&#39;a%20b&#39;); // &#39;a b&#39;</code></pre>
+<p>A malformed escape therefore becomes an ordinary <code>400</code>/<code>404</code> rather than<br>a crash. <code>scripts/test-url-decode-safety.js</code> drives the real server with<br>malformed paths and asserts the process stays alive.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./chat-ui.html">Chat UI</a> — the web interface.</p></li><li><p><a href="./app-and-project-settings.html">App and project settings</a> — configuration hierarchy and defaults.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

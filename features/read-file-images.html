@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Opening images with `read_file` — mouaif docs</title>
+  <meta name="description" content="`read_file` opens a picture instead of reading it as text. When the path ends in a picture extension, the tool attaches the file&#39;s pixels to the tool result…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="opening-images-with-read-file">Opening images with <code>read_file</code></h1>
+<h2 id="overview">Overview</h2>
+<p><code>read_file</code> opens a picture instead of reading it as text. When the path ends in a picture extension, the tool attaches the file&#39;s pixels to the tool result as an image, so a vision model actually sees the screenshot, diagram, or photo — and the chat card paints the same picture back to the user. Text files keep their existing behavior; <code>.svg</code> stays on the text path because its markup is what a model can use.</p>
+<h2 id="usage">Usage</h2>
+<p>Ask the assistant to look at an image, or call the tool directly:</p>
+<pre><code class="language-text">read_file { &quot;path&quot;: &quot;docs/features/images/inspector-panel.png&quot; }</code></pre>
+<p>Supported extensions: <code>.png</code>, <code>.jpg</code>, <code>.jpeg</code>, <code>.gif</code>, <code>.webp</code>, <code>.bmp</code>, <code>.ico</code>. <code>.svg</code> is read as text (markup).</p>
+<p><code>startLine</code> / <code>endLine</code> do not apply to a picture and are ignored.</p>
+<h3 id="finding-an-image">Finding an image</h3>
+<p><code>list_files</code> lists pictures alongside text files and marks them, so the model can find one without a shell round trip:</p>
+<pre><code class="language-text"># Listing: &lt;all text and image files&gt;
+# Count: 2
+
+# docs/features/images/
+  inspector-panel.png (image)
+  notes.md</code></pre>
+<h3 id="the-model-facing-result">The model-facing result</h3>
+<p>An image read returns a three-line header — no base64 payload — plus the picture itself, which arrives as a separate vision message part right after the tool result:</p>
+<pre><code class="language-text"># File: docs/features/images/inspector-panel.png
+# Kind: image (image/png, 184320 bytes)
+# The picture is attached to this tool result as an image part.</code></pre>
+<h3 id="the-chat-card">The chat card</h3>
+<p>The tool card shows the path, the MIME type, the size, and the picture. Tap the thumbnail to open it full screen; tap outside the picture, tap <strong>✕</strong>, or press <code>Escape</code> to close. A result that reached the UI as plain text (a replayed transcript row, a nested subagent result) has no bytes left, so the card says <code>Image bytes are not part of this result.</code> instead of painting an empty frame.</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Caps.</strong> An image larger than <code>fileReadMaxImageBytes</code> (default 4 MB) is refused with <code>ETOOL_CAP</code>. The model can downscale with the shell tool and read again. Set the knob at app level:</p></li></ul>
+<pre><code class="language-json">{
+  &quot;fileReadMaxLines&quot;: 10000,
+  &quot;fileReadMaxImageBytes&quot;: 4194304
+}</code></pre>
+<ul><li><p><strong>Vision or text model.</strong> The picture is sent as an image part regardless of the model. A text-only model rejects image input, so the provider returns its own error; use a vision-capable model (the model picker&#39;s provider catalog notes which OpenRouter models accept image input).</p></li><li><p><strong>Authorization is unchanged.</strong> <code>read_file</code> is gated by the same <strong>File tools</strong> authorization mode (<code>off</code> / <code>ask</code> / <code>allowlist</code> / <code>allow</code>) as every other file tool. See <a href="./tool-authorization.html">tool-authorization.md</a>.</p></li><li><p><strong>Path safety is unchanged.</strong> Images are subject to the same project-root containment rules as text reads (<code>EOUTSIDE_PROJECT</code>).</p></li><li><p><strong>Hidden content does not apply.</strong> <a href="./hide-file-content.html">hide-file-content</a> rules mark <em>lines</em>; a picture has none, so an image read is not redacted.</p></li><li><p><strong><code>search_files</code> is unchanged.</strong> It still searches text only — a byte search over pictures would be noise.</p></li><li><p><strong>Transcript size.</strong> The pixels are persisted with the tool result (the same way an MCP image result is), so a 4 MB picture adds roughly 5.3 MB of base64 to that chat&#39;s transcript. Keep the cap low if a project holds large screenshots.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><code>readImageFile</code> in <a href="../../src/tools/files.js">src/tools/files.js</a> does the read. The extension list and the extension → MIME map come from <code>src/files.js</code> (<code>isImageExt</code>, <code>mimeForExt</code>), the same table the file editor previews with, so the two surfaces cannot disagree about what is a picture.</p></li><li><p>The result carries <code>kind: &#39;image&#39;</code>, <code>mimeType</code>, <code>bytes</code>, <code>note</code>, and a <code>content</code> array holding one <code>{ type: &#39;image&#39;, data, mimeType }</code> block. That block shape is the one MCP image results already use, so <code>toolResultImageParts</code> in <a href="../../src/ai-stream.js">src/ai-stream.js</a> forwards it as a native vision part with no provider-specific code. <code>openAIContentToAnthropic</code> / <code>openAIContentToGeminiParts</code> in <code>src/ai-endpoints.js</code> convert the same block for Anthropic and Gemini.</p></li><li><p><code>compactToolFeedback</code> in <a href="../../src/toolFeedback.js">src/toolFeedback.js</a> already replaces image payloads with <code>[image payload omitted; attached separately]</code> inside the reconstructed history, so the base64 is never paid for twice on the model side.</p></li><li><p>The card lives in <a href="../../frontend/src/components/chat/toolRender.js">frontend/src/components/chat/toolRender.js</a> (<code>renderReadFileToolResult</code> → <code>renderReadFileImage</code>, plus <code>openImageLightbox</code>). The lightbox is plain DOM so it works from the transcript&#39;s hot path; the thumbnail is wrapped in a button so the whole picture is a tap target (44 px minimum), and <code>.image-lightbox__close</code> sits inside the top safe area.</p></li><li><p>The overlay is mounted at <code>document.body</code> — outside the Preact tree — so it removes itself only through <code>dismiss()</code>. <code>teardownImageLightbox()</code> publishes a <code>mouaif:teardown-lightbox</code> window event that <code>dismiss()</code> also listens for, and <code>ChatView</code> calls it on unmount. Without that, leaving the chat with an image open left a full-viewport cover over the next screen with its keydown listener still armed, and each further open stacked another overlay. A second <code>openImageLightbox</code> fires the teardown first, so only one viewer is ever mounted. Regression test: <a href="../../scripts/test-image-lightbox-teardown.js">scripts/test-image-lightbox-teardown.js</a>.</p></li><li><p>Mobile-first: the thumbnail is capped at 220 px (<code>max-height</code> on <code>.tool-card__image</code>), the lightbox is <code>position: fixed; inset: 0</code> with <code>object-fit: contain</code> so a wide screenshot fits a 360 px viewport, and the card&#39;s caption is a <code>0.66rem</code> muted line rather than a second toolbar.</p></li><li><p>Tests: <code>scripts/test-file-tools.js</code> covers the server side (block shape, byte fidelity, cap, <code>.svg</code> staying text, <code>list_files</code> flags, path safety), <code>scripts/test-read-image-preview.js</code> covers the card (data URL, alt text, no base64 in text nodes, lightbox open/close paths, text-only fallback), and <code>scripts/test-image-lightbox-teardown.js</code> covers the escape hatch (unmount/teardown releases the overlay and its listener, repeated opens do not stack).</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p>Native file tools: <a href="./file-tools.html">file-tools.md</a>.</p></li><li><p>Tool authorization: <a href="./tool-authorization.html">tool-authorization.md</a>.</p></li><li><p>Hidden line ranges: <a href="./hide-file-content.html">hide-file-content.md</a>.</p></li><li><p>MCP image results (the same content-block path): <a href="./mcp.html">mcp.md</a>.</p></li><li><p>Image preview in the file editor: <a href="./files-modal-text-and-images.html">files-modal-text-and-images.md</a>.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Responsive layout — mouaif docs</title>
+  <meta name="description" content="The mouaif web UI is mobile-first: every surface is designed for a 360–430 px phone, then scales up to tablet and desktop. The app frame grows with the window…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="responsive-layout">Responsive layout</h1>
+<h2 id="overview">Overview</h2>
+<p>The mouaif web UI is mobile-first: every surface is designed for a 360–430 px phone, then scales up to tablet and desktop. The app frame grows with the window up to 1152 px instead of staying a 480 px phone column, and long-form surfaces (chat bubbles, transcript cards, the composer) keep a readable measure inside that frame.</p>
+<p>Before this change the shell carried a hard <code>max-width: 30rem</code> (480 px). On a laptop that produced the worst of both layouts: the modals (<code>@media (min-width: 720px)</code>) and the Inspector (<code>@media (min-width: 900px)</code>) switched to their desktop branches — both written for a wide viewport — while the frame they were laid out in stayed 480 px, so the desktop UI was squeezed into a phone-width strip and the rest of the window stayed empty.</p>
+<h2 id="usage">Usage</h2>
+<p>No settings and no toggles: the layout responds to the window.</p>
+<div class="table-wrap"><table><thead><tr><th>Window width</th><th>App frame</th><th>Lists, groups, view heads, hints</th><th>Chat bubbles, cards, composer, chat head</th></tr></thead><tbody><tr><td>360–430 px (phone)</td><td>viewport width</td><td>viewport width</td><td>92% of the transcript</td></tr><tr><td>430–899 px (large phone, portrait tablet)</td><td>viewport width</td><td>viewport width</td><td>92% of the transcript</td></tr><tr><td>900–1152 px (tablet, small laptop)</td><td>viewport width</td><td>capped at 896 px, centred</td><td>capped at 704 px, centred</td></tr><tr><td>1152 px and wider (desktop, ultrawide)</td><td>capped at 1152 px, centred</td><td>capped at 896 px, centred</td><td>capped at 704 px, centred</td></tr></tbody></table></div>
+<ul><li><p>The header and the tab bar paint to the edges of the frame; above 720 px the three tab labels keep a comfortable width instead of stretching across the frame.</p></li><li><p>Every non-chat route renders its content as one column — the view head, hint paragraphs, groups, cards and page bars all share the 896 px measure, so a title lines up with the rows under it instead of starting at the frame edge.</p></li><li><p>Chat keeps the transcript scroller full width (the overlay scrollbar sits at the frame edge) while every row spans that scroller&#39;s inner box, so all rows — prose bubbles, thinking cards, tool cards, the system card — share one left edge and one right edge, and long text keeps the 704 px readable measure on a wide frame. The bubble inside still hugs its text from the shared left edge and user bubbles stay right-aligned. The chat head (back button, title, usage chips, model row) and the composer row are centred on the same measure, so the controls stop a screen apart from each other on a wide window.</p></li><li><p>Wide tool surfaces do not join the 896 px column: the file editor and the other modal sheets keep their own card widths (520–1120 px) from <code>sheets.css</code> and <code>file-editor.css</code>.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p>The three stops are custom properties in <code>frontend/src/base.css</code>:</p>
+<pre><code class="language-css">--shell-max: 72rem;   /* 1152px */
+--list-max:  56rem;   /*  896px */
+--read-max:  44rem;   /*  704px */</code></pre>
+<p>They are consumed in four places, all keyed off the frame rather than the viewport, so a phone is unaffected (every cap is inert below its own width):</p>
+<ul><li><p><code>frontend/src/layout.css</code> — <code>.app__shell</code> grows to <code>--shell-max</code> and centres; inside <code>@media (min-width: 900px)</code>, every direct child of <code>.app__main</code> except the chat view is capped at <code>--list-max</code> and centred with <code>margin-inline: auto</code>; <code>.app__tablist</code> caps at 32rem inside a <code>@media (min-width: 720px)</code> block so a phone keeps the full-bleed tappable bar.</p></li><li><p><code>frontend/src/chat-view.css</code> — <code>.chat-view__head</code> is capped at <code>--read-max</code> and centred, so the back button, title and icon column stay on the same measure as the transcript below.</p></li><li><p><code>frontend/src/chat-transcript.css</code> — every direct child of <code>.chat-view__transcript</code> is a full-width row (<code>align-self: stretch; width: 100%</code>) capped at <code>--read-max</code> and centred, so all rows share one left and right edge and short rows cannot shrink and float to the middle; assistant rows use <code>align-items: flex-start</code> so the bubble inside still hugs its text from that shared edge, and <code>.chat-msg__body</code> is capped at <code>max-width: 100%</code> so a long unbreakable token cannot overflow its row.</p></li><li><p><code>frontend/src/chat-composer.css</code> — <code>.chat-view__composer-row</code> is capped at <code>--read-max</code> and centred.</p>
+<p>Two constraints shaped the approach:</p></li></ul>
+<ul><li><p><strong>Container width, not viewport width.</strong> Everything is capped by a max width on the frame, the content column or the row itself, never by a new breakpoint that could disagree with the existing <code>720px</code> / <code>900px</code> modal and Inspector branches. Between 900 px and 1152 px the frame equals the viewport, so those viewport-based branches stay truthful.</p></li><li><p><strong>A definite row width, not a stretch plus auto margins.</strong> The first attempt capped the rows and left them <code>align-self: flex-start</code>, which put all the slack on the right; the second added <code>margin-inline: auto</code>, which <em>cancels</em> the stretch — so a row sized to its content, and a short row floated to the middle of the transcript instead of lining up with the long rows around it. Transcript rows therefore set <code>width: 100%</code> with a <code>max-width</code> measure: the box is pinned to the full inner width (or to the measure on a wide frame) and can never shrink to fit-content. The content column rule is wrapped in <code>@media (min-width: 900px)</code> so that below that width an element&#39;s own inline margin (for example a hint paragraph&#39;s 10 px gutter) is never clobbered on a phone.</p>
+<p>Touch targets: the frame, the tab bar and every row keep their ≥ 44 px sizing at all widths.</p></li></ul>
+<h3 id="the-44-px-floor-and-where-it-deliberately-stops">The 44 px floor, and where it deliberately stops</h3>
+<p><code>--tap</code> (44px) in <code>frontend/src/base.css</code> is the minimum height for a control. A pass over the phone-width UI closed the gaps where a control that <em>looks</em> like a target was smaller than one:</p>
+<div class="table-wrap"><table><thead><tr><th>Control</th><th>Before</th><th>Now</th><th>Why it matters</th></tr></thead><tbody><tr><td>Chat title (<strong>Switch chat</strong>)</td><td>20 px tall</td><td>32 px (<code>--tap-sm</code>)</td><td>The title is 16 px of text, so a 44 px box added 14 px of invisible padding and pushed the usage chips down to 4 px above the model selects. The head&#39;s first row is 66 px tall anyway (the stacked gear + globe), so the extra height bought no reachable area. Target is 260 × 32 on a phone.</td></tr><tr><td>Chat <strong>Back</strong>, sub-page <strong>Back</strong> (<code>.view-back</code>)</td><td>32 px</td><td><code>--tap</code></td><td>Navigation, and both sit alone at the start of a row, so the bigger target costs no layout.</td></tr><tr><td>Project settings select</td><td>32 px</td><td><code>--tap</code></td><td>Matches every other <code>.input</code> in the settings forms.</td></tr><tr><td>PWA banner <strong>Reload</strong> / <strong>Retry</strong></td><td>65 × 28</td><td>44 px hit area</td><td><code>.tap-target</code>, so the transient strip does not get taller.</td></tr></tbody></table></div>
+<p>Three controls stay compact, because for them a 44 px target <em>is</em> a 44 px box and that would visibly bloat the densest screen in the app:</p>
+<div class="table-wrap"><table><thead><tr><th>Control</th><th>Size</th><th>Why it stays small</th></tr></thead><tbody><tr><td>Model picker (<code>ModelPickerField</code>, chat header)</td><td>200 × 26</td><td>The trigger is its own box. At 44 px the model row grew 26 → 44 and the chat head 94 → 112 px. It is 200 px wide, so the target is comfortable.</td></tr><tr><td>Thinking level select / custom input</td><td>110 × 26</td><td>Same, next to it in the same row.</td></tr><tr><td>Composer textarea, send, image, tools</td><td>32 px (pill 40 px)</td><td>The composer is the primary input; a 44 px row of glyph buttons made the pill 52 px around a single line of text. <code>.tap-target</code> is <strong>not</strong> usable here: an expanded hit area would sit over the textarea and steal the tap meant to focus it, so the paint is the target.</td></tr></tbody></table></div>
+<p>That trade-off was measured rather than guessed: <code>head</code> and the composer pill are back to their previous heights (94 px / 40 px), and the transcript recovers the ~26 px those two rounds had cost it on a 780 px phone.</p>
+<p>Where a control is a <strong>glyph-only accessory standing next to another one</strong>, the paint stays at <code>--tap-sm</code> (32 px) and only the hit area grows, via the <code>.tap-target</code> helper:</p>
+<pre><code class="language-css">/* base.css — grow the hit area, not the paint. */
+.tap-target { position: relative; }
+.tap-target::after {
+  content: &#39;&#39;;
+  position: absolute;
+  left: 50%; top: 50%;
+  width: max(100%, var(--tap));
+  height: max(100%, var(--tap));
+  transform: translate(-50%, -50%);
+}</code></pre>
+<p>The pseudo-element belongs to the control, so a tap inside it activates that control — no wrapper element and no JS. It is only safe on a control that <strong>stands alone</strong>: two expanded areas that overlap hand the tap to whichever control comes later in the document, which would silently make the earlier one unreachable in the overlap. Two small controls side by side therefore need the control itself sized up — and a control next to a text field (the composer) must not use it at all.</p>
+<p>The dense settings lists are also deliberately not part of this pass: the tool tree in Settings → Project pairs a 20 px checkbox with a 24–26 px row (and its name text is intentionally not a label, so tapping a name never flips a tool), and the segmented pills are 26 px. Raising those to 44 px doubles the height of a list of ~30 tools, which is a density decision for that list rather than a one-line fix. The two stacked chat-header glyph buttons (project settings, tools) stay at 32 px for the same reason: the column is 2 × 32 + 2 px, and at 44 px each the header would grow by ~24 px.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="../../.github/copilot-instructions.html">.github/copilot-instructions.md</a> §2 — mobile-first UI rules.</p></li><li><p><a href="inspector.html">Inspector</a> — the desktop panel layout this frame now has room for.</p></li><li><p><a href="chat-ui.html">Chat UI</a> — transcript and composer surfaces.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

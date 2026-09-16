@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Content Security Policy — mouaif docs</title>
+  <meta name="description" content="Every HTML document the app serves — the shell at `/` and any SPA fallback that resolves to it — carries a `Content-Security-Policy` header. Scripts may only…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="content-security-policy">Content Security Policy</h1>
+<h2 id="overview">Overview</h2>
+<p>Every HTML document the app serves — the shell at <code>/</code> and any SPA fallback that resolves to it — carries a <code>Content-Security-Policy</code> header. Scripts may only come from the app&#39;s own origin: no inline <code>on*</code> handler, no <code>eval</code>, no remote script. The policy is a second line of defence behind the escaping each surface already does, so a markup-injection bug cannot become script execution in the app&#39;s origin, where the access cookie and the whole <code>/api/*</code> surface live.</p>
+<h2 id="usage">Usage</h2>
+<p>Nothing to configure. Open the app and the header is already there:</p>
+<pre><code class="language-bash">curl -sD - -o /dev/null http://127.0.0.1:5732/ | grep -i -E &#39;content-security|referrer|x-content&#39;</code></pre>
+<pre><code class="language-text">Content-Security-Policy: default-src &#39;self&#39;; script-src &#39;self&#39;; style-src &#39;self&#39; &#39;unsafe-inline&#39;; img-src &#39;self&#39; data: blob:; font-src &#39;self&#39; data:; media-src &#39;self&#39; data: blob:; connect-src &#39;self&#39; ws: wss:; worker-src &#39;self&#39; blob:; manifest-src &#39;self&#39;; frame-src &#39;self&#39;; base-uri &#39;none&#39;; object-src &#39;none&#39;; form-action &#39;self&#39;; frame-ancestors &#39;self&#39; http://localhost:* http://127.0.0.1:* https://localhost:* https://127.0.0.1:*
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer</code></pre>
+<h3 id="what-each-directive-means">What each directive means</h3>
+<div class="table-wrap"><table><thead><tr><th>Directive</th><th>Value</th><th>Why</th></tr></thead><tbody><tr><td><code>default-src</code></td><td><code>&#39;self&#39;</code></td><td>Everything not listed below falls back to same-origin.</td></tr><tr><td><code>script-src</code></td><td><code>&#39;self&#39;</code></td><td>The bundle is a Vite ESM build under <code>/assets/*</code> and <code>index.html</code> has no inline <code>&lt;script&gt;</code>. This is the directive that stops an injected <code>on*</code> handler or a remote script tag.</td></tr><tr><td><code>style-src</code></td><td><code>&#39;self&#39; &#39;unsafe-inline&#39;</code></td><td>CodeMirror injects a <code>&lt;style&gt;</code> element at runtime. Styles are not a script execution path, so this stays pragmatic.</td></tr><tr><td><code>img-src</code></td><td><code>&#39;self&#39; data: blob:</code></td><td>Image previews and pasted/attached images arrive as <code>data:</code> URLs from the API.</td></tr><tr><td><code>font-src</code></td><td><code>&#39;self&#39; data:</code></td><td>System font stacks today; <code>data:</code> is kept for a future webfont.</td></tr><tr><td><code>media-src</code></td><td><code>&#39;self&#39; data: blob:</code></td><td>Same reasoning as <code>img-src</code>.</td></tr><tr><td><code>connect-src</code></td><td><code>&#39;self&#39; ws: wss:</code></td><td><code>fetch</code> and <code>EventSource</code> are same-origin; the Inspector&#39;s CDP socket is the same-origin <code>/api/inspector/proxy</code> WebSocket.</td></tr><tr><td><code>worker-src</code></td><td><code>&#39;self&#39; blob:</code></td><td>The service worker is served from <code>/sw.js</code>.</td></tr><tr><td><code>manifest-src</code></td><td><code>&#39;self&#39;</code></td><td><code>/manifest.webmanifest</code> for the PWA install prompt.</td></tr><tr><td><code>frame-src</code></td><td><code>&#39;self&#39;</code></td><td>Nothing frames anything today; a same-origin frame stays allowed.</td></tr><tr><td><code>base-uri</code></td><td><code>&#39;none&#39;</code></td><td>The shell has no <code>&lt;base&gt;</code>; <code>&#39;none&#39;</code> means a <code>&lt;base&gt;</code> injection cannot retarget every relative URL on the page.</td></tr><tr><td><code>object-src</code></td><td><code>&#39;none&#39;</code></td><td>No <code>&lt;embed&gt;</code>, <code>&lt;object&gt;</code> or <code>&lt;applet&gt;</code> anywhere in the app.</td></tr><tr><td><code>form-action</code></td><td><code>&#39;self&#39;</code></td><td>A form, if one is ever added, may only post back to us.</td></tr><tr><td><code>frame-ancestors</code></td><td><code>&#39;self&#39;</code> + localhost/127.0.0.1 on any port</td><td>Blocks remote clickjacking while still letting a local shell (host app or test harness) embed the UI.</td></tr></tbody></table></div>
+<h3 id="what-it-deliberately-does-not-do">What it deliberately does not do</h3>
+<ul><li><p>It is <strong>not</strong> a substitute for escaping. Markdown rendering, tool output and the file preview each sanitise or sandbox their own input; the policy only makes a mistake in one of them much harder to exploit.</p></li><li><p>It does <strong>not</strong> restrict the server. Tools, providers and MCP servers are unaffected — this is a browser-side header on HTML documents.</p></li><li><p>It is <strong>not</strong> applied to static assets. Only <code>.html</code> responses carry the policy, so an asset can never be turned into a document by a later cache rule.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><code>src/server-web-static.js</code> owns the policy string (<code>WEB_CSP</code>) and <code>applyDocumentHeaders()</code>, called from <code>serveWebFile()</code> right next to the existing PWA/Cache-Control headers. Adding a directive is a one-line change; relaxing <code>script-src</code> is not (see below).</p></li><li><p><code>scripts/test-web-csp.js</code> stands up the real server on an ephemeral port and asserts that <code>/</code> and the SPA fallback carry the policy verbatim, that <code>script-src</code> is exactly <code>&#39;self&#39;</code> with no <code>unsafe-inline</code>/<code>unsafe-eval</code>, that assets are not policy-carrying documents, and that every directive has a value.</p></li><li><p>The inline-handler ban is why <code>frontend/src/markdown.js</code> no longer emits <code>onclick=&quot;return false&quot;</code> on a garbage auto-link: the attribute would be blocked anyway, and the project&#39;s own safety test (<code>scripts/test-markdown-safety.mjs</code>) forbids the renderer from emitting any <code>on*</code> attribute. Such a link is now unwrapped to inert text.</p></li><li><p>Tested in Chrome at 360 px against a live build: the shell boots, every Settings route, the chat view and the Inspector load with zero console violations, and an SVG-injection probe that fires <code>onbegin</code>/<code>onerror</code> handlers on a CSP-free page is inert under this policy.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

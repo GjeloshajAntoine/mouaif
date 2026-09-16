@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Restart the app from chat — mouaif docs</title>
+  <meta name="description" content="The `restart_app` tool lets the assistant gracefully relaunch mouaif directly from a chat. The supervisor stays running while the HTTP worker is replaced, so…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="restart-the-app-from-chat">Restart the app from chat</h1>
+<h2 id="overview">Overview</h2>
+<p>The <code>restart_app</code> tool lets the assistant gracefully relaunch mouaif directly from a chat. The supervisor stays running while the HTTP worker is replaced, so server-side code and configuration are reloaded without manually stopping and starting the command.</p>
+<h2 id="usage">Usage</h2>
+<p>Ask the assistant to restart the app, for example:</p>
+<pre><code class="language-text">Restart the app.</code></pre>
+<p>For an immediate explicit restart, enter the direct composer command:</p>
+<pre><code class="language-text">@restart_app apply the latest fix</code></pre>
+<p>The exact <code>@restart_app</code> command is treated as the user&#39;s approval and runs without a second confirmation. Autonomous assistant calls still use the project tool authorization mode:</p>
+<ul><li><p><strong>Ask</strong> shows an approval card before restarting.</p></li><li><p><strong>Allow</strong> lets the assistant restart immediately.</p></li><li><p><strong>Off</strong> hides the tool from the assistant.</p>
+<p>The setting is available under <strong>Settings → Project → Tools → Restart app</strong>. A restart briefly disconnects the chat while the new worker starts; reload or reopen the app if the browser does not reconnect automatically.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p>Autonomous <code>restart_app</code> tool calls use the shared graceful-restart scheduler in <code>src/restart.js</code> after authorization. The exact <code>@restart_app</code> composer command calls the authenticated <code>POST /api/restart</code> endpoint directly because the user already requested the destructive action. Both paths share the same scheduler and work with app access authentication.</p>
+<p>The scheduler returns the tool result before restarting, waits briefly so the chat can persist and flush the result, stops MCP child processes, and invokes the same supervisor lifecycle hook used by the restart API. The outer <code>mouaif serve</code> process remains alive and starts a fresh worker.</p>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

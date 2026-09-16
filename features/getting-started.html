@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Getting started — mouaif docs</title>
+  <meta name="description" content="Install mouaif, start the app, and open its web interface. Node.js 18 or newer is required." />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a class="is-active" href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="getting-started">Getting started</h1>
+<h2 id="overview">Overview</h2>
+<p>Install mouaif, start the app, and open its web interface. Node.js 18 or newer is required.</p>
+<h2 id="install-from-this-repository">Install from this repository</h2>
+<pre><code class="language-bash">git clone &lt;repo-url&gt;
+cd mouaif
+npm install
+npm link</code></pre>
+<p><code>npm install</code> builds the web UI once through the package <code>prepare</code> script when the Vite toolchain is present, so a fresh clone works even if <code>frontend/dist/</code> is missing from the checkout. <code>npm link</code> makes the <code>mouaif</code> command available in your terminal.</p>
+<p>See <a href="./cli-commands.html">CLI commands</a> for the complete command list and every <code>mouaif serve</code> option.</p>
+<h2 id="run-the-app">Run the app</h2>
+<p>Start mouaif on the default local address:</p>
+<pre><code class="language-bash">mouaif serve</code></pre>
+<p>Open <code>http://127.0.0.1:5732/</code> in a browser. Keep the terminal open while using the app, and press <code>Ctrl+C</code> when you want to stop it.</p>
+<p>Useful alternatives:</p>
+<pre><code class="language-bash"># Use another port
+mouaif serve --port 9000
+
+# Listen on your local network
+mouaif serve --host 0.0.0.0
+
+# Show the installed version and default port
+mouaif info</code></pre>
+<p>When listening on your network, use the address printed by mouaif. Enable access authentication before making the app available to other devices.</p>
+<h2 id="first-setup">First setup</h2>
+<ol><li><p>Open the <strong>Chats</strong> tab.</p></li><li><p>Tap <strong>Add project</strong> and choose a folder.</p></li><li><p>Open <strong>Settings → Providers</strong> and connect an AI provider.</p></li><li><p>Open the project&#39;s settings and add or select a model.</p></li><li><p>Create a chat, select the model, and send a message.</p>
+<p>Provider connections are shared by the app. Project settings control the models and abilities available in each project.</p></li></ol>
+<h2 id="update-a-source-installation">Update a source installation</h2>
+<pre><code class="language-bash">git pull
+npm install</code></pre>
+<p><code>npm install</code> rebuilds the web UI when the Vite toolchain is present, so there is no separate build step. Restart your manually started <code>mouaif serve</code> process after updating.</p>
+<h2 id="next-steps">Next steps</h2>
+<ul><li><p><a href="./cli-commands.html">CLI commands</a> — every command and <code>serve</code> option.</p></li><li><p><a href="./authentication.html">Authentication</a> — connect AI providers and protect app access.</p></li><li><p><a href="./app-abilities.html">App abilities</a> — learn what chats, tools, projects, and the Inspector can do.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

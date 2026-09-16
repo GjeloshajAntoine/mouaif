@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>iOS touch scroll — the chat transcript scrolls when the user drags it — mouaif docs</title>
+  <meta name="description" content="On iOS Safari, dragging the chat transcript with a finger used to do nothing: the page never moved, no momentum kicked in, and the jump-to-bottom FAB never…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="ios-touch-scroll-the-chat-transcript-scrolls-when-the-user-drags-it">iOS touch scroll — the chat transcript scrolls when the user drags it</h1>
+<h2 id="overview">Overview</h2>
+<p>On iOS Safari, dragging the chat transcript with a finger used to do nothing: the page never moved, no momentum kicked in, and the jump-to-bottom FAB never appeared. Two separate layout bugs caused this, and both are fixed:</p>
+<ol><li><p><strong>Nested scroll layers</strong> — the transcript is an <code>overflow-y: auto</code> element, and <strong>every</strong> ancestor in the chain between the transcript and the document was also a scroll container. iOS Safari does not deliver a touch-pan gesture to a nested <code>overflow: auto</code> element when one of its ancestors already establishes a scroll context — the outer scroll container captures the gesture, the inner one never sees it, and a touch-drag is a no-op. The fix removes every overflow layer between the transcript and the document so the transcript is the only scroll container in the tree.</p></li></ol>
+<ol><li><p><strong>The document itself was scrollable</strong> — the safe-area insets (<code>env(safe-area-inset-*)</code> for the iPhone notch / home indicator) lived on <code>&lt;html&gt;</code> as padding while the app shell was <code>height: 100dvh</code>. On a notched iPhone that pushed the document 47+34 px past the bottom of the screen, making the <em>page</em> scrollable alongside the transcript. The two fought for the touch gesture: iOS Safari would hand the pan to the page (or rubber-band it), the transcript&#39;s <code>scroll</code> events fired late or never, and the composer / status line ended up below the home indicator. The fix locks the document to the viewport (<code>html/body { height: 100%; overflow: hidden }</code>) and moves the safe-area padding onto the shell (border-box, so <code>100dvh</code> + insets still fills exactly the visible area).</p>
+<p>The transcript keeps the iOS-specific hooks (<code>-webkit-overflow-scrolling: touch</code>, <code>overscroll-behavior: contain</code>, <code>touch-action: pan-y</code>) so momentum and gesture ownership are explicit, and the flex sizing is the standard &quot;flex child owns the scroll&quot; pattern (<code>flex: 1 1 0; min-height: 0;</code> on the section, <code>flex: 1 1 auto; min-height: 0;</code> on the transcript). The same momentum/containment hooks apply to the main list scroller and non-chat drill-in sections.</p>
+<p>The shell uses <code>height: 100vh</code> followed by <code>height: 100dvh</code>: older iOS releases get a bounded fallback, while current Safari uses the dynamic viewport as its top and bottom browser chrome changes. The shell owns the top inset. On top-level routes, the tab bar owns the bottom inset so its background reaches the screen edge while its controls remain above the home indicator; on flush routes without a tab bar, the main region owns that inset. The tab bar is a normal flex sibling of the main region, so the main scroller does not reserve another tab-bar height as bottom padding. Its content row is the 44 px minimum touch target and the icon/label stack is shifted 4 px toward the screen edge, keeping the bar compact without entering the home-indicator inset.</p></li></ol>
+<h2 id="usage">Usage</h2>
+<p>No user-facing change. Drag the chat transcript up or down with a finger on an iPhone (Safari or a PWA installed via Add-to-Home-Screen) and it scrolls the same way it does on a desktop browser:</p>
+<ul><li><p>Drag up to read older messages.</p></li><li><p>Drag down to return to the bottom; once the bottom is visible, the auto-pin behaviour kicks back in and new tokens keep the view pinned.</p></li><li><p>The floating &quot;↓ N&quot; jump button appears as soon as the user has scrolled up enough that auto-pin is suspended, and a single tap re-anchors the view to the bottom.</p>
+<p>This applies to every chat, including the first message in a brand-new chat (the empty transcript, the system-prompt card, and the per-chat tool toggles all live inside the same scroll container).</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Docker smoke test — mouaif docs</title>
+  <meta name="description" content="The Docker smoke test builds a production mouaif image, starts the server with isolated storage, mounts an example project, and validates the built UI and…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="docker-smoke-test">Docker smoke test</h1>
+<h2 id="overview">Overview</h2>
+<p>The Docker smoke test builds a production mouaif image, starts the server with isolated storage, mounts an example project, and validates the built UI and core project, file, chat, and message APIs.</p>
+<h2 id="usage">Usage</h2>
+<p>Docker with the Compose plugin is required. Run the complete test from the repository root:</p>
+<pre><code class="language-bash">docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from test</code></pre>
+<p>Remove the containers and isolated test volume afterward:</p>
+<pre><code class="language-bash">docker compose -f compose.test.yaml down --volumes</code></pre>
+<p>A successful run ends with <code>Docker smoke test passed.</code> and exits with status zero. The example fixture is available at <code>examples/docker-test-project/</code>.</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p><code>Dockerfile</code> uses a build stage to install dependencies and compile the Preact frontend. Its runtime stage runs as the unprivileged <code>node</code> user, stores app data in <code>/data</code>, and exposes mouaif on port <code>5732</code>. The runtime stage also ships <strong>Google Chrome</strong> (the <code>stable</code> channel, installed at <code>/opt/google/chrome/chrome</code>) so an agent session inside the container can drive and inspect the UI through the <code>chrome-debug</code> MCP server and the Inspector tab. Chrome runs headless as <code>node</code>; it needs <code>--no-sandbox</code> in a container, enabled via <code>PUPPETEER_DANGEROUS_NO_SANDBOX=true</code>, and <code>MOUAIF_CHROME_URL=http://127.0.0.1:9222</code> points mouaif&#39;s Inspector/<code>webpreview</code> bridge at that same CDP endpoint.</p>
+<p><code>compose.test.yaml</code> starts two services:</p>
+<ul><li><p><code>app</code> runs the production image and waits for <code>/api/settings</code> to become healthy.</p></li><li><p><code>test</code> runs <code>scripts/docker-smoke-test.js</code> only after the app is healthy.</p>
+<p>The example project is mounted read-only at <code>/workspace/example</code>. Project settings and generated chats are stored in a named Docker volume, so the repository fixture remains unchanged. The smoke test covers:</p></li></ul>
+<ol><li><p>Serving the compiled mobile UI.</p></li><li><p>Opening an isolated app settings store.</p></li><li><p>Finding and registering the mounted example project.</p></li><li><p>Reading example content through the file API.</p></li><li><p>Creating a chat and persisting a sample conversation.</p></li><li><p>Listing the registered project and created chat.</p>
+<p>No AI provider credentials or network calls to an AI service are required.</p></li></ol>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Skills — mouaif docs</title>
+  <meta name="description" content="Skills implement the [Agent Skills specification](https://agentskills.io/specification) using `.agents/skills/&lt;skill&gt;/SKILL.md`. The model receives a compact…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="skills">Skills</h1>
+<h2 id="overview">Overview</h2>
+<p>Skills implement the <a href="https://agentskills.io/specification" target="_blank" rel="noopener noreferrer">Agent Skills specification</a> using <code>.agents/skills/&lt;skill&gt;/SKILL.md</code>. The model receives a compact metadata catalog and activates full instructions only when relevant; skills can be disabled per project, per chat, or one skill at a time inside a chat.</p>
+<h2 id="usage">Usage</h2>
+<p>Create a conformant skill:</p>
+<pre><code class="language-markdown">---
+name: testing
+description: Run and diagnose project tests. Use when changing code or investigating failures.
+---
+Run the narrowest relevant tests first, then the full suite.</code></pre>
+<p>Save it as <code>.agents/skills/testing/SKILL.md</code>. Optional <code>scripts/</code>, <code>references/</code>, and <code>assets/</code> directories may sit beside it.</p>
+<p>Open <strong>Settings → Project → Tools</strong> to toggle skills on or off. Off locks skills out of every chat; on lets each chat opt out.</p>
+<p>In a chat, the transcript shows a <strong>Skills</strong> card below tools and agent files. Every discovered skill has its own checkbox:</p>
+<ul><li><p>Unchecking one skill switches <strong>only that skill</strong> off for this chat. The other skills stay on, the project setting is untouched, and the choice is stored on the chat record, so it survives a reload.</p></li><li><p>Checking a skill switches it back on for this chat, again without touching its siblings.</p></li><li><p>A chat whose skills are off shows every row unchecked. Checking any row turns the chat&#39;s skills back on with that one skill selected.</p>
+<p>The <strong>Tools</strong> popup (globe icon in the chat top bar) shows the same always-expanded <strong>Skills</strong> group. There the group checkbox is the explicit all-on / all-off shortcut for the chat, while each row is that one skill&#39;s switch.</p>
+<p>Project settings use this shape:</p></li></ul>
+<pre><code class="language-json">{
+  &quot;skills&quot;: true
+}</code></pre>
+<p>An individual skill can also be switched off for the whole project from <code>.mouaif.json</code> (no UI yet). Such a skill renders disabled with a reason in every chat.</p>
+<pre><code class="language-json">{
+  &quot;skills&quot;: true,
+  &quot;disabledSkills&quot;: [&quot;pdf-processing&quot;]
+}</code></pre>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p>Discovery and resolution live in <code>src/agentSkills.js</code>. <code>resolve({ chat, projectDir })</code> returns the family flag, the project-level lock, and two separate opt-out sets: <code>projectDisabled</code> (from <code>project.disabledSkills</code>) and <code>chatDisabled</code> (from <code>chat.disabledSkills</code>). <code>disabled</code> is their union and is what filters the catalog and the <code>activate_skill</code> tool.</p></li><li><p>The chat record carries <code>disabledSkills</code> (a string array of skill ids, stored as JSON in <code>chat_store.disabled_skills</code>, <code>NULL</code> when empty). <code>PATCH /api/chats/:id</code> accepts it; an empty array or <code>null</code> clears it.</p></li><li><p><code>GET /api/chats/:id/system-prompt</code> reports each skill as <code>{ id, name, description, enabled, disabled, chatDisabled }</code> plus <code>skillsEnabled</code>, so the chat view can tell a project lock (row disabled, with a reason) from this chat&#39;s own opt-out (a plain checkbox), and can show what the stream will actually inject.</p></li><li><p>Enabling a single skill in a chat that had skills off writes both <code>skills: true</code> and the remaining skill ids into <code>disabledSkills</code>, and switching the last skill off writes <code>skills: false</code> together with every selectable id. A prompt preset may force the family flag back on for a turn, and the per-skill list is what keeps that from resurrecting a catalog the user switched off row by row.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

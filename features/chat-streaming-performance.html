@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat streaming performance — mouaif docs</title>
+  <meta name="description" content="The chat transcript renders assistant text **incrementally** while an SSE turn is streaming. Each token delta is appended as a single text node instead of…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="chat-streaming-performance">Chat streaming performance</h1>
+<h2 id="overview">Overview</h2>
+<p>The chat transcript renders assistant text <strong>incrementally</strong> while an SSE turn is streaming. Each token delta is appended as a single text node instead of rebuilding the whole assistant bubble from the full accumulated string. This removes the O(n²) re-encode and per-token DOM teardown/recreate that made long turns burn CPU and memory.</p>
+<h2 id="usage">Usage</h2>
+<p>No user-visible controls — the behavior is automatic. Open a chat and watch a long response stream: the text appears progressively with the same look as before, but the page stays responsive.</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p>Token appends, transcript mutations, and resize notifications share one per-transcript animation-frame scheduler. A burst of deltas performs no synchronous scroll-height reads; each scheduled frame reads geometry once before writing the bottom position. Follow-up frames stop after the layout settles, while late image/tool growth can schedule another pass.</p>
+<p>The scroll listener remains the source of truth for whether the reader is pinned. Scrolling up cancels following, Jump to latest re-enables it, and pagination/render suspension takes precedence. Pending frames are cancelled on cleanup. Resize observers track only direct message rows; nested text mutations no longer scan every row to rebuild that set.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./chat-ui.html">Chat UI</a> — the Preact + Vite shell that hosts the transcript.</p></li><li><p><a href="./usage-metrics.html">Usage metrics</a> — the live token-speed meta line repaints on a separate 120 ms throttle, independent of this path.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

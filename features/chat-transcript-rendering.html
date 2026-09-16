@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat transcript rendering — mouaif docs</title>
+  <meta name="description" content="The chat transcript reuses the DOM rows that are already on screen instead of destroying and rebuilding them on every render pass. A row whose identity has…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="chat-transcript-rendering">Chat transcript rendering</h1>
+<h2 id="overview">Overview</h2>
+<p>The chat transcript reuses the DOM rows that are already on screen instead of destroying and rebuilding them on every render pass. A row whose identity has not changed keeps its element; a header card whose inputs have not changed keeps its node. A pass over unchanged data therefore performs no DOM mutation at all, which is what stops the transcript from flashing.</p>
+<h2 id="usage">Usage</h2>
+<p>No user-visible controls — the behavior is automatic. Open a chat, send a message, or leave an idle chat on screen: rows appear and update in place, and the conversation area no longer blinks between paints.</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p>A re-created element replays its CSS entry animation, and <code>.chat-msg</code> animates from <code>opacity: 0</code> (see <code>frontend/src/chat-transcript.css</code>). The transcript used to be rebuilt by removing every child and drawing it again from <code>state.messages</code>, so each pass restarted that animation even when nothing had changed — on an empty chat the system-prompt row was torn down and rebuilt on every reconcile tick. Reconciliation fixes the cause instead of suppressing the animation: an unchanged row is reused, so there is nothing left to animate.</p>
+<p>Each message row carries a stable key, computed by <code>transcriptRowKey(m)</code> in <code>frontend/src/components/chat/transcript.js</code>:</p>
+<div class="table-wrap"><table><thead><tr><th>Row</th><th>Key</th></tr></thead><tbody><tr><td>Persisted row</td><td><code>seq:&lt;n&gt;</code> — the message store is append-only, so a given seq never changes</td></tr><tr><td>Tool call / result</td><td><code>tool:&lt;toolCallId&gt;:&lt;phase&gt;</code> — a call and its result are two messages but two distinct rows</td></tr><tr><td>Optimistic or live row</td><td>object identity from a <code>WeakMap</code>, which survives a merge because untouched rows keep their reference</td></tr></tbody></table></div>
+<p><code>reconcileTranscriptRows(state, refs, order)</code> walks the renderable messages in display order while holding a cursor at the position the next row must occupy. A reused row already sitting at the cursor is left untouched; a row that is missing is built, and its new node is found by diffing the child list around the builder call, because the builders insert themselves. Only rows whose key has left the transcript are removed. Duplicate keys — the leftover of an overlapping pass — collapse to the first node.</p>
+<p>Header cards are gated the same way. <code>headerSignatures(state, empty)</code> reduces the inputs of the four cards above the messages (system prompt, tools, agent files, skills) plus the setup control to a signature string each, and <code>syncHeaderCards</code> rebuilds a card only when its signature moved or its node is missing. The empty-state block is kept as a node rather than rebuilt while the chat stays empty.</p>
+<p>Other rules the pass preserves:</p>
+<ul><li><p>Authorization and <code>ask_user</code> overlay cards are not message rows. They are mounted beside the transcript while a run is parked, they carry <code>data-auth-call-id</code>, and the reconciler never matches, moves, or removes them.</p></li><li><p>A pass for a different chat must not reconcile against the rows of the chat the user just left, since equal seqs would key onto the wrong nodes. <code>chatTranscriptKey(state)</code> (project dir + chat id) detects the switch and resets the row block, the card signatures, and the per-chat group-expansion memory.</p></li><li><p>A long transcript still renders progressively, because a first paint that blocks on a full markdown build is worse than an animation. The chunked pass runs only when no message rows are mounted yet; rows already on screen are reused and only the not-yet-reached rows are created.</p></li><li><p>An empty chat creates no rows, so an idle pass leaves the scroll position alone instead of re-pinning it.</p></li></ul>
+<h3 id="tail-sync-picks-the-right-dom-path">Tail sync picks the right DOM path</h3>
+<p>The 1 s reconcile poll and the dropped-stream recovery both fold the server&#39;s newest rows into <code>state.messages</code> with <code>mergeServerRows</code> and then update the DOM. The cheap path, <code>syncTranscriptAppend(state, refs, prevLen)</code>, renders only <code>messages[prevLen…]</code> and appends it — correct only for a <strong>pure append</strong>, where every prior row is still at its old index by reference. But <code>mergeServerRows</code> also replaces a seq-less optimistic twin (the just-sent user bubble, the live assistant segment) in place and splices a late-arriving persisted row into the middle of the array. Both move the prefix, so appending the tail repaints a row already on screen (a visible duplicate), drops a mid-inserted row at the bottom (wrong order), and the next poll&#39;s full rebuild then corrects it as a visible reload/flash.</p>
+<p><code>applyTailSync</code> (in <code>stream.js</code>) now asks <code>tailSyncDomAction(prev, merged)</code> (in <code>msgMerge.js</code>) which path to take: <code>&#39;append&#39;</code> for a genuine append, <code>&#39;render&#39;</code> for a moved prefix — which routes to the full <code>reconcileTranscriptRows</code> pass that reuses every unchanged node (so nothing re-animates) and places each row in its correct slot. <code>scripts/test-msg-merge.js</code> covers the decision.</p>
+<p>The file-order tests drive this module in a <code>vm</code> context with a minimal element stub, so the reconciler reads <code>className</code> as a string rather than through <code>classList</code>, and those harnesses must expose <code>WeakMap</code> alongside the other globals they provide.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./chat-ui.html">Chat UI</a> — the Preact + Vite shell that hosts the transcript.</p></li><li><p><a href="./chat-streaming-performance.html">Chat streaming performance</a> — the per-token streaming hot path.</p></li><li><p><a href="./chat-load-performance.html">Chat load performance</a> — latest-first rendering and the incremental tail sync.</p></li><li><p><a href="./chat-backward-pagination.html">Chat backward pagination</a> — windowed loading of long transcripts.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

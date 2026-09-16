@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cloud model providers — mouaif docs</title>
+  <meta name="description" content="`mouaif` ships with four additional first-class API-key providers on top of the original six: **Azure OpenAI**, **Mistral**, **Groq**, and **DeepSeek**. All…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="cloud-model-providers">Cloud model providers</h1>
+<h2 id="overview">Overview</h2>
+<p><code>mouaif</code> ships with four additional first-class API-key providers on top of the original six: <strong>Azure OpenAI</strong>, <strong>Mistral</strong>, <strong>Groq</strong>, and <strong>DeepSeek</strong>. All four are OpenAI-shaped at the wire level — the same <code>/chat/completions</code> SSE contract and the same <code>/models</code> catalog shape — so they reuse the existing openai-compatible request builder, SSE parser, tool loop, and usage accounting. Adding them was a localized change: one <code>ENDPOINTS</code> entry (with a <code>listModels</code> adapter) in <code>src/ai-endpoints.js</code>, a row in the Settings providers list, and a keyring-namespace mapping in <code>src/auth.js</code>.</p>
+<h2 id="usage">Usage</h2>
+<h3 id="add-a-provider">Add a provider</h3>
+<ol><li><p><strong>Settings → Providers → + Add provider.</strong></p></li><li><p>Pick the provider from the dropdown:</p></li></ol>
+<ul><li><p><strong>Azure OpenAI</strong> — paste the resource key. The <strong>API base URL</strong> must be the full deployment URL, e.g. <code>https://&lt;resource&gt;.openai.azure.com/openai/deployments/&lt;deployment&gt;</code>. The deployment name is the model id on the chat side. The <code>api-version</code> query parameter is appended automatically (default <code>2024-10-21</code>; override per project model via <code>model.apiVersion</code>).</p></li><li><p><strong>Mistral</strong> — default base URL <code>https://api.mistral.ai/v1</code>. Paste a key from <a href="https://console.mistral.ai" target="_blank" rel="noopener noreferrer">console.mistral.ai</a>.</p></li><li><p><strong>Groq</strong> — default base URL <code>https://api.groq.com/openai/v1</code>. Paste a key from <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer">console.groq.com</a>.</p></li><li><p><strong>DeepSeek</strong> — default base URL <code>https://api.deepseek.com</code>. Paste a key from <a href="https://platform.deepseek.com" target="_blank" rel="noopener noreferrer">platform.deepseek.com</a>.</p></li></ul>
+<ol><li><p><strong>Save provider.</strong> All four are API-key only — the Settings form shows no OAuth option for them.</p></li></ol>
+<h3 id="add-a-model">Add a model</h3>
+<p>In the project&#39;s <strong>Models</strong> editor set <code>provider</code> to <code>azure</code> / <code>mistral</code> / <code>groq</code> / <code>deepseek</code> and <code>id</code> to the model id (for Azure, the deployment name):</p>
+<pre><code class="language-jsonc">// &lt;projectDir&gt;/.mouaif.json
+{
+  &quot;models&quot;: [
+    { &quot;id&quot;: &quot;gpt-4o&quot;, &quot;provider&quot;: &quot;azure&quot;, &quot;label&quot;: &quot;GPT-4o (my deployment)&quot;, &quot;apiVersion&quot;: &quot;2024-10-21&quot; },
+    { &quot;id&quot;: &quot;mistral-large-latest&quot;, &quot;provider&quot;: &quot;mistral&quot;, &quot;label&quot;: &quot;Mistral Large&quot; },
+    { &quot;id&quot;: &quot;llama-3.3-70b-versatile&quot;, &quot;provider&quot;: &quot;groq&quot;, &quot;label&quot;: &quot;Llama 3.3 70B&quot; },
+    { &quot;id&quot;: &quot;deepseek-chat&quot;, &quot;provider&quot;: &quot;deepseek&quot;, &quot;label&quot;: &quot;DeepSeek Chat&quot; }
+  ]
+}</code></pre>
+<p>The live model catalog (chat head refresh ↻) pulls each provider&#39;s real <code>/models</code> list, so picking from the picker works without hand-editing JSON.</p>
+<h3 id="chat">Chat</h3>
+<p>No special path. The chat composer posts to <code>/api/chats/:id/messages/stream</code>, which hydrates the project model with the provider connection and streams SSE exactly like the other OpenAI-shaped providers. Tool calls, the multi-turn loop, usage/cost lines, and prompt-size profiles all work unchanged.</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>OpenAI-shaped wire protocol.</strong> All four use the OpenAI chat-completions request/response shape, so they share <code>buildOpenAIRequest</code> and <code>parseOpenAISSE</code>. Streaming requests set <code>stream_options.include_usage</code> so the Context/Cost line has authoritative token counts (Azure needs <code>api-version</code> ≥ <code>2024-10-21</code> for this).</p></li><li><p><strong>Azure specifics.</strong> Auth is the <code>api-key</code> header (the OpenAI <code>Authorization: Bearer</code> header is not sent). The base URL is the deployment URL; <code>api-version</code> is appended after <code>/chat/completions</code>. The default api-version is <code>2024-10-21</code>; a project model may set <code>apiVersion</code> to pin a different one (e.g. a preview API or an Entra-ID proxy).</p></li><li><p><strong>Mistral / Groq / DeepSeek specifics.</strong> Plain <code>Authorization: Bearer &lt;key&gt;</code> against their <code>/chat/completions</code>; model catalogs are fetched from their <code>/models</code> endpoints. Missing keys surface as <code>ENO_APIKEY</code> (the chat UI says &quot;add API key in Settings → Providers&quot;) instead of a generic upstream 401.</p></li><li><p><strong>Thinking levels.</strong> Reasoning families on these OpenAI-shaped endpoints (DeepSeek <code>deepseek-reasoner</code> / <code>deepseek-r1</code>, Qwen <code>qwq</code> / <code>-thinking</code> variants, Groq&#39;s <code>qwen-qwq-32b</code>) are inferred by <code>thinkingForOpenAIModel</code> and advertised as effort levels, so the chat thinking dropdown works without a client update.</p></li><li><p><strong>Pricing.</strong> Built-in defaults were added for common Mistral, Groq, and DeepSeek model ids in <code>src/usage.js</code>; unknown ids fall back to <code>--</code> on the cost line (or a per-model <code>pricing</code> override).</p></li><li><p><strong>No OAuth.</strong> All four are API-key-only. <code>AI_TO_AUTH_PROVIDER</code> maps each to its own keyring namespace (<code>azure</code>, <code>mistral</code>, <code>groq</code>, <code>deepseek</code>) so a key stored under one provider is never reused as a credential for another.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./ai-client.html">docs/features/ai-client.md</a> — the proxy architecture all providers ride on.</p></li><li><p><a href="./settings-ui.html">docs/features/settings-ui.md</a> — the provider form that renders <code>SETTINGS_PROVIDERS</code>.</p></li><li><p><a href="./usage-metrics.html">docs/features/usage-metrics.md</a> — cost line behavior and pricing resolution.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Legacy `report_progress` tool — mouaif docs</title>
+  <meta name="description" content="The `report_progress` tool was briefly retained only for compatibility with persisted or external tool calls. It is advertised to models again through the…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="legacy-report-progress-tool">Legacy <code>report_progress</code> tool</h1>
+<h2 id="overview">Overview</h2>
+<p>The <code>report_progress</code> tool was briefly retained only for compatibility with persisted or external tool calls. It is advertised to models again through the current <a href="progress-tool.html">Progress tool</a>, but this page documents the compatibility path for older transcripts and external callers. Progress events do not create global overlays or Web Push notifications. The frontend <strong>does</strong> render a real-time progress bar card in the transcript when the model calls it.</p>
+<h2 id="usage">Usage</h2>
+<p>A legacy caller can invoke <code>report_progress</code> with this schema:</p>
+<pre><code class="language-json">{
+  &quot;title&quot;: &quot;Building project&quot;,
+  &quot;current&quot;: 5,
+  &quot;total&quot;: 100,
+  &quot;status&quot;: &quot;running&quot;,
+  &quot;message&quot;: &quot;Compiling source files...&quot;
+}</code></pre>
+<p>The dispatcher still processes the call so existing tool history fails gracefully. Chat questions, authorization requests, completion, and errors are the supported notification events described in <a href="push-notifications.html">Push notifications</a>.</p>
+<h2 id="frontend-rendering">Frontend rendering</h2>
+<p>When the server emits a <code>progress_update</code> SSE event, the frontend renders a <code>.tool-card--progress</code> card in the transcript with:</p>
+<ul><li><p>A header showing the <code>title</code> and a status pill (running / completed / failed)</p></li><li><p>A progress bar (width animates from <code>current / total</code>)</p></li><li><p>A percentage label (e.g. &quot;42%&quot;)</p></li><li><p>An optional status message</p>
+<p>Completed/failed statuses auto-expand the card; running cards stay collapsed. The status pill also shows a short progress summary (e.g. &quot;Building project 42%&quot;).</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

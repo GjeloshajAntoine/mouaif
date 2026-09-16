@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Model bookmarks (pinned &amp; recently used) — mouaif docs</title>
+  <meta name="description" content="The model picker saves the user time by showing **pinned** and **recently used** models at the top of the list, so the most frequently accessed models are…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="model-bookmarks-pinned-recently-used">Model bookmarks (pinned &amp; recently used)</h1>
+<h2 id="overview">Overview</h2>
+<p>The model picker saves the user time by showing <strong>pinned</strong> and <strong>recently used</strong> models at the top of the list, so the most frequently accessed models are reachable in one tap without scrolling or searching. Pins persist across page reloads via <code>localStorage</code>; the recent list is capped at 20 entries per project.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Open the model picker (tap the model trigger in the chat head).</p></li><li><p><strong>Pin a model</strong>: tap the star icon (☆) next to a model&#39;s name. The star fills (★) and the model appears in the <strong>Pinned</strong> section at the top of the unfiltered picker.</p></li><li><p><strong>Unpin</strong>: tap the filled star again. The model disappears from the Pinned section.</p></li><li><p><strong>Recently used</strong>: Every model you select is automatically added to the <strong>Recent</strong> section (up to 5 shown, newest first). Models you have pinned are excluded from the recent list to avoid duplication.</p></li><li><p>Both sections only appear when the provider filter is set to <strong>All</strong> and the search box is empty — they hide when you browse a specific provider or type a query.</p></li><li><p>The last 20 selections are tracked per project; older entries are dropped when the list overflows.</p></li><li><p>Each time the chat model picker is requested, it refreshes the server-backed recent list before showing the sheet, so stale entries are never briefly displayed.</p></li></ol>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p>The chat picker keeps its sheet closed while <code>GET /api/settings/models/recent</code> is in flight. Once the request settles, the refreshed recent rows and open state are applied together. Closing or superseding an open request invalidates the pending result.</p>
+<p>The <strong>dictation page</strong> (<a href="./dictation.html">dictation.md</a>) shows the same Pinned and Recent sections: it calls <code>loadPinned</code>, <code>loadRecent</code>, <code>loadRecentFromServer</code> and <code>togglePin</code> from <code>frontend/src/components/chat/modelPicker.js</code> with a state object holding just the two fields those helpers read (<code>props.projectDir</code> and <code>recentModels</code>). A pin is therefore per project in <code>localStorage</code> on both surfaces, and the recents are one server list per project. Rows that cannot transcribe are filtered out of the list the sections resolve against, so a chat model never shows up in the dictation picker. The chat head additionally records a pick with <code>touchRecent</code>; dictation does not, because a speech-only model should not fill the chat picker&#39;s recent list.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./model-picker.html">docs/features/model-picker.md</a> — the model picker popover</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

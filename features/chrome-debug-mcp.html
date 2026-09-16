@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chrome Debug MCP — model-driven browser automation — mouaif docs</title>
+  <meta name="description" content="The `chrome-debug` MCP server launches an isolated headless Chrome instance to enable AI-driven browser inspection and automation (`take_snapshot`, `click`,…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="chrome-debug-mcp-model-driven-browser-automation">Chrome Debug MCP — model-driven browser automation</h1>
+<h2 id="overview">Overview</h2>
+<p>The <code>chrome-debug</code> MCP server launches an isolated headless Chrome instance to enable AI-driven browser inspection and automation (<code>take_snapshot</code>, <code>click</code>, <code>type_text</code>, <code>navigate</code>, etc.) without requiring manual browser setup.</p>
+<h2 id="getting-started">Getting started</h2>
+<h3 id="enabling-browser-automation">Enabling browser automation</h3>
+<ol><li><p>Navigate to <strong>Settings → MCP</strong>.</p></li><li><p>Find the <strong><code>chrome-debug</code></strong> row and tap <strong>Start</strong>.</p></li><li><p>In any chat in that project, the browser automation tools will become available to the model.</p></li></ol>
+<h3 id="pairing-with-the-inspector">Pairing with the Inspector</h3>
+<p>By default, the Inspector tab and the <code>chrome-debug</code> MCP server operate independently:</p>
+<ul><li><p><strong>Inspector</strong> connects to a user-configured debug endpoint (default: <code>http://127.0.0.1:9222</code>).</p></li><li><p><strong>chrome-debug</strong> launches its own isolated Chrome instance for the model&#39;s actions.</p>
+<p>If you want both the Inspector UI and the model to share the exact same browser window, start Chrome with <code>--remote-debugging-port=9222</code> and set the MCP server argument to:</p></li></ul>
+<pre><code class="language-bash">--browser-url=http://127.0.0.1:9222</code></pre>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Headless by default</strong> — Chrome launches with an isolated temporary profile and no window, making it compatible with servers, containers, and desktop environments alike.</p></li><li><p><strong>Custom executable path</strong> — if Chrome is in a non-standard location, you can add <code>--executablePath=/path/to/chrome</code> in the server arguments.</p></li><li><p><strong>Tool safety</strong> — browser actions follow your project&#39;s tool authorization permissions (<code>Ask</code>, <code>Allow</code>, or <code>Off</code>).</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./mcp.html">MCP</a> — managing Model Context Protocol servers.</p></li><li><p><a href="./inspector.html">Inspector</a> — mobile DevTools inspection tab.</p></li><li><p><a href="./tool-authorization.html">Tool authorization</a> — tool execution permissions.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

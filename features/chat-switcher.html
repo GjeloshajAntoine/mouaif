@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat switcher — mouaif docs</title>
+  <meta name="description" content="The chat switcher is a dropdown in the chat header that lets the user quickly switch between chats in the current project without going back to the project…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="chat-switcher">Chat switcher</h1>
+<h2 id="overview">Overview</h2>
+<p>The chat switcher is a dropdown in the chat header that lets the user quickly switch between chats in the current project without going back to the project list. A click on the chat title area (including a right-facing arrow chevron) opens a scrollable, paginated list of recent chats. The list is preloaded when the chat view mounts, so opening the dropdown never waits on the network, and the currently running chat is marked with a pulsing dot while a response is streaming.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>While viewing a chat, tap or click the chat title area in the header.</p></li><li><p>A dropdown appears instantly, showing the project&#39;s recent chats (already loaded in the background).</p></li><li><p>Tap any chat row to navigate to that chat.</p></li><li><p>The currently active chat is highlighted with the accent color and shows a pulsing dot while a response is streaming in it.</p></li><li><p>Scroll the dropdown to the bottom to load older chats (100 per page).</p></li><li><p>Tap outside the dropdown or click the title again to close it.</p>
+<p>A small down-chevron (<code>▾</code>) sits to the right of the chat title; it flips to <code>▴</code> (via CSS <code>rotate(180deg)</code>) when the dropdown is open.</p></li></ol>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

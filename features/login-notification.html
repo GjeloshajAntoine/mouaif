@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Login notification — mouaif docs</title>
+  <meta name="description" content="mouaif can push a browser notification when a new browser signs in to a protected server. The alert names the user and a friendly label for the device or…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="login-notification">Login notification</h1>
+<h2 id="overview">Overview</h2>
+<p>mouaif can push a browser notification when a new browser signs in to a protected server. The alert names the user and a friendly label for the device or platform that signed in, and tapping it opens the projects list. The channel is <strong>on by default</strong> and can be turned off from Settings → Notifications.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Enable access authentication for the server (<code>mouaif serve --auth</code>, or create the access user from a setup invitation).</p></li><li><p>Enable Web notifications in <strong>Settings → Notifications</strong> on the devices that should receive the alert.</p></li><li><p><strong>Sign-in alerts</strong> under <strong>Notification types</strong> is on by default; turn it off to silence the alert.</p></li><li><p>Sign in from another browser or device. Every subscribed device receives one replaceable <code>mouaif sign-in</code> notification such as:</p></li></ol>
+<pre><code class="language-text">mouaif sign-in
+New sign-in as alice from iPhone or iPad.</code></pre>
+<p>The message stays generic on purpose: it names the platform (iPhone or iPad, Android device, Mac, Windows, Linux, or <code>this browser</code>) rather than a raw user-agent string.</p>
+<h3 id="what-triggers-a-push">What triggers a push</h3>
+<div class="table-wrap"><table><thead><tr><th>Event</th><th>When</th><th>Content</th></tr></thead><tbody><tr><td><code>login</code></td><td>A password, setup, or passkey sign-in issues a new session</td><td>&quot;New sign-in as <code>&lt;user&gt;</code> from <code>&lt;platform&gt;</code>&quot;</td></tr></tbody></table></div>
+<p>The alert is sent to <strong>every subscribed endpoint</strong>, not only the session that just signed in. A login mints a brand-new push session whose own subscription list is empty until the page rebinds its endpoint, so a per-session send would reach nothing. Broadcasting is also the useful behavior: a sign-in notice matters most on the user&#39;s <em>other</em> already-signed-in devices.</p>
+<p>The sign-in alert shares one replaceable tag (<code>mouaif-login</code>), so repeated sign-ins do not stack in the notification tray.</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><strong>Preference resolution</strong> lives in <code>src/notifications.js</code> (<code>resolveNotificationPrefs</code>). This single server-side normalizer is shared by the chat streaming push and the access sign-in push, so both agree on the default set. It also keeps the legacy five-boolean fallbacks (<code>progress</code> / <code>completion</code> / <code>errors</code> and <code>askUser</code> / <code>toolAuthorization</code>). The frontend mirror is <code>normalizePreferences()</code> in <code>frontend/src/components/SettingsNotifications.jsx</code>.</p></li><li><p><strong>The notifier</strong> is <code>notifyLogin(username, req)</code> in <code>src/server-handlers-access.js</code>. It reads the app-level <code>notifications</code> setting, returns early unless <code>login === true</code>, derives the platform label from the request&#39;s <code>User-Agent</code>, and calls <code>push.sendPushToAll(...)</code>. It is wrapped in try/catch: a notification failure must never block sign-in.</p></li></ul>
+<ul><li><p><strong>The broadcast helper</strong> is <code>push.sendPushToAll({ ... })</code> plus <code>push.listAllSubscriptions()</code> in <code>src/push.js</code>. The existing <code>sendPush</code> takes an explicit <code>subs</code> array or falls back to the per-session list.</p></li><li><p><strong>The preference key</strong> is <code>login</code> inside the app-level <code>notifications</code> object, defaulting to <code>true</code>. It is allowlisted through <code>CLIENT_SETTINGS_KEYS</code> in <code>src/server-shared.js</code> (<code>notifications</code>), so the web UI reads and writes it through the normal <code>/api/settings/app</code> endpoint.</p></li></ul>
+<pre><code class="language-json">{
+  &quot;status&quot;: true,
+  &quot;authorization&quot;: true,
+  &quot;quickActions&quot;: true,
+  &quot;login&quot;: true
+}</code></pre>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./push-notifications.html">Push notifications</a> — the notification service, its triggers, and iOS delivery behavior.</p></li><li><p><a href="./access-authentication.html">Access authentication</a> — enabling and managing app access.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tool output profile — mouaif docs</title>
+  <meta name="description" content="A per-project setting controls how much of each tool result is fed back to the model and how file-listing results are laid out. It lives under the…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="tool-output-profile">Tool output profile</h1>
+<h2 id="overview">Overview</h2>
+<p>A per-project setting controls how much of each tool result is fed back to the model and how file-listing results are laid out. It lives under the <code>toolOutput</code> key in <code>&lt;projectDir&gt;/.mouaif.json</code>, defaults to <code>{ &quot;size&quot;: &quot;average&quot;, &quot;structure&quot;: &quot;tree&quot; }</code>, and is edited from <strong>Settings → Project → Tools → File tool options</strong>.</p>
+<h2 id="usage">Usage</h2>
+<p>Open a project, go to <strong>Tools</strong>, and tap <strong>File tool options</strong>. The page exposes a single <strong>Layout</strong> control that picks how the native file-listing tools (<code>list_files</code>, <code>search_files</code>, and <code>read_file</code>) render their result for the model:</p>
+<ul><li><p><strong>Hierarchical</strong> (<code>tree</code>, the default) — an indented tree: each path segment is a node, directories printed once with a trailing <code>/</code>, files nested two spaces deeper. Because every shared path prefix is written once, this is the most compact text layout.</p></li><li><p><strong>Full JSON</strong> (<code>json</code>) — the exact structured result serialized as JSON, so the model can parse it programmatically.</p>
+<p>The layout only changes how file-listing tools render; generic tool output (shell, MCP) is unaffected.</p>
+<p>The other backend dimension, <strong><code>size</code></strong> (the byte cap), is not surfaced in the UI. It keeps its stored value (default <code>average</code>) and can still be hand-edited in <code>.mouaif.json</code>:</p></li></ul>
+<ul><li><p><code>very-small</code> — one quarter of <code>toolFeedbackMaxBytes</code>.</p></li><li><p><code>average</code> — exactly <code>toolFeedbackMaxBytes</code> (default 64 KiB).</p></li><li><p><code>full</code> — four times <code>toolFeedbackMaxBytes</code>.</p></li><li><p><code>extensive</code> — never truncate.</p>
+<p>Saving the Layout writes the whole <code>toolOutput</code> object to the project file, preserving the current <code>size</code>:</p></li></ul>
+<pre><code class="language-json">{
+  &quot;toolOutput&quot;: { &quot;size&quot;: &quot;average&quot;, &quot;structure&quot;: &quot;tree&quot; }
+}</code></pre>
+<p>The page reads the <strong>resolved</strong> value (defaults → app → project), so an empty project still shows the default. Hand-edited <code>.mouaif.json</code> values that use either supported layout stay visible in the UI; any other value — including the retired <code>grouped</code> layout and the legacy <code>full</code> / <code>concise</code> generic structures — normalizes to <code>tree</code> in the selector, and the tools themselves fall back to <code>tree</code> when the stored value is unknown.</p>
+<p>Below the stored-value readout, an <strong>Example</strong> block shows what the model would receive for a representative <code>list_files</code> result under the selected layout. The sample is a monorepo-shaped file list generated from a small cross-product (module stems × directory prefixes × variants × sub-concerns), so a few lines of source expand into ~900 directories / ~5.4k files (~90 KiB), past every finite cap: <code>very-small</code> and <code>average</code> show the head/tail truncation marker the real model path uses, while <code>full</code> and <code>extensive</code> show the untruncated body.</p>
+<p>The layout applies to every model-facing file-tool result in the live multi-turn tool loop; the structured <code>result</code> surfaced to the chat UI and stored transcript is unchanged — only the <code>role: &quot;tool&quot;</code> message sent upstream is reshaped, at the same boundary as the existing byte-cap compaction. When a card is replayed from a stored transcript, the UI parses the indented body back into <code>entries</code> / <code>matches</code>, so a card&#39;s count and summary stay correct — and transcripts written under the retired <code># dir/</code> grouped layout still parse.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./file-tools.html">Native file tools</a></p></li><li><p><a href="./app-and-project-settings.html">App and project settings</a></p></li><li><p><a href="./tool-feedback-compaction.html">Tool feedback compaction</a></p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

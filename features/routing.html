@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Routing — mouaif docs</title>
+  <meta name="description" content="The web UI is a single page with a hash router: no history API, no server-side rewrite. `window.location.hash` decides which view renders, so a deep link, a…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="routing">Routing</h1>
+<h2 id="overview">Overview</h2>
+<p>The web UI is a single page with a hash router: no history API, no server-side rewrite. <code>window.location.hash</code> decides which view renders, so a deep link, a bookmark and an installed PWA all land in the same place. The whole hash → route mapping is one ordered table in <code>frontend/src/routes.js</code>; <code>frontend/src/router.js</code> is only the browser wiring (the <code>hashchange</code> listener and <code>nav()</code>).</p>
+<h2 id="usage">Usage</h2>
+<p>Every view has a hash. Deep links are stable and old names keep working.</p>
+<div class="table-wrap"><table><thead><tr><th>Hash</th><th>View</th></tr></thead><tbody><tr><td><code>#/chats</code> (default, and any unknown hash)</td><td>Chat list, grouped by project</td></tr><tr><td><code>#/chat/&lt;chatId&gt;?projectDir=…</code></td><td>Chat transcript</td></tr><tr><td><code>#/projects/new?dir=…</code></td><td>Project folder picker</td></tr><tr><td><code>#/inspector</code></td><td>Inspector</td></tr><tr><td><code>#/settings</code></td><td>Settings root</td></tr><tr><td><code>#/settings/access</code></td><td>Access / authentication</td></tr><tr><td><code>#/settings/providers</code>, <code>#/settings/providers/new</code>, <code>#/settings/providers/&lt;id&gt;</code></td><td>AI providers</td></tr><tr><td><code>#/settings/projects</code></td><td>Registered projects</td></tr><tr><td><code>#/settings/defaults</code></td><td>App defaults</td></tr><tr><td><code>#/settings/notifications</code></td><td>Push notifications</td></tr><tr><td><code>#/settings/pricing</code></td><td>Pricing</td></tr><tr><td><code>#/settings/about</code></td><td>About</td></tr><tr><td><code>#/settings/project?projectDir=…&amp;chatId=…</code></td><td>Project settings</td></tr><tr><td><code>#/settings/project/technical</code></td><td>Project settings → Technical details</td></tr><tr><td><code>#/settings/project/output</code></td><td>Project settings → File tool options (Layout: Hierarchical / Full JSON)</td></tr><tr><td><code>#/settings/project/preview</code></td><td>Project settings → Web preview</td></tr><tr><td><code>#/settings/project/hide?file=…</code></td><td>Project settings → Hide file content</td></tr><tr><td><code>#/settings/agents?projectDir=…</code></td><td>Agents list</td></tr><tr><td><code>#/settings/agents/&lt;name&gt;?…</code></td><td>Agent editor (<code>new</code> is a draft unless <code>?edit=1</code>)</td></tr><tr><td><code>#/settings/actions?projectDir=…</code>, <code>#/settings/actions/&lt;id&gt;</code></td><td>Custom actions</td></tr><tr><td>`#/settings/prompts?projectDir=…&amp;scope=app\</td><td>project`</td></tr><tr><td><code>#/settings/mcp</code>, <code>#/settings/mcp/registry</code>, <code>#/settings/mcp/new?scope=…</code>, <code>#/settings/mcp/&lt;id&gt;</code></td><td>MCP servers</td></tr><tr><td><code>#/settings/tags?projectId=…</code></td><td>File tagging</td></tr></tbody></table></div>
+<h3 id="query-parameters">Query parameters</h3>
+<ul><li><p><code>projectDir</code> — which project a project-scoped page is editing. It defaults to the active project; the hash value only overrides it for deep links and tests.</p></li><li><p><code>from=projects|settings/projects</code> — where the user entered project settings from, so <strong>Back</strong> returns there. Any other value is dropped.</p></li><li><p><code>chatId</code> — carries the chat context into project settings and the agent editor.</p></li><li><p><code>scope=app|project</code> — pre-selects the scope for an MCP add, and tells an edit which list it came from. Any other value is dropped.</p></li><li><p><code>file</code> — the file to open in <strong>Hide file content</strong>.</p></li><li><p><code>dir</code> — the folder to start the project picker in.</p></li></ul>
+<h3 id="legacy-names">Legacy names</h3>
+<div class="table-wrap"><table><thead><tr><th>Old hash</th><th>Now</th></tr></thead><tbody><tr><td><code>#/projects</code></td><td><code>#/chats</code></td></tr><tr><td><code>#/auth</code></td><td><code>#/settings</code></td></tr><tr><td><code>#/settings/copilot</code></td><td><code>#/settings/providers/github-copilot</code></td></tr><tr><td><code>#/settings/project/agents/&lt;name&gt;?…</code></td><td><code>#/settings/agents/&lt;name&gt;?…</code> (with <code>returnTo=project</code>)</td></tr></tbody></table></div>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><code>frontend/src/routes.js</code> holds the table. Entries are <code>exact(path)</code>, <code>exactOrQuery(path)</code> or <code>prefix(head)</code>, each with a <code>build(match)</code> that returns a route object or <code>null</code> to fall through. Matching is <strong>in order</strong>, which is what keeps <code>settings/mcp/registry</code> and <code>settings/mcp/new</code> from being read as <code>settings/mcp/&lt;id&gt;</code>, and the legacy <code>settings/project/agents/&lt;name&gt;</code> from being read as project settings. Adding a route is one entry; adding a sub-page under an existing prefix means putting the exact entry above the prefix entry.</p></li><li><p><code>frontend/src/router.js</code> writes the shared <code>route</code> signal on load and on <code>hashchange</code>, and exports <code>nav(hash)</code> (used by every component that navigates). It contains no route knowledge.</p></li><li><p><code>parseHash()</code> is pure and never touches <code>window</code>, so <code>scripts/test-routes.js</code> covers the whole table (legacy aliases, query plumbing, order-sensitive routes, fall-throughs) without a DOM.</p></li><li><p>Path segments are decoded with a non-throwing <code>decodeURIComponent</code>: a malformed escape (<code>%zz</code>, a truncated <code>%e0</code>) keeps the segment as written instead of throwing a <code>URIError</code> out of the <code>hashchange</code> handler, which used to leave the app on a dead hash. <code>src/util.js</code> has the same guard server-side (<code>safeDecode</code>).</p></li><li><p>The previous inline router compared the whole hash remainder for <code>settings/providers/&lt;id&gt;</code>, so <code>#/settings/providers/openai?from=projects</code> looked up a provider literally named <code>openai?from=projects</code>. The table takes the segment before the query.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

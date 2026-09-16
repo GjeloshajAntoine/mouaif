@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Project card — mouaif docs</title>
+  <meta name="description" content="The Project card is the main organizational view in mouaif: each registered project appears as a card displaying the project name, path, list of chats, a &quot;+…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="project-card">Project card</h1>
+<h2 id="overview">Overview</h2>
+<p>The Project card is the main organizational view in mouaif: each registered project appears as a card displaying the project name, path, list of chats, a &quot;+ New chat&quot; button, and a project options menu.</p>
+<p><img src="./images/project-card/chats-tab.png" alt="Project cards in the Chats tab — registered projects, each with a name, path, chat list, and &amp;quot;+ New chat&amp;quot; button." loading="lazy" /></p>
+<h2 id="card-features">Card features</h2>
+<ul><li><p><strong>Project header</strong> — displays the project name and path, with an options menu (<code>⋯</code>) offering:</p>
+<ul><li><p><strong>Settings…</strong> — opens the dedicated project settings page.</p></li><li><p><strong>Rename…</strong> — updates the display name of the project.</p></li><li><p><strong>Unregister</strong> — removes the project from mouaif without deleting any files on disk.</p></li></ul></li><li><p><strong>Scrollable chat list</strong> — lists previous conversations sorted by most recently active. Each chat row displays:</p></li><li><p>The conversation title.</p></li><li><p>Total token cost and timestamp.</p></li><li><p>A quick delete (<code>×</code>) action.</p></li><li><p><strong>Draft-only chats</strong> — a chat with no persisted messages but a non-empty composer draft renders the start of that draft instead of the title, tinted yellow (<code>--warning</code>) with a small yellow rectangle indicator — the inverse of the blue &quot;running&quot; dot. An image-only draft (a pending picture in the composer, no text yet) reads as <code>Image draft</code> so the row still shows that something is waiting there.</p></li><li><p><strong>+ New chat button</strong> — creates a fresh conversation and navigates directly into it.</p></li><li><p><strong>Custom prompt buttons</strong> — prompts with <strong>Add to project card</strong> enabled appear as icon buttons beside <strong>+ New chat</strong>. Tapping one creates a chat with that prompt attached; its icon also identifies the prompt on the resulting chat row.</p></li></ul>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Independent scrolling</strong> — each card&#39;s chat list scrolls internally to prevent tall chat lists from pushing the rest of your dashboard out of view. Vertical overscroll is contained so reaching the first or last chat does not move the dashboard behind the list.</p></li><li><p><strong>Compact height</strong> — the project name and path share one compact header row, while its options menu retains a touch-safe target. The per-card chat list is capped at <code>10.0625rem</code> (161px), keeping about three rows visible before the list scrolls. The cap is applied with <code>max-height</code>; a <code>min-height</code> does not constrain a populated list and was the reason the previous size fix had no effect on normal phone viewports.</p></li><li><p><strong>Recency sorting</strong> — recently opened conversations stay pinned to the top of the card.</p></li><li><p><strong>Cost tracking</strong> — running costs are aggregated per chat and shown directly in the list.</p></li><li><p><strong>Draft inference</strong> — whether a chat is &quot;draft-only&quot; is decided entirely on the client from fields already in the list payload: <code>messageCount</code>, <code>draftSnippet</code> and <code>hasDraftImage</code>. No additional request is made per row.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p>The chat list is a <code>&lt;ul class=&quot;project-card__chats&quot;&gt;</code> with a fixed CSS cap — no JS measurement is needed. The card itself is a flex column, so the <code>&lt;ul&gt;</code> sits at the bottom and scrolls inside its own box. <code>overscroll-behavior-y: contain</code> keeps an edge gesture in the list instead of chaining it to <code>.app__main</code>.</p>
+<p>Draft-only detection uses <code>messageCount === 0</code> (a bulk <code>GROUP BY</code> over <code>message_store</code> in <code>src/chatdb.js#projectMessageCounts</code>, attached per-page by <code>GET /api/chats</code> in <code>src/server-handlers-chats.js</code>) combined with a non-empty <code>draftSnippet</code> — or, for a draft that holds only a picture, <code>hasDraftImage</code>. A running chat is never treated as draft-only even if it has no stored message yet, because the blue running indicator takes precedence.</p>
+<p>List rows are summaries, not full chat records: <code>GET /api/chats</code> replaces the <code>draft</code> body with <code>draftSnippet</code> (its first 400 characters) and the <code>draftAttachments</code> array with the <code>hasDraftImage</code> flag, so a page never carries the base64 of a pending picture (see <a href="./chat-load-performance.html">Chat load performance</a>). Read the whole draft through <code>GET /api/chats/:id</code>.</p>
+<pre><code class="language-css">.project-card__chats {
+  max-height: 10.0625rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}</code></pre>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./folder-picker.html">Folder picker</a> — registering new project directories.</p></li><li><p><a href="./app-and-project-settings.html">App and project settings</a> — configuring project-specific prompts and tools.</p></li><li><p><a href="./chat-ui.html">Chat UI</a> — the chat conversation view.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>
