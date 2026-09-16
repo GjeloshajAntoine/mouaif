@@ -2,21 +2,30 @@
 
 ## Overview
 
-mouaif has two separate kinds of authentication: AI provider credentials let it use models, while optional access authentication protects the web app and its HTTP endpoints.
+mouaif deals with two unrelated things that both get called "authentication." They are independent — you can set up either one without the other:
 
-## Connect an AI provider
+| | What it does | Who you prove yourself to | Where you set it up |
+|---|---|---|---|
+| **Provider credentials** | Let mouaif call an AI model on your behalf | The AI provider (OpenAI, Anthropic, …) | In the app: **Settings → Providers** |
+| **App access** | Control who is allowed to open mouaif | mouaif itself, when you log in | On the command line, when you start the server |
+
+The rest of this page covers each one in its own section.
+
+## Provider credentials — let mouaif use models
+
+To send messages to a model, mouaif needs a credential for that model's provider. This is a key (or browser sign-in) you give to the provider — it does **not** log you into mouaif.
 
 1. Open **Settings → Providers**.
 2. Choose a provider.
-3. Enter the requested API key and base URL, or tap **Sign in** when browser sign-in is available.
-4. Save the provider and use its model refresh or connection test.
+3. Enter the requested API key and base URL, or tap **Sign in** when the provider offers browser sign-in.
+4. Save the provider, then run its model refresh or connection test to confirm it works.
 5. Open a project's settings and add the model you want to use.
 
-Available connections include OpenAI-compatible services, Anthropic, Google Gemini, Ollama, OpenRouter, GitHub Copilot, Azure OpenAI, Mistral, Groq, and DeepSeek. Ollama normally runs locally without an API key. Anthropic, OpenRouter, and GitHub Copilot offer browser sign-in in the provider form.
+Available connections include OpenAI-compatible services, Anthropic, Google Gemini, Ollama, OpenRouter, GitHub Copilot, Azure OpenAI, Mistral, Groq, and DeepSeek. Ollama normally runs locally without an API key. Anthropic, OpenRouter, and GitHub Copilot offer browser sign-in in the provider form; the rest use an API key.
 
-## Protect app access
+## App access — control who can open mouaif
 
-Access authentication is off unless you enable it when starting mouaif.
+App access is off by default: anyone who can reach the server can open it. Turn it on when you start mouaif, and after that people must log in with a username and password (or a passkey). This is separate from provider credentials above.
 
 ### Create access from the setup page
 
@@ -87,7 +96,7 @@ Changing the password revokes other sessions and removes existing passkeys.
 
 ## Authenticate command-line requests
 
-When access authentication is enabled, command-line requests such as `curl` must send HTTP Basic authentication with the access username and password you created during setup. Browser sign-ins use a session cookie automatically.
+When app access is enabled, command-line requests such as `curl` must send HTTP Basic authentication with the app username and password you created during setup. Browsers sign in once and reuse a session cookie automatically.
 
 
 ## Next steps
