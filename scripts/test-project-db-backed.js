@@ -51,6 +51,19 @@ check('isDbBacked false after delete', settings.isDbBacked(PROJ) === false);
 check('file has DB copy after switch back', settings.getProject(PROJ).toolOutput.size === 'full');
 check('promptSize gone from file after switch back', !Object.prototype.hasOwnProperty.call(settings.getProject(PROJ), 'promptSize'));
 
+// ---- deleteDbProject canonicalizes its key ------------------------------
+// The storage toggle-off deletes the DB row through settings.deleteDbProject.
+// A non-canonical spelling (trailing slash, `..` segment) must still target
+// the row the opt-in created, or isDbBacked() stays true and the project keeps
+// reading stale DB settings.
+settings.setDbProject(PROJ, { promptSize: 'extensive', __dbBacked: true });
+check('re-opted-in is db-backed', settings.isDbBacked(PROJ) === true);
+settings.deleteDbProject(PROJ + '/');
+check('deleteDbProject(trailing slash) clears the canonical row', settings.isDbBacked(PROJ) === false);
+settings.setDbProject(PROJ, { promptSize: 'extensive', __dbBacked: true });
+settings.deleteDbProject(path.join(PROJ, '..', path.basename(PROJ)));
+check('deleteDbProject(.. segment) clears the canonical row', settings.isDbBacked(PROJ) === false);
+
 // ---- Summary ------------------------------------------------------------
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 try { fs.rmSync(HOME, { recursive: true, force: true }); } catch { /* ignore */ }

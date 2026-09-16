@@ -348,9 +348,11 @@ async function handleSettings(req, res, parsed) {
         const current = settings.getDbProjectRaw(projectDir);
         delete current.__dbBacked;
         settings.writeProjectJson(settings.getProjectPath(projectDir), current);
-        settings.getDb()
-          .prepare('DELETE FROM ' + settings.PROJECT_SETTINGS_TABLE + ' WHERE project_dir = ?')
-          .run(projectDir);
+        // Delete through settings so the key is canonicalized: a raw
+        // `DELETE ... WHERE project_dir = ?` on the request path would miss
+        // the row when the client sent a trailing slash or `..` segment,
+        // leaving isDbBacked() true and the project reading stale DB settings.
+        settings.deleteDbProject(projectDir);
       }
       const dbBacked = settings.isDbBacked(projectDir);
       return sendJSON(res, 200, {

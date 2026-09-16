@@ -698,6 +698,19 @@ ON CONFLICT(project_dir) DO UPDATE SET value = excluded.value`
     .run(dir, JSON.stringify(next));
   return next;
 }
+// Remove a project's DB-backed settings row entirely. Canonicalizes the key
+// like every other project-scoped write so a non-canonical spelling (trailing
+// slash, `..` segment) still targets the row the opt-in created. Toggling a
+// project back to file-backed storage deletes the row through here; a bare
+// `DELETE ... WHERE project_dir = ?` on the raw request path would miss it and
+// leave the project reading stale DB settings.
+function deleteDbProject(projectDir) {
+  const dir = canonicalProjectDir(projectDir);
+  if (!dir) return;
+  db()
+    .prepare(`DELETE FROM ${PROJECT_SETTINGS_TABLE} WHERE project_dir = ?`)
+    .run(dir);
+}
 function setDbBacked(projectDir, dbBacked) {
   // Opting in seeds from the project's existing `.mouaif.json` (when there is
   // no DB row yet) so no hand-written setting is silently ignored. This is the
@@ -856,6 +869,7 @@ module.exports = {
   getProjectRaw,
   setProject,
   setDbProject,
+  deleteDbProject,
   unsetProjectKeys,
   getDbProjectRaw,
   isDbBacked,
