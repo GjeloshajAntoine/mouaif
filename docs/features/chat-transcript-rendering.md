@@ -31,6 +31,12 @@ Other rules the pass preserves:
 - A long transcript still renders progressively, because a first paint that blocks on a full markdown build is worse than an animation. The chunked pass runs only when no message rows are mounted yet; rows already on screen are reused and only the not-yet-reached rows are created.
 - An empty chat creates no rows, so an idle pass leaves the scroll position alone instead of re-pinning it.
 
+### Tail sync picks the right DOM path
+
+The 1 s reconcile poll and the dropped-stream recovery both fold the server's newest rows into `state.messages` with `mergeServerRows` and then update the DOM. The cheap path, `syncTranscriptAppend(state, refs, prevLen)`, renders only `messages[prevLen…]` and appends it — correct only for a **pure append**, where every prior row is still at its old index by reference. But `mergeServerRows` also replaces a seq-less optimistic twin (the just-sent user bubble, the live assistant segment) in place and splices a late-arriving persisted row into the middle of the array. Both move the prefix, so appending the tail repaints a row already on screen (a visible duplicate), drops a mid-inserted row at the bottom (wrong order), and the next poll's full rebuild then corrects it as a visible reload/flash.
+
+`applyTailSync` (in `stream.js`) now asks `tailSyncDomAction(prev, merged)` (in `msgMerge.js`) which path to take: `'append'` for a genuine append, `'render'` for a moved prefix — which routes to the full `reconcileTranscriptRows` pass that reuses every unchanged node (so nothing re-animates) and places each row in its correct slot. `scripts/test-msg-merge.js` covers the decision.
+
 The file-order tests drive this module in a `vm` context with a minimal element stub, so the reconciler reads `className` as a string rather than through `classList`, and those harnesses must expose `WeakMap` alongside the other globals they provide.
 
 ## Related

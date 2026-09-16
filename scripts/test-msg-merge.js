@@ -16,7 +16,7 @@ function t(name, cond, msg) {
 }
 
 async function run() {
-  const { mergeServerRows, isReplaceable, nextServerMessageIndex } = await import(
+  const { mergeServerRows, isReplaceable, nextServerMessageIndex, tailSyncDomAction } = await import(
     '../frontend/src/components/chat/msgMerge.js'
   );
 
@@ -125,6 +125,55 @@ async function run() {
   ] };
   out = mergeServerRows(s, [{ role: 'tool', phase: 'call', name: 'shell', ts: 'S', seq: 2 }]);
   t('a later row lands after the persisted prefix', out.length === 3 && out[2].seq === 2, out.map((m) => m.seq));
+
+  // ---- tailSyncDomAction: which DOM path a merge outcome needs -----------
+  //
+  // Regression for the "element appears twice / wrong order / random reload"
+  // bug: applyTailSync used to run the cheap append (render only the new tail)
+  // on EVERY merge that grew the array — but a merge that replaces an
+  // optimistic twin or splices a row into the middle moves the prefix, so the
+  // append repaints an on-screen row or drops one at the bottom. These assert
+  // the guard now steering those cases to a full reconcile render instead.
+
+  // Same array reference -> nothing to do.
+  {
+    const a = [{ role: 'user', content: 'hi', seq: 0 }];
+    t('tailSyncDomAction: same reference is a no-op', tailSyncDomAction(a, a) === 'noop');
+  }
+
+  // Pure append: prefix rows unchanged by reference, one row added at the end.
+  {
+    const u = { role: 'user', content: 'hi', seq: 0 };
+    const prev = [u];
+    const merged = [u, { role: 'assistant', content: 'a', seq: 1 }];
+    t('tailSyncDomAction: a genuine append uses the cheap path',
+      tailSyncDomAction(prev, merged) === 'append');
+  }
+
+  // Optimistic twin replaced in place: prev[0] (seq-less) becomes the
+  // persisted row (a NEW object) at index 0 -> prefix moved -> full render.
+  {
+    const prev = [{ role: 'user', content: 'hi' }];
+    const merged = mergeServerRows({ seenSeqs: new Set(), messages: prev.slice() },
+      [{ role: 'user', content: 'hi', seq: 0 }]);
+    t('tailSyncDomAction: an in-place optimistic replace needs a full render',
+      tailSyncDomAction(prev, merged) === 'render');
+  }
+
+  // Middle splice: a late persisted row (seq 1) lands between held rows while a
+  // seq-less live segment stays last -> prefix moved -> full render, not append.
+  {
+    const live = { role: 'assistant', content: 'live', reasoning: '' };
+    const prev = [{ role: 'user', content: 'q', seq: 0 }, live];
+    const merged = mergeServerRows({ seenSeqs: new Set([0]), messages: prev.slice() },
+      [{ role: 'tool', phase: 'call', name: 'shell', seq: 1 }]);
+    t('tailSyncDomAction: a middle splice needs a full render',
+      tailSyncDomAction(prev, merged) === 'render');
+  }
+
+  // Bad input is a safe no-op.
+  t('tailSyncDomAction: non-arrays are a no-op',
+    tailSyncDomAction(null, undefined) === 'noop' && tailSyncDomAction([], null) === 'noop');
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

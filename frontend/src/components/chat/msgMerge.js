@@ -120,6 +120,38 @@ export function mergeServerRows(state, rows) {
   return out;
 }
 
+// tailSyncDomAction(prev, merged) -> 'noop' | 'append' | 'render'
+//
+// Decide how the DOM must be updated after mergeServerRows turned `prev`
+// (state.messages before the merge) into `merged`.
+//
+//   - 'noop'   — nothing changed (same array reference, or identical rows).
+//   - 'append' — a PURE append: every prior row is still at its old index by
+//                reference, and rows were only added at the end. The cheap
+//                syncTranscriptAppend path (render just messages[prevLen…])
+//                is correct and flash-free here.
+//   - 'render' — the prefix moved: mergeServerRows either replaced a seq-less
+//                optimistic twin in place or spliced a late persisted row into
+//                the middle. Appending the tail would repaint an on-screen row
+//                (a visible duplicate) or drop a row at the bottom (wrong
+//                order), so a full reconcile render is required. The reconcile
+//                render reuses every unchanged node, so it does not re-animate.
+//
+// This is the guard syncTranscriptAppend documents but never enforced at its
+// call site — the source of the duplicate/mis-ordered rows the next poll's
+// full rebuild "fixed" with a visible reload.
+export function tailSyncDomAction(prev, merged) {
+  if (!Array.isArray(prev) || !Array.isArray(merged)) return 'noop';
+  if (merged === prev) return 'noop';
+  const prevLen = prev.length;
+  let pureAppend = true;
+  for (let i = 0; i < prevLen; i++) {
+    if (merged[i] !== prev[i]) { pureAppend = false; break; }
+  }
+  if (!pureAppend) return 'render';
+  return merged.length > prevLen ? 'append' : 'noop';
+}
+
 // insertionPointFor(out, seq) -> number
 //
 // Index at which a persisted row with `seq` belongs in an array that may end

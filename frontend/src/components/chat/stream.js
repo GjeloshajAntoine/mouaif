@@ -31,7 +31,7 @@ import { authorizationCard, askUserCard, removePendingAuthorizationCards } from 
 import { normalizeToolName, parseAtInvocation, findCustomActionInvocation, buildDirectMcpCall, parseDirectRestartInvocation, parseToolArgs } from './tools.js';
 import { saveComposerDraftNow } from './composer.js';
 import { subscribeLive } from './live.js';
-import { mergeServerRows, nextServerMessageIndex } from './msgMerge.js';
+import { mergeServerRows, nextServerMessageIndex, tailSyncDomAction } from './msgMerge.js';
 import { toPublicImageAttachments } from './annotation.js';
 import { mountOverlayCard } from './overlay.js';
 import { PAGE_SIZE_DEFAULT } from './pagination.js';
@@ -606,11 +606,27 @@ async function fullRebuildFromServer(state, refs, nextSeq) {
 function applyTailSync(state, refs, nextSeq, tail) {
   if (!Array.isArray(tail)) return null;
   state.transcriptNextSeq = nextSeq;
-  const prevLen = state.messages.length;
+  const prev = state.messages;
+  const prevLen = prev.length;
   const merged = mergeServerRows(state, tail);
-  if (merged === state.messages) return 'appended';
+  if (merged === prev) return 'appended';
   state.messages = merged;
-  if (merged.length > prevLen) syncTranscriptAppend(state, refs, prevLen);
+  // syncTranscriptAppend renders ONLY the new tail (messages[prevLen…]) and
+  // appends it to the DOM, which is correct only for a pure append — every
+  // prior row still at its old index by reference. mergeServerRows also
+  // replaces a seq-less optimistic twin in place and splices a late-arriving
+  // persisted row into the MIDDLE, both of which move the prefix. Appending
+  // the tail then repaints an on-screen row (a visible duplicate) or drops a
+  // row at the bottom (wrong order), which the next poll's full rebuild
+  // corrects as a visible reload/flash. tailSyncDomAction picks the safe path:
+  // a full reconcile render (which reuses unchanged nodes — no re-animate) for
+  // a moved prefix, the cheap append only for a genuine append.
+  const action = tailSyncDomAction(prev, merged);
+  if (action === 'render') {
+    if (state._renderTranscript) state._renderTranscript();
+  } else if (action === 'append') {
+    syncTranscriptAppend(state, refs, prevLen);
+  }
   return 'appended';
 }
 
