@@ -239,11 +239,20 @@ export function SettingsAgentEditView(props) {
         // agent editor's tool rows read the same as the chat tools card
         // and the project Tools section.
         if (tr.status === 200 && Array.isArray(tr.body.tools)) setToolsCatalog(tr.body.tools);
-        const live = await Promise.all(providers.map((provider) =>
-          fetchLiveModels(provider)
-            .then((result) => ({ provider, models: result.models || [] }))
-            .catch(() => ({ provider, models: [] }))
-        ));
+        // Read both the chat slice and the image slice of every provider's
+        // catalog and union them: an image-only model (OpenRouter's
+        // /images/models rows, a Gemini Imagen model) is never in the chat
+        // list, so an agent set to draw pictures could not be pointed at one.
+        // A provider without a separate image slice returns its chat list, so
+        // the extra read is harmless where it does not apply.
+        const live = (await Promise.all(providers.flatMap((provider) => [
+        fetchLiveModels(provider)
+        .then((result) => ({ provider, models: result.models || [] }))
+        .catch(() => ({ provider, models: [] })),
+        fetchLiveModels(provider, { purpose: 'image' })
+        .then((result) => ({ provider, models: result.models || [] }))
+        .catch(() => ({ provider, models: [] }))
+        ])));
         const union = new Map();
         for (const m of saved) {
           if (m && m.id && m.provider) union.set(m.provider + '\u0000' + m.id, m);

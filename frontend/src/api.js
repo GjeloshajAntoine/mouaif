@@ -80,9 +80,15 @@ export function invalidateModelsCache() {
 
 // ---- Live models cache ------------------------------------------------
 
-export async function fetchLiveModels(provider, { force = false } = {}) {
+export async function fetchLiveModels(provider, { force = false, purpose = '' } = {}) {
   // Convert force to an extra parameter so the server also knows whether to bypass its internal Map cache.
-  const r = await fetchJson('/api/ai/models/live?provider=' + encodeURIComponent(provider) + (force ? '&_bust=1' : ''));
+  // `purpose` ('image' | 'transcription') asks the server for that slice of
+  // the provider's catalog instead of the chat list; a provider with no
+  // separate slice returns its chat list, so the caller can ask on every
+  // provider and union the answers.
+  const r = await fetchJson('/api/ai/models/live?provider=' + encodeURIComponent(provider)
+    + (force ? '&_bust=1' : '')
+    + (purpose ? '&purpose=' + encodeURIComponent(purpose) : ''));
   if (r.status !== 200) return { error: r.body, status: r.status, provider };
   const models = Array.isArray(r.body && r.body.models) ? r.body.models : [];
   return { models, cached: r.body.cached, provider };

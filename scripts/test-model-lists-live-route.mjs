@@ -23,6 +23,16 @@ ai.listModels = async (provider) => {
   if (provider === 'groq') { const e = new Error('fetch failed'); e.code = 'EUNREACHABLE'; throw e; }
   return [{ id: 'gpt-4o', label: 'GPT-4o' }];
 };
+// `purpose=image` reads the provider's image slice (listImageModels). The
+// agent editor's model picker asks for it on every provider so an image-only
+// model reaches it; a provider without a separate slice falls back to the
+// chat list above.
+let imageCalls = 0;
+ai.listImageModels = async (provider) => {
+  imageCalls++;
+  if (provider === 'openrouter') return [{ id: 'openai/gpt-image-2', label: 'GPT Image 2' }];
+  return null; // no separate image slice -> caller falls back to the chat list
+};
 
 const server = require('../src/index.js').createServer(0);
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -49,7 +59,19 @@ try {
   assert.equal(up.status, 500, 'EUPSTREAM keeps the upstream status');
   assert.equal(up.body.upstreamStatus, 500);
   assert.equal((await get('?provider=groq')).status, 503, 'EUNREACHABLE maps to 503');
-  console.log('PASS /api/ai/models/live: status mapping, cache reuse, _bust bypass after the modelList extraction');
+
+  // purpose=image reads the image slice. OpenRouter has one, so its
+  // image-only model comes back; a provider with no image slice falls back to
+  // the chat list, so the picker can ask on every provider and union.
+  const img = await get('?provider=openrouter&purpose=image');
+  assert.equal(img.status, 200, JSON.stringify(img.body));
+  assert.ok(img.body.models.some((m) => m.id === 'openai/gpt-image-2'), 'the image slice is served');
+  assert.equal(imageCalls >= 1, true, 'listImageModels was consulted for the image purpose');
+  const imgFallback = await get('?provider=openai-compatible&purpose=image');
+  assert.equal(imgFallback.status, 200);
+  assert.ok(imgFallback.body.models.some((m) => m.id === 'gpt-4o'), 'a provider with no image slice falls back to the chat list');
+
+  console.log('PASS /api/ai/models/live: status mapping, cache reuse, _bust bypass, image slice after the modelList extraction');
 } finally {
   server.closeAllConnections();
   await new Promise((r) => server.close(r));
