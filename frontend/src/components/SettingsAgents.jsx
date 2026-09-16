@@ -238,12 +238,24 @@ export function SettingsAgentEditView(props) {
         // agent editor's tool rows read the same as the chat tools card
         // and the project Tools section.
         if (tr.status === 200 && Array.isArray(tr.body.tools)) setToolsCatalog(tr.body.tools);
-        // Read every provider's live catalog so the picker can offer a model
-        // that is not pinned in the project yet.
+        // Read both the chat slice and the image slice of every provider's
+        // catalog and union them: an image-only model (OpenRouter's
+        // /images/models rows, a Gemini Imagen model) is never in the chat
+        // slice, so a pinned agent could not select one. A provider without a
+        // separate image slice returns its chat list, so asking everywhere is
+        // safe; the union de-dupes on provider + id.
         const live = (await Promise.all(providers.map((provider) =>
+        Promise.all([
         fetchLiveModels(provider)
         .then((result) => ({ provider, models: result.models || [] }))
+        .catch(() => ({ provider, models: [] })),
+        fetchLiveModels(provider, { purpose: 'image' })
+        .then((result) => ({ provider, models: result.models || [] }))
         .catch(() => ({ provider, models: [] }))
+        ]).then((groups) => ({
+        provider,
+        models: groups.flatMap((g) => g.models)
+        }))
         )));
         const union = new Map();
         for (const m of saved) {

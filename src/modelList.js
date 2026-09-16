@@ -28,6 +28,11 @@ const { ai, credentialForProvider, hashShort, modelListCacheKey, MODEL_LIST_CACH
 //                   defaults to `text`, so none of its 21 speech-to-text
 //                   models are in the chat list at all), and otherwise the
 //                   chat list, for the caller to filter;
+//   'image'         the image-generation slice, read through the provider's
+//                   `listImageModels` adapter when it has one (OpenRouter's
+//                   /images/models, and Gemini's /v1beta/models filtered to
+//                   the Imagen rows). A provider without a separate slice
+//                   returns its chat list, for the caller to filter.
 //
 // The slices live under different cache keys. They are different upstream
 // questions, and answering one with the other is exactly how dictation came
@@ -48,7 +53,8 @@ async function liveModelsFor(provider, opts) {
     e.code = 'EUNKNOWN_PROVIDER';
     throw e;
   }
-  const purpose = opts && opts.purpose === 'transcription' ? 'transcription' : 'chat';
+  const purpose = opts && opts.purpose === 'transcription' ? 'transcription'
+    : (opts && opts.purpose === 'image' ? 'image' : 'chat');
   let cred = null;
   try { cred = credentialForProvider(provider); }
   catch { /* the adapter surfaces ENO_APIKEY when a credential is required */ }
@@ -73,7 +79,7 @@ async function liveModelsFor(provider, opts) {
     // instead.
     const sliced = purpose === 'transcription'
     ? await ai.listTranscriptionModels(provider, cred || null, ac.signal)
-    : null;
+    : (purpose === 'image' ? await ai.listImageModels(provider, cred || null, ac.signal) : null);
     const models = sliced || await ai.listModels(provider, cred || null, ac.signal);
     clearTimeout(timer);
     // Discard the late result: the caller already saw the timeout.

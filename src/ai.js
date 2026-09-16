@@ -7,7 +7,7 @@
 // repo stays under ~2 000 lines each:
 //
 //   src/ai-endpoints.js  — provider endpoints (ENDPOINTS), model-list
-//                          adapters (listModels / listTranscriptionModels),
+//                          adapters (listModels / listTranscriptionModels / listImageModels),
 //                          request builders
 //                          (BUILDERS), event parsers (PARSERS), and the
 //                          shared helpers they use.
@@ -16,7 +16,7 @@
 //   src/ai-chat.js       — non-streaming convenience wrapper (chat).
 //
 // The public surface is unchanged: streamChat, chat, runSingleToolCall,
-// ENDPOINTS, listModels, listTranscriptionModels, plus the test-facing helpers
+// ENDPOINTS, listModels, listTranscriptionModels, listImageModels, plus the test-facing helpers
 // parseSSEFrame / readSSE / readNDJSON / BUILDERS / PARSERS / copilotCacheClear.
 // See the module-level comment below for the request/response contract.
 //
@@ -40,6 +40,7 @@ const {
 ENDPOINTS,
 listModels,
 listTranscriptionModels,
+listImageModels,
 BUILDERS,
 PARSERS,
 copilotCacheClear
@@ -55,6 +56,7 @@ runSingleToolCall,
 ENDPOINTS,
 listModels,
 listTranscriptionModels,
+listImageModels,
   // exposed for tests
   parseSSEFrame,
   readSSE,

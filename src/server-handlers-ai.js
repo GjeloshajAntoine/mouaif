@@ -55,10 +55,13 @@ async function handleAI(req, res, parsed) {
       return sendJSON(res, 400, { error: 'unknown provider', provider });
     }
     // `purpose` selects which slice of the provider's catalog to read:
-    // `chat` (default) or `transcription`. A provider without a separate
-    // slice returns its chat list.
+    // `chat` (default), `transcription`, or `image`. A provider without a
+    // separate slice returns its chat list, so a caller can safely ask for
+    // the image slice on every provider and union the results — which is
+    // what the agent editor's model picker does so an image model reaches
+    // it even though the chat list never carries one.
     const purposeRaw = typeof parsed.query.purpose === 'string' ? parsed.query.purpose : '';
-    const purpose = purposeRaw === 'transcription' ? purposeRaw : undefined;
+    const purpose = (purposeRaw === 'image' || purposeRaw === 'transcription') ? purposeRaw : undefined;
     try {
     const result = await modelList.liveModelsFor(provider, { force: !!parsed.query._bust, purpose });
     return sendJSON(res, 200, { models: result.models, fetchedAt: result.fetchedAt, cached: result.cached });
