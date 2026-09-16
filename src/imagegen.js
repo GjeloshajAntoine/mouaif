@@ -37,17 +37,25 @@ const { err, joinUrl } = require('./util.js');
 //                      self-hosted OpenAI-shaped servers expose.
 //   openai-chat-image  POST {base}/chat/completions with
 //                      `modalities: ["image","text"]`. The route for a model
-//                      that returns pictures from the chat endpoint —
-//                      OpenRouter's image catalog and Gemini's image models
-//                      on OpenRouter both answer this way.
+//                      that returns pictures from the chat endpoint — the
+//                      Gemini-shaped chat models a provider reports as
+//                      producing an image, on OpenRouter included (its own
+//                      image router is the family below).
 //   gemini             POST {base}/v1beta/models/{model}:generateContent with
 //                      `responseModalities: ["TEXT","IMAGE"]` — the native
 //                      Gemini image path (`*-image` models).
 //   gemini-predict     POST {base}/v1beta/models/{model}:predict with
 //                      `instances` / `parameters` — Imagen's image API.
+//   openrouter-image   POST /images on the OpenRouter image router. This is
+//                      how OpenRouter serves its *whole* image catalogue:
+//                      its own docs say every image model answers this route
+//                      and none of them answer `/chat/completions` with
+//                      `modalities`, which is why the chat route used to be
+//                      the wrong family for it (see kindForModel).
 const IMAGE_KINDS = Object.freeze([
   { id: 'openai-image',      label: 'OpenAI-compatible (POST /images/generations)' },
   { id: 'openai-chat-image', label: 'OpenAI-compatible (inline image /chat/completions)' },
+  { id: 'openrouter-image',  label: 'OpenRouter (POST /images)' },
   { id: 'gemini',            label: 'Gemini (generateContent image)' },
   { id: 'gemini-predict',    label: 'Gemini Imagen (predict)' }
 ]);
@@ -104,6 +112,15 @@ function resolveUrl(kind, model) {
     if (/\/v1$/.test(base) || /\/api\/v1$/.test(base)) return joinUrl(base, '/images/generations');
     return joinUrl(base, '/v1/images/generations');
   }
+  if (kind === 'openrouter-image') {
+    // OpenRouter's image router lives at /images, directly under the API
+    // version root (its own docs call it with
+    // `https://openrouter.ai/api/v1/images`). A connection whose base URL
+    // already names it keeps it.
+    if (/\/images\/?$/.test(base)) return base;
+    if (/\/v1$/.test(base) || /\/api\/v1$/.test(base)) return joinUrl(base, '/images');
+    return joinUrl(base, '/v1/images');
+  }
   // chat/completions
   if (/\/chat\/completions\/?$/.test(base)) return base;
   if (/\/v\d+$/.test(base)) return joinUrl(base, '/chat/completions');
@@ -124,10 +141,11 @@ function resolveUrl(kind, model) {
 //   6. only when the provider is unknown, the id (`google/…` -> Gemini).
 //
 // The default for an unrecognised OpenAI-shaped model is the *chat* route,
-// because that is where OpenRouter files its image models and where a
-// provider returns a description of the route it wants. Guessing
-// /images/generations for a model that has no such entry is the exact
-// failure dictation already documents for /audio/transcriptions.
+// because a provider that does return pictures from a chat completion (the
+// Gemini-shaped models, an image-capable chat model) is reached that way and
+// a provider that does not leaves text there instead of a 400 on an endpoint
+// it never had. OpenRouter is the exception it always was — its image router
+// is its own family, see below.
 function kindForModel(model) {
   const m = model || {};
   const explicit = m.imageGeneration && typeof m.imageGeneration.kind === 'string'
@@ -140,9 +158,15 @@ function kindForModel(model) {
   // Gemini. `google/…` names the same family on an OpenAI-shaped gateway.
   if (id.includes('imagen')) return m.provider === 'gemini' ? 'gemini-predict' : DEFAULT_KIND;
   if (m.provider === 'gemini') return 'gemini';
-  // OpenRouter has no generateContent endpoint: its marked image models
-  // (Google's included) all answer the chat route.
-  if (m.provider === 'openrouter') return DEFAULT_KIND;
+  // OpenRouter serves its image catalogue through its own image router
+  // (`POST /images`), not through a chat completion: a model it reports
+  // `output_modalities: ["image"]` is *not* in its chat catalogue at all
+  // (`openai/gpt-image-2`, `black-forest-labs/flux.2-max`), and the
+  // Gemini-shaped rows that *are* there are answered by this router too —
+  // its docs say the router takes every image model it lists. Sending any of
+  // them to the chat route is what kept "the latest image model" out of the
+  // picker and out of reach.
+  if (m.provider === 'openrouter') return 'openrouter-image';
   if (OPENAI_SHAPED_PROVIDERS.includes(m.provider)) {
     return startsWithAny(id, OPENAI_IMAGE_HINTS) ? 'openai-image' : DEFAULT_KIND;
   }
@@ -211,11 +235,51 @@ function isImageModel(model) {
 // A catalog whose provider *did* report what every model produces, and none
 // of them produce an image, gets an empty list: offering chat models to an
 // image endpoint is the provider error the filter exists to prevent.
+//
+// Rows the provider itself declared unable to draw from a prompt alone are
+// dropped first (`imageGenerationCandidates`), so an inpainting or
+// background-removal model is not offered to a tool that has no input
+// picture to give it.
 function imageCandidates(models) {
-  const list = (Array.isArray(models) ? models : []).filter((m) => m && m.id);
+  const list = imageGenerationCandidates(models).filter((m) => m && m.id);
   const recognisable = list.filter(isImageModel);
   if (recognisable.length) return recognisable;
   return list.some((m) => !reportedOutputModalities(m)) ? list : [];
+}
+
+// imageGenerationCandidates(models) — the *generation* slice of a provider's
+// image catalogue: the models that produce a picture from a prompt alone.
+// The rest of the catalogue (inpainting, upscaling, background removal,
+// vectorizers) is a different product from "draw me a fox": it wants an
+// input image the `image_gen` tool does not take, so offering it in the
+// picture picker is a menu entry that cannot work.
+//
+// The discriminator is the provider's own report — OpenRouter publishes a
+// per-model `supported_parameters` map, and a row that *requires* input
+// references (`input_references: { min: 1, … }`) is an editor: it cannot
+// run on the prompt alone. A generator either omits the parameter or
+// declares `min: 0`, as every text-to-image row does. A model the provider
+// left unclassified is kept: absent is unknown, never "no", the same rule
+// isImageModel follows.
+//
+// The filter is deliberately narrow: it only ever *removes* a row the
+// provider itself declared unable to run without an input image, so a
+// catalog we cannot read is offered whole.
+function imageGenerationCandidates(models) {
+  const list = Array.isArray(models) ? models : [];
+  return list.filter((m) => {
+    const params = m && m.supportedParameters;
+    if (!params || typeof params !== 'object') return true;
+    const refs = params.input_references;
+    if (!refs || typeof refs !== 'object') return true;
+    const min = Number(refs.min);
+    return !(Number.isFinite(min) && min > 0);
+  });
+}
+
+// imageModelIdList(models) — the ids an image picker offers, in order.
+function imageModelIdList(models) {
+  return imageCandidates(imageGenerationCandidates(models)).map((m) => m && m.id).filter(Boolean);
 }
 
 // clampCount(n) -> 1..MAX_IMAGES
@@ -287,6 +351,16 @@ function buildImageRequest(options) {
     return { url, method: 'POST', headers, body: Buffer.from(JSON.stringify(body)) };
   }
 
+  if (kind === 'openrouter-image') {
+    // OpenRouter's image router: `{ model, prompt }` required, `n` / `size`
+    // / `aspect_ratio` the knobs it normalizes to the chosen provider. No
+    // `response_format` — the response is always base64 in `data[].b64_json`.
+    const body = { model: model.id || '', prompt, n };
+    if (size) body.size = size;
+    if (aspectRatio) body.aspect_ratio = aspectRatio;
+    return { url, method: 'POST', headers, body: Buffer.from(JSON.stringify(body)) };
+  }
+
   // openai-chat-image: an ordinary chat completion that is asked for an
   // image too. `modalities: ["image","text"]` is the documented switch on
   // OpenRouter and on OpenAI's image-capable chat models; a provider that
@@ -335,7 +409,13 @@ function imageBlockToImage(block) {
     return { data: inline.data, mimeType: inline.mimeType || inline.mime_type || DEFAULT_IMAGE_MIME };
   }
   if (typeof block.b64_json === 'string') {
-    return { data: block.b64_json, mimeType: block.mimeType || DEFAULT_IMAGE_MIME };
+    // OpenRouter's image router names the MIME type `media_type`
+    // (`{ b64_json, media_type }`); the OpenAI images endpoint usually sends
+    // nothing at all, in which case PNG is the documented fallback.
+    return {
+      data: block.b64_json,
+      mimeType: block.media_type || block.mimeType || block.mime_type || DEFAULT_IMAGE_MIME
+    };
   }
   // Imagen's `predictions[]` entry: `{ bytesBase64Encoded, mimeType }`.
   if (typeof block.bytesBase64Encoded === 'string') {
@@ -471,6 +551,7 @@ module.exports = {
   kindForModel,
   isImageModel,
   imageCandidates,
+  imageGenerationCandidates,
   markedForImageGeneration,
   buildImageRequest,
   parseImageResponse,

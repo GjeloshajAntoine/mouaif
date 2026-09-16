@@ -115,18 +115,33 @@ async function handleImage(req, res, parsed) {
       if (imagegen.isImageModel(m)) push(m.id, m.provider, m.label);
     }
     // Live catalogs, when a provider was named or the project has none.
+    // Read as the provider's *image* slice where it publishes one: on
+    // OpenRouter that is `/images/models`, because `/models` defaults to
+    // `output_modalities=text` and carries only the eleven chat models that
+    // can also return a picture. Filtering the chat list is why "the latest
+    // image model" was missing — `openai/gpt-image-2`,
+    // `black-forest-labs/flux.2-max`, the Recraft and Seedream families and
+    // 37 others were never fetched at all. Providers without an image slice
+    // hand back their chat list, which the candidate filter narrows as
+    // before.
     const providers = provider
-      ? [provider]
-      : Array.from(new Set((Array.isArray(settings.getApp().providers) ? settings.getApp().providers : []).map((p) => p && p.id).filter(Boolean)));
+    ? [provider]
+    : Array.from(new Set((Array.isArray(settings.getApp().providers) ? settings.getApp().providers : []).map((p) => p && p.id).filter(Boolean)));
     const failures = [];
     for (const p of providers) {
-      if (!ai.ENDPOINTS[p]) continue;
-      try {
-        const result = await modelList.liveModelsFor(p, { force: !!q._bust });
-        for (const m of imagegen.imageCandidates(result.models || [])) push(m.id, p, m.label);
-      } catch (e) {
-        failures.push({ provider: p, code: e.code || 'EUPSTREAM', error: e.message || String(e) });
+    if (!ai.ENDPOINTS[p]) continue;
+    try {
+      // OpenRouter is the one provider where *both* slices are needed: its
+      // image catalogue is the generation list, and its chat list is where
+      // the Gemini-shaped chat models that can return a picture live.
+      const reads = p === 'openrouter' ? [{ purpose: 'image' }, { purpose: 'chat' }] : [{}];
+      for (const read of reads) {
+      const result = await modelList.liveModelsFor(p, Object.assign({ force: !!q._bust }, read));
+      for (const m of imagegen.imageCandidates(result.models || [])) push(m.id, p, m.label);
       }
+    } catch (e) {
+      failures.push({ provider: p, code: e.code || 'EUPSTREAM', error: e.message || String(e) });
+    }
     }
     let configured = null;
     try {

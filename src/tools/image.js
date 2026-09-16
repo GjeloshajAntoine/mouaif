@@ -129,21 +129,27 @@ function imageModelRecords(projectDir) {
   for (const m of projectModels) {
     if (imagegen.isImageModel(m)) push(m);
   }
-  // Live catalogs: the chat slice is where OpenRouter files its image
-  // models, so a project with no pinned image model still offers them. Only
-  // providers with a connection are consulted — an unreachable catalog is
-  // simply not in the cache.
+  // Live catalogs: on OpenRouter the image models live in the *image* slice
+  // (`/images/models` — `/models` defaults to `output_modalities=text` and
+  // omits most of them), with its chat slice holding the Gemini-shaped chat
+  // models that can also return a picture. Both are consulted; a project
+  // with no pinned image model still offers whatever the provider can draw
+  // with. Only providers with a connection are consulted — an unreachable
+  // catalog is simply not in the cache.
   try {
     const app = settingsMod.getApp();
     const providers = Array.isArray(app.providers) ? app.providers : [];
     for (const p of providers) {
       if (!p || !p.id) continue;
-      const entry = serverShared.MODEL_LIST_CACHE.get(
-        serverShared.modelListCacheKey(p.id, serverShared.credHashFor(p.id), 'chat')
-      );
-      if (!entry || !Array.isArray(entry.models)) continue;
-      for (const m of entry.models) {
-        if (imagegen.isImageModel(m)) push(m, p.id);
+      const purposes = p.id === 'openrouter' ? ['image', 'chat'] : ['chat'];
+      for (const purpose of purposes) {
+        const entry = serverShared.MODEL_LIST_CACHE.get(
+          serverShared.modelListCacheKey(p.id, serverShared.credHashFor(p.id), purpose)
+        );
+        if (!entry || !Array.isArray(entry.models)) continue;
+        for (const m of entry.models) {
+          if (imagegen.isImageModel(m)) push(m, p.id);
+        }
       }
     }
   } catch { /* no live catalog yet: project models only */ }

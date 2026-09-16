@@ -48,8 +48,10 @@ function main() {
       imagegen.kindForModel({ id: 'dall-e-3', provider: 'openai-compatible' }) === 'openai-image');
     check('an unknown OpenAI-shaped model defaults to the chat route',
       imagegen.kindForModel({ id: 'my-diffusion', provider: 'openai-compatible' }) === 'openai-chat-image');
-    check('an OpenRouter Google image model uses the chat route',
-      imagegen.kindForModel({ id: 'google/gemini-2.5-flash-image', provider: 'openrouter' }) === 'openai-chat-image');
+    check('an OpenRouter image model uses the /images router, never chat',
+    imagegen.kindForModel({ id: 'google/gemini-2.5-flash-image', provider: 'openrouter' }) === 'openrouter-image');
+    check('an OpenRouter image model with no provider report still uses /images',
+    imagegen.kindForModel({ id: 'openai/gpt-image-2', provider: 'openrouter' }) === 'openrouter-image');
     check('a native Gemini image model uses generateContent',
       imagegen.kindForModel({ id: 'gemini-2.5-flash-image', provider: 'gemini' }) === 'gemini');
     check('an imagen model uses :predict',
@@ -128,6 +130,31 @@ function main() {
       JSON.stringify(imagenBody));
     check('imagen resolves the :predict URL', imagenReq.url.endsWith(':predict'), imagenReq.url);
 
+    const orReq = imagegen.buildImageRequest({
+      kind: 'openrouter-image',
+      model: { id: 'openai/gpt-image-2', baseUrl: 'https://openrouter.ai/api/v1' },
+      apiKey: 'sk-or',
+      prompt: 'a red fox in snow',
+      n: 2,
+      size: '1024x1024',
+      aspectRatio: '16:9'
+    });
+    const orBody = JSON.parse(orReq.body.toString());
+    check('openrouter-image resolves the /images URL',
+      orReq.url === 'https://openrouter.ai/api/v1/images', orReq.url);
+    check('openrouter-image posts model + prompt + n + size + aspect_ratio',
+      orBody.model === 'openai/gpt-image-2' && orBody.prompt === 'a red fox in snow'
+      && orBody.n === 2 && orBody.size === '1024x1024' && orBody.aspect_ratio === '16:9',
+      JSON.stringify(orBody));
+    check('openrouter-image sends a bearer key and no response_format',
+      orReq.headers.Authorization === 'Bearer sk-or' && orBody.response_format === undefined);
+    const orBare = imagegen.buildImageRequest({
+      kind: 'openrouter-image',
+      model: { id: 'x', baseUrl: 'https://openrouter.ai/api/v1/images' },
+      prompt: 'a fox'
+    });
+    check('an /images base URL is kept as-is', orBare.url === 'https://openrouter.ai/api/v1/images', orBare.url);
+
     check('an empty prompt is refused',
       (() => { try { imagegen.buildImageRequest({ kind: 'openai-image', model: { baseUrl: 'https://x/v1' }, prompt: '' }); return false; } catch (e) { return e.code === 'EEMPTYPROMPT'; } })());
     check('n is clamped to the cap',
@@ -141,7 +168,12 @@ function main() {
     const b64 = PNG.toString('base64');
     const cases = [
       ['b64_json', 'openai-image', {
-        data: [{ b64_json: b64 }]
+      data: [{ b64_json: b64 }]
+      }],
+      ['the OpenRouter image router response (b64_json + media_type)', 'openrouter-image', {
+      created: 1748372400,
+      data: [{ b64_json: b64, media_type: 'image/png' }],
+      usage: { prompt_tokens: 0, completion_tokens: 4175, total_tokens: 4175 }
       }],
       ['an OpenRouter image_url data URL', 'openai-chat-image', {
         choices: [{ message: { images: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,' + b64 } }] } }]
@@ -338,16 +370,63 @@ async function runHttpChecks(projectDir) {
     check('GET /api/ai/image/models answers 200',
       models.status === 200, models.status + ' ' + models.raw.slice(0, 120));
     check('the models endpoint publishes the family list',
-      Array.isArray(models.body && models.body.kinds) && models.body.kinds.length === 4,
-      JSON.stringify(models.body && models.body.kinds));
+    Array.isArray(models.body && models.body.kinds) && models.body.kinds.length === 5,
+    JSON.stringify(models.body && models.body.kinds));
+    check('the family list includes the OpenRouter image router',
+    Array.isArray(models.body && models.body.kinds)
+    && models.body.kinds.some((k) => k && k.id === 'openrouter-image' && /images/.test(k.label)));
     const missingDir = await req('GET', '/api/ai/image/models');
     check('the models endpoint requires projectDir', missingDir.status === 400, missingDir.status);
     const noPrompt = await req('POST', '/api/ai/image', { projectDir });
     check('POST /api/ai/image requires a prompt', noPrompt.status === 400, noPrompt.status);
     const noModel = await req('POST', '/api/ai/image', { projectDir, prompt: 'a fox' });
     check('a project with no image model answers 404 ENO_IMAGE_MODEL',
-      noModel.status === 404 && noModel.body && noModel.body.code === 'ENO_IMAGE_MODEL',
-      noModel.status + ' ' + noModel.raw.slice(0, 160));
+    noModel.status === 404 && noModel.body && noModel.body.code === 'ENO_IMAGE_MODEL',
+    noModel.status + ' ' + noModel.raw.slice(0, 160));
+
+    // ---- 7. the image picker reads the provider's *image* slice ---------
+    // OpenRouter files its image catalogue under /images/models, which
+    // /models never lists. Two stubs stand in for the two upstream reads so
+    // the endpoint's own merge/filter logic runs: the image slice carries a
+    // model the chat slice does not have (the whole point) plus one that
+    // requires input references (an editor, not a generator), and the chat
+    // slice carries the Gemini-shaped chat model that can also return a
+    // picture.
+    const aiMod = require('../src/ai.js');
+    const realListImage = aiMod.listImageModels;
+    const realList = aiMod.listModels;
+    aiMod.listImageModels = async (provider) => (provider === 'openrouter' ? [
+    { id: 'openai/gpt-image-fresh', label: 'GPT Image Fresh', outputModalities: ['image'], supportedParameters: { aspect_ratio: { type: 'enum' } } },
+    { id: 'recraft/paint-in', label: 'Paint In', outputModalities: ['image'], supportedParameters: { input_references: { min: 1, max: 1 } } }
+    ] : null);
+    aiMod.listModels = async (provider, cred, signal) => (provider === 'openrouter'
+    ? [
+      { id: 'google/gemini-chat-image', label: 'Gemini Chat Image', outputModalities: ['image', 'text'] },
+      { id: 'meta/some-text-model', label: 'Text Model', outputModalities: ['text'] }
+    ]
+    : realList(provider, cred, signal));
+    const configured = require('../src/settings.js').getApp().providers || [];
+    require('../src/settings.js').setApp({
+    providers: configured.concat([{ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'sk-or-test' }])
+    });
+    try {
+    const orModels = await req('GET', '/api/ai/image/models?projectDir=' + encodeURIComponent(projectDir) + '&provider=openrouter&_bust=1');
+    const ids = (orModels.body && orModels.body.models || []).map((m) => m.id);
+    check('the image picker offers a model only the image slice has',
+      ids.includes('openai/gpt-image-fresh'), JSON.stringify(ids));
+    check('the image slice is read, not the chat list alone',
+      ids.includes('google/gemini-chat-image'), JSON.stringify(ids));
+    check('a model that cannot draw from a prompt alone is not offered',
+      !ids.includes('recraft/paint-in'), JSON.stringify(ids));
+    check('a text-only chat model is not offered',
+      !ids.includes('meta/some-text-model'), JSON.stringify(ids));
+    check('an OpenRouter row is labelled with the /images family',
+      ((orModels.body && orModels.body.models || []).find((m) => m.id === 'openai/gpt-image-fresh') || {}).kind === 'openrouter-image',
+      JSON.stringify(orModels.body && orModels.body.models));
+    } finally {
+    aiMod.listImageModels = realListImage;
+    aiMod.listModels = realList;
+    }
   } finally {
     await new Promise((resolve) => server.close(resolve));
     if (stub) await stub.close();

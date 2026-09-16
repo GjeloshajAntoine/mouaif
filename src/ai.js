@@ -7,7 +7,8 @@
 // repo stays under ~2 000 lines each:
 //
 //   src/ai-endpoints.js  — provider endpoints (ENDPOINTS), model-list
-//                          adapters (listModels), request builders
+//                          adapters (listModels / listTranscriptionModels /
+//                          listImageModels), request builders
 //                          (BUILDERS), event parsers (PARSERS), and the
 //                          shared helpers they use.
 //   src/ai-stream.js     — the multi-turn streaming loop (streamChat,
@@ -39,6 +40,7 @@ const {
 ENDPOINTS,
 listModels,
 listTranscriptionModels,
+listImageModels,
 BUILDERS,
 PARSERS,
 copilotCacheClear
@@ -54,6 +56,7 @@ runSingleToolCall,
 ENDPOINTS,
 listModels,
 listTranscriptionModels,
+listImageModels,
   // exposed for tests
   parseSSEFrame,
   readSSE,
