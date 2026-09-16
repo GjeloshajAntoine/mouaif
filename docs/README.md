@@ -1,8 +1,8 @@
 # mouaif documentation
 Use these guides to install mouaif, connect accounts, secure access, and learn what the app can do.
 ## User guide
-- [Getting started](features/getting-started.md) — install, run, update, and complete first setup.
-- [CLI commands](features/cli-commands.md) — every `mouaif` command and `serve` option, and why no install needs `npm run build:web`.
+- [Getting started](features/getting-started.md) — install with `npx`, `npm install -g`, or a repo checkout; run, update, and complete first setup.
+- [CLI commands](features/cli-commands.md) — every `mouaif` command and `serve` option, what the published tarball contains, and why no install needs `npm run build:web`.
 - [Authentication](features/authentication.md) — connect AI providers and protect app access, with CLI examples.
 - [App abilities](features/app-abilities.md) — projects, chats, coding tools, agents, MCP, and Inspector.
 - [Chat backward pagination](features/chat-backward-pagination.md) — long chats load the newest page immediately, then eagerly load all older history in the background.

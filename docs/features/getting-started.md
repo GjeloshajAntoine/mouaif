@@ -4,7 +4,21 @@
 
 Install mouaif, start the app, and open its web interface. Node.js 18 or newer is required.
 
-## Install from this repository
+## Install
+
+Install the published package globally:
+
+```bash
+npm install -g mouaif
+```
+
+Run it once without installing, straight from the registry:
+
+```bash
+npx mouaif serve
+```
+
+Or install from a checkout of this repository:
 
 ```bash
 git clone <repo-url>
@@ -14,6 +28,8 @@ npm link
 ```
 
 `npm install` builds the web UI once through the package `prepare` script when the Vite toolchain is present, so a fresh clone works even if `frontend/dist/` is missing from the checkout. `npm link` makes the `mouaif` command available in your terminal.
+
+Every published tarball already contains the pre-built web UI in `frontend/dist/`, so `npm install -g mouaif` and `npx mouaif` never run a frontend build. The package depends on `better-sqlite3` and `@napi-rs/keyring`, which ship prebuilt binaries for common platforms; on an unusual platform Node compiles them during install, so the first install can take a few minutes.
 
 See [CLI commands](./cli-commands.md) for the complete command list and every `mouaif serve` option.
 

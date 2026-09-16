@@ -8,6 +8,20 @@ The `mouaif` command starts the app, prints build information, and imports chats
 
 ### Install
 
+Install the published package globally:
+
+```bash
+npm install -g mouaif
+```
+
+Run the app without installing, straight from the registry:
+
+```bash
+npx mouaif serve
+```
+
+Or install from a checkout of this repository:
+
 ```bash
 git clone <repo-url>
 cd mouaif
@@ -16,6 +30,8 @@ npm link
 ```
 
 `npm install` also builds the web UI through the package `prepare` script when the Vite toolchain is present, so a fresh clone works even if `frontend/dist/` is missing from the checkout. `npm link` makes the `mouaif` command available in your terminal.
+
+Every published tarball contains the pre-built UI in `frontend/dist/`, so `npm install -g mouaif` and `npx mouaif` serve the shipped bundle without building anything. `better-sqlite3` and `@napi-rs/keyring` ship prebuilt binaries for common platforms; where none exists, Node compiles them during install and the first install takes a few minutes.
 
 ### Serve
 
@@ -75,6 +91,10 @@ The automatic startup migration that used to run this import has been retired, s
 - `mouaif serve` always runs as a supervisor process that spawns and respawns a worker. The supervisor keeps the process alive across restarts from `POST /api/restart` and across source changes with `--watch`, so a restart always loads the code currently on disk.
 - The built UI lives at `frontend/dist/` and is served by `src/server-web-static.js`. `npm run build:web` exists for frontend development; it is not a required installation step.
 - The package `files` list (`package.json`) ships `bin/`, `src/`, `frontend/dist/`, and `README.md`, so an installed package contains the whole server and the pre-built UI.
+- `bin/mouaif.js` carries a `#!/usr/bin/env node` shebang; npm links it into the global `bin` directory, which is what makes both `mouaif` and `npx mouaif` work.
+- `version` in `package.json` must be a full semantic version (`0.3.0`, not `0.3`). The npm registry rejects the bare two-part form with a `400`, so `npm publish` refuses to start until it is fixed.
+- `postinstall` runs `scripts/patch-zimmerframe.js`, which must therefore stay in the published tarball — a missing script file fails the install of an already-unpacked package. `scripts/prepare-web.js` only runs in a checkout and is intentionally not published.
+- `prepublishOnly` ends with `node scripts/check-npm-name.js`, which asks the registry whether the `mouaif` name is still free and aborts the publish if it now belongs to another repository. It warns and continues when the registry is unreachable, so an offline release is never blocked by a network hiccup.
 
 ## Related
 

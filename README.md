@@ -9,6 +9,20 @@ mouaif is a mobile-first AI coding assistant for local projects. Connect your pr
 
 ## Install
 
+Run it once without installing anything:
+
+```bash
+npx mouaif serve
+```
+
+Install the `mouaif` command globally:
+
+```bash
+npm install -g mouaif
+```
+
+Or install from a checkout of this repository:
+
 ```bash
 git clone <repo-url>
 cd mouaif
@@ -16,6 +30,8 @@ npm install
 npm link
 ```
 `npm install` builds the web UI once when its sources are newer than `frontend/dist/` (the Vite toolchain is present in a source checkout), so there is no separate build step. `npm link` makes the `mouaif` command available in your terminal.
+
+Every install ships the pre-built web UI in `frontend/dist/`, so `mouaif serve` never builds the frontend. The package depends on `better-sqlite3` and `@napi-rs/keyring`, which ship prebuilt binaries for common platforms; on an unusual platform Node compiles them, so the first install can take a few minutes.
 
 ## Run
 
