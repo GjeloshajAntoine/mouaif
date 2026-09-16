@@ -8,13 +8,7 @@ The `mouaif` command starts the app, prints build information, and imports chats
 
 ### Install
 
-Install the published package globally:
-
-```bash
-npm install -g mouaif
-```
-
-Run the app without installing, straight from the registry:
+Run the app without installing anything, straight from the registry:
 
 ```bash
 npx mouaif serve
@@ -24,6 +18,12 @@ npx mouaif serve
 
 ```bash
 npx --yes --package "mouaif@0.3.0" mouaif info
+```
+
+Install the published package globally:
+
+```bash
+npm install -g mouaif
 ```
 
 Or install from a checkout of this repository:

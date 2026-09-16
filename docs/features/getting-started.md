@@ -6,13 +6,7 @@ Install mouaif, start the app, and open its web interface. Node.js 18 or newer i
 
 ## Install
 
-Install the published package globally:
-
-```bash
-npm install -g mouaif
-```
-
-Run it once without installing, straight from the registry:
+Run it once without installing anything, straight from the registry:
 
 ```bash
 npx mouaif serve
@@ -24,6 +18,12 @@ To pin an exact version, quote the argument. A bare `mouaif@0.3.0` is read as a 
 
 ```bash
 npx --yes --package "mouaif@0.3.0" mouaif info
+```
+
+Install the `mouaif` command globally:
+
+```bash
+npm install -g mouaif
 ```
 
 Or install from a checkout of this repository:
