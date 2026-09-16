@@ -9,35 +9,40 @@ Inspector surface that is *typed into*, and it is designed for a phone first —
 a soft keyboard, one hand, and a card that shares the screen with the log
 above it.
 
-![The JavaScript console on a 430 px phone, three lines tall and with its Run button live](./images/inspector/js-console-mobile-430.png)
+![The JavaScript console on a 430 px phone, three lines tall, with the indent button in its strip](./images/inspector/js-console-mobile-430.png)
 
 ## Usage
 
 1. Open the **Inspector** tab, connect to a target, and switch on the
    **Console** panel.
 2. Type an expression in the editor below the log.
-3. Press **Enter** — or tap **Run** — to evaluate it in the page. The result
-   is appended to the console log as a new row, sharing the log's stream, and
-   the editor is emptied so the next entry starts clean.
+3. Press **Ctrl** + **Enter** (or **Cmd** + **Enter**) to evaluate it in the
+   page. The result is appended to the console log as a new row, sharing the
+   log's stream, and the editor is emptied so the next entry starts clean.
 
 ```js
 document.querySelectorAll('.card').length
 ```
 
-Hardware keys and touch are equivalent:
+**Enter inserts a newline; the evaluate shortcut is the modifier form.** A
+console entry is often several lines, and Enter is the one key a phone's soft
+keyboard is guaranteed to have — so Enter belongs to the text, exactly as it
+does in the chat composer. The desktop DevTools console evaluates on bare
+Enter because it is typed on a hardware keyboard; that binding would make a
+multi-line entry impossible on touch.
 
-| Action | Hardware | Touch |
-| --- | --- | --- |
-| Evaluate | `Enter` | **Run** |
-| New line | `Shift` + `Enter` | `Enter` |
-| Indent | `Tab` | **⇥** |
-| Autocomplete | `Ctrl` + `Space` | type, or `Ctrl` + `Space` |
-| Recall the previous entry | `↑` / `↓` | — |
+| Action | Binding |
+| --- | --- |
+| Evaluate | `Ctrl` / `Cmd` + `Enter` |
+| New line (indented) | `Enter` or `Shift` + `Enter` |
+| Indent | `Tab`, or the strip's **↵** button |
+| Autocomplete | `Ctrl` + `Space`, or just type |
+| Recall the previous entry | `↑` / `↓` |
 
 The editor is **one line tall when it is empty** and grows with what has been
-typed, up to about a third of the viewport; beyond that it scrolls. Run is
-disabled while the box holds nothing but whitespace, so the button always
-reflects whether it has anything to send.
+typed, up to about a third of the viewport; beyond that it scrolls. The strip
+carries a single **↵** button — the newline-with-indent a soft keyboard cannot
+type — beside the hint.
 
 ### Autocomplete
 
@@ -62,8 +67,8 @@ rather than one per keystroke.
 - **Results land in the log.** An evaluated expression is appended as a
   console row, so it scrolls, expands, and can be sent to a chat draft exactly
   like a `console.log` from the page.
-- **A whitespace-only entry is not sent**, and the button that would send it
-  stays disabled.
+- **A whitespace-only entry is not sent**: `Ctrl` + `Enter` leaves the box
+  untouched rather than clearing it.
 - **The card is content-sized.** An empty console is one line of editor under
   the strip; a five-line expression is five. Nothing is reserved for a
   keyboard the user has not opened.
@@ -82,15 +87,11 @@ rather than one per keystroke.
   `Runtime.evaluate` sender) down to it.
 - **The editor is created once**, in a mount effect, and never rebuilt: the
   CodeMirror view, its completion source, and its history live for the life of
-  the panel. The strip's two buttons are rendered by Preact on every render, so
-  they reach the current view through refs (`runRef`, `indentRef`) rather than
-  capturing a view from the first render.
-- **The card's height is the document's.** An `EditorView.updateListener`
-  reduces the document to one boolean — "is there anything in it" — and only
-  re-renders when that boolean changes, so keystrokes inside a non-empty entry
-  do not re-render the panel. It is deliberately driven by the document rather
-  than by a keystroke, so paste, cut, undo and the Run path's clear all land in
-  the same state.
+  the panel. It renders no Preact state at all — the strip's button is rendered
+  on every render but the editor is not, so the button reaches the current view
+  through a ref (`indentRef`) rather than capturing a view from the first
+  render. Evaluating is a keymap binding (`Mod-Enter`), which is why the
+  component needs no re-render when the box fills or empties, either.
 - **The height cap has to be on `.cm-scroller`.** CodeMirror styles that
   element with a definite `height: 100%`, so a `max-height` on the wrapper is
   simply overflowed and clipped — which is what the old fixed 108 px box did,
@@ -109,11 +110,11 @@ rather than one per keystroke.
   bottom edge, inside the home-indicator inset, with empty space stretched
   around it.
 - **Tests:** `scripts/test-inspector-js-console-mobile.js` drives the component
-  in a VM against a miniature CodeMirror — typing, tapping Run, tapping Tab —
-  and asserts the CSS invariants the mobile sizing depends on (content height,
-  the scroller cap, the 44 px floor, the full-screen order). Run it with
-  `node scripts/test-inspector-js-console-mobile.js`; it is also part of
-  `npm run test:inspector`.
+  in a VM against a miniature CodeMirror — typing, firing the keymap bindings,
+  tapping the strip button — and asserts the CSS invariants the mobile sizing
+  depends on (content height, the scroller cap, the 44 px floor, the full-screen
+  order). Run it with `node scripts/test-inspector-js-console-mobile.js`; it is
+  also part of `npm run test:inspector`.
 
 ## Related
 

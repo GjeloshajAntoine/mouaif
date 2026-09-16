@@ -12,14 +12,16 @@
 //      tall as the expression is, with the overflow living on CodeMirror's own
 //      scroller. The old fixed 108 px box was dead space on a phone *and* it hid
 //      a long expression behind a clipped `overflow: hidden`;
-//   2. every action the entry needs is also a button: **Run** (which carries the
-//      empty state) and a **Tab** that inserts the same indent the hardware key
-//      would, so the console is usable with the on-screen keyboard alone.
+//   2. Enter inserts a newline and `Ctrl`/`Cmd`+Enter evaluates. Enter is the
+//      one key a phone's soft keyboard always offers and an entry is often
+//      several lines, so Enter belongs to the text; evaluating is the modifier
+//      form, the same split the chat composer uses. A single strip button adds
+//      the indent a soft keyboard cannot type.
 //
 // The component runs in a VM against a miniature CodeMirror and a small hook
-// store, so the assertions *drive* it — type, tap Run, tap Tab — rather than
-// matching source text. The last section checks the CSS invariants a later
-// refactor could quietly break.
+// store, so the assertions *drive* it — type, press the keymap bindings, tap the
+// strip button — rather than matching source text. The last section checks the
+// CSS invariants a later refactor could quietly break.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -106,6 +108,11 @@ function mountConsole() {
     },
     destroy() { box.destroyed = true; }
   };
+  // `Mod-Enter` identifies itself to the test as `Ctrl-Enter`, which is what a
+  // non-Apple keyboard sends.
+  box.bindings = () => (box.keymap || []).map((b) => (b && b.key === 'Mod-Enter' ? { ...b, key: 'Ctrl-Enter' } : b));
+  // The keymap handlers receive the editor at the moment of the keypress.
+  box.view = view;
   // Test-side typing: a change the update listener sees, exactly like a
   // keystroke, without a DOM input pipeline.
   box.type = (str) => {
@@ -119,6 +126,10 @@ function mountConsole() {
 
   const sandbox = {
     EditorState: { create: () => state },
+    // The component's own imports are stripped before it runs here, so the
+    // harness supplies `EditorSelection`. That makes a name the component
+    // *forgot* to import invisible to this VM, which is why a source-level
+    // assertion below checks that every name the component uses is imported.
     EditorSelection: { cursor: (anchor) => ({ anchor }) },
     EditorView: Object.assign(
       function EditorView(opts) { box.parent = opts.parent; return view; },
@@ -137,13 +148,16 @@ function mountConsole() {
     indentOnInput: () => ({}),
     bracketMatching: () => ({}),
     syntaxHighlighting: () => ({}),
-    autocompletion: () => ({}),
+    autocompletion: (opts) => { box.autocompletion = opts; return {}; },
     closeBrackets: () => ({}),
     javascript: () => ({}),
     oneDark: {},
     oneDarkHighlightStyle: {},
     placeholder: () => ({}),
     indentWithTab: { key: 'Tab', run: () => true },
+    // Stubbed so the newline bindings can be asserted by identity: the real
+    // command is CodeMirror's, and the wiring is what matters here.
+    insertNewlineAndIndent: function insertNewlineAndIndent() { return true; },
     defaultKeymap: [], historyKeymap: [], completionKeymap: [], closeBracketsKeymap: [],
     h: (type, props, ...children) => ({ type, props: props || {}, children }),
     useState: (initial) => {
@@ -213,95 +227,101 @@ function textOf(node) {
   return textOf(node.children);
 }
 
-const runButton = (box) => findByProp(box.tree, 'aria-label', 'Run');
-const tabButton = (box) => findByProp(box.tree, 'aria-label', 'indent');
+const indentButton = (box) => findByProp(box.tree, 'aria-label', 'indent');
+
+// Find a keymap binding by key. `Mod-Enter` is normalised to `Ctrl-Enter` on the
+// way out of the harness, so the test reads the way a keyboard behaves.
+const binding = (box, key) => (box.bindings() || []).find((b) => b && b.key === key);
+
+// Fire a binding the way CodeMirror would: the handler gets the live view and
+// runs the command. `insertNewlineAndIndent` is stubbed, so a newline binding is
+// asserted by identity plus a dispatch, and the evaluate binding by its effect.
+function press(box, key) {
+  const b = binding(box, key);
+  if (!b) return { found: false };
+  const view = box.view;
+  const ran = b.run(view);
+  return { found: true, ran };
+}
 
 // ---------------------------------------------------------------------------
 (() => {
-  // ===== 1. The strip's touch affordances ================================
+  // ===== 1. The strip's touch affordance =================================
   {
     const box = mountConsole();
-    const run = runButton(box);
-    const tab = tabButton(box);
+    const indent = indentButton(box);
 
-    check('the strip renders a Run button', !!run);
-    check('Run is a real button', !!run && run.type === 'button');
-    check('Run is the accent action',
-      !!run && /inspector__jsconsole-btn--run/.test(run.props.class), run && run.props.class);
-    check('Tab is a real button', !!tab && tab.type === 'button');
-    check('Run names what it does for assistive tech',
-      !!run && /evaluate in the page/i.test(run.props['aria-label']), run && run.props['aria-label']);
-    check('Tab names what it does for assistive tech',
-      !!tab && /indent/i.test(tab.props['aria-label']), tab && tab.props['aria-label']);
-    check('both actions sit in their own group',
-      !!findByProp(box.tree, 'class', 'inspector__jsconsole-actions'));
-    check('Run is disabled while the editor is empty', !!run && run.props.disabled === true);
-    check('Tab is never disabled (it works on an empty box)',
-      !!tab && !tab.props.disabled);
-    check('the keyboard hint is still on the strip',
-      /Enter to run/.test(textOf(box.tree)) && /Ctrl\+Space/.test(textOf(box.tree)),
+    check('the strip renders the indent button', !!indent);
+    check('the indent button is a real button', !!indent && indent.type === 'button');
+    check('the indent button names what it does for assistive tech',
+      !!indent && /new line/i.test(indent.props['aria-label']), indent && indent.props['aria-label']);
+    check('the indent button is never disabled (it works on an empty box)',
+      !!indent && !indent.props.disabled);
+    check('the strip no longer offers a Run button',
+      !findByProp(box.tree, 'aria-label', 'Run'));
+    check('the strip no longer wraps its actions in their own group',
+      !findByProp(box.tree, 'class', 'inspector__jsconsole-actions'));
+    check('the hint describes the real bindings',
+      /Enter for newline/.test(textOf(box.tree)) && /Ctrl\+Enter to run/.test(textOf(box.tree)),
       textOf(box.tree));
+    check('the hint does not open by promising bare Enter runs',
+      !/^Enter to run/.test(textOf(box.tree)), textOf(box.tree));
     check('the editor is mounted against its host node', box.parent !== undefined);
   }
 
-  // ===== 2. Run sends the expression and empties the box =================
+  // ===== 2. Enter inserts, Ctrl+Enter evaluates ==========================
   {
     const box = mountConsole();
-    box.type('1 + 1');
-    check('typing enables Run', runButton(box).props.disabled === false,
-      String(runButton(box).props.disabled));
-
-    runButton(box).props.onClick();
-    check('Run evaluates the expression', box.evaluated.length === 1 && box.evaluated[0] === '1 + 1',
-      JSON.stringify(box.evaluated));
-    check('Run leaves the editor focused', box.focused === true);
-    check('Run clears the box', box.text() === '', JSON.stringify(box.text()));
-    check('an emptied box disables Run again', runButton(box).props.disabled === true);
-
-    // Whitespace only is not an expression: the card must not claim it can run.
-    box.type('   ');
-    check('whitespace alone still runs nothing',
-      (runButton(box).props.onClick(), box.evaluated.length === 1),
-      JSON.stringify(box.evaluated));
+    check('Enter is bound', !!binding(box, 'Enter'));
+    check('Enter is bound to a newline, not to evaluate',
+      !!binding(box, 'Enter') && binding(box, 'Enter').run !== undefined
+      && binding(box, 'Enter').run.name !== 'runCode',
+      binding(box, 'Enter') && String(binding(box, 'Enter').run));
+    check('Shift+Enter is bound to the same newline',
+      !!binding(box, 'Shift-Enter') && binding(box, 'Shift-Enter').run === binding(box, 'Enter').run);
+    check('Ctrl+Enter is bound', !!binding(box, 'Ctrl-Enter'));
+    check('Ctrl+Enter evaluates the expression', (() => {
+      box.type('1 + 1');
+      press(box, 'Ctrl-Enter');
+      return box.evaluated.length === 1 && box.evaluated[0] === '1 + 1';
+    })(), JSON.stringify(box.evaluated));
+    check('evaluating clears the box', box.text() === '', JSON.stringify(box.text()));
+    check('a whitespace-only box evaluates nothing', (() => {
+      box.type('   ');
+      press(box, 'Ctrl-Enter');
+      return box.evaluated.length === 1;
+    })(), JSON.stringify(box.evaluated));
+    check('Tab is still bound to the editor indent',
+      (box.bindings() || []).some((b) => b && b.key === 'Tab'));
+    check('Ctrl+Space autocomplete still comes from CodeMirror',
+      !!box.autocompletion, JSON.stringify(box.autocompletion && Object.keys(box.autocompletion)));
   }
 
-  // ===== 3. Tab indents without a keyboard ===============================
+  // ===== 3. The indent button adds a line without a keyboard =============
   {
     const box = mountConsole();
     box.type('if (x) {');
-    tabButton(box).props.onClick();
-    check('Tab inserts a newline and the line\'s own indent',
+    indentButton(box).props.onClick();
+    check('the indent button inserts a newline',
       box.text() === 'if (x) {\n', JSON.stringify(box.text()));
 
     // A nested line keeps its indentation, so a body typed on a phone lines up
     // with the block it belongs to.
     box.type('  ');
     box.caretAtEnd();
-    tabButton(box).props.onClick();
-    check('Tab copies the current line\'s leading whitespace',
+    indentButton(box).props.onClick();
+    check('the indent button copies the current line\'s leading whitespace',
       box.text() === 'if (x) {\n  \n  ', JSON.stringify(box.text()));
-    check('Tab leaves the editor focused', box.focused === true);
-    check('Tab does not evaluate anything', box.evaluated.length === 0);
+    check('the indent button leaves the editor focused', box.focused === true);
+    check('the indent button does not evaluate anything', box.evaluated.length === 0);
   }
 
-  // ===== 4. The hardware keys still work =================================
-  {
-    const box = mountConsole();
-    const enter = (box.keymap || []).find((b) => b.key === 'Enter');
-    check('Enter is bound in the keymap', !!enter);
-    check('Enter runs the expression', !!enter && enter.run({ state: { doc: { toString: () => '2 + 2', length: 5 } }, dispatch() {} }) === true);
-    check('Shift+Enter inserts a newline', !!enter && typeof enter.shift === 'function');
-    check('Tab is still bound to the editor indent',
-      (box.keymap || []).some((b) => b && b.key === 'Tab'));
-  }
-
-  // ===== 5. CSS invariants ==============================================
+  // ===== 4. CSS invariants ==============================================
   {
     const wrap = (/\.inspector__jsconsole-editor \{([^}]*)\}/.exec(css) || ['', ''])[1];
     check('the editor wrapper is content-height', /height:\s*auto/.test(wrap), wrap.trim());
     check('the fixed 108 px editor box is gone', !/height:\s*108px/.test(css));
-    check('the wrapper no longer caps its own height',
-      !/max-height:/.test(wrap), (wrap.match(/max-height[^;]*/) || [''])[0]);
+    check('the wrapper no longer caps its own height', !/max-height:/.test(wrap));
 
     // The cap has to live on the element CodeMirror styles with `height: 100%`
     // — a max-height anywhere else is overflowed and clipped instead of binding.
@@ -313,23 +333,43 @@ const tabButton = (box) => findByProp(box.tree, 'aria-label', 'indent');
       /'&': \{ height: 'auto'/.test(read('frontend/src/components/inspector/JsConsole.jsx')));
 
     const bar = (/\.inspector__jsconsole-bar \{([^}]*)\}/.exec(css) || ['', ''])[1];
-    check('the bar wraps rather than clipping its actions', /flex-wrap:\s*wrap/.test(bar), bar.trim());
+    check('the bar rolls its one action onto a second line when the hint fills the row',
+    /flex-wrap:\s*wrap/.test(bar), bar.trim());
+    check('the strip reserves no vertical padding around its tap target',
+    /padding:\s*0 4px 0 10px/.test(bar), bar.trim());
     const hint = (/\.inspector__jsconsole-hint \{([^}]*)\}/.exec(css) || ['', ''])[1];
-    check('the hint ellipsizes instead of pushing the buttons off',
-      /text-overflow:\s*ellipsis/.test(hint));
+    check('the hint ellipsizes instead of pushing the button off',
+    /text-overflow:\s*ellipsis/.test(hint));
     check('the hint may shrink to make room', /min-width:\s*0/.test(hint));
+    // The hint is a long string; on a 360 px card it must be able to share the
+    // row's leftover with the button rather than claiming a row of its own.
+    check('the hint shares the row instead of taking all of it',
+    /flex:\s*1 1 120px/.test(hint), hint.trim());
 
     const btn = (/\.inspector__jsconsole-btn \{([^}]*)\}/.exec(css) || ['', ''])[1];
-    check('the actions meet the 44 px floor',
-    /min-height:\s*var\(--tap\)/.test(btn) && /min-width:\s*var\(--tap\)/.test(btn), btn.trim());
-    // Declaration-level, because `min-width` contains the substring `width`:
-    // the buttons reserve the 44 px floor, and nothing forces them wider than
-    // their label, which is what keeps the hint on the same line at 360 px.
+    check('the strip button meets the 44 px floor',
+      /min-height:\s*var\(--tap\)/.test(btn) && /min-width:\s*var\(--tap\)/.test(btn), btn.trim());
     const decls = btn.split(';').map((d) => d.trim());
-    check('the actions are not forced wider than the 44 px minimum',
-    !decls.some((d) => d.startsWith('width:')), btn.trim());
-    check('Run is painted with the accent token',
-      /\.inspector__jsconsole-btn--run \{[^}]*background:\s*var\(--accent\)/.test(css));
+    check('the strip button is not forced wider than the 44 px minimum',
+      !decls.some((d) => d.startsWith('width:')), btn.trim());
+    check('the Run button\'s accent style is gone',
+      !/jsconsole-btn--run/.test(css) && !/jsconsole-btn--run/.test(read('frontend/src/components/inspector/JsConsole.jsx')));
+
+    // The VM harness strips the component's imports and supplies these names
+    // itself, so a missed import is invisible to every driven assertion above.
+    // Grep for it instead: dropping `EditorSelection` when the Run button went
+    // away left the indent handler throwing a ReferenceError in the real bundle
+    // while this harness stayed green.
+    const jsConsoleSource = read('frontend/src/components/inspector/JsConsole.jsx');
+    const imports = (jsConsoleSource.match(/^import .*$/gm) || []).join('\n');
+    check('EditorSelection is imported, not just used',
+    /EditorSelection[^}]*\} from '@codemirror\/state'/.test(imports), imports);
+    const body = jsConsoleSource.replace(/^import .*$/gm, '');
+    check('every CodeMirror name the component uses is imported',
+    ['EditorState', 'EditorSelection', 'EditorView', 'insertNewlineAndIndent', 'indentWithTab']
+      .filter((n) => new RegExp('\\b' + n + '\\b').test(body))
+      .every((n) => new RegExp('\\b' + n + '\\b').test(imports)),
+    imports);
 
     // Full screen: the strip stays reachable at the end of the card, and the
     // wrapper is bounded so the log above it keeps the leftover height.

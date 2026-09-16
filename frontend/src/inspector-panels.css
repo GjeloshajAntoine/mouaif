@@ -30,26 +30,26 @@ border-radius: var(--r-md);
 overflow: hidden;
 flex: 0 0 auto;
 }
-/* The bar carries the keyboard hint *and* the two actions a soft keyboard
-cannot provide: Run, and a Tab that inserts spaces. It wraps, because the hint
-is the one thing here that can be long: on a 360 px phone it ellipsizes on the
-first line while the buttons take the second, and neither is ever squeezed to
-nothing. */
+/* The bar carries the keyboard hint and the one action a soft keyboard cannot
+provide: a newline with the current line's indent. A single 44 px button and a
+hint that shrinks to fit share one row, even at the 360 px minimum. */
 .inspector__jsconsole-bar {
 display: flex;
 flex-wrap: wrap;
 align-items: center;
 gap: 6px;
-padding: 3px 10px;
+/* No vertical padding: the 44 px button sets the strip's height, so the row is
+exactly one tap target tall instead of a target inside a taller box. */
+padding: 0 4px 0 10px;
 background: #21252b;
 border-bottom: 1px solid #21252b;
 font-size: 0.66rem;
 color: #7d8799;
 }
 .inspector__jsconsole-hint {
-/* `flex-basis: 120px` is what lets the hint and a pair of 44 px buttons share
-one 366 px line (the card's width at 360 px): the hint takes the leftover and
-ellipsizes rather than pushing the buttons onto a second row. */
+/* `flex-basis: 120px` is what lets the hint and the button share one 366 px
+line (the card's width at 360 px): the hint takes the leftover and ellipsizes
+rather than pushing the button onto a second row. */
 flex: 1 1 120px;
 min-width: 0;
 font-family: var(--font-mono);
@@ -57,16 +57,8 @@ white-space: nowrap;
 overflow: hidden;
 text-overflow: ellipsis;
 }
-.inspector__jsconsole-actions {
-flex: 0 0 auto;
-display: flex;
-align-items: center;
-gap: 4px;
-margin-left: auto;
-}
-/* Touch targets first: both buttons are --tap tall so a thumb that lands a few
-pixels off still hits, and Run keeps the accent because it is the action the
-whole card exists for. */
+/* Touch target first: --tap tall and wide, so a thumb that lands a few pixels
+off still hits. */
 .inspector__jsconsole-btn {
 flex: 0 0 auto;
 display: inline-flex;
@@ -74,28 +66,19 @@ align-items: center;
 justify-content: center;
 min-width: var(--tap);
 min-height: var(--tap);
-padding: 0 10px;
+padding: 0;
 background: #ffffff0d;
 color: #abb2bf;
 border: 1px solid #3a4049;
 border-radius: var(--r-sm);
 font: inherit;
-font-size: 0.72rem;
-font-weight: 600;
+font-size: 1rem;
 line-height: 1;
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
 .inspector__jsconsole-btn:hover { background: #ffffff17; color: #e6e6e6; }
 .inspector__jsconsole-btn:active { background: #ffffff22; }
-.inspector__jsconsole-btn[disabled] { opacity: 0.45; cursor: default; }
-.inspector__jsconsole-btn--run {
-background: var(--accent);
-border-color: transparent;
-color: var(--on-accent);
-}
-.inspector__jsconsole-btn--run:hover { background: var(--accent-press); color: var(--on-accent); }
-.inspector__jsconsole-btn--run:active { background: var(--accent-press); }
 /* The editor is one line tall while the placeholder is all there is, and grows
 with what has been typed. A fixed 108 px box was dead space above the log — on
 a phone the card was more empty than used, and the placeholder (the only thing

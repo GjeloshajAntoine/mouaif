@@ -9,6 +9,15 @@
 // Console panel as new rows, reusing its virtual list so the live
 // log and the user's own evaluations share one stream.
 //
+// **Enter inserts a newline; `Ctrl`/`Cmd`+Enter evaluates.** Enter is the
+// only key a phone's soft keyboard is guaranteed to offer, and a console
+// entry is often several lines, so Enter belongs to the text and the
+// evaluate shortcut is the modifier form — the same split the chat
+// composer uses. `Shift`+Enter is bound to the same newline for muscle
+// memory from the rest of the app. The real DevTools console evaluates on
+// bare Enter because it has a desktop keyboard; here that binding would
+// make a multi-line entry impossible to type on touch.
+//
 // Autosuggestion comes from three layers:
 //   1. A snapshot of the page's globals (`Runtime.globalLexicalScopeNames`),
 //      property-completed on demand via `Runtime.getProperties`.
@@ -25,10 +34,10 @@
 // `type`, and `info` so the picker reads like DevTools, not a bare
 // word list.
 import { h } from 'preact';
-import { useRef, useEffect, useState } from 'preact/hooks';
+import { useRef, useEffect } from 'preact/hooks';
 import { EditorState, EditorSelection } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, placeholder } from '@codemirror/view';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, indentWithTab, insertNewlineAndIndent } from '@codemirror/commands';
 import { bracketMatching, indentOnInput, syntaxHighlighting } from '@codemirror/language';
 import { javascript } from '@codemirror/lang-javascript';
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -258,9 +267,9 @@ function makeConsoleCompletionSource(getEval) {
 }
 
 // ---- Component ---------------------------------------------------------
-// props: { onEvaluate(expression), onRun, getEval }
+// props: { onEvaluate(expression), getEval }
 //   getEval(description, params) -> Promise<CDP Runtime.evaluate result>
-//   onEvaluate is called on Run; the result string returned is pushed
+//   onEvaluate(expression) is called to evaluate; the result is appended
 //   to the console log by the parent (via ConsolePanel's entry array).
 export function JsConsole(props) {
   const hostRef = useRef(null);
@@ -269,15 +278,10 @@ export function JsConsole(props) {
   onEvaluateRef.current = props.onEvaluate;
   const getEvalRef = useRef(props.getEval);
   getEvalRef.current = props.getEval;
-  // The strip's two on-screen actions. The editor is created once, in an
-  // effect, but the buttons are rendered by Preact on every render — so the
-  // buttons read the current editor through refs instead of capturing a view
-  // from the first render.
-  const runRef = useRef(null);
+  // The strip's indent button is rendered by Preact on every render but the
+  // editor is created once, in an effect, so the button reaches the current
+  // editor through a ref rather than capturing a view from the first render.
   const indentRef = useRef(null);
-  // Run carries the input's emptiness: the editor starts one line tall, so a
-  // permanently live button would be the only thing suggesting it is not.
-  const [hasInput, setHasInput] = useState(false);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -295,48 +299,37 @@ export function JsConsole(props) {
       if (onEval) {
         try { onEval(code); } catch { /* ignore evaluation errors */ }
       }
-      // Clear the input after a successful dispatch, matching the
-      // DevTools REPL where the entry is consumed on Enter.
+      // Clear the input once the entry has been sent, matching the DevTools REPL.
       view.dispatch({ changes: { from: 0, to: view.state.doc.length }, selection: { anchor: 0 } });
       return true;
     };
 
-    // The same entry point the on-screen Run button uses. It runs whatever the
-    // keymap would have run and leaves the editor focused.
-    runRef.current = () => {
+    // The only way to indent on Touch: a soft keyboard has no Tab key, so the
+    // strip's indent button inserts the same body indent `indentWithTab` would
+    // — a newline plus the current line's own leading whitespace, so a nested
+    // line stays nested.
+    indentRef.current = () => {
       const view = viewRef.current;
       if (!view) return;
-      runCode(view);
+      const { from, to } = view.state.selection.main;
+      const line = view.state.doc.lineAt(from);
+      const indent = '\n' + /^[ \t]*/.exec(line.text)[0];
+      view.dispatch(view.state.changeByRange((range) => ({
+        changes: { from: range.from, to: range.to, insert: indent },
+        range: EditorSelection.cursor(range.from + indent.length)
+      })));
       view.focus();
     };
-    // Shift+Enter's job on hardware, and the only way to indent on Touch: a
-    // soft keyboard has no Tab key, so the second action button inserts the
-    // same body indent `indentWithTab` would — a newline plus the current
-    // line's own leading whitespace, so a nested line stays nested.
-    indentRef.current = () => {
-    const view = viewRef.current;
-    if (!view) return;
-    const { from, to } = view.state.selection.main;
-    const line = view.state.doc.lineAt(from);
-    const indent = '\n' + /^[ \t]*/.exec(line.text)[0];
-    view.dispatch(view.state.changeByRange((range) => ({
-      changes: { from: range.from, to: range.to, insert: indent },
-      range: EditorSelection.cursor(range.from + indent.length)
-    })));
-    view.focus();
-    };
 
-    // Run on Enter. Shift-Enter inserts a newline, matching the real
-    // DevTools console and the code editors in the rest of the app.
+    // Enter belongs to the text: a console entry is often several lines, and
+    // Enter is the one key a phone's soft keyboard always offers. So Enter and
+    // Shift+Enter both insert a newline (with the line's own indent, like every
+    // other code editor in the app), and evaluating is the modifier form —
+    // `Ctrl`/`Cmd`+Enter, the same shortcut the chat composer uses.
     const consoleKeymap = [
-      {
-        key: 'Enter',
-        run: (view) => runCode(view),
-        shift: (view) => {
-          view.dispatch(view.state.replaceSelection('\n'));
-          return true;
-        }
-      },
+      { key: 'Mod-Enter', run: (view) => runCode(view) },
+      { key: 'Enter', run: insertNewlineAndIndent },
+      { key: 'Shift-Enter', run: insertNewlineAndIndent },
       indentWithTab,
       ...closeBracketsKeymap,
       ...completionKeymap,
@@ -374,15 +367,6 @@ export function JsConsole(props) {
           '.cm-gutters': { backgroundColor: '#282c34', borderRight: '1px solid #21252b' },
           '.cm-line': { padding: '0 8px' }
         }),
-        // The card grows with the expression, and Run has to follow it: an
-        // empty editor is one line, a five-line expression is five. Reading the
-        // document's own length (rather than listening to keystrokes) covers
-        // every path that changes it — typing, paste, Run clearing the box.
-        EditorView.updateListener.of((update) => {
-          if (!update.docChanged) return;
-          const filled = update.state.doc.length > 0;
-          setHasInput((prev) => (prev === filled ? prev : filled));
-        })
       ]
     });
 
@@ -392,31 +376,20 @@ export function JsConsole(props) {
     return () => {
       view.destroy();
       viewRef.current = null;
-      runRef.current = null;
       indentRef.current = null;
     };
   }, []);
 
   return h('div', { class: 'inspector__jsconsole' },
     h('div', { class: 'inspector__jsconsole-bar' },
-      h('span', { class: 'inspector__jsconsole-hint' }, 'Enter to run · Shift+Enter for newline · Ctrl+Space to autocomplete'),
-      h('div', { class: 'inspector__jsconsole-actions' },
-        h('button', {
-          type: 'button',
-          class: 'inspector__jsconsole-btn',
-          'aria-label': 'Tab — indent the expression',
-          title: 'Tab — indent',
-          onClick: () => { if (indentRef.current) indentRef.current(); }
-        }, '⇥'),
-        h('button', {
-          type: 'button',
-          class: 'inspector__jsconsole-btn inspector__jsconsole-btn--run',
-          'aria-label': 'Run — evaluate in the page',
-          title: 'Run — evaluate in the page',
-          disabled: !hasInput,
-          onClick: () => { if (runRef.current) runRef.current(); }
-        }, 'Run')
-      )
+      h('span', { class: 'inspector__jsconsole-hint' }, 'Enter for newline · Ctrl+Enter to run · Ctrl+Space to autocomplete'),
+      h('button', {
+        type: 'button',
+        class: 'inspector__jsconsole-btn',
+        'aria-label': 'New line with indent',
+        title: 'New line with indent',
+        onClick: () => { if (indentRef.current) indentRef.current(); }
+      }, '\u21b5')
     ),
     h('div', { ref: hostRef, class: 'inspector__jsconsole-editor', 'aria-label': 'JavaScript console' })
   );

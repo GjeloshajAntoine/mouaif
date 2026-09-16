@@ -43,7 +43,7 @@ Because the switcher stays put while the cards scroll away under it, a card the 
 
 ### 2. Console panel
 - **Live logs** — see `console.log`, `info`, `warn`, and `error` messages with timestamps and severity indicators.
-- **Interactive JavaScript Console** — execute JS expressions directly on the page with autocomplete for globals, properties, and element IDs. The editor is one line tall while it is empty and grows with the expression up to ~32 dvh, then scrolls inside itself, so the card is never mostly empty and a long entry is never clipped. Every action is also a button — **Run** (disabled while the box holds only whitespace) and **⇥** for the indent a phone's soft keyboard cannot type. See [Inspector JavaScript console](./inspector-js-console.md).
+- **Interactive JavaScript Console** — execute JS expressions directly on the page with autocomplete for globals, properties, and element IDs. The editor is one line tall while it is empty and grows with the expression up to ~32 dvh, then scrolls inside itself, so the card is never mostly empty and a long entry is never clipped. **Enter inserts a newline** (with the line's indent) and **`Ctrl`/`Cmd` + Enter** evaluates, the same split the chat composer uses: a console entry is often several lines, and Enter is the one key a phone's soft keyboard always offers. The strip's **↵** button is the only way to indent on touch, where there is no `Tab` key. See [Inspector JavaScript console](./inspector-js-console.md).
 - **Stack traces** — tap any log row to inspect formatted stack traces and object details.
 
 ### 3. Network panel
