@@ -1207,6 +1207,12 @@ const indexBlock = indexSection.split(/\n##\s+/)[0] || '';
   fs.mkdirSync(outDir, { recursive: true });
   fs.mkdirSync(path.join(outDir, 'assets'), { recursive: true });
   fs.writeFileSync(path.join(outDir, 'assets', 'site.css'), SITE_CSS);
+  // The site is deployed from a gh-pages branch (branch deploy, no GitHub
+  // Actions). A `.nojekyll` file stops GitHub Pages from running Jekyll over
+  // the branch, which would otherwise rewrite asset paths, drop files whose
+  // names start with an underscore, and re-render the HTML with its own
+  // theme. The published site is already static HTML, so it is served as-is.
+  fs.writeFileSync(path.join(outDir, '.nojekyll'), '');
   copyFeatureImages(outDir);
 
   // Sidebar HTML is shared across every page. The active link class is

@@ -40,11 +40,27 @@ node scripts/build-docs.js --out /tmp/site --with-internal
 
 Open `docs-dist/index.html` in a browser to read the result locally. The build has no dependencies beyond Node.js 18+.
 
+Publish the public site to the `gh-pages` branch (see [Publishing to GitHub Pages](#publishing-to-github-pages)):
+
+```bash
+npm run docs:publish
+```
+
 ## Publishing to GitHub Pages
 
-The [docs-site workflow](../../.github/workflows/pages.yml) builds the public site and deploys it on every push to `master` that touches `docs/`, `scripts/build-docs.js`, or the workflow itself. It never passes `--with-internal`, so the decisions log and the agent notes cannot reach the published site.
+The published site is deployed from a dedicated **`gh-pages` branch** — a branch deploy with **no GitHub Actions workflow**. Publishing is one command:
 
-Enable it once per repository: **Settings → Pages → Build and deployment → Source: GitHub Actions**. `docs-dist/` is gitignored; the workflow builds it fresh in CI. It can also be started by hand from the **Actions** tab (`workflow_dispatch`).
+```bash
+npm run docs:publish            # build + commit + push to gh-pages
+node scripts/publish-docs.js --dry-run    # build + commit, do not push
+node scripts/publish-docs.js --remote upstream   # push to another remote
+```
+
+`scripts/publish-docs.js` builds the public site into a scratch directory (never `--with-internal`, so the decisions log and the agent notes cannot reach the published branch), checks that no maintainer page slipped in, then commits the result at the root of `gh-pages` and force-pushes it. Every tracked path on the branch is replaced on each publish, so deleting or renaming a doc removes its published page instead of leaving a stale one. The build emits a `.nojekyll` file, so GitHub Pages serves the rendered HTML as-is instead of running Jekyll over it.
+
+The script authors the commit with its own name/email, so it also works on a machine that never ran `git config user.name`. It is a normal CLI command, not a deploy workflow — it runs wherever the repo is checked out and can reach the remote.
+
+Enable it once per repository: **Settings → Pages → Build and deployment → Source: Deploy from a branch**, branch `gh-pages`, folder `/ (root)`. After the first `npm run docs:publish`, the site is live at `https://<owner>.github.io/<repo>/`.
 
 ## Adding a page
 
