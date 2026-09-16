@@ -26,6 +26,10 @@ The script is CommonJS, dependency-free, and runs under plain `node`. `node -c s
 
 `docs/README.md` is no longer rendered into a page: the build only looks for an optional `## Feature source index` section to order cards. The landing page copy lives in `buildLandingPage()`.
 
+### Landing page screenshot row
+
+`buildLandingPage()` embeds three captures through `shotFigure()` — the same helper the old `#chats` / `#inspector` / `#settings` `.feature` sections used before `637aeda5` dropped them — wrapped in a `.shot-row` grid under the `#screenshots` section. The images are stored in `docs/features/images/landing/` (a subdirectory of the feature image tree) so `copyFeatureImages()` ships them to `features/images/landing/` for free; the `src` is therefore `features/images/landing/<file>.png`, not a `./images/…` path, because the page is generated at the site root and not under `features/`. The grid is `repeat(auto-fit, minmax(210px, 1fr))` and collapses to one centred, 340 px-capped column inside the existing `max-width: 760px` media query, next to the `.feature` stacking rules. Captures are 390 × 520 CSS px at device scale factor 2, so the row is a 2× asset that stays sharp on a retina phone.
+
 ### Internal gating
 
 `main()` parses `--out <dir>` and `--with-internal` (alias `--internal`). `buildDecisionsPage`, `buildAgentNotesPage`, and `buildAgentFeaturePages` are called only when `withInternal` is true, so a public build produces no file a crawler could reach under `decisions.html`, `agent-notes.html`, or `agent/`. The agent pages keep their own sidebar, which links to `../decisions.html` and `../agent-notes.html`; those targets only exist in an internal build, which is why the two halves must be built together.

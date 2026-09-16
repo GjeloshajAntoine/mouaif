@@ -822,6 +822,18 @@ table tr:last-child td { border-bottom: 0; }
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
+/* Landing-page screenshot row: three phone-proportioned captures, one row on
+   a wide screen, a single stacked column on a phone (see the media query). */
+.shot-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+  align-items: start;
+  margin: 24px 0;
+}
+.shot-row .shot img {
+  border-radius: 0;
+}
 .section {
   margin: 56px 0;
 }
@@ -854,6 +866,10 @@ table tr:last-child td { border-bottom: 0; }
 .feature { grid-template-columns: 1fr; gap: 20px; }
 .feature--flip .shot { order: 0; }
 .feature--flip .feature-copy { order: 0; }
+/* Landing screenshots: one full-width column, so each phone capture is
+   readable at 360–430 px instead of shrinking beside its neighbours. */
+.shot-row { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.shot-row .shot { max-width: 340px; margin: 0 auto; }
 }
 `;
 
@@ -1038,6 +1054,29 @@ function shotFigure(src, alt, caption) {
 }
 
 function buildLandingPage(outDir) {
+// Phone-width captures of the real UI, side by side on a desktop and
+// stacked on a phone. They live in the feature image tree
+// (`docs/features/images/landing/`) so the existing recursive copy ships
+// them to the site, and they are referenced from the site root — hence the
+// `features/images/...` prefix rather than a `./images/...` one.
+const landingShots = [
+  [
+    'features/images/landing/chats-list.png',
+    'The Chats tab at 390 px: one project card holding its own chat list, with a New chat button under it.',
+    'Chats — projects group their own chats'
+  ],
+  [
+    'features/images/landing/settings.png',
+    'The Settings tab at 390 px: a Providers section, then the app defaults that apply to every project.',
+    'Settings — providers, then app defaults'
+  ],
+  [
+    'features/images/landing/inspector-connect.png',
+    'The Inspector tab at 390 px while no Chrome debugger is attached: a debugger URL field, the Discover button and the connection state.',
+    'Inspector — attach to a page over CDP'
+  ]
+].map(([src, alt, caption]) => shotFigure(src, alt, caption)).join('\n');
+
 const body = `
 <section class="hero">
 <p class="eyebrow">Mobile-first AI coding assistant</p>
@@ -1048,6 +1087,14 @@ const body = `
 <a class="btn" href="features/authentication.html">Set up authentication</a>
 <a class="btn" href="features/app-abilities.html">Explore app abilities</a>
 </div>
+</section>
+<section class="section" id="screenshots">
+<h2>See it on a phone</h2>
+<p class="lead">Every screen is built for a 360–430 px viewport first and grows from there. These are captures of the running app at 390 px wide.</p>
+<div class="shot-row">
+${landingShots}
+</div>
+<p><a href="features/app-abilities.html">See every app ability →</a></p>
 </section>
 <section class="section" id="start">
 <h2>Install and run</h2>

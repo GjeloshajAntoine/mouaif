@@ -327,6 +327,18 @@ table tr:last-child td { border-bottom: 0; }
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
+/* Landing-page screenshot row: three phone-proportioned captures, one row on
+   a wide screen, a single stacked column on a phone (see the media query). */
+.shot-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+  align-items: start;
+  margin: 24px 0;
+}
+.shot-row .shot img {
+  border-radius: 0;
+}
 .section {
   margin: 56px 0;
 }
@@ -359,4 +371,8 @@ table tr:last-child td { border-bottom: 0; }
 .feature { grid-template-columns: 1fr; gap: 20px; }
 .feature--flip .shot { order: 0; }
 .feature--flip .feature-copy { order: 0; }
+/* Landing screenshots: one full-width column, so each phone capture is
+   readable at 360–430 px instead of shrinking beside its neighbours. */
+.shot-row { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.shot-row .shot { max-width: 340px; margin: 0 auto; }
 }

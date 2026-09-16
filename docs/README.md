@@ -48,6 +48,6 @@ npm run docs:build            # public site -> docs-dist/
 npm run docs:build:internal   # + maintainer pages (decisions, agent notes)
 ```
 
-- [Documentation site](features/docs-site.md) — what is published, what stays maintainer-only, and how GitHub Pages deploys it.
+- [Documentation site](features/docs-site.md) — what is published, what stays maintainer-only, how GitHub Pages deploys it, and the landing page's screenshot row.
 
 The generated public navigation links only to the published guides (Getting started, Authentication, App abilities, Draft Craft). Maintainer references — `docs/decisions.md` and `docs/agent/features/*.md` — remain in the repository for contributors, are written into the site only by `npm run docs:build:internal`, and are never shown or linked on the published site.
