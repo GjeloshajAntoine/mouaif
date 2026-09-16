@@ -18,10 +18,10 @@ Draft Craft adds material to a chat draft without sending it: an annotated image
 
 ### From the Inspector
 
-![The Draft Craft icon in the Preview toolbar](./images/draft-craft/inspector-preview-360.png)
+![The blue Draft Craft icon in the Preview toolbar, left of the reload button](./images/draft-craft/inspector-preview-360.png)
 
 1. Open **Inspector** and connect to a browser tab.
-2. In the **Preview** toolbar, tap the blue image-and-sparkle **Draft Craft** icon, beside the other preview actions.
+2. In the **Preview** toolbar, tap the blue **Draft Craft** icon — the only blue button in the row, left of the reload button.
 3. Mark up the page, then tap **Add to chat draft** and choose a project and chat.
 
 ![Choosing the project and chat for an annotated image](./images/draft-craft/add-to-draft-360.png)
