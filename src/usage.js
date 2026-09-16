@@ -45,9 +45,23 @@ const BUILTIN_PRICING = Object.freeze({
   'claude-3-5-sonnet-latest':{ inputPer1K: 0.00300, outputPer1K: 0.01500 },
   'claude-3-5-haiku-latest': { inputPer1K: 0.00080, outputPer1K: 0.00400 },
   'claude-3-opus-latest':    { inputPer1K: 0.01500, outputPer1K: 0.07500 },
+  // The dated 3.5 snapshots are the same models as the `-latest` aliases
+  // above at the same list price — they ship in ANTHROPIC_MODEL_CATALOG, so
+  // leaving them out meant a cost line that read `--` for a model we could
+  // price exactly.
+  'claude-3-5-sonnet-20241022': { inputPer1K: 0.00300, outputPer1K: 0.01500 },
+  'claude-3-5-haiku-20241022':  { inputPer1K: 0.00080, outputPer1K: 0.00400 },
   'claude-sonnet-4':         { inputPer1K: 0.00300, outputPer1K: 0.01500 },
   'claude-sonnet-4-5':       { inputPer1K: 0.00300, outputPer1K: 0.01500 },
   'claude-sonnet-4.5':       { inputPer1K: 0.00300, outputPer1K: 0.01500 },
+  // Newer generation, priced from the vendor list rate carried by the
+  // OpenRouter catalog (scripts/fixtures/dictation-openrouter-models.json),
+  // which agrees to the cent with this table on every Claude model we can
+  // cross-check (sonnet-4, sonnet-4.5, opus-4, opus-4.1). See
+  // scripts/test-model-pricing-coverage.js, which fails when a catalog id
+  // has no price here.
+  'claude-sonnet-5':         { inputPer1K: 0.00200, outputPer1K: 0.01000 },
+  'claude-opus-4.5':         { inputPer1K: 0.00500, outputPer1K: 0.02500 },
   'claude-haiku-4-5':        { inputPer1K: 0.00080, outputPer1K: 0.00400 },
   'claude-haiku-4.5':        { inputPer1K: 0.00080, outputPer1K: 0.00400 },
   'claude-opus-4':           { inputPer1K: 0.01500, outputPer1K: 0.07500 },

@@ -1768,6 +1768,10 @@ endpointFor,
   BUILDERS,
   PARSERS,
   parseMiniMaxTextToolCalls,
+  // Curated catalogs, exported so scripts/test-model-pricing-coverage.js can
+  // assert that every model id we *offer* also has a built-in price.
+  ANTHROPIC_MODEL_CATALOG,
+  COPILOT_MODEL_CATALOG,
   // Copilot token cache clear (OAuth refresher + tests)
   copilotCacheClear
 };
