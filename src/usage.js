@@ -54,16 +54,18 @@ const BUILTIN_PRICING = Object.freeze({
   'claude-sonnet-4':         { inputPer1K: 0.00300, outputPer1K: 0.01500 },
   'claude-sonnet-4-5':       { inputPer1K: 0.00300, outputPer1K: 0.01500 },
   'claude-sonnet-4.5':       { inputPer1K: 0.00300, outputPer1K: 0.01500 },
-  // Newer generation, priced from the vendor list rate carried by the
-  // OpenRouter catalog (scripts/fixtures/dictation-openrouter-models.json),
-  // which agrees to the cent with this table on every Claude model we can
-  // cross-check (sonnet-4, sonnet-4.5, opus-4, opus-4.1). See
+  // Newer generation. Verified against the live vendor page
+  // (https://www.anthropic.com/pricing), not just the catalog fixture — the
+  // fixture had Haiku 4.5 at $0.8/$4, which is Haiku *3.5*'s rate and had
+  // been wrong here since this table was written. See
   // scripts/test-model-pricing-coverage.js, which fails when a catalog id
   // has no price here.
   'claude-sonnet-5':         { inputPer1K: 0.00200, outputPer1K: 0.01000 },
   'claude-opus-4.5':         { inputPer1K: 0.00500, outputPer1K: 0.02500 },
-  'claude-haiku-4-5':        { inputPer1K: 0.00080, outputPer1K: 0.00400 },
-  'claude-haiku-4.5':        { inputPer1K: 0.00080, outputPer1K: 0.00400 },
+  // Haiku 4.5 is $1/$5, not $0.8/$4 — the latter is Haiku 3.5 (the
+  // `claude-3-5-haiku-*` rows above), and the two were conflated here.
+  'claude-haiku-4-5':        { inputPer1K: 0.00100, outputPer1K: 0.00500 },
+  'claude-haiku-4.5':        { inputPer1K: 0.00100, outputPer1K: 0.00500 },
   'claude-opus-4':           { inputPer1K: 0.01500, outputPer1K: 0.07500 },
   'claude-opus-4-1':         { inputPer1K: 0.01500, outputPer1K: 0.07500 },
   'claude-opus-4.1':         { inputPer1K: 0.01500, outputPer1K: 0.07500 },

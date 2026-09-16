@@ -104,5 +104,47 @@ check('an unknown model is still allowed to be unpriced', () => {
   assert.equal(usage.resolvePricing({ id: 'my-local-llama' }, null), null);
 });
 
+// ---------------------------------------------------------------------------
+// Vendor-verified spot checks.
+//
+// The numbers below were read off the live vendor page
+// (https://www.anthropic.com/pricing). They are here because the catalog
+// fixture this file otherwise leans on had drifted from the vendor on some
+// rows: it priced Haiku 4.5 at $0.8/$4, which is Haiku *3.5*'s rate, and the
+// table had copied that error since the day it was written. A fixture is not
+// a price list — it catches *omissions*, and these catch *wrong numbers*.
+//
+// Each entry is [inputPer1K, outputPer1K] in USD, derived from the vendor's
+// per-MTok rate. Update it from the vendor page, never from the fixture.
+const VENDOR_VERIFIED = {
+  'claude-sonnet-5':  [0.002, 0.010],
+  'claude-opus-4.5':  [0.005, 0.025],
+  'claude-haiku-4.5': [0.001, 0.005],
+  'claude-sonnet-4.5':[0.003, 0.015],
+  'claude-opus-4.1':  [0.015, 0.075]
+};
+
+check('vendor-verified prices match the built-in table', () => {
+  const wrong = [];
+  for (const [id, [inp, outp]] of Object.entries(VENDOR_VERIFIED)) {
+    const p = usage.builtinPricingForId(id);
+    if (!p) { wrong.push(id + ': missing'); continue; }
+    if (Math.abs(p.inputPer1K - inp) > 1e-9) wrong.push(id + ': input ' + p.inputPer1K + ' != ' + inp);
+    if (Math.abs(p.outputPer1K - outp) > 1e-9) wrong.push(id + ': output ' + p.outputPer1K + ' != ' + outp);
+  }
+  assert.deepEqual(wrong, [], 'built-in prices disagree with the vendor page: ' + wrong.join('; '));
+});
+
+check('the two Haiku generations are not conflated', () => {
+  // The specific error this guard exists for: Haiku 4.5 was priced with
+  // Haiku 3.5's rate. They are different models at different prices.
+  const h45 = usage.builtinPricingForId('claude-haiku-4.5');
+  const h35 = usage.builtinPricingForId('claude-3-5-haiku-latest');
+  assert.ok(h45 && h35);
+  assert.notDeepEqual(h45, h35, 'Haiku 4.5 and Haiku 3.5 must not share a price row');
+  assert.equal(h45.inputPer1K, 0.001, 'Haiku 4.5 is $1/MTok in');
+  assert.equal(h35.inputPer1K, 0.0008, 'Haiku 3.5 is $0.8/MTok in');
+});
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);
