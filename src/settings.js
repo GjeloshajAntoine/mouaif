@@ -93,9 +93,10 @@ fileOrbButton: false,
   prompts: [],
   // Tool output profile for file/result text fed back to the model. `size`
   // controls the byte cap (`very-small`, `average`, `full`, `extensive`);
-  // `structure` controls the layout (`full`, `concise`). Lives in the same
-  // default floor so projects without a key resolve to a sane value.
-  toolOutput: { size: 'average', structure: 'full' },
+  // `structure` controls the file-listing layout (`tree` default, `json`).
+  // Lives in the same default floor so projects without a key resolve to a
+  // sane value.
+  toolOutput: { size: 'average', structure: 'tree' },
   // Maximum UTF-8 bytes of one tool result copied into model context.
   // The complete result remains available to the UI and transcript.
   toolFeedbackMaxBytes: 64 * 1024,

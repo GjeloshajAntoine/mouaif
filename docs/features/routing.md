@@ -24,7 +24,7 @@ Every view has a hash. Deep links are stable and old names keep working.
 | `#/settings/about` | About |
 | `#/settings/project?projectDir=…&chatId=…` | Project settings |
 | `#/settings/project/technical` | Project settings → Technical details |
-| `#/settings/project/output` | Project settings → File tool options |
+| `#/settings/project/output` | Project settings → File tool options (Layout: Hierarchical / Full JSON) |
 | `#/settings/project/preview` | Project settings → Web preview |
 | `#/settings/project/hide?file=…` | Project settings → Hide file content |
 | `#/settings/agents?projectDir=…` | Agents list |

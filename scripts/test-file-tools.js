@@ -152,6 +152,25 @@ function writeFile(p, content) {
   const r2z = await files.runFileTool('list_files', { projectDir: root, args: { pattern: '   ' } });
   assert(r2z.ok === true && r2z.result.pattern === '', 'list_files blank pattern treated as no filter');
 
+  // ---- runFileTool: toolOutput layout formats --------------------
+  // tree (default): indented hierarchy, directories printed once with a
+  // trailing slash and files nested two spaces deeper.
+  const lgTree = await files.runFileTool('list_files', { projectDir: root, args: { pattern: 'src/*.js' }, toolOutput: { structure: 'tree' } });
+  assert(/\nsrc\/\n  a\.js/.test(lgTree.content), 'tree layout: indented dir + nested file');
+  // json: the structured result verbatim.
+  const lgJson = await files.runFileTool('list_files', { projectDir: root, args: { pattern: 'src/*.js' }, toolOutput: { structure: 'json' } });
+  const lgParsed = JSON.parse(lgJson.content);
+  assert(Array.isArray(lgParsed.entries) && lgParsed.entries.some((e) => e.path === 'src/a.js'), 'json layout: parseable entries with full paths');
+  // No toolOutput at all resolves to the tree layout.
+  const lgDefault = await files.runFileTool('list_files', { projectDir: root, args: { pattern: 'src/*.js' } });
+  assert(/\nsrc\/\n  a\.js/.test(lgDefault.content), 'no toolOutput falls back to the tree layout');
+  // legacy/invalid structures fall back to tree.
+  for (const legacy of ['grouped', 'full', 'concise', 'bogus']) {
+    const lgLegacy = await files.runFileTool('list_files', { projectDir: root, args: { pattern: 'src/*.js' }, toolOutput: { structure: legacy } });
+    assert(/\nsrc\/\n  a\.js/.test(lgLegacy.content), 'legacy structure "' + legacy + '" falls back to tree');
+    assert(!lgLegacy.content.includes('# src/'), 'legacy structure "' + legacy + '" no longer prints a directory header');
+  }
+
   // ---- runFileTool: search_files ---------------------------------
   writeFile(path.join(root, 'src', 'auth.js'), 'export function login() {}\nexport const TOKEN = "x";\n');
   writeFile(path.join(root, 'src', 'logout.js'), 'export function logout() {}\n');
@@ -161,6 +180,12 @@ function writeFile(p, content) {
   assert(r3p.some((s) => s.startsWith('src/auth.js:1')), 'search_files finds auth.js:1');
   assert(r3p.some((s) => s.startsWith('src/logout.js:1')), 'search_files finds logout.js:1');
   assert(r3.result.filesScanned >= 4, 'search_files filesScanned counted');
+
+  // search_files layouts: json parses; tree indents matches under the path.
+  const r3j = await files.runFileTool('search_files', { projectDir: root, args: { query: 'function (login|logout)' }, toolOutput: { structure: 'json' } });
+  assert(Array.isArray(JSON.parse(r3j.content).matches), 'search_files json layout parseable');
+  const r3t = await files.runFileTool('search_files', { projectDir: root, args: { query: 'function (login|logout)' }, toolOutput: { structure: 'tree' } });
+  assert(/\nsrc\//.test(r3t.content) && /\n {4}1: /.test(r3t.content), 'search_files tree layout indents matches');
 
   // Path filter (directory and single file).
   const r3d = await files.runFileTool('search_files', { projectDir: root, args: { query: 'function (login|logout)', path: 'src' } });

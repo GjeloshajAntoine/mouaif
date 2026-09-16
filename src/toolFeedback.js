@@ -23,9 +23,19 @@ const SIZE_MULTIPLIER = Object.freeze({
   full: 4,            // four times the cap: bigger results pass through
   extensive: Infinity // never truncate
 });
-const STRUCTURES = Object.freeze(['full', 'concise']);
+// `structure` values:
+//   - `full`    — raw body (kept for back-compat); generic tools use it.
+//   - `concise` — whitespace/JSON minification for generic tools.
+//   - `json`    — file-tool results serialized as their structured JSON.
+//   - `tree`    — file listings as an indented hierarchical tree (the
+//                 default file-tool layout: every shared path prefix is
+//                 printed once, files nested two spaces per depth level).
+// The file-listing values only change how the native file tools render;
+// for generic (shell / MCP) output they behave like `full`.
+const STRUCTURES = Object.freeze(['full', 'concise', 'json', 'tree']);
+const FILE_STRUCTURES = Object.freeze(['json', 'tree']);
 const DEFAULT_SIZE = 'average';
-const DEFAULT_STRUCTURE = 'full';
+const DEFAULT_STRUCTURE = 'tree';
 
 function resolveToolOutput(raw) {
   const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
@@ -196,6 +206,7 @@ module.exports = {
   resolveMaxBytes,
   effectiveMaxForSize,
   resolveToolOutput,
+  FILE_STRUCTURES,
   DEFAULT_MAX_BYTES,
   MIN_MAX_BYTES,
   MAX_MAX_BYTES

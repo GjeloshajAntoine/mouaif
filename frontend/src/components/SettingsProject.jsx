@@ -35,7 +35,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   // resolved settings so the File tool options page has defaults even when
   // the project never set a toolOutput key.
   const [outputSize, setOutputSize] = useState('average');
-  const [outputStructure, setOutputStructure] = useState('full');
+  const [outputStructure, setOutputStructure] = useState('tree');
   const [outputStatusMsg, setOutputStatusMsg] = useState('');
 
   // Backend-supported tool output dimensions. Keep these in sync with
@@ -47,15 +47,19 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
     full: { label: 'Full — 4× cap' },
     extensive: { label: 'Extensive — never truncate' }
   };
+  // Layout formats for native file-tool results. `tree` is the default
+  // (an indented hierarchy, every shared path prefix printed once); `json`
+  // sends the raw structured result. Legacy values (`grouped`, `full`,
+  // `concise`) normalize to `tree` so the select always shows one.
   const OUTPUT_STRUCTURES = {
-    full: { label: 'Raw — preserve body' },
-    concise: { label: 'Concise — compact layout' }
+    json: { label: 'Full JSON — raw structured result' },
+    tree: { label: 'Hierarchical — indented tree' }
   };
   function normalizeOutputSize(size) {
     return Object.prototype.hasOwnProperty.call(OUTPUT_SIZES, size) ? size : 'average';
   }
   function normalizeOutputStructure(structure) {
-    return Object.prototype.hasOwnProperty.call(OUTPUT_STRUCTURES, structure) ? structure : 'full';
+    return Object.prototype.hasOwnProperty.call(OUTPUT_STRUCTURES, structure) ? structure : 'tree';
   }
 
   const [traceCardVisible, setTraceCardVisible] = useState(!!(initialChatId && initialChatId.trim()));
@@ -361,9 +365,6 @@ setSkillsOn(cp.skills !== false);
     setOutputStructure(nextStructure);
     setOutputStatusMsg('saving…');
     await patchProject({ toolOutput: { size: nextSize, structure: nextStructure } }, setOutputStatusMsg, 'saved');
-  }
-  function onOutputSize(e) {
-    saveToolOutput(e && e.target ? e.target.value : outputSize, outputStructure);
   }
   function onOutputStructure(e) {
     saveToolOutput(outputSize, e && e.target ? e.target.value : outputStructure);
@@ -998,10 +999,9 @@ const SIZE_MULTIPLIER = { 'very-small': 0.25, average: 1, full: 4, extensive: In
 const BASE_MAX_BYTES = 64 * 1024;
 const MIN_MAX_BYTES = 4 * 1024;
 const utf8Len = (s) => new TextEncoder().encode(s).length;
-// A representative `list_files` result from a monorepo-shaped project, in
-// the compact format the file tools produce: one `# Listing`/`# Count`
-// header, then each directory printed once as a `# <dir>/` group header
-// with bare basenames indented under it — no JSON envelope. Rather than
+// A representative `list_files` result from a monorepo-shaped project: one
+// `# Listing`/`# Count` header, then the files as an indented tree with
+// every shared path prefix printed once — no JSON envelope. Rather than
 // spelling every directory out, the tree is a small cross-product of a
 // few hand-picked roots, domain prefixes, module stems and variants, so a
 // handful of lines expands into hundreds of directories and comfortably
@@ -1036,21 +1036,39 @@ addDir(prefix + stem + variant + (concern ? '/' + concern : '') + '/', unitFiles
 }
 }
 }
-const fileCount = dirRows.filter((r) => r.startsWith('  ')).length;
-const lines = ['# Listing: **/*.{js,jsx,ts,tsx,md,css}', '# Count: ' + fileCount, '# Skipped: 12', ''].concat(dirRows);
-const raw = lines.join('\n');
+// Rebuild a flat entry list from the sample so we can re-render it in
+// either layout (this mirrors src/tools/files.js).
+const entries = [];
+let curDir = '';
+for (const row of dirRows) {
+  if (row.startsWith('# ')) curDir = row.slice(2);
+  else entries.push({ path: curDir + row.trim() });
+}
+const fileCount = entries.length;
+const header = '# Listing: **/*.{js,jsx,ts,tsx,md,css}\n# Count: ' + fileCount + '\n# Skipped: 12';
+const struct = normalizeOutputStructure(structure);
 
-    // structure: `concise` collapses blank runs, strips leading indentation
-    // and trailing whitespace (matches conciseLayout for non-JSON text).
-    let body = raw;
-    if (normalizeOutputStructure(structure) === 'concise') {
-      body = raw
-        .replace(/\n[ \t]*\n+/g, '\n')
-        .replace(/^[ \t]+/gm, '')
-        .replace(/\s+$/gm, '');
-    }
+let body;
+if (struct === 'json') {
+  body = JSON.stringify({ entries, skipped: 12, truncated: false, cap: 5000, pattern: '**/*.{js,jsx,ts,tsx,md,css}' });
+} else {
+  // tree (default) — indented hierarchy, shared path prefixes printed once.
+  const treeLines = [];
+  let prev = [];
+  for (const e of entries) {
+    const parts = e.path.split('/');
+    const name = parts[parts.length - 1];
+    const dirs = parts.slice(0, -1);
+    let shared = 0;
+    while (shared < dirs.length && shared < prev.length && dirs[shared] === prev[shared]) shared++;
+    for (let i = shared; i < dirs.length; i++) treeLines.push('  '.repeat(i) + dirs[i] + '/');
+    treeLines.push('  '.repeat(dirs.length) + name);
+    prev = dirs;
+  }
+  body = header + '\n\n' + treeLines.join('\n');
+}
 
-    // size: byte-budget cap against the base 64 KiB. `extensive` never caps.
+// size: byte-budget cap against the base 64 KiB. `extensive` never caps.
     const mult = SIZE_MULTIPLIER[normalizeOutputSize(size)];
     if (mult === Infinity) return body;
     const cap = Math.max(MIN_MAX_BYTES, Math.floor(BASE_MAX_BYTES * mult));
@@ -1076,24 +1094,15 @@ h('h2', { class: 'view-title' }, 'File tool options')
           sectionIcon('tools'),
           h('span', null, 'Tool output')
         ),
-        h('p', { class: 'hint hint--compact' }, 'How much of a tool result the model sees, and how the result is structured. Applies to file tools and all native/MCP tool output.')
-      ),
-      h('ul', { class: 'group__list' },
-        h('li', { class: 'settings-project__item' },
-          h('div', { class: 'settings-project__item-main' },
-            h('label', { class: 'settings-project__item-title', for: 'sp-output-size' }, 'Size cap'),
-            h('div', { class: 'settings-project__item-note' }, 'How many bytes of each tool result the model can see.'),
-            h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, outputStatusMsg)
-          ),
-          h('select', { class: 'input settings-project__select', id: 'sp-output-size', value: normalizeOutputSize(outputSize), onChange: onOutputSize },
-            Object.entries(OUTPUT_SIZES).map(([value, meta]) => h('option', { value }, meta.label))
-          )
-        ),
-        h('li', { class: 'settings-project__item' },
-          h('div', { class: 'settings-project__item-main' },
-            h('label', { class: 'settings-project__item-title', for: 'sp-output-structure' }, 'Layout'),
-            h('div', { class: 'settings-project__item-note' }, 'Whether whitespace is preserved or compacted before the size cap.')
-          ),
+              h('p', { class: 'hint hint--compact' }, 'How each tool result is structured before it reaches the model. Applies to file tools and all native/MCP tool output.')
+),
+h('ul', { class: 'group__list' },
+h('li', { class: 'settings-project__item' },
+h('div', { class: 'settings-project__item-main' },
+h('label', { class: 'settings-project__item-title', for: 'sp-output-structure' }, 'Layout'),
+h('div', { class: 'settings-project__item-note' }, 'How file-listing results (list_files, search_files) are shaped for the model.'),
+h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, outputStatusMsg)
+),
           h('select', { class: 'input settings-project__select', id: 'sp-output-structure', value: normalizeOutputStructure(outputStructure), onChange: onOutputStructure },
             Object.entries(OUTPUT_STRUCTURES).map(([value, meta]) => h('option', { value }, meta.label))
           )
@@ -1106,7 +1115,7 @@ h('h2', { class: 'view-title' }, 'File tool options')
       ),
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title' }, 'Example'),
-        h('p', { class: 'hint hint--compact' }, 'What the model would receive for a sample ', h('code', null, 'list_files'), ' result from a realistic monorepo tree — the compact file-tool format (each directory grouped once, no repeated path prefix, no JSON). The sample is sized so the finite size caps show the truncation marker:'),
+        h('p', { class: 'hint hint--compact' }, 'What the model would receive for a sample ', h('code', null, 'list_files'), ' result from a realistic monorepo tree, rendered in the selected layout. The sample is sized so the finite size caps show the truncation marker:'),
         h('pre', { class: 'settings__out' }, exampleFor(outputSize, outputStructure))
 )
 )

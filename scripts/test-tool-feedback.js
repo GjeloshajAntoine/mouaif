@@ -92,7 +92,10 @@ const rawLong = 'HEAD\n\n\n  mid\n\nTAIL';
 const conciseOut = feedback.compactToolFeedback({ name: 'shell', content: rawLong, maxBytes: base, toolOutput: { size: 'average', structure: 'concise' } });
 check('concise collapses blank runs', !conciseOut.includes('\n\n\n'), conciseOut);
 check('concise minifies json', feedback.compactToolFeedback({ name: 'shell', content: bigJson, maxBytes: base, toolOutput: { size: 'average', structure: 'concise' } }).length < bigJson.length);
-check('resolveToolOutput defaults', feedback.resolveToolOutput(undefined).size === 'average' && feedback.resolveToolOutput(undefined).structure === 'full');
+check('resolveToolOutput defaults', feedback.resolveToolOutput(undefined).size === 'average' && feedback.resolveToolOutput(undefined).structure === 'tree');
+check('invalid structure normalizes to tree', feedback.resolveToolOutput({ structure: 'nope' }).structure === 'tree');
+check('legacy grouped normalizes to tree', feedback.resolveToolOutput({ structure: 'grouped' }).structure === 'tree');
+check('file structures are json + tree only', feedback.FILE_STRUCTURES.join(',') === 'json,tree', feedback.FILE_STRUCTURES.join(','));
 check('history honors toolOutput', messages.reconstructUpstreamHistory([
   { role: 'tool', phase: 'call', toolCallId: 'call_to', name: 'shell', args: {}, content: '{}' },
   { role: 'tool', phase: 'result', toolCallId: 'call_to', name: 'shell', ok: true, content: bigJson }

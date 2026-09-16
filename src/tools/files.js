@@ -294,7 +294,8 @@ function formatBytes(n) {
   return (Math.round((n / (1024 * 1024)) * 10) / 10) + ' MB';
 }
 
-function formatReadFileResult(r) {
+function formatReadFileResult(r, structure) {
+  if (structure === 'json') return JSON.stringify(r);
   if (r && r.kind === 'image') {
     return '# File: ' + r.relPath
       + '\n# Kind: image (' + r.mimeType + ', ' + r.bytes + ' bytes)'
@@ -383,28 +384,34 @@ async function runListFiles(opts) {
   return { entries: out, skipped, truncated, cap, pattern: pattern || '' };
 }
 
-function formatListFilesResult(r) {
+function formatListFilesResult(r, structure) {
   const header = '# Listing: ' + (r.pattern || '<all text and image files>') + '\n# Count: ' + r.entries.length + (r.truncated ? ' (capped at ' + r.cap + ')' : '') + (r.skipped ? '\n# Skipped: ' + r.skipped : '');
   if (!r.entries.length) return header + '\n\n(no matching files)';
 
-  // Group by directory, emitting one #-prefixed directory header per
-  // group then indented file lines. This saves tokens over repeating
-  // the full path on every line. Lines starting with '# ' are directory
-  // headers; indented lines are files under the preceding header.
   const sorted = [...r.entries].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
-  const lines = [];
-  let currentDir = null;
+
+  // `json` — the structured result verbatim, so the model can parse it.
+  if (structure === 'json') return JSON.stringify(r);
+
+  // `tree` (default) — an indented hierarchical tree: each path segment is
+  // a node, directories printed once and files nested under their parent.
+  // Two spaces per depth level, matching how a file explorer reads. This is
+  // the only text layout: it prints every shared path prefix once, which is
+  // what the old `# dir/` group-header layout did, without the header lines
+  // the model has to context-switch on.
+  const treeLines = [];
+  let prev = [];
   for (const e of sorted) {
-    const slash = e.path.lastIndexOf('/');
-    const dir = slash === -1 ? '.' : e.path.slice(0, slash);
-    const name = slash === -1 ? e.path : e.path.slice(slash + 1);
-    if (dir !== currentDir) {
-      if (dir !== '.') lines.push('# ' + dir + '/');
-      currentDir = dir;
-    }
-    lines.push(e.image ? ('  ' + name + ' (image)') : ('  ' + name));
+    const parts = e.path.split('/');
+    const name = parts[parts.length - 1];
+    const dirs = parts.slice(0, -1);
+    let shared = 0;
+    while (shared < dirs.length && shared < prev.length && dirs[shared] === prev[shared]) shared++;
+    for (let i = shared; i < dirs.length; i++) treeLines.push('  '.repeat(i) + dirs[i] + '/');
+    treeLines.push('  '.repeat(dirs.length) + name + (e.image ? ' (image)' : ''));
+    prev = dirs;
   }
-  return header + '\n\n' + lines.join('\n');
+  return header + '\n\n' + treeLines.join('\n');
 }
 
 // Minimal glob: **/foo matches foo anywhere; foo/** matches a directory
@@ -593,23 +600,35 @@ async function runSearchFiles(opts) {
   return result;
 }
 
-function formatSearchFilesResult(r) {
+function formatSearchFilesResult(r, structure) {
   const header = '# Search: ' + r.query
     + '\n# Matches: ' + r.matches.length + (r.truncated ? ' (capped at ' + r.capMatches + ' matches / ' + r.capBytes + ' chars)' : '');
   if (!r.matches.length) return header + '\n\n(no matches)';
-  // Group by file so each path is printed once (a "# path" header)
-  // followed by "line: text" rows, instead of repeating the full path
-  // on every match line.
-  const lines = [];
+
+  // `json` — the structured result verbatim.
+  if (structure === 'json') return JSON.stringify(r);
+
+  // `tree` (default) — matches nested under an indented path hierarchy.
+  // Each file's path segments are printed once, then its matching lines are
+  // indented one level deeper.
+  const treeLines = [];
+  let prevDirs = [];
   let currentPath = null;
   for (const m of r.matches) {
     if (m.path !== currentPath) {
-      lines.push('# ' + m.path);
+      const parts = m.path.split('/');
+      const name = parts[parts.length - 1];
+      const dirs = parts.slice(0, -1);
+      let shared = 0;
+      while (shared < dirs.length && shared < prevDirs.length && dirs[shared] === prevDirs[shared]) shared++;
+      for (let i = shared; i < dirs.length; i++) treeLines.push('  '.repeat(i) + dirs[i] + '/');
+      treeLines.push('  '.repeat(dirs.length) + name);
+      prevDirs = dirs;
       currentPath = m.path;
     }
-    lines.push(m.line + ': ' + m.text);
+    treeLines.push('  '.repeat(prevDirs.length + 1) + m.line + ': ' + m.text);
   }
-  return header + '\n\n' + lines.join('\n');
+  return header + '\n\n' + treeLines.join('\n');
 }
 
 // ---- write_file / edit_file --------------------------------------------
@@ -1126,11 +1145,20 @@ async function runFileTool(name, opts) {
   // Format the model's response as a clean header + body string. The
   // model-facing content is the string the upstream API will see as
   // the `tool` message; the chat UI gets the structured result.
+  // Pick the file-listing layout from the per-project tool-output profile.
+  // Only the two file structures (`json` / `tree`) change rendering here;
+  // every other value (including the legacy `grouped`, `full`, `concise`)
+  // falls through to the default `tree` layout.
+  const FILE_STRUCTURES = ['json', 'tree'];
+  const rawStructure = opts && opts.toolOutput && typeof opts.toolOutput === 'object'
+    ? opts.toolOutput.structure : null;
+  const structure = FILE_STRUCTURES.includes(rawStructure) ? rawStructure : 'tree';
+
   let content;
   try {
-    if (name === 'read_file') content = formatReadFileResult(out);
-    else if (name === 'list_files') content = formatListFilesResult(out);
-    else if (name === 'search_files') content = formatSearchFilesResult(out);
+    if (name === 'read_file') content = formatReadFileResult(out, structure);
+    else if (name === 'list_files') content = formatListFilesResult(out, structure);
+    else if (name === 'search_files') content = formatSearchFilesResult(out, structure);
     else if (name === 'write_file' || name === 'edit_file') content = formatWriteFileResult(out);
     else content = JSON.stringify(out);
   } catch (e) {
@@ -1178,7 +1206,7 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'search_files',
-      description: 'Search for a regex in text files under the project directory. Matches are grouped by file: one "# path" header per file, then "line: text" rows. Optional `path` filters to a directory or single file; ".", "./", "src", "src/", and "src/file.js" are accepted. Capped at 200 matches / 2M chars scanned.',
+      description: 'Search for a regex in text files under the project directory. Matches are printed as an indented tree: each file\'s path segments once, then its "line: text" rows one level deeper. Optional `path` filters to a directory or single file; ".", "./", "src", "src/", and "src/file.js" are accepted. Capped at 200 matches / 2M chars scanned.',
       parameters: {
         type: 'object',
         properties: {

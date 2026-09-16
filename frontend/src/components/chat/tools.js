@@ -358,12 +358,14 @@ export function parsePlainFileToolResult(text) {
     } else if ((m = line.match(/^# Skipped: (\d+)/))) out.skipped = Number(m[1]);
   }
   // Rebuild the structured arrays the per-tool renderers and the
-  // collapsed summary rely on. The plain-text form groups rows by a
-  // `# dir/` / `# path` header, so parse the body back into the same
-  // `entries` / `matches` objects the live SSE path emits. Without
-  // this, a list_files / search_files result that reaches the UI as
-  // text (subagent nested results, tool-feedback replay) would report
-  // an empty count and the summary would say "0 files" / "0 matches".
+  // collapsed summary rely on. The plain-text form prints each file as an
+  // indented tree path (the model-facing layout), so parse the body back
+  // into the same `entries` / `matches` objects the live SSE path emits.
+  // Without this, a list_files / search_files result that reaches the UI as
+  // text (subagent nested results, tool-feedback replay) would report an
+  // empty count and the summary would say "0 files" / "0 matches".
+  // Transcripts written before the tree layout — the old `# dir/` grouped
+  // header form — still parse, because a `# ` header line is handled too.
   if (out.pattern != null) {
     out.entries = parseListEntriesBody(out.body);
     if (out.entryCount != null && out.entries.length > out.entryCount) out.entries = out.entries.slice(0, out.entryCount);
@@ -373,39 +375,89 @@ export function parsePlainFileToolResult(text) {
   }
   return out;
 }
-// Rebuild `entries: [{ path }]` from the grouped list_files body:
-// indented lines are files, `# dir/` headers set the current directory.
+// Rebuild `entries: [{ path }]` from the list_files body. Two text forms:
+//
+//   tree (current)    indentation encodes the path — every `name/` line
+//                     pushes a directory level, every other line is a file
+//                     under the directories currently on the stack;
+//   `# dir/` (legacy) a `# dir/` header sets the current directory, and the
+//                     bare names under it belong to that directory.
+//
+// Both are recognized so a card replayed from an old transcript renders the
+// same rows the live result did.
 function parseListEntriesBody(body) {
   const entries = [];
-  let dir = '';
+  const stack = [];       // tree: directory names at each depth
+  let legacyDir = '';     // legacy: current `# dir/` header
+  let legacy = false;
   for (const line of String(body || '').split('\n')) {
+    if (!line.trim()) continue;
     if (line.startsWith('# ')) {
-      dir = line.slice(2).replace(/\/+$/, '');
-    } else if (line.trim()) {
-      let name = line.trim();
-      let image = false;
-      // An image row is flagged by the tool (`dot.png (image)`); keep the
-      // flag so the replayed card renders the same row the live result did.
-      if (name.endsWith(' (image)')) { image = true; name = name.slice(0, -8); }
-      const entryPath = dir ? dir + '/' + name : name;
-      entries.push(image ? { path: entryPath, image: true } : { path: entryPath });
+      legacy = true;
+      legacyDir = line.slice(2).replace(/\/+$/, '');
+      continue;
     }
+    if (legacy) {
+      // Legacy: the whole (two-space indented) line is a bare basename.
+      pushListEntry(entries, legacyDir ? legacyDir + '/' + line.trim() : line.trim());
+      continue;
+    }
+    const indent = line.match(/^ */)[0].length;
+    const depth = Math.floor(indent / 2);
+    let name = line.trim();
+    // A directory row ends with `/`; everything else is a file.
+    if (name.endsWith('/')) {
+      stack.length = depth;
+      stack[depth] = name.slice(0, -1);
+      continue;
+    }
+    stack.length = depth;
+    pushListEntry(entries, stack.filter(Boolean).concat(name).join('/'));
   }
   return entries;
 }
-// Rebuild `matches: [{ path, line, text }]` from the grouped search_files
-// body: `# path` headers then `lineno: text` rows.
+// One list_files row. An image row is flagged by the tool (`dot.png (image)`);
+// keep the flag so the replayed card renders the same row the live result did.
+function pushListEntry(entries, raw) {
+  let path = raw;
+  let image = false;
+  if (path.endsWith(' (image)')) { image = true; path = path.slice(0, -8); }
+  entries.push(image ? { path, image: true } : { path });
+}
+// Rebuild `matches: [{ path, line, text }]` from the search_files body. The
+// tree layout prints each file's path segments once (`dir/` then a deeper
+// `name`), then its `lineno: text` rows one level deeper; the legacy grouped
+// layout used a `# path` header followed by the same rows.
 function parseSearchMatchesBody(body) {
   const matches = [];
-  let path = '';
-  const re = /^(\d+): ?(.*)$/;
+  const stack = [];
+  let currentPath = '';
+  let legacy = false;
+  const rowRe = /^(\d+): ?(.*)$/;
   for (const line of String(body || '').split('\n')) {
     if (line.startsWith('# ')) {
-      path = line.slice(2);
-    } else {
-      const m = line.match(re);
-      if (m) matches.push({ path, line: Number(m[1]), text: m[2] });
+      legacy = true;
+      currentPath = line.slice(2);
+      continue;
     }
+    // Tree rows are indented one level under their file, so match on the
+    // trimmed line; the legacy grouped rows are already flush left.
+    const row = line.trim().match(rowRe);
+    if (row) {
+      matches.push({ path: currentPath, line: Number(row[1]), text: row[2] });
+      continue;
+    }
+    if (legacy || !line.trim()) continue;
+    const indent = line.match(/^ */)[0].length;
+    const depth = Math.floor(indent / 2);
+    const name = line.trim();
+    if (name.endsWith('/')) {
+      stack.length = depth;
+      stack[depth] = name.slice(0, -1);
+      continue;
+    }
+    stack.length = depth;
+    currentPath = stack.filter(Boolean).concat(name).join('/');
   }
   return matches;
 }

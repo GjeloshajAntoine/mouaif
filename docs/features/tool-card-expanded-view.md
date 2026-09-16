@@ -14,7 +14,7 @@ Tap a tool card's header row to expand or collapse it.
 | `read_file` | The resolved path, then the file body |
 | `write_file` | The written content, capped at 2000 lines / 200 000 chars |
 | `edit_file` | A line-by-line diff with add/remove gutters |
-| `list_files`, `search_files` | Results grouped under one path label per directory or file |
+| `list_files`, `search_files` | Results under one path label per directory, nested by depth |
 | `subagent` | The nested conversation as chat rows |
 
 Behavior notes:

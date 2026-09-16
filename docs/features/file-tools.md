@@ -78,33 +78,38 @@ The `tool` message the model sees is a small header followed by the body, so the
 <file body>
 ```
 
-`list_files` groups entries by directory (one `# dir/` header per group, then bare filenames) so the path prefix is printed once instead of on every row:
+`list_files` prints the files as an indented tree (the default `toolOutput.structure`), so every shared path prefix is written once instead of on every row:
 
 ```text
+# Listing: src/**/*.js
+# Count: 3
 
+src/
   auth.js
   logout.js
   new.js
 ```
 
-`search_files` groups matches by file the same way — one `# path` header per file, then `line: text` rows:
+`search_files` nests each match under the same tree — the file's path segments once, then its `line: text` rows one level deeper:
 
 ```text
+# Search: function (login|logout)
+# Matches: 2
 
-1: export function login() {}
-1: export function logout() {}
-```
+src/
+  auth.js
+    1: export function login() {}
+  logout.js
+    1: export function logout() {}
+  ```
 
-```text
-```
-
-The chat UI gets a richer object on the `tool_result` SSE event (full result, no header), so it can show the path and a one-line summary on the inline card. When a file-tool result reaches the UI as the plain-text header form above (subagent-nested results, tool-replay from the message store, or the model-facing `content` string), the frontend re-parses it back into the structured shape: it reads the `# Count:` / `# Matches:` (and `# Skipped:`) header lines and rebuilds the `entries` / `matches` arrays from the grouped body, so the card's count and the collapsed "N files" / "N matches" summary are accurate and consistent with the object path.
+  The chat UI gets a richer object on the `tool_result` SSE event (full result, no header), so it can show the path and a one-line summary on the inline card. When a file-tool result reaches the UI as the plain-text header form above (subagent-nested results, tool-replay from the message store, or the model-facing `content` string), the frontend re-parses it back into the structured shape: it reads the `# Count:` / `# Matches:` (and `# Skipped:`) header lines and rebuilds the `entries` / `matches` arrays from the indented body, so the card's count and the collapsed "N files" / "N matches" summary are accurate and consistent with the object path. The parser also still reads the retired `# dir/` grouped form, so cards replayed from transcripts written before the tree layout keep their counts.
 
 The collapsed summary flags truncation instead of presenting a capped total as complete. A truncated `list_files` card reads `1000 files (capped at 1000)` and a truncated `search_files` card reads `200 matches (capped at 200)`, matching the inline header the model already receives (`# Count: N (capped at M)` / `# Matches: N (capped at M matches / B chars)`). The text-reparse path extracts the same `truncated` + cap fields from those header lines, so subagent-nested results and message-store replays show the same annotation as the live SSE path.
 
 ### Tool card previews
 
-Expanding a file-tool card shows the payload that matters for that tool — `read_file` the file body (or, for a picture, the image itself), `list_files` the grouped entries, `search_files` the matches, `edit_file` its unified diff, and **`write_file` the content that was written**.
+Expanding a file-tool card shows the payload that matters for that tool — `read_file` the file body (or, for a picture, the image itself), `list_files` the entries grouped by directory, `search_files` the matches, `edit_file` its unified diff, and **`write_file` the content that was written**.
 
 The `tool_result` frame carries metadata only (`relPath`, `chars`, `lines`), so the `write_file` preview renders the call's `content` argument. The card resolves it from whichever side of the call/result pair it was built:
 

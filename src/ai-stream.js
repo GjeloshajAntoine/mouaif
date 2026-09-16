@@ -1890,9 +1890,10 @@ promptSize: callOpts && callOpts.promptSize,
         return { ok: false, content: JSON.stringify(r), result: r };
       }
       return await ft.runFileTool(name, {
-        projectDir: callOpts && callOpts.projectDir,
-        args,
-        settings: callOpts && callOpts.appSettings
+      projectDir: callOpts && callOpts.projectDir,
+      args,
+      settings: callOpts && callOpts.appSettings,
+      toolOutput: callOpts && callOpts.toolOutput
       });
     }
 
