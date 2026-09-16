@@ -44,8 +44,12 @@ selection leads to.
    - **Box model** draws the margin ring around the padding ring with the element
      in the middle. Tap any edge — `padding-top`, `margin-left` — and the slider
      underneath becomes that edge's.
-   - **Colour rows** show a swatch plus the colours this page already uses for
-     that property, so "the same green as the rest of the page" is one tap.
+  - **Colour rows** show a swatch plus the colours this page already uses for
+  that property, so "the same green as the rest of the page" is one tap. The
+  swatch is painted over a checkerboard so a `transparent` value reads as
+  "see-through" rather than as an empty control — the colour is set through
+  `background-color` (an inline `background` shorthand would erase the
+  checkerboard).
    - **Image rows** (background image) offer named gradient presets —
      **None / Down / Accent / Warm / Cool / Fade out** — because a gradient is
      thirty-odd characters of punctuation and typing one on a phone is the exact

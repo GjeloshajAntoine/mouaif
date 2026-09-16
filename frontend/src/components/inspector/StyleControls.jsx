@@ -250,7 +250,12 @@ h('div', { class: 'inspector__touch-colour' },
 h('button', {
 class: 'inspector__touch-stroke',
 type: 'button',
-style: { background: value || 'transparent' },
+// backgroundColor, not the `background` shorthand: the swatch's own CSS
+// paints a checkerboard with `background-image` so `transparent` and a
+// near-black colour are distinguishable, and the shorthand would reset
+// that image to `none` — leaving a transparent value looking like an
+// empty swatch. Layering the colour over the checkerboard keeps both.
+style: { backgroundColor: value || 'transparent' },
 disabled,
 title: value ? 'Edit ' + control.prop + ' (' + value + ')' : 'Pick a colour for ' + control.prop,
 'aria-label': 'Edit ' + control.prop + (value ? ', now ' + value : ''),
@@ -262,7 +267,9 @@ rows.map((v) => h('button', {
 class: 'inspector__touch-swatch',
 type: 'button',
 key: v,
-style: { background: v },
+// See the stroke swatch above: backgroundColor layers over the CSS
+// checkerboard, the `background` shorthand would erase it.
+style: { backgroundColor: v },
 disabled,
 title: 'Set ' + control.prop + ' to ' + v,
 'aria-label': 'Set ' + control.prop + ' to ' + v,
