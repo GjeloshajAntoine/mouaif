@@ -977,21 +977,16 @@ function accumulateRoundUsage(roundUsage) {
 
   // statusBody(sub, percent, lines) -> notification body for one device
   //
-  // A status notification is one ASCII bar plus the information it belongs
-  // to, in that order. The bar is built per subscription from the line
-  // budget that device reported (src/push.js BAR_CELLS): a phone lock
-  // screen gets 6 cells, a tablet 10, a desktop toast 20 — the widest bar
-  // that still fits one row there, because a wrapped bar row pushes the
-  // status text out of the collapsed preview most phones show.
-  //
-  // `lines` is the info: the task/message line, or the completion/error
-  // text. Empty entries are dropped so a progress update with no message is
-  // just the bar.
+  // A status notification is the ASCII bar plus the information it belongs
+  // to. The bar's width and the body's layout both come from the receiving
+  // device's plan (src/statusBar.js): the measured body line drives a
+  // continuous cell count, the OS + version pick how many lines the
+  // platform previews, and a one-line style puts the bar and message on one
+  // shared row so the message is visible at all. A device that never
+  // reported itself falls back to the platform's conservative phone plan.
   function statusBody(sub, percent, lines) {
-    const size = push.statusBarSizeForMaxChars(sub && sub.status_bar);
-    const bar = push.asciiStatusBar(percent, size);
-    const info = (lines || []).map((l) => String(l == null ? '' : l).trim()).filter(Boolean);
-    return info.length ? bar + '\n' + info.join('\n') : bar;
+    const plan = push.statusBar.planForSubscription(sub);
+    return push.statusBar.composeStatusBody(plan, percent, lines);
   }
 
   function sendChatPush(kind, options = {}) {

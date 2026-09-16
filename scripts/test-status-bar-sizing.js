@@ -3,16 +3,16 @@
 // Regression coverage for the device-sized ASCII status bar.
 //
 // The status bar was one fixed 10-cell width for every device, so it either
-// wrapped and pushed the status text off a phone's collapsed notification or
-// wasted resolution on a desktop. The width is now derived from the body line
-// the receiving browser reports at subscribe time and stored per
-// subscription, and the two status bodies (chat and sign-in/test) resolve it
-// per target.
+// wrapped and pushed the status text off a phone's preview or wasted
+// resolution on a desktop. The width now follows the screen, the body layout
+// follows the notification style the OS presents, and the fallbacks follow the
+// OS version (src/statusBar.js). A device reports its own facts at subscribe
+// time and the server resolves them per target.
 //
 // This test drives the real HTTP layer: it POSTs subscriptions with different
-// reported widths, then fires a chat-style status push and asserts each
-// device received a bar sized to its own screen. web-push is replaced with a
-// recorder, so no network is used.
+// device reports, then fires a chat-style status push and asserts each device
+// received a body built for its own screen, style, and OS. web-push is
+// replaced with a recorder, so no network is used.
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -29,51 +29,145 @@ webpush.sendNotification = (subscription, payload) => {
   return Promise.resolve();
 };
 
-const settings = require('../src/settings.js');
+const statusBar = require('../src/statusBar.js');
 const push = require('../src/push.js');
 const { handlePush } = require('../src/server-handlers-push.js');
 
 push.ensureTable();
 push.ensureVapidKeys();
 
-// ---- Pure formatter ----------------------------------------------------
+const INFO = 'Fix push layout — 2 of 5';
 
-assert.equal(push.asciiStatusBar(40, 'narrow'), '[##----] 40%', 'narrow renders 6 cells');
-assert.equal(push.asciiStatusBar(40, 'wide'), '[####------] 40%', 'wide renders 10 cells');
-assert.equal(push.asciiStatusBar(40, 'huge'), '[########------------] 40%', 'huge renders 20 cells');
-assert.equal(push.asciiStatusBar(1, 'huge'), '[#-------------------] 1%', 'a fine bar lights one cell for 1%');
-assert.equal(push.asciiStatusBar(0, 'huge'), '[--------------------] 0%', 'zero progress lights no cells');
-assert.equal(push.asciiStatusBar(null, 'narrow'), '[------]', 'an unlabelled bar has no percentage');
-assert.equal(push.statusBarSizeForMaxChars(30), 'narrow', 'a phone line is narrow');
-assert.equal(push.statusBarSizeForMaxChars(60), 'wide', 'a landscape phone line is wide');
-assert.equal(push.statusBarSizeForMaxChars(120), 'huge', 'a desktop line is huge');
-assert.equal(push.statusBarSizeForMaxChars(0), 'narrow', 'an unreported width defaults to narrow');
-assert.equal(push.statusBarSizeForMaxChars(NaN), 'narrow', 'a non-numeric width defaults to narrow');
+// ---- Bar formatter -----------------------------------------------------
 
-// ---- HTTP: subscribe with a reported body width ------------------------
+assert.equal(statusBar.asciiStatusBar(40, 6), '[##----] 40%', 'a 6-cell bar fills proportionally');
+assert.equal(statusBar.asciiStatusBar(40, 10), '[####------] 40%', 'a 10-cell bar fills proportionally');
+assert.equal(statusBar.asciiStatusBar(40, 20), '[########------------] 40%', 'a 20-cell bar fills proportionally');
+assert.equal(statusBar.asciiStatusBar(1, 20), '[#-------------------] 1%', 'a fine bar lights one cell for 1%');
+assert.equal(statusBar.asciiStatusBar(0, 20), '[--------------------] 0%', 'zero progress lights no cells');
+assert.equal(statusBar.asciiStatusBar(null, 6), '[------]', 'an unlabelled bar has no percentage');
+// A cell count outside the supported range is clamped rather than producing
+// a bar that cannot be shown.
+assert.equal(statusBar.asciiStatusBar(50, 0), '[##--] 50%', 'a zero cell count clamps to the minimum');
+assert.equal(statusBar.asciiStatusBar(50, 1e6).length, 32 + 6, 'an absurd cell count clamps to the maximum');
+
+// ---- OS + version resolution -------------------------------------------
+
+assert.equal(statusBar.normalizeOs('iPadOS'), 'ipados', 'iPadOS is recognized as its own platform');
+assert.equal(statusBar.normalizeOs('Android'), 'android', 'Android is case-insensitive');
+assert.equal(statusBar.normalizeOs('macintel'), 'macos', 'a Safari Mac platform string maps to macOS');
+assert.equal(statusBar.normalizeOs('webos'), '', 'an unknown platform is rejected');
+assert.equal(statusBar.capacityFor('ios', 12).collapsedLines, 1, 'an iOS 12 banner previews one line');
+assert.equal(statusBar.capacityFor('ios', 15).collapsedLines, 2, 'an iOS 15 banner previews two lines');
+assert.equal(statusBar.capacityFor('ios', 17).versionMatched, true, 'the iOS 15 rule is reported as matched');
+assert.equal(statusBar.capacityFor('ios', 0).collapsedLines, 1, 'an iOS device that reports no version keeps the base row');
+assert.equal(statusBar.capacityFor('android', 8).expandedLines, 8, 'an Android 8 expanded card is taller');
+assert.equal(statusBar.capacityFor('android', 7).expandedLines, 4, 'a pre-Oreo expanded card stays short');
+assert.equal(statusBar.capacityFor('nokia', 1).os, 'unknown', 'an unknown OS resolves to the unknown table');
+assert.equal(statusBar.capacityFor('nokia', 1).collapsedLines, 1, 'the unknown table assumes one line');
+
+// ---- Plan: continuous width, style, sanity band ------------------------
+
+// Width is continuous across phone sizes, not bucketed: two phones 24 px apart
+// get different cell counts.
+const smallPhone = statusBar.statusBarPlan({ chars: 28, viewportWidth: 320, os: 'android', osVersion: 13 });
+const bigPhone = statusBar.statusBarPlan({ chars: 35, viewportWidth: 430, os: 'android', osVersion: 13 });
+assert.notEqual(smallPhone.cells, bigPhone.cells, 'two phone sizes get different bar widths');
+assert.ok(bigPhone.cells > smallPhone.cells, 'the wider phone gets the wider bar');
+// The same holds on a two-line platform, where the bar has a row of its own.
+const smallIos = statusBar.statusBarPlan({ chars: 33, viewportWidth: 320, os: 'ios', osVersion: 17 });
+const bigIos = statusBar.statusBarPlan({ chars: 42, viewportWidth: 430, os: 'ios', osVersion: 17 });
+assert.ok(bigIos.cells > smallIos.cells, 'a larger iOS phone gets a longer stacked bar');
+
+// Style decides the layout, and the lines come from the OS + version.
+const android = statusBar.statusBarPlan({ chars: 34, viewportWidth: 360, os: 'android', osVersion: 13 });
+assert.equal(android.lines, 1, 'a collapsed Android notification shows one body line');
+assert.equal(android.layout, 'inline', 'a one-line style puts the bar and message on one row');
+const ios = statusBar.statusBarPlan({ chars: 40, viewportWidth: 390, os: 'ios', osVersion: 17 });
+assert.equal(ios.lines, 2, 'an iOS 17 banner shows two body lines');
+assert.equal(ios.layout, 'stacked', 'a multi-line style keeps the bar on its own row');
+const ios14 = statusBar.statusBarPlan({ chars: 40, viewportWidth: 390, os: 'ios', osVersion: 14 });
+assert.equal(ios14.layout, 'inline', 'a pre-15 iOS banner uses the inline layout');
+const expanded = statusBar.statusBarPlan({ chars: 34, viewportWidth: 360, os: 'android', osVersion: 13, style: 'expanded' });
+assert.equal(expanded.layout, 'stacked', 'an expanded notification gives the bar its own row');
+
+// A stacked bar stays shorter than the line, so the message row is the widest
+// row in the notice.
+assert.ok(statusBar.asciiStatusBar(100, android.cells).length <= android.chars,
+  'a stacked bar fits its body line');
+assert.ok(android.cells <= Math.round(android.chars * statusBar.STACKED_BAR_SHARE),
+  'a stacked bar leaves room on its row');
+
+// A measurement far off what the platform expects is pulled back rather than
+// trusted, so a broken probe cannot produce a bar that overflows.
+const bogus = statusBar.statusBarPlan({ chars: 900, viewportWidth: 360, os: 'android', osVersion: 13 });
+assert.equal(bogus.clamped, true, 'an implausible measurement is clamped');
+assert.ok(bogus.chars <= Math.ceil(34 * 1.6), 'the clamped width is near the platform expectation');
+
+// An unmeasured device falls back to the platform table scaled to its
+// viewport, and an unknown platform to the conservative phone plan.
+const unmeasured = statusBar.statusBarPlan({ viewportWidth: 720, os: 'macos' });
+assert.ok(unmeasured.chars > 52, 'an unmeasured desktop scales the fallback up from the table');
+const unknown = statusBar.statusBarPlan({});
+assert.equal(unknown.os, 'unknown', 'a device that reports nothing is unknown');
+assert.equal(unknown.layout, 'inline', 'an unknown device is assumed to show one line');
+
+// ---- Body composition --------------------------------------------------
+
+const stackedBody = statusBar.composeStatusBody(ios, 40, [INFO]);
+assert.equal(stackedBody.split('\n')[0], statusBar.asciiStatusBar(40, ios.cells), 'the bar row comes first');
+assert.ok(stackedBody.endsWith('\n' + INFO), 'the message row follows intact');
+const inlineBody = statusBar.composeStatusBody(android, 40, [INFO]);
+assert.equal(inlineBody.split('\n').length, 1, 'an inline body is a single line');
+assert.ok(inlineBody.startsWith(statusBar.asciiStatusBar(40, android.cells) + statusBar.INLINE_SEPARATOR),
+  'an inline body starts with the bar and its separator');
+assert.ok(inlineBody.length <= android.chars, 'an inline body fits the body line');
+// A bar-only body is legal (a progress update with no message).
+assert.equal(statusBar.composeStatusBody(android, 40, []), statusBar.asciiStatusBar(40, android.cells),
+  'an empty message leaves the bar alone');
+// If the bar leaves no room for a meaningful message, the bar is the line
+// rather than a two-letter stub.
+const tiny = statusBar.statusBarPlan({ chars: 8, os: 'android', osVersion: 13 });
+assert.ok(!statusBar.composeStatusBody(tiny, 40, [INFO]).includes(statusBar.INLINE_SEPARATOR),
+  'a line too narrow for a message shows the bar only');
+assert.equal(statusBar.clip('Fix push layout — 2 of 5', 12), 'Fix push...', 'a clipped message is ellipsized');
+assert.ok(statusBar.clip('Fix push layout — 2 of 5', 12).length <= 12, 'a clipped message fits its budget');
+assert.equal(statusBar.clip('short', 12), 'short', 'a message inside the budget is untouched');
+assert.equal(statusBar.clip('  padded  ', 40), 'padded', 'a clip trims surrounding whitespace');
+
+// ---- Legacy stored shape ----------------------------------------------
+
+// A subscription written by the older client stored only the character count.
+const legacyPlan = statusBar.planForSubscription({ status_bar: 34 });
+assert.equal(legacyPlan.chars, 34, 'the legacy character count is still honored');
+assert.equal(legacyPlan.os, 'unknown', 'a legacy subscription has no OS and uses the safe default');
+// A profile written by the current client wins over the legacy count.
+const profilePlan = statusBar.planForSubscription({
+  status_bar: 34,
+  status_bar_profile: JSON.stringify({ chars: 40, viewportWidth: 390, os: 'ios', osVersion: 17 })
+});
+assert.equal(profilePlan.os, 'ios', 'the stored profile drives the plan');
+assert.equal(profilePlan.layout, 'stacked', 'the stored profile style drives the layout');
+// Corruption in the stored profile must not throw at send time.
+assert.doesNotThrow(() => statusBar.planForSubscription({ status_bar_profile: '{not json' }),
+  'a corrupt stored profile falls back safely');
+
+// ---- HTTP: subscribe with a device report ------------------------------
 
 function mockResponse() {
-  const res = {
+  return {
     statusCode: 0,
     headers: null,
     body: '',
     writeHead(code, headers) { this.statusCode = code; this.headers = headers; },
     end(chunk) { if (chunk) this.body += chunk; }
   };
-  return res;
 }
 
-async function postSubscription(sessionToken, endpoint, statusBarMaxChars) {
-  const payload = JSON.stringify({
-    subscription: {
-      endpoint,
-      keys: { p256dh: 'p-' + endpoint, auth: 'a-' + endpoint },
-      ...(statusBarMaxChars === undefined ? {} : { statusBarMaxChars })
-    }
-  });
+async function postSubscription(sessionToken, endpoint, subscription) {
+  const payload = JSON.stringify({ subscription: Object.assign({ endpoint, keys: { p256dh: 'p-' + endpoint, auth: 'a-' + endpoint } }, subscription || {}) });
   const req = {
     method: 'POST',
-    _body: payload,
     on(event, handler) {
       if (event === 'data') handler(Buffer.from(payload));
       if (event === 'end') handler();
@@ -87,38 +181,53 @@ async function postSubscription(sessionToken, endpoint, statusBarMaxChars) {
 }
 
 (async () => {
-  // Three devices, three reported body lines: a phone, a landscape phone, and
-  // a desktop window.
   const session = 'session-mixed';
   const sid = push.sessionIdFromToken(session);
-  assert.equal((await postSubscription(session, 'https://phone.example', 32)).status, 200, 'phone subscription accepted');
-  assert.equal((await postSubscription(session, 'https://tablet.example', 60)).status, 200, 'tablet subscription accepted');
-  assert.equal((await postSubscription(session, 'https://desktop.example', 140)).status, 200, 'desktop subscription accepted');
 
-  const rows = push.listSubscriptions(sid);
-  const byEndpoint = new Map(rows.map((r) => [r.endpoint, r]));
-  assert.equal(byEndpoint.get('https://phone.example').status_bar, 32, 'the phone width is stored per device');
-  assert.equal(byEndpoint.get('https://tablet.example').status_bar, 60, 'the tablet width is stored per device');
-  assert.equal(byEndpoint.get('https://desktop.example').status_bar, 140, 'the desktop width is stored per device');
+  // A small Android phone (one body line), an iOS 17 phone (two lines), and a
+  // desktop window — three devices, three different bodies.
+  assert.equal((await postSubscription(session, 'https://android.example', {
+    statusBarProfile: { chars: 30, viewportWidth: 320, os: 'android', osVersion: 13, style: 'collapsed' }
+  })).status, 200, 'the Android subscription is accepted');
+  assert.equal((await postSubscription(session, 'https://ios.example', {
+    statusBarProfile: { chars: 40, viewportWidth: 390, os: 'ios', osVersion: 17, style: 'collapsed' }
+  })).status, 200, 'the iOS subscription is accepted');
+  assert.equal((await postSubscription(session, 'https://desktop.example', {
+    statusBarProfile: { chars: 110, viewportWidth: 1280, os: 'macos', osVersion: 14, style: 'collapsed' }
+  })).status, 200, 'the desktop subscription is accepted');
+  // The older bare-count shape still works.
+  assert.equal((await postSubscription(session, 'https://legacy.example', { statusBarMaxChars: 34 })).status, 200,
+    'the legacy bare-count subscription is accepted');
 
-  // Rebinding without a width (an older/cached page) must not wipe a good one.
-  await postSubscription(session, 'https://phone.example');
-  assert.equal(push.listSubscriptions(sid).find((r) => r.endpoint === 'https://phone.example').status_bar, 32,
-    'a rebind without a width keeps the stored width');
+  const rows = new Map(push.listSubscriptions(sid).map((r) => [r.endpoint, r]));
+  assert.ok(rows.get('https://android.example').status_bar_profile.includes('"os":"android"'),
+    'the Android device report is stored');
+  assert.equal(rows.get('https://legacy.example').status_bar_profile, null, 'a bare count stores no profile');
+  assert.equal(rows.get('https://legacy.example').status_bar, 34, 'a bare count is still stored');
 
-  // A brand-new subscription that never reports a width keeps the column NULL
-  // and therefore gets the phone bar.
+  // Rebinding without a report (an older/cached page) must not wipe a profile.
+  await postSubscription(session, 'https://android.example');
+  assert.equal(push.listSubscriptions(sid).find((r) => r.endpoint === 'https://android.example').status_bar_profile,
+    rows.get('https://android.example').status_bar_profile, 'a rebind without a report keeps the stored profile');
+
+  // A new subscription that reports nothing stores nothing and gets the
+  // conservative plan at send time.
   await postSubscription(session, 'https://unknown.example');
-  assert.equal(push.listSubscriptions(sid).find((r) => r.endpoint === 'https://unknown.example').status_bar, null,
-    'a silent subscription stores no width');
+  assert.equal(push.listSubscriptions(sid).find((r) => r.endpoint === 'https://unknown.example').status_bar_profile, null,
+    'a silent subscription stores no profile');
 
-  // ---- One push, three device-specific bars ---------------------------
+  // ---- One push, three device-specific bodies -------------------------
   deliveries.length = 0;
+  const planBodies = new Map();
   push.sendPushToSession(sid, {
     title: 'Chat one',
-    // The chat handler passes a resolver, not a fixed body, which is what
-    // lets each device get its own bar width.
-    bodyFor: (sub) => push.asciiStatusBar(40, push.statusBarSizeForMaxChars(sub && sub.status_bar)) + '\nFix push layout — 2 of 5',
+    // The chat handler passes a resolver, not a fixed body, which is what lets
+    // each device get its own plan.
+    bodyFor: (sub) => {
+      const plan = push.statusBar.planForSubscription(sub);
+      planBodies.set(sub.endpoint, plan);
+      return push.statusBar.composeStatusBody(plan, 40, [INFO]);
+    },
     tag: 'chat-abcd1234-status',
     chatId: 'abcd1234',
     projectDir: '/tmp/project'
@@ -126,35 +235,46 @@ async function postSubscription(sessionToken, endpoint, statusBarMaxChars) {
   await new Promise((r) => setTimeout(r, 20));
 
   const bodies = new Map(deliveries.map((d) => [d.endpoint, d.payload.body]));
-  assert.equal(deliveries.length, 4, 'every device got the push');
-  assert.equal(bodies.get('https://phone.example'),
-    '[##----] 40%\nFix push layout — 2 of 5', 'the phone body uses a 6-cell bar');
-  assert.equal(bodies.get('https://tablet.example'),
-    '[####------] 40%\nFix push layout — 2 of 5', 'the tablet body uses a 10-cell bar');
-  assert.equal(bodies.get('https://desktop.example'),
-    '[########------------] 40%\nFix push layout — 2 of 5', 'the desktop body uses a 20-cell bar');
-  assert.equal(bodies.get('https://unknown.example'),
-    '[##----] 40%\nFix push layout — 2 of 5', 'a device that reported no width gets the phone bar');
+  assert.equal(deliveries.length, 5, 'every device got the push');
 
-  // Every bar row stays on one line in its device's own body width, so the
-  // info row is never pushed out of a collapsed preview.
-  for (const [endpoint, width] of [['https://phone.example', 32], ['https://tablet.example', 60], ['https://desktop.example', 140]]) {
-    const firstLine = bodies.get(endpoint).split('\n')[0];
-    assert.ok(firstLine.length <= width, endpoint + ' bar row fits its ' + width + '-char body line');
+  // Android: one body line, so the message shares the bar's row.
+  assert.equal(bodies.get('https://android.example').split('\n').length, 1,
+    'the one-line Android device gets a single-line body');
+  assert.ok(bodies.get('https://android.example').includes(INFO.slice(0, 8)),
+    'the one-line Android body still shows the message');
+  // iOS: two body lines, so the bar keeps its own row and the message is intact.
+  assert.equal(bodies.get('https://ios.example'), statusBar.asciiStatusBar(40, planBodies.get('https://ios.example').cells) + '\n' + INFO,
+    'the two-line iOS body stacks the bar over the full message');
+  // Desktop: a wider body line, so a longer bar (up to the readability cap).
+  assert.ok(planBodies.get('https://desktop.example').chars > planBodies.get('https://ios.example').chars,
+    'the desktop body line is wider than the phone line');
+  assert.ok(planBodies.get('https://desktop.example').cells >= planBodies.get('https://ios.example').cells,
+    'the desktop bar is at least as wide as the phone bar');
+  assert.ok(planBodies.get('https://android.example').cells < planBodies.get('https://ios.example').cells,
+    'the small phone bar is narrower than the larger phone bar');
+  // No body wraps: each device's longest line fits its own body line.
+  for (const endpoint of ['https://android.example', 'https://ios.example', 'https://desktop.example']) {
+    const lines = bodies.get(endpoint).split('\n');
+    const chars = planBodies.get(endpoint).chars;
+    for (const line of lines) assert.ok(line.length <= chars, endpoint + ' line ' + JSON.stringify(line) + ' fits ' + chars);
   }
 
-  // ---- A body with no info is the bar alone ---------------------------
+  // ---- An error keeps the bar shape with no percentage ----------------
   deliveries.length = 0;
   push.sendPushToSession(sid, {
     title: 'Chat one',
-    bodyFor: (sub) => push.asciiStatusBar(null, push.statusBarSizeForMaxChars(sub && sub.status_bar)) + '\nError: upstream error',
+    bodyFor: (sub) => {
+      const plan = push.statusBar.planForSubscription(sub);
+      return push.statusBar.composeStatusBody(plan, null, ['Error: upstream error']);
+    },
     tag: 'chat-abcd1234-status',
     chatId: 'abcd1234',
     projectDir: '/tmp/project'
   });
   await new Promise((r) => setTimeout(r, 20));
-  const errorBody = deliveries.find((d) => d.endpoint === 'https://tablet.example').payload.body;
-  assert.equal(errorBody, '[----------]\nError: upstream error', 'an error keeps the bar shape but has no percentage');
+  const errorBody = deliveries.find((d) => d.endpoint === 'https://ios.example').payload.body;
+  assert.equal(errorBody, statusBar.asciiStatusBar(null, planBodies.get('https://ios.example').cells) + '\nError: upstream error',
+    'an error keeps the bar shape but has no percentage');
 
   // ---- A push without a resolver sends one body everywhere ------------
   deliveries.length = 0;

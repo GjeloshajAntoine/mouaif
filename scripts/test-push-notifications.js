@@ -98,43 +98,36 @@ const chatPushSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'server
 assert.ok(chatPushSource.includes("const statusPushTag = 'chat-' + chatId + '-status'"), 'chat streams define one shared status push tag');
 assert.ok(!chatPushSource.includes("'-progress'"), 'chat streams do not send progress pushes under a second tag');
 assert.ok(chatPushSource.includes("function statusBody(sub, percent, lines)"), 'chat streams build one per-device ASCII status body');
-assert.ok(chatPushSource.includes('push.statusBarSizeForMaxChars(sub && sub.status_bar)'), 'the bar width comes from the subscription device budget');
 assert.ok(chatPushSource.includes("statusBody(sub, 100, ['Response complete'])"), 'completion uses the shared ASCII status format');
 assert.ok(chatPushSource.includes("statusBody(sub, pctNum, infoLines)"), 'generic progress uses the shared ASCII status format');
 assert.ok(!chatPushSource.includes("'▓'.repeat") && !chatPushSource.includes("'░'.repeat"), 'status avoids Unicode block glyphs');
-// ---- Device-sized ASCII bar (src/push.js) ------------------------------
+// ---- Device-sized ASCII bar (src/statusBar.js) -------------------------
 //
 // One cell count cannot fit a phone lock screen, a tablet, and a desktop
-// toast, so the bar size is derived from the body width each device reports
-// at subscribe time and stored per subscription.
+// toast, so the bar size is derived from the device's report: measured body
+// line (continuous, not bucketed), notification style, and OS version. The
+// rules live in src/statusBar.js; scripts/test-status-bar-sizing.js covers
+// them behaviorally. These checks guard the wiring.
 const pushSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'push.js'), 'utf8');
-assert.ok(pushSource.includes('function statusBarSizeForMaxChars(maxChars)'), 'push defines the device budget -> bar size mapping');
-assert.ok(pushSource.includes("narrow: 6, wide: 10, huge: 20"), 'push ships the three surface-matched bar widths');
-assert.ok(pushSource.includes('status_bar INTEGER'), 'subscriptions store the reported body width');
-assert.ok(pushSource.includes("c.name === 'status_bar'") && pushSource.includes('ADD COLUMN status_bar'), 'existing subscriptions gain the column by migration');
-assert.equal(push.asciiStatusBar(40, 'narrow'), '[##----] 40%', 'a phone bar renders 6 cells');
-assert.equal(push.asciiStatusBar(40, 'wide'), '[####------] 40%', 'a tablet bar renders 10 cells');
-assert.equal(push.asciiStatusBar(40, 'huge'), '[########------------] 40%', 'a desktop bar renders 20 cells');
-assert.equal(push.asciiStatusBar(100, 'wide'), '[##########] 100%', 'a full bar fills every cell');
-assert.equal(push.asciiStatusBar(null, 'wide'), '[----------]', 'an error bar has no percentage and stays empty');
-assert.equal(push.asciiStatusBar(4, 'huge'), '[#-------------------] 4%', 'a fine bar lights one cell for small progress');
-assert.equal(push.statusBarSizeForMaxChars(32), 'narrow', 'a phone body width maps to the 6-cell bar');
-assert.equal(push.statusBarSizeForMaxChars(44), 'narrow', 'a narrow phone body still maps to the 6-cell bar');
-assert.equal(push.statusBarSizeForMaxChars(60), 'wide', 'a landscape phone body maps to the 10-cell bar');
-assert.equal(push.statusBarSizeForMaxChars(120), 'huge', 'a desktop body width maps to the 20-cell bar');
-assert.equal(push.statusBarSizeForMaxChars(undefined), 'narrow', 'an unreported budget falls back to the phone bar');
-assert.equal(push.statusBarSizeForMaxChars(0), 'narrow', 'a zero budget falls back to the phone bar');
-// Every bar and its worst-case percentage label must fit the smallest body
-// line in its own bucket, otherwise the row wraps and pushes the status text
-// off the preview the OS shows.
-for (const [size, max] of [['narrow', 32], ['wide', 44], ['huge', 90]]) {
-  assert.ok(push.asciiStatusBar(100, size).length <= max,
-    size + ' bar with a 100% label fits a ' + max + '-char body line');
-}
-// The page must report its own width rather than the server assuming one.
+assert.ok(pushSource.includes("require('./statusBar.js')"), 'push uses the status-bar module');
+assert.ok(pushSource.includes('status_bar_profile TEXT'), 'subscriptions store the full device report');
+assert.ok(pushSource.includes("names.has('status_bar_profile')") && pushSource.includes('ADD COLUMN status_bar_profile TEXT'),
+  'existing subscriptions gain the profile column by migration');
+assert.ok(pushSource.includes('function normalizeStatusBarProfile(value)'), 'the device report is validated before storage');
+
+// The chat status bodies resolve the plan per subscription, so one push can
+// render differently on each device.
+assert.ok(chatPushSource.includes('push.statusBar.planForSubscription(sub)'), 'the chat handler plans the bar per device');
+assert.ok(chatPushSource.includes('return push.statusBar.composeStatusBody(plan, percent, lines)'), 'the chat handler composes via the shared module');
+assert.ok(!chatPushSource.includes("'▓'.repeat") && !chatPushSource.includes("'░'.repeat"), 'status avoids Unicode block glyphs');
+
+// The page reports its own facts rather than the server assuming a device.
 const pushClientSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'components', 'push.js'), 'utf8');
-assert.ok(pushClientSource.includes('function statusBarMaxChars()'), 'the page measures its notification body width');
-assert.ok(pushClientSource.includes('statusBarMaxChars: statusBarMaxChars()'), 'the subscription request carries the measured width');
+assert.ok(pushClientSource.includes('function deviceReport()'), 'the page builds a device report');
+assert.ok(pushClientSource.includes('function osFromUserAgent()'), 'the page has a platform fallback for Safari');
+assert.ok(pushClientSource.includes('function notificationStyle()'), 'the page reports the notification presentation');
+assert.ok(pushClientSource.includes('statusBarProfile: report'), 'the subscription request carries the device report');
+assert.ok(pushClientSource.includes('statusBarMaxChars: report.chars'), 'the older bare-count field is still sent');
 
 const swSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'build', 'sw-src.js'), 'utf8');
 const bridgeSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'push-page-bridge.js'), 'utf8');

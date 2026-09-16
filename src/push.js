@@ -6,80 +6,57 @@
 //   1. VAPID key management (auto-generated, stored in SQLite)
 //   2. Push subscription CRUD (per-session)
 //   3. Push sending utility (tagged per-chat for updatable notifications)
+//
+// The ASCII status bar that rides every chat notification lives in
+// src/statusBar.js: it decides the bar's cell count from the receiving
+// device's screen size, notification style, and OS version. This module only
+// stores the device's self-report and resolves it per target at send time.
 
 const webpush = require('web-push');
 const crypto = require('crypto');
 const settings = require('./settings.js');
+const statusBar = require('./statusBar.js');
 
 const SUB_TABLE = 'push_subscriptions';
 const VAPID_TABLE = 'push_vapid';
 const VAPID_SUBJECT = 'mailto:push@mouaif.local';
 
-// ---- ASCII status bar ---------------------------------------------------
-//
-// Every chat status notification (progress, completion, error) carries one
-// ASCII bar. The bar has to fit the *device* that receives it, not the
-// server: a 430 px phone lock screen gives a plain-text body roughly 32
-// characters per line, a tablet-held PWA about 44, and a desktop toast —
-// which lays the bar out with a proportional font on a much wider surface —
-// comfortably more. One fixed cell count cannot be right for all three, so
-// the receiving browser reports its own body budget at subscribe time, that
-// budget is stored on the subscription row, and each send picks the cell
-// count from the size the bar will actually be shown at.
-//
-// Three sizes, matched to the surfaces the app is actually used on:
-//   narrow (a phone, incl. an installed iOS/Android PWA)  -> 6 cells
-//   wide   (a phone in landscape, a small tablet)         -> 10 cells
-//   huge   (a tablet, a desktop browser toast)            -> 20 cells
-// A wider bar is strictly more informative, but a row that wraps to a
-// second line pushes the status text out of the collapsed preview a phone
-// lock screen shows, so the cell count only grows with the room the body
-// actually has. The thresholds are deliberately below the raw character
-// capacity of each surface: the bar shares the line with the notification's
-// own gutter, and the info line under it reads better when it is the
-// longest row in the notice.
-const BAR_CELLS = Object.freeze({ narrow: 6, wide: 10, huge: 20 });
-const BAR_NARROW_MAX_CHARS = 45;
-const BAR_WIDE_MAX_CHARS = 90;
-// An unmeasured device (a headless browser, a worker-only context, an older
-// page) gets the phone bar: the conservative choice, since too few cells
-// only loses resolution while too many wraps the row.
-const DEFAULT_STATUS_BAR_SIZE = 'narrow';
+// Fields a device may report about itself for status-bar sizing. Anything
+// else in the subscribe body is ignored, so a malformed client cannot grow an
+// unbounded blob in the subscription row.
+const PROFILE_MAX_CHARS = 512;
 
-// statusBarSizeForMaxChars(maxChars) -> 'narrow' | 'wide' | 'huge'
+// normalizeStatusBarProfile(value) -> JSON string | null
 //
-// The cell count is chosen from the body width the device reported. A body
-// line under 45 characters is a phone (6 cells), under 90 a landscape phone
-// or small tablet (10 cells), and beyond that a tablet or desktop toast
-// (20 cells). An unknown/absent budget falls back to the phone default.
-function statusBarSizeForMaxChars(maxChars) {
-  const max = Number(maxChars);
-  if (!Number.isFinite(max) || max <= 0) return DEFAULT_STATUS_BAR_SIZE;
-  if (max < BAR_NARROW_MAX_CHARS) return 'narrow';
-  if (max < BAR_WIDE_MAX_CHARS) return 'wide';
-  return 'huge';
+// Keep only the known sizing fields and only when they carry a usable value,
+// so the stored profile is small and statusBarJs.statusBarPlan() can trust
+// its types. Returns null when nothing usable was reported, so a rebind can
+// preserve the previously stored profile.
+function normalizeStatusBarProfile(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out = {};
+  const chars = Number(value.chars);
+  if (Number.isFinite(chars) && chars > 0) out.chars = Math.round(chars);
+  const viewportWidth = Number(value.viewportWidth);
+  if (Number.isFinite(viewportWidth) && viewportWidth > 0) out.viewportWidth = Math.round(viewportWidth);
+  const os = statusBar.normalizeOs(value.os);
+  if (os) out.os = os;
+  const osVersion = Number(value.osVersion);
+  if (Number.isFinite(osVersion) && osVersion > 0) out.osVersion = Math.round(osVersion);
+  const style = String(value.style || '').trim().toLowerCase();
+  if (style === 'collapsed' || style === 'expanded') out.style = style;
+  if (!Object.keys(out).length) return null;
+  const json = JSON.stringify(out);
+  return json.length <= PROFILE_MAX_CHARS ? json : null;
 }
 
-function statusBarCells(size) {
-  return BAR_CELLS[size] || BAR_CELLS[DEFAULT_STATUS_BAR_SIZE];
-}
-
-// asciiStatusBar(percent, size) -> '[####--] 40%'
+// statusBarFromLegacyChars(value) -> integer | null
 //
-// One bar for every chat status notification, so progress, completion, and
-// errors share a single visual format. `percent == null` (an error with no
-// measurable progress) renders an empty bar without a percentage. Pure
-// ASCII: no Unicode block glyphs, which render inconsistently across
-// Android, iOS, and desktop notification fonts.
-function asciiStatusBar(percent, size) {
-  const width = statusBarCells(size);
-  const normalized = percent == null ? null : Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
-  // Round the fill so any non-zero progress lights at least one cell: at
-  // 20 cells a plain round() would show 4% as a completely empty bar.
-  const filled = normalized == null ? 0
-    : (normalized > 0 ? Math.max(1, Math.round((normalized / 100) * width)) : 0);
-  return '[' + '#'.repeat(filled) + '-'.repeat(width - filled) + ']'
-    + (normalized == null ? '' : ' ' + normalized + '%');
+// The original subscribe shape sent a bare character count. Keep honoring it
+// so a client that predates the richer profile still sizes its bar.
+function statusBarFromLegacyChars(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
 // ---- VAPID keys ---------------------------------------------------------
@@ -152,6 +129,7 @@ function ensureTable() {
     auth       TEXT NOT NULL,
     origin     TEXT,
     status_bar INTEGER,
+    status_bar_profile TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`);
@@ -161,18 +139,24 @@ function ensureTable() {
     created_at TEXT NOT NULL
   )`);
   // Devices subscribed before the status bar became device-sized have no
-  // stored budget; they keep the phone default until the page rebinds its
-  // endpoint (every startup sync re-registers, so this is self-healing).
+  // stored report; they keep the conservative phone plan until the page
+  // rebinds its endpoint (every startup sync re-registers, so this heals).
+  // `status_bar` is the original bare character count; `status_bar_profile`
+  // is the current shape (measured chars, viewport, OS, OS version, style).
   const cols = db.prepare(`PRAGMA table_info('${SUB_TABLE}')`).all();
-  if (!cols.some((c) => c.name === 'status_bar')) {
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has('status_bar')) {
     db.exec(`ALTER TABLE ${SUB_TABLE} ADD COLUMN status_bar INTEGER`);
+  }
+  if (!names.has('status_bar_profile')) {
+    db.exec(`ALTER TABLE ${SUB_TABLE} ADD COLUMN status_bar_profile TEXT`);
   }
 }
 
 function listSubscriptions(sessionId) {
 if (!sessionId) return [];
 const db = settings.getDb();
-return db.prepare(`SELECT id, endpoint, p256dh, auth, origin, status_bar, created_at FROM ${SUB_TABLE} WHERE session_id = ? ORDER BY created_at ASC`).all(sessionId);
+return db.prepare(`SELECT id, endpoint, p256dh, auth, origin, status_bar, status_bar_profile, created_at FROM ${SUB_TABLE} WHERE session_id = ? ORDER BY created_at ASC`).all(sessionId);
 }
 // Every subscription, across sessions — used by the sign-in alert, which
 // must reach the user's other already-signed-in devices. A login mints a
@@ -180,32 +164,37 @@ return db.prepare(`SELECT id, endpoint, p256dh, auth, origin, status_bar, create
 // rebinds its endpoint, so a per-session send would reach nothing.
 function listAllSubscriptions() {
 const db = settings.getDb();
-return db.prepare(`SELECT id, session_id, endpoint, p256dh, auth, origin, status_bar, created_at FROM ${SUB_TABLE} ORDER BY created_at ASC`).all();
+return db.prepare(`SELECT id, session_id, endpoint, p256dh, auth, origin, status_bar, status_bar_profile, created_at FROM ${SUB_TABLE} ORDER BY created_at ASC`).all();
 }
 
 
-function addSubscription({ sessionId, endpoint, p256dh, auth, origin, statusBarMaxChars }) {
+function addSubscription({ sessionId, endpoint, p256dh, auth, origin, statusBarMaxChars, statusBarProfile }) {
   const db = settings.getDb();
   const now = new Date().toISOString();
-  const existing = db.prepare(`SELECT id, created_at, status_bar FROM ${SUB_TABLE} WHERE endpoint = ?`).get(endpoint);
+  const existing = db.prepare(`SELECT id, created_at, status_bar, status_bar_profile FROM ${SUB_TABLE} WHERE endpoint = ?`).get(endpoint);
   const id = existing ? existing.id : crypto.randomUUID();
-  // The device reports how many characters one notification body line
-  // holds. Absent (an older page, a curl client) keeps whatever this
-  // device last reported so a stale client cannot reset a good budget.
-  const reported = Number(statusBarMaxChars);
-  const statusBar = Number.isFinite(reported) && reported > 0
-    ? Math.round(reported)
+  // The device reports how it presents notifications (measured body line,
+  // viewport, OS, OS version, style). An absent report (an older page, a curl
+  // client) keeps whatever this device last stored — a stale client must not
+  // reset a good profile, and a rebind is the normal path that refines it.
+  const profileJson = normalizeStatusBarProfile(statusBarProfile)
+    || (existing && existing.status_bar_profile)
+    || null;
+  const legacyChars = statusBarFromLegacyChars(statusBarMaxChars);
+  const statusBarValue = legacyChars != null
+    ? legacyChars
     : (existing && existing.status_bar) || null;
-  db.prepare(`INSERT INTO ${SUB_TABLE} (id, session_id, endpoint, p256dh, auth, origin, status_bar, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  db.prepare(`INSERT INTO ${SUB_TABLE} (id, session_id, endpoint, p256dh, auth, origin, status_bar, status_bar_profile, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(endpoint) DO UPDATE SET
       session_id = excluded.session_id,
       p256dh = excluded.p256dh,
       auth = excluded.auth,
       origin = excluded.origin,
       status_bar = excluded.status_bar,
+      status_bar_profile = excluded.status_bar_profile,
       updated_at = excluded.updated_at`)
-    .run(id, sessionId, endpoint, p256dh, auth, origin || null, statusBar, existing ? existing.created_at : now, now);
+    .run(id, sessionId, endpoint, p256dh, auth, origin || null, statusBarValue, profileJson, existing ? existing.created_at : now, now);
   return { id, endpoint, origin };
 }
 
@@ -228,10 +217,10 @@ function removeAllSubscriptions(sessionId) {
 // target subscription.
 //
 // `body` is the device-independent text; `bodyFor(sub)` is the status-bar
-// escape hatch: a status push passes a function that builds its body from
-// the *subscription's* own reported line budget, so each device gets a bar
-// sized to the surface the OS will actually show it on (see BAR_CELLS). A
-// push without `bodyFor` sends the same `body` everywhere, which is what
+// escape hatch: a status push passes a function that builds its body from the
+// *subscription's* own device plan, so each device gets a bar sized to its
+// screen, notification style, and OS version (see src/statusBar.js). A push
+// without `bodyFor` sends the same `body` everywhere, which is what
 // authorization and sign-in alerts do.
 function sendPush({ sessionId, subs, title, body, bodyFor, tag, data, chatId, projectDir, actions, requireInteraction }) {
 const targets = Array.isArray(subs) ? subs : (sessionId ? listSubscriptions(sessionId) : []);
@@ -310,11 +299,10 @@ module.exports = {
   getVapidPublicKey,
   getPushConfig,
   vapidSubjectForOrigin,
-  asciiStatusBar,
-  statusBarSizeForMaxChars,
-  statusBarCells,
-  BAR_CELLS,
-  DEFAULT_STATUS_BAR_SIZE,
+  normalizeStatusBarProfile,
+  // Status-bar surface re-exported so senders have one import for "build a
+  // status body": `push.statusBar` is src/statusBar.js.
+  statusBar,
   listSubscriptions,
 listAllSubscriptions,
 addSubscription,

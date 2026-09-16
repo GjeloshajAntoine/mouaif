@@ -40,12 +40,17 @@ async function handlePush(req, res, parsed, sessionToken, servedOrigin) {
     if (!keys || !keys.p256dh || !keys.auth) {
     return sendJSON(res, 400, { error: 'subscription must include keys.p256dh and keys.auth', code: 'EBADINPUT' });
     }
-    // `statusBarMaxChars` is how many characters one notification body line
-    // holds on this device. The status push uses it to pick the ASCII bar
-    // width (src/push.js BAR_CELLS) instead of guessing a single size for
-    // phone, tablet, and desktop. Optional: the page always sends it, and a
-    // client that omits it keeps the phone default.
+    // How this device presents a notification. The status bar is sized from
+    // these facts (src/statusBar.js): `chars` is the measured body line,
+    // `viewportWidth` keeps a measurement honest and scales the fallback,
+    // and `os` + `osVersion` pick how many lines the platform previews and
+    // the platform's own fallback width. `style` is 'collapsed' or
+    // 'expanded' so a one-line presentation puts the bar and message on one
+    // row. All optional; an omitted field keeps whatever this device
+    // reported last. `statusBarMaxChars` is the older, bare-count shape and
+    // stays supported.
     const statusBarMaxChars = Number(body.subscription.statusBarMaxChars);
+    const statusBarProfile = body.subscription.statusBarProfile;
     try {
     const result = push.addSubscription({
       sessionId: sid,
@@ -53,7 +58,8 @@ async function handlePush(req, res, parsed, sessionToken, servedOrigin) {
       p256dh: keys.p256dh,
       auth: keys.auth,
       origin: servedOrigin || null,
-      statusBarMaxChars: Number.isFinite(statusBarMaxChars) && statusBarMaxChars > 0 ? statusBarMaxChars : null
+      statusBarMaxChars: Number.isFinite(statusBarMaxChars) && statusBarMaxChars > 0 ? statusBarMaxChars : null,
+      statusBarProfile
     });
     return sendJSON(res, 200, { ok: true, id: result.id });
     } catch (e) {
