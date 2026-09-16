@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Web preview tool (`webpreview`) — mouaif docs</title>
+  <meta name="description" content="`webpreview` refreshes a user-facing, mobile-proportioned screenshot of a web URL. The latest image appears as a reduced image between the chat scroll and the…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="web-preview-tool-webpreview">Web preview tool (<code>webpreview</code>)</h1>
+<h2 id="overview">Overview</h2>
+<p><code>webpreview</code> refreshes a user-facing, mobile-proportioned screenshot of a web URL. The latest image appears as a reduced image between the chat scroll and the message textbox; the AI can trigger a refresh, but the screenshot is not returned to the AI for visual analysis.</p>
+<h2 id="usage">Usage</h2>
+<p>The AI can show or reload a preview by invoking the tool with the current URL:</p>
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;webpreview&quot;,
+  &quot;arguments&quot;: {
+    &quot;url&quot;: &quot;https://example.com/landing&quot;
+  }
+}</code></pre>
+<p>To capture at a different size, add a <code>viewport</code> argument — a preset id (<code>&quot;phone&quot;</code>, <code>&quot;phone+&quot;</code>, <code>&quot;tablet&quot;</code>, <code>&quot;laptop&quot;</code>) or a <code>&quot;WIDTHxHEIGHT&quot;</code> string (e.g. <code>&quot;1280x800&quot;</code>). It defaults to the 375 × 667 <code>&quot;phone&quot;</code> capture:</p>
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;webpreview&quot;,
+  &quot;arguments&quot;: {
+    &quot;url&quot;: &quot;https://example.com/landing&quot;,
+    &quot;viewport&quot;: &quot;tablet&quot;
+  }
+}</code></pre>
+<h3 id="in-the-chat-ui">In the chat UI</h3>
+<ul><li><p><strong>Right-aligned miniature</strong> — the latest successful capture is shown above the composer, outside the scrolling transcript, as a small phone-proportioned image. The screenshot is the only content in chat; page title/host/time are shown only in the full-screen viewer. Its height is capped (<code>min(24dvh, 11rem)</code>) so a tall page capture stays a thumbnail instead of taking over the chat: the dock is in the flow above the composer, so every pixel of it comes out of the transcript. The image fills the card and is cropped to the <strong>top</strong> of the page — the part worth previewing — and the full capture is one tap away in the viewer.</p></li><li><p><strong>Mobile proportion</strong> — by default the capture uses the Inspector&#39;s 375 × 667 Phone viewport and the dock preserves that aspect ratio. The capture resolution is reported in the full-screen viewer&#39;s footer and can be changed.</p></li><li><p><strong>Full image</strong> — tap the card to open the screenshot in a full-screen viewer (title with a short host sub-line, a <strong>Refresh</strong> button, the Size dropdown, capture time and resolution in the footer, and Open-in-new-tab). The header is a <strong>single row at every phone width</strong>. The title/host block is the only flexible child, so it absorbs the slack and ellipsizes; <strong>Refresh</strong> collapses to its icon and keeps its glyph <strong>centred</strong> in the 44 × 44 px button (it is the only control here with no text to justify); the Size dropdown keeps its own width (enough for the longest option, so its label is never clipped); and the close ✕ sits at the end of the row. On a 360 px phone the whole header is 55 px tall and every control is still a 44 × 44 px tap target.</p></li><li><p><strong>Change resolution</strong> — the full-screen viewer has a native <strong>Size</strong> selector beside the close button (Phone / Phone+ / Tablet / Laptop / Custom). Picking a preset re-captures the same URL immediately, without a model round-trip. Picking <strong>Custom</strong> reveals touch-friendly width and height fields; values from 64 to 2048 px can be applied. A custom size requested by the model pre-fills those fields.</p></li><li><p><strong>Dismiss</strong> — a small circular close button on the card&#39;s top-right border removes the preview without changing the chat.</p></li><li><p><strong>Open in browser</strong> — the full viewer can open the original URL in a new browser tab.</p></li><li><p><strong>Reload by the AI</strong> — another <code>webpreview</code> call replaces the card&#39;s image with a fresh capture.</p></li></ul>
+<h3 id="authorization">Authorization</h3>
+<p><code>webpreview</code> uses the project&#39;s tool authorization mode (<code>Ask</code>, <code>Allow</code>, or <code>Off</code>) and optional URL allowlist patterns. In <code>Ask</code> mode, changing the resolution closes the viewer and shows the standard authorization card in the chat; approving it retries the capture at the selected size.</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p>The native runner in <code>src/tools/webpreview.js</code> opens a temporary debug-Chrome tab, waits for the page, applies the requested viewport (default 375 × 667 phone), captures a JPEG, and closes the tab. It accepts a <code>viewport</code> arg via the model spec, and <code>resolveViewport()</code> maps preset ids or <code>WIDTHxHEIGHT</code> strings (clamped) to a capture rectangle.</p></li><li><p><code>frontend/src/components/chat/webpreviewState.js</code> bridges imperative tool results to <code>WebpreviewDock.jsx</code>.</p></li><li><p>The dock is rendered directly between <code>.chat-view__transcript</code> and <code>.chat-view__composer-row</code> in <code>frontend/src/components/chat/Chat.jsx</code>.</p></li><li><p>The full-screen viewer (<code>WebpreviewModal.jsx</code>) shows the capture resolution in its footer meta and exposes a <strong>Refresh</strong> button plus a native <strong>Size</strong> selector. Its <strong>Custom</strong> option validates width and height before sending a <code>WIDTHxHEIGHT</code> viewport. These controls call <code>POST /api/tools/webpreview</code> (implemented in <code>src/server-handlers-tools.js</code>) to re-capture at a chosen size. That endpoint goes through the same <code>webpreview</code> authorization gate as the model path; <code>Chat.jsx</code> handles <code>EAUTH_REQUIRED</code> by mounting the shared authorization card and retrying with the original call ID after approval.</p></li><li><p>Screenshot bytes are emitted in the rich UI result only. <code>src/ai-stream.js</code> does not append them as model image input; the model receives compact URL, title, size, dimension, and viewport metadata.</p></li><li><p>Repeating the tool call opens a fresh temporary tab, so each call functions as a reload.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./inspector.html">Inspector</a> — inspecting and interacting with live browser pages.</p></li><li><p><a href="./tool-authorization.html">Tool authorization</a> — approving or gating tool execution.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>App abilities — mouaif docs</title>
+  <meta name="description" content="mouaif organizes AI-assisted work by project. Each project can have its own models, instructions, tools, agents, and chats while provider connections remain…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a class="is-active" href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="app-abilities">App abilities</h1>
+<h2 id="overview">Overview</h2>
+<p>mouaif organizes AI-assisted work by project. Each project can have its own models, instructions, tools, agents, and chats while provider connections remain available across the app.</p>
+<h2 id="projects-and-chats">Projects and chats</h2>
+<ul><li><p>Add an existing folder or create a folder from the <strong>Chats</strong> tab.</p></li><li><p>Create multiple chats for each project and switch between them from the chat header.</p></li><li><p>Pick and bookmark a model for each chat.</p></li><li><p>Attach text files and images to a message.</p></li><li><p>Use <strong>Draft Craft</strong> to add selected file code or an annotated Inspector image to any chat draft.</p></li><li><p>Read streamed responses with Markdown, token usage, speed, and estimated cost.</p></li><li><p>Rename, trace, or delete chats from the chat menu.</p>
+<p>Unregistering a project removes it from mouaif without deleting the folder on disk.</p></li></ul>
+<h2 id="coding-tools">Coding tools</h2>
+<p>Open a project’s settings, then configure each tool as <strong>Off</strong>, <strong>Ask</strong>, or <strong>Allow</strong>. Use <strong>Ask</strong> when you want to review calls before they run.</p>
+<h3 id="shell">Shell</h3>
+<p>The model can run non-interactive commands in the project folder, inspect the output, make changes, and run another command. Calls appear in the chat with their live output.</p>
+<p>You can also run a command yourself from the composer:</p>
+<pre><code class="language-text">/shell npm test</code></pre>
+<p>Commands that wait for terminal input are not supported. Use one-shot commands such as <code>npm test</code> or <code>node -e &quot;console.log(&#39;ok&#39;)&quot;</code>.</p>
+<h3 id="files">Files</h3>
+<p>File tools let the model list, search, read, create, and edit files in the project. The Files toolbar also lets you inspect or edit text files and preview common image formats yourself.</p>
+<h3 id="git">Git</h3>
+<p>Open the Git view from the file toolbar to inspect staged changes, unstaged changes, and recent commits. Git actions remain visible in the chat when the model uses an enabled Git integration.</p>
+<h3 id="tasks-and-progress">Tasks and progress</h3>
+<p>The model can create a task list and update progress while it works. Long operations can show a live progress bar in the transcript.</p>
+<h3 id="ask-user">Ask user</h3>
+<p>When the model needs a product choice or approval, it can present a structured question with selectable answers and a free-form note.</p>
+<h2 id="agents-and-skills">Agents and skills</h2>
+<ul><li><p><strong>Agents</strong> are named project personas that can handle delegated work with their own model and instructions.</p></li><li><p><strong>Skills</strong> are reusable instruction sets discovered from the project and enabled for a chat.</p></li><li><p><strong>Agent instruction files</strong> such as <code>AGENTS.md</code>, <code>CLAUDE.md</code>, and configured alternatives can provide project guidance automatically.</p>
+<p>Configure these under the project settings. Delegated runs appear as expandable cards in the parent chat.</p></li></ul>
+<h2 id="mcp-integrations">MCP integrations</h2>
+<p>MCP connects additional tools, such as browser automation or external services.</p>
+<ol><li><p>Open <strong>Settings → MCP servers</strong>.</p></li><li><p>Add a server manually or browse the registry.</p></li><li><p>Enable it globally or for a project.</p></li><li><p>Set its authorization mode before using it in chat.</p>
+<p>The Chrome Debug MCP can give the model access to the same debug browser used by the Inspector.</p></li></ol>
+<h2 id="inspector">Inspector</h2>
+<p>Use the <strong>Inspector</strong> tab to work with pages open in the configured debug Chrome:</p>
+<ul><li><p>discover and select browser tabs;</p></li><li><p>preview a page;</p></li><li><p>read console messages;</p></li><li><p>run JavaScript in the console;</p></li><li><p>inspect network requests;</p></li><li><p>navigate, reload, open, and close tabs.</p>
+<p>Closing a browser tab requires confirmation.</p></li></ul>
+<h2 id="prompts-and-model-controls">Prompts and model controls</h2>
+<p>Per-chat and per-project controls include:</p>
+<ul><li><p>custom system prompts;</p></li><li><p>prompt-size profiles;</p></li><li><p>model selection and bookmarks;</p></li><li><p>reasoning or thinking level when supported;</p></li><li><p>maximum output tokens;</p></li><li><p>tool visibility and authorization.</p>
+<p>Use a smaller prompt profile to reduce context use, or an extensive profile when the model needs fuller guidance.</p></li></ul>
+<h2 id="traces-notifications-and-installation">Traces, notifications, and installation</h2>
+<ul><li><p>Enable tracing for a chat when you want an event history that can be exported or saved with the project.</p></li><li><p>Enable browser notifications to follow long-running chats and respond to approvals while the app is in the background.</p></li><li><p>Install the web app from a supported browser for an app-like mobile experience.</p></li></ul>
+<h2 id="safety-tips">Safety tips</h2>
+<ul><li><p>Keep shell and write-capable tools on <strong>Ask</strong> until you trust the workflow.</p></li><li><p>Review commands and file changes before approving them.</p></li><li><p>Use access authentication and HTTPS before sharing mouaif on a network.</p></li><li><p>Keep API keys out of project files and chat messages; add them through <strong>Settings → Providers</strong>.</p></li></ul>
+<h2 id="next-steps">Next steps</h2>
+<ul><li><p><a href="./getting-started.html">Getting started</a> — install, run, and complete first setup.</p></li><li><p><a href="./authentication.html">Authentication</a> — provider sign-in and access-auth CLI examples.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

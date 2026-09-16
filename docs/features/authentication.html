@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Authentication — mouaif docs</title>
+  <meta name="description" content="mouaif has two separate kinds of authentication: AI provider credentials let it use models, while optional access authentication protects the web app and its…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a class="is-active" href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="authentication">Authentication</h1>
+<h2 id="overview">Overview</h2>
+<p>mouaif has two separate kinds of authentication: AI provider credentials let it use models, while optional access authentication protects the web app and its HTTP endpoints.</p>
+<h2 id="connect-an-ai-provider">Connect an AI provider</h2>
+<ol><li><p>Open <strong>Settings → Providers</strong>.</p></li><li><p>Choose a provider.</p></li><li><p>Enter the requested API key and base URL, or tap <strong>Sign in</strong> when browser sign-in is available.</p></li><li><p>Save the provider and use its model refresh or connection test.</p></li><li><p>Open a project&#39;s settings and add the model you want to use.</p>
+<p>Available connections include OpenAI-compatible services, Anthropic, Google Gemini, Ollama, OpenRouter, GitHub Copilot, Azure OpenAI, Mistral, Groq, and DeepSeek. Ollama normally runs locally without an API key. Anthropic, OpenRouter, and GitHub Copilot offer browser sign-in in the provider form.</p></li></ol>
+<h2 id="protect-app-access">Protect app access</h2>
+<p>Access authentication is off unless you enable it when starting mouaif.</p>
+<h3 id="create-access-from-the-setup-page">Create access from the setup page</h3>
+<pre><code class="language-bash">mouaif serve --auth-setup</code></pre>
+<p>The terminal prints a setup link, QR code, and short code. The invitation expires after 15 minutes. Open it to create the app username and password, then optionally add a passkey.</p>
+<p>For a URL that another device can open:</p>
+<pre><code class="language-bash">mouaif serve \
+  --host 0.0.0.0 \
+  --public-origin https://mouaif.example.com \
+  --auth-setup</code></pre>
+<p>Use HTTPS when exposing mouaif outside the computer that runs it. Passkeys require HTTPS on remote devices.</p>
+<h3 id="set-the-username-and-password-from-the-cli">Set the username and password from the CLI</h3>
+<p>Prefer an environment variable so the password is not saved in shell history:</p>
+<pre><code class="language-bash">MOUAIF_PASSWORD=&#39;a-long-password&#39; \
+  mouaif serve --auth --user alice</code></pre>
+<p>PowerShell:</p>
+<pre><code class="language-powershell">$env:MOUAIF_PASSWORD = &#39;a-long-password&#39;
+mouaif serve --auth --user alice</code></pre>
+<p>A direct CLI argument is also supported, but may remain in shell history:</p>
+<pre><code class="language-bash">mouaif serve --auth --user alice --password &#39;a-long-password&#39;</code></pre>
+<p>The password must contain at least eight characters.</p>
+<h3 id="reuse-existing-access-settings">Reuse existing access settings</h3>
+<p>After initial setup, require login on future starts with:</p>
+<pre><code class="language-bash">mouaif serve --auth</code></pre>
+<p>To create a fresh setup invitation or replace the access user later:</p>
+<pre><code class="language-bash">mouaif serve --auth-setup</code></pre>
+<h2 id="manage-access-in-the-app">Manage access in the app</h2>
+<p>Open <strong>Settings → Access &amp; passkeys</strong> to:</p>
+<ul><li><p>change the password;</p></li><li><p>add or remove passkeys;</p></li><li><p>review and revoke signed-in sessions.</p>
+<p>Changing the password revokes other sessions and removes existing passkeys.</p></li></ul>
+<h2 id="authenticate-command-line-requests">Authenticate command-line requests</h2>
+<p>When access authentication is enabled, command-line requests such as <code>curl</code> must send HTTP Basic authentication with the access username and password you created during setup. Browser sign-ins use a session cookie automatically.</p>
+<h2 id="next-steps">Next steps</h2>
+<ul><li><p><a href="./getting-started.html">Getting started</a> — install and start mouaif.</p></li><li><p><a href="./app-abilities.html">App abilities</a> — configure tools and use the app.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

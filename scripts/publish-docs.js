@@ -1,28 +1,33 @@
 // scripts/publish-docs.js
-// Publish the public documentation site to the `gh-pages` branch.
+// Publish the public documentation site into docs/ on the current branch.
 //
-// This is a branch deploy: there is no GitHub Actions workflow. The script
-// builds docs-dist/ (public site only — never --with-internal, so the
-// decisions log and the agent notes can never reach the published site),
-// then commits the result onto an orphan `gh-pages` branch and pushes it.
-// GitHub Pages serves that branch directly; the generated `.nojekyll` file
-// stops Jekyll from rewriting the already-rendered HTML.
+// Deployment model: GitHub Pages is set to "Deploy from a branch" ->
+// `master` / `/docs`. There is no GitHub Actions workflow and no extra
+// branch. GitHub Pages only serves files that are committed, and it never
+// runs our build, so the generated site (index.html, documentation.html,
+// features/*.html, assets/site.css, .nojekyll) is committed into docs/
+// next to the Markdown sources.
+//
+// This script keeps that committed output in sync:
+//   1. builds the public site into a scratch directory (never --with-internal,
+//      so decisions.html and agent/* can never be published);
+//   2. refuses to continue if a maintainer page slipped into the build;
+//   3. copies the generated files into docs/, skipping the image tree (it is
+//      already the source of truth under docs/features/images/) and deleting
+//      stale docs/features/*.html so a removed or renamed doc disappears.
 //
 // One-time setup per repository:
 //   Settings -> Pages -> Build and deployment -> Source: Deploy from a branch
-//     Branch: gh-pages  /  (root)
+//     Branch: master  /  /docs
 //
 // Usage:
-//   node scripts/publish-docs.js                       # build + commit + push
-//   node scripts/publish-docs.js --dry-run             # build + commit, no push
-//   node scripts/publish-docs.js --remote upstream     # push elsewhere
+//   node scripts/publish-docs.js            # build + sync docs/ + git add
+//   node scripts/publish-docs.js --check    # verify docs/ is in sync; no writes
 //   npm run docs:publish
+//   npm run docs:publish:check
 //
-// The commit is created from docs-dist/ only: every tracked path on the
-// gh-pages branch is replaced, so deleting a doc removes its published page.
-// The main working tree is never modified — the commit is built with a
-// temporary index (GIT_INDEX_FILE), so local changes and staged files are
-// untouched.
+// --check exits non-zero when the committed docs/ output differs from a fresh
+// build, so CI can fail on docs/code drift without writing to the tree.
 
 'use strict';
 
@@ -32,41 +37,62 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
-const BRANCH = 'gh-pages';
+const DOCS_DIR = path.join(ROOT, 'docs');
 
-function git(args, opts) {
-  const res = spawnSync('git', args, {
-    // Run from the staging directory when given one, so paths are relative to
-    // the work tree git is indexing; otherwise from the repo root.
-    cwd: (opts && opts.cwd) || ROOT,
-    encoding: 'utf8',
-    // Git needs a name/email to author the commit; supply one so the script
-    // works on a machine that never configured `git config user.*`.
-    env: Object.assign({}, process.env, (opts && opts.env) || {})
-  });
-  if (res.error) throw res.error;
-  if (res.status !== 0 && !(opts && opts.allowFailure)) {
-    const detail = (res.stderr || res.stdout || '').trim();
-    throw new Error('git ' + args.join(' ') + ' failed: ' + detail);
+// Files that are copied verbatim from the build into docs/. Everything else
+// under the build is either the image tree (already present in docs/) or a
+// per-feature HTML page handled by the features/ pass below.
+const ROOT_FILES = ['index.html', 'documentation.html', '.nojekyll'];
+const ASSETS_DIR = 'assets';
+const FEATURES_DIR = 'features';
+
+function walkFiles(dir, base) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const rel = base ? base + '/' + entry.name : entry.name;
+    const abs = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkFiles(abs, rel));
+    else if (entry.isFile()) out.push(rel);
   }
-  return res;
+  return out;
+}
+
+function readIfExists(p) {
+  try {
+    return fs.readFileSync(p);
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+function listGenerated(buildDir) {
+  // Per-feature HTML the build produced, as slugs.
+  const featuresDir = path.join(buildDir, FEATURES_DIR);
+  const featurePages = fs.existsSync(featuresDir)
+    ? fs.readdirSync(featuresDir).filter((f) => f.endsWith('.html'))
+    : [];
+  return {
+    rootFiles: ROOT_FILES.filter((f) => fs.existsSync(path.join(buildDir, f))),
+    assets: fs.existsSync(path.join(buildDir, ASSETS_DIR))
+      ? walkFiles(path.join(buildDir, ASSETS_DIR), '').map((f) => f)
+      : [],
+    featurePages
+  };
 }
 
 function main() {
   const argv = process.argv.slice(2);
-  let dryRun = false;
-  let remote = 'origin';
+  let check = false;
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--dry-run') {
-      dryRun = true;
-    } else if (argv[i] === '--remote' && i + 1 < argv.length) {
-      remote = argv[++i];
+    if (argv[i] === '--check') {
+      check = true;
     } else if (argv[i] === '-h' || argv[i] === '--help') {
       process.stdout.write(
-        'Usage: node scripts/publish-docs.js [--dry-run] [--remote <name>]\n' +
-          '  Builds the public docs site and publishes it to the ' + BRANCH + ' branch.\n' +
-          '  --dry-run        build and commit, but do not push.\n' +
-          '  --remote <name>  git remote to push to (default: origin).\n'
+        'Usage: node scripts/publish-docs.js [--check]\n' +
+          '  Builds the public docs site and syncs it into docs/ for a\n' +
+          '  branch deploy (Settings -> Pages -> master /docs).\n' +
+          '  --check  verify docs/ matches a fresh build without writing.\n'
       );
       process.exit(0);
     } else {
@@ -75,30 +101,31 @@ function main() {
     }
   }
 
-  if (!fs.existsSync(path.join(ROOT, 'docs'))) {
-    process.stderr.write('error: docs/ directory not found\n');
+  if (!fs.existsSync(path.join(DOCS_DIR, 'features'))) {
+    process.stderr.write('error: docs/features/ not found\n');
     process.exit(2);
   }
 
-  // 1. Build the public site into a fresh, throwaway directory. Building into
-  //    a scratch dir instead of docs-dist/ guarantees the published branch can
-  //    never pick up stale maintainer pages (decisions.html, agent/) left
-  //    behind by an earlier `--with-internal` build. Never --with-internal:
-  //    the published branch must not contain decisions.html or agent/*.
+  // 1. Build the public site into a scratch directory. Building elsewhere
+  //    keeps the source tree (Markdown + images) untouched by the renderer
+  //    and guarantees a stale `--with-internal` build cannot leak.
   const staging = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-docs-'));
   process.stdout.write('[publish] building public docs site...\n');
-  const build = spawnSync('node', [path.join(__dirname, 'build-docs.js'), '--out', staging], {
-    cwd: ROOT,
-    stdio: 'inherit'
-  });
+  const build = spawnSync(
+    'node',
+    [path.join(__dirname, 'build-docs.js'), '--out', staging],
+    { cwd: ROOT, stdio: 'inherit' }
+  );
   if (build.error) throw build.error;
   if (build.status !== 0) {
     process.stderr.write('error: docs build failed\n');
     process.exit(build.status || 1);
   }
 
-  if (fs.existsSync(path.join(staging, 'decisions.html')) ||
-      fs.existsSync(path.join(staging, 'agent'))) {
+  if (
+    fs.existsSync(path.join(staging, 'decisions.html')) ||
+    fs.existsSync(path.join(staging, 'agent'))
+  ) {
     process.stderr.write(
       'error: built site contains maintainer pages; refusing to publish\n'
     );
@@ -109,76 +136,127 @@ function main() {
     process.exit(1);
   }
 
-    // 2. Build the branch tree in a throwaway index so the normal working tree,
-  //    its index, and any staged changes are left untouched. All index
-  //    commands run with the real .git as the object store but the staging
-  //    dir as the work tree, so the site lands at the branch root.
-  const indexFile = path.join(
-    fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-publish-')),
-    'index'
-  );
-  const gitEnv = Object.assign({}, process.env, {
-    GIT_INDEX_FILE: indexFile,
-    // The real repository object store + refs, indexed against the staging
-    // work tree, so the built site lands at the root of the gh-pages branch.
-    GIT_DIR: path.join(ROOT, '.git'),
-    GIT_WORK_TREE: staging,
-    GIT_AUTHOR_NAME: 'mouaif docs',
-    GIT_AUTHOR_EMAIL: 'docs@mouaif.invalid',
-    GIT_COMMITTER_NAME: 'mouaif docs',
-    GIT_COMMITTER_EMAIL: 'docs@mouaif.invalid'
-  });
-  const gitOpts = { env: gitEnv, cwd: staging };
+  const gen = listGenerated(staging);
+  const cleanup = () => fs.rmSync(staging, { recursive: true, force: true });
 
-  // Start from an empty index so removed pages do not linger on the branch.
-  git(['read-tree', '--empty'], gitOpts);
-  // -f because the staging dir is not covered by the repo's .gitignore rules
-  // in the way docs-dist/ is; -A so deletions are recorded too.
-  git(['add', '-A', '-f', '.'], gitOpts);
+  // 2. Check mode: compare the generated files against what is committed, and
+  //    report every difference. Nothing on disk is written.
+  if (check) {
+    const drift = [];
+    const generatedRel = new Set();
 
-  const tree = git(['write-tree'], gitOpts).stdout.trim();
-  // Parent is the previous published tip when one exists, so the branch keeps
-  // a readable history; the first ever run creates a parentless commit.
-  // Resolved with ls-remote (read-only) so chaining does not depend on a prior
-  // fetch or on a local ref for the branch.
-  let parent = '';
-  const lsRemote = git(
-    ['ls-remote', '--heads', remote, 'refs/heads/' + BRANCH],
-    Object.assign({}, gitOpts, { allowFailure: true })
-  );
-  const line = (lsRemote.stdout || '').trim().split('\n')[0] || '';
-  if (line) parent = line.split(/\s+/)[0];
+    for (const rel of gen.rootFiles) {
+      generatedRel.add(rel);
+      const want = readIfExists(path.join(staging, rel));
+      const have = readIfExists(path.join(DOCS_DIR, rel));
+      if (have === null) drift.push('missing docs/' + rel);
+      else if (!want.equals(have)) drift.push('stale docs/' + rel);
+    }
+    for (const rel of gen.assets) {
+      const dest = ASSETS_DIR + '/' + rel;
+      generatedRel.add(dest);
+      const want = readIfExists(path.join(staging, ASSETS_DIR, rel));
+      const have = readIfExists(path.join(DOCS_DIR, ASSETS_DIR, rel));
+      if (have === null) drift.push('missing docs/' + dest);
+      else if (!want.equals(have)) drift.push('stale docs/' + dest);
+    }
+    for (const page of gen.featurePages) {
+      const dest = FEATURES_DIR + '/' + page;
+      generatedRel.add(dest);
+      const want = readIfExists(path.join(staging, FEATURES_DIR, page));
+      const have = readIfExists(path.join(DOCS_DIR, FEATURES_DIR, page));
+      if (have === null) drift.push('missing docs/' + dest);
+      else if (!want.equals(have)) drift.push('stale docs/' + dest);
+    }
 
-  const message = 'docs: publish site' + (dryRun ? ' (dry run)' : '');
-  const commitArgs = ['commit-tree', tree, '-m', message];
-  if (parent) commitArgs.push('-p', parent);
-  const commit = git(commitArgs, gitOpts).stdout.trim();
+    // Committed generated pages that the build no longer produces.
+    const committedFeatures = fs
+      .readdirSync(path.join(DOCS_DIR, FEATURES_DIR))
+      .filter((f) => f.endsWith('.html'));
+    for (const f of committedFeatures) {
+      if (!generatedRel.has(FEATURES_DIR + '/' + f)) drift.push('orphan docs/' + FEATURES_DIR + '/' + f);
+    }
 
-  if (dryRun) {
-    fs.rmSync(path.dirname(indexFile), { recursive: true, force: true });
-    fs.rmSync(staging, { recursive: true, force: true });
-    process.stdout.write(
-      '[publish] dry run: built the public site as commit ' +
-        commit.slice(0, 12) + ' (not pushed)\n'
-    );
+    cleanup();
+    if (drift.length) {
+      process.stderr.write(
+        '[publish] docs/ is out of date with the Markdown sources:\n' +
+          drift.map((d) => '  - ' + d).join('\n') +
+          '\n  run `npm run docs:publish` and commit the result\n'
+      );
+      process.exit(1);
+    }
+    process.stdout.write('[publish] docs/ is in sync with the Markdown sources.\n');
     return;
   }
 
-  // 3. Push the commit straight to the remote branch. The branch is generated
-  //    output, so the push is forced: it always replaces, never merges.
-  process.stdout.write('[publish] pushing to ' + remote + ' ' + BRANCH + '...\n');
-  git([
-    'push',
-    '--force',
-    remote,
-    commit + ':refs/heads/' + BRANCH
-  ]);
+  // 3. Write mode: sync the generated files into docs/.
+  const written = [];
+  const removed = [];
 
-  fs.rmSync(path.dirname(indexFile), { recursive: true, force: true });
-  fs.rmSync(staging, { recursive: true, force: true });
+  for (const rel of gen.rootFiles) {
+    fs.copyFileSync(path.join(staging, rel), path.join(DOCS_DIR, rel));
+    written.push('docs/' + rel);
+  }
+
+  // Replace the whole assets/ tree so a removed stylesheet does not linger.
+  const destAssets = path.join(DOCS_DIR, ASSETS_DIR);
+  fs.rmSync(destAssets, { recursive: true, force: true });
+  fs.mkdirSync(destAssets, { recursive: true });
+  for (const rel of gen.assets) {
+    const dest = path.join(destAssets, rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(path.join(staging, ASSETS_DIR, rel), dest);
+    written.push('docs/' + ASSETS_DIR + '/' + rel);
+  }
+
+  // Feature pages: write every generated page, then delete any committed
+  // *.html the build no longer produces (a renamed or removed doc). Markdown
+  // sources and the images/ tree in the same directory are left alone.
+  const wantPages = new Set(gen.featurePages);
+  for (const page of gen.featurePages) {
+    fs.copyFileSync(
+      path.join(staging, FEATURES_DIR, page),
+      path.join(DOCS_DIR, FEATURES_DIR, page)
+    );
+    written.push('docs/' + FEATURES_DIR + '/' + page);
+  }
+  for (const f of fs.readdirSync(path.join(DOCS_DIR, FEATURES_DIR))) {
+    if (f.endsWith('.html') && !wantPages.has(f)) {
+      fs.rmSync(path.join(DOCS_DIR, FEATURES_DIR, f));
+      removed.push('docs/' + FEATURES_DIR + '/' + f);
+    }
+  }
+
+  cleanup();
+
+  // 4. Stage exactly the generated paths so unrelated edits stay untouched.
+  const add = spawnSync('git', ['add', '--', ...generatedGitPaths(gen, removed)], {
+    cwd: ROOT,
+    stdio: 'inherit'
+  });
+  if (add.error) throw add.error;
+  if (add.status !== 0) {
+    process.stderr.write('error: git add failed\n');
+    process.exit(add.status || 1);
+  }
+
   process.stdout.write(
-    '[publish] published ' + commit.slice(0, 12) + ' to ' + remote + '/' + BRANCH + '\n'
+    '[publish] synced ' + written.length + ' file(s) into docs/' +
+      (removed.length ? ', removed ' + removed.length + ' stale page(s)' : '') +
+      '\n[publish] staged. Next: commit and push to master — ' +
+      'Pages must be set to master /docs.\n'
   );
+}
+
+// The set of docs/ paths git should stage: the synced files plus the removed
+// pages (so a deletion is staged too).
+function generatedGitPaths(gen, removed) {
+  const paths = ['docs/index.html', 'docs/documentation.html', 'docs/.nojekyll'];
+  paths.push('docs/assets');
+  for (const page of gen.featurePages) paths.push('docs/features/' + page);
+  for (const f of removed) paths.push(f);
+  return paths;
 }
 
 main();

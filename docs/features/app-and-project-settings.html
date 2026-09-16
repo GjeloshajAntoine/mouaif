@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>App and project settings — mouaif docs</title>
+  <meta name="description" content="`mouaif` manages settings through a three-layer hierarchy: **built-in defaults → global app settings → project-level settings**. Project values override…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="app-and-project-settings">App and project settings</h1>
+<h2 id="overview">Overview</h2>
+<p><code>mouaif</code> manages settings through a three-layer hierarchy: <strong>built-in defaults → global app settings → project-level settings</strong>. Project values override app-level defaults when they conflict, giving you shared defaults across your environment while allowing fine-grained customization per codebase.</p>
+<h2 id="api-shapes-get-api-settings-project-get-api-settings-resolved">API shapes (<code>GET /api/settings/project</code>, <code>GET /api/settings/resolved</code>)</h2>
+<p>The app-level and project-level payloads are projected differently, because the two stores hold different kinds of data:</p>
+<ul><li><p><code>GET /api/settings</code> (app + defaults) is <strong>allowlisted</strong>: only the keys the web UI consumes are sent, so server-only bookkeeping such as in-flight OAuth state (<code>authPending</code>) or the CDP debugger URL can never leak into the browser.</p></li><li><p>The project-scoped endpoints send the <strong>whole project object</strong>, minus secrets and the internal storage marker. <code>.mouaif.json</code> is hand-editable and every feature that lands there adds a key (<code>name</code>, <code>agents</code>, <code>skills</code>, <code>agentFiles</code>, <code>hideFileContent</code>, <code>tags</code>, <code>customActions</code>, <code>totalCost</code>, <code>models</code>, ...), so an allowlist would silently hide user data and freeze project-scoped UI at its default.</p></li></ul>
+<pre><code class="language-json">// GET /api/settings/project?projectDir=/abs/path
+{
+  &quot;project&quot;: { &quot;name&quot;: &quot;app&quot;, &quot;skills&quot;: true, &quot;agentFiles&quot;: false, &quot;tags&quot;: [&quot;web&quot;] },
+  &quot;path&quot;: &quot;/abs/path/.mouaif.json&quot;,
+  &quot;dbBacked&quot;: false
+}</code></pre>
+<p>Two fields are always removed: <code>__dbBacked</code> (internal storage bookkeeping, never part of the user&#39;s settings) and <code>apiKey</code> on any <code>providers</code> / <code>models</code> entry, which is replaced by a response-only <code>hasApiKey</code> boolean. Credentials belong in the app store only — see docs/decisions.md §3.</p>
+<h2 id="where-the-app-store-lives">Where the app store lives</h2>
+<p>App-level settings are stored as one JSON object in the <code>app_kv</code> row of <code>~/.mouaif/store.sqlite</code> (key <code>settings</code>), next to the purpose-built tables for project settings, the MCP tool cache and recent models.</p>
+<p>Because every route reads that row, an unreadable value must not take the server down — but it must not destroy the user&#39;s data either. If the stored blob does not parse (or is not a JSON object), the server:</p>
+<ol><li><p>moves the stored text to a quarantine row keyed <code>settings.corrupt-&lt;timestamp&gt;-&lt;random&gt;</code>;</p></li><li><p>deletes the unreadable live row, so the app starts from the built-in defaults;</p></li><li><p>logs the quarantine key on stderr.</p>
+<p>The result is the same empty-but-working store the old silent <code>{}</code> fallback produced, except the original bytes are still in the database:</p></li></ol>
+<pre><code class="language-bash">sqlite3 ~/.mouaif/store.sqlite \
+  &quot;SELECT key, value FROM app_kv WHERE key LIKE &#39;settings.corrupt-%&#39;&quot;</code></pre>
+<p><code>settings.listQuarantinedAppSettings()</code> returns the same rows from Node. Restore an entry by copying its value back into the <code>settings</code> row once you have repaired the JSON.</p>
+<h2 id="how-settings-work">How settings work</h2>
+<ul><li><p><strong>Global app settings</strong> — configured once in the <strong>Settings</strong> tab. These include connected AI provider credentials, global model pricing, default prompt styles, and default tool permissions.</p></li><li><p><strong>Project settings</strong> — configured per project in <strong>Settings → Projects → [Project Name]</strong> (or via the project card menu). These include project custom prompts, prompt size preferences, agent personas, and specific tool permissions. They are written <strong>atomically</strong> (stage + fsync + rename), so an interrupted save can never leave a half-written <code>.mouaif.json</code> that would break every settings and chat route for that project.</p></li><li><p><strong>Merge order</strong> — defaults apply first, global settings override defaults, and project settings override global settings. The merged object is a <strong>fresh copy</strong>: nested objects merge key by key (an <code>app</code> value of <code>toolOutput.size</code> keeps the built-in <code>toolOutput.structure</code>), arrays are replaced rather than concatenated, and nothing in the result aliases the built-in defaults, the stored app object, or the project file — so a caller may edit the resolved object freely.</p></li></ul>
+<h2 id="managing-settings-in-the-ui">Managing settings in the UI</h2>
+<ol><li><p><strong>AI Providers &amp; Keys</strong> — open <strong>Settings → Providers</strong> to add or edit API keys and OAuth connections. Provider credentials are global and never committed to individual project folders.</p></li><li><p><strong>Access &amp; Security</strong> — configure optional password protection, passkeys, and manage sessions from <strong>Settings → Access &amp; passkeys</strong> (see <a href="./access-authentication.html">Access authentication</a>).</p></li><li><p><strong>Project Customizations</strong> — open project settings to configure rules, instruction files (such as <code>AGENTS.md</code> or <code>CLAUDE.md</code>), and tool permissions for that project.</p></li><li><p><strong>Database-backed settings (Clean tree)</strong> — by default, project settings are stored next to your code in <code>.mouaif.json</code>. If you prefer to keep your working directory untouched by tooling files, enable <strong>Store settings in app DB</strong> in project settings.</p></li><li><p><strong>Chat defaults</strong> — open <strong>Settings → App defaults → Chat defaults</strong> to set the default prompt style and two composer toggles (Enter inserts a newline; Auto-retry failed sends). All three save automatically as soon as you change them; there is no Save button. Each setting is a row card with a per-row status line that confirms the change.</p></li><li><p><strong>Dictation</strong> — open <strong>Settings → App defaults → Dictation</strong> to pick the speech-to-text model. The choice is stored under the app-level <code>dictation</code> key (<code>{ modelId, providerId }</code>) and is read by the Dictation page and the chat composer&#39;s microphone alike, so both agree on which model a recording is sent to (see <a href="./dictation.html">Dictation</a>).</p></li></ol>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./access-authentication.html">Access authentication</a> — user login, passwords, and WebAuthn passkeys.</p></li><li><p><a href="./project-settings-storage.html">Project settings storage</a> — storing project settings without writing files to your git repo.</p></li><li><p><a href="./custom-prompts.html">Custom prompts</a> — creating and managing prompt presets.</p></li><li><p><a href="./tool-authorization.html">Tool authorization</a> — configuring tool execution permissions.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

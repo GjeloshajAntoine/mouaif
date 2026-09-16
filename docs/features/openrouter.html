@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenRouter provider — mouaif docs</title>
+  <meta name="description" content="OpenRouter is a single API key that fronts many upstream models (Anthropic, OpenAI, Google, Meta, Mistral, and others) over one OpenAI-shaped endpoint.…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="openrouter-provider">OpenRouter provider</h1>
+<h2 id="overview">Overview</h2>
+<p>OpenRouter is a single API key that fronts many upstream models (Anthropic, OpenAI, Google, Meta, Mistral, and others) over one OpenAI-shaped endpoint. <code>mouaif</code> treats it as a first-class provider: same UI flow as any other provider, same SSE streaming, same usage accounting — but the user only has to manage one key to access models from many vendors.</p>
+<p>The provider supports <strong>two ways to authenticate</strong>:</p>
+<ol><li><p><strong>Paste an OpenRouter API key</strong> (issued at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai</a>). The key is stored in the app SQLite provider record and never returned to the browser after save.</p></li><li><p><strong>Sign in with OpenRouter (PKCE).</strong> The Settings → Providers form now offers a <code>Sign in with OpenRouter</code> button. The browser is sent to <code>https://openrouter.ai/auth?callback_url=...&amp;code_challenge=...&amp;code_challenge_method=S256</code>, the user authorises the app, OpenRouter redirects back to the loopback, the server exchanges the <code>code</code> for a user-controlled OpenRouter API key at <code>https://openrouter.ai/api/v1/auth/keys</code>, and the key is stored in the OS keyring under the <code>openrouter</code> namespace. Subsequent chats use that key as a plain Bearer credential.</p>
+<p>The PKCE flow is the only sign-in option OpenRouter exposes to third-party clients; there is no client_id, no client_secret, no per-app dashboard, and no refresh-token grant. The flow&#39;s &quot;OAuth&quot; surface is therefore narrower than Anthropic&#39;s or GitHub Copilot&#39;s, but it still ships a sign-in button on the provider form so the user can authorise the app in one tap rather than round-tripping through the OpenRouter keys page.</p></li></ol>
+<h2 id="usage">Usage</h2>
+<h3 id="add-the-provider">Add the provider</h3>
+<ol><li><p><strong>Settings → Providers → + Add provider.</strong></p></li><li><p>Pick <strong>OpenRouter</strong> from the provider dropdown. The default API base URL is <code>https://openrouter.ai/api/v1</code> (overridable for self-hosted/proxy setups).</p></li><li><p>Pick an authentication mode:</p></li></ol>
+<ul><li><p><strong>API key</strong> — paste your OpenRouter key. The key lives in the app store (encrypted at rest by the host OS, see <a href="./app-and-project-settings.html"><code>app-and-project-settings</code></a>). The apikey path does not touch the keyring.</p></li><li><p><strong>OAuth (PKCE)</strong> — tap <strong>Sign in with OpenRouter</strong> in the provider form. The browser opens <code>https://openrouter.ai/auth</code>, the user signs in and grants the request, OpenRouter redirects back to the loopback, and the resulting OpenRouter API key is stored in the OS keyring under the <code>openrouter</code> namespace. The account picker shows a short label derived from the key (e.g. <code>sk-or-v1-mock-12</code>) so the user can tell two sign-ins apart without exposing the full secret.</p></li></ul>
+<ol><li><p><strong>Save provider.</strong> You can now pick OpenRouter when creating a model on a project.</p></li></ol>
+<h3 id="add-a-model">Add a model</h3>
+<ol><li><p>In a project, open the project&#39;s <strong>Models</strong> editor.</p></li><li><p>Set <code>provider: &#39;openrouter&#39;</code> and <code>id</code> to the OpenRouter model slug as listed on <a href="https://openrouter.ai/models" target="_blank" rel="noopener noreferrer">openrouter.ai/models</a>. For example:</p></li></ol>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;anthropic/claude-3.5-sonnet&quot;,
+  &quot;provider&quot;: &quot;openrouter&quot;,
+  &quot;label&quot;: &quot;Claude 3.5 Sonnet (via OpenRouter)&quot;
+}</code></pre>
+<p>   The full upstream <code>id</code> (including the vendor prefix) is sent verbatim in the chat-completions <code>model</code> field.</p>
+<ol><li><p>The model now appears in the chat head&#39;s model picker for any chat in this project.</p></li></ol>
+<h3 id="chat">Chat</h3>
+<p>No special path. The chat composer posts to <code>/api/chats/:id/messages/stream</code>, which hydrates the project&#39;s model with the OpenRouter provider connection, calls <code>https://openrouter.ai/api/v1/chat/completions</code>, and forwards events as SSE. The model picker shows the friendly label; the chat transcript and usage display are identical to every other provider. The key path is transparent: a key obtained via PKCE is used exactly the same way a manually pasted key is.</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>OpenAI-shaped wire protocol.</strong> OpenRouter accepts and returns the standard OpenAI chat-completions format, so <code>mouaif</code> reuses the openai-compatible builder and parser. The body shape is <code>{ model, messages, stream, ... }</code>; the response is <code>text/event-stream</code> ending with the literal <code>[DONE]</code> sentinel.</p></li><li><p><strong>Attribution headers.</strong> Every request carries <code>HTTP-Referer: &lt;url&gt;</code> and <code>X-OpenRouter-Title: &lt;app name&gt;</code> (plus the deprecated alias <code>X-Title: &lt;app name&gt;</code>), per <a href="https://openrouter.ai/docs/api-reference/overview" target="_blank" rel="noopener noreferrer">OpenRouter&#39;s docs</a>. <code>X-OpenRouter-Title</code> is the canonical attribution header on current OpenRouter releases (the older <code>X-Title</code> is silently dropped on the SSO/leaderboard path, so we send both). The shipped defaults are <code>mouaif</code> for the title and <code>https://mouaif.local</code> for the referer URL. Both headers do not send PII. They can be overridden per-request by <code>model.headers</code> for testing.</p></li><li><p><strong>OAuth via PKCE.</strong> The flow follows <a href="https://openrouter.ai/docs/guides/overview/auth/oauth" target="_blank" rel="noopener noreferrer">OpenRouter&#39;s documented PKCE guide</a>:</p>
+<ul><li><p>Authorize: <code>https://openrouter.ai/auth?callback_url=&lt;loopback&gt;&amp;code_challenge=&lt;sha256(verifier)&gt;&amp;code_challenge_method=S256&amp;state=&lt;state&gt;</code>.</p></li><li><p>Token: <code>POST https://openrouter.ai/api/v1/auth/keys</code> with JSON body <code>{ code, code_verifier, code_challenge_method: &#39;S256&#39; }</code>.</p></li><li><p>Response: <code>{ key }</code> — a user-controlled OpenRouter API key.<br>  The key is stored as the <code>accessToken</code> field of a standard OAuth blob, with <code>refreshToken: null</code> and <code>expiresAt: null</code> (OpenRouter keys do not expire unless revoked).</p></li></ul></li><li><p><strong>No refresh-token grant.</strong> OpenRouter&#39;s PKCE flow does not issue a refresh token. A leaked or revoked key is irrecoverable through the OAuth path; the user re-runs Sign in to receive a new key. The <code>auth.registerRefresher(&#39;openrouter&#39;, ...)</code> call in <code>src/oauth-openrouter.js</code> therefore registers a no-op refresher — <code>expiresAt</code> is always <code>null</code> so the AI client&#39;s proactive-refresh code path never fires.</p></li><li><p><strong>Account naming.</strong> Each sign-in produces a separate row in the OAuth account picker. The label is the first 16 characters of the issued key (e.g. <code>sk-or-v1-mock-12</code>); that is unique enough to be useful in a phone-sized picker without leaking the full secret.</p></li><li><p><strong>Separate secure storage</strong> — OpenRouter credentials live in their own dedicated keyring and app store namespace, keeping them strictly isolated from standard OpenAI keys.</p></li><li><p><strong>Unified sign-in</strong> — the authorization callback returns automatically to mouaif across popup windows, mobile tabs, and standalone PWA modes.</p></li><li><p><strong>Model identifiers</strong> — model slugs (<code>anthropic/claude-3.5-sonnet</code>, <code>meta-llama/llama-3-70b-instruct</code>, etc.) are passed directly as provided by OpenRouter.</p></li><li><p><strong>Two catalogues behind one <code>/models</code>.</strong> OpenRouter slices <code>GET /api/v1/models</code> by output modality and defaults to <code>output_modalities=text</code>, so the chat list contains no speech-to-text model: <code>openai/whisper-1</code>, <code>openai/gpt-4o-transcribe</code>, <code>google/chirp-3</code> and 18 more are only in <code>GET /api/v1/models?output_modalities=transcription</code>. The chat picker reads the default slice; the dictation catalog reads <strong>both</strong>, and caches them under separate keys. Both are needed because the split cuts a family in half: every Google Gemini row is filed under <code>output_modalities: [&quot;text&quot;]</code>, so it is in the chat slice and absent from the transcription one. The audio-input chat rows (<code>openai/gpt-audio</code>, <code>google/gemini-3.5-flash</code>, <code>~google/gemini-flash-latest</code>) are <em>rejected</em> by <code>POST /audio/transcriptions</code> with <code>400 Model … does not exist</code>, so dictation sends them to <code>POST /chat/completions</code> with an inline <code>input_audio</code> part instead — the route that accepts them and returns a real transcript. The transcription slice&#39;s one Google row, <code>google/chirp-3</code>, still uses the multipart endpoint. See <a href="dictation.html">Dictation</a>.</p></li><li><p><strong>Live balance &amp; pricing</strong> — live model prices and account credit balances are queried directly from OpenRouter so per-turn costs reflect your actual tier.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./ai-client.html">AI client</a> — the parent feature, including the wire-protocol details and the model record shape.</p></li><li><p><a href="./app-and-project-settings.html">App and project settings</a> — where provider connections live.</p></li><li><p><a href="./settings-ui.html">Settings UI</a> — the mobile Providers screen where OpenRouter is configured.</p></li><li><p><a href="./oauth-anthropic.html">Anthropic OAuth</a> — the per-provider OAuth flow for Anthropic, which the OpenRouter flow parallels in shape (PKCE → token exchange → keyring).</p></li><li><p>decisions.md §10 — the original AI client core spec.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

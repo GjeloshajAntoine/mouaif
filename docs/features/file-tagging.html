@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>File tagging — annotate project files and inject them into a chat — mouaif docs</title>
+  <meta name="description" content="A user can attach **tags** to files inside a project. When a chat is sent, every tagged file is included in the upstream request as a synthetic message…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="file-tagging-annotate-project-files-and-inject-them-into-a-chat">File tagging — annotate project files and inject them into a chat</h1>
+<h2 id="overview">Overview</h2>
+<p>A user can attach <strong>tags</strong> to files inside a project. When a chat is sent, every tagged file is included in the upstream request as a synthetic message carrying the file&#39;s content (or a path/line-range excerpt) and the tags that pulled it in. Tags live in <code>&lt;projectDir&gt;/.mouaif.json</code> so the user can commit them with the project and edit them by hand. The picker is mobile-first: a list of files, a per-file tag chip strip, and an &quot;Include in chat&quot; toggle.</p>
+<h2 id="usage">Usage</h2>
+<h3 id="tagging-a-file">Tagging a file</h3>
+<p>From the project card&#39;s options menu or <strong>Settings → This project → File tags</strong>, the user opens <strong>File tags</strong> and sees every scanned project file. Each row shows the file name prominently and its project-relative folder underneath; root files show <strong>Project root</strong>. Binary files are labeled and cannot be newly tagged.</p>
+<ul><li><p><strong>Tags</strong> — a free-form chip list. New tags are created by typing and pressing <code>,</code> or <code>Enter</code>. Removing a chip is a tap on the chip&#39;s <code>×</code>.</p></li><li><p><strong>Excerpt</strong> — the user can pin a specific line range (start/end inclusive) instead of including the whole file. Empty excerpt means &quot;whole file.&quot;</p></li><li><p><strong>Include in chat</strong> — a single switch, on by default. Off means the file stays tagged but is not auto-injected into new messages; it can still be referenced explicitly with <code>@path/to/file</code> in the composer.</p>
+<p>Tags are project-scoped. A tag named <code>api</code> on <code>src/api/users.js</code> is a different annotation from a tag named <code>api</code> on <code>frontend/api.js</code>; the chat injects both, each with its own context.</p></li></ul>
+<h3 id="in-a-chat">In a chat</h3>
+<p>When the user sends a message, the server pre-appends the tagged files to the upstream <code>messages</code> array, before the user&#39;s history. The shape of each injected message is:</p>
+<pre><code class="language-js">{
+  role: &#39;system&#39;,                     // or &#39;user&#39; if the user explicitly @-referenced the file
+  content:
+    &#39;# File: src/api/users.js\n&#39; +
+    &#39;# Tags: api, auth\n&#39; +
+    &#39;# Excerpt: 1-120\n&#39; +
+    &#39;\n&#39; +
+    &#39;&lt;file contents or excerpt&gt;&#39;
+}</code></pre>
+<p>The leading header block lets the model reason about provenance. The role is <code>system</code> by default (the tagged files are project context); when the user types <code>@src/api/users.js</code> in the composer, the role is <code>user</code> so the model treats it as a direct reference.</p>
+<p>A bare basename mention — <code>@users.js</code> instead of the full path — is also accepted. <code>parseReferences</code> resolves it against the tagged map first and the on-disk scan second, so <code>@users.js</code> promotes <code>src/api/users.js</code> when that basename is unambiguous (an ambiguous basename resolves to the shortest path rather than being dropped, and a mention with no match at all is silently ignored).</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Storage: per-project <code>.mouaif.json</code>.</strong> New top-level key <code>tags</code>, shaped exactly like the GET response above. The file is rewritten on every PUT; the scan and DELETE endpoints do not touch the map.</p></li><li><p><strong>Path normalization.</strong> Paths are stored as POSIX-style relative paths from the project root (<code>src/api/users.js</code>, never <code>src\\api\\users.js</code>). The chat loader resolves them with <code>path.join(projectDir, rel)</code> and refuses anything that escapes the project root (<code>..</code> segments or absolute paths yield <code>EOUTSIDE_PROJECT</code>).</p></li><li><p><strong>Excerpt format.</strong> <code>{ start, end }</code> are 1-indexed inclusive line numbers. An absent excerpt means the whole file; <code>{ start: 2, end: 2 }</code> injects line 2.</p></li><li><p><strong>File size cap.</strong> Files above a soft cap (default 256 KB, configurable via <code>app.fileTagMaxBytes</code>) are not auto-injected; the tagged entry stays in the project file with <code>includeInChat: false</code> and a <code>note: &quot;exceeds fileTagMaxBytes&quot;</code>. The user can pin a smaller excerpt to bypass the cap.</p></li><li><p><strong>Stale path handling.</strong> If a tagged file is moved, renamed, or deleted, the entry is kept (the user may be in the middle of a refactor) but is silently skipped at injection time. The UI shows a <code>missing</code> badge on stale entries and offers a &quot;Remove&quot; action.</p></li><li><p><strong>Commit-friendliness.</strong> Because the tag map lives in <code>.mouaif.json</code>, the user can <code>git add</code> it next to the source. The chat injects the current working-tree version of each file at message-send time, not whatever was committed.</p></li><li><p><strong>No tags on a missing project.</strong> Tag CRUD requires the project to be registered; a PUT against an unregistered project returns <code>404</code>.</p></li><li><p><strong>Binary files are out.</strong> The scan filters by extension (configurable; defaults to a text-friendly list: <code>.js</code>, <code>.jsx</code>, <code>.ts</code>, <code>.tsx</code>, <code>.mjs</code>, <code>.cjs</code>, <code>.json</code>, <code>.json5</code>, <code>.md</code>, <code>.txt</code>, <code>.py</code>, <code>.rb</code>, <code>.go</code>, <code>.rs</code>, <code>.java</code>, <code>.kt</code>, <code>.swift</code>, <code>.c</code>, <code>.h</code>, <code>.cpp</code>, <code>.hpp</code>, <code>.css</code>, <code>.scss</code>, <code>.less</code>, <code>.html</code>, <code>.vue</code>, <code>.svelte</code>, <code>.astro</code>, <code>.yml</code>, <code>.yaml</code>, <code>.toml</code>, <code>.sh</code>, <code>.sql</code>, <code>.graphql</code>, <code>.gql</code>, <code>.proto</code>, <code>.ini</code>, <code>.conf</code>, <code>.cfg</code>, <code>.env</code>, <code>.lock</code>, <code>.map</code>, <code>.log</code>, <code>.lua</code>, <code>.pl</code>, <code>.pm</code>, <code>.r</code>, <code>.jl</code>, <code>.dart</code>, <code>.zig</code>, <code>.ex</code>, <code>.exs</code>, <code>.erl</code>, <code>.hrl</code>, <code>.fs</code>, <code>.fsx</code>, <code>.ml</code>, <code>.clj</code>, <code>.cljs</code>, <code>.scala</code>, <code>.groovy</code>, <code>.gradle</code>, <code>.tf</code>, <code>.hcl</code>, <code>.pug</code>, <code>.jade</code>, <code>.ejs</code>, <code>.hbs</code>, <code>.mustache</code>, <code>.tpl</code>, <code>.gitignore</code>, <code>.gitattributes</code>, <code>.editorconfig</code>, <code>.eslintrc</code>, <code>.prettierrc</code>, <code>.babelrc</code>, <code>.npmrc</code>, <code>.nvmrc</code>, <code>.yarnrc</code>, <code>.dockerignore</code>, <code>.gitmodules</code>, <code>.htaccess</code>, <code>.dockerfile</code>, <code>.makefile</code>). The check is against the file&#39;s <strong>extension</strong>, never the whole name, so dotted base names (<code>App.vue</code>, <code>webpack.config.js</code>) are never mistaken for extensionless binaries; extensionless build files (<code>Makefile</code>) are classified via the allowlist too. Unknown extensions show up in the scan as <code>binary: true</code> and cannot be tagged.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./folder-picker.html">docs/features/folder-picker.md</a> — the same home-allowlist rules.</p></li><li><p><a href="./custom-prompts.html">docs/features/custom-prompts.md</a> — tags and prompts compose: a tagged file can sit under a custom system prompt in the same upstream array.</p></li><li><p><a href="./chat-ui.html">docs/features/chat-ui.md</a> — composer and message rendering.</p></li><li><p>Decision: docs/decisions.md §15 (this feature) and §2 (project overrides app).</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

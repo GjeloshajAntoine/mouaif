@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tool authorization — gating what tools the model may run — mouaif docs</title>
+  <meta name="description" content="Every tool call the model initiates — and every `/shell` slash command the user types in the composer — passes through an **authorization gate** before the…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="tool-authorization-gating-what-tools-the-model-may-run">Tool authorization — gating what tools the model may run</h1>
+<h2 id="overview">Overview</h2>
+<p>Every tool call the model initiates — and every <code>/shell</code> slash command the user types in the composer — passes through an <strong>authorization gate</strong> before the runner executes. The user picks one of three primary modes per tool — <strong>Off</strong>, <strong>Ask</strong>, <strong>Allow</strong> — from a one-tap segmented control. An allowlist is an advanced refinement of Ask, not a fourth choice. The default is <code>ask</code>, so first use prompts for approval.</p>
+<p>The mode has <strong>two scopes</strong>, and the surface decides which one is written:</p>
+<div class="table-wrap"><table><thead><tr><th>Surface</th><th>Scope</th><th>Stored in</th></tr></thead><tbody><tr><td>Chat <strong>Tools</strong> card, composer <strong>tool popup</strong></td><td>this chat only</td><td>the chat record (app SQLite store), <code>chat.toolAuth</code></td></tr><tr><td>Settings → Project tool tree</td><td>the project</td><td><code>&lt;projectDir&gt;/.mouaif.json</code> / <code>.mcp.json</code></td></tr></tbody></table></div>
+<p>A chat-scoped choice never writes the project file, and it never changes another chat. Project settings is the only place a project-wide default is changed.</p>
+<h2 id="usage">Usage</h2>
+<h3 id="modes">Modes</h3>
+<div class="table-wrap"><table><thead><tr><th>Mode</th><th>Behavior</th></tr></thead><tbody><tr><td><code>off</code></td><td>The tool is hidden from the model (its declaration is dropped from the request, so it costs no prompt tokens). Any call that still arrives — a stale chat filter, a hand-crafted REST call — returns <code>ETOOL_DISABLED</code>.</td></tr><tr><td><code>ask</code></td><td>Every call must be approved by the user in the UI. The chat shows a prompt with the command, working dir, and the proposed timeout; the user taps <strong>Allow</strong> or <strong>Deny</strong>.</td></tr><tr><td><code>allowlist</code></td><td>Calls whose <code>cmd</code> matches an allowlist regex run without prompting. Calls that do not match fall through to <code>ask</code>. This is the advanced form of <code>ask</code>; patterns are stored in the project file. The app-level MCP page keeps an <strong>Auto-approve list</strong> textarea; project-level patterns are edited from the raw <code>.mouaif.json</code> / <code>.mcp.json</code>.</td></tr><tr><td><code>allow</code></td><td>Every call is auto-approved.</td></tr></tbody></table></div>
+<p>The mode is picked with one segmented control, rendered by a single shared component (<code>ToolAuthSeg</code> in <code>frontend/src/components/settings/toolAuth.js</code>) on every surface: the tool row in the chat <strong>Tools</strong> card, the composer <strong>Tools</strong> popup, and project settings. <code>subagent</code> is not special-cased — it is the same row, same control, and same save path as <code>shell</code>, <code>task</code>, and the file-family gate, so a change to the control lands everywhere at once. <code>ask_user</code> narrows the component to the binary <code>Off / Ask</code> choices.</p>
+<h3 id="where-a-mode-is-stored-and-what-wins">Where a mode is stored, and what wins</h3>
+<p>A tool&#39;s effective mode resolves most-specific-first:</p>
+<ol><li><p><strong>this chat&#39;s override</strong> — the choice made in the chat&#39;s Tools card / tool popup;</p></li><li><p>the project value — <code>tools.&lt;name&gt;.mode</code> in <code>.mouaif.json</code>, or the MCP block in <code>.mcp.json</code>;</p></li><li><p>the app-level value — e.g. <code>mcp.authorization</code> in the app SQLite store;</p></li><li><p>the built-in default, <code>ask</code>.</p>
+<p>The project record keeps the shape it always had — written by settings, never by a chat:</p></li></ol>
+<pre><code class="language-jsonc">// &lt;projectDir&gt;/.mouaif.json   (SETTINGS → PROJECT only)
+{
+&quot;tools&quot;: {
+&quot;shell&quot;: {
+&quot;mode&quot;:      &quot;allowlist&quot;,     // &#39;off&#39; | &#39;ask&#39; | &#39;allowlist&#39; | &#39;allow&#39;
+&quot;allowlist&quot;: [
+&quot;^npm (test|run build|lint)$&quot;,
+&quot;^git (status|diff|log|show)$&quot;
+],
+&quot;defaultTimeoutMs&quot;: 30000,
+&quot;maxTimeoutMs&quot;:     600000
+}
+}
+}</code></pre>
+<p>The per-chat overrides live on the chat record instead, under <code>chat.toolAuth</code>:</p>
+<pre><code class="language-jsonc">// chat record (app SQLite store) — never a project file
+{
+&quot;native&quot;: {
+&quot;shell&quot;: { &quot;mode&quot;: &quot;allow&quot;, &quot;allowlist&quot;: [] },   // this chat only
+&quot;file&quot;:  { &quot;mode&quot;: &quot;off&quot; }                        // all five file ops
+},
+&quot;mcp&quot;: {
+&quot;shared&quot;:  { &quot;mode&quot;: &quot;ask&quot; },                     // every MCP call in this chat
+&quot;servers&quot;: { &quot;filesystem&quot;: { &quot;mode&quot;: &quot;allow&quot; } }, // one server, by slug
+&quot;tools&quot;:   { &quot;mcp__git__commit&quot;: { &quot;mode&quot;: &quot;off&quot; } }
+}
+}</code></pre>
+<p>Tapping a segment in a chat writes that chat&#39;s override; the surface first <strong>clears</strong> the chat&#39;s own entry for that tool, so the stored value always equals the tap. Clearing the last override drops the map entirely, so &quot;this chat has no overrides&quot; has exactly one representation.</p>
+<h3 id="mcp-tools-layered-per-server-and-per-tool">MCP tools — layered, per-server and per-tool</h3>
+<p>MCP calls resolve through the layered gate, most specific first, with this chat&#39;s own overrides sitting on top of the project / app layers:</p>
+<ol><li><p>this chat&#39;s <code>mcp.tools.&lt;composedName&gt;</code> — one tool on one server, this chat;</p></li><li><p>this chat&#39;s <code>mcp.servers.&lt;serverSlug&gt;</code> — every tool on that server, this chat;</p></li><li><p>this chat&#39;s <code>mcp.shared</code> — every MCP call, this chat;</p></li><li><p><code>authorization.tools.&lt;composedName&gt;</code> — one tool on one server (<code>mcp__filesystem__write_file</code>). <em>(project <code>.mcp.json</code>)</em></p></li><li><p><code>authorization.servers.&lt;serverSlug&gt;</code> — every tool on that server. <em>(project <code>.mcp.json</code>)</em></p></li><li><p><code>authorization</code> (mode + allowlist) — the project&#39;s default for every MCP call. <em>(project <code>.mcp.json</code>)</em></p></li><li><p><code>mcp.authorization</code> (mode + allowlist) — the app-level default, the fallback for every project that has no project default. <em>(app SQLite store)</em></p>
+<p>The first entry with a <code>mode</code> wins; <code>ask</code> counts as a decision (so a per-server <code>ask</code> can tighten a project <code>allow</code>, and a chat override can tighten every layer below it). A <code>null</code> value in a PUT patch deletes an entry, restoring inheritance. <code>off</code> at any level hides exactly the specs it covers — one tool, one server, or every <code>mcp__*</code> spec — at zero prompt-token cost. The app layer carries only the single shared gate (mode + allowlist); per-server / per-tool maps are project-scoped, because the app store has no server registry.</p></li></ol>
+<pre><code class="language-jsonc">// &lt;projectDir&gt;/.mcp.json   (SETTINGS → PROJECT only)
+{
+  &quot;authorization&quot;: {
+    &quot;mode&quot;: &quot;ask&quot;,
+    &quot;servers&quot;: {
+      &quot;filesystem&quot;: { &quot;mode&quot;: &quot;allow&quot; },
+      &quot;playwright&quot;: { &quot;mode&quot;: &quot;allowlist&quot;, &quot;allowlist&quot;: [&quot;^mcp__playwright__navigate&quot;] }
+    },
+    &quot;tools&quot;: {
+      &quot;mcp__filesystem__write_file&quot;: { &quot;mode&quot;: &quot;off&quot; }
+    }
+  }
+}</code></pre>
+<p>MCP allowlists match against the summary <code>&quot;&lt;composedName&gt; &lt;firstStringArg&gt;&quot;</code> (e.g. <code>mcp__filesystem__read_file src/index.js</code>), so a pattern can pin either the tool itself (<code>^mcp__fs__read_file$</code>) or the resource it touches (<code>^mcp__fs__read_file src/.*</code>). Choosing <strong>Always allow</strong> on an MCP prompt pins only that one tool to <code>mode: &quot;allow&quot;</code> — it never flips the shared gate.</p>
+<h4 id="where-the-off-gate-is-applied">Where the <code>off</code> gate is applied</h4>
+<p>The &quot;at zero prompt-token cost&quot; property is not automatic: <code>off</code> hides tools when the advertised tool list is built, in two places that must stay in step — <code>src/ai-stream.js</code> (the streaming request) and <code>src/server-handlers-chats.js</code> (the tools-list endpoint behind the chat UI). Both run the same three passes:</p>
+<ol><li><p>the native-family loop, which drops every member of a family whose resolved family mode is <code>off</code> (<code>file</code> drops all five operations, <code>shell</code> drops <code>shell</code>, …);</p></li><li><p>a <strong>per-leaf file loop</strong>, which resolves each <code>read_file</code> / <code>list_files</code> / <code>search_files</code> / <code>write_file</code> / <code>edit_file</code> spec through <code>authorization.effectiveConfig(projectDir, name)</code> so a single operation&#39;s <code>off</code> override (e.g. <code>tools.read_file.mode = &quot;off&quot;</code> while <code>tools.file.mode = &quot;allow&quot;</code>) hides exactly that operation;</p></li><li><p>the MCP loop, which resolves each <code>mcp__*</code> spec through the same <code>effectiveConfig</code>.</p>
+<p><code>effectiveConfig</code> is a module export of <code>src/tools/authorization.js</code>, and every call site sits inside a <code>catch {}</code> whose documented fallback is &quot;authorization state unreadable; keep every tool advertised&quot;. If that export is ever dropped, the calls throw <code>TypeError</code>, the fallback swallows it, and an <code>off</code> override silently stops hiding anything — the project keeps paying prompt tokens for tools it disabled, with no error anywhere. <code>scripts/test-mcp-authorization-gate.js</code> locks down the export, the layered resolution (per-tool over per-server), and the no-override case that must <em>not</em> resolve to <code>off</code>.</p></li></ol>
+<h3 id="approval-flow">Approval flow</h3>
+<p>When the gate is <code>ask</code> and the model initiates a call, the chat pauses the stream and renders an <strong>Authorization required</strong> card. The card shows:</p>
+<ul><li><p>the tool name (<code>shell</code>)</p></li><li><p>the proposed <code>cmd</code> and <code>timeoutMs</code></p></li><li><p>the project directory the command will run in</p></li><li><p>the chat id and a &quot;review trace&quot; link (only when tracing is on)</p>
+<p>The user can tap <strong>Allow once</strong>, <strong>Allow for session</strong>, <strong>Always allow</strong>, or <strong>Deny</strong>. <strong>Always allow</strong> persists <code>mode: &quot;allow&quot;</code> for that tool family in <code>.mouaif.json</code>, so it also applies to new chats and after restart. <strong>Allow for session</strong> remains in memory and is cleared when the chat is reopened.</p>
+<p>On a keyboard, <code>1</code>–<code>4</code> select the four decisions and <code>Escape</code> denies. Those shortcuts are scoped to non-text targets: the card hosts the per-run model picker, whose <strong>Search models</strong> field mounts inside it, and a keystroke aimed at that field must never resolve the prompt (previously typing <code>4</code> in the search box denied the call). Regression test: <a href="../../scripts/test-auth-shortcut-scope.js">scripts/test-auth-shortcut-scope.js</a>.</p>
+<p>For <code>subagent</code> calls the card also shows a <strong>model picker</strong>: the user may select which model executes the delegated run, for that one call only. See <a href="./auth-model-picker.html">Per-run model choice on subagent approval</a>.</p>
+<p>The composer <code>/shell</code> slash command uses the same gate. A <code>/shell</code> invocation in <code>ask</code> mode shows the same card; the only difference is the source line (&quot;user-typed slash command&quot; instead of &quot;model-initiated call&quot;).</p></li></ul>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Default: <code>ask</code>.</strong> New tools land with <code>ask</code> so the first call always requires a tap. A user who wants a friction-free experience flips to <code>allowlist</code> with a tight regex set.</p></li><li><p><strong>Chat surfaces are chat-scoped.</strong> The Off/Ask/Allow segments in the chat <strong>Tools</strong> card and the composer <strong>tool popup</strong> write the chat record (<code>chat.toolAuth</code>), never <code>.mouaif.json</code> / <code>.mcp.json</code>. Selecting a mode drops the chat&#39;s previous entry for that tool first, so the stored value and the tap always agree; selecting the mode the project already has leaves no chat entry behind at all. The card prints a scope line as soon as this chat carries any override.</p></li><li><p><strong>Project settings is the only project-wide writer.</strong> Its tool tree PUTs the project scope — the one path that touches <code>.mouaif.json</code> / <code>.mcp.json</code>. Nothing a user does in one chat changes another chat&#39;s modes or the project default.</p></li><li><p><strong>A chat override outranks the project and the app.</strong> <code>effectiveConfig(projectDir, tool, chatId)</code> resolves the chat layer first, so <code>off</code> in a chat hides that tool from the model in that chat only: the advertisement gate (<code>src/ai-stream.js</code> and its mirror in <code>src/server-handlers-chats.js</code>) passes the chat id through, making the prompt-token saving per chat rather than per project. What is left after the override, project, and app layers is the built-in default, <code>ask</code>.</p></li><li><p><strong>Allowlist is regex-matched against the full command.</strong> The match is anchored on the full string (<code>^...$</code>); partial matches do not pass. Each untrusted expression runs in an isolated worker that is terminated after 1 ms, so catastrophic backtracking cannot block the HTTP process.</p></li><li><p><strong>Decisions are session-scoped, not persisted.</strong> An <code>allow-once</code> decision resumes exactly one blocked call. An <code>allow-session</code> decision is kept in server memory and cleared by <code>POST /api/chats/:id/touch</code> when the chat is reopened.</p></li><li><p><strong>Revoking a session never orphans a parked prompt.</strong> A pending request owns the promise the tool loop is awaiting, so both revokes settle it before discarding state: <code>POST /api/chats/:id/touch</code> (<code>clearGrants</code>) and <code>POST /api/tools/authorization/cancel</code> (<code>cancelSession</code>) reject every parked wait with a typed <code>EDENIED</code> and return how many they rejected. Otherwise the loop would stay parked — the upstream-abort signal does not fire while it waits on a decision rather than a fetch — holding the chat&#39;s running marker so every later send bounced off <code>409 EALREADY_RUNNING</code>.</p></li><li><p><strong>Deny reasons are kept private.</strong> A deny records only the call id in the in-memory session. The upstream receives <code>{ ok: false, code: &#39;EDENIED&#39;, reason: &#39;user denied&#39; }</code>, without the command, project, or chat id.</p></li><li><p><strong><code>off</code> hides the tool from the model.</strong> Tools in <code>off</code> mode are filtered out of the advertised tool list before each upstream request (saving prompt tokens on every round), and the execution gate still rejects late or forged calls with <code>ETOOL_DISABLED</code> as defense-in-depth. File tools resolve through their <code>file</code> family name, so one <code>off</code> hides all five operations. MCP tools resolve through the layered <code>.mcp.json</code> authorization block (per-tool → per-server → shared fallback), so an <code>off</code> at any level hides exactly the specs it covers — one tool, one server, or every <code>mcp__&lt;slug&gt;__&lt;tool&gt;</code> spec at once.</p></li><li><p><strong>File operations share one gate.</strong> The model-facing <code>read_file</code>, <code>list_files</code>, <code>search_files</code>, <code>write_file</code>, and <code>edit_file</code> names resolve through <code>tools.file</code>; enabling File tools therefore enables authorization for all five operations instead of returning <code>ETOOL_DISABLED</code> for their individual names. Per-operation <code>off</code> overrides still disable one leaf, but stale per-operation <code>ask</code> entries do not mask a family-level <code>allow</code>. A per-leaf <code>off</code> hides <strong>only that operation</strong> from the model — the family loop never fires while the family is enabled, so the advertisement gate resolves each file spec through <code>effectiveConfig</code> a second time. Regression test: <a href="../../scripts/test-file-tool-off-advertisement.js">scripts/test-file-tool-off-advertisement.js</a>.</p></li><li><p><strong>Timeouts are bounded by the project.</strong> A call&#39;s effective timeout is <code>clamp(requestedTimeoutMs || defaultTimeoutMs, 1 ms, maxTimeoutMs)</code>. Anything above the cap is clamped silently; the UI surfaces the clamped value in the prompt.</p></li><li><p><strong>Mode changes are not retroactive.</strong> Flipping a tool from <code>allow</code> to <code>ask</code> mid-session revokes the blanket grant and the next call is asked again. Flipping to <code>off</code> drops the tool from the next request&#39;s tool list and rejects any in-flight call with <code>ETOOL_DISABLED</code>; the model&#39;s prior <code>tool_result</code> history is left untouched.</p></li><li><p><strong>Audit log.</strong> Every decision is appended to the per-chat trace file (decision §5) as a <code>system event</code> line (<code>{ type: &#39;auth_decision&#39;, tool, callId, decision }</code>) when tracing is on. The audit line is not forwarded to the upstream.</p></li><li><p><strong>A parked prompt survives reload, tab switch, back navigation, and refocus.</strong> A run waiting on an authorization / <code>ask_user</code> prompt never emits new transcript rows (the <code>tool_call</code> row is withheld until the user approves), so the client&#39;s reconcile poll (<code>reconcileRunningChat</code>) treats the pending queue itself as the &quot;genuinely waiting&quot; signal. Reopening a server-running chat loads <code>GET /api/tools/authorization/pending</code> before subscribing to live replay and clears any stale local settle latch. The poll also checks pending requests before honoring that latch, covering a retained/background page whose URL never remounted. Responses are scoped to the chat that requested them, so a late response from the page just left cannot mount an approval on the page returned to. Cards remain deduped by <code>callId</code>; as long as a prompt is pending, the status reads <strong>waiting for you…</strong> and the run is not locally marked done.</p></li></ul>
+<h3 id="rest-surface">REST surface</h3>
+<div class="table-wrap"><table><thead><tr><th>Request</th><th>Scope</th></tr></thead><tbody><tr><td><code>GET /api/tools/authorization?projectDir=&lt;abs&gt;</code></td><td>project view — what settings renders and edits. Carries no <code>chat</code> block.</td></tr><tr><td><code>GET /api/tools/authorization?projectDir=&lt;abs&gt;&amp;chatId=&lt;id&gt;</code></td><td>chat view — every mode resolved chat-over-project, plus <code>chat</code> with this chat&#39;s raw override maps. 404 when the chat does not exist.</td></tr><tr><td><code>GET /api/tools/authorization?scope=app</code></td><td>the app-level shared MCP gate.</td></tr><tr><td><code>PUT /api/tools/authorization</code> body <code>{ scope: &#39;chat&#39;, projectDir, chatId, chat }</code></td><td>writes this chat&#39;s overrides. Needs both <code>projectDir</code> and <code>chatId</code> (400 otherwise); 404 for an unknown chat. Never touches the project file.</td></tr><tr><td><code>PUT /api/tools/authorization</code> body <code>{ scope: &#39;app&#39;, mcp }</code></td><td>writes the app-level shared MCP gate.</td></tr><tr><td><code>PUT /api/tools/authorization</code> body <code>{ projectDir, tools, mcp }</code></td><td>writes the project gate. Legacy shape, and the one settings sends.</td></tr><tr><td><code>POST /api/tools/authorization/decision</code></td><td>resolves a parked approval prompt (unchanged).</td></tr></tbody></table></div>
+<p>A <code>chat</code> patch is <code>{ native: { shell: { mode, allowlist } | null, … }, mcp: { shared | null, servers: { &lt;slug|id&gt;: { mode } | null }, tools: { &lt;name&gt;: { mode } | null } } }</code>. A <code>null</code> entry clears that override; clearing the last one drops <code>chat.toolAuth</code> entirely.</p>
+<p>Regression test: <a href="../../scripts/test-chat-tool-authorization.js">scripts/test-chat-tool-authorization.js</a> — it locks down the storage split (the project file stays byte-identical), chat-over-project resolution, per-chat <code>off</code> advertisement, override clearing, and the REST scoping (404/400 cases included).</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./shell-tool.html">docs/features/shell-tool.md</a> — the first tool wired through this gate.</p></li><li><p><a href="./ai-client.html">docs/features/ai-client.md</a> — <code>tool_call</code> and <code>tool_result</code> events.</p></li><li><p><a href="./chat-ui.html">docs/features/chat-ui.md</a> — the chat composer renders the prompt and the <code>/shell</code> slash command.</p></li><li><p>Decision: docs/decisions.md §17 (this feature) and §2 (project overrides app), §10 (AI client wire format).</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

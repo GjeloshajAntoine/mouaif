@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prompt caching — mouaif docs</title>
+  <meta name="description" content="Anthropic&#39;s Messages API supports **prompt caching**: a stable prefix of the prompt (system block, tools, earlier messages) can be marked with `cache_control`…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="prompt-caching">Prompt caching</h1>
+<h2 id="overview">Overview</h2>
+<p>Anthropic&#39;s Messages API supports <strong>prompt caching</strong>: a stable prefix of the prompt (system block, tools, earlier messages) can be marked with <code>cache_control</code> so the provider stores it once and serves subsequent requests from cache. Cached reads are billed at <strong>10%</strong> of the input rate and cache writes at <strong>125%</strong>, so multi-turn and tool-heavy Claude chats become markedly cheaper once the cache is warm.</p>
+<p>OpenAI-family providers cache automatically rather than through markers, and there the lever is a per-conversation routing key instead — see <a href="#openai-family-cache-routing">OpenAI-family cache routing</a>.</p>
+<p><code>mouaif</code> enables this for every Anthropic model, including OAuth-authenticated models. The cached prefix is the <strong>system block plus the native tool definitions, with the breakpoint extended to the penultimate message</strong>: the combined system block (prompt profile + agent files + skills + feature summary + tagged files + custom prompt) is the most stable part of the prompt across turns, the last tool definition is marked with <code>cache_control</code> per Anthropic&#39;s own recommendation, and the second-to-last message carries a breakpoint too. The message breakpoint is what makes caching actually engage: Anthropic silently ignores a <code>cache_control</code> breakpoint whose prefix is below the per-model minimum cacheable length (1024 tokens for Sonnet 3.5/3.7, 4096 for the current generation — Sonnet 4 / Opus 4 / Haiku 4.5), and a system block alone — or even a small tool set — is usually below that. The penultimate message guarantees the cached prefix (system + tools + history) clears the minimum whenever there is any history to replay, so caching works from the second request of a conversation <strong>even with every tool switched off</strong>. The cache read/write token counts are surfaced in the chat usage line and priced at the discounted tiers.</p>
+<p>Claude tool calls ride the same multi-turn loop as the OpenAI-shaped providers: the request carries native <code>tools</code> (converted from the OpenAI-shaped specs), <code>tool_use</code> blocks from the stream are parsed back into the loop, and tool results are sent back as <code>tool_result</code> blocks.</p>
+<h2 id="usage">Usage</h2>
+<p>No user action is required. Every chat turn against an Anthropic API-key model sends:</p>
+<pre><code class="language-jsonc">// Request body, system field (single combined block, marked cacheable):
+{
+  &quot;system&quot;: [
+    {
+      &quot;type&quot;: &quot;text&quot;,
+      &quot;text&quot;: &quot;&lt;profile + agent files + skills + feature summary + tagged files + custom prompt&gt;&quot;,
+      &quot;cache_control&quot;: { &quot;type&quot;: &quot;ephemeral&quot; }
+    }
+  ],
+  &quot;tools&quot;: [
+    { &quot;name&quot;: &quot;shell&quot;, &quot;description&quot;: &quot;Run a shell command&quot;, &quot;input_schema&quot;: { &quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: { &quot;cmd&quot;: { &quot;type&quot;: &quot;string&quot; } } } },
+    // … every other enabled tool …
+    {
+      &quot;name&quot;: &quot;report_progress&quot;,
+      &quot;description&quot;: &quot;Report progress&quot;,
+      &quot;input_schema&quot;: { /* … */ },
+      &quot;cache_control&quot;: { &quot;type&quot;: &quot;ephemeral&quot; }   // LAST tool only
+    }
+  ]
+}</code></pre>
+<p>API-key requests need no caching beta header because prompt caching is generally available. OAuth requests retain only their required <code>anthropic-beta: oauth-2025-04-20</code> header; stale cache beta names are intentionally not combined with it. The system block is sent as an <strong>array</strong> because a plain string silently drops <code>cache_control</code>.</p>
+<p>Every request also marks the <strong>penultimate message</strong> (the second-to-last, i.e. the deepest point of the stable, replayed prefix) with <code>cache_control</code>. The final message — the current turn — is never marked: a breakpoint there is ignored by the API, and the current turn is not part of the stable prefix anyway. On the first request of a conversation there is no penultimate message, so the breakpoint appears from the second request onward — which is also the first time there is any history to read back from cache.</p>
+<h3 id="cache-metrics">Cache metrics</h3>
+<p>Anthropic reports cache usage on the <code>message_start</code> frame:</p>
+<pre><code class="language-jsonc">{ &quot;message&quot;: { &quot;usage&quot;: {
+  &quot;input_tokens&quot;: 1200,
+  &quot;cache_read_input_tokens&quot;: 900,
+  &quot;cache_creation_input_tokens&quot;: 300
+} } }</code></pre>
+<p>Anthropic&#39;s three input fields are disjoint buckets: <code>input_tokens</code> is uncached input, while the two cache fields are read and newly-created input. The AI client normalizes them into the provider-neutral contract by setting <code>promptTokens</code> to their sum, then folds the result into per-round usage snapshots and the final <code>done</code> usage block:</p>
+<pre><code class="language-jsonc">{ &quot;usage&quot;: { &quot;promptTokens&quot;: 2400, &quot;completionTokens&quot;: 400,
+             &quot;cacheReadTokens&quot;: 900, &quot;cacheCreationTokens&quot;: 300 } }</code></pre>
+<p>The chat UI shows a <code>cache 900 read · 300 written</code> token in the per-turn meta line (only when the provider reported any cache activity), and the cost line prices the cached tokens at the discounted rates.</p>
+<h3 id="openai-family-cache-routing">OpenAI-family cache routing</h3>
+<p>OpenAI-family endpoints cache prompt prefixes automatically and need no <code>cache_control</code> markers. What they do need is a routing hint: the cache is machine-local, so two requests of the same conversation only hit a warm cache if they land on the same machine. Every request carries <code>prompt_cache_key</code>, derived from the chat id:</p>
+<pre><code class="language-jsonc">// Request body, OpenAI-shaped providers.
+{
+  &quot;model&quot;: &quot;gpt-4o&quot;,
+  &quot;messages&quot;: [ /* … */ ],
+  &quot;stream&quot;: true,
+  &quot;prompt_cache_key&quot;: &quot;mouaif-&lt;chatId&gt;&quot;
+}</code></pre>
+<p>The key is byte-identical for every request of one chat — every tool round and every follow-up turn — and different between chats, which is exactly what the hint is for. A request with no chat (a one-shot <code>POST /api/chat</code>) omits the field, because there is no conversation worth keeping warm. Hits come back as <code>prompt_tokens_details.cached_tokens</code> and are priced by <a href="./usage-metrics.html">usage-metrics.md</a>.</p>
+<p>The field is sent only to <code>openai-compatible</code>, <code>azure</code>, and <code>openrouter</code>. <code>github-copilot</code> is OpenAI-shaped but rides a gateway of its own, and the remaining OpenAI-shaped providers are non-OpenAI upstreams; a strict gateway that rejects unknown body fields would turn the optimisation into a 400. Anthropic is never sent the field — it uses <code>cache_control</code> instead.</p>
+<div class="table-wrap"><table><thead><tr><th>Provider</th><th>Caching mechanism</th><th>Routing key</th></tr></thead><tbody><tr><td><code>anthropic</code></td><td>explicit <code>cache_control</code> breakpoints</td><td>not applicable</td></tr><tr><td><code>openai-compatible</code></td><td>automatic</td><td><code>prompt_cache_key</code></td></tr><tr><td><code>azure</code></td><td>automatic</td><td><code>prompt_cache_key</code></td></tr><tr><td><code>openrouter</code></td><td>automatic, forwarded to the routed upstream</td><td><code>prompt_cache_key</code></td></tr><tr><td><code>github-copilot</code></td><td>automatic</td><td>not sent</td></tr><tr><td><code>gemini</code></td><td>automatic (implicit caching)</td><td>not applicable</td></tr><tr><td><code>ollama</code></td><td>none</td><td>not applicable</td></tr></tbody></table></div>
+<p>The derivation lives in <code>src/ai-stream.js</code> (<code>promptCacheKeyFor</code>) and the provider gate in <code>src/ai-endpoints.js</code> (<code>PROMPT_CACHE_KEY_PROVIDERS</code>). <code>scripts/test-prompt-cache-key.js</code> locks both halves down: which providers receive the field, which must not, and that the key stays stable within a chat and distinct between chats.</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>API-key and OAuth models.</strong> Prompt caching is generally available, so both authentication modes carry <code>cache_control</code> markers. OAuth models retain the required <code>anthropic-beta: oauth-2025-04-20</code> header; API-key requests do not send any beta header for caching.</p></li><li><p><strong>One combined cacheable system block.</strong> All <code>system</code> messages are concatenated into a single text block marked with <code>cache_control</code>. String content and text-block arrays both preserve their text before the builder applies one fresh cache marker. The block is stable across every turn of a conversation (profile, agent files, skills, feature summary, tagged files, and the custom prompt are all resolved from persistent state), so the second and subsequent turns read it from cache.</p></li><li><p><strong>The last tool definition is cacheable too.</strong> Every enabled native/MCP tool is converted to Anthropic&#39;s <code>{ name, description, input_schema }</code> form and the <strong>last</strong> entry carries <code>cache_control</code> — the documented best practice. Tool schemas are several thousand tokens, so the cached prefix (system + tools) clears the per-model minimum cacheable length on its own for typical tool sets.</p></li><li><p><strong>The penultimate message carries the guaranteed breakpoint.</strong> The second-to-last message is always marked with <code>cache_control</code>. Its prefix — system + tools + every message before the current turn — is re-sent byte-identically on every request (each tool round and every follow-up turn replays the full history), so the next request reads it from cache. This is what makes caching engage when the system + tools prefix is short: no tools enabled, a small tool set, or a terse system block all still cache, because the history itself clears the minimum. Plain-text messages are wrapped into a <code>text</code> block so the marker is honored; tool results and tool_use blocks are marked on their last block.</p></li><li><p><strong>Multi-turn tool loop works for Claude.</strong> The conversation is converted per request: assistant <code>tool_calls</code> become <code>tool_use</code> blocks, <code>role: &quot;tool&quot;</code> messages become <code>tool_result</code> blocks in a user message, and streamed <code>input_json_delta</code> frames are accumulated into tool calls by the parser. Historical tool pairs are reconstructed the same way when a chat resumes.</p></li><li><p><strong>The cache prefix is kept byte-stable.</strong> The post-tool empty-response retry reminder rides as a <code>user</code> message instead of <code>system</code> for Anthropic, because the builder folds every <code>system</code>-role message into the cached system block — a mid-conversation system message would change the prefix and invalidate the warm cache for the rest of the chat. If an assistant emits explanatory text before a tool call, storage keeps that text as a separate UI segment beside the tool cards; history reconstruction merges it back into the same assistant message as <code>tool_calls</code>, matching the live request shape after a chat is reopened. The agent feature summary (<code>src/agentFeatures.js</code>) is also cache-safe: its <code>[MCP]</code> line carries only the <em>configured</em> server count, never live running/stopped status, because a status flip mid-conversation would change the cached system block and invalidate the warm cache for the rest of the chat — the exact failure mode long, tool-heavy chats hit.</p></li><li><p><strong>Minimum cacheable length still applies.</strong> If a conversation is so short that even the full replayed prefix (system + tools + history) is below the per-model minimum, the markers are harmless but inactive — there is simply nothing worth caching yet. The cache engages from the second request of any real conversation, tools on or off.</p></li><li><p><strong>Cost is cache-aware and per-model.</strong> <code>src/usage.js → computeCost</code> charges cached reads at 10% of the input rate and cache writes at 125%, with the remaining uncached prompt tokens at the full input rate — <strong>multiplied by the model&#39;s own input price</strong>. The 10% / 125% factors are the standard Anthropic tiers and are uniform across Claude models today, but a pricing record can override them per model (<code>pricing.cacheReadFactor</code> / <code>pricing.cacheWriteFactor</code>); see <a href="./usage-metrics.html#per-model-pricing">usage-metrics.md</a>. OpenRouter&#39;s live model catalog supplies both the per-model base prices and the cache factors from its <code>/models</code> API (<code>pricing.prompt</code> / <code>pricing.completion</code> in $ per token, cache rates in <code>pricing.input_cache_read</code> / <code>pricing.input_cache_write</code>), so Claude models used through OpenRouter are priced from the provider&#39;s real numbers — including non-standard cache tiers (e.g. Gemini 2.5 Pro writes at 0.3×, DeepSeek reads at 0.5×). A <code>usage</code> block without cache fields prices identically to before the feature. The per-segment cost attached at <code>assistant_turn_end</code> uses the same math via the round snapshot.</p></li><li><p><strong>Claude through OpenRouter carries the breakpoints too.</strong> OpenRouter forwards Anthropic prompt caching, but only when the OpenAI-shaped request body already contains explicit <code>cache_control</code> breakpoints on message content blocks — the plain OpenAI body has none, so a Claude model routed through OpenRouter would otherwise get a <strong>0% cache hit on every turn</strong>. <code>buildOpenAIRequest</code> (<code>src/ai-endpoints.js</code>) detects <code>anthropic/*</code> OpenRouter model slugs and injects the same two breakpoints the native path uses: the <strong>last system message</strong> and the <strong>deepest replayed message</strong>. A plain string is wrapped into a single <code>{ type: &quot;text&quot;, … , cache_control }</code> part; an array keeps its parts and only the last one is marked. The final (current-turn) message is never marked. Every other OpenAI-shaped provider and every non-Claude OpenRouter model is left untouched. The history breakpoint walks back from the penultimate message to the deepest one that can actually hold a marker: in the agentic tool loop the penultimate message is frequently an assistant tool-call message whose <code>content</code> is <code>null</code> (the OpenAI shape keeps tool calls in <code>tool_calls</code>, not in content), and <code>cache_control</code> is only honored on a content block. Marking that empty message would leave <strong>only</strong> the small system block cached — usually below Claude&#39;s minimum cacheable length — so every tool round silently got a 0% hit. Skipping content-less messages guarantees a real breakpoint lands (e.g. on the preceding user turn), so caching engages through the whole tool loop.</p></li><li><p><strong>Other providers&#39; cache reads are normalized too.</strong> OpenAI-shaped providers (including OpenAI-compatible endpoints, OpenRouter, Azure, GitHub Copilot, Mistral, Groq, and DeepSeek) expose cache hits through <code>prompt_tokens_details.cached_tokens</code>; Gemini exposes <code>usageMetadata.cachedContentTokenCount</code>. Both are subsets of the provider&#39;s total prompt count and map to <code>cacheReadTokens</code>, enabling the same cache-aware usage and pricing path. Ollama does not currently report a cached-token usage bucket.</p></li><li><p><strong>Cache fields travel with the transcript.</strong> The <code>usage</code> block — including <code>cacheReadTokens</code> / <code>cacheCreationTokens</code> — is persisted on the assistant message, so a chat re-opened later shows the same numbers that were on screen.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./ai-client.html">docs/features/ai-client.md</a> — request builders and SSE events.</p></li><li><p><a href="./oauth-anthropic.html">docs/features/oauth-anthropic.md</a> — the API-key vs OAuth header split.</p></li><li><p><a href="./usage-metrics.html">docs/features/usage-metrics.md</a> — cost and token/s rendering.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

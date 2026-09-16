@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trace to file — mouaif docs</title>
+  <meta name="description" content="A per-chat toggle (off by default) appends every new event for that chat to a project-relative NDJSON file. A one-shot &quot;Export trace&quot; action writes the same…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="trace-to-file">Trace to file</h1>
+<h2 id="overview">Overview</h2>
+<p>A per-chat toggle (off by default) appends every new event for that chat to a project-relative NDJSON file. A one-shot &quot;Export trace&quot; action writes the same shape to a path the user picks without leaving the toggle on. The file is the user&#39;s source file — no rotation, no TTL, no auto-cleanup — and deleting either the trace or the chat leaves the other untouched.</p>
+<h2 id="usage">Usage</h2>
+<ul><li><p><strong>Toggle</strong>: per-chat, off by default. There is no app-wide or project-wide default; every chat starts untraced.</p></li><li><p><strong>Path</strong>: <code>&lt;projectDir&gt;/.mouaif/traces/&lt;chatId&gt;.ndjson</code>, append-only. The filename identifies the chat, so <code>chatId</code> is not repeated on every line. If the chat has no project, the user is prompted to pick one before tracing starts (no surprise writes outside the project).</p></li><li><p><strong>One-shot export</strong>: the chat UI exposes an &quot;Export trace&quot; action that writes the same NDJSON shape to a user-picked path without enabling the toggle.</p></li><li><p><strong>Where the controls live</strong>: the trace toggle, &quot;Export trace&quot;, and the chat&#39;s delete action sit on the project&#39;s <strong>Technical details</strong> page (<code>#/settings/project/technical?chatId=…</code>). Reach it from a chat via the settings button, then the <strong>Technical details</strong> link at the bottom of project settings; the link carries the current <code>chatId</code> so the trace controls show.</p></li></ul>
+<h3 id="ndjson-shape">NDJSON shape</h3>
+<p>One event per line, each with <code>{ ts, type, ...payload }</code>:</p>
+<div class="table-wrap"><table><thead><tr><th><code>type</code></th><th>Payload</th></tr></thead><tbody><tr><td><code>user message</code></td><td>The message the user sent</td></tr><tr><td><code>assistant message</code></td><td>The model&#39;s reply text</td></tr><tr><td><code>tool call</code></td><td><code>tool_call</code> — name and arguments</td></tr><tr><td><code>tool result</code></td><td><code>tool_result</code> — the tool&#39;s output</td></tr><tr><td><code>system event</code></td><td>Non-message system events (e.g. authorization decisions)</td></tr><tr><td><code>error</code></td><td>Failed turns surfaced as errors</td></tr></tbody></table></div>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p>While the toggle is on, every new event for the chat is appended.</p></li><li><p>Toggling off closes the file handle; the file is kept. Toggling on again opens it in append mode and continues.</p></li><li><p>Independent of chat storage: the trace is a <em>view</em> of the transcript, written out as a plain file. Deleting the trace file does not delete the chat; deleting the chat does not delete the trace file.</p></li><li><p>Append-only, no rotation, no auto-cleanup.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./ai-client.html">docs/features/ai-client.md</a> — <code>tool_call</code> and <code>tool_result</code> SSE event names.</p></li><li><p><a href="./mcp.html">docs/features/mcp.md</a> — MCP tool calls are traced as <code>tool call</code> / <code>tool result</code> lines too.</p></li><li><p>Decision: docs/decisions.md §5 (trace-to-file) and §10 (AI client wire format).</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

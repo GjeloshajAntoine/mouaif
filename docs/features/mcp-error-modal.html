@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCP server error modal — mouaif docs</title>
+  <meta name="description" content="MCP server lifecycle failures in Settings open a full-screen modal with the typed error code, complete message, and server identity. MCP tool failures in chat…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="mcp-server-error-modal">MCP server error modal</h1>
+<h2 id="overview">Overview</h2>
+<p>MCP server lifecycle failures in Settings open a full-screen modal with the typed error code, complete message, and server identity. MCP tool failures in chat do not open a modal; they remain in the normal inline transcript tool card.</p>
+<h2 id="usage">Usage</h2>
+<p>No configuration is required.</p>
+<ul><li><p>Open <strong>Settings → MCP servers</strong> and start or restart a server.</p></li><li><p>If startup fails, the error modal opens immediately.</p></li><li><p>The full-width error row remains below the server and can be tapped to reopen the modal.</p></li><li><p>Dismiss the modal with its close button, the backdrop, or Escape. Escape, the Tab cycle and focus restore come from the shared sheet hook — see <a href="modal-sheets.html">Modal sheets</a>.</p></li><li><p>Use the server row to edit its command or URL before retrying.</p></li></ul>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p>The modal is limited to MCP server lifecycle actions in Settings.</p></li><li><p>Chat MCP tool failures continue to use the existing auto-expanded transcript error card.</p></li><li><p>Typed codes such as <code>EMCP_START</code>, <code>EMCP_TRANSPORT</code>, <code>EMCP_RPC</code>, and <code>EMCP_TIMEOUT</code> are preserved.</p></li><li><p>The layout fills a phone viewport and becomes a centered sheet on wider screens.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><code>frontend/src/components/SettingsMcp.jsx</code> opens the modal for lifecycle failures and renders a tappable full-width error row.</p></li><li><p><code>frontend/src/components/chat/McpErrorModal.jsx</code> renders the lifecycle error details. It is shared by location only; chat does not import or mount it.</p></li><li><p><code>frontend/src/features.css</code> allows MCP server rows to wrap so lifecycle messages occupy their own row.</p></li><li><p><code>frontend/src/chat-composer.css</code> holds the mobile-first <code>.mcp-err__*</code> modal styles. The overlay, the sheet shell and the desktop card come from the shared modal sheet idiom in <code>frontend/src/sheets.css</code>; this file only overrides <code>--sheet-z</code> (62, above the other modals) and <code>--sheet-backdrop</code>, plus the desktop card width.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./mcp.html">MCP</a> — MCP server configuration, lifecycle, tools, and typed errors.</p></li><li><p><a href="./chat-error-surfacing.html">Chat error surfacing</a> — inline chat error behavior.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

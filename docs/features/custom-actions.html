@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Custom actions — mouaif docs</title>
+  <meta name="description" content="Custom actions are project-scoped shortcuts that run a saved CLI command or MCP tool without a model round-trip. They are stored in the project’s…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="custom-actions">Custom actions</h1>
+<h2 id="overview">Overview</h2>
+<p>Custom actions are project-scoped shortcuts that run a saved CLI command or MCP tool without a model round-trip. They are stored in the project’s <code>customActions</code> setting and remain protected by the underlying Shell or MCP authorization mode.</p>
+<h2 id="usage">Usage</h2>
+<p>Open <strong>Project settings → More settings → Custom actions</strong>, then add an action.</p>
+<h3 id="cli-action">CLI action</h3>
+<p>Choose <strong>CLI</strong>, give the action an ID, and enter a non-interactive command. The command runs with the project folder as its working directory.</p>
+<pre><code class="language-json">{
+  &quot;customActions&quot;: [
+    {
+      &quot;id&quot;: &quot;test&quot;,
+      &quot;label&quot;: &quot;Run tests&quot;,
+      &quot;description&quot;: &quot;Run the project test suite&quot;,
+      &quot;kind&quot;: &quot;cli&quot;,
+      &quot;command&quot;: &quot;npm test&quot;,
+      &quot;timeoutMs&quot;: 120000
+    }
+  ]
+}</code></pre>
+<h3 id="mcp-action">MCP action</h3>
+<p>Choose <strong>MCP</strong>, select a configured server and tool, then edit the prefilled JSON arguments. The editor builds the initial object from the tool’s input schema, using declared defaults, examples, or enum values when available and type-appropriate placeholders otherwise.</p>
+<pre><code class="language-json">{
+  &quot;customActions&quot;: [
+    {
+      &quot;id&quot;: &quot;open-issues&quot;,
+      &quot;label&quot;: &quot;List open issues&quot;,
+      &quot;kind&quot;: &quot;mcp&quot;,
+      &quot;serverId&quot;: &quot;github&quot;,
+      &quot;toolName&quot;: &quot;list_issues&quot;,
+      &quot;args&quot;: {
+        &quot;state&quot;: &quot;open&quot;
+      }
+    }
+  ]
+}</code></pre>
+<h3 id="run-an-action">Run an action</h3>
+<p>From a chat in that project:</p>
+<ul><li><p>Tap the <strong>file-toolbar</strong> button (the stacked arrow/folder icon) left of the textarea and pick the action by name. Compact action rows appear first and show only the action name, without an icon, section heading, or type metadata.</p></li><li><p>Type <code>@test</code> as the complete composer message. Pressing Enter runs the exact action even when a similarly named file is the first autocomplete result or the composer setting normally uses Enter for a newline; Shift+Enter still inserts a newline. The autocomplete refresh keeps this direct-dispatch list current, so newly created actions work without reopening the chat.<br>An action uses its saved command or arguments. Ad-hoc arguments after the <code>@action-id</code> are not accepted. MCP action failures surface the server&#39;s returned text in the composer status instead of a generic error.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p>Definitions are available through these local REST endpoints:</p>
+<pre><code class="language-text">GET    /api/actions?projectDir=&lt;absolute-path&gt;
+POST   /api/actions
+DELETE /api/actions/:id?projectDir=&lt;absolute-path&gt;
+POST   /api/actions/:id/run</code></pre>
+<p>CLI execution delegates to the native Shell runner and its project authorization gate. MCP execution resolves the configured server and delegates to the selected MCP tool’s layered authorization gate. In <strong>Ask</strong> mode, the standard chat approval card appears before execution.</p>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

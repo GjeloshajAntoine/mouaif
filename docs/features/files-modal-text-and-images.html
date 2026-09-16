@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Files modal — edit any text file, preview images — mouaif docs</title>
+  <meta name="description" content="- **Text files** (`.js`, `.ts`, `.json`, `.md`, `.py`, `.yml`, `.sh`, …) open in the existing CodeMirror editor with syntax highlighting, save/revert, and…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="files-modal-edit-any-text-file-preview-images">Files modal — edit any text file, preview images</h1>
+<h2 id="overview">Overview</h2>
+<ul><li><p><strong>Text files</strong> (<code>.js</code>, <code>.ts</code>, <code>.json</code>, <code>.md</code>, <code>.py</code>, <code>.yml</code>, <code>.sh</code>, …) open in the existing CodeMirror editor with syntax highlighting, save/revert, and Ctrl/Cmd+S.</p></li><li><p><strong>Unknown extensions</strong> with text content (e.g. <code>LICENSE</code>, <code>.gitattributes</code>, dotfiles) are detected by an 8 KiB NUL-byte sniff and open in the editor too.</p></li><li><p><strong>Images</strong> (<code>.png</code>, <code>.jpg</code>, <code>.jpeg</code>, <code>.gif</code>, <code>.webp</code>, <code>.svg</code>, <code>.bmp</code>, <code>.ico</code>) open in a preview pane that renders the bytes through a single <code>&lt;img&gt;</code>; an SVG is a script-disabled image document there, exactly like a raster bitmap.</p></li><li><p><strong>SVG</strong> is both text and image; the preview is the default, and the preview header has an <strong>Edit</strong> button to switch the same file into the CodeMirror editor.</p></li><li><p><strong>Other binaries</strong> stay disabled in the file list, same as before.</p></li><li><p><strong>Layout toggle</strong> — the modal opens in split view by default (file list on the left, editor/preview on the right) and has a toolbar button to switch to <strong>full-editor mode</strong> (the file list is hidden so the editor/preview takes the whole pane). Tapping the same button restores the split view.</p></li></ul>
+<h2 id="usage">Usage</h2>
+<p>Tap the <strong>Files</strong> item in the file toolbar dropdown (next to the composer). The modal opens with the project root listed on the left and an empty state on the right.</p>
+<p>The browser is <strong>not capped at the project root</strong>: you can navigate up (via the <strong>Up</strong> button, the breadcrumb, or by typing an absolute path in the path input) to browse and edit files anywhere under the user&#39;s home directory. With <code>MOUAIF_ALLOW_ANY_ROOT=1</code> set on the server, the whole filesystem is reachable. The Up button and breadcrumb stop at the natural boundary (home, or <code>/</code> when allow-any-root is on) rather than at the project root, so the list never asks the server for a directory the home guard would reject.</p>
+<div class="table-wrap"><table><thead><tr><th>Tap on a list row</th><th>Result</th></tr></thead><tbody><tr><td>Folder (<code>…</code>)</td><td>Recurse into that folder</td></tr><tr><td>Text file (<code>.js</code>, <code>.json</code>, …)</td><td>Editor opens with the file content</td></tr><tr><td>Text file with no extension (<code>LICENSE</code>)</td><td>Editor opens (sniffed as text)</td></tr><tr><td>Image (<code>.png</code>, <code>.jpg</code>, …)</td><td>Preview opens in the right pane</td></tr><tr><td>SVG (<code>.svg</code>)</td><td>Preview opens by default; <strong>Edit</strong> in the header swaps to the editor</td></tr><tr><td>Other binary</td><td>Row is greyed out and not tappable</td></tr></tbody></table></div>
+<h3 id="right-hand-pane-modes">Right-hand pane modes</h3>
+<ul><li><p><strong>Editor</strong> — header shows the relative path with a <code>•</code> when dirty, <strong>Revert</strong> + <strong>Save</strong> buttons, the CodeMirror host, and a status row. Syntax highlighting uses the One Dark palette (readable on the dark editor surface), not the light <code>defaultHighlightStyle</code>.</p></li><li><p><strong>Preview</strong> — header shows the relative path, <strong>Edit</strong> (only for SVG) + <strong>Close</strong>, the centered image, and a status row with the file size and MIME type. Every previewable image, SVG included, is painted by one <code>&lt;img&gt;</code> whose <code>src</code> is the <code>data:</code> URL the server returned. An SVG loaded that way is a separate document with scripting disabled: <code>&lt;script&gt;</code>, <code>on*</code> handlers, <code>&lt;foreignObject&gt;</code> HTML content and external fetches do not run. See <strong>Why the SVG preview is an image, not markup</strong> below.</p></li><li><p><strong>Empty state</strong> — &quot;Pick a file from the list to start editing, or tap an image to preview it.&quot;</p>
+<p>The two panes never appear together. Opening a text file clears the preview, opening an image clears the editor and destroys the CodeMirror view to free memory.</p></li></ul>
+<h3 id="layout-toggle-split-vs-full-editor">Layout toggle — split vs full-editor</h3>
+<p>The modal opens in <strong>split view</strong> by default: the file list sits on the left (38% width on tablet/desktop, full-width and stacked above the editor on phones) and the editor/preview sits on the right. A single-rectangle icon in the header toolbar switches to <strong>full-editor mode</strong>, which hides the file list (and the breadcrumb + list-status rows that go with it) so the editor/preview takes the whole pane. The header is also reduced: the path input, Up / Go / Refresh buttons, and breadcrumb all disappear in full-editor mode, leaving only the toggle and <strong>Close</strong>.</p>
+<p>The toggle icon always shows the <strong>next</strong> state, not the current one:</p>
+<ul><li><p>In split view: a single wide rectangle (the action is &quot;hide the file list&quot;).</p></li><li><p>In full-editor mode: two equal vertical bars (the action is &quot;restore the split view&quot;). The icon gets the <code>is-active</code> accent so the current layout is obvious at a glance. The icon renders at 18px in this state so the two-bar shape stays legible at the 36px mobile touch target.</p>
+<p>Tapping the toggle switches layouts without reloading or closing the currently open file, so flipping it mid-edit preserves the buffer, dirty flag, and save state.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<h3 id="why-the-svg-preview-is-an-image-not-markup">Why the SVG preview is an image, not markup</h3>
+<p>The preview used to render an SVG by base64-decoding the file and assigning the markup to a <code>&lt;div&gt;</code> with <code>dangerouslySetInnerHTML</code>. That put the file&#39;s markup inside the app&#39;s origin, with the access cookie and full <code>/api/*</code> reach — and a project folder is untrusted input the moment it contains a checked-out repository, a downloaded asset, or a file a model just wrote.</p>
+<p>The executing vector is the event-handler attribute, not the <code>&lt;script&gt;</code> element: a <code>&lt;script&gt;</code> element inserted through <code>innerHTML</code> does not run (that is the HTML/SVG insertion rule), but <code>on*</code> attributes on injected elements do. Verified in Chrome on a policy-free page — an injected <code>&lt;svg&gt;</code> with <code>&lt;animate onbegin&gt;</code> and <code>&lt;foreignObject&gt;&lt;img onerror&gt;</code> ran both handlers in the page&#39;s origin. Under the app&#39;s Content-Security-Policy those handlers are blocked too, but the preview no longer injects anything at all.</p>
+<p>The preview is now a plain <code>&lt;img src=&quot;data:image/svg+xml;base64,…&quot;&gt;</code>. Browsers refuse to run scripts or event handlers in an SVG loaded as an image, so the file renders as a picture and nothing else; nested/external references do not resolve either, which is the same behaviour as the raster previews. Verified end-to-end at 360 px: an SVG containing both a <code>&lt;script&gt;</code> and an <code>onbegin</code> handler renders (canvas sample equals the file&#39;s own fill colour) with the handler never firing and no <code>&lt;svg&gt;</code> element in the DOM.</p>
+<p>This is covered by <code>scripts/test-file-preview-safety.js</code> (source guard plus a real <code>readMedia</code> round-trip): it fails if a preview path decodes file bytes for display, or if the <code>fe__media-svg</code> markup container comes back.</p>
+<p>The list is built server-side by <code>listDir</code> in <code>src/files.js</code>, which mirrors the <code>SKIP_DIRS</code> allowlist that the rest of the app uses (see the file-tagging and file-tools scans). - Hidden <strong>dotfiles</strong> that are text (<code>.gitignore</code>, <code>.env</code>, <code>.editorconfig</code>, <code>.mouaif.json</code>, …) are listed and open in the editor; they were previously hidden by a blanket <code>name.startsWith(&#39;.&#39;)</code> skip. - Hidden <strong>dot directories</strong> that are junk (<code>.git</code>, <code>.mouaif</code>, <code>.cache</code>, <code>.next</code>, <code>.turbo</code>, …) are still skipped via <code>SKIP_DIRS</code> so the list stays clean.</p>
+<h3 id="browse-boundary-not-the-project-root">Browse boundary (not the project root)</h3>
+<p>Every read/write/list path goes through <code>files.resolveSafe</code>, which <strong>used to</strong> confine the editor to the project root and throw <code>EOUTSIDE_PROJECT</code> for anything above it. The boundary is now the same home / <code>MOUAIF_ALLOW_ANY_ROOT</code> guard the project-folder picker uses: <code>projects.ensureSafeRoot(abs)</code> is called on the resolved target, so paths escape the project root but must stay under the user&#39;s home (or anywhere at all when <code>MOUAIF_ALLOW_ANY_ROOT=1</code>). A path outside that boundary still throws <code>EOUTSIDE_HOME</code>.</p>
+<ul><li><p><code>resolveSafe(projectDir, incoming)</code> resolves <code>incoming</code> (relative against <code>projectDir</code>, absolute as-is), then validates the absolute target with <code>projects.ensureSafeRoot</code>. <code>rel</code> stays project-relative, so a sibling of the project is reported as <code>../…</code>.</p></li><li><p><code>listDir</code> now also returns <code>browseTop</code>, the top-most directory the browser may reach (the user&#39;s home, or <code>/</code> when allow-any-root is on). The frontend clamps the Up button and breadcrumb there.</p></li><li><p>The frontend <code>FileEditor</code> and <code>AgentFilePicker</code> read <code>browseTop</code> from the <code>/api/files</code> response and use it to decide where Up stops, so the UI never requests a directory the server would reject. The path-input placeholder is &quot;Folder path (absolute, or under this project)&quot;.</p></li><li><p>Error status falls back to <code>EOUTSIDE_HOME</code> (403) when a target leaves the home boundary; <code>EOUTSIDE_PROJECT</code> is no longer produced by the file editor.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

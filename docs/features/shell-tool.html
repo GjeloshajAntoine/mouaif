@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shell tool — let the model run commands in the project — mouaif docs</title>
+  <meta name="description" content="`mouaif` ships a built-in `shell` tool the model can invoke. The tool runs a command in the project&#39;s working directory, captures stdout / stderr / exit code…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="shell-tool-let-the-model-run-commands-in-the-project">Shell tool — let the model run commands in the project</h1>
+<h2 id="overview">Overview</h2>
+<p><code>mouaif</code> ships a built-in <code>shell</code> tool the model can invoke. The tool runs a command in the project&#39;s working directory, captures stdout / stderr / exit code / duration, and returns the result to the model. Calls and results ride the chat as <code>tool_call</code> and <code>tool_result</code> SSE events (see <a href="./ai-client.html">docs/features/ai-client.md</a> for the reserved event names) and are persisted with the transcript and written to the trace file when tracing is on. The tool is <strong>off by default per project</strong>; the user opts in through project settings and gates every call with the authorization system (<a href="./tool-authorization.html">docs/features/tool-authorization.md</a>).</p>
+<h2 id="usage">Usage</h2>
+<h3 id="enabling-the-tool">Enabling the tool</h3>
+<p>In <strong>Settings → Project settings → Tools</strong> (reachable from a project card&#39;s ⋯ menu → <strong>Settings…</strong>), the <strong>Shell</strong> tool carries an Off/Ask/Allow authorization segment. It persists <code>tools.shell: { mode, allowlist }</code> on the project&#39;s <code>.mouaif.json</code>. The mode is the enablement gate: <code>off</code> hides the tool from the model and rejects any call with <code>ETOOL_DISABLED</code>; <code>ask</code> prompts on first use; <code>allow</code> runs every call; <code>allowlist</code> auto-approves calls whose summary matches one of the patterns (see <a href="./tool-authorization.html">docs/features/tool-authorization.md</a>). With a non-<code>off</code> mode, the AI client&#39;s outgoing request advertises the tool to the model using the OpenAI-compatible tool-call shape:</p>
+<pre><code class="language-json">{
+  &quot;type&quot;: &quot;function&quot;,
+  &quot;function&quot;: {
+    &quot;name&quot;: &quot;shell&quot;,
+    &quot;description&quot;: &quot;Run a shell command in the project directory through mouaif, the local AI coding assistant that provides this chat. Commands execute on &lt;os&gt; via &lt;shell&gt; (e.g. \&quot;Windows via Command Prompt (cmd.exe) — Windows command-line syntax (cmd.exe batch-style quoting and escaping; not POSIX sh/bash)\&quot; or \&quot;macOS via zsh (/bin/zsh) — POSIX sh syntax\&quot;). Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead.&quot;,
+    &quot;parameters&quot;: {
+      &quot;type&quot;: &quot;object&quot;,
+      &quot;properties&quot;: {
+        &quot;cmd&quot;:       { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;The command to run, as a single string. Must be non-interactive (no stdin input, no REPL, no prompts).&quot; },
+        &quot;shell&quot;:     { &quot;type&quot;: &quot;string&quot;, &quot;description&quot;: &quot;Optional. The exact interpreter to run the command with, e.g. \&quot;cmd.exe\&quot; (default), \&quot;pwsh\&quot;, or \&quot;powershell.exe\&quot; on Windows; a path to a sh-compatible binary on POSIX. Falls back to the platform default when omitted.&quot; },
+        &quot;timeoutMs&quot;: { &quot;type&quot;: &quot;integer&quot;, &quot;description&quot;: &quot;Optional per-call timeout, 1 ms - 10 min. Default 30 000.&quot; }
+      },
+      &quot;required&quot;: [&quot;cmd&quot;],
+      &quot;additionalProperties&quot;: false
+    }
+  }
+}</code></pre>
+<p>The tool spec makes the shell dialect explicit — <code>cmd.exe</code> on Windows is not POSIX sh, so the model is told up front which syntax to write (see <a href="#model-awareness">Model awareness</a> below). An optional <code>shell</code> parameter lets the model (or a REST caller) pick a different interpreter for a single call; it is validated before use.</p>
+<h3 id="in-a-chat">In a chat</h3>
+<p>When the model decides to call the tool, the server intercepts the call (the model only sees the tool&#39;s description; the actual execution lives behind the mouaif server), runs the command in <code>projectDir</code>, and forwards the result back to the upstream as a <code>tool</code> message before continuing the stream. This is a real <strong>multi-turn loop</strong>: the model can call the tool, read the result, and call again until it considers the task complete or the user aborts the request. The chat UI shows every call and result inline in the conversation.</p>
+<p>The wire shape on the SSE stream:</p>
+<pre><code>event: tool_call
+data: { &quot;id&quot;: &quot;call_abc123&quot;, &quot;name&quot;: &quot;shell&quot;, &quot;args&quot;: { &quot;cmd&quot;: &quot;npm test&quot;, &quot;timeoutMs&quot;: 60000 } }
+
+event: shell_output
+data: { &quot;id&quot;: &quot;call_abc123&quot;, &quot;stream&quot;: &quot;stdout&quot;, &quot;delta&quot;: &quot;&gt; project@1.0.0 test\n&quot; }
+
+event: shell_output
+data: { &quot;id&quot;: &quot;call_abc123&quot;, &quot;stream&quot;: &quot;stderr&quot;, &quot;delta&quot;: &quot;npm warn ...\n&quot; }
+
+event: tool_result
+data: { &quot;id&quot;: &quot;call_abc123&quot;, &quot;name&quot;: &quot;shell&quot;, &quot;ok&quot;: true, &quot;result&quot;: { &quot;stdout&quot;: &quot;...&quot;, &quot;stderr&quot;: &quot;&quot;, &quot;exitCode&quot;: 0, &quot;durationMs&quot;: 4213, &quot;identity&quot;: &quot;mouaif shell · macOS · zsh (/bin/zsh)&quot; } }</code></pre>
+<p><code>shell_output</code> frames are live, best-effort output deltas emitted while the command is still running. They are never persisted to the transcript; the final <code>tool_result</code> carries the complete (truncated) output. The <code>identity</code> field names the software (<code>mouaif shell</code>) plus the OS and the exact shell that ran the command; the same line is prepended to the first model-facing <code>tool</code> message so the model always knows which environment executed its command.</p>
+<p>The chat composer also accepts a <code>/shell &lt;cmd&gt;</code> slash command that runs the tool directly without going through the model. The output is rendered in the chat as a <code>tool_result</code> block, with the same live preview as a model-initiated call: the endpoint streams each stdout/stderr chunk to the card while the command is still running. This is the same code path as a model-initiated call — the only difference is that there is no prior <code>tool_call</code> from the model and the result is shown without a follow-up assistant message.</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Working directory.</strong> Commands run in <code>projectDir</code>. The runner resolves the path and refuses anything outside the project root (<code>..</code> segments, absolute paths, symlinks that point outside) with <code>EOUTSIDE_PROJECT</code>. The runner is <code>path.join</code>-aware; it does not shell-<code>cd</code> for the user.</p></li><li><p><strong>Shell.</strong> The command is run with the user&#39;s login shell (<code>$SHELL</code> on POSIX, <code>cmd.exe /d /s /c</code> on Windows). It is a single string passed verbatim; there is no command parsing or argument splitting. Pipes, redirects, and <code>&amp;&amp;</code> chains are the user&#39;s responsibility and are not interpreted by mouaif. On Windows the runner passes the flags as separate argv elements and wraps the command in an extra pair of quotes with <code>windowsVerbatimArguments</code> so <code>cmd /s</code> quote-stripping does not mangle inner quotes (e.g. <code>node -e &quot;console.log(1+1)&quot;</code>). An optional per-call <code>shell</code> override reuses the same quoting rules when it resolves to <code>cmd.exe</code>/<code>cmd</code> and plain <code>-c</code> otherwise, so the override can never become an arbitrary-arguments injection.</p></li><li><p><strong>Env.</strong> The child inherits the parent process&#39;s environment, minus a small denylist (<code>LD_PRELOAD</code>, <code>LD_LIBRARY_PATH</code>, <code>DYLD_INSERT_LIBRARIES</code>, <code>NODE_OPTIONS</code>) to prevent trivial tool escape. <code>PATH</code> is preserved.</p></li><li><p><strong>Sandboxing.</strong> The runner does not provide OS-level sandboxing (containers, seccomp, <code>bwrap</code>). It is the user&#39;s responsibility to enable the tool only on projects they trust. The Settings UI shows a warning when the toggle is flipped on, and the authorization system (§17) requires explicit approval per call by default.</p></li><li><p><strong>Timeouts.</strong> A per-call <code>timeoutMs</code> is honored; the default is 30 s, the ceiling is 10 min. On timeout the child is killed (SIGTERM, then SIGKILL after 5 s) and the result is <code>{ ok: false, error: &#39;timed out&#39;, code: &#39;ETIMEDOUT&#39;, durationMs: &lt;actual elapsed ms&gt; }</code>. A child that ignores SIGTERM stays tracked for the exit-hook reap; its late <code>close</code> is ignored.</p></li><li><p><strong>The project&#39;s ceiling wins over the model&#39;s request.</strong> <code>timeoutMs</code> from a tool call is resolved by the authorization gate against <code>tools.shell.defaultTimeoutMs</code> / <code>maxTimeoutMs</code> (<code>clamp(requested || default, 1, max)</code>) before the command runs, and the clamped value is what the approval card shows. A model that asks for 10 minutes in a project capped at 30 s gets 30 s. The <code>shell</code> tool&#39;s own 10-minute ceiling applies on top when the project sets no cap.</p></li><li><p><strong>Output size cap.</strong> stdout and stderr are truncated to a per-call cap (default 256K chars each, configurable via <code>app.shellOutputMaxBytes</code>). The cap counts characters (UTF-16 code units), not bytes, so multi-byte output is never split mid-codepoint and the marker matches what the model and the UI read. Truncation adds a final <code>\n...[truncated at 262144 chars]</code> line; the original exit code is preserved.</p></li><li><p><strong>Multi-turn loop.</strong> Tool results are fed back to the model as <code>tool</code> messages, so the model can chain calls (read a file, run a build, read the error, fix it). There is no fixed tool-turn limit; cancellation comes from the user aborting the active request.</p></li><li><p><strong>Non-interactive only.</strong> The child runs with no stdin (<code>stdio: [&#39;ignore&#39;, &#39;pipe&#39;, &#39;pipe&#39;]</code>), so REPLs and commands that read stdin (bare <code>node</code>, <code>cmd</code> builtins, <code>npm init</code>, ...) fail or exit immediately — e.g. <code>Input redirection is not supported, exiting the process immediately.</code> on Windows. The tool spec declares this constraint; use one-shot forms (<code>node -e &quot;...&quot;</code>, <code>npm test</code>, flags) instead.</p></li><li><p><strong>Identical-call circuit breaker.</strong> The tool loop has no turn limit, so a model retrying the exact same failing call (same tool + same arguments) would spin forever. After 3 consecutive identical calls the server refuses the 4th+ with an <code>ELOOP</code> tool error telling the model to vary the command or answer in plain text. Any different call resets the streak.</p></li><li><p><strong>Live output preview.</strong> While the command runs, decoded stdout/stderr chunks ride the SSE stream as <code>shell_output</code> events so the chat card can stream a live preview (same for shell calls nested inside a subagent, which re-emit as <code>subagent_event</code> with <code>kind: &quot;shell_output&quot;</code>). These frames are UI-only — never persisted and never sent back to the model; the authoritative output is the single <code>tool_result</code> after the command exits.</p></li><li><p><strong>Disabled when off.</strong> A project with <code>tools.shell.mode</code> set to <code>off</code> returns <code>ETOOL_DISABLED</code> for any call (model-initiated or <code>/shell</code>). The authorization gate is the single source of truth for enablement; there is no separate <code>enabled</code> flag.</p></li><li><p><strong>Persisted with the chat.</strong> <code>tool_call</code> and <code>tool_result</code> events are written to <code>&lt;projectDir&gt;/.mouaif.traces.&lt;chatId&gt;.json</code> (when tracing is on) and to the per-chat NDJSON trace (decision §5) as <code>tool_call</code> and <code>tool_result</code> lines.</p></li><li><p><strong>No new runtime dependencies.</strong> The runner is built on <code>node:child_process.spawn</code> only. No third-party shell wrappers.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./ai-client.html">docs/features/ai-client.md</a> — <code>tool_call</code> and <code>tool_result</code> SSE event names.</p></li><li><p><a href="./tool-authorization.html">docs/features/tool-authorization.md</a> — every shell call passes through the authorization gate.</p></li><li><p><a href="./trace.html">docs/features/trace.md</a> — <code>tool_call</code> and <code>tool_result</code> lines on the NDJSON trace (decision §5).</p></li><li><p>Decision: docs/decisions.md §16 (this feature) and §10 (AI client wire format).</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

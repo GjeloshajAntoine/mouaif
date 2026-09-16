@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>`report_progress` tool — mouaif docs</title>
+  <meta name="description" content="The `report_progress` tool lets the model report real-time progress on a long-running operation. The server validates the call, emits a `progress_update` SSE…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="report-progress-tool"><code>report_progress</code> tool</h1>
+<h2 id="overview">Overview</h2>
+<p>The <code>report_progress</code> tool lets the model report real-time progress on a long-running operation. The server validates the call, emits a <code>progress_update</code> SSE event, and the frontend renders a live progress bar card in the transcript. The tool is advertised to all models that support tool calling when its project authorization mode is not <code>off</code>.</p>
+<h2 id="usage">Usage</h2>
+<p>The model calls <code>report_progress</code> with this schema:</p>
+<pre><code class="language-json">{
+  &quot;title&quot;: &quot;Building project&quot;,
+  &quot;current&quot;: 5,
+  &quot;total&quot;: 100,
+  &quot;status&quot;: &quot;running&quot;,
+  &quot;message&quot;: &quot;Compiling source files...&quot;
+}</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody><tr><td><code>title</code></td><td>string</td><td>yes</td><td>Short description of the operation (max 120 chars)</td></tr><tr><td><code>current</code></td><td>number</td><td>yes</td><td>Current progress value (0-based)</td></tr><tr><td><code>total</code></td><td>number</td><td>yes</td><td>Maximum progress value (must be positive)</td></tr><tr><td><code>status</code></td><td>string</td><td>no</td><td><code>&quot;running&quot;</code>, <code>&quot;completed&quot;</code>, or <code>&quot;failed&quot;</code> (default: <code>&quot;running&quot;</code>)</td></tr><tr><td><code>message</code></td><td>string</td><td>no</td><td>Optional status message shown below the progress bar (max 500 chars)</td></tr></tbody></table></div>
+<h2 id="authorization">Authorization</h2>
+<p><code>report_progress</code> appears in Settings → Project with the same <code>off</code> / <code>ask</code> / <code>allow</code> modes as other native tools. <code>off</code> hides it from model requests, while <code>ask</code> and <code>allow</code> keep it visible. Execution bypasses the interactive authorization prompt because progress updates do not read or modify project resources; the mode is used as the visibility gate. Legacy or external calls can still be dispatched directly for compatibility.</p>
+<h2 id="frontend-rendering">Frontend rendering</h2>
+<p>When the server emits a <code>progress_update</code> SSE event, the frontend renders a <code>.tool-card--progress</code> card in the transcript with:</p>
+<ul><li><p>A header showing the <code>title</code> and a status pill (running / completed / failed)</p></li><li><p>A progress bar (width animates from <code>current / total</code>)</p></li><li><p>A percentage label (e.g. &quot;42%&quot;)</p></li><li><p>An optional status message</p>
+<p>Completed/failed statuses auto-expand the card; running cards stay collapsed. The status pill also shows a short progress summary (e.g. &quot;Building project 42%&quot;).</p></li></ul>
+<h2 id="notifications">Notifications</h2>
+<p>Each <code>progress_update</code> also drives a per-chat updatable browser push notification (tag <code>chat-&lt;id&gt;-status</code>), so a background chat keeps the user in the loop without leaving a second progress notification beside the final completion/error notification. The notification title carries the chat title plus the cumulative token/cost label for this turn (e.g. &quot;my-project · 12.4K tok · $0.03&quot;) — progress and usage together; the body shows the live percentage and message. When a <code>status: &quot;completed&quot;</code> update arrives, the card turns green and the final completion notification replaces that status slot so the end of a long task is visible if the chat is not open.</p>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

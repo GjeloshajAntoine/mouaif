@@ -17,6 +17,8 @@ The `docs/` folder is written so it can be published as a static site (GitHub Pa
 
 The public guide order and the public navigation links come from a single allowlist in [scripts/build-docs.js](../../scripts/build-docs.js) (`PUBLIC_GUIDE_SLUGS`). The decisions log and the agent notes are never linked from the public navigation and are not written at all in a public build.
 
+The generated `features/*.html`, `index.html`, `documentation.html`, `assets/` and `.nojekyll` are committed under `docs/`, because Pages serves the branch as-is. The `.md` sources and `features/images/` sit in the same tree and are what the build reads.
+
 ## Usage
 
 Build the public site into `docs-dist/`:
@@ -40,7 +42,7 @@ node scripts/build-docs.js --out /tmp/site --with-internal
 
 Open `docs-dist/index.html` in a browser to read the result locally. The build has no dependencies beyond Node.js 18+.
 
-Publish the public site to the `gh-pages` branch (see [Publishing to GitHub Pages](#publishing-to-github-pages)):
+Publish the public site into `docs/` (see [Publishing to GitHub Pages](#publishing-to-github-pages)):
 
 ```bash
 npm run docs:publish
@@ -48,19 +50,22 @@ npm run docs:publish
 
 ## Publishing to GitHub Pages
 
-The published site is deployed from a dedicated **`gh-pages` branch** — a branch deploy with **no GitHub Actions workflow**. Publishing is one command:
+The site is deployed from **`master` / `/docs`** — a branch deploy with **no GitHub Actions workflow** and no extra branch. GitHub Pages only serves committed files and never runs our build, so the generated site lives in `docs/` next to the Markdown sources.
+
+`npm run docs:publish` keeps that committed output in sync:
 
 ```bash
-npm run docs:publish            # build + commit + push to gh-pages
-node scripts/publish-docs.js --dry-run    # build + commit, do not push
-node scripts/publish-docs.js --remote upstream   # push to another remote
+npm run docs:publish            # build + sync docs/ + git add
+npm run docs:publish:check      # verify docs/ matches a fresh build (no writes)
 ```
 
-`scripts/publish-docs.js` builds the public site into a scratch directory (never `--with-internal`, so the decisions log and the agent notes cannot reach the published branch), checks that no maintainer page slipped in, then commits the result at the root of `gh-pages` and force-pushes it. Every tracked path on the branch is replaced on each publish, so deleting or renaming a doc removes its published page instead of leaving a stale one. The build emits a `.nojekyll` file, so GitHub Pages serves the rendered HTML as-is instead of running Jekyll over it.
+[scripts/publish-docs.js](../../scripts/publish-docs.js) builds the public site into a scratch directory (never `--with-internal`, so the decisions log and the agent notes can never be published), refuses to continue if a maintainer page slipped in, then copies the generated `index.html`, `documentation.html`, `features/*.html`, `assets/site.css` and `.nojekyll` into `docs/`. It replaces the `assets/` tree and deletes any committed `docs/features/*.html` the build no longer produces, so a renamed or removed doc disappears instead of leaving a stale page. The `features/images/` tree and the `.md` sources are left alone.
 
-The script authors the commit with its own name/email, so it also works on a machine that never ran `git config user.name`. It is a normal CLI command, not a deploy workflow — it runs wherever the repo is checked out and can reach the remote.
+The build emits a `.nojekyll` file, so GitHub Pages serves the rendered HTML as-is instead of running Jekyll over it. Without that file, Jekyll would re-theme the pages and drop files whose names start with an underscore.
 
-Enable it once per repository: **Settings → Pages → Build and deployment → Source: Deploy from a branch**, branch `gh-pages`, folder `/ (root)`. After the first `npm run docs:publish`, the site is live at `https://<owner>.github.io/<repo>/`.
+Set this once per repository: **Settings → Pages → Build and deployment → Source: Deploy from a branch**, branch `master`, folder **`/docs`**. The site is then live at `https://<owner>.github.io/<repo>/`.
+
+`npm run docs:publish:check` runs in CI and fails when the committed `docs/` output drifts from the Markdown sources, so the page and its source can never disagree.
 
 ## Adding a page
 
@@ -69,6 +74,7 @@ Enable it once per repository: **Settings → Pages → Build and deployment →
 3. Add a one-line entry to [docs/README.md](../README.md).
 4. Link it from a published guide if users should find it; otherwise it stays reachable by URL only.
 5. Implementation details the assistant needs go in `docs/agent/features/<same-name>.md`.
+6. Run `npm run docs:publish` and commit the regenerated `docs/features/<slug>.html` together with the `.md`, so the published page and its source land in the same commit.
 
 ## Implementation notes
 

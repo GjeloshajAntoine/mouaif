@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Native file tools — mouaif docs</title>
+  <meta name="description" content="`mouaif` ships built-in tools the model can call to read, list, search, create, and safely edit project files — `read_file`, `list_files`, `search_files`,…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="native-file-tools">Native file tools</h1>
+<h2 id="overview">Overview</h2>
+<p><code>mouaif</code> ships built-in tools the model can call to read, list, search, create, and safely edit project files — <code>read_file</code>, <code>list_files</code>, <code>search_files</code>, <code>write_file</code>, and <code>edit_file</code>. They are wired through the same tool pipeline as <code>shell</code> (decisions §16), so the model sees them as ordinary function calls and the chat UI renders them as the same tool-call / tool-result cards. Every call is gated by the per-project authorization module (decisions §17) and refuses any path that escapes the project root.</p>
+<p>The tools cover the common &quot;find the file, read the file, edit the file&quot; loop without requiring an MCP server. They are not a replacement for <code>shell</code> (a model that wants to run a build, install a dep, or <code>git diff</code> still uses <code>shell</code>) and they are not a replacement for MCP (third-party tool ecosystems — Postgres, Playwright, GitHub — still come in via <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>). They are the boring file primitives every agent needs.</p>
+<h2 id="usage">Usage</h2>
+<h3 id="availability">Availability</h3>
+<ul><li><p>Native file tools are always included in the base tool declaration.</p></li><li><p><strong>Settings → Project → Tools → File tools authorization</strong> controls execution for the family: <code>ask</code> by default, <code>off</code> to reject calls, or <code>allow</code> to run without prompting.</p></li><li><p>Individual file-tool leaf checkboxes can store a per-operation <code>off</code> override. They cannot make a family-level <code>allow</code> fall back to <code>ask</code>.</p></li><li><p>Legacy <code>tools.file.enabled</code> values remain readable but no longer affect detection.</p></li></ul>
+<h3 id="authorization-modes">Authorization modes</h3>
+<ul><li><p><strong>off</strong> — the runner returns <code>ETOOL_DISABLED</code> for every call.</p></li><li><p><strong>ask</strong> — every call shows an &quot;Authorization required&quot; card. The card carries the path, the tool name, and a preview of the body for <code>read_file</code> / <code>write_file</code> / <code>edit_file</code>. The user picks <strong>Allow once</strong>, <strong>Allow for this session</strong>, or <strong>Deny</strong>.</p></li><li><p><strong>allowlist</strong> — calls whose <code>path</code> matches a regex in the per-project allowlist run without prompting. Everything else falls through to <code>ask</code>.</p></li><li><p><strong>allow</strong> — every call is auto-approved across chats and restarts. The authorization card&#39;s <strong>Always allow</strong> action persists this mode.</p>
+<p>The mode, allowlist, and timeouts live in <code>&lt;projectDir&gt;/.mouaif.json</code> under <code>tools.file</code> (parallel to <code>tools.shell</code>). The shape is:</p></li></ul>
+<pre><code class="language-json">{
+  &quot;tools&quot;: {
+    &quot;file&quot;: {
+      &quot;enabled&quot;: true,
+      &quot;mode&quot;: &quot;ask&quot;,
+      &quot;allowlist&quot;: [&quot;^src/.*\\.js$&quot;, &quot;^README\\.md$&quot;]
+    }
+  }
+}</code></pre>
+<h3 id="the-file-tools">The file tools</h3>
+<div class="table-wrap"><table><thead><tr><th>Tool</th><th>Purpose</th><th>Required args</th><th>Optional args</th></tr></thead><tbody><tr><td><code>read_file</code></td><td>Read a text file, or open an image (<code>.png</code>, <code>.jpg</code>, <code>.jpeg</code>, <code>.gif</code>, <code>.webp</code>, <code>.bmp</code>, <code>.ico</code>) and attach its pixels as an image.</td><td><code>path</code> (POSIX-relative)</td><td><code>startLine</code>, <code>endLine</code> (1-indexed inclusive) for slicing large files — text only</td></tr><tr><td><code>list_files</code></td><td>List text and image files under the project (image rows are marked <code>(image)</code>).</td><td>—</td><td><code>pattern</code> (glob; a bare directory like <code>src</code> is treated as <code>src/**</code>, and matching is case-insensitive)</td></tr><tr><td><code>search_files</code></td><td>ripgrep-style text search.</td><td><code>query</code> (regex source)</td><td><code>path</code> (scope to a directory or single file; <code>.</code>, <code>./</code>, <code>src</code>, <code>src/</code>, <code>src/file.js</code> are accepted, and a misspelled or not-yet-created directory still searches its nearest existing ancestor)</td></tr><tr><td><code>write_file</code></td><td>Create or overwrite a text file.</td><td><code>path</code>, <code>content</code></td><td>—</td></tr><tr><td><code>edit_file</code></td><td>Replace one unique block in an existing file. Line-ending differences are ignored, and formatter-only differences such as indentation, blank lines, line wrapping, and spaces around punctuation are tolerated. A block that matches on trimmed lines is also <strong>re-indented to the file&#39;s indentation depth</strong> so the replacement lands where a native edit would. A JSON-escaped block is unescaped and retried once before the match is declared missing. Changed code still fails, ambiguous matches return <code>EMULTI_MATCH</code>, and failed matches return <code>ENO_MATCH</code> with a line-numbered closest candidate.</td><td><code>path</code> (or <code>file</code>), <code>oldText</code>, <code>newText</code></td><td>—</td></tr></tbody></table></div>
+<p>Every tool:</p>
+<ul><li><p>Refuses paths that escape the project root with <code>EOUTSIDE_PROJECT</code> (<code>. .</code>, absolute paths outside the root, and symlinks that point outside are all rejected).</p></li><li><p>Skips generated/private directories during walks (<code>node_modules</code>, <code>.git</code>, <code>.mouaif</code>, <code>dist</code>, <code>build</code>).</p></li><li><p>Refuses whole-file reads over <code>fileReadMaxLines</code> (default 10000 lines). A <code>startLine</code> / <code>endLine</code> slice bypasses the cap.</p></li><li><p>Attaches an image read as a picture (see <a href="./read-file-images.html">read-file-images.md</a>) and refuses one over <code>fileReadMaxImageBytes</code> (default 4 MB). <code>startLine</code> / <code>endLine</code> do not apply to images.</p></li><li><p>Honors per-project <a href="./hide-file-content.html">hide-file-content</a> rules: <code>read_file</code> returns <code>[hidden]</code> for each marked line, and <code>search_files</code> skips matches on marked lines. <code>write_file</code> / <code>edit_file</code> and <code>list_files</code> are unaffected.</p></li><li><p>Caps <code>write_file</code> content at <code>fileWriteMaxBytes</code> (default 1 MB).</p></li><li><p>Caps <code>list_files</code> at <code>fileListMaxEntries</code> entries (default 1000) and <code>search_files</code> at <code>fileSearchMaxMatches</code> matches / <code>fileSearchMaxBytes</code> chars scanned (default 200 / 2 MB; the counter counts characters, not bytes). When a search is truncated, the cap values appear inline in the <code># Matches</code> header line.</p>
+<p>The caps are app-level knobs. Override them in the app store:</p></li></ul>
+<pre><code class="language-json">{
+  &quot;fileReadMaxLines&quot;: 10000,
+  &quot;fileReadMaxImageBytes&quot;: 4194304,
+  &quot;fileListMaxEntries&quot;: 500,
+  &quot;fileSearchMaxMatches&quot;: 100,
+  &quot;fileSearchMaxBytes&quot;: 1048576,
+  &quot;fileWriteMaxBytes&quot;: 2097152
+}</code></pre>
+<h3 id="result-shape-sent-back-to-the-model">Result shape (sent back to the model)</h3>
+<p>The <code>tool</code> message the model sees is a small header followed by the body, so the model can read its own response cleanly:</p>
+<pre><code class="language-text">
+&lt;file body&gt;</code></pre>
+<p><code>list_files</code> prints the files as an indented tree (the default <code>toolOutput.structure</code>), so every shared path prefix is written once instead of on every row:</p>
+<pre><code class="language-text"># Listing: src/**/*.js
+# Count: 3
+
+src/
+  auth.js
+  logout.js
+  new.js</code></pre>
+<p><code>search_files</code> nests each match under the same tree — the file&#39;s path segments once, then its <code>line: text</code> rows one level deeper:</p>
+<pre><code class="language-text"># Search: function (login|logout)
+# Matches: 2
+
+src/
+  auth.js
+    1: export function login() {}
+  logout.js
+    1: export function logout() {}</code></pre>
+<p>  The chat UI gets a richer object on the <code>tool_result</code> SSE event (full result, no header), so it can show the path and a one-line summary on the inline card. When a file-tool result reaches the UI as the plain-text header form above (subagent-nested results, tool-replay from the message store, or the model-facing <code>content</code> string), the frontend re-parses it back into the structured shape: it reads the <code># Count:</code> / <code># Matches:</code> (and <code># Skipped:</code>) header lines and rebuilds the <code>entries</code> / <code>matches</code> arrays from the indented body, so the card&#39;s count and the collapsed &quot;N files&quot; / &quot;N matches&quot; summary are accurate and consistent with the object path. The parser also still reads the retired <code># dir/</code> grouped form, so cards replayed from transcripts written before the tree layout keep their counts.</p>
+<p>The collapsed summary flags truncation instead of presenting a capped total as complete. A truncated <code>list_files</code> card reads <code>1000 files (capped at 1000)</code> and a truncated <code>search_files</code> card reads <code>200 matches (capped at 200)</code>, matching the inline header the model already receives (<code># Count: N (capped at M)</code> / <code># Matches: N (capped at M matches / B chars)</code>). The text-reparse path extracts the same <code>truncated</code> + cap fields from those header lines, so subagent-nested results and message-store replays show the same annotation as the live SSE path.</p>
+<h3 id="tool-card-previews">Tool card previews</h3>
+<p>Expanding a file-tool card shows the payload that matters for that tool — <code>read_file</code> the file body (or, for a picture, the image itself), <code>list_files</code> the entries grouped by directory, <code>search_files</code> the matches, <code>edit_file</code> its unified diff, and <strong><code>write_file</code> the content that was written</strong>.</p>
+<p>The <code>tool_result</code> frame carries metadata only (<code>relPath</code>, <code>chars</code>, <code>lines</code>), so the <code>write_file</code> preview renders the call&#39;s <code>content</code> argument. The card resolves it from whichever side of the call/result pair it was built:</p>
+<ul><li><p>the live <code>tool_call</code> event&#39;s args, stashed on the card before the result arrives;</p></li><li><p>the persisted <code>call</code> row with the same <code>toolCallId</code>, used by the tail-first transcript render when a result row is painted before its call row (the result card then wins the tool-id de-dup, so the call row is skipped);</p></li><li><p>the nested call row inside a subagent card, where the arguments come from the assistant turn&#39;s <code>tool_calls</code> entry.</p>
+<p>Nothing is rendered until the card is expanded, and the preview stops at 2000 lines / 200 KB with a <code>… preview truncated (N lines, M chars written)</code> line, so a 1 MB write (the <code>fileWriteMaxBytes</code> cap) cannot jank the expand. A result with no recoverable args — an orphan row whose call was never persisted — keeps the plain <code>write complete</code> line.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p>Decisions: docs/decisions.md §16 (shell tool), docs/decisions.md §17 (tool authorization), docs/decisions.md §18 (MCP).</p></li><li><p>Shell tool: <a href="./shell-tool.html">docs/features/shell-tool.md</a>. File tools share the same authorization gate and the same UI card shape.</p></li><li><p>Tool authorization: <a href="./tool-authorization.html">docs/features/tool-authorization.md</a>. The four modes and the SSE / REST surface.</p></li><li><p>File tagging: <a href="./file-tagging.html">docs/features/file-tagging.md</a>. Tagged files are auto-injected into the system prompt — file tools let the model read on demand, which complements tagging for files the user did not pre-attach.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Push notifications — mouaif docs</title>
+  <meta name="description" content="Browser notifications let mouaif follow a running chat when the tab is in the background or closed. The important alerts are interactive: a user can answer a…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="push-notifications">Push notifications</h1>
+<h2 id="overview">Overview</h2>
+<p>Browser notifications let mouaif follow a running chat when the tab is in the background or closed. The important alerts are interactive: a user can answer a simple two-choice <code>ask_user</code> question, allow a tool once, or deny a tool directly from the notification when the browser supports actions.</p>
+<p><strong>Stack:</strong> <code>web-push</code> (server), service worker <code>push</code> event (client), VAPID keys (auto-generated, stored in SQLite).</p>
+<h2 id="usage">Usage</h2>
+<h3 id="enabling-push-notifications">Enabling push notifications</h3>
+<ol><li><p>Open <strong>Settings → Notifications</strong>.</p></li><li><p>Tap <strong>Enable</strong> under &quot;Web notifications&quot;.</p></li><li><p>Accept the browser&#39;s permission prompt.</p></li><li><p>Optionally tap <strong>Send test notification</strong>.</p>
+<p>The same screen exposes the notification types: <strong>ASCII chat status</strong>, <strong>Authorization</strong>, <strong>Authorization actions</strong>, and <strong>Sign-in alerts</strong>. Authorization quick actions can be toggled separately. Each preference uses a short summary so the rows remain compact on a phone. iPhone and iPad require the app to be installed on the Home Screen before Web Push can be enabled.</p>
+<p>The <strong>Server configuration</strong> group shows the origin used by the notification service, the generated-key status, and the VAPID contact. Opening this screen repairs a missing VAPID pair automatically; there are no keys to copy into the browser. Configuration values and notification-type descriptions wrap on narrow screens so their full contents remain readable.</p></li></ol>
+<h3 id="serving-from-a-public-domain">Serving from a public domain</h3>
+<p>Web Push on iPhone and iPad requires an installed Home Screen app served over HTTPS. When a TLS reverse proxy exposes mouaif on a public domain, start the HTTP server with its canonical external origin:</p>
+<pre><code class="language-bash">mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com</code></pre>
+<p><code>MOUAIF_PUBLIC_ORIGIN=https://mouaif.example.com</code> is the equivalent environment setting. The origin must contain only the scheme, host, and optional port. This explicit value is used for same-origin checks, the Secure browser-session cookie, subscription records, and the VAPID contact; untrusted forwarding headers are not accepted as configuration.</p>
+<h3 id="what-triggers-a-push">What triggers a push</h3>
+<div class="table-wrap"><table><thead><tr><th>Event</th><th>When</th><th>Content</th></tr></thead><tbody><tr><td><code>ask_user_required</code></td><td>The model pauses for a structured answer</td><td>Question; exactly two single-choice answers can be tapped directly</td></tr><tr><td><code>authorization_required</code></td><td>A tool is waiting for approval</td><td>Tool name with <strong>Allow once</strong> and <strong>Deny</strong> actions</td></tr><tr><td><code>done</code></td><td>A chat turn completes successfully</td><td>Chat title + &quot;Response complete&quot;</td></tr><tr><td><code>error</code></td><td>A chat turn fails (stream error, upstream error)</td><td>Chat title + error message</td></tr><tr><td><code>login</code></td><td>A password, setup, or passkey sign-in issues a new session</td><td>&quot;New sign-in as <code>&lt;user&gt;</code> from <code>&lt;platform&gt;</code>&quot;</td></tr></tbody></table></div>
+<p>Only two per-chat notification slots are used. Authorization alerts (<code>ask_user_required</code> and <code>authorization_required</code>) share <code>chat-{chatId}-attention</code>; all other chat status (<code>progress_update</code>, <code>done</code>, and <code>error</code>) shares <code>chat-{chatId}-status</code> and the same ASCII format. New notifications replace the older notification in their slot, so statuses cannot stack and a question cannot be replaced by ordinary status. The service worker suppresses an alert only when the same chat ID is confirmed visible on screen by a fresh page response, regardless of query-parameter order or whether the open route includes <code>projectDir</code>. A page that is focused but hidden — screen locked, another app on top, or an iOS PWA sitting in the background — still delivers the notification. Suppression also clears queued alerts for that chat because their content is already visible.</p>
+<p>Because <code>WindowClient.focused</code> / <code>visibilityState</code> are unreliable on some engines (Safari, iOS PWA), the page is the authority on its own visibility. The service worker queries every live window when each push arrives, and only a current <code>{ hash, visible, focused }</code> response can suppress it; no cached visibility table is maintained. Responses normally use a transferred <code>MessagePort</code>; the page also mirrors each response as a query-ID-correlated service-worker message because some iOS WebKit releases deliver <code>Client.postMessage</code> but silently drop the transferred port. A suspended or recently closed PWA may remain temporarily listed as a focused client but cannot answer; in that case the alert is shown rather than discarded. Fresh responses are matched by parsed chat ID.</p>
+<p>On iOS Safari, the OS can keep replaced notifications visible until the user acts on them. Before showing a push, the service worker closes the matching tag. Status pushes also close legacy progress/completion/error tags carrying the same chat ID, preventing older notification formats from stacking beside the current status slot.</p>
+<h3 id="clicking-a-notification">Clicking a notification</h3>
+<ul><li><p>Tapping the notification body opens the exact chat and restores its pending question or authorization card. If the app is already open, the service worker posts the target URL to the existing window (a <code>NAVIGATE</code> message) and focuses it; only when no app window exists does it call <code>clients.openWindow()</code>. iOS Safari has no <code>WindowClient.navigate()</code>, so the page itself swaps its hash — the click lands in the running window, not in a second tab.</p></li><li><p><strong>Already-open / suspended-app recovery (iOS PWA):</strong> a suspended PWA reported to the worker as an existing window can be woken by focus without its JavaScript running to receive the <code>NAVIGATE</code> postMessage (WebKit drops it). The worker therefore writes the click URL to the shared IndexedDB store <strong>before</strong> posting <code>NAVIGATE</code>, exactly as it does for a cold launch. The page consumes that store on startup, on becoming visible, on <code>pageshow</code>, and on <code>focus</code> — so tapping a notification still lands in the right chat even when the move is attempted on a window that never handled the message. The store is read-and-clear, and a <code>NAVIGATE</code> that <em>is</em> handled clears it too, so a successful move never re-navigates.</p></li><li><p><strong>Closed-app (iOS PWA) handoff:</strong> iOS Safari relaunches an installed PWA at its <code>start_url</code> when the app is closed, and does not support <code>clients.openWindow()</code> from the service worker. The worker therefore writes the click URL to an IndexedDB store (<code>mouaif-push-click</code> / <code>clicks</code>, shared with the page, 60 s TTL) before attempting to open a window. The freshly launched page reads and clears that store on startup and whenever it becomes visible again, then navigates to the chat. A later manual launch is never redirected because the target is consumed (and cleared) on the first read.</p></li><li><p><strong>Late worker write (cold launch):</strong> a click can wake the service worker <em>itself</em>, so its IndexedDB write sometimes lands after the freshly loaded page has already run its one-shot startup read. The page therefore keeps re-reading the store every <code>COLD_LAUNCH_POLL_MS</code> for up to <code>COLD_LAUNCH_POLL_WINDOW_MS</code> after launch (stopping on the first applied target), so the tap still lands in the chat instead of the chats list. The poll also stops as soon as the user navigates somewhere themselves, so a late or stale target can never pull them out of a view they chose.</p></li><li><p><strong>Guarded open-window clear:</strong> when <code>clients.openWindow()</code> <em>does</em> resolve, the worker only clears the stored target if the opened window actually landed on the clicked chat URL (its hash matches). iOS can resolve <code>clients.openWindow()</code> without navigating to the clicked URL — reopening <code>start_url</code> <code>/</code> instead — so clearing unconditionally would discard the only navigation hint and land the user on the chats list. A non-matching open keeps the target, which the freshly loaded page recovers via the cold-launch path.</p></li><li><p><strong>Allow once</strong> and <strong>Deny</strong> post to the existing authorization-decision API without opening the app.</p></li><li><p>A simple two-choice question submits the selected value through the same API.</p></li><li><p>Multi-select questions, long option lists, and free-form answers open the full chat UI.</p></li></ul>
+<h3 id="subscription-sync">Subscription sync</h3>
+<p>Startup sync compares the browser&#39;s current Push endpoint with the server&#39;s saved subscriptions for the current session. After a server restart, an existing local subscription is rebound to the fresh session instead of being destroyed. Disabling notifications removes only an endpoint owned by that session.</p>
+<h3 id="configuration">Configuration</h3>
+<p>The app-level <code>notifications</code> setting stores:</p>
+<pre><code class="language-json">{
+&quot;status&quot;: true,
+&quot;authorization&quot;: true,
+&quot;quickActions&quot;: true,
+&quot;login&quot;: true
+}</code></pre>
+<p>Browser permission and subscription are installation-specific. Event preferences are app-wide and are exposed through the normal <code>/api/settings/app</code> endpoint.</p>
+<h3 id="progress-notifications">Progress notifications</h3>
+<p>The model&#39;s <code>report_progress</code> calls and task updates (<code>update_progress</code> / <code>complete</code>) emit <code>progress_update</code> stream events. Each one sends a push tagged <code>chat-{chatId}-status</code>, so the OS replaces the previous status notification for that chat instead of stacking notifications. Every status uses a true ASCII bar and is gated by the <strong>ASCII chat status</strong> toggle (<code>notifications.status</code>), which defaults to on.</p>
+<p>The bar is adapted to the device that receives it: <strong>every phone size</strong>, the <strong>notification style</strong> the OS presents, and the <strong>OS version</strong>. When a browser subscribes it reports its own facts — the measured width of one notification body line, its viewport, its platform and version — and the server stores them per device and builds each body for that device.</p>
+<p><strong>Width follows the screen, continuously.</strong> The number of cells is derived from the measured body line, not from size buckets, so a 320 px phone and a 430 px phone get a different bar, and a desktop window a longer one.</p>
+<p><strong>Style decides the layout.</strong> A collapsed Android notification shows one body line; an iOS banner (15+) shows two; a desktop toast about two. When the platform previews a single line, the bar and the most important fact share that row — <code>[###---] 40% · Refactoring...</code> — because a second row would never be seen. When it previews two or more, the bar takes its own row and the facts follow. An empty fact set leaves the bar alone in both layouts.</p>
+<p><strong>OS version sets the fallback.</strong> A device that cannot measure itself (older WebKit, a headless browser) falls back to its platform&#39;s known width, and the number of preview lines comes from a version table:</p>
+<div class="table-wrap"><table><thead><tr><th>Platform</th><th>One body line holds</th><th>Collapsed lines</th><th>Notes</th></tr></thead><tbody><tr><td>Android</td><td>~34 chars on a 360 px phone</td><td>1</td><td>Android 8+ (Oreo) adds the tall expanded card</td></tr><tr><td>iOS / iPadOS</td><td>~40 chars</td><td>2 on iOS 15+, else 1</td><td>Version sets the banner preview</td></tr><tr><td>macOS</td><td>~52 chars</td><td>2</td><td></td></tr><tr><td>Windows / Linux / ChromeOS</td><td>~46–48 chars</td><td>2</td><td></td></tr></tbody></table></div>
+<p>The same table bounds a measured value that is implausibly far from what the platform expects at the reported viewport, so a broken measurement cannot produce a bar that overflows the notification card. A device that reports nothing at all is treated as a phone on an unknown platform: one body line, conservative width.</p>
+<p><strong>Everything else rides the body, under the bar.</strong> The notification title is always just the chat name — the slot the OS clips first — so the status facts live in the body, where a wider/taller device simply shows more of them. Each fact is a tier, added top-down while it fits the surface&#39;s width <strong>and</strong> height:</p>
+<div class="table-wrap"><table><thead><tr><th>Order</th><th>Fact</th><th>Example</th></tr></thead><tbody><tr><td>1</td><td>Running message</td><td><code>Refactoring the composer</code></td></tr><tr><td>2</td><td>Position in the work</td><td><code>2 of 5</code></td></tr><tr><td>3</td><td>Turn usage</td><td><code>12.4K tok · $0.0312</code></td></tr><tr><td>4</td><td>Elapsed time</td><td><code>12s</code></td></tr><tr><td>5</td><td>Tool</td><td><code>shell</code></td></tr><tr><td>6</td><td>Model</td><td><code>gpt-5-mini</code></td></tr></tbody></table></div>
+<p>A one-line surface keeps the bar and its single most important fact; a preview-sized one shows the top three; an expanded notification shows all six. Missing facts simply do not appear, so a plain model round shows only the model and no tool. A slot that would wrap is dropped rather than wrapped, and a path or model id that has to be clipped keeps its tail (<code>...transcript.js</code>) rather than its prefix. A completion replaces the counts row (the position is no longer the news), and an error keeps its message plus whatever context the turn had reached.</p>
+<p>The notification title carries the chat name and does not change with the device.</p>
+<p>Every status shares one shape. A two-line surface:</p>
+<pre><code class="language-text">[####------] 40%
+Refactoring the composer
+2 of 5
+12.4K tok · $0.0312</code></pre>
+<p>A one-line surface, where the bar shares its row:</p>
+<pre><code class="language-text">[###---] 40% · Refactoring...</code></pre>
+<p>Progress from a nested <code>subagent</code> run flows to the same <code>progress_update</code> channel as top-level calls, so a delegated agent that reports progress still sends the updatable push and the transcript progress card on the parent chat.</p>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

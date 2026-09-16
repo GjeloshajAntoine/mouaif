@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Provider authentication — mouaif docs</title>
+  <meta name="description" content="mouaif connects to AI providers using API keys or browser-based OAuth authentication (such as Anthropic and OpenRouter). Credentials are encrypted securely in…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="provider-authentication">Provider authentication</h1>
+<h2 id="overview">Overview</h2>
+<p>mouaif connects to AI providers using API keys or browser-based OAuth authentication (such as Anthropic and OpenRouter). Credentials are encrypted securely in your operating system&#39;s keychain or stored safely in your local app settings, ensuring no secrets are exposed in code repositories or network traffic.</p>
+<h2 id="connecting-providers">Connecting providers</h2>
+<ol><li><p>Navigate to <strong>Settings → Providers</strong>.</p></li><li><p>Select a provider from the list (e.g., Anthropic, OpenRouter, OpenAI-compatible, Google Gemini, Ollama, DeepSeek, Groq, Mistral, Azure OpenAI).</p></li><li><p>Choose your preferred authentication method:</p></li></ol>
+<ul><li><p><strong>API Key</strong> — enter your API key and tap save.</p></li><li><p><strong>Sign in / OAuth</strong> — tap the sign-in button to authenticate in your browser. Upon approving permissions, you will be redirected straight back into mouaif.</p></li></ul>
+<h2 id="multi-account-security">Multi-account &amp; Security</h2>
+<ul><li><p><strong>Secure local storage</strong> — credentials remain local to your machine and are never synchronized or uploaded to third parties.</p></li><li><p><strong>Multiple accounts</strong> — you can sign in to multiple accounts per provider and switch between them when configuring models.</p></li><li><p><strong>Revoking access</strong> — remove any connected provider or sign out of accounts at any time from <strong>Settings → Providers</strong>.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./access-authentication.html">Access authentication</a> — optional web UI and API access protection via password and WebAuthn passkeys.</p></li><li><p><a href="./ai-client.html">AI client</a> — supported provider capabilities and options.</p></li><li><p><a href="./openrouter.html">OpenRouter</a> — connecting with OpenRouter API keys or OAuth.</p></li><li><p><a href="./oauth-anthropic.html">Anthropic OAuth</a> — signing in with Anthropic.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

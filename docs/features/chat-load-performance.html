@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat load performance — mouaif docs</title>
+  <meta name="description" content="Opening a long, tool-heavy chat should feel instant even when the transcript runs to hundreds of messages and multiple megabytes. This page documents the…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="chat-load-performance">Chat load performance</h1>
+<h2 id="overview">Overview</h2>
+<p>Opening a long, tool-heavy chat should feel instant even when the transcript runs to hundreds of messages and multiple megabytes. This page documents the server-side and client-side changes that keep chat load fast: SQL-side cost aggregation, a cheap transcript revision marker for polling, lazy rendering of collapsed tool-result cards, and windowed backward pagination so only the newest page of a long transcript loads on open.</p>
+<h2 id="usage">Usage</h2>
+<p>No user-visible controls — the behavior is automatic. Open any chat (especially a long agentic one) and it paints progressively; the 1-second reconcile poll and the post-stream reconciliation no longer re-download the whole transcript unless something actually changed — and when it did, they transfer only the rows appended after the client&#39;s known prefix. A long chat additionally loads just its newest page up front; older history is fetched on demand as the user scrolls to the top (see <a href="./chat-backward-pagination.html">Chat backward pagination</a>).</p>
+<p>Returning to the Chats tab reads only the visible page of chat metadata and its persisted cost totals. Projects with long histories and active or very large transcripts therefore do not delay the visible project chat list.</p>
+<h2 id="chat-list-payload">Chat list payload</h2>
+<p>A chat&#39;s composer draft can hold up to eight images as base64 data URLs (each bounded at 12 MB — <code>frontend/src/components/chat/annotation.js</code>), so <code>chat_store.draft_attachments</code> is an unbounded TEXT column. The list endpoint used to read and ship it for every row of the page, which made the Chats tab, the chat switcher and the Draft Craft picker slow as soon as one chat had a picture in its draft: the JSON was megabytes per picture and every row had to be parsed before a single card could render.</p>
+<p><code>GET /api/chats</code> now returns a summary per row (<code>src/chatdb.js#LIST_COLUMNS</code>):</p>
+<div class="table-wrap"><table><thead><tr><th>Field</th><th>Meaning</th></tr></thead><tbody><tr><td><code>draftSnippet</code></td><td>First 400 characters of the text draft, for the one-line card preview.</td></tr><tr><td><code>hasDraftImage</code></td><td><code>true</code> when a pending image draft exists; the images themselves are never sent.</td></tr></tbody></table></div>
+<p><code>draft</code> and <code>draftAttachments</code> are absent from list rows. Anything that needs the bodies — restoring the composer, appending a dictation transcript, Draft Craft hand-off — reads the single chat with <code>GET /api/chats/:id</code>, which is unchanged.</p>
+<p>Measured on a page of ten chats, three of them holding a 2 MB draft image: the list response is <strong>3.7 KB</strong> where <code>SELECT *</code> pulled <strong>6.0 MB</strong> of draft bodies out of SQLite for the same page.</p>
+<h2 id="latest-first-transcript-rendering">Latest-first transcript rendering</h2>
+<p>A long transcript paints its newest rows first and backfills older history above them, one animation frame at a time, so the first frame is bounded regardless of length. Two rules keep that pass and the live/reconcile tail sync from interfering:</p>
+<ul><li><p>An append (rows arriving from a live turn or a reconcile sync) writes at the <strong>bottom</strong>, so it never competes with the backfill, which inserts <strong>above</strong> the tail at its anchor. The append parks the anchor for the duration of its own writes and hands it back afterwards — <code>transcriptInsert()</code> targets that anchor while it is set.</p></li><li><p>Because of that, an append does <strong>not</strong> cancel the in-flight backfill. Cancelling it would drop every history row the pass had not reached yet: they would stay in <code>state.messages</code> but never reach the DOM, leaving a hole in the middle of the transcript until some later full rebuild. A full rebuild still supersedes the pass, since it re-owns the whole transcript.</p>
+<p>Tail sync (<code>mergeServerRows</code> in <a href="../../frontend/src/components/chat/msgMerge.js">frontend/src/components/chat/msgMerge.js</a>) keeps the array in <strong>seq order</strong>. A persisted row that has no seq-less optimistic twin to replace is inserted at its seq position rather than pushed onto the end: the known prefix stays first, any trailing seq-less optimistic rows sort last (the server has not persisted them yet), and the row lands between them. Pushing instead reorders the batch — on an early turn the tail fetch returns the whole transcript, and the tool call/result rows of that turn (which have no optimistic twin) would be appended <strong>after</strong> the assistant answer that followed them. Regression cases: <code>scripts/test-msg-merge.js</code> cases 8–10.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p>When a known cost is appended to an assistant message, the same write path increments <code>chat_store.total_cost</code> and the registered project&#39;s <code>totalCost</code>. Clearing, replacing, or deleting transcript data applies the inverse delta. <code>GET /api/chats</code> applies <code>offset</code> and <code>limit</code> in SQLite, uses a separate indexed count for <code>total</code>, and never aggregates <code>message_store</code>; a one-time migration backfills existing histories. The transcript cursor (<code>seq</code>) keeps the paginated view and the append-only tail sync in agreement.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./chat-storage.html">Chat storage</a> — SQLite-backed messages.</p></li><li><p><a href="./chat-ui.html">Chat UI</a> — the transcript shell.</p></li><li><p><a href="./chat-streaming-performance.html">Chat streaming performance</a> — the per-token streaming hot path.</p></li><li><p><a href="./chat-backward-pagination.html">Chat backward pagination</a> — windowed loading of long transcripts.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

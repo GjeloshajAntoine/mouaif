@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inspector full screen — mouaif docs</title>
+  <meta name="description" content="Expand one Inspector panel over the whole viewport, from the button in its own card header." />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="inspector-full-screen">Inspector full screen</h1>
+<p>Expand one Inspector panel over the whole viewport, from the button in its own card header.</p>
+<h2 id="overview">Overview</h2>
+<p>The Inspector stacks its panels as cards inside the tab: Preview, Styles, Console, Network and Info, each with its own scroll area. On a phone that leaves every panel body between 32 and 54 <code>dvh</code> tall — under half the screen — which is workable for a glance and cramped for the tasks the panels exist for: reading a computed-styles list of ~470 rows, scanning a request log, or scrolling a console back through a noisy page.</p>
+<p>Every card header therefore carries a <strong>full-screen button</strong>. Tapping it expands that panel over the whole viewport; tapping it again returns to the stacked layout exactly as you left it.</p>
+<p>The header used to print the panel&#39;s name in that slot. It no longer does: the name is what the chip in the pinned switcher above the cards already says, and the row&#39;s one wide slot is worth more as an action. The button carries the panel&#39;s name in its accessible label, so nothing becomes unnameable for assistive technology.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Open the <strong>Inspector</strong> tab and connect to a page.</p></li><li><p>Find the panel you want to enlarge (its chip in the switcher row shows which are visible).</p></li><li><p>Tap the <strong>expand</strong> glyph at the left of that panel&#39;s header.</p></li><li><p>Work as normal — the panel is the same live surface, just larger. Everything the panel does inline still works: selecting elements, editing values, evaluating in the console, tapping the preview.</p></li><li><p>Tap the glyph again, or press <strong>Escape</strong>, to return to the stacked layout.</p></li></ol>
+<h3 id="which-panel-you-get">Which panel you get</h3>
+<div class="table-wrap"><table><thead><tr><th>Card</th><th>What its full-screen button opens</th></tr></thead><tbody><tr><td>Preview</td><td>The panel&#39;s own <strong>viewport-spanning live preview</strong>, unchanged: a second screenshot surface with the live page&#39;s title + host, Refresh, Capture size, zoom and its own close button.</td></tr><tr><td>Styles</td><td>The card expanded over the viewport, with its style controls, property lists and matched rules.</td></tr><tr><td>Console</td><td>The card expanded over the viewport: the log list plus the JavaScript console below it.</td></tr><tr><td>Network</td><td>The card expanded over the viewport.</td></tr><tr><td>Info</td><td>The card expanded over the viewport.</td></tr></tbody></table></div>
+<p>Preview keeps its own overlay because it already had a fuller full screen — a second surface with its own header, viewport presets and &quot;type into page&quot; bar — and replacing it with the generic one would lose controls rather than gain space.</p>
+<h3 id="leaving-full-screen">Leaving full screen</h3>
+<p>Any of these returns you to the stacked layout:</p>
+<ul><li><p><strong>Escape.</strong></p></li><li><p>Tapping the same header button again (the glyph now points inward).</p></li><li><p>Switching the expanded panel off with its eye toggle. Opening a different panel card is never blocked by the mode; the mode is simply left.</p></li><li><p>Detaching from the inspected tab.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<h3 id="the-header-button">The header button</h3>
+<p>The button lives in <code>PanelCard</code> in <a href="../../frontend/src/components/Inspector.jsx">frontend/src/components/Inspector.jsx</a>, in the slot the panel label used to fill. It is a glyph-only control with <code>aria-label</code> + <code>title</code>, sized to the shared <code>--tap</code> (44 px) minimum like every other control in that row, and it is disabled rather than hidden when its panel is off.</p>
+<p><code>onFullscreen</code> is what differs per card:</p>
+<pre><code class="language-js">onFullscreen: id === &#39;preview&#39;
+  ? () =&gt; { if (previewFullscreenRef.current) previewFullscreenRef.current(); }
+  : () =&gt; togglePanelFullscreen(id),</code></pre>
+<h3 id="the-surface">The surface</h3>
+<p>Expanding a card <em>in place</em> would not deliver the space. The card is sized in the flow, inside <code>.app__main</code>, and the region is the box that has the dead space in it — a list stretched to the bottom of the region is the same list it already was. The full-screen surface is therefore a separate node portalled to the document root:</p>
+<pre><code class="language-js">focusPanelId
+  ? createPortal(
+      h(&#39;div&#39;, { class: &#39;inspector__fs&#39;, role: &#39;dialog&#39;, &#39;aria-modal&#39;: &#39;true&#39; }, ...),
+      document.body
+    )
+  : null,</code></pre>
+<p>Two consequences are deliberate:</p>
+<ul><li><p><strong>The stacked layout stays mounted underneath</strong>, with its own scroll offsets and panel bodies untouched. Leaving full screen is therefore exactly the state you left, with no restore path to get wrong.</p></li><li><p><strong>The focused panel is mounted a second time</strong> inside the surface (<code>key: &#39;fs-&#39; + focusPanelId</code>). A panel body cannot be in two places at once — the console and network panel bodies build their virtual lists against the DOM node they own, and the Styles panel publishes its pinned-stack height and re-adopts its selected element on mount — so the state that has to survive both mounts lives above them: the Inspector owns the selection and its retained copy, the session receipt, the attached target and the CDP handlers.</p></li></ul>
+<h3 id="filling-the-height">Filling the height</h3>
+<p>The panel bodies carry their stacked-layout heights as <code>dvh</code> values in the panel parts (<code>inspector-chrome.css</code> sets the console and network scrollers to <code>32dvh</code>, <code>inspector-styles.css</code> sizes the Styles scroller at <code>52dvh</code>, or <code>72dvh</code> when it is the only visible card). Those have to lose to the surface, and some of the selectors have the same specificity, so they are overridden by cascade order: <a href="../../frontend/src/inspector-fullscreen.css">frontend/src/inspector-fullscreen.css</a> is imported <strong>last</strong> by <a href="../../frontend/src/inspector.css">frontend/src/inspector.css</a>, after every panel part.</p>
+<p>That last part re-declares the three body shapes as <code>flex: 1 1 auto; height: auto</code>, lifts the Styles scroller&#39;s <code>78dvh</code> ceiling and raises the element-preview cap, so the list is what scrolls inside the surface rather than the surface around it.</p>
+<h3 id="escape">Escape</h3>
+<p>The surface is a dialog, not a sheet: it is the only thing on screen but it is not layered over another surface, and it takes no slot on the modal stack. Its key handler is registered on <code>document</code> in the <strong>bubble</strong> phase, so a sheet opened from inside the expanded panel — the Styles edit sheet, the Add-property confirm, a detail sheet — handles the key first through <code>useModal</code>&#39;s capture-phase listener and stops it there. One press closes the sheet; it does not also close the panel underneath it.</p>
+<h3 id="the-preview-interaction">The Preview interaction</h3>
+<p><code>PreviewPanel</code> publishes whether its own overlay is open through a ref:</p>
+<pre><code class="language-js">if (props.fullscreenOpenRef) props.fullscreenOpenRef.current.open = fullscreen;</code></pre>
+<p>The card mode stands down when that ref reports the overlay is open, so the two full-screen states can never both be in force — the overlay covers the viewport, and a card left expanded underneath would be revealed in that state the moment the overlay closed.</p>
+<h3 id="what-is-not-persisted">What is not persisted</h3>
+<p>The mode is a momentary reading surface, so it is not written to storage: a reload or a reconnect comes back to the stacked layout rather than greeting the next session with a screen you cannot account for. It is dropped on detach for the same reason.</p>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

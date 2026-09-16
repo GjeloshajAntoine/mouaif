@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agents — mouaif docs</title>
+  <meta name="description" content="An **agent** is a named persona stored in the project&#39;s `.mouaif.json` and used **exclusively as a delegation target for the `subagent` tool**. When the model…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="agents">Agents</h1>
+<h2 id="overview">Overview</h2>
+<p>An <strong>agent</strong> is a named persona stored in the project&#39;s <code>.mouaif.json</code> and used <strong>exclusively as a delegation target for the <code>subagent</code> tool</strong>. When the model calls <code>subagent({ task, agent: &quot;reviewer&quot; })</code>, the nested model call runs with that agent&#39;s instructions as its system message and, optionally, a restricted tool allowlist. Agents let the main model hand focused work to a specialist (a reviewer, a test-writer, a docs-reader) without that persona leaking into the main chat.</p>
+<p>Agents are <strong>not</strong> chat personas — a chat-level persona is what <a href="./custom-prompts.html">custom prompts</a> are for. Nothing in the chat stream, the chat record, or the project record references an agent; the only consumer is the <code>subagent</code> tool.</p>
+<h2 id="what-you-can-set-for-an-agent">What you can set for an agent</h2>
+<div class="table-wrap"><table><thead><tr><th>Setting</th><th>Type</th><th>Default</th><th>Meaning</th></tr></thead><tbody><tr><td><strong>Name</strong></td><td>string</td><td>— (required)</td><td>Unique per project, matches <code>[A-Za-z0-9][A-Za-z0-9._-]{0,63}</code>. Mutable after creation — renaming auto-saves and redirects the edit view to the new URL. This is the value the <code>subagent</code> <code>agent</code> argument is matched against.</td></tr><tr><td><strong>Instructions</strong></td><td>string</td><td>— (required)</td><td>The persona text. Becomes the nested call&#39;s system message. Capped at 64 KiB.</td></tr><tr><td><strong>Tools</strong></td><td>tool-name list</td><td>all</td><td>Optional allowlist restricting which tools the nested call may use. Empty/unset = the nested call inherits the parent&#39;s full tool surface.</td></tr><tr><td><strong>Model</strong></td><td>provider + model id</td><td>inherit</td><td>Optional model from the same project + live-catalog union as the chat top bar. Empty/unset = the nested call uses the chat&#39;s model and provider. Provider-qualified live models do not need to be duplicated in project settings; legacy unqualified ids that no longer exist fail with <code>EUNKNOWN_MODEL</code>.</td></tr><tr><td><strong>Thinking</strong></td><td>thinking level</td><td>inherit</td><td>Optional reasoning-effort override for the nested call (same values as the chat&#39;s thinking dropdown). Empty/unset = the nested call follows the chat&#39;s thinking level.</td></tr></tbody></table></div>
+<p>Provider and prompt size are <strong>never</strong> configurable on an agent — the model pin carries its own provider; everything else follows the chat. Thinking level <strong>is</strong> configurable (an optional reasoning-effort override that only applies when the agent&#39;s nested call runs).</p>
+<h2 id="usage">Usage</h2>
+<h3 id="manage-agents">Manage agents</h3>
+<p>Open <strong>Settings → Project → Agents</strong>. The project settings list shows each agent as a compact, single-line name; tapping one opens its editor. <strong>Back</strong> and successful deletion return directly to project settings, preserving the originating chat or project list. The dedicated list (<code>#/settings/agents</code>) remains available: editors opened there return to that list instead.</p>
+<ul><li><p><strong>+ Add agent</strong> uses the same page from either entry point. Set the name, instructions, model, thinking, and tools before tapping <strong>Create</strong>. Nothing is saved until creation succeeds; errors leave the form intact. Creation replaces the add page in browser history with the editor.</p></li><li><p><strong>Name</strong> is editable inline with auto-save and validation; renaming updates the URL without remounting the form, losing focus, or adding history entries. An agent named <code>new</code> is supported.</p></li><li><p><strong>Instructions</strong> is a multiline field; it saves on a short debounce. Rapid edits across fields are merged and saves run in order, including changes made during a rename. <strong>Back</strong> waits for pending saves; a failed save keeps the editor open with <strong>Retry save</strong>.</p></li><li><p><strong>Model</strong> uses the same project + live-catalog union, two-line trigger, provider chips, grouped rows, search, and phone viewport sheet as the chat top bar. &quot;Inherit chat model&quot; clears both the saved model and provider. The union reads every provider&#39;s live chat catalog (<code>/api/ai/models/live</code>) plus its live <strong>image</strong> catalog (<code>/api/ai/models/live?purpose=image</code>) — an image-only model such as an OpenRouter <code>/images/models</code> row or a Gemini Imagen model is never in the chat slice — plus the models already pinned in the project. A provider with no separate image slice returns its chat list, so asking every provider and de-duping on provider + id is safe.</p></li><li><p><strong>Tools</strong> is a grouped tree of native tools and configured MCP servers. Every row carries the tool&#39;s one-line description, exactly as it reads in the chat tools card and in Settings → Project → Tools, so a tool looks the same wherever it is listed. Each MCP group shows its status and discovered tool names/descriptions (using cached discovery data while stopped). Selecting an MCP server stores its server slug, so current and future tools from that server are available to the agent. All groups checked = inherit everything; unchecking builds an explicit allowlist. The tree deliberately has no <code>Off / Ask / Allow</code> control: authorization is a project-level setting, so it lives in Settings → Project and the chat view rather than on an agent&#39;s allowlist.</p></li><li><p><strong>Thinking</strong> is a dropdown of the presets for the agent&#39;s pinned model (from the model&#39;s provider-reported <code>thinking</code> descriptor) plus &quot;Inherit chat thinking&quot;. The first row keeps the chat&#39;s level; picking a preset stores <code>thinkingLevel</code> on the agent so delegated runs use it even when the chat later changes.</p></li><li><p><strong>Delete</strong> removes the agent. Nothing references agents, so no cleanup is needed.</p></li></ul>
+<h3 id="delegate-with-subagent">Delegate with <code>subagent</code></h3>
+<p>The native <code>subagent</code> tool accepts an optional <code>agent</code> argument matched against the stored names:</p>
+<pre><code class="language-json">{ &quot;task&quot;: &quot;Review the staged changes for regressions.&quot;, &quot;agent&quot;: &quot;reviewer&quot; }</code></pre>
+<p>The <code>agent</code> parameter&#39;s description is built per request and enumerates the current agent names, so the model sees exactly what it can call.</p>
+<h3 id="invoke-an-agent-yourself-with">Invoke an agent yourself with <code>@</code></h3>
+<p>You don&#39;t have to wait for the model to delegate. In the chat composer, type <code>@</code> and pick the agent from the <strong>Agents</strong> section (or type <code>@&lt;name&gt;</code>), write the task, and send:</p>
+<pre><code>@reviewer Check the staged changes for regressions.</code></pre>
+<p>A leading <code>@&lt;agent&gt; &lt;task&gt;</code> dispatches the agent directly through <code>POST /api/tools/subagent</code> — the same dispatcher and authorization gate the model-driven path uses. The run shows as a <code>subagent</code> tool card pair that names the agent (a chip in the card head and the nested system row&#39;s role label), and the agent&#39;s answer lands in the transcript as an assistant message. A leading <code>@&lt;agent&gt;</code> with no task (or <code>@</code> mid-text) sends to the model as plain text. See <a href="./at-mention.html">at-mention</a> and <a href="./subagent-transcript.html">subagent-transcript</a>.</p>
+<p>The call card is opened before the request is made, so the server&#39;s call id is not yet known. The card is opened under a placeholder id and <strong>re-keyed to the id the server returns</strong> before its result is appended, which is what lets the result update that card in place instead of rendering a second card beside a spinner that can never resolve. If the request fails outright there is no id to adopt, so the placeholder card is retired and the error is reported on its own result card. Regression test: <a href="../scripts/test-agent-command-card.js">scripts/test-agent-command-card.js</a>.</p>
+<div class="table-wrap"><table><thead><tr><th>Method</th><th>Path</th><th>Body</th><th>Response</th></tr></thead><tbody><tr><td><code>POST</code></td><td><code>/api/tools/subagent</code></td><td><code>{ projectDir, chatId, task, agent?, context?, modelId?, providerId? }</code></td><td><code>{ ok, id, name, args, result, toolCall }</code>; 400 on missing task; 403 when the subagent tool is off/denied</td></tr></tbody></table></div>
+<p>When a name is provided:</p>
+<ul><li><p>The nested call&#39;s system message is the agent&#39;s <strong>instructions</strong> (replacing the generic &quot;focused subagent&quot; persona).</p></li><li><p>If the agent has a <strong>tools</strong> allowlist, the nested call is restricted to it.</p></li><li><p>If the agent has a <strong>model</strong> pin, the nested call runs on that project or live-catalog model (through its saved provider connection) instead of the chat&#39;s model.</p></li><li><p>Everything else is inherited from the parent: MCP surface and the authorization gate.</p>
+<p>An <strong>unknown name returns a typed error</strong> — no silent fallback to a generic subagent:</p></li></ul>
+<pre><code class="language-json">{ &quot;ok&quot;: false, &quot;error&quot;: { &quot;code&quot;: &quot;EUNKNOWN_AGENT&quot;, &quot;message&quot;: &quot;Unknown agent \&quot;reviewr\&quot;&quot;, &quot;available&quot;: [&quot;reviewer&quot;] } }</code></pre>
+<h2 id="cost-and-usage">Cost and usage</h2>
+<p>Nested agent runs are billed on the agent&#39;s pinned model (or the chat&#39;s model, when none is pinned) and added to the parent chat&#39;s running total. As each nested round finishes, the streaming layer emits a <code>usage_update</code> SSE event carrying that round&#39;s increment so the chat header&#39;s &quot;Total&quot; pill grows while the delegated run is still working; the parent&#39;s <code>done</code> event later folds the total into the final segment&#39;s remainder. Re-opening the chat shows the same total as a sum of the persisted assistant messages&#39; <code>cost</code> fields. See <a href="./usage-metrics.html">usage-metrics.md</a>.</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p>Agent routes carry <code>projectDir</code>, optional <code>chatId</code>, and <code>from=projects|settings/projects</code>. Editors opened directly from project settings also carry <code>returnTo=project</code>; other editors return to the dedicated agent list. <code>#/settings/agents/new</code> creates an agent, while <code>#/settings/agents/new?edit=1</code> edits an existing agent named <code>new</code>. Legacy <code>settings/project/agents/&lt;name&gt;</code> links keep their project-settings return target.</p>
+<p>The editor uses phone-sized touch targets for Back and tool selection. It loads agent data independently of model catalogs, so an unavailable provider does not block the form. The auto-save queue merges pending patches, serializes requests, and uses the latest persisted name after a rename. In-app unmounts flush pending edits without redirecting the newly opened page; failed saves require a retry. Closing the browser during an unfinished request cannot guarantee persistence—wait for <strong>saved</strong> or use <strong>Back</strong>.</p>
+<p>Run the focused regression suite with:</p>
+<pre><code class="language-bash">node scripts/test-agent-page-flow.mjs</code></pre>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./custom-prompts.html">Custom prompts</a> — the chat-level persona mechanism.</p></li><li><p><a href="./agent-feature-prompt.html">Agent feature prompt and tool</a> — how agents surface in <code>list_features</code>.</p></li><li><p><a href="./tool-authorization.html">Tool authorization</a> — the gate the nested call still passes through.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

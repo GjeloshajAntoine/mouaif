@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prompt-size profiles — mouaif docs</title>
+  <meta name="description" content="`mouaif` provides three built-in system prompt profiles — `very-small`, `average`, and `extensive` — to tailor how much context, guidance, and tool schema…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="prompt-size-profiles">Prompt-size profiles</h1>
+<h2 id="overview">Overview</h2>
+<p><code>mouaif</code> provides three built-in system prompt profiles — <code>very-small</code>, <code>average</code>, and <code>extensive</code> — to tailor how much context, guidance, and tool schema information is provided to the AI model.</p>
+<h2 id="usage">Usage</h2>
+<h3 id="picking-a-profile">Picking a profile</h3>
+<ul><li><p><strong>In the chat (at creation time)</strong> — open a fresh chat and pick from the dropdown at the top of the transcript (<code>Very small</code>, <code>Average</code>, or <code>Extensive</code>). Once the first message is sent, the choice is locked for that conversation to ensure consistent model behavior.</p></li><li><p><strong>For the whole project</strong> — configure <code>Default prompt style</code> in project settings. New chats inherit this default.</p></li><li><p><strong>Global default</strong> — set your preferred app-wide default in <strong>Settings → Defaults</strong>.</p></li></ul>
+<h3 id="reading-the-active-profile">Reading the active profile</h3>
+<p>The active system prompt (the profile instructions plus any attached custom prompt) is displayed in an expandable <strong>System prompt</strong> card at the top of the chat transcript. Tap it anytime to inspect the exact instructions given to the model.</p>
+<h3 id="the-three-profiles">The three profiles</h3>
+<div class="table-wrap"><table><thead><tr><th>ID</th><th>Label</th><th>When to use it</th></tr></thead><tbody><tr><td><code>very-small</code></td><td>Very small</td><td>Shared core rules for concise answers, safe changes, progress, and verification. The smallest prompt; tools are listed in compact form and schemas are retrieved on demand.</td></tr><tr><td><code>average</code></td><td>Average</td><td>The recommended default. Adds an explicit inspect/edit/verify workflow, precise file-editing guidance, and full tool schemas.</td></tr><tr><td><code>extensive</code></td><td>Extensive</td><td>All Average guidance plus planning, regression testing, mobile UI checks, and concrete workflow examples. Uses the same full tool schemas.</td></tr></tbody></table></div>
+<h2 id="shared-behavior">Shared behavior</h2>
+<p>Changing the profile adds detail, not a different set of permissions or safety rules. All three profiles instruct the assistant to:</p>
+<ul><li><p>Answer concisely with project-relative paths and language-tagged code blocks.</p></li><li><p>Follow applicable project and custom instructions while respecting instruction priority.</p></li><li><p>Make reasonable, reversible decisions autonomously; ask when ambiguity affects scope, safety, or correctness.</p></li><li><p>Obtain explicit authorization for destructive actions, full-file rewrites, dependency installs, and pushes; preserve unrelated user work.</p></li><li><p>Use only enabled tools, respect authorization gates, and discover missing tool schemas before calling them.</p></li><li><p>Inspect before editing, keep changes focused, run relevant checks, and use non-interactive shell commands.</p></li><li><p>Report task start and completion when <code>report_progress</code> is enabled. Completed work uses <code>status: &quot;completed&quot;</code> with <code>current</code> equal to <code>total</code>; blocked work uses <code>status: &quot;failed&quot;</code>, not a false completion.</p></li><li><p>Report actual results, unrun checks, and limitations without inventing project facts or exposing secrets.</p>
+<p>Average and Extensive also distinguish implementation requests from questions/reviews: apply authorized changes for implementation, but do not edit files merely to answer a question. Their progress guidance uses real milestones and falls back to brief text when the progress tool is unavailable.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p><code>src/promptProfiles.js</code> composes each profile from shared text: Very small is the compact core, Average appends workflow guidance, and Extensive appends planning and examples to Average. This keeps common instructions identical and prevents larger profiles from drifting into contradictory behavior.</p>
+<p>Profile IDs, the <code>average</code> default, settings resolution, and tool-schema reduction are unchanged. <code>GET /api/prompt-profiles</code> exposes the same metadata and composed <code>systemMessage</code> used by the chat pipeline and the custom-prompt editor&#39;s <strong>Start from a default</strong> / <strong>Copy from default</strong> actions. Saved custom prompts are independent copies and are not overwritten by built-in prompt updates.</p>
+<p>Regression coverage in <code>scripts/test-prompt-profiles.js</code> checks shared rules, additive composition, size ordering, settings fallback, tool schemas, and HTTP responses using an isolated server on an ephemeral loopback port.</p>
+<h2 id="chat-integration">Chat integration</h2>
+<ul><li><p><strong>Layered instructions</strong> — system prompt profile instructions are placed first, followed by project custom prompts, and then the conversation turns.</p></li><li><p><strong>Per-chat flexibility</strong> — you can choose different profiles for different tasks within the same codebase.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./custom-prompts.html">Custom prompts</a> — managing custom prompt presets.</p></li><li><p><a href="./chat-ui.html">Chat UI</a> — the conversation interface.</p></li><li><p><a href="./app-and-project-settings.html">App and project settings</a> — defaults and configuration hierarchy.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

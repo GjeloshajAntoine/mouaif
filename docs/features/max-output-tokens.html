@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Max output tokens — mouaif docs</title>
+  <meta name="description" content="A per-chat **max output tokens** override in the model picker&#39;s options panel. It lets you cap how many tokens a model may generate per turn, instead of…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="max-output-tokens">Max output tokens</h1>
+<h2 id="overview">Overview</h2>
+<p>A per-chat <strong>max output tokens</strong> override in the model picker&#39;s options panel. It lets you cap how many tokens a model may generate per turn, instead of relying on each provider&#39;s default (which may be very large for reasoning models). It is stored on the chat record, so it travels with the chat and applies to whichever model the chat uses. Leaving the field blank uses the provider default.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Tap the <strong>model trigger</strong> in the chat head to open the model picker.</p></li><li><p>Tap the <strong>Model options</strong> gear button beside the search input.</p></li><li><p>Enter a positive integer (e.g. <code>2048</code>) in <strong>Max output tokens</strong>, or clear it to fall back to the provider default.</p></li><li><p>Press <code>Enter</code> or blur the field to save. The value is written with <code>PATCH /api/chats/:id</code> (<code>{ maxOutputTokens }</code>) and applies to the next turn.</p>
+<p>The value is per chat, not per model: switching models keeps the same cap (or you can clear it for a specific chat). Blank means &quot;no override — use the provider default.&quot;</p></li></ol>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>How the cap is sent.</strong> On each streamed turn the frontend includes <code>maxOutputTokens</code> in the <code>POST /api/chats/:id/messages/stream</code> body. It rides the chat record even when the field is left untouched, so a value set once keeps applying to later turns and across reloads.</p></li><li><p><strong>Provider mapping.</strong> The single value is translated differently per provider family:</p>
+<ul><li><p><strong>OpenAI-compatible providers</strong> (<code>openai-compatible</code>, <code>openrouter</code>, <code>azure</code>, <code>mistral</code>, <code>groq</code>, <code>deepseek</code>, <code>github-copilot</code>) send <code>max_completion_tokens</code>.</p></li><li><p><strong>Anthropic</strong> sends <code>max_tokens</code> (Anthropic&#39;s name for the output cap). When a thinking budget is set, Anthropic still bumps <code>max_tokens</code> to <code>budget + 256</code> so the thinking budget fits inside the cap.</p></li></ul></li><li><p><strong>Validation.</strong> Only a positive all-numeric string is honoured. Empty, non-numeric, or <code>&lt;= 0</code> input means <strong>no override</strong> — the field is not sent and the provider default applies. Invalid input is silently discarded rather than persisted.</p></li><li><p><strong>Default remains 1024</strong> when no override is set on the Anthropic path, matching prior behaviour.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./model-picker.html">docs/features/model-picker.md</a> — the popover this field lives in.</p></li><li><p><a href="./thinking-level.html">docs/features/thinking-level.md</a> — the sibling per-chat field whose plumbing <code>maxOutputTokens</code> mirrors.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

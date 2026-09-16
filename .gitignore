@@ -1,7 +1,8 @@
 node_modules/
-# Generated docs site (npm run docs:build). Not committed; the source
-# of truth is docs/*.md, and CI checks that this directory is up to
-# date with what the source produces.
+# Local inspection output from `npm run docs:build` / `node
+# scripts/build-docs.js`. Not committed — the published site is the
+# generated HTML that scripts/publish-docs.js syncs into docs/ for the
+# GitHub Pages branch deploy.
 docs-dist/
 npm-debug.log*
 mouaif.out

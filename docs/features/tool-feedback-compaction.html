@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tool feedback compaction — mouaif docs</title>
+  <meta name="description" content="Tool results remain complete in the chat transcript while the copy sent back to the model is capped and compacted. This prevents large file reads, shell…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="tool-feedback-compaction">Tool feedback compaction</h1>
+<h2 id="overview">Overview</h2>
+<p>Tool results remain complete in the chat transcript while the copy sent back to the model is capped and compacted. This prevents large file reads, shell output, MCP diffs, browser snapshots, and nested subagent transcripts from causing runaway input-token growth on later tool rounds.</p>
+<h2 id="usage">Usage</h2>
+<p>Compaction is automatic for every native and MCP tool. No chat action is required.</p>
+<p>The default model-facing limit is 64 KiB per tool result. A server operator can override it in the app settings data with <code>toolFeedbackMaxBytes</code>; values are clamped between 4 KiB and 1 MiB.</p>
+<pre><code class="language-json">{
+  &quot;toolFeedbackMaxBytes&quot;: 65536
+}</code></pre>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p>Results under the limit are passed to the model unchanged.</p></li><li><p>Oversized text keeps approximately three quarters from the beginning and one quarter from the end, with a truncation marker between them.</p></li><li><p>Truncation is based on UTF-8 bytes, not JavaScript character count.</p></li><li><p>The complete structured result still reaches the SSE client, SQLite transcript, trace file, and tool card.</p></li><li><p>Subagent feedback sent to the parent contains only <code>ok</code>, final <code>text</code>, and an error when present. Its complete nested chat and tool events remain available to the UI.</p></li><li><p>Base64 image data is omitted from textual tool feedback because image blocks are attached separately as vision content.</p></li><li><p>Existing stored chats are compacted when their tool history is reconstructed. No database migration or transcript rewrite is required.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./ai-client.html">AI client</a></p></li><li><p><a href="./file-tools.html">Native file tools</a></p></li><li><p><a href="./shell-tool.html">Shell tool</a></p></li><li><p><a href="./agents.html">Agents</a></p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

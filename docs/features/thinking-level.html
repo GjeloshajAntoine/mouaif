@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Thinking Level — mouaif docs</title>
+  <meta name="description" content="The thinking level is a lightweight parameter stored on the chat record (`thinkingLevel`). The dropdown options **come from the provider when available**:…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="thinking-level">Thinking Level</h1>
+<h2 id="overview">Overview</h2>
+<p>The thinking level is a lightweight parameter stored on the chat record (<code>thinkingLevel</code>). The dropdown options <strong>come from the provider when available</strong>: each model record may carry a <code>thinking</code> capability descriptor attached by the server, and the chat view builds its option list from it. When the provider reports nothing (unknown model, no live data yet), the dropdown falls back to the generic Low/Medium/High presets plus a custom input.</p>
+<p>The selected value is sent to the AI provider&#39;s API as the appropriate native field:</p>
+<ul><li><p><strong>OpenAI-compatible</strong> (including OpenRouter, GitHub Copilot): maps to <code>reasoning_effort</code> — any provider-reported level is passed through verbatim (<code>&quot;minimal&quot;</code>, <code>&quot;low&quot;</code>, <code>&quot;medium&quot;</code>, <code>&quot;high&quot;</code>, <code>&quot;xhigh&quot;</code>, …)</p></li><li><p><strong>Anthropic</strong>: maps to <code>thinking.budget_tokens</code> (low=2048, medium=8192, high=16384, or a custom number). A custom number is capped at <strong>100 000</strong> tokens, and <code>max_tokens</code> is raised to <code>min(budget, 100000) + 256</code> when it would otherwise be smaller — Anthropic rejects a request whose <code>max_tokens</code> does not clear its thinking budget, so both values come from the same capped number.</p></li><li><p><strong>Gemini</strong> (2.5+ models): maps to <code>generationConfig.thinkingConfig.thinkingBudget</code></p></li><li><p><strong>Ollama</strong>: maps to the boolean <code>think</code> flag on the chat request</p></li></ul>
+<h2 id="thinking-capability-descriptors">Thinking capability descriptors</h2>
+<p>Each model record may carry a <code>thinking</code> field describing the controls the provider accepts:</p>
+<pre><code class="language-json">{ &quot;kind&quot;: &quot;levels&quot;, &quot;levels&quot;: [&quot;minimal&quot;, &quot;low&quot;, &quot;medium&quot;, &quot;high&quot;, &quot;xhigh&quot;] }</code></pre>
+<pre><code class="language-json">{ &quot;kind&quot;: &quot;budget&quot; }</code></pre>
+<pre><code class="language-json">{ &quot;kind&quot;: &quot;toggle&quot; }</code></pre>
+<p>Where the descriptor comes from, per provider:</p>
+<ul><li><p><strong>OpenRouter</strong> — parsed from the per-model <code>supported_parameters</code> on <code>GET /api/v1/models</code>. Models with <code>reasoning</code> support get <code>levels</code>; Anthropic-family slugs get <code>budget</code>.</p></li><li><p><strong>OpenAI-compatible</strong> — inferred statically from the model id (reasoning families: <code>o*</code>, <code>gpt-5*</code>, plus common third-party reasoning markers). The upstream <code>/models</code> endpoint does not report reasoning support, so this is a best-effort signal; unknown ids get no descriptor and the UI falls back to presets.</p></li><li><p><strong>Anthropic</strong> — the curated catalog marks every current Claude model as <code>budget</code>.</p></li><li><p><strong>Gemini</strong> — <code>gemini-2.5</code> and newer ids are marked <code>budget</code>.</p></li><li><p><strong>GitHub Copilot</strong> — the curated catalog infers per family: OpenAI reasoning models → <code>levels</code>, Claude / Gemini 2.5+ → <code>budget</code>.</p></li><li><p><strong>Ollama</strong> — provider-level <code>toggle</code> descriptor (<code>think</code> boolean), applied to every project model on that provider via <code>/api/ai/models</code>.</p></li></ul>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Open a chat.</p></li><li><p>Tap the <strong>thinking level</strong> dropdown next to the model picker.</p></li><li><p>Select one of the provider-reported options (or a preset when no provider info is available).</p></li><li><p>The value is persisted immediately on the chat record and takes effect on the next message sent.</p></li></ol>
+<h3 id="fallback-presets">Fallback presets</h3>
+<div class="table-wrap"><table><thead><tr><th>Label</th><th>Value</th><th>OpenAI</th><th>Anthropic</th><th>Gemini</th></tr></thead><tbody><tr><td>No thinking</td><td><code>&quot;&quot;</code> (empty)</td><td>not sent</td><td>not sent</td><td>not sent</td></tr><tr><td>Low</td><td><code>&quot;low&quot;</code></td><td><code>reasoning_effort: &quot;low&quot;</code></td><td><code>thinking.budget_tokens: 2048</code></td><td><code>thinkingConfig.thinkingBudget: 2048</code></td></tr><tr><td>Medium</td><td><code>&quot;medium&quot;</code></td><td><code>reasoning_effort: &quot;medium&quot;</code></td><td><code>thinking.budget_tokens: 8192</code></td><td><code>thinkingConfig.thinkingBudget: 8192</code></td></tr><tr><td>High</td><td><code>&quot;high&quot;</code></td><td><code>reasoning_effort: &quot;high&quot;</code></td><td><code>thinking.budget_tokens: 16384</code></td><td><code>thinkingConfig.thinkingBudget: 16384</code></td></tr></tbody></table></div>
+<p>When the provider reports a <code>levels</code> descriptor, its level list replaces the Low/Medium/High rows. A <code>budget</code> descriptor keeps the presets (mapped to token counts server-side) and adds the custom input. A <code>toggle</code> descriptor shows just &quot;No thinking&quot; / &quot;Thinking&quot;.</p>
+<h3 id="custom-values">Custom values</h3>
+<p>For <code>levels</code> and <code>budget</code> models, select &quot;Custom…&quot; from the dropdown to reveal a text input. Type any value and press Enter or blur the field. The value is saved immediately.</p>
+<ul><li><p>For Anthropic and Gemini, a numeric string is parsed as the token budget. Anthropic caps at 100000 and raises <code>max_tokens</code> to at least <code>budget_tokens + 256</code>.</p></li><li><p>For OpenAI-compatible providers, the value is passed as-is as <code>reasoning_effort</code>.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

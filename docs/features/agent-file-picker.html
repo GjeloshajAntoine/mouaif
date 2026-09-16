@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent file picker — mouaif docs</title>
+  <meta name="description" content="A mobile-first file browser in **Settings → Project → Agent files** that lets a user fill the **File names to look for** textarea by tapping files in the…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="agent-file-picker">Agent file picker</h1>
+<h2 id="overview">Overview</h2>
+<p>A mobile-first file browser in <strong>Settings → Project → Agent files</strong> that lets a user fill the <strong>File names to look for</strong> textarea by tapping files in the project instead of typing paths by hand. It reuses the existing <code>/api/files</code> read-only endpoint (the same contract the in-chat file editor uses), so it adds no new server surface and can never create, edit, or delete anything.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Open <strong>Settings → Project → Agent files</strong>.</p></li><li><p>Under <strong>File names to look for</strong>, tap <strong>Pick file…</strong>.</p></li><li><p>A full-screen modal opens rooted at the project directory. Navigate folders with taps, the <strong>↑ Up</strong> button, or the breadcrumb path; the <strong>×</strong> closes it.</p></li><li><p>Tap a text file — its project-relative path is appended to the textarea (deduplicated) and the project setting autosaves, exactly as if it had been typed.</p></li><li><p>Directories are navigable; binary files are greyed out and can&#39;t be picked (matching the file editor&#39;s rule).</p>
+<p>Leaving the field empty still uses the defaults (<code>AGENTS.md</code>, <code>CLAUDE.md</code>, <code>.github/copilot-instructions.md</code>). The picker is additive — it only appends, so existing hand-typed entries are preserved.</p></li></ol>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

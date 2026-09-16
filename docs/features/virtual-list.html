@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Virtual list primitive — mouaif docs</title>
+  <meta name="description" content="A headless, dependency-free, windowed list renderer. Only visible rows plus an `overscan` margin exist as DOM nodes; all other rows are represented by the…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="virtual-list-primitive">Virtual list primitive</h1>
+<h2 id="overview">Overview</h2>
+<p>A headless, dependency-free, windowed list renderer. Only visible rows plus an <code>overscan</code> margin exist as DOM nodes; all other rows are represented by the height of one spacer element. The source powers the Inspector Console and Network panels in the mobile UI.</p>
+<p>Implements the rule in <a href="../../.github/copilot-instructions.html">.github/copilot-instructions.md</a> §4: &quot;Virtual list with low memory and low CPU — windowed rendering, recycled nodes, no forced reflow on scroll.&quot;</p>
+<h2 id="usage">Usage</h2>
+<p>The module is an ES module at <code>frontend/src/virtual-list.js</code>. Vite bundles it into the committed <code>/</code> production assets.</p>
+<pre><code class="language-js">import { createVirtualList } from &#39;./virtual-list.js&#39;;
+
+const data = Array.from({ length: 10000 }, (_, i) =&gt; ({ id: i, label: &#39;Row &#39; + i }));
+const list = createVirtualList({
+  scroller: document.getElementById(&#39;scroller&#39;),
+  itemHeight: 44,
+  overscan: 4,
+  render: (item, node) =&gt; { node.textContent = item.label; },
+  data
+});
+
+// Later:
+list.setData(newData);
+list.scrollToIndex(5000);
+list.destroy();</code></pre>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Windowed</strong>: renders only <code>ceil(viewportHeight / itemHeight) + 2 * overscan</code> rows.</p></li><li><p><strong>Recycled</strong>: a node pool grows and shrinks to match the current window; nodes are reused while scrolling.</p></li><li><p><strong>No forced reflow on scroll</strong>: scroll work is scheduled through <code>requestAnimationFrame</code>; layout reads happen before DOM writes.</p></li><li><p><strong>Idempotent</strong>: if the visible range is unchanged, the renderer returns without writing.</p></li><li><p><strong>Fixed height</strong>: every row uses <code>itemHeight</code>; variable-height rows are intentionally out of scope.</p></li><li><p><strong>One spacer</strong>: a relative container grows to the full list height. Rendered rows are absolutely positioned with transforms, so the native scrollbar reports the correct total height without one DOM node per item.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./inspector.html">Inspector</a> uses this primitive for its fixed-height Console and Network event lists.</p></li><li><p><a href="./chat-ui.html">Chat UI</a> owns the Preact + Vite shell that bundles the module.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

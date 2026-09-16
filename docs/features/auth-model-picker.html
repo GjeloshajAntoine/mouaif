@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Per-run model choice on the subagent authorization card — mouaif docs</title>
+  <meta name="description" content="When a `subagent` tool call needs approval (the tool authorization gate is in `ask` mode), the **Authorization required** card now carries a model picker.…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="per-run-model-choice-on-the-subagent-authorization-card">Per-run model choice on the subagent authorization card</h1>
+<h2 id="overview">Overview</h2>
+<p>When a <code>subagent</code> tool call needs approval (the tool authorization gate is in <code>ask</code> mode), the <strong>Authorization required</strong> card now carries a model picker. Before tapping <strong>Allow once</strong> / <strong>Allow for session</strong> / <strong>Always allow</strong>, the user can choose which model executes <em>this</em> delegated run. The choice is a one-off: nothing is persisted on the chat, the agent, or the project — the next subagent call uses the chat&#39;s model again (or the agent&#39;s pinned model).</p>
+<h2 id="usage">Usage</h2>
+<p>The picker appears only on <code>subagent</code> approval cards. It lists the same union the main chat <a href="./model-picker.html">model picker</a> shows:</p>
+<ul><li><p>project-defined models (<code>settings.models</code>)</p></li><li><p>the per-provider live catalog (<code>GET /api/ai/models/live</code>)<br>deduplicated by <code>(provider, modelId)</code>, sorted by provider then id. The first row is a <strong>&quot;(chat default)&quot;</strong> entry that keeps the run on the chat&#39;s current model (or the agent&#39;s model pin, when the called agent has one). The trigger shows <code>(chat default) &lt;modelId&gt;</code> until the user picks an override. Below it, a <strong>thinking</strong> dropdown offers the picked model&#39;s presets plus an &quot;Inherit chat thinking&quot; first row (the same <code>ThinkingSelectField</code> the Agents editor uses).</p>
+<p>The card&#39;s picker also shows the <strong>Pinned</strong> and <strong>Recent</strong> bookmark sections exactly like the chat top bar, using the same source of truth: pins live in localStorage (per project), and the recent list is the server-backed <code>model_recent</code> SQLite cache, refreshed when the sheet opens. Picking a model on the card records it as recently used; pinning/unpinning works right on the card.</p>
+<p>Pick a model (and optionally a thinking level), then choose any non-deny action. The decision payload carries</p></li></ul>
+<pre><code class="language-json">{
+  &quot;modelOverride&quot;: { &quot;providerId&quot;: &quot;openrouter&quot;, &quot;modelId&quot;: &quot;anthropic/claude-sonnet-4&quot; },
+  &quot;thinkingLevel&quot;: &quot;medium&quot;
+}</code></pre>
+<p>and the nested call runs on that model — with that reasoning effort — for this invocation only. Deny still ignores the pick.</p>
+<h3 id="precedence">Precedence</h3>
+<p>Model resolution for the delegated run, most specific first:</p>
+<ol><li><p><strong>Authorization-card pick</strong> — the user explicitly approved this run on a model, so it wins over everything else.</p></li><li><p><strong>Agent model pin</strong> — a named agent&#39;s <code>modelId</code> (Settings → Project → Agents) applies when no card pick was made.</p></li><li><p><strong>Chat model</strong> — the fallback for a generic subagent with no pin.</p>
+<p>Thinking level follows the same precedence: the card&#39;s pick wins, then the agent&#39;s <code>thinkingLevel</code>, then the chat&#39;s inherited level.</p></li></ol>
+<h3 id="regression-check">Regression check</h3>
+<p>With debug Chrome available at <code>http://127.0.0.1:9222</code> (or <code>CDP_URL</code>), run:</p>
+<pre><code class="language-bash">node scripts/test-auth-model-picker.cjs</code></pre>
+<p>The test mounts the real <code>AuthModelPicker</code> on an isolated about:blank tab with an in-memory localStorage shim, seeds a pinned model and a server-backed recent entry, opens the sheet, and asserts both bookmark sections render. It does not modify app data.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./tool-authorization.html">Tool authorization</a> — the gate the card belongs to.</p></li><li><p><a href="./agents.html">Agents</a> — named subagent personas and their model pins.</p></li><li><p><a href="./model-picker.html">Model picker</a> — the main picker whose data feeds this one.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

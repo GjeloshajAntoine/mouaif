@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent feature prompt and tool — mouaif docs</title>
+  <meta name="description" content="The agent feature prompt is a dynamic system message injected into every chat stream that tells the model which mouaif features are enabled, disabled, or…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="agent-feature-prompt-and-tool">Agent feature prompt and tool</h1>
+<h2 id="overview">Overview</h2>
+<p>The agent feature prompt is a dynamic system message injected into every chat stream that tells the model which mouaif features are enabled, disabled, or authorized for the current project and chat session. It is accompanied by a <code>list_features</code> tool the model can call at any time to get the complete structured feature state — especially useful under the <code>very-small</code> prompt profile, where tool descriptions are trimmed.</p>
+<p>Together they solve the problem of &quot;the model doesn&#39;t know what it can do&quot;: without them, the model only learns about a tool when it receives its full schema in the <code>tools</code> field. The feature prompt gives a one-line summary of every available capability up front, and the tool delivers the full detail on demand.</p>
+<h2 id="usage">Usage</h2>
+<h3 id="feature-injection">Feature injection</h3>
+<p>The feature summary is assembled server-side and injected as its own <code>system</code> message in the upstream message array, after agent files and before tagged files. It lists:</p>
+<ul><li><p><strong>Built-in tools</strong> — shell, subagent, ask_user, file tools — showing their authorization mode (<code>off</code> / <code>ask</code> / <code>allowlist</code> / <code>allow</code>).</p></li><li><p><strong>MCP servers</strong> — how many are configured. (Deliberately NOT the live running/stopped status: the summary rides inside the cached Anthropic system block, and a status flip mid-conversation would invalidate the whole prompt cache. Live status is available via <code>list_features</code>.)</p></li><li><p><strong>Agent files</strong> — whether AGENTS.md / CLAUDE.md etc. are injected.</p></li><li><p><strong>Agents</strong> — how many named subagent personas are defined in the project.</p></li><li><p><strong>File tagging</strong> — whether tags are configured in the project.</p></li><li><p><strong>Trace</strong> — whether trace-to-file is on for this chat.</p></li><li><p><strong>Prompt profile</strong> — the active profile id (<code>very-small</code>, <code>average</code>, or <code>extensive</code>).</p>
+<p>The message ends by mentioning the <code>list_features</code> tool for full detail.</p></li></ul>
+<h3 id="list-features-tool"><code>list_features</code> tool</h3>
+<p>The model has a <code>list_features</code> tool available in every chat. It takes no arguments and returns a JSON object with these keys:</p>
+<div class="table-wrap"><table><thead><tr><th>Key</th><th>Type</th><th>Description</th></tr></thead><tbody><tr><td><code>tools</code></td><td><code>object</code></td><td>Each built-in tool family (<code>shell</code>, <code>subagent</code>, <code>file</code>, <code>ask_user</code>) with <code>mode</code>, <code>allowlist</code>, <code>defaultTimeoutMs</code>, <code>maxTimeoutMs</code>.</td></tr><tr><td><code>mcp</code></td><td><code>array</code></td><td>Each MCP server with <code>name</code>, <code>slug</code>, <code>status</code>, <code>tools</code>, <code>authorization</code>.</td></tr><tr><td><code>agentFiles</code></td><td><code>object</code></td><td><code>enabled</code> (boolean), <code>fileNames</code> (the names looked for), <code>discovered</code> (files actually found with size).</td></tr><tr><td><code>agents</code></td><td><code>object</code></td><td><code>discovered</code> (named subagent personas found, by name).</td></tr><tr><td><code>fileTagging</code></td><td><code>object</code></td><td><code>active</code> (boolean), <code>count</code> (number of tags).</td></tr><tr><td><code>trace</code></td><td><code>boolean</code></td><td>Whether trace-to-file is on for this chat.</td></tr><tr><td><code>promptProfile</code></td><td><code>object</code></td><td><code>id</code> and <code>label</code> of the active prompt profile.</td></tr></tbody></table></div>
+<p>The tool bypasses the authorization gate — it is read-only metadata and never requires user approval.</p>
+<h3 id="chat-controls">Chat controls</h3>
+<p>When discovered agent files are shown in the chat card, every file row has a checkbox next to the file name. Because agent-file injection is currently a chat-level on/off state, toggling any row controls whether all discovered files are injected on the next turn. The card lists discovered files even when the current chat has agent files disabled, so the chat card and Settings → Project remain consistent. The checkboxes are disabled and marked as locked when agent files are disabled in project settings.</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Always injected</strong> — the feature summary is always added as a system message (unless no feature is enabled, in which case it is omitted to save tokens). Even if every tool is <code>off</code>, the prompt profile and trace state are still reported.</p></li><li><p><strong>No tokens wasted</strong> — the summary is short (typically 5–10 lines). The detailed state is on-demand via the tool.</p></li><li><p><strong>Authorization bypass</strong> — <code>list_features</code> is exempt from the authorization gate; it never prompts the user. It is a metadata tool, not an execution tool.</p></li><li><p><strong>Live state</strong> — the feature summary is recalculated on every stream turn, so it always reflects the current project and chat settings. The tool call also reads live state.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./prompt-profiles.html">Prompt-size profiles</a> — selecting between very-small, average, and extensive prompt profiles.</p></li><li><p><a href="./tool-authorization.html">Tool authorization</a> — tool authorization rules and options.</p></li><li><p><a href="./agents.html">Agents</a> — subagent delegation personas.</p></li><li><p><a href="./file-tagging.html">File tagging</a> — tagging context files in projects.</p></li><li><p><a href="./file-tools.html">Native file tools</a> — reading and managing files.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

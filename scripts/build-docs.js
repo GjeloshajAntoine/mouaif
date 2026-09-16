@@ -29,6 +29,11 @@
 //   # or
 //   npm run docs:build            / npm run docs:build:internal
 //
+// The published site is a branch deploy served from docs/ on master (GitHub
+// Pages, "Deploy from a branch"). This script only renders; scripts/
+// publish-docs.js builds into a scratch dir and copies the public output into
+// docs/ itself. docs-dist/ is a local inspection target only.
+//
 // The renderer is intentionally small and safe for innerHTML: every text node
 // is HTML-escaped before inline patterns are re-introduced. It is not a full
 // CommonMark implementation — it covers the subset used by docs/:

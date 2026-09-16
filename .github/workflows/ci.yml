@@ -18,6 +18,7 @@ jobs:
       - run: npm test
       - run: npm run build:web
       - run: git diff --exit-code -- frontend/dist
-            - run: npm run docs:build
-      - run: git diff --exit-code -- docs-dist
-      - run: node scripts/publish-docs.js --dry-run
+      # The docs site is deployed from docs/ on master (GitHub Pages,
+      # "Deploy from a branch"). Fail if the committed output has drifted
+      # from the Markdown sources, so docs and site can never disagree.
+      - run: npm run docs:publish:check

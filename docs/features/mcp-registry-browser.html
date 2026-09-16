@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCP Registry Browser — mouaif docs</title>
+  <meta name="description" content="The **MCP Registry Browser** integrates the official community-owned registry at `registry.modelcontextprotocol.io` into the Settings UI. Users can search,…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="mcp-registry-browser">MCP Registry Browser</h1>
+<h2 id="overview">Overview</h2>
+<p>The <strong>MCP Registry Browser</strong> integrates the official community-owned registry at <code>registry.modelcontextprotocol.io</code> into the Settings UI. Users can search, sort, explore popularity-scored server entries, and add any server as a project-scoped or app-wide MCP server without leaving the app. Browsing is stateless: mouaif requests the Registry API directly through its backend proxy and does not store or cache registry responses.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Go to <strong>Settings → MCP servers</strong> (app or project scoped).</p></li><li><p>Tap the <strong>Browse Registry</strong> button in the bottom bar.</p></li><li><p>Browse the paginated list, or type a search term and hit Enter.</p></li><li><p>Each server card shows:</p></li></ol>
+<ul><li><p><strong>Name</strong> (short display name) + version badge</p></li><li><p><strong>Status</strong> badge (active / deprecated)</p></li><li><p><strong>Description</strong> (first 200 characters)</p></li><li><p><strong>Qualified name</strong> (e.g. <code>io.github.user/weather</code>)</p></li><li><p><strong>Package count</strong></p></li><li><p><strong>Last updated</strong> date</p></li><li><p><strong>Popularity score</strong> (0–100) — a visual bar computed from update recency, package count, and version metadata</p></li></ul>
+<ol><li><p>Tap <strong>Add to project</strong> (or <strong>Add to app</strong>) to install the server instantly. The form auto-fills:</p></li></ol>
+<ul><li><p>Command (<code>uvx</code>, <code>npx</code>, or the package&#39;s declared command)</p></li><li><p>Arguments from the first package</p></li><li><p>Environment variables (defaults, if any)</p></li></ul>
+<ol><li><p>After adding, the view navigates to the new server&#39;s edit screen. The new server is always on — there is no <code>enabled</code> flag to set.</p></li></ol>
+<h2 id="popularity-scoring">Popularity Scoring</h2>
+<p>Since the official registry does not expose download counts or star ratings, mouaif computes a composite score (0–100):</p>
+<div class="table-wrap"><table><thead><tr><th>Component</th><th>Max</th><th>Source</th></tr></thead><tbody><tr><td>Update recency</td><td>50</td><td>Days since <code>updatedAt</code> (≤ 90 days = max)</td></tr><tr><td>Package count</td><td>30</td><td>Each package = 10 pts (3+ = max)</td></tr><tr><td>Version activity</td><td>20</td><td>Has latest version flag = 20 pts</td></tr><tr><td><strong>Total</strong></td><td><strong>100</strong></td><td>Capped at 100</td></tr></tbody></table></div>
+<p>A green bar (≥ 70) means actively maintained; yellow (40–69) means moderately active; grey (&lt; 40) means stable or older.</p>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

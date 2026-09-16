@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Access authentication — mouaif docs</title>
+  <meta name="description" content="mouaif can optionally protect its web UI and APIs with one local user, a password, and WebAuthn passkeys. Authentication is disabled unless an auth-related…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="access-authentication">Access authentication</h1>
+<h2 id="overview">Overview</h2>
+<p>mouaif can optionally protect its web UI and APIs with one local user, a password, and WebAuthn passkeys. Authentication is disabled unless an auth-related CLI option is supplied, preserving the local development workflow.</p>
+<h2 id="usage">Usage</h2>
+<h3 id="set-a-user-and-password-from-the-cli">Set a user and password from the CLI</h3>
+<p>Enable authentication and print an expiring setup invitation:</p>
+<pre><code class="language-bash">mouaif serve --auth</code></pre>
+<p>Without <code>--auth</code>, <code>--auth-setup</code>, or <code>--user</code>, the server does not require a login. Existing stored credentials are left intact but are not enforced for that process.</p>
+<p>Pass both values when starting the server:</p>
+<pre><code class="language-bash">mouaif serve --auth --user alice --password &#39;a-long-password&#39;</code></pre>
+<p>To keep the password out of shell history, use the environment variable instead:</p>
+<pre><code class="language-bash">MOUAIF_PASSWORD=&#39;a-long-password&#39; mouaif serve --user alice</code></pre>
+<p>On PowerShell:</p>
+<pre><code class="language-powershell">$env:MOUAIF_PASSWORD = &#39;a-long-password&#39;
+mouaif serve --auth --user alice</code></pre>
+<p>The password must contain at least eight characters. Supplying changed CLI credentials updates the single access user, invalidates existing login sessions, and removes passkeys tied to the replaced account. Repeating the same credentials on a restart is a no-op.</p>
+<h3 id="use-the-setup-ui">Use the setup UI</h3>
+<p>When authentication is enabled and access has not been configured, startup prints:</p>
+<ul><li><p>an expiring setup link;</p></li><li><p>a scannable terminal QR code containing that link;</p></li><li><p>an eight-character short code.</p>
+<p>Use <code>--auth-setup</code> to enable authentication and print a new setup invitation even when access is already configured:</p></li></ul>
+<pre><code class="language-bash">mouaif serve --host 0.0.0.0 --public-origin https://mouaif.example.test --auth-setup</code></pre>
+<p>Open the link, scan the QR code on another device, or open <code>/#/setup</code> and enter the short code. Setup invitations expire after 15 minutes and are consumed after use. The setup form creates or replaces the user and password, then offers passkey enrollment.</p>
+<p>For another device to use the printed URL, the served origin must be reachable from that device. Prefer <code>--public-origin</code> behind HTTPS. A loopback origin such as <code>127.0.0.1</code> is only reachable on the machine running mouaif.</p>
+<h3 id="sign-in-with-a-passkey">Sign in with a passkey</h3>
+<p>After password setup, choose <strong>Add a passkey</strong>. WebAuthn requires a secure context: HTTPS is required for remote origins, while browsers permit <code>localhost</code> as a development exception. On an insecure LAN URL, the UI reports this requirement instead of presenting the failure as missing browser support, and the CLI warns that only password setup is available.</p>
+<p>Existing users can manage passkeys under <strong>Settings → Access &amp; passkeys</strong>. Password login remains available. Removing a passkey does not change the password.</p>
+<h3 id="change-the-password-in-the-ui">Change the password in the UI</h3>
+<p><strong>Settings → Access &amp; passkeys</strong> includes a <strong>Change password</strong> form. Enter the current password and the new one (at least eight characters). Changing the password is treated like a reset: every other browser session is revoked and all passkeys are removed; the current device stays signed in. The username is unchanged.</p>
+<p>Alternatively, the CLI setup flow (<code>--auth-setup</code>) or a one-time setup link can replace the user and password from outside the UI.</p>
+<h3 id="authenticate-cli-api-requests">Authenticate CLI API requests</h3>
+<p>Browser clients use an HttpOnly session cookie. Non-browser REST clients can use HTTP Basic authentication:</p>
+<pre><code class="language-bash">curl --user &#39;alice:a-long-password&#39; http://127.0.0.1:5732/api/settings</code></pre>
+<h3 id="initial-access-check">Initial access check</h3>
+<p>On startup, the page stays visually blank while it requests <code>/api/access/status</code>. The app UI is mounted only after the server confirms that access authentication is disabled or that the browser has a valid session. Login and setup screens still appear when authentication is required.</p>
+<p>This removes the access-check splash without bypassing protection: APIs, SSE, and app data remain guarded by server-side authorization.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./settings-ui.html">Settings UI</a> — managing settings and access in the mobile web interface.</p></li><li><p><a href="./auth.html">Provider authentication</a> — connecting AI providers via API keys and OAuth.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>
