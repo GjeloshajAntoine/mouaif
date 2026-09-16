@@ -1767,8 +1767,14 @@ promptSize: callOpts && callOpts.promptSize,
       }
       chat.push({ role: 'assistant', content: text });
       const r = nested && nested.ok
-        ? { ok: true, text, chat, toolEvents: nestedToolEvents, usage: nested.usage || null, providerCost: nested.providerCost ?? null, totalCost: nested.totalCost ?? null, model: nestedModelRef }
-        : { ok: false, text, chat, toolEvents: nestedToolEvents, error: nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' } };
+      ? { ok: true, text, chat, toolEvents: nestedToolEvents, usage: nested.usage || null, providerCost: nested.providerCost ?? null, totalCost: nested.totalCost ?? null, model: nestedModelRef }
+      : { ok: false, text, chat, toolEvents: nestedToolEvents, error: nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' } };
+      // Record WHICH agent ran, when one was named. The name is not derivable
+      // from the nested transcript (an agent's system message is its
+      // instructions, not its name), and only the delegated call knows it, so
+      // it has to ride the result payload or the chat card cannot say which
+      // agent answered. Omitted entirely for a generic delegation.
+      if (agentName) r.agent = agentName;
       // Commit the run. The round reports above already billed every nested
       // round, so this only adds what they missed — a run whose rounds
       // never reported usage, or a cost estimate that only became

@@ -61,6 +61,27 @@
   line-height: 1.25;
   color: var(--fg-soft);
 }
+/* The agent a delegated run dispatched, on a subagent card. The card's own
+   label is always the generic "Subagent", so this chip is the ONLY place the
+   agent's name is visible — without it a `@reviewer` dispatch and a generic
+   delegation read identically. Sized as a touch-safe chip at the head's type
+   scale, and capped so a long name cannot push the status dot off the row. */
+.tool-card__agent {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--fg-soft);
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .tool-card__args {
   flex: 1 1 auto;
   margin: 0;

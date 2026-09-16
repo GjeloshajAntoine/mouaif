@@ -30,7 +30,7 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [Opening images with `read_file`](features/read-file-images.md) — the agent opens a picture, sees it, and the chat card shows what the model received.
 - [Docker smoke test](features/docker-smoke-test.md) — build and verify mouaif in containers with a mounted example project.
 - [Retry and auto-retry](features/retry-and-auto-retry.md) — retry failed turns from their error card, or let the app retry once automatically.
-- [Subagent transcript](features/subagent-transcript.md) — the delegated conversation inside an expanded subagent card renders as chat rows.
+- [Subagent transcript](features/subagent-transcript.md) — the delegated conversation inside an expanded subagent card renders as chat rows, and the card names the agent it dispatched.
 - [Responsive layout](features/responsive-layout.md) — the app frame grows with the window instead of staying a 480 px phone column.
 - [Content Security Policy](features/content-security-policy.md) — the policy the app shell ships with, directive by directive.
 - [Routing](features/routing.md) — every hash the app answers, its query parameters, and the old names that still work.

@@ -8,7 +8,7 @@ A `subagent` tool card keeps the delegated conversation in its expanded body. Th
 
 | Nested turn | Rendered as |
 | --- | --- |
-| `system` | The collapsed **System prompt · N lines** card the main transcript uses for the active system prompt. |
+| `system` | The collapsed **System prompt · N lines** card the main transcript uses for the active system prompt. Its role label names the agent the run dispatched (`Search`), or `agent` for a generic delegation. |
 | `user` | A user chat bubble, right-aligned, with the `user` role label. |
 | `assistant` | An assistant chat bubble with markdown, labelled with the model that ran the delegated call. |
 | `tool` | A compact nested tool row (verb label, one-line arguments, per-tool result summary, status dot, per-tool preview) — not a chat bubble, so the assistant→tool→assistant loop stays readable. |
@@ -25,15 +25,28 @@ A tool row inside the subagent card is rendered with the **same classes the main
 - **No empty assistant bubble.** An assistant turn that only asked for tools carries no text of its own; it renders as its tool rows, matching the main transcript, which skips empty assistant turns.
 - **No chevron.** A nested row has no expand/collapse of its own — the parent subagent card owns that — so it carries no chevron and is not a tap target.
 
+## Naming the agent
+
+A delegated run names the agent it dispatched, in two places:
+
+- a `.tool-card__agent` chip in the card head, beside the generic `Subagent` label;
+- the role label of the nested system row.
+
+The name comes from the `subagent` call's `agent` argument, which the server echoes back on the result as `result.agent`. It has to ride the result payload: the nested transcript does not contain it (an agent's system message is its instructions, not its name), so without it a `@reviewer` dispatch and a model-driven generic delegation render identically. A run with no `agent` argument shows no chip and labels its system row `agent`.
+
 ## Usage
 
 1. Enable the **Subagent** tool for the project in Settings → Project and approve a delegation (or use an `@agent` mention in the composer).
-2. Tap the `Subagent` card header to expand or collapse it. The nested chat is visible in both states.
+2. Read the delegated conversation directly under the card head — a settled `Subagent` card opens itself (`is-expanded`), because the nested transcript IS its body. Tap the header to collapse or re-expand it.
 3. Read the delegated conversation top to bottom: the subagent's prompt, the delegated task, its tool calls, and its final answer.
+4. To see which agent ran, read the chip in the head or the nested system row's role label.
 
 ## Implementation notes
 
-- `renderSubagentChat()` in [frontend/src/components/chat/transcript.js](../../frontend/src/components/chat/transcript.js) builds each nested turn. It shares `buildSystemPromptRow()` and the `.chat-msg__head` / `.chat-msg__role` / `.chat-msg__ts` shape with `appendMessageToTranscript()`, so the two transcripts cannot drift apart.
+- `renderSubagentChat()` in [frontend/src/components/chat/transcript.js](../../frontend/src/components/chat/transcript.js) builds each nested turn. It shares `buildSystemPromptRow()` and the `.chat-msg__head` / `.chat-msg__role` / `.chat-msg__ts` shape with `appendMessageToTranscript()`, so the two transcripts cannot drift apart. `buildSystemPromptRow(text, extraClass, roleLabel)` takes the role label, which `agentLabel(result.agent)` supplies for a delegated run.
+- A subagent card builds its body on the spot rather than through the lazy-result path. `appendToolResultCard` defers a result body to first expand to keep tool-heavy chats cheap, but a subagent's body IS its transcript, so a lazy card rendered as a bare `Subagent · task · ok` header with the whole delegated conversation hidden behind an undiscoverable tap. The card is also left `is-expanded` (unless the user collapsed it), so the conversation is readable without a tap.
+- The agent chip is its own element because the head's `args` is an already-formatted one-line string by the time `buildToolCardHead` sees it, so the agent name is not recoverable there. `buildToolCardHead(toolName, args, pillClass, pillText, resultSummary, toolArgs)` takes the raw argument object as a sixth parameter for exactly this; `rebuildToolCardHead` forwards it so the chip survives the result rebuild.
+- Regression test: [scripts/test-subagent-agent-label.js](../scripts/test-subagent-agent-label.js) loads the module with a DOM stub and asserts the chip on both the call and result paths, that a generic delegation adds no chip, that the nested system row is labelled with the agent, and that a settled subagent card is expanded with its nested chat built.
 - Nested turns carry no timestamp and no `modelId`, so the timestamp element is rendered hidden and the assistant label uses the delegated run's model id from the tool result (`result.model.id`), falling back to `assistant`.
 - The system turn's `content` is an array of typed content parts in provider shape, not a string. `textOfContent()` flattens it (`text` parts joined by a blank line) and pretty-prints unknown shapes instead of dumping the parts as JSON.
 - `tool-card__subagent-msg` only drops the entry animation. The nested rows deliberately keep `.chat-msg`'s own width cap, bubble geometry and colours from [frontend/src/chat-transcript.css](../../frontend/src/chat-transcript.css); `tool-card__subagent-chat` restores the transcript's type scale and foreground colour inside the card body.
@@ -43,9 +56,12 @@ A tool row inside the subagent card is rendered with the **same classes the main
 - The subagent body rule is written as `.tool-card.tool-card--subagent .tool-card__body` so it out-specifies the generic `.tool-card.is-expanded .tool-card__body` rule in [frontend/src/tool-cards.css](../../frontend/src/tool-cards.css). Without the extra `.tool-card` qualifier the panel was silently dropped the moment the card expanded, and subagent content was restyled to the flat, indented tool-output layout.
 - `scripts/test-subagent-transcript-parity.js` loads the module with a DOM stub and asserts the row shape, the delegated model label, the system card, the live streaming bubble, and — for one call rendered through both paths — that the live and settled nested rows are field-for-field identical (label, arguments, status dot, result summary) and that a call plus its result produce exactly one row. It fails on the pre-parity renderer.
 
+- The result payload carries `agent` only when one was named (`src/ai-stream.js`), so a generic delegation's transcript is unchanged apart from the `agent` role label.
+
 ## Related
 
 - [Agents](agents.md)
+- [At-mention](at-mention.md)
 - [Chat UI](chat-ui.md)
 - [Live tool preview](live-tool-preview.md)
 - [Tool popup](tool-popup.md)

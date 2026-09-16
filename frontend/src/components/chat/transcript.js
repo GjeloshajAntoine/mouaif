@@ -36,21 +36,38 @@ import {
 } from './toolRender.js';
 import { renderUsageMeta } from './usage.js';
 import { isPersistedTurnError, retryPayloadForError } from './retry.js';
-// buildSystemPromptRow(text, extraClass)
+// agentLabel(agentName) -> string
+//
+// The role label a delegated run's system row shows. The model chooses an
+// agent by its stored name, so the name is the one fact that distinguishes
+// this delegated run from a generic `subagent` call. Without it an `@agent`
+// dispatch and a model-driven delegation render identically and the card only
+// ever says "Subagent" — there was no way to tell WHICH agent answered after
+// the fact. An empty or malformed name falls back to `agent` so the row always
+// names a role, never a blank.
+export function agentLabel(agentName) {
+  const name = String(agentName == null ? '' : agentName).trim();
+  return name || 'agent';
+}
+
+// buildSystemPromptRow(text, extraClass, roleLabel)
 //
 // The `system` chat row: a role head plus a body holding a collapsed
 // <details> whose summary is the line count. Shared by the top-level
 // transcript and the nested subagent transcript, so a delegated run's own
 // system message renders as a system card instead of a JSON dump of its
 // content parts.
-export function buildSystemPromptRow(text, extraClass) {
+//
+// `roleLabel` overrides the head's role text (default `system`), which is
+// how a nested agent run labels WHICH agent answered — see agentLabel.
+export function buildSystemPromptRow(text, extraClass, roleLabel) {
   const row = document.createElement('div');
   row.className = 'chat-msg chat-msg--system' + (extraClass ? ' ' + extraClass : '');
   const head = document.createElement('div');
   head.className = 'chat-msg__head';
   const role = document.createElement('div');
   role.className = 'chat-msg__role';
-  role.textContent = 'system';
+  role.textContent = roleLabel || 'system';
   // Same head shape as every other chat row so the nested and top-level
   // transcripts cannot drift apart again. Nested turns carry no
   // timestamp, so the element stays hidden rather than omitted.
@@ -540,7 +557,7 @@ function fillSubagentToolRow(row, name, raw, args, okHint) {
   return r;
 }
 
-// buildToolCardHead(toolName, args, pillClass, pillText, resultSummary)
+// buildToolCardHead(toolName, args, pillClass, pillText, resultSummary, toolArgs)
 //
 // The compact header row shared by tool_call and tool_result cards:
 // a chevron, the verb-style tool label, the one-line arg summary,
@@ -548,7 +565,13 @@ function fillSubagentToolRow(row, name, raw, args, okHint) {
 // tap target for expand/collapse. The status element keeps the
 // legacy `.tool-card__pill` classes so subagent code that toggles
 // pill classes keeps working.
-function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
+//
+// `toolArgs` is the call's argument OBJECT, when the caller has it. `args` is
+// only the formatted one-line text, so a card that has to render more than the
+// generic arg summary (a delegated run names the agent it dispatched) cannot
+// recover the agent from it. Kept separate so the display text stays a plain
+// string for every existing caller.
+function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary, toolArgs) {
   const head = document.createElement('div');
   head.className = 'tool-card__head';
   head.setAttribute('role', 'button');
@@ -559,6 +582,36 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
   const name = document.createElement('span');
   name.className = 'tool-card__name';
   name.textContent = toolCardLabel(toolName);
+  // Name the agent on a delegated run's card. The model chooses an agent by
+  // its stored name and the name is not otherwise recoverable from the card,
+  // so without this a `@reviewer` dispatch and a generic delegation read
+  // identically as "Subagent". Own element (not folded into the name) so it
+  // can be styled as a chip and left out of the tap target's label.
+  if (isSubagentTool(toolName)) {
+    const agentName = toolArgs && typeof toolArgs === 'object' ? toolArgs.agent : null;
+    if (String(agentName == null ? '' : agentName).trim()) {
+      const agent = document.createElement('span');
+      agent.className = 'tool-card__agent';
+      agent.textContent = String(agentName).trim();
+      agent.title = 'Agent';
+      head.appendChild(chev);
+      head.appendChild(name);
+      head.appendChild(agent);
+      return finishToolCardHead(head, toolName, args, pillClass, pillText, resultSummary);
+    }
+  }
+  head.appendChild(chev);
+  head.appendChild(name);
+  return finishToolCardHead(head, toolName, args, pillClass, pillText, resultSummary);
+}
+
+// finishToolCardHead(head, toolName, args, pillClass, pillText, resultSummary)
+//
+// The half of the head that does not depend on the tool: the one-line argument
+// summary, the collapsed result summary and the status dot, plus the tap
+// handler. Split out so the subagent branch above can prepend the agent chip
+// without duplicating (and drifting from) this markup.
+function finishToolCardHead(head, toolName, args, pillClass, pillText, resultSummary) {
   // `args` may be either a raw arg object or an already-formatted
   // string (when the caller has the display text already). Pass it
   // through formatToolArgs either way: passing a string returns
@@ -567,8 +620,6 @@ function buildToolCardHead(toolName, args, pillClass, pillText, resultSummary) {
   const pill = document.createElement('span');
   pill.className = 'tool-card__pill ' + pillClass;
   pill.textContent = pillText;
-  head.appendChild(chev);
-  head.appendChild(name);
   if (argText) {
     const argsEl = document.createElement('pre');
     argsEl.className = 'tool-card__args';
@@ -675,7 +726,7 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
   // own payload — write_file's content — reads it from here when the
   // card is expanded.
   card._toolArgs = toolCall.args && typeof toolCall.args === 'object' ? toolCall.args : null;
-  card.appendChild(buildToolCardHead(toolCall.name, toolCall.args, 'tool-card__pill--busy', 'running'));
+  card.appendChild(buildToolCardHead(toolCall.name, toolCall.args, 'tool-card__pill--busy', 'running', null, toolCall.args));
   if (isSubagentTool(toolCall.name)) {
     card.classList.add('tool-card--subagent');
     // Auto-expand so the streamed nested activity is visible live
@@ -925,7 +976,7 @@ if (!card) {
     const headArgs = (isSubagent || name === 'shell' || (callArgs && callArgs.cmd))
       ? formatToolArgs(callArgs, toolResult.name)
       : null;
-    card.appendChild(buildToolCardHead(toolResult.name, headArgs, pillClass, pillText, summary));
+    card.appendChild(buildToolCardHead(toolResult.name, headArgs, pillClass, pillText, summary, callArgs));
     const body = document.createElement('div');
     body.className = 'tool-card__body';
     card.appendChild(body);
@@ -942,7 +993,7 @@ if (!card) {
     const headArgs = isSubagent
       ? formatToolArgs(toolResult.args, toolResult.name)
       : (oldArgs ? oldArgs.textContent : null);
-    rebuildToolCardHead(card, toolResult.name, headArgs, pillClass, pillText, summary);
+    rebuildToolCardHead(card, toolResult.name, headArgs, pillClass, pillText, summary, callArgs);
     let body = card.querySelector('.tool-card__body');
     if (!body) {
       body = document.createElement('div');
@@ -971,9 +1022,17 @@ if (!card) {
       afterTranscriptAppend(refs, false);
     };
     card._lazyBody = lazyBody;
-    if (card.classList.contains('is-expanded') || !toolResult.ok) {
-      // Errors auto-expand — build immediately so the failure is visible.
-      lazyBody();
+    // A subagent card's whole point is the delegated conversation it holds.
+    // Leaving its body lazy meant a finished run rendered as a bare
+    // "Subagent · task · ok" header with nothing under it until the user
+    // guessed that the row is tappable — the transcript looked like the run
+    // had produced nothing. Delegate cards keep the body VISIBLE (a
+    // delegation is a rare, deliberate action, not the tool-heavy chatter the
+    // lazy path was added for), still built on first paint rather than
+    // deferred.
+    if (isSubagent || card.classList.contains('is-expanded') || !toolResult.ok) {
+    // Errors auto-expand — build immediately so the failure is visible.
+    lazyBody();
     } else {
       // Build on the first head tap. The head's own toggle handler
       // (buildToolCardHead) calls card._lazyBody() when it opens the
@@ -987,16 +1046,21 @@ if (!card) {
 // Expand errors automatically so the user sees what went wrong.
 // Successful results stay collapsed; webpreview publishes its image to the
 // dedicated dock above the composer rather than expanding in the transcript.
+// A subagent card is the exception: its built body IS the delegated
+// transcript, so it stays expanded (never over a deliberate collapse) instead
+// of showing a header with an invisible conversation under it.
 if (!toolResult.ok) {
 card.classList.add('is-expanded');
+} else if (isSubagent) {
+if (!card._userCollapsed) card.classList.add('is-expanded');
 } else if (!card._userCollapsed) card.classList.remove('is-expanded');
   afterTranscriptAppend(refs, true);
 }
 
-// rebuildToolCardHead(card, toolName, args, pillClass, pillText)
-function rebuildToolCardHead(card, toolName, args, pillClass, pillText, resultSummary) {
+// rebuildToolCardHead(card, toolName, args, pillClass, pillText, resultSummary, toolArgs)
+function rebuildToolCardHead(card, toolName, args, pillClass, pillText, resultSummary, toolArgs) {
   const oldHead = card.querySelector(':scope > .tool-card__head');
-  const fresh = buildToolCardHead(toolName, args, pillClass, pillText, resultSummary);
+  const fresh = buildToolCardHead(toolName, args, pillClass, pillText, resultSummary, toolArgs);
   if (oldHead && oldHead.parentNode === card) {
     card.replaceChild(fresh, oldHead);
   } else {
@@ -1179,9 +1243,11 @@ export function renderSubagentChat(card, toolResult) {
     // A nested system turn is the subagent's own prompt — the generic
     // focused-subagent instruction or the delegated agent's instructions.
     // Render it as the same collapsed system card the top-level transcript
-    // uses instead of dumping its content parts as JSON.
+    // uses instead of dumping its content parts as JSON. A delegated run
+    // carries its agent name on the tool call, so the row's role label names
+    // WHICH agent answered instead of the generic `system`.
     if (role === 'system') {
-      const sysRow = buildSystemPromptRow(text, 'tool-card__subagent-msg');
+    const sysRow = buildSystemPromptRow(text, 'tool-card__subagent-msg', agentLabel(r && r.agent));
       const sysCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
       appendCallRows(sysRow, sysCalls);
       wrap.appendChild(sysRow);
