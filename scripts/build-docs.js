@@ -669,12 +669,6 @@ table tr:last-child td { border-bottom: 0; }
   font-size: 12px;
 }
 
-@media (max-width: 760px) {
-.site { grid-template-columns: minmax(0, 1fr); }
-.site.site--full .main { margin: 0; max-width: none; }
-.sidebar { position: static; max-height: none; order: 2; }
-.main { padding: 20px 16px 48px 16px; order: 1; }
-}
 /* Top navigation (shared across pages). */
 .topnav {
   display: flex;
@@ -841,8 +835,9 @@ table tr:last-child td { border-bottom: 0; }
 .section .lead { color: var(--text); }
 @media (max-width: 760px) {
 .site { grid-template-columns: minmax(0, 1fr); }
-.sidebar { position: static; max-height: none; }
-.main { padding: 20px 16px 48px 16px; }
+.site.site--full .main { margin: 0; max-width: none; }
+.sidebar { position: static; max-height: none; order: 2; }
+.main { padding: 20px 16px 48px 16px; order: 1; }
 /* Compact top nav: the brand always occupies its own full-width line, so the
 * links reliably drop to a full-width second row beneath it at every mobile
 * width (there is no awkward mid-range state where the links sit beside the
