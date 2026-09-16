@@ -152,8 +152,28 @@ const BINARY_MODE_TOOLS = new Set(['ask_user']);
 // Everything else defaults to `ask` — a prompt on first use — which is the
 // right default for a read-mostly tool. These are the tools whose *first use
 // without an answer* would already have a cost, so they stay off.
+//
+// `image_gen` is such a tool, but it is now a *leaf* of the File tools
+// family (see configToolName), so this default only applies while neither
+// the family nor the leaf carries a stored mode: opening the File tools gate
+// governs image generation too, and a project that wants the picture tool
+// alone can still pin an `off` / `allow` leaf. See docs/features/image-generation.md.
 const DEFAULT_OFF_TOOLS = new Set(['image_gen']);
+// The model-facing file operations. Their specs are collected one per
+// name, and an `off` on the family (`tools.file`) hides all of them.
 const FILE_TOOL_NAMES = new Set(['read_file', 'list_files', 'search_files', 'write_file', 'edit_file']);
+// The image-generation tool. It no longer has a family of its own: it is a
+// File tools leaf, so one `tools.file` Off / Ask / Allow covers reading,
+// listing, searching, writing, editing, *and* drawing. `configToolName`
+// maps it to `file`, and every per-leaf override path treats it like the
+// five file operations.
+const IMAGE_TOOL_NAME = 'image_gen';
+// Every tool that resolves its authorization through the File tools family
+// (the `file` gate plus its per-leaf overrides). Used by the effective-mode
+// resolver, the chat-override reader/writer, and the GET /api/tools/
+// authorization view — the family's children, not just its five read/write
+// operations.
+const FILE_FAMILY_TOOLS = new Set([...FILE_TOOL_NAMES, IMAGE_TOOL_NAME]);
 const MCP_FILE = '.mcp.json';
 
 // ---- Per-chat authorization overrides (decisions §17) --------------------
@@ -195,7 +215,7 @@ function readChatAuthOverrides(projectDir, chatId) {
   const nativeSource = (raw.native && typeof raw.native === 'object' && !Array.isArray(raw.native))
     ? raw.native
     : raw;
-  for (const name of [...NATIVE_TOOLS, ...FILE_TOOL_NAMES]) {
+  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS]) {
     const entry = nativeSource[name];
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     if (typeof entry.mode !== 'string' || !MODES.has(entry.mode)) continue;
@@ -304,8 +324,10 @@ function writeMcpConfig(projectDir, config) {
 // Model-facing file operations share the single project.tools.file gate.
 // Keep the original operation name for session grants and audit events, but
 // resolve enablement and authorization mode through the canonical family.
+// `image_gen` rides the same gate: it is a File tools leaf, so one `file`
+// mode covers every read/write operation *and* drawing.
 function configToolName(tool) {
-  return FILE_TOOL_NAMES.has(tool) ? 'file' : tool;
+  return FILE_FAMILY_TOOLS.has(tool) ? 'file' : tool;
 }
 
 // Split `mcp__<serverSlug>__<toolName>` into its parts. Returns null for
@@ -412,18 +434,20 @@ function effectiveConfig(projectDir, tool, chatId) {
   const project = settings.getProject(projectDir);
   const app = settings.getApp();
   if (NATIVE_TOOLS.has(tool)) {
-    const projectToolValue = FILE_TOOL_NAMES.has(requestedTool) && project && project.tools && project.tools[requestedTool];
-    const appToolValue = FILE_TOOL_NAMES.has(requestedTool) && app && app.tools && app.tools[requestedTool];
+    const projectToolValue = FILE_FAMILY_TOOLS.has(requestedTool) && project && project.tools && project.tools[requestedTool];
+    const appToolValue = FILE_FAMILY_TOOLS.has(requestedTool) && app && app.tools && app.tools[requestedTool];
     const projectFamilyValue = project && project.tools && project.tools[tool];
     const appFamilyValue = app && app.tools && app.tools[tool];
     let value;
     let source;
-    if (FILE_TOOL_NAMES.has(requestedTool)) {
-      // File-operation checkboxes can persist per-leaf overrides, but a
-      // family-level Allow must mean Allow for every non-disabled leaf. A stale
-      // per-operation `ask` / `allowlist` entry must not mask `tools.file.mode =
-      // allow`, or the prompt says File tools are allowed while read_file still
-      // asks. Only an explicit per-operation `off` tightens family Allow.
+    if (FILE_FAMILY_TOOLS.has(requestedTool)) {
+      // File-tool checkboxes (the five operations *and* `image_gen`, which
+      // is now a File tools leaf) can persist per-leaf overrides, but a
+      // family-level Allow must mean Allow for every non-disabled leaf. A
+      // stale per-leaf `ask` / `allowlist` entry must not mask
+      // `tools.file.mode = allow`, or the prompt says File tools are allowed
+      // while read_file still asks. Only an explicit per-leaf `off` tightens
+      // family Allow.
       if (projectToolValue && projectToolValue.mode === 'off') { value = projectToolValue; source = 'project-tool'; }
       else if (projectFamilyValue && projectFamilyValue.mode === 'allow') { value = projectFamilyValue; source = 'project'; }
       else if (projectToolValue) { value = projectToolValue; source = 'project-tool'; }
@@ -442,7 +466,12 @@ function effectiveConfig(projectDir, tool, chatId) {
     // use, `allow` runs directly, and `off` explicitly disables execution.
     // Keep accepting legacy `enabled` fields in project files, but do not let
     // a missing/false flag make a base tool disappear from the model.
-    return normalizeConfig(value, source, true, tool);
+    //
+    // The *requested* name decides the default, not the family name: a
+    // `image_gen` leaf whose family and leaf both carry no stored mode still
+    // resolves to `off` (DEFAULT_OFF_TOOLS), while its `read_file` siblings
+    // default to `ask`. Storing any mode — family or leaf — overrides that.
+    return normalizeConfig(value, source, true, requestedTool);
   }
   if (tool.startsWith('mcp__')) {
     const chatOverride = chatMcpOverride(projectDir, chatId, tool);
@@ -616,7 +645,7 @@ function setAuthorization(projectDir, patch) {
   // defaultTimeoutMs, maxTimeoutMs }. The caller's `enabled` flag is
   // owned by the project tools toggle (a different setting) and is
   // not duplicated here.
-  for (const name of [...NATIVE_TOOLS, ...FILE_TOOL_NAMES]) {
+  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS]) {
     if (patch.tools && patch.tools[name]) {
       const cfg = normalizeConfig(patch.tools[name], 'project', true);
       // Preserve entries already applied from this patch. A request can
@@ -886,6 +915,10 @@ function recordDecision(projectDir, chatId, callId, decision, payload) {
 module.exports = {
 MODES,
 FILE_TOOL_NAMES,
+// Every tool that resolves through the File tools family (`file` gate plus
+// its per-leaf overrides): the five read/write operations and `image_gen`.
+FILE_FAMILY_TOOLS,
+IMAGE_TOOL_NAME,
 readChatAuthOverrides,
 setChatAuthorization,
 getAuthorization,

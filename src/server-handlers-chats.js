@@ -437,6 +437,12 @@ chatDisabled: skillState.chatDisabled.has(s.id)
       try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); } catch { /* skip */ }
       try { toolSpecs.push(require('./tools/webpreview.js').SPEC); } catch { /* skip */ }
 try { toolSpecs.push(require('./tools/restart.js').SPEC); } catch { /* skip */ }
+try {
+  const img = require('./tools/image.js');
+  let imageModels = [];
+  try { imageModels = img.imageModelRecords(dir); } catch { /* no image models configured */ }
+  toolSpecs.push(img.buildSpec ? img.buildSpec(imageModels) : img.SPEC);
+  } catch { /* skip */ }
 if (fileToolsEnabled) {
 
         try {
@@ -458,22 +464,23 @@ if (fileToolsEnabled) {
       try {
         const authz = require('./tools/authorization.js');
         const authState = authz.getAuthorization(dir, id);
-        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'image_gen']) {
-          const cfg = authState.tools[family];
-          if (cfg && cfg.mode === 'off') {
-            const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
-            for (let i = toolSpecs.length - 1; i >= 0; i--) {
-              const spec = toolSpecs[i];
-              if (spec && spec.function && hidden.has(spec.function.name)) toolSpecs.splice(i, 1);
-            }
-          }
-        }
-        // Per-leaf file overrides (e.g. tools.read_file.mode = "off"
-        // with the `file` family enabled) must drop just that operation,
-        // matching what streamChat advertises to the model.
+        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
+        const cfg = authState.tools[family];
+        if (cfg && cfg.mode === 'off') {
+        const hidden = family === 'file' ? authz.FILE_FAMILY_TOOLS : new Set([family]);
         for (let i = toolSpecs.length - 1; i >= 0; i--) {
         const spec = toolSpecs[i];
-        if (!spec || !spec.function || !authz.FILE_TOOL_NAMES.has(spec.function.name)) continue;
+        if (spec && spec.function && hidden.has(spec.function.name)) toolSpecs.splice(i, 1);
+        }
+        }
+        }
+        // Per-leaf file overrides (e.g. tools.read_file.mode = "off"
+        // with the `file` family enabled) must drop just that operation —
+        // and `image_gen`, a File tools leaf whose unconfigured default is
+        // `off` — matching what streamChat advertises to the model.
+        for (let i = toolSpecs.length - 1; i >= 0; i--) {
+        const spec = toolSpecs[i];
+        if (!spec || !spec.function || !authz.FILE_FAMILY_TOOLS.has(spec.function.name)) continue;
         const cfg = authz.effectiveConfig(dir, spec.function.name, id);
         if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
         }

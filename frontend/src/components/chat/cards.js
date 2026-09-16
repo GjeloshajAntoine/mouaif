@@ -120,7 +120,6 @@ head.appendChild(scoped);
     report_progress: 'report_progress',
     webpreview: 'webpreview',
     restart_app: 'restart_app',
-    image_gen: 'image_gen',
     files: 'file'
   };
   for (const g of groups) {

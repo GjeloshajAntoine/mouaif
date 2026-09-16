@@ -415,7 +415,7 @@ setCustomActions(response.body.actions);
     const t = body.tools;
     if (t && typeof t === 'object') {
       const auth = {};
-      for (const name of ['shell', 'file', 'subagent', 'task', 'webpreview', 'restart_app', 'report_progress', 'image_gen']) {
+      for (const name of ['shell', 'file', 'subagent', 'task', 'webpreview', 'restart_app', 'report_progress']) {
         if (!t[name]) continue;
         auth[name] = {
           mode: t[name].mode || 'ask',

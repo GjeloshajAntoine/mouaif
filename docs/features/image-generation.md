@@ -6,7 +6,7 @@
 
 ## Usage
 
-Enable the tool for the project in **Settings → Project → Image generation**, pick an image model, and ask for a picture:
+Enable the tool for the project in **Settings → Project → Tools → File tools** (its `image_gen` leaf or the whole File tools family), set the image model in the project file, and ask for a picture:
 
 ```text
 generate a hero image for the landing page: a red fox in falling snow, soft morning light
@@ -34,7 +34,7 @@ and receives a small three-line header plus the picture:
 | Argument | Purpose |
 | --- | --- |
 | `prompt` | **Required.** What to draw. |
-| `model` / `provider` | Pick a specific image model. Defaults to the project's configured one (Settings → Project → Image generation). |
+| `model` / `provider` | Pick a specific image model. Defaults to the project's configured one (the `imageGeneration` block in `.mouaif.json`). |
 | `path` | Where to save it, project-relative. A directory is allowed (a name is generated inside it); a name with no extension gets the MIME-derived one (`.png`, `.jpg`, `.webp`, …). |
 | `size` | `WIDTHxHEIGHT`, e.g. `1024x1024`. Ignored by providers that do not take one. |
 | `aspectRatio` | Imagen-style `16:9`. |
@@ -93,14 +93,14 @@ Gemini needs one extra rule. Its `GET /v1beta/models` reports a `supportedGenera
 
 ## Settings
 
-**Settings → Project → Image generation** carries an **Off / Ask / Allow** authorization segment, **off by default** — this is the one tool that spends money outside a text model and writes files into the project, so a project opts in explicitly. The default itself lives in the authorization module (`DEFAULT_OFF_TOOLS` in [src/tools/authorization.js](../../src/tools/authorization.js)), so an unconfigured project reports `off` rather than `ask`; storing any mode overrides it.
+`image_gen` is a **File tools** leaf, so **Settings → Project → Tools → File tools** carries the single **Off / Ask / Allow** authorization segment that governs reading, listing, searching, writing, editing, *and* drawing. `image_gen` is the one leaf whose *unconfigured* mode is `off`: it spends money outside a text model and writes files into the project, so a project opts in explicitly. The default lives in the authorization module (`DEFAULT_OFF_TOOLS` in [src/tools/authorization.js](../../src/tools/authorization.js)), so an unconfigured project reports `off` for the `image_gen` leaf while its `read_file` siblings report `ask`. Opening the File tools family gate (`tools.file.mode`) turns image generation on with it; a per-leaf `tools.image_gen.mode` still tightens or relaxes just that one tool.
 
 The image **model** the agent draws with is stored in `.mouaif.json` next to the other project settings, because a picture is project content. There is no inline picker in the settings UI — set it in the project file directly:
 
 ```json
 {
   "imageGeneration": { "modelId": "gpt-image-1", "providerId": "openai-compatible" },
-  "tools": { "image_gen": { "mode": "ask" } }
+  "tools": { "file": { "mode": "ask" }, "image_gen": { "mode": "ask" } }
 }
 ```
 
@@ -132,7 +132,7 @@ Both are proxies, for the same reason the chat endpoint is one ([decisions §10]
 - **The model never pays for base64 twice.** `compactToolFeedback` in [src/toolFeedback.js](../../src/toolFeedback.js) has an `image_gen` branch that replaces the whole result with `{ ok, model, images: [{ relPath, mimeType, bytes }], note }`, and `omitImagePayloads` replaces any image `data` with `[image payload omitted; attached separately]` in reconstructed history. The pixels ride exactly one vision message.
 - **Path safety reuses the file tools'. ** `outputPathFor` resolves through `resolveSandbox`, and `saveImage` refuses anything whose relative path escapes the project root (`EOUTSIDE_PROJECT`), so a model-supplied `path` cannot write outside the project.
 - **Caps.** `n` is clamped to 4, a prompt over 8 KB and a picture over 8 MB are refused with `ETOOL_CAP` / `ETOOLARGE`. The per-picture cap is deliberately below what a transcript can carry comfortably and *above* `read_file`'s own 4 MB image cap would be wrong the other way — a generated file the agent could not read back would be worse than a typed error.
-- **Authorization** rides the same gate as every other native tool. `image_gen` is in `NATIVE_TOOLS` and in `DEFAULT_OFF_TOOLS` ([src/tools/authorization.js](../../src/tools/authorization.js)), so an `off` project never advertises the tool (the spec is dropped from the request, costing zero prompt tokens) and the chat's Tools card / popup carry an Off/Ask/Allow segment for it (a chat override wins over the project).
+- **Authorization** rides the File tools gate. `image_gen` resolves through the `file` family (`configToolName` in [src/tools/authorization.js](../../src/tools/authorization.js) maps the leaf to `file`), so one **File tools** Off / Ask / Allow covers it alongside the five read/write operations. It also sits in `DEFAULT_OFF_TOOLS`, so its *unconfigured* leaf mode is `off` even while the family defaults to `ask` — the advertisement gate drops the spec from the request (zero prompt tokens) until the project opts in, and the chat's Tools card / popup and Settings → Project → Tools both render it as a leaf of the File tools group (a chat override wins over the project).
 - **The model tool always saves.** A tool call is scaffolding for project work, so its result must be durable: `runImageTool` writes every picture unless the caller passes `save: false`, which only the REST preview path does.
 - **Cost.** The run is priced with `src/usage.js` when the provider reports usage on its response. Most image endpoints bill per picture and report nothing, which is why a run with no usage stays `known: false` (rendered `--`) rather than `$0.00` — the app's existing convention ([decisions §14](../decisions.md)).
 - **The image catalog is read as its own slice, like dictation's.** [src/modelList.js](../../src/modelList.js) already separated the chat and transcription caches so one product's list could not answer another's question; `purpose: 'image'` is the third slice, backed by `ai.listImageModels` (a `listImageModels` adapter on the OpenRouter `ENDPOINTS` row, `null` for every other provider). The three slices live under three cache keys, so a picker cannot read the wrong answer out of a warm cache.

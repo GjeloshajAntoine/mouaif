@@ -42,10 +42,10 @@ function check(name, cond, detail) {
 function advertise(specs, dir) {
   const out = specs.slice();
   const authState = authz.getAuthorization(dir);
-  for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'image_gen']) {
+  for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
     const cfg = authState.tools[family];
     if (cfg && cfg.mode === 'off') {
-      const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
+      const hidden = family === 'file' ? authz.FILE_FAMILY_TOOLS : new Set([family]);
       for (let i = out.length - 1; i >= 0; i--) {
         const spec = out[i];
         if (spec && spec.function && hidden.has(spec.function.name)) out.splice(i, 1);
@@ -54,7 +54,7 @@ function advertise(specs, dir) {
   }
   for (let i = out.length - 1; i >= 0; i--) {
     const spec = out[i];
-    if (!spec || !spec.function || !authz.FILE_TOOL_NAMES.has(spec.function.name)) continue;
+    if (!spec || !spec.function || !authz.FILE_FAMILY_TOOLS.has(spec.function.name)) continue;
     const cfg = authz.effectiveConfig(dir, spec.function.name);
     if (cfg && cfg.mode === 'off') out.splice(i, 1);
   }
@@ -128,28 +128,42 @@ try {
   console.log('FAIL  unexpected error -- ' + (error && error.message ? error.message : error));
 } finally {
   
-// ---- image_gen: off by default, hidden while off --------------------
-// The first native family whose *unconfigured* mode is off, because it
-// spends money outside a text model and writes files into the project.
+// ---- image_gen: a File tools leaf, off until the family opts in -----
+// `image_gen` is no longer its own authorization family — it rides the
+// `file` gate like the five read/write operations, but its *unconfigured*
+// mode is still `off` (DEFAULT_OFF_TOOLS), because it spends money outside
+// a text model and writes files into the project. Opening the File tools
+// gate turns it on; a project that wants the picture tool alone can pin an
+// explicit per-leaf override.
 {
   const imageProjectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-image-off-proj-'));
   const imageSpec = require('../src/tools/image.js').SPEC;
   const before = authz.effectiveConfig(imageProjectDir, 'image_gen');
   check('an unconfigured project reports image_gen off', before.mode === 'off', String(before.mode));
-  check('read_file still defaults to ask next to it',
+  check('read_file defaults to ask next to the image_gen leaf',
     authz.effectiveConfig(imageProjectDir, 'read_file').mode === 'ask');
+  check('image_gen resolves through the file family',
+    authz.configToolName('image_gen') === 'file');
 
   const offSet = advertise([imageSpec], imageProjectDir);
   check('an off image_gen is not advertised', offSet.length === 0, 'got ' + offSet.length + ' spec(s)');
 
-  authz.setAuthorization(imageProjectDir, { tools: { image_gen: { mode: 'allow' } } });
-  check('a stored mode overrides the off default',
+  // Opening the File tools family gate turns image generation on with it.
+  authz.setAuthorization(imageProjectDir, { tools: { file: { mode: 'allow' } } });
+  check('a file family allow turns image_gen on',
     authz.effectiveConfig(imageProjectDir, 'image_gen').mode === 'allow',
     authz.effectiveConfig(imageProjectDir, 'image_gen').mode);
   check('an allowed image_gen is advertised', advertise([imageSpec], imageProjectDir).length === 1);
 
-  authz.setAuthorization(imageProjectDir, { tools: { image_gen: { mode: 'off' } } });
-  check('an explicit off is honored too', advertise([imageSpec], imageProjectDir).length === 0);
+  // A family-level off hides it again, and an explicit per-leaf off still
+  // tightens a family-level allow.
+  authz.setAuthorization(imageProjectDir, { tools: { file: { mode: 'off' } } });
+  check('a file family off hides image_gen', advertise([imageSpec], imageProjectDir).length === 0);
+  authz.setAuthorization(imageProjectDir, { tools: { file: { mode: 'allow' }, image_gen: { mode: 'off' } } });
+  check('a per-leaf image_gen off overrides a family allow',
+    authz.effectiveConfig(imageProjectDir, 'image_gen').mode === 'off',
+    authz.effectiveConfig(imageProjectDir, 'image_gen').mode);
+  check('a per-leaf image_gen off is not advertised', advertise([imageSpec], imageProjectDir).length === 0);
 }
 
 console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

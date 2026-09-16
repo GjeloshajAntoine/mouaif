@@ -545,28 +545,31 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     if (opts && opts.projectDir) {
       const authz = require('./tools/authorization.js');
       const authState = authz.getAuthorization(opts.projectDir, opts && opts.chatId);
-      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'image_gen']) {
-        const cfg = authState.tools[family];
-        if (cfg && cfg.mode === 'off') {
-          const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
-          for (let i = toolSpecs.length - 1; i >= 0; i--) {
-            const spec = toolSpecs[i];
-            if (spec && spec.function && hidden.has(spec.function.name)) toolSpecs.splice(i, 1);
-          }
-        }
+      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
+      const cfg = authState.tools[family];
+      if (cfg && cfg.mode === 'off') {
+      const hidden = family === 'file' ? authz.FILE_FAMILY_TOOLS : new Set([family]);
+      for (let i = toolSpecs.length - 1; i >= 0; i--) {
+        const spec = toolSpecs[i];
+        if (spec && spec.function && hidden.has(spec.function.name)) toolSpecs.splice(i, 1);
       }
-      // Per-leaf file overrides: a single file operation can carry its
-      // own `off` (e.g. tools.read_file.mode = "off") while the `file`
-      // family stays enabled. The family loop above only fires when the
-      // family itself is `off`, so resolve each file-tool spec through
-      // effectiveConfig to honor the leaf. Without this the leaf was
-      // still advertised even though the execution gate rejects it with
-      // ETOOL_DISABLED — the model paid tokens for a tool it could never
-      // use. A family-level `off` still hides every leaf (the loop above
-      // runs first and drops them all).
+      }
+      }
+      // Per-leaf file overrides: a single file operation (or `image_gen`,
+      // now a File tools leaf) can carry its own `off` (e.g.
+      // tools.read_file.mode = "off") while the `file` family stays
+      // enabled. The family loop above only fires when the family itself
+      // is `off`, so resolve each file-tool spec through effectiveConfig to
+      // honor the leaf. Without this the leaf was still advertised even
+      // though the execution gate rejects it with ETOOL_DISABLED — the
+      // model paid tokens for a tool it could never use. This is also what
+      // keeps `image_gen` off by default: its unconfigured mode is `off`
+      // even while the `file` family defaults to `ask`. A family-level
+      // `off` still hides every leaf (the loop above runs first and drops
+      // them all).
       for (let i = toolSpecs.length - 1; i >= 0; i--) {
       const spec = toolSpecs[i];
-      if (!spec || !spec.function || !authz.FILE_TOOL_NAMES.has(spec.function.name)) continue;
+      if (!spec || !spec.function || !authz.FILE_FAMILY_TOOLS.has(spec.function.name)) continue;
       const cfg = authz.effectiveConfig(opts.projectDir, spec.function.name, opts && opts.chatId);
       if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
       }

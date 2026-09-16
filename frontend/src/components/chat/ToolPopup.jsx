@@ -104,7 +104,6 @@ export function ToolPopup(props) {
     task: 'task',
 webpreview: 'webpreview',
 restart_app: 'restart_app',
-image_gen: 'image_gen',
 files: 'file'
 
   };

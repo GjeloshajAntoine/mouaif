@@ -235,7 +235,7 @@ export function buildAgentToolGroups({ choices, restricted, selected, mcpServers
 const isOn = (value) => !restricted || selected(value);
 const groups = [];
 const natives = choices.filter((c) => !c.value.startsWith('mcp__'));
-const files = natives.filter((c) => ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file'].includes(c.value));
+const files = natives.filter((c) => ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'image_gen'].includes(c.value));
 for (const c of natives) {
 if (files.includes(c)) continue;
 const entry = catalog.find((t) => t && t.name === c.value);
@@ -252,7 +252,7 @@ tools: [{ id: c.value, name: c.label, checked: isOn(c.value) }]
     groups.push({
       id: 'files',
       name: 'File tools',
-      description: 'read, list, search, write, edit',
+      description: 'read, list, search, write, edit, draw',
       checked: files.every((c) => isOn(c.value)),
       tools: files.map((c) => ({ id: c.value, name: c.label, checked: isOn(c.value) }))
     });
@@ -322,7 +322,7 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
     used: usedTools.has(t.name)
   }, extra || {});
 
-  for (const name of ['shell', 'subagent', 'ask_user', 'task', 'webpreview', 'restart_app', 'image_gen']) {
+  for (const name of ['shell', 'subagent', 'ask_user', 'task', 'webpreview', 'restart_app']) {
     const t = catalog.find((x) => x && x.name === name);
     if (!t) continue;
     groups.push({
@@ -352,7 +352,7 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
     groups.push({
       id: 'files',
       name: 'File tools',
-      description: 'read, list, search, write, edit',
+      description: 'read, list, search, write, edit, draw',
       checked: allToolsOn(fileTools),
       tools: fileTools.map((t) => leaf(t))
     });

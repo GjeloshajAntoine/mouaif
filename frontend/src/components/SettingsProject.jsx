@@ -79,11 +79,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [taskAuth, setTaskAuth] = useState({ mode: 'ask', allowlist: [] });
 const [webpreviewAuth, setWebpreviewAuth] = useState({ mode: 'ask', allowlist: [] });
 const [restartAuth, setRestartAuth] = useState({ mode: 'ask', allowlist: [] });
-// Image generation is OFF by default: it is the one tool that spends money
-// outside a text model and writes files into the project, so the project
-// opts in explicitly (the authorization module's default for a family with
-// no stored config is `ask`, so the default is written here instead).
-const [imageAuth, setImageAuth] = useState({ mode: 'off', allowlist: [] });
 const [askUserMode, setAskUserMode] = useState('ask');
 
   const [shellStatusMsg, setShellStatusMsg] = useState('');
@@ -93,7 +88,6 @@ const [askUserMode, setAskUserMode] = useState('ask');
   const [taskStatusMsg, setTaskStatusMsg] = useState('');
 const [webpreviewStatusMsg, setWebpreviewStatusMsg] = useState('');
 const [restartStatusMsg, setRestartStatusMsg] = useState('');
-const [imageStatusMsg, setImageStatusMsg] = useState('');
 const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
 const [toolsCatalog, setToolsCatalog] = useState([]);
 // Web preview page state — the dedicated "Web preview" sub-page captures
@@ -230,7 +224,7 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
         allowlist: file && Array.isArray(file.allowlist) ? file.allowlist : []
       });
       setFileToolAuth(Object.fromEntries(
-        ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file'].map((name) => [name, authz.status === 200 && authz.body.tools && authz.body.tools[name]])
+      ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'image_gen'].map((name) => [name, authz.status === 200 && authz.body.tools && authz.body.tools[name]])
       ));
       const sub = authz.status === 200 && authz.body.tools && authz.body.tools.subagent;
       setSubagentAuth({
@@ -256,11 +250,6 @@ const restart = authz.status === 200 && authz.body.tools && authz.body.tools.res
 setRestartAuth({
 mode: (restart && restart.mode) || 'ask',
 allowlist: restart && Array.isArray(restart.allowlist) ? restart.allowlist : []
-});
-const imageGen = authz.status === 200 && authz.body.tools && authz.body.tools.image_gen;
-setImageAuth({
-mode: (imageGen && imageGen.mode) || 'off',
-allowlist: imageGen && Array.isArray(imageGen.allowlist) ? imageGen.allowlist : []
 });
 const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
 
@@ -482,7 +471,6 @@ setSkillsOn(cp.skills !== false);
   function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskAuth, setTaskStatusMsg, newMode); }
 function pickWebpreviewMode(newMode) { pickToolMode('webpreview', webpreviewAuth, setWebpreviewAuth, setWebpreviewStatusMsg, newMode); }
 function pickRestartMode(newMode) { pickToolMode('restart_app', restartAuth, setRestartAuth, setRestartStatusMsg, newMode); }
-function pickImageMode(newMode) { pickToolMode('image_gen', imageAuth, setImageAuth, setImageStatusMsg, newMode); }
 
 // ---- Web preview page handlers ----------------------------------------
 // The webpreview capture endpoint is scoped to a chat (authorization and
@@ -858,23 +846,6 @@ tools: [leaf(restartTool, { checked: isOn(restartAuth.mode) })],
 extra: restartStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, restartStatusMsg) : null
 });
 }
-    const imageTool = catalog.find((t) => t.name === 'image_gen');
-if (imageTool) {
-groups.push({
-id: 'image_gen',
-name: 'Image generation',
-description: shortDesc(imageTool.description),
-title: imageTool.description || '',
-checked: isOn(imageAuth.mode),
-control: toolModeSegs('Image generation', segMode(imageAuth.mode), pickImageMode, [
-{ value: 'off', label: 'Off' },
-{ value: 'ask', label: 'Ask' },
-{ value: 'allow', label: 'Allow' }
-]),
-tools: [leaf(imageTool, { checked: isOn(imageAuth.mode) })],
-extra: imageStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, imageStatusMsg) : null
-});
-}
 const askTool = catalog.find((t) => t.name === 'ask_user');
 if (askTool) {
 
@@ -898,7 +869,7 @@ if (askTool) {
       groups.push({
         id: 'files',
         name: 'File tools',
-        description: 'read, list, search, write, edit',
+        description: 'read, list, search, write, edit, draw',
         checked: isOn(fileAuth.mode),
         control: toolModeSegs('File tools', segMode(fileAuth.mode), pickFileMode, [
           { value: 'off', label: 'Off' },
@@ -1010,7 +981,6 @@ if (askTool) {
     else if (groupId === 'task') pickTaskMode(mode);
     else if (groupId === 'webpreview') pickWebpreviewMode(mode);
 else if (groupId === 'restart_app') pickRestartMode(mode);
-else if (groupId === 'image_gen') pickImageMode(mode);
 else if (groupId === 'report_progress') pickProgressMode(mode);
 
     else if (groupId === 'ask_user') pickAskUserMode(mode);
