@@ -44,6 +44,51 @@ function withTimeout(promise, ms, label) {
 const PERMISSION_PROMPT_TIMEOUT_MS = 30_000;
 // How long to wait for the service worker to reach the active state.
 const SW_READY_TIMEOUT_MS = 10_000;
+// Fallback body width when the DOM cannot be measured (a headless browser, a
+// worker-only context): the phone row the ASCII status bar was designed for.
+const DEFAULT_STATUS_BAR_MAX_CHARS = 32;
+
+// statusBarMaxChars() — how many characters fit on one notification body
+// line on THIS device.
+//
+// The server renders the ASCII status bar at one of three cell counts
+// (src/push.js BAR_CELLS) and needs to know which surface will show it: a
+// phone lock screen gives a plain-text body roughly 32 characters per line,
+// a tablet-held PWA about 44, a desktop toast much more. The reported number
+// is stored on the subscription row, so a phone and a desktop signed in to
+// the same server each get a bar sized to their own screen.
+//
+// It is measured, not sniffed: a hidden element styled with the page's own
+// monospace notification metrics is laid out at the viewport width and its
+// `ch` capacity counted. That grows with the window on a desktop and stays
+// at the phone width in an installed PWA, with no user-agent test to drift.
+function statusBarMaxChars() {
+  try {
+    if (typeof document === 'undefined' || !document.body) return DEFAULT_STATUS_BAR_MAX_CHARS;
+    const probe = document.createElement('span');
+    probe.textContent = '0'.repeat(200);
+    probe.setAttribute('aria-hidden', 'true');
+    // 0.7rem monospace is the size the OS previews a notification body at;
+    // the notification font is not the page font, so a proportional fallback
+    // is fine — the server only needs the size bucket, not the exact count.
+    probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;'
+      + 'white-space:nowrap;font:12px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;';
+    document.body.appendChild(probe);
+    const charWidth = probe.getBoundingClientRect().width / 200;
+    probe.remove();
+    if (!charWidth || !Number.isFinite(charWidth)) return DEFAULT_STATUS_BAR_MAX_CHARS;
+    const viewport = (window.visualViewport && window.visualViewport.width) || window.innerWidth || 0;
+    if (!viewport) return DEFAULT_STATUS_BAR_MAX_CHARS;
+    // The OS wraps the body to the notification card, which is narrower than
+    // the viewport (margins plus the app icon/badge gutter). 0.92 is a
+    // conservative fit so a measured bar never overflows the card.
+    const usable = viewport * 0.92;
+    const chars = Math.floor(usable / charWidth);
+    return chars > 0 ? chars : DEFAULT_STATUS_BAR_MAX_CHARS;
+  } catch {
+    return DEFAULT_STATUS_BAR_MAX_CHARS;
+  }
+}
 
 async function registerSubscription(sub) {
   const subData = sub && sub.toJSON ? sub.toJSON() : null;
@@ -52,7 +97,11 @@ async function registerSubscription(sub) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      subscription: { endpoint: subData.endpoint, keys: subData.keys }
+      subscription: {
+        endpoint: subData.endpoint,
+        keys: subData.keys,
+        statusBarMaxChars: statusBarMaxChars()
+      }
     })
   });
   return r.status === 200;

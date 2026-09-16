@@ -38,19 +38,26 @@ async function handlePush(req, res, parsed, sessionToken, servedOrigin) {
     }
     const { endpoint, keys } = body.subscription;
     if (!keys || !keys.p256dh || !keys.auth) {
-      return sendJSON(res, 400, { error: 'subscription must include keys.p256dh and keys.auth', code: 'EBADINPUT' });
+    return sendJSON(res, 400, { error: 'subscription must include keys.p256dh and keys.auth', code: 'EBADINPUT' });
     }
+    // `statusBarMaxChars` is how many characters one notification body line
+    // holds on this device. The status push uses it to pick the ASCII bar
+    // width (src/push.js BAR_CELLS) instead of guessing a single size for
+    // phone, tablet, and desktop. Optional: the page always sends it, and a
+    // client that omits it keeps the phone default.
+    const statusBarMaxChars = Number(body.subscription.statusBarMaxChars);
     try {
-      const result = push.addSubscription({
-        sessionId: sid,
-        endpoint,
-        p256dh: keys.p256dh,
-        auth: keys.auth,
-        origin: servedOrigin || null
-      });
-      return sendJSON(res, 200, { ok: true, id: result.id });
+    const result = push.addSubscription({
+      sessionId: sid,
+      endpoint,
+      p256dh: keys.p256dh,
+      auth: keys.auth,
+      origin: servedOrigin || null,
+      statusBarMaxChars: Number.isFinite(statusBarMaxChars) && statusBarMaxChars > 0 ? statusBarMaxChars : null
+    });
+    return sendJSON(res, 200, { ok: true, id: result.id });
     } catch (e) {
-      return sendJSON(res, 500, { error: e.message, code: 'EDB' });
+    return sendJSON(res, 500, { error: e.message, code: 'EDB' });
     }
   }
 

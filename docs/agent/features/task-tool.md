@@ -23,7 +23,7 @@ Fix push layout — 2 of 5
 ```
 
 - **Title row** — chat name on the left, running turn usage on the right: total tokens (formatted via `usage.formatTokens`, e.g. `12K tok`) plus the accumulated price (`usage.formatCost`) when pricing is known. Token and cost totals accumulate across every upstream round of the turn (including tool rounds).
-- **Bar row** — 10-cell ASCII bar (`#` filled / `-` empty) with the percentage.
+- **Bar row** — an ASCII bar (`#` filled / `-` empty) with the percentage. The cell count is **per receiving device**: 6 (phone / installed PWA), 10 (landscape phone, small tablet), or 20 (tablet, desktop toast), chosen by `push.statusBarSizeForMaxChars()` from the body line width the browser reported at subscribe time (stored as `push_subscriptions.status_bar`). The row is first so a body the OS collapses to one line still shows progress. A non-zero percentage always lights at least one cell.
 - **Task row** — the task title with its `current of total` counts.
 
-Generic `report_progress` notifications use the same ASCII bar and message layout.
+Generic `report_progress` notifications use the same per-device ASCII bar and message layout; completion uses a full bar and an error an empty, unlabelled one (see [push-notifications.md](./push-notifications.md)).

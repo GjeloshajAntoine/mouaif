@@ -975,12 +975,23 @@ function accumulateRoundUsage(roundUsage) {
   // slot rendered with an ASCII bar, and one authorization/attention slot.
   const statusPushTag = 'chat-' + chatId + '-status';
 
-  function asciiStatusBar(percent) {
-    const width = 10;
-    const normalized = percent == null ? null : Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
-    const filled = normalized == null ? 0 : Math.round((normalized / 100) * width);
-    return '[' + '#'.repeat(filled) + '-'.repeat(width - filled) + ']'
-      + (normalized == null ? '' : ' ' + normalized + '%');
+  // statusBody(sub, percent, lines) -> notification body for one device
+  //
+  // A status notification is one ASCII bar plus the information it belongs
+  // to, in that order. The bar is built per subscription from the line
+  // budget that device reported (src/push.js BAR_CELLS): a phone lock
+  // screen gets 6 cells, a tablet 10, a desktop toast 20 — the widest bar
+  // that still fits one row there, because a wrapped bar row pushes the
+  // status text out of the collapsed preview most phones show.
+  //
+  // `lines` is the info: the task/message line, or the completion/error
+  // text. Empty entries are dropped so a progress update with no message is
+  // just the bar.
+  function statusBody(sub, percent, lines) {
+    const size = push.statusBarSizeForMaxChars(sub && sub.status_bar);
+    const bar = push.asciiStatusBar(percent, size);
+    const info = (lines || []).map((l) => String(l == null ? '' : l).trim()).filter(Boolean);
+    return info.length ? bar + '\n' + info.join('\n') : bar;
   }
 
   function sendChatPush(kind, options = {}) {
@@ -995,6 +1006,7 @@ function accumulateRoundUsage(roundUsage) {
     push.sendPushToSession(_pushSessionId, {
       title: options.title || ((chat && chat.title) || 'mouaif'),
       body: options.body || '',
+      bodyFor: options.bodyFor,
       chatId,
       projectDir,
       tag: options.tag || `chat-${chatId}-${kind}`,
@@ -1198,38 +1210,32 @@ promptSize: resolvedProfileId,
         const pctNum = data.current != null && data.total != null
           ? Math.round((Number(data.current) / Math.max(1, Number(data.total))) * 100)
           : null;
-        if (data.kind === 'task') {
-          // Task notifications use a plain ASCII layout so status text
-          // renders consistently across Android, iOS, and desktop:
+        // Only the info lines differ between a task update and a plain
+        // report_progress; the bar row and the per-device sizing are shared
+        // so there is one visual status format. Push bodies are plain text
+        // — no markdown — so the em dash is spelled out and every line
+        // reads the same on every platform.
+        const counts = (data.current != null && data.total != null)
+          ? data.current + ' of ' + data.total
+          : (data.message || '');
+        const infoLines = data.kind === 'task'
           //   title row:  <chat title> · <tokens> · <price>
           //   bar row:    [####------] 40%
           //   task row:   <task title> — 2 of 5
-          const bar = asciiStatusBar(pctNum);
-          const counts = (data.current != null && data.total != null)
-            ? data.current + ' of ' + data.total
-            : (data.message || '');
-          const taskLine = (data.title || 'Task') + (counts ? ' — ' + counts : '');
-          const usageLabel = pushUsageLabel();
-          const chatTitle = (chat && chat.title) || 'mouaif';
-          sendChatPush('progress', {
-            title: usageLabel ? chatTitle + ' · ' + usageLabel : chatTitle,
-            body: bar + '\n' + taskLine,
-            tag: statusPushTag
-          });
-        } else {
-          // Plain `report_progress` uses the same ASCII status shape as a
-          // task, so there is only one visual status notification format.
-          const usageLabel = pushUsageLabel();
-          const chatTitle = (chat && chat.title) || 'mouaif';
-          const statusLine = data.message || data.title || '';
-          sendChatPush('progress', {
-            title: usageLabel ? chatTitle + ' · ' + usageLabel : chatTitle,
-            body: asciiStatusBar(pctNum) + (statusLine ? '\n' + statusLine : ''),
-            tag: statusPushTag
-          });
-        }
+          ? [(data.title || 'Task') + (counts ? ' — ' + counts : '')]
+          : [data.message || data.title || ''];
+        const usageLabel = pushUsageLabel();
+        const chatTitle = (chat && chat.title) || 'mouaif';
+        sendChatPush('progress', {
+          title: usageLabel ? chatTitle + ' · ' + usageLabel : chatTitle,
+          bodyFor: (sub) => statusBody(sub, pctNum, infoLines),
+          tag: statusPushTag
+        });
       } else if (name === 'done') {
-        sendChatPush('completion', { body: asciiStatusBar(100) + '\nResponse complete', tag: statusPushTag });
+        sendChatPush('completion', {
+          bodyFor: (sub) => statusBody(sub, 100, ['Response complete']),
+          tag: statusPushTag
+        });
         // Compute the enrichment once. `cost.known` is true when at
         // least one of the four pricing layers (model, app, builtin)
         // had a non-empty entry for this model id. We always emit
@@ -1338,7 +1344,10 @@ promptSize: resolvedProfileId,
     persistStreamError(errPayload);
     try { emit('error', errPayload); } catch { /* socket closed */ }
     liveChat.finishLiveChat(runKey);
-    sendChatPush('error', { body: asciiStatusBar(null) + '\nError: ' + (errPayload.message || 'stream failed'), tag: statusPushTag });
+    sendChatPush('error', {
+    bodyFor: (sub) => statusBody(sub, null, ['Error: ' + (errPayload.message || 'stream failed')]),
+    tag: statusPushTag
+    });
     res.end();
     return;
   }
@@ -1365,7 +1374,10 @@ promptSize: resolvedProfileId,
     }
     persistStreamError(errPayload);
     emit('error', errPayload);
-    sendChatPush('error', { body: asciiStatusBar(null) + '\nError: ' + (errPayload.message || 'upstream error'), tag: statusPushTag });
+    sendChatPush('error', {
+    bodyFor: (sub) => statusBody(sub, null, ['Error: ' + (errPayload.message || 'upstream error')]),
+    tag: statusPushTag
+    });
   }
   if (traceStream) trace.close(traceStream);
   runningChats.delete(runKey);

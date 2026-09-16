@@ -139,7 +139,7 @@ export function SettingsNotificationsView() {
     ),
     h('section', { class: 'settings-notifications' },
       h('p', { class: 'hint hint--compact' },
-        'Follow a running chat with one ASCII status notification. Authorization alerts stay visible when the model needs an answer or tool approval.'),
+      'Follow a running chat with one ASCII status notification. Authorization alerts stay visible when the model needs an answer or tool approval. The status bar is sized to this device — a phone shows a compact bar, a desktop a longer one.'),
       h('div', { class: 'group' },
         h('div', { class: 'group__title' }, 'This browser'),
         h('div', { class: 'group__list' },
@@ -199,7 +199,7 @@ export function SettingsNotificationsView() {
       h('div', { class: 'group' },
 h('div', { class: 'group__title' }, 'Notification types'),
 h('div', { class: 'group__list' },
-eventRow('status', 'ASCII chat status', 'Progress, completion, and errors.'),
+eventRow('status', 'ASCII chat status', 'Progress, completion, and errors. Bar sized to this device.'),
 eventRow('authorization', 'Authorization', 'Questions and tool approvals.'),
 eventRow('quickActions', 'Authorization actions', 'Answer, allow once, or deny.'),
 eventRow('login', 'Sign-in alerts', 'A password or passkey sign-in to this server.')

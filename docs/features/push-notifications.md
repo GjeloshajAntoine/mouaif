@@ -77,6 +77,28 @@ Browser permission and subscription are installation-specific. Event preferences
 
 ### Progress notifications
 
-The model's `report_progress` calls and task updates (`update_progress` / `complete`) emit `progress_update` stream events. Each one sends a push tagged `chat-{chatId}-status`, so the OS replaces the previous status notification for that chat instead of stacking notifications. Every status uses a true ASCII bar such as `[####------] 40%`; completion uses `[##########] 100%`, and errors retain the same bar-shaped status layout. Status pushes are gated by the **ASCII chat status** toggle (`notifications.status`), which defaults to on.
+The model's `report_progress` calls and task updates (`update_progress` / `complete`) emit `progress_update` stream events. Each one sends a push tagged `chat-{chatId}-status`, so the OS replaces the previous status notification for that chat instead of stacking notifications. Every status uses a true ASCII bar and is gated by the **ASCII chat status** toggle (`notifications.status`), which defaults to on.
+
+The bar is sized to the device that receives it. A phone lock screen gives a plain-text notification body roughly 32 characters per line, a landscape phone or small tablet about 60, and a tablet or desktop toast far more — so one fixed cell count cannot fit all three. Each browser therefore **measures its own body line** when it subscribes and sends that number with the subscription; the server stores it per device and renders the bar at one of three widths:
+
+| Device | Body line | Bar |
+|--------|-----------|-----|
+| Phone, installed iOS/Android PWA | under 45 chars | 6 cells — `[##----] 40%` |
+| Landscape phone, small tablet | under 90 chars | 10 cells — `[####------] 40%` |
+| Tablet, desktop toast | 90+ chars | 20 cells — `[########------------] 40%` |
+
+A wider bar carries more resolution, but a bar row that wraps to a second line pushes the status text out of the collapsed preview, so the cell count only grows with the room the body actually has. A device that never reported a width keeps the 6-cell phone bar. At 20 cells a non-zero percentage always lights at least one cell, so `1%` no longer reads as an empty bar.
+
+Every status shares one shape:
+
+```text
+[####------] 40%
+Fix push layout — 2 of 5
+```
+
+- **Bar row** — the ASCII bar with the percentage. The row is the first line so a notification the OS collapses to one line still shows progress.
+- **Info row(s)** — the task title with its `current of total` counts, the `report_progress` message, `Response complete`, or the error text. Completion uses a full bar (`100%`); an error has no measurable progress, so its bar is empty and unlabelled.
+
+The notification title carries the chat name and the running turn usage (tokens plus price when pricing is known). The bar width changes with the device; the title does not.
 
 Progress from a nested `subagent` run flows to the same `progress_update` channel as top-level calls, so a delegated agent that reports progress still sends the updatable push and the transcript progress card on the parent chat.
