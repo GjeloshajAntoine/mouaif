@@ -92,9 +92,10 @@ Use HTTPS and `--public-origin` before making mouaif available outside the compu
 
 ## Documentation
 
-- [Getting started](docs/features/getting-started.md)
-- [Authentication](docs/features/authentication.md)
-- [App abilities](docs/features/app-abilities.md)
+- [Getting started](docs/features/getting-started.md) — install, run, update, and first setup.
+- [Authentication](docs/features/authentication.md) — connect AI providers and protect app access.
+- [App abilities](docs/features/app-abilities.md) — projects, chats, coding tools, agents, MCP, and Inspector.
+- [Draft Craft](docs/features/draft-craft.md) — add selected code or annotated Inspector images to a chat draft.
 
 Build the static documentation site with:
 
