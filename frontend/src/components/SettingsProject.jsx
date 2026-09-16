@@ -209,7 +209,6 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
     setProgressStatusMsg('');
     setTaskStatusMsg('');
     setAskUserStatusMsg('');
-    setImageStatusMsg('');
 
     try {
       const authz = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(d));
