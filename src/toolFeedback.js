@@ -180,6 +180,26 @@ function compactToolFeedback(options) {
   if (name === 'subagent') {
     const compact = subagentModelResult(opts.result, content);
     if (compact) content = safeJson(compact, content);
+  } else if (name === 'image_gen') {
+    // The picture bytes are attached to the following vision message (see
+    // toolResultImageParts in src/ai-stream.js), so the tool text must
+    // carry what the model *acts on*: which files were written, their MIME
+    // type and size, and the model that ran. Serializing the full result
+    // would pay for the base64 once per turn even though the payload is
+    // replaced by a marker.
+    const r = (opts.result && typeof opts.result === 'object') ? opts.result : null;
+    if (r) {
+      const compact = {
+        ok: r.ok !== false,
+        model: r.model || null,
+        images: Array.isArray(r.images)
+          ? r.images.map((i) => ({ relPath: i.relPath, mimeType: i.mimeType, bytes: i.bytes }))
+          : [],
+        note: 'The generated image is attached to this tool result as an image part.'
+      };
+      if (r.error) compact.error = { code: (r.error.code || 'EIMAGE'), message: r.error.message || String(r.error) };
+      content = safeJson(compact, content);
+    }
   } else if (opts.result && typeof opts.result === 'object') {
     // Images are already attached to the following vision message by ai.js.
     // Avoid paying again for their base64 representation in role=tool text.

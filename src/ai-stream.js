@@ -229,6 +229,7 @@ async function runSingleToolCall(c, cx) {
       let summary;
       if (c.name === 'shell') summary = (args && args.cmd) || '';
       else if (c.name === 'subagent') summary = (args && args.task) || '';
+      else if (c.name === 'image_gen') summary = (args && args.prompt) || '';
       else if (c.name === 'webpreview') {
         // Show the URL the model wants to open so the user can tell
         // at a glance which site it'll preview — beats the generic
@@ -492,6 +493,17 @@ async function streamChat(opts) {
 catch { /* task tool module unavailable; skip */ }
 try { toolSpecs.push(require('./tools/restart.js').SPEC); }
 catch { /* restart tool module unavailable; skip */ }
+  // Native image generation tool: generate a picture with an image model,
+  // save it as a project file, and attach the picture to the tool result
+  // (so a subagent's generation is what the main agent receives). Off by
+  // default; gated by the `image_gen` authorization mode.
+  try {
+    const img = require('./tools/image.js');
+    let imageModels = [];
+    try { if (opts && opts.projectDir) imageModels = img.imageModelRecords(opts.projectDir); }
+    catch { /* no image models configured */ }
+    toolSpecs.push(img.buildSpec ? img.buildSpec(imageModels) : img.SPEC);
+  } catch { /* image tool module unavailable; skip */ }
 try {
 const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir, opts && opts.chat);
 
@@ -533,7 +545,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     if (opts && opts.projectDir) {
       const authz = require('./tools/authorization.js');
       const authState = authz.getAuthorization(opts.projectDir, opts && opts.chatId);
-      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
+      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'image_gen']) {
         const cfg = authState.tools[family];
         if (cfg && cfg.mode === 'off') {
           const hidden = family === 'file' ? authz.FILE_TOOL_NAMES : new Set([family]);
@@ -1928,6 +1940,29 @@ return out;
 const r = { error: { code: 'EWEBPREVIEW', message: e.message || String(e) } };
 return { ok: false, content: JSON.stringify(r), result: r };
 }
+    }
+
+    // Native image generation tool. Generates one or more pictures with a
+    // project image model, saves each as a file inside the project, and
+    // attaches the pixels to the result. A subagent reaches this same
+    // branch (it shares the dispatcher), so a delegated run's generated
+    // image is a real file plus a real image part in the tool result the
+    // main agent receives.
+    if (name === 'image_gen') {
+    let img;
+    try { img = require('./tools/image.js'); }
+    catch (e) {
+      const r = { error: { code: 'EMODULE', message: 'image tool module unavailable: ' + (e.message || e) } };
+      return { ok: false, content: JSON.stringify(r), result: r };
+    }
+    const out = await img.runImageTool({
+      projectDir: callOpts && callOpts.projectDir,
+      args,
+      settings: opts && opts.appSettings,
+      appSettings: callOpts && callOpts.appSettings,
+      signal: callOpts && callOpts.signal
+    });
+    return out;
     }
 
     // MCP tools (mcp__<serverSlug>__<toolName>).

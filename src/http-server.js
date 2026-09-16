@@ -69,6 +69,7 @@ const { handleChats } = require('./server-handlers-chats.js');
 const { handleProjects, handleFileEditor } = require('./server-handlers-projects.js');
 const { handleAI } = require('./server-handlers-ai.js');
 const { handleTranscribe } = require('./server-handlers-transcribe.js');
+const { handleImage } = require('./server-handlers-image.js');
 const { handleAuth, handleOAuthCallback, handleOAuthCallbackPost } = require('./server-handlers-auth.js');
 const { handleAccess } = require('./server-handlers-access.js');
 const { handlePush } = require('./server-handlers-push.js');
@@ -220,6 +221,13 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   // readable. See src/server-handlers-transcribe.js.
   if (urlPath === '/api/ai/transcribe' || urlPath.startsWith('/api/ai/transcribe/')) {
   return handleTranscribe(req, res, parsed);
+  }
+  // Image generation proxy, mounted the same way (and for the same reason)
+  // as the dictation proxy above: a different product with a different
+  // shape, its own handler module, and the credential staying server-side.
+  // See src/server-handlers-image.js.
+  if (urlPath === '/api/ai/image' || urlPath.startsWith('/api/ai/image/')) {
+  return handleImage(req, res, parsed);
   }
   if (urlPath.startsWith('/api/ai/')) {
   return handleAI(req, res, parsed);

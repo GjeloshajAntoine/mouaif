@@ -99,6 +99,12 @@ function normalizeConfig(raw, source, enabled, tool) {
   // from a future migration can't bypass the prompt.
   let mode = MODES.has(value.mode) ? value.mode : 'ask';
   if (tool && BINARY_MODE_TOOLS.has(tool) && mode !== 'off' && mode !== 'ask') mode = 'ask';
+  // Tools that are OFF until the project opts in. This only moves the
+  // *default*: a stored mode (project, app, or chat) is honored as written,
+  // so the only thing this changes is what an unconfigured project reports.
+  // `image_gen` is the one such tool — it spends money outside a text model
+  // and writes files into the project, so silence must not mean "on".
+  if (tool && DEFAULT_OFF_TOOLS.has(tool) && !Object.prototype.hasOwnProperty.call(value, 'mode')) mode = 'off';
   // A per-chat override is a decision the USER just made in this chat
   // (decisions §17), not a config file that could carry a stale or
   // hand-edited shape. It is the most specific layer of all.
@@ -134,7 +140,7 @@ function normalizeConfig(raw, source, enabled, tool) {
 // has its own block under project.mcp.authorization). The same shape
 // works for any future native tool: { mode, allowlist, defaultTimeoutMs,
 // maxTimeoutMs } under project.tools.<name>.
-const NATIVE_TOOLS = new Set(['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']);
+const NATIVE_TOOLS = new Set(['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'image_gen']);
 // Tools that only support a binary `off` / `ask` mode. `ask_user` is
 // the first of its kind: the model can't predict the user's answer,
 // so allowlist / allow make no sense. The authorization module still
@@ -142,6 +148,11 @@ const NATIVE_TOOLS = new Set(['shell', 'subagent', 'file', 'ask_user', 'report_p
 // event, the audit log — works the same), but the mode enum is
 // narrowed to { off, ask }.
 const BINARY_MODE_TOOLS = new Set(['ask_user']);
+// Tools whose effective mode is `off` until a mode is stored for them.
+// Everything else defaults to `ask` — a prompt on first use — which is the
+// right default for a read-mostly tool. These are the tools whose *first use
+// without an answer* would already have a cost, so they stay off.
+const DEFAULT_OFF_TOOLS = new Set(['image_gen']);
 const FILE_TOOL_NAMES = new Set(['read_file', 'list_files', 'search_files', 'write_file', 'edit_file']);
 const MCP_FILE = '.mcp.json';
 
@@ -467,9 +478,10 @@ function getAuthorization(projectDir, chatId) {
       report_progress: effectiveConfig(projectDir, 'report_progress', chatId),
 task: effectiveConfig(projectDir, 'task', chatId),
 webpreview: effectiveConfig(projectDir, 'webpreview', chatId),
-restart_app: effectiveConfig(projectDir, 'restart_app', chatId)
+restart_app: effectiveConfig(projectDir, 'restart_app', chatId),
+image_gen: effectiveConfig(projectDir, 'image_gen', chatId)
 
-    },
+  },
     mcp
   };
   // Chat-scoped reads advertise what this chat has pinned; a project-scoped

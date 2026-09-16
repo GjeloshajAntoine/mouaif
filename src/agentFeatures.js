@@ -194,7 +194,7 @@ async function dispatchListFeatures(args, opts) {
     const authState = authz.getAuthorization(projectDir);
     const tools = (authState && authState.tools) || {};
     state.tools = {};
-    for (const name of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
+    for (const name of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'image_gen']) {
       const cfg = tools[name] || { mode: 'ask' };
       state.tools[name] = {
         mode: cfg.mode || 'ask',
