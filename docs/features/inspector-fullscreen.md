@@ -22,7 +22,7 @@ The header used to print the panel's name in that slot. It no longer does: the n
 
 | Card | What its full-screen button opens |
 | --- | --- |
-| Preview | The panel's own **viewport-spanning live preview**, unchanged: a second screenshot surface with a page title, host, Refresh, Capture size and its own close button. |
+| Preview | The panel's own **viewport-spanning live preview**, unchanged: a second screenshot surface with the live page's title + host, Refresh, Capture size, zoom and its own close button. |
 | Styles | The card expanded over the viewport, with its style controls, property lists and matched rules. |
 | Console | The card expanded over the viewport: the log list plus the JavaScript console below it. |
 | Network | The card expanded over the viewport. |

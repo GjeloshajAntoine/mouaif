@@ -2001,6 +2001,14 @@ typeBarRef: previewTypeBarRef,
     // modal does. `evaluate` wraps Runtime.evaluate; `sizePresets`
     // is the same list the in-panel Size dropdown uses.
     evaluate: (expression) => conn.current ? conn.current.cdpSend('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: false }) : Promise.reject(new Error('not connected')),
+    // Identity of the attached page, straight from the target the user
+    // connected to. The panel's own `liveUrl`/`liveTitle` are seeded from
+    // CDP navigation events, and those never fire for a page that is
+    // *already loaded* when the Inspector attaches — so a connect to a
+    // running tab left the full-screen header on its raw-URL fallback with
+    // a blank host subtitle. These props close that gap at mount.
+    pageUrl: currentTarget && currentTarget.url,
+    pageTitle: currentTarget && currentTarget.title,
     sizePresets: VIEWPORT_PRESETS,
     sizeId: viewportId,
     sizeDisabled: !cdpReady,

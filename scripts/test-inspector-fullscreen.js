@@ -244,6 +244,28 @@ check('the Inspector reads that ref',
   /const fullscreenOverlayRef = useRef\(\{ open: false \}\)/.test(inspectorSource)
   && /fullscreenOpenRef: fullscreenOverlayRef/.test(inspectorSource));
 
+// The overlay header's identity. The panel seeds `liveUrl`/`liveTitle` from
+// CDP navigation events, which never fire for a page that is *already loaded*
+// when the Inspector attaches — so a connect to a running tab used to leave the
+// header on its raw-URL fallback (the title slot printed `https://…`, not the
+// page's `document.title`) with an empty host subtitle. The attached target
+// already carries both values, so the Inspector passes them down and the panel
+// seeds from them once.
+check('the Inspector passes the attached page identity to the Preview panel',
+  /pageUrl: currentTarget && currentTarget\.url/.test(inspectorSource)
+  && /pageTitle: currentTarget && currentTarget\.title/.test(inspectorSource));
+check('the Preview panel seeds its header identity from those props once',
+  /seededIdentityRef\.current/.test(previewSource)
+  && /props\.pageUrl/.test(previewSource)
+  && /setLiveTitle\(title\)/.test(previewSource));
+check('the seed cannot stomp a fresher navigation-reported URL',
+  /if \(url && url !== liveUrlRef\.current\)/.test(previewSource));
+// The title read races the new document on Page.frameNavigated (which Chrome
+// emits before the document is ready), so the load-complete event re-reads it.
+check('a load-complete capture re-reads document.title',
+  /Page\.frameStoppedLoading[\s\S]{0,500}refreshPageTitle\(liveUrlRef\.current\)/
+  .test(previewSource));
+
 // ---- C. The CSS contract --------------------------------------------------
 
 check('the full-screen part is imported last',

@@ -464,6 +464,13 @@ scheduleFallback();
 subs.push(props.subscribe('Page.frameStoppedLoading', () => {
 if (stop) return;
 runCapture('load');
+// Re-read document.title now the document has finished loading. The
+// Page.frameNavigated handler below fires *before* the new document is
+// ready, so its title read can race the load and come back empty — which
+// left the full-screen header on its raw-URL fallback for the rest of the
+// document's life (no further navigation event re-tries it). This is that
+// second read.
+refreshPageTitle(liveUrlRef.current);
 scheduleFallback();
 }));
 subs.push(props.subscribe('Page.navigatedWithinDocument', (params) => {
@@ -541,6 +548,32 @@ if (streamTimer) clearTimeout(streamTimer);
 for (const off of subs) { try { off(); } catch { /* listener map gone */ } }
 };
 }, [props.capture, props.subscribe, props.ackFrame]);
+
+// Seed the header identity from the attached target. A page that is already
+// loaded when the Inspector attaches emits no Page.frameNavigated, and the
+// mount-time title read in the effect above can lose its race with the CDP
+// socket opening — so both `liveUrl` (the host subtitle) and `liveTitle`
+// (the overlay's one-line heading) could stay empty until the user happened
+// to navigate. The target the user connected to already carries the page's
+// URL and title (the same pair the "connected to …" status line prints), so
+// take them directly instead of asking Chrome again.
+//
+// Seeded once: navigation events are the authority after this, and re-running
+// on every prop change (the Inspector re-renders often) would both stomp a
+// fresher event-reported URL and re-render the panel pointlessly.
+const seededIdentityRef = useRef(false);
+useEffect(() => {
+if (seededIdentityRef.current) return;
+if (!props.pageUrl && !props.pageTitle) return;
+seededIdentityRef.current = true;
+const url = typeof props.pageUrl === 'string' ? props.pageUrl : '';
+const title = typeof props.pageTitle === 'string' ? props.pageTitle : '';
+if (url && url !== liveUrlRef.current) {
+liveUrlRef.current = url;
+setLiveUrl(url);
+}
+if (title) setLiveTitle(title);
+}, [props.pageUrl, props.pageTitle]);
 
 // Clicking/tapping the preview pokes the page at that point. The
 // frame is a scroll container (the image is a full-page capture,
