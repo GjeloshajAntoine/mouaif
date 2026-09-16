@@ -446,17 +446,40 @@ color: var(--fg-soft);
 .tool-preview--list { gap: 1px; }
 .tool-preview--diff { gap: 1px; }
 .tool-preview--terminal { gap: 1px; }
-/* A shell card that shows a command AND its output is one continuous
-   terminal: meta, space, the command, space, the output — no border lines
-   anywhere in the body. Stacking the output's own border under the command
-   block read as a divider between them. The class is added only when the
-   command block is actually present, so a card that shows output alone
-   keeps its box. */
-.tool-preview--terminal.tool-preview--with-args .tool-preview__terminal {
+/* A shell card that shows a command AND its output is ONE visible terminal.
+   The surface (background, border, radius, padding) lives on the card body
+   and both sections inside it are transparent, so the card reads as a single
+   bounded box with no line drawn between the command and the output — the
+   divider the earlier revision removed.
+   The container is `renderToolResultBody`'s `body`, which is the SAME element
+   the renderer appends `tool-preview--terminal` to (it sets
+   `body.className = 'tool-card__body'` and both classes coexist). That
+   element is already styled transparent by `.tool-card.is-expanded
+   .tool-card__body` (0,3,0), so the surface rule must name the body class and
+   reach at least the same specificity — otherwise the surface silently loses
+   the cascade and the card renders unboxed again.
+   The surface cannot live on either child: it would be order-dependent, and
+   on the error path the status line is rendered BETWEEN the command and the
+   output, which would split the card into two. The class is added only when
+   the command block actually exists, so a card that shows output alone keeps
+   its own box unchanged.
+   Without this the body is invisible, because its colour is --bg, the same
+   colour as the page behind it. */
+.tool-card__body.tool-preview--terminal.tool-preview--with-args {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 4px 6px;
+}
+/* Both sections are flush inside the shared surface: no border, no radius,
+   and no padding of their own — the container's padding is the only inset,
+   so the command and the output align to the same left edge. */
+.tool-card__body.tool-preview--terminal.tool-preview--with-args .tool-preview__pre--args,
+.tool-card__body.tool-preview--terminal.tool-preview--with-args .tool-preview__terminal {
+  background: transparent;
   border: 0;
   border-radius: 0;
-  padding-left: 0;
-  padding-right: 0;
+  padding: 0;
 }
 .tool-preview__meta {
   font-size: 0.7rem;
@@ -484,14 +507,13 @@ color: var(--fg-soft);
   min-height: 1.5rem;
 }
 /* The full call arguments above a result, shown when the head had to
-   ellipsize them. It is the SAME surface as the output below — same
-   background, text colour and type size, and deliberately NO border of its
-   own — because a shell card is one terminal. A second border stacked on
-   the output's own border read as a divider line between the two, and a
-   separate tone implied the command was secondary to its own output. The
-   two sections are separated by space alone. Only the height differs: the
-   command scrolls at one third of the viewport so one enormous command
-   cannot push the output off screen. */
+   ellipsize them. It is NOT a surface of its own — the card container
+   (`.tool-preview--terminal.tool-preview--with-args`) owns the background,
+   border and padding that both this block and the output sit inside; a
+   second surface here read as a divider line between the command and its
+   own output, and a separate tone implied the command was secondary to it.
+   Only the height differs: the command scrolls at one third of the viewport
+   so one enormous command cannot push the output off screen. */
 .tool-preview__args {
   display: flex;
   flex-direction: column;
@@ -501,9 +523,6 @@ color: var(--fg-soft);
 .tool-preview__pre--args {
   max-height: 33dvh;
   overflow-y: auto;
-  background: var(--bg);
-  border: 0;
-  border-radius: 0;
   color: var(--fg);
   font-size: 0.7rem;
 }

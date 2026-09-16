@@ -368,6 +368,77 @@ function main() {
     }
   }
 
+  // ---- 7. The card keeps ONE visible surface ------------------------
+  //
+  // A shell card that shows a command is one bounded terminal against the
+  // page. The surface must live on the body (`.tool-card__body`, which is
+  // also the `.tool-preview` element — `renderToolResultBody` sets
+  // `body.className = 'tool-card__body'` and then adds the preview classes
+  // to that SAME element), not on either child, because the child that
+  // carries it depends on render order — and on the error path the status
+  // line is rendered BETWEEN the command and the output, so a border on a
+  // child would split one card into two.
+  //
+  // Two regressions this guards, both of which shipped:
+  //   1. the surface was removed from the output pre when a command block
+  //      was present and never re-added anywhere, leaving the body
+  //      transparent over a --bg page and therefore invisible;
+  //   2. the surface was re-added as `.tool-preview--terminal.tool-preview--
+  //      with-args` alone (specificity 0,2,0), which LOSES to the existing
+  //      `.tool-card.is-expanded .tool-card__body` rule (0,3,0). The rule
+  //      was present, and inert. Checking for the rule's existence is not
+  //      enough — the selector has to name the body class so it can win.
+  //
+  // Colours are not resolvable in this JS harness, so the cascade is
+  // checked by comparing selector specificity against the rule that
+  // actually paints the body transparent.
+  {
+    const css = fs.readFileSync(path.join(__dirname, '../frontend/src/tool-cards.css'), 'utf8');
+    // `a.b.c` -> [0, 3, 0]; `a.b .c` -> [0, 2, 1]. Enough to compare the
+    // plain class selectors involved here (no ids, no inline styles).
+    const specificity = (sel) => {
+      const classes = (sel.match(/\.[A-Za-z0-9_-]+/g) || []).length;
+      const elements = (sel.match(/(^|[\s>+~])[a-z][a-z0-9-]*/gi) || []).length;
+      return classes * 100 + elements;
+    };
+
+    const container = /^([^\n{]*\.tool-preview--with-args)\s*\{([^}]*)\}/m.exec(css);
+    check('the shell card container declares a surface', !!container, String(container));
+    if (container) {
+      const selector = container[1].trim();
+      const body = container[2];
+      check('its surface has a background', /background:\s*var\(--bg\)/.test(body), body);
+      check('its surface has a border', /border:\s*1px solid var\(--border\)/.test(body), body);
+      // The body is the element the surface has to land on.
+      check('the surface selector names the card body',
+        /\.tool-card__body/.test(selector), selector);
+
+      // …and it has to beat the rule that paints that body transparent.
+      const competitor = /^([^\n{]*)\{[^}]*background:\s*transparent[^}]*\}/m.exec(css);
+      const competitorSel = competitor ? competitor[1].trim().split(',')[0].trim() : '';
+      check('the transparent body rule is found', !!competitor, String(competitor));
+      check('the surface outranks the rule that clears the body background',
+        specificity(selector) >= specificity(competitorSel),
+        selector + ' (' + specificity(selector) + ') vs ' + competitorSel + ' (' + specificity(competitorSel) + ')');
+    }
+
+    // Both children must be flush inside that one surface — no border of
+    // their own to reintroduce the divider line. The selector is split over
+    // two lines, so match the rule block and inspect its selector text.
+    const flush = /([^\n{]*(?:\.tool-preview__pre--args)[^{]*)\{([^}]*)\}/m.exec(css);
+    check('both sections are flush inside the shared surface', !!flush, String(flush));
+    if (flush) {
+    check('the flush rule covers the output block too',
+      /\.tool-preview__terminal/.test(flush[1]), flush[1]);
+    check('the command block has no border of its own',
+      /border:\s*0\b/.test(flush[2]), flush[2]);
+    check('the output block has no border of its own',
+      /border:\s*0\b/.test(flush[2]), flush[2]);
+    check('the flush rule is scoped to the surface, not the base class',
+      /\.tool-preview--with-args/.test(flush[1]), flush[1]);
+    }
+  }
+
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   if (failed) process.exitCode = 1;
 }
