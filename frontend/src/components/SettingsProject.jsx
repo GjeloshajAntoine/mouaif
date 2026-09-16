@@ -15,6 +15,8 @@ import { ToolTree, shortDesc } from './ToolTree.jsx';
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg, segMode } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
+import { ModelPickerField } from './ModelPickerField.jsx';
+import { loadImageModels, kindLabel } from '../imageGeneration.js';
 import { agentEditorPath } from './settings/agentNavigation.js';
 // Web-preview components were previously chat-only. The dedicated
 // "Web preview" page in project settings reuses the same capture
@@ -78,6 +80,16 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [taskAuth, setTaskAuth] = useState({ mode: 'ask', allowlist: [] });
 const [webpreviewAuth, setWebpreviewAuth] = useState({ mode: 'ask', allowlist: [] });
 const [restartAuth, setRestartAuth] = useState({ mode: 'ask', allowlist: [] });
+// Image generation is OFF by default: it is the one tool that spends money
+// outside a text model and writes files into the project, so the project
+// opts in explicitly (the authorization module's default for a family with
+// no stored config is `ask`, so the default is written here instead).
+const [imageAuth, setImageAuth] = useState({ mode: 'off', allowlist: [] });
+// Image model pick (project-scoped): a picture is project content, so the
+// choice lives in `.mouaif.json` with the other project settings.
+const [imageModels, setImageModels] = useState([]);
+const [imageModelValue, setImageModelValue] = useState({ providerId: '', modelId: '' });
+const [imageKinds, setImageKinds] = useState([]);
 const [askUserMode, setAskUserMode] = useState('ask');
 
   const [shellStatusMsg, setShellStatusMsg] = useState('');
@@ -87,6 +99,7 @@ const [askUserMode, setAskUserMode] = useState('ask');
   const [taskStatusMsg, setTaskStatusMsg] = useState('');
 const [webpreviewStatusMsg, setWebpreviewStatusMsg] = useState('');
 const [restartStatusMsg, setRestartStatusMsg] = useState('');
+const [imageStatusMsg, setImageStatusMsg] = useState('');
 const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
 const [toolsCatalog, setToolsCatalog] = useState([]);
 // Web preview page state — the dedicated "Web preview" sub-page captures
@@ -208,6 +221,11 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
     setProgressStatusMsg('');
     setTaskStatusMsg('');
     setAskUserStatusMsg('');
+    setImageStatusMsg('');
+    // Image models are a separate catalog (project records + the providers'
+    // live image slice), so they load alongside the tool state rather than
+    // through the settings payload.
+    reloadImageModels(false).catch(() => {});
 
     try {
       const authz = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(d));
@@ -248,6 +266,11 @@ const restart = authz.status === 200 && authz.body.tools && authz.body.tools.res
 setRestartAuth({
 mode: (restart && restart.mode) || 'ask',
 allowlist: restart && Array.isArray(restart.allowlist) ? restart.allowlist : []
+});
+const imageGen = authz.status === 200 && authz.body.tools && authz.body.tools.image_gen;
+setImageAuth({
+mode: (imageGen && imageGen.mode) || 'off',
+allowlist: imageGen && Array.isArray(imageGen.allowlist) ? imageGen.allowlist : []
 });
 const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
 
@@ -469,6 +492,27 @@ setSkillsOn(cp.skills !== false);
   function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskAuth, setTaskStatusMsg, newMode); }
 function pickWebpreviewMode(newMode) { pickToolMode('webpreview', webpreviewAuth, setWebpreviewAuth, setWebpreviewStatusMsg, newMode); }
 function pickRestartMode(newMode) { pickToolMode('restart_app', restartAuth, setRestartAuth, setRestartStatusMsg, newMode); }
+function pickImageMode(newMode) { pickToolMode('image_gen', imageAuth, setImageAuth, setImageStatusMsg, newMode); }
+
+// ---- Image generation: model pick -------------------------------------
+// The project stores which image model the agent draws with
+// (`imageGeneration: { modelId, providerId }` in `.mouaif.json`). The list
+// is the project's own records plus the connected providers' live catalogs.
+async function reloadImageModels(refresh) {
+  const d = dir();
+  if (!d) return;
+  const res = await loadImageModels(d, { refresh: !!refresh });
+  setImageModels(res.models.map((m) => ({ id: m.id, provider: m.provider, label: m.label || '', kind: m.kind })));
+  setImageKinds(res.kinds || []);
+  const cfg = res.configured || (currentProject && currentProject.imageGeneration) || {};
+  setImageModelValue({ modelId: cfg.modelId || '', providerId: cfg.providerId || '' });
+}
+async function saveImageModel(sel) {
+  const next = sel ? { modelId: sel.modelId || '', providerId: sel.providerId || '' } : { modelId: '', providerId: '' };
+  setImageModelValue(next);
+  await patchProject({ imageGeneration: { modelId: next.modelId, providerId: next.providerId } }, setImageStatusMsg,
+    next.modelId ? 'image model set' : 'image model cleared');
+}
 // ---- Web preview page handlers ----------------------------------------
 // The webpreview capture endpoint is scoped to a chat (authorization and
 // trace are keyed by projectDir + chatId). Resolve a chatId once so the
@@ -843,6 +887,39 @@ tools: [leaf(restartTool, { checked: isOn(restartAuth.mode) })],
 extra: restartStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, restartStatusMsg) : null
 });
 }
+    const imageTool = catalog.find((t) => t.name === 'image_gen');
+if (imageTool) {
+groups.push({
+id: 'image_gen',
+name: 'Image generation',
+description: shortDesc(imageTool.description),
+title: imageTool.description || '',
+checked: isOn(imageAuth.mode),
+control: toolModeSegs('Image generation', segMode(imageAuth.mode), pickImageMode, [
+{ value: 'off', label: 'Off' },
+{ value: 'ask', label: 'Ask' },
+{ value: 'allow', label: 'Allow' }
+]),
+tools: [leaf(imageTool, { checked: isOn(imageAuth.mode) })],
+extra: h('div', { class: 'settings-project__image' },
+  h(ModelPickerField, {
+    models: imageModels,
+    value: imageModelValue,
+    onChange: (sel) => saveImageModel(sel),
+    allowClear: true,
+    clearLabel: 'No image model',
+    placeholder: imageModels.length ? 'Pick an image model' : 'No image models yet',
+    label: 'Image model',
+    ariaLabel: 'Pick the image model this project draws with',
+    refresh: () => reloadImageModels(true)
+  }),
+  imageModelValue.modelId
+    ? h('div', { class: 'settings-project__hint' }, 'Sends as ' + (kindLabel(imageKinds, (imageModels.find((m) => m.id === imageModelValue.modelId) || {}).kind) || 'auto'))
+    : h('div', { class: 'settings-project__hint' }, 'The agent draws with this model and saves the picture into the project.'),
+  imageStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, imageStatusMsg) : null
+)
+});
+}
 const askTool = catalog.find((t) => t.name === 'ask_user');
 if (askTool) {
 
@@ -978,6 +1055,7 @@ if (askTool) {
     else if (groupId === 'task') pickTaskMode(mode);
     else if (groupId === 'webpreview') pickWebpreviewMode(mode);
 else if (groupId === 'restart_app') pickRestartMode(mode);
+else if (groupId === 'image_gen') pickImageMode(mode);
 else if (groupId === 'report_progress') pickProgressMode(mode);
 
     else if (groupId === 'ask_user') pickAskUserMode(mode);

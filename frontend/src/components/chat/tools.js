@@ -170,6 +170,7 @@ export function formatToolArgs(args, toolName) {
   if (name === 'ask_user') return args.question || '';
   if (name === 'task') return (args.action || '') + (args.title ? ': ' + args.title : '');
 if (name === 'webpreview') return args.url || '';
+  if (name === 'image_gen') return args.prompt || '';
 if (name === 'restart_app') return args.reason || '';
 try { return JSON.stringify(args, null, 2); }
 
@@ -203,6 +204,7 @@ export function formatToolArgsFull(args, toolName) {
   if (name === 'ask_user') return String(args.question || '');
   if (name === 'task') return String(args.action || '') + (args.title ? ': ' + args.title : '');
   if (name === 'webpreview') return String(args.url || '');
+  if (name === 'image_gen') return String(args.prompt || '');
   if (name === 'restart_app') return String(args.reason || '');
   try { return JSON.stringify(args, null, 2); } catch { return String(args); }
 }
@@ -298,6 +300,15 @@ export function formatResultSummary(name, r) {
     if (r.task && r.task.status) return r.task.status;
     if (Array.isArray(r.tasks)) return r.tasks.length + ' task' + (r.tasks.length === 1 ? '' : 's');
     return null;
+  }
+  if (n === 'image_gen') {
+    const images = Array.isArray(r.images) ? r.images : [];
+    const count = images.length || (r.kind === 'image' ? 1 : 0);
+    if (!count) return null;
+    const first = images[0];
+    const size = first && first.bytes != null ? ' · ' + formatBytes(first.bytes) : '';
+    const saved = images.some((i) => i && i.relPath) ? 'saved' : 'not saved';
+    return count + ' image' + (count === 1 ? '' : 's') + size + ' · ' + saved;
   }
   return null;
 }

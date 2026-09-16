@@ -14,7 +14,7 @@ import {
   parsePlainFileToolResult
 } from './tools.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
-
+import { dataUrlFor, imageBlocksFromResult } from '../../imageGeneration.js';
 // Caps for the expanded write_file content preview. The tool itself
 // allows a 1 MB write; painting that as one text node would jank the
 // expand, so the preview truncates and says so.
@@ -599,6 +599,51 @@ function renderTaskToolResult(body, r) {
   body.appendChild(container);
 }
 
+// renderImageGenToolResult(body, r)
+//
+// A generated picture is the result, so the card paints it — one thumbnail
+// per generated image, each a tap target that opens the same full-screen
+// viewer the `read_file` image path uses. Above them, the file each picture
+// was saved to, because "where did it go?" is the question the user actually
+// has; a picture generated without a save (the Settings page's preview) says
+// so instead of showing a path that does not exist.
+function renderImageGenToolResult(body, r) {
+  body.classList.add('tool-preview', 'tool-preview--image');
+  if (typeof r === 'string') r = coerceToolResult(r, 'image_gen');
+  if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
+  if (r.model && r.model.id) renderToolMeta(body, [r.model.id, r.model.provider || '']);
+  const blocks = imageBlocksFromResult(r);
+  if (!blocks.length) {
+    return renderPreviewPre(body, 'Image bytes are not part of this result.', 'tool-preview__pre');
+  }
+  for (const block of blocks) {
+    const src = dataUrlFor(block);
+    if (!src) continue;
+    const name = block.relPath || (Array.isArray(r.images) && r.images[0] && r.images[0].relPath) || 'generated image';
+    const img = document.createElement('img');
+    img.className = 'tool-card__image tool-card__image--zoomable';
+    img.src = src;
+    img.alt = 'Generated image ' + name;
+    img.loading = 'lazy';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'tool-card__image-button';
+    button.setAttribute('aria-label', 'Open ' + name + ' full screen');
+    button.appendChild(img);
+    button.addEventListener('click', () => openImageLightbox(img.src, img.alt));
+    body.appendChild(button);
+  }
+  const saved = (Array.isArray(r.images) ? r.images : []).filter((i) => i && i.relPath);
+  const note = document.createElement('div');
+  note.className = 'tool-preview__image-note';
+  note.textContent = saved.length
+    ? (saved.length === 1
+      ? 'Saved to ' + saved[0].relPath + ' · sent to the model as an image.'
+      : 'Saved ' + saved.length + ' files (' + saved.map((i) => i.relPath).join(', ') + ') · sent to the model as images.')
+    : 'Not saved to the project · sent to the model as an image.';
+  body.appendChild(note);
+}
+
 // renderToolResultBody(body, toolResult, isSubagentFn)
 //
 // The dispatcher called by appendToolResultCard in transcript.js.
@@ -627,6 +672,7 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   if (name === 'write_file') return renderWriteFileToolResult(body, r, args);
   if (name === 'task') return renderTaskToolResult(body, r);
   if (name === 'webpreview') return renderWebpreviewToolResult(body, r);
+  if (name === 'image_gen') return renderImageGenToolResult(body, r);
   if (isSubagentFn(toolResult && toolResult.name)) {
     // The full chat is rendered by renderSubagentChat in
     // transcript.js, which is called by the caller right after

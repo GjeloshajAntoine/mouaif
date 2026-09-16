@@ -322,7 +322,7 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
     used: usedTools.has(t.name)
   }, extra || {});
 
-  for (const name of ['shell', 'subagent', 'ask_user', 'task', 'webpreview', 'restart_app']) {
+  for (const name of ['shell', 'subagent', 'ask_user', 'task', 'webpreview', 'restart_app', 'image_gen']) {
     const t = catalog.find((x) => x && x.name === name);
     if (!t) continue;
     groups.push({
