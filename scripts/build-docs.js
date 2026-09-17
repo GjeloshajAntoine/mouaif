@@ -822,11 +822,16 @@ table tr:last-child td { border-bottom: 0; }
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
-/* Landing-page screenshot row: three phone-proportioned captures, one row on
-   a wide screen, a single stacked column on a phone (see the media query). */
+/* Landing-page screenshot row: phone-proportioned captures of the real UI.
+  Three per row on a laptop (six captures = two full rows, so no row is left
+  with a single orphan card), a centred two-up in the middle width, and one
+  stacked column on a phone (see the media query). A fixed 3-column grid with
+  a cap per card rather than auto-fit: auto-fit sizes the tracks from the
+  container, which left the last card of a six-shot row alone on its own line
+  and much wider than the others. */
 .shot-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   align-items: start;
   margin: 24px 0;
@@ -870,6 +875,12 @@ table tr:last-child td { border-bottom: 0; }
    readable at 360–430 px instead of shrinking beside its neighbours. */
 .shot-row { grid-template-columns: minmax(0, 1fr); gap: 18px; }
 .shot-row .shot { max-width: 340px; margin: 0 auto; }
+}
+/* Landing screenshots between the phone and a full three-up: two captures per
+   row, centred, so neither a 2-up stretch nor a cramped three-up is left at
+   tablet widths. Sits outside the 760 px block so it only applies above it. */
+@media (min-width: 761px) and (max-width: 1040px) {
+.shot-row { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 760px; margin-left: auto; margin-right: auto; }
 }
 `;
 
@@ -1059,21 +1070,40 @@ function buildLandingPage(outDir) {
 // (`docs/features/images/landing/`) so the existing recursive copy ships
 // them to the site, and they are referenced from the site root — hence the
 // `features/images/...` prefix rather than a `./images/...` one.
+//
+// Every capture is produced by `scripts/capture-landing-shots.js`, which
+// boots a throwaway MOUAIF_HOME, seeds the demo project and shoots each
+// screen over CDP; run it after a UI change instead of re-taking one by hand.
 const landingShots = [
   [
     'features/images/landing/chats-list.png',
-    'The Chats tab at 390 px: one project card holding its own chat list, with a New chat button under it.',
+    'The Chats tab at 390 px: a project card holding its own chat list, a draft-only chat shown in italics, and a New chat button under it.',
     'Chats — projects group their own chats'
+  ],
+  [
+    'features/images/landing/chat-view.png',
+    'A chat at 390 px: the model header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
+    'Chats — a run reads, searches, edits and tests'
+  ],
+  [
+    'features/images/landing/providers.png',
+    'Settings → Providers at 390 px: three connected providers, each row naming its endpoint and whether a key is stored.',
+    'Providers — connect them once, app-wide'
+  ],
+  [
+    'features/images/landing/project-settings.png',
+    'Project settings at 390 px: the prompt style, then the tool list where every tool carries its own Off, Ask or Allow control.',
+    'Project settings — per-tool Off / Ask / Allow'
+  ],
+  [
+    'features/images/landing/inspector.png',
+    'The Inspector tab at 390 px, attached to a page over CDP: the target bar, the panel chips, the live preview of the inspected page, and the console input.',
+    'Inspector — attach to a page over CDP'
   ],
   [
     'features/images/landing/settings.png',
     'The Settings tab at 390 px: a Providers section, then the app defaults that apply to every project.',
-    'Settings — providers, then app defaults'
-  ],
-  [
-    'features/images/landing/inspector-connect.png',
-    'The Inspector tab at 390 px while no Chrome debugger is attached: a debugger URL field, the Discover button and the connection state.',
-    'Inspector — attach to a page over CDP'
+    'Settings — providers first, then app defaults'
   ]
 ].map(([src, alt, caption]) => shotFigure(src, alt, caption)).join('\n');
 
@@ -1090,7 +1120,7 @@ const body = `
 </section>
 <section class="section" id="screenshots">
 <h2>See it on a phone</h2>
-<p class="lead">Every screen is built for a 360–430 px viewport first and grows from there. These are captures of the running app at 390 px wide.</p>
+<p class="lead">Every screen is built for a 360–430 px viewport first and grows from there. These are captures of the running app at 390 px wide — a project's chats, a run that reads and edits files, the providers behind it, the per-project tool permissions, the Inspector attached to a page, and the app defaults.</p>
 <div class="shot-row">
 ${landingShots}
 </div>

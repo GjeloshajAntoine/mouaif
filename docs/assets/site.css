@@ -327,11 +327,16 @@ table tr:last-child td { border-bottom: 0; }
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
-/* Landing-page screenshot row: three phone-proportioned captures, one row on
-   a wide screen, a single stacked column on a phone (see the media query). */
+/* Landing-page screenshot row: phone-proportioned captures of the real UI.
+  Three per row on a laptop (six captures = two full rows, so no row is left
+  with a single orphan card), a centred two-up in the middle width, and one
+  stacked column on a phone (see the media query). A fixed 3-column grid with
+  a cap per card rather than auto-fit: auto-fit sizes the tracks from the
+  container, which left the last card of a six-shot row alone on its own line
+  and much wider than the others. */
 .shot-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   align-items: start;
   margin: 24px 0;
@@ -375,4 +380,10 @@ table tr:last-child td { border-bottom: 0; }
    readable at 360–430 px instead of shrinking beside its neighbours. */
 .shot-row { grid-template-columns: minmax(0, 1fr); gap: 18px; }
 .shot-row .shot { max-width: 340px; margin: 0 auto; }
+}
+/* Landing screenshots between the phone and a full three-up: two captures per
+   row, centred, so neither a 2-up stretch nor a cramped three-up is left at
+   tablet widths. Sits outside the 760 px block so it only applies above it. */
+@media (min-width: 761px) and (max-width: 1040px) {
+.shot-row { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 760px; margin-left: auto; margin-right: auto; }
 }
