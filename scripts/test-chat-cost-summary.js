@@ -7,7 +7,7 @@ const vm = require('node:vm');
 
 (async () => {
   const { costSnapshot, summarizeChatUsage: summarize, attributedCostAfter } = await import('../frontend/src/components/chat/costSummary.js');
-  const { mergeServerRows, nextServerMessageIndex } = await import('../frontend/src/components/chat/msgMerge.js');
+  const { mergeServerRows, nextServerMessageIndex, tailSyncDomAction } = await import('../frontend/src/components/chat/msgMerge.js');
   const cost = (total) => ({ total, known: true });
   const row = (seq, total) => ({ role: 'assistant', content: String(total), seq, cost: cost(total) });
   const baseline = costSnapshot({ nextSeq: 200, totalCost: cost(10) });
@@ -51,14 +51,20 @@ const vm = require('node:vm');
   const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/stream.js'), 'utf8');
   const syncSource = source.slice(source.indexOf('function applyTailSync('), source.indexOf('// startStreamRecovery / stopStreamRecovery'));
   let painted;
+  let reconciled;
   const context = vm.createContext({
     mergeServerRows, nextServerMessageIndex, costSnapshot,
+    // applyTailSync routes a moved prefix to a full reconcile render, so the
+    // slice needs the same helpers the module imports. `_renderTranscript`
+    // stands in for that render: this case only asserts the cost lines.
+    // `syncTranscriptAppend` covers the cheap append path.
+    tailSyncDomAction,
     fetchMessagesFromSeq: async () => ({ messages: [row(200, 2)], nextSeq: 201, totalCost: cost(12) }),
     syncTranscriptAppend() {},
     updateUsageSummary: (state) => { painted = summarize(state.messages, state.costSnapshot, null, state.attributedCost).totalCost; }
   });
   vm.runInContext(syncSource + ';this.sync = syncToNextSeq;', context);
-  const state = { props: { projectDir: '/test', chatId: 'test' }, messages: [...page, row(undefined, 2)], seenSeqs: new Set([198, 199]), transcriptNextSeq: 200, costSnapshot: baseline, attributedCost: 0.5 };
+  const state = { props: { projectDir: '/test', chatId: 'test' }, messages: [...page, row(undefined, 2)], seenSeqs: new Set([198, 199]), transcriptNextSeq: 200, costSnapshot: baseline, attributedCost: 0.5, _renderTranscript() { reconciled = true; } };
   await context.sync(state, {}, 201);
   assert.equal(painted, 12);
   assert.equal(state.messages.length, 3);
@@ -66,7 +72,31 @@ const vm = require('node:vm');
   // The refreshed snapshot already covers the attributed run, so the session
   // delta is rebased away in the same step — the 12 above is not 12.5.
   assert.equal(state.attributedCost, 0);
+  // The merge replaced the seq-less optimistic twin in place, so the prefix
+  // moved and applyTailSync must take the reconcile render, not the cheap
+  // tail append that would repaint the on-screen row (see msgMerge.js).
+  assert.equal(reconciled, true, 'a replaced optimistic twin routes to the reconcile render');
   console.log('PASS reconciliation replaces optimistic cost without double counting');
+
+  // And the cheap path is kept for a genuine append: nothing on screen moves,
+  // so re-rendering the transcript would be a needless repaint.
+  {
+    const u = { role: 'user', content: 'hi', ts: 'S', seq: 210 };
+    const appendRefs = {};
+    let appended = false;
+    const ctx = vm.createContext({
+      mergeServerRows, nextServerMessageIndex, costSnapshot, tailSyncDomAction,
+      fetchMessagesFromSeq: async () => ({ messages: [{ role: 'assistant', content: 'a', ts: 'S', seq: 211, cost: cost(0) }], nextSeq: 212, totalCost: cost(12) }),
+      syncTranscriptAppend() { appended = true; },
+      updateUsageSummary() {}
+    });
+    vm.runInContext(syncSource + ';this.sync = syncToNextSeq;', ctx);
+    const appendState = { props: { projectDir: '/test', chatId: 'test' }, messages: [u], seenSeqs: new Set([210]), transcriptNextSeq: 211, costSnapshot: baseline, attributedCost: 0, _renderTranscript() { throw new Error('a pure append must not re-render the transcript'); } };
+    await ctx.sync(appendState, appendRefs, 212);
+    assert.equal(appended, true, 'a pure append uses the cheap tail append');
+    assert.equal(appendState.messages.length, 2);
+  }
+  console.log('PASS a pure append still uses the cheap tail render');
 
   // Exercise the real HTTP handler and SQLite totals, not a CLI/server restart.
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-cost-summary-'));

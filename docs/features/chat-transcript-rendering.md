@@ -62,6 +62,8 @@ The 1 s reconcile poll and the dropped-stream recovery both fold the server's ne
 
 `applyTailSync` (in `stream.js`) now asks `tailSyncDomAction(prev, merged)` (in `msgMerge.js`) which path to take: `'append'` for a genuine append, `'render'` for a moved prefix — which routes to the full `reconcileTranscriptRows` pass that reuses every unchanged node (so nothing re-animates) and places each row in its correct slot. `scripts/test-msg-merge.js` covers the decision.
 
+Any test that slices `applyTailSync` out of `stream.js` and runs it in a `vm` must supply `tailSyncDomAction` alongside `mergeServerRows` and `nextServerMessageIndex`, because the slice references the helpers the module imports rather than re-declaring them. `scripts/test-chat-cost-summary.js` did not, so its tail-sync case threw before it could assert the rebased cost; it now injects the classifier and pins both branches — the reconcile render for a replaced optimistic twin, the cheap append for a genuine one.
+
 The file-order tests drive this module in a `vm` context with a minimal element stub, so the reconciler reads `className` as a string rather than through `classList`, and those harnesses must expose `WeakMap` alongside the other globals they provide. `headerCards.js` is deliberately import-free for the same reason: a harness can load it standalone, or inject its exports into the `transcript.js` context.
 
 ## Related
