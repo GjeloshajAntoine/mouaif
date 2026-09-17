@@ -42,7 +42,7 @@ The mode, allowlist, and timeouts live in `<projectDir>/.mouaif.json` under `too
 |---|---|---|---|
 | `read_file` | Read a text file, or open an image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.ico`) and attach its pixels as an image. | `path` (POSIX-relative) | `startLine`, `endLine` (1-indexed inclusive) for slicing large files — text only |
 | `list_files` | List text and image files under the project (image rows are marked `(image)`). | — | `pattern` (glob; a bare directory like `src` is treated as `src/**`, and matching is case-insensitive) |
-| `search_files` | ripgrep-style text search. | `query` (regex source) | `path` (scope to a directory or single file; `.`, `./`, `src`, `src/`, `src/file.js` are accepted, and a misspelled or not-yet-created directory still searches its nearest existing ancestor) |
+| `search_files` | Text search on the [project search engine](./search-engine.md): ripgrep when a binary is available, a bounded JS walk when not. Honors `.gitignore`, skips binary files, searches extensionless files such as `Dockerfile`. | `query` (ripgrep-style regex), `include` (optional file glob) | `path` (scope to a directory or single file; `.`, `./`, `src`, `src/`, `src/file.js` are accepted, and a misspelled or not-yet-created directory still searches its nearest existing ancestor) |
 | `write_file` | Create or overwrite a text file. | `path`, `content` | — |
 | `edit_file` | Replace one unique block in an existing file. Line-ending differences are ignored, and formatter-only differences such as indentation, blank lines, line wrapping, and spaces around punctuation are tolerated. A block that matches on trimmed lines is also **re-indented to the file's indentation depth** so the replacement lands where a native edit would. A JSON-escaped block is unescaped and retried once before the match is declared missing. Changed code still fails, ambiguous matches return `EMULTI_MATCH`, and failed matches return `ENO_MATCH` with a line-numbered closest candidate. | `path` (or `file`), `oldText`, `newText` | — |
 
@@ -52,9 +52,9 @@ Every tool:
 - Skips generated/private directories during walks (`node_modules`, `.git`, `.mouaif`, `dist`, `build`).
 - Refuses whole-file reads over `fileReadMaxLines` (default 10000 lines). A `startLine` / `endLine` slice bypasses the cap.
 - Attaches an image read as a picture (see [read-file-images.md](./read-file-images.md)) and refuses one over `fileReadMaxImageBytes` (default 4 MB). `startLine` / `endLine` do not apply to images.
-- Honors per-project [hide-file-content](./hide-file-content.md) rules: `read_file` returns `[hidden]` for each marked line, and `search_files` skips matches on marked lines. `write_file` / `edit_file` and `list_files` are unaffected.
+- Honors per-project [hide-file-content](./hide-file-content.md) rules: `read_file` returns `[hidden]` for each marked line, and `search_files` drops matches on marked lines and matches inside marked character spans. `write_file` / `edit_file` and `list_files` are unaffected.
 - Caps `write_file` content at `fileWriteMaxBytes` (default 1 MB).
-- Caps `list_files` at `fileListMaxEntries` entries (default 1000) and `search_files` at `fileSearchMaxMatches` matches / `fileSearchMaxBytes` chars scanned (default 200 / 2 MB; the counter counts characters, not bytes). When a search is truncated, the cap values appear inline in the `# Matches` header line.
+- Caps `list_files` at `fileListMaxEntries` entries (default 1000) and `search_files` at `fileSearchMaxMatches` matches / `fileSearchMaxBytes` chars of matched line text (default 200 / 2 MB; the counter counts characters, not bytes). When a search is truncated, the cap values appear inline in the `# Matches` header line. The search engine's own read ceiling is separate and is documented in [search-engine.md](./search-engine.md).
 
 The caps are app-level knobs. Override them in the app store:
 

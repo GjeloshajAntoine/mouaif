@@ -36,14 +36,18 @@
 //   fileReadDefaultLines = 2000    (default window when the model asks for a slice)
 //   fileReadMaxImageBytes = 4 MB   (cap on an image attached to the result)
 //   fileListMaxEntries   = 1000    (cap on list_files result rows)
-//   fileSearchMaxMatches = 200     (cap on search_files matches)
-//   fileSearchMaxBytes   = 2 MB    (cap on total bytes read by one search call)
+//   fileSearchMaxMatches = 200     (cap on search_files matches; in src/tools/searchEngine.js)
+//   fileSearchMaxBytes   = 2 MB    (cap on matched line text returned by one search)
 //   fileWriteMaxBytes    = 1 MB    (cap on a single write_file call)
 
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const hideFileContent = require('../hideFileContent.js');
+// The search engine owns its own skip-dirs / text-extension list and its own
+// default caps; importing them keeps list_files and the engine from drifting
+// apart while the two live in different files.
+const searchEngine = require('./searchEngine.js');
 
 // Image extension knowledge (and the ext -> MIME map) lives in src/files.js
 // — the same list the file editor previews with — so `read_file` and the
@@ -56,28 +60,20 @@ const DEFAULT_READ_MAX_LINES = 10000;
 const DEFAULT_READ_LINES = 2000;
 const DEFAULT_READ_MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4 MiB
 const DEFAULT_LIST_MAX_ENTRIES = 1000;
-const DEFAULT_SEARCH_MAX_MATCHES = 200;
-const DEFAULT_SEARCH_MAX_BYTES = 2 * 1024 * 1024;
 const DEFAULT_WRITE_MAX_BYTES = 1024 * 1024;
 
 const MAX_TIMEOUT_MS = 60_000; // hard ceiling per call (defensive)
 
-// Directories the list_files / search_files walk never descends into.
-const SKIP_DIRS = new Set([
-  'node_modules', '.git', '.mouaif', 'dist', 'build'
-]);
+// The search engine owns the search caps and its skip-dir list. Re-exported
+// from here because this module used to define them and tests reference the
+// names through this module's exports.
+const DEFAULT_SEARCH_MAX_MATCHES = searchEngine.DEFAULT_MAX_MATCHES;
+const DEFAULT_SEARCH_MAX_BYTES = searchEngine.DEFAULT_MAX_BYTES;
+const SKIP_DIRS = new Set(searchEngine.SKIP_DIRS);
 
-// Extension allowlist for list_files and search_files. It keeps the walk
-// focused on files the model can reasonably consume as text.
-const TEXT_EXTS = new Set([
-  '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.json', '.md', '.mdx',
-  '.txt', '.py', '.rb', '.go', '.rs', '.java', '.kt', '.swift',
-  '.c', '.h', '.cpp', '.hpp', '.cc', '.cs', '.php',
-  '.css', '.scss', '.less', '.html', '.htm', '.xml', '.svg',
-  '.yml', '.yaml', '.toml', '.ini', '.sh', '.bash', '.zsh', '.fish',
-  '.lua', '.pl', '.r', '.dart', '.ex', '.exs', '.clj', '.scala',
-  '.sql', '.graphql', '.vue', '.svelte', '.astro'
-]);
+// Extension allowlist for list_files. search_files decides for itself (the
+// engine compares content, and the walk searches extensionless files).
+const TEXT_EXTS = new Set(searchEngine.TEXT_EXTS);
 
 // ---- Errors ------------------------------------------------------------
 
@@ -459,145 +455,15 @@ function escapeGlob(pattern) {
   return String(pattern).replace(/[.+^$()|{}[\]\\]/g, '\\$&');
 }
 
-function stripSearchPathFilter(raw) {
-  if (typeof raw !== 'string' || !raw.trim()) return null;
-  let s = raw.trim().replace(/\\/g, '/');
-  if (s === '.' || s === './') return null;
-  while (s.startsWith('./')) s = s.slice(2);
-  s = s.replace(/\/+/g, '/');
-  return s;
-}
-
-function makeSearchPathFilter(root, rawPath) {
-  const rel = stripSearchPathFilter(rawPath);
-  if (!rel) return null;
-  const safeRel = toRelPath(root, rel);
-  const abs = toAbsInside(root, safeRel);
-  let isDir = rel.endsWith('/');
-  try { isDir = fs.statSync(abs).isDirectory(); } catch { /* keep slash heuristic */ }
-  // A path that does not exist on disk (typo, moved file, bare prefix
-  // without `/**`) is treated as a directory prefix — a subtree search —
-  // instead of quietly returning zero matches. The scope is still
-  // anchored to the project root, so this never walks outside.
-  // A non-existing path resolves to its longest existing ancestor, so
-  // `src/util` (typo or a dir not created yet) still searches under src/.
-  let exists = false;
-  try { exists = fs.statSync(abs) ? true : false; } catch { exists = false; }
-  if (isDir || !exists) {
-    const prefix = safeRel.replace(/\/+$/, '');
-    // Longest existing ancestor: walk up until a segment that is on disk.
-    let ancestor = prefix;
-    while (ancestor) {
-      try {
-        if (fs.statSync(path.resolve(root, ancestor)).isDirectory()) break;
-      } catch { /* keep walking up */ }
-      const slash = ancestor.lastIndexOf('/');
-      if (slash <= 0) { ancestor = ''; break; }
-      ancestor = ancestor.slice(0, slash);
-    }
-    const searchRoot = ancestor || '';
-    return {
-      mayContain: (childRel) => {
-        // Whole-project fallback: walk everything.
-        if (searchRoot === '') return true;
-        // Descend into the root, any ancestor of the searchRoot, the
-        // searchRoot itself, or a directory already inside it.
-        if (!childRel) return true;
-        return childRel === searchRoot
-          || searchRoot.startsWith(childRel + '/')
-          || childRel.startsWith(searchRoot + '/');
-      },
-      matchesFile: (childRel) => searchRoot === ''
-        ? true
-        : childRel === searchRoot || childRel.startsWith(searchRoot + '/')
-    };
-  }
-  return {
-    mayContain: (childRel) => safeRel.startsWith(childRel + '/'),
-    matchesFile: (childRel) => childRel === safeRel
-  };
-}
-
 // ---- search_files ------------------------------------------------------
 
-// ripgrep-style text search. Walks the project, reads each candidate
-// text file and emits a line-oriented match list. Capped by maxMatches
-// and maxBytes so a model that asks for "every TODO in the repo" can't
-// blow the budget.
+// Text search over the project. The engine (ripgrep when available, a JS
+// walk when not) lives in src/tools/searchEngine.js; this function owns the
+// tool-facing contract only: validate the input, hand the caps over, and
+// return the same result shape the formatter and the tests expect.
 async function runSearchFiles(opts) {
   const { projectDir, args, settings } = opts;
-  const root = resolveSandbox(projectDir);
-  const cap = {
-    matches: (settings && settings.fileSearchMaxMatches) || DEFAULT_SEARCH_MAX_MATCHES,
-    bytes: (settings && settings.fileSearchMaxBytes) || DEFAULT_SEARCH_MAX_BYTES
-  };
-
-  const query = (args && typeof args.query === 'string') ? args.query : '';
-  if (!query) throw err('EBADINPUT', 'query is required');
-
-  let re;
-  try { re = new RegExp(query); }
-  catch (e) { throw err('EBADINPUT', 'invalid regex: ' + e.message); }
-
-  const pathFilter = makeSearchPathFilter(root, args && args.path);
-
-  const matches = [];
-  let charsRead = 0;
-  let filesScanned = 0;
-  let truncated = false;
-
-  async function walk(dirAbs, dirRel) {
-    if (matches.length >= cap.matches || charsRead >= cap.bytes) { truncated = true; return; }
-    let entries;
-    try { entries = await fsp.readdir(dirAbs, { withFileTypes: true }); }
-    catch { return; }
-    for (const ent of entries) {
-      if (matches.length >= cap.matches || charsRead >= cap.bytes) { truncated = true; return; }
-      const childAbs = path.join(dirAbs, ent.name);
-      const childRel = (dirRel ? dirRel + '/' : '') + ent.name;
-      if (ent.isDirectory()) {
-        if (SKIP_DIRS.has(ent.name)) continue;
-        if (pathFilter && !pathFilter.mayContain(childRel)) continue;
-        await walk(childAbs, childRel);
-        continue;
-      }
-      if (!ent.isFile()) continue;
-      if (pathFilter && !pathFilter.matchesFile(childRel)) continue;
-      const ext = path.extname(ent.name).toLowerCase();
-      if (!TEXT_EXTS.has(ext)) continue;
-      filesScanned++;
-      let content;
-      try { content = await fsp.readFile(childAbs, 'utf8'); }
-      catch { continue; }
-      charsRead += content.length;
-      if (charsRead > cap.bytes) { truncated = true; return; }
-      const lines = content.split('\n');
-      // Skip lines the user marked hidden in project settings so a match
-      // on a redacted line never reaches the model. Best-effort: if the
-      // rules cannot be read, the line is searched as normal. A match that
-      // falls inside a hidden character span is also suppressed, so selecting
-      // text in the editor hides it from search too.
-      for (let i = 0; i < lines.length; i++) {
-      const lineNumber = i + 1;
-      if (hideFileContent.lineIsHidden(projectDir, childRel, lineNumber)) continue;
-      // Reset lastIndex so a reused regex (from a 'g'/flags build) behaves
-      // deterministically on each line.
-      re.lastIndex = 0;
-      const match = re.exec(lines[i]);
-      if (match) {
-      const colStart = match.index + 1;
-      const colEnd = colStart + match[0].length - 1;
-      if (hideFileContent.matchIsHidden(projectDir, childRel, lineNumber, colStart, colEnd)) continue;
-      matches.push({ path: childRel, line: lineNumber, text: lines[i].slice(0, 240) });
-      if (matches.length >= cap.matches) { truncated = true; return; }
-      }
-      }
-    }
-  }
-  await walk(root, '');
-  const result = { query, matches, filesScanned, truncated };
-  if (truncated) { result.capMatches = cap.matches; result.capBytes = cap.bytes; }
-  return result;
+  return await searchEngine.runSearch({ projectDir, args, settings });
 }
 
 function formatSearchFilesResult(r, structure) {
@@ -1206,12 +1072,13 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'search_files',
-      description: 'Search for a regex in text files under the project directory. Matches are printed as an indented tree: each file\'s path segments once, then its "line: text" rows one level deeper. Optional `path` filters to a directory or single file; ".", "./", "src", "src/", and "src/file.js" are accepted. Capped at 200 matches / 2M chars scanned.',
+      description: 'Search file contents with a ripgrep-style regular expression. Honors the project\'s .gitignore, so generated and build output trees are skipped. Binary files are skipped. Matches are printed as an indented tree: each file\'s path segments once, then its "line: text" rows one level deeper. Optional `path` scopes the search to a directory or a single file, and a path that does not exist yet still searches its nearest existing ancestor ("src/util" searches "src/"). Optional `include` filters by glob, e.g. "*.js" or "*.{ts,tsx}". Destructive and named patterns stay plain: backreferences (\\1), lookahead and lookbehind are rejected. Capped at 200 matches / 2M chars scanned.',
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'JavaScript regular expression source (no flags).' },
-          path: { type: 'string', description: 'Optional directory or single file to scope the search. Use "." or omit for the whole project.' }
+          query: { type: 'string', description: 'Ripgrep-style regular expression. `(?i)` for case-insensitive and `(?s)` for dot-matches-newline are honored. Lookaround and backreferences are not supported.' },
+          path: { type: 'string', description: 'Optional directory or single file to scope the search. Use "." or omit for the whole project.' },
+          include: { type: 'string', description: 'Optional glob to filter the files searched, e.g. "*.js", "*.{ts,tsx}", "src/**/*.test.js".' }
         },
         required: ['query'],
         additionalProperties: false

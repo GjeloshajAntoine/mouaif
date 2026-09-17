@@ -53,6 +53,12 @@ return Array.isArray(entries) ? entries : [];
 // malformed rule can never match and hide the wrong file.
 function normalizePath(p) {
 if (typeof p !== 'string' || !p.trim()) return '';
+// Strip a leading `./` BEFORE the slash collapsing, so a rule the user
+// saved as `./src/a.js` (the editor reports paths with the prefix in some
+// flows) lands on the same value src/tools/files.js toRelPath computes.
+// Otherwise the rule is silently dead: it never matches the file it was
+// written to hide. This was the previously-broken `while (s.startsWith`
+// line, which ran before `s` was declared.
 let s = p.trim().replace(/\\/g, '/');
 while (s.startsWith('./')) s = s.slice(2);
 s = s.replace(/\/+/g, '/').replace(/\/+$/, '');
@@ -200,56 +206,122 @@ return getEntries(projectDir)
 .map(normalizeEntry)
 .filter(Boolean);
 }
+// Build one lookup index for a whole search: the normalized rules plus a
+// Map from normalized path to rule, and a Map from normalized path to the
+// rules that match it by path *suffix*.
+//
+// This exists because the redaction check used to call `getRules()` (and
+// therefore re-read and re-parse the project settings) once per line of
+// every scanned file — 27k settings reads for one 2-second search. Callers
+// with many paths to test build the index once and hand it to
+// `matchIsHiddenIn` / `lineIsHiddenIn`.
+//
+// The suffix map is the safety net: the engine that produces the paths can
+// report them differently from the rule (`./src/a.js` vs `src/a.js`,
+// absolute vs relative) and a rule that fails to match is a leak, not a
+// cosmetic bug. So a rule also applies to any path that ends with the rule
+// path on a `/` boundary.
+function buildRuleIndex(projectDir) {
+const rules = getRules(projectDir);
+const byPath = new Map();
+const bySuffix = new Map();
+for (const rule of rules) {
+byPath.set(rule.path, rule);
+const parts = rule.path.split('/');
+for (let i = 1; i < parts.length; i++) {
+const suffix = parts.slice(i).join('/');
+if (!bySuffix.has(suffix)) bySuffix.set(suffix, []);
+bySuffix.get(suffix).push(rule);
+}
+}
+return { rules, byPath, bySuffix };
+}
+// Resolve the rules that apply to one path against a prebuilt index.
+// Exact normalized match first, then the suffix map. Returns [] when
+// nothing applies. Never throws.
+function rulesForPathIn(index, relPath) {
+if (!index || !relPath) return [];
+const target = normalizePath(relPath);
+if (!target) return [];
+const exact = index.byPath.get(target);
+const suffix = index.bySuffix.get(target);
+if (exact && suffix) return [exact].concat(suffix.filter((r) => r !== exact));
+if (exact) return [exact];
+return suffix || [];
+}
 // Return the { path, ranges, chars } rule for a given project file, or null.
 function ruleForPath(projectDir, relPath) {
 const target = normalizePath(relPath);
 if (!target) return null;
-const rules = getRules(projectDir);
-for (const rule of rules) {
+for (const rule of getRules(projectDir)) {
 if (rule.path === target) return rule;
 }
 return null;
 }
-// A predicate used by search_files: returns true when the given 1-indexed
-// line of the given file is hidden and should therefore be excluded from
-// any match list (the whole line is redacted, or a character span covers
-// the match's column range). `colStart`/`colEnd` are 1-indexed inclusive
-// character columns occupied by the match on that line; when omitted the
-// whole line is treated as potentially hidden so a search result is
-// conservatively suppressed. Never throws.
-function matchIsHidden(projectDir, relPath, line, colStart, colEnd) {
-const rule = ruleForPath(projectDir, relPath);
-if (!rule || !Number.isInteger(line) || line < 1) return false;
+// Predicate over a prebuilt rule index: true when the given 1-indexed line
+// is fully hidden by any rule that applies to `relPath`. The no-index
+// `lineIsHidden` wrapper below keeps the single-path callers (and tests)
+// working.
+function lineIsHiddenIn(index, relPath, line) {
+if (!Number.isInteger(line) || line < 1) return false;
+for (const rule of rulesForPathIn(index, relPath)) {
+if (isLineHidden(rule, line)) return true;
+}
+return false;
+}
+// Same, for a match that occupies columns [colStart, colEnd] on the line.
+// The whole line, or an overlapping character span, suppresses the match.
+function matchIsHiddenIn(index, relPath, line, colStart, colEnd) {
+if (!Number.isInteger(line) || line < 1) return false;
+for (const rule of rulesForPathIn(index, relPath)) {
 if (isLineHidden(rule, line)) return true;
 const spans = rule.chars || [];
-if (!spans.length) return false;
-// A character span hides the line if it overlaps the match's columns.
 for (const s of spans) {
 if (line < s.startLine || line > s.endLine) continue;
 if (typeof colStart !== 'number' || typeof colEnd !== 'number') return true;
 const startCol = line === s.startLine ? s.startCol : 1;
 const endCol = line === s.endLine ? s.endCol : Number.MAX_SAFE_INTEGER;
-const from = Math.max(startCol, colStart);
-const to = Math.min(endCol, colEnd);
-if (from <= to) return true;
+if (Math.max(startCol, colStart) <= Math.min(endCol, colEnd)) return true;
+}
 }
 return false;
 }
+// A predicate used by callers that only have a project dir and a path (the
+// search engine, when it did not bother to build an index). Returns true
+// when the given 1-indexed line of the given file is hidden and should
+// therefore be excluded from any match list. `colStart`/`colEnd` are
+// 1-indexed inclusive character columns occupied by the match on that line;
+// when omitted the whole line is treated as potentially hidden so a search
+// result is conservatively suppressed. Never throws.
+function matchIsHidden(projectDir, relPath, line, colStart, colEnd) {
+return matchIsHiddenIn(buildRuleIndex(projectDir), relPath, line, colStart, colEnd);
+}
 // Convenience predicate for callers that only care about whole lines.
 function lineIsHidden(projectDir, relPath, line) {
-const rule = ruleForPath(projectDir, relPath);
-return rule ? isLineHidden(rule, line) : false;
+return lineIsHiddenIn(buildRuleIndex(projectDir), relPath, line);
+}
+// The rule that applies to a path, resolved through the same exact-then-
+// suffix lookup the search engine uses, so a one-path caller and the
+// engine never disagree about whether a file is covered.
+function ruleForPathIn(index, relPath) {
+const matches = rulesForPathIn(index, relPath);
+return matches.length ? matches[0] : null;
 }
 module.exports = {
 REDACT_MARKER,
 getEntries,
 getRules,
+buildRuleIndex,
+rulesForPathIn,
 ruleForPath,
+ruleForPathIn,
 isLineHidden,
 redactText,
 lineIsHidden,
+lineIsHiddenIn,
+matchIsHidden,
+matchIsHiddenIn,
 normalizePath,
 normalizeEntry,
-normalizeCharSpan,
-matchIsHidden
+normalizeCharSpan
 };
