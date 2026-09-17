@@ -179,7 +179,7 @@ function writeFile(p, content) {
   const r3p = r3.result.matches.map((m) => m.path + ':' + m.line);
   assert(r3p.some((s) => s.startsWith('src/auth.js:1')), 'search_files finds auth.js:1');
   assert(r3p.some((s) => s.startsWith('src/logout.js:1')), 'search_files finds logout.js:1');
-  assert(r3.result.filesScanned >= 4, 'search_files filesScanned counted');
+  assert(r3.result.filesScanned === 2, 'search_files filesScanned counts the matched files');
 
   // search_files layouts: json parses; tree indents matches under the path.
   const r3j = await files.runFileTool('search_files', { projectDir: root, args: { query: 'function (login|logout)' }, toolOutput: { structure: 'json' } });
@@ -193,7 +193,7 @@ function writeFile(p, content) {
   assert(r3d.result.matches.some((m) => m.path === 'src/auth.js'), 'search_files directory path includes auth.js');
   assert(r3d.result.matches.some((m) => m.path === 'src/logout.js'), 'search_files directory path includes logout.js');
   const r3dot = await files.runFileTool('search_files', { projectDir: root, args: { query: 'TOKEN', path: '.' } });
-  assert(r3dot.ok === true && r3dot.result.filesScanned > 0, 'search_files dot path means whole project');
+  assert(r3dot.ok === true && r3dot.result.filesScanned === 1, 'search_files dot path means whole project');
   const r3f = await files.runFileTool('search_files', { projectDir: root, args: { query: 'TOKEN', path: 'src/auth.js' } });
   assert(r3f.ok === true, 'search_files path filter ok');
   assert(r3f.result.matches.length === 1, 'search_files path filter narrows to one file');

@@ -28,7 +28,7 @@
 }
 ```
 
-`filesScanned` counts files the backend actually looked at: `begin` + `end` records for ripgrep, read attempts for the walk. `filesSkipped` is walk-only and never implies `truncated` — those files were untried, not reported as matches.
+`filesScanned` counts the files that produced **at least one match** — a `Set` of the matched paths, computed identically by both backends. It is the "N files" the chat card shows beside "N matches". It is **not** "files opened": ripgrep emits its per-file `begin`/`end` records lazily, so only matching files ever appear, and the field used to add `begin` + `end` together and report double the real count. `filesSkipped` is walk-only and never implies `truncated` — those files were untried, not reported as matches.
 
 ## Redaction — the safety-critical part
 
@@ -43,7 +43,8 @@ Three properties matter, and a change to any of them is a redaction-leak change:
 
 1. **Suffix matching.** `rulesForPathIn()` tries an exact normalized match, then a suffix match on a `/` boundary. The two backends can report a path differently (`./src/a.js` vs `src/a.js`, absolute vs project-relative), and a rule that fails to match its file is a leak, not a cosmetic bug.
 2. **Per-submatch checking, per-line reporting.** ripgrep emits one `match` record per line with a `submatches` array. If **any** submatch on the line falls on a hidden line or inside a hidden character span, the whole row is dropped. Printing the line because only one of three occurrences was hidden would hand over the redacted text.
-3. **Byte offsets are not columns.** A `match` record's `absolute_offset` is a byte offset into the file; `submatches[].start/end` are byte offsets into `data.lines.text`. `submatchColumns()` converts each to 1-indexed **character** columns by decoding the byte prefix, which is the unit the stored rules use. Multi-byte characters count once. `\r` is left in place so CRLF files keep their column numbering.
+3. **A row is exactly one line, and a multi-line match is refused.** The rules are `(line, column)` pairs, so a record spanning lines cannot be redacted — and ripgrep's `line_number` for such a record names only its *first* line, so a hidden line in the middle would be printed verbatim (this was a real leak through `(?s)`). Two guards: `assertPatternSupported()` rejects `(?s)` with `EBADINPUT` on both backends, and `consumeRgLine()` drops any record whose text contains `\n` in case an engine reports one anyway. Do not re-add `--multiline`.
+4. **Byte offsets are not columns.** A `match` record's `absolute_offset` is a byte offset into the file; `submatches[].start/end` are byte offsets into `data.lines.text`. `submatchColumns()` converts each to 1-indexed **character** columns by decoding the byte prefix, which is the unit the stored rules use. Multi-byte characters count once. `\r` is left in place so CRLF files keep their column numbering.
 
 `lineIsHidden()`, `matchIsHidden()`, and `ruleForPath()` keep their single-path signatures for callers that have one path and no index; they build an index internally. Do not call them per line — that is the per-line settings re-read that made the old engine slow.
 
@@ -51,38 +52,48 @@ Three properties matter, and a change to any of them is a redaction-leak change:
 
 ```text
 rg --json --no-config --no-require-git --line-number --with-filename \
-   --hidden --no-ignore-global --max-count <max(2000, capMatches)> \
-   --max-columns 500 --max-columns-preview \
-   [--ignore-case] [--multiline --multiline-dotall] \
-   [--ignore-file <root>/.gitignore] \
-   -g '!**/<skip dir>/**' ... [-g '/<single file>'] [-g '<include>'] \
-   -- <pattern> .
+ --hidden --no-ignore-global --max-count <max(2000, capMatches)> \
+ --max-columns 500 --max-columns-preview \
+ [--ignore-case] \
+ [--ignore-file <root>/.gitignore] \
+ [-g '<include>'] -g '!**/<skip dir>/**' ... [-g '/<single file>'] \
+ -- <pattern> .
 ```
+
+There is deliberately no `--multiline` variant: `(?s)` is rejected by `assertPatternSupported()` before the child is spawned (see *Redaction* above).
 
 Why each non-obvious flag is there:
 
 - `--no-config` — a project `.ripgreprc` must not silently change what the model sees.
 - `--no-require-git` + `--ignore-file <absolute root>/.gitignore` — ripgrep reads ignore files natively only inside a git repository, so a plain folder of sources would get its generated trees searched. The `--ignore-file` path must be **absolute**: ripgrep resolves it against its cwd, which is the scope directory (a subdirectory), not the project root.
 - `--no-ignore-global` — a developer's personal `~/.gitignore` is not part of the project.
-- `--max-columns 500 --max-columns-preview` — a minified one-line bundle prints one enormous JSON record that dominates the result; the preview keeps the line while capping the payload.
+- `--max-columns 500 --max-columns-preview` — **not a payload bound on the JSON path.** It limits the printed line on a plain-text run; a `--json` record still carries the whole `lines.text` (measured: a 160 KB single line arrived complete). The bound that actually matters is the cap in `consumeRgLine()`, which truncates a row's text to 240 characters.
 - `--max-count` set to `max(2000, capMatches)` — a flood guard that leaves our own cap authoritative while streaming, so the reported count matches the setting.
 - `--` before the pattern — a pattern starting with `-` is not read as a flag.
-- The search root is always `.` with cwd = `scope.dir`. ripgrep's `--json` has no `--no-messages` equivalent, so progress messages cannot contaminate stdout; the parsers credit `begin`/`end` records for `filesScanned`.
+- The search root is always `.` with cwd = `scope.dir`. ripgrep's `--json` has no `--no-messages` equivalent, so progress messages cannot contaminate stdout.
+- **`-g` order is load-bearing and the include goes first.** ripgrep applies globs in sequence and a later one can re-include what an earlier one excluded, so `include` is pushed *before* the `SKIP_DIRS` exclusions and the single-file anchor. With the include last, `include: "**/node_modules/**"` returned vendored files this tool documents as never searched.
 
-The spawn is bounded three ways: `--max-columns`, `--max-count`, and a 60 s kill timer plus a 500 ms grace period after the cap is reached. A non-zero exit with a usage-looking stderr (`unrecognized|invalid|unknown flag|error:`) throws `ERGFALLBACK`, which `runSearch()` swallows to run the walk instead. **Any** non-`EBADINPUT` failure falls back; only a caller error aborts.
+The spawn is bounded three ways: `--max-count`, `--max-columns`, and a 60 s kill timer plus a 500 ms grace period after the cap is reached. A non-zero exit with a usage-looking stderr (`unrecognized|invalid|unknown flag|error:`) throws `ERGFALLBACK`, which `runSearch()` swallows to run the walk instead. **Any** non-`EBADINPUT` failure falls back; only a caller error aborts.
 
-`consumeRgLine()` parses one NDJSON record and returns `true` when the caller should stop reading. Records are line-buffered in `runRipgrep()` because a chunk boundary can split a JSON record.
+`consumeRgLine()` parses one NDJSON record and returns `true` when the caller should stop reading. Records are line-buffered in `runRipgrep()` because a chunk boundary can split a JSON record. Only `match` records are read: `begin`/`end` are emitted lazily and are ignored.
 
 ## Pattern normalization
 
-`normalizePattern()` peels leading `(?i)` / `(?s)` / `(?is)` groups into `{ pattern, ignoreCase, multiline }`. `ignoreCase` becomes `--ignore-case` rather than staying an inline group so it also works on ripgrep builds compiled without PCRE2. A flags-only query is returned untouched so the syntax error surfaces normally.
+`normalizePattern()` peels leading `(?i)` / `(?s)` / `(?is)` groups into `{ pattern, ignoreCase, multiline }`. `ignoreCase` becomes `--ignore-case` rather than staying an inline group so it also works on ripgrep builds compiled without PCRE2. A flags-only query is returned untouched so the syntax error surfaces normally. `multiline` is **detection only** — it exists so `(?s)` can be refused, not so it can be translated.
 
-`assertPatternSupported()` throws `EBADINPUT` for `\1`-style backreferences and for lookaround, with a message that names the construct (the tool description documents a regex, so a model that sends one deserves to be told what is wrong rather than getting a bare parse error). Named groups `(?P<name>...)` are allowed through — both engines accept them.
+`assertPatternSupported()` throws `EBADINPUT` for `\1`-style backreferences, for lookaround, and for `(?s)` / dot-matches-newline, with a message that names the construct (the tool description documents a regex, so a model that sends one deserves to be told what is wrong rather than getting a bare parse error or a silently empty result). `(?s)` is refused because a dot-matches-newline match spans lines: the record's `line_number` covers only the first line, so the per-line redaction rules cannot suppress a hidden line inside the match. The walk backend had no `s` flag at all, so the same query also returned *different* results per backend. Named groups `(?P<name>...)` are allowed through — both engines accept them.
+
+## The `include` glob
+
+`sanitizeInclude()` strips a leading `!` (which would otherwise become an exclusion) and any leading `/`. `includeMatches()` translates the glob for the walk backend and must stay in step with what ripgrep does with the same `-g` argument: brace alternation (`*.{ts,tsx}`, expanded by `expandBraces()`, one level, not nested), character classes (`[ab]`, `[!a]`, `[a-z]` via `globClassSource()`), `**`, `*`, and `?`. The walker used to escape `{`, `}`, `[`, `]` and matched them literally, so a documented glob like `*.{ts,tsx}` returned matches under ripgrep and nothing without it.
+
+Compiled globs are cached in `includeRegExpCache`, which is process-lifetime and unbounded — fine for a model-supplied filter that comes from a small vocabulary, but do not start generating globs programmatically without a size guard.
 
 ## The walk backend
 
 - 16 concurrent readers pull from a pre-collected candidate list. `collectCandidates()` runs single-threaded (directory descent dominates over file reads).
 - The match cap is re-checked **after** the `await` in each worker, and again immediately before each push in `scanContent()`. Workers pass the cap check in parallel, so without both checks the result overshoots the cap by up to one row per worker.
+- **Redaction parity with ripgrep is not automatic.** `scanContent()` first asks `rulesForPathIn()` whether the file has any rule at all — the common case, which skips both redaction passes — then checks the hidden *line*, then every occurrence on it via `lineHasHiddenOccurrence()`. That helper needs a **global** clone of the pattern (`new RegExp(re.source, re.flags + 'g')`) because `exec` on a non-global regex returns the first match forever; it steps `lastIndex` past a zero-width match so `^` / `x?` cannot spin. Testing only the first occurrence was a real leak: a line with two occurrences where only the second was hidden came back in full.
 - `WALK_MAX_BYTES` (64 MB) is the read ceiling. The tool-level byte budget bounds the **matched line text** added to the answer, because the walk must read a file to know whether it matches: spending the budget alphabetically let `docs/features/*.html` exhaust it before `src/` was reached, which returned zero results for a function that exists.
 - `collectCandidates()` skips `GENERATED_DIRS` (`docs-dist`, `coverage`, `.next`, `.nuxt`, `.svelte-kit`, `target`, `vendor`, `__pycache__`, `.venv`, `venv`) on top of `SKIP_DIRS`.
 - `loadGitignore()` is a small reader: comments, blank lines, trailing `/`, leading `/`, `**`, and `!` re-includes. Nested `.gitignore` files are not read. It exists so the fallback's file set roughly matches ripgrep's, not to be a complete git implementation.
@@ -100,8 +111,10 @@ The resolved binary is memoized in a module-level `rgCache`; `_clearRipgrepCache
 ## Things that will bite
 
 - **ripgrep path form.** With `--json` and a `.` root, paths come back as `src/a.js` (no `./`); with a single-file target they come back as the argument, which can be `./src/a.js`. Always normalize before matching a rule.
-- **`begin`/`end` counting.** `begin` records appear only for files that produce output, so a match-free search reports `stats.searches === 0`. `filesScanned` is therefore a lower bound on files visited; it is the number of files ripgrep touched and reported.
+- **`begin`/`end` are lazy.** They appear only for files that produce output, so a match-free search reports `stats.searches === 0`. They are ignored now; `filesScanned` comes from the set of matched paths instead. Do not try to reintroduce a "files opened" count from them — the information is not in the stream.
 - **`docs/agent/features/*.md` is a second document tree.** A public feature doc must be mirrored here, and `scripts/build-docs.js --with-internal` is what emits it.
+- **Do not re-add `--multiline`, and do not relax the `(?s)` rejection.** That is what made a hidden line printable.
+- **Do not move the caller's `-g <include>` after the skip-dir exclusions.** ripgrep's last-matching-glob-wins rule means the exclusions must be last.
 - **Do not "optimize" away the after-await cap check.** It is load-bearing for the cap being a hard promise.
 - **Do not call `lineIsHidden(projectDir, ...)` inside a loop.** Build the index once.
 

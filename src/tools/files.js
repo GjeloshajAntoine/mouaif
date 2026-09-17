@@ -37,7 +37,10 @@
 //   fileReadMaxImageBytes = 4 MB   (cap on an image attached to the result)
 //   fileListMaxEntries   = 1000    (cap on list_files result rows)
 //   fileSearchMaxMatches = 200     (cap on search_files matches; in src/tools/searchEngine.js)
-//   fileSearchMaxBytes   = 2 MB    (cap on matched line text returned by one search)
+//   fileSearchMaxBytes   = 2 MB    (cap on matched line text returned by one search).
+//                                   A match is redacted per line, so `search_files`
+//                                   refuses `(?s)` rather than return a result it
+//                                   cannot redact. See src/tools/searchEngine.js.
 //   fileWriteMaxBytes    = 1 MB    (cap on a single write_file call)
 
 const fs = require('fs');
@@ -1076,9 +1079,9 @@ const SPECS = Object.freeze({
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'Ripgrep-style regular expression. `(?i)` for case-insensitive and `(?s)` for dot-matches-newline are honored. Lookaround and backreferences are not supported.' },
+          query: { type: 'string', description: 'Ripgrep-style regular expression, matched one line at a time. `(?i)` for case-insensitive is honored. `(?s)` is not: matches are reported and redacted per line, so search for the two anchors separately. Lookaround and backreferences are not supported.' },
           path: { type: 'string', description: 'Optional directory or single file to scope the search. Use "." or omit for the whole project.' },
-          include: { type: 'string', description: 'Optional glob to filter the files searched, e.g. "*.js", "*.{ts,tsx}", "src/**/*.test.js".' }
+          include: { type: 'string', description: 'Optional glob to filter the files searched, e.g. "*.js", "*.{ts,tsx}", "src/**/*.test.js", "src/[ab].js".' }
         },
         required: ['query'],
         additionalProperties: false

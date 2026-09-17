@@ -41,6 +41,7 @@ function tmpdir() {
 //   - a binary file
 //   - a hidden (dot) directory
 //   - a file with a hidden line and a hidden character span
+//   - a line with two occurrences where only the second is hidden
 function fixture() {
   const root = tmpdir();
   const w = (rel, body) => {
@@ -62,11 +63,18 @@ function fixture() {
   fs.writeFileSync(path.join(root, 'linked', 'l.js'), 'const login = "linked";\n');
   fs.writeFileSync(path.join(root, 'blob.bin'), Buffer.from('\x00\x01login binary\n'));
   w('.gitignore', 'docs-dist/\n');
+  // Two occurrences of ONE symbol, the second of them hidden. Under the old
+  // "check only the first occurrence" behavior this row came back with its
+  // hidden copy in plain view; the docs promise the row is dropped.
+  w('src/twice.js', 'const DUP = 1; const DUP = 2;\n');
   w('.mouaif.json', JSON.stringify({
     hideFileContent: [{
       path: 'src/a.js',
       ranges: [{ start: 2, end: 2 }],
       chars: [{ startLine: 1, endLine: 1, startCol: 7, endCol: 11 }]
+    }, {
+      path: 'src/twice.js',
+      chars: [{ startLine: 1, endLine: 1, startCol: 21, endCol: 23 }]
     }]
   }));
   return root;
@@ -281,9 +289,27 @@ async function main() {
     });
 
     await tAsync(m('a hidden line and a hidden span are both suppressed'), async () => {
-      assert.equal((await search(fx, { query: 'SECRET' })).result.matches.length, 0);
-      assert.ok(!(await search(fx, { query: 'login' })).result.matches.some((x) => x.path === 'src/a.js'));
-      assert.deepEqual((await search(fx, { query: 'const logout' })).result.matches.map((x) => x.path), ['src/a.js']);
+    assert.equal((await search(fx, { query: 'SECRET' })).result.matches.length, 0);
+    assert.ok(!(await search(fx, { query: 'login' })).result.matches.some((x) => x.path === 'src/a.js'));
+    assert.deepEqual((await search(fx, { query: 'const logout' })).result.matches.map((x) => x.path), ['src/a.js']);
+    });
+
+    // If ANY occurrence of the pattern on a line is hidden, the row is dropped:
+    // printing it because only the *first* occurrence was visible would hand the
+    // model the hidden copy. This is the case the old fixture never covered.
+    await tAsync(m('a hidden second occurrence drops the whole row'), async () => {
+    const r = await search(fx, { query: 'DUP' });
+    assert.equal(r.result.matches.length, 0, 'a row with any hidden occurrence is not printed');
+    // The same line is returned when nothing on it is hidden, so this is
+    // suppression and not a fixture that never matched.
+    assert.equal((await search(fx, { query: 'const DUP = 1' })).result.matches.length, 1);
+    });
+
+    // A path that does not exist searches its longest existing ancestor.
+    await tAsync(m('a missing path falls back to its existing ancestor'), async () => {
+    const r = await search(fx, { query: 'login', path: 'src/nope/deeper' });
+    assert.ok(r.ok && r.result.matches.length > 0);
+    assert.ok(r.result.matches.every((x) => x.path.startsWith('src/')));
     });
 
     await tAsync(m('the match cap is enforced'), async () => {
@@ -297,6 +323,53 @@ async function main() {
       const none = await search(fx, { query: 'zzq-no-such-token-zzq' });
       assert.equal(none.ok, true);
       assert.equal(none.result.matches.length, 0);
+      assert.equal(none.result.filesScanned, 0, 'no match means no matched file');
+    });
+
+    // `filesScanned` is "files with at least one match", and it must mean the
+    // same thing on both backends. It is the "N files" the chat card prints
+    // next to "N matches". It used to count ripgrep's begin+end records, i.e.
+    // twice the number of matching files.
+    await tAsync(m('filesScanned counts the files that matched, once each'), async () => {
+    const r = await search(fx, { query: 'login' });
+    const paths = new Set(r.result.matches.map((x) => x.path));
+    assert.equal(r.result.filesScanned, paths.size);
+    // Dockerfile has two matching lines and is still one file.
+    const multi = await search(fx, { query: 'npm|FROM|RUN' });
+    assert.equal(multi.result.matches.length, 4);
+    assert.equal(multi.result.filesScanned, 3);
+    });
+
+    // `(?s)` used to mean two different things per backend, and on the ripgrep
+    // path it let a multi-line match print a hidden line verbatim (the record's
+    // line_number only names the first line). It is refused now, on both.
+    await tAsync(m('(?s) is refused instead of leaking a hidden line'), async () => {
+      const r = await search(fx, { query: '(?s)const logout.*SECRET' });
+      assert.equal(r.ok, false);
+      assert.equal(r.result.error.code, 'EBADINPUT');
+      assert.match(r.result.error.message, /dot-matches-newline/);
+    });
+
+    // Brace alternation and character classes are documented glob grammar, so
+    // the walk backend has to implement them too — it used to escape them and
+    // return nothing for a query the docs advertise.
+    await tAsync(m('include globs survive the fallback: braces and classes'), async () => {
+    assert.deepEqual((await search(fx, { query: 'login', include: '*.{js,ts}' })).result.matches.map((x) => x.path).sort(),
+      ['linked/l.js', 'src/multi.js', 'src/nested/b.js', 'src/nested/deep/c.ts']);
+    // A character class, both bare and behind `**/`.
+    assert.deepEqual((await search(fx, { query: 'login', include: 'src/**/[ab].js' })).result.matches.map((x) => x.path).sort(),
+      ['src/nested/b.js']);
+    assert.deepEqual((await search(fx, { query: 'login', include: 'src/multi.[jt]s' })).result.matches.map((x) => x.path),
+      ['src/multi.js']);
+    assert.deepEqual((await search(fx, { query: 'login', include: 'src/**/*.{js,ts}' })).result.matches.map((x) => x.path).sort(),
+      ['src/multi.js', 'src/nested/b.js', 'src/nested/deep/c.ts']);
+    });
+
+    // A caller-supplied include must not be able to re-enable a skipped tree:
+    // ripgrep applies -g in order, so the include is pushed before them.
+    await tAsync(m('an include cannot dig a skipped directory back out'), async () => {
+      const r = await search(fx, { query: 'login', include: '**/node_modules/**' });
+      assert.deepEqual(r.result.matches.map((x) => x.path), []);
     });
   });
 

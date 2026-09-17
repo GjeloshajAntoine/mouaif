@@ -20,16 +20,27 @@
 //   - Files with no extension or an extension outside the old allowlist
 //     (`Dockerfile`, `Makefile`, `LICENSE`, shell scripts) are searched.
 //   - ripgrep skips binary files and detects file encodings itself.
-//   - The real ripgrep regex dialect: `(?i)foo` and `(?s)f.o` now work, and
-//     `(?i)` is passed through as `--ignore-case` so it also works on the
-//     older ripgrep builds that ship without PCRE2.
+//   - The real ripgrep regex dialect: `(?i)foo` works, and `(?i)` is passed
+//     through as `--ignore-case` so it also works on the older ripgrep builds
+//     that ship without PCRE2.
 //
-// Redaction is preserved on both paths. ripgrep reports a 1-indexed line
-// number and byte offsets for each submatch; the offsets are converted to
-// 1-indexed character columns so a match inside a hidden character span is
-// suppressed by the same `matchIsHiddenIn` predicate the walker uses. There
-// is no "search without redaction" mode, and a search whose redaction rules
-// cannot be read behaves exactly as if none were configured.
+// Redaction is preserved on both paths, and it is line-granular by
+// construction: every row this module returns is a single line of a single
+// file, which is what `matchIsHiddenIn` can decide. ripgrep reports a
+// 1-indexed line number and byte offsets for each submatch; the offsets are
+// converted to 1-indexed character columns so a match inside a hidden
+// character span is suppressed by the same predicate the walker uses. A match
+// on a hidden line is dropped outright, never printed.
+//
+// That contract is why `(?s)` / dot-matches-newline is REJECTED with
+// EBADINPUT instead of passed to `--multiline`: ripgrep reports a
+// dot-matches-newline match as one record whose `line_number` is only the
+// first line, so a hidden line in the middle of the match would be printed
+// verbatim. A single-line engine cannot redact a multi-line result, so it does
+// not accept one. See assertPatternSupported().
+//
+// There is no "search without redaction" mode, and a search whose redaction
+// rules cannot be read behaves exactly as if none were configured.
 //
 // Public surface:
 //   findRipgrepBinary()        -> string | null   (cached for the process)
@@ -38,6 +49,12 @@
 // `result` is the shape src/tools/files.js formats and the tests assert on:
 //   { query, matches: [{ path, line, text }], filesScanned, truncated,
 //     engine: 'ripgrep' | 'walk', capMatches?, capBytes?, filesSkipped? }
+// `filesScanned` counts the files that produced at least one match — the
+// "N files" the chat card prints next to "N matches". Both engines count it
+// the same way. It is deliberately NOT "files opened": ripgrep emits its
+// per-file `begin` record lazily, so the files it opened without matching are
+// never mentioned in the NDJSON, and a number that meant "opened" would have
+// been structurally unavailable on one backend and a guess on the other.
 //
 // src/tools/files.js re-exports DEFAULT_MAX_MATCHES / DEFAULT_MAX_BYTES as
 // DEFAULT_SEARCH_MAX_MATCHES / DEFAULT_SEARCH_MAX_BYTES and reuses SKIP_DIRS
@@ -76,10 +93,18 @@ const SKIP_DIRS = ['node_modules', '.git', '.mouaif', 'dist', 'build', '.cache']
 // ignore-file engine, so it matches the generated names directly.
 const GENERATED_DIRS = ['docs-dist', 'coverage', '.next', '.nuxt', '.svelte-kit', 'target', 'vendor', '__pycache__', '.venv', 'venv'];
 
-// How many matches ripgrep may print before it stops. We apply the real cap
-// ourselves while streaming (so the reported count matches the setting), but
-// `--max-count` keeps the child from flooding the pipe on a `(?s).` query.
+// How many matching lines per file ripgrep may print before it stops. We
+// apply the real (project-wide) cap ourselves while streaming, so the reported
+// count matches the setting; `--max-count` is only a pipe guard.
+//
+// Deliberately above the default per-search cap of 200, so the default search
+// can reach its own cap from a single file and still report `truncated`.
 const RG_MAX_MATCHES = 2000;
+// `--max-columns` bounds what ripgrep *prints* on a non-JSON run. It is not a
+// ceiling on the `lines.text` in a `--json` record — that still carries the
+// whole line, and `--max-columns-preview` is what lets a match past the limit
+// be reported at all. The real bound on a pathological one-line bundle is the
+// `--max-count` pipe guard plus RG_HARD_TIMEOUT_MS, not this number.
 const RG_MAX_LINE_BYTES = 500;
 const RG_KILL_GRACE_MS = 500;
 const RG_HARD_TIMEOUT_MS = 60_000;
@@ -171,16 +196,19 @@ function isExecutableFile(p) {
 
 // ---- regex handling ----------------------------------------------------
 
-// ripgrep speaks Rust's regex dialect. Two syntaxes that are valid in the
-// JavaScript RegExp the tool schema documents are not valid there:
+// ripgrep speaks Rust's regex dialect. One syntax that is valid in the
+// JavaScript RegExp the tool schema documents is not valid there:
 //
 //   (?i)  inline case-insensitive — PCRE2-only on old ripgrep builds
-//   (?s)  inline dot-matches-newline — same
 //
-// Both are handled here: the flag is peeled off the front of the pattern and
-// turned into real CLI flags. That makes them work regardless of whether the
-// installed ripgrep was built with PCRE2. Any other inline group (e.g. the
-// valid Rust `(?P<name>...)`) is left untouched.
+// It is handled here: the flag is peeled off the front of the pattern and
+// turned into a real CLI flag, so it works regardless of whether the installed
+// ripgrep was built with PCRE2. Any other inline group (e.g. the valid Rust
+// `(?P<name>...)`) is left untouched.
+//
+// `(?s)` — dot-matches-newline — is *detected* here only so it can be rejected
+// (see `multiline` below); it is deliberately not translated into
+// `--multiline`.
 //
 // Returns { pattern, ignoreCase, multiline }.
 function normalizePattern(query) {
@@ -201,10 +229,11 @@ function normalizePattern(query) {
   return { pattern, ignoreCase, multiline };
 }
 
-// Reject a pattern both engines would choke on, and report it as EBADINPUT
-// with a message that names the construct — the schema documents JavaScript
-// regular expressions, so a model that sends a lookaround deserves to be told
-// it is unsupported rather than getting a bare "regex parse error".
+// Reject a pattern neither engine can answer correctly, and report it as
+// EBADINPUT with a message that names the construct — the schema documents
+// JavaScript regular expressions, so a model that sends an unsupported one
+// deserves to be told which, rather than getting a bare "regex parse error"
+// or an empty result.
 function assertPatternSupported(pattern, multiline) {
   // `\1` .. `\9` are backreferences; `\0` and `\n` are ordinary escapes.
   if (/(?<![\\[])\\[1-9]/.test(pattern)) {
@@ -213,12 +242,15 @@ function assertPatternSupported(pattern, multiline) {
   if (/\(\?<?[=!]/.test(pattern)) {
     throw err('EBADINPUT', 'lookahead / lookbehind are not supported; use a capture group or two searches instead');
   }
-  if (multiline) return; // `--multiline` is enabled for (?s)
-  const named = /\(\?P?<([^>]*)>/.exec(pattern);
-  if (named) {
-    // Rust accepts (?P<name>...) and JS accepts (?<name>...); both engines
-    // accept this form, so nothing to do.
-    return;
+  // `(?s)` used to become `--multiline --multiline-dotall` on the ripgrep path
+  // and nothing at all on the walk path, which made one query mean two
+  // different things and — worse — let ripgrep return a multi-line match whose
+  // `line_number` is only the first line, so a hidden line in the middle of the
+  // match was printed in full. The redaction rules are per line, so a
+  // dot-matches-newline result is not something this engine can redact.
+  // Refusing it is also what makes the two backends agree.
+  if (multiline) {
+    throw err('EBADINPUT', '(?s) / dot-matches-newline is not supported: matches are reported and redacted per line; search for the two anchors separately');
   }
 }
 
@@ -267,7 +299,7 @@ function sanitizeInclude(raw) {
   return s.trim() || null;
 }
 
-// Does a project-relative path match a simple include glob? Used by the walk
+// Does a project-relative path match the include glob? Used by the walk
 // engine; ripgrep applies the same glob itself.
 function includeMatches(glob, rel) {
   if (!glob) return true;
@@ -277,8 +309,50 @@ function includeMatches(glob, rel) {
 
 const includeRegExpCache = new Map();
 
+// Translate a ripgrep-style glob into a RegExp. The grammar supported here is
+// deliberately the one the tool documents and the one a model actually sends:
+//
+//   *.js                 a name pattern: matches at any depth
+//   src/**/*.test.js     a path pattern: matches from the root
+//   *.{ts,tsx}           brace alternation (nested braces are not supported)
+//   src/[ab].js          character class, with `^`-negation and ranges
+//   ?                    exactly one character, never a `/`
+//
+// Anything else is escaped and matched literally. This must stay in step with
+// what ripgrep does with the same `-g` argument: the fallback walk used to
+// escape `{`, `}`, `[` and `]`, so a documented query like `*.{ts,tsx}`
+// returned matches under ripgrep and nothing at all on a machine without it.
 function includeToRegExp(glob) {
   if (includeRegExpCache.has(glob)) return includeRegExpCache.get(glob);
+  const re = buildGlobRegExp(glob);
+  includeRegExpCache.set(glob, re);
+  return re;
+}
+
+function buildGlobRegExp(glob) {
+  // A bare `*.js` is a name pattern: it should match at any depth, which is
+  // what the ripgrep `-g` behavior gives and what a model means by it.
+  const prefix = glob.includes('/') ? '^' : '(?:^|/)';
+  let re = null;
+  try { re = new RegExp(prefix + expandBraces(glob).map(globToRegexSource).join('|') + '$'); }
+  catch { re = null; }
+  return re;
+}
+
+// Expand `{a,b}` alternation into one glob per alternative, so the alternation
+// becomes a real alternation in the RegExp (the old code escaped the braces and
+// matched them literally). Nested braces are left alone.
+function expandBraces(glob) {
+  const m = /\{([^{}]*)\}/.exec(glob);
+  if (!m) return [glob];
+  const out = [];
+  for (const part of m[1].split(',')) {
+    out.push(...expandBraces(glob.slice(0, m.index) + part + glob.slice(m.index + m[0].length)));
+  }
+  return out;
+}
+
+function globToRegexSource(glob) {
   let src = '';
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
@@ -290,19 +364,40 @@ function includeToRegExp(glob) {
       src += '[^/]*';
     } else if (c === '?') {
       src += '[^/]';
-    } else if ('.+^$()|{}[]\\'.includes(c)) {
+    } else if (c === '[') {
+    // `globClassSource` returns the class source (brackets included) or null
+    // when it is unterminated; the loop then steps past the closing bracket.
+    const cls = globClassSource(glob, i);
+    if (cls) { src += cls; i += cls.length - 1; }
+    else src += '\\[';
+    } else if ('.+^$()|{}\\'.includes(c)) {
       src += '\\' + c;
     } else {
       src += c;
     }
   }
-  // A bare `*.js` is a name pattern: it should match at any depth, which is
-  // what the ripgrep `-g` behavior gives and what a model means by it.
-  const prefix = glob.includes('/') ? '^' : '(?:^|/)';
-  let re = null;
-  try { re = new RegExp(prefix + src + '$'); } catch { re = null; }
-  includeRegExpCache.set(glob, re);
-  return re;
+  return src;
+}
+
+// Translate one `[...]` class. Returns the source text (including brackets) or
+// null when the class is unterminated, in which case the caller escapes the
+// `[` and moves on. `!` is ripgrep's (and git's) negation, `^` is accepted too.
+function globClassSource(glob, start) {
+  const end = glob.indexOf(']', start + 1);
+  if (end === -1) return null;
+  let body = glob.slice(start + 1, end);
+  const negated = body.startsWith('!') || body.startsWith('^');
+  if (negated) body = body.slice(1);
+  if (!body) return null;
+  let src = '';
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === '\\' || c === ']') { src += '\\' + c; continue; }
+    // `-` is a range operator unless it is first or last.
+    if (c === '-' && (i === 0 || i === body.length - 1)) { src += '\\-'; continue; }
+    src += c;
+  }
+  return '[' + (negated ? '^' : '') + src + ']';
 }
 
 // Resolve the `path` argument to an absolute directory to search plus the
@@ -388,7 +483,7 @@ function relRelOf(root, abs) {
 
 // ---- ripgrep engine ----------------------------------------------------
 
-function buildRgArgs({ scope, pattern, ignoreCase, multiline, include, cap }) {
+function buildRgArgs({ scope, pattern, ignoreCase, include, cap }) {
   const args = [
     '--json',
     '--no-config',            // the project's .ripgreprc must not change results
@@ -405,7 +500,9 @@ function buildRgArgs({ scope, pattern, ignoreCase, multiline, include, cap }) {
     '--max-columns-preview'
   ];
   if (ignoreCase) args.push('--ignore-case');
-  if (multiline) { args.push('--multiline', '--multiline-dotall'); }
+  // No `--multiline`: `(?s)` is refused in assertPatternSupported, because a
+  // dot-matches-newline match spans lines that the per-line redaction rules
+  // cannot describe (and the walk backend has no `s` flag to match it with).
   // Belt and braces next to --no-require-git: pass the root .gitignore
   // explicitly. The path must be absolute because ripgrep resolves
   // `--ignore-file` against its cwd (the scope directory), not the project
@@ -414,7 +511,16 @@ function buildRgArgs({ scope, pattern, ignoreCase, multiline, include, cap }) {
   if (fs.existsSync(rootIgnore)) {
     args.push('--ignore-file', rootIgnore);
   }
-  // Generated / vendored trees are excluded before ripgrep walks them.
+  // The `include` filter from the tool call. Pushed BEFORE the skip-dir
+  // exclusions on purpose: ripgrep applies `-g` globs in order and a later one
+  // can re-include what an earlier one excluded, so `include` last would make
+  // `include: "**/node_modules/**"` match vendored files that this tool
+  // documents as never searched. The order below makes the skip dirs final.
+  if (include) {
+    args.push('-g', include);
+  }
+  // Generated / vendored trees are excluded before ripgrep walks them, and
+  // this list is the last word on what is searched.
   for (const d of SKIP_DIRS) {
     args.push('-g', '!**/' + d + '/**');
     if (scope.relDir) args.push('-g', '!' + scope.relDir + '/' + d + '/**');
@@ -424,10 +530,6 @@ function buildRgArgs({ scope, pattern, ignoreCase, multiline, include, cap }) {
   // tree cannot leak into the results.
   if (scope.relFile) {
     args.push('-g', '/' + escapeGlob(scope.relFile));
-  }
-  // The `include` filter from the tool call.
-  if (include) {
-    args.push('-g', include);
   }
   const target = scope.relFile
     ? path.relative(scope.dir, path.join(scope.root, scope.relFile)) || '.'
@@ -445,7 +547,9 @@ async function runRipgrep(ctx) {
   const { scope, cap, rg } = ctx;
   const args = buildRgArgs(ctx);
   const matches = [];
-  let filesScanned = 0;
+  // Files that produced at least one match. Populated from the match records
+  // rather than from `begin`/`end`, which ripgrep emits lazily.
+  const matched = new Set();
   let truncated = false;
   let stderr = '';
   let exited = false;
@@ -480,9 +584,11 @@ async function runRipgrep(ctx) {
         buffered = buffered.slice(nl + 1);
         if (!line) continue;
         const stop = consumeRgLine(line, {
-          matches, cap, ruleIndex, scope,
-          onBegin: () => { filesScanned++; },
-          onEnd: () => { filesScanned++; }
+        matches, cap, ruleIndex, scope,
+        // One match record per matching LINE, and `filesScanned` counts the
+        // distinct files among them, which is the number the card shows and
+        // the only file count ripgrep's NDJSON can support (see the header).
+        onMatch: (relPath) => { matched.add(relPath); }
         });
         if (stop) { truncated = true; break; }
       }
@@ -491,8 +597,7 @@ async function runRipgrep(ctx) {
   } catch { /* stream torn down by the kill timer */ }
 
   if (truncated) {
-    // ripgrep counts `begin`+`end` per searched file; keep the child from
-    // doing any more work now that the cap is reached.
+    // Stop the child now that the cap is reached; no need to keep streaming.
     try { child.kill('SIGTERM'); } catch { /* gone */ }
   }
 
@@ -516,7 +621,7 @@ async function runRipgrep(ctx) {
     throw e;
   }
 
-  const result = { query: ctx.query, matches, filesScanned, truncated, engine: 'ripgrep' };
+  const result = { query: ctx.query, matches, filesScanned: matched.size, truncated, engine: 'ripgrep' };
   if (truncated) {
     result.capMatches = cap.matches;
     result.capBytes = cap.bytes;
@@ -531,8 +636,6 @@ function consumeRgLine(line, ctx) {
   try { rec = JSON.parse(line); } catch { return false; }
   if (!rec || typeof rec !== 'object') return false;
 
-  if (rec.type === 'begin') { ctx.onBegin(); return false; }
-  if (rec.type === 'end') { ctx.onEnd(rec.data && rec.data.stats); return false; }
   if (rec.type !== 'match') return false;
 
   const data = rec.data || {};
@@ -542,6 +645,13 @@ function consumeRgLine(line, ctx) {
   const lineNumber = data.line_number;
   const rawLine = (data.lines && data.lines.text) || '';
   const text = trimLine(rawLine);
+  // A record that covers more than one line cannot be redacted: the redaction
+  // rules are (line, column) pairs, and `line_number` names only the first line
+  // of the match, so a hidden line in the middle would be printed verbatim.
+  // `assertPatternSupported` refuses `(?s)`, which is the only documented way
+  // to ask for this, so reaching here means an engine reported something
+  // unexpected — drop the row rather than risk leaking a hidden line.
+  if (text.includes('\n')) return false;
   // One row per matching line, like every other search surface here and in
   // the peer tools: ripgrep reports a submatch per occurrence, and a line
   // with the pattern three times must not become three rows.
@@ -563,6 +673,7 @@ function consumeRgLine(line, ctx) {
   }
 
   ctx.matches.push({ path: relPath, line: lineNumber, text: text.slice(0, 240) });
+  if (ctx.onMatch) ctx.onMatch(relPath);
   return ctx.matches.length >= ctx.cap.matches;
 }
 
@@ -623,9 +734,11 @@ async function runWalk(ctx) {
   const ruleIndex = hideFileContent.buildRuleIndex(ctx.projectDir);
   const ignored = loadGitignore(scope.root);
   const matches = [];
+  // One entry per file that produced at least one match — the same definition
+  // of `filesScanned` the ripgrep backend uses.
+  const matched = new Set();
   let matchedChars = 0;
   let bytesRead = 0;
-  let filesScanned = 0;
   let filesSkipped = 0;
   let truncated = false;
 
@@ -659,14 +772,15 @@ async function runWalk(ctx) {
       // budget below bounds the answer instead, and this ceiling only stops
       // a pathological tree from being read forever.
       if (!fileScoped && bytesRead > WALK_MAX_BYTES) { truncated = true; filesSkipped++; return; }
-      filesScanned++;
       bytesRead += content.length;
-      matchedChars += scanContent(content, rel, re, ruleIndex, matches, cap);
+      const found = scanContent(content, rel, re, ruleIndex, matches, cap);
+      matchedChars += found.chars;
+      if (found.rows) matched.add(rel);
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
-  const result = { query: ctx.query, matches, filesScanned, truncated, engine: 'walk' };
+  const result = { query: ctx.query, matches, filesScanned: matched.size, truncated, engine: 'walk' };
   if (filesSkipped) result.filesSkipped = filesSkipped;
   if (truncated) { result.capMatches = cap.matches; result.capBytes = cap.bytes; }
   return result;
@@ -677,27 +791,61 @@ async function runWalk(ctx) {
 // which files are searched.
 const WALK_MAX_BYTES = 64 * 1024 * 1024;
 
-// Scan one file body and append its non-redacted matching lines. Returns the
-// number of characters of matched line text, which is what the tool's byte
-// budget bounds.
+// Scan one file body and append its non-redacted matching lines. Returns
+// `{ chars, rows }`: the number of characters of matched line text (what the
+// tool's byte budget bounds), and how many rows were appended (so the caller
+// can tell whether this file matched at all).
 function scanContent(content, rel, re, ruleIndex, matches, cap) {
   const lines = content.split('\n');
+  // No rule for this file means nothing on it can be hidden, so both redaction
+  // passes below are skipped. That is the common case, and it is what keeps a
+  // project with no rules as fast as it was before redaction existed.
+  const hidden = hideFileContent.rulesForPathIn(ruleIndex, rel).length > 0;
+  // The stored pattern is deliberately NOT global (an unexpected `lastIndex`
+  // would make `exec` skip rows), so the per-occurrence scan below works on its
+  // own global clone.
+  const occRe = re.global ? re : new RegExp(re.source, re.flags + 'g');
   let matched = 0;
+  let rows = 0;
   for (let i = 0; i < lines.length; i++) {
     const lineNumber = i + 1;
-    re.lastIndex = 0;
-    const m = re.exec(lines[i]);
-    if (!m) continue;
-    // A match on a hidden line or inside a hidden character span is dropped,
-    // not redacted in place: the model must not be able to infer it.
-    if (hideFileContent.matchIsHiddenIn(ruleIndex, rel, lineNumber, m.index + 1, m.index + m[0].length)) continue;
-    // Hard stop: the cap is a promise to the caller, so it must not be
-    // exceeded even by one row.
-    if (matches.length >= cap.matches) return matched;
-    matches.push({ path: rel, line: lineNumber, text: lines[i].slice(0, 240) });
-    matched += lines[i].length;
+    const line = lines[i];
+    occRe.lastIndex = 0;
+    if (!occRe.exec(line)) continue;
+    if (hidden) {
+      // A match on a hidden line is dropped, not redacted in place: the model
+      // must not be able to infer it. Testing the *line* (not just the match)
+      // drops a whole-window match on a hidden line, exactly as ripgrep does.
+      if (hideFileContent.lineIsHiddenIn(ruleIndex, rel, lineNumber)) continue;
+      // EVERY occurrence on the line is checked, not just the first: a row that
+      // printed its visible copy while the hidden copy sat next to it would hand
+      // the model the redacted text, which is the whole promise.
+      if (lineHasHiddenOccurrence(occRe, line, ruleIndex, rel, lineNumber)) continue;
+    }
+    // Hard stop: the cap is a promise to the caller, so it must not be exceeded
+    // even by one row.
+    if (matches.length >= cap.matches) return { chars: matched, rows };
+    matches.push({ path: rel, line: lineNumber, text: line.slice(0, 240) });
+    rows++;
+    matched += line.length;
   }
-  return matched;
+  return { chars: matched, rows };
+}
+
+// True when any occurrence of `re` on this line overlaps a hidden character
+// span. The pattern may be zero-width (`^`, `x?`, `\b`), in which case the
+// span is the single column the empty match sits at, which is the closest a
+// column-based rule can be asked about.
+function lineHasHiddenOccurrence(re, line, ruleIndex, rel, lineNumber) {
+  re.lastIndex = 0;
+  let m;
+  while ((m = re.exec(line)) !== null) {
+    const colStart = m.index + 1;
+    const colEnd = m.index + Math.max(m[0].length, 1);
+    if (hideFileContent.matchIsHiddenIn(ruleIndex, rel, lineNumber, colStart, colEnd)) return true;
+    if (m[0].length === 0) re.lastIndex++;
+  }
+  return false;
 }
 
 async function collectCandidates(scope, ignored, out) {
