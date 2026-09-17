@@ -25,6 +25,14 @@ import { useRef, useEffect, useState } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
 import { pickBannerText } from './pickMode.js';
 
+// The localStorage keys for the preview's zoom mode. Module scope, not
+// component scope: `zoomInitial` and `zoomStored` below (and the regression
+// test) all read the same pair, and a component-local `const` is not visible
+// to the module-level helpers — which silently turned the stored-preference
+// probe into a function that always answered "no decision on record".
+const ZOOM_STATE_KEY = 'mouaif:inspector:previewZoom';
+const ZOOM_STATE_KEY_V2 = 'mouaif:inspector:previewZoom2';
+
 export function PreviewPanel(props) {
 const frameRef = useRef(null);
 const imgRef = useRef(null);
@@ -105,6 +113,19 @@ const [note, setNote] = useState('capturing…');
 // decision that should be re-evaluated per viewport preset into a permanent
 // user preference.
 //
+// The heuristic is one-shot *per mount*, and a mount is a fresh `?` because
+// `autoZoomRef` starts false again — so the gate below does not survive a
+// panel toggle, a full-screen round trip, or a full-screen *card* swap, all of
+// which unmount and remount this panel. In those cases the auto-fit was
+// re-deciding a mode the user had already chosen: on a wide preset the preview
+// snapped straight back to natural size (and panned, losing the frame's scroll
+// position) after the user had tapped "Fit" — the preview "blinking" between
+// two framings as panels are switched. `applyAutoZoom` therefore also *reads*
+// the stored preference: `size` is a real choice and is never re-derived;
+// `fit` is persisted as well (see toggleZoom), so it needs the same protection
+// — the presence of the key is what marks "the user has decided", which is why
+// the initial read above cannot tell them apart but the write can.
+//
 // The key is versioned. The v1 key was written by the auto-fit path as well
 // as by the toggle, and while the Touch stylesheet was collapsing the preview
 // frame to a ~38px column (see inspector-touch.css) auto-fit saw a
@@ -112,8 +133,6 @@ const [note, setNote] = useState('capturing…');
 // is indistinguishable from a real preference and would leave the preview
 // stuck in panned natural-size mode, so v1 is read once, migrated when it
 // still describes the current frame, and never written again.
-const ZOOM_STATE_KEY = 'mouaif:inspector:previewZoom';
-const ZOOM_STATE_KEY_V2 = 'mouaif:inspector:previewZoom2';
 const zoomInitial = (() => {
 if (typeof localStorage === 'undefined') return 'fit';
 try {
@@ -139,13 +158,40 @@ const dimsRef = useRef({ w: 0, h: 0 });
 // frame) and only before the user explicitly toggles. A manual toggle clears
 // the gate so the user's choice is never overridden.
 const autoZoomRef = useRef(false);
+// zoomChosenRef — whether the zoom mode came from storage or a tap, i.e. it is
+// the user's decision rather than the auto-fit's guess. Read once at mount and
+// set by toggleZoom; the auto-fit path refuses to act while it is true.
+const zoomChosenRef = useRef(zoomStored());
 function toggleZoom() {
+zoomChosenRef.current = true;
 autoZoomRef.current = true;
 setZoom((v) => {
 const next = v === 'fit' ? 'size' : 'fit';
 try { localStorage.setItem(ZOOM_STATE_KEY_V2, next); } catch { /* ignore */ }
 return next;
 });
+}
+// applyAutoZoom — the one-shot "this page is too wide to read in fit mode, so
+// pan it instead" decision, taken on the first decode of a mount.
+//
+// It bails out when the mode is already the user's (`zoomChosenRef`): the
+// one-shot gate is per mount, so without this every remount re-decided it and
+// a wide preset flipped the preview from the chosen fit mode back to natural
+// size. An auto-chosen mode is still re-decided on remount, which is what keeps
+// the derived heuristic honest when the *frame* changes size.
+function applyAutoZoom(img, frame) {
+if (autoZoomRef.current) return;
+autoZoomRef.current = true;
+if (!img || !frame) return;
+const frameW = frame.clientWidth || frame.offsetWidth;
+const dpr = currentDeviceScaleFactor(sizeRef.current.presets, sizeRef.current.id);
+if (autoZoomDecision({
+decided: false,
+chosen: zoomChosenRef.current,
+naturalWidth: img.naturalWidth,
+frameWidth: frameW,
+deviceScaleFactor: dpr
+})) setZoom('size');
 }
 // Live page identity shown in the full-screen header. Both are kept
 // in refs as well as state so capture-loop callbacks can write them
@@ -374,23 +420,11 @@ if (decW && decH && (decW !== dimsRef.current.w || decH !== dimsRef.current.h)) 
 dimsRef.current = { w: decW, h: decH };
 setDims(dimsRef.current);
 }
-// Smart default: on the first decode, if a wide page would be shrunk
-// below ~60% of the frame width in fit mode (text unreadable), switch to
-// natural size automatically. Only applies before the user toggles; the
-// manual toggle clears the gate so the user's choice always wins.
-//
-// This is a rendered-mode decision, not a preference: it is derived from
-// the frame's live width, so it is intentionally NOT persisted. Persisting
-// it is what let a collapsed frame (see the versioned ZOOM_STATE_KEY above)
-// pin the preview to `size` across sessions.
-if (!autoZoomRef.current && cur.naturalWidth && frameRef.current) {
-const frameW = frameRef.current.clientWidth || frameRef.current.offsetWidth;
-const dpr = currentDeviceScaleFactor(sizeRef.current.presets, sizeRef.current.id);
-if (frameW && previewZoomForWidth(cur.naturalWidth, frameW, dpr) === 'size') {
-setZoom('size');
-}
-autoZoomRef.current = true;
-}
+// Smart default: on the first decode of a mount, if a wide page would be
+// shrunk below ~60% of the frame width in fit mode (text unreadable), switch
+// to natural size. Refuses to run once the mode is the user's — see
+// applyAutoZoom.
+applyAutoZoom(cur, frameRef.current);
 cur.onload = prevOnload || null;
 }
 };
@@ -914,6 +948,38 @@ function hostFromUrl(url) {
 if (!url || !/^https?:\/\//i.test(url)) return '';
 try { return new URL(url).host; } catch { return ''; }
 }
+// autoZoomDecision — the pure form of the one-shot auto-fit: "should this mount
+// switch the preview to natural size?"
+//
+// Extracted so the rule that fixes the blinking preview is testable without a
+// DOM. `chosen` is whether the mode already came from the user (storage or a
+// tap); when it did, the auto-fit must not touch it — the gate is per mount, so
+// a remount (a panel toggle, a full-screen round trip) used to re-decide the
+// mode and flip a wide preset back to natural size under the user.
+export function autoZoomDecision({ decided, chosen, naturalWidth, frameWidth, deviceScaleFactor }) {
+if (decided) return false;
+if (chosen) return false;
+return previewZoomForWidth(naturalWidth, frameWidth, deviceScaleFactor) === 'size';
+}
+
+// zoomStored — whether a zoom mode the *user* chose is already on record.
+//
+// `toggleZoom` writes the v2 key on every toggle, so its presence is the mark
+// of a decision, whatever the value. The panel reads the value at mount to pick
+// its initial mode; this answers the different question the auto-fit path asks
+// ("has the user decided?"), which the value alone cannot: a stored `fit` is
+// indistinguishable from the default, and a stored `size` boots into natural
+// size but could still be re-derived. Both are decisions, so both stop the
+// auto-fit from overriding them. Exported so the rule is testable without a
+// DOM.
+export function zoomStored() {
+if (typeof localStorage === 'undefined') return false;
+try {
+const v = localStorage.getItem(ZOOM_STATE_KEY_V2);
+return v === 'size' || v === 'fit';
+} catch { return false; }
+}
+
 // currentDeviceScaleFactor — the page's effective device pixel ratio for the
 // selected viewport preset. The retina Phone/Phone+ presets capture at
 // deviceScaleFactor 2, so their screenshot is 2x the page's CSS width. The

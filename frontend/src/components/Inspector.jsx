@@ -530,13 +530,25 @@ return props.render(props.id);
 // change and the user can read the connection at a glance. The
 // tone is derived from the text by classifyStatus, so callers
 // keep their imperative `setStatus("saved.")` shape.
-function classifyStatus(msg) {
+//
+// The pill is a *transient* signal: it reports what just happened and then
+// stops moving. Only genuinely in-flight wording may claim the animated tone,
+// so `classifyStatus` must not hand `busy` to a steady state — "busy" is the
+// one tone with an infinite opacity animation
+// (`inspector__statuspill-pulse`, see inspector-target-bar.css). "connected to
+// …" and "now using …" are the states the Inspector sits in for the whole
+// session, and they used to classify as busy, so the status dot pulsed 1.2 s
+// forever beside the panel headers — read as the preview area blinking, since
+// that dot sits directly above the preview and the Styles card's live shot.
+// A steady state gets `ok` (a settled success); the pulse is reserved for
+// work that is actually still happening.
+export function classifyStatus(msg) {
   if (!msg) return 'idle';
   const m = String(msg).toLowerCase();
   if (/fail|error|disconnected|reject|abort|invalid|missing|denied|unknown/.test(m)) return 'danger';
   if (/warn/.test(m)) return 'warn';
-  if (/reload|saved|connected|navigat|opened|closed|fetching|loading|saving|connecting|navigating|opening/.test(m)) return 'busy';
-  if (/targets/.test(m)) return 'ok';
+  if (/reloading|navigating|opening|closing|fetching|saving|connecting|switching|going /.test(m)) return 'busy';
+  if (/connected|now using|saved|closed|opened|reloaded|navigat|targets|applied|copied/.test(m)) return 'ok';
   return 'info';
 }
 function StatusPill(props) {

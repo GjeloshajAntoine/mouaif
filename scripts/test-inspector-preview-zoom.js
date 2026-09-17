@@ -78,6 +78,8 @@ removeItem: (k) => { delete stored[k]; }
     stored, imgNode, frameNode,
     previewZoomForWidth: context.previewZoomForWidth,
     previewNaturalWidth: context.previewNaturalWidth,
+    autoZoomDecision: context.autoZoomDecision,
+    zoomStored: context.zoomStored,
     render: () => { nodes = []; cursor = 0; context.PreviewPanel(props); return nodes; },
     zoomImg: (nodes) => nodes.find((n) => n.tag === 'img' && /preview-img/.test(n.attrs.class)),
     zoomBtn: (nodes) => nodes.find((n) => n.tag === 'button' && /^inspector__zoom/.test(n.attrs.class))
@@ -167,6 +169,46 @@ assert.equal('mouaif:inspector:previewZoom' in h2b.stored, false,
     'a retina capture of a wide page paints at its CSS content width');
   assert.equal(h1.previewNaturalWidth(0, 2), 0,
     'nothing decoded yet yields no pinned width');
+
+  // Scenario 6 (regression): a remount must not re-decide a mode the user
+  // already chose. The one-shot auto-fit gate lives in a ref, so it resets on
+  // every mount — and the Preview panel remounts whenever its chip is toggled
+  // or its full-screen overlay round-trips. With a wide preset selected and
+  // `Fit` chosen by hand, the old code re-ran the heuristic on remount and
+  // snapped the preview back to natural size (panning, and losing the frame's
+  // scroll position): the preview appeared to blink between two framings on
+  // every panel switch. The decision helper now refuses whenever the mode is
+  // the user's, whether that came from storage or a tap.
+  const decision = h1.autoZoomDecision;
+  assert.ok(typeof decision === 'function', 'the auto-fit decision is exported for testing');
+  assert.equal(decision({ decided: false, chosen: true, naturalWidth: 1280, frameWidth: 366, deviceScaleFactor: 1 }),
+    false, 'a user-chosen zoom is never overridden by the auto-fit');
+  assert.equal(decision({ decided: false, chosen: false, naturalWidth: 1280, frameWidth: 366, deviceScaleFactor: 1 }),
+    true, 'an unchosen, too-wide page is still auto-switched to natural size');
+  assert.equal(decision({ decided: false, chosen: false, naturalWidth: 375, frameWidth: 366, deviceScaleFactor: 1 }),
+    false, 'an unchosen page that fits stays in fit mode');
+  assert.equal(decision({ decided: true, chosen: false, naturalWidth: 1280, frameWidth: 366, deviceScaleFactor: 1 }),
+    false, 'the one-shot gate fires once per mount');
+  assert.equal(decision({ decided: false, chosen: true, naturalWidth: 750, frameWidth: 351, deviceScaleFactor: 2 }),
+    false, 'a chosen fit survives a retina preset too');
+
+  // zoomStored — the "the user has decided" mark. toggleZoom writes the key on
+  // *every* toggle, including `fit` (which is also the default), so the
+  // presence of the key is what marks a decision; the initial read alone cannot
+  // tell a stored `fit` from the default.
+  const stored = h1.zoomStored;
+  assert.ok(typeof stored === 'function', 'the stored-preference probe is exported');
+  // A fresh harness, because h1 has already toggled twice above and therefore
+  // does hold a stored decision by now.
+  const h0 = newHarness({});
+  assert.equal(h0.zoomStored(), false, 'no key means the user has not decided');
+  const h6 = newHarness({ storedSeed: { 'mouaif:inspector:previewZoom2': 'fit' } });
+  assert.equal(h6.zoomStored(), true, 'a stored fit counts as a decision');
+  const h7 = newHarness({ storedSeed: { 'mouaif:inspector:previewZoom2': 'size' } });
+  assert.equal(h7.zoomStored(), true, 'a stored size counts as a decision');
+  const h8 = newHarness({ storedSeed: { 'mouaif:inspector:previewZoom': 'size' } });
+  h8.render();
+  assert.equal(h8.zoomStored(), false, 'the discarded legacy v1 key is not a decision');
 
   console.log('PASS preview fit/natural-size toggle, persistence, bootstrap, auto-fit, and 100% width');
 }

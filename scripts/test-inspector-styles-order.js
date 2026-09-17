@@ -116,13 +116,23 @@ assert.ok(/removeEdit[\s\S]*?await revalidate\(\)/.test(panel),
   'a removed property re-reads the element too');
 assert.ok(/function revalidate\(\)[\s\S]{0,200}await syncFromPage\(\)[\s\S]{0,200}loadRules\(/.test(panel),
   'the re-read covers both the inline declarations and the matched rules');
-assert.ok(/m\.objectId !== prevId\)[\s\S]{0,80}setChanged\(\[\]\)/.test(panel),
+assert.ok(/const sameElement = !!\(m && m\.objectId === prevId\)/.test(panel),
+  'the panel decides "same element" by comparing object ids');
+assert.ok(/!sameElement\)[\s\S]{0,80}setChanged\(\[\]\)/.test(panel),
   'selecting a different element clears the change set');
 // …and the receipt with it: its entries name properties of the element that was
 // selected, so undoing them against a new element would be a write to the wrong
 // node.
-assert.ok(/m\.objectId !== prevId\)[\s\S]{0,120}props\.onSelectionReset/.test(panel),
+assert.ok(/!sameElement\)[\s\S]{0,140}props\.onSelectionReset/.test(panel),
   'selecting a different element clears the session receipt');
+// The pinned element preview is never blanked on adoption: the capture for the
+// new element is dispatched first and written into the same <img> node, so the
+// previous picture stays painted while the new bytes decode instead of the strip
+// going empty on every tap in the element tree.
+assert.ok(/setModelBoth\(m\);\s*\nsetShotBusy\(false\);\s*\n\/\/ The preview is cleared only after/.test(panel),
+  'the element preview is filled by the capture, not blanked on adoption');
+assert.ok(!/setShot\(null\);\s*\nsetShotBusy\(false\);\s*\ncaptureShot\(\)/.test(panel),
+  'adoption no longer clears the preview before capturing');
 // --- a shorthand edit marks the longhands it wrote -------------------------
 // The rows the lists carry are the element's own declarations, and the CSSOM
 // expands every shorthand when it lands (`padding: 30px` is stored as four

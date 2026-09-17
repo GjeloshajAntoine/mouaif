@@ -1190,23 +1190,47 @@ const shotLiveBusy = useRef(false);
 // captureShot — grab a clipped screenshot of the currently selected
 // element. Never throws: a failed capture leaves the previous preview in
 // place rather than blanking the panel.
-async function captureShot() {
-const objectId = modelRef.current && modelRef.current.objectId;
+async function captureShot(model) {
+// `model` (optional) is the element this capture is *for*. applyModel passes
+// the freshly adopted model, because the capture has to be dispatched before
+// the preview is touched — see the comment there — and at that moment
+// modelRef.current may not be the new element yet.
+const m = model || modelRef.current;
+const objectId = m && m.objectId;
 if (!objectId || !props.captureElementShot) return;
 const serial = ++shotSerial.current;
 manualShotBusy.current = true;
 setShotBusy(true);
 try {
 const r = await props.captureElementShot(objectId);
+// Drop the answer if the selection moved on while it was in flight — an
+// answer for an element that is no longer selected would put the wrong
+// element's picture above the properties.
 if (serial !== shotSerial.current) return;
 if (r && r.data) {
+// The cached bytes are only replaced together with the image they
+// describe. `captureShotLive` compares against this, so it has to be the
+// picture actually on screen — updating it on dispatch instead would let a
+// failed capture poison the cache and suppress the next identical frame.
 lastShotData.current = r.data;
-setShot({ src: 'data:image/png;base64,' + r.data, width: r.width, height: r.height });
+applyShot({ src: 'data:image/png;base64,' + r.data, width: r.width, height: r.height });
 }
 } catch { /* keep the previous preview */ } finally {
 manualShotBusy.current = false;
 if (serial === shotSerial.current) setShotBusy(false);
 }
+}
+// applyShot — publish a capture into the strip.
+//
+// The state object is always *merged*, never replaced, so the `<img>` node is
+// never remounted: a browser keeps an image's last painted bitmap up while a
+// newly assigned `src` decodes, whereas a fresh node has nothing to paint and
+// shows an empty box for that window. Merging is therefore what makes the strip
+// go from one capture straight to the next with no blank frame — including from
+// one element to another, where the previous element's picture is briefly held
+// instead of an empty strip (see applyModel).
+function applyShot(next) {
+setShot((prev) => ({ ...prev, ...next }));
 }
 // captureShotLive — the loop's capture. Same clipped screenshot, three
 // deliberate differences from `captureShot` above:
@@ -1237,7 +1261,7 @@ if (r.data === lastShotData.current) return;
 const cur = modelRef.current;
 if (!cur || cur.objectId !== objectId) return;
 lastShotData.current = r.data;
-setShot({ src: 'data:image/png;base64,' + r.data, width: r.width, height: r.height });
+applyShot({ src: 'data:image/png;base64,' + r.data, width: r.width, height: r.height });
 } catch { /* keep the previous preview */ } finally {
 shotLiveBusy.current = false;
 }
@@ -1299,17 +1323,27 @@ function applyModel(m) {
 // (the properties belong to the old node). A refresh of the same element
 // keeps it.
 const prevId = modelRef.current && modelRef.current.objectId;
-if (!m || m.objectId !== prevId) { setChanged([]); if (props.onSelectionReset) props.onSelectionReset(); }
+const sameElement = !!(m && m.objectId === prevId);
+if (!sameElement) { setChanged([]); if (props.onSelectionReset) props.onSelectionReset(); }
 setModelBoth(m);
-shotSerial.current++;
-// The previous element's capture is meaningless for this one, in the cache as
-// well as on screen: the live loop compares against `lastShotData`, so leaving
-// it behind would drop the new element's first capture when the two happen to
-// be byte-identical (two identical buttons, a repeated card).
-lastShotData.current = '';
-setShot(null);
 setShotBusy(false);
-captureShot();
+// The preview is cleared only after the replacement is *ready*, never before.
+//
+// It used to be cleared up front, so the strip went empty on every adoption
+// and only filled again one round-trip later: a clipped capture plus its
+// decode. On a phone that is a visible hole under the pinned identity row —
+// measured at ~250 ms on a local fixture and far longer on a real page, on
+// every tap in the element tree or the breadcrumb.
+//
+// Dispatching the capture *first* is what closes it: `applyShot` writes the
+// new bytes into the same <img> node, and a browser keeps an image's last
+// painted bitmap up while a newly assigned `src` decodes — so the strip goes
+// from one element straight to the next with no empty frame in between. The
+// byte cache is then updated only once the new capture has actually landed,
+// which preserves the invariant the old up-front reset was protecting (a stale
+// cache would otherwise discard the new element's first capture when the two
+// happen to be byte-identical).
+captureShot(m);
 loadTree(m);
 loadRules(m);
 }
