@@ -47,6 +47,35 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
   <link rel="apple-touch-icon" href="/icons/icon-180-apple.png" />
   <title>mouaif</title>
+  <!--
+    Paint the page background before the bundle's stylesheet arrives.
+
+    Until this rule existed the app's first frame was the browser's default
+    canvas: #fff, a full-screen WHITE flash, because the document's only
+    background came from the `@import`-ed index CSS and the external
+    stylesheet is requested before the module script runs. On a cold load,
+    a hard reload, or a profile where the SW has not yet taken over, that
+    is one or more frames of pure white between the commit and the
+    stylesheet — reported as "grey flashes with page reload".
+
+    Two details make this the right fix rather than a workaround:
+      - the inline <style> is in the document, so it applies at the first
+        paint — the white canvas is never composited;
+      - the color is the SAME --bg token the app settles on (#0a0d12, the
+        literal value of `--bg` in frontend/src/base.css). The bundle's CSS
+        re-declares it with the accent glow a tick later, so the swap is an
+        invisible repaint of the same base colour instead of a step.
+
+    Keep the value in sync with --bg in frontend/src/base.css, and keep this
+    rule BEFORE the bundler-injected `<link rel="stylesheet">` (Vite appends
+    it at the end of <head>): the bundle's `html` rule sets the same
+    `background` property at equal specificity, so coming later on equal
+    footing is exactly what lets the glow take over once it has loaded.
+    scripts/test-index-first-paint.mjs asserts both facts.
+  -->
+  <style>
+    html { background: #0a0d12; }
+  </style>
 </head>
 <body>
   <main id="app"></main>
