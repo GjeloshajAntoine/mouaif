@@ -21,7 +21,7 @@ import {
 } from './tools.js';
 import { renderToolResultBody } from './toolRender.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
-import { cssEscape } from './utils.js';
+import { cssEscape, copyText, messageCopyText } from './utils.js';
 import { buildSetupCard, mountToolsCard, mountAgentFilesCard, mountSkillsCard } from './cards.js';
 import { setPromptSize } from './meta.js';
 import { updateUsageSummary } from './usage.js';
@@ -214,6 +214,42 @@ function renderAssistantBody(body, content, reasoning, final) {
   body.appendChild(answer);
 }
 
+// buildCopyButton(messageFor) -> button
+//
+// The per-message copy control: a small, tap-sized button appended at the END
+// of the row (below the body) so it never sits between the text and its
+// neighbors or overlaps the content on a narrow screen — the same place the
+// error card puts its Retry button.
+//
+// `messageFor` resolves the message to copy at click time, not at build time.
+// That matters for the live row: it streams into `row._content`, not into the
+// placeholder object the row was created from, so a snapshot would copy an
+// empty string. A settled row simply returns its message. The label flips to
+// `Copied` / `Copy failed` in place for ~1.4s — the transcript is a scrolling
+// list, so a toast would be missed.
+function buildCopyButton(messageFor) {
+  const btn = document.createElement('button');
+  btn.className = 'chat-msg__copy';
+  btn.type = 'button';
+  btn.textContent = 'Copy';
+  btn.setAttribute('aria-label', 'Copy message');
+  btn.addEventListener('click', async () => {
+    const ok = await copyText(messageCopyText(messageFor()));
+    btn.textContent = ok ? 'Copied' : 'Copy failed';
+    btn.classList.toggle('is-copied', ok);
+    btn.classList.toggle('is-failed', !ok);
+    btn.setAttribute('aria-label', ok ? 'Copied message' : 'Copy failed');
+    if (btn._copyReset) clearTimeout(btn._copyReset);
+    btn._copyReset = setTimeout(() => {
+      btn._copyReset = null;
+      btn.textContent = 'Copy';
+      btn.classList.remove('is-copied', 'is-failed');
+      btn.setAttribute('aria-label', 'Copy message');
+    }, 1400);
+  });
+  return btn;
+}
+
 // appendMessageToTranscript(m, isLive, refs, state)
 //
 // Append a chat bubble. `isLive` marks the row as the current
@@ -263,6 +299,18 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
   head.appendChild(ts);
   row.appendChild(head);
   row.appendChild(body);
+  if (m.role === 'user' || m.role === 'assistant') {
+    const actions = document.createElement('div');
+    actions.className = 'chat-msg__actions';
+    // A live row streams into `_content` (the placeholder message it was
+    // created from stays empty), so gather what is on screen right now. Every
+    // other row copies its own message.
+    actions.appendChild(buildCopyButton(() => {
+    if (!isLive) return m;
+    return { role: m.role, content: row._content || '', reasoning: row._reasoning || '' };
+    }));
+    row.appendChild(actions);
+  }
   transcriptInsert(refs, row);
   if (m.role === 'assistant' && isLive) {
     row._body = body;

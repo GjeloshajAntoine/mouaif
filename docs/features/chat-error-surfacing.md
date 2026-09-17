@@ -13,6 +13,7 @@ No configuration. When a turn fails you see a red-tinted bubble at the failure p
 - Reloading the chat re-renders the error bubble from the persisted transcript; the post-stream reconciliation never erases it.
 - Client-side send failures (network down before the request reached the server, HTTP 4xx rejections such as `409 EALREADY_RUNNING`) render the same bubble locally.
 - If saving the model selection or clearing the saved draft fails before sending, the composer keeps its exact text and image attachments. The status line explains that the message was not sent, and Send becomes available for another attempt.
+- An error bubble carries its own **Retry** action. Normal user and assistant bubbles instead carry a **Copy** action — see [Message copy](./message-copy.md).
 
 ## Implementation notes
 

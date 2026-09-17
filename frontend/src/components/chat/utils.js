@@ -10,6 +10,63 @@ export function cssEscape(s) {
   return String(s).replace(/[^A-Za-z0-9_-]/g, (c) => '\\' + c);
 }
 
+// copyText(text) -> Promise<boolean>
+//
+// Write a string to the clipboard, falling back to execCommand for embedded
+// web views (and non-secure origins) that block `navigator.clipboard`.
+// Returns true on success instead of throwing: the transcript's copy button
+// reports a refusal in place, and the value itself is always on screen, so a
+// rejected write is never the only way to reach it. Mirrors the helpers in
+// chat/GitModal.jsx and Inspector.jsx.
+export async function copyText(text) {
+  const value = String(text == null ? '' : text);
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch (_) { /* fall through to the execCommand path */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+// messageCopyText(m) -> string
+//
+// The text a message row copies. Assistant turns keep their reasoning out of
+// the copied answer when the turn also has an answer — the thinking block is
+// scaffolding, not the reply — but a reasoning-only turn (cancelled before the
+// first content delta) would otherwise copy an empty string, so it falls back
+// to the reasoning. User turns copy their prose; image attachments are DOM
+// data URLs and cannot travel through the clipboard as text, so their file
+// name is noted instead.
+export function messageCopyText(m) {
+  if (!m) return '';
+  const content = typeof m.content === 'string' ? m.content : String(m.content == null ? '' : m.content);
+  if (m.role !== 'assistant') {
+    if (m.role !== 'user' || !Array.isArray(m.attachments) || !m.attachments.length) return content;
+    const names = m.attachments.map((a) => (a && a.name) || 'image').filter(Boolean);
+    if (!names.length) return content;
+    return (content ? content + '\n\n' : '') + names.map((n) => '[image: ' + n + ']').join('\n');
+  }
+  const reasoning = typeof m.reasoning === 'string' ? m.reasoning : '';
+  if (content.trim()) return content;
+  return reasoning;
+}
+
 // Strip ANSI/VT control codes from a command's output and reconstruct a
 // readable plain-text view of a screen. Used by the interactive CLI modal,
 // whose session is a **piped, non-TTY** child: programs that draw a full

@@ -18,7 +18,7 @@
     "dev": "node bin/mouaif.js serve --watch",
     "dev:web": "vite --config frontend/vite.config.js",
     "build:web": "vite build --config frontend/vite.config.js",
-    "test:chat-view": "node scripts/test-chat-send-preparation.js && node scripts/test-chat-cost-summary.js && node scripts/test-chat-scroll-performance.js && node scripts/test-chat-draft-performance.js",
+    "test:chat-view": "node scripts/test-chat-send-preparation.js && node scripts/test-chat-cost-summary.js && node scripts/test-chat-scroll-performance.js && node scripts/test-chat-draft-performance.js && node scripts/test-message-copy.js",
     "docs:build": "node scripts/build-docs.js",
     "docs:build:internal": "node scripts/build-docs.js --with-internal",
     "docs:publish": "node scripts/publish-docs.js",

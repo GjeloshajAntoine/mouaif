@@ -235,6 +235,40 @@
   border-color: var(--danger);
 }
 
+/* ---- Per-message copy action ------------------------------------- */
+
+/* The copy button sits below the bubble, aligned to the same edge the
+   bubble hugs (right for user turns, left for assistant turns — the
+   `.chat-msg` cross-axis alignment already pins that), so it never covers
+   the message text on a 360px screen. */
+.chat-msg__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 2px;
+}
+.chat-msg__copy {
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+}
+.chat-msg__copy:hover,
+.chat-msg__copy:active {
+  color: var(--fg);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.chat-msg__copy.is-copied {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+}
+.chat-msg__copy.is-failed {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+
 /* ---- Per-turn usage meta ----------------------------------------- */
 
 .chat-msg__meta {

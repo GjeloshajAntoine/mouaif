@@ -49,6 +49,9 @@ function createElement(tag) {
     scrollTop: 0,
     clientHeight: 800,
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    attributes: {},
+    setAttribute(name, value) { node.attributes[name] = String(value); },
+    getAttribute(name) { return Object.prototype.hasOwnProperty.call(node.attributes, name) ? node.attributes[name] : null; },
     appendChild(child) {
       child.parentNode = node;
       node.children.push(child);
