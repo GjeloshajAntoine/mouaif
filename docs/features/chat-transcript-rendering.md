@@ -24,6 +24,31 @@ Each message row carries a stable key, computed by `transcriptRowKey(m)` in `fro
 
 Header cards are gated the same way. `headerSignatures(state, empty)` reduces the inputs of the four cards above the messages (system prompt, tools, agent files, skills) plus the setup control to a signature string each, and `syncHeaderCards` rebuilds a card only when its signature moved or its node is missing. The empty-state block is kept as a node rather than rebuilt while the chat stays empty.
 
+### The header block has one fixed order
+
+The header block is laid out as
+
+```text
+[setup] [system prompt] [tools] [agent files] [skills] [empty state]
+```
+
+always above the message rows and any standing overlay card. That order used to be an accident of mount timing, because each card mounter located its own slot by looking up a sibling anchor — "insert after the system-prompt row, else before the empty state, else `appendChild()`". Every one of those anchors can legitimately be absent (the system-prompt row is removed and re-inserted on every prompt refresh; the empty-state block leaves with the first message), and the `appendChild()` fallback dropped the card **below the conversation** — the prompt and tool toggles appearing in the middle of the transcript.
+
+`frontend/src/components/chat/headerCards.js` owns the block's order:
+
+| Export | Purpose |
+| --- | --- |
+| `headerCardIndex(el)` | Slot of a mounted header card, or `-1` for a message row, tool card, overlay card, or padding |
+| `isHeaderCardNode(el)` | `headerCardIndex(el) !== -1` — used by the transcript to classify nodes |
+| `placeHeaderCard(el, card, index)` | Put a card in its slot in one mutation: before the first child that is not a header card, or is a header card from a later slot |
+| `orderHeaderCards(refs)` | Invariant pass that re-slots every mounted header card |
+
+`placeHeaderCard` computes its reference node from slot indices rather than from an anchor lookup, so **no anchor is required**: with every other card absent it still inserts above the message rows. A card already sitting in its slot is not moved — moving a node replays its CSS entry animation, so a settled pass must perform no mutation. `orderHeaderCards` runs at the end of `syncHeaderCards`, which makes the final order independent of which mounters ran.
+
+The system-prompt row is the one header card that is also a `.chat-msg` bubble. `isMessageRowNode` excludes it via `isHeaderCardNode`, because otherwise the reconciler treated it as an unkeyed message row: it parked its row cursor on it and inserted the real messages **above** the header block, and it culled the row on the next pass whenever the row was no longer the first child. `findTranscriptContentStart` uses the same classification, so the pagination prepend and the mounters cannot drift apart.
+
+`scripts/test-transcript-header-order.js` pins all of it — slot placement with every anchor absent, the no-op settled pass, the repair of a mis-ordered block, and the reconciler keeping messages below the header block.
+
 Other rules the pass preserves:
 
 - Authorization and `ask_user` overlay cards are not message rows. They are mounted beside the transcript while a run is parked, they carry `data-auth-call-id`, and the reconciler never matches, moves, or removes them.
@@ -37,7 +62,7 @@ The 1 s reconcile poll and the dropped-stream recovery both fold the server's ne
 
 `applyTailSync` (in `stream.js`) now asks `tailSyncDomAction(prev, merged)` (in `msgMerge.js`) which path to take: `'append'` for a genuine append, `'render'` for a moved prefix — which routes to the full `reconcileTranscriptRows` pass that reuses every unchanged node (so nothing re-animates) and places each row in its correct slot. `scripts/test-msg-merge.js` covers the decision.
 
-The file-order tests drive this module in a `vm` context with a minimal element stub, so the reconciler reads `className` as a string rather than through `classList`, and those harnesses must expose `WeakMap` alongside the other globals they provide.
+The file-order tests drive this module in a `vm` context with a minimal element stub, so the reconciler reads `className` as a string rather than through `classList`, and those harnesses must expose `WeakMap` alongside the other globals they provide. `headerCards.js` is deliberately import-free for the same reason: a harness can load it standalone, or inject its exports into the `transcript.js` context.
 
 ## Related
 

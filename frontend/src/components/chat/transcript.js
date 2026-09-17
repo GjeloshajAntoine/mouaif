@@ -23,6 +23,7 @@ import { renderToolResultBody } from './toolRender.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
 import { cssEscape, copyText, messageCopyText } from './utils.js';
 import { buildSetupCard, mountToolsCard, mountAgentFilesCard, mountSkillsCard } from './cards.js';
+import { headerCardIndex, isHeaderCardNode, orderHeaderCards, placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
 import { setPromptSize } from './meta.js';
 import { updateUsageSummary } from './usage.js';
 import { updateJumpButton } from './scroll.js';
@@ -121,14 +122,14 @@ export function renderSystemPromptMessage(refs, systemPrompt) {
   if (!systemPrompt || !systemPrompt.text) return;
   const row = buildSystemPromptRow(systemPrompt.text);
   row.dataset.sysPrompt = '1';
-  // Insert directly after the setup card if one is still mounted,
-  // so the system message always sits under it on a new chat.
-  const setup = refs.setupCard.current;
-  if (setup && setup.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(row, setup.nextSibling);
-  } else {
-    refs.transcript.current.insertBefore(row, refs.transcript.current.firstChild);
-  }
+  // Slot 1 of the header block, in one mutation: after the setup control and
+  // above the tools / agent-files / skills cards, regardless of which of them
+  // happen to be mounted right now. The previous "insert after the setup card
+  // if mounted, else first child" guess put the row back above a still-mounted
+  // setup card whenever the prompt was refreshed.
+  placeHeaderCard(refs.transcript.current, row, HEADER_CARD_ORDER.sysPrompt);
+  refs._cardSigs = refs._cardSigs || {};
+  refs._cardSigs.sys = String((systemPrompt && systemPrompt.text) || '');
 }
 
 // transcriptInsert(refs, node)
@@ -2003,8 +2004,16 @@ function isOverlayCard(el) {
 }
 
 // isMessageRowNode(el) -> bool
+//
+// A transcript row the reconciler may match, move, or remove. Header cards
+// are excluded even though the system-prompt row is a `.chat-msg` bubble: it
+// is a card with a fixed slot above the conversation, not a message from
+// state.messages. Without the exclusion the reconciler saw it as an unkeyed
+// row — culling it whenever it did not happen to be first (see
+// reconcileTranscriptRows) and parking its row cursor on it, so real messages
+// were inserted ABOVE the header block.
 function isMessageRowNode(el) {
-  if (!el || el.nodeType !== 1 || isOverlayCard(el)) return false;
+  if (!el || el.nodeType !== 1 || isOverlayCard(el) || isHeaderCardNode(el)) return false;
   return hasClass(el, 'chat-msg') || hasClass(el, 'tool-card');
 }
 
@@ -2218,7 +2227,9 @@ function syncHeaderCards(state, refs, empty) {
   } else if (prev.setup !== sigs.setup || !refs.setupCard.current || !refs.setupCard.current.parentNode) {
     if (refs.setupCard.current && refs.setupCard.current.parentNode) refs.setupCard.current.remove();
     const card = buildSetupCardForMount(refs, state);
-    el.insertBefore(card, el.firstChild);
+    // The setup control owns slot 0 of the header block, where buildToolCard
+    // expects to find it (it queries `.chat-view__setup`).
+    placeHeaderCard(el, card, HEADER_CARD_ORDER.setup);
     refs.setupCard.current = card;
     prev.setup = sigs.setup;
   }
@@ -2239,6 +2250,10 @@ function syncHeaderCards(state, refs, empty) {
     mountSkillsCard(refs, state);
     prev.skills = sigs.skills;
   }
+  // Header cards keep their fixed order no matter which mounters ran this
+  // pass, or which card one of them found or missed as an anchor. Only a card
+  // already out of place is moved, so a settled pass performs no mutation.
+  orderHeaderCards(refs);
   ensureEmptyState(refs, empty);
 }
 
@@ -2321,9 +2336,9 @@ function findTranscriptContentStart(el) {
 if (!el) return null;
 for (let i = 0; i < el.children.length; i++) {
 const child = el.children[i];
-if (child.classList && child.classList.contains('chat-view__setup')) continue;
-if (child.classList && child.classList.contains('chat-view__empty')) continue;
-if (child.dataset && (child.dataset.sysPrompt || child.dataset.toolsCard || child.dataset.agentFilesCard || child.dataset.skillsCard)) continue;
+// Shared classification (see headerCards.js) rather than a second list of
+// classes and data attributes that could drift from the mounters'.
+if (isHeaderCardNode(child)) continue;
 return child;
 }
 return null;

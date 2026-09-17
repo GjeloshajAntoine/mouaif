@@ -10,6 +10,7 @@ import { h, render } from 'preact';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
+import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
 
 // buildSetupCard()
 //
@@ -252,18 +253,14 @@ export function mountToolsCard(refs, state) {
   if (existing) existing.remove();
   const card = buildToolsCard(state);
   refs.toolsCard.current = card;
-  // Insert AFTER the system-prompt message so the visual order is:
-  //   [setup card] [system prompt] [tools card] [messages/empty]
-  // The user asked for the toggles "below the system prompt".
-  const sysMsg = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
-  const empty = refs.transcript.current.querySelector('.chat-view__empty');
-  if (sysMsg && sysMsg.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, sysMsg.nextSibling);
-  } else if (empty && empty.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, empty);
-  } else {
-    refs.transcript.current.appendChild(card);
-  }
+  // Slot 2 of the header block: below the system-prompt message and above
+  // agent files + skills, whichever of those are mounted. Placed by slot
+  // rather than by looking up a sibling anchor, because every anchor a
+  // mounter could look for may legitimately be absent (the system-prompt row
+  // is removed and re-inserted on refresh, the empty state goes with the
+  // first message) — and the old appendChild() fallback for "no anchor
+  // found" dropped the card below the whole conversation.
+  placeHeaderCard(refs.transcript.current, card, HEADER_CARD_ORDER.tools);
 }
 
 // buildAgentFilesCard(state)
@@ -419,18 +416,9 @@ export function mountAgentFilesCard(refs, state) {
   if (existing) existing.remove();
   const card = buildAgentFilesCard(state);
   refs.agentFilesCard.current = card;
-  const toolsCard = refs.transcript.current.querySelector('[data-tools-card="1"]');
-  const sysMsg = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
-  const empty = refs.transcript.current.querySelector('.chat-view__empty');
-  if (toolsCard && toolsCard.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, toolsCard.nextSibling);
-  } else if (sysMsg && sysMsg.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, sysMsg.nextSibling);
-  } else if (empty && empty.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, empty);
-  } else {
-    refs.transcript.current.appendChild(card);
-  }
+  // Slot 3: below the tools card, above skills. See mountToolsCard for why the
+  // sibling-anchor lookup was replaced by an explicit slot.
+  placeHeaderCard(refs.transcript.current, card, HEADER_CARD_ORDER.agentFiles);
 }
 
 // mountSkillsCard(refs, state)
@@ -443,21 +431,10 @@ export function mountSkillsCard(refs, state) {
   if (existing) existing.remove();
   const card = buildSkillsCard(state);
   refs.skillsCard.current = card;
-  const agentFilesCard = refs.transcript.current.querySelector('[data-agent-files-card="1"]');
-  const toolsCard = refs.transcript.current.querySelector('[data-tools-card="1"]');
-  const sysMsg = refs.transcript.current.querySelector('[data-sys-prompt="1"]');
-  const empty = refs.transcript.current.querySelector('.chat-view__empty');
-  if (agentFilesCard && agentFilesCard.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, agentFilesCard.nextSibling);
-  } else if (toolsCard && toolsCard.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, toolsCard.nextSibling);
-  } else if (sysMsg && sysMsg.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, sysMsg.nextSibling);
-  } else if (empty && empty.parentNode === refs.transcript.current) {
-    refs.transcript.current.insertBefore(card, empty);
-  } else {
-    refs.transcript.current.appendChild(card);
-  }
+  // Slot 4: the last header card, below agent files and above the message
+  // rows. See mountToolsCard for why the sibling-anchor lookup was replaced
+  // by an explicit slot.
+  placeHeaderCard(refs.transcript.current, card, HEADER_CARD_ORDER.skills);
 }
 
 // updateAgentFilesCard(refs, state)
