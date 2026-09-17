@@ -135,13 +135,17 @@
 }
 @keyframes tool-card-spin { to { transform: rotate(360deg); } }
 
-.tool-card:where(:not(.is-expanded):not(.tool-card--authorization):not(.tool-card--ask-user):not(.tool-card--progress):not(.tool-card--subagent)) .tool-card__body { display: none; }
-/* Subagent cards keep their body visible even when collapsed: the
-   card auto-expands while the subagent runs, and on completion it
-   collapses but the final nested chat stays visible so the user can
-   read the result without an extra tap. Shell call cards only show
-   their live output while expanded. */
-.tool-card--subagent .tool-card__body { display: block; }
+.tool-card:where(:not(.is-expanded):not(.tool-card--authorization):not(.tool-card--ask-user):not(.tool-card--progress)) .tool-card__body { display: none; }
+/* A subagent card's body IS its delegated transcript, but it still obeys
+  `is-expanded` like every other card. The renderer leaves a settled card
+  open (adds `is-expanded`) unless the user collapsed it, so the transcript
+  is readable without a tap — while the header's collapse toggle actually
+  does something. The blanket `.tool-card--subagent .tool-card__body
+  { display: block; }` that used to live here overrode the hide rule and
+  made that toggle a no-op: a "collapsed" subagent card kept rendering its
+  whole body, so it looked permanently expanded.
+  `.tool-card--progress` keeps its always-visible body; shell call cards
+  only show their live output while expanded. */
 .tool-card.is-expanded .tool-card__body,
 .tool-card--authorization .tool-card__body {
   margin: 0;
@@ -290,9 +294,13 @@ color: var(--fg-soft);
    nested transcript used to lose this panel the moment the card expanded:
    it fell back to the flat, 17 px-indented tool-output style with the
    muted type scale, and expanding a finished card visibly restyled its
-   content. The `.tool-card` qualifier keeps the panel in both states. */
+   content. The `.tool-card` qualifier keeps the panel styling in both
+   states — but it deliberately does NOT declare `display`. Visibility is
+   owned by the generic rules above (`:not(.is-expanded) … { display: none }`
+   / `.is-expanded … { display: block }`); a `display: block` here
+   out-specified the hide rule and welded the body open, so collapsing a
+   subagent card changed nothing on screen. */
 .tool-card.tool-card--subagent .tool-card__body {
-  display: block;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
