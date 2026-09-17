@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Project search engine — mouaif docs</title>
+  <meta name="description" content="`search_files` — the built-in tool the model uses to grep the project — runs on **ripgrep** when a binary is available on the machine, and on a bounded…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="project-search-engine">Project search engine</h1>
+<h2 id="overview">Overview</h2>
+<p><code>search_files</code> — the built-in tool the model uses to grep the project — runs on <strong>ripgrep</strong> when a binary is available on the machine, and on a bounded JavaScript walk when it is not. Both backends return the identical result object, so the tool, the chat card, and the redaction rules cannot tell which one ran.</p>
+<p>The rewrite replaced a hand-written walker that read every allowlisted file in full with a <code>RegExp.test</code> per line. On this repository that walker needed 843 file reads and 27,680 re-reads of <code>.mouaif.json</code> to answer one query: 12.6 s for a whole-project search. The same query now takes ~30 ms.</p>
+<h2 id="usage">Usage</h2>
+<h3 id="nothing-to-configure">Nothing to configure</h3>
+<p>The engine is a drop-in replacement for the previous walker. The tool name, its arguments, its result shape, and its authorization gate are unchanged, so existing chats, transcripts, and prompt profiles keep working.</p>
+<h3 id="which-backend-ran">Which backend ran</h3>
+<p>The result carries an <code>engine</code> field (<code>&quot;ripgrep&quot;</code> or <code>&quot;walk&quot;</code>). It is sent on the <code>tool_result</code> event and is visible in the trace file, which is the fastest way to tell why two machines returned slightly different match sets.</p>
+<h3 id="binary-discovery">Binary discovery</h3>
+<p>The ripgrep binary is looked up in this order, and the answer is cached for the process:</p>
+<ol><li><p><code>MOUAIF_RG_PATH</code> — an explicit path, for a machine that keeps its own copy somewhere unusual.</p></li><li><p><code>PATH</code> — a system <code>rg</code>.</p></li><li><p>Bundled copies shipped inside tools the app already integrates with: the VS Code / Cursor server&#39;s <code>@vscode/ripgrep</code>, and the packaged codex CLI&#39;s <code>rg</code>.</p>
+<p>Two environment variables control the lookup:</p>
+<div class="table-wrap"><table><thead><tr><th>Variable</th><th>Effect</th></tr></thead><tbody><tr><td><code>MOUAIF_RG_PATH</code></td><td>Use this binary.</td></tr><tr><td><code>MOUAIF_RG_DISABLE</code></td><td>Never use ripgrep; always use the walk.</td></tr></tbody></table></div>
+<p>The fallback is not a degraded mode: it enforces the same caps and the same redaction rules. It is slower and its file set is slightly different, which is documented under <em>Implementation notes</em>.</p></li></ol>
+<h3 id="what-the-search-sees">What the search sees</h3>
+<div class="table-wrap"><table><thead><tr><th>Rule</th><th>Detail</th></tr></thead><tbody><tr><td>Ignore files</td><td>The project&#39;s <code>.gitignore</code> is honored <strong>even when the directory is not a git repository</strong>. ripgrep gets <code>--no-require-git</code> plus an absolute <code>--ignore-file</code>, because on its own it only reads ignore files inside a repo.</td></tr><tr><td>Hidden files</td><td>Searched. <code>.github/workflows/ci.yml</code> is project source.</td></tr><tr><td>Skipped directories</td><td><code>node_modules</code>, <code>.git</code>, <code>.mouaif</code>, <code>dist</code>, <code>build</code>, <code>.cache</code>.</td></tr><tr><td>Extensionless files</td><td>Searched, so <code>Dockerfile</code>, <code>Makefile</code> and <code>LICENSE</code> are reachable.</td></tr><tr><td>Unknown extensions</td><td>Skipped in the walk backend (a stray <code>dump.001</code> or a photo is not source). ripgrep decides by content, so it searches any file that is text.</td></tr><tr><td>Binary files</td><td>Skipped.</td></tr><tr><td>Global ignore files</td><td>Not applied (<code>--no-ignore-global</code>): a developer&#39;s personal <code>~/.gitignore</code> is not part of the project.</td></tr><tr><td><code>.ripgreprc</code></td><td>Not applied (<code>--no-config</code>): a project config file must not silently change what the model sees.</td></tr></tbody></table></div>
+<h3 id="redaction">Redaction</h3>
+<p><a href="./hide-file-content.html">hide-file-content</a> applies to both backends, unchanged in intent:</p>
+<ul><li><p>A match on a hidden <strong>line</strong> is dropped.</p></li><li><p>A match inside a hidden <strong>character span</strong> is dropped. ripgrep reports byte offsets, which are converted to the 1-indexed character columns the rules are stored in, so a multi-byte character counts as one column.</p></li><li><p>If <em>any</em> occurrence on a matching line falls inside a hidden span, the whole line is dropped. Printing the line because only one of its three occurrences was hidden would hand the model the redacted text.</p></li><li><p>Rules are read <strong>once per search</strong>. This is the fix for the per-line settings re-read that made the old engine slow; it also means a rule saved mid-search applies to the next search, not the running one.</p></li><li><p>If the rules cannot be read, the search behaves exactly as if none were configured.</p></li></ul>
+<h3 id="arguments">Arguments</h3>
+<div class="table-wrap"><table><thead><tr><th>Argument</th><th>Required</th><th>Notes</th></tr></thead><tbody><tr><td><code>query</code></td><td>yes</td><td>A ripgrep-style regular expression.</td></tr><tr><td><code>path</code></td><td>no</td><td>A directory or a single file. <code>.</code>, <code>./</code>, <code>src</code>, <code>src/</code>, <code>src/file.js</code> are accepted. A path that does not exist yet searches its <strong>nearest existing ancestor</strong>, so <code>src/util</code> searches <code>src/</code> instead of returning nothing.</td></tr><tr><td><code>include</code></td><td>no</td><td>A glob to filter the files searched: <code>*.js</code>, <code>*.{ts,tsx}</code>, <code>src/**/*.test.js</code>. A leading <code>!</code> or <code>/</code> is stripped rather than honored, so an <code>include</code> can never turn into an exclusion.</td></tr></tbody></table></div>
+<h3 id="regex-dialect">Regex dialect</h3>
+<p>The engine speaks the real ripgrep dialect, which is wider than the JavaScript <code>RegExp</code> the old documentation described:</p>
+<ul><li><p><code>(?i)foo</code> — case-insensitive. Peeling this off the front of the pattern into <code>--ignore-case</code> makes it work on ripgrep builds compiled without PCRE2.</p></li><li><p><code>(?s)f.o</code> — dot matches newline, passed as <code>--multiline --multiline-dotall</code>.</p></li><li><p><code>(?P&lt;name&gt;...)</code> — named capture groups, passed through.</p>
+<p>Two constructs are rejected with a typed <code>EBADINPUT</code> error whose message names the problem, rather than a bare regex parse failure:</p></li></ul>
+<pre><code class="language-text">lookahead / lookbehind are not supported; use a capture group or two searches instead
+backreferences (\1) are not supported; rewrite the pattern without them</code></pre>
+<h3 id="caps">Caps</h3>
+<p><code>fileSearchMaxMatches</code> (default 200) and <code>fileSearchMaxBytes</code> (default 2 MB) are app-level settings, overridable in the app store:</p>
+<pre><code class="language-json">{
+  &quot;fileSearchMaxMatches&quot;: 100,
+  &quot;fileSearchMaxBytes&quot;: 1048576
+}</code></pre>
+<p>A truncated search says so, and the cap values appear in the header the model reads:</p>
+<pre><code class="language-text"># Search: login
+# Matches: 200 (capped at 200 matches / 2097152 chars)</code></pre>
+<h2 id="implementation-notes">Implementation notes</h2>
+<h3 id="files">Files</h3>
+<ul><li><p><a href="../../src/tools/searchEngine.js">src/tools/searchEngine.js</a> — both backends, binary discovery, pattern normalization, path scoping.</p></li><li><p><a href="../../src/tools/files.js">src/tools/files.js</a> — <code>runSearchFiles()</code> is now a thin adapter that delegates to the engine; the formatter is unchanged.</p></li><li><p><a href="../../src/hideFileContent.js">src/hideFileContent.js</a> — <code>buildRuleIndex()</code>, <code>rulesForPathIn()</code>, <code>lineIsHiddenIn()</code>, <code>matchIsHiddenIn()</code>.</p></li></ul>
+<h3 id="one-settings-read-per-search">One settings read per search</h3>
+<p><code>buildRuleIndex(projectDir)</code> reads the project settings once and returns three things: the normalized rules, a <code>Map</code> from normalized path to rule, and a <code>Map</code> from path <strong>suffix</strong> to the rules that match it. The suffix map is a safety net for the redaction feature: a rule that fails to match its file is a leak, not a cosmetic bug, so a rule written as <code>src/a.js</code> also applies to a path reported as <code>./src/a.js</code>.</p>
+<p><code>normalizePath()</code> gained a leading-<code>./</code> strip that previously never ran (the statement preceded its own <code>let s</code>), so a rule saved as <code>./src/a.js</code> used to be silently dead.</p>
+<h3 id="the-end-to-end-architecture">The end-to-end architecture</h3>
+<pre><code class="language-text">search_files(query, path?, include?)
+        │
+        ├─ normalizePattern()        peel (?i) / (?s) into CLI flags
+        ├─ assertPatternSupported()  typed EBADINPUT for lookaround / \1
+        ├─ resolveScope()            path -&gt; { root, dir, relDir, relFile }
+        │
+        ├─ findRipgrepBinary() ── yes ──&gt; runRipgrep()
+        │                                   spawn rg --json, stream NDJSON,
+        │                                   map byte offsets -&gt; char columns,
+        │                                   filter through the rule index
+        │                                 └─ any spawn / usage error -&gt; walk
+        └───────────────────────── no ──&gt; runWalk()
+                                           16 concurrent readers, same caps,
+                                           rules read once, same result shape</code></pre>
+<h3 id="ripgrep-invocation">ripgrep invocation</h3>
+<pre><code class="language-text">rg --json --no-config --no-require-git --line-number --with-filename \
+   --hidden --no-ignore-global --max-count &lt;n&gt; \
+   --max-columns 500 --max-columns-preview \
+   [--ignore-case] [--multiline --multiline-dotall] \
+   [--ignore-file &lt;root&gt;/.gitignore] \
+   -g &#39;!**/node_modules/**&#39; ... [-g &#39;/&lt;single file&gt;&#39;] [-g &#39;&lt;include&gt;&#39;] \
+   -- &lt;pattern&gt; .</code></pre>
+<p>The child&#39;s stdout is parsed as NDJSON with a line buffer, because a chunk boundary can split a JSON record. <code>begin</code> and <code>end</code> records count searched files (so <code>filesScanned</code> stays meaningful); <code>match</code> records carry the line number, the line text, and the submatches. The regex is passed after <code>--</code> so a pattern that begins with <code>-</code> is not read as a flag.</p>
+<p>The child is bounded three ways: <code>--max-columns</code>/<code>--max-columns-preview</code> keeps a minified one-line bundle from printing megabytes, <code>--max-count</code> keeps a match-everything pattern from flooding the pipe, and a 60 s kill timer plus a 500 ms grace period after the cap is reached keeps a wedged process from hanging the tool call. A child that exits non-zero with a usage error causes a fallback to the walk rather than a failed call, which is what makes an old ripgrep build survivable.</p>
+<h3 id="the-walk-backend">The walk backend</h3>
+<p>The fallback keeps the walker&#39;s behavior but fixes what made it slow and incomplete:</p>
+<ul><li><p>The redaction rules are read once per search instead of once per line.</p></li><li><p>Files are read through a pool of 16 concurrent readers instead of one at a time.</p></li><li><p>Extensionless files are searched.</p></li><li><p><code>.gitignore</code> is applied through a deliberately small reader (comments, blank lines, trailing <code>/</code>, leading <code>/</code>, <code>**</code>, and <code>!</code> re-includes). It is a best-effort match of git semantics, not a complete implementation: nested <code>.gitignore</code> files are not read.</p>
+<p>The walk skips <code>node_modules</code>, <code>.git</code>, <code>.mouaif</code>, <code>dist</code>, <code>build</code>, <code>.cache</code>, plus a <code>GENERATED_DIRS</code> list (<code>docs-dist</code>, <code>coverage</code>, <code>.next</code>, <code>target</code>, <code>vendor</code>, <code>__pycache__</code>, <code>.venv</code>, ...) so a checked-out build tree cannot consume the read ceiling before <code>src/</code> is reached.</p></li></ul>
+<h3 id="why-the-byte-cap-bounds-the-answer-not-the-walking">Why the byte cap bounds the answer, not the walking</h3>
+<p>The walk has to read a file to know whether it matches, so the tool-level byte budget cannot be allowed to decide <em>which</em> files get looked at. Spending it in directory order meant <code>docs/features/*.html</code> exhausted the 2 MB budget before <code>src/</code> was reached, and a search for a function in <code>src/</code> came back empty. The reported cap therefore bounds the <strong>matched line text</strong> added to the answer, and a separate read ceiling (<code>WALK_MAX_BYTES</code>, 64 MB) exists only to stop a pathological tree from being read forever. Being skipped is recorded as <code>filesSkipped</code>; being capped is recorded as <code>truncated</code>. They are not the same claim, and the model should not act on a truncation notice that did not happen.</p>
+<h3 id="verifying-a-change-here">Verifying a change here</h3>
+<pre><code class="language-bash">node scripts/test-search-engine.js</code></pre>
+<p>The suite runs every assertion twice — once per backend — and skips the ripgrep pass on a machine without a binary. It builds a fixture with an extensionless file, a <code>.gitignore</code>-excluded tree, a binary file, a hidden directory, a hidden line, and a hidden character span, and covers pattern normalization, <code>include</code>, path scoping, both error classes, both redaction forms, and the caps.</p>
+<p>For spot checks against ground truth:</p>
+<pre><code class="language-bash"># the walk backend must agree with git for tracked content
+MOUAIF_RG_DISABLE=1 node scripts/test-search-engine.js
+git grep -n resolveSandbox</code></pre>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./file-tools.html">file-tools.md</a> — the tool family this engine belongs to.</p></li><li><p><a href="./hide-file-content.html">hide-file-content.md</a> — the redaction rules both backends enforce.</p></li><li><p><a href="./trace.html">trace.md</a> — where the <code>engine</code> field shows up per chat.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

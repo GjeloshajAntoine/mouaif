@@ -234,7 +234,20 @@ async function main() {
       !!btn && btn.parentNode.className === 'chat-msg__actions', btn ? btn.parentNode.className : 'missing');
     check('the copy button is a real button with an accessible name',
       !!btn && btn.tagName === 'BUTTON' && btn.getAttribute('aria-label') === 'Copy message');
-    check('the copy button starts labelled Copy', !!btn && btn.textContent === 'Copy');
+    // Icon-only: the glyph carries the control, the name travels on
+    // aria-label. A stray text label would push the bubble's width around on a
+    // 360px screen, which is what this control was changed to avoid.
+    check('the copy button is icon-only, with no text label',
+      !!btn && btn.textContent === '' && !/[a-z]/i.test(String(btn.innerHTML || '').replace(/<[^>]*>/g, '')),
+      btn ? JSON.stringify(btn.textContent) : 'missing');
+    check('the copy button starts as a clipboard glyph',
+      !!btn && /<svg/.test(String(btn.innerHTML)) && /<rect/.test(String(btn.innerHTML)),
+      btn ? String(btn.innerHTML) : 'missing');
+    check('the copy glyph inherits its color instead of hard-coding a fill',
+      !!btn && /stroke="currentColor"/.test(String(btn.innerHTML)) && !/fill="(?!none)/.test(String(btn.innerHTML)),
+      btn ? String(btn.innerHTML) : 'missing');
+    check('the copy button keeps a 44px hit area without painting it',
+      !!btn && btn.classList.contains('tap-target'));
   }
 
   {
@@ -266,7 +279,12 @@ async function main() {
     await click();
     check('the live row copies its streamed content, not the empty placeholder',
     mod.copyState.text === 'streamed answer', JSON.stringify(mod.copyState.text));
-    check('the button reports success in place', btn.textContent === 'Copied', btn.textContent);
+    check('the button reports success with a check glyph',
+      /<svg/.test(String(btn.innerHTML)) && !/<rect/.test(String(btn.innerHTML)) && /<path/.test(String(btn.innerHTML)),
+      String(btn.innerHTML));
+    check('the button announces the success state',
+      btn.getAttribute('aria-label') === 'Copied message' && btn.classList.contains('is-copied'),
+      btn.getAttribute('aria-label'));
   }
 
   {

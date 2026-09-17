@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Message copy — mouaif docs</title>
+  <meta name="description" content="Every user and assistant bubble in a chat carries a small **copy icon** below it. One tap puts that message&#39;s text on the clipboard, so a user can paste an…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="message-copy">Message copy</h1>
+<h2 id="overview">Overview</h2>
+<p>Every user and assistant bubble in a chat carries a small <strong>copy icon</strong> below it. One tap puts that message&#39;s text on the clipboard, so a user can paste an answer into a ticket, a commit message, or another tool without selecting text by hand on a touch screen. The button gives its feedback in place — the glyph itself changes — so nothing covers the conversation.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Open a chat.</p></li><li><p>Under any of your own messages or any assistant answer, tap the <strong>clipboard icon</strong>.</p></li><li><p>The glyph becomes a <strong>check</strong> for about 1.4 s, then returns to the clipboard. If the clipboard refuses the write it becomes a <strong>cross</strong> instead.</p>
+<p>The control is icon-only — it repeats under every bubble, so a text label would compete with the message for the same line at 360 px. The state is still announced to assistive tech through the button&#39;s accessible name: <code>Copy message</code> → <code>Copied message</code> / <code>Copy failed</code>.</p>
+<p>What gets copied:</p></li></ol>
+<ul><li><p><strong>User turns</strong> — the message text exactly as it was sent.</p></li><li><p><strong>Assistant turns</strong> — the final answer. A <code>Thinking</code> block is scaffolding, not the reply, so it is left out when the turn also has an answer. A turn that was stopped before its first content token has no answer, so it copies its reasoning rather than an empty string.</p></li><li><p><strong>Image attachments</strong> — an attached image lives in the DOM as a <code>data:</code> URL and cannot travel through the clipboard as text, so the message lists the attachment by file name instead, e.g.:</p></li></ul>
+<pre><code class="language-text">look at this
+
+[image: shot.png]</code></pre>
+<p>Not copied, by design:</p>
+<ul><li><p><strong>Tool cards</strong> — tool calls and results are already reachable through the file viewer and the tool card&#39;s own actions.</p></li><li><p><strong>Error bubbles</strong> — an error card keeps its <strong>Retry</strong> action; see <a href="./chat-error-surfacing.html">Chat error surfacing</a> and <a href="./retry-and-auto-retry.html">Retry and auto-retry</a>.</p></li><li><p><strong>System prompt / setup cards</strong> — collapsed reference material rather than a turn.</p>
+<p>The button is available while a turn is still streaming: tapping it copies the text that is on screen at that moment.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><strong>Where the button is built</strong> — <code>buildCopyButton()</code> in <a href="frontend/src/components/chat/transcript.js">frontend/src/components/chat/transcript.js</a> returns the element; <code>appendMessageToTranscript()</code> mounts it in a <code>.chat-msg__actions</code> block appended after the bubble body for <code>user</code> and <code>assistant</code> rows only. Appending rather than floating keeps it off the text on a 360 px screen and matches the shape of the error card&#39;s action row.</p></li><li><p><strong>The three glyphs</strong> — <code>COPY_GLYPH_IDLE</code> / <code>COPY_GLYPH_COPIED</code> / <code>COPY_GLYPH_FAILED</code> in the same file are inline SVG drawn with <code>fill=&quot;none&quot;</code> and <code>stroke=&quot;currentColor&quot;</code>, so the CSS tint (<code>--muted</code> → <code>--success</code> / <code>--danger</code>) is the only color decision and the glyph follows the button&#39;s state classes. The state also travels on <code>aria-label</code> / <code>title</code>, because an icon alone says nothing to a screen reader.</p></li><li><p><strong>Live turns</strong> — a streaming assistant row writes into the row itself (<code>row._content</code>, <code>row._reasoning</code>), not into the placeholder message it was created from, so the button resolves its payload at click time through a closure rather than capturing a snapshot. A settled row simply returns its message object.</p></li><li><p><strong>What a message copies</strong> — <code>messageCopyText()</code> in <a href="frontend/src/components/chat/utils.js">frontend/src/components/chat/utils.js</a> is the single place that decides this, so the button and any future copy entry point cannot disagree.</p></li><li><p><strong>Clipboard access</strong> — the same module exports <code>copyText()</code>, which tries <code>navigator.clipboard.writeText()</code> and falls back to a hidden <code>textarea</code> + <code>document.execCommand(&#39;copy&#39;)</code> for embedded web views and non-secure origins. It returns a boolean rather than throwing, so the button can report a refusal in place. The helper mirrors the ones already used by <code>chat/GitModal.jsx</code> and <code>Inspector.jsx</code>.</p></li><li><p><strong>Styling</strong> — <code>.chat-msg__actions</code> / <code>.chat-msg__copy</code> (with the <code>is-copied</code> / <code>is-failed</code> states) live in <a href="frontend/src/chat-transcript.css">frontend/src/chat-transcript.css</a>. The button takes the shared compact glyph box (<code>--tap-sm</code>, 32 px) with no border or label, and pairs it with <code>.tap-target</code> from <a href="frontend/src/base.css">frontend/src/base.css</a> so the <em>hit</em> area still reaches the 44 px touch floor without painting a 44 px square. It inherits the row&#39;s alignment, so it sits under the right edge of a user bubble and the left edge of an assistant bubble.</p></li><li><p><strong>Covered by</strong> <code>scripts/test-message-copy.js</code> (wired into <code>npm run test:chat-view</code>): it asserts what each message shape copies, that the button is icon-only with a <code>currentColor</code> glyph and a <code>.tap-target</code> hit area, that the glyph flips on success, and that user/assistant rows mount the button while error cards mount only Retry.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

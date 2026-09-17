@@ -215,37 +215,65 @@ function renderAssistantBody(body, content, reasoning, final) {
   body.appendChild(answer);
 }
 
+// COPY_GLYPHS — the three states of the per-message copy control, as inline
+// SVG. The control is icon-only, so the state has to be carried by the glyph
+// itself: the clipboard, a check once the write lands, a cross when the
+// clipboard refuses it. Every glyph draws in `currentColor` with no fill, so
+// the CSS tint (muted -> success / danger) is the only color decision.
+const COPY_GLYPH_IDLE =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
+  'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<rect x="9" y="9" width="11" height="12" rx="2"/>' +
+  '<path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+const COPY_GLYPH_COPIED =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
+  'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M20 6 9 17l-5-5"/></svg>';
+const COPY_GLYPH_FAILED =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
+  'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M18 6 6 18M6 6l12 12"/></svg>';
+
 // buildCopyButton(messageFor) -> button
 //
-// The per-message copy control: a small, tap-sized button appended at the END
-// of the row (below the body) so it never sits between the text and its
+// The per-message copy control: a small, tap-sized ICON button appended at the
+// END of the row (below the body) so it never sits between the text and its
 // neighbors or overlaps the content on a narrow screen — the same place the
 // error card puts its Retry button.
+//
+// It is icon-only on purpose: it repeats under every bubble, and a text label
+// there competed with the message for the same line on a 360px screen. The
+// accessible name still travels on `aria-label`, so a screen reader hears
+// `Copy message` / `Copied message` / `Copy failed`, and `.tap-target` keeps
+// the touch area at 44px while the painted box stays 32px.
 //
 // `messageFor` resolves the message to copy at click time, not at build time.
 // That matters for the live row: it streams into `row._content`, not into the
 // placeholder object the row was created from, so a snapshot would copy an
-// empty string. A settled row simply returns its message. The label flips to
-// `Copied` / `Copy failed` in place for ~1.4s — the transcript is a scrolling
-// list, so a toast would be missed.
+// empty string. A settled row simply returns its message. The glyph flips to a
+// check / cross in place for ~1.4s — the transcript is a scrolling list, so a
+// toast would be missed.
 function buildCopyButton(messageFor) {
   const btn = document.createElement('button');
-  btn.className = 'chat-msg__copy';
+  btn.className = 'chat-msg__copy tap-target';
   btn.type = 'button';
-  btn.textContent = 'Copy';
+  btn.innerHTML = COPY_GLYPH_IDLE;
   btn.setAttribute('aria-label', 'Copy message');
+  btn.title = 'Copy message';
   btn.addEventListener('click', async () => {
     const ok = await copyText(messageCopyText(messageFor()));
-    btn.textContent = ok ? 'Copied' : 'Copy failed';
+    btn.innerHTML = ok ? COPY_GLYPH_COPIED : COPY_GLYPH_FAILED;
     btn.classList.toggle('is-copied', ok);
     btn.classList.toggle('is-failed', !ok);
     btn.setAttribute('aria-label', ok ? 'Copied message' : 'Copy failed');
+    btn.title = ok ? 'Copied message' : 'Copy failed';
     if (btn._copyReset) clearTimeout(btn._copyReset);
     btn._copyReset = setTimeout(() => {
       btn._copyReset = null;
-      btn.textContent = 'Copy';
+      btn.innerHTML = COPY_GLYPH_IDLE;
       btn.classList.remove('is-copied', 'is-failed');
       btn.setAttribute('aria-label', 'Copy message');
+      btn.title = 'Copy message';
     }, 1400);
   });
   return btn;

@@ -247,26 +247,47 @@
   gap: 6px;
   padding: 0 4px 2px;
 }
+/* Icon-only: the glyph is the whole button, so it takes the compact
+   glyph-control box (--tap-sm, the same 32px the send and MCP toggles use)
+   and the border is dropped — a bordered empty square read as a broken
+   control, and the outline is no longer needed to say "this is a button"
+   now that a clipboard glyph does. `.tap-target` (base.css) grows the hit
+   area to the 44px floor without painting it. */
 .chat-msg__copy {
+  width: var(--tap-sm);
+  min-width: var(--tap-sm);
+  height: var(--tap-sm);
+  min-height: var(--tap-sm);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--muted);
   background: transparent;
-  border: 1px solid var(--border);
-  font-size: 0.68rem;
-  letter-spacing: 0.02em;
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
 }
+.chat-msg__copy svg { display: block; }
 .chat-msg__copy:hover,
 .chat-msg__copy:active {
   color: var(--fg);
   background: var(--surface-2);
-  border-color: var(--border-strong);
 }
 .chat-msg__copy.is-copied {
   color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+}
+.chat-msg__copy.is-copied:hover,
+.chat-msg__copy.is-copied:active {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
 }
 .chat-msg__copy.is-failed {
   color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+.chat-msg__copy.is-failed:hover,
+.chat-msg__copy.is-failed:active {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
 }
 
 /* ---- Per-turn usage meta ----------------------------------------- */
