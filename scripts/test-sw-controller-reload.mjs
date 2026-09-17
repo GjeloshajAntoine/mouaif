@@ -7,13 +7,21 @@
 // reloaded unconditionally, so a freshly painted chat was thrown away and
 // reloaded once — a white flash and a second document load on a first open.
 //
+// The second bug it pins: `clients.claim()` on ANY later activation claims every
+// open client, so a worker that replaced the controller — a deploy another tab
+// accepted, a worker evicted and re-registered — fired `controllerchange` on
+// already-controlled chat tabs. Keying on a load-time "was this page controlled?"
+// flag therefore reloaded long-lived tabs at a moment tied to deploys and worker
+// churn, not to the user. The only intent a controller change can carry is an
+// update the user accepted; everything else must leave the page alone.
+//
 // Two layers are checked:
 //   1. the pure predicate (frontend/src/sw-controller-reload.js), loaded
 //      through a data: URL the same way scripts/test-git-count-format.mjs does;
 //   2. the wiring in frontend/src/sw-registration.js, by scanning its source:
-//      `controllerWasSet` must be sampled from `navigator.serviceWorker.controller`
-//      and the reload must sit behind the predicate. A regression that drops the
-//      guard (or re-samples the flag after the claim) fails here.
+//      the listener must consult the predicate, must pass `acceptedUpdate`, and
+//      must not fall back to a load-time control flag. A regression that drops
+//      the guard (or re-introduces the flag) fails here.
 import fs from 'node:fs';
 
 const read = (file) => fs.readFileSync(new URL('../frontend/src/' + file, import.meta.url), 'utf8');
@@ -33,61 +41,78 @@ function check(name, actual, expected) {
 
 // ---- 1. The predicate -------------------------------------------------
 
-// First visit: the page loaded uncontrolled, clients.claim() adopted it.
-// THIS is the reported flash/reload; it must not reload.
-check('first install claimed the page', shouldReloadOnControllerChange({ controllerWasSet: false, hasController: true }), false);
+// First visit: the page loaded uncontrolled, clients.claim() adopted it with no
+// user intent. THIS is the reported flash/reload; it must not reload.
+check('first install claimed the page', shouldReloadOnControllerChange({ hasController: true }), false);
 // Nothing gained control (e.g. every install failed): nothing to adopt.
-check('still uncontrolled', shouldReloadOnControllerChange({ controllerWasSet: false, hasController: false }), false);
-// A page that was already controlled, and the worker accepted an update
+check('still uncontrolled', shouldReloadOnControllerChange({ hasController: false }), false);
+// The regression this rule also fixes: an ALREADY-CONTROLLED, long-lived tab.
+// A worker that replaces the controller claims every open client, which is a
+// controller change that page never asked for. It must not reload, whether the
+// caller still passes the retired load-time flag or not.
+check('an unrequested controller change does not reload a controlled page',
+  shouldReloadOnControllerChange({ hasController: true, acceptedUpdate: false }), false);
+check('a stale load-time flag cannot force a reload',
+  shouldReloadOnControllerChange({ controllerWasSet: true, hasController: true, acceptedUpdate: false }), false);
+// A page that was already controlled, and the user accepted the update
 // (SKIP_WAITING -> activate -> controllerchange): reload so the new bundle runs.
-check('accepted update replaced the controller', shouldReloadOnControllerChange({ controllerWasSet: true, hasController: true }), true);
+check('accepted update replaced the controller', shouldReloadOnControllerChange({ hasController: true, acceptedUpdate: true }), true);
 // The worker was unregistered/purged; a reload cannot bring it back.
-check('controller removed', shouldReloadOnControllerChange({ controllerWasSet: true, hasController: false }), false);
+check('controller removed', shouldReloadOnControllerChange({ hasController: false, acceptedUpdate: true }), false);
 // Defensive: no argument at all must not reload.
 check('no options object', shouldReloadOnControllerChange(), false);
 check('empty options object', shouldReloadOnControllerChange({}), false);
 
 // ---- 1b. the update the user accepted ---------------------------------
 //
-// The case the load-time flag cannot see, and which shipped broken: on a FIRST
-// session the page loaded uncontrolled, so `controllerWasSet` stays false for
-// the document's whole life. A deploy then lands, the banner shows, and the user
-// taps Reload -> SKIP_WAITING -> activate -> controllerchange. Refusing that
-// reload dismissed the banner and left the old bundle running.
+// On a FIRST session the page loaded uncontrolled. A deploy then lands, the
+// banner shows, and the user taps Reload -> SKIP_WAITING -> activate ->
+// controllerchange. Refusing that reload dismissed the banner and left the old
+// bundle running.
 check('the update the user accepted reloads a first session',
-  shouldReloadOnControllerChange({ controllerWasSet: false, hasController: true, acceptedUpdate: true }), true);
+  shouldReloadOnControllerChange({ hasController: true, acceptedUpdate: true }), true);
 check('and it still reloads an already-controlled page',
   shouldReloadOnControllerChange({ controllerWasSet: true, hasController: true, acceptedUpdate: true }), true);
 // No controller to run the new bundle: nothing a reload could pick up.
 check('an accepted update with no controller does not reload',
-  shouldReloadOnControllerChange({ controllerWasSet: false, hasController: false, acceptedUpdate: true }), false);
-// Intent alone does not reload: the flag is the user's tap, not the install.
-check('accepting without a controller change is not a reload',
-  shouldReloadOnControllerChange({ controllerWasSet: true, hasController: true, acceptedUpdate: false }), true);
-check('an omitted acceptedUpdate never reloads a first install',
-  shouldReloadOnControllerChange({ controllerWasSet: false, hasController: true }), false);
+  shouldReloadOnControllerChange({ hasController: false, acceptedUpdate: true }), false);
+// Intent is required: a controller present but no tap is not a reload.
+check('a controller change with no tap is not a reload',
+  shouldReloadOnControllerChange({ hasController: true, acceptedUpdate: false }), false);
 
 // ---- 2. The wiring ----------------------------------------------------
 
 const swReg = read('sw-registration.js');
 
-// controllerWasSet is sampled from the live controller — not hard-coded, not
-// read after the claim (the listener body must not re-sample it).
-check('reads navigator.serviceWorker.controller at load time',
-  /const controllerWasSet = [\s\S]{0,120}?navigator\.serviceWorker\.controller\b/.test(swReg), true);
+// The listener must consult the predicate, and must NOT sample a load-time
+// control flag any more: a controller change is reloaded only for an update the
+// user accepted. `controllerWasSet` was the flag that let an unrequested claim
+// reload every already-controlled tab.
 check('imports the predicate',
   /import \{ shouldReloadOnControllerChange \} from '\.\/sw-controller-reload\.js';/.test(swReg), true);
 check('controllerchange listener consults the predicate',
-  /addEventListener\('controllerchange'[\s\S]*?shouldReloadOnControllerChange\(\{[\s\S]*?controllerWasSet,[\s\S]*?hasController:/.test(swReg), true);
+  /addEventListener\('controllerchange'[\s\S]*?shouldReloadOnControllerChange\(\{[\s\S]*?acceptedUpdate/.test(swReg), true);
+check('the retired load-time control flag is gone',
+  /controllerWasSet/.test(swReg), false);
+check('the listener does not sample navigator.serviceWorker.controller to decide',
+  /hasController: !!navigator\.serviceWorker\.controller/.test(swReg), true);
 
 // The accepted-update path: `applyUpdate()` records the intent, and the listener
 // passes it to the predicate. `acceptedUpdate` must be set at/above the
 // SKIP_WAITING post and read inside the listener — dropping either leaves the
-// banner's Reload a silent no-op on a first session.
+// banner's Reload a silent no-op.
 check('applyUpdate records the accepted update',
   /let acceptedUpdate = false[\s\S]*?function applyUpdate\(\)[\s\S]*?acceptedUpdate = true;[\s\S]*?postMessage\(\{ type: 'SKIP_WAITING' \}\)/.test(swReg), true);
 check('the listener passes acceptedUpdate to the predicate',
-  /shouldReloadOnControllerChange\(\{[\s\S]*?controllerWasSet,[\s\S]*?hasController:[\s\S]*?acceptedUpdate[\s\S]*?\}\)/.test(swReg), true);
+  /shouldReloadOnControllerChange\(\{[\s\S]*?hasController:[\s\S]*?acceptedUpdate[\s\S]*?\}\)/.test(swReg), true);
+
+// A bare first install with no user intent activates a worker without posting
+// SKIP_WAITING, so `acceptedUpdate` is false when its claim lands.
+check('a first install activates without recording intent',
+  /else worker\.postMessage\(\{ type: 'SKIP_WAITING' \}\); \/\/ first install has no old bundle to protect/.test(swReg), true);
+check('and that claim does not reload', shouldReloadOnControllerChange({
+  hasController: true, acceptedUpdate: false
+}), false);
 
 // The reload must be behind the guard: find the listener body and assert the
 // guard test precedes `location.reload()`.
@@ -104,8 +129,12 @@ check('no unguarded reload in the listener', /addEventListener\('controllerchang
 // The accepted-update case as it actually reaches the listener through the
 // predicate the file loads, so the source-scan above cannot pass while the
 // runtime behaviour is wrong.
-check('the listener reloads for the update the user accepted in a first session',
-  shouldReloadOnControllerChange({ controllerWasSet: false, hasController: true, acceptedUpdate: true }), true);
+check('the listener reloads for the update the user accepted',
+  shouldReloadOnControllerChange({ hasController: true, acceptedUpdate: true }), true);
+// And the reported symptom does not come back through the predicate the file
+// loads: a claim nobody asked for leaves an open chat tab alone.
+check('an unrequested claim leaves an open chat tab alone',
+  shouldReloadOnControllerChange({ hasController: true, acceptedUpdate: false }), false);
 
 console.log(failures ? '\n' + failures + ' check(s) failed' : '\nOK — controllerchange only reloads for an accepted update');
 process.exit(failures ? 1 : 0);

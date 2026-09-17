@@ -5,45 +5,41 @@
 //
 // Why this exists
 // ---------------
-// The first visit to a mouaif origin installs the service worker, and the
-// worker's activate handler calls `clients.claim()`. That takes control of the
-// page that is already on screen, which fires `controllerchange` on the
-// window — for a page that was NOT controlled when it loaded. Reloading on
-// that event threw away a page that had just painted and loaded its chat for
-// no reason: a full white flash and a second document load, reported as "the
-// chat view seems to flash and reload" on an origin being opened for the first
-// time (or on a fresh profile / private window).
+// A controller change is NEVER a reason to reload on its own. The page is only
+// allowed to throw itself away when the user asked for the update this session
+// offered. Every other controller change is something that happened *to* the
+// page, and reloading it there is a bug the user sees as a random reload:
 //
-// So the decision keys on control state sampled at LOAD time, plus one piece of
-// explicit intent:
+//   | accepted update | controller now | reload | why                                  |
+//   | --------------- | -------------- | ------ | ------------------------------------ |
+//   | yes             | yes            | yes    | the user tapped Reload on the banner  |
+//   | no              | yes            | no     | first install claimed us (clients.claim) |
+//   | no              | yes            | no     | the worker was replaced/evicted and reclaimed |
+//   | no              | no             | no     | controller gone; a reload cannot restore it |
 //
-//   | controlled when loaded | controlled now | accepted | reload | why            |
-//   | ---------------------- | -------------- | -------- | ------ | -------------- |
-//   | no                     | yes            | no       | no     | first install claimed us |
-//   | no                     | yes            | yes      | yes    | the user accepted the update offered this session |
-//   | no                     | no             | —        | no     | nothing to adopt |
-//   | yes                    | yes            | —        | yes    | an accepted update took over |
-//   | yes                    | no             | —        | no     | worker unregistered; a reload cannot restore it |
+// The two historic bugs this rule fixes:
 //
-// `controllerWasSet` must be sampled ONCE, at module/registration time, from
-// `navigator.serviceWorker.controller`. Sampling it when the event fires reads
-// the value clients.claim() has already flipped, which is the bug this module
-// documents.
+//   1. The handler used to reload on EVERY controllerchange. The first visit to
+//      an origin installs the worker, and the worker's activate handler calls
+//      `clients.claim()`, which takes control of the page already on screen and
+//      fires `controllerchange` — for a page that was NOT controlled when it
+//      loaded. Reloading there threw away a page that had just painted: a full
+//      white flash and a second document load, reported as "the chat view seems
+//      to flash and reload" on an origin being opened for the first time (or on
+//      a fresh profile / private window).
 //
-// Why the load-time flag alone is not enough, and `acceptedUpdate` exists
-// ----------------------------------------------------------------------
-// The load-time flag answers "did a controller already own this document?",
-// which is the right question for a controllerchange nobody asked for. It is
-// the WRONG question for one the user just asked for. On a first visit the page
-// is uncontrolled at load, the worker claims it, and the banner's Reload button
-// is still live: a deploy that lands while that first session is open shows "A
-// new version is ready.", the user taps Reload, the worker posts SKIP_WAITING
-// and activate fires `controllerchange` — on a page whose `controllerWasSet` is
-// false for the rest of its life. The load-time flag alone therefore refused the
-// reload the banner had just promised: tapping Reload dismissed the banner and
-// left the session running the old bundle, with no way to pick up the new one
-// short of a manual page reload. The caller sets `acceptedUpdate` (in
-// sw-registration.js, `applyUpdate()`) when it posts SKIP_WAITING, so the tap
+//   2. The first fix refused the first-install reload by keying on "was this
+//      page controlled when it loaded?". But `clients.claim()` on a later
+//      activation claims EVERY open client, so any worker that replaced the
+//      controller — a deploy another tab accepted, a worker evicted and then
+//      re-registered — fired `controllerchange` on already-controlled, open
+//      chat tabs, and the load-time flag answered "yes, controlled" for a
+//      change those tabs never asked for. They reloaded anyway, at a moment
+//      tied to deploys and worker churn rather than to the user: the same
+//      random-reload symptom, now on long-lived tabs.
+//
+// `acceptedUpdate` is the only signal that carries intent. The caller sets it
+// in sw-registration.js `applyUpdate()` when it posts SKIP_WAITING, so the tap
 // that asked for the update is part of the decision instead of something
 // inferred from control state.
 //
@@ -55,17 +51,20 @@
 
 // shouldReloadOnControllerChange(opts) -> boolean
 //
-//   opts.controllerWasSet  controller was non-null when the page loaded
 //   opts.hasController     controller is non-null now
 //   opts.acceptedUpdate    this page posted SKIP_WAITING after the user tapped
 //                          Reload; false when omitted
 export function shouldReloadOnControllerChange(opts) {
   const o = opts || {};
-  // The case the load-time flag cannot see: the user accepted the update this
-  // very session offered. The tap is the intent, the new worker already owns
-  // the page (hasController), and reloading is the whole point of it.
-  if (o.acceptedUpdate && o.hasController) return true;
-  if (!o.controllerWasSet) return false; // a first install claimed this fresh page
-  if (!o.hasController) return false; // controller removed; a reload would not bring it back
+  // Nothing controls the page: a reload would not bring a worker back, so
+  // there is nothing to pick up.
+  if (!o.hasController) return false;
+  // The controller change was not this page's request. It may be a first
+  // install claiming a page that loaded uncontrolled, or a worker that was
+  // replaced or evicted and reclaimed by someone else. This page is running a
+  // bundle the server still serves, and the next natural navigation picks up
+  // the new one, so there is nothing to force here.
+  if (!o.acceptedUpdate) return false;
+  // The user asked for this update and a controller now owns the page.
   return true;
 }
