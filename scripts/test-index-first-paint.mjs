@@ -9,19 +9,29 @@
 // the `color-scheme: dark` meta and no stylesheet paints #121212 (RGB
 // 18,18,18) — a grey flash. With no color-scheme hint at all it is #fff.
 //
+// A second symptom, "the background visibly changes on reload", is a
+// step from solid `--bg` to `radial-gradient(...), var(--bg)` once the
+// bundle's CSS lands. The two rules set the same `background` property
+// at the same specificity, so the later bundle rule paints on top of
+// the inline rule; if the two values differ at all, the browser
+// repaints visibly. The fix is to inline the bundle's full `html`
+// background (gradient + literal `--bg`) so the later rule is a no-op
+// repaint of an identical pixel stack.
+//
 // Three things are checked, all load-bearing:
-//   1. frontend/index.html carries an INLINE background on `html`, so the
-//      rule is in the document at the first paint. A background that lives
-//      only in the external bundle cannot fix this — the flash happens while
-//      that file is still in flight.
-//   2. the inline colour is the literal value of `--bg` in base.css. The
-//      inline rule and the bundle's own `html { background: radial-gradient(...),
-//      var(--bg) }` set the same property at the same specificity, so they
-//      must agree on the base colour or the page visibly steps between them.
+//   1. frontend/index.html carries an INLINE `html` background, so the
+//      rule is in the document at the first paint. A background that
+//      lives only in the external bundle cannot fix this — the flash
+//      happens while that file is still in flight.
+//   2. the inline background value equals the bundle's `html` background
+//      value with `var(--bg)` resolved to its literal. The two rules
+//      set the same `background` property at the same specificity, so
+//      a mismatch is a visible step. They must agree on the full
+//      background stack, not just the base colour.
 //   3. the inline block comes BEFORE the bundler-injected
 //      `<link rel="stylesheet">`. That ordering is what lets the bundle's
-//      later rule take over and add the accent glow; Vite appends its link at
-//      the end of <head>, so a rule that drifted below it would be inert.
+//      rule take over (Vite appends its link at the end of <head>); a
+//      rule that drifted below it would be inert.
 import fs from 'node:fs';
 
 const root = new URL('../', import.meta.url);
@@ -38,6 +48,20 @@ function check(name, actual, expected) {
     + (ok ? '' : ' :: got ' + JSON.stringify(actual) + ', expected ' + JSON.stringify(expected)));
 }
 
+// Normalize a CSS background stack so two rules that name the same
+// values in the same order compare equal. Whitespace, trailing commas,
+// and the optional final `;` are stripped; values are lowercased so
+// `#0A0D12` and `#0a0d12` agree.
+function normalize(stack) {
+  return String(stack || '')
+    .trim()
+    .replace(/;$/, '')
+    .split(',')
+    .map((part) => part.trim().toLowerCase().replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .join(',');
+}
+
 // --- 1. the inline rule exists, in <head>, before the stylesheet link ------
 // Comments are stripped first: the block explaining this rule quotes
 // `<link rel="stylesheet">`, which would otherwise look like a real tag.
@@ -52,12 +76,24 @@ check('the inline <style> is well formed', styleEnd > styleAt, true);
 check('an inline background is declared on html',
   /<style>\s*html\s*\{[^}]*background[^}]*\}\s*<\/style>/.test(markup), true);
 
-// --- 2. the inline colour is exactly --bg ---------------------------------
-const inlineColor = (/<style>\s*html\s*\{[^}]*background\s*:\s*([^;}\s]+)/.exec(html) || [])[1];
+// --- 2. the inline background equals the bundle's html background ---------
+// Read the inline `html { background: ... }` value out of the template.
+// The body of the rule may span lines, so grab everything between
+// `background:` and the next `}`.
+const inlineRaw = (/<style>\s*html\s*\{[\s\S]*?background\s*:\s*([^;}]+)[\s\S]*?\}\s*<\/style>/.exec(html) || [])[1];
+
+// Read the bundle's `html { background: ... }` from base.css, with
+// `var(--bg)` resolved to its literal so the two stacks compare on
+// values rather than on token references.
 const bgToken = (/--bg:\s*([^;]+);/.exec(base) || [])[1];
-check('an inline background value can be read back', typeof inlineColor, 'string');
-check('the inline colour is the --bg token value',
-  inlineColor && inlineColor.toLowerCase(), (bgToken || '').trim().toLowerCase());
+const bgLiteral = (bgToken || '').trim();
+const bundleRaw = (/\bhtml\s*\{[\s\S]*?background\s*:\s*([^;}]+)[\s\S]*?\}/.exec(base) || [])[1];
+const bundleResolved = bundleRaw ? bundleRaw.replace(/var\(\s*--bg\s*\)/g, bgLiteral) : '';
+
+check('an inline background value can be read back', typeof inlineRaw, 'string');
+check('a bundle html background value can be read back', typeof bundleRaw, 'string');
+check('the inline html background equals the bundle html background',
+  normalize(inlineRaw), normalize(bundleResolved));
 
 // --- 3. the inline rule still precedes the bundle's stylesheet ------------
 // The template has no stylesheet link of its own (Vite injects it into the
@@ -73,8 +109,12 @@ if (fs.existsSync(distPath)) {
   const distLinkAt = dist.indexOf('rel="stylesheet"');
   check('built index.html: inline rule precedes the bundle stylesheet',
     distStyleAt >= 0 && distLinkAt >= 0 && distStyleAt < distLinkAt, true);
-  check('built index.html: the base background survived minification',
-    /<style>html\{background:#0a0d12\}<\/style>/.test(dist), true);
+  // The minified bundle asserts byte-level: the inline block must have
+  // survived Vite's minifier and the gradient must still be there with
+  // the literal base colour, so a future regression that strips either
+  // piece is caught before it lands in dist/.
+  check('built index.html: the gradient survived minification',
+    /<style>html\{background:radial-gradient\(900px 420px at 50% 110%,rgba\(110,168,254,\.045\),transparent 60%\),#0a0d12\}<\/style>/.test(dist), true);
 } else {
   console.log('  ..  - frontend/dist/index.html not built; run npm run build:web to cover the built artifact');
 }
@@ -84,5 +124,5 @@ if (fs.existsSync(distPath)) {
 const lightHint = /color-scheme\s*[:=]\s*["']?(light|normal)\b/i.exec(html);
 check('no light color-scheme hint in index.html', lightHint, null);
 
-console.log(failures ? '\n' + failures + ' check(s) failed' : '\nOK — the app is dark from the first paint');
+console.log(failures ? '\n' + failures + ' check(s) failed' : '\nOK — the app is dark from the first paint, and the reload no longer steps');
 process.exit(failures ? 1 : 0);
