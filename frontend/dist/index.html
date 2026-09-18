@@ -50,35 +50,30 @@
   <!--
     Paint the page background before the bundle's stylesheet arrives.
 
-    Without this rule the app's first frame is the browser's default canvas:
-    #fff without a color-scheme hint, #121212 with `color-scheme: dark`. Both
-    are a full-screen fill in a colour the app never shows — reported as
-    "grey flashes with page reload". The document's own background came from
-    the `@import`-ed index CSS, and that external stylesheet is requested
-    before the module script runs, so between the document commit and the
-    arrival of the CSS the browser paints the canvas instead of the app.
+    Until this rule existed the app's first frame was the browser's default
+    canvas: #fff, a full-screen WHITE flash, because the document's only
+    background came from the `@import`-ed index CSS and the external
+    stylesheet is requested before the module script runs. On a cold load,
+    a hard reload, or a profile where the SW has not yet taken over, that
+    is one or more frames of pure white between the commit and the
+    stylesheet — reported as "grey flashes with page reload".
 
-    Two details make this rule the right fix rather than a workaround:
-      - the inline <style> is part of the document, so it applies at the
-        first paint — the default canvas is never composited;
-      - the rule is EXACTLY the bundle's `html` background, with `var(--bg)`
-        resolved to its literal `#0a0d12`. The bundle's CSS re-declares the
-        same `background` value a tick later, so the swap is a repaint of
-        the identical pixel stack rather than a step. An earlier rule set
-        only the solid base colour, which painted correctly on first frame
-        but then stepped visibly to the same base colour plus the accent
-        glow once the bundle's CSS landed.
+    Two details make this the right fix rather than a workaround:
+      - the inline <style> is in the document, so it applies at the first
+        paint — the white canvas is never composited;
+      - the color is the SAME --bg token the app settles on (#0a0d12, the
+        literal value of `--bg` in frontend/src/base.css). The bundle's CSS
+        re-declares it with the accent glow a tick later, so the swap is an
+        invisible repaint of the same base colour instead of a step.
 
-    Keep this block in sync with the `html` rule in
-    frontend/src/base.css (its --bg token and its background stack), and
-    keep this rule BEFORE the bundler-injected `<link rel="stylesheet">`
-    (Vite appends it at the end of <head>): the bundle's `html` rule sets
-    the same `background` property at equal specificity, so coming later
-    on equal footing is exactly what lets the no-op repaint run after the
-    first paint. scripts/test-index-first-paint.mjs asserts all three
-    facts.
+    Keep the value in sync with --bg in frontend/src/base.css, and keep this
+    rule BEFORE the bundler-injected `<link rel="stylesheet">` (Vite appends
+    it at the end of <head>): the bundle's `html` rule sets the same
+    `background` property at equal specificity, so coming later on equal
+    footing is exactly what lets the glow take over once it has loaded.
+    scripts/test-index-first-paint.mjs asserts both facts.
   -->
-  <style>html{background:radial-gradient(900px 420px at 50% 110%,rgba(110,168,254,.045),transparent 60%),#0a0d12}</style>
+  <style>html{background:#0a0d12}</style>
   <script type="module" crossorigin src="/assets/index-D0AWQr4S.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-sqbQ5ptX.css">
 </head>
