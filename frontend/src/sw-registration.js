@@ -5,7 +5,7 @@
 // update availability, and applies an update after the user taps Reload.
 
 import { signal } from '@preact/signals';
-import { shouldReloadOnControllerChange } from './sw-controller-reload.js';
+import { shouldReloadOnControllerChange, isUpdateStillPending } from './sw-controller-reload.js';
 export const updateAvailable = signal(false);
 let registration = null;
 let waitingWorker = null;
@@ -18,6 +18,10 @@ let applyingUpdate = false;
 // it, or a worker replaced/evicted and reclaimed elsewhere — and must not throw
 // the page away. See sw-controller-reload.js.
 let acceptedUpdate = false;
+// The worker the user's tap accepted, so we can tell "this activation is the
+// one the tap caused" from "this worker had already activated". Cleared with
+// `acceptedUpdate` the moment a reload consumes the intent.
+let acceptedWorker = null;
 const observedWorkers = new WeakSet();
 const UPDATE_CHECK_INTERVAL_MS = 60 * 1000;
 
@@ -52,12 +56,52 @@ function observeInstallingWorker(reg, worker) {
 export function applyUpdate() {
   const worker = (registration && registration.waiting) || waitingWorker;
   if (applyingUpdate || !worker) return;
+  // The bundle this tap asked to replace is only protected while the worker is
+  // still WAITING. `waitingWorker` is retained (some engines don't expose
+  // `registration.waiting` immediately), so by the time the banner is tapped the
+  // worker may already be active: its own activation finished, or another tab
+  // accepted the same update first. Posting SKIP_WAITING to an active worker is
+  // a no-op — nothing activates, no `controllerchange` arrives — so the tap
+  // would appear to do nothing while leaving an armed intent behind to fire on
+  // a later, unrelated claim. That stale intent was the random reload. The
+  // banner is stale too: drop it, and apply it through the worker's activate
+  // path like any other update instead of arming a reload that can never match.
+  if (!isUpdateStillPending(worker.state)) {
+    waitingWorker = null;
+    updateAvailable.value = false;
+    return;
+  }
   applyingUpdate = true;
   // The user asked for this update. Record the intent BEFORE the worker can
   // activate: the `controllerchange` it produces has to reload even when this
   // page loaded uncontrolled (a first session claimed by the first install).
+  // `acceptedWorker` is what later tells that activation apart from an
+  // unrelated claim of a worker that had already activated.
   acceptedUpdate = true;
+  acceptedWorker = worker;
   worker.postMessage({ type: 'SKIP_WAITING' });
+}
+
+// takeAcceptedUpdate() -> boolean
+//
+// The decision for one `controllerchange`, kept as a named unit so the intent
+// can be consumed exactly once and the listener stays a thin adapter. Returns
+// true when the page should reload (the caller performs it), and clears the
+// one-shot intent so a single tap can never reload twice — or, worse, reload
+// later against an activation it never asked for.
+function takeAcceptedUpdate() {
+  const accepted = shouldReloadOnControllerChange({
+    hasController: !!navigator.serviceWorker.controller,
+    acceptedUpdate,
+    // `acceptedWorker` leaving the waiting slot is the proof that THIS
+    // activation is the one the tap caused. A worker that activated before the
+    // tap reports 'activated' (or is gone), so the intent is refused and
+    // dropped instead of being spent on a claim the user never asked for.
+    updateApplied: !!acceptedWorker && !isUpdateStillPending(acceptedWorker.state)
+  });
+  acceptedUpdate = false;
+  acceptedWorker = null;
+  return accepted;
 }
 
 export function registerServiceWorker() {
@@ -116,12 +160,11 @@ export function registerServiceWorker() {
     // listener used to reload tabs whose user had asked for nothing. The only
     // controller change worth acting on is the update the user accepted, which
     // `applyUpdate()` records in `acceptedUpdate` before posting SKIP_WAITING.
-    // The decision itself lives in sw-controller-reload.js.
-    if (!shouldReloadOnControllerChange({
-      hasController: !!navigator.serviceWorker.controller,
-      acceptedUpdate
-    })) return;
+    // `takeAcceptedUpdate()` consumes that intent, so the reload can only ever
+    // answer the activation the tap caused — never a later claim. The decision
+    // itself lives in sw-controller-reload.js.
     if (refreshing) return;
+    if (!takeAcceptedUpdate()) return;
     refreshing = true;
     window.location.reload();
   });
