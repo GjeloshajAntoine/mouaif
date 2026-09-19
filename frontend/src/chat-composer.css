@@ -380,36 +380,12 @@ will-change: transform;
 .file-toolbar--orb .file-toolbar__plate-face {
 position: absolute;
 inset: 0;
-/* Sized to the folder silhouette (20x17), so the radius follows its corners
-rather than a bigger rectangle's. */
+/* The reference's centre is one pale folder-shaped object. The plate remains
+as the depth carrier, but its own rectangular paint is transparent so it can
+never read as a second card behind the folder. */
 border-radius: 5px;
-background:
-/* its own top-edge highlight, so the slab catches the same light as the ball */
-linear-gradient(180deg, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0) 44%),
-radial-gradient(120% 120% at 26% 10%, rgba(236, 244, 255, 0.40) 0%, rgba(0, 0, 0, 0) 62%),
-/* The tile is *cooler and darker than the folder*, which is the whole
-reason the folder silhouette exists on screen. The first pass made this
-slab nearly white and the folder's face nearly white too — a white folder
-on a white tile is one white blob, and the tab, the extrusion and the
-pocket all disappeared into it (the button read as "a card with two
-numbers"). The pane the reference draws behind its folder is a mid-tone
-frosted blue-grey, so the near-white solid in front of it separates on
-every edge without needing an outline. */
-linear-gradient(158deg,
-rgba(140, 160, 198, 0.82) 0%,
-rgba(104, 124, 166, 0.80) 54%,
-rgba(64, 80, 116, 0.78) 100%);
-box-shadow:
-inset 0 1px 0 rgba(255, 255, 255, 0.50),
-inset 0 -1px 0 rgba(16, 26, 46, 0.38),
-inset 1px 0 0 rgba(255, 255, 255, 0.26),
-inset -1px 0 0 rgba(16, 26, 46, 0.30),
-0 2px 5px -1px rgba(0, 0, 0, 0.60);
-/* The frost is what makes the tile read as glass rather than paper — the
-ball's own sheen shows through it. Without `backdrop-filter` the fallback
-below keeps the tile lighter than the sphere so the folder still separates,
-which is all the effect actually needs. */
-backdrop-filter: blur(1.5px) saturate(1.1);
+background: transparent;
+box-shadow: none;
 display: flex;
 align-items: center;
 justify-content: center;
@@ -420,27 +396,16 @@ the face) so it sits between the ball and the glass, which is where the
 occlusion would actually fall. */
 .file-toolbar__cast {
 position: absolute;
-left: -4px;
-right: -4px;
-bottom: -5px;
-height: 9px;
+left: -3px;
+right: -3px;
+bottom: -4px;
+height: 8px;
 z-index: -1;
 border-radius: 50%;
-background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55) 0%, rgba(0, 0, 0, 0.18) 62%, rgba(0, 0, 0, 0) 100%);
+background: radial-gradient(closest-side, rgba(0, 0, 0, 0.58) 0%, rgba(0, 0, 0, 0.16) 64%, rgba(0, 0, 0, 0) 100%);
 filter: blur(2px);
 pointer-events: none;
 }
-/* No backdrop-filter on the fallback path (Firefox without the flag) just
-means a slightly crisper tile — nothing breaks. The tile stays lighter than
-the sphere either way, which is what keeps the folder separated from it. */
-@supports not (backdrop-filter: blur(1px)) {
-.file-toolbar--orb .file-toolbar__plate-face {
-background:
-linear-gradient(180deg, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0) 44%),
-linear-gradient(158deg, rgba(150, 170, 206, 0.90) 0%, rgba(86, 104, 142, 0.86) 100%);
-}
-}
-
 /* ---- The extruded folder -------------------------------------------- */
 /* Depth at 28x22 comes from *stacked silhouettes*, not from a Z offset: the
    glyph has no volume of its own, so a near-black copy 2px lower (the side you
@@ -452,7 +417,8 @@ position: relative;
 display: block;
 /* Matches ORB_FOLDER_W/H in FileToolbar.jsx: the six stacked SVG copies are
 each this box, so the extrusion offsets in CSS px below land on the same
-silhouette. */
+silhouette. The orb-only path nearly fills this box, matching the reference's
+single broad folder instead of leaving a tile visible around it. */
 width: 20px;
 height: 17px;
 }
@@ -529,8 +495,8 @@ as one pale field. `paint-order: stroke` puts the hairline behind the fill,
 so only its outer half shows and the face does not shrink. */
 .file-toolbar--orb .file-toolbar__folder-face path {
 fill: url(#fileToolbarFolderFace);
-stroke: rgba(40, 54, 86, 0.55);
-stroke-width: 0.6;
+stroke: rgba(104, 130, 176, 0.78);
+stroke-width: 0.8;
 paint-order: stroke;
 stroke-linejoin: round;
 }
@@ -578,7 +544,7 @@ sets them well inside the tile's body, which is what leaves the pale slab
 visible around them. 2px horizontally and 3/2 vertically is also the box the
 count sizer's two budgets are computed from (see fileOrb.js), so the number
 and the padding have to move together. */
-padding: 2px 2px 2px;
+padding: 3px 2px 1px;
 display: flex;
 flex-direction: column;
 justify-content: space-between;

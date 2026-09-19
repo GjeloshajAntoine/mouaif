@@ -22,6 +22,11 @@ import { orbCountFont } from './fileOrb.js';
 // shape offset down as the extruded side, then the light top face — so both
 // copies come from this constant rather than two hand-kept strings.
 const FOLDER_PATH = 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z';
+// The reference orb has one large, unmistakable folder silhouette rather than
+// a small folder laid over a separate rounded tile. Orb mode therefore uses a
+// path that spends almost all of its 20 x 17 box; the flat icon keeps the
+// original, more inset path above.
+const ORB_FOLDER_PATH = 'M0.7 4.7A3.2 3.2 0 0 1 3.9 1.5h4.6l2.4 2.3h6.2a2.2 2.2 0 0 1 2.2 2.2v7.5a2.2 2.2 0 0 1-2.2 2.2H2.9a2.2 2.2 0 0 1-2.2-2.2V4.7Z';
 // Pictogram geometry, in CSS px. These are the numbers the reference is
 // proportioned to, and `frontend/src/chat-composer.css` repeats them —
 // changing one without the other detaches the paint from the boxes it
@@ -268,11 +273,11 @@ const orbFont = orbMaxLen ? orbCountFont(orbMaxLen) : null;
 // stays registered at any size; the bevel steps live in CSS, in px, because
 // a 2px extrusion is a 2px extrusion whatever the glyph is scaled to.
 const orbFolderLayers = [
-['side', h('path', { d: FOLDER_PATH })],
-['body', h('path', { d: FOLDER_PATH })],
-['shade', h('path', { d: FOLDER_PATH })],
-['face', h('path', { d: FOLDER_PATH })],
-['sheen', h('path', { d: FOLDER_PATH })],
+['side', h('path', { d: ORB_FOLDER_PATH })],
+['body', h('path', { d: ORB_FOLDER_PATH })],
+['shade', h('path', { d: ORB_FOLDER_PATH })],
+['face', h('path', { d: ORB_FOLDER_PATH })],
+['sheen', h('path', { d: ORB_FOLDER_PATH })],
 ['shine', h('path', {
 /* The lit top edges and the pocket fold, as one stroked outline. The fold
 line that used to run across the middle of the silhouette is gone: the
@@ -280,7 +285,7 @@ counts are laid out top/bottom on this plate, so at 1x that line landed
 straight across the red count's cap and read as a stray rule rather than
 as a fold. The reference render has no such line — its card carries its
 edges only. */
-d: 'M2.6 4.2a1.6 1.6 0 0 1 1.6-1.6h3.5l1.7 1.7h6.4a1.6 1.6 0 0 1 1.6 1.6'
+d: 'M1.5 5a2.7 2.7 0 0 1 2.7-2.7h4l2.3 2.3h6.3a1.8 1.8 0 0 1 1.8 1.8'
 })]
 ];
 const folderGlyph = orb

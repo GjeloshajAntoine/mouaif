@@ -428,65 +428,20 @@ check('the chevrons are drawn as a bevelled solid, not one currentColor path', a
   assert.match(css, /\.file-toolbar--orb \.file-toolbar__chevron-side \{[^}]*fill:\s*rgba\(/, 'the bar side is a dark tone');
 });
 
-// Every `linear-gradient(…)` in a declaration block, each captured with its
-// own parens balanced. A greedy `[^;]*` cannot do this: one gradient's closing
-// paren is a valid match for the next one's, so the whole block collapses into
-// a single "gradient" and the stops of every layer get mixed together.
-function linearGradients(text) {
-  const out = [];
-  const marker = 'linear-gradient(';
-  let from = 0;
-  for (;;) {
-    const at = text.indexOf(marker, from);
-    if (at < 0) return out;
-    let depth = 0;
-    let i = at + marker.length - 1;
-    for (; i < text.length; i++) {
-      if (text[i] === '(') depth += 1;
-      else if (text[i] === ')') {
-        depth -= 1;
-        if (depth === 0) break;
-      }
-    }
-    out.push(text.slice(at, i + 1));
-    from = i + 1;
-  }
-}
-
-check('the tile is darker than the folder face, so the silhouette separates', () => {
-  // This is the invariant that keeps the folder readable as an *object*: a
-  // pale solid on a pale tile is one white blob with two numbers on it. The
-  // tile is painted as rgba stops, so its tones are read out of the gradient
-  // and composited over the sphere before comparing. Only the tile's own
-  // `linear-gradient` counts — the rule also carries the box-shadow's insets,
-  // which are darker than any tile tone and would otherwise be picked up as
-  // the "darkest stop".
+check('the folder is the only painted centre object', () => {
+  // The reference has one broad folder silhouette, not a folder floating on a
+  // second rounded rectangle. Keep the plate for 3D positioning, but require
+  // its face to stay transparent and shadowless.
   const tileRule = css.match(/\.file-toolbar--orb \.file-toolbar__plate-face \{([^}]*)\}/);
-  assert.ok(tileRule, 'found the tile rule');
-  // The rule carries more than one gradient (a top-edge highlight and a
-  // corner reflection sit above the tile itself), so the tile's own body is
-  // the stop-richest of them rather than simply the first or last.
-  const gradients = linearGradients(tileRule[1]);
-  const withStops = gradients
-    .map((g) => ({ g, stops: [...g.matchAll(/rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/g)] }))
-    .sort((a, b) => b.stops.length - a.stops.length);
-  const tileStops = withStops.length ? withStops[0].stops : [];
-  assert.ok(tileStops.length >= 3, 'the tile is a multi-stop gradient');
-  const darkest = tileStops
-    .map((m) => ({ l: LIGHTNESS('#' + [1, 2, 3].map((i) => Number(m[i]).toString(16).padStart(2, '0')).join('')), a: Number(m[4]) }))
-    .sort((a, b) => a.l - b.l)[0];
-  // Composited over the sphere's own mid-tone (~#2a3450) at the tile's alpha.
-  const sphere = LIGHTNESS('#2a3450');
-  const effective = darkest.l * darkest.a + sphere * (1 - darkest.a);
+  assert.ok(tileRule, 'found the plate-face rule');
+  assert.match(tileRule[1], /background:\s*transparent;/, 'the plate does not paint a second card');
+  assert.match(tileRule[1], /box-shadow:\s*none;/, 'the plate has no rectangular edge');
+  assert.match(component, /const ORB_FOLDER_PATH = /, 'orb mode has its own broad folder silhouette');
+  assert.match(component, /\['face', h\('path', \{ d: ORB_FOLDER_PATH \}\)\]/, 'the visible folder uses the orb silhouette');
+
   const faceStops = gradientStops('fileToolbarFolderFace', 'fileToolbarFolderShade').map(LIGHTNESS).filter((n) => n !== null);
   assert.ok(faceStops.length >= 4, 'the face is a five-stop ramp');
-  const faceDarkest = Math.min(...faceStops);
-  const faceLightest = Math.max(...faceStops);
-  assert.ok(faceDarkest > effective + 0.2,
-    'the folder face (' + faceDarkest.toFixed(2) + ') must stay well clear of the tile (' + effective.toFixed(2) + ')');
-  // And the face has to hold near-white across its middle, or the counts lose
-  // the pale bed they are tuned against (the red count sits on the lower half).
-  assert.ok(faceLightest > 0.9, 'the face is near-white at the top');
+  assert.ok(Math.max(...faceStops) > 0.9, 'the face is near-white at the top');
 });
 
 check('the orb counts are the brighter validated pair', () => {
