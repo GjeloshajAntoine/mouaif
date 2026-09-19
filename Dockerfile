@@ -3,7 +3,11 @@ FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-COPY scripts/patch-zimmerframe.js ./scripts/patch-zimmerframe.js
+# `npm ci` runs the package lifecycle scripts here, so both files they need must
+# exist before the install: `postinstall` runs scripts/patch-zimmerframe.js and
+# `prepare` runs scripts/prepare-web.js. Copy exactly those two (not all of
+# scripts/) so the cached install layer only invalidates when they change.
+COPY scripts/patch-zimmerframe.js scripts/prepare-web.js ./scripts/
 RUN npm ci
 COPY . .
 RUN npm run build:web
