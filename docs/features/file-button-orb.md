@@ -2,7 +2,7 @@
 
 ## Overview
 
-Settings → App defaults → Chat defaults has a **Glass orb file button** switch. With it off (the default) the button beside the message box is the flat circle the composer has always used. With it on, the same button is drawn as a glass ball: a window reflection sweeps its upper-left, refracted light runs along its lower-inner wall and its lower-right falls away to a dark limb ringed by a bright meniscus. Inside it, white bevelled chevrons frame one broad, pale extruded folder with the `+N` / `−N` counts embossed directly into its face. The separate rectangular backing is transparent, matching the reference's clean folder silhouette. The whole pictogram turns slowly on two axes while a highlight drifts across the ball.
+Settings → App defaults → Chat defaults has a **Glass orb file button** switch. With it off (the default) the button beside the message box is the flat circle the composer has always used. With it on, the same button is drawn as a glass ball: a window reflection sweeps its upper-left, refracted light runs along its lower-inner wall and its lower-right falls away to a dark limb ringed by a bright meniscus. Inside it, cool near-white bevelled chevrons frame one broad, pale-blue extruded folder with the `+N` / `−N` counts embossed directly into its face. The separate rectangular backing is transparent, matching the reference's clean folder silhouette. The pictogram stays front-on and pixel-aligned for clarity while highlights drift across the glass.
 
 The option changes **how the button is painted, never what it does**. Same 44 × 44 tap target, same `aria-label`, same menu.
 
@@ -20,14 +20,14 @@ Turn it back off to return to the flat circle. Nothing else about the composer m
 | Chevrons | One `currentColor` bar each | White bars with a dark under-edge, so they read over both the lit and the dark half of the ball |
 | Folder | One flat silhouette | One broad extruded silhouette: a 1px dark side, a near-white face with a cool hairline outline, ambient occlusion, and a rim light along its top edges |
 | Tile | — | Transparent; retained only as the folder's 3D positioning layer so no second rectangular card shows |
-| Counts | Flat colored glyphs at a fixed `0.46rem` | Embossed, and sized per render from the longest count drawn (7px down to 5px) |
-| Motion | None | Orbit on two axes, the slab breathing in Z, the sphere sheen drifting, the folder streak breathing |
+| Counts | Flat colored glyphs at a fixed `0.46rem` | Embossed, corner-aligned, and sized per render from the longest count drawn (8px down to 6px) |
+| Motion | None | Pictogram stays pixel-aligned; only the sphere and folder highlights move |
 | Tap target | `44 × 44` | `44 × 44` (unchanged) |
 | `aria-label` | Exact counts in words | Exact counts in words (unchanged) |
 
 ### Reduced motion
 
-With the operating system's *reduce motion* preference on, the orb still renders — it holds a single frame. That frame is not a front-on view: the rest pose carries the full 3/4 attitude (a `−9deg` pitch and a `6deg` yaw), so the 3D shape, the extrusion and the emboss all still read. Only the turning stops.
+With the operating system's *reduce motion* preference on, the orb still renders; its moving highlights hold a single frame. The pictogram itself is always front-on and pixel-aligned, so the chevrons, folder edge, and small counts remain crisp at the button's real size.
 
 ## Implementation notes
 
@@ -69,8 +69,8 @@ The string forms are accepted because the app store holds a TEXT blob: a hand-ed
 Five techniques, in the order they contribute:
 1. **The sphere** is one pseudo-element. `::before` is inherited from the flat trigger (`inset: 2px`, `--surface-2`, a 1px border, the inherited corner radius), and the variant re-declares only the paint: five stacked gradients back-to-front (the dark limb at the lower-right, light refracted along the lower-inner wall, the broad window reflection sweeping the upper-left, the hard specular blob, and the cool steel body), a bright upper-left inset edge with a dark counter-edge, and an outer rim-light plus bloom ring. The three light layers are what make the ball read as *glass* rather than as a shaded disc: a solid sphere lit this way has one gradient, a transparent one has a second, sharper reflection of its surroundings on top of it. Because the top of the ball is genuinely light, everything drawn on it needed its own dark edge — see the chevrons below.
 2. **The chevrons** are two-path solids rather than one `currentColor` bar. The flat button's grey (`--fg-soft`) sits within a couple of points of the ball's sheen and vanished into it (measured 1.36:1); the reference's bars are white, so each bar is drawn as a white face over a dark copy offset 1px down, plus a hairline outline (`drop-shadow(0 0 0.6px …)`) so its silhouette survives where it crosses the light. The dark copy is what gives the bar an edge against the *window reflection*, where a bare white bar still only measured 2.6:1.
-3. **The orbit** is a real 3D rotation, not a 2D wobble. The stack sits inside `perspective(520px)` and rotates on both axes, so the chevrons genuinely turn in depth. The rest pose is already a 3/4 view (`-9deg` / `6deg`) rather than front-on, because a slab seen straight from the front has no depth to read.
-4. **The depth plate** (`__plate`) floats `--orb-depth` in front of the chevrons but paints no rectangle of its own. It is only a transform and layout carrier. Keeping it transparent prevents the centre from reading as a generic rounded card behind the folder.
+3. **The crisp stack** stays front-on with no perspective, rotation, or scale. At 40px, continuous 3D movement sends the 6–8px details between physical pixels and blurs the icon; keeping the geometry still preserves sharp edges while the material layers provide depth.
+4. **The depth plate** (`__plate`) groups and positions the folder but paints no rectangle of its own. Keeping it transparent prevents the centre from reading as a generic rounded card behind the folder.
 5. **The folder** is an extruded solid built from stacked copies of a broad orb-only silhouette: a contact shadow, the dark side 1px lower, the mid-tone body, shallow ambient occlusion, a near-white face with a cool hairline outline and a soft drop shadow, and a rim light along its top edges. At 20 × 17 this stacking is what reads as thickness; a folder glyph has no volume of its own to push in Z. The **fold line** that used to be stroked across the middle of the silhouette is gone on purpose: the counts are laid out top/bottom on this plate, so at 1x it landed across the red count's cap and read as a stray rule rather than as a fold. The face's gradient also holds near-white across the middle and only models at the very edge, so the counts keep the pale bed they are tuned against.
 
 ### The proportions are the effect, and they are pinned
@@ -78,13 +78,13 @@ The single biggest thing that made the first version read as "a white sticker on
 The sizes are therefore declared as ratios of the painted sphere rather than as taste, and they live in one place (`FileToolbar.jsx`) which `chat-composer.css` mirrors:
 | Element | Size | Share of the 40px sphere |
 |---------|------|--------------------------|
-| Chevron | 11 × 6 | 28% wide |
-| Folder / tile | 20 × 17 | 50% wide |
-| Whole stack | 31 tall | 78% tall |
+| Chevron | 12 × 6 | 30% wide |
+| Folder / plate | 22 × 18 | 55% wide |
+| Whole stack | 32 tall | 80% tall |
 `scripts/test-file-orb.mjs` asserts both ceilings — the stack may not exceed 70% of the sphere's width or 85% of its height — so a future tweak that fattens the icon fails the suite instead of quietly eating the glass again.
 Two consequences worth knowing:
 - The **count text is HTML**, not SVG, and it is laid out against the transparent plate/folder box. So the plate's size in `FileToolbar.jsx` and in the CSS has to be the *same number*; the test asserts that equality, because otherwise the sizer's width/height budgets describe a rectangle that no longer exists.
-- the whole pictogram is only ~31px tall, so the extrusion offsets (1px) are a meaningful fraction of the glyph. That is why the bevel is visible at all; scale the pictogram back up and those same offsets become invisible edges.
+- the whole pictogram is only 32px tall, so the extrusion offsets (1px) are a meaningful fraction of the glyph. The orb SVG uses a 22 × 18 viewBox at the same rendered size, avoiding another source of subpixel blur.
 
 The counts are embossed, and the emboss has **four** stacked shadows per glyph. Read top to bottom as light travels over a raised letter:
 
@@ -106,8 +106,8 @@ The formatter ([`gitCount.js`](../../frontend/src/components/chat/gitCount.js)) 
 So `orbCountFont(maxLen)` picks the step from the longest count actually drawn, and `FileToolbar` passes it in as the `--orb-count` custom property. Each step has to clear **two** budgets, both derived from the plate rather than pinned as literals:
 | Budget | Constraint | Binds at |
 |--------|-----------|----------|
-| Width | the widest string of `maxLen` glyphs inside the 16px content box | 4–5 glyphs |
-| Height | two stacked line boxes at `line-height: 0.85` inside the 13px content box | 2–3 glyphs |
+| Width | the widest string of `maxLen` glyphs inside the 18px content box | 4–5 glyphs |
+| Height | two stacked line boxes at `line-height: 0.78` inside the 14px content box | 2–3 glyphs |
 The budgets are the plate (`ORB_FOLDER_W/H` in `FileToolbar.jsx`, mirrored by `.file-toolbar__plate`) less the 2px inset `.file-toolbar--orb .file-toolbar__git-stats` applies on every side. `scripts/test-file-orb.mjs` reads both numbers out of the source and asserts the two files agree, so resizing the plate cannot leave the sizer silently overshooting it.
 Width is per-**string**, not per-glyph — `.` is far narrower than a digit, so `+9.9k` (2.63em) is wider than `+995k` (2.92em) would be at the same size. The measured em widths, at weight 800 with tabular figures:
 ```text
@@ -116,39 +116,24 @@ Width is per-**string**, not per-glyph — `.` is far narrower than a digit, so 
 ```
 Which gives:
 ```js
-const ORB_FONT_STEPS = Object.freeze({ 2: 7, 3: 7, 4: 6, 5: 5 });
+const ORB_FONT_STEPS = Object.freeze({ 2: 8, 3: 8, 4: 6.5, 5: 6 });
 ```
-The height budget is the one that is easy to miss, and missing it is invisible in a screenshot: two 12px lines need 24px but the content box is only 13px, and `overflow: hidden` then silently cuts ~4.3px off the descender side of both counts. That is what stripped the texture off the digits before the line-height was tightened. Each step is also checked to be *maximal* — the next 0.5px up has to bust its budget — so the sizer is not leaving chunkiness on the table. The 2- and 3-glyph steps are 7px rather than the 7.6px the height budget alone would allow, because the two line boxes also have to leave a *visible* gap: at 7.5px they summed to 12.75 of the 13px available and `justify-content: space-between` had 0.25px left to separate them, which measured as only 1.4px of clear space between the green and red ink. At 7px it measures 2px.
-Every emboss offset is in `em`, so it scales with the chosen size: a 1.5px extrusion on 7px digits becomes ~1px on 5px ones. The echo was previously a fixed `0.6px`, which is a visible bevel at one end of the range and an invisible smear at the other — tuning that single rule could never have reached the chunky case.
-The **bloom** is capped for the same reason, and getting this wrong is what made the button look smeared rather than embossed. The two coloured halos used to reach `0.8em`, i.e. 19px across on a 20px tile: the green and red glows met in the middle and the whole tile turned into a coloured cloud. They are now two stops at `0.14em` and `0.3em`, which keeps the glow inside the glyph's own corner of the tile.
+The larger 22 × 18 folder gives common `+0` / `−0` counts a full 8px while preserving width for abbreviated long values. The deletion count aligns to the lower-right independently instead of inheriting the addition count's width.
+Every emboss offset is in `em`, so it scales with the chosen size. Each count is also `position: relative`: without that anchor, the absolute dark echo escaped to the top of the folder and appeared as a duplicate black number.
+The **bloom** is deliberately restrained so it adds depth without smearing the red and green glyphs together.
 
-### One animated number
+### Highlight-only motion
 
-Everything that turns reads a single animated custom property, registered so it interpolates:
+The sphere highlight and folder sheen animate only when motion is allowed. The pictogram geometry itself never rotates or scales:
 
 ```css
-@property --orb-tilt { syntax: '<angle>';  inherits: true; initial-value: 0deg; }
-@property --orb-depth { syntax: '<length>'; inherits: true; initial-value: 7px; }
-
-@keyframes file-orb-tilt { 0% { --orb-tilt: -7deg; } 50% { --orb-tilt: 7deg; } 100% { --orb-tilt: -7deg; } }
-```
-
-The stack, the plate and the slab's depth all derive from it with their own factors:
-
-```css
-.file-toolbar--orb .file-toolbar__stack {
-  transform: perspective(520px)
-             rotateX(calc(-9deg + var(--orb-tilt) * 0.85))
-             rotateY(calc(6deg + var(--orb-tilt) * -0.7));
-}
+.file-toolbar--orb .file-toolbar__stack,
 .file-toolbar--orb .file-toolbar__plate {
-  transform: translateZ(var(--orb-depth)) scale(1.06);
+  transform: translateZ(0);
 }
 ```
 
-Because there is only one phase, the orbits can never drift out of step — and `--orb-depth`, being registered, tweens instead of snapping. Without the registration both properties flip between their endpoint values on every frame, so the orbit *jumps*; that was the first, wrong version.
-
-Only `transform`, `opacity` and those two registered properties are animated. No layout property is touched, so the composer never reflows and the effect stays on the compositor — on a phone mid-stream that matters (see [Chat streaming performance](chat-streaming-performance.md)).
+This still gives the material a living glass highlight without pushing the small SVG edges and text onto fractional pixels. No layout property is animated, so the composer does not reflow.
 
 ### The specificity trap
 
@@ -176,8 +161,8 @@ Every gradient-fill rule therefore carries the variant class:
 - the plumbing — the key is in `DEFAULTS`, in the client allowlist, and round-trips through the real `settings.js` + `settingsForClient()` against a throwaway store;
 - the render — running the actual `FileToolbar` component through a hook-harness in both modes, asserting the orb layers exist only when asked, every referenced gradient is defined, the decorative echo copies are `aria-hidden`, and both modes emit an identical `aria-label` and `title`;
 - the count sizer — monotonic steps, clamping for inputs the formatter cannot emit (`undefined` would drop the whole `font-size` declaration and silently fall back to the inherited size), every step clearing both the width and the height budget, and each width-bound step being maximal;
-- the CSS invariants — no unprefixed gradient fill, the orb paint is variant-scoped, the animation lives inside `prefers-reduced-motion: no-preference`, no keyframe animates a layout property, the emboss is in `em` rather than fixed px, and the rest pose carries a perspective and a base tilt;
-- the *material* invariants — the orb emits a white chevron face plus a dark side (and the flat button emits neither), the depth plate paints no second rectangular card, the broad orb-only folder path is used, and the orb's count inks are lighter than the flat pair while both clear 4.5:1 on the pale bed.
+- the CSS invariants — no unprefixed gradient fill, the orb paint is variant-scoped, only highlights animate inside `prefers-reduced-motion: no-preference`, and the stack and plate stay front-on without perspective, rotation, or scale;
+- the *material* invariants — the orb emits a near-white chevron face plus a cool side (and the flat button emits neither), the depth plate paints no second rectangular card, the broad orb-only folder path is used, every emboss copy has a local positioning anchor, and the orb's count inks are lighter than the flat pair while both clear 4.5:1 on the pale bed.
 
 The last group is what keeps the button reading like the reference rather than like a shaded disc again: each one is a relationship between declared tones rather than a pinned hex value, so the palette can still be tuned.
 

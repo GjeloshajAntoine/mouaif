@@ -233,14 +233,14 @@ radial-gradient(128% 128% at 76% 116%,
 rgba(0, 0, 0, 0.74) 0%,
 rgba(0, 0, 0, 0.34) 38%,
 rgba(0, 0, 0, 0) 70%),
-/* the body of the glass: cool steel blue, light at the top-left where the
-light enters and denser toward the bottom-right. */
-linear-gradient(163deg,
-#8ba6d4 0%,
-#6280b0 38%,
-#3c5279 68%,
-#1b2740 100%);
-border-color: rgba(214, 230, 255, 0.52);
+/* the body stays dark navy, like the reference, so the pale pictogram reads
+without the whole sphere turning into a powder-blue disc. */
+linear-gradient(154deg,
+#7894c2 0%,
+#3f587f 34%,
+#1e2d49 66%,
+#0c1425 100%);
+border-color: rgba(222, 235, 255, 0.72);
 box-shadow:
 /* the lit upper-left edge and its dark counter-edge */
 inset 1.5px 1.5px 0 -0.5px rgba(255, 255, 255, 0.72),
@@ -268,18 +268,19 @@ overflow: visible;
 thickness under it. The bar crosses the window reflection at the top of the
 ball, where a bare white bar measured 2.78:1 — the silhouette is what keeps
 it readable there. */
-filter: drop-shadow(0 0 0.6px rgba(10, 18, 34, 0.85)) drop-shadow(0 1px 0.4px rgba(10, 18, 34, 0.55));
+filter: drop-shadow(0 0 0.35px rgba(10, 18, 34, 0.92)) drop-shadow(0 1px 0 rgba(10, 18, 34, 0.72));
 }
 .file-toolbar--orb .file-toolbar__chevron-face {
-fill: #ffffff;
-/* The lit top edge of the bar, so it reads as milled rather than stamped. */
-filter: drop-shadow(0 -0.5px 0 rgba(255, 255, 255, 0.75));
+fill: #e8f2ff;
+/* A cool face and restrained rim keep the chevrons glass-like instead of
+reading as high-contrast black-and-white emoji. */
+filter: drop-shadow(0 -0.35px 0 rgba(255, 255, 255, 0.72));
 }/* The bar's thickness: the same silhouette, 1px lower, in the rim's own dark
 tone. It is what gives the bar an edge over the *light* half of the sphere —
 measured at 1.36:1 for a bare white bar, because the up-chevron crosses the
 window reflection at the top of the ball. */
 .file-toolbar--orb .file-toolbar__chevron-side {
-fill: rgba(18, 28, 48, 0.88);
+fill: rgba(93, 123, 170, 0.88);
 /* In the SVG's user units: the viewBox is 12x6 drawn at 11x6 px, so one
 unit is ~0.92px of extrusion at the button's real size. */
 transform: translateY(1px);
@@ -341,14 +342,11 @@ opacity: 0.8;
    skew. The pictogram is deliberately *small* on screen, so 520px gives a
    visible but not distorted divergence between the chevrons and the slab. */
 .file-toolbar--orb .file-toolbar__stack {
---orb-tilt: 0deg;
---orb-depth: 7px;
 position: relative;
 z-index: 2;
-transform: perspective(520px)
-rotateX(calc(-9deg + var(--orb-tilt) * 0.85))
-rotateY(calc(6deg + var(--orb-tilt) * -0.7));
-transform-style: preserve-3d;
+/* Keep the tiny glyph front-on and pixel-aligned. Perspective and continuous
+rotation made the 6–8px details interpolate between pixels and look blurred. */
+transform: translateZ(0);
 backface-visibility: hidden;
 }
 /* On press the plate sinks into the sphere and the orbit flattens. */
@@ -371,10 +369,9 @@ display: block;
 silhouette's box, so the glass tile and the solid behind it register
 exactly; the counts are positioned against this box in CSS px, which is why
 the two files have to agree on the number. */
-width: 20px;
-height: 17px;
-transform: translateZ(var(--orb-depth)) scale(1.12);
-transform-style: preserve-3d;
+width: 22px;
+height: 18px;
+transform: translateZ(0);
 will-change: transform;
 }
 .file-toolbar--orb .file-toolbar__plate-face {
@@ -419,8 +416,8 @@ display: block;
 each this box, so the extrusion offsets in CSS px below land on the same
 silhouette. The orb-only path nearly fills this box, matching the reference's
 single broad folder instead of leaving a tile visible around it. */
-width: 20px;
-height: 17px;
+width: 22px;
+height: 18px;
 }
 .file-toolbar__folder-side,
 .file-toolbar__folder-face,
@@ -486,7 +483,7 @@ fill: url(#fileToolbarFolderShade);
 }
 .file-toolbar__folder-face {
 z-index: 4;
-filter: drop-shadow(0 1px 0.6px rgba(0, 0, 0, 0.55));
+filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.58));
 }
 /* The face's own silhouette outline. The pale solid sits on a mid-tone pane
 now, and a hairline of the pane's darkest tone traced around the outline is
@@ -495,8 +492,8 @@ as one pale field. `paint-order: stroke` puts the hairline behind the fill,
 so only its outer half shows and the face does not shrink. */
 .file-toolbar--orb .file-toolbar__folder-face path {
 fill: url(#fileToolbarFolderFace);
-stroke: rgba(104, 130, 176, 0.78);
-stroke-width: 0.8;
+stroke: rgba(122, 153, 204, 0.88);
+stroke-width: 0.65;
 paint-order: stroke;
 stroke-linejoin: round;
 }
@@ -544,7 +541,7 @@ sets them well inside the tile's body, which is what leaves the pale slab
 visible around them. 2px horizontally and 3/2 vertically is also the box the
 count sizer's two budgets are computed from (see fileOrb.js), so the number
 and the padding have to move together. */
-padding: 3px 2px 1px;
+padding: 5px 3px 1px;
 display: flex;
 flex-direction: column;
 justify-content: space-between;
@@ -555,13 +552,14 @@ needs 24px and `overflow: hidden` silently cuts the bottom of every glyph
 off the digits. 0.85 is tight enough to fit two lines while still clearing
 the cap height — the counts are `+`/`-` and digits, so there is no descender
 to collide with. */
-line-height: 0.85;
+line-height: 0.78;
 /* `--orb-count` is set inline by FileToolbar from the longest count actually
 drawn. The fallback is the widest step, so a render without the inline style
 (or a future caller that forgets it) is small rather than overflowing. */
 font-size: var(--orb-count, 5.5px);
-font-weight: 800;
-letter-spacing: -0.01em;
+font-weight: 900;
+letter-spacing: -0.03em;
+text-align: left;
 }
 /* The orb's counts are one step brighter than the flat button's: they are
 embossed into a lit solid with a dark under-copy and a white lip around
@@ -577,12 +575,21 @@ color: #c11b1b;
 }
 .file-toolbar--orb .file-toolbar__git-additions,
 .file-toolbar--orb .file-toolbar__git-deletions {
-position: static;
+/* Anchor the absolute emboss copy to its own count. `position: static` let the
+black echo escape to the top of the folder and appear as a duplicate number. */
+position: relative;
 max-width: none;
 display: block;
+width: max-content;
+}
+.file-toolbar--orb .file-toolbar__git-deletions {
+align-self: flex-end;
 }
 .file-toolbar__count--3d {
-position: relative;
+isolation: isolate;
+}
+.file-toolbar__count--3d .file-toolbar__count-echo {
+z-index: -1;
 }
 /* The emboss. Every offset is in `em`, so it scales with `--orb-count`: at
    14px the digits get a 1.5px extrusion and a 1.4px lip, at 7.5px they get
@@ -597,9 +604,9 @@ position: relative;
    colors are tuned for is unchanged. */
 .file-toolbar__count-echo {
 position: absolute;
-left: 0.115em;
-top: 0.115em;
-color: rgba(2, 6, 14, 0.62);
+left: 0.07em;
+top: 0.09em;
+color: rgba(2, 6, 14, 0.45);
 }
 .file-toolbar__count-face {
 position: relative;
@@ -625,17 +632,17 @@ whole tile turned into a coloured cloud with unreadable digits inside it,
 which is the "smear" the button was showing. */
 .file-toolbar--orb .file-toolbar__git-additions .file-toolbar__count-face {
 text-shadow:
-0 -0.06em 0 rgba(0, 34, 0, 0.46),
-0 0.1em 0 rgba(255, 255, 255, 0.56),
-0 0 0.12em rgba(0, 200, 64, 0.50),
-0 0 0.26em rgba(0, 165, 50, 0.26);
+0 -0.04em 0 rgba(0, 34, 0, 0.36),
+0 0.07em 0 rgba(255, 255, 255, 0.44),
+0 0 0.08em rgba(0, 200, 64, 0.42),
+0 0 0.18em rgba(0, 165, 50, 0.20);
 }
 .file-toolbar--orb .file-toolbar__git-deletions .file-toolbar__count-face {
 text-shadow:
-0 -0.06em 0 rgba(52, 0, 0, 0.46),
-0 0.1em 0 rgba(255, 255, 255, 0.52),
-0 0 0.12em rgba(236, 46, 46, 0.50),
-0 0 0.26em rgba(200, 22, 22, 0.26);
+0 -0.04em 0 rgba(52, 0, 0, 0.36),
+0 0.07em 0 rgba(255, 255, 255, 0.42),
+0 0 0.08em rgba(236, 46, 46, 0.42),
+0 0 0.18em rgba(200, 22, 22, 0.20);
 }
 
 /* The SVG gradients the folder faces reference. Zero-sized and unreferenced
@@ -648,43 +655,8 @@ overflow: hidden;
 }
 
 @media (prefers-reduced-motion: no-preference) {
-/* TWO registered properties, because both are animated and neither interpolates
-  as a plain custom property: `--orb-tilt` as an angle, `--orb-depth` as a
-  length. Without the `@property` registrations the keyframes flip between
-  their endpoint values instead of tweening — the orbit would jump rather than
-  turn. Browsers that ignore `@property` still get the discrete steps, which
-  read as a slow 3D wobble rather than a frozen button. */
-@property --orb-tilt {
-syntax: '<angle>';
-inherits: true;
-initial-value: 0deg;
-}
-@property --orb-depth {
-syntax: '<length>';
-inherits: true;
-initial-value: 7px;
-}
-@keyframes file-orb-tilt {
-0%   { --orb-tilt: -7deg; }
-50%  { --orb-tilt: 7deg; }
-100% { --orb-tilt: -7deg; }
-}
-.file-toolbar--orb .file-toolbar__stack {
-animation: file-orb-tilt 6.4s ease-in-out infinite;
-}
-/* The slab also breathes in Z, so it visibly floats in front of the sphere
-   instead of sitting on it. `--orb-depth` is the same token the plate's
-   resting transform reads, so this re-uses one number. */
-@keyframes file-orb-float {
-0%, 100% { --orb-depth: 4.5px; }
-50%      { --orb-depth: 9px; }
-}
-.file-toolbar--orb .file-toolbar__plate {
-animation: file-orb-float 4.6s ease-in-out infinite;
-}
-/* The sheen drifts across the ball on its own, slower period. Without it the
-   sphere looks like it stopped moving whenever the glyph reaches a still point
-   of its ease curve. */
+/* Only highlights move. The pictogram itself stays pixel-aligned so the tiny
+chevrons, folder edge, and counts remain crisp on a phone. */
 @keyframes file-orb-sheen {
 0%, 100% {
 transform: translate3d(-36%, -40%, 0) scale(1.02);
@@ -710,8 +682,6 @@ animation: file-orb-sheen 9.3s ease-in-out infinite;
 animation: file-orb-folder-sheen 7.1s ease-in-out infinite;
 }
 /* Pausing on press stops the orbit fighting the :active sink. */
-.file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__stack,
-.file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__plate,
 .file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__sheen,
 .file-toolbar--orb .file-toolbar__trigger:active .file-toolbar__folder-sheen {
 animation-play-state: paused;

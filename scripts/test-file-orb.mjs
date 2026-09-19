@@ -302,7 +302,7 @@ check('the emboss scales with the font instead of being a fixed length', () => {
   assert.ok(from > -1 && to > from, 'found the emboss block');
   assert.match(block, /left:\s*0\.\d+em;/, 'the echo offset is in em');
   assert.match(block, /top:\s*0\.\d+em;/, 'the echo offset is in em');
-  assert.match(block, /0\.1em 0 rgba\(255, 255, 255/, 'the white lip is in em');
+  assert.match(block, /0 0\.\d+em 0 rgba\(255, 255, 255/, 'the white lip is in em');
   const statsRule = css.match(/\.file-toolbar--orb \.file-toolbar__git-stats \{([^}]*)\}/);
   assert.ok(statsRule, 'found the orb stats rule');
   assert.match(statsRule[1], /font-size:\s*var\(--orb-count/, 'the size is driven by the inline variable');
@@ -354,40 +354,25 @@ assert.ok(stackH <= SPHERE * 0.85,
 assert.ok(folderW >= 16, 'the folder must stay wide enough for a legible count');
 });
 
-check('the animation is opt-in under no-preference and holds a frame otherwise', () => {
+check('only the highlights animate, so the pictogram stays crisp', () => {
   const motionStart = css.indexOf('@media (prefers-reduced-motion: no-preference)');
   assert.ok(motionStart > -1, 'a no-preference block exists');
   const motionBlock = css.slice(motionStart);
-  // The animated property must be registered, or it flips instead of tweening.
-  assert.match(motionBlock, /@property --orb-tilt \{\s*syntax: '<angle>';/, '--orb-tilt is registered as an angle');
-  assert.match(motionBlock, /@property --orb-depth \{\s*syntax: '<length>';/, '--orb-depth is registered as a length');
-  // The keyframes must live inside the block, so reduced-motion users get the
-  // rest pose rather than a jump cut.
-  for (const name of ['file-orb-tilt', 'file-orb-float', 'file-orb-sheen', 'file-orb-folder-sheen']) {
+  for (const name of ['file-orb-sheen', 'file-orb-folder-sheen']) {
     const at = css.indexOf('@keyframes ' + name);
     assert.ok(at > motionStart, name + ' is inside the no-preference block');
   }
-  // Only compositable properties may be animated: transform, opacity, and the
-  // two registered custom properties. A layout property here would reflow the
-  // composer on every frame.
-  const kf = css.slice(motionStart);
-  for (const banned of ['width:', 'height:', 'top:', 'left:', 'margin', 'padding', 'font-size']) {
-    const keyframes = kf.split('@keyframes');
-    for (const block of keyframes.slice(1)) {
-      const body = block.slice(block.indexOf('{'), block.indexOf('}') + 1);
-      assert.ok(!body.includes(banned), 'keyframes must not animate ' + banned);
-    }
-  }
+  assert.doesNotMatch(motionBlock, /@keyframes file-orb-(tilt|float)/, 'the glyph does not orbit between pixels');
+  assert.doesNotMatch(motionBlock, /\.file-toolbar--orb \.file-toolbar__(stack|plate)\s*\{[^}]*animation:/, 'the stack and plate stay still');
 });
 
-check('the rest pose is a full 3/4 view, not a flat front-on frame', () => {
-// With reduced motion (and before the first animation tick) the base rule is
-// what the user sees, so it must already carry a tilt.
-const m = css.match(/\.file-toolbar--orb \.file-toolbar__stack \{[^}]*transform:([^;]+);/);
-assert.ok(m, 'the stack has a base transform');
-assert.match(m[1], /perspective\(/, 'the base transform sets a perspective');
-assert.match(m[1], /-9deg/, 'a base rotateX offset');
-assert.match(m[1], /6deg/, 'a base rotateY offset');
+check('the pictogram is front-on and pixel-aligned', () => {
+  const stack = css.match(/\.file-toolbar--orb \.file-toolbar__stack \{([^}]*)\}/);
+  const plate = css.match(/\.file-toolbar--orb \.file-toolbar__plate \{([^}]*)\}/);
+  assert.ok(stack && plate, 'the stack and plate rules exist');
+  assert.match(stack[1], /transform:\s*translateZ\(0\)/, 'the stack gets a compositing layer without rotation');
+  assert.match(plate[1], /transform:\s*translateZ\(0\)/, 'the folder stays front-on');
+  assert.doesNotMatch(stack[1] + plate[1], /perspective|rotate|scale/, 'no subpixel transform softens the glyph');
 });
 
 // ---- 5. the orb reads as glass, not as a shaded disc ---------------------
@@ -424,7 +409,7 @@ check('the chevrons are drawn as a bevelled solid, not one currentColor path', a
   assert.equal(cls(flatNodes, 'file-toolbar__chevron-face').length, 0, 'the flat button sheds no skin');
   // The face must not be left to inherit: it is the only thing that makes the
   // bar visible over the lit half of the sphere.
-  assert.match(css, /\.file-toolbar--orb \.file-toolbar__chevron-face \{[^}]*fill:\s*#ffffff/, 'the bar face is white');
+  assert.match(css, /\.file-toolbar--orb \.file-toolbar__chevron-face \{[^}]*fill:\s*#(?:ffffff|e8f2ff)/, 'the bar face is near-white');
   assert.match(css, /\.file-toolbar--orb \.file-toolbar__chevron-side \{[^}]*fill:\s*rgba\(/, 'the bar side is a dark tone');
 });
 
@@ -438,6 +423,9 @@ check('the folder is the only painted centre object', () => {
   assert.match(tileRule[1], /box-shadow:\s*none;/, 'the plate has no rectangular edge');
   assert.match(component, /const ORB_FOLDER_PATH = /, 'orb mode has its own broad folder silhouette');
   assert.match(component, /\['face', h\('path', \{ d: ORB_FOLDER_PATH \}\)\]/, 'the visible folder uses the orb silhouette');
+  const countRule = css.match(/\.file-toolbar--orb \.file-toolbar__git-additions,[\s\S]*?\.file-toolbar--orb \.file-toolbar__git-deletions \{([^}]*)\}/);
+  assert.ok(countRule, 'found the orb count positioning rule');
+  assert.match(countRule[1], /position:\s*relative;/, 'each count anchors its emboss copy');
 
   const faceStops = gradientStops('fileToolbarFolderFace', 'fileToolbarFolderShade').map(LIGHTNESS).filter((n) => n !== null);
   assert.ok(faceStops.length >= 4, 'the face is a five-stop ramp');

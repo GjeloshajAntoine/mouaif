@@ -24,9 +24,10 @@ import { orbCountFont } from './fileOrb.js';
 const FOLDER_PATH = 'M2 3.5a2 2 0 0 1 2-2h4.2l1.9 1.9H16a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9Z';
 // The reference orb has one large, unmistakable folder silhouette rather than
 // a small folder laid over a separate rounded tile. Orb mode therefore uses a
-// path that spends almost all of its 20 x 17 box; the flat icon keeps the
-// original, more inset path above.
-const ORB_FOLDER_PATH = 'M0.7 4.7A3.2 3.2 0 0 1 3.9 1.5h4.6l2.4 2.3h6.2a2.2 2.2 0 0 1 2.2 2.2v7.5a2.2 2.2 0 0 1-2.2 2.2H2.9a2.2 2.2 0 0 1-2.2-2.2V4.7Z';
+// path that spends almost all of its 22 x 18 box; the flat icon keeps the
+// original, more inset path above. Its viewBox and rendered size are identical
+// so every edge lands on the pixel grid instead of being softened by scaling.
+const ORB_FOLDER_PATH = 'M1 5.5A3.5 3.5 0 0 1 4.5 2h5l2.5 2.5h6.5A2.5 2.5 0 0 1 21 7v7.5a2.5 2.5 0 0 1-2.5 2.5h-15A2.5 2.5 0 0 1 1 14.5v-9Z';
 // Pictogram geometry, in CSS px. These are the numbers the reference is
 // proportioned to, and `frontend/src/chat-composer.css` repeats them —
 // changing one without the other detaches the paint from the boxes it
@@ -35,9 +36,9 @@ const ORB_FOLDER_PATH = 'M0.7 4.7A3.2 3.2 0 0 1 3.9 1.5h4.6l2.4 2.3h6.2a2.2 2.2 
 // The sizes are *ratios of the painted sphere*, which is 40px (a 44px tap
 // target with the flat trigger's 2px inset):
 //
-//   chevron  11 x 6   = 28% of the diameter   (reference: ~21%)
-//   folder   20 x 17  = 50% of the diameter   (reference: ~36%)
-//   stack    31 tall  = 78% of the diameter   (reference: ~71%)
+//   chevron  12 x 6   = 30% of the diameter
+//   folder   22 x 18  = 55% of the diameter
+//   stack    32 tall  = 80% of the diameter
 //
 // The first pass drew 14x7 chevrons over a 28x22 folder — a 38px stack in a
 // 40px circle. The pictogram then ran to the sphere's rim on every side and
@@ -48,10 +49,10 @@ const ORB_FOLDER_PATH = 'M0.7 4.7A3.2 3.2 0 0 1 3.9 1.5h4.6l2.4 2.3h6.2a2.2 2.2 
 // both variants — the orb only adds the extruded side copy below them.
 const CHEVRON_PATH_UP = 'M0.5 5.5 6 1 11.5 5.5 10 6 6 2.5 2 6Z';
 const CHEVRON_PATH_DOWN = 'M0.5 0.5 6 5 11.5 0.5 10 0 6 3.5 2 0Z';
-const ORB_CHEVRON_W = 11;
+const ORB_CHEVRON_W = 12;
 const ORB_CHEVRON_H = 6;
-const ORB_FOLDER_W = 20;
-const ORB_FOLDER_H = 17;
+const ORB_FOLDER_W = 22;
+const ORB_FOLDER_H = 18;
 
 function parseNumstat(stdout) {
   let additions = 0;
@@ -285,7 +286,7 @@ counts are laid out top/bottom on this plate, so at 1x that line landed
 straight across the red count's cap and read as a stray rule rather than
 as a fold. The reference render has no such line — its card carries its
 edges only. */
-d: 'M1.5 5a2.7 2.7 0 0 1 2.7-2.7h4l2.3 2.3h6.3a1.8 1.8 0 0 1 1.8 1.8'
+d: 'M1.8 5.8A2.9 2.9 0 0 1 4.7 2.9h4.4l2.3 2.3h7A1.7 1.7 0 0 1 20.1 6.9'
 })]
 ];
 const folderGlyph = orb
@@ -296,7 +297,7 @@ h('span', { class: 'file-toolbar__folder file-toolbar__folder--3d' },
 h('span', { class: 'file-toolbar__folder-ground', 'aria-hidden': 'true' }),
 ...orbFolderLayers.map(([name, ...kids]) => h('svg', {
 class: 'file-toolbar__folder-' + name,
-viewBox: '0 0 20 16',
+viewBox: '0 0 22 18',
 width: ORB_FOLDER_W,
 height: ORB_FOLDER_H,
 'aria-hidden': 'true'
@@ -309,14 +310,14 @@ h('linearGradient', { id: 'fileToolbarFolderSide', x1: '0', y1: '0', x2: '0.3', 
 step, falling to near-black where the side turns away. Kept one stop
 lighter than the first pass, which read as a dark plastron under the
 folder at 1x. */
-h('stop', { offset: '0', 'stop-color': '#a7add0' }),
-h('stop', { offset: '0.35', 'stop-color': '#4a5578' }),
-h('stop', { offset: '1', 'stop-color': '#1d2740' })
+h('stop', { offset: '0', 'stop-color': '#dbeaff' }),
+h('stop', { offset: '0.42', 'stop-color': '#7895c2' }),
+h('stop', { offset: '1', 'stop-color': '#344c72' })
 ),
 h('linearGradient', { id: 'fileToolbarFolderBody', x1: '0.12', y1: '0', x2: '0.7', y2: '1' },
-h('stop', { offset: '0', 'stop-color': '#eef0fb' }),
-h('stop', { offset: '0.4', 'stop-color': '#c9ccdd' }),
-h('stop', { offset: '1', 'stop-color': '#8d92ab' })
+h('stop', { offset: '0', 'stop-color': '#f6fbff' }),
+h('stop', { offset: '0.48', 'stop-color': '#d9e8fb' }),
+h('stop', { offset: '1', 'stop-color': '#9db6d8' })
 ),
 h('linearGradient', { id: 'fileToolbarFolderFace', x1: '0.1', y1: '0', x2: '0.62', y2: '1' },
 /* The face is the *bed the counts are read on*, so it stays pale almost
@@ -326,10 +327,10 @@ mid-tone — the ink then sat at ~3.5:1 and the digits went muddy. The
 depth that ramp was buying is bought back by the extrusion and the
 silhouette outline instead (see `.file-toolbar__folder-face path`). */
 h('stop', { offset: '0', 'stop-color': '#ffffff' }),
-h('stop', { offset: '0.5', 'stop-color': '#fbfcff' }),
-h('stop', { offset: '0.74', 'stop-color': '#eef1f9' }),
-h('stop', { offset: '0.9', 'stop-color': '#d9dfee' }),
-h('stop', { offset: '1', 'stop-color': '#c2cadf' })
+h('stop', { offset: '0.45', 'stop-color': '#eff8ff' }),
+h('stop', { offset: '0.72', 'stop-color': '#dcecff' }),
+h('stop', { offset: '0.9', 'stop-color': '#c4d9f3' }),
+h('stop', { offset: '1', 'stop-color': '#a9c2e2' })
 ),
 h('radialGradient', { id: 'fileToolbarFolderShade', cx: '0.7', cy: '0.86', r: '0.82' },
 /* Ambient occlusion only — deliberately shallow, because the red count
