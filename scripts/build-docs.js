@@ -572,7 +572,7 @@ table tr:last-child td { border-bottom: 0; }
   grid-template-columns: minmax(0, 1fr);
 }
 .site--full .main {
-  max-width: 1000px;
+  max-width: 1180px;
   width: 100%;
   margin: 0 auto;
 }
@@ -823,15 +823,15 @@ table tr:last-child td { border-bottom: 0; }
   background: var(--surface-2);
 }
 /* Landing-page screenshot row: phone-proportioned captures of the real UI.
-  Three per row on a laptop (six captures = two full rows, so no row is left
+  Four per row on a laptop (eight captures = two full rows, so no row is left
   with a single orphan card), a centred two-up in the middle width, and one
-  stacked column on a phone (see the media query). A fixed 3-column grid with
+  stacked column on a phone (see the media query). A fixed 4-column grid with
   a cap per card rather than auto-fit: auto-fit sizes the tracks from the
-  container, which left the last card of a six-shot row alone on its own line
-  and much wider than the others. */
+  container, which left the last card of a row alone on its own line and much
+  wider than the others. */
 .shot-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   align-items: start;
   margin: 24px 0;
@@ -1081,6 +1081,11 @@ const landingShots = [
     'Chats — projects group their own chats'
   ],
   [
+    'features/images/landing/chat-tools.png',
+    'An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the "Start the conversation" state.',
+    'A new chat — every tool, Off / Ask / Allow'
+  ],
+  [
     'features/images/landing/chat-view.png',
     'A chat at 390 px: the model header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
     'Chats — a run reads, searches, edits and tests'
@@ -1120,7 +1125,7 @@ const body = `
 </section>
 <section class="section" id="screenshots">
 <h2>See it on a phone</h2>
-<p class="lead">Every screen is built for a 360–430 px viewport first and grows from there. These are captures of the running app at 390 px wide — a project's chats, a run that reads and edits files, the providers behind it, the per-project tool permissions, the Inspector attached to a page, and the app defaults.</p>
+<p class="lead">Every screen is built for a 360–430 px viewport first and grows from there. These are captures of the running app at 390 px wide — a project's chats, a brand-new chat with every tool and its Off / Ask / Allow control, a run that reads and edits files, the providers behind it, the per-project tool permissions, the Inspector attached to a page, and the app defaults.</p>
 <div class="shot-row">
 ${landingShots}
 </div>

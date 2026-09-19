@@ -21,13 +21,14 @@ The generated `features/*.html`, `index.html`, `documentation.html`, `assets/` a
 
 ## Landing page screenshots
 
-The landing page (`index.html`) opens with a **See it on a phone** section: six phone-width captures of the running app, showing what the app actually does rather than only saying it. The copy states the promise (every screen is built for a 360–430 px viewport first) and the captures are the evidence, so a reader sees the app before the install commands.
+The landing page (`index.html`) opens with a **See it on a phone** section: seven phone-width captures of the running app, showing what the app actually does rather than only saying it. The copy states the promise (every screen is built for a 360–430 px viewport first) and the captures are the evidence, so a reader sees the app before the install commands.
 
-The six captures, in page order:
+The seven captures, in page order:
 
 | Capture | What it shows |
 |---------|---------------|
 | `chats-list.png` | The Chats tab — a project card holding its own chat list, a draft-only chat in italics, and **New chat** |
+| `chat-tools.png` | A brand-new chat — the system-prompt card and the **Tools** card, one checkbox and one **Off / Ask / Allow** control per tool |
 | `chat-view.png` | A chat at the end of a run — the model header, per-turn cost lines, and the **Read**, **Searched**, **Wrote** and **Ran** tool cards |
 | `providers.png` | Settings → Providers — three connected providers, each naming its endpoint and whether a key is stored |
 | `project-settings.png` | Project settings — prompt style, then every tool with its own **Off / Ask / Allow** control |
@@ -39,6 +40,7 @@ The images live in the same feature image tree as every other screenshot, so the
 ```text
 docs/features/images/landing/
   chats-list.png         # Chats tab, 390 × 700 @2x
+  chat-tools.png         # Empty chat, tools card expanded, 390 × 700 @2x
   chat-view.png          # Chat transcript, end of run, 390 × 700 @2x
   providers.png          # Settings → Providers, 390 × 700 @2x
   project-settings.png   # Project settings, 390 × 700 @2x
@@ -50,7 +52,7 @@ Because the section is on the site root, its `src` values are prefixed `features
 
 ### Layout
 
-- **Laptop (above 1040 px)** — three per row, in a fixed `repeat(3, minmax(0, 1fr))` grid. Six captures fill two rows exactly, so no capture is left alone and stretched on a row of its own.
+- **Laptop (above 1040 px)** — four per row, in a fixed `repeat(4, minmax(0, 1fr))` grid. Seven captures fill one full row plus three, so no capture is left alone and stretched on a row of its own.
 - **Tablet (761–1040 px)** — two per row, centred at a 760 px maximum.
 - **Phone (`max-width: 760px`)** — a single stacked column, each capture capped at 340 px and centred. Side-by-side thumbnails on a 360 px screen made the UI in each capture unreadable; the same breakpoint already stacks the `.feature` screenshot rows.
 - `align-items: start` keeps the captures from stretching each other, and each keeps its own aspect ratio (`width: 100%`, `height: auto` on `.shot img`), so a shorter capture is a shorter card instead of a letterboxed one. The image has no corner radius because the `.shot` card and its `overflow: hidden` already clip it.

@@ -245,6 +245,25 @@ const SHOTS = [
     alt: 'The Chats tab at 390 px: a project card holding its own chat list and a New chat button under it.'
   },
   {
+    file: 'chat-tools.png',
+    // A brand-new, message-less chat: its transcript is only the header block
+    // (setup control, system prompt, the tools card), so the shot shows the
+    // per-tool Off / Ask / Allow controls and the tool checkboxes on their
+    // own — the state a user lands in when they open a chat for the first
+    // time. The recipe expands every collapsed group so the leaf checkboxes
+    // are visible instead of a row of closed sections.
+    hash: () => `#/chat/${state.emptyChatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    alt: 'An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the "Start the conversation" state.',
+    recipe: `(() => {
+      for (const chev of document.querySelectorAll('.tool-tree__chev.is-collapsed')) {
+        chev.click();
+      }
+      const t = document.querySelector('.chat-view__transcript');
+      if (t) t.scrollTop = 0;
+    })()`,
+    waitFor: '[data-tools-card="1"]'
+  },
+  {
     file: 'chat-view.png',
     // The chat shot is taken at the transcript tail, where the run ends. The
     // `.chat-view__transcript` container is where the messages are, so the
@@ -298,7 +317,7 @@ const SHOTS = [
 
 // ---- main ---------------------------------------------------------------
 
-const state = { chatId: '', projectDir: '', previewUrl: '' };
+const state = { chatId: '', emptyChatId: '', projectDir: '', previewUrl: '' };
 
 async function main() {
   const chromeBin = findChrome();
@@ -355,7 +374,9 @@ async function main() {
       projects.registerProject(projectDir);
       seed.installProviders(settings);
       seed.installProjectModels(projectDir);
-      state.chatId = seed.seedChats(projectDir, chats, messages);
+      const seeded = seed.seedChats(projectDir, chats, messages);
+      state.chatId = seeded.chatId;
+      state.emptyChatId = seeded.emptyChatId;
       state.projectDir = projectDir;
 
       // The app server. `createServer(0)` then listen(0) keeps the port out of

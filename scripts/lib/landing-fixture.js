@@ -42,8 +42,12 @@ function installProjectModels(projectDir) {
   settings.setProject(projectDir, { models: MODELS });
 }
 
-// seedChats(projectDir, chats) -> the id of the chat that carries the
-// transcript, created last so it sorts to the top of the project card.
+// seedChats(projectDir, chats, messages) -> { chatId, emptyChatId }
+//
+// `chatId` carries the transcript, `emptyChatId` is the brand-new chat the
+// tools capture opens: no messages at all, so the transcript renders its
+// header block (setup control, system prompt, the tools card) on its own —
+// which is the whole point of that shot.
 function seedChats(projectDir, chats, messages) {
   for (const extra of EXTRA_CHATS) {
     const chat = chats.createChat(projectDir, { title: extra.title });
@@ -56,8 +60,13 @@ function seedChats(projectDir, chats, messages) {
     providerId: 'anthropic',
     draft: 'Now add a done toggle to the board view.'
   });
+  const empty = chats.createChat(projectDir, { title: 'New chat' });
+  chats.updateChat(projectDir, empty.id, {
+    modelId: 'claude-sonnet-4-6',
+    providerId: 'anthropic'
+  });
   chats.recomputeProjectTotalCost(projectDir);
-  return main.id;
+  return { chatId: main.id, emptyChatId: empty.id };
 }
 
 // ---- transcript ---------------------------------------------------------
