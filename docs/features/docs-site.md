@@ -121,7 +121,9 @@ The build emits a `.nojekyll` file, so GitHub Pages serves the rendered HTML as-
 
 Set this once per repository: **Settings → Pages → Build and deployment → Source: Deploy from a branch**, branch `master`, folder **`/docs`**. The site is then live at `https://<owner>.github.io/<repo>/`.
 
-`npm run docs:publish:check` runs in CI and fails when the committed `docs/` output drifts from the Markdown sources, so the page and its source can never disagree.
+Do not add `actions/configure-pages` or `actions/deploy-pages` for this setup. Those actions are for **GitHub Actions** as the Pages source and can fail with `Resource not accessible by integration` when a workflow tries to create or configure a Pages site. The repository's normal CI workflow only checks the committed site output; GitHub's built-in `pages-build-deployment` workflow publishes `/docs` after a push.
+
+`npm run docs:publish:check` runs in CI and fails when the committed `docs/` output drifts from the Markdown sources, so the page and its source can never disagree. CI uses the current Node-based major versions of GitHub's checkout and setup-node actions to avoid deprecated action runtimes.
 
 ## Adding a page
 

@@ -56,7 +56,9 @@ The renderer covers ATX headings (with slug anchors), fenced code blocks, blockq
 
 ### Deployment
 
-The site is a **branch deploy** from `master` / `docs` (Settings → Pages → "Deploy from a branch"), with no GitHub Actions workflow and no extra branch. Pages serves committed files as-is and never runs the build, so the generated site is committed into `docs/` alongside the Markdown sources.
+The site is a **branch deploy** from `master` / `docs` (Settings → Pages → "Deploy from a branch"), with no custom GitHub Actions deployment workflow and no extra branch. GitHub's built-in dynamic `pages-build-deployment` workflow publishes the committed files as-is, so the generated site is committed into `docs/` alongside the Markdown sources. Do not add `actions/configure-pages` or `actions/deploy-pages`: they implement the alternative **GitHub Actions** Pages source and may fail with `Resource not accessible by integration` when the workflow cannot create or reconfigure the Pages site.
+
+`.github/workflows/ci.yml` verifies the committed output but does not deploy it. Its checkout and setup-node actions use their current Node 24-runtime majors, while setup-node selects the current Node LTS release for project commands; this avoids GitHub's deprecated Node action-runtime warning.
 
 `scripts/publish-docs.js` is the sync tool (`npm run docs:publish`, or `npm run docs:publish:check` for verification). It:
 
