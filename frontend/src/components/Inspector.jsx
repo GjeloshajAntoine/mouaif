@@ -316,8 +316,8 @@ const toggleAria = isVisible ? 'Hide ' + props.label + ' panel' : 'Show ' + prop
 // full-screen button in the same slot, on every card — the pattern the Preview
 // card already shipped with, extended to the rest.
 //
-// The name is not lost, it is moved: the chip in the pinned switcher above
-// already names the panel in words, and the button carries the same name in its
+// The name is not lost, it is moved: the chip in the switcher above already
+// names the panel in words, and the button carries the same name in its
 // `aria-label` + `title`, so nothing on screen becomes unnameable for assistive
 // tech. What the header gains is the row's only wide slot turned into an
 // action: a panel body is 32–54 dvh on a phone, which is under half the
@@ -1839,16 +1839,14 @@ return stepAttachedHistory('forward');
     });
   }
   // revealPanelCard — bring one panel card into view inside the page
-  // scroller (.app__main), under the pinned switcher. The panelbar is
-  // `position: sticky; top: 0` on that scroller, so it stays on screen
-  // while the cards scroll away under it: with all five panels on, the
-  // Styles card can sit 800 px below the fold (measured at 375 x 667:
-  // the chip row pinned at the top while the card's top was at +809).
-  // A chip tap, a new selection or an armed pick mode all answer in a
-  // card the user may not be looking at, so each of those reveals the
-  // card it acts on instead of leaving the outcome off screen.
+  // scroller (.app__main). With all five panels on, the Styles card can
+  // sit 800 px below the chip row (measured at 375 x 667: the card's
+  // top was at +809). A chip tap, a new selection or an armed pick mode
+  // all answer in a card the user may not be looking at, so each of
+  // those reveals the card it acts on instead of leaving the outcome
+  // off screen.
   //
-  // `align: 'top'` puts the card's header just under the switcher —
+  // `align: 'top'` puts the card's header just below the chip row —
   // showing a panel means showing its head. `align: 'bottom'` puts the
   // card's *bottom* edge at the bottom of the visible region instead,
   // which is what pick mode wants: the preview the user has to tap is
@@ -1857,8 +1855,9 @@ return stepAttachedHistory('forward');
   //
   // The scroll is instant, not smooth: a reveal is a consequence of the
   // tap the user just made, and an animated jump reads as the page
-  // moving on its own. The sticky switcher is subtracted from the
-  // visible region so a revealed card is never tucked underneath it.
+  // moving on its own. The chip row is subtracted from the visible
+  // region while it is in view, so a revealed card is never tucked
+  // underneath it.
   function revealPanelCard(id, align) {
   requestAnimationFrame(() => {
   const main = document.querySelector('.app__main');
@@ -2094,7 +2093,7 @@ readSiblingValues: handlers ? handlers.readSiblingValues : null,
     // without it the Styles panel is exactly what it was before. A *new*
     // element also reveals the Styles card: a selection made from the Preview
     // panel (a pick, or the selector field) answers in a card that can be a
-    // screen away under the pinned switcher (see revealPanelCard).
+    // screen away (see revealPanelCard).
     onSelectionChange: (info) => {
     setStylesSelection(info);
     const objectId = (info && info.objectId) || '';

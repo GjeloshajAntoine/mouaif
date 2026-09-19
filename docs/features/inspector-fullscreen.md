@@ -8,7 +8,7 @@ The Inspector stacks its panels as cards inside the tab: Preview, Styles, Consol
 
 Every card header therefore carries a **full-screen button**. Tapping it expands that panel over the whole viewport; tapping it again returns to the stacked layout exactly as you left it.
 
-The header used to print the panel's name in that slot. It no longer does: the name is what the chip in the pinned switcher above the cards already says, and the row's one wide slot is worth more as an action. The button carries the panel's name in its accessible label, so nothing becomes unnameable for assistive technology.
+The header used to print the panel's name in that slot. It no longer does: the name is what the chip in the switcher above the cards already says, and the row's one wide slot is worth more as an action. The button carries the panel's name in its accessible label, so nothing becomes unnameable for assistive technology.
 
 ## Usage
 
