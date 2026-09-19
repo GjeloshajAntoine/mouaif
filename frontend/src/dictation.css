@@ -199,82 +199,53 @@ font-size: 0.9rem;
 color: var(--muted-2);
 }
 
-/* Live transcription: a switch inside the Options disclosure.
-  Full width, ≥44px tall, the whole row tappable — a phone targets the row,
-  not the 16px box. The box is first so it reads as a control, the two lines
-  of text are the label and the explanation. */
-.dictation__switch {
+/* Per-run hints, as a plain inset list. They used to be folded behind an
+  "Options" disclosure whose row borrowed the group-title shape (uppercase
+  label + caret) and read as a section heading rather than a control. Now
+  every setting is its own row: a 44px target, the label and its note on the
+  left, the control on the right — the same iOS-style list the rest of the
+  settings pages use. */
+.dictation__options {
+list-style: none;
+margin: 8px 10px 0;
+padding: 0;
+background: var(--surface);
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+overflow: hidden;
+}
+.dictation__options > li + li { border-top: 1px solid var(--border); }
+.dictation__option-row {
 display: flex;
-align-items: flex-start;
+align-items: center;
 gap: 10px;
 width: 100%;
-min-height: 44px;
-padding: 6px 2px;
-cursor: pointer;
+min-height: var(--tap);
+padding: 8px 12px;
 }
-.dictation__switch input {
-width: 20px;
-height: 20px;
-margin: 2px 0 0;
-flex: 0 0 auto;
-accent-color: var(--accent);
-}
-.dictation__switch-body {
+.dictation__option-body {
 display: flex;
 flex-direction: column;
 gap: 2px;
+flex: 1;
 min-width: 0;
 }
-.dictation__switch-title {
+.dictation__option-title {
 font-size: 0.9rem;
-}
-
-/* The per-run hints, folded away. The row is a real touch target (44px) and
-  reads as a summary line rather than a form control: the label, whatever is
-  set, and a caret. Folding it keeps the transcript — the point of the page —
-  within a thumb's reach on a 360px screen. */
-.dictation__options {
-padding: 2px 10px 0;
-}
-.dictation__options-toggle {
-display: flex;
-align-items: center;
-gap: 8px;
-width: 100%;
-min-height: 44px;
-padding: 0 2px;
-font: inherit;
-font-size: 0.82rem;
-font-weight: 600;
-letter-spacing: 0.02em;
-color: var(--muted-2);
-background: transparent;
-border: 0;
-cursor: pointer;
-text-align: left;
-}
-.dictation__options-toggle:active {
 color: var(--fg);
 }
-.dictation__options-label {
-text-transform: uppercase;
-flex: 0 0 auto;
+.dictation__option-note {
+font-size: 0.72rem;
+line-height: 1.35;
+color: var(--muted);
 }
-.dictation__options-summary {
-font-weight: 400;
-text-transform: none;
-letter-spacing: 0;
-color: var(--fg);
-/* One line: a long vocabulary hint must not reflow the row it summarizes. */
-overflow: hidden;
-text-overflow: ellipsis;
-white-space: nowrap;
+/* The two text hints: one line each on a phone, and never wide enough to
+  squeeze the label beside them off the row. */
+.dictation__option-input {
+flex: 0 0 42%;
+width: auto;
 min-width: 0;
-}
-.dictation__options-caret {
-margin-left: auto;
-font-size: 0.7rem;
-flex: 0 0 auto;
+font-size: 0.85rem;
 }
 
 /* The catalog note: how many models, where they came from, and the refresh

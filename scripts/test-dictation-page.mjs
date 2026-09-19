@@ -457,9 +457,8 @@ view.render();
 await view.settle();
 // A model pick and a Live toggle, without waiting for the first write.
 picker(view.render()).onChange({ providerId: 'gemini', modelId: 'gemini-2.5-flash' });
-const openOptions = all(view.render(), (n) => buttonClass(n).includes('dictation__options-toggle'))[0];
-openOptions.attrs.onClick();
 const liveBox = find(view.render(), (n) => n.attrs && n.attrs.id === 'dictation-live');
+assert.ok(liveBox, 'the live switch is on the page, not behind a disclosure');
 liveBox.attrs.onChange({ target: { checked: false } });
 await view.flush();
 const written = view.saved.at(-1);
@@ -703,48 +702,32 @@ assert.equal(patch.dictation.modelId, 'gemini-2.5-flash',
   assert.ok(!titles[0].children.some((child) => child && child.attrs && buttonClass(child) === 'group__title-note'),
     'no note for the active project');
 
-  // The per-run hints are folded away: the transcript is what the page is for,
-  // and two empty inputs above it pushed it off a phone screen.
-  assert.equal(find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-language'), null);
-  const toggle = find(nodes, (n) => buttonClass(n).includes('dictation__options-toggle'));
-  assert.equal(toggle.attrs['aria-expanded'], 'false');
-  assert.deepEqual(toggle.children[0].children, ['Options']);
-  // The collapsed row carries the live switch's state as well as the hints:
-  // live transcription is the setting users come back for, so a value that is
-  // only visible inside an open disclosure looks lost.
-  assert.deepEqual(find(nodes, (n) => buttonClass(n).includes('dictation__options-summary')).children, ['live on']);
-
-  toggle.attrs.onClick();
-  const open = view.render();
-  const languageInput = find(open, (n) => n.attrs && n.attrs.id === 'dictation-language');
-  assert.ok(languageInput, 'the hint fields appear on tap');
-  assert.equal(find(open, (n) => n.attrs && n.attrs.id === 'dictation-prompt').attrs.placeholder, 'mouaif, MediaRecorder, SSE…');
-  // The live switch lives here, on by default — the chat composer's mic reads
-  // it before it opens the microphone.
-  const liveSwitch = find(open, (n) => n.attrs && n.attrs.id === 'dictation-live');
-  assert.ok(liveSwitch, 'the live switch appears with the other options');
+  // The per-run hints are a plain item list, not a folded disclosure: every
+  // setting is on the page at once, each row its own touch target. (The old
+  // "Options" row had the shape of a group title — uppercase label + caret —
+  // and read as a section heading, which is what this pins against.)
+  const hintRows = all(nodes, (n) => buttonClass(n).includes('dictation__option-row'));
+  assert.equal(hintRows.length, 3, 'live + the two hints are each one row');
+  assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__options-toggle')), null,
+    'there is no disclosure toggle any more');
+  assert.ok(find(nodes, (n) => buttonClass(n).includes('dictation__options')),
+    'the rows live in the options list');
+  // Both hint fields are already visible, no tap needed.
+  const languageInput = find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-language');
+  assert.ok(languageInput, 'the language field is visible, not folded away');
+  assert.equal(find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-prompt').attrs.placeholder, 'mouaif, MediaRecorder, SSE…');
+  // The live switch is the first row, on by default — the chat composer's mic
+  // reads it before it opens the microphone.
+  const liveSwitch = find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-live');
+  assert.ok(liveSwitch, 'the live switch is on the page');
   assert.equal(liveSwitch.attrs.type, 'checkbox');
   assert.equal(liveSwitch.attrs.checked, true, 'live dictation is on until it is turned off');
   liveSwitch.attrs.onChange({ target: { checked: false } });
   const off = view.render();
   assert.equal(find(off, (n) => n.attrs && n.attrs.id === 'dictation-live').attrs.checked, false);
-  assert.deepEqual(
-    find(off, (n) => buttonClass(n).includes('dictation__options-summary')).children,
-    ['live off'],
-    'the switch state reads in the row while the fields are open, too'
-  );
   languageInput.attrs.onInput({ target: { value: 'fr' } });
-
-  const closing = find(view.render(), (n) => buttonClass(n).includes('dictation__options-toggle'));
-  closing.attrs.onClick();
-  const collapsed = view.render();
-  assert.equal(find(collapsed, (n) => n.attrs && n.attrs.id === 'dictation-language'), null, 'and fold away again');
-  // A hint that is set stays visible while the fields are folded: a value the
-  // user typed must not look lost.
-  assert.deepEqual(
-    find(collapsed, (n) => buttonClass(n).includes('dictation__options-summary')).children,
-    ['live off · fr']
-  );
+  assert.equal(find(view.render(), (n) => n.attrs && n.attrs.id === 'dictation-language').attrs.value, 'fr',
+    'a typed hint stays in the field');
 }
 
 // ---- The preselect rule on its own -------------------------------------

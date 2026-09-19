@@ -55,18 +55,6 @@ import {
 // model list is still the source of the models on offer.
 const APP_KEY = 'dictation';
 
-// hintSummaryLine({ live, language, prompt }) — the collapsed Options row's
-// one line. Live transcription is the switch users actually come back for, so
-// the state it is in must survive folding the fields away; the two hints
-// follow, and an empty string means "nothing set" (the row then shows nothing).
-export function hintSummaryLine(opts) {
-  const o = opts || {};
-  const parts = [o.live === false ? 'live off' : 'live on'];
-  if (String(o.language || '').trim()) parts.push(String(o.language).trim());
-  if (String(o.prompt || '').trim()) parts.push(String(o.prompt).trim());
-  return parts.join(' · ');
-}
-
 export function DictationView() {
   // ---- Settings / catalog -------------------------------------------------
   const [models, setModels] = useState([]);
@@ -81,9 +69,6 @@ export function DictationView() {
   // records a take and transcribes it once, on purpose.
   const [live, setLive] = useState(true);
 
-  // The two hint inputs are the exception rather than the rule, so they live
-  // behind a disclosure (see the Options row below the picker).
-  const [showHints, setShowHints] = useState(false);
   const [catalogBusy, setCatalogBusy] = useState(true);
   const [catalogError, setCatalogError] = useState('');
 
@@ -657,9 +642,6 @@ function onPickModel(next) {
   // see what a given model will do rather than choose it.
   const effectiveKind = (selectedRow && selectedRow.kind) || '';
 
-  // The per-run hints as one line, for the collapsed Options row: a value the
-  // user set must stay visible when the fields are folded away.
-  const hintSummary = hintSummaryLine({ live, language, prompt });
   // The project whose models these are, when it is worth naming (see scopeNote).
   const scope = scopeNote(project, projectDir);
 
@@ -731,62 +713,69 @@ function onPickModel(next) {
           )
           : null
       ),
-      // Per-run hints, behind a disclosure. They are the exception rather than
-      // the rule — most takes use neither — and two empty inputs sitting between
-      // the record button and the transcript pushed the result, which is what
-      // the user came for, off a phone screen.
-      h('div', { class: 'dictation__options' },
-        h('button', {
-          class: 'dictation__options-toggle',
-          type: 'button',
-          'aria-expanded': showHints ? 'true' : 'false',
-          onClick: () => setShowHints(!showHints)
-        },
-        h('span', { class: 'dictation__options-label' }, 'Options'),
-        hintSummary ? h('span', { class: 'dictation__options-summary' }, hintSummary) : null,
-        h('span', { class: 'dictation__options-caret', 'aria-hidden': 'true' }, showHints ? '▾' : '▸')
-        ),
-        showHints
-          ? h('div', { class: 'dictation__fields' },
-            // Live transcription is a chat-side behaviour, and this page is
-            // where it is set because this page owns dictation settings. The
-            // note says where it takes effect, so nobody waits for this page's
-            // transcript to appear word by word.
-            h('label', { class: 'dictation__switch', for: 'dictation-live' },
+      // Per-run hints. They used to be folded behind an "Options" disclosure,
+      // which hid the live switch and the two hints behind a tap and left the
+      // row reading as a section label for the group (it had the same shape as
+      // the group titles above it). Everything here is a plain item instead:
+      // one list, no disclosure, each row a full-width touch target.
+      h('ul', { class: 'dictation__options' },
+        // Live transcription is a chat-side behaviour, and this page is
+        // where it is set because this page owns dictation settings. The
+        // switch is the control, so the whole row is one label and taps toggle
+        // it; the note says where it takes effect, so nobody waits for this
+        // page's transcript to appear word by word.
+        h('li', null,
+          h('label', { class: 'dictation__option-row', for: 'dictation-live' },
+            h('span', { class: 'dictation__option-body' },
+              h('span', { class: 'dictation__option-title' }, 'Live transcription'),
+              h('span', { class: 'dictation__option-note' },
+                'In a chat, the composer fills in as you speak instead of waiting for you to stop. This page still records and transcribes once.')
+            ),
+            h('span', { class: 'switch' },
               h('input', {
                 id: 'dictation-live',
                 type: 'checkbox',
                 checked: live,
                 onChange: (e) => onToggleLive(!!(e.target && e.target.checked))
               }),
-              h('span', { class: 'dictation__switch-body' },
-                h('span', { class: 'dictation__switch-title' }, 'Live transcription'),
-                // The switch is folded into the collapsed row's summary too, so a
-                // value the user changed is not hidden behind a closed disclosure.
-                h('span', { class: 'hint hint--compact' },
-                  'In a chat, the composer fills in as you speak instead of waiting for you to stop. This page still records and transcribes once.')
+              h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+                h('span', { class: 'switch__thumb' })
               )
-            ),
-            h('div', { class: 'dictation__field' },
-              h('label', { class: 'label', for: 'dictation-language' }, 'Language (optional)'),
-              h('input', {
-                class: 'input', id: 'dictation-language', type: 'text',
-                placeholder: 'en, fr, de…',
-                value: language,
-                onInput: (e) => setLanguage(e.target.value.slice(0, 20))
-              })
-            ),
-            h('div', { class: 'dictation__field' },
-              h('label', { class: 'label', for: 'dictation-prompt' }, 'Vocabulary hint (optional)'),
-              h('input', {
-                class: 'input', id: 'dictation-prompt', type: 'text',
-                placeholder: 'mouaif, MediaRecorder, SSE…',
-                value: prompt,
-                onInput: (e) => setPrompt(e.target.value.slice(0, 400))
-              })
             )
           )
-          : null
+        ),
+        h('li', null,
+          h('div', { class: 'dictation__option-row' },
+            h('span', { class: 'dictation__option-body' },
+              h('label', { class: 'dictation__option-title', for: 'dictation-language' }, 'Language'),
+              h('span', { class: 'dictation__option-note' },
+                'Optional. An ISO-639-1 or BCP-47 code (en, fr, de) that biases decoding instead of leaving it to guess.')
+            ),
+            h('input', {
+              class: 'input dictation__option-input',
+              id: 'dictation-language', type: 'text',
+              placeholder: 'en, fr, de…',
+              value: language,
+              onInput: (e) => setLanguage(e.target.value.slice(0, 20))
+            })
+          )
+        ),
+        h('li', null,
+          h('div', { class: 'dictation__option-row' },
+            h('span', { class: 'dictation__option-body' },
+              h('label', { class: 'dictation__option-title', for: 'dictation-prompt' }, 'Vocabulary hint'),
+              h('span', { class: 'dictation__option-note' },
+                'Optional. Names and jargon the provider should expect — the OpenAI-style prompt field.')
+            ),
+            h('input', {
+              class: 'input dictation__option-input',
+              id: 'dictation-prompt', type: 'text',
+              placeholder: 'mouaif, MediaRecorder, SSE…',
+              value: prompt,
+              onInput: (e) => setPrompt(e.target.value.slice(0, 400))
+            })
+          )
+        )
       ),
       // Where the rows came from, and the one action that can add more. The
       // live catalogs are memoized server-side for an hour, so a provider that

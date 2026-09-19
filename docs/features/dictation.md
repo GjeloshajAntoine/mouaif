@@ -28,14 +28,13 @@ posted to `POST /api/ai/transcribe` and the server performs the upstream call.
 5. Choose what happens to it: **Copy**, **Insert in chat** (fills the newest
   chat's draft), **Send to chat** (same, labelled for a send), or **Clear**.
 
-Optional per-run hints sit under the picker, folded away behind an **Options**
-row (it shows whatever is set, so a value the user typed never looks lost):
+Optional per-run hints sit under the picker, as a plain item list — one row
+each, no disclosure, so every setting is on the page at once:
 
 - **Live transcription** — the composer microphone transcribes while you
   speak. On by default; off makes a chat take behave like this page (record,
-  stop, one request). The collapsed row always says which state it is in
-  (`live on` / `live off`), because it is the one setting here that changes
-  what another screen does.
+  stop, one request). The row carries a switch, so its state is always visible
+  without opening anything.
 - **Language** — an ISO-639-1 or BCP-47 code (`en`, `fr`, `de`), passed to the
   provider so it biases decoding instead of guessing.
 - **Vocabulary hint** — names and jargon the provider should expect
@@ -54,7 +53,7 @@ far — tap the mic to stop.`), the button's tooltip carries the running clock
 (`dictation added`, plus the run's cost when it is priced).
 
 **Live transcription** is on by default and is switched off in the dictation
-page's **Options** row (Settings → App defaults → Dictation). With it off the
+page's **Live transcription** row (Settings → App defaults → Dictation). With it off the
 composer mic behaves the way it always did: one recording, one request, one
 transcript when the button is tapped a second time. Turn it off for a model
 that bills per minute or that rejects a short recording on its own.
@@ -171,7 +170,7 @@ run whose cost is unknown (`--`) adds nothing to any total anywhere.
 ### The layout of the page
 
 One column, mobile first, and the sections are ordered **settings first, test
-below**: *Dictation model* (with the folded **Options** row and the catalog
+below**: *Dictation model* (with the options list and the catalog
 note), then *Test* — the record button, timer and level meter — then
 *Transcript*. The model has to be answered before a take can be transcribed at
 all, so it is picked before the microphone is opened; a phone user chooses a
