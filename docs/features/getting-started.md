@@ -6,11 +6,13 @@ Install mouaif, start the app, and open its web interface. Node.js 18 or newer i
 
 ## Install
 
-Run it once without installing anything, straight from the registry:
+The npm package name is [`mouaif`](https://www.npmjs.com/package/mouaif). Run it straight from the registry with `npx`, without installing it globally, and require a login:
 
 ```bash
-npx mouaif serve
+npx mouaif serve --auth
 ```
+
+On the first authenticated start, use the setup link, QR code, or short code printed in the terminal to create your username and password. Later starts reuse those access settings and show the login screen.
 
 `npx` unpacks the package into its own cache (`~/.npm/_npx`) and launches the CLI from there, so it never writes to the directory you run it from. The first run downloads and unpacks the package, including the prebuilt native binaries (`better-sqlite3`, `@napi-rs/keyring`); this is quick on common platforms, but an unusual platform compiles those binaries and can take a few minutes. Later runs reuse the cache and start immediately.
 
@@ -43,13 +45,13 @@ See [CLI commands](./cli-commands.md) for the complete command list and every `m
 
 ## Run the app
 
-Start mouaif on the default local address:
+Start mouaif on the default local address with access authentication enabled:
 
 ```bash
-mouaif serve
+npx mouaif serve --auth
 ```
 
-Open `http://127.0.0.1:5732/` in a browser. Keep the terminal open while using the app, and press `Ctrl+C` when you want to stop it.
+If you installed it globally, use `mouaif serve --auth` instead. Open `http://127.0.0.1:5732/` in a browser and create or enter your access credentials. Keep the terminal open while using the app, and press `Ctrl+C` when you want to stop it. Omit `--auth` only when you intentionally want the app to be accessible without a login.
 
 Useful alternatives:
 

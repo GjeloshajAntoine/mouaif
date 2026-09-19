@@ -9,11 +9,13 @@ mouaif is a mobile-first AI coding assistant for local projects. Connect your pr
 
 ## Install
 
-The npm package is named [`mouaif`](https://www.npmjs.com/package/mouaif), and it exposes the `mouaif` command. Run it once through `npx` without installing anything globally:
+The npm package name is [`mouaif`](https://www.npmjs.com/package/mouaif). Start it directly with `npx`, without a global install, and require a login:
 
 ```bash
-npx mouaif serve
+npx mouaif serve --auth
 ```
+
+On the first authenticated start, the terminal prints a setup link, QR code, and short code for creating your username and password. Later starts reuse those access settings and show the login screen.
 
 Install the `mouaif` command globally:
 
@@ -35,11 +37,19 @@ Every install ships the pre-built web UI in `frontend/dist/`, so `mouaif serve` 
 
 ## Run
 
+With `npx`:
+
 ```bash
-mouaif serve
+npx mouaif serve --auth
 ```
 
-Open `http://127.0.0.1:5732/` in a browser. Keep the terminal open while using mouaif and press `Ctrl+C` to stop it.
+Or, after a global install:
+
+```bash
+mouaif serve --auth
+```
+
+Open `http://127.0.0.1:5732/` in a browser and create or enter your access credentials. Keep the terminal open while using mouaif and press `Ctrl+C` to stop it. Omit `--auth` only when you intentionally want the app to be accessible without a login.
 
 Useful commands:
 
@@ -65,13 +75,19 @@ Open **Settings → Providers**, select a provider, then enter its API key or us
 
 ### Protect access to mouaif
 
-Access authentication is optional. With no global install, use the npm package name with `npx` to generate an expiring setup link, QR code, and short code:
+The recommended command requires login and creates a setup invitation when no user exists yet:
+
+```bash
+npx mouaif serve --auth
+```
+
+To replace the access user or explicitly generate a fresh expiring setup link, QR code, and short code:
 
 ```bash
 npx mouaif serve --auth-setup
 ```
 
-Set credentials while keeping the password out of shell history:
+You can also set credentials while keeping the password out of shell history:
 
 ```bash
 MOUAIF_PASSWORD='a-long-password' \
