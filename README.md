@@ -9,7 +9,7 @@ mouaif is a mobile-first AI coding assistant for local projects. Connect your pr
 
 ## Install
 
-Run it once without installing anything:
+The npm package is named [`mouaif`](https://www.npmjs.com/package/mouaif), and it exposes the `mouaif` command. Run it once through `npx` without installing anything globally:
 
 ```bash
 npx mouaif serve
@@ -65,33 +65,33 @@ Open **Settings → Providers**, select a provider, then enter its API key or us
 
 ### Protect access to mouaif
 
-Access authentication is optional. Generate an expiring setup link, QR code, and short code:
+Access authentication is optional. With no global install, use the npm package name with `npx` to generate an expiring setup link, QR code, and short code:
 
 ```bash
-mouaif serve --auth-setup
+npx mouaif serve --auth-setup
 ```
 
-Set credentials from the CLI while keeping the password out of shell history:
+Set credentials while keeping the password out of shell history:
 
 ```bash
 MOUAIF_PASSWORD='a-long-password' \
-  mouaif serve --auth --user alice
+  npx mouaif serve --auth --user alice
 ```
 
 PowerShell:
 
 ```powershell
 $env:MOUAIF_PASSWORD = 'a-long-password'
-mouaif serve --auth --user alice
+npx mouaif serve --auth --user alice
 ```
 
 After setup, require login on future starts with:
 
 ```bash
-mouaif serve --auth
+npx mouaif serve --auth
 ```
 
-Use HTTPS and `--public-origin` before making mouaif available outside the computer running it.
+If you installed `mouaif` globally, the shorter equivalent is `mouaif serve --auth`; the auth options are identical. Use HTTPS and `--public-origin` before making mouaif available outside the computer running it.
 
 ## App abilities
 

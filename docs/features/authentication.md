@@ -27,10 +27,12 @@ Available connections include OpenAI-compatible services, Anthropic, Google Gemi
 
 App access is off by default: anyone who can reach the server can open it. Turn it on when you start mouaif, and after that people must log in with a username and password (or a passkey). This is separate from provider credentials above.
 
+The npm package is named [`mouaif`](https://www.npmjs.com/package/mouaif), and it exposes the command with the same name. The examples below use `npx mouaif`, so they work without a global install. If you installed the package with `npm install -g mouaif`, you can replace `npx mouaif` with `mouaif`.
+
 ### Create access from the setup page
 
 ```bash
-mouaif serve --auth-setup
+npx mouaif serve --auth-setup
 ```
 
 The terminal prints a setup link, QR code, and short code. The invitation expires after 15 minutes. Open it to create the app username and password, then optionally add a passkey.
@@ -38,7 +40,7 @@ The terminal prints a setup link, QR code, and short code. The invitation expire
 For a URL that another device can open:
 
 ```bash
-mouaif serve \
+npx mouaif serve \
   --host 0.0.0.0 \
   --public-origin https://mouaif.example.com \
   --auth-setup
@@ -52,20 +54,20 @@ Prefer an environment variable so the password is not saved in shell history:
 
 ```bash
 MOUAIF_PASSWORD='a-long-password' \
-  mouaif serve --auth --user alice
+  npx mouaif serve --auth --user alice
 ```
 
 PowerShell:
 
 ```powershell
 $env:MOUAIF_PASSWORD = 'a-long-password'
-mouaif serve --auth --user alice
+npx mouaif serve --auth --user alice
 ```
 
 A direct CLI argument is also supported, but may remain in shell history:
 
 ```bash
-mouaif serve --auth --user alice --password 'a-long-password'
+npx mouaif serve --auth --user alice --password 'a-long-password'
 ```
 
 The password must contain at least eight characters.
@@ -75,13 +77,13 @@ The password must contain at least eight characters.
 After initial setup, require login on future starts with:
 
 ```bash
-mouaif serve --auth
+npx mouaif serve --auth
 ```
 
 To create a fresh setup invitation or replace the access user later:
 
 ```bash
-mouaif serve --auth-setup
+npx mouaif serve --auth-setup
 ```
 
 ## Manage access in the app
