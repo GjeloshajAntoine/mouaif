@@ -85,6 +85,8 @@ The bar is adapted to the device that receives it: **every phone size**, the **n
 
 **Style decides the layout.** A collapsed Android notification shows one body line; an iOS banner (15+) shows two; a desktop toast about two. When the platform previews a single line, the bar and the most important fact share that row — `[###---] 40% · Refactoring...` — because a second row would never be seen. When it previews two or more, the bar takes its own row and the facts follow. An empty fact set leaves the bar alone in both layouts.
 
+**The percentage never leaves the bar.** The gap between `]` and `40%` is a non-breaking space, so the pair is one unbreakable token. The OS renders a notification body in its own font — larger and proportional, unlike the monospace the line width was measured with — and would otherwise be free to wrap between the bar and its number, leaving an unlabelled bar on one line and a stray `40%` on the next. The whole `[####----] 40%` unit may still move to a lower line; it just can never be split. The gap counts as one character, so the width budget is unchanged.
+
 **OS version sets the fallback.** A device that cannot measure itself (older WebKit, a headless browser) falls back to its platform's known width, and the number of preview lines comes from a version table:
 
 | Platform | One body line holds | Collapsed lines | Notes |

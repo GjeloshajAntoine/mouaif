@@ -40,15 +40,25 @@ const INFO = 'Fix push layout — 2 of 5';
 
 // ---- Bar formatter -----------------------------------------------------
 
-assert.equal(statusBar.asciiStatusBar(40, 6), '[##----] 40%', 'a 6-cell bar fills proportionally');
-assert.equal(statusBar.asciiStatusBar(40, 10), '[####------] 40%', 'a 10-cell bar fills proportionally');
-assert.equal(statusBar.asciiStatusBar(40, 20), '[########------------] 40%', 'a 20-cell bar fills proportionally');
-assert.equal(statusBar.asciiStatusBar(1, 20), '[#-------------------] 1%', 'a fine bar lights one cell for 1%');
-assert.equal(statusBar.asciiStatusBar(0, 20), '[--------------------] 0%', 'zero progress lights no cells');
+// The gap between the bar and its percentage is a NON-BREAKING space, so an
+// OS wrapping the body can never split `40%` off the bar it labels. Written
+// as `\u00A0` here so a plain space in the expectation is a visible failure.
+const NBSP = '\u00A0';
+assert.equal(statusBar.asciiStatusBar(40, 6), '[##----]' + NBSP + '40%', 'a 6-cell bar fills proportionally');
+assert.equal(statusBar.asciiStatusBar(40, 10), '[####------]' + NBSP + '40%', 'a 10-cell bar fills proportionally');
+assert.equal(statusBar.asciiStatusBar(40, 20), '[########------------]' + NBSP + '40%', 'a 20-cell bar fills proportionally');
+assert.equal(statusBar.asciiStatusBar(1, 20), '[#-------------------]' + NBSP + '1%', 'a fine bar lights one cell for 1%');
+assert.equal(statusBar.asciiStatusBar(0, 20), '[--------------------]' + NBSP + '0%', 'zero progress lights no cells');
 assert.equal(statusBar.asciiStatusBar(null, 6), '[------]', 'an unlabelled bar has no percentage');
+// The percentage stays attached to the bar: no breakable space anywhere in a
+// labelled bar row, and the gap is the exported constant rather than a
+// literal that could drift.
+assert.equal(statusBar.PERCENT_GAP, NBSP, 'the percent gap is a non-breaking space');
+assert.ok(!/ /.test(statusBar.asciiStatusBar(40, 10)), 'a labelled bar carries no breakable space');
+assert.ok(statusBar.asciiStatusBar(40, 10).includes(statusBar.PERCENT_GAP), 'the bar uses the exported gap');
 // A cell count outside the supported range is clamped rather than producing
 // a bar that cannot be shown.
-assert.equal(statusBar.asciiStatusBar(50, 0), '[##--] 50%', 'a zero cell count clamps to the minimum');
+assert.equal(statusBar.asciiStatusBar(50, 0), '[##--]' + NBSP + '50%', 'a zero cell count clamps to the minimum');
 assert.equal(statusBar.asciiStatusBar(50, 1e6).length, 32 + 6, 'an absurd cell count clamps to the maximum');
 
 // ---- OS + version resolution -------------------------------------------

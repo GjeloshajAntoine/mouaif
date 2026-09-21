@@ -29,7 +29,7 @@
 // from turning the bar into a ruler.
 const MIN_CELLS = 4;
 const MAX_CELLS = 32;
-// Characters a bar row adds around its cells: `[` + cells + `]` + ` 100%`.
+// Characters a bar row adds around its cells: `[` + cells + `]` + a gap + ` 100%`.
 const BAR_OVERHEAD_CHARS = 7;
 // On a one-line style the bar shares its line with the message, so it takes
 // at most this share of the line and leaves the rest for the text.
@@ -55,6 +55,10 @@ const MIN_INLINE_INFO_CHARS = 8;
 const DETAIL_LINES_INLINE = 1;
 const DETAIL_LINES_PREVIEW = 3;
 const DETAIL_LINES_EXPANDED = 6;
+// Between the bar and its percentage. A NON-BREAKING space, not U+0020: the
+// two are one unit, so an OS wrapping the body cannot separate `40%` from the
+// bar it labels. Counted as one character by BAR_OVERHEAD_CHARS either way.
+const PERCENT_GAP = '\u00A0';
 // Truncation marker for a message clipped to fit a line. Kept ASCII for the
 // same reason the bar is: notification fonts render it consistently.
 const ELLIPSIS = '...';
@@ -492,26 +496,33 @@ function planForSubscription(sub) {
 
 // ---- Rendering --------------------------------------------------------
 
-// asciiStatusBar(percent, cells) -> '[##----] 40%'
+// asciiStatusBar(percent, cells) -> '[##----]\u00A040%'
 //
-// Pure ASCII (`#` filled, `-` empty) — no Unicode block glyphs, which render
-// inconsistently across Android, iOS, and desktop notification fonts.
-// `percent == null` means "no measurable progress" (an error): the bar is
-// empty and carries no label. Any non-zero progress lights at least one cell,
-// so a fine bar never reads as empty at the start of a task.
+// Pure ASCII bar glyphs (`#` filled, `-` empty) — no Unicode block glyphs,
+// which render inconsistently across Android, iOS, and desktop notification
+// fonts. `percent == null` means "no measurable progress" (an error): the bar
+// is empty and carries no label. Any non-zero progress lights at least one
+// cell, so a fine bar never reads as empty at the start of a task.
+//
+// The gap before the percentage is a NON-BREAKING space, so the bar and its
+// number are one unbreakable token: an OS that wraps the body (its own font is
+// larger and proportional, unlike the monospace the width was measured with)
+// can push the whole `[####----] 40%` pair to the next line, but can never
+// split `40%` off the bar it describes.
 function asciiStatusBar(percent, cells) {
   const width = clamp(Math.round(Number(cells) || MIN_CELLS), MIN_CELLS, MAX_CELLS);
   const normalized = percent == null ? null : clamp(Math.round(Number(percent) || 0), 0, 100);
   const filled = normalized == null ? 0
     : (normalized > 0 ? Math.max(1, Math.round((normalized / 100) * width)) : 0);
   return '[' + '#'.repeat(filled) + '-'.repeat(width - filled) + ']'
-    + (normalized == null ? '' : ' ' + normalized + '%');
+    + (normalized == null ? '' : PERCENT_GAP + normalized + '%');
 }
 
 module.exports = {
   MIN_CELLS,
   MAX_CELLS,
   BAR_OVERHEAD_CHARS,
+  PERCENT_GAP,
   SEPARATOR,
   INLINE_SEPARATOR,
   INLINE_BAR_SHARE,
