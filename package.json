@@ -2,6 +2,7 @@
   "name": "mouaif",
   "version": "0.3.0",
   "description": "CLI tool with integrated HTTP server — REST API + Server-Sent Events",
+  "author": "Antoine Gjeloshaj <gjeloshaj.antoine@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/GjeloshajAntoine/mouaif.git"
@@ -23,7 +24,8 @@
     "src/",
     "frontend/dist",
     "scripts/patch-zimmerframe.js",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "start": "node bin/mouaif.js",

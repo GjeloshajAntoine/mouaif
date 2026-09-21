@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>npm package — mouaif docs</title>
+  <meta name="description" content="`mouaif` is published to the public npm registry as the package [`mouaif`](https://www.npmjs.com/package/mouaif), which exposes a command of the same name.…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="npm-package">npm package</h1>
+<h2 id="overview">Overview</h2>
+<p><code>mouaif</code> is published to the public npm registry as the package <a href="https://www.npmjs.com/package/mouaif" target="_blank" rel="noopener noreferrer"><code>mouaif</code></a>, which exposes a command of the same name. Installing the package is the supported way to run the app anywhere Node.js is available; <code>npx mouaif serve</code> runs it without a global install.</p>
+<h2 id="usage">Usage</h2>
+<p>Run the app straight from the registry, without installing it:</p>
+<pre><code class="language-bash">npx mouaif serve --auth</code></pre>
+<p>Install the command globally:</p>
+<pre><code class="language-bash">npm install -g mouaif
+mouaif serve --auth</code></pre>
+<p>Pin an exact version (quote the argument so the shell does not read <code>@</code> as a glob):</p>
+<pre><code class="language-bash">npx --yes --package &quot;mouaif@0.3.0&quot; mouaif info</code></pre>
+<h3 id="publish-a-release">Publish a release</h3>
+<p>From a clean checkout, as a maintainer:</p>
+<pre><code class="language-bash">npm login
+npm version patch   # or minor / major
+npm publish</code></pre>
+<p><code>npm publish</code> runs <code>prepublishOnly</code> before uploading: the lint pass, the frontend build, the documentation build, and the npm-name guard. The name guard asks the registry whether <code>mouaif</code> is still free and aborts the publish if it now belongs to a different repository.</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Public access.</strong> <code>publishConfig</code> pins <code>https://registry.npmjs.org/</code> and <code>access: public</code>, so a developer-level registry override cannot send the release to another registry.</p></li><li><p><strong>Pre-built UI.</strong> Every tarball ships <code>frontend/dist/</code>, so <code>npx mouaif</code> and a global install never run a frontend build. <code>scripts/prepare-web.js</code> builds the UI only in a source checkout.</p></li><li><p><strong>Native dependencies.</strong> <code>better-sqlite3</code> and <code>@napi-rs/keyring</code> ship prebuilt binaries for common platforms; where none exists, Node compiles them during install, so the first install can take a few minutes.</p></li><li><p><strong><code>postinstall</code> patch.</strong> The install runs <code>scripts/patch-zimmerframe.js</code>, which is why that single script file stays in the tarball.</p></li><li><p><strong>Semantic versions only.</strong> <code>version</code> must be a full <code>X.Y.Z</code>; the registry rejects the two-part form with a 400.</p></li></ul>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p>The tarball contents are the <code>files</code> entry in <code>package.json</code>: <code>bin/</code>, <code>src/</code>, <code>frontend/dist/</code>, <code>scripts/patch-zimmerframe.js</code>, <code>README.md</code>, and <code>LICENSE</code>. No <code>.npmignore</code> is used.</p></li><li><p><code>bin/mouaif.js</code> carries a <code>#!/usr/bin/env node</code> shebang; npm links it into the global <code>bin</code> directory, which is what makes both <code>mouaif</code> and <code>npx mouaif</code> work.</p></li><li><p><code>prepublishOnly</code> ends with <code>node scripts/check-npm-name.js</code>. It fails when the published package belongs to another repository, passes when it is this one, and warns and continues when the registry is unreachable so an offline release is never blocked by a network hiccup.</p></li><li><p>The repository, homepage, bug-tracker, and author metadata connect the npm listing to this repository and let the name guard verify ownership.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./cli-commands.html">CLI commands</a> — every <code>mouaif</code> command and <code>serve</code> option.</p></li><li><p><a href="./getting-started.html">Getting started</a> — install, run, and first setup.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

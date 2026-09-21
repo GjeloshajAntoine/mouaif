@@ -137,4 +137,4 @@ npm run docs:build
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
