@@ -23,18 +23,21 @@ const {
 //
 // A single persistent command-line child per project (the platform shell:
 // cmd.exe on Windows, the user's $SHELL or /bin/sh on POSIX) with
-// stdin/stdout/stderr piped over HTTP. All commands run in the project
+// stdin/stdout/stderr carried over HTTP. All commands run in the project
 // directory ("default path to the project"). The session is created with
 // `windowsHide` and no window is ever shown; output streaming rides the
 // SSE endpoint (see startCliSession below).
 //
-// The child is intentionally spawned WITHOUT a TTY (pipe stdio). Commands
-// that require an interactive TTY (REPLs, `cmd.exe` interactive prompts
-// like `del` confirmation) will fail or exit immediately — a documented
-// limitation, same as the native `shell` tool. Everything non-interactive
-// works exactly like a real Command Prompt.
+// The child runs on a pseudo-terminal when the host can allocate one (see
+// src/pty.js), which is what lets prompting programs ask a question. Where
+// no PTY is available the session falls back to piped stdio, and commands
+// that require a TTY (REPLs, `cmd.exe` interactive prompts like `del`
+// confirmation) fail or exit immediately — the documented limitation, same
+// as the native `shell` tool. Everything non-interactive works exactly like
+// a real Command Prompt in both modes.
 
 const { spawn } = require('node:child_process');
+const pty = require('./pty.js');
 
 const cliSessions = new Map(); // projectDir -> { child, projectDir, id, startedAt }
 
@@ -85,26 +88,9 @@ function cliShellMeta() {
   };
 }
 
-// Load node-pty once. It is an optional native dependency: a platform with
-// no prebuilt binary (and no C++ toolchain) still installs mouaif, and the
-// session silently falls back to the piped spawn below. `require` is
-// wrapped so a missing/broken addon is a degraded mode, not a crash.
-let ptyModule = null;
-let ptyLoadAttempted = false;
-function loadPty() {
-  if (ptyLoadAttempted) return ptyModule;
-  ptyLoadAttempted = true;
-  try {
-    ptyModule = require('node-pty');
-  } catch {
-    ptyModule = null;
-  }
-  return ptyModule;
-}
-
 // Start the persistent session (idempotent) and return the session handle.
 //
-// The session runs on a pseudo-terminal when node-pty is available. That
+// The session runs on a pseudo-terminal when one can be allocated. That
 // matters for prompting programs: over pipes (`stdio: ['pipe', ...]`) the
 // child's stdin is not a TTY, so a program that asks a question either gets
 // an immediate EOF or refuses to prompt at all — `npm publish` under 2FA
@@ -113,19 +99,24 @@ function loadPty() {
 // screen, the user types the answer into the modal's prompt line, and it is
 // delivered to the still-running child.
 //
+// The TTY comes from src/pty.js, which allocates it with util-linux
+// `script(1)` — no native addon, so `npm install` needs no C++ toolchain.
+// Where no PTY can be allocated (Windows, BSD/macOS `script`, a container
+// without util-linux) the piped spawn below takes over, and the modal shows a
+// non-interactive session.
+//
 // A PTY merges stdout and stderr into one stream, so `attachCliStream`
 // labels every chunk `stdout`; there is no separate stderr channel to
-// preserve. When the PTY is unavailable the old piped triple is used and
-// stderr keeps its own channel.
+// preserve. The piped fallback keeps the old triple and stderr keeps its own
+// channel.
 function ensureCliSession(projectDir) {
   const key = String(projectDir || '');
   const existing = cliSessions.get(key);
   if (existing && existing.child && !existing.child.killed) return existing;
   const meta = cliShellMeta();
-  const pty = loadPty();
-  let child;
+  let child = null;
   let isPty = false;
-  if (pty && typeof pty.spawn === 'function') {
+  if (pty.isAvailable()) {
     try {
       // The shell is only interactive once it has a TTY, so ask for `-i`
       // here rather than in cliShellMeta (the piped fallback must not: bash
@@ -133,18 +124,16 @@ function ensureCliSession(projectDir) {
       const ptyArgs = (!meta.windows && meta.args.indexOf('-i') === -1)
         ? meta.args.concat('-i')
         : meta.args;
-      child = pty.spawn(meta.exe, ptyArgs, {
-        name: 'xterm-256color',
-        cols: meta.cols,
-        rows: meta.rows,
+      child = pty.spawnPty(meta.exe, ptyArgs, {
         cwd: projectDir,
         // The child inherits the server's env; force a colour-capable TERM
         // so utilities that gate formatting on terminfo behave.
         env: Object.assign({}, process.env, { TERM: process.env.TERM || 'xterm-256color' })
       });
-      isPty = true;
+      isPty = !!child;
     } catch {
       child = null;
+      isPty = false;
     }
   }
   if (!child) {
@@ -159,7 +148,7 @@ function ensureCliSession(projectDir) {
     projectDir,
     child,
     startedAt: Date.now(),
-    // True when the child runs on a pseudo-terminal (see loadPty above).
+    // True when the child runs on a pseudo-terminal (see src/pty.js).
     pty: isPty,
     // Record the platform so command writes use the correct line
     // terminator: CRLF for cmd.exe on Windows, LF for sh/bash on POSIX.
@@ -167,7 +156,7 @@ function ensureCliSession(projectDir) {
   };
   hookCliExit();
   cliSessions.set(key, session);
-  // Reap on exit so a closed session doesn't leak. node-pty reports exit
+  // Reap on exit so a closed session doesn't leak. A PTY reports exit
   // through `onExit`; a piped child uses the standard `exit` event.
   if (isPty) child.onExit(() => { if (cliSessions.get(key) === session) cliSessions.delete(key); });
   else child.on('exit', () => { if (cliSessions.get(key) === session) cliSessions.delete(key); });

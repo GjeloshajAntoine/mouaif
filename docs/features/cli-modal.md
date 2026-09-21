@@ -45,13 +45,22 @@ You can also run multiple commands in one session — the shell keeps its state 
 - `POST /api/tools/cli/close` with `{ projectDir }` kills the session (idempotent).
 - Output is broadcast over the `GET /events` SSE channel as `cli_output` frames `{ id, stream, data }`, filtered client-side by session id. A PTY merges stdout and stderr, so every chunk is labelled `stdout`; the piped fallback keeps a separate `stderr` channel.
 
-The session helpers live in [src/server-handlers-tools.js](../../src/server-handlers-tools.js) (`ensureCliSession`, `writeCliCommand`, `attachCliStream`, `closeCliSession`). The modal is [frontend/src/components/chat/CliModal.jsx](../../frontend/src/components/chat/CliModal.jsx), and the stateful ANSI/VT screen decoder it renders through is `CliScreen` in [frontend/src/components/chat/utils.js](../../frontend/src/components/chat/utils.js).
+The session helpers live in [src/server-handlers-tools.js](../../src/server-handlers-tools.js) (`ensureCliSession`, `writeCliCommand`, `attachCliStream`, `closeCliSession`), the pseudo-terminal shim in [src/pty.js](../../src/pty.js). The modal is [frontend/src/components/chat/CliModal.jsx](../../frontend/src/components/chat/CliModal.jsx), and the stateful ANSI/VT screen decoder it renders through is `CliScreen` in [frontend/src/components/chat/utils.js](../../frontend/src/components/chat/utils.js).
 
 ### Pseudo-terminal and the piped fallback
 
-The session is spawned with `node-pty`. Over pipes (`stdio: ['pipe', ...]`) the child is **not** a TTY, so a prompting program gets an immediate EOF — `read` returns an empty answer and `npm publish` refuses to prompt at all, answering `EOTP` with a **redacted** `…/auth/cli/***` URL (npm's `@npmcli/redact` masks the one-time token before printing it; the `*` characters are npm's placeholder, not the modal's).
+The session is spawned on a pseudo-terminal by [src/pty.js](../../src/pty.js). Over pipes (`stdio: ['pipe', ...]`) the child is **not** a TTY, so a prompting program gets an immediate EOF — `read` returns an empty answer and `npm publish` refuses to prompt at all, answering `EOTP` with a **redacted** `…/auth/cli/***` URL (npm's `@npmcli/redact` masks the one-time token before printing it; the `*` characters are npm's placeholder, not the modal's).
 
-`node-pty` is an optional native dependency. Where no prebuilt binary exists and no C++ toolchain is available, `require('node-pty')` fails, the module is treated as absent, and the session falls back to the original **piped** child. Everything non-interactive works identically; only prompting programs cannot ask a question. The session then reports `interactive: false`, and the modal omits the badge.
+`src/pty.js` allocates the TTY with util-linux `script(1)` — no native addon, so `npm install` never needs a C++ toolchain:
+
+```bash
+# what the shim runs, roughly:
+script -qefc "'/bin/bash' '-i'" /dev/null
+```
+
+`-c` runs the shell on a pty slave, `-e` propagates the child's exit code, `-f` flushes each write so output is not delayed, and `-q` drops the "Script started" banner. `script` is then killed by process group, so the shell and everything it started go down together.
+
+The module probes for a usable `script` once, at the first session. Where none is available — Windows, a BSD/macOS `script`, a container without util-linux — the session falls back to the original **piped** child. Everything non-interactive works identically; only prompting programs cannot ask a question. The session then reports `interactive: false`, and the modal omits the badge.
 
 ### Line terminator
 
@@ -75,4 +84,5 @@ npm run test:cli
 
 - `scripts/test-cli-session-newline.js` — drives the real endpoints and asserts a plain `ls` lists the project files (the terminator rule).
 - `scripts/test-cli-strip-ansi.js` — unit-tests `stripAnsi` / `CliScreen`.
-- `scripts/test-cli-pty-interactive.js` — asserts the session is interactive, that a prompting program's question reaches the screen, and that the answer POSTed to the command endpoint is read back by the still-running child. It skips (exit 0) when `node-pty` is not installed, because that is the documented degraded mode.
+- `scripts/test-cli-pty-interactive.js` — asserts the session is interactive, that a prompting program's question reaches the screen, and that the answer POSTed to the command endpoint is read back by the still-running child. It skips (exit 0) when no pseudo-terminal can be allocated, because that is the documented degraded mode.
+- `scripts/test-cli-pty-shim.js` — unit-tests `src/pty.js`: `isAvailable()` matches the piped fallback rule, quoting survives a path with spaces and quotes, `onData` replays what was buffered before the stream attached, `write` reaches the shell, and `kill` takes the whole process group down.

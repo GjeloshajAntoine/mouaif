@@ -8,17 +8,17 @@
 // symptom the user reported was publishing from the modal printing
 // `https://www.npmjs.com/auth/cli/***`.
 //
-// The session now runs on a node-pty pseudo-terminal, so the question
-// reaches the screen and the answer typed into the modal's prompt line is
-// delivered to the still-running child. This test drives the real HTTP
-// endpoints and asserts the round trip:
+// The session now runs on a pseudo-terminal allocated by src/pty.js (util-linux
+// `script(1)`), so the question reaches the screen and the answer typed into
+// the modal's prompt line is delivered to the still-running child. This test
+// drives the real HTTP endpoints and asserts the round trip:
 //
 //   1. the session reports itself interactive (a PTY was allocated);
 //   2. a program that prompts can see the question on its stdout;
 //   3. the answer POSTed to /api/tools/cli/command is read back by it.
 //
-// It skips (exit 0) when node-pty is unavailable, because that install is
-// the documented degraded mode, not a failure.
+// It skips (exit 0) when no pseudo-terminal can be allocated, because that
+// install is the documented degraded mode, not a failure.
 
 'use strict';
 const http = require('http');
@@ -26,11 +26,11 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-let ptyAvailable = true;
-try { require('node-pty'); } catch { ptyAvailable = false; }
+const pty = require('../src/pty.js');
+const ptyAvailable = pty.isAvailable();
 
 if (!ptyAvailable) {
-  console.log('SKIP  node-pty is not installed — piped fallback documented in docs/features/cli-modal.md');
+  console.log('SKIP  no pseudo-terminal on this host — piped fallback documented in docs/features/cli-modal.md');
   process.exit(0);
 }
 
