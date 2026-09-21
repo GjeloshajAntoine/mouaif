@@ -35,8 +35,9 @@
 <h2 id="overview">Overview</h2>
 <p>Install mouaif, start the app, and open its web interface. Node.js 18 or newer is required.</p>
 <h2 id="install">Install</h2>
-<p>Run it once without installing anything, straight from the registry:</p>
-<pre><code class="language-bash">npx mouaif serve</code></pre>
+<p>The npm package name is <a href="https://www.npmjs.com/package/mouaif" target="_blank" rel="noopener noreferrer"><code>mouaif</code></a>. Run it straight from the registry with <code>npx</code>, without installing it globally, and require a login:</p>
+<pre><code class="language-bash">npx mouaif serve --auth</code></pre>
+<p>On the first authenticated start, use the setup link, QR code, or short code printed in the terminal to create your username and password. Later starts reuse those access settings and show the login screen.</p>
 <p><code>npx</code> unpacks the package into its own cache (<code>~/.npm/_npx</code>) and launches the CLI from there, so it never writes to the directory you run it from. The first run downloads and unpacks the package, including the prebuilt native binaries (<code>better-sqlite3</code>, <code>@napi-rs/keyring</code>); this is quick on common platforms, but an unusual platform compiles those binaries and can take a few minutes. Later runs reuse the cache and start immediately.</p>
 <p>To pin an exact version, quote the argument. A bare <code>mouaif@0.3.0</code> is read as a glob in <code>zsh</code> and fails with <code>no matches found</code>:</p>
 <pre><code class="language-bash">npx --yes --package &quot;mouaif@0.3.0&quot; mouaif info</code></pre>
@@ -51,9 +52,9 @@ npm link</code></pre>
 <p>Every published tarball already contains the pre-built web UI in <code>frontend/dist/</code>, so <code>npm install -g mouaif</code> and <code>npx mouaif</code> never run a frontend build. The package depends on <code>better-sqlite3</code> and <code>@napi-rs/keyring</code>, which ship prebuilt binaries for common platforms; on an unusual platform Node compiles them during install, so the first install can take a few minutes.</p>
 <p>See <a href="./cli-commands.html">CLI commands</a> for the complete command list and every <code>mouaif serve</code> option.</p>
 <h2 id="run-the-app">Run the app</h2>
-<p>Start mouaif on the default local address:</p>
-<pre><code class="language-bash">mouaif serve</code></pre>
-<p>Open <code>http://127.0.0.1:5732/</code> in a browser. Keep the terminal open while using the app, and press <code>Ctrl+C</code> when you want to stop it.</p>
+<p>Start mouaif on the default local address with access authentication enabled:</p>
+<pre><code class="language-bash">npx mouaif serve --auth</code></pre>
+<p>If you installed it globally, use <code>mouaif serve --auth</code> instead. Open <code>http://127.0.0.1:5732/</code> in a browser and create or enter your access credentials. Keep the terminal open while using the app, and press <code>Ctrl+C</code> when you want to stop it. Omit <code>--auth</code> only when you intentionally want the app to be accessible without a login.</p>
 <p>Useful alternatives:</p>
 <pre><code class="language-bash"># Use another port
 mouaif serve --port 9000

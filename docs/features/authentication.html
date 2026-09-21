@@ -42,11 +42,12 @@
 <p>Available connections include OpenAI-compatible services, Anthropic, Google Gemini, Ollama, OpenRouter, GitHub Copilot, Azure OpenAI, Mistral, Groq, and DeepSeek. Ollama normally runs locally without an API key. Anthropic, OpenRouter, and GitHub Copilot offer browser sign-in in the provider form; the rest use an API key.</p></li></ol>
 <h2 id="app-access-control-who-can-open-mouaif">App access — control who can open mouaif</h2>
 <p>App access is off by default: anyone who can reach the server can open it. Turn it on when you start mouaif, and after that people must log in with a username and password (or a passkey). This is separate from provider credentials above.</p>
+<p>The npm package is named <a href="https://www.npmjs.com/package/mouaif" target="_blank" rel="noopener noreferrer"><code>mouaif</code></a>, and it exposes the command with the same name. The examples below use <code>npx mouaif</code>, so they work without a global install. If you installed the package with <code>npm install -g mouaif</code>, you can replace <code>npx mouaif</code> with <code>mouaif</code>.</p>
 <h3 id="create-access-from-the-setup-page">Create access from the setup page</h3>
-<pre><code class="language-bash">mouaif serve --auth-setup</code></pre>
+<pre><code class="language-bash">npx mouaif serve --auth-setup</code></pre>
 <p>The terminal prints a setup link, QR code, and short code. The invitation expires after 15 minutes. Open it to create the app username and password, then optionally add a passkey.</p>
 <p>For a URL that another device can open:</p>
-<pre><code class="language-bash">mouaif serve \
+<pre><code class="language-bash">npx mouaif serve \
   --host 0.0.0.0 \
   --public-origin https://mouaif.example.com \
   --auth-setup</code></pre>
@@ -54,18 +55,18 @@
 <h3 id="set-the-username-and-password-from-the-cli">Set the username and password from the CLI</h3>
 <p>Prefer an environment variable so the password is not saved in shell history:</p>
 <pre><code class="language-bash">MOUAIF_PASSWORD=&#39;a-long-password&#39; \
-  mouaif serve --auth --user alice</code></pre>
+  npx mouaif serve --auth --user alice</code></pre>
 <p>PowerShell:</p>
 <pre><code class="language-powershell">$env:MOUAIF_PASSWORD = &#39;a-long-password&#39;
-mouaif serve --auth --user alice</code></pre>
+npx mouaif serve --auth --user alice</code></pre>
 <p>A direct CLI argument is also supported, but may remain in shell history:</p>
-<pre><code class="language-bash">mouaif serve --auth --user alice --password &#39;a-long-password&#39;</code></pre>
+<pre><code class="language-bash">npx mouaif serve --auth --user alice --password &#39;a-long-password&#39;</code></pre>
 <p>The password must contain at least eight characters.</p>
 <h3 id="reuse-existing-access-settings">Reuse existing access settings</h3>
 <p>After initial setup, require login on future starts with:</p>
-<pre><code class="language-bash">mouaif serve --auth</code></pre>
+<pre><code class="language-bash">npx mouaif serve --auth</code></pre>
 <p>To create a fresh setup invitation or replace the access user later:</p>
-<pre><code class="language-bash">mouaif serve --auth-setup</code></pre>
+<pre><code class="language-bash">npx mouaif serve --auth-setup</code></pre>
 <h2 id="manage-access-in-the-app">Manage access in the app</h2>
 <p>Open <strong>Settings → Access &amp; passkeys</strong> to:</p>
 <ul><li><p>change the password;</p></li><li><p>add or remove passkeys;</p></li><li><p>review and revoke signed-in sessions.</p>
