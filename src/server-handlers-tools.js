@@ -57,6 +57,11 @@ function hookCliExit() {
 }
 
 function cliShellMeta() {
+  // Default grid for a PTY-backed session. The modal renders plain text and
+  // does not yet report its own size, so this is a sensible fixed terminal
+  // size rather than the browser viewport.
+  const cols = 100;
+  const rows = 30;
   if (process.platform === 'win32') {
     // Windows Terminal Detection: if the session's env already has a WSL
     // or PowerShell default, use it; otherwise cmd.exe (the classic prompt).
@@ -64,7 +69,9 @@ function cliShellMeta() {
       exe: process.env.ComSpec || 'cmd.exe',
       args: [],
       label: 'Command Prompt (cmd.exe)',
-      windows: true
+      windows: true,
+      cols,
+      rows
     };
   }
   const shellPath = process.env.SHELL || '/bin/sh';
@@ -72,34 +79,98 @@ function cliShellMeta() {
     exe: shellPath,
     args: [],
     label: 'Shell (' + shellPath + ')',
-    windows: false
+    windows: false,
+    cols,
+    rows
   };
 }
 
+// Load node-pty once. It is an optional native dependency: a platform with
+// no prebuilt binary (and no C++ toolchain) still installs mouaif, and the
+// session silently falls back to the piped spawn below. `require` is
+// wrapped so a missing/broken addon is a degraded mode, not a crash.
+let ptyModule = null;
+let ptyLoadAttempted = false;
+function loadPty() {
+  if (ptyLoadAttempted) return ptyModule;
+  ptyLoadAttempted = true;
+  try {
+    ptyModule = require('node-pty');
+  } catch {
+    ptyModule = null;
+  }
+  return ptyModule;
+}
+
 // Start the persistent session (idempotent) and return the session handle.
+//
+// The session runs on a pseudo-terminal when node-pty is available. That
+// matters for prompting programs: over pipes (`stdio: ['pipe', ...]`) the
+// child's stdin is not a TTY, so a program that asks a question either gets
+// an immediate EOF or refuses to prompt at all — `npm publish` under 2FA
+// answers `EOTP` with a masked auth URL instead of asking for a code, and
+// `read` returns an empty answer. With a PTY the prompt is written to the
+// screen, the user types the answer into the modal's prompt line, and it is
+// delivered to the still-running child.
+//
+// A PTY merges stdout and stderr into one stream, so `attachCliStream`
+// labels every chunk `stdout`; there is no separate stderr channel to
+// preserve. When the PTY is unavailable the old piped triple is used and
+// stderr keeps its own channel.
 function ensureCliSession(projectDir) {
   const key = String(projectDir || '');
   const existing = cliSessions.get(key);
   if (existing && existing.child && !existing.child.killed) return existing;
   const meta = cliShellMeta();
-  const child = spawn(meta.exe, meta.args, {
-    cwd: projectDir,
-    windowsHide: true,
-    stdio: ['pipe', 'pipe', 'pipe']
-  });
+  const pty = loadPty();
+  let child;
+  let isPty = false;
+  if (pty && typeof pty.spawn === 'function') {
+    try {
+      // The shell is only interactive once it has a TTY, so ask for `-i`
+      // here rather than in cliShellMeta (the piped fallback must not: bash
+      // warns about job control with no TTY).
+      const ptyArgs = (!meta.windows && meta.args.indexOf('-i') === -1)
+        ? meta.args.concat('-i')
+        : meta.args;
+      child = pty.spawn(meta.exe, ptyArgs, {
+        name: 'xterm-256color',
+        cols: meta.cols,
+        rows: meta.rows,
+        cwd: projectDir,
+        // The child inherits the server's env; force a colour-capable TERM
+        // so utilities that gate formatting on terminfo behave.
+        env: Object.assign({}, process.env, { TERM: process.env.TERM || 'xterm-256color' })
+      });
+      isPty = true;
+    } catch {
+      child = null;
+    }
+  }
+  if (!child) {
+    child = spawn(meta.exe, meta.args, {
+      cwd: projectDir,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+  }
   const session = {
     id: 'cli_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
     projectDir,
     child,
     startedAt: Date.now(),
+    // True when the child runs on a pseudo-terminal (see loadPty above).
+    pty: isPty,
     // Record the platform so command writes use the correct line
     // terminator: CRLF for cmd.exe on Windows, LF for sh/bash on POSIX.
     windows: !!meta.windows
   };
   hookCliExit();
   cliSessions.set(key, session);
-  // Reap on exit so a closed session doesn't leak.
-  child.on('exit', () => { if (cliSessions.get(key) === session) cliSessions.delete(key); });
+  // Reap on exit so a closed session doesn't leak. node-pty reports exit
+  // through `onExit`; a piped child uses the standard `exit` event.
+  if (isPty) child.onExit(() => { if (cliSessions.get(key) === session) cliSessions.delete(key); });
+  else child.on('exit', () => { if (cliSessions.get(key) === session) cliSessions.delete(key); });
   return session;
 }
 
@@ -114,20 +185,49 @@ function closeCliSession(projectDir) {
   return true;
 }
 
+// Write one command line to the session's stdin. Shared by the HTTP handler
+// and the tests so the terminator rule lives in exactly one place: CRLF for
+// cmd.exe on Windows, LF for sh/bash on POSIX. A PTY in canonical mode also
+// accepts CR to submit, but LF is what the piped path needs and what the
+// shell consumes cleanly under both.
+//
+// `raw` writes the text with no terminator: an interactive program waiting on
+// a single key (a `y/n` confirmation, a pager, a TUI) needs the byte alone,
+// where appending a newline would answer a *second* prompt.
+function writeCliCommand(session, cmd, raw) {
+  if (!session || !session.child) return false;
+  const newline = session.windows ? '\r\n' : '\n';
+  const line = String(cmd) + (raw ? '' : newline);
+  if (session.pty) {
+    if (typeof session.child.write !== 'function') return false;
+    session.child.write(line);
+    return true;
+  }
+  if (!session.child.stdin || !session.child.stdin.writable) return false;
+  session.child.stdin.write(line);
+  return true;
+}
+
 // Forward a session's stdout/stderr to the SSE broadcast channel. The
 // browser opens GET /events, receives the session id, and listens for
 // `cli_output` frames tagged with that id.
 function attachCliStream(session, broadcast) {
   if (!session || !session.child || !broadcast) return;
-  session.child.stdout.on('data', (d) => {
-    broadcast('cli_output', { id: session.id, stream: 'stdout', data: Buffer.isBuffer(d) ? d.toString('utf8') : String(d) });
-  });
-  session.child.stderr.on('data', (d) => {
-    broadcast('cli_output', { id: session.id, stream: 'stderr', data: Buffer.isBuffer(d) ? d.toString('utf8') : String(d) });
-  });
-  session.child.on('exit', (code) => {
-    broadcast('cli_output', { id: session.id, stream: 'exit', data: String(code) });
-  });
+  const emit = (stream, d) => {
+    broadcast('cli_output', { id: session.id, stream, data: Buffer.isBuffer(d) ? d.toString('utf8') : String(d) });
+  };
+  if (session.pty) {
+    // A PTY merges stdout and stderr into one readable stream and reports
+    // the exit code through onExit (the child has no `exit` event). Every
+    // chunk is labelled stdout because the two channels are no longer
+    // distinguishable.
+    session.child.onData((d) => emit('stdout', d));
+    session.child.onExit(({ exitCode }) => emit('exit', String(exitCode)));
+    return;
+  }
+  session.child.stdout.on('data', (d) => emit('stdout', d));
+  session.child.stderr.on('data', (d) => emit('stderr', d));
+  session.child.on('exit', (code) => emit('exit', String(code)));
 }
 
 // ---- Tools API ---------------------------------------------------------------
@@ -340,6 +440,11 @@ try {
       id: session.id,
       projectDir: real,
       shell: meta.label,
+      // True when the session runs on a pseudo-terminal, so prompting
+      // programs (npm under 2FA, git, sudo) can ask a question and read
+      // the answer. The modal surfaces this so a user knows interactive
+      // input is supported.
+      interactive: !!session.pty,
       startedAt: session.startedAt,
       defaultDir: real
     });
@@ -353,12 +458,15 @@ try {
     if (!body) return;
     const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     const cmd = body && typeof body.cmd === 'string' ? body.cmd : '';
+    // `raw` sends the text with no line terminator (a single-key answer).
+    const raw = !!(body && body.raw);
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     const session = cliSessions.get(String(projectDir));
     if (!session) return sendJSON(res, 404, { error: 'cli session not found — reopen the command prompt', code: 'ENOSESSION' });
     try {
-      const newline = session.windows ? '\r\n' : '\n';
-      session.child.stdin.write(cmd + newline);
+      if (!writeCliCommand(session, cmd, raw)) {
+        return sendJSON(res, 410, { ok: false, error: 'cli session is not accepting input — reopen the command prompt', code: 'ENOWRITE' });
+      }
       return sendJSON(res, 200, { ok: true });
     } catch (e) {
       return sendJSON(res, 500, { ok: false, error: e.message });
@@ -543,4 +651,4 @@ try {
   return sendJSON(res, 404, { error: 'Not found' });
 }
 
-module.exports = { handleTools };
+module.exports = { handleTools, ensureCliSession, closeCliSession, writeCliCommand, cliShellMeta, attachCliStream };
