@@ -39,6 +39,18 @@ npm link
 
 Every published tarball contains the pre-built UI in `frontend/dist/`, so `npm install -g mouaif` and `npx mouaif` serve the shipped bundle without building anything. `better-sqlite3` and `@napi-rs/keyring` ship prebuilt binaries for common platforms; where none exists, Node compiles them during install and the first install takes a few minutes.
 
+### Publish a release
+
+The package is configured to publish publicly to the official npm registry. Authenticate as a maintainer, choose a new semantic version, and publish from a clean checkout:
+
+```bash
+npm login
+npm version patch
+npm publish
+```
+
+`npm publish` runs the full `prepublishOnly` verification before uploading. The `publishConfig` in `package.json` pins `https://registry.npmjs.org/` and public access, so a developer-level registry override cannot accidentally send the CLI to another registry.
+
 ### Serve
 
 Starts the HTTP server for the web UI at `http://127.0.0.1:5732/` and keeps running until `Ctrl+C`.
@@ -98,7 +110,8 @@ The automatic startup migration that used to run this import has been retired, s
 - The built UI lives at `frontend/dist/` and is served by `src/server-web-static.js`. `npm run build:web` exists for frontend development; it is not a required installation step.
 - The package `files` list (`package.json`) ships `bin/`, `src/`, `frontend/dist/`, and `README.md`, so an installed package contains the whole server and the pre-built UI.
 - `bin/mouaif.js` carries a `#!/usr/bin/env node` shebang; npm links it into the global `bin` directory, which is what makes both `mouaif` and `npx mouaif` work.
-- `version` in `package.json` must be a full semantic version (`0.3.0`, not `0.3`). The npm registry rejects the bare two-part form with a `400`, so `npm publish` refuses to start until it is fixed.
+- `version` in `package.json` must be a full semantic version (`0.3.0`, not `0.3`). The npm registry rejects the bare two-part form with a `400`, so `npm publish` refuses to start until it is fixed. The root package version in `package-lock.json` stays aligned with it.
+- `publishConfig` explicitly selects the public npm registry and public package access. The repository, homepage, and issue tracker metadata connect the npm listing to this repository and let the package-name guard verify ownership.
 - `postinstall` runs `scripts/patch-zimmerframe.js`, which must therefore stay in the published tarball — a missing script file fails the install of an already-unpacked package. `scripts/prepare-web.js` only runs in a checkout and is intentionally not published.
 - `prepublishOnly` ends with `node scripts/check-npm-name.js`, which asks the registry whether the `mouaif` name is still free and aborts the publish if it now belongs to another repository. It warns and continues when the registry is unreachable, so an offline release is never blocked by a network hiccup.
 
