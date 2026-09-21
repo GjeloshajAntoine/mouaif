@@ -39,6 +39,8 @@ See [docs/features/cloud-providers.md](./cloud-providers.md) for the four OpenAI
 
 - **Project model records are identity metadata only.** A `.mouaif.json` model entry (`{ id, provider, label, contextWindow, pricing, thinking, thinkingLevel, maxOutputTokens }`) is merged *under* the app-level provider connection, never over it: transport (`baseUrl`) and credentials (`apiKey`, `auth`, `oauthAccount`, `headers`, `staticHeaders`, `authHeader`, `token`, `accessToken`) always come from the app store. The merge is an allow-list (`projectModelRecord()` in `src/util.js`), so a field added later is ignored until it is listed rather than silently flowing through. Every path that hydrates a project model — the chat model, an agent's pinned model, and the approval-card override — goes through it, because the project file is committed with the project and is editable by anything with write access to it.
 
+- **`POST /api/ai/chat` takes an optional `providerId` pin.** A project model is looked up by `id`, which is not unique across providers; when the caller knows which connection a model came from it also sends `providerId`, and resolution requires `provider === providerId` (falling back to the same id-plus-provider rule that already lets a live-catalog model be used without persisting it). The chat itself omits the pin — a chat stores its own `providerId`/`modelId` pair — while surface-level callers such as the Inspector's Intent panel send it.
+
 ## Related
 - Decision: [docs/decisions.md §10](../decisions.md) (this commit) and §11 (auth — next commit).
 - Settings storage: [docs/features/app-and-project-settings.md](./app-and-project-settings.md).

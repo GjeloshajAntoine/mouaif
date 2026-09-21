@@ -823,8 +823,8 @@ setReceipt((prev) => recordChange(prev, change));
 async function proposeIntent(text) {
 const selection = selectionAcrossModes(stylesSelection, selectionStore);
 if (!selection) throw new Error('Select an element first.');
-const modelId = await currentModelId();
-if (!modelId) throw new Error('No model configured. Add one in Settings → Models, then try again.');
+const current = await currentModel();
+if (!current || !current.modelId) throw new Error('No model configured. Add one in Settings → Models, then try again.');
 // The context the prompt is built from: the element, its own declarations, the
 // page values and tokens for the properties it declares, and the element's own
 // values (the strongest evidence). All of it is already in hand.
@@ -855,7 +855,8 @@ const r = await fetchJson('/api/ai/chat', {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({
-modelId,
+modelId: current.modelId,
+providerId: current.providerId || undefined,
 projectDir,
 messages: [
 { role: 'system', content: prompt.system },
@@ -868,23 +869,30 @@ throw new Error((r.body && r.body.error) || ('the model request failed (HTTP ' +
 }
 return String((r.body && r.body.text) || '');
 }
-// currentModelId — the model the project is configured to use. The same list
-// the chat picker reads, with the recent-model order as the preference, so the
-// inspector and the chat agree on the default without a second setting.
-async function currentModelId() {
+// currentModel — the model the project is configured to use, as the
+// { modelId, providerId } pair the chat picker also works in. The recent list
+// is the preference, so the inspector and the chat agree on the default without
+// a second setting; a recent row is `{ provider, id, ts }` (the same shape the
+// chat picker reads), so its model id is `id`, not `modelId`. Provider comes
+// from that same row because a model id can exist under more than one provider,
+// and `/api/ai/chat` resolves the pair against the app-level connection.
+// Falls back to the project's first model when there is no recent history.
+async function currentModel() {
 const projectDir = (activeProject && activeProject.value && activeProject.value.dir) || '';
 try {
 const recent = await fetchJson('/api/settings/models/recent?projectDir=' + encodeURIComponent(projectDir));
 const fromRecent = recent.status === 200 && recent.body && Array.isArray(recent.body.recent)
 ? recent.body.recent[0] : null;
-if (fromRecent && fromRecent.modelId) return fromRecent.modelId;
+if (fromRecent && fromRecent.id) {
+return { modelId: fromRecent.id, providerId: fromRecent.provider || '' };
+}
 } catch { /* fall through to the model list */ }
 try {
 const models = await fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(projectDir));
 const first = models.status === 200 && models.body && Array.isArray(models.body.models)
 ? models.body.models[0] : null;
-return first ? first.id : '';
-} catch { return ''; }
+return first ? { modelId: first.id, providerId: first.provider || '' } : null;
+} catch { return null; }
 }
 // applyIntent — write the ticked lines, one property at a time.
 //

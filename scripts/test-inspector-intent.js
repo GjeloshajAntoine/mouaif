@@ -250,6 +250,21 @@ check('the intent surface is styled', /\.inspector__intent \{/.test(css));
 check('the rows are ≥44 px targets', /\.inspector__intent-row \{[\s\S]{0,200}min-height:\s*44px/.test(css));
 check('the surface wraps rather than scrolling sideways', /\.inspector__intent-rows \{[\s\S]{0,120}flex-direction:\s*column/.test(css));
 check('the intent doc exists', /Inspector intent/.test(read('docs/features/inspector-intent.md')));
+// The recent-model row is `{ provider, id, ts }` (the shape the chat picker
+// reads), never `{ modelId }`. Reading the wrong key silently fell through to
+// the project's first model, so the inspector and the chat disagreed about the
+// default it documents. Keep both ends of that contract asserted.
+const inspector = read('frontend/src/components/Inspector.jsx');
+check('the inspector reads the recent row\'s model id, not a missing modelId field',
+/fromRecent && fromRecent\.id/.test(inspector), 'fromRecent.id');
+check('and it never reads a modelId field off a recent row',
+!/fromRecent\s*&&\s*fromRecent\.modelId/.test(inspector));
+const aiHandlers = read('src/server-handlers-ai.js');
+check('the inspector pins the model to the provider it was picked from',
+/providerId:\s*current\.providerId/.test(inspector));
+check('/api/ai/chat resolves the model against that provider',
+/resolveModel\(body\.modelId,\s*body\.projectDir,\s*body\.providerId\)/.test(aiHandlers),
+'ai/chat providerId');
 }
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' intent assertion(s) failed');

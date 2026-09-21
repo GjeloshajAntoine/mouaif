@@ -197,13 +197,17 @@ async function handleAI(req, res, parsed) {
     }
   }
 
-  // POST /api/ai/chat  body: { modelId, messages, projectDir? }  -> SSE stream
+  // POST /api/ai/chat  body: { modelId, providerId?, messages, projectDir? }  -> SSE stream
+  // `providerId` pins the model id to one provider connection: the same id can
+  // exist under several providers, and without it resolution picks the first
+  // project model with that id (surface-level callers such as the Inspector
+  // pass the provider they picked the model from).
   if (urlPath === '/api/ai/chat' && method === 'POST') {
     const body = await readJsonOr400(req, res);
     if (!body) return;
 
     let model;
-    try { model = resolveModel(body.modelId, body.projectDir); }
+    try { model = resolveModel(body.modelId, body.projectDir, body.providerId); }
     catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code }); }
 
     // Open SSE.
