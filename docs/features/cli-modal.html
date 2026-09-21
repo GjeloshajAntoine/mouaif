@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CLI modal — mouaif docs</title>
+  <meta name="description" content="The CLI modal is a full-screen command prompt inside a chat, opened from the composer&#39;s File button → **Cli**. It runs a persistent shell for the project —…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="cli-modal">CLI modal</h1>
+<h2 id="overview">Overview</h2>
+<p>The CLI modal is a full-screen command prompt inside a chat, opened from the composer&#39;s File button → <strong>Cli</strong>. It runs a persistent shell for the project — the platform shell (<code>cmd.exe</code> on Windows, the user&#39;s <code>$SHELL</code> or <code>/bin/sh</code> on POSIX) — with the project directory as the working directory. Output streams into the modal; each line typed at the prompt is sent to the same running process.</p>
+<p>The session runs on a <strong>pseudo-terminal</strong>, so programs that ask a question (<code>npm publish</code> under two-factor authentication, <code>git commit</code> for a missing identity, <code>sudo</code>, <code>read</code>) can show the prompt and read the answer you type.</p>
+<h2 id="usage">Usage</h2>
+<p>Open the composer&#39;s File button and choose <strong>Cli</strong>. The header shows the shell label, the project directory, and an <strong>interactive</strong> badge when the session has a real terminal.</p>
+<ul><li><p>Type a command and press <strong>Enter</strong> to run it.</p></li><li><p>Press <strong>Enter</strong> again to send an empty line — an interactive prompt that offers a default accepts it.</p></li><li><p>Press <strong>Ctrl+Enter</strong> (<strong>Cmd+Enter</strong> on macOS) to send the line <strong>without a line terminator</strong>, for a program waiting on a single key (a <code>y/n</code> confirmation, a pager).</p></li><li><p>Close the sheet with the close button or <strong>Escape</strong>. Closing kills the session.</p>
+<p>Because the session is a real terminal, an interactive program can wait for you. Publishing from the modal is the motivating case:</p></li></ul>
+<pre><code class="language-text">$ npm publish --otp=
+npm notice Publishing to https://registry.npmjs.org/ with tag latest and public access
+npm error code EOTP
+Open this URL in your browser to authenticate:
+  https://www.npmjs.com/auth/cli/***</code></pre>
+<p>With the interactive session you can instead run the command, read the prompt, and answer it in the same sheet:</p>
+<pre><code class="language-text">$ npm publish --otp=
+This operation requires a one-time password.
+Enter OTP: 123456
++ mouaif@0.3.0</code></pre>
+<p>You can also run multiple commands in one session — the shell keeps its state (working directory, environment, variables) between lines.</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<h3 id="session-lifecycle">Session lifecycle</h3>
+<ul><li><p><code>GET /api/tools/cli/session?projectDir=&lt;abs&gt;</code> starts or reuses the per-project session and returns <code>{ id, projectDir, shell, interactive, startedAt, defaultDir }</code>. <code>interactive</code> is <code>true</code> when the child runs on a pseudo-terminal.</p></li><li><p><code>POST /api/tools/cli/command</code> with <code>{ projectDir, cmd, raw? }</code> writes one line to the session&#39;s stdin. <code>raw: true</code> omits the line terminator.</p></li><li><p><code>POST /api/tools/cli/close</code> with <code>{ projectDir }</code> kills the session (idempotent).</p></li><li><p>Output is broadcast over the <code>GET /events</code> SSE channel as <code>cli_output</code> frames <code>{ id, stream, data }</code>, filtered client-side by session id. A PTY merges stdout and stderr, so every chunk is labelled <code>stdout</code>; the piped fallback keeps a separate <code>stderr</code> channel.</p>
+<p>The session helpers live in <a href="../../src/server-handlers-tools.js">src/server-handlers-tools.js</a> (<code>ensureCliSession</code>, <code>writeCliCommand</code>, <code>attachCliStream</code>, <code>closeCliSession</code>). The modal is <a href="../../frontend/src/components/chat/CliModal.jsx">frontend/src/components/chat/CliModal.jsx</a>, and the stateful ANSI/VT screen decoder it renders through is <code>CliScreen</code> in <a href="../../frontend/src/components/chat/utils.js">frontend/src/components/chat/utils.js</a>.</p></li></ul>
+<h3 id="pseudo-terminal-and-the-piped-fallback">Pseudo-terminal and the piped fallback</h3>
+<p>The session is spawned with <code>node-pty</code>. Over pipes (<code>stdio: [&#39;pipe&#39;, ...]</code>) the child is <strong>not</strong> a TTY, so a prompting program gets an immediate EOF — <code>read</code> returns an empty answer and <code>npm publish</code> refuses to prompt at all, answering <code>EOTP</code> with a <strong>redacted</strong> <code>…/auth/cli/***</code> URL (npm&#39;s <code>@npmcli/redact</code> masks the one-time token before printing it; the <code>*</code> characters are npm&#39;s placeholder, not the modal&#39;s).</p>
+<p><code>node-pty</code> is an optional native dependency. Where no prebuilt binary exists and no C++ toolchain is available, <code>require(&#39;node-pty&#39;)</code> fails, the module is treated as absent, and the session falls back to the original <strong>piped</strong> child. Everything non-interactive works identically; only prompting programs cannot ask a question. The session then reports <code>interactive: false</code>, and the modal omits the badge.</p>
+<h3 id="line-terminator">Line terminator</h3>
+<p><code>writeCliCommand</code> is the single place the terminator is chosen: CRLF for <code>cmd.exe</code> on Windows, LF for sh/bash on POSIX. Writing CRLF to a POSIX shell makes the trailing <code>\r</code> part of the command token (<code>ls\r</code> → <code>command not found</code>), which is why the rule lives in one shared helper rather than at each call site.</p>
+<h3 id="screen-decoding">Screen decoding</h3>
+<p><code>CliScreen</code> buffers escape sequences that arrive split across SSE chunks, honours cursor positioning and erase, and enters/leaves the alternate screen. A full-screen TUI (htop, top, less) therefore redraws <strong>in place</strong> instead of stacking frames, and ordinary scrollback grows downward. It is a best-effort plain-text view, not a full terminal emulator: colour and cell-width attributes are dropped and column layout is not reconstructed.</p>
+<h3 id="limits">Limits</h3>
+<ul><li><p>A PTY has a fixed grid size (100×30). The modal does not yet report its own dimensions, so <code>resize</code> is not driven from the browser.</p></li><li><p>Some single-key prompts (a <code>y/n</code> confirmation that reads raw mode) expect the key byte alone — use <strong>Ctrl+Enter</strong> so no trailing newline is sent.</p></li><li><p>Desktop-only. On a phone the soft keyboard covers much of the sheet; the modal is usable but not the primary surface.</p></li></ul>
+<h2 id="tests">Tests</h2>
+<pre><code class="language-bash">npm run test:cli</code></pre>
+<ul><li><p><code>scripts/test-cli-session-newline.js</code> — drives the real endpoints and asserts a plain <code>ls</code> lists the project files (the terminator rule).</p></li><li><p><code>scripts/test-cli-strip-ansi.js</code> — unit-tests <code>stripAnsi</code> / <code>CliScreen</code>.</p></li><li><p><code>scripts/test-cli-pty-interactive.js</code> — asserts the session is interactive, that a prompting program&#39;s question reaches the screen, and that the answer POSTed to the command endpoint is read back by the still-running child. It skips (exit 0) when <code>node-pty</code> is not installed, because that is the documented degraded mode.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>
