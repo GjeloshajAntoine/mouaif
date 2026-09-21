@@ -454,7 +454,14 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   }
   const sessionToken = crypto.randomBytes(32).toString('base64url');
   const lifecycle = (options && typeof options === 'object') ? (options.lifecycle || {}) : {};
-  const serverConfig = { publicOrigin, authEnabled: options.authEnabled === true };
+  const serverConfig = {
+    publicOrigin,
+    // The flag the process was started with. The store's in-app disable
+    // switch is layered on top at every gate (publicAccessStatus /
+    // authorizeAccessRequest) so turning access off or back on takes effect
+    // without a restart.
+    authEnabled: options.authEnabled === true
+  };
   const server = http.createServer((req, res) => {
     // Bind port to the request handler
     handleRequest(req, res, port, sessionToken, lifecycle, serverConfig);
@@ -478,7 +485,7 @@ function createServer(port = DEFAULT_PORT, options = {}) {
       const validToken = actual.length === sessionToken.length
         && crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(sessionToken));
       const accessToken = cookies[ACCESS_COOKIE] || '';
-      const validAccess = !serverConfig.authEnabled || !!accessAuth.session(accessToken);
+      const validAccess = !serverConfig.authEnabled || accessAuth.disabled() || !!accessAuth.session(accessToken);
       if (!origin || origin !== expected || !validToken || !validAccess) {
         socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
         socket.end();

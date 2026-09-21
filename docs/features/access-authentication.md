@@ -67,6 +67,10 @@ Existing users can manage passkeys under **Settings → Access & passkeys**. Pas
 
 Alternatively, the CLI setup flow (`--auth-setup`) or a one-time setup link can replace the user and password from outside the UI.
 
+### Turn access off and on
+
+**Settings → Access & passkeys** can also disarm the server: **Create disable QR & code** mints a single-use code and a QR code, and opening it on any device shows a confirmation page that removes the password and passkey wall. Protection is turned back on from the same screen (or with the account password) while access is off. The in-app switch is persisted, so a later restart that still passes `--auth` keeps access off instead of silently re-arming it. See [Disable access with a QR code](./disable-access-qr.md).
+
 ### Authenticate CLI API requests
 
 Browser clients use an HttpOnly session cookie. Non-browser REST clients can use HTTP Basic authentication:
@@ -83,5 +87,6 @@ This removes the access-check splash without bypassing protection: APIs, SSE, an
 
 ## Related
 
+- [Disable access with a QR code](./disable-access-qr.md) — turning the login wall off (and back on) from inside the app.
 - [Settings UI](./settings-ui.md) — managing settings and access in the mobile web interface.
 - [Provider authentication](./auth.md) — connecting AI providers via API keys and OAuth.

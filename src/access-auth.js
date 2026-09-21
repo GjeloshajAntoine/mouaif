@@ -1,13 +1,15 @@
 'use strict';
 
 // Local app access authentication: one account, password sessions, one-time
-// setup codes, and WebAuthn credentials. Provider OAuth remains in auth.js.
+// setup codes, one-time disable codes, and WebAuthn credentials. Provider
+// OAuth remains in auth.js.
 
 const crypto = require('node:crypto');
 const settings = require('./settings.js');
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SETUP_TTL_MS = 15 * 60 * 1000;
+const DISABLE_TTL_MS = 15 * 60 * 1000;
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 const CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const challenges = new Map();
@@ -61,6 +63,16 @@ function ensureTables() {
       created_at TEXT NOT NULL,
       last_used_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS access_disable_codes (
+      code_hash TEXT PRIMARY KEY,
+      expires_at INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS access_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      enabled INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 }
 
@@ -71,6 +83,35 @@ function user() {
 
 function configured() {
   return !!user();
+}
+
+// ---- Enable state -------------------------------------------------------
+// `mouaif serve --auth` (and friends) turns the gate on for a process, but
+// access can also be disabled from inside the app — turning a protection off
+// usually means "right now, on this device". The decision is persisted so a
+// later restart that still passes an auth flag keeps it off instead of
+// silently locking the user out of a store whose password may be forgotten.
+function disabled() {
+  ensureTables();
+  const row = settings.getDb().prepare('SELECT enabled FROM access_state WHERE id = 1').get();
+  return !!row && row.enabled === 0;
+}
+
+function setEnabled(enabled) {
+  ensureTables();
+  const on = enabled !== false;
+  settings.getDb().prepare(`
+    INSERT INTO access_state (id, enabled, updated_at) VALUES (1, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at
+  `).run(on ? 1 : 0, new Date().toISOString());
+  return on;
+}
+
+// effectiveEnabled(processEnabled) — the gate the server actually enforces:
+// a process started with an auth flag, unless the store says the user
+// disabled access from inside the app.
+function effectiveEnabled(processEnabled) {
+  return !!processEnabled && !disabled();
 }
 
 function validateCredentials(username, password) {
@@ -214,6 +255,43 @@ function consumeSetupCode(code) {
     const valid = settings.getDb().prepare('SELECT 1 FROM access_setup_codes WHERE code_hash = ? AND expires_at > ?').get(hash, Date.now());
     if (!valid) return false;
     settings.getDb().prepare('DELETE FROM access_setup_codes WHERE code_hash = ?').run(hash);
+    return true;
+  });
+  return transaction();
+}
+
+// createDisableCode() — mint a short-lived, single-use code that turns app
+// access off. Modelled on createSetupCode() with its own table so the two
+// invitations can never be confused (a setup code adds a password, a disable
+// code removes the login wall). Restricting access is signed-in-only, so no
+// code is needed for that direction; only disabling is code-gated.
+function createDisableCode(ttlMs = DISABLE_TTL_MS) {
+  ensureTables();
+  const code = randomCode();
+  const expiresAt = Date.now() + Math.max(60_000, Number(ttlMs) || DISABLE_TTL_MS);
+  settings.getDb().prepare('DELETE FROM access_disable_codes WHERE expires_at <= ?').run(Date.now());
+  settings.getDb().prepare('INSERT INTO access_disable_codes (code_hash, expires_at, created_at) VALUES (?, ?, ?)')
+    .run(digest(code), expiresAt, new Date().toISOString());
+  return { code, expiresAt };
+}
+
+function disableCodeValid(code) {
+  ensureTables();
+  const normalized = normalizeCode(code);
+  if (!normalized) return false;
+  return !!settings.getDb().prepare('SELECT 1 FROM access_disable_codes WHERE code_hash = ? AND expires_at > ?')
+    .get(digest(normalized), Date.now());
+}
+
+function consumeDisableCode(code) {
+  ensureTables();
+  const normalized = normalizeCode(code);
+  if (!normalized) return false;
+  const hash = digest(normalized);
+  const transaction = settings.getDb().transaction(() => {
+    const valid = settings.getDb().prepare('SELECT 1 FROM access_disable_codes WHERE code_hash = ? AND expires_at > ?').get(hash, Date.now());
+    if (!valid) return false;
+    settings.getDb().prepare('DELETE FROM access_disable_codes WHERE code_hash = ?').run(hash);
     return true;
   });
   return transaction();
@@ -408,9 +486,13 @@ function deletePasskey(id) {
 module.exports = {
   SESSION_TTL_MS,
   SETUP_TTL_MS,
+  DISABLE_TTL_MS,
   ensureTables,
   configured,
   user,
+  disabled,
+  setEnabled,
+  effectiveEnabled,
   setPassword,
   verifyPassword,
   changePassword,
@@ -421,6 +503,9 @@ module.exports = {
   normalizeCode,
   setupCodeValid,
   consumeSetupCode,
+  createDisableCode,
+  disableCodeValid,
+  consumeDisableCode,
   passkeys,
   beginRegistration,
   finishRegistration,

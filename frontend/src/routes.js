@@ -103,6 +103,19 @@ const ROUTES = [
   // ---- Fixed pages ---------------------------------------------------
   exact('settings', () => ({ name: 'settings' })),
   exact('settings/access', () => ({ name: 'settingsAccess' })),
+  // The disable-access confirmation page. Reached from the QR code created
+  // on the Access & passkeys screen (`?code=…`). It must render without a
+  // session — the one-time code it carries is the proof — so it is its own
+  // fixed route rather than a settings sub-page. The route carries the code
+  // so AccessGate can pre-fill it.
+  exactOrQuery('disable-access', (m) => ({ name: 'disableAccess', code: m.params.get('code') || '' })),
+  // The setup screen. Drawn by AccessGate before the normal shell mounts
+  // (there is no session yet); the route exists so the hash is navigable and
+  // so `?code=…` reaches the setup form. The App entry behind it is the
+  // default chat list, which is only reachable if access is already off.
+  // `#/login` intentionally has no route: it resolves to the default view and
+  // AccessGate shows the sign-in screen on top of it.
+  exactOrQuery('setup', (m) => ({ name: 'setup', code: m.params.get('code') || '' })),
   exact('inspector', () => ({ name: 'inspector' })),
   // Dictation — the speech-to-text page. App-level, so it lives under
   // Settings (`Settings → App defaults → Dictation`) rather than in the

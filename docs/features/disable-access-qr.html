@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Disable access with a QR code — mouaif docs</title>
+  <meta name="description" content="App access protection can be turned off from inside the app. **Settings → Access &amp; passkeys** mints a single-use code and a QR code; opening that QR on any…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="disable-access-with-a-qr-code">Disable access with a QR code</h1>
+<h2 id="overview">Overview</h2>
+<p>App access protection can be turned off from inside the app. <strong>Settings → Access &amp; passkeys</strong> mints a single-use code and a QR code; opening that QR on any device — signed in or not — loads a confirmation page, and confirming removes the password and passkey wall from the server. Protection can be turned back on from the same screen, with the account password.</p>
+<h2 id="usage">Usage</h2>
+<h3 id="create-the-disable-code-and-qr">Create the disable code and QR</h3>
+<ol><li><p>Open <strong>Settings → Access &amp; passkeys</strong> while signed in.</p></li><li><p>Tap <strong>Create disable QR &amp; code</strong>. A short code such as <code>ABCD-2345</code>, a scannable QR code, and its expiry time appear.</p></li><li><p>Scan the QR with a phone&#39;s camera, or open the confirmation page on the device you are already holding.</p>
+<p>The code is single-use and expires after 15 minutes. Nothing is generated until you ask for it, and cancelling clears it.</p></li></ol>
+<h3 id="confirm-on-the-confirmation-page">Confirm on the confirmation page</h3>
+<p>Scanning the QR opens:</p>
+<pre><code class="language-text">/#/disable-access?code=ABCD-2345</code></pre>
+<p>The page asks for the confirmation code (pre-filled when the QR was scanned) and warns what turning access off means. Confirming calls <code>POST /api/access/disable</code> and immediately clears the login wall for the whole server — no restart is required.</p>
+<p>That page works on a device with no session. The one-time code is the proof, which is what makes it usable when the server&#39;s password has been forgotten.</p>
+<h3 id="turn-protection-back-on">Turn protection back on</h3>
+<p>While access is off, <strong>Settings → Access &amp; passkeys</strong> shows a <strong>Protection off</strong> badge and a <strong>Turn access back on</strong> button. The device that disabled access keeps its session, so one tap is enough. If the session is gone, any of these re-arms the wall through <code>POST /api/access/enable</code>:</p>
+<ul><li><p>an active session cookie;</p></li><li><p>the account username and password;</p></li><li><p>a CLI setup code from <code>mouaif serve --auth-setup</code>.</p></li></ul>
+<h3 id="alerts">Alerts</h3>
+<p>Disabling and re-enabling are security-relevant events, so each broadcasts a push notification to every subscribed device (&quot;App access is off…&quot; / &quot;Password and passkey protection is on again.&quot;). They use the same <strong>Access alerts</strong> switch as sign-in notifications, which appears both on this screen and as <strong>Sign-in alerts</strong> under Settings → Notifications.</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<ul><li><p><strong>The persisted switch</strong> is <code>access_state</code> (one row) in <code>src/access-auth.js</code>: <code>disabled()</code>, <code>setEnabled()</code>, <code>effectiveEnabled(processEnabled)</code>. It is a table rather than a per-process flag because turning a protection off usually means &quot;right now, on this device&quot;, and a later restart that still passes <code>--auth</code> should not silently re-arm a store whose password may be forgotten.</p></li><li><p><strong>The code and its QR</strong> are modelled on the setup invitation: <code>createDisableCode()</code>, <code>disableCodeValid()</code>, <code>consumeDisableCode()</code> with the <code>access_disable_codes</code> table, and <code>GET /api/access/disable/qr</code> rendering the confirmation URL with <code>src/qr.js</code>. Unlike a setup code it is never printed to stdout and is never served to an unauthenticated caller — it is minted only behind a session.</p></li><li><p><strong>Live re-arming.</strong> <code>serverConfig.authEnabled</code> still records the process flag, but <code>publicAccessStatus()</code> and <code>authorizeAccessRequest()</code> layer <code>accessAuth.disabled()</code> on top, so a toggle takes effect within the running worker. <code>effectiveEnabled()</code> exists for callers that only have the flag.</p></li><li><p><strong>Recovery.</strong> <code>POST /api/access/enable</code> accepts a session, the account password, or a setup code; disabling deliberately does <em>not</em> revoke sessions, so the device that turned protection off can turn it back on.</p></li><li><p><strong>Guessing a code is throttled.</strong> <code>POST /api/access/disable</code> is reachable without a session, so an invalid or already-used code records a failure against the same per-address counter as a wrong password (ten failures per minute) and answers <code>429</code>. A successful disable clears the counter. A setup or disable code carries eight characters from a 32-symbol alphabet (~2⁴⁰), but the limit keeps the endpoint from being a free oracle.</p></li><li><p><strong>Tests.</strong> <code>scripts/test-access-disable.js</code> covers the code lifecycle, the no-session confirmation path, live re-arming, the alert broadcast, and re-enabling with a password.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="./access-authentication.html">Access authentication</a> — the account, password, and passkeys this switch protects.</p></li><li><p><a href="./login-notification.html">Login notification</a> — the alert channel the access on/off notifications share.</p></li><li><p><a href="./push-notifications.html">Push notifications</a> — how alerts reach the device.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

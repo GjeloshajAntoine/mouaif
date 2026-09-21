@@ -344,6 +344,11 @@ function authorizeBrowserRequest(req, res, sessionToken, publicOrigin) {
 
 function authorizeAccessRequest(req, res, authEnabled) {
   if (!authEnabled) return true;
+  // Access can be turned off from inside the app (one-time disable code).
+  // serverConfig.authEnabled was resolved at worker start; re-checking the
+  // store here makes the change effective immediately, without waiting for a
+  // restart — the /#/disable-access page is the point of no return.
+  if (accessAuth.disabled()) return true;
   if (!accessAuth.configured()) {
     // Preserve the existing loopback CLI/API workflow until the user opts in;
     // browser traffic is held at setup so the web UI cannot expose app data.
@@ -559,8 +564,16 @@ function clearAccessFailures(req) {
 
 function publicAccessStatus(authEnabled = true) {
   const account = accessAuth.user();
+  const disabled = accessAuth.disabled();
+  // `armed` is whether the process was started with an auth flag at all,
+  // independent of the in-app disable switch. The UI uses it to decide
+  // between "protection is off because you turned it off" and "this server
+  // was never asked to protect anything".
+  const armed = !!authEnabled || disabled;
   return {
-    enabled: !!authEnabled,
+    armed,
+    enabled: !!authEnabled && !disabled,
+    disabled,
     configured: !!account,
     user: account ? account.username : null,
     passkeyCount: account ? accessAuth.passkeys().length : 0
