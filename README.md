@@ -4,7 +4,7 @@ mouaif is a mobile-first AI coding assistant for local projects. Connect your pr
 
 ## Requirements
 
-- Node.js 18 or newer
+- Node.js 20 or newer
 - A supported AI provider account, or a local Ollama installation
 
 ## Install

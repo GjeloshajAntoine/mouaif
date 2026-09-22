@@ -2,7 +2,7 @@
 
 ## Overview
 
-Install mouaif, start the app, and open its web interface. Node.js 18 or newer is required.
+Install mouaif, start the app, and open its web interface. Node.js 20 or newer is required.
 
 ## Install
 

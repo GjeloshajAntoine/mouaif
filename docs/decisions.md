@@ -6,7 +6,7 @@ Resolved by `Ask questions for what's missin` on 2026-07-13. These choices are n
 
 - App-level settings live in `~/.mouaif/store.sqlite` (managed by `better-sqlite3`).
 - Project-level settings still live in `<projectDir>/.mouaif.json` so they can be committed to a repo and edited by hand.
-- New runtime dependency: `better-sqlite3` (^11). Add it in the settings commit.
+- New runtime dependency: `better-sqlite3` (^12). Add it in the settings commit.
 
 ## 2. Settings scope — project overrides app
 
