@@ -1,7 +1,7 @@
 {
   "name": "mouaif",
   "version": "0.3.2",
-  "description": "CLI tool with integrated HTTP server — REST API + Server-Sent Events",
+  "description": "Mobile-first AI coding assistant for local projects",
   "author": "Antoine Gjeloshaj <gjeloshaj.antoine@gmail.com>",
   "repository": {
     "type": "git",
