@@ -60,8 +60,6 @@ mouaif serve --auth --user alice</code></pre>
 <h3 id="change-the-password-in-the-ui">Change the password in the UI</h3>
 <p><strong>Settings → Access &amp; passkeys</strong> includes a <strong>Change password</strong> form. Enter the current password and the new one (at least eight characters). Changing the password is treated like a reset: every other browser session is revoked and all passkeys are removed; the current device stays signed in. The username is unchanged.</p>
 <p>Alternatively, the CLI setup flow (<code>--auth-setup</code>) or a one-time setup link can replace the user and password from outside the UI.</p>
-<h3 id="turn-access-off-and-on">Turn access off and on</h3>
-<p><strong>Settings → Access &amp; passkeys</strong> can also disarm the server: <strong>Create disable QR &amp; code</strong> mints a single-use code and a QR code, and opening it on any device shows a confirmation page that removes the password and passkey wall. Protection is turned back on from the same screen (or with the account password) while access is off. The in-app switch is persisted, so a later restart that still passes <code>--auth</code> keeps access off instead of silently re-arming it. See <a href="./disable-access-qr.html">Disable access with a QR code</a>.</p>
 <h3 id="authenticate-cli-api-requests">Authenticate CLI API requests</h3>
 <p>Browser clients use an HttpOnly session cookie. Non-browser REST clients can use HTTP Basic authentication:</p>
 <pre><code class="language-bash">curl --user &#39;alice:a-long-password&#39; http://127.0.0.1:5732/api/settings</code></pre>
@@ -69,7 +67,7 @@ mouaif serve --auth --user alice</code></pre>
 <p>On startup, the page stays visually blank while it requests <code>/api/access/status</code>. The app UI is mounted only after the server confirms that access authentication is disabled or that the browser has a valid session. Login and setup screens still appear when authentication is required.</p>
 <p>This removes the access-check splash without bypassing protection: APIs, SSE, and app data remain guarded by server-side authorization.</p>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="./disable-access-qr.html">Disable access with a QR code</a> — turning the login wall off (and back on) from inside the app.</p></li><li><p><a href="./settings-ui.html">Settings UI</a> — managing settings and access in the mobile web interface.</p></li><li><p><a href="./auth.html">Provider authentication</a> — connecting AI providers via API keys and OAuth.</p></li></ul>
+<ul><li><p><a href="./settings-ui.html">Settings UI</a> — managing settings and access in the mobile web interface.</p></li><li><p><a href="./auth.html">Provider authentication</a> — connecting AI providers via API keys and OAuth.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

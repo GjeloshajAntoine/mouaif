@@ -51,28 +51,6 @@ actions: [{ action: 'open', title: 'Open mouaif' }]
 } catch { /* a notification failure must never block sign-in */ }
 }
 
-// notifyAccessChange(enabled) — best-effort push that app access protection
-// changed. A security-relevant event, so it reuses the `login` channel
-// ("sign in to / access of this server") rather than adding a preference;
-// it broadcasts to every subscribed device, including the one that acted,
-// so the state change is visible even if that phone is put down.
-function notifyAccessChange(enabled) {
-try {
-let prefs = {};
-try { prefs = resolveNotificationPrefs((settings.getApp() || {}).notifications); } catch { /* defaults apply */ }
-if (prefs.login !== true) return;
-push.sendPushToAll({
-title: enabled ? 'mouaif access enabled' : 'mouaif access disabled',
-body: enabled
-? 'Password and passkey protection is on again.'
-: 'App access is off. Anyone who can reach this server can open it.',
-tag: 'mouaif-access',
-data: { kind: 'login', url: '/#/settings/access' },
-actions: [{ action: 'open', title: 'Open settings' }]
-});
-} catch { /* a notification failure must never change the access state */ }
-}
-
 
 async function handleAccess(req, res, parsed, serverConfig) {
   const urlPath = parsed.pathname;
@@ -85,8 +63,7 @@ async function handleAccess(req, res, parsed, serverConfig) {
   const activeSession = accessAuth.session(accessToken);
 
   if (urlPath === '/api/access/status' && method === 'GET') {
-    const status = publicAccessStatus(serverConfig.authEnabled);
-    return sendJSON(res, 200, { ...status, session: !!activeSession, authenticated: !status.enabled || !!activeSession });
+    return sendJSON(res, 200, { ...publicAccessStatus(serverConfig.authEnabled), authenticated: !serverConfig.authEnabled || !!activeSession });
   }
 
   if (urlPath === '/api/access/login' && method === 'POST') {
@@ -110,83 +87,6 @@ return sendJSON(res, 200, { ok: true, user: accessAuth.user().username });
     accessAuth.revokeSession(accessToken);
     res.setHeader('Set-Cookie', accessCookie('', secure, 0));
     return sendJSON(res, 200, { ok: true });
-  }
-
-  // ---- Turn app access off / back on ------------------------------------
-  // Disabling is signed-in-only and requires a fresh one-time code, so a
-  // request that only holds a cookie (a script, a stale tab) cannot remove
-  // the login wall by itself. The code is minted here — unlike setup codes
-  // it is never printed to stdout or served to an unauthenticated caller.
-  if (urlPath === '/api/access/disable/code' && method === 'POST') {
-    if (!activeSession) return sendJSON(res, 401, { error: 'Sign in is required', code: 'EAUTH_REQUIRED' });
-    const issued = accessAuth.createDisableCode();
-    return sendJSON(res, 200, { code: issued.code, expiresAt: issued.expiresAt, ttlMs: accessAuth.DISABLE_TTL_MS });
-  }
-
-  // The QR is an image so a phone can open it with the system camera. It
-  // encodes the confirmation page, which is what makes the code itself
-  // unnecessary to type on the scanning device.
-  if (urlPath === '/api/access/disable/qr' && method === 'GET') {
-    if (!activeSession) return sendJSON(res, 401, { error: 'Sign in is required', code: 'EAUTH_REQUIRED' });
-    const code = typeof parsed.query.code === 'string' ? parsed.query.code : '';
-    if (!accessAuth.disableCodeValid(code)) return sendJSON(res, 404, { error: 'Disable code is missing or expired', code: 'EDISABLE_CODE' });
-    const confirmUrl = servedOrigin + '/#/disable-access?code=' + encodeURIComponent(accessAuth.normalizeCode(code));
-    const svg = qr.svg(confirmUrl);
-    res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' });
-    res.end(svg);
-    return;
-  }
-
-  if (urlPath === '/api/access/disable' && method === 'POST') {
-    const body = await readJsonOr400(req, res);
-    if (!body) return;
-    // An invalid code is a failed guess, so it counts against the same
-    // per-address limit as a wrong password. The confirmation page is
-    // deliberately reachable without a session, so nothing else slows down
-    // a caller trying codes in a loop.
-    if (!checkAccessAttempts(req)) return sendJSON(res, 429, { error: 'Too many attempts; wait a minute', code: 'ERATE_LIMIT' });
-    if (!accessAuth.disableCodeValid(body.code)) {
-      recordAccessFailure(req);
-      return sendJSON(res, 401, { error: 'That code is invalid or expired', code: 'EDISABLE_CODE' });
-    }
-    if (!accessAuth.consumeDisableCode(body.code)) {
-      recordAccessFailure(req);
-      return sendJSON(res, 409, { error: 'That code was already used or expired', code: 'EDISABLE_CODE' });
-    }
-    clearAccessFailures(req);
-    // Consume every other outstanding invitation and turn the gate off.
-    // Sessions are intentionally kept: with the gate off they authorize
-    // nothing, and holding on to them lets the device that disabled access
-    // re-enable it without having to prove the password again.
-    settings.getDb().prepare('DELETE FROM access_disable_codes').run();
-    settings.getDb().prepare('DELETE FROM access_setup_codes').run();
-    accessAuth.setEnabled(false);
-    notifyAccessChange(false);
-    return sendJSON(res, 200, { ok: true, enabled: false, configured: accessAuth.configured() });
-  }
-
-  // Turning protection back on is safe to do from an unauthenticated screen,
-  // so it accepts any of the store's proofs: a live session, the account
-  // password, or a CLI setup code. That keeps recovery possible even after
-  // session cookies have expired while access was off.
-  if (urlPath === '/api/access/enable' && method === 'POST') {
-    const body = await readJsonOr400(req, res);
-    if (!body) return;
-    const account = accessAuth.user();
-    if (!account) return sendJSON(res, 409, { error: 'Create the access user before enabling protection', code: 'ENOTCONFIGURED' });
-    const bySession = !!activeSession;
-    const byPassword = !bySession && account
-      && accessAuth.verifyPassword(body.username || account.username, body.password);
-    const bySetupCode = !bySession && !byPassword && accessAuth.setupCodeValid(body.code);
-    if (!bySession && !byPassword && !bySetupCode) {
-      return sendJSON(res, 401, { error: 'Sign in, or enter the account password, to enable access', code: 'EAUTH_REQUIRED' });
-    }
-    if (bySetupCode && !accessAuth.consumeSetupCode(body.code)) {
-      return sendJSON(res, 409, { error: 'Setup code was already used or expired', code: 'ESETUP_CODE' });
-    }
-    accessAuth.setEnabled(true);
-    notifyAccessChange(true);
-    return sendJSON(res, 200, { ok: true, enabled: true, configured: true });
   }
 
   // Password change from an authenticated browser session. Requires a real

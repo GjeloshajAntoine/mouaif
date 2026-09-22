@@ -112,7 +112,7 @@ async function main() {
     const page = await fetch(openOrigin + '/');
     const cookie = String(page.headers.get('set-cookie') || '').split(';')[0];
     const status = await fetch(openOrigin + '/api/access/status', { headers: { Origin: openOrigin, Cookie: cookie } });
-    assert.deepEqual(await status.json(), { armed: false, enabled: false, disabled: false, configured: true, user: 'bob', passkeyCount: 0, session: false, authenticated: true });    const allowed = await fetch(openOrigin + '/api/settings', { headers: { Origin: openOrigin, Cookie: cookie } });
+    assert.deepEqual(await status.json(), { enabled: false, configured: true, user: 'bob', passkeyCount: 0, authenticated: true });    const allowed = await fetch(openOrigin + '/api/settings', { headers: { Origin: openOrigin, Cookie: cookie } });
     assert.equal(allowed.status, 200);
   } finally {
     await new Promise((resolve) => openServer.close(resolve));

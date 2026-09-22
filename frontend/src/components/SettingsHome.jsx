@@ -60,7 +60,7 @@ export function SettingsHomeView() {
         rowLi('settings/defaults', 'Chat defaults', { detail: promptSize }),
         rowLi('settings/dictation', 'Dictation', { sub: 'speech-to-text model & transcript' }),
         rowLi('settings/prompts', 'Custom prompts', { sub: 'app-wide system prompts' }),
-        rowLi('settings/access', 'Access & passkeys', { sub: 'password, WebAuthn, disable QR' }),
+        rowLi('settings/access', 'Access & passkeys', { sub: 'password, WebAuthn & sign out' }),
         rowLi('settings/notifications', 'Notifications', { sub: 'questions, approvals & completion' }),
         rowLi('settings/mcp', 'MCP servers', { sub: 'servers; permissions live in project Tools' }),
         rowLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })

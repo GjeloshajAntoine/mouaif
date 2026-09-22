@@ -6,7 +6,6 @@ Use these guides to install mouaif, connect accounts, secure access, and learn w
 - [npm package](features/npm-package.md) — the published package name, install and release flow, tarball contents, and the pre-publish name guard.
 - [CLI modal](features/cli-modal.md) — the in-chat command prompt runs on a pseudo-terminal allocated by util-linux `script(1)`, so a program that asks a question (`npm publish` under 2FA, `git`, `sudo`) can read the answer you type, with no native dependency.
 - [Authentication](features/authentication.md) — connect AI providers and protect app access, with CLI examples.
-- [Disable access with a QR code](features/disable-access-qr.md) — turn the login wall off (and back on) from Settings with a single-use QR code and code.
 - [App abilities](features/app-abilities.md) — projects, chats, coding tools, agents, MCP, and Inspector.
 - [Chat backward pagination](features/chat-backward-pagination.md) — long chats load the newest page immediately, then eagerly load all older history in the background.
 - [Chat transcript rendering](features/chat-transcript-rendering.md) — unchanged transcript rows and header cards are reused instead of rebuilt, so the conversation area no longer flashes.

@@ -74,15 +74,10 @@ settingsTags: [SettingsTagsView, ({ projectId, projectDir }) => ({ projectId, pr
 settingsPricing: [SettingsPricingView],
 settingsProjects: [SettingsProjectsView],
 settingsAccess: [AccessSettingsView],
-// The access screens are rendered inside AccessGate, before a session
-// exists, so this entry only keeps the App shell on the default chat list
-// for that hash.
-disableAccess: [AccessSettingsView],
-setup: [ProjectsView],
 settingsAbout: [SettingsAboutView]
 };
 const FULL_PAGE_ROUTES = new Set([
-'chat', 'picker', 'disableAccess', 'setup', ...Object.keys(ROUTES).filter((name) => name.startsWith('settings') && name !== 'settings')
+'chat', 'picker', ...Object.keys(ROUTES).filter((name) => name.startsWith('settings') && name !== 'settings')
 ]);
 // Set of route names whose view component is a Preact lazy() component.
 // Only these need a <Suspense> boundary; the eager views resolve

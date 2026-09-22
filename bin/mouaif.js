@@ -157,11 +157,7 @@ function runWorker(options) {
       console.log(`   REST:   POST /data    — update data`);
       console.log(`   SSE:    GET  /events  — subscribe to events`);
       console.log(`   CDP:    /api/inspector/  + WS /api/inspector/proxy`);
-      if (authEnabled && accessAuth.disabled()) {
-      console.log('');
-      console.log('🔓 App access is disabled from the app (Settings → Access & passkeys).');
-      console.log('   Re-enable it in Settings, or restart with --auth-setup to re-assert protection.');
-      } else if (authEnabled && (options.authSetup || !accessAuth.configured())) {
+      if (authEnabled && (options.authSetup || !accessAuth.configured())) {
         const setup = accessAuth.createSetupCode();
         const setupUrl = servedOrigin + '/#/setup?code=' + encodeURIComponent(setup.code);
         console.log('');

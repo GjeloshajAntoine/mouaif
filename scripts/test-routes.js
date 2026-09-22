@@ -224,16 +224,16 @@ function check(name, fn) {
 
   check('the route table has one entry per route group', () => {
     const names = new Set();
-    for (const h of ['#/settings', '#/settings/access', '#/disable-access', '#/setup', '#/login', '#/inspector', '#/settings/providers', '#/settings/providers/new',
-    '#/settings/providers/p', '#/settings/project', '#/settings/project/technical', '#/settings/project/output',
-    '#/settings/project/preview', '#/settings/project/hide', '#/settings/agents', '#/settings/agents/a',
-    '#/settings/actions', '#/settings/actions/a', '#/settings/projects', '#/settings/defaults',
-    '#/settings/notifications', '#/settings/pricing', '#/settings/prompts', '#/settings/prompts/p',
-    '#/settings/mcp', '#/settings/mcp/registry', '#/settings/mcp/new', '#/settings/mcp/s', '#/settings/tags',
-    '#/settings/about', '#/settings/dictation', '#/dictation', '#/chat/c', '#/projects/new']) {
-    names.add(parseHash(h).name);
+    for (const h of ['#/settings', '#/settings/access', '#/inspector', '#/settings/providers', '#/settings/providers/new',
+      '#/settings/providers/p', '#/settings/project', '#/settings/project/technical', '#/settings/project/output',
+      '#/settings/project/preview', '#/settings/project/hide', '#/settings/agents', '#/settings/agents/a',
+      '#/settings/actions', '#/settings/actions/a', '#/settings/projects', '#/settings/defaults',
+      '#/settings/notifications', '#/settings/pricing', '#/settings/prompts', '#/settings/prompts/p',
+      '#/settings/mcp', '#/settings/mcp/registry', '#/settings/mcp/new', '#/settings/mcp/s', '#/settings/tags',
+      '#/settings/about', '#/settings/dictation', '#/dictation', '#/chat/c', '#/projects/new']) {
+      names.add(parseHash(h).name);
     }
-    assert.equal(names.size, 31, Array.from(names).sort().join(','));
+    assert.equal(names.size, 28, Array.from(names).sort().join(','));
     assert.ok(mod.ROUTE_PATHS >= names.size, 'the table is not smaller than its distinct routes');
   });
 

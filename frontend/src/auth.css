@@ -51,27 +51,6 @@ Imported by style.css. */
 .access-auth__key { display: flex; align-items: center; gap: 0.75rem; min-height: var(--tap); padding: 0.5rem 0.65rem; border-radius: var(--r-md); background: var(--surface); }
 .access-auth__key > div { min-width: 0; flex: 1; display: grid; }
 .access-auth__key small { color: var(--muted); }
-.access-auth__qr {
-  display: block;
-  width: min(100%, 16rem);
-  height: auto;
-  margin: 0.5rem auto 0.25rem;
-  padding: 0.5rem;
-  border-radius: var(--r-md);
-  background: #fff;
-}
-.access-auth__quota { display: grid; gap: 0.35rem; }
-.access-state__badge {
-  display: inline-block;
-  margin: 0 0 0.5rem;
-  padding: 0.25rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-.access-state__badge[data-state='on'] { border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); }
-.access-state__badge[data-state='off'] { border-color: color-mix(in srgb, #e08585 45%, transparent); color: #e08585; }
 
 /* ---- SSO / reserved-provider UI --------------------------------- */
 

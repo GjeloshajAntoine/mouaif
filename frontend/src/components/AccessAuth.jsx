@@ -1,6 +1,6 @@
 import { h } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { fetchJson, loadApp, saveApp, route } from '../api.js';
+import { fetchJson } from '../api.js';
 
 function decode(value) {
   const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
@@ -198,80 +198,22 @@ function SetupView({ initialCode = '', status, onAuthenticated, onCancel }) {
 
 export function AccessGate({ children }) {
   const [status, setStatus] = useState(null);
-  // The router is the single source of truth for which hash is showing, so
-  // the gate subscribes to it rather than reading window.location: opening
-  // #/setup, #/disable-access, or a link back to a normal page then re-renders
-  // this component instead of leaving a stale screen.
-  const view = route.value;
-  const setup = view.name === 'setup';
-  // /#/disable-access?code=… is the confirmation page a disable QR code
-  // opens. It must work on a device with no session, so it bypasses the
-  // sign-in wall and posts the one-time code it carries.
-  const armAccess = view.name === 'disableAccess';
-  const initialCode = view.code || '';
+  const [setup, setSetup] = useState(window.location.hash.startsWith('#/setup'));
+  const params = new URLSearchParams((window.location.hash.split('?')[1] || ''));
+  const initialCode = params.get('code') || '';
 
   async function load() {
     const result = await fetchJson('/api/access/status');
     if (result.status === 200) setStatus(result.body);
   }
   useEffect(() => { load(); }, []);
-  if (armAccess) return h(ArmAccessView, { initialCode });
   // Keep the page visually empty while the server verifies the session.
   // Protected UI is mounted only after access status has been confirmed.
   if (!status) return null;
   if (!status.enabled) return children;
-  if (setup || !status.configured) return h(SetupView, { initialCode, status, onAuthenticated: () => { window.location.hash = '#/projects'; load(); }, onCancel: () => { window.location.hash = '#/login'; } });
-  if (!status.authenticated) return h(LoginView, { status, onAuthenticated: load, onSetup: () => { window.location.hash = '#/setup'; } });
+  if (setup || !status.configured) return h(SetupView, { initialCode, status, onAuthenticated: () => { window.location.hash = '#/projects'; load(); }, onCancel: () => setSetup(false) });
+  if (!status.authenticated) return h(LoginView, { status, onAuthenticated: load, onSetup: () => setSetup(true) });
   return children;
-}
-
-// ArmAccessView — the "turn access off?" page. Reached by scanning the QR
-// code shown in Settings → Access & passkeys, or by opening the link. It is
-// deliberately reachable without a session: the one-time code is the proof,
-// and the whole point is to disarm a server whose password was forgotten.
-export function ArmAccessView({ initialCode = '' }) {
-  const [code, setCode] = useState(String(initialCode || '').toUpperCase());
-  const [message, setMessage] = useState('');
-  const [tone, setTone] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  async function confirm(event) {
-    event.preventDefault();
-    setBusy(true); setMessage(''); setTone('');
-    const result = await fetchJson('/api/access/disable', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code })
-    });
-    setBusy(false);
-    if (result.status === 200) {
-      setTone('success');
-      setMessage('Access protection is off. Anyone who can reach this server can open it.');
-    } else {
-      setTone('error');
-      setMessage(result.body.error || 'Could not turn access off');
-    }
-  }
-
-  const done = tone === 'success';
-  return h(AuthFrame, {
-    title: done ? 'Access is off' : 'Turn off access?',
-    sub: done
-      ? 'You can turn protection back on from Settings → Access & passkeys.'
-      : 'This removes the password and passkey wall for this server. It can be turned back on later.'
-  },
-    !done && h('form', { onSubmit: confirm, class: 'access-auth__form' },
-      h('label', { class: 'label', htmlFor: 'disable-code' }, 'Confirmation code'),
-      h('input', {
-        id: 'disable-code', class: 'input access-auth__code', value: code, maxLength: 9,
-        inputMode: 'text', autocomplete: 'one-time-code', placeholder: 'ABCD-2345',
-        onInput: (e) => setCode(e.currentTarget.value.toUpperCase())
-      }),
-      h('button', { class: 'btn btn--danger', type: 'submit', disabled: busy || !code }, busy ? 'Turning off…' : 'Disable access')
-    ),
-    message && h('p', { class: 'status', 'data-state': tone || undefined, role: 'status' }, message),
-    done
-      ? h('button', { class: 'btn btn--primary', type: 'button', onClick: () => { window.location.hash = '#/projects'; } }, 'Open mouaif')
-      : h('button', { class: 'access-auth__link', type: 'button', onClick: () => { window.location.hash = '#/settings/access'; } }, 'Set this up on the signed-in device instead')
-  );
 }
 
 export function AccessSettingsView() {
@@ -283,49 +225,12 @@ export function AccessSettingsView() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
-  // Disable flow. The code and its QR are minted on demand and exist only
-  // for their 15-minute window; nothing is shown until the user asks for it.
-  const [disableCode, setDisableCode] = useState('');
-  const [disableQr, setDisableQr] = useState('');
-  const [disableUntil, setDisableUntil] = useState(0);
-  const [disableMessage, setDisableMessage] = useState('');
-  // Sign-in / access-change alerts. Same app-level `notifications.login`
-  // switch the Notifications screen owns; surfaced here because this is the
-  // screen that creates the disable QR the alert covers.
-  const [alertsOn, setAlertsOn] = useState(true);
-  // The other notification channels. `saveApp` merges at the top level, so a
-  // patch that carried only `{ login }` would replace the whole notifications
-  // object and silently switch off the status and authorization channels.
-  const [otherPrefs, setOtherPrefs] = useState({ status: true, authorization: true, quickActions: true });
 
   async function load() {
-    const [state, keys, app] = await Promise.all([
-      fetchJson('/api/access/status'),
-      fetchJson('/api/access/passkeys'),
-      loadApp({ force: true })
-    ]);
+    const [state, keys] = await Promise.all([fetchJson('/api/access/status'), fetchJson('/api/access/passkeys')]);
     setStatus(state.body); setPasskeys(keys.body.passkeys || []);
-    const saved = (app && app.app && app.app.notifications) || {};
-    setAlertsOn(saved.login === undefined ? true : saved.login === true);
-    setOtherPrefs({
-      status: saved.status === undefined ? true : saved.status === true,
-      authorization: saved.authorization === undefined ? true : saved.authorization === true,
-      quickActions: saved.quickActions !== false
-    });
   }
   useEffect(() => { load(); }, []);
-
-  async function saveLoginAlerts(checked) {
-    setAlertsOn(checked);
-    setDisableMessage('');
-    try {
-      await saveApp({ notifications: { ...otherPrefs, login: checked } });
-      setDisableMessage(checked ? 'Access alerts are on.' : 'Access alerts are off.');
-    } catch (error) {
-      setAlertsOn(!checked);
-      setDisableMessage('Could not save alerts: ' + error.message);
-    }
-  }
 
   async function changePassword(event) {
     event.preventDefault();
@@ -358,71 +263,11 @@ export function AccessSettingsView() {
     await fetchJson('/api/access/logout', { method: 'POST' }); window.location.hash = '#/login'; window.location.reload();
   }
 
-  async function startDisable() {
-    setBusy(true); setDisableMessage('');
-    const result = await fetchJson('/api/access/disable/code', { method: 'POST' });
-    setBusy(false);
-    if (result.status !== 200) { setDisableMessage(result.body.error || 'Could not create a disable code'); return; }
-    setDisableCode(result.body.code);
-    setDisableUntil(result.body.expiresAt || 0);
-    setDisableQr('/api/access/disable/qr?code=' + encodeURIComponent(result.body.code));
-  }
-
-  function cancelDisable() {
-    setDisableCode(''); setDisableQr(''); setDisableUntil(0); setDisableMessage('');
-  }
-
-  async function enableAccess() {
-    setBusy(true); setDisableMessage('');
-    const result = await fetchJson('/api/access/enable', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
-    });
-    setBusy(false);
-    if (result.status === 200) { setDisableMessage('Access protection is on again.'); load(); }
-    else setDisableMessage(result.body.error || 'Could not turn access back on');
-  }
-
-  const enabled = !!(status && status.enabled);
-  const armed = !!(status && status.armed);
-
   return h('section', { class: 'view settings-page' },
     h('header', { class: 'view-head' }, h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back' }, '‹'), h('h2', { class: 'view-title' }, 'Access & passkeys')),
     h('div', { class: 'settings-section' },
-      h('p', { class: 'access-state__badge', 'data-state': status ? (enabled ? 'on' : 'off') : 'busy' },
-        status ? (enabled ? 'Protection on' : 'Protection off') : 'Checking…'),
-      h('p', { class: 'hint' }, !status
-        ? 'Loading…'
-        : enabled
-          ? 'Signed in as ' + status.user + '. Changing the password signs out other devices and removes passkeys.'
-          : (armed
-              ? 'No sign-in is required on this server right now.'
-              : 'This server was started without an access flag, so no sign-in is required.')),
-
-      // ---- Turn protection back on (only meaningful once it was on) ----
-      armed && !enabled && h('div', { class: 'access-auth__actions' },
-        h('button', { class: 'btn btn--primary', type: 'button', disabled: busy, onClick: enableAccess }, busy ? 'Working…' : 'Turn access back on'),
-        h('p', { class: 'hint hint--compact' }, 'Password and passkey sign-in return. This device stays signed in.')
-      ),
-
-      // ---- Turn protection off (needs the one-time code + QR) ----------
-      enabled && !disableCode && h('div', { class: 'access-auth__actions' },
-        h('button', { class: 'btn btn--danger', type: 'button', disabled: busy, onClick: startDisable }, busy ? 'Preparing…' : 'Create disable QR & code'),
-        h('p', { class: 'hint hint--compact' }, 'Creates a one-time code and QR code. Open the QR on any device, or enter the code on the confirmation page, to remove the sign-in wall.')
-      ),
-      enabled && disableCode && h('div', { class: 'access-auth__quota' },
-        h('p', { class: 'hint hint--compact' }, 'Scan with another device, or open the confirmation page here.'),
-        disableQr && h('img', { class: 'access-auth__qr', src: disableQr, width: 240, height: 240, alt: 'Disable access QR code' }),
-        h('p', { class: 'access-auth__code' }, disableCode),
-        h('p', { class: 'hint hint--compact' },
-          'Single use' + (disableUntil ? ' · expires ' + new Date(disableUntil).toLocaleTimeString() : '')),
-        h('div', { class: 'row row--actions' },
-          h('a', { class: 'btn btn--primary', href: '#/disable-access?code=' + encodeURIComponent(disableCode) }, 'Open confirmation page'),
-          h('button', { class: 'btn', type: 'button', disabled: busy, onClick: cancelDisable }, 'Cancel')
-        )
-      ),
-
-      // ---- Password change --------------------------------------------
-      enabled && h('form', { class: 'settings-section__form', onSubmit: changePassword },
+      h('p', { class: 'hint' }, status ? 'Signed in as ' + status.user + '. Changing the password signs out other devices and removes passkeys.' : 'Loading…'),
+      h('form', { class: 'settings-section__form', onSubmit: changePassword },
         h('label', { class: 'label', htmlFor: 'current-password' }, 'Current password'),
         h('input', { id: 'current-password', class: 'input', type: 'password', autocomplete: 'current-password', value: currentPassword, onInput: (e) => setCurrentPassword(e.currentTarget.value), required: true }),
         h('label', { class: 'label', htmlFor: 'new-password' }, 'New password'),
@@ -432,34 +277,16 @@ export function AccessSettingsView() {
         h('button', { class: 'btn btn--primary', type: 'submit', disabled: busy }, busy ? 'Saving…' : 'Change password')
       ),
       passwordMessage && h('p', { class: 'status', 'data-state': passwordMessage.includes('do not match') || passwordMessage.includes('incorrect') ? 'error' : 'success', role: 'status' }, passwordMessage),
-
-      enabled && h('div', { class: 'row row--actions' },
+      h('div', { class: 'row row--actions' },
         h('button', { class: 'btn btn--primary', disabled: busy, onClick: add }, 'Add passkey'),
         h('button', { class: 'btn', disabled: busy, onClick: logout }, 'Sign out')
       ),
-      enabled && h('div', { class: 'access-auth__keys' },
+      h('div', { class: 'access-auth__keys' },
         passkeys.length ? passkeys.map((key) => h('div', { class: 'access-auth__key', key: key.id },
           h('div', null, h('strong', null, key.name), h('small', null, 'Added ' + new Date(key.createdAt).toLocaleDateString())),
           h('button', { class: 'btn btn--danger', disabled: busy, onClick: () => remove(key.id) }, 'Remove')
         )) : h('p', { class: 'hint' }, 'No passkeys yet. Password sign-in remains available.')
       ),
-
-      // ---- Sign-in alerts ---------------------------------------------
-      // The disable QR is only useful if the person holding the phone sees
-      // it, so the state-changing events (sign-in, access on/off) are
-      // surfaced here with a one-tap way to mute them.
-      h('label', { class: 'group__row settings-notifications__event' },
-        h('span', { class: 'group__row-body' },
-          h('span', { class: 'group__row-label' }, 'Access alerts'),
-          h('span', { class: 'group__row-detail' }, 'Sign-in and access on/off notifications to your other devices.')
-        ),
-        h('input', {
-        type: 'checkbox', class: 'checkbox', checked: alertsOn, disabled: busy || !status,
-        onChange: (e) => saveLoginAlerts(e.currentTarget.checked)
-        })
-      ),
-
-      disableMessage && h('p', { class: 'status', 'data-state': disableMessage.includes('again') ? 'success' : 'error', role: 'status' }, disableMessage),
       message && h('p', { class: 'status', role: 'status' }, message)
     )
   );
