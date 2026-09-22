@@ -124,6 +124,12 @@ function baseTest() {
   t('run_end notifies subscribers', collectFrames(sub).some((f) => f.name === 'run_end'));
 }
 
+function clientHandlerTest() {
+  console.log('live.js handleLiveRunEnd kicks poll immediately');
+  const liveSrc = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/live.js'), 'utf8');
+  t('handleLiveRunEnd invokes state._kickPoll', liveSrc.includes("if (typeof state._kickPoll === 'function') state._kickPoll();"));
+}
+
 // ---- HTTP: GET /api/chats/:id/live -------------------------------------
 
 function request(method, p, body) {
@@ -207,6 +213,7 @@ let port = 0;
 
 async function run() {
   baseTest();
+  clientHandlerTest();
   await httpTest();
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

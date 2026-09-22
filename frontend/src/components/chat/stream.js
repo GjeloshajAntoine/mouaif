@@ -802,11 +802,11 @@ if (!text && !atts.length) {
 if (refs.status.current) refs.status.current.textContent = 'type something or add an image';
 return;
 }
-  // A turn is already streaming from THIS client. Bail out before the
-  // composer is cleared so the typed text is never lost. (The server
-  // would 409 anyway; this also covers the Enter-key path, which
-  // bypasses the disabled send button.)
-  if (state.streaming) {
+  // A turn is already streaming from THIS client or being followed
+  // from another tab/device. Bail out before the composer is cleared so
+  // the typed text is never lost. (The server would 409 anyway; this also
+  // covers the Enter-key path, which bypasses the disabled send button.)
+  if (state.streaming || state.watchingRun) {
     setChatStatus(refs, 'wait for the current response to finish', 'busy');
     return;
   }

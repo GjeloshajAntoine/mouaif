@@ -197,6 +197,9 @@ function handleLiveRunEnd(ev, refs, state, key) {
   state.runSettled = true;
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
   setChatStatus(refs, 'done', 'success');
+  // Immediately sync the final persisted message so the transcript
+  // paints the completed turn without waiting for the next idle poll.
+  if (typeof state._kickPoll === 'function') state._kickPoll();
 }
 
 // setLiveStatus(refs, data)

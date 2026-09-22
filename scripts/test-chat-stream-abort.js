@@ -241,6 +241,22 @@ function makeRefs() {
       context.effects.errorCards.length === 0, JSON.stringify(context.effects.errorCards));
   }
 
+  // ---- send() is guarded while following another run (watchingRun) -
+  {
+    let fetchCalled = false;
+    const context = makeContext({
+      fetch: async () => {
+        fetchCalled = true;
+        return { ok: true, body: { getReader: () => makeReader(new AbortController().signal) } };
+      }
+    });
+    const state = makeState({ watchingRun: true, streaming: false });
+    const refs = makeRefs();
+    await context.send(state, refs, { clearComposerDraft: async () => true, setImageAttachments: () => {} });
+    check('send() does not fetch when watchingRun is true', !fetchCalled);
+    check('send() warns to wait when watchingRun is true', refs.status.current.textContent === 'wait for the current response to finish');
+  }
+
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   if (failed) process.exitCode = 1;
 })().catch((e) => {
