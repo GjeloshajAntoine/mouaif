@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Draft Craft — mouaif docs</title>
-  <meta name="description" content="Draft Craft adds material to a chat draft without sending it: an annotated image, code selected in the file editor, or an Inspector log / network entry. The…" />
+  <meta name="description" content="Draft Craft adds material to a chat draft without sending it: an annotated image, code selected in the file editor, or an Inspector log / network entry. You…" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
@@ -34,27 +34,46 @@
     <main class="main">
       <h1 id="draft-craft">Draft Craft</h1>
 <h2 id="overview">Overview</h2>
-<p>Draft Craft adds material to a chat draft without sending it: an annotated image, code selected in the file editor, or an Inspector log / network entry. The draft stays yours to review before you send.</p>
+<p>Draft Craft adds material to a chat draft without sending it: an annotated image, code selected in the file editor, or an Inspector log / network entry. You always review the draft and press send yourself.</p>
 <p><img src="images/draft-craft/annotator-canvas-360.png" alt="The Draft Craft annotator over an attached image" loading="lazy" /></p>
-<h2 id="annotate-an-image">Annotate an image</h2>
-<h3 id="from-a-chat-attachment">From a chat attachment</h3>
+<h2 id="pick-your-starting-point">Pick your starting point</h2>
+<p>Every path ends the same way: the material lands in a chat draft, and nothing is sent until you send it.</p>
+<ul><li><p><strong>An image already in the composer, marked up</strong> — start from the image chip. Go to <a href="#path-a-mark-up-an-attached-image">Path A</a>.</p></li><li><p><strong>A marked-up screenshot of a web page</strong> — start from <strong>Inspector</strong> → <strong>Preview</strong>. Go to <a href="#path-b-mark-up-an-inspector-page">Path B</a>.</p></li><li><p><strong>Lines of code from a project file</strong> — start from the chat file toolbar → <strong>Files</strong>. Go to <a href="#path-c-add-selected-file-code">Path C</a>.</p></li><li><p><strong>A console log, exception, or network request</strong> — start from the <strong>Inspector</strong> detail sheet. Go to <a href="#path-d-add-an-inspector-entry">Path D</a>.</p></li></ul>
+<h2 id="path-a-mark-up-an-attached-image">Path A: mark up an attached image</h2>
+<p>Use this when the image is already in the chat you want to send it from.</p>
 <p><img src="images/draft-craft/composer-image-chip-360.png" alt="An attached image waiting in the composer" loading="lazy" /></p>
-<ol><li><p>Attach an image to the composer — the <strong>add image</strong> button, paste, or drag — and tap its chip.</p></li><li><p>Mark it up. The controls are described under <strong>In the annotator</strong> below.</p></li><li><p>Tap <strong>Use annotated image</strong>: the annotated version replaces that attachment and its note is appended to the draft.</p></li></ol>
-<h3 id="from-the-inspector">From the Inspector</h3>
+<ol><li><p><strong>Attach the image.</strong> In the composer, tap the <strong>add image</strong> button, paste an image, or drag one in. It shows as a chip above the text field.</p></li><li><p><strong>Open the annotator.</strong> Tap the image chip. The annotator opens with the title <em>Draw on the attached image</em>.</p></li><li><p><strong>Mark up the image.</strong> Follow <a href="#mark-up-the-image-step-by-step">Mark up the image, step by step</a>.</p></li><li><p><strong>Finish.</strong> Tap <strong>Use annotated image</strong>. The marked-up version replaces the attachment, and the annotation text is added to the draft.</p></li><li><p><strong>Review and send.</strong> Edit the draft text if you like, then send as usual.</p>
+<p>To undo, tap the chip again and tap <strong>Reset</strong>: the original image comes back and its annotation text is removed from the draft. Annotating the same image again replaces its previous annotation text instead of adding a second copy.</p></li></ol>
+<h2 id="path-b-mark-up-an-inspector-page">Path B: mark up an Inspector page</h2>
+<p>Use this to send a screenshot of the page you are debugging to any chat.</p>
 <p><img src="images/draft-craft/inspector-preview-360.png" alt="The blue Draft Craft icon in the Preview toolbar, left of the reload button" loading="lazy" /></p>
-<ol><li><p>Open <strong>Inspector</strong> and connect to a browser tab.</p></li><li><p>In the <strong>Preview</strong> toolbar, tap the blue <strong>Draft Craft</strong> icon — the only blue button in the row, left of the reload button.</p></li><li><p>Mark up the page, then tap <strong>Add to chat draft</strong> and choose a project and chat.</p>
-<p><img src="images/draft-craft/add-to-draft-360.png" alt="Choosing the project and chat for an annotated image" loading="lazy" /></p></li></ol>
-<h3 id="in-the-annotator">In the annotator</h3>
+<ol><li><p><strong>Connect.</strong> Open the <strong>Inspector</strong> tab and connect to a browser tab.</p></li><li><p><strong>Open the annotator.</strong> In the <strong>Preview</strong> toolbar, tap the blue <strong>Draft Craft</strong> icon — the only blue button in the row, left of the reload button. The current page screenshot opens in the annotator.</p></li><li><p><strong>Mark up the image.</strong> Follow <a href="#mark-up-the-image-step-by-step">Mark up the image, step by step</a>.</p></li><li><p><strong>Finish.</strong> Tap <strong>Add to chat draft</strong>.</p></li><li><p><strong>Choose where it goes.</strong> Pick a <strong>Project</strong>, then a chat, and tap <strong>Add to draft</strong>. The sheet confirms with <em>Added with Draft Craft.</em></p></li><li><p><strong>Review and send.</strong> Open that chat: the image is attached and the text is in the draft, ready to send.</p>
+<p><img src="images/draft-craft/add-to-draft-360.png" alt="Choosing the project and chat for an annotated image" loading="lazy" /></p>
+<p>The text added with an Inspector image starts with the page title and URL, so the model knows which page it shows.</p></li></ol>
+<h2 id="mark-up-the-image-step-by-step">Mark up the image, step by step</h2>
+<p>Paths A and B share the same annotator. Do the steps you need, in this order; every step is optional.</p>
 <p><img src="images/draft-craft/annotator-marker-edit-360.png" alt="Numbered dots and the scrollable list of dot texts" loading="lazy" /></p>
-<ul><li><p><strong>Tools</strong> collapses the zoom, color and marker controls so the image gets the full canvas.</p></li><li><p><strong>Fit</strong> shows the whole picture; <strong>−</strong> / <strong>+</strong> change zoom and the pinch midpoint stays under your fingers; <strong>Pan</strong> moves a zoomed image.</p></li><li><p><strong>Marker dots</strong> lists one row per dot, scrolled inside the panel, so the tools panel keeps its height no matter how many dots you place. Each row holds the dot&#39;s label, a text field for that dot, and a delete button; tap a row&#39;s dot to select it, and a newly dragged dot scrolls its own row into view.</p></li><li><p><strong>Reset</strong> appears once the image has an annotation and restores the untouched original.</p></li><li><p>An exported image that is too large is downscaled. An image that cannot be exported leaves the annotator open with an error instead of sending the message without it.</p></li></ul>
-<h2 id="add-an-inspector-entry">Add an Inspector entry</h2>
-<p>The Inspector detail sheet&#39;s <strong>Add to chat</strong> button sends a tapped console log, exception, or network request to a draft. See <a href="inspector-add-to-chat.html">Add Inspector entries to a chat</a> for the exact text it appends.</p>
-<h2 id="add-selected-file-code">Add selected file code</h2>
-<p>Draft Craft adds only the path with its line range and the selected code — no prose, no code fence.</p>
+<ol><li><p><strong>Open the tools.</strong> Tap <strong>Tools</strong> (<em>Annotate &amp; zoom</em>) under the image to show the controls. Tap it again later to hide them and give the image the full screen.</p></li><li><p><strong>Frame the area.</strong> Tap <strong>+</strong> to zoom in, <strong>−</strong> to zoom out, or pinch with two fingers — the point between your fingers stays in place. Tap <strong>Pan</strong> and drag to move around a zoomed image, then tap <strong>Draw</strong> to go back to drawing. <strong>Fit</strong> shows the whole image again.</p></li><li><p><strong>Pick a color.</strong> Tap one of the four color swatches. Both pen strokes and new dots use it.</p></li><li><p><strong>Draw.</strong> Drag a finger on the image to circle or underline what matters.</p></li><li><p><strong>Place marker dots.</strong> Under <strong>Marker dots</strong>, drag the colored dot button onto the image. Each dot gets the next label; choose <strong>1, 2, 3</strong> or <strong>A, B, C</strong> in the menu beside it. Drag a placed dot to move it. Up to 26 dots per image.</p></li><li><p><strong>Describe each dot.</strong> Every dot has a row in the list below: type what that dot points at in its <strong>Text for …</strong> field. Tap a row&#39;s label to select that dot, or <strong>×</strong> to delete it.</p></li><li><p><strong>Add a note (optional).</strong> Type a general comment in <strong>Optional note about this image</strong>.</p></li><li><p><strong>Finish.</strong> Tap <strong>Use annotated image</strong> (Path A) or <strong>Add to chat draft</strong> (Path B).</p>
+<p>Made a mess? <strong>Clear</strong> removes all strokes and dots and starts again from the clean image.</p></li></ol>
+<h3 id="what-ends-up-in-the-draft">What ends up in the draft</h3>
+<ul><li><p>The image, with your strokes and labeled dots drawn in.</p></li><li><p>A short text block: the source (<em>Attached image</em> or <em>Inspector image</em>), the page title and URL for Inspector images, your note, then an <strong>Annotations:</strong> list with one line per dot.</p></li></ul>
+<pre><code class="language-text">Inspector image
+Checkout – Shop
+https://example.com/checkout
+The pay button is hidden on small phones
+Annotations:
+1. Button is cut off here
+2. This banner overlaps it</code></pre>
+<h2 id="path-c-add-selected-file-code">Path C: add selected file code</h2>
+<p>Use this to point the model at exact lines of a file.</p>
 <p><img src="images/draft-craft/file-editor-360.png" alt="Draft Craft in the open file display bar" loading="lazy" /></p>
-<ol><li><p>Open a chat&#39;s file toolbar and choose <strong>Files</strong>.</p></li><li><p>Open a text file and select code in the editor.</p></li><li><p>Tap <strong>Draft Craft</strong> in the open file&#39;s display bar, beside the file actions.</p></li><li><p>Choose a project and chat, then tap <strong>Add to draft</strong>.</p></li></ol>
+<ol><li><p><strong>Open the file.</strong> In a chat, open the file toolbar, choose <strong>Files</strong>, and open a text file.</p></li><li><p><strong>Select the code.</strong> Select the lines you want in the editor.</p></li><li><p><strong>Tap Draft Craft.</strong> It sits in the open file&#39;s display bar, beside the file actions.</p></li><li><p><strong>Choose where it goes.</strong> Pick a project and a chat, then tap <strong>Add to draft</strong>.</p></li><li><p><strong>Review and send.</strong> Open the chat and add your question around the code.</p>
+<p>Only the file path with its line range and the selected code are added — no extra prose and no code fence.</p></li></ol>
+<h2 id="path-d-add-an-inspector-entry">Path D: add an Inspector entry</h2>
+<ol><li><p><strong>Open the entry.</strong> In the <strong>Inspector</strong>, tap a row in the <strong>Console</strong> or <strong>Network</strong> panel — a log, an exception, or a request. Its detail sheet opens.</p></li><li><p><strong>Tap Add to chat</strong> in the sheet&#39;s header, next to <strong>Close</strong>.</p></li><li><p><strong>Choose where it goes.</strong> Pick a project and a chat, then tap <strong>Add to draft</strong>.</p></li><li><p><strong>Review and send.</strong> Open the chat and send when ready.</p>
+<p>See <a href="inspector-add-to-chat.html">Add Inspector entries to a chat</a> for the exact text it adds.</p></li></ol>
 <h2 id="good-to-know">Good to know</h2>
-<ul><li><p>Nothing is sent automatically: Draft Craft never starts a model run.</p></li><li><p>Draft text and attachments you already have are preserved; Draft Craft only appends.</p></li><li><p>A draft holds up to eight images in total, counted with the images you attached yourself.</p></li></ul>
+<ul><li><p><strong>Nothing is sent automatically.</strong> Draft Craft never starts a model run.</p></li><li><p><strong>Your draft is kept.</strong> Existing text and attachments stay; Draft Craft only adds.</p></li><li><p><strong>Eight images per draft.</strong> The limit counts Draft Craft images and the ones you attached yourself.</p></li><li><p><strong>Large images are shrunk.</strong> An exported image that is too large is downscaled. If an image cannot be exported at all, the annotator stays open with an error, so nothing is added without it.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>
