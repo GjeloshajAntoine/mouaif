@@ -1305,7 +1305,7 @@ class: 'view-back',
     h('section', { class: 'settings-project' },
       h('div', { class: 'settings-project__intro' },
         h('div', { class: 'settings-project__intro-top' },
-          h('p', { class: 'settings-project__path' }, h('code', null, projectPath)),
+          h('p', { class: 'settings-project__path' }, h('code', { title: projectPath }, h('bdi', { dir: 'ltr' }, projectPath))),
           h('span', { class: 'status', 'aria-live': 'polite', 'data-state': globalStatus.state || undefined }, globalStatus.text)
         ),
         h('p', { class: 'settings-project__lede' }, 'Only for this project — everything saves automatically.')

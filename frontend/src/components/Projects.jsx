@@ -246,7 +246,7 @@ export function ProjectsView() {
       }
       const list = r.body.projects || [];
       setProjects(list);
-      setStatusText(list.length + ' projects');
+      setStatusText(list.length + (list.length === 1 ? ' project' : ' projects'));
       setStatusState(list.length ? 'success' : null);
     } catch (err) {
       setStatusText('network error');

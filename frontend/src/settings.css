@@ -329,6 +329,10 @@ font-size: 0.78rem;
   direction: rtl;      /* keep the meaningful tail (project name) visible */
   text-align: left;
 }
+/* The path itself is left-to-right text: isolating it keeps the leading "/"
+   in front instead of letting the RTL box move it to the end, while the box
+   still clips (and puts the ellipsis on) the left side. */
+.settings-project__path bdi { unicode-bidi: isolate; direction: ltr; }
 .settings-project__intro .status { flex-shrink: 0; font-size: 0.72rem; }
 .settings-project__lede {
   color: var(--muted);
