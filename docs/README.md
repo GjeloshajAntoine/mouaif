@@ -154,6 +154,7 @@ npm run docs:build            # public site -> docs-dist/
 npm run docs:build:internal   # + maintainer pages (decisions, agent notes)
 npm run docs:publish          # sync the public site into docs/ for GitHub Pages
 npm run docs:shots            # re-capture the landing page screenshots
+npm run docs:shots:draft-craft # re-capture the Draft Craft guide screenshots
 ```
 
 See [Documentation site](features/docs-site.md) for what is published and how GitHub Pages deploys it.

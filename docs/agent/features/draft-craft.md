@@ -39,3 +39,12 @@ Project and chat loading are tracked independently, so an overlapping response c
 
 - [`docs/features/draft-craft.md`](../../features/draft-craft.md) — the published guide.
 - [`docs/features/inspector.md`](../../features/inspector.md) — the Inspector surface that hosts the image annotator.
+
+## Screenshots
+
+The six PNGs on the guide are produced by `npm run docs:shots:draft-craft` ([scripts/capture-draft-craft-shots.js](../../../scripts/capture-draft-craft-shots.js)), not by hand. The script reuses the landing-page harness's plumbing ([scripts/lib/capture-fixture.js](../../../scripts/lib/capture-fixture.js)) and the landing fixture's providers, models and seeded run, then shoots at 360 × 780 CSS px. Each frame is driven by a `recipe`: tapping `.chat-view__image-chipimg`, dragging `.draft-craft__marker-source` onto `.draft-craft__canvas-stage` and typing into `.draft-craft__marker-input`, tapping `.inspector__panel-draft-craft`, and — for the file-editor frame — opening `.file-toolbar__trigger` → **Files**, opening `src/store.js`, and selecting lines 7–9 in the CodeMirror `.cm-content`.
+
+The marker text has to be set on a later tick than the dot's drop: the row is rendered only after Preact commits the new `markers` entry, so a same-tick write lands on a field that does not exist yet. `placeMarker()` therefore waits 250 ms and writes through the native `HTMLInputElement` value setter before dispatching `input`.
+
+The attached image in the composer paths is a real capture of the Chats tab, taken first through the same CDP session and seeded into the empty chat's `draftAttachments`, so the annotation sits over the running app instead of a mock.
+

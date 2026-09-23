@@ -78,6 +78,21 @@ Because the fixture home is throwaway, the capture never reads or writes the dev
 - The fixture content — the demo project, the transcript, the providers, the models and the Inspector's target page — lives in [scripts/lib/landing-fixture.js](../../scripts/lib/landing-fixture.js), so the captures and the page copy are the only two places that describe what the app looks like.
 - Nothing in the build needs updating when an image is replaced: the paths are hard-coded in `buildLandingPage()` in [scripts/build-docs.js](../../scripts/build-docs.js).
 
+### Draft Craft captures
+
+The six screenshots on the [Draft Craft](draft-craft.md) guide are generated the same way:
+
+```bash
+npm run docs:shots:draft-craft
+```
+
+[scripts/capture-draft-craft-shots.js](../../scripts/capture-draft-craft-shots.js) shares the Chrome finder, CDP client and fixture project with the landing-page script through [scripts/lib/capture-fixture.js](../../scripts/lib/capture-fixture.js), and reuses the landing fixture's providers, models and seeded run. It shoots at 360 × 780 CSS px — the phone width the guide documents — and drives the real UI for every frame: tapping the image chip, dragging a marker dot onto the canvas, tapping the Preview toolbar's Draft Craft button, and selecting code in the file editor.
+
+- The image the chat attaches in the composer paths is itself a capture of the app's Chats tab, taken first through the same CDP session, so the annotation sits over real app pixels.
+- `waitFor` is checked after each recipe, so a frame is never photographed before the sheet, marker row or editor has rendered.
+- `--keep` leaves the fixture in the temp dir for inspection, exactly like the landing script.
+
+
 ## Usage
 
 Build the public site into `docs-dist/`:

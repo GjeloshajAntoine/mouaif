@@ -33,10 +33,10 @@ To undo, tap the chip again and tap **Reset**: the original image comes back and
 
 Use this to send a screenshot of the page you are debugging to any chat.
 
-![The blue Draft Craft icon in the Preview toolbar, left of the reload button](./images/draft-craft/inspector-preview-360.png)
+![The blue Draft Craft icon in the Preview panel's toolbar, between the size picker and Refresh](./images/draft-craft/inspector-preview-360.png)
 
 1. **Connect.** Open the **Inspector** tab and connect to a browser tab.
-2. **Open the annotator.** In the **Preview** toolbar, tap the blue **Draft Craft** icon — the only blue button in the row, left of the reload button. The current page screenshot opens in the annotator.
+2. **Open the annotator.** In the **Preview** panel's toolbar, tap the blue **Draft Craft** icon — the only blue button in the row, between the size picker and **Refresh preview**. The current page screenshot opens in the annotator.
 3. **Mark up the image.** Follow [Mark up the image, step by step](#mark-up-the-image-step-by-step).
 4. **Finish.** Tap **Add to chat draft**.
 5. **Choose where it goes.** Pick a **Project**, then a chat, and tap **Add to draft**. The sheet confirms with *Added with Draft Craft.*
