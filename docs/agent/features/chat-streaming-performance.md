@@ -19,3 +19,20 @@ The hot path lives in [frontend/src/components/chat/transcript.js](../../../fron
 Token appends, transcript mutations, and resize notifications share one per-transcript animation-frame scheduler. A burst of deltas performs no synchronous scroll-height reads; each scheduled frame reads geometry once before writing the bottom position. Follow-up frames stop after the layout settles, while late image/tool growth can schedule another pass.
 
 The scroll listener remains the source of truth for whether the reader is pinned. Scrolling up cancels following, Jump to latest re-enables it, and pagination/render suspension takes precedence. Pending frames are cancelled on cleanup. Resize observers track only direct message rows; nested text mutations no longer scan every row to rebuild that set.
+
+## Live previews (shell output, subagent reply)
+
+The two previews that stream *beside* the reply used the same O(n²) shape the assistant bubble had before the incremental fix. Both now append text nodes.
+
+- `appendShellLiveChunk(pre, data)` — the shell card's live preview. Previously `pre.textContent += delta`, which re-encoded the whole accumulated string per chunk, plus an `includes('\n── stderr ──\n')` scan of the full text per stderr chunk. The marker is now tracked per element (`_stderrMarked`) and the length in `_liveChars`, so neither is recovered by scanning.
+- `SHELL_LIVE_PREVIEW_MAX_CHARS` (120 KiB) bounds the preview. Past the cap the tail is replaced by `SHELL_LIVE_TRUNCATION_NOTICE`, once; the `tool_result` that replaces the preview carries the complete output, so nothing is lost. An unbounded live preview was the other half of the stall on returning to a running chat, where the whole buffered output replays in one burst.
+- `handleSubagentStreamEvent` — the `message` branch built the nested bubble with `renderAssistantBody(rowBody, live._text, '', false)` on **every** delta, i.e. `innerHTML = ''` plus a full re-set of the accumulated reply, tearing the bubble down and recreating it per token. It now creates the row and its answer element once and calls `appendTextToAnswer` per delta, the same shape `appendDeltaToLive` uses. `scripts/test-subagent-transcript-parity.js` asserts the answer element is *reused* across deltas, which is what distinguishes the two implementations.
+- Nested shell previews inside a subagent card go through the same `appendShellLiveChunk`.
+
+### Scroll coalescing
+
+`scrollToolBodyToBottomSoon` (frontend/src/components/chat/scroll.js) replaces `scrollToolBodyToBottom` on every live-preview path. The old helper read `scrollHeight` and wrote `scrollTop` — a forced layout — and then scheduled a second, identical pair on the next frame: two synchronous layouts per chunk.
+
+The new one does the work inside a single `requestAnimationFrame` per body. A chunk that finds a frame already queued returns immediately, so a burst of N chunks schedules one frame and reads layout once. The follow-up re-pin is bounded by `MAX_BODY_SCROLL_FRAMES` (4), `body.isConnected === false` stops the loop for a body that left the document, and `cancelToolBodyScroll` (called from `appendToolResultCard`'s `lazyBody`, which replaces the preview) neutralises a queued frame. A browser `requestAnimationFrame` cannot be un-queued, so cancellation flags the frame rather than dropping it, and a later schedule starts from a fresh entry.
+
+`scripts/test-live-scroll-coalescing.js` counts frames and layout reads against a stub body, so restoring the per-chunk version fails it.

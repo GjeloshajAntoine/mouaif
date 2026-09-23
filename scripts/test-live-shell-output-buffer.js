@@ -371,6 +371,26 @@ function main() {
     check('no hold was created for it', mod.takePendingShellOutput(refs, '').length === 0);
   }
 
+  // ---- 6. The live preview is capped, not unbounded -----------------
+  {
+    const el = makeNode('div');
+    const refs = makeRefs(el);
+    mod.appendToolCallCard({ id: 'call_6', name: 'shell', args: {} }, refs);
+    const pre = shellCardPre(el, 'call_6');
+    const chunk = 'y'.repeat(32 * 1024);
+    for (let i = 0; i < 8; i++) {
+      mod.handleShellOutputEvent({ id: 'call_6', stream: 'stdout', delta: chunk }, refs);
+    }
+    check('the live preview stops growing at its cap',
+      pre && pre.textContent.length < 8 * chunk.length,
+      'len=' + (pre && pre.textContent.length));
+    check('the truncation is announced once',
+      pre && (pre.textContent.match(/live preview truncated/g) || []).length === 1);
+    const afterNotice = pre.textContent.length;
+    mod.handleShellOutputEvent({ id: 'call_6', stream: 'stdout', delta: 'more' }, refs);
+    check('no further output is appended past the cap', pre.textContent.length === afterNotice);
+  }
+
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   if (failed) process.exitCode = 1;
 }

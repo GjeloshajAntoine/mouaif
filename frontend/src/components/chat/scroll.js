@@ -98,16 +98,74 @@ export function pinTranscriptAfterSettle(refs) {
   pending.frame = requestAnimationFrame(step);
 }
 
-// scrollToolBodyToBottom(descendant)
+// scrollToolBodyToBottomSoon(descendant)
 //
-// Find the nearest .tool-card__body in the ancestor chain and pin
-// it to the bottom. Used by the subagent card so nested activity
-// stays visible while streaming.
-export function scrollToolBodyToBottom(descendant) {
+// Pin the nearest .tool-card__body to the bottom, for the live preview hot
+// paths (a subagent's nested activity and a shell command's output both stream
+// into one).
+//
+// A naive pin reads `scrollHeight` and writes `scrollTop` — a forced layout —
+// and schedules a second, identical pair on the next frame, which on a
+// token-rate stream is two synchronous layouts per chunk: exactly what made a
+// long build log stall the page. This version performs the scroll at most once
+// per animation frame per body, so the caller's chunk handling stays free of
+// layout reads, and bounds the re-pin run (240 frames) so a body that keeps
+// growing cannot hold the frame loop open indefinitely.
+const pendingBodyScrolls = new WeakMap();
+
+// Bounded re-pin budget for one coalesced scroll. Generous enough to cover a
+// frame or two of post-append reflow, small enough that a body growing every
+// frame stops quickly once the stream goes quiet.
+const MAX_BODY_SCROLL_FRAMES = 4;
+
+export function scrollToolBodyToBottomSoon(descendant) {
+  if (typeof requestAnimationFrame !== 'function') return;
   const body = descendant && descendant.closest && descendant.closest('.tool-card__body');
   if (!body) return;
-  body.scrollTop = body.scrollHeight;
-  requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+  // Already scheduled for the upcoming frame: the pin is a single
+  // `scrollTop = scrollHeight` and it will observe every node appended before
+  // it runs, so a second chunk in the same frame needs no second schedule.
+  if (pendingBodyScrolls.has(body)) return;
+  const pending = { frames: 0, cancelled: false };
+  pendingBodyScrolls.set(body, pending);
+  function step() {
+    // Cancelled while the frame was queued (the card was replaced by its
+    // result, the transcript was rebuilt) — a browser rAF cannot be un-queued,
+    // so the frame is neutralised here instead.
+    if (pending.cancelled) return;
+    // Forget a body that left the document rather than scrolling it.
+    if (body.isConnected === false) {
+      pendingBodyScrolls.delete(body);
+      return;
+    }
+    body.scrollTop = body.scrollHeight;
+    // Usually settled: the write above landed after the appends. If the body
+    // is still short of the bottom, something reflowed later in this frame
+    // (wrapped text, a decoded image), so follow up — bounded, so a body that
+    // grows every frame cannot hold the loop open once the stream goes quiet.
+    const settled = body.scrollHeight - body.scrollTop - body.clientHeight < 1;
+    if (settled || ++pending.frames >= MAX_BODY_SCROLL_FRAMES) {
+      pendingBodyScrolls.delete(body);
+      return;
+    }
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// cancelToolBodyScroll(descendant)
+//
+// Neutralise a scheduled coalesced scroll. Called when a live preview is torn
+// down (its card is replaced by the result body) so the queued frame cannot
+// scroll nodes that are about to be removed. The frame itself still runs — a
+// browser rAF cannot be un-queued — so it is flagged instead, and a later
+// schedule for the same body starts from a fresh, unflagged entry.
+export function cancelToolBodyScroll(descendant) {
+  const body = descendant && descendant.closest && descendant.closest('.tool-card__body');
+  if (!body) return;
+  const pending = pendingBodyScrolls.get(body);
+  if (pending) pending.cancelled = true;
+  pendingBodyScrolls.delete(body);
 }
 
 // updateJumpButton(refs)

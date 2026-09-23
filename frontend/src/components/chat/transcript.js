@@ -8,7 +8,7 @@
 // matches the rest of the transcript which is also imperative.
 
 import { renderMarkdown } from '../../markdown.js';
-import { afterTranscriptAppend, scrollToolBodyToBottom, pinTranscriptAfterSettle } from './scroll.js';
+import { afterTranscriptAppend, scrollToolBodyToBottomSoon, cancelToolBodyScroll, pinTranscriptAfterSettle } from './scroll.js';
 import {
   isSubagentTool,
   normalizeToolName,
@@ -958,18 +958,56 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
 // enough that an orphaned buffer cannot grow without limit.
 const PENDING_SHELL_OUTPUT_MAX_CHARS = 64 * 1024;
 
+// SHELL_LIVE_PREVIEW_MAX_CHARS
+//
+// Cap on the live shell preview. `textContent += delta` rebuilt the whole
+// accumulated string on every chunk — O(n²) over a command's output, plus an
+// `includes(marker)` scan of the full text — and on returning to a running
+// chat the entire buffered output is replayed in one burst, so a long build
+// log could lock the page for a moment. Appending a text node touches only the
+// new bytes, and the cap bounds what a single card can hold: past it the tail
+// is replaced by a one-time truncation notice, and the final `tool_result`
+// (which replaces this preview entirely) carries the complete output anyway.
+const SHELL_LIVE_PREVIEW_MAX_CHARS = 120 * 1024;
+
+const SHELL_LIVE_TRUNCATION_NOTICE = '\n… live preview truncated — the full output is in the result below\n';
+
 // appendShellLiveChunk(pre, data)
 //
 // Append one `shell_output` chunk to a shell card's live preview, inserting
 // the stderr separator the first time a stderr chunk arrives (so a command
 // that writes to both streams reads in order).
+//
+// Appends a single text node per chunk rather than re-assigning `textContent`,
+// which re-encoded the whole accumulated string on every chunk (O(n²) over the
+// command's output). The stderr marker is tracked per element (`_stderrMarked`)
+// instead of being searched for in the full text on every stderr chunk — that
+// scan was O(n) per chunk for a marker that can only ever appear once.
 function appendShellLiveChunk(pre, data) {
   if (!pre) return;
+  if (pre._liveTruncated) return;
   if (data.stream === 'stderr') {
     pre.dataset.hasStderr = '1';
-    if (!pre.textContent.includes('\n── stderr ──\n')) pre.textContent += '\n── stderr ──\n';
+    if (!pre._stderrMarked) {
+      pre._stderrMarked = true;
+      pre.appendChild(document.createTextNode('\n── stderr ──\n'));
+    }
   }
-  pre.textContent += String(data.delta || '');
+  const delta = String(data.delta || '');
+  if (!delta) return;
+  const used = pre._liveChars || 0;
+  if (used + delta.length > SHELL_LIVE_PREVIEW_MAX_CHARS) {
+    const room = Math.max(0, SHELL_LIVE_PREVIEW_MAX_CHARS - used);
+    if (room) {
+      pre.appendChild(document.createTextNode(delta.slice(0, room)));
+      pre._liveChars = used + room;
+    }
+    pre._liveTruncated = true;
+    pre.appendChild(document.createTextNode(SHELL_LIVE_TRUNCATION_NOTICE));
+    return;
+  }
+  pre.appendChild(document.createTextNode(delta));
+  pre._liveChars = used + delta.length;
 }
 
 // bufferPendingShellOutput(refs, data) -> bool
@@ -1047,7 +1085,7 @@ export function handleShellOutputEvent(data, refs) {
   const hint = card.querySelector('.tool-card__shell-live-hint');
   if (hint && hint.textContent !== 'Running…') hint.textContent = 'Running…';
   appendShellLiveChunk(pre, data);
-  scrollToolBodyToBottom(pre);
+  scrollToolBodyToBottomSoon(pre);
   afterTranscriptAppend(refs, false);
   return true;
 }
@@ -1110,9 +1148,22 @@ export function handleSubagentStreamEvent(ev, data, refs) {
       rowBody.className = 'chat-msg__body';
       row.appendChild(rowBody);
       live.appendChild(row);
+      // First delta of this nested segment: give the body its answer element
+      // once (renderAssistantBody), then append to it. Without this the row
+      // held a raw empty body and every delta below had nowhere to append.
+      renderAssistantBody(row.querySelector('.chat-msg__body'), '', '', false);
+      // The hint ("Subagent is working…") belongs to the card's wait state,
+      // not to a segment that is now producing text.
+      const hint = live.querySelector('.tool-card__subagent-live-hint');
+      if (hint) hint.remove();
     }
-    renderAssistantBody(row.querySelector('.chat-msg__body'), live._text, '', false);
-    scrollToolBodyToBottom(live);
+    // Append the delta as a text node. The previous code re-ran
+    // renderAssistantBody with the ENTIRE accumulated reply on every chunk —
+    // `innerHTML = ''` plus a full re-set — which is O(n²) over a long nested
+    // answer and tore down/recreated the bubble on every token. This is the
+    // same incremental shape appendDeltaToLive uses for the top-level reply.
+    appendTextToAnswer(row.querySelector('.chat-msg__body'), data.delta);
+    scrollToolBodyToBottomSoon(live);
     afterTranscriptAppend(refs, false);
     return true;
   }
@@ -1127,14 +1178,8 @@ export function handleSubagentStreamEvent(ev, data, refs) {
         pre.className = 'tool-card__shell-live-pre';
         row.appendChild(pre);
       }
-      if (data.stream === 'stderr') {
-        const marker = '\n── stderr ──\n';
-        if (!pre.textContent.includes(marker)) pre.textContent += marker;
-        pre.textContent += String(data.delta || '');
-      } else {
-        pre.textContent += String(data.delta || '');
-      }
-      scrollToolBodyToBottom(pre);
+      appendShellLiveChunk(pre, data);
+      scrollToolBodyToBottomSoon(pre);
       afterTranscriptAppend(refs, false);
     }
     return true;
@@ -1146,7 +1191,7 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     // final view of one call cannot differ in label, args or status dot.
     const row = buildSubagentToolRow(data.name, data.id, formatToolArgs(data.args, data.name), data.args);
     live.appendChild(row);
-    scrollToolBodyToBottom(live);
+    scrollToolBodyToBottomSoon(live);
     afterTranscriptAppend(refs, false);
     return true;
   }
@@ -1156,7 +1201,7 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     // The live result frame carries the authoritative ok flag; the settled
     // transcript only has the result body, so the flag is a hint here.
     fillSubagentToolRow(row, data.name, data.result, row && row._toolArgs, data.ok);
-    scrollToolBodyToBottom(live);
+    scrollToolBodyToBottomSoon(live);
     afterTranscriptAppend(refs, false);
     return true;
   }
@@ -1253,11 +1298,15 @@ if (!card) {
     // result payload is stashed on the card and rendered once, on the
     // first expand, then the listener is removed.
     const lazyBody = () => {
-      if (card._resultBodyBuilt) return;
-      card._resultBodyBuilt = true;
-      renderToolResultBody(body, callArgs ? Object.assign({}, toolResult, { args: callArgs }) : toolResult, isSubagentTool);
-      if (isSubagent) renderSubagentChat(card, toolResult);
-      afterTranscriptAppend(refs, false);
+    if (card._resultBodyBuilt) return;
+    card._resultBodyBuilt = true;
+    // The live preview this card was streaming into is about to be replaced
+    // by the result body. Drop any coalesced scroll still queued against it
+    // so the frame cannot run against the removed nodes.
+    cancelToolBodyScroll(card);
+    renderToolResultBody(body, callArgs ? Object.assign({}, toolResult, { args: callArgs }) : toolResult, isSubagentTool);
+    if (isSubagent) renderSubagentChat(card, toolResult);
+    afterTranscriptAppend(refs, false);
     };
     card._lazyBody = lazyBody;
     // A subagent card's whole point is the delegated conversation it holds.

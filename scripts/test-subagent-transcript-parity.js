@@ -70,7 +70,6 @@ function createElement(tag) {
     children: [],
     parentNode: null,
     className: '',
-    textContent: '',
     hidden: false,
     title: '',
     dataset: {},
@@ -79,6 +78,25 @@ function createElement(tag) {
     scrollHeight: 0,
     scrollTop: 0,
     clientHeight: 400,
+    // `textContent` has to read back what was appended, because the streaming
+    // paths build their text from child text nodes rather than assigning one
+    // string. An own `_text` holds the directly-assigned value; child text
+    // nodes contribute theirs, which is what a real element does.
+    get textContent() {
+      if (node._text) return node._text;
+      let out = '';
+      for (const child of node.children) {
+        if (child.nodeType === 3) out += child._text || '';
+        else if (child._text) out += child._text;
+      }
+      return out || '';
+    },
+    set textContent(value) {
+      node._text = String(value == null ? '' : value);
+      for (const child of node.children) child.parentNode = null;
+      node.children = [];
+      node.childElementCount = 0;
+    },
     get classList() {
       const list = classListOf(node);
       return {
@@ -89,10 +107,14 @@ function createElement(tag) {
       };
     },
     appendChild(child) {
-      child.parentNode = node;
-      node.children.push(child);
-      node.childElementCount = node.children.length;
-      return child;
+    child.parentNode = node;
+    node.children.push(child);
+    node.childElementCount = node.children.length;
+    // Appending to an element that carried a directly-assigned string
+    // replaces that string's content, matching the real DOM (where the
+    // assignment is just text nodes).
+    if (node._text) node._text = '';
+    return child;
     },
     insertBefore(child, ref) {
       child.parentNode = node;
@@ -137,6 +159,16 @@ function installDom() {
   return {
     document: {
       createElement,
+      // The streaming paths append deltas as text nodes (appendTextToAnswer),
+      // so the stub has to provide them and fold their text into the host's
+      // textContent the way the real element does.
+      createTextNode: (text) => {
+        const n = createElement('#text');
+        n.nodeType = 3;
+        n._text = String(text == null ? '' : text);
+        n.textContent = n._text;
+        return n;
+      },
       querySelector: () => null,
       querySelectorAll: () => [],
       addEventListener() {},
@@ -344,6 +376,39 @@ function main() {
     check('the bubble accumulates the deltas',
       rows.length === 1 && rows[0].querySelector('.chat-msg__answer').textContent === 'Working…',
       rows.length === 1 && rows[0].querySelector('.chat-msg__answer').textContent);
+  }
+
+  // ---- 7b. The live bubble appends rather than re-renders ------------
+  //
+  // The nested delta path used to re-run renderAssistantBody with the WHOLE
+  // accumulated reply on every chunk — `innerHTML = ''` plus a full re-set —
+  // which is O(n^2) over a long nested answer and tore the bubble down and
+  // rebuilt it on every token. It now appends a text node per delta, the same
+  // shape the top-level reply uses. Counting rebuilds is what distinguishes
+  // the two: a rebuild replaces the answer element, so a renderer that still
+  // re-rendered would have rebuilt it once per delta.
+  {
+    const card = makeCard();
+    const transcript = createElement('div');
+    transcript.className = 'chat-view__transcript';
+    transcript.appendChild(card);
+    const refs = { transcript: { current: transcript } };
+
+    mod.handleSubagentStreamEvent({ eventName: 'message' }, { parentCallId: null, delta: 'a' }, refs);
+    const live = card.querySelector('.tool-card__subagent-live');
+    const liveRow = live && live.querySelector('.tool-card__subagent-live-msg');
+    const answer = liveRow && liveRow.querySelector('.chat-msg__answer');
+    check('the live bubble has a single answer element', !!answer);
+    const answerBefore = answer;
+
+    mod.handleSubagentStreamEvent({ eventName: 'message' }, { parentCallId: null, delta: 'b' }, refs);
+    mod.handleSubagentStreamEvent({ eventName: 'message' }, { parentCallId: null, delta: 'c' }, refs);
+    check('a later delta reuses the same answer element instead of rebuilding it',
+      liveRow.querySelector('.chat-msg__answer') === answerBefore,
+      'answer element was replaced');
+    check('the deltas accumulate in order',
+      liveRow.querySelector('.chat-msg__answer').textContent === 'abc',
+      liveRow.querySelector('.chat-msg__answer').textContent);
   }
 
   // ---- 8. A nested tool row is the main card's row, not a lookalike --
