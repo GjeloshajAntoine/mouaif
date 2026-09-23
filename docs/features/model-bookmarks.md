@@ -14,11 +14,6 @@ The model picker saves the user time by showing **pinned** and **recently used**
 6. The last 20 selections are tracked per project; older entries are dropped when the list overflows.
 7. Each time the chat model picker is requested, it refreshes the server-backed recent list before showing the sheet, so stale entries are never briefly displayed.
 
-## Implementation notes
-The chat picker keeps its sheet closed while `GET /api/settings/models/recent` is in flight. Once the request settles, the refreshed recent rows and open state are applied together. Closing or superseding an open request invalidates the pending result.
-
-The **dictation page** ([dictation.md](./dictation.md)) shows the same Pinned and Recent sections: it calls `loadPinned`, `loadRecent`, `loadRecentFromServer` and `togglePin` from `frontend/src/components/chat/modelPicker.js` with a state object holding just the two fields those helpers read (`props.projectDir` and `recentModels`). A pin is therefore per project in `localStorage` on both surfaces, and the recents are one server list per project. Rows that cannot transcribe are filtered out of the list the sections resolve against, so a chat model never shows up in the dictation picker. The chat head additionally records a pick with `touchRecent`; dictation does not, because a speech-only model should not fill the chat picker's recent list.
-
 ## Related
 
 - [docs/features/model-picker.md](./model-picker.md) — the model picker popover

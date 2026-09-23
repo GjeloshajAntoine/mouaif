@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Restart API — mouaif docs</title>
-  <meta name="description" content="Restart API" />
+  <meta name="description" content="mouaif runs as a small supervisor that keeps a worker process alive. Restarting replaces the worker, so server-side code and settings are reloaded, while the…" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
@@ -32,6 +32,14 @@
 </aside>
     <main class="main">
       <h1 id="restart-api">Restart API</h1>
+<h2 id="overview">Overview</h2>
+<p>mouaif runs as a small supervisor that keeps a worker process alive. Restarting replaces the worker, so server-side code and settings are reloaded, while the supervisor, and the terminal you started it from, keep running.</p>
+<h2 id="usage">Usage</h2>
+<ul><li><p>In a chat, ask the assistant to restart the app, or send <code>@restart_app</code>. See <a href="chat-app-restart.html">Restart from chat</a>.</p></li><li><p>From a script, send an authenticated <code>POST</code> to <code>/api/restart</code> on the running server:</p></li></ul>
+<pre><code class="language-bash">curl -X POST http://127.0.0.1:5732/api/restart</code></pre>
+<p>When access authentication is on, add <code>-u &lt;user&gt;:&lt;password&gt;</code>. The page reconnects on its own once the new worker is up.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="chat-app-restart.html">Restart from chat</a> — the <code>restart_app</code> tool and its approval modes.</p></li><li><p><a href="cli-commands.html">CLI commands</a> — <code>mouaif serve</code> and its <code>--watch</code> option.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

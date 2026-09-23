@@ -25,11 +25,12 @@ mouaif <command>
 - Bullet list of observable behavior.
 - Defaults, limits, side effects.
 
-## Implementation notes
-
-Optional. Internal details that future contributors need: files touched, data shape, performance considerations, mobile-first layout notes.
-
 ## Related
 
 - Links to other `docs/features/*.md` files this depends on or complements.
-- Links to source files in `src/` and `bin/`.
+
+<!--
+  Implementation notes (files touched, data shapes, REST / SSE surface, tests,
+  performance and layout details) go in docs/agent/features/<same-name>.md,
+  which is never published. Keep this page to what a user of the app sees.
+-->

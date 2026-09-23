@@ -75,18 +75,6 @@ An **unknown name returns a typed error** — no silent fallback to a generic su
 
 Nested agent runs are billed on the agent's pinned model (or the chat's model, when none is pinned) and added to the parent chat's running total. As each nested round finishes, the streaming layer emits a `usage_update` SSE event carrying that round's increment so the chat header's "Total" pill grows while the delegated run is still working; the parent's `done` event later folds the total into the final segment's remainder. Re-opening the chat shows the same total as a sum of the persisted assistant messages' `cost` fields. See [usage-metrics.md](./usage-metrics.md).
 
-## Implementation notes
-
-Agent routes carry `projectDir`, optional `chatId`, and `from=projects|settings/projects`. Editors opened directly from project settings also carry `returnTo=project`; other editors return to the dedicated agent list. `#/settings/agents/new` creates an agent, while `#/settings/agents/new?edit=1` edits an existing agent named `new`. Legacy `settings/project/agents/<name>` links keep their project-settings return target.
-
-The editor uses phone-sized touch targets for Back and tool selection. It loads agent data independently of model catalogs, so an unavailable provider does not block the form. The auto-save queue merges pending patches, serializes requests, and uses the latest persisted name after a rename. In-app unmounts flush pending edits without redirecting the newly opened page; failed saves require a retry. Closing the browser during an unfinished request cannot guarantee persistence—wait for **saved** or use **Back**.
-
-Run the focused regression suite with:
-
-```bash
-node scripts/test-agent-page-flow.mjs
-```
-
 ## Related
 
 - [Custom prompts](./custom-prompts.md) — the chat-level persona mechanism.

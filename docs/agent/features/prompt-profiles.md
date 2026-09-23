@@ -26,3 +26,9 @@ The chat's profile is set with the existing `PATCH /api/chats/:id { promptSize }
 - New HTTP route in [src/index.js](../../../src/index.js): `GET /api/chats/:id/tool-preview`. It reuses the same tool-collection logic as `ai.streamChat` (native `shell` gated by `tools.shell.enabled`, plus `mcp.listComposedToolSpecs`) and applies `promptProfiles.reduceToolSpecs` with the chat's resolved profile, so the preview is byte-for-byte what the model is sent. For `very-small`, the preview shows `discover_tool` plus the compact per-tool entries — the fixed list the stream sends on every request of the turn.
 - `package.json → scripts.prepublishOnly` now also runs `node -c src/promptProfiles.js` so a syntax error in the new module blocks the publish.
 - New smoke test: [scripts/test-prompt-profiles.js](../../../scripts/test-prompt-profiles.js). 50 assertions covering the module's public surface, the resolution order, and the `GET /api/prompt-profiles` endpoint. Run with `node scripts/test-prompt-profiles.js`.
+
+`src/promptProfiles.js` composes each profile from shared text: Very small is the compact core, Average appends workflow guidance, and Extensive appends planning and examples to Average. This keeps common instructions identical and prevents larger profiles from drifting into contradictory behavior.
+
+Profile IDs, the `average` default, settings resolution, and tool-schema reduction are unchanged. `GET /api/prompt-profiles` exposes the same metadata and composed `systemMessage` used by the chat pipeline and the custom-prompt editor's **Start from a default** / **Copy from default** actions. Saved custom prompts are independent copies and are not overwritten by built-in prompt updates.
+
+Regression coverage in `scripts/test-prompt-profiles.js` checks shared rules, additive composition, size ordering, settings fallback, tool schemas, and HTTP responses using an isolated server on an ephemeral loopback port.

@@ -62,3 +62,19 @@ curl -X DELETE 'http://localhost:5732/api/chats/<id>?projectDir=/path/to/project
 - Server wiring: [src/index.js](../../../src/index.js) → `handleChats()`. New routes mounted under `/api/chats` and `/api/chats/:id` (with `/touch` and `/:projectDir` variants). The project-card commit also adds `PATCH /api/projects/registered/:id` to support the rename option.
 - Project rename: [src/projects.js](../../../src/projects.js) → `renameProject(pid, newName)`. Trims and validates. Returns `null` on empty name or unknown id.
 - Settings: chat `id` is 8 hex; `lastOpenedAt` is ISO 8601; `promptSize` is one of `very-small | average | extensive`; `trace` is a boolean. All other fields in the chat object are silently dropped on read (defense against corrupted files).
+
+The chat list is a `<ul class="project-card__chats">` with a fixed CSS cap — no JS measurement is needed. The card itself is a flex column, so the `<ul>` sits at the bottom and scrolls inside its own box. `overscroll-behavior-y: contain` keeps an edge gesture in the list instead of chaining it to `.app__main`.
+
+Draft-only detection uses `messageCount === 0` (a bulk `GROUP BY` over `message_store` in `src/chatdb.js#projectMessageCounts`, attached per-page by `GET /api/chats` in `src/server-handlers-chats.js`) combined with a non-empty `draftSnippet` — or, for a draft that holds only a picture, `hasDraftImage`. A running chat is never treated as draft-only even if it has no stored message yet, because the blue running indicator takes precedence.
+
+List rows are summaries, not full chat records: `GET /api/chats` replaces the `draft` body with `draftSnippet` (its first 400 characters) and the `draftAttachments` array with the `hasDraftImage` flag, so a page never carries the base64 of a pending picture (see [Chat load performance](../../features/chat-load-performance.md)). Read the whole draft through `GET /api/chats/:id`.
+
+```css
+.project-card__chats {
+  max-height: 10.0625rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+```

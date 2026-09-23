@@ -39,14 +39,6 @@ Changing the profile adds detail, not a different set of permissions or safety r
 
 Average and Extensive also distinguish implementation requests from questions/reviews: apply authorized changes for implementation, but do not edit files merely to answer a question. Their progress guidance uses real milestones and falls back to brief text when the progress tool is unavailable.
 
-## Implementation notes
-
-`src/promptProfiles.js` composes each profile from shared text: Very small is the compact core, Average appends workflow guidance, and Extensive appends planning and examples to Average. This keeps common instructions identical and prevents larger profiles from drifting into contradictory behavior.
-
-Profile IDs, the `average` default, settings resolution, and tool-schema reduction are unchanged. `GET /api/prompt-profiles` exposes the same metadata and composed `systemMessage` used by the chat pipeline and the custom-prompt editor's **Start from a default** / **Copy from default** actions. Saved custom prompts are independent copies and are not overwritten by built-in prompt updates.
-
-Regression coverage in `scripts/test-prompt-profiles.js` checks shared rules, additive composition, size ordering, settings fallback, tool schemas, and HTTP responses using an isolated server on an ephemeral loopback port.
-
 ## Chat integration
 
 - **Layered instructions** — system prompt profile instructions are placed first, followed by project custom prompts, and then the conversation turns.

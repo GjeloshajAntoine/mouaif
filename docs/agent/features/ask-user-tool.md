@@ -49,6 +49,17 @@ const r = buildResult({
 - Mobile-first layout: every interactive control is at least 44 px tall, the option cards are full-width with the label and a wrapped description, the textarea is monospaced-friendly and clamps to 1000 chars, and the action buttons are sticky-friendly (no absolute positioning, no hover-only affordances).
 - New test: `scripts/test-ask-user.js` (40 assertions, covers the spec shape, validation rules, result-builder paths, the binary-mode gate, the `off` denial, the `ask` -> payload round trip via `recordDecision`, and the `getAuthorization` listing). No new runtime dependencies.
 
+The question payload is validated and clamped in [src/tools/ask.js](../../../src/tools/ask.js); the answer rides the existing authorization-decision channel (`payload: { choice, extra }`) and is folded into the `tool` message by the dispatcher in [src/ai-stream.js](../../../src/ai-stream.js). The card itself is built in `askUserCard()` ([frontend/src/components/chat/cards.js](../../../frontend/src/components/chat/cards.js)).
+
+Checks that cover this feature:
+
+```bash
+npm run test:ask-user      # payload shape, gate semantics, card de-dupe, head line
+npm run fixture:ask-ui     # writes the card fixture to /tmp/mouaif-ask-ui
+```
+
+`fixture:ask-ui` renders the real card against the real stylesheet with a stubbed transcript, and exposes `window.fixture` (`live()`, `wrap()`, `many()`, `pair()`, `resolve()`, `late()`, `fresh()`, `dismissed()`, `cancel()`, `measure()`). Serve the written directory with any static server and open it at 390 px: `measure()` returns each option row's height, whether it sits inside the scroll container, whether its description is clipped, and each card's head line + summary slot — the last two are how the dismissal reads at a glance. `late()` is the duplicate order the de-dupe guard has to catch — the call's own card is already up and a late pending/replay mount tries to add the question beside it — while `fresh()` is the ordinary first render, which must still mount.
+
 ## Decisions
 
 - [docs/decisions.md](../../decisions.md): §22 (ask the user tool), §17 (tool authorization).

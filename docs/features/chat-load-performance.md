@@ -34,10 +34,6 @@ A long transcript paints its newest rows first and backfills older history above
 
 Tail sync (`mergeServerRows` in [frontend/src/components/chat/msgMerge.js](../../frontend/src/components/chat/msgMerge.js)) keeps the array in **seq order**. A persisted row that has no seq-less optimistic twin to replace is inserted at its seq position rather than pushed onto the end: the known prefix stays first, any trailing seq-less optimistic rows sort last (the server has not persisted them yet), and the row lands between them. Pushing instead reorders the batch — on an early turn the tail fetch returns the whole transcript, and the tool call/result rows of that turn (which have no optimistic twin) would be appended **after** the assistant answer that followed them. Regression cases: `scripts/test-msg-merge.js` cases 8–10.
 
-## Implementation notes
-
-When a known cost is appended to an assistant message, the same write path increments `chat_store.total_cost` and the registered project's `totalCost`. Clearing, replacing, or deleting transcript data applies the inverse delta. `GET /api/chats` applies `offset` and `limit` in SQLite, uses a separate indexed count for `total`, and never aggregates `message_store`; a one-time migration backfills existing histories. The transcript cursor (`seq`) keeps the paginated view and the append-only tail sync in agreement.
-
 ## Related
 
 - [Chat storage](./chat-storage.md) — SQLite-backed messages.

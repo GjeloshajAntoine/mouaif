@@ -23,3 +23,13 @@ The mobile agent editor sheet reserves the top safe area at its fixed overlay so
 - The 64 KiB cap is applied on write; oversized content is truncated with a trailing `[... truncated ...]` note.
 - The feature summary reports `[agents] N available`; the `list_features` tool and `GET /api/features` report `agents: { discovered: [{ name }] }`.
 - Source: `src/agents.js`, `src/index.js` (`handleAgents`), `src/ai-stream.js` (subagent dispatch + spec builder), `src/tools/subagent.js`, `frontend/src/components/SettingsAgents.jsx` (list + edit views, routed at `#/settings/agents[/<name>]`), `frontend/src/components/SettingsProject.jsx` (agent list rows + inline create; rows link to the standalone editor). The agent model pin uses the shared `frontend/src/components/ModelPickerField.jsx`; the thinking override uses `frontend/src/components/ThinkingSelectField.jsx`.
+
+Agent routes carry `projectDir`, optional `chatId`, and `from=projects|settings/projects`. Editors opened directly from project settings also carry `returnTo=project`; other editors return to the dedicated agent list. `#/settings/agents/new` creates an agent, while `#/settings/agents/new?edit=1` edits an existing agent named `new`. Legacy `settings/project/agents/<name>` links keep their project-settings return target.
+
+The editor uses phone-sized touch targets for Back and tool selection. It loads agent data independently of model catalogs, so an unavailable provider does not block the form. The auto-save queue merges pending patches, serializes requests, and uses the latest persisted name after a rename. In-app unmounts flush pending edits without redirecting the newly opened page; failed saves require a retry. Closing the browser during an unfinished request cannot guarantee persistence—wait for **saved** or use **Back**.
+
+Run the focused regression suite with:
+
+```bash
+node scripts/test-agent-page-flow.mjs
+```

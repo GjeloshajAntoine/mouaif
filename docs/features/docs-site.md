@@ -129,14 +129,10 @@ Do not add `actions/configure-pages` or `actions/deploy-pages` for this setup. T
 
 1. Copy [docs/features/_template.md](./_template.md) to `docs/features/<kebab-case-name>.md`.
 2. Keep one H1, H2 sections, and language-tagged code fences — the page must stand alone as a static page with no template shortcodes.
-3. Add a one-line entry to [docs/README.md](../README.md).
+3. Add a one-line entry to [docs/README.md](../README.md), under the matching **Reference** or **How it works** group.
 4. Link it from a published guide if users should find it; otherwise it stays reachable by URL only.
-5. Implementation details the assistant needs go in `docs/agent/features/<same-name>.md`.
+5. Implementation details (source files, data shapes, endpoints, tests) go in `docs/agent/features/<same-name>.md`, never in a published page. A public page has no **Implementation notes** section; `npm test` fails if one appears.
 6. Run `npm run docs:publish` and commit the regenerated `docs/features/<slug>.html` together with the `.md`, so the published page and its source land in the same commit.
-
-## Implementation notes
-
-`scripts/build-docs.js` is a dependency-free Markdown-to-HTML converter plus a small page shell (sidebar, top navigation, `assets/site.css`). Maintainer pages are written only when `--with-internal` is passed; see [the agent note](../agent/features/docs-site.md) for the build internals. In a public build, links that point at a maintainer page render as plain text instead of a dead anchor, and links to repository files outside the site (`src/`, `scripts/`, `.github/`, …) point at the file on GitHub, so the published site has no links to pages that were never written. Public pages do not cite decision numbers; those live in the agent notes.
 
 ## Related
 

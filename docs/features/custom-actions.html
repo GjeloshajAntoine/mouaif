@@ -69,13 +69,6 @@
 <h3 id="run-an-action">Run an action</h3>
 <p>From a chat in that project:</p>
 <ul><li><p>Tap the <strong>file-toolbar</strong> button (the stacked arrow/folder icon) left of the textarea and pick the action by name. Compact action rows appear first and show only the action name, without an icon, section heading, or type metadata.</p></li><li><p>Type <code>@test</code> as the complete composer message. Pressing Enter runs the exact action even when a similarly named file is the first autocomplete result or the composer setting normally uses Enter for a newline; Shift+Enter still inserts a newline. The autocomplete refresh keeps this direct-dispatch list current, so newly created actions work without reopening the chat.<br>An action uses its saved command or arguments. Ad-hoc arguments after the <code>@action-id</code> are not accepted. MCP action failures surface the server&#39;s returned text in the composer status instead of a generic error.</p></li></ul>
-<h2 id="implementation-notes">Implementation notes</h2>
-<p>Definitions are available through these local REST endpoints:</p>
-<pre><code class="language-text">GET    /api/actions?projectDir=&lt;absolute-path&gt;
-POST   /api/actions
-DELETE /api/actions/:id?projectDir=&lt;absolute-path&gt;
-POST   /api/actions/:id/run</code></pre>
-<p>CLI execution delegates to the native Shell runner and its project authorization gate. MCP execution resolves the configured server and delegates to the selected MCP tool’s layered authorization gate. In <strong>Ask</strong> mode, the standard chat approval card appears before execution.</p>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

@@ -54,16 +54,3 @@ From a chat in that project:
 - Tap the **file-toolbar** button (the stacked arrow/folder icon) left of the textarea and pick the action by name. Compact action rows appear first and show only the action name, without an icon, section heading, or type metadata.
 - Type `@test` as the complete composer message. Pressing Enter runs the exact action even when a similarly named file is the first autocomplete result or the composer setting normally uses Enter for a newline; Shift+Enter still inserts a newline. The autocomplete refresh keeps this direct-dispatch list current, so newly created actions work without reopening the chat.
 An action uses its saved command or arguments. Ad-hoc arguments after the `@action-id` are not accepted. MCP action failures surface the server's returned text in the composer status instead of a generic error.
-
-## Implementation notes
-
-Definitions are available through these local REST endpoints:
-
-```text
-GET    /api/actions?projectDir=<absolute-path>
-POST   /api/actions
-DELETE /api/actions/:id?projectDir=<absolute-path>
-POST   /api/actions/:id/run
-```
-
-CLI execution delegates to the native Shell runner and its project authorization gate. MCP execution resolves the configured server and delegates to the selected MCP tool’s layered authorization gate. In **Ask** mode, the standard chat approval card appears before execution.

@@ -102,11 +102,6 @@ Close tab is destructive, so the Inspector prompts for confirmation before sendi
 
 The previous design used `window.confirm`, which some embedded web views auto-dismiss and return `false` without rendering a dialog; the close handler then early-returned and the user saw the button as inert (no status pill, no network call). The in-app sheet renders inline so it always renders, always accepts input, and obeys the mobile-first UI rules (≥ 44 × 44 px tap targets, safe-area padding).
 
-## Implementation notes
-
-- The Inspector's styles are the biggest CSS surface in the app, so they are split by panel: `frontend/src/inspector.css` is the entry point that `@import`s thirteen parts (`inspector-chrome.css`, `inspector-targets.css`, `inspector-pick-mode.css`, `inspector-panels.css`, `inspector-sheets.css`, `inspector-profiles.css`, `inspector-target-bar.css`, `inspector-value-suggestions.css`, `inspector-value-rail.css`, `inspector-value-kinds.css`, `inspector-intent.css`, `inspector-value-type.css`, `inspector-styles.css`). The order of those imports **is** the cascade — several sections override earlier ones — and Vite inlines them into the same bundle the single file produced.
-- **Chrome profiles** (hidden) — mouaif can list the Chrome user profiles on this machine and switch which one the Inspector attaches to. The setup screen's entry point for it is currently off (`PROFILES_ENTRY = false`); the module, routes and sheet are intact. See [Inspector Chrome profiles](./inspector-profiles.md).
-
 ## Related
 
 - [Inspector JavaScript console](./inspector-js-console.md) — the editable console under the log, with Run and indent buttons.

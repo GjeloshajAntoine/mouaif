@@ -92,3 +92,6 @@ Implementation detail worth remembering when editing the script:
 
 `docs-dist/` stays in `.gitignore`; the committed `docs/` output is the only published artifact.
 
+## Implementation notes
+
+`scripts/build-docs.js` is a dependency-free Markdown-to-HTML converter plus a small page shell (sidebar, top navigation, `assets/site.css`). Maintainer pages are written only when `--with-internal` is passed; see [the agent note](./docs-site.md) for the build internals. In a public build, links that point at a maintainer page render as plain text instead of a dead anchor, and links to repository files outside the site (`src/`, `scripts/`, `.github/`, …) point at the file on GitHub, so the published site has no links to pages that were never written. Public pages do not cite decision numbers; those live in the agent notes.

@@ -95,8 +95,8 @@ try {
   });
 
   check('public build: source-file links point at GitHub', () => {
-    const html = fs.readFileSync(path.join(pub.out, 'features', 'cli-modal.html'), 'utf8');
-    assert.match(html, /href="https:\/\/github\.com\/[^/"]+\/[^/"]+\/blob\/master\/src\/pty\.js"/);
+    const html = fs.readFileSync(path.join(pub.out, 'features', 'docs-site.html'), 'utf8');
+    assert.match(html, /href="https:\/\/github\.com\/[^/"]+\/[^/"]+\/blob\/master\/scripts\/build-docs\.js"/);
   });
 
   check('public feature pages cite no decision numbers', () => {
@@ -104,6 +104,16 @@ try {
     const offenders = fs.readdirSync(dir)
       .filter((f) => f.endsWith('.md') && !f.startsWith('_') && f !== 'docs-site.md')
       .filter((f) => /decisions\.md|decisions? §|§\d/i.test(fs.readFileSync(path.join(dir, f), 'utf8')));
+    assert.deepStrictEqual(offenders, []);
+  });
+
+  check('public feature pages have no Implementation notes section', () => {
+    // Implementation notes live in docs/agent/features/<slug>.md, which is
+    // never published; a public page carries the user-facing surface only.
+    const dir = path.join(ROOT, 'docs', 'features');
+    const offenders = fs.readdirSync(dir)
+      .filter((f) => f.endsWith('.md') && !f.startsWith('_'))
+      .filter((f) => /^## Implementation notes\s*$/m.test(fs.readFileSync(path.join(dir, f), 'utf8')));
     assert.deepStrictEqual(offenders, []);
   });
 

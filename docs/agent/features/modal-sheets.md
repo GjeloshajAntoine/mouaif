@@ -25,3 +25,17 @@ const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
 - Adopters (each attaches the returned ref to its sheet element): `frontend/src/components/chat/CliModal.jsx`, `frontend/src/components/chat/GitModal.jsx` (two hooks: the modal, then the confirm sheet — declaration order is what puts the confirm sheet on top), `frontend/src/components/chat/McpErrorModal.jsx`, `frontend/src/components/chat/WebpreviewModal.jsx`, `frontend/src/components/chat/PreviewUrlPrompt.jsx`, `frontend/src/components/AgentFilePicker.jsx`, `frontend/src/components/inspector/PreviewPanel.jsx` (the full-screen overlay, `active: fullscreen`).
 - File: `scripts/test-modal-hook.js` (30 assertions) — the stack's semantics, plus a source guard that each adopting component imports the hook, attaches the ref (directly or through the `sheetRef` prop the Git confirm sheet takes), and contains no `key === 'Escape'` or `addEventListener('keydown'` of its own. The DOM half (focus moves, computed styles) is exercised in Chrome rather than in Node; `scripts/test-inspector-preview-*.js` and `test-inspector-pick-mode.js` stub `useModal: () => ({ current: null })` in their mini hooks runtime.
 - Not migrated, on purpose: the `@`-mention popup (`chat/atMention.js`), the tool popup, the composer's Escape handling (`chat/useChatState.js`), the authorization card (`chat/cards.js`) and the prompts picker (`SettingsPrompts.jsx`). These are popovers or inline surfaces where a focus trap is wrong; the model picker (`ModelPickerField.jsx`) uses a native `<dialog>` and its own `closeAndRestoreFocus`.
+
+- `frontend/src/hooks/useModal.js` — the hook. `useModal({ onClose, active })` returns a ref to attach to the sheet element:
+
+  ```js
+  const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
+  return h('div', { class: 'gm__overlay', role: 'dialog', 'aria-modal': 'true' },
+    h('div', { class: 'gm__sheet', ref: sheetRef }, /* … */));
+  ```
+
+  It listens on `document` with capture, calls `stopPropagation()` on the Escape it consumes (so the key cannot also reach the composer or the transcript behind the sheet), and reads the latest `onClose` through a ref so a parent re-render cannot leave it holding a stale callback.
+- `frontend/src/hooks/modalStack.js` — the pure stack that decides which sheet owns the keyboard: `openModal`/`closeModal`/`isTopModal`. A sheet that is not on top ignores `Escape` and leaves `Tab` alone, which is what makes nested sheets behave. It is DOM-free so it can be unit-tested (`scripts/test-modal-hook.js`).
+- `scripts/test-modal-hook.js` — the stack's semantics (nested push/pop, closing a sheet that is not on top, re-opening a token, a three-sheet unwind) plus a source guard: every component that renders a sheet must import and use the hook, must attach the returned ref, and must not hand-roll a `keydown` listener for `Escape`. Adding a sheet means adding a row to that list.
+- Not part of this: the `@`-mention popup, the tool popup, the composer's own `Escape` handling and the model picker. Those are popovers or text surfaces, not modal sheets — a focus trap would be wrong for them. The model picker uses a native `<dialog>` and already restores focus itself (see [Model picker](../../features/model-picker.md)).
+- Verified at 360 px in Chrome against the built app: the CLI sheet, the Git sheet, the web-preview URL prompt and the agent file picker all open, take `Tab` inside, close on `Escape`, and leave the chat behind them intact; the prompt returns focus to the file-toolbar button that opened it.

@@ -81,6 +81,8 @@ Shell and subagent call cards auto-expand while running (live output/nested acti
 
 `regexMatch` started its timeout clock when the worker thread came online — but a freshly spawned worker can take tens of milliseconds to start on a loaded machine, so allowlist patterns lost the startup race and were rejected as timeouts (flaky `test-tool-authorization`, real allowlist auth failures). The clock now starts only once the worker is actually running the pattern (floored at 1 s); catastrophic-backtracking protection is unchanged.
 
+When a known cost is appended to an assistant message, the same write path increments `chat_store.total_cost` and the registered project's `totalCost`. Clearing, replacing, or deleting transcript data applies the inverse delta. `GET /api/chats` applies `offset` and `limit` in SQLite, uses a separate indexed count for `total`, and never aggregates `message_store`; a one-time migration backfills existing histories. The transcript cursor (`seq`) keeps the paginated view and the append-only tail sync in agreement.
+
 ## Rebuild safety (chunked transcript render)
 
 - Overlay cards (`ask_user` / authorization) are **not** detached during a

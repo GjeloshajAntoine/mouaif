@@ -44,10 +44,3 @@ An individual skill can also be switched off for the whole project from `.mouaif
   "disabledSkills": ["pdf-processing"]
 }
 ```
-
-## Implementation notes
-
-- Discovery and resolution live in `src/agentSkills.js`. `resolve({ chat, projectDir })` returns the family flag, the project-level lock, and two separate opt-out sets: `projectDisabled` (from `project.disabledSkills`) and `chatDisabled` (from `chat.disabledSkills`). `disabled` is their union and is what filters the catalog and the `activate_skill` tool.
-- The chat record carries `disabledSkills` (a string array of skill ids, stored as JSON in `chat_store.disabled_skills`, `NULL` when empty). `PATCH /api/chats/:id` accepts it; an empty array or `null` clears it.
-- `GET /api/chats/:id/system-prompt` reports each skill as `{ id, name, description, enabled, disabled, chatDisabled }` plus `skillsEnabled`, so the chat view can tell a project lock (row disabled, with a reason) from this chat's own opt-out (a plain checkbox), and can show what the stream will actually inject.
-- Enabling a single skill in a chat that had skills off writes both `skills: true` and the remaining skill ids into `disabledSkills`, and switching the last skill off writes `skills: false` together with every selectable id. A prompt preset may force the family flag back on for a turn, and the per-skill list is what keeps that from resurrecting a catalog the user switched off row by row.

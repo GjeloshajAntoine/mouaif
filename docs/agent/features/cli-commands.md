@@ -65,6 +65,18 @@ The "Install and run" block on the generated landing page lives inline in
 had to be edited in step with `docs/features/getting-started.md`. The test
 pins both.
 
+## Implementation notes
+
+- The command surface is defined with `commander` in `bin/mouaif.js`: `serve`, `info`, and `import-chats` (plus `--version` from the package metadata). The default port constant is shared with the server (`src/index.js`).
+- `mouaif serve` always runs as a supervisor process that spawns and respawns a worker. The supervisor keeps the process alive across restarts from `POST /api/restart` and across source changes with `--watch`, so a restart always loads the code currently on disk.
+- The built UI lives at `frontend/dist/` and is served by `src/server-web-static.js`. `npm run build:web` exists for frontend development; it is not a required installation step.
+- The package `files` list (`package.json`) ships `bin/`, `src/`, `frontend/dist/`, `scripts/patch-zimmerframe.js`, `README.md`, and `LICENSE`, so an installed package contains the whole server, the pre-built UI, and the license.
+- `bin/mouaif.js` carries a `#!/usr/bin/env node` shebang; npm links it into the global `bin` directory, which is what makes both `mouaif` and `npx mouaif` work.
+- `version` in `package.json` must be a full semantic version (`0.3.0`, not `0.3`). The npm registry rejects the bare two-part form with a `400`, so `npm publish` refuses to start until it is fixed. The root package version in `package-lock.json` stays aligned with it.
+- `publishConfig` explicitly selects the public npm registry and public package access. The repository, homepage, and issue tracker metadata connect the npm listing to this repository and let the package-name guard verify ownership.
+- `postinstall` runs `scripts/patch-zimmerframe.js`, which must therefore stay in the published tarball — a missing script file fails the install of an already-unpacked package. `scripts/prepare-web.js` only runs in a checkout and is intentionally not published.
+- `prepublishOnly` ends with `node scripts/check-npm-name.js`, which asks the registry whether the `mouaif` name is still free and aborts the publish if it now belongs to another repository. It warns and continues when the registry is unreachable, so an offline release is never blocked by a network hiccup.
+
 ## Related
 
 - [CLI commands](../../features/cli-commands.md) — the public page.

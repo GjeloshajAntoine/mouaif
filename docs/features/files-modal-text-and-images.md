@@ -40,23 +40,3 @@ The toggle icon always shows the **next** state, not the current one:
 - In full-editor mode: two equal vertical bars (the action is "restore the split view"). The icon gets the `is-active` accent so the current layout is obvious at a glance. The icon renders at 18px in this state so the two-bar shape stays legible at the 36px mobile touch target.
 
 Tapping the toggle switches layouts without reloading or closing the currently open file, so flipping it mid-edit preserves the buffer, dirty flag, and save state.
-## Implementation notes
-
-### Why the SVG preview is an image, not markup
-The preview used to render an SVG by base64-decoding the file and assigning the markup to a `<div>` with `dangerouslySetInnerHTML`. That put the file's markup inside the app's origin, with the access cookie and full `/api/*` reach — and a project folder is untrusted input the moment it contains a checked-out repository, a downloaded asset, or a file a model just wrote.
-
-The executing vector is the event-handler attribute, not the `<script>` element: a `<script>` element inserted through `innerHTML` does not run (that is the HTML/SVG insertion rule), but `on*` attributes on injected elements do. Verified in Chrome on a policy-free page — an injected `<svg>` with `<animate onbegin>` and `<foreignObject><img onerror>` ran both handlers in the page's origin. Under the app's Content-Security-Policy those handlers are blocked too, but the preview no longer injects anything at all.
-
-The preview is now a plain `<img src="data:image/svg+xml;base64,…">`. Browsers refuse to run scripts or event handlers in an SVG loaded as an image, so the file renders as a picture and nothing else; nested/external references do not resolve either, which is the same behaviour as the raster previews. Verified end-to-end at 360 px: an SVG containing both a `<script>` and an `onbegin` handler renders (canvas sample equals the file's own fill colour) with the handler never firing and no `<svg>` element in the DOM.
-
-This is covered by `scripts/test-file-preview-safety.js` (source guard plus a real `readMedia` round-trip): it fails if a preview path decodes file bytes for display, or if the `fe__media-svg` markup container comes back.
-
-The list is built server-side by `listDir` in `src/files.js`, which mirrors the `SKIP_DIRS` allowlist that the rest of the app uses (see the file-tagging and file-tools scans). - Hidden **dotfiles** that are text (`.gitignore`, `.env`, `.editorconfig`, `.mouaif.json`, …) are listed and open in the editor; they were previously hidden by a blanket `name.startsWith('.')` skip. - Hidden **dot directories** that are junk (`.git`, `.mouaif`, `.cache`, `.next`, `.turbo`, …) are still skipped via `SKIP_DIRS` so the list stays clean.
-
-### Browse boundary (not the project root)
-Every read/write/list path goes through `files.resolveSafe`, which **used to** confine the editor to the project root and throw `EOUTSIDE_PROJECT` for anything above it. The boundary is now the same home / `MOUAIF_ALLOW_ANY_ROOT` guard the project-folder picker uses: `projects.ensureSafeRoot(abs)` is called on the resolved target, so paths escape the project root but must stay under the user's home (or anywhere at all when `MOUAIF_ALLOW_ANY_ROOT=1`). A path outside that boundary still throws `EOUTSIDE_HOME`.
-
-- `resolveSafe(projectDir, incoming)` resolves `incoming` (relative against `projectDir`, absolute as-is), then validates the absolute target with `projects.ensureSafeRoot`. `rel` stays project-relative, so a sibling of the project is reported as `../…`.
-- `listDir` now also returns `browseTop`, the top-most directory the browser may reach (the user's home, or `/` when allow-any-root is on). The frontend clamps the Up button and breadcrumb there.
-- The frontend `FileEditor` and `AgentFilePicker` read `browseTop` from the `/api/files` response and use it to decide where Up stops, so the UI never requests a directory the server would reject. The path-input placeholder is "Folder path (absolute, or under this project)".
-- Error status falls back to `EOUTSIDE_HOME` (403) when a target leaves the home boundary; `EOUTSIDE_PROJECT` is no longer produced by the file editor.

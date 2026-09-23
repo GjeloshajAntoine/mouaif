@@ -20,9 +20,3 @@ The exact `@restart_app` command is treated as the user's approval and runs with
 - **Off** hides the tool from the assistant.
 
 The setting is available under **Settings → Project → Tools → Restart app**. A restart briefly disconnects the chat while the new worker starts; reload or reopen the app if the browser does not reconnect automatically.
-
-## Implementation notes
-
-Autonomous `restart_app` tool calls use the shared graceful-restart scheduler in `src/restart.js` after authorization. The exact `@restart_app` composer command calls the authenticated `POST /api/restart` endpoint directly because the user already requested the destructive action. Both paths share the same scheduler and work with app access authentication.
-
-The scheduler returns the tool result before restarting, waits briefly so the chat can persist and flush the result, stops MCP child processes, and invokes the same supervisor lifecycle hook used by the restart API. The outer `mouaif serve` process remains alive and starts a fresh worker.

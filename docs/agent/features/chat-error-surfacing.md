@@ -20,3 +20,5 @@
 ### Upstream history
 
 `messages.reconstructUpstreamHistory` passes `system` messages through as ordinary system turns, so a persisted error line is sent back to the provider on the next turn. That is intentional: it gives the model the failure context (e.g. "the previous attempt was rate-limited") instead of a silent gap.
+
+Send preparation is guarded separately from the streaming request. Both network exceptions and rejected persistence responses reset the running state without adding an optimistic transcript row. The textarea and attachment picker are cleared only after preparation succeeds.

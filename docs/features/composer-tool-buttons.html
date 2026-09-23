@@ -44,44 +44,6 @@
 <p>Turn a switch back on and the button returns — including in a chat that is already open, because the chat re-reads the app settings when its data loads.</p></li></ol>
 <h3 id="what-does-not-change">What does not change</h3>
 <ul><li><p><strong>The tap target.</strong> An optional button is either drawn exactly as it was (44 × 44, its usual margin) or not drawn at all. Nothing is squeezed to make room.</p></li><li><p><strong>The keyboard.</strong> Enter / Shift+Enter behaviour is <code>enterForNewline</code> and is untouched.</p></li><li><p><strong>The draft.</strong> Whatever is already typed, and any attachment already made, stays put.</p></li></ul>
-<h2 id="implementation-notes">Implementation notes</h2>
-<h3 id="files">Files</h3>
-<div class="table-wrap"><table><thead><tr><th>File</th><th>Role</th></tr></thead><tbody><tr><td><code>frontend/src/components/chat/composerTools.js</code></td><td>The preference reader — <code>composerToolsFromApp()</code> / <code>COMPOSER_TOOLS_DEFAULT</code></td></tr><tr><td><code>frontend/src/components/chat/useChatState.js</code></td><td>Seeds the preference from <code>/api/settings</code> when a chat loads</td></tr><tr><td><code>frontend/src/components/chat/Chat.jsx</code></td><td>Draws the image button and the microphone only when enabled</td></tr><tr><td><code>frontend/src/components/SettingsDefaults.jsx</code></td><td>The two switches in Settings → Chat defaults</td></tr><tr><td><code>src/settings.js</code></td><td><code>dictationButton: true</code>, <code>imageButton: true</code> in <code>DEFAULTS</code></td></tr><tr><td><code>src/server-shared.js</code></td><td>Both keys in <code>CLIENT_SETTINGS_KEYS</code></td></tr><tr><td><code>scripts/test-composer-tools.mjs</code></td><td>Preference, plumbing and render-guard tests</td></tr></tbody></table></div>
-<h3 id="the-preference">The preference</h3>
-<p>Both keys are <strong>app-level display preferences</strong> in the app SQLite store, next to <code>fileOrbButton</code>, <code>enterForNewline</code> and <code>autoRetry</code>. They change how the composer looks, never what the app can do, so a per-chat record would add a column and a migration for a cosmetic toggle — and would give the user a second place to look for one switch.</p>
-<p>Reading is defensive, and a value that cannot be understood means <strong>shown</strong>:</p>
-<pre><code class="language-js">// frontend/src/components/chat/composerTools.js
-export const DICTATION_BUTTON_KEY = &#39;dictationButton&#39;;
-export const IMAGE_BUTTON_KEY = &#39;imageButton&#39;;
-export const COMPOSER_TOOLS_DEFAULT = Object.freeze({ dictation: true, image: true });
-
-export function composerToolsFromApp(snapshot) {
-  const bag = snapshot &amp;&amp; snapshot.app;
-  const defaults = COMPOSER_TOOLS_DEFAULT;
-  if (!bag || typeof bag !== &#39;object&#39;) return { dictation: defaults.dictation, image: defaults.image };
-  return {
-    dictation: readBool(bag[DICTATION_BUTTON_KEY], defaults.dictation),
-    image: readBool(bag[IMAGE_BUTTON_KEY], defaults.image)
-  };
-}</code></pre>
-<p>A missing key, a failed <code>/api/settings</code> fetch, or a value the server could not store as a JSON boolean all resolve to <code>true</code>. The composer therefore only ever loses a control the user explicitly turned off — a button that silently disappeared after an update is worse than one that has to be switched off on purpose. The string forms (<code>&#39;true&#39;</code> / <code>&#39;false&#39;</code>) are accepted because the app store holds a TEXT blob, so a hand-edited <code>store.sqlite</code>, or a settings file merged from a project, can legitimately hand one back.</p>
-<h3 id="both-keys-must-be-in-two-server-side-lists">Both keys must be in two server-side lists</h3>
-<p>A key is only readable by the web UI if it is in <strong><code>CLIENT_SETTINGS_KEYS</code></strong> (<code>src/server-shared.js</code>), the allowlist that strips server-only bookkeeping out of every <code>/api/settings</code> response. A key that is stored but not allowlisted is accepted by <code>PUT /api/settings/app</code>, written to SQLite, and then silently removed from every response — which looks exactly like a toggle that will not save. Being in <code>Settings.DEFAULTS</code> (<code>src/settings.js</code>) as well puts the key in <code>RESETTABLE_APP_KEYS</code>, so Settings → reset can clear it.</p>
-<h3 id="render-guards">Render guards</h3>
-<p><code>ChatView</code> renders each optional button behind its flag:</p>
-<pre><code class="language-js">composerTools.dictation
-  ? h(MicButton, { projectDir, chatId, promptRef: refs.promptInput, onTranscript, onStatus: onMicStatus, onProgress: onMicProgress })
-  : null,</code></pre>
-<p>The hidden-image case keeps the <code>&lt;input type=&quot;file&quot;&gt;</code> mounted, because that element is the path a <em>pasted</em> image travels:</p>
-<pre><code class="language-js">// The file input is mounted either way. It is the path a pasted image
-// (and the annotation editor&#39;s own capture) travels, so hiding the
-// button removes a control, never a capability.
-h(&#39;input&#39;, { ref: refs.imageInput, class: &#39;chat-view__image-input&#39;, type: &#39;file&#39;, … }),</code></pre>
-<h3 id="mobile-first">Mobile first</h3>
-<p>The composer row is the scarcest strip in the app: at 360–430 px it already carries the file button, the image button, the microphone, the text area and a send button. These switches exist because that row is the one place a phone screen cannot spare, and a control the user never taps is pure cost there. Everything stays a tap target of at least 44 × 44 when drawn, and nothing here is hover-dependent.</p>
-<h3 id="tests">Tests</h3>
-<p><code>scripts/test-composer-tools.mjs</code> pins the reader (every defensive branch), both server-side lists, the render guards in <code>ChatView</code>, and — against a throwaway store — that <code>settings.js</code> persists each key and <code>settingsForClient()</code> still publishes it.</p>
-<p><code>scripts/test-dictation-chat.cjs</code> renders the real <code>ChatView</code> twice: once with the defaults (composer microphone and image button drawn) and once with both preferences <code>false</code> (neither is drawn, while the text area, the send button, the status line and the image file input are all still there).</p>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

@@ -92,19 +92,6 @@ When a nested `subagent` call invokes `ask_user`, the same `ask_user_required` e
 - **Audit log.** Every decision is appended to the per-chat NDJSON [trace](./trace.md) as a `system event` line (`{ type: 'auth_decision', tool: 'ask_user', callId, decision }`) when tracing is on. The audit line is not forwarded to the upstream.
 - **No new runtime dependencies.** The runner is a plain function; the chat UI handles the input side. No third-party form libraries, no new SSE machinery — the existing `authorization_required` pipeline carries the question payload through a dedicated `ask_user_required` event.
 
-## Implementation notes
-
-The question payload is validated and clamped in [src/tools/ask.js](../../src/tools/ask.js); the answer rides the existing authorization-decision channel (`payload: { choice, extra }`) and is folded into the `tool` message by the dispatcher in [src/ai-stream.js](../../src/ai-stream.js). The card itself is built in `askUserCard()` ([frontend/src/components/chat/cards.js](../../frontend/src/components/chat/cards.js)).
-
-Checks that cover this feature:
-
-```bash
-npm run test:ask-user      # payload shape, gate semantics, card de-dupe, head line
-npm run fixture:ask-ui     # writes the card fixture to /tmp/mouaif-ask-ui
-```
-
-`fixture:ask-ui` renders the real card against the real stylesheet with a stubbed transcript, and exposes `window.fixture` (`live()`, `wrap()`, `many()`, `pair()`, `resolve()`, `late()`, `fresh()`, `dismissed()`, `cancel()`, `measure()`). Serve the written directory with any static server and open it at 390 px: `measure()` returns each option row's height, whether it sits inside the scroll container, whether its description is clipped, and each card's head line + summary slot — the last two are how the dismissal reads at a glance. `late()` is the duplicate order the de-dupe guard has to catch — the call's own card is already up and a late pending/replay mount tries to add the question beside it — while `fresh()` is the ordinary first render, which must still mount.
-
 ## Related
 
 - [docs/features/ai-client.md](./ai-client.md) — `tool_call`, `tool_result`, and the new `ask_user_required` SSE event names.

@@ -22,7 +22,6 @@ Connect to a page and select an element (tap the preview in pick mode, tap **Tap
    - `--bg-app is set on the ancestor html (its inline style) and inherits down (#f4f7fb). Editing element.style overrides it for this element only.`
 5. **Header controls** — **✕ Clear**, **↻ Refresh** and **◎ Pick** live in the Styles panel's sticky header.
 
-
 ## Behaviour
 
 - **Which property is described** follows the user's attention: the property being edited, else the most recent change this session, else the element's first own declaration, else the first declaration of the best-ranked author rule. That last fallback matters: an element with no inline styles is the common case, and without it the panel would have nothing to explain exactly when the question is “where do this element's values come from?”. Browser-default declarations are never chosen.
@@ -32,14 +31,6 @@ Connect to a page and select an element (tap the preview in pick mode, tap **Tap
 - **Undo lives in the Styles panel.** The receipt strip and its **↺ Undo all** render inside that panel's own scroll flow (see [Inspector styles](./inspector-styles.md)). The Inspector still owns the receipt data, so switching the panel off cannot drop it, and reversing an entry re-reads the element afterwards.
 - **Tapping a rule chip reveals the cascade** rather than pretending the chip is an editor: the Styles panel's **Matched rules** section is where a rule's declarations and the one-tap override live, so the chip makes sure that panel is visible.
 - **One horizontal scroller, and it is bounded.** The breadcrumb is a single line whose chip strip scrolls sideways, with its vertical axis pinned and auto-scrolled to the current element; the child chips wrap, since they are a disclosure rather than a path. Nothing else in the panel scrolls sideways, and the panel itself keeps the only vertical scroller.
-
-## Implementation notes
-
-- **Pure model:** [`frontend/src/components/inspector/targetBar.js`](../../frontend/src/components/inspector/targetBar.js) exports `buildTargetBar`, plus `splitLabel`, `buildCrumbs`, `crumbLabel`, `cleanSize`, `buildRuleChips`, `ruleCount`, `findDeclaringRule`, `inlineValueOf`, `pickFocusProperty`, `firstAuthorProperty`, `originSentence`, `WRITE_TARGETS` and the caps (`MAX_CRUMBS`, `MAX_RULE_CHIPS`, `CRUMB_MAX`). Nothing there touches the network or the DOM, so the ranking, the caps, the fallback order and the sentence wording are unit-testable.
-- **Component:** [`frontend/src/components/inspector/TargetBar.jsx`](../../frontend/src/components/inspector/TargetBar.jsx) is layout only — `Crumbs`, `RuleChips` and `TargetBar` render the model, and the header buttons are optional (a control with no handler is not rendered, rather than rendered dead).
-- **Reused data, no new endpoints:** the label/size come from the existing `buildNodeModel`, the rules from `normalizeMatchedRules` (already used by the Styles panel's Matched rules section), the path from `readElementTree`, and the inline declarations from `readElementStyles`. The model adds no CDP call of its own.
-- **Mobile-first:** every interactive element is a ≥44 px target (`--tap`), and the chips are text (not icon-only).
-- **Tests:** `scripts/test-inspector-target-bar.js` still covers the model (the tag/id/class split, the crumb order and elision and truncation, the chip ranking, the declaration counts, the four origin-sentence cases, the focus-property fallback order, the scope numbers, and the component rendering). It runs as part of `npm run test:inspector`. `scripts/test-inspector-feature-inventory.js` pins that the Inspector no longer renders this bar above the panels and that the Styles panel still publishes its selection.
 
 ## Related
 

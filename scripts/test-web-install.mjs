@@ -134,7 +134,9 @@ check('the CLI commands page is published and indexed', () => {
 
   assert.match(doc, /^## Overview$/m, 'has an Overview section');
   assert.match(doc, /^## Usage$/m, 'has a Usage section');
-  assert.match(doc, /^## Implementation notes$/m, 'has an Implementation notes section');
+  assert.ok(!/^## Implementation notes$/m.test(doc), 'implementation notes live in the agent note');
+  assert.match(read('docs/agent/features/cli-commands.md'), /^## Implementation notes$/m,
+    'the agent note carries the implementation notes');
   const install = doc.slice(doc.indexOf('### Install'), doc.indexOf('### Serve'));
   assert.ok(!/build:web/.test(install), 'the install block does not build the UI');
 
