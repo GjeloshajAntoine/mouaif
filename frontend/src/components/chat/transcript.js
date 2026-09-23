@@ -452,6 +452,95 @@ export function appendDeltaToLive(delta, refs, state) {
   }
 }
 
+// restoreLiveSegment(data, refs, state)
+//
+// Paint the in-progress segment a follower receives when it joins a run
+// mid-turn (`live_segment`, see src/live-chat.js addSubscriber). Text deltas
+// are not buffered server-side, so without this a returning page shows
+// "streaming…" and no bubble until the segment ends and is persisted.
+//
+// Idempotent by construction: the row is left un-finalized (`data-live` is
+// kept) and `_streaming` is set, so the deltas that follow this snapshot
+// append to it through appendDeltaToLive's normal path instead of re-entering
+// ensureLiveStreamingBody's one-time whole-string render. Calling it again
+// with the same text — a second subscription to the same chat — repaints the
+// same content rather than concatenating it.
+export function restoreLiveSegment(data, refs, state) {
+  if (!refs.transcript.current || !data) return;
+  const text = typeof data.text === 'string' ? data.text : '';
+  const reasoning = typeof data.reasoning === 'string' ? data.reasoning : '';
+  if (!text && !reasoning) return;
+  let liveRow = refs.transcript.current.querySelector('[data-live="1"]');
+  if (!liveRow) {
+    const mid = (state.chat && state.chat.modelId) || '';
+    appendMessageToTranscript({ role: 'assistant', content: '', reasoning: '', ts: new Date().toISOString(), modelId: mid }, true, refs, state);
+    liveRow = refs.transcript.current.querySelector('[data-live="1"]');
+  }
+  if (!liveRow || !liveRow._body) return;
+  // Already streaming this segment (a delta arrived first): leave the DOM
+  // alone. Overwriting from the snapshot would drop whatever the deltas
+  // appended after the server built it.
+  if (liveRow._streaming) return;
+  liveRow._content = text;
+  liveRow._reasoning = reasoning;
+  // One render of the snapshot, then flip to append mode so the next delta
+  // touches only its own text node.
+  renderAssistantBody(liveRow._body, text, reasoning, false);
+  liveRow._body._owner = liveRow;
+  liveRow._streaming = true;
+  afterTranscriptAppend(refs, false);
+}
+
+// finalizeLiveSegment(refs, state, seq)
+//
+// Handle the follower's `assistant_turn_end`: the segment it was streaming was
+// just persisted as a transcript row. Two things have to happen.
+//
+//  1. Adopt the row's seq onto the live node (see transcriptRowKey). The
+//     reconciler keys rows by seq, so once the persisted message syncs in,
+//     it matches this node and reuses it — rendering the final markdown in
+//     place. Without the adoption the same turn is drawn twice: the node the
+//     follower streamed into, and the persisted row that arrives with no
+//     match.
+//  2. Leave the node un-marked but render its text as final markdown, so the
+//     segment looks settled rather than perpetually mid-stream.
+//
+// The next delta creates a fresh live row (no `data-live` node remains),
+// which is the same one-row-per-segment shape the owner stream produces.
+export function finalizeLiveSegment(refs, state, seq) {
+  if (!refs.transcript.current) return;
+  const liveRow = refs.transcript.current.querySelector('[data-live="1"]');
+  if (!liveRow) return;
+  delete liveRow.dataset.live;
+  liveRow._streaming = false;
+  if (liveRow._body) {
+    renderAssistantBody(liveRow._body, liveRow._content || '', liveRow._reasoning || '', true);
+  }
+  // Adopt the identity the server wrote the row with, so the message sync
+  // reconciles onto this node. `seq` is absent for a segment that was never
+  // persisted (no text) — then the node is simply left for the next full
+  // rebuild to drop.
+  if (typeof seq === 'number' && Number.isFinite(seq)) {
+    liveRow._rowKey = 'seq:' + seq;
+  }
+}
+
+// clearLiveSegment(refs, state)
+//
+// Remove a live bubble that no longer has a segment behind it — the run ended
+// before its `assistant_turn_end` arrived. The final persisted row comes from
+// the poll the caller kicks right after, so the un-finalized node would
+// otherwise show the turn a second time.
+export function clearLiveSegment(refs) {
+  if (!refs.transcript.current) return;
+  const liveRow = refs.transcript.current.querySelector('[data-live="1"]');
+  if (liveRow && liveRow.parentNode) liveRow.remove();
+  // Drop any output still held for a card that never appeared (see
+  // bufferPendingShellOutput). The run is over, so its tool_result — the
+  // authoritative rendering — is what the poll below will draw.
+  refs._pendingShellOutput = null;
+}
+
 // appendReasoningToLive(delta, refs, state)
 export function appendReasoningToLive(delta, refs, state) {
   if (!refs.transcript.current) return;
@@ -836,7 +925,17 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
     // (shell_output chunks need the body visible). From replayed
     // persisted data the result soon replaces the card anyway.
     if (!isReplay) card.classList.add('is-expanded');
-}
+    // Drain the output that arrived before this card existed (see
+    // bufferPendingShellOutput). Done here, not on the generic insert below,
+    // because this is the one point where the live preview <pre> is on the
+    // card and the call id is known.
+    const held = takePendingShellOutput(refs, toolCall.id);
+    if (held.length) {
+    card.classList.add('is-expanded');
+    if (hint) hint.textContent = 'Running…';
+    for (const chunk of held) appendShellLiveChunk(pre, chunk);
+    }
+  }
 // Other tools have no expandable body until a tool_result arrives.
 // Their header already shows the call arguments; creating a body here
 // would expose placeholder text instead of actual tool output.
@@ -852,6 +951,74 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
   }
 
 
+// PENDING_SHELL_OUTPUT_MAX_CHARS
+//
+// Upper bound on the shell output held for a card that does not exist yet
+// (see bufferPendingShellOutput). Enough for a command's opening burst, small
+// enough that an orphaned buffer cannot grow without limit.
+const PENDING_SHELL_OUTPUT_MAX_CHARS = 64 * 1024;
+
+// appendShellLiveChunk(pre, data)
+//
+// Append one `shell_output` chunk to a shell card's live preview, inserting
+// the stderr separator the first time a stderr chunk arrives (so a command
+// that writes to both streams reads in order).
+function appendShellLiveChunk(pre, data) {
+  if (!pre) return;
+  if (data.stream === 'stderr') {
+    pre.dataset.hasStderr = '1';
+    if (!pre.textContent.includes('\n── stderr ──\n')) pre.textContent += '\n── stderr ──\n';
+  }
+  pre.textContent += String(data.delta || '');
+}
+
+// bufferPendingShellOutput(refs, data) -> bool
+//
+// Park a `shell_output` chunk whose tool card does not exist yet, and return
+// true when it was parked. A live follower's stream can deliver output before
+// the card is on screen: the server does not broadcast `tool_call` on the live
+// stream (that row is persisted, so it reaches the follower through the
+// message sync), which can land strictly later than the first output chunks.
+// Dropping those chunks — what the old code did by returning false — lost the
+// first second or more of every command's output, and permanently: the stream's
+// cursor has already moved past them, so they are never re-sent.
+//
+// Keyed by call id, consumed by appendToolCallCard when it builds the card.
+function bufferPendingShellOutput(refs, data) {
+  const id = data && data.id != null ? String(data.id) : '';
+  if (!id) return false;
+  const pending = refs._pendingShellOutput || (refs._pendingShellOutput = new Map());
+  let entry = pending.get(id);
+  if (!entry) {
+    entry = { chunks: [], chars: 0, stderr: false };
+    pending.set(id, entry);
+  }
+  const delta = String(data.delta || '');
+  // Bound the hold: output that arrives before its card exists is normally a
+  // second or two of the command's start, but a tool call the follower never
+  // learns about (its persisted row was already in the fetched window) would
+  // otherwise accumulate the whole command here forever.
+  if (entry.chars + delta.length > PENDING_SHELL_OUTPUT_MAX_CHARS) return true;
+  if (data.stream === 'stderr') entry.stderr = true;
+  entry.chunks.push({ stream: data.stream, delta });
+  entry.chars += delta.length;
+  return true;
+}
+
+// takePendingShellOutput(refs, id) -> array
+//
+// Claim the buffered chunks for a call id, leaving nothing behind. Called once,
+// when the card for that id is built.
+function takePendingShellOutput(refs, id) {
+  const pending = refs._pendingShellOutput;
+  if (!pending || !id) return [];
+  const key = String(id);
+  const entry = pending.get(key);
+  if (!entry) return [];
+  pending.delete(key);
+  return entry.chunks;
+}
+
 // handleShellOutputEvent(data, refs)
 //
 // Fold a live `shell_output` SSE chunk into the matching shell tool
@@ -862,7 +1029,9 @@ export function handleShellOutputEvent(data, refs) {
   const card = data.id
     ? refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(String(data.id)) + '"]')
     : null;
-  if (!card) return false;
+  // No card yet: hold the chunk for the card that is about to be created
+  // instead of dropping it (see bufferPendingShellOutput).
+  if (!card) return bufferPendingShellOutput(refs, data);
   const pre = card.querySelector('.tool-card__shell-live-pre');
   if (!pre) return false;
   // Auto-expand the live preview the first time a real delta arrives —
@@ -877,14 +1046,7 @@ export function handleShellOutputEvent(data, refs) {
   }
   const hint = card.querySelector('.tool-card__shell-live-hint');
   if (hint && hint.textContent !== 'Running…') hint.textContent = 'Running…';
-  if (data.stream === 'stderr') {
-    pre.dataset.hasStderr = '1';
-    const marker = '\n── stderr ──\n';
-    if (!pre.textContent.includes(marker)) pre.textContent += marker;
-    pre.textContent += String(data.delta || '');
-  } else {
-    pre.textContent += String(data.delta || '');
-  }
+  appendShellLiveChunk(pre, data);
   scrollToolBodyToBottom(pre);
   afterTranscriptAppend(refs, false);
   return true;

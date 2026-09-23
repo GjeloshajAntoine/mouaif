@@ -290,6 +290,15 @@ const kickPoll = useRef(null);
       props: { projectDir, chatId },
       _setRunningVisible: setRunningVisible,
       _kickPoll: () => { if (kickPoll.current) kickPoll.current(); },
+      // Resume the eager older-history drain. It deliberately bails while a
+      // run is in flight (the tail is being written right now), and nothing
+      // restarted it once the run ended — so older history only appeared when
+      // the user scrolled to the top. Called on run_end.
+      _drainOlderMessages: () => {
+      if (msgPager.current && msgPager.current.hasMore && msgPager.current.beforeSeq !== null) {
+      loadAllOlderMessages(state, refs, msgPager.current).catch(() => {});
+      }
+      },
       get chat() { return chat.current; },
       set chat(v) { chat.current = v; },
       get providers() { return providers.current; },
@@ -1004,16 +1013,28 @@ setRunningVisible(true);
 // arrived while away is skipped as already done.
 state.runSettled = false;
 state.watchingStableTicks = 0;
+// Arm the follow poll BEFORE the pending snapshot resolves. Previously this
+// was set only when an approval turned out to be pending, so returning to a
+// running chat with nothing to approve polled at the IDLE cadence — up to
+// 3 s before the first transcript sync. Any tool output or new tool call that
+// landed in that window arrived with nothing to render it into. The chat is
+// running, so the 1 s follow cadence is the correct one regardless of
+// whether the run is also waiting on the user.
+state.watchingRun = true;
 state.pendingAuthCount = await loadPendingAuthorization(state, refs);
 if (cancelled || state.props.projectDir !== projectDir || state.props.chatId !== chatId) return;
 if (state.pendingAuthCount > 0) {
-state.watchingRun = true;
 setChatStatus(refs, 'waiting for you…', 'busy');
 }
 // Subscribe after the pending snapshot is mounted. Live replay still
 // supplies output that happened while away, and call-id de-duping prevents
 // the same authorization card from being shown twice.
 subscribeLive(state, refs);
+// Sync the transcript immediately instead of waiting out the first poll
+// interval. The live subscription only replays the transient tool events; the
+// tool CALL rows come from the message store, so without this first sync a
+// returning page shows the run's shell output with no card to put it in.
+if (kickPoll.current) kickPoll.current();
 } else {
 state.pendingAuthCount = 0;
 setRunningVisible(false);

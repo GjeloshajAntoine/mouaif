@@ -124,10 +124,101 @@ function baseTest() {
   t('run_end notifies subscribers', collectFrames(sub).some((f) => f.name === 'run_end'));
 }
 
+// Assistant text deltas are broadcast to followers but never buffered: a turn
+// emits one per token, so replaying them on every reconnect would cost more
+// than the deltas that follow the subscription and would grow the buffer
+// without bound. The in-progress segment is handed over separately, once.
+function transientTest() {
+  console.log('live-chat.js transient text deltas + segment handover');
+  const rk = 'PROJ::TRANSIENT';
+
+  // Nothing is recorded when no run entry exists (kept cheap for the common
+  // case where nobody is following).
+  liveChat.pushTransient(rk, 'message', { delta: 'ignored' });
+  liveChat.ensureLiveChat(rk);
+  t('no run entry means the transient push is a no-op', true);
+
+  const sub = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub);
+  sub._chunks = [];
+  liveChat.pushTransient(rk, 'message', { delta: 'hello ' });
+  const frames = collectFrames(sub);
+  t('a transient delta reaches a connected subscriber', frames.some((f) => f.name === 'message' && f.data.includes('hello')),
+    JSON.stringify(frames));
+  const deltaFrame = frames.find((f) => f.name === 'message');
+  let deltaData = null; try { deltaData = JSON.parse(deltaFrame.data); } catch { }
+  t('a transient delta carries no liveSeq', deltaData && deltaData.liveSeq === undefined, String(deltaFrame.data));
+
+  // The cursor must not move: a later buffered event still replays from the
+  // seq the client actually holds. If the transient had consumed a seq, a
+  // reconnect asking for `fromLiveSeq` would skip this shell_output.
+  sub._chunks = [];
+  liveChat.pushLive(rk, 'shell_output', { id: 'c1', stream: 'stdout', delta: 'out' });
+  const sub2 = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub2, { fromLiveSeq: 0 });
+  const f2 = collectFrames(sub2);
+  t('a transient push does not advance the replay cursor',
+    f2.some((f) => f.name === 'shell_output' && f.data.includes('out')), JSON.stringify(f2.map((f) => f.name)));
+
+  // Transients are absent from a fresh subscriber's replay: nothing to replay.
+  t('transient deltas are not replayed to a later subscriber',
+    !f2.some((f) => f.name === 'message'), JSON.stringify(f2.map((f) => f.name)));
+
+  // The mid-turn segment snapshot IS handed over, exactly once, and without a
+  // liveSeq (it is not a buffered event).
+  liveChat.setSegment(rk, 'partial answer', 'thinking so far');
+  const sub3 = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub3);
+  const f3 = collectFrames(sub3);
+  const segFrame = f3.find((f) => f.name === 'live_segment');
+  let segData = null; try { segData = JSON.parse(segFrame.data); } catch { }
+  t('a mid-turn subscriber receives the in-progress segment', !!(segData && segData.text === 'partial answer'), String(segFrame && segFrame.data));
+  t('the segment handover carries the reasoning too', !!(segData && segData.reasoning === 'thinking so far'));
+  t('the segment handover carries no liveSeq', !!(segData && segData.liveSeq === undefined));
+  t('the live_subscribed frame is not mistaken for a segment', segData && segData.liveSeq === undefined);
+
+  // A cleared segment sends nothing: the segment that ended is persisted as a
+  // transcript row and reaches the follower through the message sync.
+  liveChat.setSegment(rk, '', '');
+  const sub4 = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub4);
+  t('an empty segment is not handed over', !collectFrames(sub4).some((f) => f.name === 'live_segment'));
+
+  // hasSubscribers gates the per-delta snapshot maintenance.
+  liveChat.finishLiveChat(rk);
+  t('hasSubscribers is false with no run entry', liveChat.hasSubscribers(rk) === false);
+  liveChat.ensureLiveChat(rk);
+  t('hasSubscribers is false before anyone subscribes', liveChat.hasSubscribers(rk) === false);
+  const sub5 = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub5);
+  t('hasSubscribers is true once someone subscribes', liveChat.hasSubscribers(rk) === true);
+  liveChat.finishLiveChat(rk);
+}
+
 function clientHandlerTest() {
-  console.log('live.js handleLiveRunEnd kicks poll immediately');
+  console.log('live.js dispatches the follower text path');
   const liveSrc = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/live.js'), 'utf8');
   t('handleLiveRunEnd invokes state._kickPoll', liveSrc.includes("if (typeof state._kickPoll === 'function') state._kickPoll();"));
+  // The follower must resume the older-history drain when the run ends; it
+  // bails while a run is in flight and nothing else restarted it.
+  t('handleLiveRunEnd resumes the older-history drain', liveSrc.includes('state._drainOlderMessages'));
+  // Assistant deltas must reach the follower's bubble, not just the owner's.
+  t('live.js routes message deltas into appendDeltaToLive', liveSrc.includes('appendDeltaToLive(data.delta'));
+  t('live.js routes reasoning deltas into appendReasoningToLive', liveSrc.includes('appendReasoningToLive(data.delta'));
+  t('live.js finalizes a segment on assistant_turn_end', liveSrc.includes('finalizeLiveSegment(refs, state'));
+  t('live.js restores the in-progress segment', liveSrc.includes('restoreLiveSegment(data'));
+
+  // The owner SSE path must NOT mirror its own deltas into the live stream:
+  // it would draw the sending tab's bubble twice.
+  const streamSrc = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/stream.js'), 'utf8');
+  t('the owner SSE path does not append its own live deltas', !streamSrc.includes('appendDeltaToLive(data.delta, refs, state, true)'));
+
+  // The server must broadcast deltas transiently (no buffer) and keep the
+  // segment snapshot current only while someone follows.
+  const serverSrc = fs.readFileSync(path.join(__dirname, '../src/server-handlers-chats.js'), 'utf8');
+  t('server broadcasts message deltas transiently', serverSrc.includes("liveChat.pushTransient(runKey, name, data)"));
+  t('server broadcasts the segment boundary with a seq', serverSrc.includes('seq: nextLiveMessageSeq(runKey, assistantSegmentHasText)'));
+  t('server maintains the segment snapshot only with subscribers', serverSrc.includes('if (liveChat.hasSubscribers(runKey)) liveChat.setSegment('));
 }
 
 // ---- HTTP: GET /api/chats/:id/live -------------------------------------
@@ -213,6 +304,7 @@ let port = 0;
 
 async function run() {
   baseTest();
+  transientTest();
   clientHandlerTest();
   await httpTest();
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

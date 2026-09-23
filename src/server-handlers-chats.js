@@ -728,10 +728,31 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
     // connected ones. Conveniently, the run entry also gives us the
     // toolResultId for a later prune on `tool_result`.
     if (name === 'shell_output' || name === 'subagent_event' || name === 'progress_update'
-      || name === 'authorization_required' || name === 'ask_user_required') {
-      liveChat.pushLive(runKey, name, data);
+    || name === 'authorization_required' || name === 'ask_user_required') {
+    liveChat.pushLive(runKey, name, data);
     } else if (name === 'tool_result') {
-      liveChat.pruneLive(runKey, data && data.id);
+    liveChat.pruneLive(runKey, data && data.id);
+    } else if (name === 'message' || name === 'reasoning') {
+    // Assistant text deltas: fan out to followers WITHOUT buffering.
+    // Previously these were written only to this response's socket, so a
+    // returning tab or a second tab saw "streaming…" and no bubble until the
+    // turn was persisted at the end. Not buffered because a turn emits one
+    // per token — replaying the whole turn on every reconnect would cost more
+    // than the deltas that follow the subscription, and would grow the buffer
+    // without bound. `live_segment` (src/live-chat.js) covers the gap for a
+    // follower that joins mid-turn.
+    liveChat.pushTransient(runKey, name, data);
+    } else if (name === 'assistant_turn_end') {
+    // The segment boundary. Broadcast as a live ROW so a follower can mark
+    // its bubble final *and* adopt the seq the row is about to be persisted
+    // with — that is what lets the persisted copy reconcile onto the node the
+    // follower already drew instead of appearing as a second bubble once the
+    // message sync lands. Not buffered: the row is persisted immediately
+    // below, so a late subscriber gets it from the transcript sync.
+    liveChat.pushTransient(runKey, name, Object.assign({}, data, {
+      seq: nextLiveMessageSeq(runKey, assistantSegmentHasText)
+    }));
+    liveChat.setSegment(runKey, '', '');
     }
   }
   if (traceStream) {
@@ -875,6 +896,11 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
   let assistantContent = '';
   let assistantReasoning = '';
   let assistantMsg = null;
+  // Whether the segment that just ended was actually persisted. Read by the
+  // `assistant_turn_end` live broadcast to decide if the segment consumed the
+  // chat's next transcript seq. Declared here rather than inside the handler
+  // because `onEvent` is a closure re-entered per round.
+  let assistantSegmentHasText = false;
   // Track the streaming window so the cost line (which is computed
   // server-side from the upstream's authoritative usage block) also
   // carries the streamingMs the chat UI needs for its tok/s counter.
@@ -1068,7 +1094,41 @@ function accumulateRoundUsage(roundUsage) {
     return actions;
   }
 
-  // formatStreamError(err) — one-line, user-facing summary of a
+// Per-chat live-row seq counter.
+//
+// Live assistant segments are broadcast as rows BEFORE they are persisted, and
+// a follower adopts the broadcast seq onto the node it drew so the persisted
+// copy reconciles onto that node instead of duplicating it. That only works if
+// the number the client adopts is a value the store will actually assign — and
+// `messages.appendMessage` assigns its own, so the broadcast has to be a
+// prediction rather than a guess.
+//
+// A process-local counter per chat is what makes it exact: every append for a
+// chat goes through this handler, so it sees each row in order and its next
+// value is by construction the seq the store is about to hand out. Deriving the
+// number from the transcript's last row instead would repeat a seq whenever two
+// segments were persisted between two broadcasts (tool rounds do exactly that),
+// and a duplicated seq is an identity collision — the reconciler keys on seq,
+// so the second row would be treated as a duplicate of the first and vanish.
+//
+// Deliberately NOT shared with whatever counter the store keeps internally: this
+// only has to be right for chats served by this process, and it resets to -1 on
+// restart, where it under-predicts (safe: the follower's node is only reused if
+// the numbers match, otherwise it draws a normal row).
+const liveSeqByChat = new Map();
+
+function nextLiveMessageSeq(runKey, hadText) {
+  // A segment that produced no text is never persisted (see the
+  // `assistantContent.trim() || assistantReasoning.trim()` guards), so it must
+  // not consume a seq — otherwise every textless tool round would push the
+  // prediction ahead of the store and every later boundary would miss.
+  if (!hadText) return liveSeqByChat.get(runKey) || 0;
+  const next = (liveSeqByChat.get(runKey) || 0) + 1;
+  liveSeqByChat.set(runKey, next);
+  return next;
+}
+
+// formatStreamError(err) — one-line, user-facing summary of a
   // failed turn. Persisted as a system message and shown as the
   // chat's error bubble, so keep it short: code + message + the
   // first line of any upstream detail (provider error bodies can
@@ -1133,17 +1193,22 @@ promptSize: resolvedProfileId,
     onRoundUsage: (roundUsage) => { pendingRoundUsage = roundUsage; accumulateRoundUsage(roundUsage); },
     onEvent: (name, data) => {
       if (name === 'message' && typeof data.delta === 'string') {
-        if (!streamStartedAt) streamStartedAt = Date.now();
-        if (!turnStartedAt) turnStartedAt = streamStartedAt;
-        assistantContent += data.delta;
-        try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
-        return;
+      if (!streamStartedAt) streamStartedAt = Date.now();
+      if (!turnStartedAt) turnStartedAt = streamStartedAt;
+      assistantContent += data.delta;
+      // Keep the follower's mid-turn snapshot current (see
+      // liveChat.setSegment). Cheap — two string concats and one snapshot
+      // object — and only while someone is actually following the run.
+      if (liveChat.hasSubscribers(runKey)) liveChat.setSegment(runKey, assistantContent, assistantReasoning);
+      try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
+      return;
       } else if (name === 'reasoning' && typeof data.delta === 'string') {
-        if (!streamStartedAt) streamStartedAt = Date.now();
-        if (!turnStartedAt) turnStartedAt = streamStartedAt;
-        assistantReasoning += data.delta;
-        try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
-        return;
+      if (!streamStartedAt) streamStartedAt = Date.now();
+      if (!turnStartedAt) turnStartedAt = streamStartedAt;
+      assistantReasoning += data.delta;
+      if (liveChat.hasSubscribers(runKey)) liveChat.setSegment(runKey, assistantContent, assistantReasoning);
+      try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
+      return;
       } else if (name === 'assistant_turn_end') {
         // A tool round is starting: fold the window that just ended into
         // the accumulator and clear the start marker. The next assistant
@@ -1182,18 +1247,21 @@ promptSize: resolvedProfileId,
             }
           } catch { /* non-fatal */ }
         }
-        // The snapshot is consumed whether or not this segment had text.
-        // Leaving it set on a no-text round would leak round N's tokens
-        // into round N+1's segment (double-counted cost in the totals).
+        // Whether this segment was persisted, captured from the same guard
+        // that decided to append it — BEFORE the reset below. The live
+        // broadcast uses it to decide whether the segment consumed the next
+        // transcript seq (see nextLiveMessageSeq): a no-text round appends
+        // nothing, so a follower must not adopt a seq for it.
+        assistantSegmentHasText = !!(assistantContent.trim() || assistantReasoning.trim());
         pendingRoundUsage = null;
         assistantContent = '';
         assistantReasoning = '';
         // Emit the enriched frame (cost + usage attached) and skip the
         // generic emit below so the client never sees a cost-less copy.
         emit(name, Object.assign({}, data, {
-          usage: segmentUsage,
-          cost: segmentCost || undefined,
-          modelId: model.id
+        usage: segmentUsage,
+        cost: segmentCost || undefined,
+        modelId: model.id
         }));
         return;
       } else if (name === 'tool_call') {

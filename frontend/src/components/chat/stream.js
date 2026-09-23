@@ -1555,13 +1555,17 @@ if (state.pendingAuthCount > 0) {
         setChatStatus(refs, 'streaming…', 'busy');
         state.watchingStableTicks = 0;
       }
-    } else if (state.watchingRun) {
+      } else if (state.watchingRun) {
       state.pendingAuthCount = 0;
       state.watchingRun = false;
       state.watchingStableTicks = 0;
       if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
       setChatStatus(refs, 'done', 'success');
-    } else if (typeof state._setRunningVisible === 'function') {
+      // The run just ended for this client too (no live socket, or it closed
+      // without a run_end): the older-history drain bailed while the run was
+      // in flight, so restart it here or history waits for a manual scroll.
+      if (typeof state._drainOlderMessages === 'function') state._drainOlderMessages();
+      } else if (typeof state._setRunningVisible === 'function') {
       state.pendingAuthCount = 0;
       state._setRunningVisible(false);
       state.watchingStableTicks = 0;

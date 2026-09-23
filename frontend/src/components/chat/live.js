@@ -21,7 +21,16 @@
 
 import { parseSSEFrame } from '../../api.js';
 import { authorizationCard, askUserCard } from './cards.js';
-import { handleShellOutputEvent, handleSubagentStreamEvent, updateProgressCard } from './transcript.js';
+import {
+  handleShellOutputEvent,
+  handleSubagentStreamEvent,
+  updateProgressCard,
+  appendDeltaToLive,
+  appendReasoningToLive,
+  finalizeLiveSegment,
+  restoreLiveSegment,
+  clearLiveSegment
+} from './transcript.js';
 import { mountOverlayCard, removeOverlayCardByCallId, removeOverlayCards } from './overlay.js';
 import { setChatStatus } from './usage.js';
 
@@ -154,6 +163,32 @@ function dispatchLiveEvent(ev, refs, state, key) {
   }
   const { projectDir, chatId } = state.props;
   if (ev.eventName === 'live_subscribed') return;
+  // Assistant text deltas. Not buffered server-side (a turn emits one per
+  // token), so these carry no liveSeq and never advance the replay cursor —
+  // the cursor must stay comparable with the buffered events it gates.
+  if (ev.eventName === 'message' && typeof data.delta === 'string') {
+    appendDeltaToLive(data.delta, refs, state);
+    return;
+  }
+  if (ev.eventName === 'reasoning' && typeof data.delta === 'string') {
+    appendReasoningToLive(data.delta, refs, state);
+    return;
+  }
+  // Segment boundary: the row was just persisted. Mark the follower's bubble
+  // final and adopt the seq the row was written with, so the message sync can
+  // reconcile onto this node instead of drawing a second bubble. `seq` is
+  // absent when the segment produced no text (nothing was persisted).
+  if (ev.eventName === 'assistant_turn_end') {
+    finalizeLiveSegment(refs, state, data && data.seq);
+    return;
+  }
+  // The in-progress segment, sent once to a follower that joined mid-turn
+  // (see src/live-chat.js addSubscriber). Paints the text produced before the
+  // subscription; the deltas that follow append to it.
+  if (ev.eventName === 'live_segment') {
+    restoreLiveSegment(data, refs, state);
+    return;
+  }
   if (ev.eventName === 'shell_output') {
     handleShellOutputEvent(data, refs);
     return;
@@ -197,6 +232,14 @@ function handleLiveRunEnd(ev, refs, state, key) {
   state.runSettled = true;
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
   setChatStatus(refs, 'done', 'success');
+  // Drop a live bubble that never got its `assistant_turn_end` (the run died
+  // mid-segment). The final persisted row arrives with the kickPoll below, so
+  // leaving the un-finalized node would show the turn twice.
+  clearLiveSegment(refs, state);
+  // Resume the older-history drain. It deliberately bails while a run is
+  // in flight (the tail is being written), and nothing restarted it
+  // afterwards — so history only appeared when the user scrolled to the top.
+  if (typeof state._drainOlderMessages === 'function') state._drainOlderMessages();
   // Immediately sync the final persisted message so the transcript
   // paints the completed turn without waiting for the next idle poll.
   if (typeof state._kickPoll === 'function') state._kickPoll();
