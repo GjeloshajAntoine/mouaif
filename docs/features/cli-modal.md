@@ -4,35 +4,37 @@
 
 The CLI modal is a full-screen command prompt inside a chat, opened from the composer's File button → **Cli**. It runs a persistent shell for the project — the platform shell (`cmd.exe` on Windows, the user's `$SHELL` or `/bin/sh` on POSIX) — with the project directory as the working directory. Output streams into the modal; each line typed at the prompt is sent to the same running process.
 
-The session runs on a **pseudo-terminal**, so programs that ask a question (`npm publish` under two-factor authentication, `git commit` for a missing identity, `sudo`, `read`) can show the prompt and read the answer you type.
+The session always runs on a **pseudo-terminal** (on every macOS, Linux and BSD host), so programs that ask a question (`npm publish` under two-factor authentication, `git commit` for a missing identity, `sudo`, `read`) can show the prompt and read the answer you type, and programs that only print full output to a terminal — npm's 2FA link — print it complete.
 
 ## Usage
 
-Open the composer's File button and choose **Cli**. The header shows the shell label, the project directory, and an **interactive** badge when the session has a real terminal.
+Open the composer's File button and choose **Cli**. The header shows the shell label and the project directory.
 
 - Type a command and press **Enter** to run it.
-- Press **Enter** again to send an empty line — an interactive prompt that offers a default accepts it.
+- Press **Enter** on an empty line to send it — a prompt that offers a default accepts it.
 - Press **Ctrl+Enter** (**Cmd+Enter** on macOS) to send the line **without a line terminator**, for a program waiting on a single key (a `y/n` confirmation, a pager).
 - Close the sheet with the close button or **Escape**. Closing kills the session.
 
-Because the session is a real terminal, an interactive program can wait for you. Publishing from the modal is the motivating case:
+Because the session is a real terminal, an interactive program can wait for you. Publishing from the modal is the motivating case. Without a terminal, npm fails and masks its one-time link (its log redactor replaces the UUID in the URL with `***`):
 
 ```text
-$ npm publish --otp=
-npm notice Publishing to https://registry.npmjs.org/ with tag latest and public access
+$ npm publish
 npm error code EOTP
-Open this URL in your browser to authenticate:
-  https://www.npmjs.com/auth/cli/***
+npm error Open this URL in your browser to authenticate:
+npm error   https://www.npmjs.com/auth/cli/***
 ```
 
-With the interactive session you can instead run the command, read the prompt, and answer it in the same sheet:
+In the modal, npm sees a terminal, prints the link complete, and waits for the web login to finish:
 
 ```text
-$ npm publish --otp=
-This operation requires a one-time password.
-Enter OTP: 123456
+$ npm publish
+Authenticate your account at:
+https://www.npmjs.com/auth/cli/0f8fad5b-d9cb-469f-a165-70867728950e
+Press ENTER to open in the browser...
 + mouaif@0.3.0
 ```
+
+Copy the link into your phone's browser and sign in; npm polls for the approval and continues on its own. (The **Press ENTER** line is npm offering to open a browser on the machine running mouaif, which is not the device you are holding — skip it.) An account on authenticator-app 2FA gets `Enter OTP:` instead — type the code and press **Enter**.
 
 You can also run multiple commands in one session — the shell keeps its state (working directory, environment, variables) between lines.
 
@@ -40,29 +42,35 @@ You can also run multiple commands in one session — the shell keeps its state 
 
 ### Session lifecycle
 
-- `GET /api/tools/cli/session?projectDir=<abs>` starts or reuses the per-project session and returns `{ id, projectDir, shell, interactive, startedAt, defaultDir }`. `interactive` is `true` when the child runs on a pseudo-terminal.
+- `GET /api/tools/cli/session?projectDir=<abs>` starts or reuses the per-project session and returns `{ id, projectDir, shell, interactive, startedAt, defaultDir }`. `interactive` is `true` when the child runs on a pseudo-terminal — always, except on Windows. It is diagnostic only; the modal shows no badge for it.
 - `POST /api/tools/cli/command` with `{ projectDir, cmd, raw? }` writes one line to the session's stdin. `raw: true` omits the line terminator.
 - `POST /api/tools/cli/close` with `{ projectDir }` kills the session (idempotent).
 - **Access:** these routes sit behind the app's access protection (session login and same-origin/CSRF checks), like every `/api/*` route. They do **not** consult the project's **Shell** tool Off/Ask/Allow mode. That mode governs what the *model* may run; the CLI modal is typed by the signed-in user, so it is treated like a terminal on the host.
 - The session is keyed by the project's **real** path: `session` resolves symlinks with `realpath`, and `command` / `close` resolve the `projectDir` they receive the same way, so a project opened through a symlink reaches (and closes) the same shell.
-- Output is broadcast over the `GET /events` SSE channel as `cli_output` frames `{ id, stream, data }`, filtered client-side by session id. A PTY merges stdout and stderr, so every chunk is labelled `stdout`; the piped fallback keeps a separate `stderr` channel.
+- Output is broadcast over the `GET /events` SSE channel as `cli_output` frames `{ id, stream, data }`, filtered client-side by session id. A PTY merges stdout and stderr, so every chunk is labelled `stdout`; the Windows piped fallback keeps a separate `stderr` channel.
 
 The session helpers live in [src/server-handlers-tools.js](../../src/server-handlers-tools.js) (`ensureCliSession`, `writeCliCommand`, `attachCliStream`, `closeCliSession`), the pseudo-terminal shim in [src/pty.js](../../src/pty.js). The modal is [frontend/src/components/chat/CliModal.jsx](../../frontend/src/components/chat/CliModal.jsx), and the stateful ANSI/VT screen decoder it renders through is `CliScreen` in [frontend/src/components/chat/utils.js](../../frontend/src/components/chat/utils.js).
 
-### Pseudo-terminal and the piped fallback
+### Pseudo-terminal
 
 The session is spawned on a pseudo-terminal by [src/pty.js](../../src/pty.js). Over pipes (`stdio: ['pipe', ...]`) the child is **not** a TTY, so a prompting program gets an immediate EOF — `read` returns an empty answer and `npm publish` refuses to prompt at all, answering `EOTP` with a **redacted** `…/auth/cli/***` URL (npm's `@npmcli/redact` masks the one-time token before printing it; the `*` characters are npm's placeholder, not the modal's).
 
-`src/pty.js` allocates the TTY with util-linux `script(1)` — no native addon, so `npm install` never needs a C++ toolchain:
+`src/pty.js` allocates the TTY with a tool the host already has — no native addon, so `npm install` never needs a C++ toolchain. It tries, in order, and keeps the first that passes a one-time probe (the probe command must see a terminal on **both** stdin and stdout and hand back its exit code):
+
+| Backend | Where | What runs |
+| --- | --- | --- |
+| util-linux `script` | every Linux distro and base image | `script -qefc "<cmd>" /dev/null` |
+| BSD `script` | macOS, FreeBSD, OpenBSD, NetBSD | `script -q /dev/null /bin/sh -c "<cmd>"` |
+| `python3` `pty` | any POSIX host with Python (a stripped container without util-linux) | a small `pty.fork()` relay passed with `python3 -c` |
 
 ```bash
-# what the shim runs, roughly:
-script -qefc "'/bin/bash' '-i'" /dev/null
+# the util-linux case, roughly:
+script -qefc "stty rows 30 cols 100; exec '/bin/bash' '-i'" /dev/null
 ```
 
-`-c` runs the shell on a pty slave, `-e` propagates the child's exit code, `-f` flushes each write so output is not delayed, and `-q` drops the "Script started" banner. Closing the session signals every process in the terminal session `script` created (found through `/proc`, before anything is signalled): SIGHUP and SIGTERM first, then SIGKILL after a one-second grace period. An interactive shell gives each job its own process group, so signalling `script`'s group alone would miss a backgrounded job (`npm run dev &`); the session id is what they all share. A program that called `setsid()` itself (a daemon) has left the session on purpose and keeps running.
+`-c` runs the shell on a pty slave, `-e` propagates the child's exit code, `-f` flushes each write so output is not delayed, and `-q` drops the "Script started" banner. `script` sizes the pty from its own stdin, which is a pipe here, so the grid would read `0 0`; the `stty` step sets it to 100×30 first, and `exec` keeps the shell's exit code. The python3 relay sets the same grid with `TIOCSWINSZ`, forwards SIGTERM/SIGHUP to the shell as SIGHUP, and exits with the shell's status. `TERM` is inherited, or set to `xterm-256color` when it is empty or `dumb`. Closing the session signals every process in the terminal session `script` created (found through `/proc`, before anything is signalled): SIGHUP and SIGTERM first, then SIGKILL after a one-second grace period. An interactive shell gives each job its own process group, so signalling `script`'s group alone would miss a backgrounded job (`npm run dev &`); the session id is what they all share. A program that called `setsid()` itself (a daemon) has left the session on purpose and keeps running.
 
-The module probes for a usable `script` once, at the first session. Where none is available — Windows, a BSD/macOS `script`, a container without util-linux — the session falls back to the original **piped** child. Everything non-interactive works identically; only prompting programs cannot ask a question. The session then reports `interactive: false`, and the modal omits the badge.
+The probe runs once, at the first session. Only Windows has none of these backends; there the session falls back to a **piped** child (`interactive: false`). Everything non-interactive works identically, but prompting programs cannot ask a question and npm prints its link masked.
 
 ### Line terminator
 
@@ -99,4 +107,5 @@ npm run test:cli
 - `scripts/test-cli-utf8-split.js` — feeds `attachCliStream` UTF-8 split at every byte boundary, on the PTY and piped paths, and asserts no `�` reaches the broadcast.
 - `scripts/test-cli-pty-interactive.js` — asserts the session is interactive, that a prompting program's question reaches the screen, and that the answer POSTed to the command endpoint is read back by the still-running child. It skips (exit 0) when no pseudo-terminal can be allocated, because that is the documented degraded mode.
 - `scripts/test-cli-symlink-project.js` — opens a session through a symlinked project path and asserts that a command reaches it and that close really ends it.
-- `scripts/test-cli-pty-shim.js` — unit-tests `src/pty.js`: `isAvailable()` matches the piped fallback rule, quoting survives a path with spaces and quotes, `onData` replays what was buffered before the stream attached, `write` reaches the shell, and `kill` takes down the shell, its foreground job and any backgrounded job (`cmd &`).
+- `scripts/test-cli-npm-otp-url.js` — runs a real `npm publish` in a CLI session against a local registry that demands web 2FA, once per backend present on the host, and asserts the link reaches the modal complete (never `***`) and the publish finishes.
+- `scripts/test-cli-pty-shim.js` — unit-tests `src/pty.js` on every backend present on the host (stdout is a terminal too, the grid is 100×30, not 0×0): `isAvailable()` is true on every POSIX host, quoting survives a path with spaces and quotes, `onData` replays what was buffered before the stream attached, `write` reaches the shell, and `kill` takes down the shell, its foreground job and any backgrounded job (`cmd &`).

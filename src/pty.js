@@ -11,9 +11,10 @@
 // prebuilt binary for Linux (only darwin/win32), so a plain `npm install`
 // without a C++ toolchain failed outright on Linux — the exact platform where
 // mouaif is most often installed (Docker, CI, Codespaces, VPS). Instead of a
-// replacement dependency this module allocates the TTY with `script(1)` from
-// util-linux, present on every Linux base image including
-// `node:22-bookworm-slim`, and falls back to a piped child where it is not.
+// replacement dependency this module allocates the TTY with whatever the host
+// already has: util-linux `script(1)` (every Linux base image, including
+// `node:22-bookworm-slim`), BSD/macOS `script`, or `python3`'s `pty` module.
+// Only where none exists (Windows) does the caller fall back to a piped child.
 //
 // `spawnPty(exe, args, opts)` returns a handle shaped like the handful of
 // node-pty members the session uses — `onData`, `onExit`, `write`, `kill`,
@@ -30,16 +31,117 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
-// The `script` implementation we can rely on: util-linux, which supports
-// `-e` (return the child's exit code), `-f` (flush) and `-c` (command). BSD /
-// macOS `script` shares the name but not the flags, and Windows has no
-// equivalent, so on those platforms the caller's piped path stays in charge
-// (the documented degraded mode) and `isAvailable()` reports false.
-const SUPPORTED_PLATFORM = process.platform === 'linux';
+// A session without a TTY is not a smaller version of the same thing: npm, for
+// one, prints its 2FA link as `https://www.npmjs.com/auth/cli/***` (its log
+// redactor masks the UUID) unless stdin and stdout are terminals. So the shim
+// tries every dependency-free way of getting a pty before the caller falls
+// back to pipes:
+//
+//   1. util-linux `script -qefc`   — every Linux distro and base image;
+//   2. BSD `script -q /dev/null`   — macOS and the BSDs (different flags);
+//   3. `python3` + its `pty` module — any POSIX host with Python, e.g. a
+//                                    stripped container without util-linux.
+//
+// Each backend is probed once (it must run a command on a TTY and hand back
+// its exit code) and the first that passes is used. Only Windows, which has
+// none of these, keeps the piped child.
+const POSIX = process.platform !== 'win32';
 
-let resolved;
+// Grid size reported to programs on the pty. The modal renders plain text and
+// does not report its own size, so this is a sensible fixed terminal size.
+const COLS = 100;
+const ROWS = 30;
+
+// The python3 backend: fork the command onto a new pty (pty.fork makes it a
+// session leader with the slave as its controlling terminal), set the grid,
+// then copy stdin → master and master → stdout until the child exits. A
+// SIGTERM/SIGHUP to the helper is forwarded as SIGHUP — what a closed
+// terminal sends. When the session's stdin reaches EOF (the server went
+// away) the helper hangs up too, unless argv[3] is "0" — the probe feeds an
+// empty stdin and must let its command finish. The exit status is returned
+// the way a shell reports it (128 + signal).
+const PY_PTY = [
+  'import os, sys, pty, select, signal, struct',
+  'cols, rows, hup_on_eof = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3] != "0"',
+  'pid, fd = pty.fork()',
+  'if pid == 0:',
+  '    os.execvp(sys.argv[4], sys.argv[4:])',
+  'try:',
+  '    import fcntl, termios',
+  '    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))',
+  'except Exception:',
+  '    pass',
+  'def hup(*_):',
+  '    try: os.kill(pid, signal.SIGHUP)',
+  '    except OSError: pass',
+  'signal.signal(signal.SIGHUP, hup)',
+  'signal.signal(signal.SIGTERM, hup)',
+  'ins = [0, fd]',
+  'while True:',
+  '    try: r = select.select(ins, [], [])[0]',
+  '    except InterruptedError: continue',
+  '    if fd in r:',
+  '        try: data = os.read(fd, 65536)',
+  '        except OSError: data = b""',
+  '        if not data: break',
+  '        os.write(1, data)',
+  '    if 0 in r:',
+  '        data = os.read(0, 65536)',
+  '        if data: os.write(fd, data)',
+  '        else:',
+  '            ins = [fd]',
+  '            if hup_on_eof: hup()',
+  'status = os.waitpid(pid, 0)[1]',
+  'sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 128 + os.WTERMSIG(status))'
+].join('\n');
+
+// The command string `script` hands to /bin/sh, so every word is quoted for
+// that shell: a project path, shell path or argument containing a space or
+// quote must survive the round trip.
+function shellQuote(word) {
+  return "'" + String(word).replace(/'/g, "'\\''") + "'";
+}
+
+function shellCommand(exe, args) {
+  return [exe].concat(args || []).map(shellQuote).join(' ');
+}
+
+// util-linux `script` sizes the pty from its own stdin, which is a pipe
+// here, so the grid would read 0×0 (`stty size` → `0 0`) and programs that
+// lay out to the width (npm's progress, `ls`, pagers) would misbehave. Set
+// the grid first, then exec the real command so its exit code is kept.
+function sizedCommand(exe, args) {
+  return 'stty rows ' + ROWS + ' cols ' + COLS + ' 2>/dev/null; exec ' + shellCommand(exe, args);
+}
+
+// Each backend turns (exe, args[, forProbe]) into the real (file, argv).
+const ALL_BACKENDS = [
+  {
+    name: 'script (util-linux)',
+    bin: 'script',
+    platforms: ['linux'],
+    argv: (bin, exe, args) => [bin, ['-qefc', sizedCommand(exe, args), '/dev/null']]
+  },
+  {
+    // BSD / macOS `script [-q] file command ...` runs the command directly
+    // (no shell string) and has no -e/-c; it exits with the child's status.
+    name: 'script (BSD)',
+    bin: 'script',
+    platforms: ['darwin', 'freebsd', 'openbsd', 'netbsd'],
+    argv: (bin, exe, args) => [bin, ['-q', '/dev/null', '/bin/sh', '-c', sizedCommand(exe, args)]]
+  },
+  {
+    name: 'python3 pty',
+    bin: 'python3',
+    platforms: null, // any POSIX host
+    argv: (bin, exe, args, forProbe) =>
+      [bin, ['-c', PY_PTY, String(COLS), String(ROWS), forProbe ? '0' : '1', exe].concat(args || [])]
+  }
+];
+
+let candidates = ALL_BACKENDS;
 let probeDone = false;
-let scriptBin = null;
+let backend = null; // { name, bin, argv }
 
 // Resolve an executable file on PATH without spawning anything, so the probe
 // below only runs when `script` is actually present.
@@ -55,44 +157,56 @@ function which(name) {
   return null;
 }
 
-// One-shot capability probe: confirm this `script` accepts our flags before a
-// session depends on it. A util-linux build that predates `-f`, or a foreign
-// `script` that happens to be on PATH, fails the probe and the caller keeps the
-// piped fallback instead of a session that dies on spawn.
-function probeScript(bin) {
-  const result = spawnSync(bin, ['-qefc', 'exit 0', '/dev/null'], {
-    stdio: 'ignore',
-    timeout: 2000,
+// One-shot capability probe for a backend: it must run a command whose stdin
+// AND stdout are terminals and return that command's exit status. A
+// util-linux build that predates `-f`, a foreign `script` that happens to be
+// on PATH, or a Python without `pty` fails the probe, and the next backend is
+// tried instead of a session that dies on spawn (or silently has no TTY).
+const PROBE = '[ -t 0 ] && [ -t 1 ] && exit 3; exit 1';
+function probe(b, bin) {
+  const [file, argv] = b.argv(bin, '/bin/sh', ['-c', PROBE], true);
+  const result = spawnSync(file, argv, {
+    stdio: ['pipe', 'ignore', 'ignore'],
+    input: '',
+    timeout: 3000,
     windowsHide: true
   });
-  return !result.error && result.status === 0;
+  return !result.error && result.status === 3;
 }
 
-function resolveScript() {
-  if (probeDone) return scriptBin;
+function resolveBackend() {
+  if (probeDone) return backend;
   probeDone = true;
-  if (!SUPPORTED_PLATFORM) return (scriptBin = null);
-  const bin = which('script');
-  scriptBin = bin && probeScript(bin) ? bin : null;
-  return scriptBin;
+  if (!POSIX) return (backend = null);
+  for (const b of candidates) {
+    if (b.platforms && b.platforms.indexOf(process.platform) === -1) continue;
+    const bin = which(b.bin);
+    if (bin && probe(b, bin)) return (backend = { name: b.name, bin, argv: b.argv });
+  }
+  return (backend = null);
 }
 
-// True when a real pseudo-terminal can be allocated on this host. The CLI
-// session reports this as `interactive`, and the modal hides its prompt badge
-// when it is false.
+// True when a real pseudo-terminal can be allocated on this host. When false
+// (Windows) the CLI session falls back to a piped child.
 function isAvailable() {
-  return !!resolveScript();
+  return !!resolveBackend();
 }
 
-// The command string `script -c` hands to /bin/sh, so every word is quoted for
-// that shell: a project path, shell path or argument containing a space or
-// quote must survive the round trip.
-function shellQuote(word) {
-  return "'" + String(word).replace(/'/g, "'\\''") + "'";
+// Which backend is in use ('script (util-linux)', 'script (BSD)',
+// 'python3 pty'), or null. For diagnostics and tests.
+function backendName() {
+  const b = resolveBackend();
+  return b ? b.name : null;
 }
 
-function shellCommand(exe, args) {
-  return [exe].concat(args || []).map(shellQuote).join(' ');
+// Tests only: forget the probe result and optionally restrict the candidates,
+// so each backend can be exercised on a host that has several.
+function _resetForTests(onlyNames) {
+  probeDone = false;
+  backend = null;
+  candidates = Array.isArray(onlyNames)
+    ? ALL_BACKENDS.filter((b) => onlyNames.indexOf(b.name) !== -1)
+    : ALL_BACKENDS;
 }
 
 // Read `/proc/<pid>/stat` → { ppid, sid }, or null once the process is gone.
@@ -173,10 +287,11 @@ function terminate(child) {
 }
 
 function spawnPty(exe, args, opts) {
-  const bin = resolveScript();
-  if (!bin) return null;
+  const b = resolveBackend();
+  if (!b) return null;
   const options = opts || {};
-  const child = spawn(bin, ['-qefc', shellCommand(exe, args), '/dev/null'], {
+  const [file, argv] = b.argv(b.bin, exe, args);
+  const child = spawn(file, argv, {
     cwd: options.cwd,
     env: options.env || process.env,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -251,4 +366,4 @@ function spawnPty(exe, args, opts) {
   };
 }
 
-module.exports = { isAvailable, spawnPty };
+module.exports = { isAvailable, spawnPty, backendName, COLS, ROWS, _resetForTests };

@@ -28,9 +28,10 @@ const {
 // `windowsHide` and no window is ever shown; output streaming rides the
 // SSE endpoint (see startCliSession below).
 //
-// The child runs on a pseudo-terminal when the host can allocate one (see
-// src/pty.js), which is what lets prompting programs ask a question. Where
-// no PTY is available the session falls back to piped stdio, and commands
+// The child runs on a pseudo-terminal (see src/pty.js), which is what lets
+// prompting programs ask a question and keeps tools like npm from masking
+// output they only print in full to a terminal. Every POSIX host gets one;
+// only on Windows does the session fall back to piped stdio, and commands
 // that require a TTY (REPLs, `cmd.exe` interactive prompts like `del`
 // confirmation) fail or exit immediately — the documented limitation, same
 // as the native `shell` tool. Everything non-interactive works exactly like
@@ -102,9 +103,8 @@ function cliShellMeta() {
 //
 // The TTY comes from src/pty.js, which allocates it with util-linux
 // `script(1)` — no native addon, so `npm install` needs no C++ toolchain.
-// Where no PTY can be allocated (Windows, BSD/macOS `script`, a container
-// without util-linux) the piped spawn below takes over, and the modal shows a
-// non-interactive session.
+// It falls back to BSD/macOS `script` and then python3's `pty` module, so
+// every POSIX host gets a terminal; only Windows keeps the piped spawn below.
 //
 // A PTY merges stdout and stderr into one stream, so `attachCliStream`
 // labels every chunk `stdout`; there is no separate stderr channel to
@@ -129,7 +129,11 @@ function ensureCliSession(projectDir) {
         cwd: projectDir,
         // The child inherits the server's env; force a colour-capable TERM
         // so utilities that gate formatting on terminfo behave.
-        env: Object.assign({}, process.env, { TERM: process.env.TERM || 'xterm-256color' })
+        // A "dumb" or empty TERM (the server was started from a service
+        // manager or a pipe) would tell programs there is no real terminal.
+        env: Object.assign({}, process.env, {
+          TERM: (process.env.TERM && process.env.TERM !== 'dumb') ? process.env.TERM : 'xterm-256color'
+        })
       });
       isPty = !!child;
     } catch {
@@ -454,10 +458,9 @@ try {
       id: session.id,
       projectDir: real,
       shell: meta.label,
-      // True when the session runs on a pseudo-terminal, so prompting
-      // programs (npm under 2FA, git, sudo) can ask a question and read
-      // the answer. The modal surfaces this so a user knows interactive
-      // input is supported.
+      // True when the session runs on a pseudo-terminal — every POSIX host
+      // (src/pty.js tries util-linux script, BSD script, then python3).
+      // Diagnostic only: the modal no longer shows a badge for it.
       interactive: !!session.pty,
       startedAt: session.startedAt,
       defaultDir: real

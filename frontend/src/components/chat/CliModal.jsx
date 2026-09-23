@@ -26,9 +26,6 @@ export function CliModal(props) {
   const [shellLabel, setShellLabel] = useState('');
   const [dirLabel, setDirLabel] = useState(projectDir || '');
   const [busy, setBusy] = useState(false);
-  // True when the server session runs on a pseudo-terminal, so a program
-  // that asks a question can read the answer typed into the prompt line.
-  const [interactive, setInteractive] = useState(false);
 
   const outRef = useRef(null);       // <pre> terminal output
   const inputRef = useRef(null);
@@ -139,7 +136,6 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
         }
         sessionIdRef.current = r.body.id;
         setShellLabel(r.body.shell || '');
-        setInteractive(!!r.body.interactive);
         if (r.body.projectDir) setDirLabel(r.body.projectDir);
         // The session id is ready — open the SSE channel and listen
         // for this session's cli_output frames.
@@ -182,9 +178,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   // send(text, raw) — POST one line to the session. `raw: true` omits the
   // line terminator, for a single-key answer to a prompt the program is
   // showing; a normal send terminates the line so the shell runs it. An
-  // empty `text` sends a bare newline, which accepts an interactive
-  // prompt's default. On a non-interactive session the server writes to
-  // the piped child instead, which is unchanged.
+  // empty `text` sends a bare newline, which accepts a prompt's default.
   const send = useCallback(async (text, raw) => {
     setBusy(true);
     try {
@@ -205,10 +199,9 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   }, [projectDir, appendOut]);
 
   async function runCommand() {
-    // An empty line is meaningful to an interactive prompt (accept the
-    // default) — forward it instead of ignoring the Enter.
+    // An empty line is meaningful to a prompt (accept the default) and is a
+    // harmless fresh prompt otherwise — always forward the Enter.
     const cmd = cmdText;
-    if (!cmd.trim() && !interactive) return;
     setCmdText('');
     await send(cmd, false);
   }
@@ -218,10 +211,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
       h('div', { class: 'cli__head' },
         h('div', { class: 'cli__title-stack' },
           h('span', { class: 'cli__title' }, shellLabel ? ('CLI — ' + shellLabel) : 'CLI'),
-          h('span', { class: 'cli__dir', title: dirLabel }, dirLabel),
-          interactive
-            ? h('span', { class: 'cli__badge', title: 'Interactive terminal — prompting programs can read your answer' }, 'interactive')
-            : null
+          h('span', { class: 'cli__dir', title: dirLabel }, dirLabel)
         ),
         h('button', {
           class: 'icon-btn icon-btn--close cli__iconbtn',

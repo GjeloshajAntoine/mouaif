@@ -26,7 +26,7 @@ const pty = require('../src/pty.js');
 
 let passed = 0;
 let failed = 0;
-function check(name, cond, detail) {
+function checkAll(name, cond, detail) {
   if (cond) { passed++; console.log('PASS  ' + name); }
   else { failed++; console.log('FAIL  ' + name + (detail ? '  ' + detail : '')); }
 }
@@ -52,23 +52,50 @@ function newStream() {
   return stream;
 }
 
+// Every backend src/pty.js knows about. Each one present on this host runs
+// the full suite below, so the python3 fallback is proven here too and not
+// only on a host that lacks util-linux.
+const BACKENDS = ['script (util-linux)', 'script (BSD)', 'python3 pty'];
+
+const check = checkAll;
+
 async function main() {
+  pty._resetForTests();
   const available = pty.isAvailable();
 
   check('isAvailable() reports the probe result as a boolean', typeof available === 'boolean');
   check(
-    'availability matches the platform rule (Linux + util-linux script only)',
-    available === (process.platform === 'linux' && (() => {
-      try { execFileSync('script', ['-qefc', 'exit 0', '/dev/null'], { stdio: 'ignore' }); return true; } catch { return false; }
-    })()),
+    'every POSIX host gets a terminal (only Windows keeps the piped child)',
+    available === (process.platform !== 'win32'),
     'isAvailable=' + available + ' platform=' + process.platform
   );
 
   if (!available) {
-    console.log('\nSKIP  no pseudo-terminal on this host — the piped fallback is the documented mode.');
+    console.log('\nSKIP  Windows: no pseudo-terminal backend — the piped fallback is the documented mode.');
     console.log(passed + ' passed, ' + failed + ' failed');
     process.exit(failed ? 1 : 0);
   }
+
+  const present = [];
+  for (const name of BACKENDS) {
+    pty._resetForTests([name]);
+    if (pty.isAvailable()) present.push(name);
+  }
+  console.log('backends on this host: ' + present.join(', '));
+  for (const name of present) {
+    pty._resetForTests([name]);
+    console.log('\n--- backend: ' + name);
+    await suite(name);
+  }
+  pty._resetForTests();
+
+  console.log('\n' + passed + ' passed, ' + failed + ' failed');
+  process.exit(failed ? 1 : 0);
+}
+
+async function suite(backend) {
+  // Every check in the suite is labelled with the backend it ran on.
+  const check = (name, cond, detail) => checkAll('[' + backend + '] ' + name, cond, detail);
 
   // 1. A TTY exists and output reaches the caller.
   {
@@ -168,8 +195,21 @@ async function main() {
     if (leaked) { try { execFileSync('pkill', ['-KILL', '-f', marker]); } catch { /* best effort */ } }
   }
 
-  console.log('\n' + passed + ' passed, ' + failed + ' failed');
-  process.exit(failed ? 1 : 0);
+  // 7. Stdout is a terminal too, with a real grid. util-linux `script` sizes
+  //    the pty from its own (piped) stdin, which read 0x0 — and a program
+  //    that sees no terminal on stdout (npm) masks its 2FA link as `***`.
+  {
+    const stream = newStream();
+    const session = pty.spawnPty('/bin/bash', ['-i'], { cwd: process.cwd() });
+    session.onData((d) => { stream.text += d.toString('utf8'); });
+    session.write('[ -t 1 ] && O=yes || O=no; echo OUT=$O SIZE=$(stty size)\n');
+    await waitFor(stream, (t) => /OUT=\w+ SIZE=\d+ \d+/.test(t), 4000);
+    const m = stream.text.match(/OUT=(\w+) SIZE=(\d+) (\d+)/) || [];
+    check('stdout is a terminal', m[1] === 'yes', JSON.stringify(m[0]));
+    check('the grid is ' + pty.ROWS + 'x' + pty.COLS + ', not 0x0',
+      Number(m[2]) === pty.ROWS && Number(m[3]) === pty.COLS, JSON.stringify(m[0]));
+    session.kill();
+  }
 }
 
 main().catch((err) => {

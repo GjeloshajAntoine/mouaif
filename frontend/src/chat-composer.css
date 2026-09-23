@@ -1202,20 +1202,6 @@ transform: translateX(14px);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* "interactive" badge — the session runs on a pseudo-terminal, so a
-   prompting program can read an answer typed into the prompt line. */
-.cli__badge {
-  align-self: flex-start;
-  margin-top: 2px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(79, 193, 255, 0.4);
-  color: #4fc1ff;
-  font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
 /* Icon buttons use the shared .icon-btn utility (forms.css). */
 
 .cli__body {
