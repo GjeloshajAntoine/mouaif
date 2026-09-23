@@ -195,6 +195,60 @@ function transientTest() {
   liveChat.finishLiveChat(rk);
 }
 
+// progress_update is a latest-value event: each frame carries the whole state
+// (title, current, total, status, message) and it is never persisted, so
+// buffering every frame made a long run replay one entry per progress report on
+// every return to the chat — to draw a single card. replaceLive keeps only the
+// newest per call id.
+function progressCoalescingTest() {
+  console.log('live-chat.js coalesces progress_update to the latest per call');
+  const rk = 'PROJ::PROGRESS';
+  liveChat.ensureLiveChat(rk);
+
+  liveChat.replaceLive(rk, 'progress_update', { callId: 'p1', title: 'Build', current: 1, total: 10, status: 'running' }, liveChat.progressKey({ callId: 'p1' }));
+  liveChat.replaceLive(rk, 'progress_update', { callId: 'p1', title: 'Build', current: 5, total: 10, status: 'running' }, liveChat.progressKey({ callId: 'p1' }));
+  liveChat.replaceLive(rk, 'progress_update', { callId: 'p1', title: 'Build', current: 10, total: 10, status: 'completed' }, liveChat.progressKey({ callId: 'p1' }));
+
+  const sub = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub);
+  const frames = collectFrames(sub).filter((f) => f.name === 'progress_update');
+  t('many reports for one call replay as a single frame', frames.length === 1, 'saw ' + frames.length);
+  let data = null; try { data = JSON.parse(frames[0].data); } catch { }
+  t('the surviving frame is the latest state', !!(data && data.current === 10 && data.status === 'completed'), frames[0] && frames[0].data);
+
+  // A different call id is a different card and must not be merged away.
+  liveChat.replaceLive(rk, 'progress_update', { callId: 'p2', title: 'Tests', current: 1, total: 4, status: 'running' }, liveChat.progressKey({ callId: 'p2' }));
+  const sub2 = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub2);
+  const names = collectFrames(sub2).filter((f) => f.name === 'progress_update');
+  t('a second call id keeps its own frame', names.length === 2, 'saw ' + names.length);
+
+  const seqs = names.map((f) => { try { return JSON.parse(f.data).liveSeq; } catch { return null; } });
+  t('each surviving progress frame carries a liveSeq', seqs.every((n) => typeof n === 'number'), JSON.stringify(seqs));
+
+  // A frame with no call id falls back to the title, so a distinct card is
+  // never lost to over-merging.
+  liveChat.replaceLive(rk, 'progress_update', { title: 'Task A', current: 1, total: 3, status: 'running' }, liveChat.progressKey({ title: 'Task A' }));
+  liveChat.replaceLive(rk, 'progress_update', { title: 'Task A', current: 3, total: 3, status: 'completed' }, liveChat.progressKey({ title: 'Task A' }));
+  liveChat.replaceLive(rk, 'progress_update', { title: 'Task B', current: 1, total: 2, status: 'running' }, liveChat.progressKey({ title: 'Task B' }));
+  const sub3 = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub3);
+  const titles = collectFrames(sub3)
+    .filter((f) => f.name === 'progress_update')
+    .map((f) => { try { return JSON.parse(f.data).title; } catch { return ''; } });
+  t('title-keyed reports coalesce per title', titles.filter((x) => x === 'Task A').length === 1, JSON.stringify(titles));
+  t('a differently titled report is preserved', titles.includes('Task B'), JSON.stringify(titles));
+
+  // A progress frame is never persisted, so pruneLive must leave it alone.
+  liveChat.pruneLive(rk, 'p1');
+  const sub4 = makeFakeRes();
+  liveChat.addSubscriber(rk, null, sub4);
+  t('prune for a persisted tool result does not drop progress frames',
+    collectFrames(sub4).some((f) => f.name === 'progress_update'));
+
+  liveChat.finishLiveChat(rk);
+}
+
 function clientHandlerTest() {
   console.log('live.js dispatches the follower text path');
   const liveSrc = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/live.js'), 'utf8');
@@ -305,6 +359,7 @@ let port = 0;
 async function run() {
   baseTest();
   transientTest();
+  progressCoalescingTest();
   clientHandlerTest();
   await httpTest();
   console.log('\n' + pass + ' passed, ' + fail + ' failed');

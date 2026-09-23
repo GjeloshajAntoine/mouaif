@@ -727,9 +727,15 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
     // the run ends), replayed to late subscribers, and pushed live to
     // connected ones. Conveniently, the run entry also gives us the
     // toolResultId for a later prune on `tool_result`.
-    if (name === 'shell_output' || name === 'subagent_event' || name === 'progress_update'
+    if (name === 'shell_output' || name === 'subagent_event'
     || name === 'authorization_required' || name === 'ask_user_required') {
     liveChat.pushLive(runKey, name, data);
+    } else if (name === 'progress_update') {
+    // Latest-value, not a log: each frame carries the whole state, so an
+    // earlier one is worthless once a newer exists. Coalesced in the buffer
+    // so returning to a long run does not replay a progress frame per tool
+    // round to draw a single card.
+    liveChat.replaceLive(runKey, name, data, liveChat.progressKey(data));
     } else if (name === 'tool_result') {
     liveChat.pruneLive(runKey, data && data.id);
     } else if (name === 'message' || name === 'reasoning') {

@@ -49,6 +49,31 @@ function pushLive(runKey, name, data) {
   }
 }
 
+// replaceLive(runKey, name, data, key)
+//
+// Push an event and, in the same step, drop any earlier buffered event of the
+// same name carrying the same coalescing key. Used for the progress stream.
+//
+// `progress_update` is a LATEST-VALUE event, not a log: each frame carries the
+// whole state (title, current, total, status, message), so an earlier frame is
+// worthless once a newer one exists. It is also never persisted, so nothing
+// else re-delivers it. Buffering every frame meant a run that reported progress
+// across many tool rounds accumulated one entry per report, and every
+// subsequent return to the chat replayed all of them to draw a single final
+// card — a cost that grew with the length of the run, for output nobody sees.
+//
+// The surviving frame keeps the newer liveSeq, so a client that already
+// consumed a superseded frame is not asked to rewind.
+function replaceLive(runKey, name, data, key) {
+  const r = runs.get(runKey);
+  if (!r) return;
+  const id = String(key == null ? '' : key);
+  if (id && r.buffer.length) {
+    r.buffer = r.buffer.filter((e) => !(e.name === name && progressKey(e.data) === id));
+  }
+  pushLive(runKey, name, data);
+}
+
 // pushTransient(runKey, name, data)
 //
 // Fan an event out to the subscribers connected RIGHT NOW, without
@@ -96,7 +121,33 @@ function eventToolId(e) {
   if (e.name === 'shell_output') return String(data.id == null ? '' : data.id);
   if (e.name === 'subagent_event') return String(data.parentCallId == null ? '' : data.parentCallId);
   if (e.name === 'authorization_required' || e.name === 'ask_user_required') return String(data.callId == null ? '' : data.callId);
+  // Deliberately NOT `progress_update`: pruneLive drops everything matching a
+  // tool id whose result was just persisted, and a progress frame is never
+  // persisted — dropping it would lose the run's progress card for a late
+  // subscriber. Coalescing uses progressKey below, which is separate on
+  // purpose.
   return '';
+}
+
+// progressKey(data) -> string
+//
+// Coalescing key for a progress frame, used by replaceLive only.
+//
+// A frame's `callId` identifies the tool call that reported it and is the same
+// id the frontend keys the progress CARD by (`[data-progress-id]`), so two
+// frames with the same callId always draw the same card and the older one is
+// redundant.
+//
+// A frame with no callId — the subagent forwarding path reuses the event name
+// without one, and `task`-derived updates may not carry one either — falls back
+// to the title, which is the card's other identity. Keying by title is
+// deliberately conservative: two same-titled reports coalesce, two differently
+// titled ones both survive, so a distinct card is never lost to over-merging.
+function progressKey(data) {
+  const callId = data && data.callId != null ? String(data.callId) : '';
+  if (callId) return 'call:' + callId;
+  const title = data && data.title != null ? String(data.title) : '';
+  return title ? 'title:' + title : '';
 }
 
 function pruneLive(runKey, toolId) {
@@ -167,6 +218,8 @@ module.exports = {
   hasSubscribers,
   pushLive,
   pushTransient,
+  replaceLive,
+  progressKey,
   pruneLive,
   addSubscriber,
   finishLiveChat
