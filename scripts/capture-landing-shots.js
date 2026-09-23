@@ -13,7 +13,7 @@
 //      providers and projects are never read or written;
 //   2. a small fixture project (source files, AGENTS.md, one git commit) in
 //      that home, registered as the only project;
-//   3. two project models over three app-level providers, and one seeded chat
+//   3. two project models over seven app-level providers, a second project, and one seeded chat
 //      whose transcript is a real agentic run — a `read_file`, a
 //      `search_files`, a `write_file` and a `shell` card, each carrying the
 //      JSON shape its tool returns, so the cards render as they do live;
@@ -274,7 +274,16 @@ const SHOTS = [
       // Pin to the bottom, which is what the chat itself does on open, so the
       // shot shows the end of the run rather than the top of the transcript.
       const t = document.querySelector('.chat-view__transcript');
-      if (t) t.scrollTop = t.scrollHeight;
+      if (!t) return;
+      t.scrollTop = t.scrollHeight;
+      // Then back up to the top of the first message that is cut off at the
+      // top edge, so no bubble or role label is sliced in half.
+      const top = t.getBoundingClientRect().top;
+      const cut = Array.from(t.querySelectorAll('.chat-msg')).find((m) => {
+        const r = m.getBoundingClientRect();
+        return r.top < top && r.bottom > top;
+      });
+      if (cut) t.scrollTop -= top - cut.getBoundingClientRect().top + 8;
     })()`
   },
   {
@@ -372,6 +381,13 @@ async function main() {
 
       settings.runMigrations();
       projects.registerProject(projectDir);
+      // A second, smaller project so the Chats tab shows the project-card
+      // grouping instead of one card over an empty screen.
+      const secondDir = path.join(tempRoot, 'api-server');
+      fs.mkdirSync(secondDir, { recursive: true });
+      fs.writeFileSync(path.join(secondDir, 'README.md'), '# api-server\n');
+      projects.registerProject(secondDir);
+      seed.seedSecondProject(secondDir, chats);
       seed.installProviders(settings);
       seed.installProjectModels(projectDir);
       const seeded = seed.seedChats(projectDir, chats, messages);

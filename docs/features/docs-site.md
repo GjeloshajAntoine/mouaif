@@ -30,10 +30,10 @@ The seven captures, in page order:
 
 | Capture | What it shows |
 |---------|---------------|
-| `chats-list.png` | The Chats tab — a project card holding its own chat list, a draft-only chat in italics, and **New chat** |
+| `chats-list.png` | The Chats tab — two project cards, each holding its own scrolling chat list and **New chat** |
 | `chat-tools.png` | A brand-new chat — the system-prompt card and the **Tools** card, one checkbox and one **Off / Ask / Allow** control per tool |
 | `chat-view.png` | A chat at the end of a run — the model header, per-turn cost lines, and the **Read**, **Searched**, **Wrote** and **Ran** tool cards |
-| `providers.png` | Settings → Providers — three connected providers, each naming its endpoint and whether a key is stored |
+| `providers.png` | Settings → Providers — seven connected providers, each naming its endpoint and whether a key is stored |
 | `project-settings.png` | Project settings — prompt style, then every tool with its own **Off / Ask / Allow** control |
 | `inspector.png` | The Inspector attached to a page over CDP — target bar, panel chips, live preview, console input |
 | `settings.png` | The Settings tab — providers first, then the app defaults that apply to every project |
@@ -68,7 +68,7 @@ Every capture is produced by one command:
 npm run docs:shots
 ```
 
-[scripts/capture-landing-shots.js](../../scripts/capture-landing-shots.js) is self-contained: it creates a throwaway `MOUAIF_HOME` under the OS temp dir, writes a small fixture project (source files, `AGENTS.md`, one git commit) and registers it, connects three app-level providers, seeds two project models and a chat whose transcript is a real agentic run, starts a static page for the Inspector to attach to, launches a headless Chrome with `--remote-debugging-port`, and boots the app server on an ephemeral port. Each screen is then a fresh tab emulated at 390 × 700 CSS px with a device scale factor of 2, so the PNGs are 780 × 1400 and stay sharp on a retina phone.
+[scripts/capture-landing-shots.js](../../scripts/capture-landing-shots.js) is self-contained: it creates a throwaway `MOUAIF_HOME` under the OS temp dir, writes a small fixture project (source files, `AGENTS.md`, one git commit) plus a second, empty one and registers both, connects seven app-level providers, seeds two project models and a chat whose transcript is a real agentic run (the chat capture scrolls to the end of the run, then back to the first message the top edge would cut), starts a static page for the Inspector to attach to, launches a headless Chrome with `--remote-debugging-port`, and boots the app server on an ephemeral port. Each screen is then a fresh tab emulated at 390 × 700 CSS px with a device scale factor of 2, so the PNGs are 780 × 1400 and stay sharp on a retina phone.
 
 Because the fixture home is throwaway, the capture never reads or writes the developer's own chats, providers or projects, and re-running it after a UI change is the expected workflow.
 

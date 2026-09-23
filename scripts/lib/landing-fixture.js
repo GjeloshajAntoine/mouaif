@@ -3,7 +3,7 @@
 //
 // Everything the landing-page captures need to look like a real working
 // session — one fixed chat id, a transcript that is a genuine agentic run,
-// three connected providers, two project models and the Inspector's preview
+// seven connected providers, two project models and the Inspector's preview
 // page. Kept in its own module because the capture script is plumbing; this is
 // the content, and it is easier to keep honest when it lives in one place.
 
@@ -17,7 +17,11 @@ const CHAT_TITLE = 'Fix task ordering after restart';
 const PROVIDERS = [
   { id: 'anthropic', baseUrl: 'https://api.anthropic.com', apiKey: 'sk-ant-demo-not-a-real-key', auth: 'apikey' },
   { id: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-demo-not-a-real-key', auth: 'apikey' },
-  { id: 'ollama', baseUrl: 'http://127.0.0.1:11434', auth: 'apikey' }
+  { id: 'ollama', baseUrl: 'http://127.0.0.1:11434', auth: 'apikey' },
+  { id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'sk-or-demo-not-a-real-key', auth: 'apikey' },
+  { id: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', apiKey: 'demo-not-a-real-key', auth: 'apikey' },
+  { id: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'demo-not-a-real-key', auth: 'apikey' },
+  { id: 'groq', baseUrl: 'https://api.groq.com/openai/v1', apiKey: 'gsk-demo-not-a-real-key', auth: 'apikey' }
 ];
 
 const MODELS = [
@@ -34,8 +38,19 @@ function installProviders(settings) {
 const EXTRA_CHATS = [
   { title: 'Add a done toggle to the board', draft: '' },
   { title: 'Review the restart fix', draft: '' },
-  { title: 'Cache the task list for one request', draft: 'Reuse the loaded rows instead of re-querying per task.' }
+  { title: 'Cache the task list for one request', draft: 'Reuse the loaded rows instead of re-querying per task.' },
+  { title: 'Explain the store module', draft: '' },
+  { title: 'Add a test for empty boards', draft: '' },
+  { title: 'Tidy the board styles on mobile', draft: '' },
+  { title: 'Bump dependencies', draft: '' }
 ];
+
+// The second project on the Chats tab: a couple of plain chats, no transcript.
+function seedSecondProject(projectDir, chats) {
+  for (const title of ['Add rate limiting to /login', 'Document the REST endpoints']) {
+    chats.createChat(projectDir, { title });
+  }
+}
 
 function installProjectModels(projectDir) {
   const settings = require('../../src/settings.js');
@@ -266,6 +281,7 @@ module.exports = {
   MODELS,
   installProviders,
   seedChats,
+  seedSecondProject,
   installProjectModels,
   transcript,
   writePreviewPage

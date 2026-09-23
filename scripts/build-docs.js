@@ -1196,7 +1196,7 @@ function buildLandingPage(outDir) {
 const landingShots = [
   [
     'features/images/landing/chats-list.png',
-    'The Chats tab at 390 px: a project card holding its own chat list, a draft-only chat shown in italics, and a New chat button under it.',
+    'The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it.',
     'Chats — projects group their own chats'
   ],
   [
@@ -1211,7 +1211,7 @@ const landingShots = [
   ],
   [
     'features/images/landing/providers.png',
-    'Settings → Providers at 390 px: three connected providers, each row naming its endpoint and whether a key is stored.',
+    'Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored.',
     'Providers — connect them once, app-wide'
   ],
   [
