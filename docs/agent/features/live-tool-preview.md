@@ -7,7 +7,7 @@
 - Files:
   - `src/live-chat.js` — the per-chat live-replay registry: `ensureLiveChat`, `setSegment`, `hasSubscribers`, `pushLive`, `pushTransient`, `pruneLive`, `addSubscriber`, `finishLiveChat`; assigns monotonic `liveSeq` values and filters replay by `fromLiveSeq`.
   - `src/server-shared.js` — exports the module (`liveChat`).
-  - `src/server-handlers-chats.js` — the `/api/chats/:id/live` route; `handleChatStream` calls `ensureLiveChat` at run start, `pushLive`/`pushTransient`/`pruneLive`/`setSegment` inside `emit`, and `finishLiveChat` at every exit. Also holds `nextLiveMessageSeq` (the per-chat transcript-seq prediction) and `liveSeqByChat`.
+  - `src/server-handlers-chats.js` — the `/api/chats/:id/live` route; `handleChatStream` calls `ensureLiveChat` at run start, `pushLive`/`pushTransient`/`pruneLive`/`setSegment` inside `emit`, and `finishLiveChat` at every exit. Also holds `assistantSegmentSeq` (the seq the last persisted segment row was written with).
   - `frontend/src/components/chat/live.js` — the client subscription (`subscribeLive`, `closeLive`) that dispatches events to the existing transcript handlers.
   - `frontend/src/components/chat/transcript.js` — the follower-specific DOM entry points `restoreLiveSegment`, `finalizeLiveSegment`, `clearLiveSegment`, plus `bufferPendingShellOutput`/`takePendingShellOutput` for early shell output.
   - `frontend/src/components/chat/useChatState.js` and `stream.js` — open the subscription when a chat loads/runs and close it on unmount; `useChatState` arms `watchingRun` and kicks the poll on load, and exposes `_drainOlderMessages`.
@@ -34,24 +34,37 @@ if (name === 'shell_output' || name === 'subagent_event' || name === 'progress_u
 } else if (name === 'message' || name === 'reasoning') {
   liveChat.pushTransient(runKey, name, data);     // connected subscribers only
 } else if (name === 'assistant_turn_end') {
-  liveChat.pushTransient(runKey, name, Object.assign({}, data, {
-    seq: nextLiveMessageSeq(runKey, assistantSegmentHasText)
-  }));
+  liveChat.pushTransient(runKey, name, assistantSegmentSeq == null
+    ? data
+    : Object.assign({}, data, { seq: assistantSegmentSeq }));
   liveChat.setSegment(runKey, '', '');
 }
 ```
 
 - The `message`/`reasoning` handler keeps the mid-turn snapshot current only while someone is following (`if (liveChat.hasSubscribers(runKey)) liveChat.setSegment(...)`), so the ordinary turn — sending tab on its own SSE socket, no follower — pays nothing.
 
-### Sequence-number prediction
+### Segment seq is the persisted row's own value
 
 A live segment is broadcast as a *row* before it is persisted, and the follower stamps the broadcast `seq` onto the node it drew so `reconcileTranscriptRows` (which keys rows by `seq` via `transcriptRowKey`) reuses that node instead of drawing the turn twice.
 
-`nextLiveMessageSeq(runKey, hadText)` predicts the value with a per-chat counter (`liveSeqByChat`). Every append for a chat goes through this handler, so its next value is by construction the store's next value. Deriving the number from the transcript's last row would repeat a `seq` whenever two segments were persisted between two broadcasts — routine with tool rounds — and a duplicated `seq` is an identity collision, so the second row would be treated as a duplicate and culled.
+The number must be the value the store actually assigned. The broadcast therefore reuses the `appendMessage` return value: the `assistant_turn_end` handler keeps the appended row in `segmentRow` and sets `assistantSegmentSeq = segmentRow.seq` (or `null` when the segment produced no text and nothing was appended), and that value rides the frame. The append happens **before** the frame is pushed, so the number is already known — there is no need to predict it.
 
-A textless segment is never persisted, so it does not consume a seq (`assistantSegmentHasText` is captured from the same `assistantContent.trim() || assistantReasoning.trim()` guard that decides the append). Otherwise every textless tool round would push the prediction ahead of the store and every later boundary would miss. Matching is by equality only: a mismatch means the follower's node is simply not reused and a normal row is drawn, which is the pre-existing behavior.
+A textless segment persists nothing, so `assistantSegmentSeq` stays `null` and the frame carries **no** `seq` at all. A follower that sees no `seq` leaves its node unkeyed for the next full rebuild to drop.
 
-The counter resets on server restart, where it under-predicts — the safe direction, for the same reason.
+Do not reintroduce a predicted/projected seq. An earlier implementation kept a process-local per-chat counter (`liveSeqByChat`) and broadcast `nextLiveMessageSeq(runKey, hadText)`; it was removed because:
+
+- it resets to 0 on restart while the store keeps assigning `MAX(seq)+1`, so on an existing chat it collided with a real row's key — the follower either had its fresh bubble culled as a duplicate (a visible flash) or had it adopted the identity of an older on-screen message and moved to that message's position;
+- its no-text branch re-sent the previous segment's number rather than sending no seq.
+
+### The follower's completion path
+
+The cheap tail sync is what a follower reaches on the common completion path, and it must not draw a row that is already on screen:
+
+- `finalizeLiveSegment` (frontend) stamps the streamed bubble with the broadcast `seq`, but the follower never adds its live reply to `state.messages`;
+- when the persisted row arrives, `mergeServerRows` sees a pure append and `tailSyncDomAction` returns `'append'`, routing to `syncTranscriptAppend` — **not** to `reconcileTranscriptRows`, the only path that matched rows by key;
+- `syncTranscriptAppend` therefore looks the row's `transcriptRowKey` up among the mounted rows (`findKeyedRow`) and skips a row whose node is already present, instead of building a second bubble next to the live one.
+
+Tests: `scripts/test-live-segment-seq.js` (server: the broadcast seq equals the persisted row's seq even with pre-existing history, so a restart-zero prediction fails it) and `scripts/test-transcript-append-keyed-row.js` (frontend: the keyed append skips an already-mounted row, and still appends genuinely new ones).
 
 ### Early shell output
 
