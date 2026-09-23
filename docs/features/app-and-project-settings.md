@@ -50,7 +50,7 @@ sqlite3 ~/.mouaif/store.sqlite \
 ## Managing settings in the UI
 
 1. **AI Providers & Keys** — open **Settings → Providers** to add or edit API keys and OAuth connections. Provider credentials are global and never committed to individual project folders.
-2. **Access & Security** — configure optional password protection, passkeys, and manage sessions from **Settings → Access & passkeys** (see [Access authentication](./access-authentication.md)).
+2. **Access & Security** — configure optional password protection, passkeys, and manage sessions from **Settings → Access & passkeys** (see [Authentication](./authentication.md#app-access-control-who-can-open-mouaif)).
 3. **Project Customizations** — open project settings to configure rules, instruction files (such as `AGENTS.md` or `CLAUDE.md`), and tool permissions for that project.
 4. **Database-backed settings (Clean tree)** — by default, project settings are stored next to your code in `.mouaif.json`. If you prefer to keep your working directory untouched by tooling files, enable **Store settings in app DB** in project settings.
 5. **Chat defaults** — open **Settings → App defaults → Chat defaults** to set the default prompt style and two composer toggles (Enter inserts a newline; Auto-retry failed sends). All three save automatically as soon as you change them; there is no Save button. Each setting is a row card with a per-row status line that confirms the change.
@@ -58,7 +58,7 @@ sqlite3 ~/.mouaif/store.sqlite \
 
 ## Related
 
-- [Access authentication](./access-authentication.md) — user login, passwords, and WebAuthn passkeys.
+- [Authentication](./authentication.md#app-access-control-who-can-open-mouaif) — user login, passwords, and passkeys.
 - [Project settings storage](./project-settings-storage.md) — storing project settings without writing files to your git repo.
 - [Custom prompts](./custom-prompts.md) — creating and managing prompt presets.
 - [Tool authorization](./tool-authorization.md) — configuring tool execution permissions.

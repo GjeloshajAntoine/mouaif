@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `mouaif` command starts the app, prints build information, and imports chats from a legacy storage format. The UI bundle is shipped inside the package (`frontend/dist/`), so a normal installation never builds the frontend — `mouaif serve` serves the committed bundle as-is.
+The `mouaif` command starts the app, prints build information, and imports chats from a legacy storage format. The web UI ships already built inside the package, so installing mouaif never runs a frontend build.
 
 ## Usage
 

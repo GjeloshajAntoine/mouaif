@@ -58,6 +58,13 @@ const ROOT = path.join(__dirname, '..');
 const DOCS_DIR = path.join(ROOT, 'docs');
 const OUT_DIR = path.join(ROOT, 'docs-dist');
 const PUBLIC_GUIDE_SLUGS = ['getting-started', 'authentication', 'app-abilities', 'draft-craft'];
+// Feature pages that were merged into another page. GitHub Pages has no
+// server-side redirects, so the build writes a tiny features/<old>.html that
+// forwards to the new page and keeps old links and bookmarks working.
+const REDIRECTED_SLUGS = {
+  'auth': 'authentication#provider-credentials-let-mouaif-use-models',
+  'access-authentication': 'authentication#app-access-control-who-can-open-mouaif'
+};
 // Set by main(). When false (the default, published build) the maintainer
 // pages are not written and links to them are rendered as plain text.
 let includeInternalPages = false;
@@ -213,6 +220,7 @@ function resolveDocLink(url, ctx) {
 // not part of the site at all.
 function outputPathFor(target) {
   let m = /^docs\/features\/([^/_][^/]*)\.md$/.exec(target);
+  if (m && REDIRECTED_SLUGS[m[1]]) return 'features/' + REDIRECTED_SLUGS[m[1]].replace(/(#|$)/, '.html$1');
   if (m) return 'features/' + m[1] + '.html';
   if (/^docs\/features\/images\/./.test(target)) return target.slice('docs/'.length);
   if (target === 'docs/decisions.md') return includeInternalPages ? 'decisions.html' : null;
@@ -1032,6 +1040,33 @@ function buildFeaturePages(features, renderSidebar, outDir) {
     fs.writeFileSync(path.join(featureDir, f.slug + '.html'), out);
   }
 }
+function buildRedirectPages(outDir) {
+  const featureDir = path.join(outDir, 'features');
+  fs.mkdirSync(featureDir, { recursive: true });
+  for (const [from, to] of Object.entries(REDIRECTED_SLUGS)) {
+    if (fs.existsSync(path.join(DOCS_DIR, 'features', from + '.md'))) {
+      throw new Error('docs/features/' + from + '.md exists but is also listed in REDIRECTED_SLUGS');
+    }
+    const [slug, hash] = to.split('#');
+    const href = slug + '.html' + (hash ? '#' + hash : '');
+    const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Moved — mouaif docs</title>
+  <meta name="robots" content="noindex" />
+  <link rel="canonical" href="${escapeAttr(href)}" />
+  <meta http-equiv="refresh" content="0; url=${escapeAttr(href)}" />
+</head>
+<body>
+  <p>This page moved to <a href="${escapeAttr(href)}">${escapeHtml(href)}</a>.</p>
+</body>
+</html>
+`;
+    fs.writeFileSync(path.join(featureDir, from + '.html'), html);
+  }
+}
+
 // Build the agent-facing implementation notes tree (docs/agent/features/*.md).
 // These pages mirror the human feature pages but contain only the technical
 // reference (REST, wire shapes, source paths). The docs-dist/agent/ prefix
@@ -1389,6 +1424,7 @@ ${publicFeatures.map((f) => linkItem(f.slug, f.title)).join('\n')}
   buildLandingPage(outDir);
   buildDocumentationPage(features, renderSidebar('documentation'), outDir);
   buildFeaturePages(features, renderSidebar, outDir);
+  buildRedirectPages(outDir);
 
   let summary = 'landing + documentation + ' + features.length + ' feature page(s)';
   if (withInternal) {

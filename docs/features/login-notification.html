@@ -44,7 +44,7 @@ New sign-in as alice from iPhone or iPad.</code></pre>
 <p>The alert is sent to <strong>every subscribed endpoint</strong>, not only the session that just signed in. A login mints a brand-new push session whose own subscription list is empty until the page rebinds its endpoint, so a per-session send would reach nothing. Broadcasting is also the useful behavior: a sign-in notice matters most on the user&#39;s <em>other</em> already-signed-in devices.</p>
 <p>The sign-in alert shares one replaceable tag (<code>mouaif-login</code>), so repeated sign-ins do not stack in the notification tray.</p>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="push-notifications.html">Push notifications</a> — the notification service, its triggers, and iOS delivery behavior.</p></li><li><p><a href="access-authentication.html">Access authentication</a> — enabling and managing app access.</p></li></ul>
+<ul><li><p><a href="push-notifications.html">Push notifications</a> — the notification service, its triggers, and iOS delivery behavior.</p></li><li><p><a href="authentication.html#app-access-control-who-can-open-mouaif">Authentication</a> — enabling and managing app access.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

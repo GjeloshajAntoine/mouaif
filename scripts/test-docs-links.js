@@ -117,6 +117,17 @@ try {
     assert.deepStrictEqual(offenders, []);
   });
 
+  check('merged pages leave a redirect at their old URL', () => {
+    for (const [from, anchor] of [['auth', 'provider-credentials-let-mouaif-use-models'],
+      ['access-authentication', 'app-access-control-who-can-open-mouaif']]) {
+      const html = fs.readFileSync(path.join(pub.out, 'features', from + '.html'), 'utf8');
+      const want = 'authentication.html#' + anchor;
+      assert.ok(html.includes('url=' + want), from + '.html does not redirect to ' + want);
+      const target = fs.readFileSync(path.join(pub.out, 'features', 'authentication.html'), 'utf8');
+      assert.ok(target.includes('id="' + anchor + '"'), 'authentication.html has no #' + anchor);
+    }
+  });
+
   check('inline code keeps a literal [text](url) as text', () => {
     const html = fs.readFileSync(path.join(pub.out, 'features', 'markdown-renderer.html'), 'utf8');
     assert.match(html, /<code>\[text\]\(url\)<\/code>/);

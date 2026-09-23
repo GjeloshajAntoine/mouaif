@@ -38,7 +38,7 @@
 <p>The npm package name is <a href="https://www.npmjs.com/package/mouaif" target="_blank" rel="noopener noreferrer"><code>mouaif</code></a>. Run it straight from the registry with <code>npx</code>, without installing it globally, and require a login:</p>
 <pre><code class="language-bash">npx mouaif serve --auth</code></pre>
 <p>On the first authenticated start, use the setup link, QR code, or short code printed in the terminal to create your username and password. Later starts reuse those access settings and show the login screen.</p>
-<p><code>npx</code> unpacks the package into its own cache (<code>~/.npm/_npx</code>) and launches the CLI from there, so it never writes to the directory you run it from. The first run downloads and unpacks the package, including the prebuilt native binaries (<code>better-sqlite3</code>, <code>@napi-rs/keyring</code>); this is quick on common platforms, but an unusual platform compiles those binaries and can take a few minutes. Later runs reuse the cache and start immediately.</p>
+<p><code>npx</code> keeps the package in its own cache, so it never writes to the directory you run it from. The first run downloads the package; later runs start immediately. On an uncommon platform the first install can take a few minutes while Node compiles two native modules.</p>
 <p>To pin an exact version, quote the argument. A bare <code>mouaif@0.3.0</code> is read as a glob in <code>zsh</code> and fails with <code>no matches found</code>:</p>
 <pre><code class="language-bash">npx --yes --package &quot;mouaif@0.3.0&quot; mouaif info</code></pre>
 <p>Install the <code>mouaif</code> command globally:</p>
@@ -48,8 +48,7 @@
 cd mouaif
 npm install
 npm link</code></pre>
-<p><code>npm install</code> builds the web UI once through the package <code>prepare</code> script when the Vite toolchain is present, so a fresh clone works even if <code>frontend/dist/</code> is missing from the checkout. <code>npm link</code> makes the <code>mouaif</code> command available in your terminal.</p>
-<p>Every published tarball already contains the pre-built web UI in <code>frontend/dist/</code>, so <code>npm install -g mouaif</code> and <code>npx mouaif</code> never run a frontend build. The package depends on <code>better-sqlite3</code> and <code>@napi-rs/keyring</code>, which ship prebuilt binaries for common platforms; on an unusual platform Node compiles them during install, so the first install can take a few minutes.</p>
+<p><code>npm install</code> also builds the web UI, and <code>npm link</code> makes the <code>mouaif</code> command available in your terminal. The npm package already includes the built web UI, so <code>npm install -g mouaif</code> and <code>npx mouaif</code> need no build step.</p>
 <p>See <a href="cli-commands.html">CLI commands</a> for the complete command list and every <code>mouaif serve</code> option.</p>
 <h2 id="run-the-app">Run the app</h2>
 <p>Start mouaif on the default local address with access authentication enabled:</p>
@@ -71,7 +70,7 @@ mouaif info</code></pre>
 <h2 id="update-a-source-installation">Update a source installation</h2>
 <pre><code class="language-bash">git pull
 npm install</code></pre>
-<p><code>npm install</code> rebuilds the web UI when the Vite toolchain is present, so there is no separate build step. Restart your manually started <code>mouaif serve</code> process after updating.</p>
+<p><code>npm install</code> rebuilds the web UI, so there is no separate build step. Restart <code>mouaif serve</code> after updating.</p>
 <h2 id="next-steps">Next steps</h2>
 <ul><li><p><a href="cli-commands.html">CLI commands</a> — every command and <code>serve</code> option.</p></li><li><p><a href="authentication.html">Authentication</a> — connect AI providers and protect app access.</p></li><li><p><a href="app-abilities.html">App abilities</a> — learn what chats, tools, projects, and the Inspector can do.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>

@@ -14,7 +14,7 @@ npx mouaif serve --auth
 
 On the first authenticated start, use the setup link, QR code, or short code printed in the terminal to create your username and password. Later starts reuse those access settings and show the login screen.
 
-`npx` unpacks the package into its own cache (`~/.npm/_npx`) and launches the CLI from there, so it never writes to the directory you run it from. The first run downloads and unpacks the package, including the prebuilt native binaries (`better-sqlite3`, `@napi-rs/keyring`); this is quick on common platforms, but an unusual platform compiles those binaries and can take a few minutes. Later runs reuse the cache and start immediately.
+`npx` keeps the package in its own cache, so it never writes to the directory you run it from. The first run downloads the package; later runs start immediately. On an uncommon platform the first install can take a few minutes while Node compiles two native modules.
 
 To pin an exact version, quote the argument. A bare `mouaif@0.3.0` is read as a glob in `zsh` and fails with `no matches found`:
 
@@ -37,9 +37,7 @@ npm install
 npm link
 ```
 
-`npm install` builds the web UI once through the package `prepare` script when the Vite toolchain is present, so a fresh clone works even if `frontend/dist/` is missing from the checkout. `npm link` makes the `mouaif` command available in your terminal.
-
-Every published tarball already contains the pre-built web UI in `frontend/dist/`, so `npm install -g mouaif` and `npx mouaif` never run a frontend build. The package depends on `better-sqlite3` and `@napi-rs/keyring`, which ship prebuilt binaries for common platforms; on an unusual platform Node compiles them during install, so the first install can take a few minutes.
+`npm install` also builds the web UI, and `npm link` makes the `mouaif` command available in your terminal. The npm package already includes the built web UI, so `npm install -g mouaif` and `npx mouaif` need no build step.
 
 See [CLI commands](./cli-commands.md) for the complete command list and every `mouaif serve` option.
 
@@ -85,7 +83,7 @@ git pull
 npm install
 ```
 
-`npm install` rebuilds the web UI when the Vite toolchain is present, so there is no separate build step. Restart your manually started `mouaif serve` process after updating.
+`npm install` rebuilds the web UI, so there is no separate build step. Restart `mouaif serve` after updating.
 
 ## Next steps
 

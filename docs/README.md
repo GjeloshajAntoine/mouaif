@@ -19,7 +19,6 @@ One page per feature: what it does and how to use it.
 
 - [CLI commands](features/cli-commands.md) — every `mouaif` command and `serve` option.
 - [npm package](features/npm-package.md) — the published package, what an install contains, and the release flow.
-- [Access authentication](features/access-authentication.md) — one local user, a password, and passkeys for the web UI.
 - [Login notification](features/login-notification.md) — a browser alert on a new sign-in, sent to every subscribed device.
 - [Push notifications](features/push-notifications.md) — follow a running chat and answer approvals from a notification.
 - [Install as an app](features/pwa.md) — install the web app, the offline shell, and the update prompt.
@@ -28,7 +27,6 @@ One page per feature: what it does and how to use it.
 
 ### Providers and models
 
-- [Provider authentication](features/auth.md) — API keys and browser sign-in for AI providers.
 - [Cloud model providers](features/cloud-providers.md) — Azure OpenAI, Mistral, Groq, and DeepSeek.
 - [OpenRouter](features/openrouter.md) — one key for many upstream models, with browser sign-in.
 - [Anthropic sign-in](features/oauth-anthropic.md) — sign in with an Anthropic account instead of an API key.

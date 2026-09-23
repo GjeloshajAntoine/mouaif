@@ -40,18 +40,23 @@
 <p>To send messages to a model, mouaif needs a credential for that model&#39;s provider. This is a key (or browser sign-in) you give to the provider — it does <strong>not</strong> log you into mouaif.</p>
 <ol><li><p>Open <strong>Settings → Providers</strong>.</p></li><li><p>Choose a provider.</p></li><li><p>Enter the requested API key and base URL, or tap <strong>Sign in</strong> when the provider offers browser sign-in.</p></li><li><p>Save the provider, then run its model refresh or connection test to confirm it works.</p></li><li><p>Open a project&#39;s settings and add the model you want to use.</p>
 <p>Available connections include OpenAI-compatible services, Anthropic, Google Gemini, Ollama, OpenRouter, GitHub Copilot, Azure OpenAI, Mistral, Groq, and DeepSeek. Ollama normally runs locally without an API key. Anthropic, OpenRouter, and GitHub Copilot offer browser sign-in in the provider form; the rest use an API key.</p></li></ol>
+<h3 id="where-credentials-are-kept">Where credentials are kept</h3>
+<ul><li><p><strong>API keys</strong> are saved in the app&#39;s own settings store on the computer that runs mouaif (<code>~/.mouaif/store.sqlite</code>), never in a project folder. The web UI only learns whether a key is set; it never receives the key itself.</p></li><li><p><strong>Browser sign-in tokens</strong> are saved in the operating system&#39;s keychain.</p></li><li><p>Credentials never leave that computer except in requests to the provider they belong to.</p></li><li><p>You can sign in with more than one account for the same provider and pick the account in the provider form.</p></li><li><p><strong>Delete</strong> in the provider form removes a connection. Models in your projects that use it stop working until you add it again.</p>
+<p>See <a href="openrouter.html">OpenRouter</a> and <a href="oauth-anthropic.html">Anthropic sign-in</a> for those browser sign-in flows.</p></li></ul>
 <h2 id="app-access-control-who-can-open-mouaif">App access — control who can open mouaif</h2>
 <p>App access is off by default: anyone who can reach the server can open it. Turn it on when you start mouaif, and after that people must log in with a username and password (or a passkey). This is separate from provider credentials above.</p>
+<p>App access is on for a run when you pass <code>--auth</code>, <code>--auth-setup</code>, or <code>--user</code>. Without one of them the server does not ask for a login, even if you set up a user before; the stored user is kept for the next time you turn access on.</p>
 <p>The npm package is named <a href="https://www.npmjs.com/package/mouaif" target="_blank" rel="noopener noreferrer"><code>mouaif</code></a>, and it exposes the command with the same name. The examples below use <code>npx mouaif</code>, so they work without a global install. If you installed the package with <code>npm install -g mouaif</code>, you can replace <code>npx mouaif</code> with <code>mouaif</code>.</p>
 <h3 id="create-access-from-the-setup-page">Create access from the setup page</h3>
 <pre><code class="language-bash">npx mouaif serve --auth-setup</code></pre>
-<p>The terminal prints a setup link, QR code, and short code. The invitation expires after 15 minutes. Open it to create the app username and password, then optionally add a passkey.</p>
+<p>The terminal prints a setup link, a QR code, and an eight-character short code. Open the link, scan the QR code with another device, or open <code>/#/setup</code> and type the short code. The invitation expires after 15 minutes and works once. Use it to create the app username and password, then optionally add a passkey.</p>
+<p>On the first start with <code>--auth</code>, when no user exists yet, the same invitation is printed automatically.</p>
 <p>For a URL that another device can open:</p>
 <pre><code class="language-bash">npx mouaif serve \
   --host 0.0.0.0 \
   --public-origin https://mouaif.example.com \
   --auth-setup</code></pre>
-<p>Use HTTPS when exposing mouaif outside the computer that runs it. Passkeys require HTTPS on remote devices.</p>
+<p>A <code>127.0.0.1</code> address only works on the computer that runs mouaif. Use HTTPS when exposing mouaif to other devices.</p>
 <h3 id="set-the-username-and-password-from-the-cli">Set the username and password from the CLI</h3>
 <p>Prefer an environment variable so the password is not saved in shell history:</p>
 <pre><code class="language-bash">MOUAIF_PASSWORD=&#39;a-long-password&#39; \
@@ -61,18 +66,25 @@
 npx mouaif serve --auth --user alice</code></pre>
 <p>A direct CLI argument is also supported, but may remain in shell history:</p>
 <pre><code class="language-bash">npx mouaif serve --auth --user alice --password &#39;a-long-password&#39;</code></pre>
-<p>The password must contain at least eight characters.</p>
+<p>The password must contain at least eight characters. <code>--user</code> and the password must be given together.</p>
+<p>Giving a new username or password replaces the access user, signs out every browser, and removes existing passkeys. Starting again with the same username and password changes nothing, so you can keep them in a start script.</p>
 <h3 id="reuse-existing-access-settings">Reuse existing access settings</h3>
 <p>After initial setup, require login on future starts with:</p>
 <pre><code class="language-bash">npx mouaif serve --auth</code></pre>
 <p>To create a fresh setup invitation or replace the access user later:</p>
 <pre><code class="language-bash">npx mouaif serve --auth-setup</code></pre>
+<h3 id="passkeys">Passkeys</h3>
+<p>After setting a password, choose <strong>Add a passkey</strong> to sign in with your device&#39;s fingerprint, face, or PIN instead. Passkeys need a secure address: HTTPS for other devices, while <code>localhost</code> works on the computer that runs mouaif. On a plain <code>http://</code> network address, the app says so and only password sign-in is offered.</p>
+<p>Password sign-in keeps working after you add a passkey, and removing a passkey does not change the password.</p>
 <h2 id="manage-access-in-the-app">Manage access in the app</h2>
 <p>Open <strong>Settings → Access &amp; passkeys</strong> to:</p>
 <ul><li><p>change the password;</p></li><li><p>add or remove passkeys;</p></li><li><p>review and revoke signed-in sessions.</p>
-<p>Changing the password revokes other sessions and removes existing passkeys.</p></li></ul>
+<p>Changing the password signs out every other browser and removes existing passkeys; the device you changed it from stays signed in. The username stays the same.</p>
+<p>To be alerted when a new browser signs in, see <a href="login-notification.html">Login notification</a>.</p></li></ul>
 <h2 id="authenticate-command-line-requests">Authenticate command-line requests</h2>
-<p>When app access is enabled, command-line requests such as <code>curl</code> must send HTTP Basic authentication with the app username and password you created during setup. Browsers sign in once and reuse a session cookie automatically.</p>
+<p>When app access is enabled, command-line requests such as <code>curl</code> must send HTTP Basic authentication with the app username and password you created during setup:</p>
+<pre><code class="language-bash">curl --user &#39;alice:a-long-password&#39; http://127.0.0.1:5732/api/settings</code></pre>
+<p>Browsers sign in once and reuse a session cookie automatically.</p>
 <h2 id="next-steps">Next steps</h2>
 <ul><li><p><a href="getting-started.html">Getting started</a> — install and start mouaif.</p></li><li><p><a href="app-abilities.html">App abilities</a> — configure tools and use the app.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>

@@ -20,5 +20,5 @@ The flow mirrors the official [`ant` CLI](https://github.com/anthropics/anthropi
 
 ## Related
 
-- Skeleton: [docs/features/auth.md](./auth.md) (keyring, account index, loopback callback).
+- [Authentication](./authentication.md#provider-credentials-let-mouaif-use-models) — provider credentials and where they are kept.
 - AI client: [docs/features/ai-client.md](./ai-client.md) (request builders, SSE parsers, error codes).
