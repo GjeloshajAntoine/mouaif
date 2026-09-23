@@ -59,3 +59,18 @@ The 1 s reconcile poll and the dropped-stream recovery both fold the server's ne
 Any test that slices `applyTailSync` out of `stream.js` and runs it in a `vm` must supply `tailSyncDomAction` alongside `mergeServerRows` and `nextServerMessageIndex`, because the slice references the helpers the module imports rather than re-declaring them. `scripts/test-chat-cost-summary.js` did not, so its tail-sync case threw before it could assert the rebased cost; it now injects the classifier and pins both branches — the reconcile render for a replaced optimistic twin, the cheap append for a genuine one.
 
 The file-order tests drive this module in a `vm` context with a minimal element stub, so the reconciler reads `className` as a string rather than through `classList`, and those harnesses must expose `WeakMap` alongside the other globals they provide. `headerCards.js` is deliberately import-free for the same reason: a harness can load it standalone, or inject its exports into the `transcript.js` context.
+
+### Tool-card index and args index
+
+A redraw resolved every tool card with `querySelector('[data-tool-id="…"]')` — which walks the transcript subtree — and recovered every result row's call arguments with a linear scan of `state.messages`. Both ran once per row, so a tool-heavy chat cost O((N+R)·N) per pass and got sharply worse as the chat grew.
+
+`_cardIndexes` (a `WeakMap` keyed by the transcript element) holds two indexes, so they are created with the transcript and collected with it:
+
+- `cards` — `tool id -> card element`. Written by `indexToolCard`, which every site that assigns `dataset.toolId` now calls (the call card, the freshly created result card, and `rekeyToolCard` for the direct `@agent` dispatch whose id only exists once the server answers). Read by `findToolCard`. A detached entry is deleted on read rather than returned, which matches what `querySelector` did — it only ever found live nodes — so the index cannot resurrect a card a rebuild removed. `rekeyToolCard` also deletes the card's previous entry, so a stale placeholder id cannot resolve to a card now keyed by something else.
+- `args` — `toolCallId -> the call row's args`, built by `toolCallArgsIndex` once per `state.messages` array revision. The array identity is the cache key because every mutation path replaces the array (`concat`, `mergeServerRows`), so a new identity always means a rebuild. It is used by `toolCallArgsFor`, which the result path calls for every result row.
+
+`findToolCard` keeps the original query as a fallback on an index miss, and `toolCallArgsFor` returns the indexed entry only — a miss means the arguments are absent, which is the same answer the old scan gave for a row with no matching call. A miss therefore costs at most the old lookup, never a wrong result.
+
+On a chat switch, `renderTranscript` clears the card index along with the rows it indexed (the `refs._transcriptKey !== key` branch).
+
+`scripts/test-chat-card-index.js` counts DOM queries against a stub transcript: repeat lookups must perform no query, a removed card must not be returned, re-keying must move the entry, the args index must rebuild on a new array identity and be reused otherwise, and 2000 lookups over a 400-call transcript must stay fast.

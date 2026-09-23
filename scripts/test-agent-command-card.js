@@ -46,8 +46,12 @@ function makeContext(net, effectsOut) {
     isFinite, parseFloat, parseInt, encodeURIComponent, decodeURIComponent,
     setTimeout, clearTimeout,
     fetchJson: net.fetchJson,
-    // The card the call opens. runAgentCommand keys it with the server's id.
+    // The card the call opens. runAgentCommand re-keys it to the server's id.
     appendToolCallCard: (call) => { effects.call = call; effects.card = makeCard(call.id); effects.annotations++; return effects.card; },
+    // Re-keying now goes through transcript.js's rekeyToolCard (which updates
+    // the card index alongside the attribute), so the stub mirrors its contract:
+    // it moves `dataset.toolId` and drops a stale index entry.
+    rekeyToolCard: (refs, id, card) => { if (card) card.dataset.toolId = String(id); },
     appendToolResultCard: (result) => { effects.result = result; effects.appended.push(result); },
     setChatStatus: (refs, text, kind) => { refs.status.current.textContent = text; effects.status.push(kind); },
     appendMessageToTranscript: () => {},

@@ -886,6 +886,7 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
   card.className = 'tool-card tool-card--call';
   card.dataset.toolId = id;
   card.dataset.toolName = normalizeToolName(toolCall.name);
+  indexToolCard(refs, id, card);
   // Keep the call's arguments on the card. The matching `tool_result`
   // frame carries only the result, so a preview that renders the model's
   // own payload — write_file's content — reads it from here when the
@@ -1064,9 +1065,7 @@ function takePendingShellOutput(refs, id) {
 // and replaces the live view; this only fills the wait.
 export function handleShellOutputEvent(data, refs) {
   if (!refs.transcript.current || !data) return false;
-  const card = data.id
-    ? refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(String(data.id)) + '"]')
-    : null;
+  const card = data.id ? findToolCard(refs, data.id) : null;
   // No card yet: hold the chunk for the card that is about to be created
   // instead of dropping it (see bufferPendingShellOutput).
   if (!card) return bufferPendingShellOutput(refs, data);
@@ -1098,7 +1097,7 @@ export function handleShellOutputEvent(data, refs) {
 function findSubagentCard(refs, parentCallId) {
   if (!refs.transcript.current) return null;
   if (parentCallId) {
-    const byId = refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(parentCallId) + '"]');
+    const byId = findToolCard(refs, parentCallId);
     if (byId) return byId;
   }
   const cards = refs.transcript.current.querySelectorAll('.tool-card--subagent');
@@ -1222,7 +1221,7 @@ export function appendToolResultCard(toolResult, refs) {
   // card is left stranded on "Waiting for results…" next to a duplicate
   // result card.
   const id = toolResult.id || takeAnonToolCallId(refs, toolResult.name);
-  let card = id ? refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(String(id)) + '"]') : null;
+  let card = id ? findToolCard(refs, id) : null;
   const isSubagent = isSubagentTool(toolResult && toolResult.name);
   const pillClass = toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
   const pillText = toolResult.ok ? 'ok' : 'error';
@@ -1250,6 +1249,7 @@ if (!card) {
     card.className = 'tool-card tool-card--result';
     card.dataset.toolId = id || ('call_' + Math.random().toString(36).slice(2, 10));
     card.dataset.toolName = normalizeToolName(toolResult.name);
+    indexToolCard(refs, card.dataset.toolId, card);
     // Keep the recovered call args on the card (same contract as the call
     // card), so any later re-render of this body still has them.
     card._toolArgs = callArgs;
@@ -1776,6 +1776,111 @@ const TRANSCRIPT_CHUNK_ROWS = 40;   // rows appended per animation frame
 const TRANSCRIPT_CHUNK_THRESHOLD = 120; // render progressively above this many rows
 let _renderToken = 0;
 
+// ---- Tool-card index ------------------------------------------------
+//
+// A full redraw looked every card up with `querySelector('[data-tool-id="…"]')`,
+// which walks the subtree, and recovered a result row's call arguments with a
+// linear scan of `state.messages`. Both are per-row costs, so on a tool-heavy
+// chat they multiplied: rebuilding a transcript of N tool rows with R result
+// rows cost O((N+R) · N) and got sharply worse as the chat grew.
+//
+// A WeakMap keyed by the transcript element holds both indexes, so they are
+// rebuilt with the transcript and dropped with it:
+//
+//   cards — tool id -> card element. Maintained on insert/rekey and pruned of
+//           detached nodes on read, so a stale entry can never be returned
+//           (which `querySelector` could not do: it only ever found live
+//           nodes).
+//   args  — tool call id -> the call row's args. Built once per message-array
+//           revision, because that array is what it indexes.
+//
+// The fallbacks stay: an index miss costs the original lookup, so behavior is
+// unchanged if either map is out of step.
+const _cardIndexes = new WeakMap();
+
+function cardIndexFor(refs) {
+  const host = refs.transcript && refs.transcript.current;
+  if (!host) return null;
+  let index = _cardIndexes.get(host);
+  if (!index) {
+    index = { cards: new Map() };
+    _cardIndexes.set(host, index);
+  }
+  return index;
+}
+
+// indexToolCard(refs, id, card)
+//
+// Record a card under its tool id. Called wherever `dataset.toolId` is
+// (re)assigned, so the index and the attribute cannot disagree.
+function indexToolCard(refs, id, card) {
+  if (!id || !card) return;
+  const index = cardIndexFor(refs);
+  if (index) index.cards.set(String(id), card);
+}
+
+// rekeyToolCard(refs, id, card)
+//
+// Point a card's index entry at a new tool id and update its attribute. Used
+// by the direct `@agent` dispatch, where the server id only exists once it
+// answers: the placeholder card is re-keyed to that id BEFORE its result is
+// appended, so the result updates that card instead of adding a duplicate.
+// The old entry is dropped so the stale placeholder id cannot resolve to a
+// card now keyed by something else.
+export function rekeyToolCard(refs, id, card) {
+  if (!id || !card) return;
+  const index = cardIndexFor(refs);
+  if (index) {
+    for (const [key, value] of index.cards) {
+      if (value === card) index.cards.delete(key);
+    }
+  }
+  card.dataset.toolId = String(id);
+  indexToolCard(refs, id, card);
+}
+
+// findToolCard(refs, id) -> Element | null
+//
+// Indexed lookup with the original query as the fallback. A card that was
+// removed from the tree is dropped from the index on the way out rather than
+// returned, matching what `querySelector` would have done.
+function findToolCard(refs, id) {
+  if (!id || !refs.transcript || !refs.transcript.current) return null;
+  const key = String(id);
+  const index = cardIndexFor(refs);
+  if (index) {
+    const hit = index.cards.get(key);
+    if (hit) {
+      if (hit.isConnected === false) index.cards.delete(key);
+      else return hit;
+    }
+  }
+  const found = refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(key) + '"]');
+  if (found && index) index.cards.set(key, found);
+  return found;
+}
+
+// toolCallArgsIndex(state) -> Map
+//
+// toolCallId -> args for every `tool` / `call` row in `state.messages`, built
+// once per array revision. The array identity is the cache key because every
+// mutation path replaces it (`state.messages = state.messages.concat([...])`,
+// `mergeServerRows` returning a new array), so a new identity always means a
+// new build.
+function toolCallArgsIndex(state) {
+  const messages = state && Array.isArray(state.messages) ? state.messages : null;
+  if (!messages) return null;
+  const index = state._toolArgsIndexRev;
+  if (index && index.messages === messages) return index.map;
+  const map = new Map();
+  for (const row of messages) {
+    if (!row || row.role !== 'tool' || row.phase !== 'call' || !row.toolCallId) continue;
+    if (row.args && typeof row.args === 'object') map.set(String(row.toolCallId), row.args);
+  }
+  state._toolArgsIndexRev = { messages, map };
+  return map;
+}
+
 function resetTranscriptRender(refs) {
   _renderToken++;
   if (refs._pendingTranscriptChunk) {
@@ -1829,12 +1934,14 @@ export function cancelTranscriptRender(refs) {
 // model's payload — it is a linear scan and does not belong on the
 // generic result path.
 function toolCallArgsFor(state, m) {
-if (!state || !Array.isArray(state.messages) || !m.toolCallId) return null;
-const messages = state.messages;
-for (let i = messages.length - 1; i >= 0; i--) {
-const row = messages[i];
-if (row && row.role === 'tool' && row.phase === 'call' && row.toolCallId === m.toolCallId
-&& row.args && typeof row.args === 'object') return row.args;
+if (!state || !m.toolCallId) return null;
+// Indexed. The linear scan here ran once per result row, so a rebuild cost
+// O(messages^2) on a tool-heavy chat; the index is rebuilt only when the
+// messages array identity changes.
+const args = toolCallArgsIndex(state);
+if (args) {
+const hit = args.get(String(m.toolCallId));
+if (hit) return hit;
 }
 return null;
 }
@@ -1853,8 +1960,7 @@ function renderMessageRow(state, refs, m) {
     // reach the call; (2) an overlapping reconcile/recovery sync can
     // re-render a row this client already appended. Without the guard
     // the call card is duplicated (and left stuck on "Waiting…").
-    if (m.toolCallId && refs.transcript.current
-        && refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(String(m.toolCallId)) + '"]')) {
+    if (m.toolCallId && findToolCard(refs, m.toolCallId)) {
       return;
     }
     appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs, true);
@@ -2520,6 +2626,12 @@ if (refs._transcriptKey !== key) {
   clearTranscriptRows(refs.transcript.current);
   refs._anonToolCalls = [];
   refs.setupCard.current = null;
+  // Drop the tool-card index with the rows it indexed. It is keyed by the
+  // transcript element and `findToolCard` prunes detached entries on read, so
+  // a stale entry is never returned either way — this just frees the entries
+  // and saves the prunes on a chat switch.
+  const staleIndex = cardIndexFor(refs);
+  if (staleIndex) staleIndex.cards.clear();
 }
 // Pending ask_user / authorization overlay cards are NOT part of
 // state.messages (they're mounted from the pending-auth queue / SSE

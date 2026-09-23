@@ -15,6 +15,7 @@ appendMessageToTranscript,
 appendErrorCard,
 appendToolCallCard,
 appendToolResultCard,
+rekeyToolCard,
 finalizeLiveMessage,
 handleShellOutputEvent,
 handleSubagentStreamEvent,
@@ -242,7 +243,7 @@ export async function runAgentCommand(agentName, task, state, refs) {
   // instead of adding a duplicate.
   const serverId = body.id || (body.toolCall && body.toolCall.id) || null;
   if (pendingCard && pendingCard.isConnected) {
-    if (serverId) pendingCard.dataset.toolId = String(serverId);
+    if (serverId) rekeyToolCard(refs, serverId, pendingCard);
     else if (!body.ok) pendingCard.remove(); // failed with no id: don't strand it
   }
   appendToolResultCard({ id: body.id || null, name: 'subagent', ok: !!body.ok, result: body.result || body }, refs);
