@@ -174,6 +174,17 @@ function closeCliSession(projectDir) {
   return true;
 }
 
+// The session map is keyed by the *real* path (GET /cli/session resolves
+// symlinks before creating the session), so the command and close handlers
+// must resolve the path the browser sends the same way — otherwise a project
+// opened through a symlink gets a 404 on every command and its shell is never
+// closed. Falls back to the raw string when the path no longer exists, which
+// still matches a session keyed before the directory disappeared.
+function cliSessionKey(projectDir) {
+  const raw = String(projectDir || '');
+  try { return require('node:fs').realpathSync(raw); } catch { return raw; }
+}
+
 // Write one command line to the session's stdin. Shared by the HTTP handler
 // and the tests so the terminator rule lives in exactly one place: CRLF for
 // cmd.exe on Windows, LF for sh/bash on POSIX. A PTY in canonical mode also
@@ -450,7 +461,7 @@ try {
     // `raw` sends the text with no line terminator (a single-key answer).
     const raw = !!(body && body.raw);
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
-    const session = cliSessions.get(String(projectDir));
+    const session = cliSessions.get(cliSessionKey(projectDir)) || cliSessions.get(String(projectDir));
     if (!session) return sendJSON(res, 404, { error: 'cli session not found — reopen the command prompt', code: 'ENOSESSION' });
     try {
       if (!writeCliCommand(session, cmd, raw)) {
@@ -469,7 +480,9 @@ try {
     if (!body) return;
     const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
-    closeCliSession(projectDir);
+    // Close under both keys: the resolved one the session is stored under,
+    // and the raw one in case the directory has since been removed.
+    if (!closeCliSession(cliSessionKey(projectDir))) closeCliSession(projectDir);
     return sendJSON(res, 200, { ok: true });
   }
 
@@ -640,4 +653,4 @@ try {
   return sendJSON(res, 404, { error: 'Not found' });
 }
 
-module.exports = { handleTools, ensureCliSession, closeCliSession, writeCliCommand, cliShellMeta, attachCliStream };
+module.exports = { handleTools, ensureCliSession, closeCliSession, writeCliCommand, cliShellMeta, attachCliStream, cliSessionKey };
