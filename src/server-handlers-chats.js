@@ -750,14 +750,23 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
     liveChat.pushTransient(runKey, name, data);
     } else if (name === 'assistant_turn_end') {
     // The segment boundary. Broadcast as a live ROW so a follower can mark
-    // its bubble final *and* adopt the seq the row is about to be persisted
+    // its bubble final *and* adopt the seq the row was actually persisted
     // with — that is what lets the persisted copy reconcile onto the node the
     // follower already drew instead of appearing as a second bubble once the
     // message sync lands. Not buffered: the row is persisted immediately
-    // below, so a late subscriber gets it from the transcript sync.
-    liveChat.pushTransient(runKey, name, Object.assign({}, data, {
-      seq: nextLiveMessageSeq(runKey, assistantSegmentHasText)
-    }));
+    // above, so a late subscriber gets it from the transcript sync.
+    //
+    // The seq is the store's own value (the appendMessage return), never a
+    // prediction: a process-local counter resets on restart and would then
+    // collide with a real row's key — the follower would adopt the identity of
+    // an older on-screen message, so the reconciler would either drop the new
+    // bubble or move it to that older row's position. A textless segment
+    // persists nothing, so `assistantSegmentSeq` stays null and the frame
+    // carries no seq at all (the follower simply leaves its node unkeyed for
+    // the next full rebuild to drop).
+    liveChat.pushTransient(runKey, name, assistantSegmentSeq == null
+    ? data
+    : Object.assign({}, data, { seq: assistantSegmentSeq }));
     liveChat.setSegment(runKey, '', '');
     }
   }
@@ -902,11 +911,12 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
   let assistantContent = '';
   let assistantReasoning = '';
   let assistantMsg = null;
-  // Whether the segment that just ended was actually persisted. Read by the
-  // `assistant_turn_end` live broadcast to decide if the segment consumed the
-  // chat's next transcript seq. Declared here rather than inside the handler
-  // because `onEvent` is a closure re-entered per round.
-  let assistantSegmentHasText = false;
+  // The seq of the segment row persisted at the last `assistant_turn_end`, or
+  // null when that segment produced no text and nothing was written. The live
+  // broadcast reads it so a follower adopts the row's REAL seq — the value the
+  // store assigned — instead of a prediction. See the `assistant_turn_end`
+  // emit branch.
+  let assistantSegmentSeq = null;
   // Track the streaming window so the cost line (which is computed
   // server-side from the upstream's authoritative usage block) also
   // carries the streamingMs the chat UI needs for its tok/s counter.
@@ -1100,40 +1110,6 @@ function accumulateRoundUsage(roundUsage) {
     return actions;
   }
 
-// Per-chat live-row seq counter.
-//
-// Live assistant segments are broadcast as rows BEFORE they are persisted, and
-// a follower adopts the broadcast seq onto the node it drew so the persisted
-// copy reconciles onto that node instead of duplicating it. That only works if
-// the number the client adopts is a value the store will actually assign — and
-// `messages.appendMessage` assigns its own, so the broadcast has to be a
-// prediction rather than a guess.
-//
-// A process-local counter per chat is what makes it exact: every append for a
-// chat goes through this handler, so it sees each row in order and its next
-// value is by construction the seq the store is about to hand out. Deriving the
-// number from the transcript's last row instead would repeat a seq whenever two
-// segments were persisted between two broadcasts (tool rounds do exactly that),
-// and a duplicated seq is an identity collision — the reconciler keys on seq,
-// so the second row would be treated as a duplicate of the first and vanish.
-//
-// Deliberately NOT shared with whatever counter the store keeps internally: this
-// only has to be right for chats served by this process, and it resets to -1 on
-// restart, where it under-predicts (safe: the follower's node is only reused if
-// the numbers match, otherwise it draws a normal row).
-const liveSeqByChat = new Map();
-
-function nextLiveMessageSeq(runKey, hadText) {
-  // A segment that produced no text is never persisted (see the
-  // `assistantContent.trim() || assistantReasoning.trim()` guards), so it must
-  // not consume a seq — otherwise every textless tool round would push the
-  // prediction ahead of the store and every later boundary would miss.
-  if (!hadText) return liveSeqByChat.get(runKey) || 0;
-  const next = (liveSeqByChat.get(runKey) || 0) + 1;
-  liveSeqByChat.set(runKey, next);
-  return next;
-}
-
 // formatStreamError(err) — one-line, user-facing summary of a
   // failed turn. Persisted as a system message and shown as the
   // chat's error bubble, so keep it short: code + message + the
@@ -1228,37 +1204,41 @@ promptSize: resolvedProfileId,
         // render the round's real cost without waiting for reconciliation.
         let segmentCost = null;
         let segmentUsage;
+        // The row the segment was persisted as, or null when it produced no
+        // text and was not written. The `assistant_turn_end` broadcast sends
+        // this row's real `seq` so a follower adopts the store's own identity
+        // instead of predicting it (see the emit branch above).
+        let segmentRow = null;
         if (assistantContent.trim() || assistantReasoning.trim()) {
-          try {
-            segmentCost = computeSegmentCost(pendingRoundUsage);
-            if (segmentCost && segmentCost.known && typeof segmentCost.total === 'number') {
-              persistedSegmentCost += segmentCost.total;
-            }
-            segmentUsage = pendingRoundUsage
-              ? {
-                  promptTokens: pendingRoundUsage.promptTokens,
-                  completionTokens: pendingRoundUsage.completionTokens,
-                  cacheReadTokens: pendingRoundUsage.cacheReadTokens || 0,
-                  cacheCreationTokens: pendingRoundUsage.cacheCreationTokens || 0
-                }
-              : undefined;
-            assistantMsg = messages.appendMessage(projectDir, chatId, {
-              role: 'assistant', content: assistantContent, reasoning: assistantReasoning, modelId: model.id,
-              usage: segmentUsage,
-              cost: segmentCost || undefined
-            });
-            if (traceStream && assistantMsg) {
-              const event = trace.eventForMessage(assistantMsg);
-              trace.write(traceStream, event.type, event.payload);
-            }
-          } catch { /* non-fatal */ }
+        try {
+        segmentCost = computeSegmentCost(pendingRoundUsage);
+        if (segmentCost && segmentCost.known && typeof segmentCost.total === 'number') {
+        persistedSegmentCost += segmentCost.total;
         }
-        // Whether this segment was persisted, captured from the same guard
-        // that decided to append it — BEFORE the reset below. The live
-        // broadcast uses it to decide whether the segment consumed the next
-        // transcript seq (see nextLiveMessageSeq): a no-text round appends
-        // nothing, so a follower must not adopt a seq for it.
-        assistantSegmentHasText = !!(assistantContent.trim() || assistantReasoning.trim());
+        segmentUsage = pendingRoundUsage
+        ? {
+          promptTokens: pendingRoundUsage.promptTokens,
+          completionTokens: pendingRoundUsage.completionTokens,
+          cacheReadTokens: pendingRoundUsage.cacheReadTokens || 0,
+          cacheCreationTokens: pendingRoundUsage.cacheCreationTokens || 0
+          }
+        : undefined;
+        assistantMsg = messages.appendMessage(projectDir, chatId, {
+        role: 'assistant', content: assistantContent, reasoning: assistantReasoning, modelId: model.id,
+        usage: segmentUsage,
+        cost: segmentCost || undefined
+        });
+        segmentRow = assistantMsg;
+        if (traceStream && assistantMsg) {
+        const event = trace.eventForMessage(assistantMsg);
+        trace.write(traceStream, event.type, event.payload);
+        }
+        } catch { /* non-fatal */ }
+        }
+        // Hand the emitted seq to the `assistant_turn_end` live broadcast,
+        // captured BEFORE the accumulator reset below. A segment that was not
+        // persisted leaves it null, so the broadcast carries no seq at all.
+        assistantSegmentSeq = segmentRow && typeof segmentRow.seq === 'number' ? segmentRow.seq : null;
         pendingRoundUsage = null;
         assistantContent = '';
         assistantReasoning = '';

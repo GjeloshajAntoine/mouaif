@@ -271,7 +271,7 @@ function clientHandlerTest() {
   // segment snapshot current only while someone follows.
   const serverSrc = fs.readFileSync(path.join(__dirname, '../src/server-handlers-chats.js'), 'utf8');
   t('server broadcasts message deltas transiently', serverSrc.includes("liveChat.pushTransient(runKey, name, data)"));
-  t('server broadcasts the segment boundary with a seq', serverSrc.includes('seq: nextLiveMessageSeq(runKey, assistantSegmentHasText)'));
+  t('server broadcasts the segment boundary with a seq', serverSrc.includes('seq: assistantSegmentSeq'));
   t('server maintains the segment snapshot only with subscribers', serverSrc.includes('if (liveChat.hasSubscribers(runKey)) liveChat.setSegment('));
 }
 
