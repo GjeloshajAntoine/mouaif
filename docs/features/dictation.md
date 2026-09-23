@@ -689,7 +689,7 @@ previous one, so the last thing the user changed is what survives.
   OpenAI-shaped providers lives in [src/providerShapes.js](../../src/providerShapes.js),
   the one leaf module every consumer reads (it originally existed so this
   module and the since-removed image module could not disagree; see
-  [decisions §28](../../decisions.md)).
+  [decisions §28](../decisions.md)).
   It names the eight shipped OpenAI-shaped providers (`openai-compatible`,
   `openrouter`, `azure`, `mistral`, `groq`, `deepseek`, `ollama`,
   `github-copilot`). `gemini` is absent because it speaks its own per-model

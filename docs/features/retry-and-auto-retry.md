@@ -44,7 +44,7 @@ or an HTTP rejection other than an already-running `409`).
   and stops. Without that threading the guard never matched and every
   failing attempt re-armed the retry — a server that was simply down
   looped until the browser died. Regression test:
-  [scripts/test-chat-auto-retry-once.js](../scripts/test-chat-auto-retry-once.js).
+  [scripts/test-chat-auto-retry-once.js](../../scripts/test-chat-auto-retry-once.js).
 - `frontend/src/components/chat/transcript.js` renders the error card's
   **Retry** button via an optional `onRetry` argument to
   `appendErrorCard`. When a persisted error bubble is restored, the UI

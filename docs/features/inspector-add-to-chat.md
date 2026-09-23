@@ -13,8 +13,6 @@ The Inspector's detail sheet — the panel that opens when you tap a console log
 
 The entry is appended to that chat's draft. Open the chat to review and send it.
 
-![The detail sheet with its Add to chat button](./images/inspector-add-to-chat/detail-sheet-360.png)
-
 ## Behavior
 
 - **Add to chat** only appears when the app has a chat surface to hand the entry to. Otherwise the button is rendered but disabled, so the feature is never invisible — just unavailable.
