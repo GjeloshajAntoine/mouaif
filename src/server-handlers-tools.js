@@ -37,6 +37,7 @@ const {
 // a real Command Prompt in both modes.
 
 const { spawn } = require('node:child_process');
+const { StringDecoder } = require('node:string_decoder');
 const pty = require('./pty.js');
 
 const cliSessions = new Map(); // projectDir -> { child, projectDir, id, startedAt }
@@ -213,8 +214,21 @@ function writeCliCommand(session, cmd, raw) {
 // `cli_output` frames tagged with that id.
 function attachCliStream(session, broadcast) {
   if (!session || !session.child || !broadcast) return;
+  // Output arrives in arbitrary byte chunks, so a multi-byte UTF-8 character
+  // (`é`, `✓`, an emoji, a box-drawing border) can be split across two of
+  // them. Decoding each chunk on its own turns both halves into U+FFFD `�`.
+  // A StringDecoder per stream holds the incomplete tail until the rest
+  // arrives; `end()` flushes whatever is left when the child exits.
+  const decoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') };
   const emit = (stream, d) => {
-    broadcast('cli_output', { id: session.id, stream, data: Buffer.isBuffer(d) ? d.toString('utf8') : String(d) });
+    const data = Buffer.isBuffer(d) ? decoders[stream].write(d) : String(d);
+    if (data) broadcast('cli_output', { id: session.id, stream, data });
+  };
+  const flush = () => {
+    for (const stream of Object.keys(decoders)) {
+      const rest = decoders[stream].end();
+      if (rest) broadcast('cli_output', { id: session.id, stream, data: rest });
+    }
   };
   if (session.pty) {
     // A PTY merges stdout and stderr into one readable stream and reports
@@ -222,12 +236,12 @@ function attachCliStream(session, broadcast) {
     // chunk is labelled stdout because the two channels are no longer
     // distinguishable.
     session.child.onData((d) => emit('stdout', d));
-    session.child.onExit(({ exitCode }) => emit('exit', String(exitCode)));
+    session.child.onExit(({ exitCode }) => { flush(); emit('exit', String(exitCode)); });
     return;
   }
   session.child.stdout.on('data', (d) => emit('stdout', d));
   session.child.stderr.on('data', (d) => emit('stderr', d));
-  session.child.on('exit', (code) => emit('exit', String(code)));
+  session.child.on('exit', (code) => { flush(); emit('exit', String(code)); });
 }
 
 // ---- Tools API ---------------------------------------------------------------

@@ -116,6 +116,61 @@ async function run() {
   sc5.write('\x1b[?1049l');           // leave alt screen
   t('not full-screen after alt leave', sc5.isFullScreen === false);
 
+  // 16. Split tokens: every escape sequence must render the same no matter
+  //     where the SSE frame boundary falls — including a lone trailing ESC,
+  //     which used to be dropped so the rest (`[31m`, `]0;title`) leaked as
+  //     text. Each sample is split at every pair of positions (three chunks)
+  //     and also fed one code point at a time.
+  const splitSamples = {
+    'SGR colour': 'a\x1b[31mred\x1b[0m b',
+    'cursor position': '\x1b[2;5Hxy\x1b[K',
+    'OSC title (BEL)': '\x1b]0;title\x07after',
+    'OSC title (ESC \\)': '\x1b]0;title\x1b\\after',
+    'OSC 8 hyperlink': '\x1b]8;;http://a\x1b\\link\x1b]8;;\x1b\\ end',
+    'charset designator': '\x1b(Bplain',
+    'keypad modes': '\x1b=\x1b>ok',
+    'bracketed paste': '\x1b[?2004hprompt$ ',
+    'DCS string': '\x1bP1$r0m\x1b\\done',
+    'APC string': '\x1b_hidden\x1b\\vis',
+    '8-bit CSI': 'x\u009b31my',
+    'emoji next to SGR': 'ok \u{1F389}\x1b[1m\u2713\x1b[0m'
+  };
+  const expected = {
+    'SGR colour': 'ared b', 'cursor position': '    xy', 'OSC title (BEL)': 'after',
+    'OSC title (ESC \\)': 'after', 'OSC 8 hyperlink': 'link end', 'charset designator': 'plain',
+    'keypad modes': 'ok', 'bracketed paste': 'prompt$', 'DCS string': 'done', 'APC string': 'vis',
+    '8-bit CSI': 'xy', 'emoji next to SGR': 'ok \u{1F389}\u2713'
+  };
+  for (const [name, s] of Object.entries(splitSamples)) {
+    const whole = new CliScreen(); whole.write(s);
+    t(name + ': whole chunk renders clean', whole.render() === expected[name], whole.render());
+    const cps = Array.from(s);
+    let firstBad = null;
+    for (let x = 1; x < cps.length && !firstBad; x++) {
+      for (let y = x; y < cps.length && !firstBad; y++) {
+        const sc = new CliScreen();
+        sc.write(cps.slice(0, x).join('')); sc.write(cps.slice(x, y).join('')); sc.write(cps.slice(y).join(''));
+        if (sc.render() !== expected[name]) firstBad = { x, y, got: sc.render() };
+      }
+    }
+    t(name + ': identical at every split point', !firstBad, firstBad);
+    const one = new CliScreen(); for (const ch of cps) one.write(ch);
+    t(name + ': identical fed one code point at a time', one.render() === expected[name], one.render());
+  }
+
+  // 17. A control string that never terminates must not swallow every later
+  //     byte: past the pending cap it is abandoned and output resumes.
+  const runaway = new CliScreen();
+  runaway.write('\x1b]0;');
+  for (let k = 0; k < 20; k++) runaway.write('x'.repeat(1000));
+  runaway.write('\nVISIBLE');
+  t('an unterminated OSC is abandoned past the cap', /VISIBLE/.test(runaway.render()), runaway.render().slice(-40));
+
+  // 18. A malformed CSI (a byte that cannot belong to one) is abandoned
+  //     instead of eating the text that follows.
+  const malformed = new CliScreen(); malformed.write('a\x1b[1\u00e9b');
+  t('a malformed CSI does not eat following text', malformed.render() === 'a\u00e9b', malformed.render());
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
 }

@@ -166,6 +166,9 @@ return acc;
 // It is deliberately a best-effort plain-text view, not a terminal emulator:
 // colour and cell-width attributes are dropped and column layout is not
 // reconstructed (column 0 is the left edge). Keep it cheap — no Preact/DOM.
+// Longest escape sequence CliScreen will hold across chunks (in code points).
+const CLI_PENDING_LIMIT = 8192;
+
 export class CliScreen {
 constructor() {
 this.grid = [];   // grid[r] = array of chars ('' = blank cell)
@@ -259,8 +262,36 @@ break;
 default: break; // SGR colour (m), scroll region (r), window ops (t), etc.
 }
 }
+// Scan a CSI body starting at `j` (just after `ESC [` or the 8-bit CSI).
+// Returns the index of the final byte, -1 when the chunk ends first (the
+// sequence is still in flight), or -2 when a byte that cannot belong to a CSI
+// arrives (malformed — the sequence is abandoned, as a real terminal does).
+// Parameter and intermediate bytes are 0x20-0x3f; the final is 0x40-0x7e.
+_scanCsi(a, j) {
+while (j < a.length && a[j] >= '\x20' && a[j] <= '\x3f') j++;
+if (j >= a.length) return -1;
+return (a[j] >= '\x40' && a[j] <= '\x7e') ? j : -2;
+}
+// Scan a control string (OSC, DCS, SOS, PM, APC) starting at `j`. Returns
+// the index just past its terminator, -1 when the chunk ends first, or the
+// index of an aborting CAN/SUB. Terminators: BEL, `ESC \` or the 8-bit ST.
+_scanString(a, j) {
+while (j < a.length) {
+const c = a[j];
+if (c === '\x07' || c === '\u009c') return j + 1;
+if (c === '\x18' || c === '\x1a') return j; // CAN / SUB abort; dropped by the main loop
+if (c === '\x1b') {
+if (j + 1 >= a.length) return -1;      // `ESC` of the ST may be split off
+if (a[j + 1] === '\\') return j + 2;
+}
+j++;
+}
+return -1;
+}
 // Feed one chunk of raw output. Any escape sequence left unterminated at the
-// end of the chunk is buffered and completed on the next call.
+// end of the chunk — including a lone trailing `ESC` — is buffered and
+// completed on the next call, so a sequence split across SSE frames never
+// leaks as `[31m` / `]0;title` text.
 write(chunk) {
 const s = this.pending + String(chunk || '');
 this.pending = '';
@@ -268,36 +299,50 @@ this.pending = '';
 const a = Array.from(s);
 let i = 0;
 const n = a.length;
+// Hold the rest of the input for the next chunk. An unterminated sequence
+// that keeps growing past the cap (a program that never sends the ST) is
+// abandoned rather than swallowing every later byte forever.
+const hold = (from) => {
+const rest = a.slice(from).join('');
+if (rest.length <= CLI_PENDING_LIMIT) this.pending = rest;
+};
 while (i < n) {
 const c = a[i];
-if (c === '\x1b') {
-const nxt = a[i + 1];
-if (nxt === '[') {
+if (c === '\x1b' || c === '\u009b' || c === '\u009d' || c === '\u0090' ||
+c === '\u0098' || c === '\u009e' || c === '\u009f') {
+// Normalise the 8-bit C1 introducers to their `ESC x` form.
+const esc = c === '\x1b';
+if (esc && i + 1 >= n) { hold(i); break; }  // lone ESC: wait for the next byte
+const kind = esc ? a[i + 1]
+: ({ '\u009b': '[', '\u009d': ']', '\u0090': 'P', '\u0098': 'X', '\u009e': '^', '\u009f': '_' })[c];
+const body = i + (esc ? 2 : 1);
+if (kind === '[') {
 // CSI: ESC [ params? intermediates? final
-let j = i + 2;
-while (j < n && !(a[j] >= '\x40' && a[j] <= '\x7e')) j++;
-if (j >= n) { this.pending = a.slice(i).join(''); break; }
-this._csi(a.slice(i + 2, j).join(''), a[j]);
+const j = this._scanCsi(a, body);
+if (j === -1) { hold(i); break; }
+if (j === -2) { i = body; while (i < n && a[i] >= '\x20' && a[i] <= '\x3f') i++; continue; }
+this._csi(a.slice(body, j).join(''), a[j]);
 i = j + 1;
 continue;
 }
-if (nxt === ']') {
-// OSC: ESC ] text BEL | ESC ] text ESC \
-let j = i + 2;
-while (j < n && a[j] !== '\x07' && !(a[j] === '\x1b' && a[j + 1] === '\\')) j++;
-if (j >= n) { this.pending = a.slice(i).join(''); break; }
-i = (a[j] === '\x07') ? j + 1 : j + 2;
+if (kind === ']' || kind === 'P' || kind === 'X' || kind === '^' || kind === '_') {
+// OSC (title, hyperlink), DCS, SOS, PM, APC — control strings, never text.
+const j = this._scanString(a, body);
+if (j === -1) { hold(i); break; }
+i = j;
 continue;
 }
-if (nxt === '(' || nxt === ')' || nxt === '#' || nxt === '%') {
-if (i + 2 >= n) { this.pending = a.slice(i).join(''); break; }
+if (kind === '(' || kind === ')' || kind === '*' || kind === '+' || kind === '#' || kind === '%' || kind === ' ') {
+// Two-byte escape with one designator byte (charset, DEC line, ...).
+if (i + 2 >= n) { hold(i); break; }
 i += 3;
 continue;
 }
 // Any other escape (ESC =, ESC >, ESC 7/8, ESC c, ...) — drop it.
-i += (a[i + 1] !== undefined) ? 2 : 1;
+i += 2;
 continue;
 }
+if (c >= '\u0080' && c <= '\u009f') { i += 1; continue; } // other C1 controls
 if (c === '\r') { this.col = 1; i += 1; continue; }
 if (c === '\n') { this.row += 1; this.col = 1; this._ensureRow(this.row); i += 1; continue; }
 if (c === '\x08') { this.col = Math.max(1, this.col - 1); i += 1; continue; } // backspace
