@@ -143,6 +143,31 @@ async function main() {
     check('kill() marks the handle as killed', session.killed === true);
   }
 
+  // 6. A *background* job lives in its own process group (job control in an
+  //    interactive shell), and the shell itself is a session leader under
+  //    `script` — so signalling script's group alone left `cmd &` running
+  //    after the modal closed. kill() must reach every job in the session.
+  {
+    const marker = 'mouaif-pty-bg-' + Date.now();
+    const stream = newStream();
+    const session = pty.spawnPty('/bin/bash', ['-i'], { cwd: process.cwd() });
+    session.onData((d) => { stream.text += d.toString('utf8'); });
+    session.write('(exec -a ' + marker + ' sleep 300) &\n');
+    session.write('echo BG-STARTED\n');
+    await waitFor(stream, (t) => /BG-STARTED/.test(t), 4000);
+    await sleep(300);
+    const find = () => {
+      try { return execFileSync('pgrep', ['-f', marker], { encoding: 'utf8' }).trim(); } catch { return ''; }
+    };
+    check('the background job is running before kill()', !!find());
+    session.kill();
+    // SIGHUP/SIGTERM land at once; the SIGKILL sweep follows after ~1 s.
+    let leaked = find();
+    for (let i = 0; i < 30 && leaked; i++) { await sleep(100); leaked = find(); }
+    check('kill() also stops a backgrounded job (`cmd &`)', !leaked, 'still running: ' + leaked);
+    if (leaked) { try { execFileSync('pkill', ['-KILL', '-f', marker]); } catch { /* best effort */ } }
+  }
+
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed ? 1 : 0);
 }

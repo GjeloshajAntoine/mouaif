@@ -95,16 +95,81 @@ function shellCommand(exe, args) {
   return [exe].concat(args || []).map(shellQuote).join(' ');
 }
 
+// Read `/proc/<pid>/stat` → { ppid, sid }, or null once the process is gone.
+// The command name (field 2) is parenthesised and may itself contain spaces
+// or `)`, so the numeric fields are parsed after the LAST `)`.
+function procStat(pid) {
+  let text;
+  try { text = fs.readFileSync('/proc/' + pid + '/stat', 'utf8'); } catch { return null; }
+  const fields = text.slice(text.lastIndexOf(')') + 2).split(' ');
+  // After the name: state ppid pgrp session ...
+  return { ppid: Number(fields[1]), sid: Number(fields[3]) };
+}
+
+function listPids() {
+  try {
+    return fs.readdirSync('/proc').filter((n) => /^\d+$/.test(n)).map(Number);
+  } catch { return []; }
+}
+
+// Every process in the terminal session `script` created. `script` forks the
+// shell onto the pty slave as a *session leader* (its own sid), and an
+// interactive shell then gives every job its own process group — so neither
+// `-script.pid` nor the shell's group reaches a background job
+// (`npm run dev &`). The session id is the one thing they all share. Linux
+// only (the only platform where the shim runs); a process that called
+// setsid() itself (a daemon) has left the session on purpose and is not
+// followed.
+function sessionMembers(scriptPid) {
+  const pids = listPids();
+  const sids = new Set();
+  for (const pid of pids) {
+    const st = procStat(pid);
+    if (st && st.ppid === scriptPid) sids.add(st.sid);
+  }
+  sids.delete(0);
+  const members = [];
+  if (!sids.size) return members;
+  for (const pid of pids) {
+    if (pid === scriptPid) continue;
+    const st = procStat(pid);
+    if (st && sids.has(st.sid)) members.push({ pid, sid: st.sid });
+  }
+  return members;
+}
+
+const KILL_GRACE_MS = 1000;
+
+function signal(pid, sig) {
+  try { process.kill(pid, sig); } catch { /* already gone */ }
+}
+
 // `kill()` has to reach the whole tree: the shell spawned its own children
-// (a running `npm test`, a pager), and `script` sits in between. POSIX only:
-// detached:true puts `script` in its own process group, so signalling the
-// negative pid takes down the shell and everything under it.
+// (a running `npm test`, a pager, a backgrounded dev server), and `script`
+// sits in between. The session members are snapshotted *before* anything is
+// signalled — once the shell dies its children are reparented and could no
+// longer be found through `script`. They get SIGHUP (what a closed terminal
+// sends; an interactive bash ignores SIGTERM but not SIGHUP) plus SIGTERM,
+// then SIGKILL after a short grace period for anything still in the session.
+// The re-check of the session id before SIGKILL guards against a recycled pid.
 function terminate(child) {
   if (!child || child.killed) return;
+  const members = child.pid ? sessionMembers(child.pid) : [];
+  for (const m of members) { signal(m.pid, 'SIGHUP'); signal(m.pid, 'SIGTERM'); }
   if (process.platform !== 'win32' && child.pid) {
-    try { process.kill(-child.pid, 'SIGTERM'); } catch { /* group already gone */ }
+    // detached:true put `script` in its own process group.
+    signal(-child.pid, 'SIGTERM');
   }
   try { child.kill(); } catch { /* already reaped */ }
+  if (!members.length) return;
+  const timer = setTimeout(() => {
+    for (const m of members) {
+      const st = procStat(m.pid);
+      if (st && st.sid === m.sid) signal(m.pid, 'SIGKILL');
+    }
+  }, KILL_GRACE_MS);
+  // Never keep the server (or a test) alive just to finish the sweep.
+  if (timer.unref) timer.unref();
 }
 
 function spawnPty(exe, args, opts) {

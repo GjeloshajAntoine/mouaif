@@ -58,7 +58,7 @@ The session is spawned on a pseudo-terminal by [src/pty.js](../../src/pty.js). O
 script -qefc "'/bin/bash' '-i'" /dev/null
 ```
 
-`-c` runs the shell on a pty slave, `-e` propagates the child's exit code, `-f` flushes each write so output is not delayed, and `-q` drops the "Script started" banner. `script` is then killed by process group, so the shell and everything it started go down together.
+`-c` runs the shell on a pty slave, `-e` propagates the child's exit code, `-f` flushes each write so output is not delayed, and `-q` drops the "Script started" banner. Closing the session signals every process in the terminal session `script` created (found through `/proc`, before anything is signalled): SIGHUP and SIGTERM first, then SIGKILL after a one-second grace period. An interactive shell gives each job its own process group, so signalling `script`'s group alone would miss a backgrounded job (`npm run dev &`); the session id is what they all share. A program that called `setsid()` itself (a daemon) has left the session on purpose and keeps running.
 
 The module probes for a usable `script` once, at the first session. Where none is available — Windows, a BSD/macOS `script`, a container without util-linux — the session falls back to the original **piped** child. Everything non-interactive works identically; only prompting programs cannot ask a question. The session then reports `interactive: false`, and the modal omits the badge.
 
@@ -85,4 +85,4 @@ npm run test:cli
 - `scripts/test-cli-session-newline.js` — drives the real endpoints and asserts a plain `ls` lists the project files (the terminator rule).
 - `scripts/test-cli-strip-ansi.js` — unit-tests `stripAnsi` / `CliScreen`.
 - `scripts/test-cli-pty-interactive.js` — asserts the session is interactive, that a prompting program's question reaches the screen, and that the answer POSTed to the command endpoint is read back by the still-running child. It skips (exit 0) when no pseudo-terminal can be allocated, because that is the documented degraded mode.
-- `scripts/test-cli-pty-shim.js` — unit-tests `src/pty.js`: `isAvailable()` matches the piped fallback rule, quoting survives a path with spaces and quotes, `onData` replays what was buffered before the stream attached, `write` reaches the shell, and `kill` takes the whole process group down.
+- `scripts/test-cli-pty-shim.js` — unit-tests `src/pty.js`: `isAvailable()` matches the piped fallback rule, quoting survives a path with spaces and quotes, `onData` replays what was buffered before the stream attached, `write` reaches the shell, and `kill` takes down the shell, its foreground job and any backgrounded job (`cmd &`).
