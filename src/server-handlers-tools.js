@@ -30,12 +30,11 @@ const {
 //
 // The child runs on a pseudo-terminal (see src/pty.js), which is what lets
 // prompting programs ask a question and keeps tools like npm from masking
-// output they only print in full to a terminal. Every POSIX host gets one;
-// only on Windows does the session fall back to piped stdio, and commands
-// that require a TTY (REPLs, `cmd.exe` interactive prompts like `del`
-// confirmation) fail or exit immediately — the documented limitation, same
-// as the native `shell` tool. Everything non-interactive works exactly like
-// a real Command Prompt in both modes.
+// output they only print in full to a terminal. POSIX uses script/python;
+// Windows uses node-pty's prebuilt ConPTY bridge. If no backend can load, the
+// session falls back to piped stdio and commands that require a TTY fail or
+// exit immediately. Everything non-interactive still works in that degraded
+// mode.
 
 const { spawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
@@ -101,10 +100,10 @@ function cliShellMeta() {
 // screen, the user types the answer into the modal's prompt line, and it is
 // delivered to the still-running child.
 //
-// The TTY comes from src/pty.js, which allocates it with util-linux
-// `script(1)` — no native addon, so `npm install` needs no C++ toolchain.
-// It falls back to BSD/macOS `script` and then python3's `pty` module, so
-// every POSIX host gets a terminal; only Windows keeps the piped spawn below.
+// The TTY comes from src/pty.js. POSIX uses util-linux/BSD `script(1)` or
+// python3's `pty` module without a native addon. Windows uses node-pty's
+// published ConPTY prebuild; node-pty is optional, so an unavailable binary
+// keeps the piped spawn below instead of preventing mouaif from starting.
 //
 // A PTY merges stdout and stderr into one stream, so `attachCliStream`
 // labels every chunk `stdout`; there is no separate stderr channel to

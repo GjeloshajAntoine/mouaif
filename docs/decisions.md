@@ -289,4 +289,8 @@ provider:credHash so a key rotation invalidates the entry.
 - **Removed tests**: `scripts/test-image-generation.js`, `scripts/test-save-image.js`, `scripts/test-image-gen-preview.js` and their `package.json` entries. Affected existing tests were updated rather than deleted: `scripts/test-file-tool-off-advertisement.js` (its `image_gen` leaf block), `scripts/test-provider-shapes.js` (the `imagegen` agreement check). `scripts/test-model-lists-live-route.mjs` lost its `purpose=image` assertions in the removal and §28a restores them — it again pins that the image slice is served, that `listImageModels` is consulted, and that a provider without a slice falls back to the chat list.
 - **The `generated/` directory convention is gone.** Pictures a project already committed under `generated/` are ordinary files: `list_files` and `read_file` still find and open them.
 
-## 30. The CLI modal's pseudo-terminal is `script(1)`, not a native addon
+## 30. The CLI modal uses host PTYs on POSIX and ConPTY on Windows
+
+- Linux uses util-linux `script(1)`, macOS/BSD use their `script`, and Python's `pty` module remains the last POSIX fallback. This avoids compiling a native addon on Linux, where `node-pty@1.1.0` does not publish a prebuild.
+- Windows uses optional `node-pty@^1.1.0`. Its npm package publishes win32-x64 and win32-arm64 ConPTY binaries, so normal `npx` installs need neither Python nor Visual Studio Build Tools.
+- The dependency stays optional. If its native binary cannot install or load, mouaif still starts and the CLI modal falls back to pipes with `interactive: false`; non-interactive commands continue to work, while TTY-only prompts remain unavailable.

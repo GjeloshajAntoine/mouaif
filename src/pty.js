@@ -1,20 +1,18 @@
 'use strict';
 
-// A dependency-free pseudo-terminal shim.
+// Cross-platform pseudo-terminal adapter.
 //
 // The CLI modal's persistent session (src/server-handlers-tools.js) wants a
 // child whose stdin is a TTY, because programs that ask a question — `read`,
 // `npm publish` under 2FA, `sudo`, git credential prompts — either get an
 // immediate EOF or refuse to prompt when stdin is a pipe.
 //
-// This module used to be delegated to `node-pty`. That native addon ships no
-// prebuilt binary for Linux (only darwin/win32), so a plain `npm install`
-// without a C++ toolchain failed outright on Linux — the exact platform where
-// mouaif is most often installed (Docker, CI, Codespaces, VPS). Instead of a
-// replacement dependency this module allocates the TTY with whatever the host
-// already has: util-linux `script(1)` (every Linux base image, including
-// `node:22-bookworm-slim`), BSD/macOS `script`, or `python3`'s `pty` module.
-// Only where none exists (Windows) does the caller fall back to a piped child.
+// POSIX stays dependency-free: util-linux `script(1)` is used on Linux,
+// BSD/macOS `script` on those hosts, and python3's `pty` module is the final
+// fallback. Windows uses the optional `node-pty` package, whose published
+// win32-x64 and win32-arm64 prebuilds call ConPTY without requiring Python or
+// Visual Studio on the user's machine. Keeping it optional avoids making a
+// missing or unsupported native binary prevent mouaif from installing.
 //
 // `spawnPty(exe, args, opts)` returns a handle shaped like the handful of
 // node-pty members the session uses — `onData`, `onExit`, `write`, `kill`,
@@ -42,10 +40,24 @@ const { spawn, spawnSync } = require('node:child_process');
 //   3. `python3` + its `pty` module — any POSIX host with Python, e.g. a
 //                                    stripped container without util-linux.
 //
-// Each backend is probed once (it must run a command on a TTY and hand back
-// its exit code) and the first that passes is used. Only Windows, which has
-// none of these, keeps the piped child.
+// Each POSIX backend is probed once (it must run a command on a TTY and hand
+// back its exit code) and the first that passes is used. Windows loads
+// `node-pty` instead; if its optional native package is unavailable, only then
+// does the caller keep the piped child.
 const POSIX = process.platform !== 'win32';
+
+let nodePty;
+let nodePtyLoadAttempted = false;
+function loadNodePty() {
+  if (nodePtyLoadAttempted) return nodePty;
+  nodePtyLoadAttempted = true;
+  try {
+    nodePty = require('node-pty');
+  } catch {
+    nodePty = null;
+  }
+  return nodePty;
+}
 
 // Grid size reported to programs on the pty. The modal renders plain text and
 // does not report its own size, so this is a sensible fixed terminal size.
@@ -177,7 +189,12 @@ function probe(b, bin) {
 function resolveBackend() {
   if (probeDone) return backend;
   probeDone = true;
-  if (!POSIX) return (backend = null);
+  if (!POSIX) {
+    const mod = loadNodePty();
+    return (backend = mod && typeof mod.spawn === 'function'
+      ? { name: 'node-pty (ConPTY)', module: mod }
+      : null);
+  }
   for (const b of candidates) {
     if (b.platforms && b.platforms.indexOf(process.platform) === -1) continue;
     const bin = which(b.bin);
@@ -186,14 +203,15 @@ function resolveBackend() {
   return (backend = null);
 }
 
-// True when a real pseudo-terminal can be allocated on this host. When false
-// (Windows) the CLI session falls back to a piped child.
+// True when a real pseudo-terminal can be allocated on this host. A missing
+// optional node-pty binary on Windows reports false and lets the caller use its
+// existing piped fallback rather than failing startup.
 function isAvailable() {
   return !!resolveBackend();
 }
 
-// Which backend is in use ('script (util-linux)', 'script (BSD)',
-// 'python3 pty'), or null. For diagnostics and tests.
+// Which backend is in use ('node-pty (ConPTY)', 'script (util-linux)',
+// 'script (BSD)', 'python3 pty'), or null. For diagnostics and tests.
 function backendName() {
   const b = resolveBackend();
   return b ? b.name : null;
@@ -290,6 +308,15 @@ function spawnPty(exe, args, opts) {
   const b = resolveBackend();
   if (!b) return null;
   const options = opts || {};
+  if (b.module) {
+    return b.module.spawn(exe, args || [], {
+      name: 'xterm-256color',
+      cols: options.cols || COLS,
+      rows: options.rows || ROWS,
+      cwd: options.cwd,
+      env: options.env || process.env
+    });
+  }
   const [file, argv] = b.argv(b.bin, exe, args);
   const child = spawn(file, argv, {
     cwd: options.cwd,

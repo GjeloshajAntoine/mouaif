@@ -1,9 +1,9 @@
-// Unit tests for src/pty.js — the dependency-free pseudo-terminal shim.
+// Unit tests for src/pty.js — the cross-platform pseudo-terminal adapter.
 //
-// The shim replaced `node-pty` (a native addon with no Linux prebuild, whose
-// install needed a C++ toolchain and failed outright without one). It
-// allocates the TTY with util-linux `script(1)` and exposes the few members
-// the CLI session uses: `onData`, `onExit`, `write`, `kill`, `pid`, `killed`.
+// POSIX avoids a native addon with util-linux/BSD `script(1)` or python3's
+// pty module. Windows uses node-pty's prebuilt ConPTY binding. Every backend
+// exposes the members the CLI session uses: `onData`, `onExit`, `write`,
+// `kill`, `pid`, `killed`.
 //
 // This test covers the parts that are awkward to reach through the HTTP
 // endpoint: the availability probe must agree with the piped-fallback rule,
@@ -59,19 +59,79 @@ const BACKENDS = ['script (util-linux)', 'script (BSD)', 'python3 pty'];
 
 const check = checkAll;
 
+// Exercise the Windows-only branch from any development host. The child
+// process presents itself as win32 and supplies a tiny node-pty stand-in, so
+// this pins the adapter without loading a native binary for the wrong OS.
+function testWindowsAdapter() {
+  const source = `
+    const assert = require('node:assert/strict');
+    const Module = require('node:module');
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    let call;
+    const handle = { pid: 42, killed: false, onData() {}, onExit() {}, write() {}, kill() {} };
+    const original = Module._load;
+    Module._load = function (request, parent, isMain) {
+      if (request === 'node-pty') return { spawn(exe, args, options) { call = { exe, args, options }; return handle; } };
+      return original.call(this, request, parent, isMain);
+    };
+    const pty = require(${JSON.stringify(path.resolve(__dirname, '../src/pty.js'))});
+    assert.equal(pty.isAvailable(), true);
+    assert.equal(pty.backendName(), 'node-pty (ConPTY)');
+    assert.equal(pty.spawnPty('cmd.exe', [], { cwd: 'C:\\\\work', env: { A: '1' } }), handle);
+    assert.deepEqual(call, {
+      exe: 'cmd.exe',
+      args: [],
+      options: { name: 'xterm-256color', cols: 100, rows: 30, cwd: 'C:\\\\work', env: { A: '1' } }
+    });
+  `;
+  execFileSync(process.execPath, ['-e', source], { stdio: 'pipe' });
+  checkAll('Windows selects node-pty and passes ConPTY options', true);
+
+  const missing = `
+    const assert = require('node:assert/strict');
+    const Module = require('node:module');
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const original = Module._load;
+    Module._load = function (request, parent, isMain) {
+      if (request === 'node-pty') throw Object.assign(new Error('missing'), { code: 'MODULE_NOT_FOUND' });
+      return original.call(this, request, parent, isMain);
+    };
+    const pty = require(${JSON.stringify(path.resolve(__dirname, '../src/pty.js'))});
+    assert.equal(pty.isAvailable(), false);
+    assert.equal(pty.spawnPty('cmd.exe', [], {}), null);
+  `;
+  execFileSync(process.execPath, ['-e', missing], { stdio: 'pipe' });
+  checkAll('Windows keeps the piped fallback when node-pty is unavailable', true);
+}
+
 async function main() {
+  testWindowsAdapter();
   pty._resetForTests();
   const available = pty.isAvailable();
 
   check('isAvailable() reports the probe result as a boolean', typeof available === 'boolean');
-  check(
-    'every POSIX host gets a terminal (only Windows keeps the piped child)',
-    available === (process.platform !== 'win32'),
-    'isAvailable=' + available + ' platform=' + process.platform
-  );
+  if (process.platform !== 'win32') {
+    check(
+      'every POSIX host gets a terminal',
+      available === true,
+      'isAvailable=' + available + ' platform=' + process.platform
+    );
+  } else {
+    check(
+      'Windows uses node-pty when its optional prebuild is installed',
+      available === (pty.backendName() === 'node-pty (ConPTY)'),
+      'isAvailable=' + available + ' backend=' + pty.backendName()
+    );
+  }
 
   if (!available) {
-    console.log('\nSKIP  Windows: no pseudo-terminal backend — the piped fallback is the documented mode.');
+    console.log('\nSKIP  No pseudo-terminal backend loaded — the piped fallback is the documented mode.');
+    console.log(passed + ' passed, ' + failed + ' failed');
+    process.exit(failed ? 1 : 0);
+  }
+
+  if (process.platform === 'win32') {
+    console.log('\nPASS  Windows node-pty ConPTY backend loaded.');
     console.log(passed + ' passed, ' + failed + ' failed');
     process.exit(failed ? 1 : 0);
   }
