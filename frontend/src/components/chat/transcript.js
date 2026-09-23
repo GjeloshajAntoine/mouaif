@@ -2296,6 +2296,18 @@ export function syncTranscriptAppend(state, refs, prevCount) {
   for (let i = prevCount; i < total; i++) {
     const m = state.messages[i];
     if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) continue;
+    // A row whose node is already on screen under this identity must not be
+    // drawn again. This is the common live-follower path: finalizeLiveSegment
+    // stamped the live bubble with the persisted row's `seq`, but the live
+    // reply was never added to state.messages, so mergeServerRows sees a pure
+    // append and this cheap path is chosen. Drawing it here builds a SECOND
+    // bubble next to the live one — the reconciliation that would have matched
+    // them by key is only reached through the 'render' path, which
+    // tailSyncDomAction does not pick for an append. Reusing the existing node
+    // (stamping it with the row's key for later passes) keeps the transcript
+    // to one row per segment.
+    const key = transcriptRowKey(m);
+    if (key && findKeyedRow(transcriptEl, key)) continue;
     renderMessageRow(state, refs, m);
   }
   if (anchor && anchor.parentNode === transcriptEl) refs._insertAnchor = anchor;
@@ -2399,6 +2411,20 @@ export function transcriptRowKey(m) {
     _rowKeys.set(m, key);
   }
   return key;
+}
+
+// findKeyedRow(el, key) -> Element | null
+//
+// The message row already mounted under `key`, or null. Used by the cheap
+// append path to avoid drawing a row whose node is already on screen (see
+// syncTranscriptAppend): the reconciler does the same lookup, but that path
+// is only reached when the merge moved the prefix.
+function findKeyedRow(el, key) {
+  if (!el || !key) return null;
+  for (const child of el.children) {
+    if (isMessageRowNode(child) && child._rowKey === key) return child;
+  }
+  return null;
 }
 
 // hasMessageRows(el) -> bool
