@@ -126,6 +126,9 @@ check('the generated landing page matches the install docs', () => {
   const snippet = source.slice(source.indexOf('id="start"'), source.indexOf('id="auth"'));
   assert.ok(!/npm run build:web/.test(snippet), 'landing install snippet still builds');
   assert.match(snippet, /npm install\s*\n\s*npm link/);
+  // The landing page leads with the same command Getting started recommends.
+  assert.match(snippet, /npx mouaif serve --auth/, 'landing leads with npx + --auth');
+  assert.match(read('docs/features/getting-started.md'), /npx mouaif serve --auth/);
 });
 
 check('the CLI commands page is published and indexed', () => {

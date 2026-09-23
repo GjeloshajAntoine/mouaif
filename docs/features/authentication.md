@@ -2,7 +2,7 @@
 
 ## Overview
 
-mouaif deals with two unrelated things that both get called "authentication." They are independent — you can set up either one without the other:
+Connect AI providers so mouaif can use their models, and optionally require a login to open mouaif. These are two independent setups; you can do either one without the other:
 
 | | What it does | Who you prove yourself to | Where you set it up |
 |---|---|---|---|

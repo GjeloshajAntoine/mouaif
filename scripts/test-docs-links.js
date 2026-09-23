@@ -128,6 +128,21 @@ try {
     }
   });
 
+  check('every public guide is in the top navigation', () => {
+    const html = fs.readFileSync(path.join(pub.out, 'documentation.html'), 'utf8');
+    const nav = html.slice(html.indexOf('<nav class="topnav"'), html.indexOf('</nav>'));
+    for (const slug of ['getting-started', 'authentication', 'app-abilities', 'draft-craft']) {
+      assert.ok(nav.includes('href="features/' + slug + '.html"'), slug + ' missing from the top nav');
+    }
+  });
+
+  check('guide card summaries do not end on a dangling colon', () => {
+    const html = fs.readFileSync(path.join(pub.out, 'documentation.html'), 'utf8');
+    const blurbs = [...html.matchAll(/<a class="feature-card"[^>]*>[\s\S]*?<p>([\s\S]*?)<\/p>/g)].map((m) => m[1]);
+    assert.ok(blurbs.length >= 4, 'found ' + blurbs.length + ' cards');
+    for (const b of blurbs) assert.ok(!/:\s*$/.test(b), 'card ends with a colon: ' + b);
+  });
+
   check('inline code keeps a literal [text](url) as text', () => {
     const html = fs.readFileSync(path.join(pub.out, 'features', 'markdown-renderer.html'), 'utf8');
     assert.match(html, /<code>\[text\]\(url\)<\/code>/);

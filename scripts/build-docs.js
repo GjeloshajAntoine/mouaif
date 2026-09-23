@@ -58,6 +58,13 @@ const ROOT = path.join(__dirname, '..');
 const DOCS_DIR = path.join(ROOT, 'docs');
 const OUT_DIR = path.join(ROOT, 'docs-dist');
 const PUBLIC_GUIDE_SLUGS = ['getting-started', 'authentication', 'app-abilities', 'draft-craft'];
+// Short labels for the top navigation; the sidebar uses each page's H1.
+const PUBLIC_GUIDE_TITLES = {
+  'getting-started': 'Getting started',
+  authentication: 'Authentication',
+  'app-abilities': 'App abilities',
+  'draft-craft': 'Draft Craft'
+};
 // Feature pages that were merged into another page. GitHub Pages has no
 // server-side redirects, so the build writes a tiny features/<old>.html that
 // forwards to the new page and keeps old links and bookmarks working.
@@ -740,6 +747,8 @@ table tr:last-child td { border-bottom: 0; }
   font-size: 12px;
 }
 
+/* Keep an anchored heading clear of the sticky top navigation. */
+html { scroll-padding-top: 72px; }
 /* Top navigation (shared across pages). */
 .topnav {
   display: flex;
@@ -936,6 +945,11 @@ table tr:last-child td { border-bottom: 0; }
 .topnav-links { flex: 1 1 100%; min-width: 0; gap: 4px; margin-left: 0; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .topnav-links::-webkit-scrollbar { display: none; }
 .topnav-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 10px 12px; font-size: 13px; }
+/* The link row scrolls sideways; fade its trailing edge so a clipped label
+   reads as "more to the right" instead of a cut-off word. */
+.topnav-links { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); padding-right: 24px; }
+/* Two rows of sticky navigation (~110 px). */
+html { scroll-padding-top: 120px; }
 .hero { padding: 40px 16px 32px; }
 .hero h1 { font-size: 40px; }
 .hero .tagline { font-size: 15px; }
@@ -987,9 +1001,7 @@ return `<nav class="topnav" aria-label="Primary">
 <a class="topnav-brand" href="index.html"><span class="logo">m</span> mouaif</a>
 <div class="topnav-links">
 <a href="index.html">Home</a>
-<a href="features/getting-started.html">Getting started</a>
-<a href="features/authentication.html">Authentication</a>
-<a href="features/app-abilities.html">App abilities</a>
+${PUBLIC_GUIDE_SLUGS.map((slug) => '<a href="features/' + slug + '.html">' + escapeHtml(PUBLIC_GUIDE_TITLES[slug] || slug) + '</a>').join('\n')}
 </div>
 </nav>`;
 }
@@ -1006,7 +1018,14 @@ function extractBlurb(md, maxLen) {
   const after = md.replace(/^#\s+.+?\n+/, '');
   const para = after.split(/\n\n+/).find((p) => p.trim() && !/^#/.test(p.trim()));
   if (!para) return '';
-  const cleaned = para.replace(/\s+/g, ' ').trim();
+  let cleaned = para.replace(/\s+/g, ' ').trim();
+  // A paragraph that introduces a table or list ends with a colon; as a card
+  // summary that reads as cut off, so drop that lead-in sentence when an
+  // earlier sentence can stand on its own.
+  if (/:$/.test(cleaned)) {
+    const sentences = cleaned.split(/(?<=[.!?]["\u201d\u2019)]?)\s+/);
+    if (sentences.length > 1) cleaned = sentences.slice(0, -1).join(' ');
+  }
   if (cleaned.length <= maxLen) return cleaned;
   return cleaned.slice(0, maxLen - 1).replace(/\s+\S*$/, '') + '…';
 }
@@ -1233,12 +1252,15 @@ ${landingShots}
 </section>
 <section class="section" id="start">
 <h2>Install and run</h2>
-<pre><code class="language-bash">git clone &lt;repo-url&gt;
+<p>Node.js 20 or newer is required. Run mouaif straight from npm, with a login:</p>
+<pre><code class="language-bash">npx mouaif serve --auth</code></pre>
+<p>Use the setup link or QR code printed in the terminal to create your username and password, then open <code>http://127.0.0.1:5732/</code>, add a project folder, connect a provider in <strong>Settings → Providers</strong>, and create your first chat.</p>
+<p>Or install from a checkout of the repository:</p>
+<pre><code class="language-bash">git clone https://github.com/GjeloshajAntoine/mouaif.git
 cd mouaif
 npm install
 npm link
-mouaif serve</code></pre>
-<p>Open <code>http://127.0.0.1:5732/</code>, add a project folder, connect a provider in <strong>Settings → Providers</strong>, and create your first chat.</p>
+mouaif serve --auth</code></pre>
 <p><a href="features/getting-started.html">Read the complete getting-started guide →</a></p>
 </section>
 <section class="section" id="auth">

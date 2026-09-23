@@ -22,7 +22,9 @@ The script is CommonJS, dependency-free, and runs under plain `node`. `node -c s
 
 ### Public allowlist
 
-`PUBLIC_GUIDE_SLUGS` (`scripts/build-docs.js`, near the top) is the single source of truth for the public guide set and ordering. It feeds the top navigation (`renderTopNav`), the sidebar (`renderSidebar`), the documentation index cards, and the landing-page links. Adding a guide to the published site means adding its slug there — a file in `docs/features/` is built but stays out of the navigation otherwise.
+`PUBLIC_GUIDE_SLUGS` (`scripts/build-docs.js`, near the top) is the single source of truth for the public guide set and ordering. It feeds the top navigation (`renderTopNav`), the sidebar (`renderSidebar`), the documentation index cards, and the landing-page links. Adding a guide to the published site means adding its slug there (and a short label in `PUBLIC_GUIDE_TITLES` for the top navigation) — a file in `docs/features/` is built but stays out of the navigation otherwise.
+
+On a phone the top navigation's links sit on one sideways-scrolling row whose trailing edge is faded with a CSS mask, so a clipped label reads as "more to the right". `html { scroll-padding-top }` (72 px, 120 px under 760 px where the nav takes two rows) keeps an anchored heading clear of the sticky bar. `extractBlurb()` drops a trailing lead-in sentence that ends with a colon (a paragraph introducing a table or list), so a card summary never ends mid-thought.
 
 `docs/README.md` is no longer rendered into a page: the build only looks for an optional `## Feature source index` section to order cards. The landing page copy lives in `buildLandingPage()`.
 

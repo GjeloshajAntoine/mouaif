@@ -31,7 +31,7 @@ npm install -g mouaif
 Or install from a checkout of this repository:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/GjeloshajAntoine/mouaif.git
 cd mouaif
 npm install
 npm link
