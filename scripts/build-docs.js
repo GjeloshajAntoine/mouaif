@@ -61,6 +61,23 @@ const PUBLIC_GUIDE_SLUGS = ['getting-started', 'authentication', 'app-abilities'
 // Set by main(). When false (the default, published build) the maintainer
 // pages are not written and links to them are rendered as plain text.
 let includeInternalPages = false;
+// GitHub Pages serves only docs/, so a link to a repository file outside the
+// built site (src/…, scripts/…, .github/…, docs/README.md) is sent to the file
+// on GitHub instead of a relative path that would 404 on the published site.
+const SOURCE_BRANCH = 'master';
+const REPO_BLOB_BASE = repoBlobBase();
+
+function repoBlobBase() {
+  let url = '';
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    url = typeof pkg.repository === 'string' ? pkg.repository : (pkg.repository && pkg.repository.url) || '';
+  } catch (_e) {
+    return '';
+  }
+  url = url.replace(/^git\+/, '').replace(/\.git$/, '').replace(/^git@github\.com:/, 'https://github.com/');
+  return /^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(url) ? url + '/blob/' + SOURCE_BRANCH + '/' : '';
+}
 
 // ---- Markdown renderer ------------------------------------------------
 
@@ -80,6 +97,18 @@ function escapeAttr(s) {
 // Inline pass. Operates on already-escaped text.
 function renderInline(text, ctx) {
   let s = text;
+  // Inline code: extract into placeholders so the bold/italic/strike
+  // passes below do not touch the contents (e.g. `**not bold**`), and the
+  // link / image passes do not turn a literal `[text](url)` into an anchor.
+  const codeStash = [];
+  // A run of N backticks closes on the next run of exactly N, so a double-
+  // backtick span can hold a single backtick; one padding space is trimmed.
+  s = s.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_m, _ticks, code) => {
+    const idx = codeStash.length;
+    const inner = /^ [\s\S]* $/.test(code) && code.trim() ? code.slice(1, -1) : code;
+    codeStash.push('<code>' + inner + '</code>');
+    return '\u0000CODE' + idx + '\u0000';
+  });
   // Images first (before links so ![…](…) wins). Match the title
   // separator in either raw `"` (if the input didn't go through the
   // escaper, e.g. when renderInline is called on raw text) or the
@@ -104,14 +133,6 @@ function renderInline(text, ctx) {
         (isExternal ? ' target="_blank" rel="noopener noreferrer"' : '');
       return '<a' + attrs + '>' + label + '</a>';
     });
-  // Inline code: extract into placeholders so the bold/italic/strike
-  // passes below do not touch the contents (e.g. `**not bold**`).
-  const codeStash = [];
-  s = s.replace(/`([^`]+)`/g, (_m, code) => {
-    const idx = codeStash.length;
-    codeStash.push('<code>' + code + '</code>');
-    return '\u0000CODE' + idx + '\u0000';
-  });
   // Strikethrough, then bold, then italic. The italic rules require the
   // delimiter to be preceded by a non-letter (or BOL) and followed by a
   // non-letter (or EOL); that stops `snake_case` identifiers inside a
@@ -149,6 +170,9 @@ function sanitizeUrl(url, ctx) {
   if (url.startsWith('//')) return url;
   // Reject any other explicit scheme.
   if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return '';
+  // Pages that know their own source and output paths resolve the target
+  // against the repository (see resolveDocLink).
+  if (ctx && ctx.srcRel && ctx.outRel) return resolveDocLink(url, ctx);
   // Maintainer pages (decisions log, agent notes) are not part of a public
 // build: render the label as plain text instead of a dead href.
 if (!includeInternalPages && isMaintainerPagePath(url)) return '';
@@ -159,6 +183,45 @@ url = url.replace(/\.md(?=#|$)/, '.html');
 }
 return url;
 }
+// Resolve a relative link written in docs/<ctx.srcRel> for the page written
+// at <out>/<ctx.outRel>:
+//   - a page or image the build writes -> a relative href to its output file;
+//   - a maintainer page in a public build -> '' (the label stays plain text);
+//   - any other repository file -> its GitHub URL (or '' with no GitHub remote);
+//   - a path that climbs out of the repository -> ''.
+function resolveDocLink(url, ctx) {
+  const m = /^([^?#]*)([?#].*)?$/.exec(url);
+  const rel = m[1];
+  const suffix = m[2] || '';
+  if (!rel) return url;
+  const target = path.posix.normalize(path.posix.join(path.posix.dirname('docs/' + ctx.srcRel), rel));
+  if (target === '..' || target.startsWith('../') || path.posix.isAbsolute(target)) return '';
+  if (!fs.existsSync(path.join(ROOT, target))) {
+    process.stderr.write('[docs] warning: docs/' + ctx.srcRel + ' links to missing ' + target + '\n');
+  }
+  const out = outputPathFor(target);
+  if (out === null) return '';
+  if (out) {
+    const from = path.posix.dirname(ctx.outRel);
+    return path.posix.relative(from, out) + suffix;
+  }
+  return REPO_BLOB_BASE ? REPO_BLOB_BASE + target.replace(/\/$/, '') + suffix : '';
+}
+
+// The site-relative output path the build writes for a repository path, null
+// for a maintainer page left out of this build, or undefined when the file is
+// not part of the site at all.
+function outputPathFor(target) {
+  let m = /^docs\/features\/([^/_][^/]*)\.md$/.exec(target);
+  if (m) return 'features/' + m[1] + '.html';
+  if (/^docs\/features\/images\/./.test(target)) return target.slice('docs/'.length);
+  if (target === 'docs/decisions.md') return includeInternalPages ? 'decisions.html' : null;
+  m = /^docs\/agent\/features\/([^/]+)\.md$/.exec(target);
+  if (m) return includeInternalPages ? 'agent/' + m[1] + '.html' : null;
+  if (target === 'docs/agent' || target.startsWith('docs/agent/')) return includeInternalPages ? undefined : null;
+  return undefined;
+}
+
 // True for a relative target inside docs/agent/... or the decisions log.
 function isMaintainerPagePath(url) {
 const p = url.replace(/^\.\//, '');
@@ -945,7 +1008,7 @@ function buildFeaturePages(features, renderSidebar, outDir) {
   fs.mkdirSync(featureDir, { recursive: true });
   for (const f of features) {
     const src = readDocFile('features/' + f.slug + '.md');
-    const ctx = { rewriteMd: true };
+    const ctx = { rewriteMd: true, srcRel: 'features/' + f.slug + '.md', outRel: 'features/' + f.slug + '.html' };
     const body = renderMarkdown(src, ctx);
     const html = htmlPage({
       title: f.title,
@@ -983,7 +1046,7 @@ function buildAgentFeaturePages(agentFeatures, outDir) {
   };
   for (const f of agentFeatures) {
     const src = readDocFile('agent/features/' + f.slug + '.md');
-    const ctx = { rewriteMd: true };
+    const ctx = { rewriteMd: true, srcRel: 'agent/features/' + f.slug + '.md', outRel: 'agent/' + f.slug + '.html' };
     const body = renderMarkdown(src, ctx);
     const sidebar = `<aside class="sidebar">
 <h1><span class="logo">m</span> mouaif docs</h1>
@@ -1014,7 +1077,9 @@ ${agentFeatures.map((a) => linkItem(a.slug, a.title)).join('\n    ')}
       .replace(/href="documentation\.html"/g, 'href="../documentation.html"')
       .replace(/href="index\.html(#|")/g, 'href="../index.html$1')
       .replace(/href="decisions\.html"/g, 'href="../decisions.html"')
-      .replace(/href="agent-notes\.html"/g, 'href="../agent-notes.html"');
+      .replace(/href="agent-notes\.html"/g, 'href="../agent-notes.html"')
+      // The shared top navigation emits root-relative features/<slug>.html.
+      .replace(/href="features\//g, 'href="../features/');
     fs.writeFileSync(path.join(agentDir, f.slug + '.html'), out);
   }
 }
@@ -1200,7 +1265,7 @@ ${cards}
 
 function buildDecisionsPage(sidebarHtmlStr, outDir) {
   const src = readDocFile('decisions.md');
-  const body = renderMarkdown(src, { rewriteMd: true });
+  const body = renderMarkdown(src, { rewriteMd: true, srcRel: 'decisions.md', outRel: 'decisions.html' });
   const html = htmlPage({
     title: 'Architectural decisions',
     body,

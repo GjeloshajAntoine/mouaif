@@ -4,7 +4,7 @@
 
 ## Backend API
 
-`GET /api/git/info?projectDir=<abs>` returns `branch`, `branches` (local + remote), `ahead`/`behind` (counts against upstream), `stashes` (each `{ index, subject, date }`), `staged`, `unstaged`, and the first 20 `commits` — commit metadata only, no per-commit file lists (see [src/server-handlers-git.js](../../src/server-handlers-git.js)).
+`GET /api/git/info?projectDir=<abs>` returns `branch`, `branches` (local + remote), `ahead`/`behind` (counts against upstream), `stashes` (each `{ index, subject, date }`), `staged`, `unstaged`, and the first 20 `commits` — commit metadata only, no per-commit file lists (see [src/server-handlers-git.js](../../../src/server-handlers-git.js)).
 
 `GET /api/git/commits?projectDir=<abs>&offset=0&count=20` returns paginated commits with `{ ok, commits, total, offset, count }`. Commits carry only metadata — their changed-file lists are fetched lazily per commit.
 

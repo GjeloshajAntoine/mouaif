@@ -35,4 +35,3 @@ One event per line, each with `{ ts, type, ...payload }`:
 
 - [docs/features/ai-client.md](./ai-client.md) — `tool_call` and `tool_result` SSE event names.
 - [docs/features/mcp.md](./mcp.md) — MCP tool calls are traced as `tool call` / `tool result` lines too.
-- Decision: [docs/decisions.md §5](../decisions.md) (trace-to-file) and §10 (AI client wire format).

@@ -35,7 +35,7 @@
 <h2 id="overview">Overview</h2>
 <p>When a <code>subagent</code> tool call needs approval (the tool authorization gate is in <code>ask</code> mode), the <strong>Authorization required</strong> card now carries a model picker. Before tapping <strong>Allow once</strong> / <strong>Allow for session</strong> / <strong>Always allow</strong>, the user can choose which model executes <em>this</em> delegated run. The choice is a one-off: nothing is persisted on the chat, the agent, or the project — the next subagent call uses the chat&#39;s model again (or the agent&#39;s pinned model).</p>
 <h2 id="usage">Usage</h2>
-<p>The picker appears only on <code>subagent</code> approval cards. It lists the same union the main chat <a href="./model-picker.html">model picker</a> shows:</p>
+<p>The picker appears only on <code>subagent</code> approval cards. It lists the same union the main chat <a href="model-picker.html">model picker</a> shows:</p>
 <ul><li><p>project-defined models (<code>settings.models</code>)</p></li><li><p>the per-provider live catalog (<code>GET /api/ai/models/live</code>)<br>deduplicated by <code>(provider, modelId)</code>, sorted by provider then id. The first row is a <strong>&quot;(chat default)&quot;</strong> entry that keeps the run on the chat&#39;s current model (or the agent&#39;s model pin, when the called agent has one). The trigger shows <code>(chat default) &lt;modelId&gt;</code> until the user picks an override. Below it, a <strong>thinking</strong> dropdown offers the picked model&#39;s presets plus an &quot;Inherit chat thinking&quot; first row (the same <code>ThinkingSelectField</code> the Agents editor uses).</p>
 <p>The card&#39;s picker also shows the <strong>Pinned</strong> and <strong>Recent</strong> bookmark sections exactly like the chat top bar, using the same source of truth: pins live in localStorage (per project), and the recent list is the server-backed <code>model_recent</code> SQLite cache, refreshed when the sheet opens. Picking a model on the card records it as recently used; pinning/unpinning works right on the card.</p>
 <p>Pick a model (and optionally a thinking level), then choose any non-deny action. The decision payload carries</p></li></ul>
@@ -53,7 +53,7 @@
 <pre><code class="language-bash">node scripts/test-auth-model-picker.cjs</code></pre>
 <p>The test mounts the real <code>AuthModelPicker</code> on an isolated about:blank tab with an in-memory localStorage shim, seeds a pinned model and a server-backed recent entry, opens the sheet, and asserts both bookmark sections render. It does not modify app data.</p>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="./tool-authorization.html">Tool authorization</a> — the gate the card belongs to.</p></li><li><p><a href="./agents.html">Agents</a> — named subagent personas and their model pins.</p></li><li><p><a href="./model-picker.html">Model picker</a> — the main picker whose data feeds this one.</p></li></ul>
+<ul><li><p><a href="tool-authorization.html">Tool authorization</a> — the gate the card belongs to.</p></li><li><p><a href="agents.html">Agents</a> — named subagent personas and their model pins.</p></li><li><p><a href="model-picker.html">Model picker</a> — the main picker whose data feeds this one.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

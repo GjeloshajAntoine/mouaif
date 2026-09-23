@@ -55,10 +55,14 @@ curl -X PUT http://localhost:5732/api/settings/project \
 ## Implementation notes
 
 - New runtime dependency: `better-sqlite3` (`^11`). Lands in this commit.
-- New file: [src/settings.js](../../src/settings.js). Public surface: `getApp`, `setApp`, `getProject`, `setProject`, `getResolved`, `getProjectPath`, `DEFAULTS`, `MOUAIF_HOME`, `close`.
-- Server wiring: [src/index.js](../../src/index.js) → `handleSettings()`. The existing `GET /`, `GET /data`, `POST /data`, `GET /events` surface is unchanged.
+- New file: [src/settings.js](../../../src/settings.js). Public surface: `getApp`, `setApp`, `getProject`, `setProject`, `getResolved`, `getProjectPath`, `DEFAULTS`, `MOUAIF_HOME`, `close`.
+- Server wiring: [src/index.js](../../../src/index.js) → `handleSettings()`. The existing `GET /`, `GET /data`, `POST /data`, `GET /events` surface is unchanged.
 - `MOUAIF_HOME` is overridable via the `MOUAIF_HOME` env var for tests and power users. Default: `~/.mouaif/`.
-- Model pricing table: a `modelPricing` key on the app store, shaped as `{ "<modelId>": { inputPer1K, outputPer1K } }`. Edited through Settings → Model pricing; consumed by [src/usage.js](../../src/usage.js) and surfaced in the chat UI as the per-turn cost line. See [docs/features/usage-metrics.md](./usage-metrics.md).
-- Client redaction allowlist: `GET`/`PUT /api/settings/*` responses pass through `settingsForClient()` in [src/index.js](../../src/index.js), which copies only an allowlist of non-secret keys (`providers` with `apiKey` redacted, `models`, `projects`, `promptSize`, `githubCopilot`, `modelPricing`, `authAccounts`, `tools`, `toolOutput`, `flags`) and drops server-only bookkeeping.
+- Model pricing table: a `modelPricing` key on the app store, shaped as `{ "<modelId>": { inputPer1K, outputPer1K } }`. Edited through Settings → Model pricing; consumed by [src/usage.js](../../../src/usage.js) and surfaced in the chat UI as the per-turn cost line. See [docs/features/usage-metrics.md](./usage-metrics.md).
+- Client redaction allowlist: `GET`/`PUT /api/settings/*` responses pass through `settingsForClient()` in [src/index.js](../../../src/index.js), which copies only an allowlist of non-secret keys (`providers` with `apiKey` redacted, `models`, `projects`, `promptSize`, `githubCopilot`, `modelPricing`, `authAccounts`, `tools`, `toolOutput`, `flags`) and drops server-only bookkeeping.
 - Redaction round-trips: `PUT /api/settings/app` and `PUT /api/settings/project` both sanitize `providers`/`models` patches before persisting — the response-only `hasApiKey` marker is stripped, and an entry re-submitted without `apiKey` keeps the previously stored key.
 - Concurrency: `better-sqlite3` is synchronous and single-process.
+
+## Decisions
+
+- [docs/decisions.md](../../decisions.md): §1 (SQLite storage), §2 (project overrides app), §3 (providers and models).

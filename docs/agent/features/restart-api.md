@@ -45,7 +45,7 @@ Response:
 
 ## Implementation notes
 
-- Defined in [`src/server-handlers-misc.js`](../../src/server-handlers-misc.js) as `handleRestart()` and routed from [`src/http-server.js`](../../src/http-server.js). The supervisor/worker split lives in [`bin/mouaif.js`](../../bin/mouaif.js).
+- Defined in [`src/server-handlers-misc.js`](../../../src/server-handlers-misc.js) as `handleRestart()` and routed from [`src/http-server.js`](../../../src/http-server.js). The supervisor/worker split lives in [`bin/mouaif.js`](../../../bin/mouaif.js).
 - `mouaif serve` always runs as a **supervisor + worker pair**: the outer process stays alive, and the worker serves HTTP. The worker's `lifecycle.restart` hook closes the listening socket and exits with code 0; the supervisor sees the exit and spawns a brand-new worker process. Every module is re-read from disk (the `require` cache is not reused), and runtime state — MCP children, DB handles, OAuth flows — is fully re-initialized.
 - `--watch` reuses the same supervisor: a source change kills the worker and respawns it through the identical path.
 - The handler sets `lifecycle.restarting = true` immediately to serialize concurrent requests, then responds synchronously before the delayed teardown begins.

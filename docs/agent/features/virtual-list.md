@@ -17,6 +17,6 @@
 
 ## Implementation notes
 
-- Source: [frontend/src/virtual-list.js](../../frontend/src/virtual-list.js). Single ES module, no dependencies.
-- Preact + Vite is the build target for the mobile UI. The primitive is framework-agnostic and imported as a relative module by [frontend/src/main.jsx](../../frontend/src/main.jsx).
+- Source: [frontend/src/virtual-list.js](../../../frontend/src/virtual-list.js). Single ES module, no dependencies.
+- Preact + Vite is the build target for the mobile UI. The primitive is framework-agnostic and imported as a relative module by [frontend/src/main.jsx](../../../frontend/src/main.jsx).
 - Inspector keeps at most 2,000 Console entries and 2,000 Network entries in its arrays, while this primitive bounds the live DOM node count to the viewport plus overscan.

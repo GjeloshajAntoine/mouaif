@@ -48,3 +48,7 @@ const r = buildResult({
 - **De-dupe is against the whole card family, not just other prompts.** Every mount path (owner SSE frame, follower live replay, nested subagent event, reconcile poll's pending snapshot) goes through `mountOverlayCard()` → `authCardGuard()` in `frontend/src/components/chat/overlay.js`. The guard matches `.tool-card--authorization[data-auth-call-id]`, `.tool-card--ask-user[data-auth-call-id]` **and** `[data-tool-id]` for the call id: the call's own `tool_call` / `tool_result` row card is a valid "already represented" match, so a prompt cannot be appended beside the card it answers when a later mount runs (the question was answered from another tab or the OS notification, so this tab's mounted card never saw the click and its `tool_call` card is already up). Guarding only the two prompt selectors left that reverse order as the surviving duplicate.
 - Mobile-first layout: every interactive control is at least 44 px tall, the option cards are full-width with the label and a wrapped description, the textarea is monospaced-friendly and clamps to 1000 chars, and the action buttons are sticky-friendly (no absolute positioning, no hover-only affordances).
 - New test: `scripts/test-ask-user.js` (40 assertions, covers the spec shape, validation rules, result-builder paths, the binary-mode gate, the `off` denial, the `ask` -> payload round trip via `recordDecision`, and the `getAuthorization` listing). No new runtime dependencies.
+
+## Decisions
+
+- [docs/decisions.md](../../decisions.md): §22 (ask the user tool), §17 (tool authorization).

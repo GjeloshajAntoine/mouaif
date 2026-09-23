@@ -52,7 +52,7 @@ safeDecode(&#39;%zz&#39;);  // &#39;%zz&#39;  — malformed escape, no throw
 safeDecode(&#39;a%20b&#39;); // &#39;a b&#39;</code></pre>
 <p>A malformed escape therefore becomes an ordinary <code>400</code>/<code>404</code> rather than<br>a crash. <code>scripts/test-url-decode-safety.js</code> drives the real server with<br>malformed paths and asserts the process stays alive.</p>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="./chat-ui.html">Chat UI</a> — the web interface.</p></li><li><p><a href="./app-and-project-settings.html">App and project settings</a> — configuration hierarchy and defaults.</p></li></ul>
+<ul><li><p><a href="chat-ui.html">Chat UI</a> — the web interface.</p></li><li><p><a href="app-and-project-settings.html">App and project settings</a> — configuration hierarchy and defaults.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

@@ -40,7 +40,7 @@
 <p>Token appends, transcript mutations, and resize notifications share one per-transcript animation-frame scheduler. A burst of deltas performs no synchronous scroll-height reads; each scheduled frame reads geometry once before writing the bottom position. Follow-up frames stop after the layout settles, while late image/tool growth can schedule another pass.</p>
 <p>The scroll listener remains the source of truth for whether the reader is pinned. Scrolling up cancels following, Jump to latest re-enables it, and pagination/render suspension takes precedence. Pending frames are cancelled on cleanup. Resize observers track only direct message rows; nested text mutations no longer scan every row to rebuild that set.</p>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="./chat-ui.html">Chat UI</a> — the Preact + Vite shell that hosts the transcript.</p></li><li><p><a href="./usage-metrics.html">Usage metrics</a> — the live token-speed meta line repaints on a separate 120 ms throttle, independent of this path.</p></li></ul>
+<ul><li><p><a href="chat-ui.html">Chat UI</a> — the Preact + Vite shell that hosts the transcript.</p></li><li><p><a href="usage-metrics.html">Usage metrics</a> — the live token-speed meta line repaints on a separate 120 ms throttle, independent of this path.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

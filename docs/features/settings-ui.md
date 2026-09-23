@@ -4,7 +4,7 @@
 
 Two surfaces in this commit. The REST surface is the endpoints the mobile UI calls; the mobile UI is the panel at `/` that lets a user edit app-level settings, provider connections, and raw project settings without `curl`.
 
-The endpoints build on [docs/features/app-and-project-settings.md](./app-and-project-settings.md) and [docs/decisions.md §1–§3](../decisions.md). The current UI manages app-level provider connections and project settings.
+The endpoints build on [App and project settings](./app-and-project-settings.md). The current UI manages app-level provider connections and project settings.
 
 Project settings use a simple mobile-first list. Technical details (the raw `.mouaif.json` editor and resolved values) are on a dedicated page linked at the very bottom. Every agent row also opens a dedicated configuration page for its instructions, model, tools, and deletion action.
 
@@ -35,7 +35,7 @@ Each card's summary line reflects live state (e.g. `1 connected`, `3 models pric
 | `#/settings/project/output[?projectDir=<abs path>][&from=<origin>]` | `SettingsProjectView` (`page: 'output'`) | **File tool options** — the `toolOutput` profile (a single **Layout** select: Hierarchical / Full JSON) with a live JSON readout and an example, a sibling of Technical details under Settings → Project. `from` is re-emitted on the back link. |
 | `#/settings/project/preview[?projectDir=<abs path>][&from=<origin>]` | `SettingsProjectView` (`page: 'preview'`) | **Web preview** — capture a URL in the Inspector debug Chrome and view it full screen, the same surface the chat `webpreview` tool uses. `from` is re-emitted on the back link. |
 | `#/settings/copilot` | — (legacy alias) | Old GitHub Copilot OAuth screen. The `client_id` field now lives in the Copilot provider form; this hash redirects to `#/settings/providers/github-copilot`. |
-| `#/settings/tags[?projectDir=<abs path>]` | `SettingsTagsView` | Per-project file tagging (decisions §15). Resolves the registered project id from `projectDir` when no `projectId` is passed. |
+| `#/settings/tags[?projectDir=<abs path>]` | `SettingsTagsView` | Per-project [file tagging](./file-tagging.md). Resolves the registered project id from `projectDir` when no `projectId` is passed. |
 | `#/settings/access` | `AccessSettingsView` | Manage access authentication, change password, enroll/remove WebAuthn passkeys, and sign out. |
 | `#/settings/about` | `SettingsAboutView` | Storage location, in-code defaults, and the destructive "Reset all app settings" action. |
 

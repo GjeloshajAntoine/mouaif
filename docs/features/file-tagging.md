@@ -52,4 +52,3 @@ A bare basename mention — `@users.js` instead of the full path — is also acc
 - [docs/features/folder-picker.md](./folder-picker.md) — the same home-allowlist rules.
 - [docs/features/custom-prompts.md](./custom-prompts.md) — tags and prompts compose: a tagged file can sit under a custom system prompt in the same upstream array.
 - [docs/features/chat-ui.md](./chat-ui.md) — composer and message rendering.
-- Decision: [docs/decisions.md §15](../decisions.md) (this feature) and §2 (project overrides app).

@@ -55,8 +55,8 @@ curl -X DELETE http://localhost:5732/api/projects/registered/<id>
 
 ## Implementation notes
 
-- Source: [src/projects.js](../../src/projects.js). Public surface: `listDir`, `createDir`, `registerProject`, `listProjects`, `getProject`, `removeProject`, plus `isUnderHome` / `ensureSafeRoot` / `ALLOW_ANY_ROOT` for tests.
+- Source: [src/projects.js](../../../src/projects.js). Public surface: `listDir`, `createDir`, `registerProject`, `listProjects`, `getProject`, `removeProject`, plus `isUnderHome` / `ensureSafeRoot` / `ALLOW_ANY_ROOT` for tests.
 - Storage: registered projects live in the app settings under the `projects` key (added to `DEFAULTS` in this commit, additive).
-- Server wiring: [src/index.js](../../src/index.js) → `handleProjects()`. Errors are mapped to typed HTTP statuses via `projectsErrorStatus()`.
+- Server wiring: [src/index.js](../../../src/index.js) → `handleProjects()`. Errors are mapped to typed HTTP statuses via `projectsErrorStatus()`.
 - Error codes the UI can branch on: `EBADPATH` (400), `EOUTSIDE_HOME` (403), `ENOENT` (404), `ENOTDIR` (400), `EACCES` (403), `EEXIST` (409), `EREAD` (500).
-- Component: [frontend/src/main.jsx](../../frontend/src/main.jsx) (`ProjectPickerView` component and the `projects/new?dir=…` route).
+- Component: [frontend/src/main.jsx](../../../frontend/src/main.jsx) (`ProjectPickerView` component and the `projects/new?dir=…` route).

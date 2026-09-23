@@ -2,7 +2,7 @@
 
 ## Overview
 
-`mouaif` ships built-in tools the model can call to read, list, search, create, and safely edit project files — `read_file`, `list_files`, `search_files`, `write_file`, and `edit_file`. They are wired through the same tool pipeline as `shell` (decisions §16), so the model sees them as ordinary function calls and the chat UI renders them as the same tool-call / tool-result cards. Every call is gated by the per-project authorization module (decisions §17) and refuses any path that escapes the project root.
+`mouaif` ships built-in tools the model can call to read, list, search, create, and safely edit project files — `read_file`, `list_files`, `search_files`, `write_file`, and `edit_file`. They are wired through the same tool pipeline as [`shell`](./shell-tool.md), so the model sees them as ordinary function calls and the chat UI renders them as the same tool-call / tool-result cards. Every call is gated by the per-project [authorization module](./tool-authorization.md) and refuses any path that escapes the project root.
 
 The tools cover the common "find the file, read the file, edit the file" loop without requiring an MCP server. They are not a replacement for `shell` (a model that wants to run a build, install a dep, or `git diff` still uses `shell`) and they are not a replacement for MCP (third-party tool ecosystems — Postgres, Playwright, GitHub — still come in via `mcp__<server>__<tool>`). They are the boring file primitives every agent needs.
 
@@ -121,7 +121,6 @@ Nothing is rendered until the card is expanded, and the preview stops at 2000 li
 
 ## Related
 
-- Decisions: [docs/decisions.md §16](../decisions.md) (shell tool), [docs/decisions.md §17](../decisions.md) (tool authorization), [docs/decisions.md §18](../decisions.md) (MCP).
 - Shell tool: [docs/features/shell-tool.md](./shell-tool.md). File tools share the same authorization gate and the same UI card shape.
 - Tool authorization: [docs/features/tool-authorization.md](./tool-authorization.md). The four modes and the SSE / REST surface.
 - File tagging: [docs/features/file-tagging.md](./file-tagging.md). Tagged files are auto-injected into the system prompt — file tools let the model read on demand, which complements tagging for files the user did not pre-attach.

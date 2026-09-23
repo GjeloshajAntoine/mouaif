@@ -6,4 +6,4 @@
 
 - Implemented in `src/trace.js`; chat events are routed to the trace writer from the AI client / chat pipeline.
 - `tool_call` and `tool_result` lines use the same wire names as the SSE events documented in [ai-client.md](./ai-client.md).
-- See decision [docs/decisions.md §5](../decisions.md) for the design rationale.
+- See decision [docs/decisions.md §5](../../decisions.md) for the design rationale.

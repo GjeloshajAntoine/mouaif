@@ -6,9 +6,9 @@
 
 | File | Owns |
 | --- | --- |
-| [src/tools/searchEngine.js](../../src/tools/searchEngine.js) | Both backends, ripgrep discovery, pattern normalization, path scoping, the `include` glob, the walk's ignore reader. |
-| [src/tools/files.js](../../src/tools/files.js) | `runSearchFiles()` adapter, the OpenAI function spec, `formatSearchFilesResult()` (unchanged), the `SPECS` export. |
-| [src/hideFileContent.js](../../src/hideFileContent.js) | `buildRuleIndex()`, `rulesForPathIn()`, `ruleForPathIn()`, `lineIsHiddenIn()`, `matchIsHiddenIn()`. |
+| [src/tools/searchEngine.js](../../../src/tools/searchEngine.js) | Both backends, ripgrep discovery, pattern normalization, path scoping, the `include` glob, the walk's ignore reader. |
+| [src/tools/files.js](../../../src/tools/files.js) | `runSearchFiles()` adapter, the OpenAI function spec, `formatSearchFilesResult()` (unchanged), the `SPECS` export. |
+| [src/hideFileContent.js](../../../src/hideFileContent.js) | `buildRuleIndex()`, `rulesForPathIn()`, `ruleForPathIn()`, `lineIsHiddenIn()`, `matchIsHiddenIn()`. |
 | [scripts/test-search-engine.js](../../../scripts/test-search-engine.js) | The per-backend suite. |
 
 `searchEngine.js` exports `runSearch`, `findRipgrepBinary`, `normalizePattern`, `resolveScope`, `sanitizeInclude`, `includeMatches`, `escapeGlob`, `collectCandidates`, `loadGitignore`, `_clearRipgrepCache`, `TEXT_EXTS`, `SKIP_DIRS`, `DEFAULT_MAX_MATCHES`, `DEFAULT_MAX_BYTES`. The last two are internal-but-exported so a test can drive a backend directly.

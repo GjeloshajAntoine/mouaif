@@ -42,7 +42,7 @@
 <h2 id="implementation-notes">Implementation notes</h2>
 <ul><li><p><code>frontend/src/components/SettingsMcp.jsx</code> opens the modal for lifecycle failures and renders a tappable full-width error row.</p></li><li><p><code>frontend/src/components/chat/McpErrorModal.jsx</code> renders the lifecycle error details. It is shared by location only; chat does not import or mount it.</p></li><li><p><code>frontend/src/features.css</code> allows MCP server rows to wrap so lifecycle messages occupy their own row.</p></li><li><p><code>frontend/src/chat-composer.css</code> holds the mobile-first <code>.mcp-err__*</code> modal styles. The overlay, the sheet shell and the desktop card come from the shared modal sheet idiom in <code>frontend/src/sheets.css</code>; this file only overrides <code>--sheet-z</code> (62, above the other modals) and <code>--sheet-backdrop</code>, plus the desktop card width.</p></li></ul>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="./mcp.html">MCP</a> — MCP server configuration, lifecycle, tools, and typed errors.</p></li><li><p><a href="./chat-error-surfacing.html">Chat error surfacing</a> — inline chat error behavior.</p></li></ul>
+<ul><li><p><a href="mcp.html">MCP</a> — MCP server configuration, lifecycle, tools, and typed errors.</p></li><li><p><a href="chat-error-surfacing.html">Chat error surfacing</a> — inline chat error behavior.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

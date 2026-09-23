@@ -20,3 +20,7 @@ The `scan` endpoint is the directory walk the UI uses to populate the file list.
 - A `tags` section is appended to the per-chat trace file (decision §5) as a single `system event` line so a trace replay shows what was injected without re-reading the file from disk.
 - The `scan` endpoint is a one-pass walk; large projects (>50k files) are paged by directory depth. The UI can stop at any time and the server is not blocked.
 - Mobile-first layout: the bounded file list uses the existing virtual-list primitive ([docs/features/virtual-list.md](./virtual-list.md)) with recycled fixed-height editor rows and overscan, so only the visible files own DOM controls and listeners.
+
+## Decisions
+
+- [docs/decisions.md](../../decisions.md): §15 (file tagging), §2 (project overrides app).

@@ -50,7 +50,7 @@ npm install
 npm link</code></pre>
 <p><code>npm install</code> builds the web UI once through the package <code>prepare</code> script when the Vite toolchain is present, so a fresh clone works even if <code>frontend/dist/</code> is missing from the checkout. <code>npm link</code> makes the <code>mouaif</code> command available in your terminal.</p>
 <p>Every published tarball already contains the pre-built web UI in <code>frontend/dist/</code>, so <code>npm install -g mouaif</code> and <code>npx mouaif</code> never run a frontend build. The package depends on <code>better-sqlite3</code> and <code>@napi-rs/keyring</code>, which ship prebuilt binaries for common platforms; on an unusual platform Node compiles them during install, so the first install can take a few minutes.</p>
-<p>See <a href="./cli-commands.html">CLI commands</a> for the complete command list and every <code>mouaif serve</code> option.</p>
+<p>See <a href="cli-commands.html">CLI commands</a> for the complete command list and every <code>mouaif serve</code> option.</p>
 <h2 id="run-the-app">Run the app</h2>
 <p>Start mouaif on the default local address with access authentication enabled:</p>
 <pre><code class="language-bash">npx mouaif serve --auth</code></pre>
@@ -73,7 +73,7 @@ mouaif info</code></pre>
 npm install</code></pre>
 <p><code>npm install</code> rebuilds the web UI when the Vite toolchain is present, so there is no separate build step. Restart your manually started <code>mouaif serve</code> process after updating.</p>
 <h2 id="next-steps">Next steps</h2>
-<ul><li><p><a href="./cli-commands.html">CLI commands</a> — every command and <code>serve</code> option.</p></li><li><p><a href="./authentication.html">Authentication</a> — connect AI providers and protect app access.</p></li><li><p><a href="./app-abilities.html">App abilities</a> — learn what chats, tools, projects, and the Inspector can do.</p></li></ul>
+<ul><li><p><a href="cli-commands.html">CLI commands</a> — every command and <code>serve</code> option.</p></li><li><p><a href="authentication.html">Authentication</a> — connect AI providers and protect app access.</p></li><li><p><a href="app-abilities.html">App abilities</a> — learn what chats, tools, projects, and the Inspector can do.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

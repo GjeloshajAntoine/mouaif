@@ -34,7 +34,7 @@
       <h1 id="virtual-list-primitive">Virtual list primitive</h1>
 <h2 id="overview">Overview</h2>
 <p>A headless, dependency-free, windowed list renderer. Only visible rows plus an <code>overscan</code> margin exist as DOM nodes; all other rows are represented by the height of one spacer element. The source powers the Inspector Console and Network panels in the mobile UI.</p>
-<p>Implements the rule in <a href="../../.github/copilot-instructions.html">.github/copilot-instructions.md</a> §4: &quot;Virtual list with low memory and low CPU — windowed rendering, recycled nodes, no forced reflow on scroll.&quot;</p>
+<p>The chat transcript uses a virtual list with low memory and low CPU cost: windowed rendering, recycled nodes, and no forced reflow on scroll.</p>
 <h2 id="usage">Usage</h2>
 <p>The module is an ES module at <code>frontend/src/virtual-list.js</code>. Vite bundles it into the committed <code>/</code> production assets.</p>
 <pre><code class="language-js">import { createVirtualList } from &#39;./virtual-list.js&#39;;
@@ -55,7 +55,7 @@ list.destroy();</code></pre>
 <h2 id="behavior">Behavior</h2>
 <ul><li><p><strong>Windowed</strong>: renders only <code>ceil(viewportHeight / itemHeight) + 2 * overscan</code> rows.</p></li><li><p><strong>Recycled</strong>: a node pool grows and shrinks to match the current window; nodes are reused while scrolling.</p></li><li><p><strong>No forced reflow on scroll</strong>: scroll work is scheduled through <code>requestAnimationFrame</code>; layout reads happen before DOM writes.</p></li><li><p><strong>Idempotent</strong>: if the visible range is unchanged, the renderer returns without writing.</p></li><li><p><strong>Fixed height</strong>: every row uses <code>itemHeight</code>; variable-height rows are intentionally out of scope.</p></li><li><p><strong>One spacer</strong>: a relative container grows to the full list height. Rendered rows are absolutely positioned with transforms, so the native scrollbar reports the correct total height without one DOM node per item.</p></li></ul>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="./inspector.html">Inspector</a> uses this primitive for its fixed-height Console and Network event lists.</p></li><li><p><a href="./chat-ui.html">Chat UI</a> owns the Preact + Vite shell that bundles the module.</p></li></ul>
+<ul><li><p><a href="inspector.html">Inspector</a> uses this primitive for its fixed-height Console and Network event lists.</p></li><li><p><a href="chat-ui.html">Chat UI</a> owns the Preact + Vite shell that bundles the module.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

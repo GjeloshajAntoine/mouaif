@@ -48,11 +48,25 @@ Two traps worth remembering:
 
 `docs-dist/` is listed in `.gitignore`. It is a local/inspection output only — the published site is the generated HTML committed under `docs/` and served by the branch deploy (see Deployment below).
 
-`sanitizeUrl()` drops relative targets matching `isMaintainerPagePath()` (`…/decisions.md`, `…/agent/…`) when `includeInternalPages` is false, so the ~14 feature pages that cite a decisions section and the page that cites the agent note keep their label as plain text instead of emitting an anchor to a file the public build never writes. With `--with-internal` the same links resolve to `decisions.html` / `agent/<slug>.html`.
+### Link resolution
+
+Every Markdown page is rendered with a context that names its source path under `docs/` (`srcRel`) and its output path in the site (`outRel`). `sanitizeUrl()` hands each relative link to `resolveDocLink()`, which resolves the target against the source file's directory and then asks `outputPathFor()` what the build writes for it:
+
+| Resolved target | Rendered as |
+|-----------------|-------------|
+| `docs/features/<slug>.md` (not `_`-prefixed) | relative href to `features/<slug>.html` |
+| `docs/features/images/…` | relative href to `features/images/…` |
+| `docs/decisions.md`, `docs/agent/…` | `decisions.html` / `agent/<slug>.html` with `--with-internal`; plain label text in a public build |
+| any other repository file (`src/`, `frontend/`, `scripts/`, `.github/`, `docs/README.md`, …) | `https://github.com/<owner>/<repo>/blob/master/<path>` |
+| a path that climbs above the repository | plain label text |
+
+GitHub Pages serves only `docs/`, so a relative `../../src/…` link would 404 on the published site; the GitHub URL is derived from `repository.url` in `package.json` (no GitHub remote → plain label text). The build prints `[docs] warning: … links to missing …` for any target that does not exist on disk, so a mistyped path shows up at build time. Pages rendered without `srcRel` (the documentation index blurbs) keep the older behaviour: `.md` → `.html` and maintainer paths dropped.
+
+Public feature pages do not cite `docs/decisions.md` or its `§` numbers; the matching agent note carries a **Decisions** section instead, so a maintainer can still find the rationale.
 
 ### Renderer scope
 
-The renderer covers ATX headings (with slug anchors), fenced code blocks, blockquotes, nested ordered/unordered lists, GFM tables with `:` alignment, paragraphs, hard line breaks, and the inline subset (`**bold**`, `*italic*`, `~~strike~~`, `` `code` ``, links, images with titles). Every text node is HTML-escaped before inline patterns are re-applied; `sanitizeUrl()` allows only relative paths, fragments, `http(s)`, and `mailto`, and rewrites `.md` links to `.html` inside docs pages.
+The renderer covers ATX headings (with slug anchors), fenced code blocks, blockquotes, nested ordered/unordered lists, GFM tables with `:` alignment, paragraphs, hard line breaks, and the inline subset (`**bold**`, `*italic*`, `~~strike~~`, `` `code` ``, links, images with titles). Inline code is stashed before the link and emphasis passes, so a literal `[text](url)` inside backticks stays text, and a run of N backticks closes on the next run of exactly N (a double-backtick span can hold a single backtick; one padding space on each side is trimmed). Every text node is HTML-escaped before inline patterns are re-applied; `sanitizeUrl()` allows only relative paths, fragments, `http(s)`, and `mailto`, and rewrites `.md` links to `.html` inside docs pages.
 
 ### Deployment
 

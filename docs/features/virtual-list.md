@@ -4,7 +4,7 @@
 
 A headless, dependency-free, windowed list renderer. Only visible rows plus an `overscan` margin exist as DOM nodes; all other rows are represented by the height of one spacer element. The source powers the Inspector Console and Network panels in the mobile UI.
 
-Implements the rule in [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §4: "Virtual list with low memory and low CPU — windowed rendering, recycled nodes, no forced reflow on scroll."
+The chat transcript uses a virtual list with low memory and low CPU cost: windowed rendering, recycled nodes, and no forced reflow on scroll.
 
 ## Usage
 

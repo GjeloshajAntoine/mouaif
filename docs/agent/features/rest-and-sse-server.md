@@ -13,7 +13,7 @@
 
 ## Implementation notes
 
-- Source: [src/index.js](../../src/index.js), entrypoint [bin/mouaif.js](../../bin/mouaif.js).
+- Source: [src/index.js](../../../src/index.js), entrypoint [bin/mouaif.js](../../../bin/mouaif.js).
 - Default port is `5732`; do not change without a deprecation note in this file.
 - CORS is permissive (`*`) for local UI integration.
 - SSE clients receive a `connected` event on attach and a heartbeat comment every 30 s.

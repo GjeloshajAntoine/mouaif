@@ -4,7 +4,7 @@
 
 `mouaif` runs the public Anthropic OAuth browser flow against `https://platform.claude.com`. The user signs in once; the resulting access and refresh tokens are stored in the OS keychain under `mouaif/anthropic`, scoped to the signed-in email. Subsequent calls to the Messages API use `Authorization: Bearer <access_token>` with the `anthropic-beta: oauth-2025-04-20` header required by user_oauth credentials.
 
-Implements [docs/decisions.md §12](../decisions.md) (per-provider OAuth). The flow mirrors the official [`ant` CLI](https://github.com/anthropics/anthropic-cli) `auth login`, including the public `client_id`, the PKCE S256 challenge, the loopback callback, and the `state` validation on the token exchange.
+The flow mirrors the official [`ant` CLI](https://github.com/anthropics/anthropic-cli) `auth login`, including the public `client_id`, the PKCE S256 challenge, the loopback callback, and the `state` validation on the token exchange.
 
 ## Usage
 
@@ -20,6 +20,5 @@ Implements [docs/decisions.md §12](../decisions.md) (per-provider OAuth). The f
 
 ## Related
 
-- Decision: [docs/decisions.md §12](../decisions.md) (per-provider OAuth).
 - Skeleton: [docs/features/auth.md](./auth.md) (keyring, account index, loopback callback).
 - AI client: [docs/features/ai-client.md](./ai-client.md) (request builders, SSE parsers, error codes).

@@ -89,7 +89,7 @@ When a nested `subagent` call invokes `ask_user`, the same `ask_user_required` e
 - **Validation errors are surfaced, not prompted.** A bad question (too many options, duplicate value, missing label) returns an `EBADINPUT` `tool_result` directly — the user is never asked. The bug is on the model side; the model can self-correct on the next turn.
 - **Subagent-aware.** A nested `subagent` that calls `ask_user` routes the card into the subagent's live container. The user answers, the answer rides the same authorization-decision endpoint, and the subagent's tool loop continues.
 - **Multi-turn loop.** The result is fed back to the model as a `tool` message, so the model can chain calls (ask a question, read the answer, ask a follow-up, finish). There is no fixed tool-turn limit; cancellation comes from the user dismissing the card.
-- **Audit log.** Every decision is appended to the per-chat NDJSON trace (decision §5) as a `system event` line (`{ type: 'auth_decision', tool: 'ask_user', callId, decision }`) when tracing is on. The audit line is not forwarded to the upstream.
+- **Audit log.** Every decision is appended to the per-chat NDJSON [trace](./trace.md) as a `system event` line (`{ type: 'auth_decision', tool: 'ask_user', callId, decision }`) when tracing is on. The audit line is not forwarded to the upstream.
 - **No new runtime dependencies.** The runner is a plain function; the chat UI handles the input side. No third-party form libraries, no new SSE machinery — the existing `authorization_required` pipeline carries the question payload through a dedicated `ask_user_required` event.
 
 ## Implementation notes
@@ -111,4 +111,3 @@ npm run fixture:ask-ui     # writes the card fixture to /tmp/mouaif-ask-ui
 - [docs/features/tool-authorization.md](./tool-authorization.md) — every ask_user call passes through the same authorization gate; the new binary-mode set is a strict subset.
 - [docs/features/shell-tool.md](./shell-tool.md) — sibling tool that also uses the gate; the `ask_user` runner mirrors its "always return a typed error" contract.
 - [docs/features/file-tools.md](./file-tools.md) — sibling native tool; the spec registration and dispatch flow are identical.
-- Decision: [docs/decisions.md §22](../decisions.md) (this feature) and §17 (tool authorization).

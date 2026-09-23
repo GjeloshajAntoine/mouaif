@@ -74,7 +74,7 @@ when the post-tool assistant message was successfully stored.
 
 A message sent while the chat is already running is never persisted by the
 server (`409 EALREADY_RUNNING`). The send path in
-[frontend/src/components/chat/stream.js](../../frontend/src/components/chat/stream.js)
+[frontend/src/components/chat/stream.js](../../../frontend/src/components/chat/stream.js)
 treats that status specially: it drops the optimistic bubble, restores the
 composer (text, attachments, and the debounced draft), and shows a busy status
 instead of an error card, so the same-disk poll cannot wipe the message.
@@ -83,8 +83,8 @@ Image attachments are also persisted as a chat-level draft. `chat_store`
 carries a `draft_attachments` column (JSON array), written alongside the text
 `draft` field. The composer restores it on reopen and clears it after a send.
 
-- Build: [frontend/vite.config.js](../../frontend/vite.config.js), `frontend/index.html`, [frontend/src/main.jsx](../../frontend/src/main.jsx), [frontend/src/style.css](../../frontend/src/style.css), [frontend/src/virtual-list.js](../../frontend/src/virtual-list.js). Vite emits hashed assets under `frontend/dist/assets/`.
-- Server: [src/index.js](../../src/index.js) → `handleChats()` handles `/api/chats/:id/messages[/:action]` and delegates streaming to `handleChatStream()`. The static `/` route prefers `frontend/dist/`, falls back to `frontend/` for dev.
+- Build: [frontend/vite.config.js](../../../frontend/vite.config.js), `frontend/index.html`, [frontend/src/main.jsx](../../../frontend/src/main.jsx), [frontend/src/style.css](../../../frontend/src/style.css), [frontend/src/virtual-list.js](../../../frontend/src/virtual-list.js). Vite emits hashed assets under `frontend/dist/assets/`.
+- Server: [src/index.js](../../../src/index.js) → `handleChats()` handles `/api/chats/:id/messages[/:action]` and delegates streaming to `handleChatStream()`. The static `/` route prefers `frontend/dist/`, falls back to `frontend/` for dev.
 - Messages: per-chat storage in SQLite database `~/.mouaif/store.sqlite`.
-- Trace: [src/trace.js](../../src/trace.js) — per-chat NDJSON writer (`<projectDir>/.mouaif/traces/<chatId>.ndjson`), no-op when `chat.trace` is false.
+- Trace: [src/trace.js](../../../src/trace.js) — per-chat NDJSON writer (`<projectDir>/.mouaif/traces/<chatId>.ndjson`), no-op when `chat.trace` is false.
 - Bottom nav: Projects / Inspector / Settings.

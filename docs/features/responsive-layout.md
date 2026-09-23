@@ -89,6 +89,5 @@ The dense settings lists are also deliberately not part of this pass: the tool t
 
 ## Related
 
-- [.github/copilot-instructions.md](../../.github/copilot-instructions.md) §2 — mobile-first UI rules.
 - [Inspector](inspector.md) — the desktop panel layout this frame now has room for.
 - [Chat UI](chat-ui.md) — transcript and composer surfaces.

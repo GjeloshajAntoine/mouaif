@@ -43,7 +43,7 @@
 <h2 id="behavior">Behavior</h2>
 <ul><li><p>Results under the limit are passed to the model unchanged.</p></li><li><p>Oversized text keeps approximately three quarters from the beginning and one quarter from the end, with a truncation marker between them.</p></li><li><p>Truncation is based on UTF-8 bytes, not JavaScript character count.</p></li><li><p>The complete structured result still reaches the SSE client, SQLite transcript, trace file, and tool card.</p></li><li><p>Subagent feedback sent to the parent contains only <code>ok</code>, final <code>text</code>, and an error when present. Its complete nested chat and tool events remain available to the UI.</p></li><li><p>Base64 image data is omitted from textual tool feedback because image blocks are attached separately as vision content.</p></li><li><p>Existing stored chats are compacted when their tool history is reconstructed. No database migration or transcript rewrite is required.</p></li></ul>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="./ai-client.html">AI client</a></p></li><li><p><a href="./file-tools.html">Native file tools</a></p></li><li><p><a href="./shell-tool.html">Shell tool</a></p></li><li><p><a href="./agents.html">Agents</a></p></li></ul>
+<ul><li><p><a href="ai-client.html">AI client</a></p></li><li><p><a href="file-tools.html">Native file tools</a></p></li><li><p><a href="shell-tool.html">Shell tool</a></p></li><li><p><a href="agents.html">Agents</a></p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

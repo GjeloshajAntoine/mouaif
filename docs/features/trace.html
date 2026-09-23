@@ -42,7 +42,7 @@
 <h2 id="behavior">Behavior</h2>
 <ul><li><p>While the toggle is on, every new event for the chat is appended.</p></li><li><p>Toggling off closes the file handle; the file is kept. Toggling on again opens it in append mode and continues.</p></li><li><p>Independent of chat storage: the trace is a <em>view</em> of the transcript, written out as a plain file. Deleting the trace file does not delete the chat; deleting the chat does not delete the trace file.</p></li><li><p>Append-only, no rotation, no auto-cleanup.</p></li></ul>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="./ai-client.html">docs/features/ai-client.md</a> — <code>tool_call</code> and <code>tool_result</code> SSE event names.</p></li><li><p><a href="./mcp.html">docs/features/mcp.md</a> — MCP tool calls are traced as <code>tool call</code> / <code>tool result</code> lines too.</p></li><li><p>Decision: docs/decisions.md §5 (trace-to-file) and §10 (AI client wire format).</p></li></ul>
+<ul><li><p><a href="ai-client.html">docs/features/ai-client.md</a> — <code>tool_call</code> and <code>tool_result</code> SSE event names.</p></li><li><p><a href="mcp.html">docs/features/mcp.md</a> — MCP tool calls are traced as <code>tool call</code> / <code>tool result</code> lines too.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

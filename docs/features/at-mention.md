@@ -19,7 +19,7 @@ The chat composer supports `@` autocomplete: typing `@` followed by text shows a
 - In the mixed "All" view, each category shows at most **4 items** so Files don't crowd out Agents, Actions, Tools, MCP, and Model. Start typing to drop the per-category cap and search the full list across every category (the filter bar hides while searching).
 - Navigate with **Arrow Down/Up**, select with **Enter** or **Tab**, dismiss with **Escape** or click outside. For a complete custom action, press Enter to run it directly from the popup; an exact action ID takes precedence over similarly named file suggestions and works even when the composer normally uses Enter for a newline.
 - The inserted `@<item>` stays visible in the composer text so the user can edit or remove it, or type arguments after the tool name.
-- **Tools with known parameters** (from the server's `parameters` JSON Schema) insert `@toolName:firstArg=\`\`` with the cursor between the backticks, and show a **chip bar** below the textarea listing the remaining parameters. Tap a chip to append `key=\`\``. Required parameters are highlighted in bold/accent. This generated colon/backtick syntax dispatches directly for MCP tools. The inserted description is a placeholder: the caret lands immediately after the opening backtick, so the user's first keystroke replaces it. Regression test: [scripts/test-at-mention-caret.js](../../scripts/test-at-mention-caret.js).
+- **Tools with known parameters** (from the server's `parameters` JSON Schema) insert ``` @toolName:firstArg=`` ``` with the cursor between the backticks, and show a **chip bar** below the textarea listing the remaining parameters. Tap a chip to append ``` key=`` ```. Required parameters are highlighted in bold/accent. This generated colon/backtick syntax dispatches directly for MCP tools. The inserted description is a placeholder: the caret lands immediately after the opening backtick, so the user's first keystroke replaces it. Regression test: [scripts/test-at-mention-caret.js](../../scripts/test-at-mention-caret.js).
 - The popup refreshes periodically (every 5 s) to pick up newly scanned files, changed tags, or changed custom actions. Its refreshed custom-action list is also used for direct dispatch, so an action shown in the popup runs without reopening the chat.
 
 ## Direct agent invocation
@@ -40,7 +40,7 @@ When the composer text starts with `@` followed by a directly-invocable tool nam
 |--------|---------|--------|
 | **JSON** | `@mcp__fs__list { "path": "/etc" }` | `{ path: "/etc" }` |
 | **key=value** | `@mcp__fs__read path=/etc recursive=true` | `{ path: "/etc", recursive: true }` |
-| **Picker syntax** | `@mcp__fs__read:path=\`/etc/my file\`` | `{ path: "/etc/my file" }` |
+| **Picker syntax** | `` @mcp__fs__read:path=`/etc/my file` `` | `{ path: "/etc/my file" }` |
 | **Positional** | `@shell ls -la` | `{ cmd: "ls -la" }` (shell only) |
 
 Rules:

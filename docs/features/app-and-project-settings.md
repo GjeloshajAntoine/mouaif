@@ -20,7 +20,7 @@ The app-level and project-level payloads are projected differently, because the 
 }
 ```
 
-Two fields are always removed: `__dbBacked` (internal storage bookkeeping, never part of the user's settings) and `apiKey` on any `providers` / `models` entry, which is replaced by a response-only `hasApiKey` boolean. Credentials belong in the app store only — see [docs/decisions.md](../decisions.md) §3.
+Two fields are always removed: `__dbBacked` (internal storage bookkeeping, never part of the user's settings) and `apiKey` on any `providers` / `models` entry, which is replaced by a response-only `hasApiKey` boolean. Credentials belong in the app store only.
 
 ## Where the app store lives
 

@@ -53,7 +53,7 @@ npm publish</code></pre>
 <h2 id="implementation-notes">Implementation notes</h2>
 <ul><li><p>The tarball contents are the <code>files</code> entry in <code>package.json</code>: <code>bin/</code>, <code>src/</code>, <code>frontend/dist/</code>, <code>scripts/patch-zimmerframe.js</code>, <code>README.md</code>, and <code>LICENSE</code>. No <code>.npmignore</code> is used.</p></li><li><p><code>bin/mouaif.js</code> carries a <code>#!/usr/bin/env node</code> shebang; npm links it into the global <code>bin</code> directory, which is what makes both <code>mouaif</code> and <code>npx mouaif</code> work.</p></li><li><p><code>prepublishOnly</code> ends with <code>node scripts/check-npm-name.js</code>. It fails when the published package belongs to another repository, passes when it is this one, and warns and continues when the registry is unreachable so an offline release is never blocked by a network hiccup.</p></li><li><p>The repository, homepage, bug-tracker, and author metadata connect the npm listing to this repository and let the name guard verify ownership.</p></li></ul>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="./cli-commands.html">CLI commands</a> — every <code>mouaif</code> command and <code>serve</code> option.</p></li><li><p><a href="./getting-started.html">Getting started</a> — install, run, and first setup.</p></li></ul>
+<ul><li><p><a href="cli-commands.html">CLI commands</a> — every <code>mouaif</code> command and <code>serve</code> option.</p></li><li><p><a href="getting-started.html">Getting started</a> — install, run, and first setup.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

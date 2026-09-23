@@ -66,4 +66,3 @@ No special path. The chat composer posts to `/api/chats/:id/messages/stream`, wh
 - [App and project settings](./app-and-project-settings.md) — where provider connections live.
 - [Settings UI](./settings-ui.md) — the mobile Providers screen where OpenRouter is configured.
 - [Anthropic OAuth](./oauth-anthropic.md) — the per-provider OAuth flow for Anthropic, which the OpenRouter flow parallels in shape (PKCE → token exchange → keyring).
-- [decisions.md §10](../decisions.md) — the original AI client core spec.

@@ -79,4 +79,3 @@ Opening `/web/` in a browser still 301-redirects to `/` so old bookmarks and any
 
 - [Chat UI](chat-ui.md) — the Preact + Vite mobile shell that the SW caches.
 - [Web serving](rest-and-sse-server.md) — the Node server that serves the bundle and the manifest.
-- [Build order decisions](../decisions.md#9-build-order-settings-first) — the order this commit slots into.
