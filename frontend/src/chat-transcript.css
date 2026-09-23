@@ -41,7 +41,29 @@
 .chat-msg:nth-child(2)   { animation-delay: 185ms; }
 .chat-msg:nth-child(1)   { animation-delay: 0ms; }
 .chat-msg--user { align-self: flex-end; align-items: flex-end; }
+/* ---- Off-screen row skipping (cheap windowing) --------------------
+   After every older page has loaded the whole chat stays in the DOM, so a
+   long agentic transcript lays out and paints hundreds of rows that are
+   nowhere near the viewport. `content-visibility: auto` lets the browser
+   skip style, layout and paint for a row while it is off-screen, which is
+   the cheap first step before real windowing (the shared virtual-list.js
+   is not wired into the chat).
 
+   `contain-intrinsic-size` supplies the placeholder height a skipped row
+   reports, so the scrollbar geometry stays roughly stable instead of
+   collapsing to zero and jumping as rows enter and leave the viewport.
+   `auto` on it remembers each row's last rendered size, which keeps a
+   long transcript's scroll position close to what it was.
+
+   Scoped away from the two hot paths: a live/streaming assistant row
+   (which grows every frame and must stay laid out), and the overlay
+   auth/ask cards (which are scrolled into view on mount, and a skipped
+   element cannot be measured). */
+.chat-view__transcript > .chat-msg:not([data-live="1"]),
+.chat-view__transcript > .tool-card:not([data-auth-call-id]) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
 /* ---- Row alignment: one full-width column --------------------------
    The transcript scroller stays full width — the overlay scrollbar sits
    at the frame edge and the pinned composer below depends on its flex

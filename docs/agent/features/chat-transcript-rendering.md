@@ -74,3 +74,11 @@ A redraw resolved every tool card with `querySelector('[data-tool-id="…"]')` �
 On a chat switch, `renderTranscript` clears the card index along with the rows it indexed (the `refs._transcriptKey !== key` branch).
 
 `scripts/test-chat-card-index.js` counts DOM queries against a stub transcript: repeat lookups must perform no query, a removed card must not be returned, re-keying must move the entry, the args index must rebuild on a new array identity and be reused otherwise, and 2000 lookups over a 400-call transcript must stay fast.
+### Off-screen row skipping
+
+`frontend/src/chat-transcript.css` applies `content-visibility: auto` with `contain-intrinsic-size: auto 120px` to the transcript's message rows and tool cards. After every older page has loaded the whole chat stays in the DOM, so a long transcript otherwise lays out and paints hundreds of off-screen rows; this lets the browser skip them, and the intrinsic size keeps the scrollbar geometry stable instead of collapsing skipped rows to zero. This is the cheap first step — the shared `frontend/src/virtual-list.js` is not wired into the chat.
+
+Two selectors are excluded on purpose:
+
+- `[data-live="1"]` — the streaming assistant row grows every frame and must stay laid out.
+- `[data-auth-call-id]` — the authorization / `ask_user` overlay cards are scrolled into view on mount, and a skipped element cannot be measured.
