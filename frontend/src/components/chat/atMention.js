@@ -34,6 +34,9 @@ let selectedIdx = 0;
 let visible = false;
 let scanCache = null;
 let projectCacheKey = '';
+let scanAt = 0;
+// Minimum age of the file scan before a fresh `@` triggers a rescan.
+const SCAN_TTL_MS = 10000;
 // Category filter bar. null = mixed "All" view; otherwise one of the
 // CATEGORY values. Only applies while the user hasn't typed a query.
 let activeFilter = null;
@@ -100,7 +103,73 @@ export function prioritizeAtMentionFiles(candidateItems) {
   return fileItems.concat(otherItems);
 }
 
-async function buildItems(projectDir) {
+// ---- Ranking -------------------------------------------------------------
+//
+// scoreAtMentionItem(item, q) → { score, hits } | null
+//
+// Ranks a candidate against a lower-cased query. Tiers, best first:
+// exact name, name prefix, name word-start, name substring, path prefix,
+// path substring, other search text (tags, descriptions), then a fuzzy
+// subsequence of the name or path (`atmjs` → `atMention.js`). `hits` are the
+// label character indexes to highlight. No match returns null.
+const WORD_BREAK = /[\s/_.\-:]/;
+
+function subsequence(text, q) {
+  const hits = [];
+  let from = 0;
+  let gaps = 0;
+  for (const ch of q) {
+    const at = text.indexOf(ch, from);
+    if (at < 0) return null;
+    if (hits.length && at !== from) gaps += at - from;
+    hits.push(at);
+    from = at + 1;
+  }
+  return { hits, gaps };
+}
+
+function rangeHits(start, length) {
+  const hits = [];
+  for (let i = 0; i < length; i++) hits.push(start + i);
+  return hits;
+}
+
+export function scoreAtMentionItem(item, q) {
+  if (!item || !q) return null;
+  const label = String(item.label || '').toLowerCase();
+  const path = String(item.insert || '').toLowerCase();
+  if (label === q || path === q) return { score: 1000, hits: rangeHits(0, label === q ? q.length : 0) };
+  if (label.startsWith(q)) return { score: 900 - label.length, hits: rangeHits(0, q.length) };
+  const at = label.indexOf(q);
+  if (at > 0) {
+    const wordStart = WORD_BREAK.test(label[at - 1]) || (item.label[at] !== label[at]);
+    return { score: (wordStart ? 800 : 700) - label.length, hits: rangeHits(at, q.length) };
+  }
+  if (path.startsWith(q)) return { score: 600 - path.length / 10, hits: [] };
+  if (path.indexOf(q) >= 0) return { score: 500 - path.length / 10, hits: [] };
+  if (String(item.searchText || '').indexOf(q) >= 0) return { score: 400, hits: [] };
+  const inLabel = subsequence(label, q);
+  if (inLabel) return { score: 300 - inLabel.gaps * 2 - label.length / 10, hits: inLabel.hits, fuzzy: true };
+  const inPath = subsequence(path, q);
+  if (inPath) return { score: 200 - inPath.gaps - path.length / 10, hits: [], fuzzy: true };
+  return null;
+}
+
+// Filter + sort by score. Ties keep the catalog order (stable sort), so the
+// existing category/alphabetical ordering still breaks ties.
+export function rankAtMentionItems(candidates, q) {
+  const scored = [];
+  for (let i = 0; i < candidates.length; i++) {
+    const m = scoreAtMentionItem(candidates[i], q);
+    if (m) scored.push({ item: candidates[i], score: m.score, hits: m.hits, fuzzy: !!m.fuzzy, i });
+  }
+  scored.sort((a, b) => (b.score - a.score) || (a.i - b.i));
+  return scored.map(s => ((s.hits.length || s.fuzzy)
+    ? Object.assign({}, s.item, { hits: s.hits, fuzzy: s.fuzzy })
+    : s.item));
+}
+
+async function buildItems(projectDir, opts) {
   if (!projectDir) return [];
   const out = [];
 
@@ -129,11 +198,17 @@ async function buildItems(projectDir) {
     } catch { /* ignore */ }
   }
 
-  // 2. Recursive file scan via tags/scan (needs project id)
+  // 2. Recursive file scan via tags/scan (needs project id). The scan is a
+  // disk walk, so it is not repeated on the 5 s background refresh; it runs
+  // for a new project, or when a fresh `@` asks for it (opts.rescan) and the
+  // last scan is older than SCAN_TTL_MS. Files created after the chat opened
+  // therefore show up the next time the user types `@`.
   const cacheKey = projectDir + '|' + (projId || '');
-  if (cacheKey !== projectCacheKey) {
+  const scanExpired = !!(opts && opts.rescan) && Date.now() - scanAt >= SCAN_TTL_MS;
+  if (cacheKey !== projectCacheKey || scanExpired) {
+    if (cacheKey !== projectCacheKey) scanCache = null;
     projectCacheKey = cacheKey;
-    scanCache = null;
+    scanAt = Date.now();
     if (projId) {
       try {
         const r = await fetchJson('/api/projects/' + encodeURIComponent(projId) + '/tags/scan', {
@@ -269,7 +344,7 @@ let matches = searchQuery
 ? items
 : (activeFilter ? items.filter(item => item.category === activeFilter) : items);
 if (searchQuery) {
-matches = matches.filter(item => item.searchText.indexOf(searchQuery) >= 0);
+matches = rankAtMentionItems(matches, searchQuery);
 }
 // With an active query there is no per-category cap — the user is
 // searching. Files still get the large global cap.
@@ -281,7 +356,12 @@ matches = matches.filter(item => item.searchText.indexOf(searchQuery) >= 0);
       fileCount++;
       return true;
     });
-    return prioritizeAtMentionFiles(cappedMatches);
+    // Files stay first among real (substring/prefix) matches; fuzzy-only
+    // hits come after every real match so a loose file subsequence never
+    // buries an exact agent/tool/action name.
+    const strong = cappedMatches.filter(item => !item.fuzzy);
+    const loose = cappedMatches.filter(item => item.fuzzy);
+    return prioritizeAtMentionFiles(strong).concat(prioritizeAtMentionFiles(loose));
   }
   if (activeFilter) {
     // Single-category view: show everything in that category.
@@ -327,6 +407,30 @@ bar.appendChild(chip);
 root.appendChild(bar);
 }
 
+// Writes `text` into `el`, wrapping the characters at `hits` (indexes) in
+// <mark> so the user sees why a row matched. Consecutive hits share a mark.
+function appendHighlighted(el, text, hits) {
+  const str = String(text || '');
+  if (!Array.isArray(hits) || !hits.length) { el.textContent = str; return; }
+  const set = new Set(hits);
+  let i = 0;
+  while (i < str.length) {
+    const on = set.has(i);
+    let j = i;
+    while (j < str.length && set.has(j) === on) j++;
+    const part = str.slice(i, j);
+    if (on) {
+      const mark = document.createElement('mark');
+      mark.className = 'at-mention__hit';
+      mark.textContent = part;
+      el.appendChild(mark);
+    } else {
+      el.appendChild(document.createTextNode(part));
+    }
+    i = j;
+  }
+}
+
 function renderPopup() {
   if (!popup) return;
   const f = filtered;
@@ -339,6 +443,16 @@ function renderPopup() {
     if (visible && !query) {
       popup.innerHTML = '';
       renderFilterBar(popup);
+      return;
+    }
+    if (visible && query) {
+      // Say so instead of silently closing, so a typo reads as "no match"
+      // rather than "the popup broke".
+      popup.innerHTML = '';
+      const empty = document.createElement('div');
+      empty.className = 'at-mention__empty';
+      empty.textContent = 'No matches for @' + query;
+      popup.appendChild(empty);
       return;
     }
     popup.hidden = true;
@@ -374,7 +488,7 @@ function renderPopup() {
 
     const label = document.createElement('div');
     label.className = 'at-mention__label';
-    label.textContent = sec.item.label;
+    appendHighlighted(label, sec.item.label, sec.item.hits);
     textWrap.appendChild(label);
     if (sec.item.subtitle) {
       const subtitle = document.createElement('div');
@@ -405,7 +519,9 @@ if (!item || !textarea || !range) return;
 
   const ta = textarea;
   const before = ta.value.slice(0, range.start);
-  const after = ta.value.slice(range.end);
+  // The inserted token ends with a space; drop one leading space from the
+  // rest so replacing a mid-text token does not leave a double space.
+  const after = ta.value.slice(range.end).replace(/^ /, '');
 
   // Tools with parameters get the colon + first required arg inserted
   // and an arg bar shown below the textarea for remaining params.
@@ -562,7 +678,12 @@ function onInput() {
     return;
   }
 
-  range = { start, end: pos };
+  // Replace the WHOLE token on selection, not just the part before the
+  // caret: editing `@src/fo|o.js` and picking a file must not leave `o.js`.
+  let end = pos;
+  while (end < val.length && !/\s/.test(val[end])) end++;
+  range = { start, end };
+  const wasVisible = visible;
 query = q;
 selectedIdx = 0;
 // Starting a fresh @-mention (no query): reset to the mixed "All" view.
@@ -570,6 +691,9 @@ if (!q) activeFilter = null;
 filtered = filterItems(q);
 visible = true;
 renderPopup();
+  // A fresh `@` refreshes the catalog (including a throttled file rescan)
+  // so files created since the chat opened can be mentioned.
+  if (!wasVisible) refreshAtMentionItems({ rescan: true });
 }
 
 function onKeydown(e) {
@@ -596,26 +720,28 @@ function onKeydown(e) {
       return;
     }
   }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    hide();
+    if (textarea) textarea.focus();
+    return;
+  }
   const f = filtered;
   if (!f.length) return;
 
   if (e.key === 'ArrowDown') {
     e.preventDefault();
-    selectedIdx = Math.min(selectedIdx + 1, f.length - 1);
+    selectedIdx = (selectedIdx + 1) % f.length;
     renderPopup();
     scrollSelectedIntoView();
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
-    selectedIdx = Math.max(selectedIdx - 1, 0);
+    selectedIdx = (selectedIdx - 1 + f.length) % f.length;
     renderPopup();
     scrollSelectedIntoView();
   } else if (e.key === 'Enter' || e.key === 'Tab') {
     e.preventDefault();
     selectItem(selectedIdx);
-  } else if (e.key === 'Escape') {
-    e.preventDefault();
-    hide();
-    if (textarea) textarea.focus();
   }
 }
 
@@ -666,10 +792,10 @@ const projectDir = preactState.props && preactState.props.projectDir;
   };
 }
 
-export function refreshAtMentionItems() {
+export function refreshAtMentionItems(opts) {
   const projectDir = uiState && uiState.props && uiState.props.projectDir;
   if (projectDir) {
-    buildItems(projectDir).then(newItems => {
+    buildItems(projectDir, opts).then(newItems => {
       items = newItems;
       if (visible) {
         filtered = filterItems(query);

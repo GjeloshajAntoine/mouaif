@@ -8,7 +8,7 @@
   bottom: 100%;
   left: 4px;
   right: 4px;
-  max-height: 240px;
+  max-height: min(240px, 40dvh);
   overflow-y: auto;
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
@@ -136,4 +136,17 @@ display: -webkit-box;
 -webkit-box-orient: vertical;
 -webkit-line-clamp: 2;
 overflow: hidden;
+}
+/* Matched characters in a result label (from scoreAtMentionItem). */
+.at-mention__hit {
+  background: none;
+  color: var(--accent);
+  font-weight: 700;
+}
+/* Shown when a typed query matches nothing. */
+.at-mention__empty {
+  padding: 12px 10px;
+  min-height: 44px;
+  font-size: 0.72rem;
+  color: var(--muted);
 }
