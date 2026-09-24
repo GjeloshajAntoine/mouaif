@@ -28,6 +28,7 @@ One page per feature: what it does and how to use it.
 ### Providers and models
 
 - [Cloud model providers](features/cloud-providers.md) — Azure OpenAI, Mistral, Groq, and DeepSeek.
+- [Local OpenAI-compatible servers](features/local-openai-servers.md) — connect llama.cpp's `llama-server` or LM Studio with no API key.
 - [OpenRouter](features/openrouter.md) — one key for many upstream models, with browser sign-in.
 - [Anthropic sign-in](features/oauth-anthropic.md) — sign in with an Anthropic account instead of an API key.
 - [Model picker](features/model-picker.md) — search, filter by provider, and switch the chat's model.

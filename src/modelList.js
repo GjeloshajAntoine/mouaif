@@ -14,7 +14,7 @@
 // catalog treats a provider that cannot answer as "no extra models" — one
 // unreachable provider must not empty the whole picker.
 
-const { ai, credentialForProvider, hashShort, modelListCacheKey, MODEL_LIST_CACHE, MODEL_LIST_TTL_MS, MODEL_LIST_TIMEOUT_MS } = require('./server-shared.js');
+const { ai, credentialForProvider, baseUrlForProvider, hashShort, modelListCacheKey, MODEL_LIST_CACHE, MODEL_LIST_TTL_MS, MODEL_LIST_TIMEOUT_MS } = require('./server-shared.js');
 
 // liveModelsFor(provider, opts) -> { models, fetchedAt, cached }
 //
@@ -59,9 +59,18 @@ async function liveModelsFor(provider, opts) {
   try { cred = credentialForProvider(provider); }
   catch { /* the adapter surfaces ENO_APIKEY when a credential is required */ }
 
-  // Keyed by provider + credential hash + slice so rotating a key cannot serve
-  // the previous account's list, and so the two slices cannot cross over.
-  const cacheKey = modelListCacheKey(provider, cred ? hashShort(cred) : '-', purpose);
+  // The configured base URL matters for the openai-compatible family: a
+  // connection pointed at a local llama.cpp / LM Studio server must list that
+  // server's models, not the hosted OpenAI default. Passed to the adapter and
+  // folded into the cache key so switching the connection to a different
+  // server cannot serve the previous server's catalog (a keyless local
+  // endpoint has no credential to vary the key instead).
+  const baseUrl = (() => { try { return baseUrlForProvider(provider); } catch { return null; } })();
+
+  // Keyed by provider + credential hash + base URL + slice so rotating a key
+  // cannot serve the previous account's list, so two local servers cannot
+  // cross over, and so the two slices cannot cross over.
+  const cacheKey = modelListCacheKey(provider, cred ? hashShort(cred) : '-', purpose, baseUrl);
   const now = Date.now();
   if (opts && opts.force) MODEL_LIST_CACHE.delete(cacheKey);
   const cached = MODEL_LIST_CACHE.get(cacheKey);
@@ -78,9 +87,9 @@ async function liveModelsFor(provider, opts) {
     // provider returns null here and the chat list is filtered by the caller
     // instead.
     const sliced = purpose === 'transcription'
-    ? await ai.listTranscriptionModels(provider, cred || null, ac.signal)
-    : (purpose === 'image' ? await ai.listImageModels(provider, cred || null, ac.signal) : null);
-    const models = sliced || await ai.listModels(provider, cred || null, ac.signal);
+    ? await ai.listTranscriptionModels(provider, cred || null, ac.signal, baseUrl)
+    : (purpose === 'image' ? await ai.listImageModels(provider, cred || null, ac.signal, baseUrl) : null);
+    const models = sliced || await ai.listModels(provider, cred || null, ac.signal, baseUrl);
     clearTimeout(timer);
     // Discard the late result: the caller already saw the timeout.
     if (timedOut) {

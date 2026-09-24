@@ -21,7 +21,7 @@ To send messages to a model, mouaif needs a credential for that model's provider
 4. Save the provider, then run its model refresh or connection test to confirm it works.
 5. Open a project's settings and add the model you want to use.
 
-Available connections include OpenAI-compatible services, Anthropic, Google Gemini, Ollama, OpenRouter, GitHub Copilot, Azure OpenAI, Mistral, Groq, and DeepSeek. Ollama normally runs locally without an API key. Anthropic, OpenRouter, and GitHub Copilot offer browser sign-in in the provider form; the rest use an API key.
+Available connections include OpenAI-compatible services, Anthropic, Google Gemini, Ollama, OpenRouter, GitHub Copilot, Azure OpenAI, Mistral, Groq, and DeepSeek. Ollama normally runs locally without an API key, and the OpenAI-compatible provider accepts a blank key too, so a local llama.cpp `llama-server` or LM Studio endpoint works without credentials (see [local-openai-servers.md](./local-openai-servers.md)). Anthropic, OpenRouter, and GitHub Copilot offer browser sign-in in the provider form; the rest use an API key.
 
 ### Where credentials are kept
 

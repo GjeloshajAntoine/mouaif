@@ -265,11 +265,16 @@ export function SettingsProviderEditView(props) {
       if (!list.length) { setStatusMsg('sign in to ' + providerId + ' first'); setStatusType('error'); setIsSaving(false); return; }
       if (list.length > 1 && !account) { setStatusMsg('pick which signed-in account to use'); setStatusType('error'); setIsSaving(false); return; }
     }
-    if (auth === 'apikey' && providerId !== 'ollama' && !key && !(current && current.hasApiKey)) {
-      setStatusMsg('API key is required for ' + providerId);
-      setStatusType('error');
-      setIsSaving(false);
-      return;
+    // Local OpenAI-shaped servers (llama.cpp's llama-server, LM Studio, a
+    // local Ollama at /v1) take no key. A provider that marks its key
+    // optional lets the user save a keyless connection; the server then
+    // sends no Authorization header. Hosted endpoints still require a key.
+    const keyOptional = !!(def && (def.keyOptional || providerId === 'ollama'));
+    if (auth === 'apikey' && !keyOptional && !key && !(current && current.hasApiKey)) {
+    setStatusMsg('API key is required for ' + providerId);
+    setStatusType('error');
+    setIsSaving(false);
+    return;
     }
     const body = { id: providerId, auth };
     if (base) body.baseUrl = base;

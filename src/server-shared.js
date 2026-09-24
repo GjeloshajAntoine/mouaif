@@ -446,7 +446,7 @@ function resolveModel(modelId, projectDir, providerId) {
   // best-effort built-in table. Project-level records keep their own
   // `pricing` (most specific) — only the live path is enriched here.
   if (liveCatalogModel && !m.pricing) {
-    const cached = MODEL_LIST_CACHE.get(modelListCacheKey(m.provider, credHashFor(m.provider), 'chat'));
+    const cached = MODEL_LIST_CACHE.get(modelListCacheKey(m.provider, credHashFor(m.provider), 'chat', baseUrlForProvider(m.provider)));
     if (cached && Array.isArray(cached.models)) {
       const live = cached.models.find((x) => x && x.id === modelId);
       if (live && live.pricing && typeof live.pricing === 'object') {
@@ -472,6 +472,20 @@ function credHashFor(provider) {
   try { cred = credentialForProvider(provider); }
   catch { /* listModels will surface ENO_APIKEY if the provider requires a credential */ }
   return cred ? hashShort(cred) : '-';
+}
+
+// baseUrlForProvider(provider) — the configured base URL of a provider
+// connection, or null when unset. The live model list reads it so an
+// openai-compatible connection pointed at a local llama.cpp `llama-server`
+// (or LM Studio) lists that server's models instead of the hosted OpenAI
+// default. A credential alone cannot distinguish two local servers, so the
+// list cache keys include this value (see modelList.js).
+function baseUrlForProvider(provider) {
+  const app = settings.getApp();
+  const conn = (Array.isArray(app.providers) ? app.providers : []).find((p) => p && p.id === provider);
+  if (!conn || typeof conn.baseUrl !== 'string') return null;
+  const trimmed = conn.baseUrl.trim();
+  return trimmed.length ? trimmed : null;
 }
 
 function credentialForProvider(provider) {
@@ -515,15 +529,21 @@ function hashShort(s) {
 // dictation attempt fail with `400 Model … does not exist`. The chat slice
 // keeps the two-part key its existing callers (resolveModel, the test seeding
 // hook, the live-list route) already use; any other slice appends its name.
-function modelListCacheKey(provider, credHash, purpose) {
+function modelListCacheKey(provider, credHash, purpose, baseUrl) {
 const p = purpose && purpose !== 'chat' ? ':' + purpose : '';
-return provider + ':' + credHash + p;
+// A local openai-compatible connection carries no credential, so the base URL
+// is the only thing that distinguishes two servers (llama.cpp on :8080 vs
+// LM Studio on :1234). Fold it in so switching servers cannot serve the
+// previous one's catalog. Hosted providers leave it out (null/empty) to keep
+// their existing two-part key.
+const b = baseUrl ? ':' + baseUrl : '';
+return provider + ':' + credHash + b + p;
 }
 // seedModelListCache(provider, models) — test-only hook: pre-fill the
 // in-memory live model cache so resolveModel can pick up per-model
 // pricing without a live upstream call.
 function seedModelListCache(provider, models) {
-if (provider) MODEL_LIST_CACHE.set(modelListCacheKey(provider, credHashFor(provider), 'chat'), { models, fetchedAt: Date.now() });
+if (provider) MODEL_LIST_CACHE.set(modelListCacheKey(provider, credHashFor(provider), 'chat', baseUrlForProvider(provider)), { models, fetchedAt: Date.now() });
 }
 
 // ---- App access authentication helpers ----------------------------------
@@ -748,6 +768,7 @@ module.exports = {
   resolveModel,
   credHashFor,
   credentialForProvider,
+  baseUrlForProvider,
   hashShort,
   seedModelListCache,
   accessRequestOrigin,

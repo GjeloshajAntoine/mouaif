@@ -46,15 +46,25 @@ async function openAIShapedListModels(def, cred, signal) {
 
 const ENDPOINTS = {
   'openai-compatible': {
+    baseUrl: 'https://api.openai.com/v1',
     chatPath: '/chat/completions',
     authHeader: (apiKey) => ({ 'Authorization': 'Bearer ' + apiKey }),
-    // GET {baseUrl}/models — OpenAI-shaped. Optional key in practice,
-    // but in this env the upstream returns 401 when no Authorization
-    // header is sent, so treat "no cred" as a typed ENO_APIKEY error
-    // instead of a generic upstream 401.
-    listModels: async (cred, signal) => openAIShapedListModels({
+    // A keyless connection is valid for a local OpenAI-shaped server —
+    // llama.cpp's `llama-server` (http://127.0.0.1:8080/v1) or LM Studio —
+    // where there is no credential to send. `keyOptional` tells
+    // requireApiKey() to accept a model with no apiKey and buildOpenAIRequest()
+    // to omit the Authorization header entirely (an empty
+    // `Authorization: Bearer undefined` is rejected by some local servers).
+    // Hosted endpoints are unaffected: a 401 with no key still surfaces as a
+    // typed ENO_APIKEY from the model list.
+    keyOptional: true,
+    // GET {baseUrl}/models — OpenAI-shaped. The URL is resolved from the
+    // connection's configured base URL (passed in by the caller) so a local
+    // llama.cpp / LM Studio server lists *its* models instead of the hosted
+    // OpenAI default. Falls back to the conventional OpenAI endpoint.
+    listModels: async (cred, signal, baseUrl) => openAIShapedListModels({
       name: 'openai-compatible',
-      url: (ENDPOINTS['openai-compatible'].baseUrl || 'https://api.openai.com/v1') + '/models',
+      url: (baseUrl || ENDPOINTS['openai-compatible'].baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '') + '/models',
       authHeader: ENDPOINTS['openai-compatible'].authHeader,
       thinkingFor: (m) => thinkingForOpenAIModel(m.id)
     }, cred, signal)
@@ -745,17 +755,22 @@ dedup.push(m);
 }
 return dedup;
 }
-// listModels(provider, cred, signal) -> Promise<[{ id, label, contextWindow? }]>
+// listModels(provider, cred, signal, baseUrl) -> Promise<[{ id, label, contextWindow? }]>
 // Returns the live list for a provider; throws on upstream error so the
 // caller can surface a typed error to the chat UI.
-async function listModels(provider, cred, signal) {
+//
+// `baseUrl` is the connection's configured base URL (from the app store). It
+// is meaningful for the openai-compatible family, where a local llama.cpp /
+// LM Studio server must be asked for its own models rather than the hosted
+// OpenAI default; adapters that hard-code a public URL ignore it.
+async function listModels(provider, cred, signal, baseUrl) {
 const def = ENDPOINTS[provider];
 if (!def || typeof def.listModels !== 'function') {
 const e = new Error('no listModels for provider: ' + provider);
 e.code = 'ENO_LIST';
 throw e;
 }
-return normalizeModelList(await def.listModels(cred, signal));
+return normalizeModelList(await def.listModels(cred, signal, baseUrl));
 }
 // listTranscriptionModels(provider, cred, signal)
 //   -> Promise<[...] | null>
@@ -768,10 +783,10 @@ return normalizeModelList(await def.listModels(cred, signal));
 // speech-to-text catalog" — the caller filters the chat list instead, which is
 // what every provider but OpenRouter needs. Throws the same typed errors as
 // listModels.
-async function listTranscriptionModels(provider, cred, signal) {
+async function listTranscriptionModels(provider, cred, signal, baseUrl) {
 const def = ENDPOINTS[provider];
 if (!def || typeof def.listTranscriptionModels !== 'function') return null;
-return normalizeModelList(await def.listTranscriptionModels(cred, signal));
+return normalizeModelList(await def.listTranscriptionModels(cred, signal, baseUrl));
 }
 
 // listImageModels(provider, cred, signal) -> Promise<[...] | null>
@@ -784,10 +799,10 @@ return normalizeModelList(await def.listTranscriptionModels(cred, signal));
 // "this provider has no separate image catalogue" — a caller reading this slice
 // falls back to the chat list. OpenRouter and Gemini have one; every other
 // provider does not.
-async function listImageModels(provider, cred, signal) {
+async function listImageModels(provider, cred, signal, baseUrl) {
 const def = ENDPOINTS[provider];
 if (!def || typeof def.listImageModels !== 'function') return null;
-return normalizeModelList(await def.listImageModels(cred, signal));
+return normalizeModelList(await def.listImageModels(cred, signal, baseUrl));
 }
 
 function endpointFor(model) {
@@ -929,6 +944,12 @@ async function requireApiKey(model, def) {
     // don't need a credential. We detect that by arity: zero = no
     // credential, one or more = needs a key. Robust to future providers.
     if (def && typeof def.authHeader === 'function' && def.authHeader.length === 0) return true;
+    // A provider that marks its key optional (openai-compatible, so a local
+    // llama.cpp / LM Studio endpoint can be reached without a credential) is
+    // allowed through with no apiKey. Its request builder omits the
+    // Authorization header; a hosted endpoint that really needs a key still
+    // fails upstream with a 401 the UI can surface.
+    if (def && def.keyOptional) return true;
     const e = new Error('Model "' + model.id + '" has no apiKey.');
     e.code = 'ENOAPIKEY';
     throw e;
@@ -1053,7 +1074,15 @@ function buildOpenAIRequest(model, messages, stream, specs, requestOpts) {
   const authFn = (def && typeof def.authHeader === 'function')
     ? def.authHeader
     : ENDPOINTS['openai-compatible'].authHeader;
-  Object.assign(headers, authFn(credential(model)));
+  // A keyless provider (def.keyOptional with no credential) must send no
+  // Authorization header at all: an empty local server such as llama.cpp's
+  // `llama-server` runs unauthenticated, and `Authorization: Bearer undefined`
+  // is worse than nothing. Every other path keeps the auth header verbatim.
+  const credentialValue = credential(model);
+  const hasCredential = typeof credentialValue === 'string' && credentialValue.length > 0;
+  if (hasCredential || !(def && def.keyOptional)) {
+    Object.assign(headers, authFn(credentialValue));
+  }
   // Per-provider static headers. github-copilot requires editor
   // identification headers; openrouter carries the per-install
   // X-OpenRouter-Title (canonical) + X-Title (deprecated alias)
