@@ -827,6 +827,14 @@ async function requireApiKey(model, def) {
       throw e;
     }
     const lookModel = Object.assign({}, model, { provider: authProvider });
+    // Resolve the keychain account once, up front. tokenForModel falls
+    // back to the single signed-in account when the model carries no
+    // oauthAccount; the refresh path below must persist under that
+    // same account, or it would write a second 'default' entry and the
+    // single-account fallback would stop resolving on the next chat.
+    const resolvedAccount = typeof authMod.resolveAccount === 'function'
+    ? authMod.resolveAccount(lookModel)
+    : null;
     const token = authMod.tokenForModel(lookModel);
     if (!token) {
       const e = new Error(
@@ -869,7 +877,7 @@ async function requireApiKey(model, def) {
         const baseUrl = (model.baseUrl
           || (ENDPOINTS[authProvider] && ENDPOINTS[authProvider].baseUrl)
           || null);
-        const account = lookModel.oauthAccount || parsed.account || null;
+        const account = resolvedAccount || lookModel.oauthAccount || parsed.account || null;
         try {
           const next = await refresher({
             provider: authProvider,
