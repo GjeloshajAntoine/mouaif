@@ -6,16 +6,18 @@
 // able to read back. Re-typing `npm run test:cli` character by character is the
 // exact cost this removes.
 //
-// The list is the session's own output plus the project's own files. Nothing is
-// guessed and nothing is sent: a chip only rewrites the input field, so **Enter
-// is still the user's decision** — the same discipline the inspector's value
-// suggestions follow.
+// The list is the session's own commands plus the project's own files. Nothing
+// is guessed and nothing is sent: a chip only rewrites the input field, so
+// **Enter is still the user's decision** — the same discipline the inspector's
+// value suggestions follow.
 //
 // Two sources, both already on the client:
 //
-//   * the shell's echo lines (`❯ ls -la` in that output — the prompt mark the
-//     modal prints before each command), which is the session's history and
-//     needs no round trip;
+//   * the commands this modal sent to the *shell* (see `rememberCommand`),
+//     kept as a short list in the modal's state. It is deliberately not read
+//     back from the screen: on a pseudo-terminal the screen also shows answers
+//     typed to a program's prompt, and a hidden answer (`read -s`, `sudo`, an
+//     npm one-time code) must never come back as a chip;
 //   * the project's top-level entries from `GET /api/files`, the endpoint the
 //     file editor already browses with. Names only, one level deep: a
 //     suggestion row is a shortcut, not a second file browser.
@@ -27,44 +29,32 @@
 // becomes a list to read; the field is still right there for anything else.
 export const MAX_SUGGESTIONS = 7;
 
-// MAX_HISTORY — how many of the session's own commands are considered. Newest
-// wins when two entries would produce the same chip.
-const MAX_HISTORY = 40;
+// MAX_HISTORY — how many of the session's own commands are kept. Newest wins
+// when the same command is sent twice.
+export const MAX_HISTORY = 40;
 
-// The prompt mark the modal prints before each command line.
-const PROMPT_MARK = '❯';
-
-// commandFromEchoLine(line) — the command a `❯ …` echo line recorded, or ''.
+// rememberCommand(history, cmd, owner) → the next history (newest first).
 //
-// The echo line *is* the command (the modal writes it before writing the
-// command to the shell), so a trailing shell prompt or program output is not
-// part of it: only the line's own leading mark and blank space are stripped,
-// plus a trailing carriage return from a CR-terminated line.
-export function commandFromEchoLine(line) {
-  const text = String(line == null ? '' : line).replace(/\r$/, '');
-  const trimmed = text.trimStart();
-  if (!trimmed.startsWith(PROMPT_MARK)) return '';
-  return trimmed.slice(PROMPT_MARK.length).trim();
-}
-
-// historyFromOutput(output) — the session's commands, newest first, de-duped.
+// `owner` is who was reading stdin when the line was sent:
 //
-// `output` is the modal's rendered screen (`CliScreen.render()`), i.e. the text
-// the user is looking at, so the history is exactly what the reader can scroll
-// back to. A bare Enter (an empty line, which is a meaningful answer to a
-// prompt) records no command and is skipped — offering it as a chip would offer
-// nothing.
-export function historyFromOutput(output) {
-  const lines = String(output == null ? '' : output).split('\n');
-  const seen = new Set();
-  const out = [];
-  for (let i = lines.length - 1; i >= 0 && out.length < MAX_HISTORY; i--) {
-    const cmd = commandFromEchoLine(lines[i]);
-    if (!cmd || seen.has(cmd)) continue;
-    seen.add(cmd);
-    out.push(cmd);
-  }
-  return out;
+//   * 'shell'   — the shell's line editor (bracketed paste on, see
+//                 `lineEditorState` in ./cliKeys.js): the line is a command;
+//   * 'piped'   — a session with no pseudo-terminal, where nothing can prompt
+//                 (stdin is not a TTY), so every line is a command;
+//   * anything else — a program, or a pty whose shell never said: the line
+//                 may be an answer, possibly a secret, so it is not kept.
+//
+// A blank line and a history expansion (`!!`, `!git`) are not kept either —
+// the first offers nothing, the second is the shell's history, not a command.
+// Returns the same array when nothing changes, so a state setter can skip the
+// render.
+export function rememberCommand(history, cmd, owner) {
+  const list = Array.isArray(history) ? history : [];
+  const text = String(cmd == null ? '' : cmd).trim();
+  if (!text || text.startsWith('!')) return list;
+  if (owner !== 'shell' && owner !== 'piped') return list;
+  if (list[0] === text) return list;
+  return [text].concat(list.filter((c) => c !== text)).slice(0, MAX_HISTORY);
 }
 
 // nameTokens(entries) — what a directory listing contributes to the row: each
@@ -87,7 +77,7 @@ function nameTokens(entries) {
 //
 //   * `draft`   — what is in the field now; '' means "the whole list, newest
 //                 and most relevant first";
-//   * `history` — newest first, as `historyFromOutput` returns it;
+//   * `history` — newest first, as `rememberCommand` keeps it;
 //   * `entries` — the project's top-level listing as `GET /api/files` returns
 //                 it, or null when it has not been fetched (a fetch that has
 //                 not happened invents no rows).

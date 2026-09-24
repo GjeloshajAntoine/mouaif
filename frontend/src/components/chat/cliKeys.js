@@ -32,6 +32,54 @@ export const CLI_KEYS = [
   { id: 'eof', label: '^D', title: 'Ctrl+D — end input (EOF)', seq: '\x04' }
 ];
 
+// keyPayload(key, draft) → { seq, clearDraft } — what one tap actually writes.
+//
+// The modal's <input> is a *local* line buffer: nothing typed there reaches the
+// shell until Enter. A readline key acts on the shell's own line, so sending
+// Tab alone would complete an empty line — `npm ru` + Tab completed nothing.
+// The three readline keys therefore flush the draft first (`npm ru\t` in one
+// raw write) and hand the field back empty: from then on the shell's line,
+// echoed on the screen by the pty, is the line being edited, and whatever is
+// typed next continues it. ↑/↓ do the same, which is what a terminal does
+// with a half-typed line (readline keeps it as the history's newest entry).
+//
+// ^C discards the local draft too — the terminal meaning of interrupting a line
+// you were typing — but does not send it. Esc and ^D leave the field alone.
+export function keyPayload(key, draft) {
+  if (!key) return { seq: '', clearDraft: false };
+  const text = String(draft == null ? '' : draft);
+  if (key.shellOnly) return { seq: text + key.seq, clearDraft: text.length > 0 };
+  if (key.id === 'int') return { seq: key.seq, clearDraft: text.length > 0 };
+  return { seq: key.seq, clearDraft: false };
+}
+
+// Bracketed-paste mode markers. bash (readline ≥ 8.1) and zsh (≥ 5.1) switch
+// it on while their line editor waits for a command and off the moment the
+// line is accepted, so the pair is the shell's own statement of who owns
+// stdin: `?2004h` → the shell's prompt, `?2004l` → a program is running. It is
+// a real signal from the child rather than a guess from what the output looks
+// like, and a shell that never sends it (dash, a piped child) simply leaves
+// the mode unknown.
+const PASTE_ON = '\x1b[?2004h';
+const PASTE_OFF = '\x1b[?2004l';
+
+// lineEditorState(tail, chunk) → { state, tail }
+//
+//   * `state` — 'shell' when the chunk's last marker switched bracketed paste
+//     on, 'program' when it switched it off, null when the chunk has no marker
+//     (the caller keeps its previous state);
+//   * `tail` — the carry to pass with the next chunk. Output arrives in
+//     arbitrary pieces, so a marker can be cut in two; the carry is one byte
+//     shorter than a marker, so a marker is never counted twice.
+export function lineEditorState(tail, chunk) {
+  const text = String(tail || '') + String(chunk == null ? '' : chunk);
+  const on = text.lastIndexOf(PASTE_ON);
+  const off = text.lastIndexOf(PASTE_OFF);
+  let state = null;
+  if (on !== -1 || off !== -1) state = on > off ? 'shell' : 'program';
+  return { state, tail: text.slice(-(PASTE_ON.length - 1)) };
+}
+
 // keyById(id) — one key's definition, or null. Exported so a caller (and the
 // test) never has to guess at an index into CLI_KEYS.
 export function keyById(id) {

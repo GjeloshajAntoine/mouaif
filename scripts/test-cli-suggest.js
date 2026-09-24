@@ -9,8 +9,13 @@
 //     terminator on `\x03` sends Ctrl+C *and* Enter, which answers a second
 //     prompt the user never saw; that is the one mistake that must not be
 //     introduced by "tidying" the table.
-//   * `historyFromOutput` / `suggestionsFor` — the suggestion row is built from
-//     the session's own echo lines and the project's own listing: newest first,
+//   * `keyPayload` — Tab and the arrows carry the typed draft onto the shell's
+//     line, so `npm ru` + Tab completes `npm ru`, not an empty line.
+//   * `lineEditorState` — who owns stdin, read from the shell's own
+//     bracketed-paste markers, including a marker cut across two chunks.
+//   * `rememberCommand` / `suggestionsFor` — the suggestion row is built from
+//     the commands sent to the shell (never an answer to a program's prompt,
+//     which may be a password) and the project's own listing: newest first,
 //     de-duped, prefix matches before substring matches, and never a chip equal
 //     to what is already in the field.
 //
@@ -26,8 +31,8 @@ function t(name, cond, msg) {
 async function run() {
   const keys = await import('../frontend/src/components/chat/cliKeys.js');
   const suggest = await import('../frontend/src/components/chat/cliSuggest.js');
-  const { CLI_KEYS, keyById, keepEditorFocus } = keys;
-  const { MAX_SUGGESTIONS, commandFromEchoLine, historyFromOutput, suggestionsFor } = suggest;
+  const { CLI_KEYS, keyById, keepEditorFocus, keyPayload, lineEditorState } = keys;
+  const { MAX_SUGGESTIONS, MAX_HISTORY, rememberCommand, suggestionsFor } = suggest;
 
   // ---- 1. The key row -------------------------------------------------
 
@@ -86,37 +91,73 @@ async function run() {
   keepEditorFocus(undefined);
   t('keepEditorFocus cancels the default and survives a null event', prevented === 1, prevented);
 
-  // ---- 2. The echo line ----------------------------------------------
-
-  t('the prompt mark is stripped', commandFromEchoLine('\u276F ls -la') === 'ls -la', commandFromEchoLine('\u276F ls -la'));
-  t('a bare prompt line is not a command', commandFromEchoLine('\u276F') === '', commandFromEchoLine('\u276F'));
-  t('an empty line is not a command', commandFromEchoLine('\u276F   ') === '', commandFromEchoLine('\u276F   '));
-  t('shell output is not a command', commandFromEchoLine('total 4') === '', commandFromEchoLine('total 4'));
-  t('a CR-terminated echo line still parses', commandFromEchoLine('\u276F pwd\r') === 'pwd');
-  t('a non-string line is not a command', commandFromEchoLine(null) === '' && commandFromEchoLine(7) === '');
-
-  // ---- 3. History from the rendered screen -----------------------------
+  // ---- 2. What a key tap writes ----------------------------------------
   //
-  // The rendered frame is what the reader is looking at, so it is the honest
-  // source. Newest first, de-duped, and the leading indent a shell prompt adds
-  // is not part of the command.
-  const screen = [
-    'mouaif 0.3.5',
-    '\u276F ls',
-    'bin  src  package.json',
-    '\u276F npm run test:cli',
-    '\u276F ls',
-    'bin  src  package.json'
-  ].join('\n');
-  const hist = historyFromOutput(screen);
-  t('history is newest first, de-duped', JSON.stringify(hist) === JSON.stringify(['ls', 'npm run test:cli']), hist);
+  // The field is a local line buffer: nothing typed reaches the shell until
+  // Enter. Tab with a draft must complete *the draft*, so the readline keys
+  // carry it with them in one raw write and hand the field back empty.
 
-  t('history of empty output is empty', historyFromOutput('').length === 0 && historyFromOutput(null).length === 0);
-  t('history is capped', historyFromOutput(
-    Array.from({ length: 200 }, (_, i) => '\u276F cmd' + i + '\n').join('')
-  ).length === 40);
+  const tabDraft = keyPayload(byId.tab, 'npm ru');
+  t('Tab sends the draft and the Tab together', tabDraft.seq === 'npm ru\t' && tabDraft.clearDraft === true, tabDraft);
+  const tabEmpty = keyPayload(byId.tab, '');
+  t('Tab on an empty field is a bare Tab and clears nothing', tabEmpty.seq === '\t' && tabEmpty.clearDraft === false, tabEmpty);
+  const upDraft = keyPayload(byId.up, 'git');
+  t('Up carries the draft onto the shell line too', upDraft.seq === 'git\x1b[A' && upDraft.clearDraft === true, upDraft);
+  const intDraft = keyPayload(byId.int, 'rm -rf build');
+  t('^C discards the draft without sending it', intDraft.seq === '\x03' && intDraft.clearDraft === true, intDraft);
+  const escDraft = keyPayload(byId.esc, 'q');
+  t('Esc and ^D leave the draft alone', escDraft.seq === '\x1b' && !escDraft.clearDraft
+    && keyPayload(byId.eof, 'x').seq === '\x04' && !keyPayload(byId.eof, 'x').clearDraft, escDraft);
+  t('no payload ever carries a line terminator',
+    CLI_KEYS.every((k) => !/[\r\n]/.test(keyPayload(k, 'abc').seq)));
+  t('a missing key writes nothing', keyPayload(null, 'x').seq === '');
 
-  // ---- 4. The suggestion row ------------------------------------------
+  // ---- 3. Who owns stdin -------------------------------------------------
+  //
+  // bash/zsh switch bracketed paste on at their prompt and off when a command
+  // starts. This is real bash output captured from a session.
+  const bashOut = '\x1b[?2004hme@host:~$ read -s -p "pw: " x\r\n\x1b[?2004l\rpw: ';
+  let st = lineEditorState('', bashOut);
+  t('the last marker wins: a command started, so a program owns stdin', st.state === 'program', st);
+  st = lineEditorState(st.tail, 'got\r\n\x1b[?2004hme@host:~$ ');
+  t('the shell prompt is back', st.state === 'shell', st);
+  st = lineEditorState(st.tail, 'plain output, no markers');
+  t('a chunk without a marker leaves the state unknown', st.state === null, st);
+
+  // A marker cut across two chunks is still seen, and exactly once.
+  const a = lineEditorState('', 'output\x1b[?20');
+  t('half a marker is not a marker', a.state === null, a);
+  const b = lineEditorState(a.tail, '04h$ ');
+  t('the carried half completes it', b.state === 'shell', b);
+  const c = lineEditorState(b.tail, 'more');
+  t('a completed marker is not counted again from the carry', c.state === null, c);
+  t('the carry stays shorter than a marker', b.tail.length < '\x1b[?2004h'.length, b.tail);
+
+  // ---- 4. What the history keeps -----------------------------------------
+  //
+  // Only lines sent to the shell are kept. An answer to a program's prompt —
+  // `read -s`, sudo, an npm one-time code — must never become a chip.
+  let hist = [];
+  hist = rememberCommand(hist, 'npm run test:cli', 'shell');
+  hist = rememberCommand(hist, 'ls', 'shell');
+  t('commands sent to the shell are kept, newest first',
+    JSON.stringify(hist) === JSON.stringify(['ls', 'npm run test:cli']), hist);
+  t('an answer to a program is not kept', rememberCommand(hist, 'secret123', 'program') === hist);
+  t('a line sent while the owner is unknown is not kept', rememberCommand(hist, 'secret123', null) === hist);
+  t('a piped session has no prompts, so its lines are commands',
+    rememberCommand([], 'pwd', 'piped')[0] === 'pwd');
+  t('a blank line is not kept', rememberCommand(hist, '   ', 'shell') === hist);
+  t('a history expansion is not kept', rememberCommand(hist, '!!', 'shell') === hist
+    && rememberCommand(hist, '!git', 'shell') === hist);
+  t('re-sending the newest command changes nothing', rememberCommand(hist, 'ls', 'shell') === hist);
+  const moved = rememberCommand(hist, 'npm run test:cli', 'shell');
+  t('re-sending an older command moves it to the front, de-duped',
+    JSON.stringify(moved) === JSON.stringify(['npm run test:cli', 'ls']), moved);
+  let many = [];
+  for (let i = 0; i < 200; i++) many = rememberCommand(many, 'cmd' + i, 'shell');
+  t('history is capped', many.length === MAX_HISTORY && many[0] === 'cmd199', many.length);
+
+  // ---- 5. The suggestion row ------------------------------------------
 
   const entries = [
     { name: 'src', type: 'dir' },

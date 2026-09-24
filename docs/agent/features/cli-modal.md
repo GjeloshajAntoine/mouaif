@@ -43,21 +43,28 @@ Backend resolution runs once, at the first session. Windows loads `node-pty`; PO
 
 `writeCliCommand` is the single place the terminator is chosen: CRLF for `cmd.exe` on Windows, LF for sh/bash on POSIX. Writing CRLF to a POSIX shell makes the trailing `\r` part of the command token (`ls\r` → `command not found`), which is why the rule lives in one shared helper rather than at each call site.
 
-### Echo line
+### Stdin owner and echo line
 
-The server never echoes what it wrote to the child's stdin — the shell prints its own prompt only when interactive line editing is on, which is exactly what a non-TTY child or a pty with `TERM=dumb` is not — so the modal writes `❯ <cmd>\n` into the screen when it sends the command (`runCommand` in [CliModal.jsx](../../../frontend/src/components/chat/CliModal.jsx)). That line is three features in one:
+On a pty the shell's line editor echoes what is typed at its prompt, and a program that turns echo off (`read -s`, `sudo`, npm's OTP prompt) shows nothing. The modal therefore writes **no** echo line of its own on a pty — an earlier version did, which showed every command twice and printed hidden answers as `❯ secret123`. Only a **piped** session (`interactive: false`) gets the modal's `❯ <cmd>\n` line, because nothing else echoes there.
 
-- it is the record of *what was asked*, beside the output that answers it;
-- it is the `!!` anchor: `!!` is expanded by the shell's own history, so the client keeps no second history to drift. `runCommand` writes **no** echo line for `!!` itself — the expanded command never crosses the wire, so the modal cannot know what it was; the shell's own prompt is the echo.
-- it is the source the suggestion row reads its history from, and the fact that makes the key row's two modes distinguishable (a just-echoed line means the shell owns the prompt; anything after it means a program does).
+Who reads stdin is tracked as `owner` in [CliModal.jsx](../../../frontend/src/components/chat/CliModal.jsx):
 
-A command line is not echoed for a **raw** send (a single key), and a **Ctrl+Enter** line is not echoed either — a raw write is an answer to a program's prompt, not a shell command, and echoing it would claim the shell had run it.
+| `owner` | Source | Meaning |
+| --- | --- | --- |
+| `'shell'` | `ESC [?2004h` in the output | bash (readline ≥ 8.1) / zsh (≥ 5.1) enabled bracketed paste: its prompt is waiting |
+| `'program'` | `ESC [?2004l` in the output | the shell accepted a line and a command is running |
+| `'piped'` | `interactive: false` from the session endpoint | no TTY, nothing can prompt |
+| `null` | session start on a pty, `exit` frame, or a shell that never sends the markers (dash) | unknown |
+
+`lineEditorState(tail, chunk)` in [cliKeys.js](../../../frontend/src/components/chat/cliKeys.js) finds the last marker in one chunk plus a carry of `marker.length - 1` bytes, so a marker cut across two SSE frames is still seen, only once, and the per-chunk cost does not grow with the session's output. `owner` is a real statement from the child, not a guess from what the output looks like.
+
+`!!` is left to the shell's own history expansion (pty only; a piped `sh -c`-style child and `cmd.exe` have none).
 
 ### Suggestions
 
 `frontend/src/components/chat/cliSuggest.js` is pure (no Preact, no DOM) and is unit-tested by `scripts/test-cli-suggest.js`. Two client-side sources, no new endpoint:
 
-- **history** — `historyFromOutput(outBuffer)` scans the rendered screen for `❯ …` lines, newest first, de-duped, capped at 40 read entries. `outBuffer` is `CliScreen.render()`, so a TUI's redraws have already been folded into the screen the reader sees.
+- **history** — a short list in the modal's state, updated by `rememberCommand(history, cmd, owner)` when Enter sends a line: newest first, de-duped, capped at `MAX_HISTORY` (40). A line is kept only when `owner` is `'shell'` or `'piped'`, so an answer typed to a program — possibly a password — never becomes a chip; blank lines and history expansions (`!!`, `!git`) are skipped, and so is the rest of a line a readline key already pushed to the shell (`lineDirtyRef`), whose full text the modal no longer knows. The history is never read back from the screen: that would re-split the whole output on every chunk and pick up anything a program echoed.
 - **names** — the top level of the project, from `GET /api/files?projectDir=…` (the endpoint [FileEditor.jsx](../../../frontend/src/components/FileEditor.jsx) already browses with), fetched once after the session starts so a slow listing cannot delay the terminal. Hidden dot-entries are skipped; a directory is offered as `name/`.
 
 `suggestionsFor({ draft, history, entries })` filters by the draft (substring, prefix matches first, source order inside a rank), drops a candidate equal to the draft, de-dupes and caps at `MAX_SUGGESTIONS` (7). It never refuses to run anything: a chip only calls `applySuggestion`, which rewrites `.cli__prompt` — **Enter is still the decision**.
@@ -75,13 +82,15 @@ A command line is not echoed for a **raw** send (a single key), and a **Ctrl+Ent
 | `int` | `^C` | `\x03` |
 | `eof` | `^D` | `\x04` |
 
-`shellOnly: true` marks Tab and the two arrows: they are a *shell's* readline keys, so the row dims exactly those three while a program owns the prompt (`promptOpen`) and leaves Esc, `^C` and `^D` lit — those three mean the same thing to a program as to a shell, and `^C` is the key a waiting program needs. The class it drives is `.cli__key--shell` under `.cli__keys.is-prompt` in [chat-composer.css](../../../frontend/src/chat-composer.css).
+`shellOnly: true` marks Tab and the two arrows: they are a *shell's* readline keys, so the row dims exactly those three while a program owns the prompt (`owner === 'program'`) and leaves Esc, `^C` and `^D` lit — those three mean the same thing to a program as to a shell, and `^C` is the key a waiting program needs. The class it drives is `.cli__key--shell` under `.cli__keys.is-prompt` in [chat-composer.css](../../../frontend/src/chat-composer.css).
 
 Every key goes through the *same* `POST /api/tools/cli/command` with **`raw: true`**, so `writeCliCommand` appends no terminator (`\n` on POSIX, `\r\n` on Windows). Appending one to `\x03` would send Ctrl+C *and* Enter, answering a prompt the user never saw; that is the invariant the test asserts byte for byte. The arrows are sent as the VT sequences a real terminal sends, so a pty's line editor turns them into history rather than printing `[A`.
 
-Every control in both rows cancels `mousedown` (`keepEditorFocus`) so the browser cannot move focus to the button — on iOS and Android that would close the soft keyboard on every tap. After any send the modal restores focus to `.cli__prompt`, but only *after the render that re-enables it*: the prompt is `disabled` while a request is in flight, and a disabled input cannot take focus, so focusing it in the request's `finally` silently did nothing — which a phone feels as the keyboard closing after every tap (`wantFocusRef` + a `busy` effect).
+`keyPayload(key, draft)` decides what a tap writes. The prompt `<input>` is a *local* line buffer — nothing reaches the shell until Enter — so a bare `\t` would complete an empty shell line. Tab and ↑/↓ (`shellOnly`) send `draft + seq` in one raw write and clear the field; the shell's own line, echoed by the pty, is then the line being edited, and the next Enter submits it with whatever was typed after. `^C` clears the draft without sending it; Esc and `^D` leave it alone.
 
-The row's mode comes from `promptOpen`, set at each state transition (cleared on a session `exit` frame, cleared where a command line is echoed, set for `!!`, left alone by a raw key). It is never inferred from the output bytes, which would misread a program that happens to print `❯`.
+Every control in both rows cancels `mousedown` (`keepEditorFocus`) so the browser cannot move focus to the button — on iOS and Android that would close the soft keyboard on every tap. The prompt is **never disabled**: disabling a focused input blurs it, and a `focus()` issued later from a fetch callback runs outside the user gesture, which iOS will not honour with a keyboard. Instead every write goes through one promise chain (`queueRef` / `post`), so taps reach the shell in the order they were made and `^C` is never blocked behind the request it is meant to interrupt.
+
+The row dims its readline keys (`.cli__keys.is-prompt`) exactly when `owner === 'program'`. The hint names the mode; a piped session says Tab and the arrows are unavailable, since there is no line editor.
 
 ### Screen decoding
 
