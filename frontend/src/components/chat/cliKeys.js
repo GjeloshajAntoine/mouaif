@@ -53,6 +53,23 @@ export function keyPayload(key, draft) {
   return { seq: key.seq, clearDraft: false };
 }
 
+// splitTypedTab(value) → null | { draft, rest }
+//
+// Many phone keyboards that have a Tab key (Samsung's, Hacker's Keyboard, some
+// Gboard layouts) never fire a `keydown` with `key: 'Tab'`: they report
+// `Unidentified` (keyCode 229) and insert a literal HT into the field instead,
+// so the tab sat in the <input> and never reached the shell. The prompt's
+// `input` handler runs the field through this: text up to the first HT is the
+// draft to send with Tab (exactly what the key row's Tab sends), and whatever
+// followed it stays in the field. Stray further tabs are dropped — a command
+// line typed on a phone has no use for a literal HT. `null` means no tab.
+export function splitTypedTab(value) {
+  const text = String(value == null ? '' : value);
+  const at = text.indexOf('\t');
+  if (at === -1) return null;
+  return { draft: text.slice(0, at), rest: text.slice(at + 1).replace(/\t/g, '') };
+}
+
 // Bracketed-paste mode markers. bash (readline ≥ 8.1) and zsh (≥ 5.1) switch
 // it on while their line editor waits for a command and off the moment the
 // line is accepted, so the pair is the shell's own statement of who owns

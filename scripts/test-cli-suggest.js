@@ -31,7 +31,7 @@ function t(name, cond, msg) {
 async function run() {
   const keys = await import('../frontend/src/components/chat/cliKeys.js');
   const suggest = await import('../frontend/src/components/chat/cliSuggest.js');
-  const { CLI_KEYS, keyById, keepEditorFocus, keyPayload, lineEditorState } = keys;
+  const { CLI_KEYS, keyById, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab } = keys;
   const { MAX_SUGGESTIONS, MAX_HISTORY, rememberCommand, suggestionsFor } = suggest;
 
   // ---- 1. The key row -------------------------------------------------
@@ -111,6 +111,21 @@ async function run() {
   t('no payload ever carries a line terminator',
     CLI_KEYS.every((k) => !/[\r\n]/.test(keyPayload(k, 'abc').seq)));
   t('a missing key writes nothing', keyPayload(null, 'x').seq === '');
+
+  // A phone keyboard's Tab key types a literal HT into the field instead of
+  // firing a Tab keydown; the prompt splits it off and sends it as Tab.
+  t('no tab in the field → nothing to split', splitTypedTab('npm ru') === null && splitTypedTab('') === null && splitTypedTab(null) === null);
+  const typedEnd = splitTypedTab('npm ru\t');
+  t('a typed tab at the end sends the draft with Tab and empties the field',
+    typedEnd && typedEnd.draft === 'npm ru' && typedEnd.rest === '', typedEnd);
+  const typedMid = splitTypedTab('ls sr\tc/x');
+  t('a tab typed mid-line keeps what followed it in the field',
+    typedMid && typedMid.draft === 'ls sr' && typedMid.rest === 'c/x', typedMid);
+  const typedMany = splitTypedTab('\ta\tb');
+  t('a lone tab completes an empty line; further tabs are dropped',
+    typedMany && typedMany.draft === '' && typedMany.rest === 'ab', typedMany);
+  t('the split draft writes the same bytes as the key row\u2019s Tab',
+    keyPayload(byId.tab, typedEnd.draft).seq === 'npm ru\t');
 
   // ---- 3. Who owns stdin -------------------------------------------------
   //

@@ -38,7 +38,7 @@ import { h } from 'preact';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
-import { CLI_KEYS, keepEditorFocus, keyById, keyPayload, lineEditorState } from './cliKeys.js';
+import { CLI_KEYS, keepEditorFocus, keyById, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
 import { rememberCommand, suggestionsFor } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
 
@@ -298,15 +298,34 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   // Ctrl+C would also press Enter, answering a prompt the user has not seen.
   // Tab and ↑/↓ carry the draft with them, because they edit the *shell's*
   // line and the draft has not reached it yet.
-  const sendKey = useCallback((key) => {
+  // `draftOverride` is the draft when the caller already split it off the
+  // field (a Tab a phone keyboard typed into the text — see onPromptInput).
+  const sendKey = useCallback((key, draftOverride) => {
     if (!key) return;
-    const draft = inputRef.current ? inputRef.current.value : cmdText;
+    const draft = typeof draftOverride === 'string'
+      ? draftOverride
+      : (inputRef.current ? inputRef.current.value : cmdText);
     const payload = keyPayload(key, draft);
     if (payload.clearDraft) setCmdText('');
     if (key.shellOnly) lineDirtyRef.current = true;
     if (key.id === 'int') lineDirtyRef.current = false;
     post(payload.seq, true);
   }, [cmdText, post]);
+
+  // onPromptInput — the field's `input` handler. A phone keyboard's Tab key
+  // usually arrives here as a literal HT in the text rather than as a Tab
+  // `keydown` (see splitTypedTab in cliKeys.js), so the text before the tab is
+  // sent exactly like a tap on the key row's Tab, and anything after it stays
+  // in the field. The DOM value is set directly: when the state was already
+  // empty, a controlled re-render would not overwrite the typed tab.
+  function onPromptInput(e) {
+    const el = e.currentTarget;
+    const typed = splitTypedTab(el.value);
+    if (!typed) { setCmdText(el.value); return; }
+    sendKey(keyById('tab'), typed.draft);
+    el.value = typed.rest;
+    setCmdText(typed.rest);
+  }
 
   function runCommand() {
     // An empty line is meaningful to a prompt (accept the default) and is a
@@ -405,7 +424,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     class: 'input cli__prompt',
                     type: 'text',
                     value: cmdText,
-                    onInput: (e) => setCmdText(e.currentTarget.value),
+                    onInput: onPromptInput,
                     placeholder: 'Type a command — runs in the project folder',
                     'aria-label': 'Command line',
                     autocomplete: 'off',
