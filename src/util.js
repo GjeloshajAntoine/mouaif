@@ -6,6 +6,8 @@
 // several files (err, joinUrl, the first-*string finders) live here so
 // there is exactly one definition.
 
+const querystring = require('querystring');
+
 // err(code, message, extra) — a typed Error with a machine-readable
 // `code`. `extra`, when given, is copied onto the error (path, size,
 // maxBytes, ...). Shared by mcp.js, tags.js, files.js and the
@@ -58,6 +60,62 @@ function firstStringValue(value) {
 // array) safely becomes ''.
 function qs(q, name) {
   return (q && typeof q[name] === 'string') ? q[name] : '';
+}
+
+// parseRequestTarget(raw) — the request target (`req.url`) split into the
+// un-decoded path and the parsed query: the two fields the HTTP dispatcher
+// reads.
+//
+// This replaces `url.parse(raw, true)` in src/http-server.js, which is
+// deprecated and printed a warning on the first request of every
+// `mouaif serve`:
+//
+//   (node:1234) [DEP0169] DeprecationWarning: `url.parse()` behavior is not
+//   standardized and prone to errors that have security implications.
+//
+// The WHATWG `new URL(raw, base)` is NOT a drop-in replacement here, and
+// swapping to it would be a real bug rather than a cleanup:
+//
+//   * `URL.pathname` PERCENT-DECODES. `/api/projects/%2e%2e/x` would arrive
+//     as `/api/projects/../x`, so the dispatcher's prefix tests would match a
+//     route the raw target never named. src/server-web-static.js depends on
+//     the path arriving encoded — `path.join` keeping a literal `%2e%2e`
+//     inside the web dir is the suspenders to its `isInside()` belt.
+//   * `URL.pathname` also NORMALIZES dot segments, so `/a/../b` becomes `/b`
+//     and `/x/%2e%2e/y` becomes `/y`.
+//   * `URL` needs a base to resolve against, and reads `//host/p` as a
+//     protocol-relative authority.
+//
+// So the split is done by hand on the raw text, and the query is parsed by
+// `querystring.parse` — the same call `url.parse(raw, true)` made
+// internally, with the same null-prototype result and the same lenient
+// handling of a bare key (`?flag` → `''`), a repeated key (`?a=1&a=2` → an
+// array), a malformed escape (`?p=%zz` stays literal) and `+` as a space.
+// `querystring` is Node's legacy module, but it is not deprecated and emits
+// no warning.
+//
+// A fragment and an absolute-form target are tolerated because `url.parse`
+// tolerated them; a conforming client sends neither.
+function parseRequestTarget(raw) {
+  const target = typeof raw === 'string' ? raw : '';
+  // A fragment is never part of the path or the query. `url.parse` put
+  // `/a?b=1#f`'s query at `b=1`, so the fragment goes first.
+  const withoutHash = target.split('#', 1)[0];
+  const queryAt = withoutHash.indexOf('?');
+  let rawPath = queryAt >= 0 ? withoutHash.slice(0, queryAt) : withoutHash;
+  const rawQuery = queryAt >= 0 ? withoutHash.slice(queryAt + 1) : '';
+  // Absolute-form target (`GET http://host/path HTTP/1.1`), which a proxy
+  // may send: the path is what follows the authority. `url.parse` returned
+  // `/p` for `http://host/p` and `/` for a bare `http://host`.
+  const scheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.exec(rawPath);
+  if (scheme) {
+    const afterAuthority = rawPath.indexOf('/', scheme[0].length);
+    rawPath = afterAuthority >= 0 ? rawPath.slice(afterAuthority) : '/';
+  }
+  // A path is always a string, never null: `url.parse` returned null for an
+  // empty target, and the dispatcher's `urlPath.startsWith(...)` then threw a
+  // TypeError that surfaced as a 500. An unmatched path is a 404.
+  return { pathname: rawPath, query: querystring.parse(rawQuery) };
 }
 
 // safeDecode(value) — decodeURIComponent that never throws. Every REST
@@ -142,6 +200,7 @@ module.exports = {
 err,
 joinUrl,
 qs,
+parseRequestTarget,
 safeDecode,
 projectModelRecord,
 PROJECT_MODEL_FIELDS,

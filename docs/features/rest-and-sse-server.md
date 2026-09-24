@@ -55,6 +55,20 @@ A malformed escape therefore becomes an ordinary `400`/`404` rather than
 a crash. `scripts/test-url-decode-safety.js` drives the real server with
 malformed paths and asserts the process stays alive.
 
+## No deprecation warnings
+
+The request target is split by `parseRequestTarget()` (`src/util.js`), not
+by the deprecated `url.parse()`. The old call printed a `DEP0169`
+`DeprecationWarning` on the first request of every `mouaif serve`; the
+replacement keeps the raw, still-encoded path and parses the query with
+`querystring.parse`, so routing and every `?projectDir=…` value behave
+exactly as before. The WHATWG `URL` class is deliberately **not** used:
+it percent-decodes and dot-normalizes the path, which would let
+`/api/projects/%2e%2e/x` match a route the client never named.
+
+`scripts/test-request-target-parsing.js` pins the equivalence and runs the
+real server in a fresh process to prove no warning is emitted.
+
 ## Related
 - [Chat UI](./chat-ui.md) — the web interface.
 - [App and project settings](./app-and-project-settings.md) — configuration hierarchy and defaults.

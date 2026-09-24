@@ -27,7 +27,6 @@
 // src/index.js is now a thin facade that re-exports this module.
 
 const http = require('http');
-const url = require('url');
 const crypto = require('crypto');
 
 const {
@@ -63,6 +62,8 @@ const {
   usage,
   promptProfiles
 } = require('./server-shared.js');
+
+const { parseRequestTarget } = require('./util.js');
 
 const { handleSettings } = require('./server-handlers-settings.js');
 const { handleChats } = require('./server-handlers-chats.js');
@@ -114,7 +115,12 @@ function failRequest(res, e, req) {
 }
 
 function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '', lifecycle = {}, serverConfig = {}) {
-  const parsed = url.parse(req.url, true);
+  // `parseRequestTarget` replaces the deprecated `url.parse(req.url, true)`,
+  // which printed a DEP0169 warning on the first request of every run. It
+  // keeps the raw, still-encoded path and parses the query with
+  // `querystring.parse`, so every `parsed.query.<name>` read below is
+  // unchanged. See src/util.js for why the WHATWG `URL` cannot be used here.
+  const parsed = parseRequestTarget(req.url);
   const urlPath = parsed.pathname;
   const method = req.method;
 
