@@ -15,6 +15,41 @@ Open the composer's File button and choose **Cli**. The header shows the shell l
 - Press **Ctrl+Enter** (**Cmd+Enter** on macOS) to send the line **without a line terminator**, for a program waiting on a single key (a `y/n` confirmation, a pager).
 - Close the sheet with the close button or **Escape**. Closing kills the session.
 
+### Suggestions
+
+Above the prompt, a row of chips offers what you are most likely to type next: the commands this session has already run, newest first, and the project's own top-level files and folders. Tap a chip to put it in the prompt — **Enter still runs it**, so a suggestion is exactly as reversible as something you typed yourself.
+
+- The row filters as you type: `npm r` offers `npm run …`, `src` offers `src/`, and a chip equal to what you have already typed is dropped rather than offered as a no-op.
+- Folder chips carry a trailing slash (`src/`), file chips do not (`package.json`).
+- Hidden dot-entries (`.gitignore`, `.env`) are not offered as chips.
+- A command not in the row costs nothing: the prompt is still there, and the row goes quiet while nothing matches.
+
+Every command is echoed to the screen as you send it, marked with the same `❯` the prompt uses:
+
+```text
+❯ npm run test:cli
+…test output…
+❯ git status
+```
+
+That line is why **`!!`** works: type it and press **Enter** and the shell repeats the previous command — handy when a keyboard has no Up arrow, and handled by the shell's own history expansion rather than a private client-side copy. Because the shell does the expanding, `!!` itself is not echoed; the shell's own prompt marks the repeated command.
+
+### Keys
+
+A phone keyboard has letters, digits and Enter, and nothing a terminal actually needs. Under the prompt, one row carries the six keys it lacks:
+
+| Key | Sends | Does |
+| --- | --- | --- |
+| **Esc** | `ESC` | leave a full-screen program (`less`, `vim`, a TUI) |
+| **Tab** | `HT` | complete a path or command |
+| **↑** / **↓** | `ESC [ A` / `ESC [ B` | previous / next command in this shell's history |
+| **^C** | `ETX` | interrupt the running command |
+| **^D** | `EOT` | end input (EOF) |
+
+Each key is one raw write with **no line terminator**, so `^C` interrupts without also pressing Enter — which would answer a second prompt you never saw. Tapping a key does not dismiss the soft keyboard, so you can keep typing straight after it.
+
+Tab and the arrows are a **shell's** readline keys. While a program owns the prompt they are delivered to that program as literal bytes, which is usually not what you want — so the row dims just those three and the line under it says so (`A program owns the prompt — ^C stops it; Esc leaves it.`). **Esc**, **^C** and **^D** mean the same thing to a program as to a shell and stay lit; `^C` is the key a waiting program needs.
+
 Because the session is a real terminal, an interactive program can wait for you. Publishing from the modal is the motivating case. Without a terminal, npm fails and masks its one-time link (its log redactor replaces the UUID in the URL with `***`):
 
 ```text
@@ -44,6 +79,7 @@ You can also run multiple commands in one session — the shell keeps its state 
 npm run test:cli
 ```
 
+- `scripts/test-cli-suggest.js` — unit-tests the suggestion row's pure modules (the key table's sequences, the echo line, the history, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator.
 - `scripts/test-cli-session-newline.js` — drives the real endpoints and asserts a plain `ls` lists the project files (the terminator rule).
 - `scripts/test-cli-strip-ansi.js` — unit-tests `stripAnsi` / `CliScreen`, including every escape-sequence family split at every pair of positions and fed one code point at a time.
 - `scripts/test-cli-utf8-split.js` — feeds `attachCliStream` UTF-8 split at every byte boundary, on the PTY and piped paths, and asserts no `�` reaches the broadcast.

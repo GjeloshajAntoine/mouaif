@@ -43,6 +43,46 @@ Backend resolution runs once, at the first session. Windows loads `node-pty`; PO
 
 `writeCliCommand` is the single place the terminator is chosen: CRLF for `cmd.exe` on Windows, LF for sh/bash on POSIX. Writing CRLF to a POSIX shell makes the trailing `\r` part of the command token (`ls\r` → `command not found`), which is why the rule lives in one shared helper rather than at each call site.
 
+### Echo line
+
+The server never echoes what it wrote to the child's stdin — the shell prints its own prompt only when interactive line editing is on, which is exactly what a non-TTY child or a pty with `TERM=dumb` is not — so the modal writes `❯ <cmd>\n` into the screen when it sends the command (`runCommand` in [CliModal.jsx](../../../frontend/src/components/chat/CliModal.jsx)). That line is three features in one:
+
+- it is the record of *what was asked*, beside the output that answers it;
+- it is the `!!` anchor: `!!` is expanded by the shell's own history, so the client keeps no second history to drift. `runCommand` writes **no** echo line for `!!` itself — the expanded command never crosses the wire, so the modal cannot know what it was; the shell's own prompt is the echo.
+- it is the source the suggestion row reads its history from, and the fact that makes the key row's two modes distinguishable (a just-echoed line means the shell owns the prompt; anything after it means a program does).
+
+A command line is not echoed for a **raw** send (a single key), and a **Ctrl+Enter** line is not echoed either — a raw write is an answer to a program's prompt, not a shell command, and echoing it would claim the shell had run it.
+
+### Suggestions
+
+`frontend/src/components/chat/cliSuggest.js` is pure (no Preact, no DOM) and is unit-tested by `scripts/test-cli-suggest.js`. Two client-side sources, no new endpoint:
+
+- **history** — `historyFromOutput(outBuffer)` scans the rendered screen for `❯ …` lines, newest first, de-duped, capped at 40 read entries. `outBuffer` is `CliScreen.render()`, so a TUI's redraws have already been folded into the screen the reader sees.
+- **names** — the top level of the project, from `GET /api/files?projectDir=…` (the endpoint [FileEditor.jsx](../../../frontend/src/components/FileEditor.jsx) already browses with), fetched once after the session starts so a slow listing cannot delay the terminal. Hidden dot-entries are skipped; a directory is offered as `name/`.
+
+`suggestionsFor({ draft, history, entries })` filters by the draft (substring, prefix matches first, source order inside a rank), drops a candidate equal to the draft, de-dupes and caps at `MAX_SUGGESTIONS` (7). It never refuses to run anything: a chip only calls `applySuggestion`, which rewrites `.cli__prompt` — **Enter is still the decision**.
+
+### Key row
+
+`frontend/src/components/chat/cliKeys.js` holds the six keys as one table (`CLI_KEYS`), so each byte sequence lives in exactly one place:
+
+| id | label | sequence |
+| --- | --- | --- |
+| `esc` | `Esc` | `\x1b` |
+| `tab` | `Tab` | `\t` |
+| `up` | `↑` | `\x1b[A` |
+| `down` | `↓` | `\x1b[B` |
+| `int` | `^C` | `\x03` |
+| `eof` | `^D` | `\x04` |
+
+`shellOnly: true` marks Tab and the two arrows: they are a *shell's* readline keys, so the row dims exactly those three while a program owns the prompt (`promptOpen`) and leaves Esc, `^C` and `^D` lit — those three mean the same thing to a program as to a shell, and `^C` is the key a waiting program needs. The class it drives is `.cli__key--shell` under `.cli__keys.is-prompt` in [chat-composer.css](../../../frontend/src/chat-composer.css).
+
+Every key goes through the *same* `POST /api/tools/cli/command` with **`raw: true`**, so `writeCliCommand` appends no terminator (`\n` on POSIX, `\r\n` on Windows). Appending one to `\x03` would send Ctrl+C *and* Enter, answering a prompt the user never saw; that is the invariant the test asserts byte for byte. The arrows are sent as the VT sequences a real terminal sends, so a pty's line editor turns them into history rather than printing `[A`.
+
+Every control in both rows cancels `mousedown` (`keepEditorFocus`) so the browser cannot move focus to the button — on iOS and Android that would close the soft keyboard on every tap. After any send the modal restores focus to `.cli__prompt`, but only *after the render that re-enables it*: the prompt is `disabled` while a request is in flight, and a disabled input cannot take focus, so focusing it in the request's `finally` silently did nothing — which a phone feels as the keyboard closing after every tap (`wantFocusRef` + a `busy` effect).
+
+The row's mode comes from `promptOpen`, set at each state transition (cleared on a session `exit` frame, cleared where a command line is echoed, set for `!!`, left alone by a raw key). It is never inferred from the output bytes, which would misread a program that happens to print `❯`.
+
 ### Screen decoding
 
 `CliScreen` buffers escape sequences that arrive split across SSE chunks, honours cursor positioning and erase, and enters/leaves the alternate screen. A full-screen TUI (htop, top, less) therefore redraws **in place** instead of stacking frames, and ordinary scrollback grows downward. It is a best-effort plain-text view, not a full terminal emulator: colour and cell-width attributes are dropped and column layout is not reconstructed.
@@ -61,4 +101,5 @@ before:  build [32mok      after:  build ok
 
 - A PTY has a fixed grid size (100×30). The modal does not yet report its own dimensions, so `resize` is not driven from the browser.
 - Some single-key prompts (a `y/n` confirmation that reads raw mode) expect the key byte alone — use **Ctrl+Enter** so no trailing newline is sent.
-- Desktop-only. On a phone the soft keyboard covers much of the sheet; the modal is usable but not the primary surface.
+- **Ctrl+Enter** (the raw single-key send) is a desktop chord: a soft keyboard cannot produce it, which is why the key row exists — `^C` and `^D` reach the two bytes that matter most, and the suggestion row removes the need to retype a command at all.
+- The suggestion and key rows are fixed the sheet's height, so on a short viewport (a phone with the keyboard up) the terminal output is what shrinks; both rows keep their 44 px targets and never scroll out of reach.

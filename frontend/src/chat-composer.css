@@ -1269,6 +1269,109 @@ transform: translateX(14px);
 .cli__prompt:focus { border-color: #4fc1ff; }
 .cli__prompt:disabled { opacity: 0.6; }
 
+/* ---- Suggestion row and key row ------------------------------------
+   Both rows sit between the output and the prompt (suggestions) and under
+   the prompt (keys), because that is where a thumb already is: the sheet is
+   full-bleed on a phone and the output above is read-only. Neither row
+   scrolls the page — the chips wrap, and the keys are six 44 px targets
+   that fit a 360 px column.
+
+   Colours are literals, like the rest of the terminal surface (`#0b0e14`,
+   `#d7e0ee`, `#4fc1ff` above): this block paints inside the terminal, whose
+   background is deliberately not the app's `--surface`. */
+
+.cli__suggest {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 12px 0;
+  background: #0b0e14;
+}
+.cli__suggest-chip {
+  font: inherit;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  max-width: 100%;
+  min-height: 32px;               /* --tap-sm: a chip, not a primary action */
+  padding: 4px 10px;
+  color: #d7e0ee;
+  background: #11151d;
+  border: 1px solid #222a38;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+.cli__suggest-chip:active {
+  background: #1b2230;
+  border-color: #4fc1ff;
+}
+
+.cli__keys {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 12px 8px;
+  background: #0b0e14;
+}
+.cli__key {
+  font: inherit;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  line-height: 1;
+  /* Five keys share a phone's width evenly; the cap keeps them from stretching
+     into bars on the desktop card (the sheet is 860 px there), where `flex: 1`
+     alone would give each one 130 px. */
+  flex: 1 1 0;
+  min-width: 44px;
+  max-width: 72px;
+  min-height: 44px;               /* --tap: the project's tap floor */
+  padding: 0 4px;
+  color: #d7e0ee;
+  background: #11151d;
+  border: 1px solid #222a38;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 80ms ease, border-color 80ms ease, transform 80ms ease;
+}
+.cli__key:active {
+  background: #1b2230;
+  border-color: #4fc1ff;
+  transform: scale(0.97);
+}
+.cli__key:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+/* While a program owns the prompt, only the shell's own readline keys are
+   marked down (`.cli__key--shell`: Tab and ↑/↓). Esc, ^C and ^D are useful in
+   both modes — ^C is *the* key a waiting program needs — so they keep their
+   full contrast and the hint under the row names them. A key dimmed by a busy
+   request is dimmed by `:disabled`; `:not(:disabled)` keeps these two facts
+   from stacking. */
+.cli__keys.is-prompt .cli__key--shell:not(:disabled) {
+  color: #7fa8c9;
+  border-color: #1b2430;
+}
+
+.cli__hint {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0 12px 8px;
+  background: #0b0e14;
+  color: #5c6a82;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  text-align: center;
+}
+
 .cli__empty {
   flex: 1 1 auto;
   display: flex;
