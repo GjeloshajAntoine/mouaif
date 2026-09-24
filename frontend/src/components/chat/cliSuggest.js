@@ -73,6 +73,101 @@ function nameTokens(entries) {
   return out;
 }
 
+// completeLocally(text, history, entries) → the completed text, or `null` when
+// nothing matches.
+//
+// This is what Tab does now (see the CLI modal): completion happens in the
+// <input> itself rather than on the shell's own readline line, so a phone user
+// *sees* the result and never loses what they typed. The candidates are the same
+// two client-side sources the suggestion row uses — the session's own commands
+// and the project's top-level names — so it needs no round-trip and works where
+// no pseudo-terminal could be allocated too.
+//
+// Two phases, most-specific first:
+//
+//   1. **the line** — a command from this session's history that starts with
+//      what is on the line (`npm ru` → `npm run test:cli`, `git ch` → the last
+//      `git checkout …`). A command equal to the line is not a completion.
+//   2. **the word before the caret** — a project entry that starts with the
+//      line's trailing word, with the rest of the line preserved
+//      (`src/comp` → `src/components/`, `pac` → `package.json`).
+//
+// One match is substituted whole; several settle on their longest common prefix
+// (`npm ru` with both `npm run test:cli` and `npm run build` extends to
+// `npm run `), which is where the suggestion row — now filtered by that longer
+// draft — takes over. An empty line completes nothing.
+export function completeLocally(text, history, entries) {
+  const base = String(text == null ? '' : text);
+
+  if (base.trim()) {
+    const commands = [];
+    for (const cmd of Array.isArray(history) ? history : []) {
+      const c = String(cmd == null ? '' : cmd);
+      if (!c || c === base) continue;
+      if (c.startsWith(base) && !commands.includes(c)) commands.push(c);
+    }
+    if (commands.length) {
+      return commands.length === 1 ? commands[0] : longestCommonPrefix(commands);
+    }
+  }
+
+  // The word being completed: everything after the last whitespace. A trailing
+  // space means there is no word to act on.
+  const at = base.search(/\S*$/);
+  const word = at === -1 ? '' : base.slice(at);
+  if (!word) return null;
+  const prefix = at === -1 ? base : base.slice(0, at);
+  const needle = word.toLowerCase();
+  const names = [];
+  for (const name of nameTokens(entries)) {
+    if (!name || name === word) continue;
+    if (name.toLowerCase().indexOf(needle) !== 0) continue;
+    if (!names.includes(name)) names.push(name);
+  }
+  if (!names.length) return null;
+
+  return names.length === 1 ? prefix + names[0] : prefix + longestCommonPrefix(names);
+}
+
+// longestCommonPrefix(list) — the shared head of every candidate, so a Tab with
+// several matches advances as far as they agree and stops, changing nothing when
+// they agree on nothing more than what was already typed.
+function longestCommonPrefix(list) {
+  return list.reduce((acc, s) => {
+    let i = 0;
+    while (i < acc.length && i < s.length && acc[i] === s[i]) i++;
+    return acc.slice(0, i);
+  });
+}
+
+// stepHistory(history, index, dir) → { index, text }
+//
+// The modal's own ↑/↓, walking the same `history` list the suggestion row shows
+// (newest first, index 0) instead of the shell's readline history — so a recall
+// works on a session with no terminal too, and never sends a byte to the child.
+// `index` is where the walk sits: `-1` is "not walking" (the field holds a fresh
+// line). ↑ moves to older entries (index + 1), ↓ back toward the newest
+// (index - 1).
+//
+// ↓ past the newest and ↑ past the oldest are clamped: ↓ returns to `-1` with an
+// empty line (what a terminal does — the draft you were writing is the one thing
+// readline does not keep, and holding a second copy here would mean tracking the
+// field), ↑ stays on the oldest entry. With no history at all, `text` is `null`
+// and the field is left untouched.
+export function stepHistory(history, index, dir) {
+  const list = Array.isArray(history) ? history : [];
+  if (!list.length) return { index: -1, text: null };
+  const at = typeof index === 'number' && index >= 0 ? index : -1;
+  if (dir === 'down') {
+    if (at < 0) return { index: -1, text: null };
+    const next = at - 1;
+    if (next < 0) return { index: -1, text: '' };
+    return { index: next, text: list[next] };
+  }
+  const next = at < 0 ? 0 : Math.min(at + 1, list.length - 1);
+  return { index: next, text: list[next] };
+}
+
 // suggestionsFor({ draft, history, entries }) → [{ text, kind, rank }]
 //
 //   * `draft`   — what is in the field now; '' means "the whole list, newest

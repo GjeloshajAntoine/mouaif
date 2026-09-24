@@ -41,18 +41,20 @@ A phone keyboard has letters, digits and Enter, and nothing a terminal actually 
 | Key | Sends | Does |
 | --- | --- | --- |
 | **Esc** | `ESC` | leave a full-screen program (`less`, `vim`, a TUI) |
-| **Tab** | `HT` | complete a path or command |
-| **↑** / **↓** | `ESC [ A` / `ESC [ B` | previous / next command in this shell's history |
+| **Tab** | *(nothing)* | complete the command or path **in the prompt** |
+| **↑** / **↓** | *(nothing)* | previous / next command from this session, **in the prompt** |
 | **^C** | `ETX` | interrupt the running command |
 | **^D** | `EOT` | end input (EOF) |
 
-Each key is one raw write with **no line terminator**, so `^C` interrupts without also pressing Enter — which would answer a second prompt you never saw. Tab, ↑ and ↓ take what you have typed with them: `npm ru` then **Tab** completes `npm ru` on the shell's own line, and the field empties because that line — shown on the screen — is now the one being edited. Keep typing to continue it and press **Enter** to run it. `^C` also clears what you had typed. Tapping a key or pressing Enter never dismisses the soft keyboard, and keys tapped in quick succession reach the shell in order.
+Esc, **^C** and **^D** are the keys a program needs: each is one raw write with **no line terminator**, so `^C` interrupts without also pressing Enter — which would answer a second prompt you never saw.
 
-A phone keyboard that has its own Tab key (Samsung Keyboard, Hacker's Keyboard, some Gboard layouts) works too. Those keyboards usually do not report a Tab key press at all — they type a literal tab character into the field — so the prompt watches its text: everything before the tab is sent exactly like a tap on the row's **Tab**, and anything typed after it stays in the field. Further tab characters are dropped; a command line has no use for them.
+**Tab** completes **in the prompt itself**, and nothing is sent to the shell until you press **Enter**. A command from this session's history that starts with your line is completed whole (`git chec` → `git checkout main`); several matches extend as far as they agree (`npm ru` → `npm run `) and the suggestion row below narrows to the rest. When no history command matches, the word before the cursor completes from the project's own top-level names, prefix preserved (`ls pac` → `ls package.json`, `cd scr` → `cd scripts/`). **↑/↓** walk the same session history into the prompt. Because completion happens in the field, the text you typed is never emptied and never lost — and it works the same on a session without a terminal.
+
+A phone keyboard that has its own Tab key (Samsung Keyboard, Hacker's Keyboard, some Gboard layouts) works too. Those keyboards usually do not report a Tab key press at all — they type a literal tab character into the field — so the prompt watches its text: everything before the tab is completed exactly like a tap on the row's **Tab**, and anything typed after it stays in the field. Further tab characters are dropped; a command line has no use for them.
 
 With a hardware keyboard, pressing **Tab** in the prompt does exactly what the on-screen **Tab** key does — it is not focus navigation there. The prompt is marked `data-own-tab`, which tells the sheet's shared focus trap (`frontend/src/hooks/useModal.js`) to leave plain Tab alone; **Shift+Tab** still moves focus out of the prompt, so the keyboard is never trapped.
 
-Tab and the arrows are a **shell's** readline keys. When a program is running they are delivered to that program as literal bytes, which is usually not what you want — so the row dims just those three and the line under it says so (`A program owns the prompt — ^C stops it; Esc leaves it.`). The modal knows which is which because bash and zsh announce it: they switch the terminal's bracketed-paste mode on at their prompt and off when a command starts. **Esc**, **^C** and **^D** mean the same thing to a program as to a shell and stay lit; `^C` is the key a waiting program needs. Without a terminal there is no line editor, so Tab and the arrows do nothing and the hint says so.
+Tab and ↑/↓ edit the prompt, so they do nothing while a **program** owns the input — completing a command line there would be completing an answer. The row dims just those three and the line under it says so (`A program owns the prompt — ^C stops it; Esc leaves it.`). The modal knows which is which because bash and zsh announce it: they switch the terminal's bracketed-paste mode on at their prompt and off when a command starts. **Esc**, **^C** and **^D** mean the same thing to a program as to a shell and stay lit; `^C` is the key a waiting program needs.
 
 Because the session is a real terminal, an interactive program can wait for you. Publishing from the modal is the motivating case. Without a terminal, npm fails and masks its one-time link (its log redactor replaces the UUID in the URL with `***`):
 
@@ -83,7 +85,7 @@ You can also run multiple commands in one session — the shell keeps its state 
 npm run test:cli
 ```
 
-- `scripts/test-cli-suggest.js` — unit-tests the suggestion and key rows' pure modules (the key table's sequences, what each key writes with a draft in the field, how a tab a phone keyboard typed into the field is split off and sent as Tab, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator.
+- `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key row, and Tab/↑/↓ (the key table's sequences, that the readline keys write nothing to the child while ^C/Esc/^D do, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator.
 - `scripts/test-cli-session-newline.js` — drives the real endpoints and asserts a plain `ls` lists the project files (the terminator rule).
 - `scripts/test-cli-strip-ansi.js` — unit-tests `stripAnsi` / `CliScreen`, including every escape-sequence family split at every pair of positions and fed one code point at a time.
 - `scripts/test-cli-utf8-split.js` — feeds `attachCliStream` UTF-8 split at every byte boundary, on the PTY and piped paths, and asserts no `�` reaches the broadcast.

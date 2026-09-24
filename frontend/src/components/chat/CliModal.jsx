@@ -20,10 +20,12 @@
 //     the shell, the project's own top-level names from GET /api/files), which
 //     saves re-typing a command on a keyboard that covers most of the screen —
 //     see ./cliSuggest.js. A chip only rewrites the field; Enter still runs it.
-//   * a **key row** under the prompt (Esc, Tab, ↑, ↓, ^C, ^D), each a single
-//     raw write so ^C interrupts without also pressing Enter. Tab and ↑/↓ carry
-//     the typed draft with them, because they edit the shell's own line — see
-//     ./cliKeys.js.
+//   * a **key row** under the prompt (Esc, Tab, ↑, ↓, ^C, ^D). Esc, ^C and ^D
+//     are the keys a program needs, each a single raw write so ^C interrupts
+//     without also pressing Enter; Tab and ↑/↓ edit the *field itself*
+//     (completeLocally / stepHistory in ./cliSuggest.js) instead of pushing a
+//     draft onto the shell's line, so the text the user is looking at is never
+//     emptied and nothing reaches the child until Enter — see ./cliKeys.js.
 //
 // Who reads stdin is taken from the shell itself: on a pseudo-terminal bash and
 // zsh switch bracketed paste on at their prompt and off when a command starts
@@ -38,8 +40,8 @@ import { h } from 'preact';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
-import { CLI_KEYS, keepEditorFocus, keyById, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
-import { rememberCommand, suggestionsFor } from './cliSuggest.js';
+import { CLI_KEYS, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
+import { rememberCommand, suggestionsFor, completeLocally, stepHistory } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
 
 export function CliModal(props) {
@@ -49,18 +51,19 @@ export function CliModal(props) {
   const [error, setError] = useState('');
   const [shellLabel, setShellLabel] = useState('');
   const [dirLabel, setDirLabel] = useState(projectDir || '');
-  // Whether the session runs on a pseudo-terminal (`interactive` from
-  // GET /api/tools/cli/session). A pty echoes what is typed at the shell's
-  // prompt and hides what a program reads with echo off, so the modal must not
-  // echo anything itself there; a piped child echoes nothing, so it must.
-  const [interactive, setInteractive] = useState(false);
   // The session's own commands, newest first — the history half of the
-  // suggestion row (see rememberCommand in cliSuggest.js).
+  // suggestion row and what ↑/↓ recall from (see rememberCommand in
+  // cliSuggest.js).
   const [history, setHistory] = useState([]);
   // `entries` — the project's top-level names, the file half of the suggestion
   // row (`null` until the listing answers: a fetch that has not happened
   // invents no chips).
   const [entries, setEntries] = useState(null);
+
+  // Where the field sits in the ↑/↓ walk over the session's own history: -1
+  // means "not walking" (the field holds a fresh line). Reset whenever the user
+  // types or sends, so the next ↑ starts from the newest command.
+  const recallIndexRef = useRef(-1);
 
   const outRef = useRef(null);       // <pre> terminal output
   const inputRef = useRef(null);
@@ -84,10 +87,6 @@ export function CliModal(props) {
     setOwner(next);
   }, []);
   const interactiveRef = useRef(false);
-  // True once a readline key has pushed a draft onto the shell's own line
-  // (`npm ru` + Tab): what Enter then submits is that line, which the modal no
-  // longer knows, so the field's remainder is not remembered as a command.
-  const lineDirtyRef = useRef(false);
 
 const screenRef = useRef(null);
 if (!screenRef.current) screenRef.current = new CliScreen();
@@ -208,7 +207,6 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
         }
         sessionIdRef.current = r.body.id;
         interactiveRef.current = !!r.body.interactive;
-        setInteractive(!!r.body.interactive);
         // A piped child has no line editor and cannot prompt: every line is a
         // command. A pty starts unknown until the shell's first marker.
         setOwnerBoth(r.body.interactive ? null : 'piped');
@@ -296,35 +294,57 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   // sendKey(key) — one on-screen key from the row below the prompt (see
   // keyPayload in cliKeys.js). Every key is a raw write: a terminator after
   // Ctrl+C would also press Enter, answering a prompt the user has not seen.
-  // Tab and ↑/↓ carry the draft with them, because they edit the *shell's*
-  // line and the draft has not reached it yet.
-  // `draftOverride` is the draft when the caller already split it off the
-  // field (a Tab a phone keyboard typed into the text — see onPromptInput).
-  const sendKey = useCallback((key, draftOverride) => {
+  // Tab and ↑/↓ are the exception: they edit the *local* field and write
+  // nothing to the child (see completeLocally / stepHistory in ./cliSuggest.js),
+  // so completion and recall never cost a round-trip and never move the text
+  // out of the box the user is looking at.
+  const sendKey = useCallback((key) => {
     if (!key) return;
-    const draft = typeof draftOverride === 'string'
-      ? draftOverride
-      : (inputRef.current ? inputRef.current.value : cmdText);
-    const payload = keyPayload(key, draft);
+    const payload = keyPayload(key);
     if (payload.clearDraft) setCmdText('');
-    if (key.shellOnly) lineDirtyRef.current = true;
-    if (key.id === 'int') lineDirtyRef.current = false;
     post(payload.seq, true);
-  }, [cmdText, post]);
+  }, [post]);
+
+  // complete() — what the key row's Tab, a hardware Tab, and a Tab a phone
+  // keyboard typed into the field all run. It rewrites the field with the
+  // completion and leaves the caret at the end; nothing reaches the shell until
+  // Enter. A completion that does not change the text (no match, or several
+  // matches that agree on nothing more) leaves the field alone.
+  function complete() {
+    const el = inputRef.current;
+    const current = el ? el.value : cmdText;
+    const next = completeLocally(current, history, entries);
+    if (next == null || next === current) return;
+    setCmdText(next);
+    if (el) { el.value = next; el.setSelectionRange(next.length, next.length); }
+  }
+
+  // recall(dir) — the key row's ↑/↓, walking the session's own history (newest
+  // first) into the field.
+  function recall(dir) {
+    const el = inputRef.current;
+    const stepped = stepHistory(history, recallIndexRef.current, dir);
+    if (stepped.text == null) { recallIndexRef.current = -1; return; }
+    recallIndexRef.current = stepped.index;
+    setCmdText(stepped.text);
+    if (el) { el.value = stepped.text; el.setSelectionRange(stepped.text.length, stepped.text.length); }
+  }
 
   // onPromptInput — the field's `input` handler. A phone keyboard's Tab key
   // usually arrives here as a literal HT in the text rather than as a Tab
   // `keydown` (see splitTypedTab in cliKeys.js), so the text before the tab is
-  // sent exactly like a tap on the key row's Tab, and anything after it stays
-  // in the field. The DOM value is set directly: when the state was already
-  // empty, a controlled re-render would not overwrite the typed tab.
+  // completed exactly like a tap on the key row's Tab, and anything after it
+  // stays in the field.
   function onPromptInput(e) {
     const el = e.currentTarget;
     const typed = splitTypedTab(el.value);
-    if (!typed) { setCmdText(el.value); return; }
-    sendKey(keyById('tab'), typed.draft);
-    el.value = typed.rest;
-    setCmdText(typed.rest);
+    if (!typed) { setCmdText(el.value); recallIndexRef.current = -1; return; }
+    el.value = typed.before;
+    complete();
+    const done = el.value;
+    const rest = done + typed.rest;
+    el.value = rest;
+    setCmdText(rest);
   }
 
   function runCommand() {
@@ -332,14 +352,12 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     // harmless fresh prompt otherwise — always forward the Enter.
     const cmd = cmdText;
     setCmdText('');
+    recallIndexRef.current = -1;
     // Remember the line as history only when it is known to be a command for
     // the shell — never when a program might be reading it (a password, a
-    // one-time code), and never the remainder of a line a readline key has
-    // already pushed to the shell. `!!` is the shell's own history expansion
-    // and is not remembered as a command of its own.
-    const who = ownerRef.current;
-    if (!lineDirtyRef.current) setHistory((h) => rememberCommand(h, cmd, who));
-    lineDirtyRef.current = false;
+    // one-time code). `!!` is the shell's own history expansion and is not
+    // remembered as a command of its own.
+    setHistory((h) => rememberCommand(h, cmd, ownerRef.current));
     // A pty echoes the line itself (the shell's prompt shows it; a program
     // reading with echo off shows nothing, as it should). Only a piped child
     // needs the modal's echo line, or the screen would show the answer with no
@@ -353,6 +371,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   function runRaw() {
     const raw = cmdText;
     setCmdText('');
+    recallIndexRef.current = -1;
     post(raw, true);
   }
 
@@ -441,9 +460,9 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     onKeyDown: (e) => {
                     if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
                     // A hardware Tab does what the key row's Tab does:
-                    // send the draft plus HT, so the shell completes it.
+                    // complete the line in the field itself.
                     e.preventDefault();
-                    sendKey(keyById('tab'));
+                    complete();
                     return;
                     }
                     if (e.key !== 'Enter') return;
@@ -471,19 +490,22 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     'aria-label': k.title,
                     tabindex: '-1',
                     onMouseDown: keepEditorFocus,
-                    onClick: () => sendKey(k)
-                  }, k.label))
-                ),
-                // One-line hint under the row. It names the mode only when the
-                // shell has said which one it is in; a piped session has no
-                // line editor, so Tab and the arrows do nothing there.
-                h('p', { class: 'cli__hint' },
+                    onClick: () => {
+                    if (k.id === 'tab') complete();
+                    else if (k.id === 'up') recall('up');
+                    else if (k.id === 'down') recall('down');
+                    else sendKey(k);
+                    }
+                    }, k.label))
+                    ),
+                    // One-line hint under the row. It names the mode only when the
+                    // shell has said which one it is in; a piped session has no
+                    // line editor, so Tab and the arrows are client-side there too.
+                    h('p', { class: 'cli__hint' },
                   owner === 'program'
-                    ? 'A program owns the prompt — ^C stops it; Esc leaves it.'
-                    : interactive
-                      ? 'Tab and ↑/↓ complete and recall. ^C stops the running command.'
-                      : 'No terminal: Tab and ↑/↓ are not available. ^C stops the running command.'
-                )
+                  ? 'A program owns the prompt — ^C stops it; Esc leaves it.'
+                  : 'Tab completes and ↑/↓ recall in the prompt. ^C stops the running command.'
+                  )
               )
       )
     )

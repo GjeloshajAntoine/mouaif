@@ -9,8 +9,9 @@
 //     terminator on `\x03` sends Ctrl+C *and* Enter, which answers a second
 //     prompt the user never saw; that is the one mistake that must not be
 //     introduced by "tidying" the table.
-//   * `keyPayload` — Tab and the arrows carry the typed draft onto the shell's
-//     line, so `npm ru` + Tab completes `npm ru`, not an empty line.
+//   * `keyPayload` — Tab and the arrows write nothing to the child; they edit
+//     the prompt's own buffer (completeLocally / stepHistory), so a tap never
+//     empties the field and never reaches the shell.
 //   * `lineEditorState` — who owns stdin, read from the shell's own
 //     bracketed-paste markers, including a marker cut across two chunks.
 //   * `rememberCommand` / `suggestionsFor` — the suggestion row is built from
@@ -32,7 +33,7 @@ async function run() {
   const keys = await import('../frontend/src/components/chat/cliKeys.js');
   const suggest = await import('../frontend/src/components/chat/cliSuggest.js');
   const { CLI_KEYS, keyById, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab } = keys;
-  const { MAX_SUGGESTIONS, MAX_HISTORY, rememberCommand, suggestionsFor } = suggest;
+  const { MAX_SUGGESTIONS, MAX_HISTORY, rememberCommand, suggestionsFor, completeLocally, stepHistory } = suggest;
 
   // ---- 1. The key row -------------------------------------------------
 
@@ -93,39 +94,37 @@ async function run() {
 
   // ---- 2. What a key tap writes ----------------------------------------
   //
-  // The field is a local line buffer: nothing typed reaches the shell until
-  // Enter. Tab with a draft must complete *the draft*, so the readline keys
-  // carry it with them in one raw write and hand the field back empty.
+  // The field is a local line buffer, and Tab / ↑ / ↓ edit it in place
+  // (completeLocally / stepHistory): they write nothing to the child. Only the
+  // keys a program needs (Esc, ^C, ^D) reach stdin.
 
-  const tabDraft = keyPayload(byId.tab, 'npm ru');
-  t('Tab sends the draft and the Tab together', tabDraft.seq === 'npm ru\t' && tabDraft.clearDraft === true, tabDraft);
-  const tabEmpty = keyPayload(byId.tab, '');
-  t('Tab on an empty field is a bare Tab and clears nothing', tabEmpty.seq === '\t' && tabEmpty.clearDraft === false, tabEmpty);
-  const upDraft = keyPayload(byId.up, 'git');
-  t('Up carries the draft onto the shell line too', upDraft.seq === 'git\x1b[A' && upDraft.clearDraft === true, upDraft);
-  const intDraft = keyPayload(byId.int, 'rm -rf build');
-  t('^C discards the draft without sending it', intDraft.seq === '\x03' && intDraft.clearDraft === true, intDraft);
-  const escDraft = keyPayload(byId.esc, 'q');
-  t('Esc and ^D leave the draft alone', escDraft.seq === '\x1b' && !escDraft.clearDraft
-    && keyPayload(byId.eof, 'x').seq === '\x04' && !keyPayload(byId.eof, 'x').clearDraft, escDraft);
+  const tabDraft = keyPayload(byId.tab);
+  t('Tab writes nothing to the child', tabDraft.seq === '' && tabDraft.clearDraft === false, tabDraft);
+  const upDraft = keyPayload(byId.up);
+  t('Up writes nothing to the child', upDraft.seq === '' && upDraft.clearDraft === false, upDraft);
+  t('Down writes nothing to the child', keyPayload(byId.down).seq === '');
+  const intDraft = keyPayload(byId.int);
+  t('^C sends ETX and discards the draft', intDraft.seq === '\x03' && intDraft.clearDraft === true, intDraft);
+  const escDraft = keyPayload(byId.esc);
+  t('Esc and ^D carry nothing and clear nothing', escDraft.seq === '\x1b' && !escDraft.clearDraft
+    && keyPayload(byId.eof).seq === '\x04' && !keyPayload(byId.eof).clearDraft, escDraft);
   t('no payload ever carries a line terminator',
-    CLI_KEYS.every((k) => !/[\r\n]/.test(keyPayload(k, 'abc').seq)));
-  t('a missing key writes nothing', keyPayload(null, 'x').seq === '');
+    CLI_KEYS.every((k) => !/[\r\n]/.test(keyPayload(k).seq)));
+  t('a missing key writes nothing', keyPayload(null).seq === '');
 
   // A phone keyboard's Tab key types a literal HT into the field instead of
-  // firing a Tab keydown; the prompt splits it off and sends it as Tab.
+  // firing a Tab keydown; the prompt splits it off and completes the text
+  // before it, keeping what followed it in the field.
   t('no tab in the field → nothing to split', splitTypedTab('npm ru') === null && splitTypedTab('') === null && splitTypedTab(null) === null);
   const typedEnd = splitTypedTab('npm ru\t');
-  t('a typed tab at the end sends the draft with Tab and empties the field',
-    typedEnd && typedEnd.draft === 'npm ru' && typedEnd.rest === '', typedEnd);
+  t('a typed tab at the end splits the text before it from the rest',
+    typedEnd && typedEnd.before === 'npm ru' && typedEnd.rest === '', typedEnd);
   const typedMid = splitTypedTab('ls sr\tc/x');
-  t('a tab typed mid-line keeps what followed it in the field',
-    typedMid && typedMid.draft === 'ls sr' && typedMid.rest === 'c/x', typedMid);
+  t('a tab typed mid-line keeps what followed it',
+    typedMid && typedMid.before === 'ls sr' && typedMid.rest === 'c/x', typedMid);
   const typedMany = splitTypedTab('\ta\tb');
   t('a lone tab completes an empty line; further tabs are dropped',
-    typedMany && typedMany.draft === '' && typedMany.rest === 'ab', typedMany);
-  t('the split draft writes the same bytes as the key row\u2019s Tab',
-    keyPayload(byId.tab, typedEnd.draft).seq === 'npm ru\t');
+    typedMany && typedMany.before === '' && typedMany.rest === 'ab', typedMany);
 
   // ---- 3. Who owns stdin -------------------------------------------------
   //
@@ -217,6 +216,76 @@ async function run() {
   t('the row is capped', capped.length === MAX_SUGGESTIONS, capped.length);
 
   t('no chip is ever empty', suggestionsFor({ draft: '', history: [''], entries: [{ name: '', type: 'file' }] }).length === 0);
+
+  // ---- 6. Tab: completion in the field -----------------------------------
+  //
+  // Tab used to flush the draft onto the shell's readline line and clear the
+  // box; it now completes *in the field*, so nothing the user typed is lost and
+  // nothing is sent until Enter.
+
+  const cHist = ['npm run test:cli', 'npm run build', 'git status', 'git checkout main'];
+  const cEntries = [
+    { name: 'src', type: 'dir' },
+    { name: 'scripts', type: 'dir' },
+    { name: 'package.json', type: 'file' },
+    { name: 'package-lock.json', type: 'file' }
+  ];
+
+  t('an empty line completes nothing', completeLocally('', cHist, cEntries) === null);
+
+  // The line phase: a history command that extends what is typed.
+  t('a unique command prefix completes the whole line in place',
+    completeLocally('git chec', cHist, cEntries) === 'git checkout main',
+    completeLocally('git chec', cHist, cEntries));
+  t('several matching commands settle on their common prefix, in the field',
+    completeLocally('npm ru', cHist, cEntries) === 'npm run ',
+    completeLocally('npm ru', cHist, cEntries));
+  t('a line equal to a command is not "completed" to itself',
+    completeLocally('git status', cHist, cEntries) === null,
+    completeLocally('git status', cHist, cEntries));
+
+  // The word phase: only reached when no history command matches the line. The
+  // listing is one level deep, so `src` after `cd ` completes the word, not a
+  // nested path.
+  t('a name prefix completes the trailing word, keeping the rest of the line',
+    completeLocally('ls scr', cHist, cEntries) === 'ls scripts/',
+    completeLocally('ls scr', cHist, cEntries));
+  t('several matching names settle on their common prefix',
+    completeLocally('ls pac', cHist, cEntries) === 'ls package',
+    completeLocally('ls pac', cHist, cEntries));
+  t('a unique name completes whole',
+    completeLocally('cat pack', cHist, cEntries) === 'cat package',
+    completeLocally('cat pack', cHist, cEntries));
+  t('a directory name adds its trailing slash, so the completion differs from the word',
+    completeLocally('ls src', cHist, cEntries) === 'ls src/',
+    completeLocally('ls src', cHist, cEntries));
+  t('nothing matching leaves the text untouched',
+    completeLocally('zzzz', cHist, cEntries) === null);
+  t('a listing that has not answered completes from history only',
+    completeLocally('git ch', cHist, null) === 'git checkout main',
+    completeLocally('git ch', cHist, null));
+
+  // The field ends up holding the completion — never empty.
+  const completed = completeLocally('npm ru', cHist, cEntries);
+  t('completion is never an emptied field',
+    typeof completed === 'string' && completed.length >= 'npm ru'.length, completed);
+
+  // ---- 7. ↑/↓: recall in the field ---------------------------------------
+
+  t('↑ with no history leaves the field alone', stepHistory([], -1, 'up').text === null);
+  t('↑ from a fresh line walks to the newest command',
+    JSON.stringify(stepHistory(cHist, -1, 'up')) === JSON.stringify({ index: 0, text: 'npm run test:cli' }),
+    stepHistory(cHist, -1, 'up'));
+  t('↑ again walks to the next older command',
+    stepHistory(cHist, 0, 'up').text === 'npm run build');
+  t('↑ stops at the oldest command',
+    stepHistory(cHist, cHist.length - 1, 'up').text === cHist[cHist.length - 1]);
+  t('↓ walks back toward the newest',
+    stepHistory(cHist, 1, 'down').text === 'npm run test:cli');
+  t('↓ past the newest returns an empty line and stops walking',
+    JSON.stringify(stepHistory(cHist, 0, 'down')) === JSON.stringify({ index: -1, text: '' }));
+  t('↓ with a fresh line does nothing (only ↑ starts a recall)',
+    stepHistory(cHist, -1, 'down').text === null);
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   if (fail) process.exit(1);

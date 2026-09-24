@@ -18,56 +18,54 @@
 // the up/down arrows; on a pty the shell's readline turns them into history.
 //
 // `shellOnly` marks the three keys that only mean what their label says while
-// the *shell* owns stdin. Tab and ↑/↓ are readline keys: a program showing its
-// own prompt reads those bytes literally, which is usually not what the tap was
-// for. The row dims exactly these while a program owns the prompt and leaves
-// Esc, ^C and ^D lit — those three are useful in both modes (leave a full-screen
-// program / interrupt / end input), and ^C is the key a waiting program needs.
+// the *shell* owns stdin. Tab and ↑/↓ edit the *local* prompt buffer (see
+// `completeLocally` / `stepHistory` in ./cliSuggest.js): they complete or recall
+// into the modal's own field and write nothing to the child. While a program
+// owns the prompt, completing a command line is pointless — the line is an
+// answer — so the row dims exactly these three and leaves Esc, ^C and ^D lit;
+// those three are useful in both modes (leave a full-screen program / interrupt
+// / end input), and ^C is the key a waiting program needs.
 export const CLI_KEYS = [
   { id: 'esc', label: 'Esc', title: 'Escape — leave a full-screen program', seq: '\x1b' },
   { id: 'tab', label: 'Tab', title: 'Tab — complete a path or command', seq: '\t', shellOnly: true },
-  { id: 'up', label: '↑', title: 'Up — previous command in this shell’s history', seq: '\x1b[A', shellOnly: true },
-  { id: 'down', label: '↓', title: 'Down — next command in this shell’s history', seq: '\x1b[B', shellOnly: true },
+  { id: 'up', label: '↑', title: 'Up — previous command from this session', seq: '\x1b[A', shellOnly: true },
+  { id: 'down', label: '↓', title: 'Down — next command from this session', seq: '\x1b[B', shellOnly: true },
   { id: 'int', label: '^C', title: 'Ctrl+C — interrupt the running command', seq: '\x03' },
   { id: 'eof', label: '^D', title: 'Ctrl+D — end input (EOF)', seq: '\x04' }
 ];
 
-// keyPayload(key, draft) → { seq, clearDraft } — what one tap actually writes.
+// keyPayload(key) → { seq, clearDraft } — the bytes a key writes to the child.
 //
-// The modal's <input> is a *local* line buffer: nothing typed there reaches the
-// shell until Enter. A readline key acts on the shell's own line, so sending
-// Tab alone would complete an empty line — `npm ru` + Tab completed nothing.
-// The three readline keys therefore flush the draft first (`npm ru\t` in one
-// raw write) and hand the field back empty: from then on the shell's line,
-// echoed on the screen by the pty, is the line being edited, and whatever is
-// typed next continues it. ↑/↓ do the same, which is what a terminal does
-// with a half-typed line (readline keeps it as the history's newest entry).
+// A key marked `shellOnly` (Tab, ↑, ↓) writes **nothing**: it is handled
+// entirely in the prompt's own buffer by `completeLocally` / `stepHistory`
+// (./cliSuggest.js), so `seq` is empty rather than `draft + key`. An earlier
+// version flushed the draft onto the shell's readline line and cleared the
+// field, which looked like "Tab ate my text" on a phone.
 //
-// ^C discards the local draft too — the terminal meaning of interrupting a line
-// you were typing — but does not send it. Esc and ^D leave the field alone.
-export function keyPayload(key, draft) {
-  if (!key) return { seq: '', clearDraft: false };
-  const text = String(draft == null ? '' : draft);
-  if (key.shellOnly) return { seq: text + key.seq, clearDraft: text.length > 0 };
-  if (key.id === 'int') return { seq: key.seq, clearDraft: text.length > 0 };
+// ^C discards the local draft and sends ETX without a terminator — a newline
+// after it would also press Enter and answer a prompt you never saw. Esc and ^D
+// carry nothing and leave the field alone.
+export function keyPayload(key) {
+  if (!key || key.shellOnly) return { seq: '', clearDraft: false };
+  if (key.id === 'int') return { seq: key.seq, clearDraft: true };
   return { seq: key.seq, clearDraft: false };
 }
 
-// splitTypedTab(value) → null | { draft, rest }
+// splitTypedTab(value) → null | { before, rest }
 //
 // Many phone keyboards that have a Tab key (Samsung's, Hacker's Keyboard, some
 // Gboard layouts) never fire a `keydown` with `key: 'Tab'`: they report
-// `Unidentified` (keyCode 229) and insert a literal HT into the field instead,
-// so the tab sat in the <input> and never reached the shell. The prompt's
-// `input` handler runs the field through this: text up to the first HT is the
-// draft to send with Tab (exactly what the key row's Tab sends), and whatever
-// followed it stays in the field. Stray further tabs are dropped — a command
-// line typed on a phone has no use for a literal HT. `null` means no tab.
+// `Unidentified` (keyCode 229) and insert a literal HT into the field instead.
+// The prompt's `input` handler runs the field through this: `before` is the text
+// up to the first HT — what Tab completes, exactly as the key row's Tab does —
+// and `rest` is whatever followed it, kept in the field. Stray further tabs are
+// dropped: a command line typed on a phone has no use for a literal HT. `null`
+// means there was no tab.
 export function splitTypedTab(value) {
   const text = String(value == null ? '' : value);
   const at = text.indexOf('\t');
   if (at === -1) return null;
-  return { draft: text.slice(0, at), rest: text.slice(at + 1).replace(/\t/g, '') };
+  return { before: text.slice(0, at), rest: text.slice(at + 1).replace(/\t/g, '') };
 }
 
 // Bracketed-paste mode markers. bash (readline ≥ 8.1) and zsh (≥ 5.1) switch
