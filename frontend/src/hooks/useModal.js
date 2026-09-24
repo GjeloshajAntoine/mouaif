@@ -57,6 +57,12 @@ function focusableIn(root) {
   return out;
 }
 
+// ownsTab(el) — whether a focused control handles plain Tab itself (it, or an
+// ancestor, carries `data-own-tab`), so the sheet's Tab cycle must leave it be.
+function ownsTab(el) {
+  return !!(el && typeof el.closest === 'function' && el.closest('[data-own-tab]'));
+}
+
 export function useModal(options) {
   const opt = options || {};
   const { onClose, active = true, escape = true, trapFocus = true, restoreFocus = true, initialFocus = 'none' } = opt;
@@ -96,6 +102,12 @@ export function useModal(options) {
         return;
       }
       if (!trapFocus || event.key !== 'Tab') return;
+      // A control that uses Tab itself (the CLI modal's prompt, which sends
+      // it to the shell as completion) opts out with `data-own-tab`. This
+      // listener runs in the capture phase, before the control's own handler,
+      // so without the opt-out the cycle would move focus first. Shift+Tab
+      // still leaves the control, so the sheet never traps the keyboard.
+      if (!event.shiftKey && ownsTab(event.target)) return;
       const items = focusableIn(sheetRef.current);
       if (!items.length) return;
       const first = items[0];
@@ -128,4 +140,4 @@ export function useModal(options) {
 // Exported for the hook's test and for a component that needs the same
 // "which controls are reachable" answer (e.g. to decide whether to render a
 // skip link).
-export { focusableIn };
+export { focusableIn, ownsTab };

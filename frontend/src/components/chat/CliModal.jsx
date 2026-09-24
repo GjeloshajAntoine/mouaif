@@ -38,7 +38,7 @@ import { h } from 'preact';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
-import { CLI_KEYS, keepEditorFocus, keyPayload, lineEditorState } from './cliKeys.js';
+import { CLI_KEYS, keepEditorFocus, keyById, keyPayload, lineEditorState } from './cliKeys.js';
 import { rememberCommand, suggestionsFor } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
 
@@ -413,10 +413,21 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     // Labels the phone's own action key with what it does here.
                     enterkeyhint: 'send',
                     spellcheck: 'false',
+                    // Plain Tab is the shell's completion key here, not focus
+                    // navigation: the sheet's Tab cycle (useModal) skips a
+                    // control marked `data-own-tab`. Shift+Tab still moves on.
+                    'data-own-tab': '',
                     // Never disabled: disabling a focused input blurs it, which
                     // closes a phone's keyboard. Writes are queued instead.
                     onKeyDown: (e) => {
-                      if (e.key !== 'Enter') return;
+                    if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    // A hardware Tab does what the key row's Tab does:
+                    // send the draft plus HT, so the shell completes it.
+                    e.preventDefault();
+                    sendKey(keyById('tab'));
+                    return;
+                    }
+                    if (e.key !== 'Enter') return;
                       e.preventDefault();
                       // Ctrl+Enter (or Cmd+Enter) sends the line with no
                       // terminator, for a program waiting on a single key.

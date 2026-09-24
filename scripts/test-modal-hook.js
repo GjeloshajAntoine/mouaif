@@ -170,6 +170,27 @@ const SHEETS = [
     });
   }
 
+  // The Tab cycle runs in the capture phase, before any control's own handler,
+  // so a control that uses Tab (the CLI prompt → shell completion) must be
+  // able to opt out, or Tab moves focus instead of reaching the shell.
+  check('the Tab cycle skips a control marked data-own-tab', () => {
+    assert.ok(/ownsTab\(event\.target\)/.test(hookSource), 'the Tab branch must consult ownsTab');
+    const fn = hookSource.match(/function ownsTab\(el\) \{[\s\S]*?\n\}/);
+    assert.ok(fn, 'ownsTab() not found');
+    const ownsTab = new Function(fn[0] + '; return ownsTab;')();
+    assert.equal(ownsTab(null), false);
+    assert.equal(ownsTab({}), false, 'a node without closest() owns nothing');
+    assert.equal(ownsTab({ closest: (s) => (s === '[data-own-tab]' ? {} : null) }), true);
+    assert.equal(ownsTab({ closest: () => null }), false);
+  });
+
+  check('the CLI prompt owns Tab and sends it to the shell', () => {
+    const src = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/CliModal.jsx'), 'utf8');
+    assert.ok(/'data-own-tab': ''/.test(src), 'the prompt input must carry data-own-tab');
+    assert.ok(/e\.key === 'Tab'[\s\S]{0,400}preventDefault\(\)[\s\S]{0,200}sendKey\(keyById\('tab'\)\)/.test(src),
+      'a hardware Tab in the prompt must be sent like the key row\u2019s Tab');
+  });
+
   check('the nested Git confirm sheet is declared after the modal it sits on', () => {
     const src = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/GitModal.jsx'), 'utf8');
     const order = Array.from(src.matchAll(/const (\w+) = useModal\(/g)).map((m) => m[1]);
