@@ -177,6 +177,24 @@ function renderReadFileToolResult(body, r) {
   renderPreviewPre(body, r.body || '', 'tool-preview__pre tool-preview__pre--content');
 }
 
+// zoomableImage(img, label) -> HTMLButtonElement
+//
+// Wrap a tool-card thumbnail in a button that opens it in the full-screen
+// lightbox. Every inline tool image goes through here — read_file images,
+// and the image / image-resource blocks an MCP (or any generic) tool
+// returns — because the inline thumbnail is capped at 220 px, too small to
+// read a screenshot, chart or diagram on a phone.
+function zoomableImage(img, label) {
+  img.className = 'tool-card__image tool-card__image--zoomable';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'tool-card__image-button';
+  button.setAttribute('aria-label', 'Open ' + (label || 'image') + ' full screen');
+  button.appendChild(img);
+  button.addEventListener('click', () => openImageLightbox(img.src, img.alt));
+  return button;
+}
+
 // renderReadFileImage(body, r)
 //
 // The pixels live in the result's `content` array (the same block shape an
@@ -192,14 +210,7 @@ function renderReadFileImage(body, r) {
     return renderPreviewPre(body, 'Image bytes are not part of this result.', 'tool-preview__pre');
   }
   img.alt = 'Image ' + (r.relPath || '');
-  img.className = 'tool-card__image tool-card__image--zoomable';
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'tool-card__image-button';
-  button.setAttribute('aria-label', 'Open ' + (r.relPath || 'image') + ' full screen');
-  button.appendChild(img);
-  button.addEventListener('click', () => openImageLightbox(img.src, img.alt));
-  body.appendChild(button);
+  body.appendChild(zoomableImage(img, r.relPath || 'image'));
   const note = document.createElement('div');
   note.className = 'tool-preview__image-note';
   note.textContent = 'Sent to the model as an image.';
@@ -490,12 +501,12 @@ function renderGenericToolResult(body, r) {
       if (c && typeof c.text === 'string') lines.push(c.text);
       else if (c && c.type === 'image') {
         const img = imageBlockToElement(c);
-        if (img) body.appendChild(img);
+        if (img) body.appendChild(zoomableImage(img, 'image result'));
         else lines.push('[image]');
       } else if (c && c.type === 'resource') {
         const imgBlock = resourceImageBlock(c);
         const img = imgBlock && imageBlockToElement(imgBlock);
-        if (img) body.appendChild(img);
+        if (img) body.appendChild(zoomableImage(img, (c.resource && c.resource.uri) || 'image resource'));
         else lines.push('[resource] ' + JSON.stringify(c.resource || c));
       }
       else lines.push(String(c && (c.text || c.type) || c));
@@ -660,6 +671,7 @@ export function formatToolResult(toolResult) {
 
 export {
   imageBlockToElement,
+  zoomableImage,
   renderShellToolResult,
   renderReadFileToolResult,
   renderReadFileImage,
@@ -668,5 +680,6 @@ export {
   renderSearchFilesToolResult,
   renderEditFileToolResult,
   renderWriteFileToolResult,
-  renderTaskToolResult
+  renderTaskToolResult,
+  renderGenericToolResult
 };

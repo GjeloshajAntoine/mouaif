@@ -147,6 +147,7 @@ function installContext() {
   vm.runInContext('this.parsePlainFileToolResult = parsePlainFileToolResult;'
     + ' this.renderReadFileToolResult = renderReadFileToolResult;'
     + ' this.renderListFilesToolResult = renderListFilesToolResult;'
+    + ' this.renderGenericToolResult = renderGenericToolResult;'
     + ' this.formatResultSummary = formatResultSummary;', context, { filename: 'exports.js' });
   return { mod: context, documentBody, documentListeners };
 }
@@ -250,6 +251,34 @@ function main() {
     mod.renderListFilesToolResult(b4, { entries: [], pattern: '' });
     check('the empty list preview no longer claims text-only',
       allText(b4).includes('all text and image files'), allText(b4));
+  }
+
+  // ---- 6. MCP / generic tool images open full screen too -----------
+  //
+  // The generic renderer used to paint a bare 220 px <img>, so an MCP
+  // screenshot, chart or diagram could not be enlarged on a phone. Both MCP
+  // image shapes — a top-level `image` block and an image `resource` —
+  // now share read_file's tap-to-zoom button.
+  {
+    const b5 = makeNode('div');
+    mod.renderGenericToolResult(b5, { content: [
+      { type: 'text', text: 'Rendered chart' },
+      { type: 'image', data: PNG_BASE64, mimeType: 'image/png' },
+      { type: 'resource', resource: { uri: 'chart://q3', blob: PNG_BASE64, mimeType: 'image/png' } }
+    ] });
+    const buttons = b5.querySelectorAll('.tool-card__image-button');
+    check('each MCP image is wrapped in a tap target', buttons.length === 2, String(buttons.length));
+    check('an image resource names its uri in the button label',
+      buttons.length === 2 && buttons[1].getAttribute('aria-label') === 'Open chart://q3 full screen',
+      buttons[1] && buttons[1].getAttribute('aria-label'));
+    check('MCP text blocks still render beside the images', allText(b5).includes('Rendered chart'), allText(b5));
+    buttons[0]._fire('click');
+    const overlay = documentBody.children[0];
+    check('tapping an MCP image opens the lightbox',
+      !!overlay && overlay.classList.contains('image-lightbox')
+      && overlay.querySelector('.image-lightbox__image').src === PNG_DATA_URL);
+    for (const fn of (documentListeners.keydown || []).slice()) fn({ key: 'Escape' });
+    check('the MCP image lightbox closes on Escape', documentBody.children.length === 0);
   }
 
   console.log('---');
