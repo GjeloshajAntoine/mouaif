@@ -33,6 +33,7 @@
 .gm__overlay,
 .wp__overlay,
 .mcp-err__overlay,
+.mcps__overlay,
 .fe__overlay {
   position: fixed;
   inset: 0;
@@ -54,6 +55,7 @@
 .gm__sheet,
 .wp__sheet,
 .mcp-err__sheet,
+.mcps__sheet,
 .fe__sheet {
   flex: 1 1 auto;
   display: flex;
@@ -78,6 +80,7 @@
   .gm__overlay,
   .wp__overlay,
   .mcp-err__overlay,
+  .mcps__overlay,
   .fe__overlay {
     padding: var(--sheet-desktop-pad, 32px);
     align-items: center;
@@ -88,6 +91,7 @@
   .gm__sheet,
   .wp__sheet,
   .mcp-err__sheet,
+  .mcps__sheet,
   .fe__sheet {
     flex: 0 1 var(--sheet-width, 520px);
     max-width: var(--sheet-max-width, 520px);

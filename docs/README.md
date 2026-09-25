@@ -99,7 +99,7 @@ One page per feature: what it does and how to use it.
 
 - [MCP servers](features/mcp.md) — connect Model Context Protocol servers as extra tools.
 - [MCP OAuth sign-in](features/mcp-oauth.md) — sign in to HTTP MCP servers instead of pasting a token.
-- [MCP registry browser](features/mcp-registry-browser.md) — search and add servers from the public registry.
+- [MCP store](features/mcp-registry-browser.md) — search, filter, and install servers from the public MCP Registry in a few taps.
 - [MCP server error modal](features/mcp-error-modal.md) — read a server's full startup error in Settings.
 - [Chrome Debug MCP](features/chrome-debug-mcp.md) — let the model drive the debug browser.
 

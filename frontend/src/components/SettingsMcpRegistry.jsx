@@ -1,267 +1,226 @@
-// mouaif web — SettingsMcpRegistry: browse the official MCP Registry
-// with popularity scoring and one-tap "Add to project" / "Add app-wide".
+// mouaif web — SettingsMcpRegistry: the MCP store.
+//
+// Browse the official MCP Registry (registry.modelcontextprotocol.io) like an
+// app store: search as you type, filter by how a server runs, see at a glance
+// whether it needs a key or is already installed, and install it from a
+// sheet that asks only for what the server needs (McpStoreSheet).
 // See docs/features/mcp-registry-browser.md.
 import { h, Fragment } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
-import { nav } from '../router.js';
 import { projectQS } from './settings/projectQS.js';
+import { McpStoreSheet, avatarStyle, initial, editorHref } from './settings/McpStoreSheet.jsx';
+import { friendlyName, publisher, summary, findInstalled, registryMeta, relativeDate } from './settings/mcpRegistryInstall.js';
 
-// Visual popularity bar
-function popularityBar(score) {
-  const pct = Math.min(100, Math.max(0, score || 0));
-  let cls = 'reg-pop';
-  if (pct >= 70) cls += ' reg-pop--high';
-  else if (pct >= 40) cls += ' reg-pop--mid';
-  else cls += ' reg-pop--low';
-  return h('span', { class: cls, title: 'Popularity: ' + pct + '/100' },
-    h('span', { class: 'reg-pop__bar', style: 'width:' + pct + '%' }),
-    h('span', { class: 'reg-pop__label' }, pct)
-  );
+const PAGE = 30;
+const SEARCH_DEBOUNCE_MS = 350;
+
+const FILTERS = [
+  ['all', 'All'],
+  ['remote', 'Hosted'],
+  ['local', 'Local'],
+  ['nokey', 'No key']
+];
+
+const SORTS = [
+  ['popularity', 'Recommended'],
+  ['updatedAt', 'Newest'],
+  ['name', 'Name A–Z']
+];
+
+function entryKey(entry) {
+  const s = (entry && entry.server) || {};
+  return (s.name || '') + '@' + (s.version || '');
 }
 
-// Extract the first package's command suggestion from a registry entry
-function extractPkgInfo(entry) {
-  const server = entry && entry.server || {};
-  const pkgs = Array.isArray(server.packages) ? server.packages : [];
-  if (!pkgs.length) return null;
-  const pkg = pkgs[0];
-  const type = pkg.type || 'uvx';
-  const args = Array.isArray(pkg.arguments) ? pkg.arguments.map(a => a.value || a).filter(Boolean) : [];
-  const env = {};
-  if (Array.isArray(pkg.environmentVariables)) {
-    for (const ev of pkg.environmentVariables) {
-      if (ev && ev.name && ev.default) env[ev.name] = ev.default;
-      else if (ev && ev.name && ev.isRequired) env[ev.name] = '';
-    }
-  }
-  const cmd = type === 'uvx' ? 'uvx' : (type === 'npx' ? 'npx' : (pkg.command || type));
-  const fullArgs = type === 'uvx' || type === 'npx'
-    ? [pkg.packageName || pkg.name || cmd].concat(args)
-    : args;
-  return { command: cmd, args: fullArgs, env };
+function matchesFilter(info, filter) {
+  if (filter === 'remote') return info.kind === 'remote' || info.kind === 'mixed';
+  if (filter === 'local') return info.kind === 'local' || info.kind === 'mixed';
+  if (filter === 'nokey') return info.supported && !info.needsKey;
+  return true;
+}
+
+function compare(sort) {
+  const text = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+  return (a, b) => {
+    if (sort === 'name') return text.compare(friendlyName(a), friendlyName(b));
+    if (sort === 'updatedAt') return (Date.parse(registryMeta(b).updatedAt) || 0) - (Date.parse(registryMeta(a).updatedAt) || 0);
+    // Recommended: installable first, then the popularity score.
+    const sa = summary(a).supported ? 1 : 0;
+    const sb = summary(b).supported ? 1 : 0;
+    if (sa !== sb) return sb - sa;
+    return ((b.popularity && b.popularity.score) || 0) - ((a.popularity && a.popularity.score) || 0);
+  };
 }
 
 export function SettingsMcpRegistryView(props = {}) {
-const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
-const from = typeof props.from === 'string' ? props.from : '';
-  const [servers, setServers] = useState([]);
-  const [metadata, setMetadata] = useState({ count: 0, nextCursor: null });
+  const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
+  const from = typeof props.from === 'string' ? props.from : '';
+  const [entries, setEntries] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
   const [search, setSearch] = useState('');
-  const [sortField, setSortField] = useState('popularity');
-  const [sortDir, setSortDir] = useState('desc');
-  const [busy, setBusy] = useState(false);
-  const [cursor, setCursor] = useState('');
-  const [addingId, setAddingId] = useState(null); // id being added
-  const [status, setStatusObj] = useState({ message: '', type: '' });
+  const [filter, setFilter] = useState('all');
+  const [sort, setSort] = useState('popularity');
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState('');
+  const [configured, setConfigured] = useState([]);
+  const [openKey, setOpenKey] = useState('');
+  // Only the newest request may write results: a slow response for "gi"
+  // must not overwrite the list for "github".
+  const reqSeq = useRef(0);
 
-  async function loadRegistry(opts = {}) {
-    const q = opts.search !== undefined ? opts.search : search;
-    const c = opts.cursor !== undefined ? opts.cursor : cursor;
-    const sF = opts.sortField !== undefined ? opts.sortField : sortField;
-    const sD = opts.sortDir !== undefined ? opts.sortDir : sortDir;
-    setBusy(true);
-    setStatusObj({ message: 'loading…', type: 'busy' });
-    const params = new URLSearchParams();
-    if (q) params.set('search', q);
-    if (c) params.set('cursor', c);
-    params.set('sort', sF);
-    params.set('dir', sD);
-    params.set('limit', '30');
+  async function loadConfigured() {
     try {
-      const r = await fetchJson('/api/mcp/registry?' + params.toString());
-      if (r.status !== 200) {
-        setStatusObj({ message: 'Registry error: HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), type: 'error' });
-        setBusy(false);
-        return;
-      }
-      setServers(r.body.servers || []);
-      setMetadata(r.body.metadata || { count: 0, nextCursor: null });
-      setCursor(c ? (r.body.metadata && r.body.metadata.nextCursor) || '' : '');
-      setStatusObj({ message: (r.body.metadata && r.body.metadata.count) + ' servers found', type: 'success' });
-    } catch (e) {
-      setStatusObj({ message: 'Network error: ' + (e.message || e), type: 'error' });
-    }
-    setBusy(false);
+      const r = await fetchJson('/api/mcp/servers' + projectQS(projectDir));
+      if (r.status === 200) setConfigured(r.body.servers || []);
+    } catch { /* installed badges are a nicety */ }
   }
 
-  function doSearch() {
-    setCursor('');
-    loadRegistry({ search, cursor: '' });
-  }
-
-  function doNextPage() {
-    if (!metadata.nextCursor) return;
-    loadRegistry({ cursor: metadata.nextCursor });
-  }
-
-  function doPrevPage() {
-    // We don't keep history; just reload the current search without cursor
-    loadRegistry({ cursor: '' });
-  }
-
-  async function addToProject(entry) {
-    const name = entry.server ? entry.server.name : (entry.name || '');
-    if (!name) return;
-    const displayName = name.includes('/') ? name.split('/').pop() : name;
-    const pkgInfo = extractPkgInfo(entry);
-    if (!pkgInfo) {
-      setStatusObj({ message: 'Cannot install: no package info for ' + displayName, type: 'error' });
+  async function load(opts) {
+    const o = opts || {};
+    const seq = ++reqSeq.current;
+    const more = !!o.cursor;
+    if (more) setLoadingMore(true); else { setLoading(true); setError(''); }
+    const params = new URLSearchParams();
+    const q = o.search !== undefined ? o.search : search;
+    if (q.trim()) params.set('search', q.trim());
+    if (o.cursor) params.set('cursor', o.cursor);
+    params.set('limit', String(PAGE));
+    let r;
+    try { r = await fetchJson('/api/mcp/registry?' + params.toString()); }
+    catch { r = null; }
+    if (seq !== reqSeq.current) return;
+    setLoading(false);
+    setLoadingMore(false);
+    if (!r || r.status !== 200) {
+      const why = !r ? 'mouaif could not be reached.' : ((r.body && r.body.error) || 'HTTP ' + r.status);
+      setError('Could not load the store. ' + why);
       return;
     }
-    setAddingId(name);
-    setStatusObj({ message: 'Adding ' + displayName + '…', type: 'busy' });
-    const scope = projectDir ? 'project' : 'app';
-    const body = {
-      projectDir: projectDir || null,
-      scope,
-      transport: 'stdio',
-      name: displayName,
-      command: pkgInfo.command,
-      args: pkgInfo.args,
-      env: pkgInfo.env
-    };
-    try {
-      const r = await fetchJson('/api/mcp/servers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      if (r.status === 201 || r.status === 200) {
-        setStatusObj({ message: displayName + ' added!', type: 'success' });
-        // Navigate to the edit view for the new server
-        const id = r.body && r.body.server && r.body.server.id;
-        if (id) {
-setTimeout(() => {
-nav('settings/mcp/' + encodeURIComponent(id) + projectQS(projectDir) + '&scope=' + scope + (from ? '&from=' + encodeURIComponent(from) : ''));
-}, 600);
-}
-      } else {
-        setStatusObj({ message: 'HTTP ' + r.status + ': ' + (r.body && r.body.error || 'unknown'), type: 'error' });
-      }
-    } catch (e) {
-      setStatusObj({ message: 'Network error: ' + (e.message || e), type: 'error' });
-    }
-    setAddingId(null);
+    const got = Array.isArray(r.body.servers) ? r.body.servers : [];
+    setEntries((prev) => {
+      if (!more) return got;
+      const seen = new Set(prev.map(entryKey));
+      return prev.concat(got.filter((e) => !seen.has(entryKey(e))));
+    });
+    setNextCursor((r.body.metadata && r.body.metadata.nextCursor) || null);
   }
 
-  useEffect(() => { loadRegistry({}); }, []);
+  // Search as you type (debounced); the first run is the initial load.
+  useEffect(() => {
+    const t = setTimeout(() => load({ search }), search ? SEARCH_DEBOUNCE_MS : 0);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => { loadConfigured(); }, [projectDir]);
 
-  const backHref = '#/settings/mcp' + projectQS(projectDir) + (from ? '&from=' + encodeURIComponent(from) : '');
+  const rows = useMemo(() => {
+    return entries
+      .map((entry) => ({ entry, info: summary(entry), installed: findInstalled(entry, configured) }))
+      .filter((row) => matchesFilter(row.info, filter))
+      .sort((a, b) => compare(sort)(a.entry, b.entry));
+  }, [entries, configured, filter, sort]);
+
+  const openRow = openKey ? entries.find((e) => entryKey(e) === openKey) : null;
+  const backHref = '#/settings/mcp' + projectQS(projectDir) + (from ? (projectDir ? '&' : '?') + 'from=' + encodeURIComponent(from) : '');
+  const hiddenByFilter = entries.length - rows.length;
+
+  function card(row) {
+    const { entry, info, installed } = row;
+    const key = entryKey(entry);
+    const server = entry.server || {};
+    const updated = relativeDate(registryMeta(entry).updatedAt);
+    const deprecated = registryMeta(entry).status && registryMeta(entry).status !== 'active';
+    const badges = [];
+    if (installed) badges.push(['ok', 'Installed']);
+    if (info.kind === 'remote' || info.kind === 'mixed') badges.push(['accent', 'Hosted']);
+    if (info.runtime) badges.push(['plain', info.runtime]);
+    if (info.supported) badges.push(info.needsKey ? ['warn', 'Needs API key'] : ['plain', 'No key']);
+    else badges.push(['muted', 'Manual setup']);
+    if (deprecated) badges.push(['muted', 'Deprecated']);
+    return h('li', { key, class: 'mcps-card' + (info.supported ? '' : ' mcps-card--manual') },
+      h('button', { class: 'mcps-card__main', type: 'button', onClick: () => setOpenKey(key), 'aria-label': friendlyName(entry) + ' — details' },
+        h('span', { class: 'mcps-avatar', style: avatarStyle(server.name), 'aria-hidden': 'true' }, initial(entry)),
+        h('span', { class: 'mcps-card__body' },
+          h('span', { class: 'mcps-card__title' }, friendlyName(entry)),
+          h('span', { class: 'mcps-card__pub' }, publisher(entry) + (updated ? ' · ' + updated : '')),
+          server.description ? h('span', { class: 'mcps-card__desc' }, server.description) : null,
+          h('span', { class: 'mcps-badges' }, badges.map(([tone, text]) => h('span', { key: text, class: 'mcps-badge mcps-badge--' + tone }, text)))
+        )
+      ),
+      installed
+        ? h('a', { class: 'btn btn--small mcps-card__cta', href: editorHref(installed, projectDir, from), 'aria-label': 'Open ' + installed.name + ' settings' }, 'Open')
+        : h('button', { class: 'btn btn--small mcps-card__cta' + (info.supported ? ' btn--primary' : ''), type: 'button', onClick: () => setOpenKey(key) }, info.supported ? 'Get' : 'View')
+    );
+  }
+
+  const skeleton = Array.from({ length: 6 }, (_, i) => h('li', { key: 's' + i, class: 'mcps-card mcps-card--skeleton', 'aria-hidden': 'true' },
+    h('span', { class: 'mcps-avatar' }),
+    h('span', { class: 'mcps-card__body' }, h('span', { class: 'mcps-skel mcps-skel--title' }), h('span', { class: 'mcps-skel' }), h('span', { class: 'mcps-skel mcps-skel--short' }))
+  ));
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: backHref, class: 'view-back', 'aria-label': 'Back to MCP servers' }, '←'),
-      h('h2', { class: 'view-title' }, 'MCP Registry' + (projectDir ? ' · ' + projectDir.split(/[/\\]/).pop() : ''))
+      h('h2', { class: 'view-title' }, 'MCP store' + (projectDir ? ' · ' + projectDir.split(/[/\\]/).filter(Boolean).pop() : ''))
     ),
-    // Scroll container (flush route) — see SettingsMcp for the same
-    // single-root-<section> rationale.
-    h('section', null,
-    h('p', { class: 'hint hint--compact' },
-      'Browse the ',
-      h('a', { href: 'https://registry.modelcontextprotocol.io', target: '_blank', rel: 'noopener noreferrer' }, 'official MCP Registry'),
-      '. Servers are scored by update recency and package count. Tap a server to add it to ',
-      projectDir ? 'this project' : 'the app-wide list',
-      '.'
+    h('section', { class: 'mcps' },
+      h('div', { class: 'mcps-toolbar' },
+        h('div', { class: 'mcps-search' },
+          h('svg', { class: 'mcps-search__icon', viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+            h('path', { d: 'M10.5 4a6.5 6.5 0 1 0 4.03 11.6l4.43 4.43 1.06-1.06-4.43-4.43A6.5 6.5 0 0 0 10.5 4Zm0 1.5a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z', fill: 'currentColor' })),
+          h('input', {
+            class: 'input mcps-search__input', type: 'search', inputmode: 'search', enterkeyhint: 'search',
+            placeholder: 'Search servers (github, postgres, browser…)', 'aria-label': 'Search the MCP store',
+            value: search, autocomplete: 'off', autocapitalize: 'off', spellcheck: false,
+            onInput: (e) => setSearch(e.target.value),
+            onKeyDown: (e) => { if (e.key === 'Enter') { e.target.blur(); load({ search: e.target.value }); } }
+          }),
+          search ? h('button', { class: 'icon-btn mcps-search__clear', type: 'button', 'aria-label': 'Clear search', onClick: () => setSearch('') }, '×') : null
+        ),
+        h('div', { class: 'mcps-chips', role: 'radiogroup', 'aria-label': 'Filter' },
+          FILTERS.map(([v, label]) => h('button', {
+            key: v, type: 'button', role: 'radio', 'aria-checked': filter === v ? 'true' : 'false',
+            class: 'mcps-chip' + (filter === v ? ' mcps-chip--on' : ''), onClick: () => setFilter(v)
+          }, label)),
+          h('select', { class: 'mcps-sort', 'aria-label': 'Sort', value: sort, onChange: (e) => setSort(e.target.value) },
+            SORTS.map(([v, label]) => h('option', { key: v, value: v }, label)))
+        )
+      ),
+      error
+        ? h('div', { class: 'mcps-state' },
+            h('p', { class: 'mcps-state__text' }, error),
+            h('button', { class: 'btn', type: 'button', onClick: () => load({}) }, 'Try again'))
+        : h('ul', { class: 'mcps-list', 'aria-label': 'MCP servers', 'aria-busy': loading ? 'true' : 'false' },
+            loading ? skeleton : rows.map(card)),
+      !loading && !error && !rows.length
+        ? h('div', { class: 'mcps-state' },
+            h('p', { class: 'mcps-state__text' },
+              entries.length
+                ? 'No servers here match this filter.'
+                : (search ? 'Nothing found for “' + search + '”. Try a shorter or different word.' : 'The store is empty right now.')),
+            entries.length && filter !== 'all' ? h('button', { class: 'btn', type: 'button', onClick: () => setFilter('all') }, 'Show all') : null)
+        : null,
+      !loading && !error && nextCursor
+        ? h('div', { class: 'mcps-more-row' },
+            h('button', { class: 'btn mcps-more-btn', type: 'button', disabled: loadingMore, onClick: () => load({ cursor: nextCursor }) },
+              loadingMore ? 'Loading…' : 'Load more servers'),
+            hiddenByFilter > 0 ? h('span', { class: 'hint hint--compact' }, hiddenByFilter + ' loaded server' + (hiddenByFilter === 1 ? ' is' : 's are') + ' hidden by the filter.') : null)
+        : null,
+      h('p', { class: 'hint hint--compact mcps-foot' },
+        'Listings come from the ',
+        h('a', { href: 'https://registry.modelcontextprotocol.io', target: '_blank', rel: 'noopener noreferrer' }, 'official MCP Registry'),
+        '. Anyone can publish there — install servers you trust. Not listed? ',
+        h('a', { href: '#/settings/mcp/new' + (projectDir ? projectQS(projectDir) + '&scope=project' : '?scope=app') + (from ? '&from=' + encodeURIComponent(from) : '') }, 'Add one by hand'),
+        '.')
     ),
-    // Search bar and sorting controls
-    h('div', { class: 'row row--inline', style: 'margin-bottom:8px; gap:8px; flex-wrap:wrap;' },
-      h('input', {
-        class: 'input',
-        style: 'flex: 1 1 200px;',
-        type: 'text',
-        placeholder: 'Search servers by name…',
-        'aria-label': 'Search MCP registry',
-        value: search,
-        onInput: (e) => setSearch(e.target.value),
-        onKeyDown: (e) => { if (e.key === 'Enter') doSearch(); }
-      }),
-      h('button', { class: 'btn', type: 'button', onClick: doSearch, disabled: busy }, 'Search'),
-      h('select', {
-        class: 'input',
-        style: 'width: auto;',
-        value: sortField + '|' + sortDir,
-        onChange: (e) => {
-          const [f, d] = e.target.value.split('|');
-          setSortField(f);
-          setSortDir(d);
-          setCursor('');
-          loadRegistry({ sortField: f, sortDir: d, cursor: '' });
-        },
-        disabled: busy
-      },
-        h('option', { value: 'popularity|desc' }, 'Most popular'),
-        h('option', { value: 'popularity|asc' }, 'Least popular'),
-        h('option', { value: 'updatedAt|desc' }, 'Recently updated'),
-        h('option', { value: 'updatedAt|asc' }, 'Oldest updated'),
-        h('option', { value: 'name|asc' }, 'Name (A-Z)'),
-        h('option', { value: 'name|desc' }, 'Name (Z-A)')
-      )
-    ),
-    // Server list
-    h('ul', { class: 'reg-list', 'aria-label': 'Registry servers' },
-      !servers.length && !busy
-        ? h('li', { class: 'mcp__empty' }, 'No servers found. Try a different search term.')
-        : servers.map((entry) => {
-            const server = entry && entry.server || {};
-            const name = server.name || entry.name || '';
-            const displayName = name.includes('/') ? name.split('/').pop() : name || 'unknown';
-            const description = server.description || '';
-            const meta = entry._meta && entry._meta['io.modelcontextprotocol.registry/official'] || {};
-            const statusMeta = meta.status || 'active';
-            const updated = meta.updatedAt ? new Date(meta.updatedAt).toLocaleDateString() : null;
-            const packages = Array.isArray(server.packages) ? server.packages : [];
-            const pkgCount = packages.length;
-            const popScore = entry.popularity ? entry.popularity.score : 0;
-            const isAdding = addingId === name;
-            return h('li', { key: name, class: 'reg-row' },
-              h('div', { class: 'reg-row__head' },
-                h('div', { class: 'reg-row__name' }, displayName,
-                  h('span', { class: 'reg-row__ver' }, meta.isLatest !== undefined ? 'latest' : ''),
-                  statusMeta !== 'active'
-                    ? h('span', { class: 'reg-row__status reg-row__status--' + statusMeta }, statusMeta)
-                    : null
-                ),
-                popularityBar(popScore)
-              ),
-              description
-                ? h('div', { class: 'reg-row__desc' }, description.slice(0, 200) + (description.length > 200 ? '…' : ''))
-                : null,
-              h('div', { class: 'reg-row__meta' },
-                h('span', { class: 'reg-row__meta-item' }, name),
-                pkgCount > 0 ? h('span', { class: 'reg-row__meta-item' }, pkgCount + ' package' + (pkgCount === 1 ? '' : 's')) : null,
-                updated ? h('span', { class: 'reg-row__meta-item' }, 'Updated ' + updated) : null
-              ),
-              h('div', { class: 'reg-row__actions' },
-                h('button', {
-                  class: 'btn btn--small' + (popScore >= 70 ? ' btn--primary' : ''),
-                  type: 'button',
-                  disabled: isAdding || busy,
-                  onClick: () => addToProject(entry)
-                }, isAdding ? 'Adding…' : 'Add to ' + (projectDir ? 'project' : 'app'))
-              )
-            );
-          })
-    ),
-    // Pagination
-    h('div', { class: 'page-bar' },
-      h('span', {
-        class: `status page-bar__status${status.type ? ' status--' + status.type : ''}`,
-        'aria-live': 'polite'
-      }, status.message),
-      h('button', {
-        class: 'btn btn--small', type: 'button',
-        disabled: !cursor || busy,
-        onClick: doPrevPage,
-        'aria-label': 'First page'
-      }, '⇤'),
-      h('button', {
-        class: 'btn btn--small', type: 'button',
-        disabled: !metadata.nextCursor || busy,
-        onClick: doNextPage,
-        'aria-label': 'Next page'
-      }, 'Next →')
-    )
-    )
+    openRow
+      ? h(McpStoreSheet, {
+          entry: openRow, projectDir, from,
+          installed: findInstalled(openRow, configured),
+          onClose: () => setOpenKey(''),
+          onInstalled: () => loadConfigured()
+        })
+      : null
   );
 }

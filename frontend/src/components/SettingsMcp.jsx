@@ -243,6 +243,8 @@ showServerError(server, error);
 
   useEffect(() => { load(); }, [projectDir]);
 
+// The store route: `from` needs `?` when there is no projectDir query.
+const storeHref = '#/settings/mcp/registry' + projectQS(projectDir) + (from ? (projectDir ? '&' : '?') + 'from=' + encodeURIComponent(from) : '');
 const newHref = '#/settings/mcp/new' + (projectDir ? projectQS(projectDir) + '&scope=project' : '?scope=app') + (from ? '&from=' + encodeURIComponent(from) : '');
 const backHref = projectDir
 ? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''))
@@ -274,9 +276,13 @@ const backHref = projectDir
           serversList.length
             ? serversList.map(serverRow)
             : h('li', { class: 'mcp__empty' },
+                h('span', null, projectDir
+                  ? 'No MCP servers for this project yet. '
+                  : 'No app-wide MCP servers yet. '),
+                h('a', { href: storeHref }, 'Browse the MCP store'),
                 projectDir
-                  ? 'No MCP servers for this project yet. Tap "+" to add one. App-wide servers are managed from Settings → App defaults → MCP servers.'
-                  : 'No app-wide MCP servers yet. Tap "+" to add one — it will be available in every project.')
+                  ? ' to install one in a couple of taps, or tap "+" to add one by hand. App-wide servers are managed from Settings → App defaults → MCP servers.'
+                  : ' to install one in a couple of taps, or tap "+" to add one by hand — it will be available in every project.')
         )
       ),
       // App list only: deep-link into a project's list.
@@ -296,7 +302,7 @@ const backHref = projectDir
           )
         : null,
       h('div', { class: 'page-bar' },
-      h('a', { href: '#/settings/mcp/registry' + projectQS(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''), class: 'btn btn--small', type: 'button' }, 'Browse Registry'),
+      h('a', { href: storeHref, class: 'btn btn--small btn--primary' }, 'Browse store'),
       h('span', {
         class: 'status page-bar__status' + (listStatus.kind ? ' status--' + listStatus.kind : ''),
         'aria-live': 'polite'
