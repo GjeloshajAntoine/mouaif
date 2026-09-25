@@ -42,22 +42,20 @@ export function PreviewUrlPrompt({ onSubmit, onClose }) {
   function submit(event) {
     event.preventDefault();
     const trimmed = url.trim();
-    // Light validation: accept http(s) URLs. A bare hostname is fine to
-    // normalise, but reject anything that is clearly not a web page.
+    // Light validation: any absolute URL (http, https, file, data, about, …)
+    // is accepted as typed. A bare hostname ("example.com", "localhost:5173")
+    // has no scheme and is normalised to https://.
     if (!trimmed) {
-      setError('Enter a web URL to preview.');
-      return;
+    setError('Enter a URL to preview.');
+    return;
     }
+    const hasScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !/^[^:/]+:\d+(\/|$)/.test(trimmed);
     let parsed;
     try {
-      parsed = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : 'https://' + trimmed);
+    parsed = new URL(hasScheme ? trimmed : 'https://' + trimmed);
     } catch {
-      setError('That does not look like a valid web URL.');
-      return;
-    }
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      setError('Only http and https URLs are supported.');
-      return;
+    setError('That does not look like a valid URL.');
+    return;
     }
     if (onSubmit) onSubmit(parsed.href);
   }

@@ -66,16 +66,16 @@ const VIEWPORTS = Object.freeze({
 });
 const DEFAULT_VIEWPORT_ID = 'phone';
 const DEFAULT_VIEWPORT = VIEWPORTS[DEFAULT_VIEWPORT_ID];
-// Guard the custom-size path. A runaway width/height would make a
-// capture exceed MAX_IMAGE_BYTES (or time out); clamp into a sane range.
-const MIN_VIEWPORT_DIM = 64;
-const MAX_VIEWPORT_DIM = 2048;
+// Custom sizes are not clamped: any positive integer width/height is
+// passed to Chrome as-is. Chrome itself is the only limit (a huge viewport
+// may be slow, time out, or exceed MAX_IMAGE_BYTES below).
 
 // Largest image we accept from CDP. CDP returns either base64-encoded
 // data or a binary stream; either way we re-validate against this cap
-// before returning the image to the chat. 2 MiB is ample for a 375 × 667
-// JPEG at quality 70 and well under any model-feedback rail.
-const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+// before returning the image to the chat. The screenshot is stored in the
+// chat transcript, so the cap only guards against a runaway payload — it
+// is generous enough for large custom viewports at JPEG quality 70.
+const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 
 // Default polling cadence while waiting for the load event. The CDP
 // `Page.loadEventFired` event is the clean signal so we subscribe, but
@@ -88,11 +88,10 @@ const POST_LOAD_GRACE_MS = 250;
 // preset. This is also the fallback when a Chrome build omits layout metrics.
 const err = (code, message, extra) => Object.assign(new Error(message), { code, ...(extra || {}) });
 
-// Validate a URL the model supplied. Accept http(s) only — ftp, file,
-// chrome-extension, view-source, javascript:, data: are all rejected
-// because they are either not real web pages (`file:`, `data:`) or
-// they would surprise the user (`javascript:`) or are obviously out of
-// scope (`view-source:`, `chrome-extension:`).
+// Validate a URL the model supplied. Any scheme Chrome can open is
+// accepted (http, https, file, data, about, chrome, view-source, …); the
+// only requirement is that the string parses as an absolute URL. Access is
+// governed by the project's webpreview authorization mode / allowlist.
 function parseUrl(raw) {
   if (typeof raw !== 'string' || !raw.trim()) {
     throw err('EBADINPUT', 'url is required');
@@ -100,9 +99,6 @@ function parseUrl(raw) {
   let url;
   try { url = new URL(raw.trim()); }
   catch { throw err('EBADINPUT', 'url is not a valid URL'); }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw err('EBADINPUT', 'url must use http or https (got ' + url.protocol + ')');
-  }
   return url;
 }
 
@@ -185,14 +181,8 @@ const n = Number(value);
 if (!isFinite(n) || n <= 0) return max;
 return Math.min(Math.round(n), max);
 }
-// Clamp a custom WIDTH/HEIGHT into the supported capture range. Below the
-// minimum a capture is useless (and a 1x1 thumbnail reads as broken), and
-// above MAX_VIEWPORT_DIM it blows past the image byte cap.
-function clampDim(value) {
-const n = Math.round(Number(value));
-if (!isFinite(n) || n <= 0) return MIN_VIEWPORT_DIM;
-return Math.min(MAX_VIEWPORT_DIM, Math.max(MIN_VIEWPORT_DIM, n));
-}
+// A custom WIDTH/HEIGHT is used as-is (no range clamp); only a zero
+// dimension, which Chrome cannot capture, falls back to the default preset.
 // Normalize a viewport argument into a concrete capture rectangle.
 //
 // Accepts either a known preset id (its `mobile` semantics are kept) or a
@@ -207,9 +197,11 @@ if (VIEWPORTS[key]) return VIEWPORTS[key];
 // Allow '1280x800' and '1280×800' and lowercase / spaced forms.
 const m = String(input).match(/^\s*(\d+)\s*[x×]\s*(\d+)\s*$/i);
 if (m) {
-const width = clampDim(Number(m[1]));
-const height = clampDim(Number(m[2]));
+const width = Number(m[1]);
+const height = Number(m[2]);
+if (width > 0 && height > 0 && Number.isSafeInteger(width) && Number.isSafeInteger(height)) {
 return { id: 'custom', label: width + '×' + height, width, height, mobile: false };
+}
 }
 }
 return DEFAULT_VIEWPORT;
@@ -368,7 +360,8 @@ const captureVp = resolveViewport(opts && opts.viewport);
         if (live && typeof live.title === 'string' && live.title.trim()) title = live.title;
       } catch { /* title is cosmetic; keep the hostname fallback */ }
     }
-    if (!title) title = url.hostname;
+    // Non-web schemes (file:, data:, about:) have no hostname.
+    if (!title) title = url.hostname || finalUrl.slice(0, 120);
     const dataUrl = 'data:image/jpeg;base64,' + data;
 // The viewport the capture was taken at. `viewportLabel` uses the friendly
 // preset label when the size came from a preset; a custom size shows the
@@ -417,15 +410,15 @@ const SPEC = {
     description: 'Refresh the user-facing preview of a web URL in the debug Chrome used by the Inspector tab. ' +
       'The screenshot is shown only to the user in a small dock between the chat scroll and textbox; tapping it opens the full image. ' +
       'Call this tool again with the URL whenever the user preview should reload. The screenshot is not returned to you for visual analysis. ' +
-      'Only http and https URLs are accepted. Optionally set `viewport` to capture at a different size: ' +
-      'a preset id ("phone", "phone+", "tablet", "laptop") or a "WIDTHxHEIGHT" string (e.g. "1280x800").',
-    parameters: {
+      'Any absolute URL Chrome can open is accepted (http, https, file, data, about, …). Optionally set `viewport` to capture at a different size: ' +
+      'a preset id ("phone", "phone+", "tablet", "laptop") or any "WIDTHxHEIGHT" string (e.g. "1280x800").',
+      parameters: {
       type: 'object',
       properties: {
-        url: { type: 'string', description: 'HTTP or HTTPS URL to load. Required.' },
+        url: { type: 'string', description: 'Absolute URL to load (any scheme). Required.' },
         viewport: {
-          type: 'string',
-          description: 'Capture size. One of "phone" (375x667), "phone+" (414x896), "tablet" (768x1024), "laptop" (1280x800), or a "WIDTHxHEIGHT" string. Defaults to "phone".'
+        type: 'string',
+        description: 'Capture size. One of "phone" (375x667), "phone+" (414x896), "tablet" (768x1024), "laptop" (1280x800), or any "WIDTHxHEIGHT" string (positive integers, no range limit). Defaults to "phone".'
         }
       },
       required: ['url'],

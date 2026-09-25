@@ -43,11 +43,23 @@ check('blank string -> default', resolveViewport('  ').id === DEFAULT_VIEWPORT_I
 check('garbage -> default', resolveViewport('12x').id === DEFAULT_VIEWPORT_ID, 'got ' + resolveViewport('12x').id);
 check('negative -> default', resolveViewport('-5x-5').id === DEFAULT_VIEWPORT_ID, 'got ' + resolveViewport('-5x-5').id);
 
-// Runaway dimensions are clamped into a sane range
+// Custom dimensions are not clamped
 const big = resolveViewport('5000x5000');
-check('custom clamp (max)', big.width === 2048 && big.height === 2048, JSON.stringify(big));
+check('custom large is kept', big.width === 5000 && big.height === 5000, JSON.stringify(big));
 const tiny = resolveViewport('10x10');
-check('custom clamp (min)', tiny.width === 64 && tiny.height === 64, JSON.stringify(tiny));
+check('custom small is kept', tiny.width === 10 && tiny.height === 10, JSON.stringify(tiny));
+check('zero dimension -> default', resolveViewport('0x500').id === DEFAULT_VIEWPORT_ID, 'got ' + resolveViewport('0x500').id);
+
+// Any absolute URL scheme is accepted
+const { parseUrl } = require('../src/tools/webpreview.js');
+for (const u of ['https://example.com', 'http://localhost:5173/', 'file:///tmp/a.html', 'data:text/html,<b>hi</b>', 'about:blank']) {
+  let okParse = false;
+  try { okParse = !!parseUrl(u); } catch { /* fail */ }
+  check('parseUrl accepts ' + u.slice(0, 24), okParse);
+}
+let rejected = false;
+try { parseUrl('not a url'); } catch (e) { rejected = e.code === 'EBADINPUT'; }
+check('parseUrl rejects non-URL', rejected);
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exitCode = failed ? 1 : 0;

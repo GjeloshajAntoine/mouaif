@@ -17,7 +17,9 @@ The AI can show or reload a preview by invoking the tool with the current URL:
 }
 ```
 
-To capture at a different size, add a `viewport` argument — a preset id (`"phone"`, `"phone+"`, `"tablet"`, `"laptop"`) or a `"WIDTHxHEIGHT"` string (e.g. `"1280x800"`). It defaults to the 375 × 667 `"phone"` capture:
+Any absolute URL Chrome can open is accepted — `http:`, `https:`, `file:`, `data:`, `about:`, and so on. Which URLs actually run is decided by the project's authorization mode and allowlist (see below).
+
+To capture at a different size, add a `viewport` argument — a preset id (`"phone"`, `"phone+"`, `"tablet"`, `"laptop"`) or any `"WIDTHxHEIGHT"` string of positive integers (e.g. `"1280x800"`, `"3840x2160"`). Custom sizes have no range limit; very large ones may be slow, time out, or exceed the 32 MiB screenshot cap. It defaults to the 375 × 667 `"phone"` capture:
 
 ```json
 {
@@ -33,7 +35,7 @@ To capture at a different size, add a `viewport` argument — a preset id (`"pho
 - **Right-aligned miniature** — the latest successful capture is shown above the composer, outside the scrolling transcript, as a small phone-proportioned image. The screenshot is the only content in chat; page title/host/time are shown only in the full-screen viewer. Its height is capped (`min(24dvh, 11rem)`) so a tall page capture stays a thumbnail instead of taking over the chat: the dock is in the flow above the composer, so every pixel of it comes out of the transcript. The image fills the card and is cropped to the **top** of the page — the part worth previewing — and the full capture is one tap away in the viewer.
 - **Mobile proportion** — by default the capture uses the Inspector's 375 × 667 Phone viewport and the dock preserves that aspect ratio. The capture resolution is reported in the full-screen viewer's footer and can be changed.
 - **Full image** — tap the card to open the screenshot in a full-screen viewer (title with a short host sub-line, a **Refresh** button, the Size dropdown, capture time and resolution in the footer, and Open-in-new-tab). The header is a **single row at every phone width**. The title/host block is the only flexible child, so it absorbs the slack and ellipsizes; **Refresh** collapses to its icon and keeps its glyph **centred** in the 44 × 44 px button (it is the only control here with no text to justify); the Size dropdown keeps its own width (enough for the longest option, so its label is never clipped); and the close ✕ sits at the end of the row. On a 360 px phone the whole header is 55 px tall and every control is still a 44 × 44 px tap target.
-- **Change resolution** — the full-screen viewer has a native **Size** selector beside the close button (Phone / Phone+ / Tablet / Laptop / Custom). Picking a preset re-captures the same URL immediately, without a model round-trip. Picking **Custom** reveals touch-friendly width and height fields; values from 64 to 2048 px can be applied. A custom size requested by the model pre-fills those fields.
+- **Change resolution** — the full-screen viewer has a native **Size** selector beside the close button (Phone / Phone+ / Tablet / Laptop / Custom). Picking a preset re-captures the same URL immediately, without a model round-trip. Picking **Custom** reveals touch-friendly width and height fields; any positive whole-number size can be applied (no upper limit). A custom size requested by the model pre-fills those fields.
 - **Dismiss** — a small circular close button on the card's top-right border removes the preview without changing the chat.
 - **Open in browser** — the full viewer can open the original URL in a new browser tab.
 - **Reload by the AI** — another `webpreview` call replaces the card's image with a fresh capture.

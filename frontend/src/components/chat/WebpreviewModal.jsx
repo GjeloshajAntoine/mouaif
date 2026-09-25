@@ -30,8 +30,9 @@ const VIEWPORT_PRESETS = [
   { id: 'laptop', label: 'Laptop', width: 1280, height: 800 }
 ];
 const CUSTOM_VIEWPORT_ID = 'custom';
-const MIN_VIEWPORT_DIM = 64;
-const MAX_VIEWPORT_DIM = 2048;
+// Custom sizes have no range limit (the server passes them to Chrome as-is);
+// only a positive whole number is required.
+const MIN_VIEWPORT_DIM = 1;
 // Native selects open the platform's touch-friendly picker on phones. Custom
 // captures share one stable option; their exact dimensions live in the fields
 // shown below the header.
@@ -112,7 +113,7 @@ const [recapturing, setRecapturing] = useState(false);
     const widthValue = parseCustomDimension(customWidth);
     const heightValue = parseCustomDimension(customHeight);
     if (!widthValue || !heightValue) {
-      setCustomError('Enter width and height from 64 to 2048 px.');
+      setCustomError('Enter a positive whole number for width and height.');
       return;
     }
     setCustomError('');
@@ -178,7 +179,6 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
                 type: 'number',
                 inputMode: 'numeric',
                 min: MIN_VIEWPORT_DIM,
-                max: MAX_VIEWPORT_DIM,
                 step: 1,
                 value: customWidth,
                 disabled: recapturing,
@@ -194,7 +194,6 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
                 type: 'number',
                 inputMode: 'numeric',
                 min: MIN_VIEWPORT_DIM,
-                max: MAX_VIEWPORT_DIM,
                 step: 1,
                 value: customHeight,
                 disabled: recapturing,
@@ -251,7 +250,7 @@ function customSizeFromViewport(value, preview) {
 }
 function parseCustomDimension(value) {
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < MIN_VIEWPORT_DIM || parsed > MAX_VIEWPORT_DIM) return 0;
+  if (!Number.isSafeInteger(parsed) || parsed < MIN_VIEWPORT_DIM) return 0;
   return parsed;
 }
 function hostFromUrl(url) {
