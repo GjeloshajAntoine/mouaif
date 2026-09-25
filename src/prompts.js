@@ -153,12 +153,42 @@ preset,
 
 // ---- CRUD ---------------------------------------------------------------
 
+// Default app prompts, written ONCE into the app store the first time the
+// app prompt list is read. After that they are ordinary saved prompts:
+// listed, edited, deleted, and used by chats exactly like user-created
+// ones. The `promptsSeeded` flag keeps a deleted default from coming back.
+//   - "Chat": no prompt text, a chat icon, and an exclusive preset with no
+//     tools, so a chat started from it is a plain conversation.
+const DEFAULT_APP_PROMPTS = [
+  {
+    id: 'chat',
+    title: 'Chat',
+    icon: 'chat',
+    showOnProjectCard: false,
+    content: '',
+    role: 'system',
+    preset: { tools: [], exclusive: true }
+  }
+];
+
+function seedDefaultAppPrompts(app) {
+  if (app.promptsSeeded === true) return app;
+  const list = Array.isArray(app.prompts) ? app.prompts.slice() : [];
+  const now = new Date().toISOString();
+  for (const def of DEFAULT_APP_PROMPTS) {
+    if (list.some((p) => p && p.id === def.id)) continue;
+    list.push(Object.assign({}, def, { createdAt: now, updatedAt: now }));
+  }
+  try { return settings.setApp({ prompts: list, promptsSeeded: true }); }
+  catch { return app; }
+}
+
 function getPromptsList(projectDir) {
   if (projectDir) {
     const project = settings.getProject(projectDir);
     return Array.isArray(project.prompts) ? project.prompts : [];
   }
-  const app = settings.getApp();
+  const app = seedDefaultAppPrompts(settings.getApp());
   return Array.isArray(app.prompts) ? app.prompts : [];
 }
 
@@ -399,6 +429,7 @@ function effectivePresetConfig(chat, preset) {
 
 module.exports = {
   newPromptId,
+DEFAULT_APP_PROMPTS,
 VALID_ROLES,
 DEFAULT_ICON,
 PROMPT_ICONS,

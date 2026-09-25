@@ -61,6 +61,16 @@ function pickFreePort() {
 }
 
 async function run() {
+  // 0. Default "Chat" prompt is seeded once as an ordinary app prompt.
+  const seeded = prompts.listPrompts('', { scope: 'app' });
+  const seededChat = seeded.find((p) => p.id === 'chat');
+  t('default Chat prompt is seeded as an app prompt', !!seededChat && seededChat.scope === 'app' && seededChat.icon === 'chat' && seededChat.content === '');
+  t('default Chat prompt has no tools', !!seededChat && seededChat.preset && seededChat.preset.exclusive === true && seededChat.preset.tools.length === 0);
+  const renamed = prompts.updatePrompt('', 'chat', { title: 'Plain chat', scope: 'app' });
+  t('default Chat prompt is editable like any prompt', renamed && renamed.title === 'Plain chat');
+  t('default Chat prompt can be deleted', prompts.deletePrompt('', 'chat', { scope: 'app' }) === true);
+  t('deleted default prompt is not re-seeded', !prompts.listPrompts('', { scope: 'app' }).some((p) => p.id === 'chat'));
+
   // 1. Direct module tests
   const appPrompt = prompts.createPrompt('', { title: 'Global Helper', icon: 'code', showOnProjectCard: true, content: 'You are global.', scope: 'app' });
 t('create app prompt has scope app', appPrompt.scope === 'app');

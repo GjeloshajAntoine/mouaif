@@ -24,20 +24,6 @@ import { PromptIcon, PROMPT_ICONS } from './PromptIcon.jsx';
 // Sentinel id used by the "new prompt" entry in the picker dropdown.
 const NEW_PROMPT_ID = '__new__';
 
-// Built-in prompt templates listed under "Start from a default", next to
-// the prompt-size profiles. "Chat" is a plain conversation preset: no
-// prompt text, a chat icon, and an exclusive preset with no tools, so a
-// chat started from it gets no tools until the user turns some on.
-const PROMPT_TEMPLATES = [
-  {
-    id: 'chat',
-    label: 'Chat',
-    icon: 'chat',
-    content: '',
-    preset: { tools: [], exclusive: true, agentFiles: false, skills: false }
-  }
-];
-
 function presetFromRecord(pp) {
   if (!pp || !(Array.isArray(pp.tools) || typeof pp.agentFiles === 'boolean' || typeof pp.skills === 'boolean' || pp.exclusive === true)) return null;
   return {
@@ -542,31 +528,6 @@ setPreset(null);
     setStatusMsg({ text: 'started from ' + (profile.label || profile.id) + ' profile', kind: 'success' });
   }
 
-  function startFromTemplate(template) {
-    // Start a fresh (unsaved) prompt from a built-in template such as
-    // "Chat" (no text, chat icon, no tools).
-    if (!template) return;
-    setPickerOpen(false);
-    if (dirtyRef.current) {
-      const ok = confirm('Discard unsaved changes to this prompt?');
-      if (!ok) return;
-    }
-    userPickedRef.current = true;
-    setSelectedId(NEW_PROMPT_ID);
-    const defaultScope = projectDir ? 'project' : 'app';
-    const snap = { title: '', icon: 'sparkles', showOnProjectCard: false, content: '', preset: null, scope: defaultScope };
-    setTitle(template.label || '');
-    setIcon(template.icon || 'sparkles');
-    setShowOnProjectCard(false);
-    setContent(template.content || '');
-    setPreset(presetFromRecord(template.preset));
-    setPromptScope(defaultScope);
-    setLoadedSnapshot(snap);
-    dirtyRef.current = true;
-    setShowProfileCopy(false);
-    setStatusMsg({ text: 'started from ' + (template.label || template.id) + ' template', kind: 'success' });
-  }
-
   function copyProfileIntoContent(profile) {
     if (!profile) return;
     if (content.trim()) {
@@ -731,22 +692,7 @@ p.preset ? h('span', { class: 'prompts__picker-preset' }, 'preset') : null
 )
 );
 }),
-h('div', { class: 'prompts__picker-section', role: 'presentation' }, 'Start from a default'),
-PROMPT_TEMPLATES.map((tpl) => h('button', {
-type: 'button',
-key: 'template:' + tpl.id,
-class: 'prompts__picker-option prompts__picker-option--profile',
-role: 'option',
-'aria-selected': 'false',
-onClick: () => startFromTemplate(tpl)
-},
-h('span', { class: 'prompts__picker-check', 'aria-hidden': 'true' }, ''),
-h('span', { class: 'prompts__picker-option-label' },
-h(PromptIcon, { name: tpl.icon, size: 17, class: 'prompts__picker-icon' }),
-h('span', null, tpl.label),
-h('span', { class: 'prompts__picker-preset' }, 'default')
-)
-)),
+profiles.length ? h('div', { class: 'prompts__picker-section', role: 'presentation' }, 'Start from a default') : null,
 profiles.map((p) => h('button', {
 type: 'button',
 key: 'profile:' + p.id,

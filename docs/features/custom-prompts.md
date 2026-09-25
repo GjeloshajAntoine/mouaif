@@ -21,7 +21,7 @@ Prompts can be managed from two locations in Settings:
 1. **Settings → App defaults → Custom prompts** (`#/settings/prompts`): Manage global custom prompts that apply across all projects.
 2. **Settings → This project → Custom prompts** (`#/settings/prompts?projectDir=...`): Manage project-specific prompts and view inherited app-wide prompts.
 
-The **Prompt** picker lists every saved prompt (with a `preset` tag for ones that carry a tool/agent-file/skills preset; scope badges only appear on the project screen, where the two scopes are mixed, and are omitted on the single-scope App-defaults screen) plus a `+ New prompt` entry for a blank form. Below the saved prompts, a **Start from a default** section lists the built-in **Chat** template and the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`, each tagged `default`); tapping one opens a fresh unsaved prompt pre-filled with that template or profile, ready to edit and Create. This means the picker is never empty even before you have saved anything. It uses an in-app, theme-matched list instead of the platform select overlay, keeping the prompt content visible and avoiding oversized native menus on mobile. On first open the picker defaults to the first saved prompt so the editor is already populated; tapping **New** starts a blank form instead. Pick a prompt to load its title, content, and preset into the editor.
+The **Prompt** picker lists every saved prompt (with a `preset` tag for ones that carry a tool/agent-file/skills preset; scope badges only appear on the project screen, where the two scopes are mixed, and are omitted on the single-scope App-defaults screen) plus a `+ New prompt` entry for a blank form. Below the saved prompts, a **Start from a default** section lists the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`, each tagged `default`); tapping one opens a fresh unsaved prompt pre-filled with that profile's title and `systemMessage`, ready to edit and Create. This means the picker is never empty even before you have saved anything. It uses an in-app, theme-matched list instead of the platform select overlay, keeping the prompt content visible and avoiding oversized native menus on mobile. On first open the picker defaults to the first saved prompt so the editor is already populated; tapping **New** starts a blank form instead. Pick a prompt to load its title, content, and preset into the editor.
 
 - **Scope** — when creating a new prompt while a project is active, choose between **This project** and **App default**.
 - **Title** (optional until saved) and **Prompt content** are edited in place. Toggle **Chat preset** to attach or detach the tool/agent-file/skills bundle.
@@ -29,15 +29,17 @@ The **Prompt** picker lists every saved prompt (with a `preset` tag for ones tha
 - **Copy from default** — under the Prompt content field, tap **Copy from default** to reveal the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`). Tap one to load its `systemMessage` into the content editor as a starting point, then edit and Save as your own custom prompt.
 - Tap **Save** (or **Create** for a new prompt) to persist. Tap **Delete** to remove the selected prompt — the API cascade-clears `promptId` on every chat that referenced it.
 
-### The Chat template
+### The default Chat prompt
 
-**Chat** is a built-in template for a plain conversation with no extras:
+mouaif ships one app prompt out of the box: **Chat**, a plain conversation with no extras.
 
 - **no prompt text** — no custom system message is added, so only the prompt-size profile is sent;
 - a **chat bubble** icon;
 - a chat preset with **Only these tools** on and nothing checked, so a chat started from it has **no tools**.
 
-Pick **Chat** under **Start from a default**, adjust anything you want (for example, turn on **Add to project card**), then tap **Create**. When you create a chat from this prompt, the chat's own tool allowlist starts empty, so its **Tools** card shows every tool off. You can still turn tools on for that one chat, and the project's Off/Ask/Allow setting still applies.
+It is written into the app store the first time the prompt list is read, then behaves like any other saved prompt. It is listed in the picker and selectable on agents, and you can rename, edit, add to the project card, or delete it. It uses the fixed id `chat`. Once deleted, it is not created again.
+
+When you create a chat from it, that chat's own tool list starts empty, so its **Tools** card shows every tool off. You can still turn tools on for that one chat, and the project's Off/Ask/Allow setting still applies.
 
 Prompt content is optional only when a chat preset is on. A prompt with no text and no preset is rejected.
 
