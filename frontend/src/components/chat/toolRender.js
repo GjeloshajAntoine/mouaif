@@ -13,7 +13,6 @@ import {
   normalizeToolName,
   parsePlainFileToolResult
 } from './tools.js';
-import { publish as publishWebPreview } from './webpreviewState.js';
 // Caps for the expanded write_file content preview. The tool itself
 // allows a 1 MB write; painting that as one text node would jank the
 // expand, so the preview truncates and says so.
@@ -462,16 +461,20 @@ function renderShellToolResult(body, r, args) {
 
 // renderWebpreviewToolResult(body, r)
 //
-// The screenshot is a user-facing preview, not model feedback. Publish it
-// to the dock above the composer and keep only a short status in the tool
-// card so image bytes never become part of the scrolling transcript.
+// The screenshot is a user-facing preview, not model feedback. It lives in
+// the dock above the composer; the card keeps only a short status so image
+// bytes never become part of the scrolling transcript.
+//
+// This renderer does NOT publish to the dock. appendToolResultCard already
+// publishes when the result lands, and this body is built lazily on the
+// user's first expand — publishing here meant that opening an OLD webpreview
+// card swapped the dock back to that stale capture.
 function renderWebpreviewToolResult(body, r) {
   body.classList.add('tool-preview', 'tool-preview--webpreview');
   if (typeof r === 'string') r = coerceToolResult(r, 'webpreview');
   if (!r || r.error) {
     return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
   }
-  publishWebPreview(r);
   renderPreviewPre(body, 'Preview ready for the user.', 'tool-preview__pre');
 }
 

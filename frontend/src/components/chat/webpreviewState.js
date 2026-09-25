@@ -9,13 +9,32 @@ let activePreview = null;
 
 export function publish(payload) {
   if (!payload || !payload.thumbnail) return;
-  // Transcript backfill renders old rows after the latest rows. Do not let a
-  // historical card replace a newer dock capture when its lazy body mounts.
-  const currentTime = Date.parse(activePreview && activePreview.capturedAt || '') || 0;
-  const nextTime = Date.parse(payload.capturedAt || '') || 0;
-  if (activePreview && currentTime && nextTime && nextTime < currentTime) return;
+  if (!isNewer(payload, activePreview)) return;
   activePreview = payload;
   emit();
+}
+
+// isNewer(next, current) -> bool
+//
+// Whether `next` may replace the dock capture. Transcript backfill renders
+// old rows after the latest ones, so a historical result can be published
+// after a newer capture; it must not win. The old guard only compared when
+// BOTH captures carried a parseable `capturedAt`, so a capture missing the
+// timestamp (an older server, a hand-built payload) replaced a newer one
+// unconditionally.
+//
+//   - no current capture          -> accept
+//   - both timed                  -> accept unless strictly older
+//   - next untimed, current timed -> reject: unknown age never beats known
+//   - current untimed             -> accept (nothing to compare against;
+//                                    the latest publish wins, as before)
+function isNewer(next, current) {
+  if (!current) return true;
+  const currentTime = Date.parse(current.capturedAt || '') || 0;
+  const nextTime = Date.parse(next.capturedAt || '') || 0;
+  if (!currentTime) return true;
+  if (!nextTime) return false;
+  return nextTime >= currentTime;
 }
 
 export function getActivePayload() {

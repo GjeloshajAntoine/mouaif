@@ -37,6 +37,7 @@ To capture at a different size, add a `viewport` argument — a preset id (`"pho
 - **Dismiss** — a small circular close button on the card's top-right border removes the preview without changing the chat.
 - **Open in browser** — the full viewer can open the original URL in a new browser tab.
 - **Reload by the AI** — another `webpreview` call replaces the card's image with a fresh capture.
+- **The dock always shows the newest capture.** A capture goes to the dock once, when its tool result arrives, not when you open its card in the transcript, so opening an old `webpreview` card no longer swaps the dock back to that stale screenshot. The dock compares `capturedAt`: an older capture never replaces a newer one, and a capture with no timestamp never replaces one that has a timestamp. Transcript backfill renders old rows after newer ones, so this ordering matters (`scripts/test-webpreview-dock-order.mjs`).
 
 ### Authorization
 `webpreview` uses the project's tool authorization mode (`Ask`, `Allow`, or `Off`) and optional URL allowlist patterns. In `Ask` mode, changing the resolution closes the viewer and shows the standard authorization card in the chat; approving it retries the capture at the selected size.
