@@ -141,7 +141,7 @@ Published pages about how the app is built. They are reachable by URL but not li
 - [Modal sheets](features/modal-sheets.md) — shared Escape, Tab, and focus behavior for full-screen sheets.
 - [Content Security Policy](features/content-security-policy.md) — the policy the app shell ships with.
 - [Docker smoke test](features/docker-smoke-test.md) — build and verify mouaif in containers.
-- [Documentation site](features/docs-site.md) — how this site is built and published, and the landing screenshots.
+- [Documentation site](features/docs-site.md) — how this site is built and published.
 
 ## Maintainer notes
 
@@ -156,7 +156,6 @@ Kept in the repository for contributors and never published.
 npm run docs:build            # public site -> docs-dist/
 npm run docs:build:internal   # + maintainer pages (decisions, agent notes)
 npm run docs:publish          # sync the public site into docs/ for GitHub Pages
-npm run docs:shots            # re-capture the landing page screenshots
 npm run docs:shots:draft-craft # re-capture the Draft Craft guide screenshots
 ```
 

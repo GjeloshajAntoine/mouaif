@@ -1,11 +1,11 @@
 'use strict';
-// Fixture for scripts/capture-landing-shots.js.
+// Fixture for the docs screenshot capture scripts.
 //
-// Everything the landing-page captures need to look like a real working
-// session — one fixed chat id, a transcript that is a genuine agentic run,
-// seven connected providers, two project models and the Inspector's preview
-// page. Kept in its own module because the capture script is plumbing; this is
-// the content, and it is easier to keep honest when it lives in one place.
+// Everything a capture needs to look like a real working session — one fixed
+// chat id, a transcript that is a genuine agentic run, seven connected
+// providers, two project models and the Inspector's preview page. Kept in its
+// own module because the capture script is plumbing; this is the content, and
+// it is easier to keep honest when it lives in one place.
 
 const fs = require('fs');
 const path = require('path');

@@ -1,16 +1,16 @@
 'use strict';
 // Shared plumbing for the docs screenshot capture scripts.
 //
-// Two scripts shoot the real UI at a phone viewport and write the PNGs the
-// published pages embed:
+// scripts/capture-draft-craft-shots.js shoots the real UI at a phone viewport
+// and writes the PNGs the published guide embeds ->
+// docs/features/images/draft-craft/.
 //
-//   scripts/capture-landing-shots.js     -> docs/features/images/landing/
-//   scripts/capture-draft-craft-shots.js -> docs/features/images/draft-craft/
-//
-// Both need the same three things, so they live here instead of being copied:
+// A capture script needs three things, so they live here instead of being
+// copied:
 // a Chrome finder, the tiny CDP client the screenshots go over, and the small
 // throwaway project the captures are taken against. Keeping one copy means a
-// fixture fix (a Chrome flag, a demo file) lands in both scripts at once.
+// fixture fix (a Chrome flag, a demo file) lands in the capture scripts at
+// once.
 //
 // Nothing here touches the developer's own MOUAIF_HOME: the callers point
 // MOUAIF_HOME at a temp dir before requiring any src/ module.

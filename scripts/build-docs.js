@@ -861,73 +861,6 @@ html { scroll-padding-top: 72px; }
   color: #fff;
 }
 .btn--primary:hover { filter: brightness(1.06); }
-/* Feature sections with a screenshot + copy. */
-.feature {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  gap: 32px;
-  align-items: center;
-  margin: 56px 0;
-}
-.feature--flip .shot { order: 2; }
-.feature--flip .feature-copy { order: 1; }
-.feature-copy h2 { margin-top: 0; padding-top: 0; border-top: 0; }
-.feature-copy p, .feature-copy li { color: var(--muted); }
-.shot {
-  position: relative;
-  margin: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-.shot-fallback {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface);
-  color: var(--muted);
-  border: 1px dashed var(--border);
-  border-radius: 11px;
-  font-size: 13px;
-  text-align: center;
-  padding: 16px;
-  z-index: 0;
-}
-.shot img {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  height: auto;
-  display: block;
-  border-radius: 12px;
-}
-.shot figcaption {
-  padding: 10px 12px;
-  font-size: 12px;
-  color: var(--muted);
-  border-top: 1px solid var(--border);
-  background: var(--surface-2);
-}
-/* Landing-page screenshot row: phone-proportioned captures of the real UI.
-  Four per row on a laptop (eight captures = two full rows, so no row is left
-  with a single orphan card), a centred two-up in the middle width, and one
-  stacked column on a phone (see the media query). A fixed 4-column grid with
-  a cap per card rather than auto-fit: auto-fit sizes the tracks from the
-  container, which left the last card of a row alone on its own line and much
-  wider than the others. */
-.shot-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
-  margin: 24px 0;
-}
-.shot-row .shot img {
-  border-radius: 0;
-}
 .section {
   margin: 56px 0;
 }
@@ -962,19 +895,6 @@ html { scroll-padding-top: 120px; }
 .hero { padding: 40px 16px 32px; }
 .hero h1 { font-size: 40px; }
 .hero .tagline { font-size: 15px; }
-.feature { grid-template-columns: 1fr; gap: 20px; }
-.feature--flip .shot { order: 0; }
-.feature--flip .feature-copy { order: 0; }
-/* Landing screenshots: one full-width column, so each phone capture is
-   readable at 360–430 px instead of shrinking beside its neighbours. */
-.shot-row { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-.shot-row .shot { max-width: 340px; margin: 0 auto; }
-}
-/* Landing screenshots between the phone and a full three-up: two captures per
-   row, centred, so neither a 2-up stretch nor a cramped three-up is left at
-   tablet widths. Sits outside the 760 px block so it only applies above it. */
-@media (min-width: 761px) and (max-width: 1040px) {
-.shot-row { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 760px; margin-left: auto; margin-right: auto; }
 }
 `;
 
@@ -1178,73 +1098,7 @@ ${cards}
   fs.writeFileSync(path.join(outDir, 'agent-notes.html'), html);
 }
 
-// Screenshot placeholder markup. When a real PNG lands at the path (or the
-// caller passes a src), the <img> renders on top of the dashed fallback slot.
-function shotFigure(src, alt, caption) {
-  const img = src ? `<img src="${escapeAttr(src)}" alt="${escapeAttr(alt || caption || '')}" loading="lazy" />` : '';
-  const fallback = img ? escapeHtml(alt || caption || 'Screenshot placeholder') : '';
-  const spacer = img ? '' : '<div style="min-height:220px"></div>';
-  const cap = caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : '';
-  return `<figure class="shot">
-  <div class="shot-fallback">${fallback}</div>
-  ${spacer}${img}
-  ${cap}
-</figure>`;
-}
-
 function buildLandingPage(outDir) {
-// Phone-width captures of the real UI, side by side on a desktop and
-// stacked on a phone. They live in the feature image tree
-// (`docs/features/images/landing/`) so the existing recursive copy ships
-// them to the site, and they are referenced from the site root — hence the
-// `features/images/...` prefix rather than a `./images/...` one.
-//
-// Every capture is produced by `scripts/capture-landing-shots.js`, which
-// boots a throwaway MOUAIF_HOME, seeds the demo project and shoots each
-// screen over CDP; run it after a UI change instead of re-taking one by hand.
-const landingShots = [
-  [
-    'features/images/landing/chat-tools.png',
-    'An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the "Start the conversation" state.',
-    'A new chat — every tool, Off / Ask / Allow'
-  ],
-  [
-    'features/images/landing/subagent-auth.png',
-    'A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons.',
-    'Approving a subagent — pick its model first'
-  ],
-  [
-    'features/images/landing/chats-list.png',
-    'The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it.',
-    'Chats — projects group their own chats'
-  ],
-  [
-    'features/images/landing/chat-view.png',
-    'A chat at 390 px: the model header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
-    'Chats — a run reads, searches, edits and tests'
-  ],
-  [
-    'features/images/landing/providers.png',
-    'Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored.',
-    'Providers — connect them once, app-wide'
-  ],
-  [
-    'features/images/landing/project-settings.png',
-    'Project settings at 390 px: the prompt style, then the tool list where every tool carries its own Off, Ask or Allow control.',
-    'Project settings — per-tool Off / Ask / Allow'
-  ],
-  [
-    'features/images/landing/inspector.png',
-    'The Inspector tab at 390 px, attached to a page over CDP: the target bar, the panel chips, the live preview of the inspected page, and the console input.',
-    'Inspector — attach to a page over CDP'
-  ],
-  [
-    'features/images/landing/settings.png',
-    'The Settings tab at 390 px: a Providers section, then the app defaults that apply to every project.',
-    'Settings — providers first, then app defaults'
-  ]
-].map(([src, alt, caption]) => shotFigure(src, alt, caption)).join('\n');
-
 const body = `
 <section class="hero">
 <p class="eyebrow">Mobile Ouaib first</p>
@@ -1261,14 +1115,6 @@ npx mouaif serve --auth-setup</code></pre>
 <a class="btn" href="features/providers.html">Connect a provider</a>
 <a class="btn" href="features/app-abilities.html">Explore app abilities</a>
 </div>
-</section>
-<section class="section" id="screenshots">
-<h2>See it on a phone</h2>
-<p class="lead">Every screen is built for a 360–430 px viewport first and grows from there. These are captures of the running app at 390 px wide — a brand-new chat with every tool and its Off / Ask / Allow control, a subagent approval where you pick the model that runs the delegation, a project's chats, a run that reads and edits files, the providers behind it, the per-project tool permissions, the Inspector attached to a page, and the app defaults.</p>
-<div class="shot-row">
-${landingShots}
-</div>
-<p><a href="features/app-abilities.html">See every app ability →</a></p>
 </section>
 <section class="section" id="start">
 <h2>Install and run</h2>

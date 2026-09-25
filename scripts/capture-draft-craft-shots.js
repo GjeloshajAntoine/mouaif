@@ -5,13 +5,12 @@
 //
 // The published guide (docs/features/draft-craft.md) embeds one PNG per step,
 // and those PNGs have to be the real UI or they quietly become fiction. This
-// script takes all six from a running app in one command, the same way
-// scripts/capture-landing-shots.js does for the landing page:
+// script takes all six from a running app in one command:
 //
 //   1. a throwaway MOUAIF_HOME in the OS temp dir (never the developer's own);
 //   2. the demo task-board project, two projects on the Chats tab, seven
-//      providers, two project models and one seeded run (reused from
-//      scripts/lib/landing-fixture.js so the two capture scripts agree);
+//      providers, two project models and one seeded run, all from
+//      scripts/lib/landing-fixture.js;
 //   3. a headless Chrome with --remote-debugging-port that is both the
 //      capture browser and the target the Inspector attaches to;
 //   4. the app server on an ephemeral port, plus the fixture web page the
