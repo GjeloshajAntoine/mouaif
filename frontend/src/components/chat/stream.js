@@ -1057,6 +1057,18 @@ state.messages = state.messages.filter((m) => m !== userMsg);
   // produces a strobe effect on a phone. We repaint at most every
   // 120 ms while deltas are flowing, and once on `done`.
   let lastRepaintAt = 0;
+  // Set on `done` from the server's per-round numbers (the final
+  // round's completionTokens over that round's streamingMs), so the
+  // live row shows the same tok/s the persisted row shows on reload.
+  let finalRate = null;
+  // currentRate() -> tok/s of the round in flight. The counter restarts
+  // on every `assistant_turn_end`, and only this round's reported output
+  // (never the turn aggregate) may replace the heuristic — pairing the
+  // aggregate with one round's window over-reports tok/s.
+  function currentRate() {
+    if (finalRate != null) return finalRate;
+    return counter.rate(roundCompletionTokens > 0 ? roundCompletionTokens : undefined);
+  }
   // composeLiveInfo() -> { modelId, usage, cost, streamingMs, liveRate, liveCost }
   //
   // Builds the `info` object passed to renderUsageMeta and
@@ -1068,7 +1080,7 @@ state.messages = state.messages.filter((m) => m !== userMsg);
   // `done` arrives the persisted message absorbs both and the
   // running delta is cleared.
   function composeLiveInfo() {
-    const info = { modelId, usage, cost, streamingMs, liveRate: counter.rate(usage && usage.completionTokens) };
+    const info = { modelId, usage, cost, streamingMs, liveRate: currentRate() };
     if (liveSubagentCost > 0) {
       // Carry the subagent delta in a new envelope so
       // updateUsageSummary can keep the parent's `cost` intact
@@ -1166,6 +1178,12 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       }
       cost = data.cost || cost;
       streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
+      const doneRoundTokens = Number(data.roundCompletionTokens) > 0
+        ? Number(data.roundCompletionTokens)
+        : (roundCompletionTokens > 0 ? roundCompletionTokens : null);
+      finalRate = (doneRoundTokens && streamingMs > 0)
+        ? (doneRoundTokens / streamingMs) * 1000
+        : counter.rate(doneRoundTokens == null ? undefined : doneRoundTokens);
       roundPromptTokens = 0;
       roundCompletionTokens = 0;
       // The final `done` event's `cost` already includes the
@@ -1251,10 +1269,16 @@ state.messages = state.messages.filter((m) => m !== userMsg);
               }
             : undefined);
         const segmentCost = data.cost || undefined;
+        // The round's own streaming window (server-measured), so the
+        // segment shows its tok/s now and after a reload alike.
+        const segmentStreamingMs = typeof data.streamingMs === 'number' && data.streamingMs > 0
+          ? data.streamingMs
+          : undefined;
         state.messages = state.messages.concat([{
           role: 'assistant', content: segment, reasoning: thoughtSegment, ts: new Date().toISOString(), modelId,
           usage: segmentUsage,
-          cost: segmentCost
+          cost: segmentCost,
+          streamingMs: segmentStreamingMs
         }]);
         // Update the just-finalized row's meta line so the segment
         // shows its cost immediately without waiting for the
@@ -1264,7 +1288,7 @@ state.messages = state.messages.filter((m) => m !== userMsg);
           const lastRow = rows.length ? rows[rows.length - 1] : null;
           if (lastRow) {
             const meta = lastRow.querySelector('.chat-msg__meta');
-            if (meta) renderUsageMeta(meta, { modelId, usage: segmentUsage, cost: segmentCost }, state);
+            if (meta) renderUsageMeta(meta, { modelId, usage: segmentUsage, cost: segmentCost, streamingMs: segmentStreamingMs }, state);
           }
         }
         // Reset round counters for the next segment.
@@ -1275,6 +1299,10 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       }
       assembled = '';
       reasoning = '';
+      // Next round starts a fresh tok/s window: the tool run in between
+      // is not streaming time.
+      counter.reset();
+      roundCompletionTokens = 0;
     } else if (ev.eventName === 'authorization_required' || ev.eventName === 'ask_user_required') {
       // Authorization and ask_user cards both read the SAME pending
       // queue the reconcile poll (loadPendingAuthorization) drains, so
@@ -1404,7 +1432,7 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
     finalizeLiveMessage({ content: assembled, reasoning }, refs);
     // Final meta line: the live counter has the authoritative
     // completionTokens; the cost is already on the `done` event.
-    const finalRate = counter.rate(usage && usage.completionTokens);
+    const rowRate = currentRate();
     const persisted = {
       role: 'assistant',
       content: assembled,
@@ -1414,7 +1442,7 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
       usage: usage || undefined,
       cost: cost || undefined,
       streamingMs: streamingMs || undefined,
-      liveRate: finalRate
+      liveRate: rowRate
     };
     state.messages = state.messages.concat([persisted]);
     updateUsageSummary(state, null, refs);

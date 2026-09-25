@@ -924,11 +924,19 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
   // updates; the server-side number is the fallback when the client
   // missed frames — e.g. when the tab was backgrounded.)
   //
-  // streamingMs accumulates ONLY the assistant-streaming windows, not
-  // the tool-execution gaps between them. The multi-round tool loop
-  // would otherwise stretch the window and under-report tok/s.
-  let streamStartedAt = 0;   // set on first message/reasoning delta
-  let streamingMs = 0;       // accumulated across streaming windows
+  // The window is per ROUND (first delta → assistant_turn_end / done),
+  // saved on the row that round produced next to that round's own
+  // completionTokens. Pairing a whole-turn window with one round's
+  // tokens (or the reverse) under- or over-reports tok/s, and the
+  // tool-execution gaps between rounds are never counted.
+  let streamStartedAt = 0;   // set on first message/reasoning delta of a round
+  // closeStreamWindow() -> ms of the round's streaming window, and disarms
+  // it so the next round's first delta starts a fresh one.
+  function closeStreamWindow() {
+    const ms = streamStartedAt ? Date.now() - streamStartedAt : 0;
+    streamStartedAt = 0;
+    return ms;
+  }
   // Per-round usage snapshots from ai.js. Each tool round's upstream
   // call reports its own prompt/completion tokens. When a round ends
   // with tool calls, the pending snapshot is attached to the segment
@@ -1195,7 +1203,10 @@ promptSize: resolvedProfileId,
         // A tool round is starting: fold the window that just ended into
         // the accumulator and clear the start marker. The next assistant
         // delta re-arms streamStartedAt.
-        if (streamStartedAt) { streamingMs += Date.now() - streamStartedAt; streamStartedAt = 0; }
+        // The window is saved on the segment row itself (paired with
+        // that round's completionTokens) so the row keeps its tok/s
+        // after a reload.
+        const segmentStreamingMs = closeStreamWindow();
         // Persist text produced before a tool call at its real transcript
         // position, then start a fresh segment for the post-tool response.
         // Attach the round's usage/cost so this segment shows its own
@@ -1226,7 +1237,8 @@ promptSize: resolvedProfileId,
         assistantMsg = messages.appendMessage(projectDir, chatId, {
         role: 'assistant', content: assistantContent, reasoning: assistantReasoning, modelId: model.id,
         usage: segmentUsage,
-        cost: segmentCost || undefined
+        cost: segmentCost || undefined,
+        streamingMs: segmentStreamingMs > 0 ? segmentStreamingMs : undefined
         });
         segmentRow = assistantMsg;
         if (traceStream && assistantMsg) {
@@ -1247,6 +1259,7 @@ promptSize: resolvedProfileId,
         emit(name, Object.assign({}, data, {
         usage: segmentUsage,
         cost: segmentCost || undefined,
+        streamingMs: segmentStreamingMs > 0 ? segmentStreamingMs : undefined,
         modelId: model.id
         }));
         return;
@@ -1344,10 +1357,11 @@ promptSize: resolvedProfileId,
           const cost = providerCost == null
             ? usage.computeCost({ model, usage: data && data.usage, app })
             : { known: true, input: 0, output: 0, total: providerCost, currency: 'USD' };
-          // Fold the still-open window (first delta → done) into the
-          // accumulated tool-round windows. Falls back to the full
-          // elapsed time when no message delta ever armed the start.
-          const finalStreamingMs = streamingMs + (streamStartedAt ? Date.now() - streamStartedAt : 0);
+          // The final row's own streaming window (first delta of the
+          // last round → done). It pairs with the final round's
+          // completionTokens persisted on the row below; the earlier
+          // rounds' windows already live on their segment rows.
+          const finalStreamingMs = closeStreamWindow();
           enriched = Object.assign({}, data, {
             cost: {
               known: cost.known,
@@ -1389,6 +1403,12 @@ promptSize: resolvedProfileId,
             currency: (enriched.cost && enriched.cost.currency) || 'USD'
           };
           enriched = Object.assign({}, enriched, { cost: remainderCost });
+        }
+        // The final round's own output count, paired with the round's
+        // `streamingMs` so the client's tok/s matches the persisted row
+        // (`usage` on this frame is the turn aggregate).
+        if (finalRoundUsage && finalRoundUsage.completionTokens > 0) {
+          enriched = Object.assign({}, enriched, { roundCompletionTokens: finalRoundUsage.completionTokens });
         }
         lastEnrichment = enriched;
         // Persist the assistant message so a chat that is later
