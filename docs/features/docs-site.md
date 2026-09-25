@@ -18,6 +18,10 @@ The `docs/` folder is written so it can be published as a static site (GitHub Pa
 | Landing page screenshots | `docs/features/images/landing/*.png` copied to `features/images/landing/*.png` | Referenced from the site root, so the `src` keeps the `features/` prefix |
 On a phone, the navigation links scroll sideways on one row with a faded edge, and a link to a heading lands below the sticky bar. The landing page's **Install and run** block leads with the same `npx mouaif serve --auth` command as Getting started.
 
+## Landing page repository link
+
+The landing page (`index.html`) ends its hero action row with a **View the source on GitHub** link, so a reader can go straight from the presentation page to the code. The URL is the repository's `repository.url` from [package.json](../../package.json), normalized to a plain `https://github.com/<owner>/<repo>` link; when that is not a GitHub repository the link is simply omitted, so the row never renders a dead anchor. The link opens in a new tab (`target="_blank" rel="noopener noreferrer"`). It is generated in `buildLandingPage()` in [scripts/build-docs.js](../../scripts/build-docs.js) — change `repository.url` in `package.json` and the build picks it up.
+
 The public guide order and the public navigation links come from a single allowlist in [scripts/build-docs.js](../../scripts/build-docs.js) (`PUBLIC_GUIDE_SLUGS`). The decisions log and the agent notes are never linked from the public navigation and are not written at all in a public build.
 
 The generated `features/*.html`, `index.html`, `documentation.html`, `assets/` and `.nojekyll` are committed under `docs/`, because Pages serves the branch as-is. The `.md` sources and `features/images/` sit in the same tree and are what the build reads.

@@ -83,9 +83,12 @@ let includeInternalPages = false;
 // built site (src/…, scripts/…, .github/…, docs/README.md) is sent to the file
 // on GitHub instead of a relative path that would 404 on the published site.
 const SOURCE_BRANCH = 'master';
-const REPO_BLOB_BASE = repoBlobBase();
+const REPO_URL = repoUrl();
+const REPO_BLOB_BASE = REPO_URL ? REPO_URL + '/blob/' + SOURCE_BRANCH + '/' : '';
 
-function repoBlobBase() {
+// The repository URL from package.json, normalized to a plain
+// https://github.com/<owner>/<repo> link (or '' when it is not a GitHub repo).
+function repoUrl() {
   let url = '';
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
@@ -94,7 +97,7 @@ function repoBlobBase() {
     return '';
   }
   url = url.replace(/^git\+/, '').replace(/\.git$/, '').replace(/^git@github\.com:/, 'https://github.com/');
-  return /^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(url) ? url + '/blob/' + SOURCE_BRANCH + '/' : '';
+  return /^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(url) ? url : '';
 }
 
 // ---- Markdown renderer ------------------------------------------------
@@ -1259,7 +1262,7 @@ npx mouaif serve --auth-setup</code></pre>
 <div class="hero-actions">
 <a class="btn btn--primary" href="features/getting-started.html">Get started</a>
 <a class="btn" href="features/providers.html">Connect a provider</a>
-<a class="btn" href="features/app-abilities.html">Explore app abilities</a>
+<a class="btn" href="features/app-abilities.html">Explore app abilities</a>${REPO_URL ? `\n<a class="btn" href="${escapeAttr(REPO_URL)}" target="_blank" rel="noopener noreferrer">View the source on GitHub</a>` : ''}
 </div>
 </section>
 <section class="section" id="screenshots">
