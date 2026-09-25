@@ -32,7 +32,13 @@
 // Errors are typed: EKEYRING (OS keychain unavailable), ENOENT (no such
 // account), EBADINPUT (validation), EPROVIDER (unknown provider).
 
-const { Entry } = require('@napi-rs/keyring');
+// The keyring is a native addon; load it on the first credential access
+// rather than at server start.
+let keyringMod = null;
+function keyringEntry(service, account) {
+  const { Entry } = keyringMod || (keyringMod = require('@napi-rs/keyring'));
+  return new Entry(service, account);
+}
 const settings = require('./settings.js');
 
 // 'mouaif' is the keyring service prefix; per-provider accounts are
@@ -75,7 +81,7 @@ async function setToken(provider, account, blob) {
   }
   let entry;
   try {
-    entry = new Entry(serviceName(provider), account);
+    entry = keyringEntry(serviceName(provider), account);
     entry.setPassword(blob);
   } catch (e) {
     const wrapped = new Error('Keyring set failed: ' + (e && e.message || e));
@@ -92,7 +98,7 @@ function getToken(provider, account) {
   validateAccount(provider, account);
   let entry;
   try {
-    entry = new Entry(serviceName(provider), account);
+    entry = keyringEntry(serviceName(provider), account);
     return entry.getPassword();
   } catch (e) {
     // @napi-rs/keyring throws when the entry does not exist. That's our
@@ -110,7 +116,7 @@ function getToken(provider, account) {
 function deleteToken(provider, account) {
   validateAccount(provider, account);
   try {
-    const entry = new Entry(serviceName(provider), account);
+    const entry = keyringEntry(serviceName(provider), account);
     entry.deletePassword();
     indexRemove(provider, account);
     return { provider, account, deleted: true };

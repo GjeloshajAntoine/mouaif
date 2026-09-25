@@ -325,6 +325,9 @@ const includeRegExpCache = new Map();
 function includeToRegExp(glob) {
   if (includeRegExpCache.has(glob)) return includeRegExpCache.get(glob);
   const re = buildGlobRegExp(glob);
+  // Globs come from the model, so cap the cache instead of letting it grow for
+  // the life of the server. Evict the oldest entry (Map keeps insertion order).
+  if (includeRegExpCache.size >= 64) includeRegExpCache.delete(includeRegExpCache.keys().next().value);
   includeRegExpCache.set(glob, re);
   return re;
 }

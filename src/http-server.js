@@ -473,7 +473,8 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   // any other upgrade is rejected so the rest of the server stays
   // untouched. The noServer WebSocketServer gives us manual
   // handleUpgrade() so we can decide per-request.
-  const wss = inspector.makeNoServerWss();
+  // Created on the first inspector upgrade so an idle server never loads `ws`.
+  let wss = null;
   server.on('upgrade', (req, socket, head) => {
     const u = req.url || '';
     if (u.startsWith('/api/inspector/proxy')) {
@@ -493,6 +494,7 @@ function createServer(port = DEFAULT_PORT, options = {}) {
       // The inspector module does the heavy lifting. We pass `server`
       // so it can complete the upgrade on the browser side via
       // server.handleUpgrade().
+      if (!wss) wss = inspector.makeNoServerWss();
       inspector.handleProxy(req, socket, head, { server, wss, debuggerUrl: inspector.getDebuggerUrl() })
         .catch((e) => {
           // Already-closed sockets are normal; the only way to surface

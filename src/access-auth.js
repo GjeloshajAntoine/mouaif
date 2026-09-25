@@ -231,6 +231,9 @@ function challengeKey(id) {
 function putChallenge(type, data) {
   const id = crypto.randomBytes(18).toString('base64url');
   const challenge = crypto.randomBytes(32).toString('base64url');
+  // A challenge the browser never answers would otherwise stay forever.
+  const now = Date.now();
+  for (const [k, v] of challenges) if (v.expiresAt <= now) challenges.delete(k);
   challenges.set(challengeKey(id), { type, challenge, expiresAt: Date.now() + CHALLENGE_TTL_MS, ...data });
   return { id, challenge };
 }

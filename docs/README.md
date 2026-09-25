@@ -129,6 +129,7 @@ Published pages about how the app is built. They are reachable by URL but not li
 - [Chat load performance](features/chat-load-performance.md) — how long chats open quickly.
 - [Chat backward pagination](features/chat-backward-pagination.md) — newest page first, older history in the background.
 - [Chat streaming performance](features/chat-streaming-performance.md) — incremental rendering while a reply streams.
+- [Memory footprint and payload size](features/memory-footprint.md) — lazy server dependencies, bounded caches, compressed assets.
 - [Chat transcript rendering](features/chat-transcript-rendering.md) — unchanged rows are reused instead of rebuilt.
 - [Run settle latch](features/run-settle-latch.md) — no status flicker when returning to a finished run.
 - [iOS touch scroll](features/ios-touch-scroll.md) — the transcript scrolls with a finger on iOS Safari.

@@ -41,7 +41,10 @@ assert.equal(localConfig.subject, 'mailto:push@mouaif.local', 'local HTTP uses t
 const iosConfig = push.getPushConfig('https://mouaif.example.test');
 assert.equal(iosConfig.subject, 'https://mouaif.example.test', 'public HTTPS origin becomes the deployment VAPID contact');
 assert.equal(iosConfig.publicKey, localConfig.publicKey, 'changing served origin preserves existing subscriptions');
-assert.equal(vapidDetails.at(-1).subject, 'https://mouaif.example.test', 'web-push receives the served-domain VAPID subject');
+// The per-send options carry the VAPID details (asserted on delivery below),
+// so no process-wide setVapidDetails() is needed — that keeps `web-push`
+// unloaded until the first real send.
+assert.equal(vapidDetails.length, 0, 'no global VAPID state is set; each send carries its own vapidDetails');
 
 const endpoint = 'https://push.example.test/subscription-1';
 const first = push.addSubscription({

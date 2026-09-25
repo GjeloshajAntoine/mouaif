@@ -48,7 +48,10 @@
 const http = require('http');
 const https = require('https');
 const { URL } = require('url');
-const { WebSocketServer, WebSocket } = require('ws');
+// `ws` is required lazily: it is only needed once the Inspector tab (or a
+// webpreview capture) opens a CDP socket, so an idle server never pays for it.
+let wsMod = null;
+function loadWs() { return wsMod || (wsMod = require('ws')); }
 const { qs } = require('./util.js');
 const settings = require('./settings.js');
 
@@ -232,7 +235,7 @@ async function openTargetViaCdp(base, pageUrl, opts) {
     err.__cdpFallback = true;
     throw err;
   }
-  const { WebSocket } = require('ws');
+  const { WebSocket } = loadWs();
   return new Promise((resolve, reject) => {
     let ws;
     try { ws = new WebSocket(wsUrl, { perMessageDeflate: false }); }
@@ -332,7 +335,7 @@ async function sendBrowserCommandOnce(base, method, params) {
     err.code = 'EUPSTREAM';
     throw err;
   }
-  const { WebSocket } = require('ws');
+  const { WebSocket } = loadWs();
   return new Promise((resolve, reject) => {
     let ws;
     try { ws = new WebSocket(wsUrl, { perMessageDeflate: false }); }
@@ -390,7 +393,7 @@ async function sendTargetCommand(debuggerUrl, targetId, method, params) {
     err.code = 'ETARGET_NOT_FOUND';
     throw err;
   }
-  const { WebSocket } = require('ws');
+  const { WebSocket } = loadWs();
   return new Promise((resolve, reject) => {
     let ws;
     try { ws = new WebSocket(t.webSocketDebuggerUrl, { perMessageDeflate: false }); }
@@ -602,7 +605,7 @@ async function handleProxy(req, socket, head, opts) {
 
   let upstreamWs;
   try {
-    upstreamWs = new WebSocket(upstreamWsUrl, { perMessageDeflate: false });
+    upstreamWs = new (loadWs().WebSocket)(upstreamWsUrl, { perMessageDeflate: false });
   } catch (e) {
     writeProxyError(socket, 502, 'EWS_OPEN_FAILED', e && e.message || 'WebSocket open failed');
     return;
@@ -655,6 +658,7 @@ function writeProxyError(socket, status, code, message) {
 }
 
 function wirePair(browserWs, upstreamWs) {
+  const { WebSocket } = loadWs();
   // Open the upstream socket if it isn't already.
   let opened = upstreamWs.readyState === WebSocket.OPEN;
   const pendingFromBrowser = [];
@@ -715,12 +719,11 @@ function wirePair(browserWs, upstreamWs) {
   });
 }
 
-// Create a no-op WebSocketServer instance so the http server can
-// delegate upgrades to it. We could use `new WebSocketServer({ noServer: true })`
-// directly. We export the constructor through a lazy init so callers
-// don't pay for it if they don't need it.
+// Create a noServer WebSocketServer so the http server can delegate
+// upgrades to it. Called lazily on the first inspector upgrade so an idle
+// server never loads `ws`.
 function makeNoServerWss() {
-  return new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 16 * 1024 * 1024 });
+  return new (loadWs().WebSocketServer)({ noServer: true, perMessageDeflate: false, maxPayload: 16 * 1024 * 1024 });
 }
 
 module.exports = {

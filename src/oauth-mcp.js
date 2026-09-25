@@ -5,7 +5,12 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { Entry } = require('@napi-rs/keyring');
+// Native keyring addon, loaded on the first vault access.
+let keyringMod = null;
+function vaultEntry(key) {
+  const { Entry } = keyringMod || (keyringMod = require('@napi-rs/keyring'));
+  return new Entry('mouaif/mcp-oauth', key);
+}
 const CALLBACK_PATH = '/oauth/mcp/callback';
 const PENDING_TTL = 10 * 60 * 1000;
 const error = (code, message) => Object.assign(new Error(message), { code });
@@ -32,7 +37,7 @@ function safeUrl(value) {
 const vault = {
   read(key) {
     try {
-      const text = new Entry('mouaif/mcp-oauth', key).getPassword();
+      const text = vaultEntry(key).getPassword();
       return text ? JSON.parse(text) : {};
     } catch (e) {
       if (/no matching entry|not found|No such file/i.test(e.message || '')) return {};
@@ -40,11 +45,11 @@ const vault = {
     }
   },
   write(key, value) {
-    try { new Entry('mouaif/mcp-oauth', key).setPassword(JSON.stringify(value)); }
+    try { vaultEntry(key).setPassword(JSON.stringify(value)); }
     catch { throw error('EKEYRING', 'Could not save MCP OAuth credentials in the OS keychain.'); }
   },
   remove(key) {
-    try { new Entry('mouaif/mcp-oauth', key).deletePassword(); }
+    try { vaultEntry(key).deletePassword(); }
     catch (e) {
       if (!/no matching entry|not found|No such file/i.test(e.message || '')) {
         throw error('EKEYRING', 'Could not remove MCP OAuth credentials from the OS keychain.');

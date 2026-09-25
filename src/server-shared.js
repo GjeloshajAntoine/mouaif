@@ -562,7 +562,9 @@ function checkAccessAttempts(req) {
   const key = accessAttemptKey(req);
   const now = Date.now();
   const recent = (accessAttempts.get(key) || []).filter((at) => now - at < 60_000);
-  accessAttempts.set(key, recent);
+  // Drop the key once its window is empty so every IP that ever probed the
+  // login page does not stay in memory for the life of the server.
+  if (recent.length) accessAttempts.set(key, recent); else accessAttempts.delete(key);
   return recent.length < 10;
 }
 

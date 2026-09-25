@@ -12,7 +12,10 @@
 // device's screen size, notification style, and OS version. This module only
 // stores the device's self-report and resolves it per target at send time.
 
-const webpush = require('web-push');
+// `web-push` pulls in asn1.js / bn.js / jws (~several MB resident). Load it on
+// first use — a server with no push subscribers never needs it.
+let webpushMod = null;
+function webpush() { return webpushMod || (webpushMod = require('web-push')); }
 const crypto = require('crypto');
 const settings = require('./settings.js');
 const statusBar = require('./statusBar.js');
@@ -83,12 +86,10 @@ function readVapidKeys() {
 function ensureVapidKeys(origin) {
   const db = settings.getDb();
   const existing = readVapidKeys();
-  const subject = vapidSubjectForOrigin(origin);
-  if (existing.publicKey && existing.privateKey) {
-    webpush.setVapidDetails(subject, existing.publicKey, existing.privateKey);
-    return existing.publicKey;
-  }
-  const keys = webpush.generateVAPIDKeys();
+  // No global webpush.setVapidDetails(): sendPush() passes vapidDetails on
+  // every call, so an existing key pair never needs `web-push` loaded here.
+  if (existing.publicKey && existing.privateKey) return existing.publicKey;
+  const keys = webpush().generateVAPIDKeys();
   const now = new Date().toISOString();
   const save = db.prepare(`INSERT INTO ${VAPID_TABLE} (key, value, created_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, created_at = excluded.created_at`);
@@ -97,7 +98,6 @@ function ensureVapidKeys(origin) {
     save.run('privateKey', keys.privateKey, now);
   });
   saveKeys();
-  webpush.setVapidDetails(subject, keys.publicKey, keys.privateKey);
   return keys.publicKey;
 }
 
@@ -262,7 +262,7 @@ if (!targets.length) return;
         privateKey: keys.privateKey
       }
     } : undefined;
-    webpush.sendNotification(subscription, payload, options).catch((err) => {
+    webpush().sendNotification(subscription, payload, options).catch((err) => {
       // 410 Gone / 404 Not Found means the subscription is dead
       if (err && (err.statusCode === 410 || err.statusCode === 404)) {
         removeSubscription(sub.endpoint);
