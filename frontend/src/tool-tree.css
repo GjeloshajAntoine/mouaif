@@ -126,12 +126,15 @@
 when the server is startable but not running. */
 .tool-tree__reload {
 flex: 0 0 auto;
+display: inline-flex;
+align-items: center;
+justify-content: center;
 min-width: 28px;
 height: 26px;
 padding: 0 6px;
 font-size: 0.9rem;
 line-height: 1;
-color: var(--muted);
+color: var(--accent);
 background: var(--surface-2);
 border: 1px solid var(--border);
 border-radius: var(--r-sm);
@@ -183,6 +186,10 @@ appearance: none;
   font-size: 0.64rem;
   line-height: 1.35;
   color: var(--muted);
+}
+.tool-tree__reason--error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
 }
 .tool-tree__leaf-reason {
   flex: 0 0 auto;

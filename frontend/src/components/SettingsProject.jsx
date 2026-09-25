@@ -955,18 +955,20 @@ if (askTool) {
     group.reloadBusy = true;
     setGlobalStatus({ text: 'starting server…', state: 'busy' });
     let ok = false;
+    let reason = '';
     try {
-      const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + '/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectDir: d })
-      });
-      ok = r.status === 200;
+    const r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + '/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir: d })
+    });
+    ok = r.status === 200;
+    if (!ok && r.body && r.body.error) reason = r.body.error;
     } catch { /* ok stays false */ }
     group.reloadBusy = false;
     setGlobalStatus(ok
-      ? { text: 'server started', state: 'ok' }
-      : { text: 'start failed — check Server command/URL', state: 'error' });
+    ? { text: 'server started', state: 'ok' }
+    : { text: reason || 'start failed — check Server command/URL', state: 'error' });
     load(d);
   }
   function toggleSettingsGroup(groupId, checked) {

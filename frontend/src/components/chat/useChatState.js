@@ -724,6 +724,11 @@ await sendTurn(state, refs, {
   // in place. A disabled (auth `off`) server is skipped — callTool would
   // refuse it; the reload control is only shown for enabled-but-stopped
   // servers anyway. Returns a boolean so the caller can show busy state.
+  // A failed start records the server's error message in
+  // `state._mcpStartErrors[serverId]` so both tree surfaces can show why
+  // under the row. Without it a broken command (e.g. `uvx -y <npm pkg>`)
+  // just repainted the row as "stopped" and the start button looked dead.
+  state._mcpStartErrors = state._mcpStartErrors || {};
   state._reloadMcpServer = async (serverId) => {
     const d = projectDir;
     if (!d || !serverId) return false;
@@ -733,9 +738,14 @@ await sendTurn(state, refs, {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectDir: d })
       });
-      if (r.status !== 200) return false;
+      if (r.status !== 200) {
+        state._mcpStartErrors[serverId] = (r.body && r.body.error) || ('Start failed (HTTP ' + r.status + ')');
+        return false;
+      }
+      delete state._mcpStartErrors[serverId];
       return true;
-    } catch {
+    } catch (e) {
+      state._mcpStartErrors[serverId] = 'Start failed: ' + ((e && e.message) || 'network error');
       return false;
     }
   };

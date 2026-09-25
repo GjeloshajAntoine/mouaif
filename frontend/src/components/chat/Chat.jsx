@@ -506,6 +506,8 @@ onToggleTool: s.state._toggleTool,
             // so its control was inert (the transcript card's twin worked).
             onReloadMcpServer: s.state._startMcpServer,
             mcpStartBusy,
+            // Last start failure per server id, shown under the row.
+            mcpStartErrors: s.state._mcpStartErrors,
             // Render stamps keep ref-backed authorization and catalog data fresh.
             authStamp,
             toolDataStamp

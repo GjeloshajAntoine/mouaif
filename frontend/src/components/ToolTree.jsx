@@ -165,16 +165,28 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
                 'aria-busy': group.reloadBusy ? 'true' : undefined,
                 disabled: !!group.reloadBusy,
                 onClick: (e) => {
-                  e.stopPropagation();
-                  if (onReloadServer) onReloadServer(group);
+                e.stopPropagation();
+                if (onReloadServer) onReloadServer(group);
                 }
-              }, '…')
-        ),
-        // Below-row extra content. A disabled row explains itself
-        // here — a dead grey checkbox without a reason helps nobody.
-        group.disabled && group.disabledReason
-          ? h('div', { class: 'tool-tree__reason' }, group.disabledReason)
-          : null,
+              },
+                // A play glyph reads as "start"; the old bare "…" looked
+                // like an overflow menu and nobody guessed it started
+                // the server.
+                h('svg', { viewBox: '0 0 16 16', width: 12, height: 12, 'aria-hidden': 'true' },
+                h('path', { d: 'M5 3.5 L12.5 8 L5 12.5 Z', fill: 'currentColor' })
+                )
+              )
+              ),
+              // Below-row extra content. A disabled row explains itself
+              // here — a dead grey checkbox without a reason helps nobody.
+              group.disabled && group.disabledReason
+              ? h('div', { class: 'tool-tree__reason' }, group.disabledReason)
+              : null,
+              // A failed MCP start says why, so the start control never looks
+              // like it silently did nothing.
+              group.startError && !group.reloadBusy
+              ? h('div', { class: 'tool-tree__reason tool-tree__reason--error', role: 'alert' }, group.startError)
+              : null,
         showChildren
           ? h('ul', { class: 'tool-tree__children', role: 'group' },
               kids.map((tool) =>

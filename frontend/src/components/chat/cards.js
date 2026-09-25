@@ -107,6 +107,11 @@ head.appendChild(scoped);
       if (g && g.serverId === busyServerId) g.reloadBusy = true;
     }
   }
+  // Last start failure per server (set by state._reloadMcpServer).
+  const startErrors = state._mcpStartErrors || {};
+  for (const g of groups) {
+    if (g && g.serverId && startErrors[g.serverId]) g.startError = startErrors[g.serverId];
+  }
 
   // Inject the shared Off/Ask/Allow authorization control on each known
   // group row, exactly like the project settings page. Every native tool

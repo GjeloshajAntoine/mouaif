@@ -56,6 +56,7 @@ export function ToolPopup(props) {
     onSaveMcpAuth,
     onReloadMcpServer,
     mcpStartBusy,
+    mcpStartErrors,
     autoRetry,
     onToggleAutoRetry
   } = props;
@@ -139,6 +140,7 @@ files: 'file'
     // Busy marker for the row's "…" start control. Without it the button
     // looked dead for the whole multi-second MCP cold start.
     if (g.serverId && g.serverId === mcpStartBusy) g.reloadBusy = true;
+    if (g.serverId && mcpStartErrors && mcpStartErrors[g.serverId]) g.startError = mcpStartErrors[g.serverId];
   }
 
   // Start a stopped-but-enabled MCP server on demand, exactly like the
