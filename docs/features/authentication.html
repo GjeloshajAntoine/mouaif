@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Authentication — mouaif docs</title>
-  <meta name="description" content="App access decides who is allowed to open mouaif. It is off by default: anyone who can reach the server can open it. Turn it on when you start the server, and…" />
+  <meta name="description" content="App access decides who is allowed to open mouaif, and it is off by default: anyone who can reach the server can open it. Turn it on when you start the server,…" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
@@ -35,9 +35,8 @@
 </aside>
     <main class="main">
       <h1 id="authentication">Authentication</h1>
-<h2 id="overview">Overview</h2>
-<p>App access decides who is allowed to open mouaif. It is off by default: anyone who can reach the server can open it. Turn it on when you start the server, and after that people must log in with a username and password, or a passkey.</p>
-<p>App access is separate from AI provider credentials. Connecting a provider only lets mouaif call that provider; it does not protect your app. See <a href="providers.html">AI providers</a> for that setup.</p>
+<p>App access decides who is allowed to open mouaif, and it is off by default: anyone who can reach the server can open it. Turn it on when you start the server, and people must then log in with a username and password, or a passkey.</p>
+<p>This is separate from AI provider credentials — connecting a provider lets mouaif call that provider, it does not protect your app. See <a href="providers.html">AI providers</a>.</p>
 <h2 id="usage">Usage</h2>
 <p>App access is on for a run when you pass <code>--auth</code>, <code>--auth-setup</code>, or <code>--user</code>. Without one of them the server does not ask for a login, even if you created a user before; the stored user is kept for the next time you turn access on.</p>
 <p>The npm package is named <a href="https://www.npmjs.com/package/mouaif" target="_blank" rel="noopener noreferrer"><code>mouaif</code></a>, and it exposes the command with the same name. The examples below use <code>npx mouaif</code>, so they work without a global install. If you installed the package with <code>npm install -g mouaif</code>, you can replace <code>npx mouaif</code> with <code>mouaif</code>.</p>
