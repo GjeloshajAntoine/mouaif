@@ -11,3 +11,164 @@
 - **Wiring:** `StylesPanel.jsx` assembles the context once per render (`scaleFor` for the step, `tokensFor` for the violet ticks, the element's box or font size for a length range, `snapValue`'s nearest value for the ghost) and passes `onChange` that only calls `setValue` — the same contract as `ValueTypes` and `Suggestions`, so `Apply` remains the single commit point. It also decides which of the two changers is shown, from the shape held per sheet.
 - **Mobile-first:** the track is 60 px tall with a 34 px thumb, `touch-action: none` keeps the vertical gesture with the sheet, the labels are absolutely positioned so a long token name cannot widen the rail, the end labels and end marks are shifted inside rather than centred so nothing hangs past the track, and the footer wraps.
 - **Tests:** `npm run test:inspector` covers this with four suites. `scripts/test-inspector-value-rail.js` (271 assertions) covers the per-family ranges, the time presets (the four durations on a ms and on a s rail, the dropped-out-of-range case, the non-time families), the gesture rules (a slow drag dropping to the family's finest step and overriding both a chosen precision and the page's own, the double-tap window in time and place, the hold threshold, and the leave-scale/ghost wiring), the box fractions (¼/½/1 of a 64 px and a 120 px element, their ratios, the rem case, and every way of having no size to divide), monotonicity and exact endpoints for every range, the per-family step table and its ladders (the reachable set for an opacity, a line height and a duration, every family present in both tables, and that a drag step is always one of the three the segment offers), the footer's unit equivalent, the log mapping and its geometric-mean midpoint, clamping in both directions, step selection and precedence, the nudge pair, tick generation with the cap, major-label rounding, token ticks (in range, out of range, wrong unit, unparsable, duplicated), label round-trips, the `railWritable` fallback reasons, the unit bases, and the mock's own rail end to end. `scripts/test-inspector-value-shapes.js` (223 assertions) covers the shape ladder for 27 property/value pairs, the function catalogue (adding a function with its default argument, re-parsing the result, renumbering the indices, the caps, the no-catalogue and out-of-range cases), reordering in both directions and at both ends, `none` as a value, the shorthand expansion and collapse round trip, the function and comma-list splitting with nested brackets, the enum ranking and de-duplication, the colour parsing and write-back in all four formats (including the `color-mix()` round trip, its exactness for an opaque colour, an `rgb()` first stop, a refusal for every other mix, and a drag that keeps the format), the HSL round trip, the three rails, the time and angle conversions, the image candidates and the contrast hand-off. `scripts/test-inspector-shorthand.js` (84 assertions) covers the four collapse rules, the `var()` / `env()` / `attr()` refusals, the value-would-re-split refusal, the `border-radius` slash rule, the longhand fallback, the split→write→split round trip for nine shorthand values, the written-name expansion a shorthand edit is tracked by (`padding` → its four longhands, `border` → `border-top-width`, `inset` → `top`, `gap` → both axis gaps, a custom property never expanded, and a longhand never matching its own shorthand), and the unit conversions against 12 / 16 / 17.5 / 20 px roots. `scripts/test-inspector-target-bar.js` gained 15 assertions for the shorthand lookup (a shorthand found through its longhands, the direct declaration winning, a partial expansion not invented, and the origin sentence explaining the expansion). Gesture handling is verified live, not unit-tested.
+
+## Detail moved from the public page
+
+The public page keeps the usage ladder and the kind table. The per-kind parsing rules, write-back arithmetic, and rail geometry live here.
+### Every kind, and the view it gets
+
+The rail is the right changer for *a* number. It is the wrong control for a colour (three numbers that only mean something together), for a four-sided shorthand (four numbers that are one declaration), for a function list (an ordered list of rail-shaped arguments) and for an enum (not a number at all). The edit sheet therefore picks a view per kind, in the ladder the mock states: a numeric kind gets the rail, a numeric shorthand fans out, a known keyword set gets segments, a list of functions gets one rail per argument, and anything else falls back to the typed field with the reason stated.
+
+The view is chosen from the value the property holds when the sheet opens, and **held for as long as the sheet is open**: dragging one side with "link all sides" on turns `10px 14px 18px 14px` into `12px`, and the four rails must not collapse into a single slider under the user's finger.
+
+| Kind | View | Properties |
+| --- | --- | --- |
+| Length, number, percent, `scale()`, custom property holding a number | The rail | `padding: 14px`, `opacity: 0.5`, `--space-card: 14px` |
+| Colour | Three rails (hue / saturation / lightness), the page's palette with per-swatch contrast badges, hex / rgb / hsl / `color-mix()` format chips | `color`, `background-color`, `border-color`, `--brand` |
+| Fan-out | One sub-rail per side plus a "link all sides" switch | `padding`, `margin`, `inset`, `border-width`, `border-radius`, `gap`, `background-position` |
+| Enum | Segmented keyword chips, the page's own values first and the CSS-wide keywords last | `display`, `position`, `overflow`, `text-align`, `flex-direction`, `align-items` |
+| Functions | One rail per argument, or one row per item for a comma list | `transform`, `filter`, `box-shadow`, `text-shadow`, `transition`, `animation` |
+| Image | The page's own images and gradients as candidates — no rail | `background-image`, `mask-image`, `list-style-image` |
+| Time / Angle | The rail plus its unit segment | `transition-duration`, `animation-delay`, `rotate`, `hue-rotate` |
+| Anything else | The typed field, with a note saying why there is no view | `font-family`, `content`, `calc()`, `var()` |
+
+#### Colour
+
+![The three colour rails and the palette with contrast badges at 360 px](../../features/images/inspector/value-colour-rails-360.png)
+
+Three rails instead of one, because a colour is three numbers that only mean something together, and because each rail's track can then be a *picture* of the value: the hue track is the full gamut at the current saturation and lightness, the saturation track runs grey → colour, and the lightness track runs black → colour → white.
+
+- **HSL is kept as HSL.** A typed `hsl(220, 38%, 15%)` becomes `rgb(24, 33, 53)`, whose own hue is 221.7° — so a rail built from the pixels would read 222° for a value the user typed as 220°, and dragging it one step would write a colour they did not ask for. The parse keeps the original H/S/L where the value has it.
+- **The palette shows the ratio before Apply.** Each swatch carries its WCAG badge against the element's resolved background (`#2b3a56 fail 1.4:1`, `#9cc2ff AAA 8.7:1`), and a failing swatch takes the danger styling. Candidates are capped at five, because a swatch with a value and a badge is three times the width of a plain chip.
+- **The format chips rewrite the *form*, not the colour.** `hex` / `rgb` / `hsl` / `color-mix()` pick how the rails write back, and the choice survives a drag — which is the difference between a colour view and a converter.
+- **`color-mix()` is an exact rewrite, not an approximation.** The mix form is the colour at the weight of its alpha, mixed with `transparent`:
+  ```text
+  rgba(110, 168, 254, 0.425)  ->  color-mix(in srgb, #6ea8fe 42.5%, transparent)
+  ```
+  In sRGB that leaves the channels untouched and takes the alpha as the weight of the first stop, so the declaration resolves to the colour that was on screen and the rails can keep dragging it. The percentage keeps four decimals, so a `0.425` alpha does not become `0.43`. The parser reads the same shape back — including a first stop of `rgb(110, 168, 254)`, whose own commas must not be mistaken for the mix's — and any other mix (`in oklab`, a second stop that is not `transparent`, malformed stops) is left to the typed field with the reason rather than approximated.
+- **`currentcolor` is explained, not clamped.** It is a keyword whose value is another property's, so the view says so and leaves the typed field as the control.
+- The palette is rendered **once**: while the colour view is up, the suggestion row above drops its own colour group rather than showing the same candidates twice.
+
+#### Time and angle
+
+The rail is the changer; the unit segment is what the kind adds. Time cycles `ms ⇄ s` and angle cycles `deg ⇄ turn ⇄ rad`, each converting the *current* value so the write is the same duration or rotation in another unit (`180ms` ⇄ `0.18s`, `12deg` ⇄ `0.0333turn`). The angle rail's range is −180…180 and its snaps are the right angles the mock lists — 0° / 45° / 90° / 180°, plus their negatives.
+
+A time rail adds the durations a transition actually uses, one tap each:
+
+```text
+transition-duration 0.18s        [ 0.1s ] [ 0.15s ] [ 0.2s ] [ 0.3s ]
+```
+
+The mock's four are `100 / 150 / 200 / 300 ms`, and they earn a row of their own because a 0…2000 ms rail is roughly 10 ms per pixel on a phone: 150 ms is not a value a thumb can reliably hit. The chips are written in the rail's own unit — a value in seconds offers `0.15s`, not `150ms` — and a preset the range cannot hold is dropped rather than clamped. `transition-timing-function` and `animation-timing-function` get the other half of the mock's row: their easing keywords are a real choice set, so the enum view offers `ease / linear / ease-in / ease-out / ease-in-out / step-start / step-end`, the page's own usage first and the CSS-wide keywords last, which beats tapping `cubic-bezier(0.4, 0, 0.2, 1)` out on a phone.
+
+#### Enum
+
+![The enum segments for `display` at 360 px](../../features/images/inspector/value-kinds-enum-360.png)
+
+Segmented keyword chips, ranked: the values **this page uses** first (in the order the index reports them, so `flex` beats `grid` on a page that uses flex more), then the property's own spec set, then the CSS-wide keywords last. A value the page uses is marked, because it is the likelier choice.
+
+The view only appears for a property with a real choice set — **two or more of its own keywords**. `keywordsFor` always appends `inherit` / `initial` / `unset` / `revert`, so a "more than one keyword" rule would make every keyword an enum and give `transform: none` a five-chip row of which four are the CSS-wide ones.
+
+#### Functions and comma lists
+
+One rail per argument, each typed by its own kind, with the item's name as the row label:
+
+```text
+transform                                    [▲] [▼] [✕]
+  arg 1   translateY(−4px)
+  arg 2   scale(1.02)
+Add  [ translateX ] [ rotate ] [ skewX ] [ skewY ] [ none ]
+```
+
+A property that is a list of *shorthands* rather than of function calls (`box-shadow`, `transition`) gets the same view with its items split on the top-level commas instead of on function names, so a shadow's four values are four rails and a two-item transition list is two rows. Splitting is bracket-depth aware, which is what keeps `rgba(0, 0, 0, 0.4)` and `calc(100% - 2px)` in one piece.
+
+- **Add carries a real default, or it is not offered.** `FUNCTION_CATALOG` holds the functions worth adding per property with one valid argument each (`rotate(45deg)`, `blur(4px)`, `scale(1.05)`), because an add button that produces `translateX()` would write a broken declaration. The catalogue is short on purpose — a property with twenty addable functions is a menu, not a control — and a function the value already contains is not offered again; edit the one that is there.
+- **Reorder is part of the value, not tidiness.** A transform list is not commutative (`translateY` then `scale` is not `scale` then `translateY`) and a filter list runs in order, so `▲` / `▼` move an item one place through the same `joinFunctions` write as any other edit. The end stops are `disabled` rather than removed, so the row does not reflow under the finger mid-edit. The comma-list branch reorders through `joinListItems` for the same reason.
+- **`none` is a chip, not an empty field.** It is a real declaration for these properties (`transform: none`), so the row offers it directly rather than making the user delete the last function to reach it, and an emptied list falls back to it.
+
+#### Fan-out
+
+![The padding fan-out with four sub-rails at 360 px](../../features/images/inspector/value-fanout-360.png)
+
+A four-value shorthand becomes four sub-rails, with the value line under them showing what will be written:
+
+```text
+padding: 10px 14px 18px 14px
+  top     [───●────]  10px
+  right   [────●───]  14px
+  bottom  [─────●──]  18px
+  left    [────●───]  14px
+  padding: 10px 14px 18px
+```
+
+- **The expansion is CSS's own rule**, not a guess: one value repeats four times, two values repeat as a pair, three repeat the second for the left, four are as written. `gap` and `background-position` take two values rather than four, and are fanned out as a pair.
+- **"Link all sides" starts on for a shorthand that is already uniform.** That is the state the user is in; starting it off for `10px` would make the first drag surprising.
+- **Write-back is the shortest valid form** for display (`10px 14px 18px 14px` → `10px 14px 18px`, four equal values → `10px`). The full shorthand round-trip guarantees, including the longhand fallback for values that cannot collapse, land with `shorthandFor` in R3 — until then a fan-out edit writes the collapsed shorthand, which is what the view shows.
+- **A shorthand that cannot be taken apart is refused with its reason.** `padding: inherit` and `padding: calc(100% - 2px)` have no sides to drag, so the view says so and the typed field stays the control.
+
+#### Image and text
+
+An image is not a number, so the image view offers the page's own `url()` and gradient values instead of a rail — the honest alternative to dragging nothing. `content` is **not** an image property: it takes a `url()` but it is a text value first (`content: "→"`, `counter(x)`, `attr(data-label)`), and the mock lists it under STRING, so it gets the string view; routing it to the image view gave a text value a panel with no candidates in it. Everything else (an unparsable value, a keyword with no choice set, a font stack) renders the typed field with a one-line note stating why there is no view. Nothing is ever a silently disabled control with no explanation.
+
+A string value has no rail and no per-kind view, so what it gets is **the page's own values plus the keyword forms**:
+
+```text
+font-family
+On this page · 2 values            [ Inter, system-ui, sans-serif 1× ]  [ Georgia, serif 1× ]
+Keywords · valid for any property  [ inherit ] [ initial ] [ unset ] [ revert ]
+cursor
+On this page · 2 values            [ pointer 2× ]  [ grab 1× ]
+```
+
+The stacks and the cursors are the page's own declarations (the group above); the keyword row is the half a string value could not reach at all, because `text` is the shape with no view of its own. `keywordsFor` supplies a property's own words first (`cursor` → `auto, default, pointer, …`) and the CSS-wide four last, the row is capped at six, the word already in the field is not offered back, and an **enum-shaped** property does not get the row — it renders its own chips, and two copies of the same list is worse than one.
+
+#### Write-back: what the page reads back
+
+![The padding fan-out with four sub-rails at 360 px](../../features/images/inspector/value-fanout-360.png)
+
+A fan-out edit drags four sides, and what the sheet writes has to be both the shortest valid form and something the page reads back as the same four values:
+
+```text
+10px 10px 10px 10px   ->   10px
+10px 20px 10px 20px   ->   10px 20px
+4px 8px 12px 8px      ->   4px 8px 12px
+```
+
+The CSS rules are the whole of the arithmetic (all equal → one; top == bottom and left == right → two; left == right → three; otherwise four), and there are three cases where the value must **not** be collapsed:
+
+- **A `var()` side.** An unresolvable custom property invalidates the *whole* shorthand at computed-value time, so folding four sides into one would spread a single missing variable across all four. `env()` and `attr()` are refused for the same reason. The view still shows the four sub-rails and the value line, and the note says `Not rewritten from here: a custom property cannot join a shorthand…`.
+- **A value that would re-split.** A side containing top-level whitespace (`1px 2px`) cannot sit in a shorthand, because the parser would read it as two sides. A parenthesised `calc(1px + 2px)` is fine — it is one token.
+- **A `border-radius` pair.** `8px 8px 12px 12px` is four values; the two-value form of `border-radius` is the slash form (`8px / 12px`), a different declaration. Where the corners would collapse to a pair, they are written as the four corner longhands instead.
+
+A shorthand is **expanded by the browser the moment it is set**: after writing `padding: 24px 14px 18px`, `element.style` reports `padding-top`, `padding-right`, `padding-bottom` and `padding-left` and *not* `padding`. The target bar's origin sentence and the panel's scope summary therefore look a property up through its longhands too, and say so:
+
+```text
+padding: 24px 14px 18px is set on element.style (expanded to padding-top and its
+siblings), which wins this value for this element only.
+```
+
+Without that fallback the bar would claim `padding has no declaration on this element` seconds after the user wrote one.
+
+**Undo restores every side.** One fan-out drag is one receipt entry (`padding  —  →  24px 14px 18px`), because the write is one declaration: `recordChange` merges same-property edits and keeps the original *from* value, so **Undo all** returns an element that had no `padding` of its own to exactly that state — no inline style at all — and the origin sentence goes back to naming the stylesheet rule. A value the sheet wrote is re-read after the write (inline declarations *and* the matched-rules entry), so the pinned preview, the Declared list, the Computed list and the origin sentence all describe the same page.
+
+### Behaviour
+
+- **The rail never writes to the page.** It only rewrites the sheet's value field, so a drag is one property and one undo receipt entry, and the element's other declarations are untouched. Verified live: after a full drag the inspected element's `style` attribute is still empty, and it changes only after **Apply**.
+- **The rail never touches another property.** The only write path is the same `style.setProperty` the rest of the sheet uses, addressed at the property the sheet was opened for.
+- **Ranges are per property family, not global.** `opacity` is 0…1, `line-height` 0…3, `z-index` −10…100, an angle −180…180 (0…360 for a hue), a time 0…2000 ms, a `scale()` 0…3, a percentage 0…200, and a length 0…4× the element's own size.
+- **A length is measured against the right size.** A box property (`width`, `top`, `max-height`) is scaled by the element's box; a spacing, radius or type property is scaled by the element's font size, because a `16px` padding measured against a 448 px card would sit at 0.9% of the rail — technically "4× the size" and impossible to drag.
+- **A logarithmic scale is used only where it helps.** A range whose maximum is at least 100× its minimum (`1px … 1000px`) is mapped logarithmically, which is the only case where a linear thumb spends most of its travel on values nobody wants. A range that starts at 0 is always linear, because a rail that cannot reach its own minimum is worse than a coarse one.
+- **The value in force is always on the rail.** If the property's current value sits outside the family's usual bounds (`z-index: 400`), the range grows to include it rather than parking the thumb at an end and reading a different number than the page holds.
+- **Ticks are capped so they stay ticks.** A 0…2000 ms range at a 10 ms step would be 200 marks ~1.7 px apart on a phone: the step is widened to the next multiple that fits 40 ticks, keeping the ticks on multiples of the page's step. A range with no page step gets ten evenly spaced ticks, which is the most the rail can show without implying precision it does not have.
+- **Tokens are dropped rather than approximated.** A token outside the range, in another unit, or holding something that is not a number is not ticked — a violet mark at the wrong place is worse than no mark.
+- **Three tick families, three jobs.** A grey tick is a step, a dark tick is a round number you can tap, a violet tick is a design token, and a green tick is a share of this element. `fractionSnaps` derives the fractions from the rail's own maximum (`range.max / 4` is the element's size in the value's unit), so a rem rail gets rem fractions with no conversion of its own, and a fraction that would fall outside the range is dropped rather than drawn off the end.
+- **A drag never churns the field.** Writing the value the field already holds is a no-op, so a tap on the track cannot wipe a half-typed value.
+- **The gesture is one pointer capture, no drag library.** The track is 60 px tall with `touch-action: none`, so the sheet's vertical scroller cannot claim a horizontal drag and the moves keep arriving after the finger leaves the track. Arrow keys work too (Left/Right, Down/Up), which costs nothing and makes the control usable with a keyboard.
+- **Every control is a ≥44 px target**: the thumb is 34 px of ink inside the 60 px track, the tick labels carry 44 px hit areas without widening their marks, and the segment and unit chips are 44 px tall.
+- **Nothing scrolls sideways.** The rail is 336 px inside the 360 px sheet, its labels are absolutely positioned inside the track, and the sheet body and the page both measure `scrollWidth − clientWidth = 0`.
+
+### Related
+
+- [Inspector value suggestions](../../features/inspector-value-suggestions.md) — the page's own values, the snap hint and the contrast badges.
+- [Inspector value types](../../features/inspector-value-types.md) — switching a value between length, number, percentage and keyword.
+- [Inspector non-destructive editing](../../features/inspector-non-destructive-editing.md) — what an edit changes, what it keeps, and how to undo it.
