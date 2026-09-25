@@ -446,8 +446,10 @@ color: var(--fg-soft);
   line-height: 1.3;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 30dvh;
-  overflow-y: auto;
+  /* No height cap of its own: the card body (40dvh) is the one scroller.
+     A second scroll box inside it trapped swipes on touch screens (the
+     gesture scrolled the output, then the body, then the transcript) and
+     kept the live pin — which scrolls the body — from following output. */
 }
 .tool-card__shell-live-pre:empty { display: none; }
 /* Nested subagent turns are ordinary chat rows: they keep `.chat-msg`'s own
@@ -620,8 +622,9 @@ color: var(--fg-soft);
    border and padding that both this block and the output sit inside; a
    second surface here read as a divider line between the command and its
    own output, and a separate tone implied the command was secondary to it.
-   Only the height differs: the command scrolls at one third of the viewport
-   so one enormous command cannot push the output off screen. */
+   It has no scroll box of its own either: the card body is the single
+   scroller, so a long command scrolls with its output instead of trapping
+   the swipe in a nested box. */
 .tool-preview__args {
   display: flex;
   flex-direction: column;
@@ -629,8 +632,6 @@ color: var(--fg-soft);
   margin-bottom: 6px;
 }
 .tool-preview__pre--args {
-  max-height: 33dvh;
-  overflow-y: auto;
   color: var(--fg);
   font-size: 0.7rem;
 }
