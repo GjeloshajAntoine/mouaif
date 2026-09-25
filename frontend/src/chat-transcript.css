@@ -269,17 +269,18 @@
   gap: 6px;
   padding: 0 4px 2px;
 }
-/* Icon-only: the glyph is the whole button, so it takes the compact
-   glyph-control box (--tap-sm, the same 32px the send and MCP toggles use)
-   and the border is dropped — a bordered empty square read as a broken
-   control, and the outline is no longer needed to say "this is a button"
-   now that a clipboard glyph does. `.tap-target` (base.css) grows the hit
-   area to the 44px floor without painting it. */
+/* Icon-only: the glyph is the whole button, so it takes the smaller
+   glyph-control box (--tap-xs) and the border is dropped — a bordered
+   empty square read as a broken control, and the outline is no longer
+   needed to say "this is a button" now that a clipboard glyph does. It
+   repeats under every bubble, so it runs a touch smaller than the send
+   and MCP toggles. `.tap-target` (base.css) grows the hit area to the
+   44px floor without painting it, so the tap target stays legal. */
 .chat-msg__copy {
-  width: var(--tap-sm);
-  min-width: var(--tap-sm);
-  height: var(--tap-sm);
-  min-height: var(--tap-sm);
+  width: var(--tap-xs);
+  min-width: var(--tap-xs);
+  height: var(--tap-xs);
+  min-height: var(--tap-xs);
   padding: 0;
   display: inline-flex;
   align-items: center;

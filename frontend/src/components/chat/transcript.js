@@ -221,16 +221,16 @@ function renderAssistantBody(body, content, reasoning, final) {
 // clipboard refuses it. Every glyph draws in `currentColor` with no fill, so
 // the CSS tint (muted -> success / danger) is the only color decision.
 const COPY_GLYPH_IDLE =
-  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
   'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<rect x="9" y="9" width="11" height="12" rx="2"/>' +
   '<path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
 const COPY_GLYPH_COPIED =
-  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
   'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M20 6 9 17l-5-5"/></svg>';
 const COPY_GLYPH_FAILED =
-  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" ' +
+  '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" ' +
   'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M18 6 6 18M6 6l12 12"/></svg>';
 
@@ -245,7 +245,7 @@ const COPY_GLYPH_FAILED =
 // there competed with the message for the same line on a 360px screen. The
 // accessible name still travels on `aria-label`, so a screen reader hears
 // `Copy message` / `Copied message` / `Copy failed`, and `.tap-target` keeps
-// the touch area at 44px while the painted box stays 32px.
+// the touch area at 44px while the painted box stays 26px.
 //
 // `messageFor` resolves the message to copy at click time, not at build time.
 // That matters for the live row: it streams into `row._content`, not into the

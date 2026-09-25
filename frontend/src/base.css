@@ -95,6 +95,7 @@
      44px targets. */
   --tap: 44px;
   --tap-sm: 32px;
+  --tap-xs: 26px;
   --tabbar-h: 44px;   /* minimum touch row; the tab bar adds the iOS inset */
   --font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   /* Radius scale — four stops, used everywhere. The codebase used to
