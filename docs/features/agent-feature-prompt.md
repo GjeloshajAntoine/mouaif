@@ -18,7 +18,7 @@ The feature summary is assembled server-side and injected as its own `system` me
 - **Agents** — how many named subagent personas are defined in the project.
 - **File tagging** — whether tags are configured in the project.
 - **Trace** — whether trace-to-file is on for this chat.
-- **Prompt profile** — the active profile id (`very-small`, `average`, or `extensive`).
+- **Prompt profile** — the active profile id (`very-small`, `average`, `extensive`, or `chat`).
 
 The message ends by mentioning the `list_features` tool for full detail.
 

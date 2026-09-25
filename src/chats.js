@@ -20,6 +20,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const settings = require('./settings.js');
 const messages = require('./messages.js');
+const promptProfiles = require('./promptProfiles.js');
 const PROJECT_FILE = '.mouaif.json';
 function ensureDir(dir) {
 fs.mkdirSync(dir, { recursive: true });
@@ -71,7 +72,7 @@ title: (opts && typeof opts.title === 'string' && opts.title.trim()) ? opts.titl
 createdAt: new Date().toISOString(),
 lastOpenedAt: null,
 trace: opts && opts.trace === true,
-promptSize: opts && ['very-small', 'average', 'extensive'].includes(opts.promptSize) ? opts.promptSize : defaults.promptSize,
+promptSize: opts && promptProfiles.isValidProfile(opts.promptSize) ? opts.promptSize : defaults.promptSize,
 thinkingLevel: opts && typeof opts.thinkingLevel === 'string' ? opts.thinkingLevel : '',
 maxOutputTokens: opts && typeof opts.maxOutputTokens === 'string' ? opts.maxOutputTokens : '',
 promptId: opts && typeof opts.promptId === 'string' && opts.promptId ? opts.promptId : null,
@@ -86,6 +87,8 @@ toolAuth: (opts && opts.toolAuth && typeof opts.toolAuth === 'object' && !Array.
 : undefined,
 tools: opts && Array.isArray(opts.tools) ? opts.tools : undefined
 };
+// The `chat` profile starts with no tool checked.
+if (!chat.tools && promptProfiles.NO_TOOLS_PROFILES.has(chat.promptSize)) chat.tools = [];
 return getChatDb().createChat(projectDir, chat);
 }
 function updateChat(projectDir, chatId, patch) {
@@ -96,7 +99,19 @@ const t = String(patch.title).trim();
 if (t) dbPatch.title = t;
 }
 if (patch && typeof patch.trace === 'boolean') dbPatch.trace = patch.trace;
-if (patch && ['very-small', 'average', 'extensive'].includes(patch.promptSize)) dbPatch.promptSize = patch.promptSize;
+if (patch && promptProfiles.isValidProfile(patch.promptSize)) {
+dbPatch.promptSize = patch.promptSize;
+// Switching to the `chat` profile unchecks every tool; switching away
+// from it restores the default (all tools). An explicit `tools` in the
+// same patch wins (handled below).
+if (!Object.prototype.hasOwnProperty.call(patch, 'tools')) {
+if (promptProfiles.NO_TOOLS_PROFILES.has(patch.promptSize)) dbPatch.tools = [];
+else {
+const current = getChat(projectDir, chatId);
+if (current && promptProfiles.NO_TOOLS_PROFILES.has(current.promptSize)) dbPatch.tools = null;
+}
+}
+}
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'promptId')) {
 dbPatch.promptId = (patch.promptId === null || patch.promptId === '') ? null : String(patch.promptId);
 }

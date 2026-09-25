@@ -93,8 +93,22 @@ const PROFILES = Object.freeze({
     description: 'All Average guidance + planning, verification, and workflow examples.',
     summary: 'core rules + workflow + examples',
     systemMessage: AVERAGE_GUIDANCE + '\n\n' + EXTENSIVE_GUIDANCE
+  },
+  // Plain conversation: no system prompt, and new chats start with no
+  // tool checked (see NO_TOOLS_PROFILES / chats.js). The user can still
+  // check tools in the chat's Tools card.
+  'chat': {
+    id: 'chat',
+    label: 'Chat',
+    description: 'Empty system prompt and no tools checked. For a plain conversation.',
+    summary: 'empty prompt + no tools',
+    systemMessage: ''
   }
 });
+
+// Profiles whose new chats start with an empty tool allowlist
+// (`chat.tools = []`), i.e. every tool unchecked in the Tools card.
+const NO_TOOLS_PROFILES = new Set(['chat']);
 
 const DEFAULT_PROFILE = 'average';
 
@@ -104,6 +118,7 @@ function isValidProfile(value) {
 
 function profileSystemMessage(value) {
   if (!isValidProfile(value)) return PROFILES[DEFAULT_PROFILE].systemMessage;
+  // `chat` is intentionally empty; keep it empty rather than defaulting.
   return PROFILES[value].systemMessage;
 }
 
@@ -245,6 +260,7 @@ function resolveProfile(opts) {
 module.exports = {
   PROFILES,
   DEFAULT_PROFILE,
+  NO_TOOLS_PROFILES,
   isValidProfile,
   profileSystemMessage,
   describeProfile,

@@ -64,7 +64,7 @@ const DEFAULTS = Object.freeze({
   //   { openai: ['me@example.com'], anthropic: [], google: [], 'github-copilot': [] }
   // The actual tokens live in the OS keychain via src/auth.js.
   authAccounts: {},
-  // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive'.
+  // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive' | 'chat'.
   promptSize: 'average',
 // Composer keyboard default: when true, Enter inserts a newline and the
 // send button / Cmd+Ctrl+Enter sends. When false, Enter sends and

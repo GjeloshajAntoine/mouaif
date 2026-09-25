@@ -254,7 +254,7 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   }
 
   // Prompt-size profiles. Static read-only endpoint that lists the
-  // three profiles (very-small | average | extensive) so the chat
+  // profiles (very-small | average | extensive | chat) so the chat
   // UI and the Settings view can render a picker without hard-coding
   // the labels or descriptions. The actual profile text is consumed
   // server-side at stream time; only the metadata is exposed here.

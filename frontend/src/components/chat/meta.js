@@ -9,6 +9,7 @@
 import { fetchJson, projectsReload } from '../../api.js';
 import { nav } from '../../router.js';
 import { renderSystemPromptMessage } from './transcript.js';
+import { updateToolsCard } from './cards.js';
 import { setChatStatus } from './usage.js';
 
 // updateMetaLine(refs, state)
@@ -27,7 +28,7 @@ export function updateMetaLine(refs, state) {
 // activeProfileId(state) -> string
 export function activeProfileId(state) {
   const c = state.chat;
-  if (c && ['very-small', 'average', 'extensive'].indexOf(c.promptSize) >= 0) return c.promptSize;
+  if (c && ['very-small', 'average', 'extensive', 'chat'].indexOf(c.promptSize) >= 0) return c.promptSize;
   return 'average';
 }
 
@@ -116,9 +117,19 @@ export function deleteThisChat(state, refs) {
 // size is chosen once, while the chat is still empty; the control
 // is not a permanent fixture (see updateSetupVisibility below).
 export function setPromptSize(v, state, refs) {
-  if (['very-small', 'average', 'extensive'].indexOf(v) < 0) return;
+  if (['very-small', 'average', 'extensive', 'chat'].indexOf(v) < 0) return;
   updateSwitch(v, refs);
-  updateChat({ promptSize: v }, state, refs).then(() => { refreshSystemPrompt(state, refs); });
+  updateChat({ promptSize: v }, state, refs).then(() => {
+    // The server unchecks every tool for the `chat` profile (and restores
+    // them when switching away), so mirror the chat's tool list in the card.
+    if (state.chat && state.tools) {
+      state.tools = Object.assign({}, state.tools, {
+        filter: Array.isArray(state.chat.tools) ? state.chat.tools.slice() : null
+      });
+      updateToolsCard(refs, state);
+    }
+    refreshSystemPrompt(state, refs);
+  });
 }
 
 // updateSwitch(id, refs)

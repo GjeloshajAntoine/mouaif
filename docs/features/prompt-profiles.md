@@ -2,13 +2,13 @@
 
 ## Overview
 
-`mouaif` provides three built-in system prompt profiles — `very-small`, `average`, and `extensive` — to tailor how much context, guidance, and tool schema information is provided to the AI model.
+`mouaif` provides four built-in system prompt profiles — `very-small`, `average`, `extensive`, and `chat` — to tailor how much context, guidance, and tool schema information is provided to the AI model.
 
 ## Usage
 
 ### Picking a profile
 
-- **In the chat (at creation time)** — open a fresh chat and pick from the dropdown at the top of the transcript (`Very small`, `Average`, or `Extensive`). Once the first message is sent, the choice is locked for that conversation to ensure consistent model behavior.
+- **In the chat (at creation time)** — open a fresh chat and pick from the dropdown at the top of the transcript (`Very small`, `Average`, `Extensive`, or `Chat`). Once the first message is sent, the choice is locked for that conversation to ensure consistent model behavior.
 - **For the whole project** — configure `Default prompt style` in project settings. New chats inherit this default.
 - **Global default** — set your preferred app-wide default in **Settings → Defaults**.
 
@@ -18,17 +18,22 @@ The active system prompt (the profile instructions plus any attached custom prom
 
 The expanded prompt wraps to the card's width — long lines fold rather than running off the card inside a horizontally scrolling box, so the instructions are readable on a phone. The same wrapping applies to the nested prompt card inside an expanded subagent card. Fenced code blocks in a reply are unaffected: they keep their own no-wrap, horizontally scrolling rendering.
 
-### The three profiles
+### The four profiles
 
 | ID | Label | When to use it |
 |---|---|---|
 | `very-small` | Very small | Shared core rules for concise answers, safe changes, progress, and verification. The smallest prompt; tools are listed in compact form and schemas are retrieved on demand. |
 | `average` | Average | The recommended default. Adds an explicit inspect/edit/verify workflow, precise file-editing guidance, and full tool schemas. |
 | `extensive` | Extensive | All Average guidance plus planning, regression testing, mobile UI checks, and concrete workflow examples. Uses the same full tool schemas. |
+| `chat` | Chat | A plain conversation: an empty system prompt and no tools checked. Agent files are off by default, as with Very small. |
+
+### The Chat profile
+
+`chat` sends no profile system message. A new chat created with this profile starts with its tool list empty (`chat.tools = []`), so every tool is unchecked in the chat's **Tools** card. You can check tools there as with any chat. Switching an empty chat to `chat` unchecks every tool; switching it back to another profile restores all tools.
 
 ## Shared behavior
 
-Changing the profile adds detail, not a different set of permissions or safety rules. All three profiles instruct the assistant to:
+Changing the profile adds detail, not a different set of permissions or safety rules. The three non-empty profiles (`very-small`, `average`, `extensive`) instruct the assistant to:
 
 - Answer concisely with project-relative paths and language-tagged code blocks.
 - Follow applicable project and custom instructions while respecting instruction priority.

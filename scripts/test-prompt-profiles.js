@@ -45,7 +45,7 @@ async function main() {
   // 1) Module shape.
   check('exports PROFILES', pp.PROFILES && typeof pp.PROFILES === 'object');
   check('exports DEFAULT_PROFILE', pp.DEFAULT_PROFILE === 'average');
-  check('PROFILES has 3 entries', Object.keys(pp.PROFILES).length === 3,
+  check('PROFILES has 4 entries', Object.keys(pp.PROFILES).length === 4,
     'got: ' + Object.keys(pp.PROFILES).length);
 
   // 2) Each profile carries the documented fields.
@@ -58,6 +58,13 @@ async function main() {
     check('PROFILES[' + id + '] has non-empty systemMessage',
       typeof (p && p.systemMessage) === 'string' && p.systemMessage.length > 0);
   }
+
+  // 2b) The `chat` profile: empty system prompt, no tools checked.
+  const chatP = pp.PROFILES['chat'];
+  check('PROFILES[chat] exists with a label', chatP && chatP.id === 'chat' && chatP.label === 'Chat');
+  check('PROFILES[chat] has an empty systemMessage', chatP && chatP.systemMessage === '');
+  check('profileSystemMessage(chat) stays empty', pp.profileSystemMessage('chat') === '');
+  check('chat profile starts with no tools', pp.NO_TOOLS_PROFILES.has('chat') && !pp.NO_TOOLS_PROFILES.has('average'));
 
   // 3) The three profiles carry distinct messages (the "very-small" one
   //    is intentionally the shortest).
@@ -91,7 +98,8 @@ async function main() {
     ['honest progress completion', /status: "completed" and current equal to total.*status: "failed" if blocked/],
     ['evidence and privacy', /Never invent project facts or test results.*checks run.*limitations.*Do not expose secrets/]
   ];
-  for (const profile of pp.listProfiles()) {
+  // `chat` is intentionally empty, so it carries none of the shared rules.
+  for (const profile of pp.listProfiles().filter((p) => p.id !== 'chat')) {
     for (const [rule, pattern] of sharedRules) {
       check(profile.id + ' includes ' + rule, pattern.test(profile.systemMessage));
     }
@@ -128,11 +136,12 @@ async function main() {
 
   // 7) listProfiles returns 3 entries with the expected ids.
   const list = pp.listProfiles();
-  check('listProfiles length 3', list.length === 3);
+  check('listProfiles length 4', list.length === 4);
   check('listProfiles has all ids',
     list.some(p => p.id === 'very-small') &&
     list.some(p => p.id === 'average') &&
-    list.some(p => p.id === 'extensive'));
+    list.some(p => p.id === 'extensive') &&
+    list.some(p => p.id === 'chat'));
   // Copies, not references.
   check('listProfiles entries are copies', list.every(p => p !== pp.PROFILES[p.id]));
 
@@ -251,7 +260,7 @@ async function main() {
     check('GET /api/prompt-profiles 200', r.status === 200, 'got: ' + r.status);
     check('GET /api/prompt-profiles has default', r.body && r.body.default === 'average');
     check('GET /api/prompt-profiles has 3 entries',
-      r.body && Array.isArray(r.body.profiles) && r.body.profiles.length === 3,
+      r.body && Array.isArray(r.body.profiles) && r.body.profiles.length === 4,
       'got: ' + (r.body && r.body.profiles && r.body.profiles.length));
     check('GET /api/prompt-profiles entries carry id+label',
       r.body && r.body.profiles.every(p => p.id && p.label && p.description && p.summary));
@@ -262,8 +271,19 @@ async function main() {
     // server-side resolver returns.
     check('GET /api/prompt-profiles exposes systemMessage',
       r.body && r.body.profiles.every(p =>
-        typeof p.systemMessage === 'string' && p.systemMessage.length > 0 &&
+        typeof p.systemMessage === 'string' && (p.systemMessage.length > 0 || p.id === 'chat') &&
         p.systemMessage === pp.PROFILES[p.id].systemMessage));
+    // A chat created with the `chat` profile has every tool unchecked;
+    // switching away restores all tools, switching back unchecks them.
+    const chats = require('../src/chats.js');
+    const c1 = chats.createChat(projectDir, { promptSize: 'chat' });
+    check('createChat(chat) starts with tools = []', c1.promptSize === 'chat' && Array.isArray(c1.tools) && c1.tools.length === 0);
+    const c2 = chats.updateChat(projectDir, c1.id, { promptSize: 'average' });
+    check('switching chat -> average restores all tools', c2 && c2.promptSize === 'average' && c2.tools == null);
+    const c3 = chats.updateChat(projectDir, c2.id, { promptSize: 'chat' });
+    check('switching to chat unchecks every tool', c3 && Array.isArray(c3.tools) && c3.tools.length === 0);
+    const c4 = chats.createChat(projectDir, { promptSize: 'average' });
+    check('other profiles keep all tools', c4.tools == null);
   } finally {
     await new Promise(resolve => {
       server.close(resolve);

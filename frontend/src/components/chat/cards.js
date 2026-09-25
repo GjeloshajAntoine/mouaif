@@ -28,7 +28,8 @@ function buildSetupCard() {
   for (const opt of [
     { id: 'very-small', label: 'Very small — tool names only, no parameter schemas, smallest prompt' },
     { id: 'average',    label: 'Average — full tools, recommended' },
-    { id: 'extensive',  label: 'Extensive — full tools + best-practice guidance' }
+    { id: 'extensive',  label: 'Extensive — full tools + best-practice guidance' },
+    { id: 'chat',       label: 'Chat — empty prompt, no tools checked' }
   ]) {
     const o = document.createElement('option');
     o.value = opt.id;

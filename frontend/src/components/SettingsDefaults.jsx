@@ -2,7 +2,7 @@
 //
 // Renders Settings → App defaults → Chat defaults. Seven settings:
 //
-//   - Default prompt style       (very-small / average / extensive)
+//   - Default prompt style       (very-small / average / extensive / chat)
 //   - Enter inserts a newline    (boolean switch)
 //   - Auto-retry failed sends    (boolean switch)
 //   - Glass orb file button      (boolean switch)
@@ -33,7 +33,8 @@ import { composerToolsFromApp } from './chat/composerTools.js';
 const PROMPT_SIZE_OPTIONS = [
   { value: 'very-small', label: 'Very small — tool names only, no schemas' },
   { value: 'average',    label: 'Average — full tools, recommended' },
-  { value: 'extensive',  label: 'Extensive — full tools + best-practice guidance' }
+  { value: 'extensive',  label: 'Extensive — full tools + best-practice guidance' },
+  { value: 'chat',       label: 'Chat — empty prompt, no tools checked' }
 ];
 
 // Localised human label for the prompt-size value, used by the live-region
