@@ -1239,7 +1239,7 @@ const body = `
 <section class="hero">
 <p class="eyebrow">Mobile Ouaib first</p>
 <h1>mouaif</h1>
-<p class="tagline">Run an AI coding workspace for your local projects, connect the model providers you choose, and control which tools the assistant may use.</p>
+<p class="tagline">Run an AI coding workspace for your local projects, with a web inspector, a CodeMirror-based code editor, subagents, and custom prompts.</p>
 <div class="hero-actions">
 <a class="btn btn--primary" href="features/getting-started.html">Get started</a>
 <a class="btn" href="features/providers.html">Connect a provider</a>
