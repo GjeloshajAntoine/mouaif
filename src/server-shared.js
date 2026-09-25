@@ -172,6 +172,7 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
 // composer keeps showing. See docs/features/composer-tool-buttons.md.
 'dictationButton', // the composer microphone button (`false` hides it)
 'imageButton',    // the composer image-attachment button (`false` hides it)
+'statusBar',      // the status line under the composer (`false` hides it)
 // The remembered dictation choice: `{ modelId, providerId }`, written by the
 // dictation page and read by every surface that dictates — the page's picker
 // and the composer microphone. No secret, but it must be allowlisted here:

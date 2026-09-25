@@ -44,7 +44,7 @@ function check(name, fn) {
 
 // ---- 1. the preference reader -------------------------------------------
 const {
-  composerToolsFromApp, COMPOSER_TOOLS_DEFAULT, DICTATION_BUTTON_KEY, IMAGE_BUTTON_KEY
+  composerToolsFromApp, COMPOSER_TOOLS_DEFAULT, DICTATION_BUTTON_KEY, IMAGE_BUTTON_KEY, STATUS_BAR_KEY
 } = await import(
   'data:text/javascript;base64,' + Buffer.from(read('frontend/src/components/chat/composerTools.js')).toString('base64')
 );
@@ -61,33 +61,61 @@ check('both optional buttons are shown by default', () => {
 });
 
 check('composerToolsFromApp reads both booleans', () => {
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: false } }), { dictation: false, image: false });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: false } }), { dictation: true, image: false });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: true } }), { dictation: false, image: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: true } }), { dictation: true, image: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: false } }), { dictation: false, image: false, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: false } }), { dictation: true, image: false, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: true } }), { dictation: false, image: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: true } }), { dictation: true, image: true, status: true });
 });
 
 check('a value it cannot read leaves the button shown, never hidden', () => {
   // Anything shaped differently is "a settings read that failed or never
   // happened" — not "the user hid a button". Both flags fall back to shown.
   for (const snapshot of [{}, null, undefined, { app: null }, { app: [] }, { app: 'nope' }, 0]) {
-    assert.deepEqual(composerToolsFromApp(snapshot), { dictation: true, image: true },
+    assert.deepEqual(composerToolsFromApp(snapshot), { dictation: true, image: true, status: true },
       'snapshot ' + JSON.stringify(snapshot) + ' must read as the defaults');
   }
   // And per key: an absent, numeric, null or prose value resolves to shown.
   for (const raw of [undefined, null, 1, 0, 'yes', 'on', {}]) {
     const got = composerToolsFromApp({ app: { dictationButton: raw, imageButton: raw } });
-    assert.deepEqual(got, { dictation: true, image: true }, 'raw ' + JSON.stringify(raw) + ' must read as shown');
+    assert.deepEqual(got, { dictation: true, image: true, status: true }, 'raw ' + JSON.stringify(raw) + ' must read as shown');
   }
 });
 
 check('the string forms a TEXT store hands back are honoured', () => {
   // The app store holds a TEXT blob, so a hand-edited store.sqlite (or a
   // settings file merged from a project) can legitimately hand us 'false'.
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false', imageButton: 'false' } }), { dictation: false, image: false });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'true', imageButton: 'true' } }), { dictation: true, image: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false' } }), { dictation: false, image: true });
-  assert.deepEqual(composerToolsFromApp({ app: { imageButton: 'false' } }), { dictation: true, image: false });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false', imageButton: 'false' } }), { dictation: false, image: false, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'true', imageButton: 'true' } }), { dictation: true, image: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false' } }), { dictation: false, image: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { imageButton: 'false' } }), { dictation: true, image: false, status: true });
+});
+
+check('the status line switch reads the same way, shown by default', () => {
+  assert.equal(STATUS_BAR_KEY, 'statusBar');
+  assert.equal(COMPOSER_TOOLS_DEFAULT.status, true);
+  assert.equal(composerToolsFromApp({ app: { statusBar: false } }).status, false);
+  assert.equal(composerToolsFromApp({ app: { statusBar: 'false' } }).status, false);
+  for (const raw of [undefined, null, 1, 'off']) {
+    assert.equal(composerToolsFromApp({ app: { statusBar: raw } }).status, true, 'raw ' + JSON.stringify(raw) + ' reads as shown');
+  }
+});
+
+check('the status line key is a default and survives the allowlist', () => {
+  assert.match(read('src/settings.js'), /statusBar: true,/);
+  const shared = read('src/server-shared.js');
+  const start = shared.indexOf('const CLIENT_SETTINGS_KEYS = Object.freeze([');
+  assert.match(shared.slice(start, shared.indexOf(']);', start)), /'statusBar'/);
+});
+
+check('a hidden status line keeps its span mounted and its errors visible', () => {
+  const src = read('frontend/src/components/chat/Chat.jsx');
+  assert.match(src, /composerTools\.status \? '' : ' chat-view__status-row--hidden'/);
+  assert.match(src, /h\('span', \{ ref: refs\.status, class: 'status chat-view__status'/, 'the span stays mounted');
+  const css = read('frontend/src/chat-composer.css');
+  assert.match(css, /\.chat-view__status-row--hidden \.chat-view__status:not\(\[data-state="error"\]\) \{ display: none; \}/);
+  const ui = read('frontend/src/components/SettingsDefaults.jsx');
+  assert.ok(ui.includes("id: 'sd-status-bar'"));
+  assert.match(ui, /'statusBar', \{ statusBar: v \}/);
 });
 
 // ---- 2. the server-side plumbing ----------------------------------------

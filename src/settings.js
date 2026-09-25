@@ -89,6 +89,9 @@ fileOrbButton: false,
   // docs/features/composer-tool-buttons.md.
   dictationButton: true,
   imageButton: true,
+  // The one-line status row under the composer. `false` hides its text (the
+  // row keeps the safe-area inset, and an error state still shows).
+  statusBar: true,
   // App-level custom prompts. Empty by default.
   prompts: [],
   // Tool output profile for file/result text fed back to the model. `size`

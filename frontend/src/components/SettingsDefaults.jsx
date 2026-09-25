@@ -1,6 +1,6 @@
 // mouaif web — SettingsDefaultsView
 //
-// Renders Settings → App defaults → Chat defaults. Six settings:
+// Renders Settings → App defaults → Chat defaults. Seven settings:
 //
 //   - Default prompt style       (very-small / average / extensive)
 //   - Enter inserts a newline    (boolean switch)
@@ -8,12 +8,13 @@
 //   - Glass orb file button      (boolean switch)
 //   - Dictation microphone       (boolean switch — hides the composer mic)
 //   - Image button               (boolean switch — hides the attach button)
+//   - Status line                (boolean switch — hides the composer status row text)
 //
 // The last two only decide whether the composer *draws* a control: the routes
 // behind them stay open and a pasted image still attaches (see
 // ./chat/composerTools.js and docs/features/composer-tool-buttons.md).
 //
-// All six auto-save on change via the shared `saveApp` helper, matching
+// All seven auto-save on change via the shared `saveApp` helper, matching
 // the rest of the app (Settings → Project toggles, Settings → Agents, etc.).
 // No Save button: the previous version required a manual commit, which was
 // inconsistent and an extra tap for the user.
@@ -49,6 +50,7 @@ export function SettingsDefaultsView() {
 const [fileOrb, setFileOrb] = useState(false);
   const [dictationButton, setDictationButton] = useState(true);
   const [imageButton, setImageButton] = useState(true);
+  const [statusBar, setStatusBar] = useState(true);
 
   // Per-row status messages, mirroring SettingsProject's
   // `promptSizeStatusMsg` / `chatTraceStatusMsg` pattern. Empty string hides
@@ -59,6 +61,7 @@ const [fileOrb, setFileOrb] = useState(false);
 const [fileOrbMsg, setFileOrbMsg] = useState('');
   const [dictationButtonMsg, setDictationButtonMsg] = useState('');
   const [imageButtonMsg, setImageButtonMsg] = useState('');
+  const [statusBarMsg, setStatusBarMsg] = useState('');
 
   // Bail flag for late save() responses if the component unmounts mid-save
   // (e.g. user navigates back). Mirrors the same pattern other views use.
@@ -68,7 +71,7 @@ const [fileOrbMsg, setFileOrbMsg] = useState('');
   // Track in-flight saves per field so a fast toggle flip doesn't race
   // an earlier in-flight request. Latest write wins; older writes' status
   // messages are dropped so the user only sees the most recent outcome.
-  const inflight = useRef({ promptSize: 0, enterForNewline: 0, autoRetry: 0, fileOrbButton: 0, dictationButton: 0, imageButton: 0 });
+  const inflight = useRef({ promptSize: 0, enterForNewline: 0, autoRetry: 0, fileOrbButton: 0, dictationButton: 0, imageButton: 0, statusBar: 0 });
 
   useEffect(() => {
     (async () => {
@@ -84,6 +87,7 @@ const [fileOrbMsg, setFileOrbMsg] = useState('');
         const tools = composerToolsFromApp(app);
         setDictationButton(tools.dictation);
         setImageButton(tools.image);
+        setStatusBar(tools.status);
       } catch (e) {
         if (aliveRef.current) setPromptSizeMsg('load failed: ' + e.message);
       }
@@ -145,6 +149,12 @@ const v = e.currentTarget.checked;
 setImageButton(v);
 saveField('imageButton', { imageButton: v }, setImageButtonMsg,
 v ? 'the composer image button is shown again' : 'the composer image button is hidden (open a chat to see it)');
+}
+function onStatusBarChange(e) {
+const v = e.currentTarget.checked;
+setStatusBar(v);
+saveField('statusBar', { statusBar: v }, setStatusBarMsg,
+v ? 'the status line under the composer is shown again' : 'the status line under the composer is hidden (errors still show)');
 }
 
   return h(Fragment, null,
@@ -311,6 +321,34 @@ v ? 'the composer image button is shown again' : 'the composer image button is h
                       'aria-checked': String(imageButton),
                       checked: imageButton,
                       onChange: onImageButtonChange
+                    }),
+                    h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+                      h('span', { class: 'switch__thumb' })
+                    )
+                  )
+                )
+                ),
+              // ---- Composer status line: switch-in-a-card ----------------
+              h('li', { class: 'settings-project__item settings-project__item--col' },
+                h('div', { class: 'settings-project__item-row' },
+                  h('div', { class: 'settings-project__item-main' },
+                    h('label', { class: 'settings-project__item-title', for: 'sd-status-bar' },
+                      'Status line under the composer'),
+                    h('div', { class: 'settings-project__item-note' },
+                      'Shows the small line below the message box ("streaming…", the turn cost, ' +
+                      '"dictation added"). Turn it off for a cleaner chat: the composer keeps its ' +
+                      'space above the home indicator, and an error still appears there so a failed ' +
+                      'send never goes silent. On by default.'),
+                    h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, statusBarMsg)
+                  ),
+                  h('label', { class: 'switch' },
+                    h('input', {
+                      id: 'sd-status-bar',
+                      type: 'checkbox',
+                      role: 'switch',
+                      'aria-checked': String(statusBar),
+                      checked: statusBar,
+                      onChange: onStatusBarChange
                     }),
                     h('span', { class: 'switch__track', 'aria-hidden': 'true' },
                       h('span', { class: 'switch__thumb' })

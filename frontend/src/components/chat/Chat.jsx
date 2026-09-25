@@ -591,7 +591,10 @@ h('span', null, '×')
 ) : null
 )
 ),
-h('div', { class: 'chat-view__status-row' },
+// The status span stays mounted when the line is hidden (Settings → Chat
+// defaults): a dozen modules write to `refs.status`. The CSS modifier hides
+// the text but keeps the safe-area inset and any error state.
+h('div', { class: 'chat-view__status-row' + (composerTools.status ? '' : ' chat-view__status-row--hidden') },
       h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
     ),
 fileEditorOpen && FileEditor

@@ -997,6 +997,11 @@ line-height: 0;
 .chat-view__status[data-state="error"]   { color: var(--danger); }
 .chat-view__status[data-state="success"] { color: var(--success); }
 .chat-view__status[data-state="busy"]    { color: var(--accent); }
+/* "Status line under the composer" switched off: drop the text, keep the
+   home-indicator inset so the composer does not sit on the gesture bar.
+   An error still shows — a failed send must never go silent. */
+.chat-view__status-row--hidden { padding-top: 0; }
+.chat-view__status-row--hidden .chat-view__status:not([data-state="error"]) { display: none; }
 
 .chat-view__image-btn {
   width: var(--tap-sm); height: var(--tap-sm); padding: 0; min-height: var(--tap-sm);
