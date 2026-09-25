@@ -255,6 +255,21 @@ function parsePorcelainStatus(stdout) {
   return { staged, unstaged };
 }
 
+// `git stash list` format: reflog selector (`stash@{0}`), subject, date, each
+// field NUL-terminated so records never run together. (`%S` is not a
+// stash-list placeholder — git prints it literally.)
+const STASH_FORMAT = '%gd%x00%s%x00%ad%x00';
+
+function parseStashList(stdout) {
+  const fields = String(stdout || '').split('\0').map((f) => f.trim());
+  const stashes = [];
+  for (let i = 0; i + 2 < fields.length; i += 3) {
+    if (!fields[i]) continue;
+    stashes.push({ index: fields[i], subject: fields[i + 1], date: fields[i + 2] });
+  }
+  return stashes;
+}
+
 // Parse `git for-each-ref --format=%(refname)` output into the branches the
 // Git modal can offer for checkout. Local branches come first. Remote
 // branches are listed only when no local branch of the same name exists, and
@@ -336,22 +351,8 @@ async function handleGitInfo(req, res, parsed) {
   const { branches, remoteBranches } = parseBranchRefs(branchesRes.ok ? branchesRes.stdout : '');
 
   // ---- Stashes ---------------------------------------------------------
-  // `git stash list --format=...` gives one entry per stash:
-  //   stash@{0} :: subject :: author-relative-date
-  const stashRes = await run([
-    'stash', 'list', '--format=%S%x00%s%x00%ad'
-  ]);
-  const stashes = [];
-  if (stashRes.ok) {
-    const fields = stashRes.stdout.split('\0');
-    for (let i = 0; i + 2 < fields.length; i += 3) {
-      stashes.push({
-        index: fields[i].trim(),            // "stash@{0}"
-        subject: fields[i + 1].trim(),
-        date: fields[i + 2].trim()
-      });
-    }
-  }
+  const stashRes = await run(['stash', 'list', '--format=' + STASH_FORMAT]);
+  const stashes = stashRes.ok ? parseStashList(stashRes.stdout) : [];
 
   // ---- Parse porcelain v1 -z status -------------------------------------
   // One record per change. A renamed file is `XY old\0new\0` (the path
@@ -559,4 +560,4 @@ async function handleGitCommitFiles(req, res, parsed) {
   return sendJSON(res, 200, { ok: true, files });
 }
 
-module.exports = { handleGit, handleGitInfo, handleGitLog, handleGitCommitFiles, parsePorcelainStatus, parseBranchRefs };
+module.exports = { handleGit, handleGitInfo, handleGitLog, handleGitCommitFiles, parsePorcelainStatus, parseBranchRefs, parseStashList, STASH_FORMAT };
