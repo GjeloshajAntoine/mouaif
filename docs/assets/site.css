@@ -236,6 +236,7 @@ html { scroll-padding-top: 72px; }
   margin: 0 0 12px;
   color: var(--accent);
   font-size: 13px;
+  line-height: 1.45;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   font-weight: 600;
@@ -243,6 +244,7 @@ html { scroll-padding-top: 72px; }
 .hero h1 {
   font-size: 52px;
   margin: 0 0 14px;
+  line-height: 1.1;
   letter-spacing: -0.02em;
 }
 .hero .tagline {
