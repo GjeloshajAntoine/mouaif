@@ -1237,7 +1237,7 @@ const landingShots = [
 
 const body = `
 <section class="hero">
-<p class="eyebrow">Mobile-first AI coding assistant</p>
+<p class="eyebrow">Mobile Web first — mobile-first AI coding assistant</p>
 <h1>mouaif</h1>
 <p class="tagline">Run an AI coding workspace for your local projects, connect the model providers you choose, and control which tools the assistant may use.</p>
 <div class="hero-actions">
@@ -1309,6 +1309,7 @@ return `<a class="feature-card" href="features/${f.slug}.html"><h3>${escapeHtml(
 }).join('\n        ');
 const body = `
 <h1>mouaif user guide</h1>
+<p class="lead">Mobile Web first.</p>
 <p>Everything needed to install, run, authenticate, and use the app.</p>
 <div class="features-grid">
 ${cards}
