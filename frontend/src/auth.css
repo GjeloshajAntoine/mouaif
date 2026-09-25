@@ -102,3 +102,30 @@ Imported by style.css. */
   border-left-width: 3px;
   border-left-color: var(--accent);
 }
+/* GitHub Copilot device sign-in: the one-time code, large and tappable to copy. */
+.copilot-device {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.copilot-device__code {
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  font: 600 1.5rem/1.2 var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.15em;
+  text-align: center;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  cursor: copy;
+}
+details.row--copilot > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+details.row--copilot > summary::before { content: '\25B8'; margin-right: 0.4rem; transition: transform 0.15s; }
+details.row--copilot[open] > summary::before { transform: rotate(90deg); }
+details.row--copilot > summary::-webkit-details-marker { display: none; }

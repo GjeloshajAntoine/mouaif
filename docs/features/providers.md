@@ -22,7 +22,7 @@ The built-in providers are:
 - **Google Gemini** — API key.
 - **Ollama** — local server, no API key required.
 - **OpenRouter** — one key for many upstream models, or browser sign-in, see [OpenRouter](./openrouter.md).
-- **GitHub Copilot** — browser sign-in only.
+- **GitHub Copilot** — sign in with a GitHub one-time code, see [GitHub Copilot](./github-copilot.md).
 - **Azure OpenAI**, **Mistral**, **Groq**, **DeepSeek** — API key, see [Cloud model providers](./cloud-providers.md).
 
 ### Add a model to a project
@@ -31,7 +31,7 @@ Open a project's settings, then its **Models** editor, and add an entry that nam
 
 ### Sign in with an account instead of a key
 
-Anthropic, OpenRouter, and GitHub Copilot offer **Sign in** in the provider form. The browser is sent to the provider, you authorize mouaif, and the resulting token or key is stored on your computer. You can sign in with more than one account for the same provider and pick the account in the provider form.
+Anthropic and OpenRouter offer **Sign in** in the provider form: the browser is sent to the provider, you authorize mouaif, and the resulting token or key is stored on your computer. GitHub Copilot uses a one-time code you enter at github.com/login/device instead. You can sign in with more than one account for the same provider and pick the account in the provider form.
 
 ## Where credentials are kept
 

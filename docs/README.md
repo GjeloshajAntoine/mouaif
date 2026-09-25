@@ -32,6 +32,7 @@ One page per feature: what it does and how to use it.
 - [Local OpenAI-compatible servers](features/local-openai-servers.md) — connect llama.cpp's `llama-server` or LM Studio with no API key.
 - [OpenRouter](features/openrouter.md) — one key for many upstream models, with browser sign-in.
 - [Anthropic sign-in](features/oauth-anthropic.md) — sign in with an Anthropic account instead of an API key.
+- [GitHub Copilot](features/github-copilot.md) — chat with your Copilot plan's models after a one-time-code GitHub sign-in.
 - [Model picker](features/model-picker.md) — search, filter by provider, and switch the chat's model.
 - [Model bookmarks](features/model-bookmarks.md) — pinned and recently used models at the top of the picker.
 - [Thinking level](features/thinking-level.md) — choose how much the model reasons, when the provider supports it.

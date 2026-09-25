@@ -181,13 +181,28 @@ const ENDPOINTS = {
     // is inferred per family: OpenAI reasoning models take effort
     // levels, Claude models take a token budget, Gemini 2.5+ takes a
     // thinking budget.
-    listModels: async () => parseCuratedModels(COPILOT_MODEL_CATALOG, (m) => {
-      const id = String(m.id || '');
-      if (/^(gpt-5|o\d)/.test(id)) return { kind: 'levels', levels: OPENAI_THINKING_LEVELS.slice() };
-      if (/^claude-/.test(id)) return { kind: 'budget' };
-      if (/^gemini-(2\.5|[3-9])/.test(id)) return { kind: 'budget' };
-      return undefined;
-    }),
+    // With a signed-in GitHub token the live <api>/models list is used (it
+    // reflects the account's plan and org policy); without one, or if that
+    // call fails, the curated catalog below keeps the picker usable.
+    listModels: async (cred, signal) => {
+      const thinkingFor = (m) => {
+        const id = String(m.id || '');
+        if (/^(gpt-5|o\d)/.test(id)) return { kind: 'levels', levels: OPENAI_THINKING_LEVELS.slice() };
+        if (/^claude-/.test(id)) return { kind: 'budget' };
+        if (/^gemini-(2\.5|[3-9])/.test(id)) return { kind: 'budget' };
+        return undefined;
+      };
+      if (cred) {
+        try {
+          const live = await listCopilotModels(cred, signal);
+          if (live && live.length) {
+            const curated = new Map(COPILOT_MODEL_CATALOG.map((m) => [m.id, m]));
+            return parseCuratedModels(live.map((m) => Object.assign({ contextWindow: (curated.get(m.id) || {}).contextWindow }, m)), thinkingFor);
+          }
+        } catch { /* fall back to the curated catalog */ }
+      }
+      return parseCuratedModels(COPILOT_MODEL_CATALOG, thinkingFor);
+    },
     // Copilot requires a handful of editor-identifying headers. The
     // values mirror the public Copilot CLI; they identify this
     // client as a third-party tool without sending PII. Tests can
@@ -935,7 +950,16 @@ async function requireApiKey(model, def) {
         // Re-throw with the typed code preserved.
         throw e;
       }
-      if (copilot) model.__accessToken = copilot;
+      if (copilot) {
+        model.__accessToken = copilot.token;
+        // Business / Enterprise seats are served from a per-account host
+        // (`endpoints.api` in the exchange response, e.g.
+        // https://api.business.githubcopilot.com). Use it unless the model
+        // record pins a custom base URL of its own.
+        if (copilot.apiBase && (!model.baseUrl || model.baseUrl === ENDPOINTS['github-copilot'].baseUrl)) {
+          model.baseUrl = copilot.apiBase;
+        }
+      }
     }
     return true;
   }
@@ -987,7 +1011,7 @@ function copilotCacheGet(githubToken) {
   entry.ts = Date.now();
   return entry;
 }
-function copilotCachePut(githubToken, copilotToken, expiresAt) {
+function copilotCachePut(githubToken, copilotToken, expiresAt, apiBase) {
   // Cap the map at 16 entries — should never hit this in practice
   // (one per signed-in account per process), but defensive against
   // memory growth in a long-lived server.
@@ -995,7 +1019,7 @@ function copilotCachePut(githubToken, copilotToken, expiresAt) {
     const first = _copilotCache.keys().next().value;
     if (first !== undefined) _copilotCache.delete(first);
   }
-  _copilotCache.set(githubToken, { copilotToken, expiresAt, ts: Date.now() });
+  _copilotCache.set(githubToken, { copilotToken, expiresAt, apiBase: apiBase || null, ts: Date.now() });
 }
 function copilotCacheClear() { _copilotCache.clear(); }
 
@@ -1012,7 +1036,7 @@ async function exchangeCopilotTokenIfNeeded(model, parsedBlob) {
     throw e;
   }
   const cached = copilotCacheGet(githubToken);
-  if (cached) return cached.copilotToken;
+  if (cached) return { token: cached.copilotToken, apiBase: cached.apiBase || null };
   let oauthCopilot;
   try {
     oauthCopilot = require('./oauth-github-copilot.js');
@@ -1034,8 +1058,59 @@ async function exchangeCopilotTokenIfNeeded(model, parsedBlob) {
     e.code = 'ETOKEN';
     throw e;
   }
-  copilotCachePut(githubToken, out.token, out.expiresAt);
-  return out.token;
+  const apiBase = safeCopilotApiBase(out.endpoints && out.endpoints.api);
+  copilotCachePut(githubToken, out.token, out.expiresAt, apiBase);
+  return { token: out.token, apiBase };
+}
+
+// Only accept an https *.githubcopilot.com host from the exchange response,
+// so a tampered or unexpected value can never redirect chats (and the
+// short-lived token) elsewhere.
+function safeCopilotApiBase(value) {
+  if (typeof value !== 'string' || !value) return null;
+  try {
+    const u = new URL(value);
+    if (u.protocol !== 'https:') return null;
+    if (u.hostname !== 'githubcopilot.com' && !u.hostname.endsWith('.githubcopilot.com')) return null;
+    return u.origin;
+  } catch { return null; }
+}
+
+// listCopilotModels(githubToken) — the live Copilot catalog. Exchanges the
+// GitHub token, then GETs <api>/models. Returns null when there is no token
+// so the caller falls back to the curated list.
+async function listCopilotModels(githubToken, signal) {
+  if (!githubToken) return null;
+  const ex = await exchangeCopilotTokenIfNeeded({ provider: 'github-copilot' }, { accessToken: githubToken });
+  const base = ex.apiBase || ENDPOINTS['github-copilot'].baseUrl;
+  const res = await fetch(joinUrl(base, '/models'), {
+    headers: Object.assign({ 'Authorization': 'Bearer ' + ex.token, 'Accept': 'application/json' }, ENDPOINTS['github-copilot'].staticHeaders),
+    signal
+  });
+  if (!res.ok) {
+    const e = new Error('Copilot /models failed: HTTP ' + res.status);
+    e.code = 'EUPSTREAM';
+    e.status = res.status;
+    throw e;
+  }
+  const body = await res.json();
+  const rows = Array.isArray(body && body.data) ? body.data : [];
+  const out = [];
+  for (const m of rows) {
+    if (!m || typeof m.id !== 'string') continue;
+    // Skip embedding / completion-only rows and models the account's policy
+    // has turned off; the chat picker only wants chat models it may call.
+    const caps = m.capabilities || {};
+    if (caps.type && caps.type !== 'chat') continue;
+    if (m.model_picker_enabled === false) continue;
+    if (m.policy && m.policy.state && m.policy.state !== 'enabled') continue;
+    const limits = caps.limits || {};
+    const rec = { id: m.id, label: m.name || m.id };
+    const ctx = limits.max_context_window_tokens || limits.max_prompt_tokens;
+    if (typeof ctx === 'number' && ctx > 0) rec.contextWindow = ctx;
+    out.push(rec);
+  }
+  return out;
 }
 
 // ---- Request builders --------------------------------------------------
@@ -1913,5 +1988,7 @@ endpointFor,
   ANTHROPIC_MODEL_CATALOG,
   COPILOT_MODEL_CATALOG,
   // Copilot token cache clear (OAuth refresher + tests)
-  copilotCacheClear
+  copilotCacheClear,
+  // exposed for scripts/test-copilot-provider.js
+  safeCopilotApiBase
 };

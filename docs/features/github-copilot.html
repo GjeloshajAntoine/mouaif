@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GitHub Copilot — mouaif docs</title>
+  <meta name="description" content="Chat with the models in your GitHub Copilot plan (GPT, Claude, Gemini) through mouaif. You sign in once with a GitHub one-time code. mouaif then swaps that…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="github-copilot">GitHub Copilot</h1>
+<h2 id="overview">Overview</h2>
+<p>Chat with the models in your GitHub Copilot plan (GPT, Claude, Gemini) through mouaif. You sign in once with a GitHub one-time code. mouaif then swaps that sign-in for a short-lived Copilot token on each chat, so no API key is involved.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Open <strong>Settings → Providers → + Add provider</strong> and choose <strong>GitHub Copilot</strong>.</p></li><li><p>Tap <strong>Sign in with GitHub code</strong>. A code like <code>ABCD-1234</code> appears; tap it to copy.</p></li><li><p>Tap <strong>Open github.com/login/device</strong>, paste the code, and approve. Any device works, including another phone or computer.</p></li><li><p>Come back to mouaif. The form shows <code>signed in as &lt;login&gt;</code>. Tap <strong>Save</strong>.</p></li><li><p>Add a model to a project with provider <code>github-copilot</code>, or pick one from the live list in the chat&#39;s model picker.</p>
+<p>With several GitHub accounts signed in, pick one in <strong>OAuth account</strong> before saving.</p></li></ol>
+<h3 id="advanced-your-own-oauth-app">Advanced: your own OAuth app</h3>
+<p>The shipped public client works for most accounts. To use your own GitHub OAuth app instead, open <strong>Advanced: custom GitHub OAuth app</strong>, paste its client ID, and tap <strong>Save client ID</strong>.</p>
+<ul><li><p>The device code sign-in needs <strong>Device Flow</strong> turned on for that app.</p></li><li><p><strong>Sign in with browser redirect</strong> uses the web flow instead. Register the callback URL shown in the form in the app&#39;s settings.</p></li></ul>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p>The GitHub token is stored in the OS keychain. The Copilot token lasts about 30 minutes, is kept only in memory, and is renewed automatically.</p></li><li><p>Business and Enterprise seats are routed to the API host GitHub assigns to the account. Only <code>https://*.githubcopilot.com</code> hosts are accepted.</p></li><li><p>The model list comes from your account&#39;s live Copilot catalog, so models disabled by your plan or organization policy are not offered. With no sign-in, or if that request fails, a built-in list is shown.</p></li><li><p>Tool calls, thinking levels, and max output tokens work as they do for other OpenAI-shaped providers.</p></li><li><p><code>ENOCOPILOT</code> means the account has no active Copilot plan. <code>ESSO_REQUIRED</code> means the organization requires SAML SSO; the error includes the authorization link.</p></li><li><p>An unused code expires after about 15 minutes. Start sign-in again to get a new one.</p></li></ul>
+<h2 id="api">API</h2>
+<pre><code class="language-text">POST   /api/auth/device/github-copilot          -&gt; { id, userCode, verificationUri, expiresAt, status }
+GET    /api/auth/device/github-copilot?id=&lt;id&gt;  -&gt; same shape; status: pending | ok | expired | denied | error | cancelled
+DELETE /api/auth/device/github-copilot?id=&lt;id&gt;  -&gt; { ok }
+POST   /api/auth/sign-in/github-copilot         -&gt; { authorizeUrl, ... }   (browser-redirect flow)</code></pre>
+<p>The server polls GitHub itself. The device code never reaches the browser.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="providers.html">AI providers</a> — connecting providers and where credentials are kept.</p></li><li><p><a href="model-picker.html">Model picker</a> — the live catalog.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

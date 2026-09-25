@@ -11,7 +11,7 @@ Ten providers ship today:
 - **Google Gemini** — Google AI Studio. API key.
 - **Ollama** — local server. No key.
 - **OpenRouter** — one API key, many models (Anthropic, OpenAI, Google, Meta, Mistral, etc.) over an OpenAI-shaped endpoint. API key, or PKCE sign-in (the server stores the issued key).
-- **GitHub Copilot** — reserved; OAuth-only, requires an active Copilot subscription.
+- **GitHub Copilot** — OAuth-only (GitHub device-code sign-in), requires an active Copilot plan. See [GitHub Copilot](./github-copilot.md).
 - **Azure OpenAI** — deployment-based OpenAI endpoint. `api-key` header + `api-version` query param. API key.
 - **Mistral** — La Plateforme, OpenAI-shaped. API key.
 - **Groq** — fast inference for open models, OpenAI-shaped. API key.
@@ -25,7 +25,7 @@ See [docs/features/cloud-providers.md](./cloud-providers.md) for the four OpenAI
 
 - **SSE in, SSE out.** The proxy reads the upstream's SSE (or Ollama's NDJSON) and re-emits the same event names with normalized shapes. The browser does not need to know what provider is behind the URL.
 - **Apikey only in this commit.** Models with `auth: 'oauth'` produce a typed `ENOAUTH` error. The OAuth commits add the flow; nothing in this commit stores tokens.
-- **Reserved provider: `github-copilot`.** Listed in `ENDPOINTS` and `providers`, gated by `reserved: true`, so any attempt to call it returns `ENOAUTH`. The provider's auth flow ships separately.
+- **OAuth-only provider: `github-copilot`.** Marked `reserved: true` in the UI, which means OAuth is the only auth mode. Each chat exchanges the stored GitHub token for a short-lived Copilot token and uses the per-account API host it returns.
 - **Live model catalog.** Each `ENDPOINTS` entry carries a `listModels(cred, signal, baseUrl)` that returns a normalized `[{ id, label, contextWindow? }]`. The chat <select> is populated from this list (see [Chat UI](./chat-ui.md#per-chat-controls)). `baseUrl` is the connection's configured base URL, threaded from the app store so the openai-compatible family lists a local llama.cpp / LM Studio server's own models rather than the hosted OpenAI default. Throws `ENO_LIST` for providers without an adapter, `ENO_APIKEY` when a provider requires a credential and none is configured, `EUNREACHABLE` for network failures (Ollama not running, DNS error), `EABORTED` for the per-call timeout, and `EUPSTREAM` (with `err.status` forwarded) for upstream HTTP errors. The HTTP layer maps these to the right status code so the chat UI can show an actionable message — see [Live model list](#live-model-list).
 - **Errors are typed.** The proxy maps upstream HTTP errors to `EUPSTREAM`, network failures to `ENETWORK`, aborts to `EABORTED`, unknown providers to `EUNKNOWN_PROVIDER`, missing keys to `ENOAPIKEY`, OAuth-marked models to `ENOAUTH`, and bad input to `EBADINPUT` / `EMODEL_NOT_FOUND`. The UI branches on `code`, not on `message`.
 - **Connectivity tests time out.** `/api/ai/test` converts its own ten-second abort into `ETIMEDOUT`; unrelated aborted chat requests remain `EABORTED`.

@@ -302,6 +302,156 @@ async function exchangeCopilotToken({ githubToken, fetchImpl = globalThis.fetch 
   };
 }
 
+// ---- Device flow (RFC 8628) ---------------------------------------------
+//
+// The web flow above needs a GitHub OAuth app whose callback URL matches the
+// mouaif origin, which a phone on a LAN address or a reverse-proxied install
+// rarely has. The device flow needs no callback at all: the server asks
+// GitHub for a short user code, the user types it at github.com/login/device
+// on any device, and the server polls until GitHub issues the token. This is
+// what the public Copilot client_id supports, so it is the default sign-in.
+
+const GITHUB_DEVICE_CODE_URL = 'https://github.com/login/device/code';
+const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
+
+// POST /login/device/code -> { deviceCode, userCode, verificationUri, expiresIn, interval }
+async function requestDeviceCode({ clientId = getClientId(), scope = DEFAULT_SCOPE, fetchImpl = globalThis.fetch } = {}) {
+  if (typeof fetchImpl !== 'function') throw new Error('global fetch is not available');
+  const res = await fetchImpl(GITHUB_DEVICE_CODE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json', 'User-Agent': 'mouaif/1.0' },
+    body: new URLSearchParams({ client_id: clientId, scope }).toString()
+  });
+  const text = await res.text().catch(() => '');
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* handled below */ }
+  if (!res.ok || !json || json.error || !json.device_code) {
+    const code = json && json.error;
+    const e = new Error('GitHub device code request failed: ' + (code || ('HTTP ' + res.status))
+      + (json && json.error_description ? ' (' + json.error_description + ')' : '')
+      + (code === 'device_flow_disabled' ? ' — enable Device Flow on the OAuth app, or clear the custom client ID.' : ''));
+    e.code = code === 'device_flow_disabled' ? 'EDEVICE_DISABLED' : 'EUPSTREAM';
+    e.status = res.status;
+    throw e;
+  }
+  return {
+    deviceCode: json.device_code,
+    userCode: json.user_code,
+    verificationUri: json.verification_uri || 'https://github.com/login/device',
+    expiresIn: typeof json.expires_in === 'number' ? json.expires_in : 900,
+    interval: typeof json.interval === 'number' ? json.interval : 5
+  };
+}
+
+// One poll of the token endpoint. Returns { status: 'pending' | 'slow_down' |
+// 'ok' | 'expired' | 'denied' | 'error', token?, interval?, error? }.
+async function pollDeviceToken({ deviceCode, clientId = getClientId(), fetchImpl = globalThis.fetch } = {}) {
+  if (!deviceCode) throw new Error('deviceCode is required');
+  const res = await fetchImpl(GITHUB_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json', 'User-Agent': 'mouaif/1.0' },
+    body: new URLSearchParams({ client_id: clientId, device_code: deviceCode, grant_type: DEVICE_GRANT }).toString()
+  });
+  const text = await res.text().catch(() => '');
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* handled below */ }
+  if (!json) return { status: 'error', error: 'HTTP ' + res.status };
+  if (json.access_token) return { status: 'ok', token: { accessToken: json.access_token, scope: json.scope || null } };
+  switch (json.error) {
+    case 'authorization_pending': return { status: 'pending' };
+    case 'slow_down': return { status: 'slow_down', interval: typeof json.interval === 'number' ? json.interval : null };
+    case 'expired_token': return { status: 'expired', error: 'The code expired. Start sign-in again.' };
+    case 'access_denied': return { status: 'denied', error: 'Sign-in was declined on GitHub.' };
+    default: return { status: 'error', error: json.error_description || json.error || ('HTTP ' + res.status) };
+  }
+}
+
+// In-memory device sign-ins, keyed by an opaque id handed to the browser.
+// The device_code itself never leaves the server.
+const _deviceFlows = new Map();
+const DEVICE_FLOW_MAX = 8;
+
+function publicDeviceFlow(f) {
+  return {
+    id: f.id,
+    status: f.status,
+    userCode: f.userCode,
+    verificationUri: f.verificationUri,
+    expiresAt: f.expiresAt,
+    account: f.account || null,
+    error: f.error || null
+  };
+}
+
+// Start a device sign-in and poll GitHub in the background until it
+// resolves. On success the GitHub token is stored in the keychain exactly as
+// the web flow stores it, so the rest of the provider does not care which
+// flow was used.
+async function startDeviceFlow({ fetchImpl = globalThis.fetch, setToken = auth.setToken, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  const clientId = getClientId();
+  const dc = await requestDeviceCode({ clientId, fetchImpl });
+  // Drop finished / oldest flows so abandoned sign-ins cannot pile up.
+  for (const [k, f] of _deviceFlows) if (f.status !== 'pending') _deviceFlows.delete(k);
+  while (_deviceFlows.size >= DEVICE_FLOW_MAX) _deviceFlows.delete(_deviceFlows.keys().next().value);
+  const flow = {
+    id: randomUrlSafe(18),
+    status: 'pending',
+    userCode: dc.userCode,
+    verificationUri: dc.verificationUri,
+    expiresAt: Date.now() + dc.expiresIn * 1000,
+    interval: Math.max(1, dc.interval),
+    cancelled: false
+  };
+  _deviceFlows.set(flow.id, flow);
+  (async () => {
+    while (!flow.cancelled && Date.now() < flow.expiresAt) {
+      await sleep(flow.interval * 1000);
+      if (flow.cancelled) return;
+      let r;
+      try { r = await pollDeviceToken({ deviceCode: dc.deviceCode, clientId, fetchImpl }); }
+      catch (e) { r = { status: 'pending' }; void e; } // transient network error: keep polling
+      if (r.status === 'pending') continue;
+      if (r.status === 'slow_down') { flow.interval = (r.interval || flow.interval + 5); continue; }
+      if (r.status === 'ok') {
+        const who = await fetchAccount({ githubToken: r.token.accessToken, fetchImpl });
+        const account = (who && who.login) || 'default';
+        try {
+          await setToken('github-copilot', account, JSON.stringify({
+            accessToken: r.token.accessToken, refreshToken: null, expiresAt: null, scope: r.token.scope || DEFAULT_SCOPE
+          }));
+          flow.status = 'ok';
+          flow.account = account;
+        } catch (e) {
+          flow.status = 'error';
+          flow.error = 'Could not store the token: ' + e.message;
+        }
+        return;
+      }
+      flow.status = r.status === 'expired' || r.status === 'denied' ? r.status : 'error';
+      flow.error = r.error || 'sign-in failed';
+      return;
+    }
+    if (flow.status === 'pending') {
+      flow.status = flow.cancelled ? 'cancelled' : 'expired';
+      if (!flow.cancelled) flow.error = 'The code expired. Start sign-in again.';
+    }
+  })();
+  return publicDeviceFlow(flow);
+}
+
+function getDeviceFlow(id) {
+  const f = _deviceFlows.get(String(id || ''));
+  return f ? publicDeviceFlow(f) : null;
+}
+
+function cancelDeviceFlow(id) {
+  const f = _deviceFlows.get(String(id || ''));
+  if (!f) return false;
+  f.cancelled = true;
+  if (f.status === 'pending') f.status = 'cancelled';
+  return true;
+}
+
 // ---- Account resolution ------------------------------------------------
 
 // Read the account the user authorized with. Returns a normalized
@@ -409,6 +559,13 @@ module.exports = {
   exchangeAuthorizationCode,
   exchangeCopilotToken,
   fetchAccount,
+  // device flow (default sign-in)
+  GITHUB_DEVICE_CODE_URL,
+  requestDeviceCode,
+  pollDeviceToken,
+  startDeviceFlow,
+  getDeviceFlow,
+  cancelDeviceFlow,
   // registration
   register,
   // exposed for tests
