@@ -44,8 +44,8 @@
 <p>Open a project’s settings, then configure each tool as <strong>Off</strong>, <strong>Ask</strong>, or <strong>Allow</strong>. Use <strong>Ask</strong> when you want to review calls before they run.</p>
 <h3 id="shell">Shell</h3>
 <p>The model can run non-interactive commands in the project folder, inspect the output, make changes, and run another command. Calls appear in the chat with their live output.</p>
-<p>You can also run a command yourself from the composer:</p>
-<pre><code class="language-text">/shell npm test</code></pre>
+<p>You can also run a command yourself from the composer with the <code>@shell</code> command:</p>
+<pre><code class="language-text">@shell npm test</code></pre>
 <p>Commands that wait for terminal input are not supported. Use one-shot commands such as <code>npm test</code> or <code>node -e &quot;console.log(&#39;ok&#39;)&quot;</code>.</p>
 <h3 id="files">Files</h3>
 <p>File tools let the model list, search, read, create, and edit files in the project. The Files toolbar also lets you inspect or edit text files and preview common image formats yourself.</p>

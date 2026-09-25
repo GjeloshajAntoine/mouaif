@@ -34,7 +34,7 @@ When the composer text starts with `@` followed by a defined **agent name** and 
 @reviewer Check the staged changes for regressions.
 ```
 
-The run renders as a `subagent` tool_call/tool_result card pair (like `/shell`), and the agent's final text is appended to the transcript as an assistant message so it persists across reloads. The call passes through the same authorization gate as a model-initiated `subagent` call, and honors the agent's tool allowlist and model pin. A leading `@<agent>` with no task, or an `@` in the middle of the text, falls through to a normal model send.
+The run renders as a `subagent` tool_call/tool_result card pair (like `@shell`), and the agent's final text is appended to the transcript as an assistant message so it persists across reloads. The call passes through the same authorization gate as a model-initiated `subagent` call, and honors the agent's tool allowlist and model pin. A leading `@<agent>` with no task, or an `@` in the middle of the text, falls through to a normal model send.
 
 ## Direct tool invocation with arguments
 

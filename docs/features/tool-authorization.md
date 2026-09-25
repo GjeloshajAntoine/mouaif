@@ -2,7 +2,7 @@
 
 ## Overview
 
-Every tool call the model initiates — and every `/shell` slash command the user types in the composer — passes through an **authorization gate** before the runner executes. The user picks one of three primary modes per tool — **Off**, **Ask**, **Allow** — from a one-tap segmented control. An allowlist is an advanced refinement of Ask, not a fourth choice. The default is `ask`, so first use prompts for approval.
+Every tool call the model initiates — and every `@shell` command the user types in the composer — passes through an **authorization gate** before the runner executes. The user picks one of three primary modes per tool — **Off**, **Ask**, **Allow** — from a one-tap segmented control. An allowlist is an advanced refinement of Ask, not a fourth choice. The default is `ask`, so first use prompts for approval.
 
 The mode has **two scopes**, and the surface decides which one is written:
 
@@ -132,7 +132,7 @@ On a keyboard, `1`–`4` select the four decisions and `Escape` denies. Those sh
 
 For `subagent` calls the card also shows a **model picker**: the user may select which model executes the delegated run, for that one call only. See [Per-run model choice on subagent approval](./auth-model-picker.md).
 
-The composer `/shell` slash command uses the same gate. A `/shell` invocation in `ask` mode shows the same card; the only difference is the source line ("user-typed slash command" instead of "model-initiated call").
+The composer `@shell` command uses the same gate. An `@shell` invocation in `ask` mode shows the same card; the only difference is the source line ("user-typed command" instead of "model-initiated call").
 
 ## Behavior
 
@@ -169,4 +169,4 @@ Regression test: [scripts/test-chat-tool-authorization.js](../../scripts/test-ch
 
 - [docs/features/shell-tool.md](./shell-tool.md) — the first tool wired through this gate.
 - [docs/features/ai-client.md](./ai-client.md) — `tool_call` and `tool_result` events.
-- [docs/features/chat-ui.md](./chat-ui.md) — the chat composer renders the prompt and the `/shell` slash command.
+- [docs/features/chat-ui.md](./chat-ui.md) — the chat composer renders the prompt and the `@shell` command.

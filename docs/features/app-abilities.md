@@ -24,10 +24,10 @@ Open a project’s settings, then configure each tool as **Off**, **Ask**, or **
 
 The model can run non-interactive commands in the project folder, inspect the output, make changes, and run another command. Calls appear in the chat with their live output.
 
-You can also run a command yourself from the composer:
+You can also run a command yourself from the composer with the `@shell` command:
 
 ```text
-/shell npm test
+@shell npm test
 ```
 
 Commands that wait for terminal input are not supported. Use one-shot commands such as `npm test` or `node -e "console.log('ok')"`.
