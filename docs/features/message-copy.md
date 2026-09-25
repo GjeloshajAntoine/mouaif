@@ -32,10 +32,8 @@ Not copied, by design:
 
 The button is available while a turn is still streaming: tapping it copies the text that is on screen at that moment.
 
-## Implementation notes
+## Related
 
-The control is built by `buildCopyButton` in [frontend/src/components/chat/transcript.js](../../frontend/src/components/chat/transcript.js) and styled by `.chat-msg__copy` in [frontend/src/chat-transcript.css](../../frontend/src/chat-transcript.css).
-
-- **Compact painted box, legal tap area.** The glyph is the whole button, so the painted box is the smallest glyph-control size, `--tap-xs` (26px in [frontend/src/base.css](../../frontend/src/base.css)) — smaller than the `--tap-sm` send / MCP toggles because it repeats under every bubble. `.tap-target` expands the hit area to the `--tap` floor (44px) without painting it, so the mobile-first tap rule still holds.
-- **State lives in the glyph.** The three SVGs are `COPY_GLYPH_IDLE` / `_COPIED` / `_FAILED`, drawn in `currentColor`; the CSS tint (muted → success / danger) is the only color decision. The glyph and the `aria-label` / `title` flip together, so the state is never carried by color alone.
+- [Chat](./chat-ui.md) — the transcript the button is mounted under.
+- [Chat error surfacing](./chat-error-surfacing.md) — the retry action error cards keep instead of a copy button.
 

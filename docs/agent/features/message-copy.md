@@ -11,3 +11,10 @@
 - **Clipboard access** — the same module exports `copyText()`, which tries `navigator.clipboard.writeText()` and falls back to a hidden `textarea` + `document.execCommand('copy')` for embedded web views and non-secure origins. It returns a boolean rather than throwing, so the button can report a refusal in place. The helper mirrors the ones already used by `chat/GitModal.jsx` and `Inspector.jsx`.
 - **Styling** — `.chat-msg__actions` / `.chat-msg__copy` (with the `is-copied` / `is-failed` states) live in [frontend/src/chat-transcript.css](../../../frontend/src/chat-transcript.css). The button takes the shared compact glyph box (`--tap-sm`, 32 px) with no border or label, and pairs it with `.tap-target` from [frontend/src/base.css](../../../frontend/src/base.css) so the *hit* area still reaches the 44 px touch floor without painting a 44 px square. It inherits the row's alignment, so it sits under the right edge of a user bubble and the left edge of an assistant bubble.
 - **Covered by** `scripts/test-message-copy.js` (wired into `npm run test:chat-view`): it asserts what each message shape copies, that the button is icon-only with a `currentColor` glyph and a `.tap-target` hit area, that the glyph flips on success, and that user/assistant rows mount the button while error cards mount only Retry.
+
+## Layout and tap target
+
+> Moved from the public page, which carried it as an "Implementation notes" section.
+
+- **Compact painted box, legal tap area.** The glyph is the whole button, so the painted box is the smallest glyph-control size, `--tap-xs` (26px in [frontend/src/base.css](../../../frontend/src/base.css)) — smaller than the `--tap-sm` send / MCP toggles because it repeats under every bubble. `.tap-target` expands the hit area to the `--tap` floor (44px) without painting it, so the mobile-first tap rule still holds.
+- **State lives in the glyph.** The three SVGs are `COPY_GLYPH_IDLE` / `_COPIED` / `_FAILED`, drawn in `currentColor`; the CSS tint (muted → success / danger) is the only color decision. The glyph and the `aria-label` / `title` flip together, so the state is never carried by color alone.
