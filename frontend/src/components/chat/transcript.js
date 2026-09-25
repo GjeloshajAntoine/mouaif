@@ -192,13 +192,24 @@ function textOfContent(content) {
 // wrap it in a <details>/<summary> collapsible block. The final
 // pass renders markdown; the streaming pass renders plain text
 // (cheaper, and avoids re-parsing every delta).
+//
+// The block opens by default while streaming and closes on the final pass.
+// A tap on its summary is the user's choice and outlives both defaults: the
+// body is the same element across the streaming and final passes, so the
+// choice is kept on it (`body._reasoningUserOpen`: true = opened, false =
+// closed, undefined = never touched). Without this the final pass built a
+// fresh, closed <details> and folded away a block the user was reading.
 function renderAssistantBody(body, content, reasoning, final) {
   body.innerHTML = '';
   if (reasoning) {
     const details = document.createElement('details');
     details.className = 'chat-msg__reasoning';
-    if (!final) details.open = true;
+    const userOpen = body._reasoningUserOpen;
+    details.open = typeof userOpen === 'boolean' ? userOpen : !final;
     const summary = document.createElement('summary');
+    // Fires before the native toggle, so the new state is the inverse of the
+    // current one. Enter / Space on a focused summary dispatch click too.
+    summary.addEventListener('click', () => { body._reasoningUserOpen = !details.open; });
     summary.textContent = final ? 'Thinking' : 'Thinking…';
     const thinkBody = document.createElement('div');
     thinkBody.className = 'chat-msg__reasoning-body' + (final ? '' : ' chat-msg__reasoning-body--raw');
