@@ -95,7 +95,10 @@ assert.strictEqual(isChanged(null, 'color'), false, 'a missing list is tolerated
 const panel = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/StylesPanel.jsx'), 'utf8');
 assert.ok(/import \{[^}]*orderChangedFirst[^}]*\} from '\.\/stylesOrder\.js'/.test(panel),
   'StylesPanel imports orderChangedFirst');
-assert.ok(/orderChangedFirst\(inlineRows, changed\)/.test(panel),
+// The declared list is ordered after grouping (declaredGroups.js), keyed by the
+// most recently changed member of each row, so a `border` row rises when one of
+// its longhands was edited.
+assert.ok(/orderChangedFirst\(groupedRows, changed, \(row\) => changedKey\(row, changed\)\)/.test(panel),
   'the declared list is ordered with the change set');
 assert.ok(/orderChangedFirst\(computedRows, changed\)/.test(panel),
   'the computed list is ordered with the change set');

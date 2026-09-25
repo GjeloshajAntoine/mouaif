@@ -240,9 +240,9 @@ check('an applied edit reports what it replaced to the owner',
 // share one loose pattern, which was satisfied by whichever of the two happened
 // to have a short gap and said nothing about the other.
 check('the previous value is read before the write',
-/const prevRow = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,400}await props\.setInlineStyleProperty\(objId, prop, value, priority\)/.test(stylesSource));
+/const prevRow = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,500}await props\.setInlineStyleProperty\(objId, prop, value, priority\)/.test(stylesSource));
 check('the previous value is read before a removal too',
-/const prevRow = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,400}await props\.removeInlineStyleProperty\(objId, prop\)/.test(stylesSource));
+/const prevRow = \(\(modelRef\.current && modelRef\.current\.inlineProps\) \|\| \[\]\)[\s\S]{0,500}await props\.removeInlineStyleProperty\(objId, prop\)/.test(stylesSource));
 check('a removal is reported too',
 /if \(props\.onRecordChange\) props\.onRecordChange\(\{ prop, from: prevValue, to: '', fromPriority: prevPriority, toPriority: '' \}\)/.test(stylesSource));
 // The priority has to be read before the write as well as the value: an undo

@@ -204,7 +204,10 @@ ellipsizes rather than wrapping, so a pathological label costs nothing
 below. */
 .inspector__styles-elem {
 display: flex;
-align-items: baseline;
+/* Centred, not baseline: the chip is a 44 px target and baseline alignment
+pinned the one line of text to the top of it, leaving an empty band under the
+label that read as a missing second line. */
+align-items: center;
 gap: 8px;
 width: 100%;
 min-height: var(--tap);
@@ -222,7 +225,7 @@ cursor: pointer;
 .inspector__styles-elem:hover { background: var(--surface-3); }
 .inspector__styles-elem-name {
 min-width: 0;
-font-size: 0.72rem;
+font-size: 0.8rem;
 font-weight: 700;
 white-space: nowrap;
 overflow: hidden;
@@ -231,22 +234,53 @@ text-overflow: ellipsis;
 .inspector__styles-elem-size {
 flex: 0 0 auto;
 margin-left: auto;
-font-size: 0.62rem;
-color: var(--muted-2);
+font-size: 0.66rem;
+font-variant-numeric: tabular-nums;
+color: var(--muted);
 white-space: nowrap;
 }
+/* The label's three parts in the DevTools colours: tag in the text colour,
+#id in the accent, .classes a step softer. Shared by nothing else, so the
+names are short. */
+.inspector__id-tag { color: var(--fg); }
+.inspector__id-id { color: var(--accent-hi); }
+.inspector__id-cls { color: var(--warning); font-weight: 600; }
 .inspector__styles-section {
 display: flex;
 flex-direction: column;
-gap: 4px;
+gap: 6px;
+}
+/* Every section after the first is set off by a hairline and some air. The
+panel stacks five sections of similar-looking rows (tree, controls, declared,
+rules, computed) in one scroller, and with only a 8 px gap between them the
+small uppercase headings were the only cue a new section had begun — easy to
+scroll straight past. */
+.inspector__styles-section ~ .inspector__styles-section {
+margin-top: 6px;
+padding-top: 12px;
+border-top: 1px solid var(--border-strong);
 }
 .inspector__styles-h {
 margin: 0;
-font-size: 0.7rem;
+font-size: 0.72rem;
 font-weight: 700;
-letter-spacing: 0.04em;
+letter-spacing: 0.05em;
 text-transform: uppercase;
-color: var(--fg-soft);
+color: var(--fg);
+}
+/* Declared styles header: heading, how many declarations, and where they live
+(`element.style`, the name DevTools gives an element's own inline style). */
+.inspector__declared-bar {
+display: flex;
+flex-wrap: wrap;
+align-items: center;
+gap: 8px;
+}
+.inspector__declared-where {
+margin-left: auto;
+font-family: var(--font-mono);
+font-size: 0.66rem;
+color: var(--muted);
 }
 .inspector__styles-list {
 list-style: none;
@@ -337,7 +371,16 @@ font-weight: 700;
 color: var(--accent-hi);
 flex-shrink: 0;
 }
-.inspector__styles-row--declared .inspector__styles-prop { color: var(--fg); }
+.inspector__styles-row--declared .inspector__styles-prop { color: var(--accent-hi); }
+/* `prop: value` — the colon every stylesheet uses, drawn rather than typed so
+the row's text (and its accessible name) stays the plain property. Without it
+the name and value ran together as one monospace string (`margin-top20px` when
+copied, and barely better on screen). */
+.inspector__styles-prop::after {
+content: ':';
+color: var(--muted);
+font-weight: 400;
+}
 /* Changed in this session. These rows are hoisted to the top of the list
 (see stylesOrder.js), so the highlight is what explains why they are there —
 an accent left bar plus a tinted background, and a "changed" word chip so the
@@ -403,7 +446,16 @@ border-radius: 3px;
   to be visible against the row's own background. */
 background-clip: padding-box;
 }
-.inspector__styles-row--computed .inspector__styles-val { color: var(--fg-soft); }
+.inspector__styles-row--declared .inspector__styles-val { color: var(--fg); }
+.inspector__styles-row--computed .inspector__styles-val { color: var(--fg); }
+/* ~400 read-only rows: the names in a regular weight and a softer tone, so the
+values — the part being read — carry the contrast, and a bold blue wall no
+longer drowns the few rows that matter. Changed rows keep the bold accent name
+(the rule above) because they are the ones to find. */
+.inspector__styles-row--computed:not(.inspector__styles-row--changed) .inspector__styles-prop {
+font-weight: 500;
+color: var(--fg-soft);
+}
 .inspector__styles-none {
 margin: 0;
 font-size: 0.82rem;

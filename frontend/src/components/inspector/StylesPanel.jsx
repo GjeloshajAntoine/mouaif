@@ -50,9 +50,13 @@ import { createLiveShot } from './liveShot.js';
 import { sheetPortal } from './sheetPortal.js';
 import { valueShape } from './valueShapes.js';
 import { writtenNames } from './shorthand.js';
+// findDeclaration is also the read-before-write fallback in applyEdit/removeEdit:
+// a shorthand row (`border`) has no longhand of its own name, so the value it
+// replaces — what an undo restores — is the declaration cssText serialises.
+import { groupDeclared, changedKey, groupChanged, memberNames, findDeclaration } from './declaredGroups.js';
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
 import { ORIGIN_LABEL } from './matchedRules.js';
-import { cleanSize } from './targetBar.js';
+import { cleanSize, splitLabel } from './targetBar.js';
 
 // valueSwatch — a colour value gets a swatch in front of its text. `rgb(255,
 // 230, 0)` is the same length as three other colours at this row size, and the
@@ -246,6 +250,26 @@ label += classes.slice(0, 3).map((c) => '.' + c).join('');
 if (classes.length > 3) label += '…';
 }
 return label;
+}
+
+// identityParts — `div#hero.card.tall…` as coloured spans (tag, #id, .classes in
+// the DevTools colours), so the three parts read apart at a glance instead of as
+// one monospace string. Pure decoration over splitLabel(): the concatenated text
+// is the label unchanged, and the label is still what the chip copies.
+function identityParts(label) {
+const text = String(label || '');
+const tail = text.endsWith('…') ? '…' : '';
+const parts = splitLabel(tail ? text.slice(0, -1) : text);
+// A label splitLabel cannot reproduce exactly (an unusual id / class) is shown
+// as plain text rather than risk rendering something other than the selector.
+const rebuilt = parts.tag + (parts.id ? '#' + parts.id : '') + parts.classes.map((c) => '.' + c).join('');
+if (rebuilt + tail !== text) return text;
+return [
+h('span', { class: 'inspector__id-tag', key: 't' }, parts.tag),
+parts.id ? h('span', { class: 'inspector__id-id', key: 'i' }, '#' + parts.id) : null,
+parts.classes.length ? h('span', { class: 'inspector__id-cls', key: 'c' }, parts.classes.map((c) => '.' + c).join('')) : null,
+tail ? h('span', { class: 'inspector__id-cls', key: 'm' }, tail) : null
+];
 }
 
 // boxSummary — one-line size readout from the box model. `box` carries
@@ -1598,7 +1622,16 @@ Object.prototype.hasOwnProperty.call(resolved, row.prop)
 ? { ...row, value: String(resolved[row.prop] || '') }
 : row
 ));
-setModelBoth({ ...prev, inlineProps, computed, bases: bases || prev.bases || null, rev: (prev.rev || 0) + 1 });
+setModelBoth({
+...prev,
+inlineProps,
+// The serialised style from the same read, so the Declared list groups the
+// fresh longhands against a matching cssText (see declaredGroups.js).
+inlineCss: typeof snapshot.cssText === 'string' ? snapshot.cssText : (prev.inlineCss || ''),
+computed,
+bases: bases || prev.bases || null,
+rev: (prev.rev || 0) + 1
+});
 }
 // syncFromPage — pull the element's styles after an edit. Best-effort: a
 // failed read leaves the model alone rather than blanking the lists.
@@ -1629,7 +1662,8 @@ if (!objId) throw new Error('element not resolved');
 // undo of this change has to restore. recordChange keeps the earliest value for
 // a property, so a chain of edits on one property still undoes to the original.
 const prevRow = ((modelRef.current && modelRef.current.inlineProps) || [])
-.filter((x) => x.prop === prop)[0];
+.filter((x) => x.prop === prop)[0]
+|| findDeclaration(modelRef.current && modelRef.current.inlineCss, prop);
 const prevValue = (prevRow && prevRow.value) || '';
 const prevPriority = (prevRow && prevRow.priority) || '';
 // The engine's answer, not the argument: the write reads the priority back off
@@ -1682,7 +1716,8 @@ if (!objId) throw new Error('element not resolved');
 // along with the priority it was stored with, so undoing a removal of an
 // `!important` declaration brings the priority back with the value.
 const prevRow = ((modelRef.current && modelRef.current.inlineProps) || [])
-.filter((x) => x.prop === prop)[0];
+.filter((x) => x.prop === prop)[0]
+|| findDeclaration(modelRef.current && modelRef.current.inlineCss, prop);
 const prevValue = (prevRow && prevRow.value) || '';
 const prevPriority = (prevRow && prevRow.priority) || '';
 // What this removal takes off the element: read before the write, since the
@@ -1833,7 +1868,11 @@ const valueIndex = useMemo(
 // Hoist the properties changed in this session to the top of both lists
 // (most recent first) so the edit you just made is the first thing you see,
 // rather than something to hunt for in the ~400-row computed wall.
-const declaredRows = orderChangedFirst(inlineRows, changed);
+// Declared rows as the author wrote them: the longhands folded back into the
+// shorthands the browser serialises (`border: 1px solid …` instead of seventeen
+// `border-*` rows), then changed-first by whichever member was edited last.
+const groupedRows = groupDeclared(inlineRows, model.inlineCss);
+const declaredRows = orderChangedFirst(groupedRows, changed, (row) => changedKey(row, changed));
 const orderedComputed = orderChangedFirst(computedRows, changed);
 // The Computed list, narrowed. `setNames` is what this element declares
 // itself (its inline style plus anything edited in this session), which is
@@ -1892,7 +1931,7 @@ title: 'Copy the selector ' + label + (boxSize ? ' · ' + boxSize : ''),
 'aria-label': 'Copy selector ' + label,
 onClick: () => { if (props.onCopyElement) props.onCopyElement(label); }
 },
-h('span', { class: 'inspector__styles-elem-name' }, label),
+h('span', { class: 'inspector__styles-elem-name' }, identityParts(label)),
 boxSize ? h('span', { class: 'inspector__styles-elem-size' }, boxSize) : null
 ),
 // The error line belongs *inside* the sticky block, with the element it is
@@ -2158,12 +2197,18 @@ setEdit({ prop: row.prop, value: row.isSet ? row.value : '' });
 }
 }),
 h('div', { class: 'inspector__styles-section' },
+h('div', { class: 'inspector__declared-bar' },
 h('h3', { class: 'inspector__styles-h' }, 'Declared styles'),
+// The count is of declarations as written (a `border` row is one), the same
+// unit the list below renders — not the CSSOM's longhand count.
+inlineRows.length ? h('span', { class: 'inspector__rules-count' }, String(groupedRows.length)) : null,
+h('span', { class: 'inspector__declared-where' }, 'element.style')
+),
 inlineRows.length
 ? h('ul', { class: 'inspector__styles-list' },
 declaredRows.map((row) => h('li', {
 class: 'inspector__styles-row inspector__styles-row--declared'
-+ (isChanged(changed, row.prop) ? ' inspector__styles-row--changed' : ''),
++ (groupChanged(row, changed) ? ' inspector__styles-row--changed' : ''),
 key: (model.rev || 0) + ':' + row.prop
 },
 h('button', {
@@ -2175,13 +2220,17 @@ type: 'button',
 // label-content-name-mismatch check and be confusing for screen-reader
 // users who see "color #00ff00" on screen. Changed rows also announce
 // that state, since the highlight is colour-only for sighted users.
-'aria-label': (isChanged(changed, row.prop) ? 'Changed. ' : '')
+'aria-label': (groupChanged(row, changed) ? 'Changed. ' : '')
 + (row.value ? 'Edit ' + row.prop + ', value ' + row.value : 'Edit ' + row.prop),
-title: 'Edit ' + row.prop,
+// A shorthand row names what it stands for, so the grouping is never a
+// mystery: `border` sets these 17 properties, all of them in Computed.
+title: 'Edit ' + row.prop + (row.longhands && row.longhands.length
+? ' — shorthand for ' + memberNames(row).slice(1).join(', ')
+: ''),
 onClick: () => setEdit({ prop: row.prop, value: row.value, priority: row.priority || '' })
 },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
-isChanged(changed, row.prop) ? h('span', { class: 'inspector__styles-changed', 'aria-hidden': 'true' }, 'changed') : null,
+groupChanged(row, changed) ? h('span', { class: 'inspector__styles-changed', 'aria-hidden': 'true' }, 'changed') : null,
 // A declaration the element stores as `!important` says so on the row. It is a
 // different thing from a normal one — it beats later normal declarations and
 // every stylesheet rule except another `!important` — so hiding it would leave
@@ -2343,7 +2392,7 @@ value: edit.value,
 // `!important` toggle opens on the truth and an edit keeps it.
 priority: edit.priority || '',
 isInline: true,
-isRemove: inlineRows.some((x) => x.prop === edit.prop),
+isRemove: groupedRows.some((x) => x.prop === edit.prop) || inlineRows.some((x) => x.prop === edit.prop),
 // The element's own box, for the value rail's length range (0…4× its size).
 box: model.box,
 // What the element declares right now, so the sheet can count what the write

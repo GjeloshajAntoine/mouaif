@@ -733,6 +733,17 @@ if (v) raw = v;
 }
 return normalizeMatchedRules(raw, { ancestors });
 }
+// compareComputed — the Computed list's order: standard properties A–Z, then
+// vendor-prefixed ones (`-webkit-…`) A–Z. A plain sort puts the leading hyphen
+// first, so Chrome's ~25 `-webkit-` compatibility rows were the whole first
+// screen of the list and `align-items`, `background-color` and `color` began
+// below them.
+function compareComputed(a, b) {
+const pa = a.prop.charAt(0) === '-' && a.prop.charAt(1) !== '-';
+const pb = b.prop.charAt(0) === '-' && b.prop.charAt(1) !== '-';
+if (pa !== pb) return pa ? 1 : -1;
+return a.prop < b.prop ? -1 : a.prop > b.prop ? 1 : 0;
+}
 // buildNodeModel — resolve everything the Styles panel needs from a
 // RemoteObject objectId: the DOM node identity (tag/id/class), the inline
 // declared styles, the computed styles, and the box-model dimensions. Also
@@ -746,7 +757,7 @@ const model = { objectId, node: null, inlineProps: [], computed: [], box: null }
 try {
 const s = await cdpSend('Runtime.callFunctionOn', {
 objectId,
-functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline=[]; for (var i=0;i<this.style.length;i++){ var p=this.style.item(i); inline.push([p, this.style.getPropertyValue(p), this.style.getPropertyPriority(p)]); } var computed=[]; for (var j=0;j<cs.length;j++){ var q=cs.item(j); computed.push([q, cs.getPropertyValue(q)]); } var r=this.getBoundingClientRect(); var cls=(typeof this.className==="string")?this.className:""; var root=null, parent=null; try { root=parseFloat(getComputedStyle(document.documentElement).fontSize)||null; } catch(e){ root=null; } try { var pe=this.parentElement; parent=pe?parseFloat(getComputedStyle(pe).fontSize)||null:null; } catch(e){ parent=null; } if (parent==null) parent=parseFloat(cs.fontSize)||null; return { tag:this.nodeName, id:this.id||"", className:cls, inline:inline, computed:computed, width:r.width, height:r.height, bases:{ root:root, parent:parent, self:parseFloat(cs.fontSize)||null } }; }',
+functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline=[]; for (var i=0;i<this.style.length;i++){ var p=this.style.item(i); inline.push([p, this.style.getPropertyValue(p), this.style.getPropertyPriority(p)]); } var computed=[]; for (var j=0;j<cs.length;j++){ var q=cs.item(j); computed.push([q, cs.getPropertyValue(q)]); } var r=this.getBoundingClientRect(); var cls=(typeof this.className==="string")?this.className:""; var root=null, parent=null; try { root=parseFloat(getComputedStyle(document.documentElement).fontSize)||null; } catch(e){ root=null; } try { var pe=this.parentElement; parent=pe?parseFloat(getComputedStyle(pe).fontSize)||null:null; } catch(e){ parent=null; } if (parent==null) parent=parseFloat(cs.fontSize)||null; return { tag:this.nodeName, id:this.id||"", className:cls, inline:inline, cssText:this.style.cssText||"", computed:computed, width:r.width, height:r.height, bases:{ root:root, parent:parent, self:parseFloat(cs.fontSize)||null } }; }',
 returnByValue: true
 });
 const v = s && s.result && s.result.value;
@@ -761,11 +772,17 @@ prop: x[0],
 value: String(x[1] || ''),
 priority: x[2] === 'important' ? 'important' : ''
 }));
+// The element's own style as the browser serialises it. The longhand list
+// above is what every write keys on; cssText is the same style folded back into
+// the shorthands the author wrote, which is how the Declared list groups its
+// rows (see declaredGroups.js).
+model.inlineCss = String(v.cssText || '');
 // Computed styles come back in whatever order the browser iterates
 // CSSStyleDeclaration; sort alphabetically so the long read-only list is
-// scannable (mirrors the desktop DevTools Styles pane).
+// scannable (mirrors the desktop DevTools Styles pane) — with the vendor-
+// prefixed rows last, see compareComputed.
 model.computed = (v.computed || []).map((x) => ({ prop: x[0], value: String(x[1] || '') }))
-.sort((a, b) => (a.prop < b.prop ? -1 : a.prop > b.prop ? 1 : 0));
+.sort(compareComputed);
 model.box = { width: v.width, height: v.height };
 // The base font sizes travel with every pick, not only with a post-edit read:
 // the value-type switch needs them the moment an element is selected (a rem or
@@ -901,7 +918,7 @@ if (!objectId) return null;
 // round-trip — it is the same callFunctionOn the post-edit read already makes.
 const r = await cdpSend('Runtime.callFunctionOn', {
 objectId,
-functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline = {}; var priorities = {}; var computed = {}; for (var i = 0; i < this.style.length; i++) { var p = this.style.item(i); inline[p] = this.style.getPropertyValue(p); priorities[p] = this.style.getPropertyPriority(p); computed[p] = cs.getPropertyValue(p); } var root = null, parent = null; try { root = parseFloat(getComputedStyle(document.documentElement).fontSize) || null; } catch (e) { root = null; } try { var pe = this.parentElement; if (pe) parent = parseFloat(getComputedStyle(pe).fontSize) || null; } catch (e) { parent = null; } if (parent == null) parent = parseFloat(cs.fontSize) || null; return { inline: inline, priorities: priorities, computed: computed, bases: { root: root, parent: parent, self: parseFloat(cs.fontSize) || null } }; }',
+functionDeclaration: 'function(){ var cs = getComputedStyle(this); var inline = {}; var priorities = {}; var computed = {}; for (var i = 0; i < this.style.length; i++) { var p = this.style.item(i); inline[p] = this.style.getPropertyValue(p); priorities[p] = this.style.getPropertyPriority(p); computed[p] = cs.getPropertyValue(p); } var root = null, parent = null; try { root = parseFloat(getComputedStyle(document.documentElement).fontSize) || null; } catch (e) { root = null; } try { var pe = this.parentElement; if (pe) parent = parseFloat(getComputedStyle(pe).fontSize) || null; } catch (e) { parent = null; } if (parent == null) parent = parseFloat(cs.fontSize) || null; return { inline: inline, priorities: priorities, cssText: this.style.cssText || "", computed: computed, bases: { root: root, parent: parent, self: parseFloat(cs.fontSize) || null } }; }',
 returnByValue: true
 }, 8000);
 return (r && r.result && r.result.value) || null;
