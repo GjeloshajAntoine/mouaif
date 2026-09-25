@@ -20,5 +20,5 @@ The flow mirrors the official [`ant` CLI](https://github.com/anthropics/anthropi
 
 ## Related
 
-- [Authentication](./authentication.md#provider-credentials-let-mouaif-use-models) — provider credentials and where they are kept.
+- [AI providers](./providers.md) — provider credentials and where they are kept.
 - AI client: [docs/features/ai-client.md](./ai-client.md) (request builders, SSE parsers, error codes).

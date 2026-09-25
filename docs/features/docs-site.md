@@ -9,7 +9,7 @@ The `docs/` folder is written so it can be published as a static site (GitHub Pa
 | Source | Published as | Audience |
 |--------|--------------|----------|
 | `docs/features/getting-started.md`, `authentication.md`, `app-abilities.md`, `draft-craft.md` | `features/<slug>.html` | User guide — linked in the top navigation and sidebar |
-| Other `docs/features/<slug>.md` | `features/<slug>.html` | Reference pages — built and reachable by URL, not in the public navigation |
+| Other `docs/features/<slug>.md`, such as `providers.md` | `features/<slug>.html` | Reference pages — built and reachable by URL, not in the public navigation |
 | `docs/features/_template.md` | — | Skipped (template / draft prefix `_`) |
 | A page merged into another | `features/<old-slug>.html` | Redirect to the page it moved into, so old links keep working |
 | `docs/decisions.md` | `decisions.html` | Maintainer only — needs `--with-internal` |

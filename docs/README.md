@@ -8,7 +8,7 @@ The guides linked from the site navigation.
 
 - [Getting started](features/getting-started.md) — step-by-step install, first login, provider, project, and chat; phone access, update, uninstall, and troubleshooting.
 - [CLI commands](features/cli-commands.md) — every `mouaif` command, `serve` option, and environment variable, with recipes.
-- [Authentication](features/authentication.md) — connect AI providers and protect app access, with CLI examples.
+- [Authentication](features/authentication.md) — require a login to open mouaif, with CLI examples.
 - [App abilities](features/app-abilities.md) — projects, chats, coding tools, agents, MCP, and Inspector.
 - [Draft Craft](features/draft-craft.md) — add selected code, annotated images, or Inspector entries to any chat draft.
 
@@ -27,6 +27,7 @@ One page per feature: what it does and how to use it.
 
 ### Providers and models
 
+- [AI providers](features/providers.md) — connect the providers mouaif calls, and where their credentials are kept.
 - [Cloud model providers](features/cloud-providers.md) — Azure OpenAI, Mistral, Groq, and DeepSeek.
 - [Local OpenAI-compatible servers](features/local-openai-servers.md) — connect llama.cpp's `llama-server` or LM Studio with no API key.
 - [OpenRouter](features/openrouter.md) — one key for many upstream models, with browser sign-in.

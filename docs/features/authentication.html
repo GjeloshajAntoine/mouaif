@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Authentication — mouaif docs</title>
-  <meta name="description" content="Connect AI providers so mouaif can use their models, and optionally require a login to open mouaif." />
+  <meta name="description" content="App access decides who is allowed to open mouaif. It is off by default: anyone who can reach the server can open it. Turn it on when you start the server, and…" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
@@ -36,19 +36,10 @@
     <main class="main">
       <h1 id="authentication">Authentication</h1>
 <h2 id="overview">Overview</h2>
-<p>Connect AI providers so mouaif can use their models, and optionally require a login to open mouaif. These are two independent setups; you can do either one without the other:</p>
-<div class="table-wrap"><table><thead><tr><th></th><th>What it does</th><th>Who you prove yourself to</th><th>Where you set it up</th></tr></thead><tbody><tr><td><strong>Provider credentials</strong></td><td>Let mouaif call an AI model on your behalf</td><td>The AI provider (OpenAI, Anthropic, …)</td><td>In the app: <strong>Settings → Providers</strong></td></tr><tr><td><strong>App access</strong></td><td>Control who is allowed to open mouaif</td><td>mouaif itself, when you log in</td><td>On the command line, when you start the server</td></tr></tbody></table></div>
-<p>The rest of this page covers each one in its own section.</p>
-<h2 id="provider-credentials-let-mouaif-use-models">Provider credentials — let mouaif use models</h2>
-<p>To send messages to a model, mouaif needs a credential for that model&#39;s provider. This is a key (or browser sign-in) you give to the provider — it does <strong>not</strong> log you into mouaif.</p>
-<ol><li><p>Open <strong>Settings → Providers</strong>.</p></li><li><p>Choose a provider.</p></li><li><p>Enter the requested API key and base URL, or tap <strong>Sign in</strong> when the provider offers browser sign-in.</p></li><li><p>Save the provider, then run its model refresh or connection test to confirm it works.</p></li><li><p>Open a project&#39;s settings and add the model you want to use.</p>
-<p>Available connections include OpenAI-compatible services, Anthropic, Google Gemini, Ollama, OpenRouter, GitHub Copilot, Azure OpenAI, Mistral, Groq, and DeepSeek. Ollama normally runs locally without an API key, and the OpenAI-compatible provider accepts a blank key too, so a local llama.cpp <code>llama-server</code> or LM Studio endpoint works without credentials (see <a href="local-openai-servers.html">local-openai-servers.md</a>). Anthropic, OpenRouter, and GitHub Copilot offer browser sign-in in the provider form; the rest use an API key.</p></li></ol>
-<h3 id="where-credentials-are-kept">Where credentials are kept</h3>
-<ul><li><p><strong>API keys</strong> are saved in the app&#39;s own settings store on the computer that runs mouaif (<code>~/.mouaif/store.sqlite</code>), never in a project folder. The web UI only learns whether a key is set; it never receives the key itself.</p></li><li><p><strong>Browser sign-in tokens</strong> are saved in the operating system&#39;s keychain.</p></li><li><p>Credentials never leave that computer except in requests to the provider they belong to.</p></li><li><p>You can sign in with more than one account for the same provider and pick the account in the provider form.</p></li><li><p><strong>Delete</strong> in the provider form removes a connection. Models in your projects that use it stop working until you add it again.</p>
-<p>See <a href="openrouter.html">OpenRouter</a> and <a href="oauth-anthropic.html">Anthropic sign-in</a> for those browser sign-in flows.</p></li></ul>
-<h2 id="app-access-control-who-can-open-mouaif">App access — control who can open mouaif</h2>
-<p>App access is off by default: anyone who can reach the server can open it. Turn it on when you start mouaif, and after that people must log in with a username and password (or a passkey). This is separate from provider credentials above.</p>
-<p>App access is on for a run when you pass <code>--auth</code>, <code>--auth-setup</code>, or <code>--user</code>. Without one of them the server does not ask for a login, even if you set up a user before; the stored user is kept for the next time you turn access on.</p>
+<p>App access decides who is allowed to open mouaif. It is off by default: anyone who can reach the server can open it. Turn it on when you start the server, and after that people must log in with a username and password, or a passkey.</p>
+<p>App access is separate from AI provider credentials. Connecting a provider only lets mouaif call that provider; it does not protect your app. See <a href="providers.html">AI providers</a> for that setup.</p>
+<h2 id="usage">Usage</h2>
+<p>App access is on for a run when you pass <code>--auth</code>, <code>--auth-setup</code>, or <code>--user</code>. Without one of them the server does not ask for a login, even if you created a user before; the stored user is kept for the next time you turn access on.</p>
 <p>The npm package is named <a href="https://www.npmjs.com/package/mouaif" target="_blank" rel="noopener noreferrer"><code>mouaif</code></a>, and it exposes the command with the same name. The examples below use <code>npx mouaif</code>, so they work without a global install. If you installed the package with <code>npm install -g mouaif</code>, you can replace <code>npx mouaif</code> with <code>mouaif</code>.</p>
 <h3 id="create-access-from-the-setup-page">Create access from the setup page</h3>
 <pre><code class="language-bash">npx mouaif serve --auth-setup</code></pre>
@@ -89,7 +80,7 @@ npx mouaif serve --auth --user alice</code></pre>
 <pre><code class="language-bash">curl --user &#39;alice:a-long-password&#39; http://127.0.0.1:5732/api/settings</code></pre>
 <p>Browsers sign in once and reuse a session cookie automatically.</p>
 <h2 id="next-steps">Next steps</h2>
-<ul><li><p><a href="getting-started.html">Getting started</a> — install and start mouaif.</p></li><li><p><a href="app-abilities.html">App abilities</a> — configure tools and use the app.</p></li></ul>
+<ul><li><p><a href="getting-started.html">Getting started</a> — install and start mouaif.</p></li><li><p><a href="providers.html">AI providers</a> — connect the providers mouaif uses.</p></li><li><p><a href="app-abilities.html">App abilities</a> — configure tools and use the app.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

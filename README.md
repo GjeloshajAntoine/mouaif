@@ -40,7 +40,7 @@ mouaif info                             # version and default port
 mouaif --help                           # all commands
 ```
 
-Every option and environment variable: [CLI commands](docs/features/cli-commands.md). Login, passkeys, and provider credentials: [Authentication](docs/features/authentication.md).
+Every option and environment variable: [CLI commands](docs/features/cli-commands.md). App login and passkeys: [Authentication](docs/features/authentication.md). Provider keys: [AI providers](docs/features/providers.md).
 
 ## App abilities
 
@@ -59,7 +59,8 @@ Every option and environment variable: [CLI commands](docs/features/cli-commands
 
 - [Getting started](docs/features/getting-started.md) — step-by-step install, first setup, phone access, update, and troubleshooting.
 - [CLI commands](docs/features/cli-commands.md) — every command, option, and environment variable.
-- [Authentication](docs/features/authentication.md) — connect AI providers and protect app access.
+- [Authentication](docs/features/authentication.md) — require a login to open mouaif.
+- [AI providers](docs/features/providers.md) — connect the providers mouaif calls.
 - [App abilities](docs/features/app-abilities.md) — projects, chats, coding tools, agents, MCP, and Inspector.
 - [Draft Craft](docs/features/draft-craft.md) — add selected code or annotated Inspector images to a chat draft.
 

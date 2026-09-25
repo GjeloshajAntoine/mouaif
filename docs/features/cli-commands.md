@@ -177,5 +177,5 @@ The command prints how many chats and messages it imported and lists any file it
 ## Related
 
 - [Getting started](./getting-started.md) — install and complete first setup.
-- [Authentication](./authentication.md) — provider credentials and app access.
+- [Authentication](./authentication.md) — app access, passwords, passkeys, and sessions.
 - [REST and SSE server](./rest-and-sse-server.md) — the HTTP API that `mouaif serve` exposes.

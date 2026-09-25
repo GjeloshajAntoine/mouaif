@@ -118,13 +118,13 @@ try {
   });
 
   check('merged pages leave a redirect at their old URL', () => {
-    for (const [from, anchor] of [['auth', 'provider-credentials-let-mouaif-use-models'],
-      ['access-authentication', 'app-access-control-who-can-open-mouaif']]) {
+    for (const [from, slug, anchor] of [['auth', 'providers', null],
+      ['access-authentication', 'authentication', null]]) {
       const html = fs.readFileSync(path.join(pub.out, 'features', from + '.html'), 'utf8');
-      const want = 'authentication.html#' + anchor;
+      const want = slug + '.html' + (anchor ? '#' + anchor : '');
       assert.ok(html.includes('url=' + want), from + '.html does not redirect to ' + want);
-      const target = fs.readFileSync(path.join(pub.out, 'features', 'authentication.html'), 'utf8');
-      assert.ok(target.includes('id="' + anchor + '"'), 'authentication.html has no #' + anchor);
+      const target = fs.readFileSync(path.join(pub.out, 'features', slug + '.html'), 'utf8');
+      if (anchor) assert.ok(target.includes('id="' + anchor + '"'), slug + '.html has no #' + anchor);
     }
   });
 

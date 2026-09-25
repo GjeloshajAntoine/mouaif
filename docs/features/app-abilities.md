@@ -109,4 +109,4 @@ Use a smaller prompt profile to reduce context use, or an extensive profile when
 ## Next steps
 
 - [Getting started](./getting-started.md) — install, run, and complete first setup.
-- [Authentication](./authentication.md) — provider sign-in and access-auth CLI examples.
+- [Authentication](./authentication.md) — app-access CLI examples, passkeys, and sessions.

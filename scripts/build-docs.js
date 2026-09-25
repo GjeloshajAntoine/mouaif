@@ -70,8 +70,11 @@ const PUBLIC_GUIDE_TITLES = {
 // server-side redirects, so the build writes a tiny features/<old>.html that
 // forwards to the new page and keeps old links and bookmarks working.
 const REDIRECTED_SLUGS = {
-  'auth': 'authentication#provider-credentials-let-mouaif-use-models',
-  'access-authentication': 'authentication#app-access-control-who-can-open-mouaif'
+  // The former auth.md (provider credentials) moved out of authentication.md
+  // into its own providers.md page; access-authentication.md stayed behind and
+  // is now the whole of authentication.md.
+  'auth': 'providers',
+  'access-authentication': 'authentication'
 };
 // Set by main(). When false (the default, published build) the maintainer
 // pages are not written and links to them are rendered as plain text.
@@ -1239,7 +1242,7 @@ const body = `
 <p class="tagline">Run an AI coding workspace for your local projects, connect the model providers you choose, and control which tools the assistant may use.</p>
 <div class="hero-actions">
 <a class="btn btn--primary" href="features/getting-started.html">Get started</a>
-<a class="btn" href="features/authentication.html">Set up authentication</a>
+<a class="btn" href="features/providers.html">Connect a provider</a>
 <a class="btn" href="features/app-abilities.html">Explore app abilities</a>
 </div>
 </section>
@@ -1271,7 +1274,7 @@ mouaif serve --auth</code></pre>
 <p>Or set a user while keeping the password out of shell history:</p>
 <pre><code class="language-bash">MOUAIF_PASSWORD='a-long-password' \\
   mouaif serve --auth --user alice</code></pre>
-<p><a href="features/authentication.html">Read provider and access authentication setup →</a></p>
+<p><a href="features/authentication.html">Read the full authentication guide →</a></p>
 </section>
 <section class="section" id="abilities">
 <h2>What you can do</h2>

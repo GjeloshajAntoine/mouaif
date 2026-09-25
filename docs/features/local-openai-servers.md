@@ -50,4 +50,4 @@ Hosted providers (OpenAI, Together, Groq, and the first-class Azure/Mistral/Deep
 
 - [docs/features/ai-client.md](./ai-client.md) — the proxy architecture every provider rides on.
 - [docs/features/cloud-providers.md](./cloud-providers.md) — the other OpenAI-shaped providers.
-- [docs/features/authentication.md](./authentication.md) — where credentials are stored.
+- [AI providers](./providers.md) — where provider credentials are stored.

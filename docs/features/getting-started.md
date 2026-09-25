@@ -177,5 +177,5 @@ This removes the command but keeps your data. To also delete every setting, key,
 ## Next steps
 
 - [CLI commands](./cli-commands.md) — every command, option, and environment variable.
-- [Authentication](./authentication.md) — provider credentials, logins, passkeys, and sessions.
+- [Authentication](./authentication.md) — logins, passkeys, and sessions.
 - [App abilities](./app-abilities.md) — projects, chats, coding tools, agents, MCP, and the Inspector.

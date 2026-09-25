@@ -63,5 +63,5 @@ The UI is mobile-first: stacked rows, minimum 44 px touch targets, system colors
 ## Related
 
 - Storage: [docs/features/app-and-project-settings.md](./app-and-project-settings.md).
-- Access security: [Authentication](./authentication.md#app-access-control-who-can-open-mouaif).
+- Access security: [Authentication](./authentication.md).
 - Chat proxy that consumes the models list: [docs/features/ai-client.md](./ai-client.md).

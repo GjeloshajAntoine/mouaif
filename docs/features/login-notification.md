@@ -31,4 +31,4 @@ The sign-in alert shares one replaceable tag (`mouaif-login`), so repeated sign-
 ## Related
 
 - [Push notifications](./push-notifications.md) — the notification service, its triggers, and iOS delivery behavior.
-- [Authentication](./authentication.md#app-access-control-who-can-open-mouaif) — enabling and managing app access.
+- [Authentication](./authentication.md) — enabling and managing app access.

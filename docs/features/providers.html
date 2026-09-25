@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI providers — mouaif docs</title>
+  <meta name="description" content="To send a message, mouaif needs a connection to the provider that serves the model you picked. A connection is an API key — or a browser sign-in — that you…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="ai-providers">AI providers</h1>
+<h2 id="overview">Overview</h2>
+<p>To send a message, mouaif needs a connection to the provider that serves the model you picked. A connection is an API key — or a browser sign-in — that you give to the provider. It does <strong>not</strong> log you into mouaif; for the app login see <a href="authentication.html">Authentication</a>.</p>
+<p>Connections live at app level, not per project: you add a provider once and every project can use it.</p>
+<h2 id="usage">Usage</h2>
+<h3 id="connect-a-provider">Connect a provider</h3>
+<ol><li><p>Open <strong>Settings → Providers</strong>.</p></li><li><p>Tap <strong>+ Add provider</strong> and choose a provider from the list.</p></li><li><p>Enter the requested API key and API base URL, or tap <strong>Sign in</strong> when the provider offers browser sign-in.</p></li><li><p>Save the provider, then run its model refresh or connection test to confirm it works.</p>
+<p>The built-in providers are:</p></li></ol>
+<ul><li><p><strong>OpenAI compatible</strong> — any OpenAI-shaped endpoint (OpenAI, Together, LM Studio, llama.cpp <code>llama-server</code>). The key may be left blank for a local server that needs none, see <a href="local-openai-servers.html">Local OpenAI-compatible servers</a>.</p></li><li><p><strong>Anthropic</strong> — API key or browser sign-in, see <a href="oauth-anthropic.html">Anthropic sign-in</a>.</p></li><li><p><strong>Google Gemini</strong> — API key.</p></li><li><p><strong>Ollama</strong> — local server, no API key required.</p></li><li><p><strong>OpenRouter</strong> — one key for many upstream models, or browser sign-in, see <a href="openrouter.html">OpenRouter</a>.</p></li><li><p><strong>GitHub Copilot</strong> — browser sign-in only.</p></li><li><p><strong>Azure OpenAI</strong>, <strong>Mistral</strong>, <strong>Groq</strong>, <strong>DeepSeek</strong> — API key, see <a href="cloud-providers.html">Cloud model providers</a>.</p></li></ul>
+<h3 id="add-a-model-to-a-project">Add a model to a project</h3>
+<p>Open a project&#39;s settings, then its <strong>Models</strong> editor, and add an entry that names this provider and the model id you want. The live model catalog in the chat&#39;s model picker can also refresh and pull the provider&#39;s own list.</p>
+<h3 id="sign-in-with-an-account-instead-of-a-key">Sign in with an account instead of a key</h3>
+<p>Anthropic, OpenRouter, and GitHub Copilot offer <strong>Sign in</strong> in the provider form. The browser is sent to the provider, you authorize mouaif, and the resulting token or key is stored on your computer. You can sign in with more than one account for the same provider and pick the account in the provider form.</p>
+<h2 id="where-credentials-are-kept">Where credentials are kept</h2>
+<ul><li><p><strong>API keys</strong> are saved in the app&#39;s own settings store on the computer that runs mouaif (<code>~/.mouaif/store.sqlite</code>), never in a project folder. The web UI only learns whether a key is set; it never receives the key itself.</p></li><li><p><strong>Browser sign-in tokens</strong> are saved in the operating system&#39;s keychain.</p></li><li><p>Credentials never leave that computer except in requests to the provider they belong to.</p></li><li><p><strong>Delete</strong> in the provider form removes a connection. Project models that use it stop working until you add it again.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="authentication.html">Authentication</a> — require a login to open mouaif.</p></li><li><p><a href="settings-ui.html">Settings</a> — the Providers screen.</p></li><li><p><a href="app-and-project-settings.html">App and project settings</a> — where provider connections live.</p></li><li><p><a href="ai-client.html">AI client</a> — the server-side proxy that talks to providers.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>
