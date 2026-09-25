@@ -167,6 +167,7 @@ Do not add `actions/configure-pages` or `actions/deploy-pages` for this setup. T
 
 1. Copy [docs/features/_template.md](./_template.md) to `docs/features/<kebab-case-name>.md`.
 2. Keep one H1, H2 sections, and language-tagged code fences — the page must stand alone as a static page with no template shortcodes.
+2b. Keep it short. A feature page is read on a phone, so aim for a few hundred words: one to two sentences per bullet, a table or a numbered walkthrough instead of prose, and no measurements or "we tried X and rejected it" stories — those go in the agent note.
 3. Add a one-line entry to [docs/README.md](../README.md), under the matching **Reference** or **How it works** group.
 4. Link it from a published guide if users should find it; otherwise it stays reachable by URL only.
 5. Implementation details (source files, data shapes, endpoints, tests) go in `docs/agent/features/<same-name>.md`, never in a published page. A public page has no **Implementation notes** section; `npm test` fails if one appears.
