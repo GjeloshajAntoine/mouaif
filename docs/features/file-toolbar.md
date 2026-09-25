@@ -35,6 +35,8 @@ Below the header are four collapsible sections (Stash first):
 
 A transient notice bar under the header shows the result of push / pull / checkout / stash operations (success or the raw git stderr).
 
+`POST /api/git` accepts only a safe subset of arguments. Checkout, cherry-pick and revert take a single ref that cannot start with `-`. The stash actions take a `stash@{N}` ref. Push and pull accept only a short list of flags (`-u`, `--tags`, `--rebase`, `--ff-only`, `--force-with-lease`, and a few others). Options that run a program or write a file (`--upload-pack`, `--output`, `--exec`, …) are rejected with a 400. Push and pull time out after 2 minutes; every other git command times out after 15 seconds.
+
 ### CLI prompt
 
 The Cli item opens a full-screen overlay with a live terminal readout. The default working directory is the **project root** — type a command and press Enter to run it there. On Windows the shell is the classic **Command Prompt (`cmd.exe`)** (honoring `ComSpec`); on POSIX it is `$SHELL` or `/bin/sh`.

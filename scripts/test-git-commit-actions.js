@@ -140,6 +140,25 @@ if (!(r.status === 200 && r.body.ok)) throw new Error('checkout ' + defaultBranc
 // Missing hash is rejected (400), not a git crash.
 r = await postJson(port, P(), Object.assign(B(), { action: 'cherry-pick' }));
 if (!(r.status === 400)) throw new Error('missing hash should be a 400, got ' + r.status);
+// Option-looking or program-running args are refused before git runs.
+const rejected = [
+  { action: 'checkout', args: '--orphan=x' },
+  { action: 'revert', args: '-m 1 ' + base },
+  { action: 'pull', args: '--upload-pack=touch /tmp/mouaif-pwned' },
+  { action: 'push', args: '--receive-pack=true' },
+  { action: 'diff', args: '--output=/tmp/mouaif-pwned' },
+  { action: 'stash-drop', args: '--quiet' }
+];
+for (const bad of rejected) {
+  r = await postJson(port, P(), Object.assign(B(), bad));
+  if (r.status !== 400) throw new Error(bad.action + ' ' + bad.args + ' should be a 400, got ' + r.status + ' ' + JSON.stringify(r.body));
+}
+// Remote-branch checkout with track: true creates a local tracking branch.
+await git(repo, 'git remote add origin "' + repo + '" && git update-ref refs/remotes/origin/remote-only ' + base);
+r = await postJson(port, P(), Object.assign(B(), { action: 'checkout', args: 'origin/remote-only', track: true }));
+if (!(r.status === 200 && r.body.ok)) throw new Error('track checkout failed: ' + JSON.stringify(r.body));
+sym = await git(repo, 'git symbolic-ref --short -q HEAD');
+if (sym.out.trim() !== 'remote-only') throw new Error('expected local remote-only branch, got ' + sym.out);
 console.log('PASS: checkout/cherry-pick/revert commit actions');
 } catch (e) {
 failed = true;

@@ -10,15 +10,17 @@ const { sendJSON, readJsonOr400, xyToText } = require('./server-shared.js');
 //
 // Lightweight git operations run directly against the project directory.
 // Routes:
-//   POST /api/git  body: { projectDir, action, args? }
+//   POST /api/git  body: { projectDir, action, args?, files?, message?, track? }
 //     -> { ok, stdout, stderr, exitCode }
 //
 // Supported actions: status, diff, log, add, unstage, commit, branch, checkout,
 // stash, stash-apply, stash-pop, stash-drop, push, pull, cherry-pick, revert
-// These are read-safe or explicit-save commands. `commit` and `add` require
-// an extra `message` field. `push` and `pull` talk to the configured remote.
-// `cherry-pick` and `revert` operate on a commit hash in `args` and create new
-// commits (the frontend confirms before calling them).
+// These are read-safe or explicit-save commands. `commit` requires a
+// `message`; `add` / `unstage` take a `files` array. `push` and `pull` talk
+// to the configured remote (2 min timeout, allow-listed flags only).
+// `checkout`, `cherry-pick` and `revert` take a single ref in `args` that may
+// not start with `-`; the stash actions take a `stash@{N}` ref. Options that
+// run programs or write files (`--upload-pack`, `--output`, …) are refused.
 async function handleGit(req, res, parsed) {
   const body = await readJsonOr400(req, res);
   if (!body) return;
@@ -47,93 +49,164 @@ const SAFE_ACTIONS = new Set(['status', 'diff', 'log', 'add', 'unstage', 'commit
   // spaces — commit messages in particular — reach git as single
   // arguments instead of being shattered into separate tokens.
   const splitArgs = (s) => (s ? s.trim().split(/\s+/).filter(Boolean) : []);
+  // Free-form `args` must never smuggle in an option that runs a program or
+  // writes a file (`pull --upload-pack=<cmd>`, `diff --output=<file>`).
+  let tokens;
+  try {
+    tokens = checkArgs(action, splitArgs(args));
+  } catch (err) {
+    return sendJSON(res, 400, { error: err.message });
+  }
   let argv;
   switch (action) {
     case 'status':
       argv = ['status', '--short', '--branch'];
       break;
     case 'diff':
-      argv = ['diff'].concat(args ? splitArgs(args) : ['--stat']);
+      argv = ['diff'].concat(tokens.length ? tokens : ['--stat']);
       break;
     case 'log':
-      argv = ['log', '--oneline', '-20'].concat(splitArgs(args));
+      argv = ['log', '--oneline', '-20'].concat(tokens);
       break;
     case 'add':
-if (files.length === 0) {
-if (!args) return sendJSON(res, 400, { error: 'files (array of paths) required for add' });
-argv = ['add'].concat(splitArgs(args));
-} else {
-argv = ['add', '--'].concat(files);
-}
-break;
-case 'unstage':
-if (files.length === 0) {
-if (!args) return sendJSON(res, 400, { error: 'files (array of paths) required for unstage' });
-argv = ['reset', '-q', 'HEAD', '--'].concat(splitArgs(args));
-} else {
-argv = ['reset', '-q', 'HEAD', '--'].concat(files);
-}
-break;
-case 'commit':
+      if (files.length === 0) {
+        if (!tokens.length) return sendJSON(res, 400, { error: 'files (array of paths) required for add' });
+        argv = ['add'].concat(tokens);
+      } else {
+        argv = ['add', '--'].concat(files);
+      }
+      break;
+    case 'unstage':
+      if (files.length === 0) {
+        if (!tokens.length) return sendJSON(res, 400, { error: 'files (array of paths) required for unstage' });
+        argv = ['reset', '-q', 'HEAD', '--'].concat(tokens);
+      } else {
+        argv = ['reset', '-q', 'HEAD', '--'].concat(files);
+      }
+      break;
+    case 'commit':
       if (!message) return sendJSON(res, 400, { error: 'message required for commit' });
       argv = ['commit', '-m', message];
       break;
     case 'branch':
-      argv = ['branch'].concat(splitArgs(args));
+      argv = ['branch'].concat(tokens);
       break;
-    case 'checkout':
-    if (!args) return sendJSON(res, 400, { error: 'args (branch name) required for checkout' });
-    // `track: true` checks out a remote branch (`origin/feature`) as a new
-    // local tracking branch instead of a detached HEAD.
-    argv = body.track === true ? ['checkout', '--track', args] : ['checkout', args];
-    break;
+    case 'checkout': {
+      const ref = refArg(args);
+      if (!ref) return sendJSON(res, 400, { error: 'args (branch name or commit) required for checkout' });
+      // `track: true` checks out a remote branch (`origin/feature`) as a new
+      // local tracking branch instead of a detached HEAD. The trailing `--`
+      // pins the ref as a revision, never a path.
+      argv = body.track === true ? ['checkout', '--track', ref, '--'] : ['checkout', ref, '--'];
+      break;
+    }
     case 'stash':
-      argv = ['stash'].concat(splitArgs(args));
+      argv = ['stash'].concat(tokens);
       break;
     case 'stash-apply':
-      argv = ['stash', 'apply'].concat(splitArgs(args));
-      break;
     case 'stash-pop':
-      argv = ['stash', 'pop'].concat(splitArgs(args));
+    case 'stash-drop': {
+      const ref = args ? stashRef(args) : '';
+      if (args && !ref) return sendJSON(res, 400, { error: 'args must be a stash ref like stash@{0}' });
+      argv = ['stash', action.slice('stash-'.length)].concat(ref ? [ref] : []);
       break;
-    case 'stash-drop':
-      argv = ['stash', 'drop'].concat(splitArgs(args));
-      break;
+    }
     case 'push':
-argv = ['push'].concat(splitArgs(args));
-break;
-case 'pull':
-argv = ['pull'].concat(splitArgs(args));
-break;
-case 'cherry-pick':
-if (!args) return sendJSON(res, 400, { error: 'args (commit hash) required for cherry-pick' });
-argv = ['cherry-pick'].concat(splitArgs(args));
-break;
-case 'revert':
-if (!args) return sendJSON(res, 400, { error: 'args (commit hash) required for revert' });
-argv = ['revert', '--no-edit'].concat(splitArgs(args));
-break;
-default:
-return sendJSON(res, 400, { error: 'unsupported action' });
+      argv = ['push'].concat(tokens);
+      break;
+    case 'pull':
+      argv = ['pull'].concat(tokens);
+      break;
+    case 'cherry-pick':
+    case 'revert': {
+      const ref = refArg(args);
+      if (!ref) return sendJSON(res, 400, { error: 'args (commit hash) required for ' + action });
+      argv = action === 'revert' ? ['revert', '--no-edit', ref] : ['cherry-pick', ref];
+      break;
+    }
+    default:
+      return sendJSON(res, 400, { error: 'unsupported action' });
   }
 
-  const child = spawn('git', ['-C', projectDir].concat(argv), {
-    cwd: projectDir,
-    timeout: 15000,
-    env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0' })
-  });
-  let stdout = '', stderr = '';
-  child.stdout.on('data', d => { stdout += d; });
-  child.stderr.on('data', d => { stderr += d; });
-  try {
-    const exitCode = await new Promise((resolve, reject) => {
-      child.on('close', resolve);
-      child.on('error', reject);
-    });
-    return sendJSON(res, 200, { ok: exitCode === 0, stdout: stdout.trim(), stderr: stderr.trim(), exitCode });
-  } catch (err) {
-    return sendJSON(res, 500, { ok: false, error: err.message, stdout: stdout.trim(), stderr: stderr.trim(), exitCode: -1 });
+  // push / pull wait on the network; everything else is local and quick.
+  const timeout = action === 'push' || action === 'pull' ? NETWORK_TIMEOUT_MS : LOCAL_TIMEOUT_MS;
+  const r = await runGitCommand(projectDir, argv, { timeout });
+  if (r.error) {
+    return sendJSON(res, 500, { ok: false, error: r.error, stdout: r.stdout.trim(), stderr: r.stderr.trim(), exitCode: -1 });
   }
+  let stderr = r.stderr.trim();
+  if (r.timedOut) stderr = (stderr ? stderr + '\n' : '') + 'git ' + action + ' timed out after ' + Math.round(timeout / 1000) + ' s';
+  return sendJSON(res, 200, { ok: r.exitCode === 0, stdout: r.stdout.trim(), stderr, exitCode: r.exitCode });
+}
+
+const LOCAL_TIMEOUT_MS = 15000;
+const NETWORK_TIMEOUT_MS = 120000;
+
+// Spawn one git command in `projectDir` and collect its output. Never a
+// shell: `argv` reaches git verbatim. Resolves (never rejects) with
+// { ok, exitCode, stdout, stderr, timedOut, error? }.
+function runGitCommand(projectDir, argv, opts) {
+  const timeout = (opts && opts.timeout) || LOCAL_TIMEOUT_MS;
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn('git', ['-C', projectDir].concat(argv), {
+        cwd: projectDir,
+        timeout,
+        env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0' }),
+        windowsHide: true
+      });
+    } catch (err) {
+      resolve({ ok: false, exitCode: -1, stdout: '', stderr: '', timedOut: false, error: err.message });
+      return;
+    }
+    let stdout = '', stderr = '';
+    let done = false;
+    const finish = (value) => { if (!done) { done = true; resolve(value); } };
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.on('error', (err) => finish({ ok: false, exitCode: -1, stdout, stderr, timedOut: false, error: err.message }));
+    child.on('close', (code, signal) => finish({
+      ok: code === 0,
+      exitCode: code === null ? -1 : code,
+      stdout,
+      stderr,
+      timedOut: code === null && signal === 'SIGTERM'
+    }));
+  });
+}
+
+// Options that make git run another program or write outside its normal
+// output. Refused in every free-form `args` string.
+const DANGEROUS_OPTION = /^--?(output|ext-diff|textconv|upload-pack|receive-pack|exec|config|git-dir|work-tree|namespace|open-files-in-pager|run|command)(=|$)/i;
+// push / pull accept only these flags (plus bare remote / refspec tokens).
+const NETWORK_FLAGS = new Set([
+  '-u', '--set-upstream', '--tags', '--follow-tags', '--force-with-lease',
+  '--rebase', '--no-rebase', '--ff-only', '--ff', '--no-ff', '--autostash', '--prune'
+]);
+
+function checkArgs(action, tokens) {
+  for (const t of tokens) {
+    if (DANGEROUS_OPTION.test(t)) throw new Error('option not allowed: ' + t);
+    if ((action === 'push' || action === 'pull') && t.startsWith('-') && !NETWORK_FLAGS.has(t)) {
+      throw new Error('option not allowed for ' + action + ': ' + t);
+    }
+  }
+  return tokens;
+}
+
+// A single ref-like token (branch, remote branch, sha) that git cannot read
+// as an option. Returns '' when the value is empty, has whitespace, or starts
+// with '-'.
+function refArg(value) {
+  const ref = String(value || '').trim();
+  if (!ref || /\s/.test(ref) || ref.startsWith('-')) return '';
+  return ref;
+}
+
+function stashRef(value) {
+  const ref = String(value || '').trim();
+  return /^stash@\{\d+\}$/.test(ref) ? ref : '';
 }
 
 // Parse `git status --porcelain=v1 -z` into the two working-tree sections.
@@ -225,18 +298,7 @@ async function handleGitInfo(req, res, parsed) {
   const projectDir = typeof parsed.query.projectDir === 'string' ? parsed.query.projectDir : '';
   if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
 
-  const run = (args) => new Promise((resolve) => {
-    const child = spawn('git', ['-C', projectDir].concat(args), {
-      cwd: projectDir,
-      timeout: 15000,
-      env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0' }),
-      windowsHide: true
-    });
-    let stdout = '';
-    child.stdout.on('data', (d) => { stdout += d; });
-    child.on('error', () => resolve({ ok: false, stdout: '', exitCode: -1 }));
-    child.on('close', (code) => resolve({ ok: code === 0, stdout, exitCode: code }));
-  });
+  const run = (args) => runGitCommand(projectDir, args);
 
   const statusRes = await run(['status', '--porcelain=v1', '-z']);
   if (!statusRes.ok) {
@@ -374,18 +436,7 @@ async function handleGitLog(req, res, parsed) {
   const queryCount = parseInt(parsed.query.count, 10);
   const count = isFinite(queryCount) && queryCount >= 1 && queryCount <= 100 ? queryCount : 20;
 
-  const run = (args) => new Promise((resolve) => {
-    const child = spawn('git', ['-C', projectDir].concat(args), {
-      cwd: projectDir,
-      timeout: 15000,
-      env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0' }),
-      windowsHide: true
-    });
-    let stdout = '';
-    child.stdout.on('data', (d) => { stdout += d; });
-    child.on('error', () => resolve({ ok: false, stdout: '', exitCode: -1 }));
-    child.on('close', (code) => resolve({ ok: code === 0, stdout, exitCode: code }));
-  });
+  const run = (args) => runGitCommand(projectDir, args);
 
   // Get total commit count
   const totalRes = await run(['rev-list', '--count', 'HEAD']);
@@ -430,18 +481,7 @@ async function handleGitCommitFiles(req, res, parsed) {
   if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
   if (!hash) return sendJSON(res, 400, { error: 'hash is required' });
 
-  const run = (args) => new Promise((resolve) => {
-    const child = spawn('git', ['-C', projectDir].concat(args), {
-      cwd: projectDir,
-      timeout: 15000,
-      env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0' }),
-      windowsHide: true
-    });
-    let stdout = '';
-    child.stdout.on('data', (d) => { stdout += d; });
-    child.on('error', () => resolve({ ok: false, stdout: '', exitCode: -1 }));
-    child.on('close', (code) => resolve({ ok: code === 0, stdout, exitCode: code }));
-  });
+  const run = (args) => runGitCommand(projectDir, args);
 
   // Sanity-check the hash before passing it to git: allow only hex (at
   // least 4 chars) or a ref-like token such as a commit-ish. Everything
