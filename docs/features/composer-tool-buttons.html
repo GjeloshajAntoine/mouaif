@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Composer tool buttons — mouaif docs</title>
-  <meta name="description" content="Settings → App defaults → Chat defaults has two switches that decide which optional tools the chat composer draws beside the message box: **Dictation…" />
+  <meta name="description" content="Settings → App defaults → Chat defaults has three switches that decide which optional parts the chat composer draws: **Dictation microphone in the composer**,…" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
@@ -36,14 +36,14 @@
     <main class="main">
       <h1 id="composer-tool-buttons">Composer tool buttons</h1>
 <h2 id="overview">Overview</h2>
-<p>Settings → App defaults → Chat defaults has two switches that decide which optional tools the chat composer draws beside the message box: <strong>Dictation microphone in the composer</strong> and <strong>Image button in the composer</strong>. Both are on by default. Turning one off removes that button from the composer row — for a user who never dictates, or never attaches a picture, and who does not want to reach past a control that does nothing for them every time they send a message.</p>
+<p>Settings → App defaults → Chat defaults has three switches that decide which optional parts the chat composer draws: <strong>Dictation microphone in the composer</strong>, <strong>Image button in the composer</strong> and <strong>Status line under the composer</strong>. All are on by default. Turning one off removes that button from the composer row — for a user who never dictates, or never attaches a picture, and who does not want to reach past a control that does nothing for them every time they send a message.</p>
 <p>Hiding is <strong>not</strong> disabling. The routes behind the buttons stay exactly as they were, so a hidden control removes a way to <em>reach</em> a capability, never the capability:</p>
-<div class="table-wrap"><table><thead><tr><th>Hidden</th><th>Still works</th></tr></thead><tbody><tr><td>Dictation microphone</td><td>The <code>#/dictation</code> page (record, transcribe, edit, copy / insert / send), the app-level dictation model choice, and <code>POST /api/ai/transcribe</code></td></tr><tr><td>Image button</td><td>Pasting an image into the composer, the annotation editor, and image attachments on a send</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>Hidden</th><th>Still works</th></tr></thead><tbody><tr><td>Dictation microphone</td><td>The <code>#/dictation</code> page (record, transcribe, edit, copy / insert / send), the app-level dictation model choice, and <code>POST /api/ai/transcribe</code></td></tr><tr><td>Image button</td><td>Pasting an image into the composer, the annotation editor, and image attachments on a send</td></tr><tr><td>Status line</td><td>Errors (a failed send, a refused key, a dictation with no model) still appear on the line; the home-indicator inset below the composer is kept</td></tr></tbody></table></div>
 <h2 id="usage">Usage</h2>
 <ol><li><p>Open <strong>Settings → App defaults</strong> (the <strong>Chat defaults</strong> group).</p></li><li><p>Find the row you want and flip its switch:</p></li></ol>
-<ul><li><p><strong>Dictation microphone in the composer</strong> — off removes the microphone from the composer row.</p></li><li><p><strong>Image button in the composer</strong> — off removes the picture-attachment button.</p></li></ul>
+<ul><li><p><strong>Dictation microphone in the composer</strong> — off removes the microphone from the composer row.</p></li><li><p><strong>Image button in the composer</strong> — off removes the picture-attachment button.</p></li><li><p><strong>Status line under the composer</strong> — off hides the one-line status text below the message box (&quot;streaming…&quot;, the turn cost, &quot;dictation added&quot;). Error messages still show.</p></li></ul>
 <ol><li><p>Each row saves immediately (there is no Save button) and the choice applies app-wide, so every project&#39;s composer obeys it. The status line under the row confirms what happened.</p>
-<p>Open any chat to see the result. The composer keeps the text area, the send button and the status line, so hiding both optional tools leaves a narrower row rather than an empty one.</p>
+<p>Open any chat to see the result. The composer keeps the text area and the send button, so hiding both optional buttons leaves a narrower row rather than an empty one.</p>
 <p>Turn a switch back on and the button returns — including in a chat that is already open, because the chat re-reads the app settings when its data loads.</p></li></ol>
 <h3 id="what-does-not-change">What does not change</h3>
 <ul><li><p><strong>The tap target.</strong> An optional button is either drawn exactly as it was (44 × 44, its usual margin) or not drawn at all. Nothing is squeezed to make room.</p></li><li><p><strong>The keyboard.</strong> Enter / Shift+Enter behaviour is <code>enterForNewline</code> and is untouched.</p></li><li><p><strong>The draft.</strong> Whatever is already typed, and any attachment already made, stays put.</p></li></ul>

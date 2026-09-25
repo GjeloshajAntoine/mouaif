@@ -252,6 +252,31 @@ html { scroll-padding-top: 72px; }
   font-size: 17px;
   line-height: 1.6;
 }
+.hero-install {
+  max-width: 640px;
+  margin: 0 auto 24px;
+  text-align: left;
+}
+.hero-install__label {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+}
+.hero-install__label + pre {
+  margin-top: 0;
+}
+.hero-install__note {
+  margin: 6px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.hero-install__note:last-child {
+  margin-bottom: 0;
+}
 .hero-actions {
   display: flex;
   gap: 10px;

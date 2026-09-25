@@ -829,6 +829,31 @@ html { scroll-padding-top: 72px; }
   font-size: 17px;
   line-height: 1.6;
 }
+.hero-install {
+  max-width: 640px;
+  margin: 0 auto 24px;
+  text-align: left;
+}
+.hero-install__label {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+}
+.hero-install__label + pre {
+  margin-top: 0;
+}
+.hero-install__note {
+  margin: 6px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.hero-install__note:last-child {
+  margin-bottom: 0;
+}
 .hero-actions {
   display: flex;
   gap: 10px;
@@ -1240,6 +1265,14 @@ const body = `
 <p class="eyebrow">Mobile Ouaib first</p>
 <h1>mouaif</h1>
 <p class="tagline">Run an AI coding workspace for your local projects, with a web inspector, a CodeMirror-based code editor, subagents, and custom prompts.</p>
+<div class="hero-install">
+<p class="hero-install__label">Try it now (keyless, no login)</p>
+<pre><code class="language-bash">npx mouaif serve</code></pre>
+<p class="hero-install__note">Serves the app at <code>http://127.0.0.1:5732/</code>. Add a project folder, connect a provider in <strong>Settings → Providers</strong> — a local llama.cpp, LM Studio, or Ollama server needs no key — and start a chat.</p>
+<p class="hero-install__label">Or require a login</p>
+<pre><code class="language-bash">npx mouaif serve --auth</code></pre>
+<p class="hero-install__note">mouaif prints a one-time setup link, QR code, and short code in the terminal; open it to create your username and password before signing in.</p>
+</div>
 <div class="hero-actions">
 <a class="btn btn--primary" href="features/getting-started.html">Get started</a>
 <a class="btn" href="features/providers.html">Connect a provider</a>
