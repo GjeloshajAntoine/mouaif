@@ -139,6 +139,27 @@ if (!(infoGet3.body.commits[0] && /modal/.test(infoGet3.body.commits[0].subject)
 // Path-with-space file is tracked.
 const ls = await git(repo, 'git ls-files');
 if (!/my file\.txt/.test(ls.out)) throw new Error('path-with-space file not intact');
+// A staged rename is listed old -> new and unstages cleanly with both paths.
+await git(repo, 'git mv "my file.txt" "renamed file.txt"');
+const getInfo = () => new Promise((resolve, reject) => {
+const req = http.request({ host: '127.0.0.1', port, path: '/api/git/info?projectDir=' + encodeURIComponent(repo), method: 'GET' }, (res) => {
+let b = '';
+res.on('data', (d) => { b += d; });
+res.on('end', () => { try { resolve(JSON.parse(b)); } catch (e) { reject(e); } });
+});
+req.on('error', reject);
+req.end();
+});
+const info4 = await getInfo();
+const ren = info4.staged[0];
+if (!(ren && ren.path === 'my file.txt -> renamed file.txt')) throw new Error('rename path wrong: ' + JSON.stringify(ren));
+if (!(ren.diff && /rename from my file\.txt/.test(ren.diff))) throw new Error('rename diff missing: ' + JSON.stringify(ren.diff));
+r = await postJson(port, P(), Object.assign(B(), { action: 'unstage', files: ren.paths }));
+if (!(r.status === 200 && r.body.ok)) throw new Error('unstage rename failed: ' + JSON.stringify(r.body));
+const info5 = await getInfo();
+if (info5.staged.length !== 0) throw new Error('rename left staged entries: ' + JSON.stringify(info5.staged));
+const unstagedPaths = info5.unstaged.map((f) => f.path).sort();
+if (unstagedPaths.join('|') !== 'my file.txt|renamed file.txt') throw new Error('rename unstage wrong: ' + unstagedPaths.join('|'));
 console.log('PASS: stage/unstage/commit via array files');
 } catch (e) {
 failed = true;

@@ -82,9 +82,11 @@ case 'commit':
       argv = ['branch'].concat(splitArgs(args));
       break;
     case 'checkout':
-      if (!args) return sendJSON(res, 400, { error: 'args (branch name) required for checkout' });
-      argv = ['checkout', args];
-      break;
+    if (!args) return sendJSON(res, 400, { error: 'args (branch name) required for checkout' });
+    // `track: true` checks out a remote branch (`origin/feature`) as a new
+    // local tracking branch instead of a detached HEAD.
+    argv = body.track === true ? ['checkout', '--track', args] : ['checkout', args];
+    break;
     case 'stash':
       argv = ['stash'].concat(splitArgs(args));
       break;
@@ -137,6 +139,16 @@ return sendJSON(res, 400, { error: 'unsupported action' });
 // Parse `git status --porcelain=v1 -z` into the two working-tree sections.
 // Untracked entries use `??`; they belong in the unstaged section even though
 // their worktree status character is `?` rather than a tracked-file status.
+//
+// A rename/copy record is `XY <new>\0<old>\0` — with `-z` git prints the
+// *new* path first and the original second (the reverse of the human
+// `old -> new` form). Each entry carries:
+//   path   display text, `old -> new` for a rename
+//   paths  the exact pathspecs a stage/unstage of this row must pass to git.
+//          A staged rename needs both sides (`git reset -- old new` restores
+//          the delete + untracked pair; resetting one side leaves half of it
+//          staged). The unstaged half of `RM` is the edit to the new file, so
+//          it only needs the new path.
 function parsePorcelainStatus(stdout) {
   const records = String(stdout || '').split('\0').filter((s) => s.length > 0);
   const staged = [];
@@ -144,34 +156,62 @@ function parsePorcelainStatus(stdout) {
   for (let i = 0; i < records.length; i++) {
     const rec = records[i];
     const xy = rec.slice(0, 2);
-    let path = rec.slice(3);
+    const target = rec.slice(3);
+    let orig = '';
     if (xy[0] === 'R' || xy[0] === 'C') {
-      const target = records[i + 1];
-      if (target !== undefined) {
-        path = path + ' -> ' + target;
+      if (records[i + 1] !== undefined) {
+        orig = records[i + 1];
         i++;
       }
     }
-    const statusText = xyToText(xy);
+    // Each section describes its own half of XY: `AM` is "Added" in staged
+    // and "Modified" in unstaged.
     if (xy[0] !== ' ' && xy[0] !== '?') {
-      staged.push({ path, status: xy[0], statusText, diff: '' });
+    staged.push({
+      path: orig ? orig + ' -> ' + target : target,
+      paths: orig ? [orig, target] : [target],
+      status: xy[0],
+      statusText: xyToText(xy[0] + ' '),
+      diff: ''
+    });
     }
     if (xy[1] !== ' ') {
-      unstaged.push({ path, status: xy[1], statusText, diff: '' });
+    unstaged.push({ path: target, paths: [target], status: xy[1], statusText: xyToText(' ' + xy[1]), diff: '' });
     }
   }
   return { staged, unstaged };
+}
+
+// Parse `git for-each-ref --format=%(refname)` output into the branches the
+// Git modal can offer for checkout. Local branches come first. Remote
+// branches are listed only when no local branch of the same name exists, and
+// the symbolic `refs/remotes/<remote>/HEAD` pointer is skipped: checking it
+// out (it shows up as a bare `origin` in `git branch -a`) lands on a detached
+// HEAD instead of a branch.
+function parseBranchRefs(stdout) {
+  const local = [];
+  const remote = [];
+  for (const raw of String(stdout || '').split('\n')) {
+    const ref = raw.trim();
+    if (ref.startsWith('refs/heads/')) local.push(ref.slice('refs/heads/'.length));
+    else if (ref.startsWith('refs/remotes/') && !ref.endsWith('/HEAD')) remote.push(ref.slice('refs/remotes/'.length));
+  }
+  const localSet = new Set(local);
+  const remotes = remote.filter((name) => !localSet.has(name.slice(name.indexOf('/') + 1)));
+  return { branches: local, remoteBranches: remotes };
 }
 // ---- Git info API ---------------------------------------------------------
 //
 // GET /api/git/info?projectDir=<abs>
 //   -> {
 //        ok: true,
-//        branch: 'master',
-//        branches: [ 'master', 'dev', ... ],      // local + remote branches
+//        branch: 'master',                        // '' on a detached HEAD
+//        detached: '',                            // short sha when detached
+//        branches: [ 'master', 'dev', ... ],      // local branches
+//        remoteBranches: [ 'origin/feature' ],    // remote-only, no */HEAD
 //        stashes:  [ { index, subject, date } ],
-//        staged:  [ { path, status, statusText, diff } ],   // staged changes
-//        unstaged: [ { path, status, statusText, diff } ],  // unstaged changes
+//        staged:  [ { path, paths, status, statusText, diff, diffSkipped? } ],
+//        unstaged: [ { path, paths, status, statusText, diff, diffSkipped? } ],
 //        commits: [ { hash, short, subject, author, date } ] // metadata only
 //      }
 //
@@ -205,6 +245,13 @@ async function handleGitInfo(req, res, parsed) {
 
   const branchRes = await run(['symbolic-ref', '--short', '-q', 'HEAD']);
   const branch = (branchRes.ok ? branchRes.stdout : '').trim();
+  // Detached HEAD: no branch name, so report the short commit instead and
+  // let the modal show "detached at <sha>" rather than a random branch.
+  let detached = '';
+  if (!branch) {
+    const headRes = await run(['rev-parse', '--short', 'HEAD']);
+    if (headRes.ok) detached = headRes.stdout.trim();
+  }
 
   // ---- Ahead / behind counts against upstream ---------------------------
   let ahead = 0, behind = 0;
@@ -221,10 +268,10 @@ async function handleGitInfo(req, res, parsed) {
   }
 
   // ---- Branches (local + remote) --------------------------------------
-  const branchesRes = await run(['branch', '-a', '--format=%(refname:short)']);
-  const branches = branchesRes.ok
-    ? branchesRes.stdout.split('\n').map((b) => b.trim()).filter(Boolean)
-    : [];
+  // Full refnames, so local and remote are told apart without guessing and
+  // the "(HEAD detached at …)" pseudo-entry of `git branch -a` never appears.
+  const branchesRes = await run(['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes']);
+  const { branches, remoteBranches } = parseBranchRefs(branchesRes.ok ? branchesRes.stdout : '');
 
   // ---- Stashes ---------------------------------------------------------
   // `git stash list --format=...` gives one entry per stash:
@@ -277,22 +324,30 @@ async function handleGitInfo(req, res, parsed) {
     return text;
   };
 
+  // Files past the cap are flagged `diffSkipped` so the modal can say so
+  // instead of silently rendering them as if they had no diff. A rename
+  // diffs both sides so git can pair them (`-M` is on by default).
   const MAX_FILE_DIFFS = 12;
+  const markSkipped = (list) => { for (const f of list.slice(MAX_FILE_DIFFS)) f.diffSkipped = true; };
+  markSkipped(staged);
+  markSkipped(unstaged);
   await Promise.all(staged.slice(0, MAX_FILE_DIFFS).map(async (f) => {
-    const r = await run(['diff', '--cached', '--', f.path.split(' -> ')[0]]);
+    const r = await run(['diff', '--cached', '--'].concat(f.paths));
     if (r.ok) f.diff = capDiff(r.stdout);
   }));
   await Promise.all(unstaged.slice(0, MAX_FILE_DIFFS).map(async (f) => {
-    const r = await run(['diff', '--', f.path.split(' -> ')[0]]);
+    const r = await run(['diff', '--'].concat(f.paths));
     if (r.ok) f.diff = capDiff(r.stdout);
   }));
 
   return sendJSON(res, 200, {
     ok: true,
     branch,
+    detached,
     ahead,
     behind,
     branches,
+    remoteBranches,
     stashes,
     staged,
     unstaged,
@@ -464,4 +519,4 @@ async function handleGitCommitFiles(req, res, parsed) {
   return sendJSON(res, 200, { ok: true, files });
 }
 
-module.exports = { handleGit, handleGitInfo, handleGitLog, handleGitCommitFiles, parsePorcelainStatus };
+module.exports = { handleGit, handleGitInfo, handleGitLog, handleGitCommitFiles, parsePorcelainStatus, parseBranchRefs };
