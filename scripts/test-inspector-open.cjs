@@ -22,19 +22,20 @@ function mockChrome({ mode }) {
   // mode: 'cdp' — /json/version has webSocketDebuggerUrl, /json/new 404s
   //       'legacy' — /json/version has NO webSocketDebuggerUrl, /json/new PUT works
   //       'broken' — /json/version 500s
+  //       'noWindow' — Target.createTarget fails with "no browser is open" unless newWindow
   //       'noBrowserWsNoNew' — /json/version has NO webSocketDebuggerUrl AND /json/new 404s
   const wss = new WebSocketServer({ noServer: true });
   const server = http.createServer((req, res) => {
     if (req.url.startsWith('/json/version')) {
       if (mode === 'broken') { res.writeHead(500); res.end('boom'); return; }
-      const payload = { Browser: 'Chrome/' + (mode === 'cdp' ? '137.0.0.0' : '100.0.0.0') };
-      if (mode === 'cdp') payload.webSocketDebuggerUrl = 'ws://127.0.0.1:' + server.address().port + '/devtools/browser/abc';
+      const payload = { Browser: 'Chrome/' + (mode === 'cdp' || mode === 'noWindow' ? '137.0.0.0' : '100.0.0.0') };
+      if (mode === 'cdp' || mode === 'noWindow') payload.webSocketDebuggerUrl = 'ws://127.0.0.1:' + server.address().port + '/devtools/browser/abc';
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(payload));
       return;
     }
     if (req.url.startsWith('/json/new')) {
-      if (mode === 'cdp' || mode === 'noBrowserWsNoNew') { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
+      if (mode === 'cdp' || mode === 'noWindow' || mode === 'noBrowserWsNoNew') { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('not found'); return; }
       if (req.method === 'PUT') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ id: 'legacy-tab', type: 'page', url: req.url.split('?')[1] ? decodeURIComponent(req.url.split('?')[1]) : '', title: '', webSocketDebuggerUrl: 'ws://127.0.0.1:' + server.address().port + '/devtools/page/legacy-tab' }));
@@ -56,7 +57,11 @@ function mockChrome({ mode }) {
         ws.on('message', (data) => {
           const msg = JSON.parse(data.toString());
           if (msg.method === 'Target.createTarget') {
-            ws.send(JSON.stringify({ id: msg.id, result: { targetId: 'cdp-tab' } }));
+            if (mode === 'noWindow' && !(msg.params && msg.params.newWindow)) {
+              ws.send(JSON.stringify({ id: msg.id, error: { code: -32000, message: 'Failed to open new tab - no browser is open' } }));
+              return;
+            }
+            ws.send(JSON.stringify({ id: msg.id, result: { targetId: mode === 'noWindow' ? 'win-tab' : 'cdp-tab' } }));
           } else if (msg.method === 'Target.closeTarget') {
             ws.send(JSON.stringify({ id: msg.id, result: {} }));
           }
@@ -114,6 +119,15 @@ async function main() {
     catch (e) { caught = e; }
     assert(caught && caught.code === 'EUPSTREAM', 'no-browser-WS + no /json/new surfaces EUPSTREAM');
     assert(caught && caught.message.indexOf('not found') === -1, 'raw "not found" from Chrome is replaced with a clear error');
+    server.close(); wss.close();
+  }
+  // 4b. Chrome with no window left (headless --incognito after its last
+  //     tab closed): createTarget fails with "no browser is open" and
+  //     must be retried with newWindow: true.
+  {
+    const { server, wss, base } = await mockChrome({ mode: 'noWindow' });
+    const t = await inspector.openInspectorTarget(base, 'http://example.com/w');
+    assert(t.id === 'win-tab', '"no browser is open" retries Target.createTarget with newWindow');
     server.close(); wss.close();
   }
   // 5. Tab management on the mock Chrome:

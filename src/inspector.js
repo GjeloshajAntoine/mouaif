@@ -163,11 +163,24 @@ async function openInspectorTarget(debuggerUrl, pageUrl) {
       return await openTargetViaCdp(base, pageUrl);
     } catch (e) {
       cdpErr = e;
+      // "no browser is open" is not a stale id: Chrome has no window to
+      // put a tab in (typical for a headless/--incognito Chrome whose
+      // default-profile window is gone). Retrying the same call is
+      // pointless; handled below with newWindow + /json/new.
+      if (isNoBrowserError(e)) break;
       // The fallback path is handled below; retryable errors get one
       // more CDP attempt, everything else surfaces immediately.
       if (!e || !e.__cdpRetryable) break;
       await new Promise((r) => setTimeout(r, 300));
     }
+  }
+  if (isNoBrowserError(cdpErr)) {
+    // Ask Chrome for a new window instead of a tab in a (missing) one.
+    try { return await openTargetViaCdp(base, pageUrl, { newWindow: true }); }
+    catch (e) { cdpErr = e; }
+    // Last resort: the HTTP endpoint, which Chrome serves by creating
+    // a window when none exists.
+    cdpErr.__cdpFallback = true;
   }
   // Fall back to the classic HTTP endpoint for older Chrome builds —
   // but only when the CDP path itself isn't the thing that's broken
@@ -202,7 +215,12 @@ async function openInspectorTarget(debuggerUrl, pageUrl) {
 // CDP WebSocket. Requires /json/version to expose webSocketDebuggerUrl;
 // returns the fresh target record (Chrome /json/new would return the
 // same shape). Rejects with a typed error on any failure.
-async function openTargetViaCdp(base, pageUrl) {
+function isNoBrowserError(e) {
+  return !!(e && /no browser is open/i.test(String(e.message || '')));
+}
+
+async function openTargetViaCdp(base, pageUrl, opts) {
+  const newWindow = !!(opts && opts.newWindow);
   const info = await httpGetJson(base + '/json/version', 5000);
   const wsUrl = info && info.webSocketDebuggerUrl;
   if (!wsUrl || !String(wsUrl).trim()) {
@@ -234,7 +252,7 @@ async function openTargetViaCdp(base, pageUrl) {
       ws.send(JSON.stringify({
         id,
         method: 'Target.createTarget',
-        params: { url: pageUrl, newWindow: false }
+        params: { url: pageUrl, newWindow }
       }));
     });
     ws.on('message', (data) => {
