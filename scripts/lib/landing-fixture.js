@@ -57,6 +57,52 @@ function installProjectModels(projectDir) {
   settings.setProject(projectDir, { models: MODELS });
 }
 
+// seedSubagentAuthorization(projectDir, chatId) -> { callId }
+//
+// Park a `subagent` call on the authorization gate and mark the chat as
+// running, so the chat view's pending-auth poll mounts the approval card —
+// with its per-run model + thinking pickers — on the next open. This is the
+// state a real run pauses in while it waits for the user, produced through
+// the same gate a live call uses rather than a hand-built DOM fixture.
+//
+// `subagent` defaults to `ask`, so `authorize` parks the call and returns a
+// pending wait. The wait is left unsettled and rejected on cleanup; nothing
+// in the capture process needs it to resolve.
+function seedSubagentAuthorization(projectDir, chatId) {
+  const authz = require('../../src/tools/authorization.js');
+  const core = require('../../src/server-shared.js');
+  const callId = 'call_demo_subagent';
+  authz.authorize({
+    projectDir,
+    chatId,
+    callId,
+    tool: 'subagent',
+    summary: 'Audit src/store.js for the restart-ordering bug',
+    args: {
+      task: 'Audit src/store.js for the restart-ordering bug',
+      context: 'The task board loses its ordering after a restart.'
+    }
+  }).then((r) => {
+    // A prompt is what this fixture wants. A resolved decision would mean a
+    // stale grant leaked in, but the capture must not fail over it.
+    if (r && r.wait && typeof r.wait.catch === 'function') r.wait.catch(() => {});
+  }).catch(() => { /* capture must not fail if the gate refuses to prompt */ });
+  core.runningChats.add(core.runningKey(projectDir, chatId));
+  return { callId };
+}
+
+// clearSubagentAuthorization(projectDir, chatId, callId)
+//
+// Undo seedSubagentAuthorization so a later shot of the same chat (the
+// transcript capture) sees it as an ordinary settled run again: the parked
+// wait is answered with a deny and the chat stops reporting as running.
+function clearSubagentAuthorization(projectDir, chatId, callId) {
+  const authz = require('../../src/tools/authorization.js');
+  const core = require('../../src/server-shared.js');
+  try { authz.recordDecision(projectDir, chatId, callId, 'deny'); } catch { /* already settled */ }
+  core.runningChats.delete(core.runningKey(projectDir, chatId));
+}
+
 // seedChats(projectDir, chats, messages) -> { chatId, emptyChatId }
 //
 // `chatId` carries the transcript, `emptyChatId` is the brand-new chat the
@@ -283,6 +329,8 @@ module.exports = {
   seedChats,
   seedSecondProject,
   installProjectModels,
+  seedSubagentAuthorization,
+  clearSubagentAuthorization,
   transcript,
   writePreviewPage
 };

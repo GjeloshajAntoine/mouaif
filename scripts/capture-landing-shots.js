@@ -60,15 +60,12 @@ const EXTERNAL_BASE = argValue('--base', '');
 // Each entry: the hash to open (a string, or a function of the fixture can be
 // used as needed), the file to write, and an optional `recipe` evaluated in
 // the page before the screenshot (scroll a container, tap a tab). `settle` is
-// the extra wait after the SPA's first paint.
+// the extra wait after the SPA's first paint. A shot may also carry `before` /
+// `after` hooks that run in the capture process (state-to-seed, server-side
+// setup) around its own capture, so a shot that needs a paused run can park
+// one and tear it down without leaking into the next frame.
 
 const SHOTS = [
-  {
-    file: 'chats-list.png',
-    hash: '#/chats',
-    caption: 'Chats',
-    alt: 'The Chats tab at 390 px: a project card holding its own chat list and a New chat button under it.'
-  },
   {
     file: 'chat-tools.png',
     // A brand-new, message-less chat: its transcript is only the header block
@@ -87,6 +84,38 @@ const SHOTS = [
       if (t) t.scrollTop = 0;
     })()`,
     waitFor: '[data-tools-card="1"]'
+  },
+  {
+    file: 'subagent-auth.png',
+    // The subagent approval card: a live run paused on a `subagent` call, so
+    // the transcript's pending-auth poll mounts the authorization card with
+    // its per-run model + thinking pickers. `before` parks the call on the
+    // real gate and flags the chat as running — the exact state a live run
+    // waits in — and `after` answers it so the later `chat-view` shot sees an
+    // ordinary settled run instead of a paused one.
+    hash: () => `#/chat/${state.chatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    alt: 'A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons.',
+    before: () => {
+      state.subagentAuth = require('./lib/landing-fixture.js')
+        .seedSubagentAuthorization(state.projectDir, state.chatId);
+    },
+    after: () => {
+      const seeded = state.subagentAuth;
+      if (!seeded) return;
+      require('./lib/landing-fixture.js')
+        .clearSubagentAuthorization(state.projectDir, state.chatId, seeded.callId);
+      state.subagentAuth = null;
+    },
+    // The card scrolls itself into view once mounted; give the pending poll
+    // its second to run and the scroll to settle before the shot.
+    waitFor: '.tool-card--authorization .auth-model-picker',
+    settle: 1800
+  },
+  {
+    file: 'chats-list.png',
+    hash: '#/chats',
+    caption: 'Chats',
+    alt: 'The Chats tab at 390 px: a project card holding its own chat list and a New chat button under it.'
   },
   {
     file: 'chat-view.png',
@@ -151,7 +180,7 @@ const SHOTS = [
 
 // ---- main ---------------------------------------------------------------
 
-const state = { chatId: '', emptyChatId: '', projectDir: '', previewUrl: '' };
+const state = { chatId: '', emptyChatId: '', projectDir: '', previewUrl: '', subagentAuth: null };
 
 async function main() {
   const chromeBin = findChrome();
@@ -301,9 +330,14 @@ async function main() {
 
     fs.mkdirSync(OUT_DIR, { recursive: true });
     for (const shot of SHOTS) {
-      const file = path.join(OUT_DIR, shot.file);
+    const file = path.join(OUT_DIR, shot.file);
+    if (typeof shot.before === 'function') shot.before();
+    try {
       await captureShot({ shot, base, cdpBase });
-      logs.push('wrote ' + path.relative(ROOT, file));
+    } finally {
+      if (typeof shot.after === 'function') shot.after();
+    }
+    logs.push('wrote ' + path.relative(ROOT, file));
     }
     console.log(logs.join('\n'));
   } finally {

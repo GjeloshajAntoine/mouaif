@@ -1204,14 +1204,19 @@ function buildLandingPage(outDir) {
 // screen over CDP; run it after a UI change instead of re-taking one by hand.
 const landingShots = [
   [
-    'features/images/landing/chats-list.png',
-    'The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it.',
-    'Chats — projects group their own chats'
-  ],
-  [
     'features/images/landing/chat-tools.png',
     'An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the "Start the conversation" state.',
     'A new chat — every tool, Off / Ask / Allow'
+  ],
+  [
+    'features/images/landing/subagent-auth.png',
+    'A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons.',
+    'Approving a subagent — pick its model first'
+  ],
+  [
+    'features/images/landing/chats-list.png',
+    'The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it.',
+    'Chats — projects group their own chats'
   ],
   [
     'features/images/landing/chat-view.png',
@@ -1259,7 +1264,7 @@ npx mouaif serve --auth-setup</code></pre>
 </section>
 <section class="section" id="screenshots">
 <h2>See it on a phone</h2>
-<p class="lead">Every screen is built for a 360–430 px viewport first and grows from there. These are captures of the running app at 390 px wide — a project's chats, a brand-new chat with every tool and its Off / Ask / Allow control, a run that reads and edits files, the providers behind it, the per-project tool permissions, the Inspector attached to a page, and the app defaults.</p>
+<p class="lead">Every screen is built for a 360–430 px viewport first and grows from there. These are captures of the running app at 390 px wide — a brand-new chat with every tool and its Off / Ask / Allow control, a subagent approval where you pick the model that runs the delegation, a project's chats, a run that reads and edits files, the providers behind it, the per-project tool permissions, the Inspector attached to a page, and the app defaults.</p>
 <div class="shot-row">
 ${landingShots}
 </div>

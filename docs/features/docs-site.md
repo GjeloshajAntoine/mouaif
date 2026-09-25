@@ -24,14 +24,15 @@ The generated `features/*.html`, `index.html`, `documentation.html`, `assets/` a
 
 ## Landing page screenshots
 
-The landing page (`index.html`) opens with a **See it on a phone** section: seven phone-width captures of the running app, showing what the app actually does rather than only saying it. The copy states the promise (every screen is built for a 360–430 px viewport first) and the captures are the evidence, so a reader sees the app before the install commands.
+The landing page (`index.html`) opens with a **See it on a phone** section: eight phone-width captures of the running app, showing what the app actually does rather than only saying it. The copy states the promise (every screen is built for a 360–430 px viewport first) and the captures are the evidence, so a reader sees the app before the install commands.
 
-The seven captures, in page order:
+The eight captures, in page order:
 
 | Capture | What it shows |
 |---------|---------------|
-| `chats-list.png` | The Chats tab — two project cards, each holding its own scrolling chat list and **New chat** |
 | `chat-tools.png` | A brand-new chat — the system-prompt card and the **Tools** card, one checkbox and one **Off / Ask / Allow** control per tool |
+| `subagent-auth.png` | A **subagent** approval card on a paused run — the delegated task, the per-run model picker and thinking select, and the **Allow once / Allow session / Always allow / Deny** buttons |
+| `chats-list.png` | The Chats tab — two project cards, each holding its own scrolling chat list and **New chat** |
 | `chat-view.png` | A chat at the end of a run — the model header, per-turn cost lines, and the **Read**, **Searched**, **Wrote** and **Ran** tool cards |
 | `providers.png` | Settings → Providers — seven connected providers, each naming its endpoint and whether a key is stored |
 | `project-settings.png` | Project settings — prompt style, then every tool with its own **Off / Ask / Allow** control |
@@ -42,8 +43,9 @@ The images live in the same feature image tree as every other screenshot, so the
 
 ```text
 docs/features/images/landing/
-  chats-list.png         # Chats tab, 390 × 700 @2x
   chat-tools.png         # Empty chat, tools card expanded, 390 × 700 @2x
+  subagent-auth.png      # Subagent approval card, per-run model + thinking, 390 × 700 @2x
+  chats-list.png         # Chats tab, 390 × 700 @2x
   chat-view.png          # Chat transcript, end of run, 390 × 700 @2x
   providers.png          # Settings → Providers, 390 × 700 @2x
   project-settings.png   # Project settings, 390 × 700 @2x
@@ -55,7 +57,7 @@ Because the section is on the site root, its `src` values are prefixed `features
 
 ### Layout
 
-- **Laptop (above 1040 px)** — four per row, in a fixed `repeat(4, minmax(0, 1fr))` grid. Seven captures fill one full row plus three, so no capture is left alone and stretched on a row of its own.
+- **Laptop (above 1040 px)** — four per row, in a fixed `repeat(4, minmax(0, 1fr))` grid. Eight captures fill exactly two full rows, so no capture is left alone and stretched on a row of its own.
 - **Tablet (761–1040 px)** — two per row, centred at a 760 px maximum.
 - **Phone (`max-width: 760px`)** — a single stacked column, each capture capped at 340 px and centred. Side-by-side thumbnails on a 360 px screen made the UI in each capture unreadable; the same breakpoint already stacks the `.feature` screenshot rows.
 - `align-items: start` keeps the captures from stretching each other, and each keeps its own aspect ratio (`width: 100%`, `height: auto` on `.shot img`), so a shorter capture is a shorter card instead of a letterboxed one. The image has no corner radius because the `.shot` card and its `overflow: hidden` already clip it.
@@ -69,6 +71,8 @@ npm run docs:shots
 ```
 
 [scripts/capture-landing-shots.js](../../scripts/capture-landing-shots.js) is self-contained: it creates a throwaway `MOUAIF_HOME` under the OS temp dir, writes a small fixture project (source files, `AGENTS.md`, one git commit) plus a second, empty one and registers both, connects seven app-level providers, seeds two project models and a chat whose transcript is a real agentic run (the chat capture scrolls to the end of the run, then back to the first message the top edge would cut), starts a static page for the Inspector to attach to, launches a headless Chrome with `--remote-debugging-port`, and boots the app server on an ephemeral port. Each screen is then a fresh tab emulated at 390 × 700 CSS px with a device scale factor of 2, so the PNGs are 780 × 1400 and stay sharp on a retina phone.
+
+The subagent capture parks a real `subagent` authorization request on the gate and marks the chat as running for the duration of that one shot (`before` / `after` hooks in the shot list), so the approval card — with its per-run model and thinking pickers — is what the transcript's pending-auth poll mounts. The request is answered (denied) once the shot is taken, so the following transcript capture sees an ordinary settled run.
 
 Because the fixture home is throwaway, the capture never reads or writes the developer's own chats, providers or projects, and re-running it after a UI change is the expected workflow.
 
