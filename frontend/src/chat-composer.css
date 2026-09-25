@@ -1210,6 +1210,25 @@ transform: translateX(14px);
   white-space: nowrap;
 }
 /* Icon buttons use the shared .icon-btn utility (forms.css). */
+/* Stop: the explicit kill of a background terminal. Closing only detaches. */
+.cli__stop {
+  flex: 0 0 auto;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  font-size: 0.8rem;
+}
+
+/* File → Cli row: a dot while the project has a live background shell. */
+.file-toolbar__run-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--ok, #3fb950);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok, #3fb950) 30%, transparent);
+}
 
 .cli__body {
   flex: 1 1 auto;

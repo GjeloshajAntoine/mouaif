@@ -93,6 +93,9 @@ const [menuOpen, setMenuOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [cliOpen, setCliOpen] = useState(false);
   const [gitStats, setGitStats] = useState(null);
+  // True while this project has a live background shell (the CLI sheet was
+  // closed but the shell kept running — docs/features/background-terminal.md).
+  const [cliRunning, setCliRunning] = useState(false);
   const menuRef = useRef(null);
 
   // Lazy-load the git and CLI modals on first open, mirroring how the
@@ -142,12 +145,26 @@ const [menuOpen, setMenuOpen] = useState(false);
     return () => { cancelled = true; };
   }, [projectDir]);
 
+  const refreshCliRunning = useCallback(async () => {
+    if (!projectDir) { setCliRunning(false); return; }
+    try {
+      const r = await fetchJson('/api/tools/cli/sessions?projectDir=' + encodeURIComponent(projectDir));
+      const list = r.status === 200 && r.body && Array.isArray(r.body.sessions) ? r.body.sessions : [];
+      setCliRunning(list.some((s) => s && s.running));
+    } catch (_) {
+      setCliRunning(false);
+    }
+  }, [projectDir]);
+
+  useEffect(() => { refreshCliRunning(); }, [refreshCliRunning]);
+
   useClickOutside(menuRef, () => setMenuOpen(false), menuOpen);
 
   function handleTrigger() {
 const nextOpen = !menuOpen;
 setMenuOpen(nextOpen);
 refreshGitStats();
+if (nextOpen) refreshCliRunning();
 if (nextOpen && onRefreshCustomActions) onRefreshCustomActions();
 }
 
@@ -169,6 +186,11 @@ if (nextOpen && onRefreshCustomActions) onRefreshCustomActions();
   function handleCli() {
     setMenuOpen(false);
     setCliOpen(true);
+  }
+
+  function handleCliClose() {
+    setCliOpen(false);
+    refreshCliRunning();
   }
   function handlePreview() {
 setMenuOpen(false);
@@ -399,10 +421,16 @@ h('span', null, 'Files')
       ),
       h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handleCli },
 h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F5A5}'),
-h('span', null, 'Cli')
+h('span', null, 'Cli'),
+cliRunning ? h('span', {
+  class: 'file-toolbar__run-dot',
+  role: 'status',
+  'aria-label': 'A shell is still running',
+  title: 'A shell is still running in this project'
+}) : null
 )
 ),
 gitOpen && GitModal ? h(GitModal, { projectDir, onClose: handleGitClose }) : null,
-    cliOpen && CliModal ? h(CliModal, { projectDir, onClose: () => setCliOpen(false) }) : null
+    cliOpen && CliModal ? h(CliModal, { projectDir, onClose: handleCliClose }) : null
   );
 }

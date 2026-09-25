@@ -69,6 +69,8 @@ export function CliModal(props) {
   const inputRef = useRef(null);
   const sessionIdRef = useRef(null);
   const evtSourceRef = useRef(null);
+  // Highest output seq already written to the screen (replay + live).
+  const lastSeqRef = useRef(0);
   const [outBuffer, setOutBuffer] = useState('');   // accumulated output
   // Who is reading the session's stdin: 'shell' (its line editor is waiting),
   // 'program' (a command is running and may be asking a question), 'piped' (no
@@ -213,15 +215,40 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
         setShellLabel(r.body.shell || '');
         if (r.body.projectDir) setDirLabel(r.body.projectDir);
         // The session id is ready — open the SSE channel and listen
-        // for this session's cli_output frames.
+        // for this session's cli_output frames. The session may be a
+        // background terminal that kept running while the modal was closed
+        // (docs/features/background-terminal.md), so live frames that arrive
+        // before the backlog replay finishes are held, then everything at or
+        // below the replayed seq is dropped: no gap, no duplicate.
+        const pending = [];
+        let replayed = false;
+        const deliver = (data) => {
+        if (typeof data.seq === 'number') {
+        if (data.seq <= lastSeqRef.current) return;
+        lastSeqRef.current = data.seq;
+        }
+        appendOut(data.data, data.stream);
+        };
         evtSource = new EventSource('/events');
         evtSourceRef.current = evtSource;
         evtSource.addEventListener('cli_output', (e) => {
-          let data;
-          try { data = JSON.parse(e.data); } catch { return; }
-          if (!data || data.id !== sessionIdRef.current) return;
-          appendOut(data.data, data.stream);
+        let data;
+        try { data = JSON.parse(e.data); } catch { return; }
+        if (!data || data.id !== sessionIdRef.current) return;
+        if (!replayed) { pending.push(data); return; }
+        deliver(data);
         });
+        // Replay the retained backlog (empty for a fresh session).
+        try {
+        const rr = await fetchJson('/api/tools/cli/output?id=' + encodeURIComponent(r.body.id) + '&since=0');
+        if (cancelled) return;
+        if (rr.status === 200 && rr.body && Array.isArray(rr.body.chunks)) {
+        if (rr.body.dropped) writeOut('\u2026 earlier output dropped \u2026\r\n');
+        for (const c of rr.body.chunks) deliver({ data: c.data, stream: c.stream, seq: c.seq });
+        }
+        } catch { /* replay is best-effort; live frames still flow */ }
+        replayed = true;
+        for (const d of pending.splice(0)) deliver(d);
         setLoading(false);
         // Focus the prompt once the screen is up.
         if (inputRef.current) inputRef.current.focus();
@@ -243,17 +270,24 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     start();
     return () => {
       cancelled = true;
+      // Detach only. The shell keeps running in the background and the next
+      // open replays what it printed meanwhile; Stop is the explicit kill.
       if (evtSource) evtSource.close();
-      // Close the server session when the modal unmounts.
-      if (sessionIdRef.current) {
-        fetchJson('/api/tools/cli/close', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectDir })
-        }).catch(() => {});
-      }
     };
   }, [projectDir]);
+
+  // stop() — the header's Stop action: the only way the UI kills the shell.
+  // Closing the sheet merely detaches (see the effect above).
+  const stop = useCallback(() => {
+    const ok = typeof window === 'undefined' || typeof window.confirm !== 'function'
+      || window.confirm('Stop this shell? Anything still running in it is killed.');
+    if (!ok) return;
+    fetchJson('/api/tools/cli/close', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectDir })
+    }).catch(() => {}).then(() => { if (onClose) onClose(); });
+  }, [projectDir, onClose]);
 
   // Escape, the Tab cycle and focus restore come from the shared sheet hook
   // (frontend/src/hooks/useModal.js); the backdrop is this component's own.
@@ -398,8 +432,17 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
         h('div', { class: 'cli__title-stack' },
           h('span', { class: 'cli__title' }, shellLabel ? ('CLI — ' + shellLabel) : 'CLI'),
           h('span', { class: 'cli__dir', title: dirLabel }, dirLabel)
-        ),
-        h('button', {
+          ),
+          // Stop kills the shell; the close button only hides the sheet and
+          // leaves the session running in the background.
+          !loading && !error ? h('button', {
+          class: 'btn btn--danger cli__stop',
+          type: 'button',
+          onClick: stop,
+          'aria-label': 'Stop shell',
+          title: 'Stop shell (kills running commands)'
+          }, 'Stop') : null,
+          h('button', {
           class: 'icon-btn icon-btn--close cli__iconbtn',
           type: 'button',
           onClick: onClose,

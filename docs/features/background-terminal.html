@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Background terminal — mouaif docs</title>
+  <meta name="description" content="The CLI modal&#39;s shell keeps running after you close the sheet. An `npm install`, a test run, or a dev server survives going back to the chat, and reopening…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="background-terminal">Background terminal</h1>
+<h2 id="overview">Overview</h2>
+<p>The CLI modal&#39;s shell keeps running after you close the sheet. An <code>npm install</code>, a test run, or a dev server survives going back to the chat, and reopening <strong>Cli</strong> reattaches to the same shell and shows what it printed while you were away.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Open the composer&#39;s File button → <strong>Cli</strong> and start a command.</p></li><li><p>Close the sheet (close button or <strong>Escape</strong>). The shell keeps running.</p></li><li><p>While it runs, the <strong>Cli</strong> row in the File menu shows a green dot.</p></li><li><p>Reopen <strong>Cli</strong>. The screen replays the buffered output, then continues live.</p></li><li><p>Tap <strong>Stop</strong> in the sheet header (and confirm) to kill the shell. This is the only action in the UI that ends it.</p></li></ol>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p>One shell per project. Reopening always returns the same session until it exits or is stopped.</p></li><li><p>Output is kept in a ring buffer of about 256 KB per session. When older output was dropped, the replay starts with <code>… earlier output dropped …</code>.</p></li><li><p>A shell that exits on its own (<code>exit</code>, a crash) is removed; its exit line is part of the replay until then.</p></li><li><p>Sessions live in server memory. Restarting mouaif, including the in-chat restart tool, stops them.</p></li><li><p>A phone that suspends the tab loses nothing: the shell keeps running and the next open replays.</p></li><li><p>CLI output is not written to chat traces.</p></li></ul>
+<h2 id="api">API</h2>
+<p>All routes sit behind the same access gate as every other <code>/api</code> route.</p>
+<pre><code class="language-text">GET  /api/tools/cli/session?projectDir=&lt;abs&gt;   start or reuse; returns { id, seq, ... }
+POST /api/tools/cli/command  { projectDir, cmd, raw? }
+POST /api/tools/cli/close    { projectDir }     explicit Stop
+GET  /api/tools/cli/sessions[?projectDir=&lt;abs&gt;]
+     -&gt; { sessions: [{ id, projectDir, shell, interactive, startedAt, running, seq, bytes }] }
+GET  /api/tools/cli/output?id=&lt;sessionId&gt;&amp;since=&lt;seq&gt;
+     -&gt; { id, running, seq, firstSeq, dropped, bytes, chunks: [{ seq, stream, data }] }</code></pre>
+<p>Live <code>cli_output</code> frames on <code>GET /events</code> carry the same <code>seq</code>, so a client replays with <code>output</code>, then ignores live frames at or below the last replayed <code>seq</code>.</p>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="cli-modal.html">CLI modal</a> — the terminal this extends.</p></li><li><p><a href="chat-app-restart.html">Restart from chat</a> — a restart drops running sessions.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

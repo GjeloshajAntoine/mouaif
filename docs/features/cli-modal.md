@@ -13,7 +13,7 @@ Open the composer's File button and choose **Cli**. The header shows the shell l
 - Type a command and press **Enter** to run it.
 - Press **Enter** on an empty line to send it — a prompt that offers a default accepts it.
 - Press **Ctrl+Enter** (**Cmd+Enter** on macOS) to send the line **without a line terminator**, for a program waiting on a single key (a `y/n` confirmation, a pager).
-- Close the sheet with the close button or **Escape**. Closing kills the session.
+- Close the sheet with the close button or **Escape**. Closing only hides it: the shell keeps running in the background and reopening replays what it printed. Tap **Stop** in the header to kill it — see [Background terminal](background-terminal.md).
 
 ### Suggestions
 

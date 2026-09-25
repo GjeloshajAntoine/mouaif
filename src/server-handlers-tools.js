@@ -162,8 +162,9 @@ function ensureCliSession(projectDir) {
   cliSessions.set(key, session);
   // Reap on exit so a closed session doesn't leak. A PTY reports exit
   // through `onExit`; a piped child uses the standard `exit` event.
-  if (isPty) child.onExit(() => { if (cliSessions.get(key) === session) cliSessions.delete(key); });
-  else child.on('exit', () => { if (cliSessions.get(key) === session) cliSessions.delete(key); });
+  const reap = () => { session.exited = true; if (cliSessions.get(key) === session) cliSessions.delete(key); };
+  if (isPty) child.onExit(reap);
+  else child.on('exit', reap);
   return session;
 }
 
@@ -176,6 +177,30 @@ function closeCliSession(projectDir) {
   } catch { /* already gone */ }
   cliSessions.delete(key);
   return true;
+}
+
+function findCliSessionById(id) {
+  for (const s of cliSessions.values()) if (s.id === id) return s;
+  return null;
+}
+
+function isCliRunning(session) {
+  return !!(session && session.child && !session.child.killed && !session.exited);
+}
+
+// Public, secret-free summary of a session for GET /api/tools/cli/sessions.
+function describeCliSession(s) {
+  const buf = ensureCliBuffer(s);
+  return {
+    id: s.id,
+    projectDir: s.projectDir,
+    shell: cliShellMeta().label,
+    interactive: !!s.pty,
+    startedAt: s.startedAt,
+    running: isCliRunning(s),
+    seq: buf.seq,
+    bytes: buf.bytes
+  };
 }
 
 // The session map is keyed by the *real* path (GET /cli/session resolves
@@ -212,11 +237,60 @@ function writeCliCommand(session, cmd, raw) {
   return true;
 }
 
+// ---- Background output ring buffer ------------------------------------------
+//
+// A session outlives the modal (docs/features/background-terminal.md), so a
+// client that reattaches needs the output it missed. Every broadcast chunk is
+// kept in a bounded per-session ring, tagged with a monotonically increasing
+// `seq`. Once the ring holds more than CLI_BUFFER_BYTES the oldest chunks are
+// dropped and `firstSeq` moves forward, so a replay can tell the client that
+// a prefix is gone instead of silently showing a truncated transcript.
+const CLI_BUFFER_BYTES = 256 * 1024;
+
+function ensureCliBuffer(session) {
+  if (!session.output) session.output = { seq: 0, chunks: [], bytes: 0, firstSeq: 1, cap: CLI_BUFFER_BYTES };
+  return session.output;
+}
+
+// Append one chunk and return the stored entry (with its seq).
+function bufferCliChunk(session, stream, data) {
+  const buf = ensureCliBuffer(session);
+  const entry = { seq: ++buf.seq, stream, data: String(data) };
+  buf.chunks.push(entry);
+  buf.bytes += entry.data.length;
+  // Drop from the front, but always keep the newest chunk even if it alone
+  // is larger than the cap (a single huge write is still worth replaying).
+  while (buf.bytes > buf.cap && buf.chunks.length > 1) {
+    const old = buf.chunks.shift();
+    buf.bytes -= old.data.length;
+    buf.firstSeq = buf.chunks[0].seq;
+  }
+  return entry;
+}
+
+// The chunks after `since` (exclusive). `since` omitted / 0 means "the whole
+// retained tail". `dropped` is true when chunks the caller has not seen were
+// evicted from the ring before it asked.
+function readCliBuffer(session, since) {
+  const buf = ensureCliBuffer(session);
+  const after = Number.isFinite(since) && since > 0 ? since : 0;
+  const chunks = buf.chunks.filter((c) => c.seq > after);
+  const dropped = buf.chunks.length > 0 && buf.chunks[0].seq > after + 1;
+  return { seq: buf.seq, firstSeq: buf.firstSeq, dropped, bytes: buf.bytes, chunks };
+}
+
 // Forward a session's stdout/stderr to the SSE broadcast channel. The
 // browser opens GET /events, receives the session id, and listens for
-// `cli_output` frames tagged with that id.
+// `cli_output` frames tagged with that id. Every frame is also kept in the
+// session's ring buffer (see bufferCliChunk) and carries its `seq`, so a
+// modal that reopens later can replay what it missed.
 function attachCliStream(session, broadcast) {
   if (!session || !session.child || !broadcast) return;
+  ensureCliBuffer(session);
+  const send = (stream, data) => {
+    const entry = bufferCliChunk(session, stream, data);
+    broadcast('cli_output', { id: session.id, stream, data: entry.data, seq: entry.seq });
+  };
   // Output arrives in arbitrary byte chunks, so a multi-byte UTF-8 character
   // (`é`, `✓`, an emoji, a box-drawing border) can be split across two of
   // them. Decoding each chunk on its own turns both halves into U+FFFD `�`.
@@ -225,12 +299,12 @@ function attachCliStream(session, broadcast) {
   const decoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') };
   const emit = (stream, d) => {
     const data = Buffer.isBuffer(d) ? decoders[stream].write(d) : String(d);
-    if (data) broadcast('cli_output', { id: session.id, stream, data });
+    if (data) send(stream, data);
   };
   const flush = () => {
     for (const stream of Object.keys(decoders)) {
       const rest = decoders[stream].end();
-      if (rest) broadcast('cli_output', { id: session.id, stream, data: rest });
+      if (rest) send(stream, rest);
     }
   };
   if (session.pty) {
@@ -462,8 +536,40 @@ try {
       // Diagnostic only: the modal no longer shows a badge for it.
       interactive: !!session.pty,
       startedAt: session.startedAt,
-      defaultDir: real
+      defaultDir: real,
+      // The newest buffered seq. A reopening modal replays up to here via
+      // GET /api/tools/cli/output, then keeps only live frames above it.
+      seq: ensureCliBuffer(session).seq
     });
+  }
+
+  // GET /api/tools/cli/sessions
+  // Every live background terminal, so a UI can show "a shell is still
+  // running in this project" without opening the modal. Optional
+  // `projectDir` narrows the list to that project.
+  if (urlPath === '/api/tools/cli/sessions' && method === 'GET') {
+    const filter = qs(q, 'projectDir');
+    const key = filter ? cliSessionKey(filter) : '';
+    const out = [];
+    for (const s of cliSessions.values()) {
+      if (key && s.projectDir !== key && s.projectDir !== filter) continue;
+      out.push(describeCliSession(s));
+    }
+    return sendJSON(res, 200, { sessions: out });
+  }
+
+  // GET /api/tools/cli/output?id=<sessionId>&since=<seq>
+  // One-shot JSON replay of the session's buffered output after `since`
+  // (exclusive; omitted = the whole retained tail). `dropped` is true when
+  // the ring evicted chunks the caller never saw.
+  if (urlPath === '/api/tools/cli/output' && method === 'GET') {
+    const id = qs(q, 'id');
+    if (!id) return sendJSON(res, 400, { error: 'id is required' });
+    const session = findCliSessionById(id);
+    if (!session) return sendJSON(res, 404, { error: 'cli session not found', code: 'ENOSESSION' });
+    const since = parseInt(qs(q, 'since') || '0', 10);
+    const r = readCliBuffer(session, Number.isFinite(since) ? since : 0);
+    return sendJSON(res, 200, Object.assign({ id: session.id, running: isCliRunning(session) }, r));
   }
 
   // POST /api/tools/cli/command  body: { projectDir, cmd }
@@ -669,4 +775,8 @@ try {
   return sendJSON(res, 404, { error: 'Not found' });
 }
 
-module.exports = { handleTools, ensureCliSession, closeCliSession, writeCliCommand, cliShellMeta, attachCliStream, cliSessionKey };
+module.exports = {
+  handleTools, ensureCliSession, closeCliSession, writeCliCommand, cliShellMeta, attachCliStream, cliSessionKey,
+  // background terminal (docs/features/background-terminal.md)
+  bufferCliChunk, readCliBuffer, CLI_BUFFER_BYTES
+};
