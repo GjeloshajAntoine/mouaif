@@ -1078,6 +1078,19 @@ state.messages = state.messages.filter((m) => m !== userMsg);
     }
     return info;
   }
+  // Expose the in-flight subagent delta to head-summary rebuilds that do
+  // not come from this stream (tail sync, reconcile, backfill all call
+  // updateUsageSummary(state, null, …)). Only `liveCost` is shared: the
+  // parent's own `cost` lands on a message row at `done`, so exposing it
+  // here would count it twice. Scoped to this chat so a switch before the
+  // reader unwinds never leaks the delta into another chat's Total.
+  const liveUsageInfo = () => {
+    if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) return null;
+    return liveSubagentCost > 0
+      ? { liveCost: { known: true, total: liveSubagentCost, currency: 'USD' } }
+      : null;
+  };
+  state._liveUsageInfo = liveUsageInfo;
   function repaintLiveRate() {
     if (!refs.transcript.current) return;
     const live = refs.transcript.current.querySelector('[data-live="1"]');
@@ -1355,6 +1368,7 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
       setChatStatus(refs, 'stream interrupted: ' + (err && err.message ? err.message : 'connection closed'), 'error');
     }
   } finally {
+    if (state._liveUsageInfo === liveUsageInfo) state._liveUsageInfo = null;
     if (state.streamAbort === streamAbort) state.streamAbort = null;
     try { reader.releaseLock(); } catch { /* already released */ }
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;

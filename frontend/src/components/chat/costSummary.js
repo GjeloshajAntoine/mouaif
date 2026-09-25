@@ -23,6 +23,21 @@ export function attributedCostAfter(held, snapshot, amount) {
   return { snapshot: key, total: base + delta };
 }
 
+// resolveLiveInfo(state, liveInfo) -> liveInfo | null
+//
+// The running turn registers `state._liveUsageInfo` (a getter for its current
+// live envelope, incl. the in-flight subagent `liveCost`). Callers that rebuild
+// the head summary for reasons unrelated to the stream — tail sync, reconcile,
+// backfill, snapshot rebase — pass `null`; without this fallback those calls
+// dropped the delegated cost from Total until the next usage_update or `done`,
+// so the pill flickered down and back up while a subagent was running.
+export function resolveLiveInfo(state, liveInfo) {
+  if (liveInfo) return liveInfo;
+  const get = state && state._liveUsageInfo;
+  if (typeof get !== 'function') return null;
+  try { return get() || null; } catch { return null; }
+}
+
 export function summarizeChatUsage(messages, snapshot, liveInfo, attributedCost) {
   let latestContext = null;
   let totalCost = snapshot ? snapshot.total : 0;

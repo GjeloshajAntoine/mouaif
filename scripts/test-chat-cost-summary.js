@@ -47,6 +47,22 @@ const vm = require('node:vm');
   }
   console.log('PASS paginated totals, live segments, subagent costs, unknown/zero costs and fallback');
 
+  // A summary rebuild that passes no live info (tail sync, reconcile,
+  // backfill) must still count the running turn's in-flight subagent cost,
+  // or the head Total dips mid-turn and jumps back on the next usage_update.
+  {
+    const { resolveLiveInfo } = await import('../frontend/src/components/chat/costSummary.js');
+    const running = { _liveUsageInfo: () => ({ liveCost: cost(3) }) };
+    assert.equal(summarize(page, baseline, resolveLiveInfo(running, null)).totalCost, 13);
+    const explicit = { cost: cost(2) };
+    assert.equal(resolveLiveInfo(running, explicit), explicit, 'explicit live info wins');
+    assert.equal(resolveLiveInfo({}, null), null);
+    assert.equal(resolveLiveInfo({ _liveUsageInfo: () => null }, null), null);
+    assert.equal(resolveLiveInfo({ _liveUsageInfo: () => { throw new Error('x'); } }, null), null);
+    assert.equal(summarize(page, baseline, resolveLiveInfo({ _liveUsageInfo: () => null }, null)).totalCost, 10);
+  }
+  console.log('PASS summary rebuilds without live info keep the in-flight subagent cost');
+
   // Run actual tail-sync code: replacement-only merges must rebase and repaint.
   const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/stream.js'), 'utf8');
   const syncSource = source.slice(source.indexOf('function applyTailSync('), source.indexOf('// startStreamRecovery / stopStreamRecovery'));

@@ -9,7 +9,7 @@
 
 import { fetchJson } from '../../api.js';
 import { formatCost, formatTokPerSecond, formatTokens } from '../../usage.js';
-import { summarizeChatUsage } from './costSummary.js';
+import { summarizeChatUsage, resolveLiveInfo } from './costSummary.js';
 
 // setChatStatus(refs, text, state)
 //
@@ -86,7 +86,7 @@ export function updateUsageSummary(state, liveInfo, refs) {
   const el = refs.usageSummary.current;
   if (!el) return;
   const { latestContext, totalCost, hasKnownCost } = summarizeChatUsage(
-    state.messages, state.costSnapshot, liveInfo, state.attributedCost
+    state.messages, state.costSnapshot, resolveLiveInfo(state, liveInfo), state.attributedCost
   );
   el.innerHTML = '';
   // Each value is rendered as a pill (label + number) so the head
