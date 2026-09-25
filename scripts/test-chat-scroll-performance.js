@@ -71,7 +71,7 @@ const vm = require('node:vm');
   const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/useChatState.js'), 'utf8');
   const start = source.indexOf('  useEffect(() => {\n    const el = transcript.current;');
   const end = source.indexOf('  }, [projectDir, chatId]);', start) + '  }, [projectDir, chatId]);'.length;
-  let cleanup, mutation, resize, scans = 0, cancelled = false;
+  let cleanup, mutation, resize, scans = 0, cancelled = false, intentDisposed = false;
   const observed = new Set();
   const row = { nodeType: 1 };
   const transcriptEl = { get children() { scans++; return [row]; }, addEventListener() {}, removeEventListener() {} };
@@ -80,7 +80,8 @@ const vm = require('node:vm');
     useEffect: (fn) => { cleanup = fn(); }, transcript: { current: transcriptEl }, refs: {}, projectDir: '/test', chatId: 'test',
     ResizeObserver: class { constructor(fn) { resize = fn; } observe(node) { observed.add(node); } unobserve(node) { observed.delete(node); } disconnect() { observed.clear(); } },
     MutationObserver: class { constructor(fn) { mutation = fn; } observe() {} disconnect() {} },
-    pinTranscriptAfterSettle() {}, cancelTranscriptPin() { cancelled = true; }
+    pinTranscriptAfterSettle() {}, cancelTranscriptPin() { cancelled = true; },
+    trackUserScrollIntent() { return { isUserScroll: () => false, dispose() { intentDisposed = true; } }; }
   });
   vm.runInContext(source.slice(start, end), context);
   assert.equal(scans, 1);
@@ -96,5 +97,47 @@ const vm = require('node:vm');
   cleanup();
   assert.equal(observed.size, 0);
   assert.equal(cancelled, true);
+  assert.equal(intentDisposed, true);
   console.log('PASS nested text changes do not scan transcript rows; added/removed observers are cleaned up');
+
+  // Only user input may unpin. A browser-caused scroll (content-visibility
+  // clamp, scroll anchoring, streaming growth) must keep following.
+  const { trackUserScrollIntent } = await import('../frontend/src/components/chat/scroll.js');
+  const listeners = {};
+  const target = {
+    addEventListener(type, fn) { (listeners[type] = listeners[type] || new Set()).add(fn); },
+    removeEventListener(type, fn) { if (listeners[type]) listeners[type].delete(fn); }
+  };
+  const fire = (type, ev = {}) => { for (const fn of listeners[type] || []) fn(ev); };
+  let clock = 1000;
+  const intent = trackUserScrollIntent(target, () => clock);
+  assert.equal(intent.isUserScroll(), false, 'no input -> not a user scroll');
+  fire('wheel', { deltaY: 120 });
+  assert.equal(intent.isUserScroll(), false, 'a downward wheel cannot leave the bottom');
+  fire('wheel', { deltaY: -120 });
+  assert.equal(intent.isUserScroll(), true, 'an upward wheel counts');
+  clock += 1000;
+  assert.equal(intent.isUserScroll(), false, 'intent window expires');
+  fire('touchstart');
+  clock += 5000;
+  assert.equal(intent.isUserScroll(), true, 'a held touch counts however long');
+  fire('touchend');
+  clock += 200;
+  assert.equal(intent.isUserScroll(), true, 'momentum right after touchend counts');
+  clock += 200;
+  assert.equal(intent.isUserScroll(), true, 'each momentum scroll extends the window');
+  clock += 1000;
+  assert.equal(intent.isUserScroll(), false, 'momentum over');
+  fire('keydown', { key: 'a' });
+  assert.equal(intent.isUserScroll(), false, 'typing is not scrolling');
+  fire('keydown', { key: 'Home', target: { tagName: 'TEXTAREA' } });
+  assert.equal(intent.isUserScroll(), false, 'caret keys in the composer do not count');
+  fire('keydown', { key: 'End', target: { tagName: 'BODY' } });
+  assert.equal(intent.isUserScroll(), false, 'downward keys do not count');
+  fire('keydown', { key: 'PageUp', target: { tagName: 'BODY' } });
+  assert.equal(intent.isUserScroll(), true, 'scroll keys count');
+  intent.dispose();
+  const remaining = Object.values(listeners).reduce((n, set) => n + set.size, 0);
+  assert.equal(remaining, 0, 'dispose removes every listener');
+  console.log('PASS only wheel/touch/key/pointer input unpins; momentum is attributed; listeners disposed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

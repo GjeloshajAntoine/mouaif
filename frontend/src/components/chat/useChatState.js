@@ -25,7 +25,7 @@ import {
 renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills, toggleSkill } from './cards.js';
-import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll } from './scroll.js';
+import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
   updateMetaLine, refreshSystemPrompt, activeProfileId, updateSwitch, updateSetupVisibility
@@ -1101,14 +1101,22 @@ setRunningVisible(false);
     if (!el) return undefined;
     // Ignore only a scroll that actually landed at our programmed target;
     // a user scrolling elsewhere before its event must still unpin.
-function onScroll() {
-if (isTranscriptPinScroll(refs, el.scrollTop)) return;
-const near = isNearBottom(el);
-if (near && !pinnedToBottom.current) {
-pinnedToBottom.current = true;
-pendingCount.current = 0;
-updateJumpButton(refs);
-} else if (!near && pinnedToBottom.current) {
+    // Only a user-caused scroll may unpin: the browser's own clamping
+    // (content-visibility rows collapsing to placeholder height, scroll
+    // anchoring) and height grown by streaming between our pin and the
+    // event must not strand a live reply below the fold.
+    const intent = trackUserScrollIntent(el);
+  function onScroll() {
+  if (isTranscriptPinScroll(refs, el.scrollTop)) return;
+  const near = isNearBottom(el);
+  if (near && !pinnedToBottom.current) {
+  pinnedToBottom.current = true;
+  pendingCount.current = 0;
+  updateJumpButton(refs);
+  } else if (!near && pinnedToBottom.current && !intent.isUserScroll()) {
+  // Not the user: keep following the newest content.
+  pinTranscriptAfterSettle(refs);
+  } else if (!near && pinnedToBottom.current) {
 pinnedToBottom.current = false;
 updateJumpButton(refs);
 }
@@ -1174,6 +1182,7 @@ loadOlderMessages(state, refs, msgPager.current).catch(() => {});
     return () => {
       el.removeEventListener('scroll', onScroll);
       el.removeEventListener('load', onLoadCapture, true);
+      intent.dispose();
       if (mo) mo.disconnect();
       if (ro) ro.disconnect();
       observedRows.clear();

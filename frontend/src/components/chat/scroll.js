@@ -16,6 +16,72 @@ if (!el) return true;
 return el.scrollHeight - el.scrollTop - el.clientHeight < 48;
 }
 
+// trackUserScrollIntent(el, now?) -> { isUserScroll(), dispose() }
+//
+// Whether the scroll event being handled was caused by the user. Not every
+// scroll event is: the browser also moves `scrollTop` itself — clamping it
+// when off-screen `content-visibility` rows collapse to their placeholder
+// height, scroll anchoring when a row above the viewport resizes — and a
+// streaming reply can grow `scrollHeight` between our pin and the event
+// being dispatched. Treating any such event as "the user scrolled up"
+// unpinned the transcript mid-stream, so the reply ran on below the fold
+// with nothing left to follow it.
+//
+// So only real input that can take the view AWAY from the bottom unpins: an
+// upward wheel, an upward scroll key, a touch drag, or a pointer press on
+// the transcript (scrollbar drag). Touch and pointer are direction-ambiguous
+// and always count. A downward wheel or key cannot mean "leave the bottom",
+// so it does not open the window — otherwise a browser clamp landing right
+// after the user scrolls back down would unpin them again. The window
+// extends on every scroll event inside it so touch momentum, which keeps
+// scrolling after `touchend`, stays attributed to the user.
+const USER_SCROLL_UP_KEYS = new Set(['ArrowUp', 'PageUp', 'Home']);
+const USER_SCROLL_WINDOW_MS = 250;
+export function trackUserScrollIntent(el, now = () => Date.now()) {
+  let touching = false;
+  let until = 0;
+  const mark = () => { until = now() + USER_SCROLL_WINDOW_MS; };
+  const onWheel = (e) => { if (!e || !(e.deltaY > 0)) mark(); };
+  const onTouchStart = () => { touching = true; mark(); };
+  const onTouchEnd = () => { touching = false; mark(); };
+  // The transcript is not focusable, so a scroll key reaches `body`, not the
+  // transcript: listen on the document, and skip keys typed into a field
+  // (Home/arrows in the composer move the caret, not the transcript).
+  const onKey = (e) => {
+    const up = USER_SCROLL_UP_KEYS.has(e.key) || (e.shiftKey && (e.key === ' ' || e.key === 'Spacebar'));
+    if (!up) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''))) return;
+    mark();
+  };
+  const keyTarget = el.ownerDocument || el;
+  const opts = { passive: true };
+  el.addEventListener('wheel', onWheel, opts);
+  el.addEventListener('touchstart', onTouchStart, opts);
+  el.addEventListener('touchmove', mark, opts);
+  el.addEventListener('touchend', onTouchEnd, opts);
+  el.addEventListener('touchcancel', onTouchEnd, opts);
+  el.addEventListener('pointerdown', mark, opts);
+  keyTarget.addEventListener('keydown', onKey);
+  return {
+    isUserScroll() {
+      if (touching) return true;
+      if (now() > until) return false;
+      mark();
+      return true;
+    },
+    dispose() {
+      el.removeEventListener('wheel', onWheel, opts);
+      el.removeEventListener('touchstart', onTouchStart, opts);
+      el.removeEventListener('touchmove', mark, opts);
+      el.removeEventListener('touchend', onTouchEnd, opts);
+      el.removeEventListener('touchcancel', onTouchEnd, opts);
+      el.removeEventListener('pointerdown', mark, opts);
+      keyTarget.removeEventListener('keydown', onKey);
+    }
+  };
+}
+
 // scrollTranscriptToBottom(refs)
 //
 // Pin to the bottom and clear the pending counter. Pin again on the
