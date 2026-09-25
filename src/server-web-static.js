@@ -6,6 +6,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
 const { sendJSON, WEB_DIR, WEB_DIST } = require('./server-shared.js');
 
 const WEB_MIME = {
@@ -140,6 +141,85 @@ function applyDocumentHeaders(res, absPath) {
   res.setHeader('Referrer-Policy', 'no-referrer');
 }
 
+// Text assets worth compressing. PNG/WebP/ICO are already compressed.
+const COMPRESSIBLE = new Set(['.html', '.css', '.js', '.mjs', '.json', '.webmanifest', '.svg']);
+
+// pickEncoding(req, ext) — 'br', 'gzip', or null from Accept-Encoding.
+// q=0 opt-outs are honoured; anything fancier falls back to identity.
+function pickEncoding(req, ext) {
+  if (!req || !COMPRESSIBLE.has(ext)) return null;
+  const header = String(req.headers && req.headers['accept-encoding'] || '').toLowerCase();
+  if (!header) return null;
+  const accepted = new Set();
+  for (const part of header.split(',')) {
+    const [name, ...params] = part.trim().split(';');
+    if (params.some((p) => /^\s*q=0(\.0*)?\s*$/.test(p))) continue;
+    accepted.add(name.trim());
+  }
+  if (accepted.has('br')) return 'br';
+  if (accepted.has('gzip')) return 'gzip';
+  return null;
+}
+
+// Compressed bodies are produced once per (file, encoding, mtime) and kept in
+// a small byte-capped cache. Compressing per request would allocate a fresh
+// zlib/brotli encoder every time (several MB of transient native memory that
+// the allocator tends to keep), so a warm server answers from the cache with
+// no CPU and no new allocations. The whole built bundle compresses to well
+// under the cap, so in practice nothing is evicted; the cap only guards
+// against an unexpectedly large dist/.
+const COMPRESSED_CACHE_MAX_BYTES = 4 * 1024 * 1024;
+const compressedCache = new Map(); // `${enc}\0${abs}` -> { mtimeMs, size, body }
+let compressedCacheBytes = 0;
+
+function cacheCompressed(key, entry) {
+  const prev = compressedCache.get(key);
+  if (prev) { compressedCacheBytes -= prev.body.length; compressedCache.delete(key); }
+  if (entry.body.length > COMPRESSED_CACHE_MAX_BYTES) return;
+  while (compressedCacheBytes + entry.body.length > COMPRESSED_CACHE_MAX_BYTES && compressedCache.size) {
+    const [oldKey, old] = compressedCache.entries().next().value;
+    compressedCache.delete(oldKey);
+    compressedCacheBytes -= old.body.length;
+  }
+  compressedCache.set(key, entry);
+  compressedCacheBytes += entry.body.length;
+}
+
+function compress(encoding, data, cb) {
+  if (encoding === 'br') {
+    return zlib.brotliCompress(data, {
+      params: {
+        [zlib.constants.BROTLI_PARAM_QUALITY]: 9,
+        [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT,
+        // 1 MiB window instead of the 4 MiB default: the largest asset is
+        // ~600 kB, so the ratio is unchanged while the encoder allocates less.
+        [zlib.constants.BROTLI_PARAM_LGWIN]: 20,
+        [zlib.constants.BROTLI_PARAM_SIZE_HINT]: data.length
+      }
+    }, cb);
+  }
+  return zlib.gzip(data, { level: 9 }, cb);
+}
+
+// readBody(abs, st, encoding, cb) — cb(err, body) with the (possibly
+// compressed) bytes for `abs`. Identity reads straight from disk and keeps
+// nothing; compressed bodies come from / go into the cache above.
+function readBody(abs, st, encoding, cb) {
+  if (!encoding) return fs.readFile(abs, cb);
+  const key = encoding + '\0' + abs;
+  const hit = compressedCache.get(key);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return cb(null, hit.body);
+  fs.readFile(abs, (err, data) => {
+    if (err) return cb(err);
+    compress(encoding, data, (zerr, body) => {
+      // A compression failure is not fatal: fall back to the plain bytes.
+      if (zerr) return cb(null, data, true);
+      cacheCompressed(key, { mtimeMs: st.mtimeMs, size: st.size, body });
+      cb(null, body);
+    });
+  });
+}
+
 function serveWebFile(res, absOrRel, opts) {
   const opt = opts || {};
   let abs;
@@ -166,26 +246,34 @@ function serveWebFile(res, absOrRel, opts) {
   if (!isInside(WEB_DIR, abs) && !opt.allowOutside) {
     return sendJSON(res, 400, { error: 'Bad path' });
   }
-  fs.readFile(abs, (err, data) => {
-    if (err) return sendJSON(res, 404, { error: 'Not found', path: absOrRel });
-    applyPwaHeaders(res, abs, absOrRel);
-    applyDocumentHeaders(res, abs);
-    res.writeHead(200, { 'Content-Type': WEB_MIME[path.extname(abs)] || 'application/octet-stream' });
-    res.end(data);
+  fs.stat(abs, (err, st) => {
+    if (err || !st.isFile()) return sendJSON(res, 404, { error: 'Not found', path: absOrRel });
+    const ext = path.extname(abs).toLowerCase();
+    const encoding = pickEncoding(opt.req, ext);
+    readBody(abs, st, encoding, (rerr, body, uncompressed) => {
+      if (rerr) return sendJSON(res, 404, { error: 'Not found', path: absOrRel });
+      applyPwaHeaders(res, abs, absOrRel);
+      applyDocumentHeaders(res, abs);
+      const headers = { 'Content-Type': WEB_MIME[ext] || 'application/octet-stream', 'Content-Length': body.length };
+      if (COMPRESSIBLE.has(ext)) headers.Vary = 'Accept-Encoding';
+      if (encoding && !uncompressed) headers['Content-Encoding'] = encoding;
+      res.writeHead(200, headers);
+      res.end(opt.req && opt.req.method === 'HEAD' ? undefined : body);
+    });
   });
 }
 
-function serveWebRequest(res, relPath) {
-  if (!relPath) return serveWebFile(res, 'index.html', { preferDist: true });
+function serveWebRequest(res, relPath, req) {
+  if (!relPath) return serveWebFile(res, 'index.html', { preferDist: true, req });
   // SPA fallback: if the path is not a known asset type (no extension
   // or an unknown extension), serve index.html so the client-side hash
   // router can handle it. This prevents 404 JSON pages when navigation
   // resolves to a garbage path like '/+ safe +'.
   const ext = path.extname(relPath).toLowerCase();
   if (!ext || !WEB_MIME[ext]) {
-    return serveWebFile(res, 'index.html', { preferDist: true });
+    return serveWebFile(res, 'index.html', { preferDist: true, req });
   }
-  return serveWebFile(res, relPath, { preferDist: true });
+  return serveWebFile(res, relPath, { preferDist: true, req });
 }
 
-module.exports = { serveWebFile, serveWebRequest, isInside, WEB_CSP };
+module.exports = { serveWebFile, serveWebRequest, isInside, pickEncoding, WEB_CSP };

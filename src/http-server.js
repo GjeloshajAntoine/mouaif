@@ -181,7 +181,7 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   if (urlPath === '/') {
     const servedOrigin = expectedOrigin(req, serverConfig.publicOrigin);
     res.setHeader('Set-Cookie', sessionCookie(sessionToken, !!servedOrigin && servedOrigin.startsWith('https://')));
-    return serveWebFile(res, 'index.html', { preferDist: true });
+    return serveWebFile(res, 'index.html', { preferDist: true, req });
   }
   // Legacy /web/ alias: the app now lives at the root; a simple redirect
   // keeps old bookmarks and installed PWAs working. The browser preserves
@@ -196,7 +196,7 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   // Browser auto-requests a favicon. Serve the real one now that
   // we've generated a 32x32 PNG (no more 204 stub).
   if (urlPath === '/favicon.ico' && method === 'GET') {
-    return serveWebFile(res, 'icons/favicon-32.png', { preferDist: true });
+    return serveWebFile(res, 'icons/favicon-32.png', { preferDist: true, req });
   }
 
   // Settings API
@@ -428,7 +428,7 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
       || urlPath === '/events' || urlPath === '/data') {
       return sendJSON(res, 404, { error: 'Not found' });
     }
-    return serveWebRequest(res, urlPath === '/' ? '' : urlPath.slice(1));
+    return serveWebRequest(res, urlPath === '/' ? '' : urlPath.slice(1), req);
   }
 
   // 404

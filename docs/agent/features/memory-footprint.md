@@ -29,9 +29,22 @@ Measured on Linux, Node 24, an empty `MOUAIF_HOME`, idle for 3 s after start:
 | `includeRegExpCache` (`src/tools/searchEngine.js`) | capped at 64 globs, oldest evicted (the globs come from the model) |
 | access challenges (`src/access-auth.js`) | expired, unanswered challenges are swept whenever a new one is issued |
 
+## Compressed static assets
+
+`src/server-web-static.js` negotiates `Accept-Encoding` (`br`, then `gzip`; `q=0` opt-outs are honoured) for HTML, JS, CSS, JSON, the manifest and SVG. Images are sent as-is. Every compressible response carries `Vary: Accept-Encoding` and an exact `Content-Length`.
+
+Each compressed body is produced once per `(encoding, file, mtime, size)` and kept in a byte-capped cache (4 MiB, oldest evicted first). The built bundle compresses to well under that cap. Compressing on every request would create a new zlib/brotli encoder each time, several MB of transient native memory that the allocator tends to keep. The cache avoids that and uses no CPU on a warm server. A rebuilt file has a new mtime and size, so it is recompressed rather than served stale. Brotli runs at quality 9 with a 1 MiB window, which is enough for the largest chunk (~600 kB).
+
+| Asset | Raw | gzip | br |
+| --- | --- | --- | --- |
+| entry JS | 330 kB | 101 kB | ~94 kB |
+| entry CSS | 162 kB | 27 kB | ~26 kB |
+| CodeMirror chunk (lazy) | 631 kB | 222 kB | ~207 kB |
+
 ## Verifying
 
 ```sh
+node scripts/test-web-static-compression.js
 node scripts/test-push-notifications.js
 ```
 
