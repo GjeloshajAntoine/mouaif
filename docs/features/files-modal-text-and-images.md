@@ -32,11 +32,13 @@ The browser is **not capped at the project root**: you can navigate up (via the 
 The two panes never appear together. Opening a text file clears the preview, opening an image clears the editor and destroys the CodeMirror view to free memory.
 
 ### Layout toggle — split vs full-editor
-The modal opens in **split view** by default: the file list sits on the left (38% width on tablet/desktop, full-width and stacked above the editor on phones) and the editor/preview sits on the right. A single-rectangle icon in the header toolbar switches to **full-editor mode**, which hides the file list (and the breadcrumb + list-status rows that go with it) so the editor/preview takes the whole pane. The header is also reduced: the path input, Up / Go / Refresh buttons, and breadcrumb all disappear in full-editor mode, leaving only the toggle and **Close**.
+The modal opens in **split view** by default. On tablet/desktop the file list sits on the left (38% width) and the editor/preview on the right. On phones the list is stacked above the editor. While no file is open, the list and the empty state share the body. Once a file or image is open, the list shrinks to fit its rows, up to 40% of the body, and scrolls past that. The editor gets the rest of the space.
 
-The toggle icon always shows the **next** state, not the current one:
+A **layout toggle** in the header switches to **full-editor mode**, which hides the file list (and the breadcrumb + list-status rows that go with it) so the editor/preview takes the whole pane. The header is also reduced: the path input, Up / Go / Refresh buttons, and breadcrumb all disappear in full-editor mode, leaving only the toggle and **Close**.
 
-- In split view: a single wide rectangle (the action is "hide the file list").
-- In full-editor mode: two equal vertical bars (the action is "restore the split view"). The icon gets the `is-active` accent so the current layout is obvious at a glance. The icon renders at 18px in this state so the two-bar shape stays legible at the 36px mobile touch target.
+The toggle is a single on/off switch for the file list. It is the same button in both headers:
+
+- Its icon is a panel outline that matches the current layout: a top pane on phones, a left pane on wider screens. The list pane is **filled** while the list is shown and empty while it is hidden.
+- It carries the `is-active` accent and `aria-pressed="true"` while the list is shown (split view), and neither while it is hidden (full editor). Its accessible name stays "Show file list" in both states. The tooltip names the action a tap takes.
 
 Tapping the toggle switches layouts without reloading or closing the currently open file, so flipping it mid-edit preserves the buffer, dirty flag, and save state.

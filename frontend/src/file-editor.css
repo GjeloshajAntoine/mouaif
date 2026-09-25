@@ -56,6 +56,14 @@
 .fe__iconbtn { font-size: 0.8rem; }
 .fe__iconbtn.is-active,
 .fe__iconbtn.is-active:hover { background: var(--accent-soft); color: var(--accent); }
+/* Layout toggle (split ↔ full editor). The phone split stacks the list
+   above the editor and wider screens put it on the left, so the glyph
+   carries both panel shapes and shows the one that matches. */
+.fe__layout-icon--side { display: none; }
+@media (min-width: 720px) {
+  .fe__layout-icon--stack { display: none; }
+  .fe__layout-icon--side { display: inline; }
+}
 
 .fe__crumbs {
   display: flex;
@@ -116,6 +124,17 @@
   overflow-y: auto;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
+}
+/* Phone split: once a file or image is open, the stacked list stops
+   taking half the body. It sizes to its rows, capped at 40% of the body
+   and scrolling past that, so the editor gets the rest. With nothing
+   open, the list keeps the full share: it is the only useful pane. */
+@media (max-width: 719.98px) {
+  .fe__body--has-pane .fe__list-wrap {
+    flex: 0 1 auto;
+    max-height: 40%;
+  }
+  .fe__body--has-pane .fe__editor-wrap { flex: 1 1 0; }
 }
 @media (min-width: 720px) {
   .fe__list-wrap {

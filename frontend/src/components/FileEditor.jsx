@@ -513,6 +513,36 @@ export function FileEditorView(props) {
     return h(Fragment, null, items);
   }
 
+  // One layout toggle, shared by both header variants so it keeps its
+  // place, its label and its pressed state across the switch.
+  // aria-pressed tracks "file list shown". The glyph is a panel outline:
+  // the list's pane is filled while it is shown and empty while hidden.
+  // Phones stack the list above the editor and wider screens put it on
+  // the left, so the SVG holds both shapes and CSS shows the one that
+  // matches the current layout.
+  const listShown = !editorFull;
+  const layoutToggle = h('button', {
+    class: 'icon-btn fe__iconbtn fe__layout-toggle' + (listShown ? ' is-active' : ''),
+    type: 'button',
+    onClick: () => setEditorFull((v) => !v),
+    'aria-label': 'Show file list',
+    'aria-pressed': listShown ? 'true' : 'false',
+    title: listShown ? 'Hide file list (full editor)' : 'Show file list (split view)'
+  },
+    h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linejoin': 'round' },
+      h('rect', { x: 3, y: 4, width: 18, height: 16, rx: 2 }),
+      h('g', { class: 'fe__layout-icon fe__layout-icon--stack' },
+        h('path', { d: 'M3 10h18' }),
+        listShown ? h('path', { d: 'M5 6h14v3H5z', fill: 'currentColor', stroke: 'none' }) : null
+      ),
+      h('g', { class: 'fe__layout-icon fe__layout-icon--side' },
+        h('path', { d: 'M9 4v16' }),
+        listShown ? h('path', { d: 'M5 6h3v12H5z', fill: 'currentColor', stroke: 'none' }) : null
+      )
+    )
+  );
+  const hasPane = !!(openFile || openMedia);
+
   return h('div', {
     class: 'fe__overlay',
     role: 'dialog',
@@ -524,25 +554,11 @@ export function FileEditorView(props) {
 h('div', { class: 'fe__head' },
 // In full-editor mode the file list (and the
           // breadcrumb + nav bar) is gone, so we render a
-          // minimal header with just the toggle (to switch
-          // back to split) and Close. The toggle icon shows
-          // the *next* state: two equal bars = split view.
-          // The icon is rendered at 18px so the single shape
-          // stays legible at the 36px mobile touch target.
+          // minimal header with just the layout toggle (to
+          // switch back to split) and Close.
           editorFull
             ? h('div', { class: 'fe__path-row' },
-                h('button', {
-            class: 'icon-btn fe__iconbtn is-active',
-            type: 'button',
-            onClick: () => setEditorFull(false),
-                  'aria-label': 'Show file list',
-                  'aria-pressed': 'true',
-                  title: 'Show file list'
-                },
-                  h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-                    h('path', { d: 'M4 4h7v16H4zM13 4h7v16h-7z', fill: 'currentColor' })
-                  )
-                ),
+                layoutToggle,
           h('button', { class: 'icon-btn icon-btn--close fe__iconbtn', type: 'button', onClick: handleClose, 'aria-label': 'Close', title: 'Close' },
           h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
             h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })
@@ -552,7 +568,8 @@ h('div', { class: 'fe__head' },
       : h('div', { class: 'fe__path-row' },
         h('button', { class: 'icon-btn fe__iconbtn', type: 'button', onClick: goUp, 'aria-label': 'Up one folder', title: 'Up' },
             h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-              h('path', { d: 'M12 4 4 12l8 8 1.4-1.4L8.8 14H20v-2H8.8l4.6-4.6L12 4Z', fill: 'currentColor', transform: 'rotate(-90 12 12)' })
+              // The path is a left-pointing arrow; +90° turns it up.
+              h('path', { d: 'M12 4 4 12l8 8 1.4-1.4L8.8 14H20v-2H8.8l4.6-4.6L12 4Z', fill: 'currentColor', transform: 'rotate(90 12 12)' })
             )
           ),
           h('div', { class: 'fe__path-input-wrap' },
@@ -574,22 +591,7 @@ h('div', { class: 'fe__head' },
               h('path', { d: 'M12 4V1L7 6l5 5V7c3.31 0 6 2.69 6 6 0 1-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 13c0-4.42-3.58-8-8-8Zm-5.3 7.7A7.93 7.93 0 0 0 4 13c0 4.42 3.58 8 8 8v3l5-5-5-5v3c-3.31 0-6-2.69-6-6 0-1 .25-1.97.7-2.8L5.24 10.24Z', fill: 'currentColor' })
             )
           ),
-          // Toggle to full-editor mode. The icon is the *next*
-          // state (one wide rectangle) so the button reads as
-          // "go to full editor". A larger 18px box keeps the
-          // single shape legible on phone-sized buttons.
-          h('button', {
-          class: 'icon-btn fe__iconbtn',
-          type: 'button',
-          onClick: () => setEditorFull(true),
-            'aria-label': 'Hide file list',
-            'aria-pressed': 'false',
-            title: 'Hide file list'
-          },
-            h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-              h('path', { d: 'M3 5h18v14H3z', fill: 'currentColor' })
-            )
-          ),
+          layoutToggle,
         h('button', { class: 'icon-btn icon-btn--close fe__iconbtn', type: 'button', onClick: handleClose, 'aria-label': 'Close', title: 'Close' },
             h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
               h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })
@@ -606,7 +608,7 @@ h('div', { class: 'fe__head' },
           parentRel() ? h('button', { class: 'btn btn--ghost fe__list-up', type: 'button', onClick: goUp }, '↑ Up') : null
         )
       ),
-      h('div', { class: 'fe__body' },
+      h('div', { class: 'fe__body' + (hasPane ? ' fe__body--has-pane' : '') },
         h('div', { class: 'fe__list-wrap' },
           h('ul', { class: 'fe__list', 'aria-label': 'Files and folders' },
             entries.length === 0
