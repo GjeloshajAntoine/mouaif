@@ -686,17 +686,21 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     if (request.callId) card.dataset.authCallId = request.callId;
     const head = document.createElement('div');
     head.className = 'tool-card__head';
-    const chev = document.createElement('span');
-    chev.className = 'tool-card__chev';
-    chev.setAttribute('aria-hidden', 'true');
-    chev.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 5.5 15.5 12 9 18.5l1.4 1.4L18.3 12l-7.9-7.9L9 5.5Z"/></svg>';
+    // A static shield, not the collapse chevron. The card cannot be folded
+    // (its body holds the decision the run is waiting on), and a
+    // closed-looking chevron that ignores taps reads as broken. Same
+    // treatment as the ask_user card's question icon.
+    const icon = document.createElement('span');
+    icon.className = 'tool-card__auth-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Zm-1 5h2v6h-2V7Zm0 8h2v2h-2v-2Z"/></svg>';
     const name = document.createElement('div');
     name.className = 'tool-card__name';
     name.textContent = request.tool || 'tool';
     const title = document.createElement('div');
     title.className = 'tool-card__role';
     title.textContent = 'authorization required';
-    head.appendChild(chev); head.appendChild(name); head.appendChild(title);
+    head.appendChild(icon); head.appendChild(name); head.appendChild(title);
     const detail = document.createElement('pre');
     detail.className = 'tool-card__body';
     detail.textContent = [request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']

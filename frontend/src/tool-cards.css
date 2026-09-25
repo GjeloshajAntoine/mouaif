@@ -833,6 +833,12 @@ color: var(--fg-soft);
 
 /* ---- Authorization card ------------------------------------------- */
 
+/* Not collapsible: a static icon instead of a chevron, and no pointer or
+  press state on the head — the same treatment as the ask_user card. */
+.tool-card__auth-icon { flex: 0 0 auto; display: inline-flex; color: var(--warning); }
+.tool-card--authorization .tool-card__head { cursor: default; }
+.tool-card--authorization .tool-card__head:active { background: transparent; }
+
 .tool-card--authorization .tool-card__body {
   margin: 0;
   padding: 2px 0 0 17px;
