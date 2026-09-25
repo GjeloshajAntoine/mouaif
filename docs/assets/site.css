@@ -284,8 +284,9 @@ html { scroll-padding-top: 72px; }
   color: #fff;
 }
 .btn--primary:hover { filter: brightness(1.06); }
-/* Icon-only action button: a square 44 × 44 tap target with no label text. */
-.btn--icon { padding: 0; width: 44px; min-height: 44px; }
+/* GitHub action button: the mark sits before the label, none of the row's
+  other buttons carry an icon, so it needs its own gap. */
+.btn__icon { display: block; margin-right: 8px; flex: none; }
 /* Feature sections with a screenshot + copy. */
 .feature {
   display: grid;
