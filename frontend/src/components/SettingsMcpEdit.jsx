@@ -32,7 +32,7 @@ const from = typeof props.from === 'string' ? props.from : '';
   const [isDeleting, setIsDeleting] = useState(false);
   const [statusMsg, setStatusMsg] = useState({text: '', kind: ''});
   const [transport, setTransport] = useState('stdio');
-  const [oauth, setOauth] = useState({ enabled: false, clientId: '', scope: '' });
+  const [oauth, setOauth] = useState({ enabled: false, clientId: '', scope: '', grant: 'authorization_code', clientSecret: '', clearClientSecret: false });
 
   const [currentServer, setCurrentServer] = useState(null);
   const [toolAuths, setToolAuths] = useState({});
@@ -55,10 +55,10 @@ const from = typeof props.from === 'string' ? props.from : '';
       setCurrentServer(current);
       setCurrentScope(current.scope === 'app' ? 'app' : 'project');
       setName(current.name || '');
-      setTransport(current.transport === 'http' ? 'http' : 'stdio');
+      setTransport(current.transport === 'http' || current.transport === 'sse' ? current.transport : 'stdio');
       setCommand(current.command || '');
       setUrl(current.url || '');
-      setOauth({ enabled: !!current.oauth?.enabled, clientId: current.oauth?.clientId || '', scope: current.oauth?.scope || '' });
+      setOauth({ enabled: !!current.oauth?.enabled, clientId: current.oauth?.clientId || '', scope: current.oauth?.scope || '', grant: current.oauth?.grant || 'authorization_code', clientSecret: '', clearClientSecret: false });
       setArgs(current.args || []);
       setEnv('');
       const envKeys = Object.keys(current.env || {}).filter(k => current.env[k] && current.env[k].configured);
@@ -166,8 +166,14 @@ const from = typeof props.from === 'string' ? props.from : '';
       projectDir, scope, transport,
       name: (name || '').trim(),
       command: transport === 'stdio' ? (command || '').trim() : '',
-      url: transport === 'http' ? (url || '').trim() : '',
-      oauth: transport === 'http' && oauth.enabled ? { enabled: true, clientId: oauth.clientId.trim(), scope: oauth.scope.trim() } : null,
+      url: transport !== 'stdio' ? (url || '').trim() : '',
+      // clientSecret is write-only: sent only when typed, never read back.
+      oauth: transport !== 'stdio' && oauth.enabled ? Object.assign(
+        { enabled: true, clientId: oauth.clientId.trim(), scope: oauth.scope.trim() },
+        oauth.grant === 'client_credentials' ? { grant: 'client_credentials' } : {},
+        oauth.clientSecret.trim() ? { clientSecret: oauth.clientSecret.trim() } : {},
+        oauth.clearClientSecret ? { clearClientSecret: true } : {}
+      ) : null,
       args: transport === 'stdio' ? args : [],
       cwd: transport === 'stdio' ? (cwd || '').trim() : ''
     };
@@ -179,7 +185,7 @@ const from = typeof props.from === 'string' ? props.from : '';
     else if (headersText.trim()) body.headers = parseHeaders(headersText);
     if (!body.name) { setStatusMsg({text: 'name is required', kind: 'error'}); setIsSaving(false); return; }
     if (transport === 'stdio' && !body.command) { setStatusMsg({text: 'command is required', kind: 'error'}); setIsSaving(false); return; }
-    if (transport === 'http' && !body.url) { setStatusMsg({text: 'URL is required', kind: 'error'}); setIsSaving(false); return; }
+    if (transport !== 'stdio' && !body.url) { setStatusMsg({text: 'URL is required', kind: 'error'}); setIsSaving(false); return; }
     let r;
     try {
       r = await fetchJson(id ? ('/api/mcp/servers/' + encodeURIComponent(id)) : '/api/mcp/servers', {
@@ -246,7 +252,7 @@ const backHref = '#/settings/mcp' + projectQS(backQSPath) + (from ? '&from=' + e
     h('div', { class: 'row' },
       h('label', { class: 'label' }, 'Transport'),
       h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'MCP transport' },
-        [{ value: 'stdio', label: 'Stdio' }, { value: 'http', label: 'HTTP' }].map((m) =>
+        [{ value: 'stdio', label: 'Stdio' }, { value: 'http', label: 'HTTP' }, { value: 'sse', label: 'SSE (legacy)' }].map((m) =>
           h('label', { key: m.value, class: 'seg__item' + (transport === m.value ? ' seg__item--on' : '') },
             h('input', { type: 'radio', name: 'mcp-transport', value: m.value, checked: transport === m.value, onChange: () => setTransport(m.value) }),
             h('span', { class: 'seg__pill' }, m.label)
@@ -277,8 +283,9 @@ const backHref = '#/settings/mcp' + projectQS(backQSPath) + (from ? '&from=' + e
       )
     ) : h(Fragment, null,
       h('div', { class: 'row' },
-        h('label', { class: 'label', for: 'mcp-url' }, 'HTTP URL'),
-        h('input', { class: 'input', id: 'mcp-url', type: 'url', placeholder: 'https://example.com/mcp', value: url, onInput: (e) => setUrl(e.target.value) })
+        h('label', { class: 'label', for: 'mcp-url' }, transport === 'sse' ? 'SSE URL' : 'HTTP URL'),
+        h('input', { class: 'input', id: 'mcp-url', type: 'url', placeholder: transport === 'sse' ? 'https://example.com/sse' : 'https://example.com/mcp', value: url, onInput: (e) => setUrl(e.target.value) }),
+        transport === 'sse' ? h('span', { class: 'hint hint--compact' }, 'For servers that only speak the older HTTP+SSE transport (MCP 2024-11-05). Prefer HTTP when the server offers it.') : null
       ),
       h(McpOAuth, { id, projectDir, saved: currentServer, value: { ...oauth, url }, onChange: setOauth }),
       h('div', { class: 'row' },

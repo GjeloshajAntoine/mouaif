@@ -57,7 +57,7 @@ export function McpStoreSheet(props) {
   const website = safeHttpUrl(server.websiteUrl);
   const repo = safeHttpUrl(server.repository && server.repository.url);
   const updated = relativeDate(meta.updatedAt || meta.publishedAt);
-  const oauth = !!option && option.transport === 'http' && auth === 'oauth';
+  const oauth = !!option && (option.transport === 'http' || option.transport === 'sse') && auth === 'oauth';
   const visibleFields = option ? option.fields.filter((f) => !(oauth && f.kind === 'header' && f.name.toLowerCase() === 'authorization')) : [];
   const required = visibleFields.filter((f) => f.required);
   const optional = visibleFields.filter((f) => !f.required);
@@ -201,7 +201,7 @@ export function McpStoreSheet(props) {
               ),
               runtimeNeed ? h('span', { class: 'hint hint--compact mcps-sheet__hint' }, 'Needs ' + runtimeNeed + ' installed where mouaif runs.') : null
             ),
-        option && option.transport === 'http'
+        option && (option.transport === 'http' || option.transport === 'sse')
           ? h('div', { class: 'mcps-sheet__section' },
               h('div', { class: 'mcps-sheet__label' }, 'Sign-in'),
               h('div', { class: 'seg mcps-seg', role: 'radiogroup', 'aria-label': 'Sign-in' },

@@ -64,10 +64,14 @@ function getSdk() {
     const clientMod = require('@modelcontextprotocol/sdk/client/index.js');
     const stdioMod = require('@modelcontextprotocol/sdk/client/stdio.js');
     const httpMod = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
+    const sseMod = require('@modelcontextprotocol/sdk/client/sse.js');
     sdk = {
       Client: clientMod.Client,
       StdioClientTransport: stdioMod.StdioClientTransport,
-      StreamableHTTPClientTransport: httpMod.StreamableHTTPClientTransport
+      StreamableHTTPClientTransport: httpMod.StreamableHTTPClientTransport,
+      // Legacy HTTP+SSE transport (MCP 2024-11-05): GET an event stream,
+      // POST messages to the endpoint it announces.
+      SSEClientTransport: sseMod.SSEClientTransport
     };
     return sdk;
   } catch (e) {
@@ -310,9 +314,9 @@ function writeConfigForScope(projectDir, scope, servers) {
 function normalizeServerEntry(raw, usedSlugs) {
   if (!raw || typeof raw !== 'object') return null;
   if (typeof raw.name !== 'string' || !raw.name.trim()) return null;
-  const transport = raw.transport === 'http' ? 'http' : 'stdio';
+  const transport = remoteTransport(raw.transport) || 'stdio';
   if (transport === 'stdio' && (typeof raw.command !== 'string' || !raw.command.trim())) return null;
-  if (transport === 'http' && (typeof raw.url !== 'string' || !raw.url.trim())) return null;
+  if (transport !== 'stdio' && (typeof raw.url !== 'string' || !raw.url.trim())) return null;
   const name = raw.name.trim();
   let slug = typeof raw.slug === 'string' && raw.slug ? slugify(raw.slug) : slugify(name);
   if (!slug) slug = 'srv';
@@ -335,7 +339,7 @@ function normalizeServerEntry(raw, usedSlugs) {
     name,
     slug: candidate,
     command: transport === 'stdio' ? raw.command.trim() : '',
-    url: transport === 'http' ? raw.url.trim() : '',
+    url: transport !== 'stdio' ? raw.url.trim() : '',
     headers: normalizeHeaders(raw.headers),
     args,
     env,
@@ -344,16 +348,51 @@ function normalizeServerEntry(raw, usedSlugs) {
   };
   // Only persist the transport field for HTTP — stdio is the implicit
   // default. The read path defaults to 'stdio' when the field is absent.
-  if (transport === 'http') out.transport = 'http';
-  if (transport === 'http' && raw.oauth && raw.oauth.enabled === true) {
+  if (transport !== 'stdio') out.transport = transport;
+  if (transport !== 'stdio' && raw.oauth && raw.oauth.enabled === true) {
     mcpOAuth.safeUrl(out.url);
     out.oauth = {
       enabled: true,
       clientId: typeof raw.oauth.clientId === 'string' ? raw.oauth.clientId.trim() : '',
       scope: typeof raw.oauth.scope === 'string' ? raw.oauth.scope.trim() : ''
     };
+    // Only persisted when non-default, so existing entries (and their
+    // OAuth identity hash) are unchanged. The client secret is never part
+    // of the entry: it lives in the OS keychain (src/oauth-mcp.js).
+    if (raw.oauth.grant === 'client_credentials') out.oauth.grant = 'client_credentials';
   }
   return out;
+}
+
+// 'http' (Streamable HTTP) and 'sse' (legacy HTTP+SSE) are the two remote
+// transports; anything else is stdio.
+function remoteTransport(value) {
+  return value === 'http' || value === 'sse' ? value : null;
+}
+
+// Validate and apply the write-only OAuth client secret from an add/update
+// body: `oauth.clientSecret` (non-empty string) stores it, and
+// `oauth.clearClientSecret: true` removes it. Client credentials need both
+// a client ID and a secret.
+function applyOAuthSecret(entry, scope, projectDir, rawOAuth) {
+  if (!entry.oauth?.enabled) return;
+  const context = { entry, scope, projectDir: projectDir || '' };
+  const incoming = rawOAuth && typeof rawOAuth.clientSecret === 'string' ? rawOAuth.clientSecret.trim() : '';
+  if (rawOAuth && rawOAuth.clearClientSecret === true) mcpOAuth.setSecret(context, null);
+  if (incoming) {
+    if (!entry.oauth.clientId) throw err('EBADINPUT', 'A client secret needs a client ID.');
+    mcpOAuth.setSecret(context, incoming);
+  }
+}
+
+function validateOAuthEntry(entry, scope, projectDir, rawOAuth) {
+  if (entry.oauth?.grant !== 'client_credentials') return;
+  if (!entry.oauth.clientId) throw err('EBADINPUT', 'Client credentials need a client ID.');
+  const incoming = rawOAuth && typeof rawOAuth.clientSecret === 'string' && rawOAuth.clientSecret.trim();
+  const cleared = rawOAuth && rawOAuth.clearClientSecret === true;
+  if (!incoming && (cleared || !mcpOAuth.hasSecret({ entry, scope, projectDir: projectDir || '' }))) {
+    throw err('EBADINPUT', 'Client credentials need a client secret.');
+  }
 }
 
 function normalizeAll(rawList) {
@@ -731,6 +770,12 @@ function decorate(entry, projectDir, rawEntry) {
   // the Settings list is unchanged.
   const enabled = entry.enabled !== undefined ? entry.enabled : serverEnabled(projectDir, entry);
   const decorated = Object.assign({}, entry, { env: redactEnv(entry.env), headers: redactHeaders(entry.headers), status, tools, enabled });
+  // Write-only client secret: expose only whether one is stored.
+  if (entry.oauth?.enabled && entry.oauth.clientId) {
+    decorated.oauth = Object.assign({}, entry.oauth, {
+      secretConfigured: mcpOAuth.hasSecret({ entry, scope: entry.scope === APP_SCOPE ? APP_SCOPE : PROJECT_SCOPE, projectDir: projectDir || '' })
+    });
+  }
   if (error) decorated.error = error;
   return decorated;
 }
@@ -746,9 +791,9 @@ function redactEnv(env) {
 function addServer(projectDir, opts) {
   if (!opts || typeof opts !== 'object') throw err('EBADINPUT', 'opts required');
   if (typeof opts.name !== 'string' || !opts.name.trim()) throw err('EBADINPUT', 'name is required');
-  const transport = opts.transport === 'http' ? 'http' : 'stdio';
+  const transport = remoteTransport(opts.transport) || 'stdio';
   if (transport === 'stdio' && (typeof opts.command !== 'string' || !opts.command.trim())) throw err('EBADINPUT', 'command is required');
-  if (transport === 'http' && (typeof opts.url !== 'string' || !opts.url.trim())) throw err('EBADINPUT', 'url is required');
+  if (transport !== 'stdio' && (typeof opts.url !== 'string' || !opts.url.trim())) throw err('EBADINPUT', 'url is required');
   const scope = opts.scope === APP_SCOPE ? APP_SCOPE : PROJECT_SCOPE;
   if (scope === PROJECT_SCOPE && (!projectDir || typeof projectDir !== 'string' || !projectDir.trim())) {
     throw err('EBADINPUT', 'projectDir is required for a project-scoped server');
@@ -763,6 +808,8 @@ function addServer(projectDir, opts) {
   const usedSlugs = new Set(normalizeAll(scopeList).map(s => s.slug));
   const entry = normalizeServerEntry(Object.assign({}, opts, { id }), usedSlugs);
   if (!entry) throw err('EBADINPUT', 'invalid server entry');
+  validateOAuthEntry(entry, scope, projectDir, opts.oauth);
+  applyOAuthSecret(entry, scope, projectDir, opts.oauth);
   const next = scopeList.concat([entry]);
   writeConfigForScope(projectDir, scope, next);
   return decorate(Object.assign({}, entry, { scope }), projectDir, entry);
@@ -846,9 +893,17 @@ function updateServer(projectDir, serverId, patch) {
   const renormalized = normalizeServerEntry(merged, new Set(normalized.filter((_, i) => i !== idx).map(o => o.slug)));
   if (!renormalized) return null;
   const oldContext = { entry: normalized[idx], scope, projectDir };
+  validateOAuthEntry(renormalized, scope, projectDir, patch && patch.oauth);
   if (normalized[idx].oauth?.enabled && mcpOAuth.identity(oldContext) !== mcpOAuth.identity({ entry: renormalized, scope, projectDir })) {
-    mcpOAuth.clear(oldContext);
+    // Turning OAuth off drops the client secret too; any other change
+    // (endpoint, client, scope, grant) keeps it and only drops the grant.
+    mcpOAuth.clear(oldContext, { secret: !renormalized.oauth?.enabled });
     stopOAuthSessions(oldContext).catch(() => {});
+  }
+  applyOAuthSecret(renormalized, scope, projectDir, patch && patch.oauth);
+  if (patch && patch.oauth && (patch.oauth.clientSecret || patch.oauth.clearClientSecret) && renormalized.oauth?.enabled) {
+    // A new secret invalidates tokens minted with the old one.
+    stopOAuthSessions({ entry: renormalized, scope, projectDir }).catch(() => {});
   }
   normalized[idx] = renormalized;
   writeConfigForScope(projectDir, scope, normalized);
@@ -862,7 +917,7 @@ function removeServer(projectDir, serverId) {
   if (!found) return false;
   const context = { entry: found.normalized[found.idx], scope: found.scope, projectDir };
   if (context.entry.oauth?.enabled) {
-    mcpOAuth.clear(context);
+    mcpOAuth.clear(context, { secret: true });
     stopOAuthSessions(context).catch(() => {});
   }
   const scopeList = found.list;
@@ -899,10 +954,10 @@ async function startServer(projectDir, serverId) {
     untrackSession(projectDir, serverId);
   }
 
-  const { Client, StdioClientTransport, StreamableHTTPClientTransport } = getSdk();
+  const { Client, StdioClientTransport, StreamableHTTPClientTransport, SSEClientTransport } = getSdk();
   const hasProject = !!(projectDir && typeof projectDir === 'string' && projectDir.trim());
   let transport;
-  if (entry.transport === 'http') {
+  if (entry.transport === 'http' || entry.transport === 'sse') {
     let endpoint;
     try { endpoint = new URL(entry.url); } catch { throw err('EBADINPUT', 'HTTP MCP URL is invalid', { serverId }); }
     if (endpoint.protocol !== 'http:' && endpoint.protocol !== 'https:') {
@@ -913,14 +968,20 @@ async function startServer(projectDir, serverId) {
     // Explicit OAuth owns Authorization; don't let a stale manual header
     // override SDK bearer tokens or leak it into discovery/token requests.
     const headers = Object.fromEntries(Object.entries(entry.headers || {}).filter(([key]) => !oauthEnabled || key.toLowerCase() !== 'authorization'));
-    transport = new StreamableHTTPClientTransport(endpoint, oauthEnabled ? {
+    const Transport = entry.transport === 'sse' ? SSEClientTransport : StreamableHTTPClientTransport;
+    // The legacy SSE transport POSTs to a message endpoint the stream
+    // announces (same origin, enforced by the SDK). It counts as the MCP
+    // endpoint for header scoping too.
+    const isMcpEndpoint = (target) => target === endpoint.href
+      || (entry.transport === 'sse' && transport && transport._endpoint && target === transport._endpoint.href);
+    transport = new Transport(endpoint, oauthEnabled ? {
       authProvider: mcpOAuth.provider(oauthContext),
       fetch: (input, init = {}) => {
         // SDK discovery and token requests share this fetch implementation.
         // Custom MCP headers must never follow them to an authorization server.
         const target = String(input instanceof Request ? input.url : input);
         const scopedHeaders = new Headers(init.headers);
-        if (target === endpoint.href) {
+        if (isMcpEndpoint(target)) {
           for (const [key, value] of Object.entries(headers)) scopedHeaders.set(key, value);
         }
         return mcpOAuth.oauthFetch(input, { ...init, headers: scopedHeaders });

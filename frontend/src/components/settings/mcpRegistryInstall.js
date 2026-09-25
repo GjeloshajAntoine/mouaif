@@ -107,7 +107,8 @@ const RUNTIME_LABEL = { npm: 'Node.js (npx)', pypi: 'Python (uvx)', oci: 'Docker
 //
 // Every way mouaif can run this server, best first: a hosted Streamable
 // HTTP endpoint needs nothing installed locally, so it leads; then local
-// stdio packages. SSE-only remotes and non-stdio packages are returned with
+// stdio packages. Legacy SSE remotes are installable too (transport 'sse'),
+// sorted after streamable HTTP. Non-stdio packages are returned with
 // `supported: false` and a reason so the sheet can explain instead of
 // silently hiding them.
 //
@@ -119,15 +120,16 @@ export function installOptions(entry) {
   (Array.isArray(server.remotes) ? server.remotes : []).forEach((r, i) => {
     if (!r || !r.url) return;
     const type = String(r.type || '');
-    const supported = type === 'streamable-http' || type === 'http';
+    const sse = type === 'sse';
+    const supported = type === 'streamable-http' || type === 'http' || sse;
     out.push({
       key: 'remote-' + i,
       kind: 'remote',
-      label: 'Hosted',
+      label: sse ? 'Hosted (SSE)' : 'Hosted',
       detail: r.url,
       supported,
-      reason: supported ? '' : 'Uses the older SSE transport, which mouaif does not support yet.',
-      transport: 'http',
+      reason: supported ? (sse ? 'Older SSE transport; HTTP is preferred when offered.' : '') : 'Unknown remote transport "' + type + '".',
+      transport: sse ? 'sse' : 'http',
       url: String(r.url),
       fields: (Array.isArray(r.headers) ? r.headers : []).filter((x) => x && x.name).map((x) => toField(x, 'header'))
     });
@@ -154,7 +156,10 @@ export function installOptions(entry) {
   // Stable: supported first, remote before local within each group.
   return out
     .map((o, i) => ({ o, i }))
-    .sort((a, b) => (Number(b.o.supported) - Number(a.o.supported)) || (a.o.kind === b.o.kind ? a.i - b.i : (a.o.kind === 'remote' ? -1 : 1)))
+    .sort((a, b) => (Number(b.o.supported) - Number(a.o.supported))
+      || (a.o.kind === b.o.kind
+        ? ((Number(a.o.transport === 'sse') - Number(b.o.transport === 'sse')) || a.i - b.i)
+        : (a.o.kind === 'remote' ? -1 : 1)))
     .map((x) => x.o);
 }
 
@@ -192,7 +197,7 @@ export function buildServerBody(option, opts) {
     name: String(o.name || '').trim() || 'MCP server',
     transport: option.transport
   };
-  if (option.transport === 'http') {
+  if (option.transport === 'http' || option.transport === 'sse') {
     body.url = option.url;
     const headers = {};
     for (const f of option.fields) {

@@ -22,9 +22,16 @@ async function handleMcpOAuth(req, res, parsed, serverConfig) {
       await mcp.stopOAuthSessions(context);
       sendJSON(res, 200, await oauth.begin(context, expectedOrigin(req, serverConfig.publicOrigin)));
     } else if (req.method === 'DELETE') {
+      // Revoke at the authorization server first (RFC 7009, best-effort and
+      // bounded), then always drop local credentials. `?revoke=0` skips the
+      // remote call. The client secret is configuration and is kept.
+      let revoked = 'skipped';
+      if (parsed.query?.revoke !== '0') {
+        try { revoked = await oauth.revoke(context); } catch { revoked = 'failed'; }
+      }
       oauth.clear(context);
       await mcp.stopOAuthSessions(context);
-      sendJSON(res, 200, { ok: true });
+      sendJSON(res, 200, { ok: true, revoked });
     } else {
       sendJSON(res, 200, oauth.status(context));
     }

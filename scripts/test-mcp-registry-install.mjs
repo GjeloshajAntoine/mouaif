@@ -55,12 +55,17 @@ check('pypi uses uvx; oci uses docker run with -e forwards', () => {
   assert.deepEqual(oci.args, ['run', '-i', '--rm', '-e', 'TOKEN', 'ghcr.io/a/b:0.1', 'serve', '--transport', 'stdio']);
 });
 
-check('streamable-http leads; sse is listed as unsupported', () => {
+check('streamable-http leads; sse is installable as the legacy transport', () => {
   const opts = installOptions(remoteEntry);
   assert.equal(opts[0].url, 'https://example.ai/mcp');
   assert.equal(opts[0].supported, true);
-  assert.equal(opts[1].supported, false);
+  assert.equal(opts[0].transport, 'http');
+  assert.equal(opts[1].supported, true);
+  assert.equal(opts[1].transport, 'sse');
   assert.match(opts[1].reason, /SSE/);
+  const body = buildServerBody(opts[1], { name: 'S', scope: 'app' });
+  assert.equal(body.transport, 'sse');
+  assert.equal(body.url, 'https://example.ai/sse');
 });
 
 check('summary reports hosted/local and a needed key', () => {
