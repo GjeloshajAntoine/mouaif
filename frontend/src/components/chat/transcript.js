@@ -670,13 +670,34 @@ function shortToolText(text, max) {
 // `.tool-card__result-summary` and `.tool-card__pill` — so the tool name
 // and its content render at the main transcript's type scale, casing,
 // truncation budget and status-dot size instead of on a private style
-// scale. The row is NOT a `.tool-card__head`: a nested row has no
-// expand/collapse of its own (the parent subagent card owns that), so it
-// carries no chevron and no tap target.
+// scale. The row is NOT a `.tool-card__head`, but it does fold: its result
+// preview (and a running shell's live output) is hidden until the row is
+// opened, so a delegated run that read five files is five compact rows
+// rather than five files inline. The chevron is a real <button> (keyboard
+// and screen-reader reachable); a tap anywhere on the row line toggles too.
+// See setNestedRowOpen for the open/closed policy.
 function buildSubagentToolRow(name, id, argsText, argsObj) {
   const row = document.createElement('div');
   row.className = 'tool-card__subagent-tool';
   if (id) row.dataset.nestedToolId = String(id);
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'tool-card__subagent-toggle';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-label', toolCardLabel(name) + ' result');
+  toggle.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M9 5.5 15.5 12 9 18.5l1.4 1.4L18.3 12l-7.9-7.9L9 5.5Z"/></svg>';
+  row.appendChild(toggle);
+  // One handler for the whole row: the button's own click (mouse, Enter,
+  // Space) bubbles here, so there is no second listener to double-toggle.
+  // Taps inside the revealed content (selecting output, opening an image)
+  // must not fold the row they are reading.
+  row.addEventListener('click', (e) => {
+    const t = e && e.target;
+    if (t && t.closest && t.closest('.tool-card__subagent-preview, .tool-card__shell-live-pre')) return;
+    const open = !row.classList.contains('is-open');
+    row._userOpen = open;
+    setNestedRowOpen(row, open);
+  });
   const callName = document.createElement('span');
   callName.className = 'tool-card__name';
   callName.textContent = toolCardLabel(name);
@@ -730,7 +751,52 @@ function fillSubagentToolRow(row, name, raw, args, okHint) {
   const oldPreview = row.querySelector('.tool-card__subagent-preview');
   if (oldPreview) oldPreview.remove();
   renderSubagentToolPreview(row, name, raw, args);
+  // The same policy as a top-level card: a settled row is folded, a failed
+  // one opens so the error is visible, and a row the user toggled keeps
+  // the user's choice.
+  setNestedRowOpen(row, typeof row._userOpen === 'boolean' ? row._userOpen : !ok);
   return r;
+}
+
+// setNestedRowOpen(row, open)
+//
+// Open or fold one nested subagent tool row. `is-open` is the only state
+// the CSS reads; the toggle button mirrors it for assistive tech. The
+// user's own choice is recorded separately (`row._userOpen`) by the row's
+// click handler, so the automatic opens here never overwrite it.
+function setNestedRowOpen(row, open) {
+  if (!row) return;
+  if (open) row.classList.add('is-open');
+  else row.classList.remove('is-open');
+  const toggle = row.querySelector('.tool-card__subagent-toggle');
+  if (toggle) toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+// snapshotNestedRowState(root) -> Map<nestedToolId, boolean>
+//
+// The rows inside a subagent card are rebuilt when the run settles (the
+// live container is replaced by the settled render) and on every full
+// transcript rebuild. Record only what the USER chose, keyed by the nested
+// call id, so the rebuilt rows can adopt it; automatic state is recomputed.
+function snapshotNestedRowState(root) {
+  const out = new Map();
+  if (!root || !root.querySelectorAll) return out;
+  for (const row of root.querySelectorAll('.tool-card__subagent-tool')) {
+    const id = row.dataset && row.dataset.nestedToolId;
+    if (id && typeof row._userOpen === 'boolean') out.set(id, row._userOpen);
+  }
+  return out;
+}
+
+// restoreNestedRowState(root, state)
+function restoreNestedRowState(root, state) {
+  if (!root || !state || !state.size || !root.querySelectorAll) return;
+  for (const row of root.querySelectorAll('.tool-card__subagent-tool')) {
+    const id = row.dataset && row.dataset.nestedToolId;
+    if (!id || !state.has(id)) continue;
+    row._userOpen = state.get(id);
+    setNestedRowOpen(row, row._userOpen);
+  }
 }
 
 // buildToolCardHead(toolName, args, pillClass, pillText, resultSummary, toolArgs)
@@ -1188,6 +1254,10 @@ export function handleSubagentStreamEvent(ev, data, refs) {
         pre.className = 'tool-card__shell-live-pre';
         row.appendChild(pre);
       }
+      // Watching a command run is the point of the live preview, so a
+      // running row opens on its first chunk — never over a user's fold.
+      // It folds again when a clean result lands (fillSubagentToolRow).
+      if (row._userOpen !== false) setNestedRowOpen(row, true);
       appendShellLiveChunk(pre, data);
       scrollToolBodyToBottomSoon(pre);
       afterTranscriptAppend(refs, false);
@@ -1315,8 +1385,14 @@ if (!card) {
     // by the result body. Drop any coalesced scroll still queued against it
     // so the frame cannot run against the removed nodes.
     cancelToolBodyScroll(card);
+    // The settled render replaces the live nested rows; carry over the
+    // rows the user opened or folded while the run was streaming.
+    const nestedRows = isSubagent ? snapshotNestedRowState(card) : null;
     renderToolResultBody(body, callArgs ? Object.assign({}, toolResult, { args: callArgs }) : toolResult, isSubagentTool);
-    if (isSubagent) renderSubagentChat(card, toolResult);
+    if (isSubagent) {
+    renderSubagentChat(card, toolResult);
+    restoreNestedRowState(card, nestedRows);
+    }
     afterTranscriptAppend(refs, false);
     };
     card._lazyBody = lazyBody;
@@ -1747,6 +1823,7 @@ function snapshotExpandedState(root) {
     if (card.dataset && card.dataset.progressId) state.progressIds.add(card.dataset.progressId);
   }
   root.querySelectorAll('details[open]').forEach((d) => state.details.push(d.className || ''));
+  state.nestedRows = snapshotNestedRowState(root);
   return state;
 }
 
@@ -2244,6 +2321,7 @@ function restoreExpandedState(exp, root) {
     const cls = d.className || '';
     if (exp.details.includes(cls)) d.open = true;
   });
+  restoreNestedRowState(root, exp.nestedRows);
 }
 
 // reanchorOverlayCards(refs) — move any standing ask_user /

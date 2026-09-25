@@ -416,10 +416,38 @@ color: var(--fg-soft);
   gap: 5px;
   padding: 2px 0;
   min-width: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
-.tool-card__subagent-preview {
+/* The row folds like a top-level card: the result preview and a running
+   shell's live output are hidden until the row is opened (`is-open`), so a
+   delegated run that read five files lists five compact rows instead of
+   pasting five files into the nested transcript. */
+.tool-card__subagent-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted-2);
+  cursor: pointer;
+}
+.tool-card__subagent-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tool-card__subagent-toggle svg { transition: transform var(--dur-fast) var(--ease); }
+.tool-card__subagent-tool.is-open > .tool-card__subagent-toggle svg { transform: rotate(90deg); }
+.tool-card__subagent-tool:not(.is-open) > .tool-card__subagent-preview,
+.tool-card__subagent-tool:not(.is-open) > .tool-card__shell-live-pre { display: none; }
+.tool-card__subagent-preview,
+.tool-card__subagent-tool > .tool-card__shell-live-pre {
   flex: 1 0 100%;
   margin-top: 2px;
+  cursor: auto;
 }
 
 /* ---- Live shell output (call cards) -------------------------------- */

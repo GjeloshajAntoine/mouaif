@@ -135,10 +135,19 @@ function createElement(tag) {
     querySelector(sel) { return descendants(node).find((n) => matches(n, sel)) || null; },
     querySelectorAll(sel) { return descendants(node).filter((n) => matches(n, sel)); },
     closest(sel) { let n = node; while (n) { if (matches(n, sel)) return n; n = n.parentNode; } return null; },
-    setAttribute() {},
-    getAttribute() { return null; },
-    addEventListener() {},
-    removeEventListener() {}
+    attrs: {},
+    listeners: {},
+    setAttribute(k, v) { node.attrs[k] = String(v); },
+    getAttribute(k) { return k in node.attrs ? node.attrs[k] : null; },
+    addEventListener(type, fn) { (node.listeners[type] = node.listeners[type] || []).push(fn); },
+    removeEventListener() {},
+    // Test helper: fire a click whose target is this node, bubbling up.
+    click() {
+      const ev = { type: 'click', target: node, stopPropagation() { ev.stopped = true; } };
+      for (let n = node; n && !ev.stopped; n = n.parentNode) {
+        for (const fn of (n.listeners && n.listeners.click) || []) fn(ev);
+      }
+    }
   };
   // `body.innerHTML = ''` is the chat renderer's "clear this host" idiom;
   // the stub has to drop children for it or re-renders stack copies.
@@ -223,7 +232,7 @@ function loadTranscript(globals) {
     has: () => true,
     get: (target, key) => (key in target ? target[key] : () => undefined)
   }));
-  vm.runInContext(body + '; this.renderSubagentChat = renderSubagentChat; this.handleSubagentStreamEvent = handleSubagentStreamEvent;', context);
+  vm.runInContext(body + '; this.renderSubagentChat = renderSubagentChat; this.handleSubagentStreamEvent = handleSubagentStreamEvent; this.snapshotNestedRowState = snapshotNestedRowState; this.restoreNestedRowState = restoreNestedRowState;', context);
   return context;
 }
 
@@ -513,7 +522,7 @@ function main() {
     liveFacts.label === 'Read'
     && liveFacts.args === JSON.stringify(callArgs)
     && liveFacts.pill === 'tool-card__pill tool-card__pill--ok'
-    && liveFacts.order.startsWith('tool-card__name>tool-card__args>'),
+    && liveFacts.order.startsWith('tool-card__subagent-toggle>tool-card__name>tool-card__args>'),
     JSON.stringify(liveFacts));
     check('live and settled rows are identical (label, args, dot, summary)',
       JSON.stringify(liveFacts) === JSON.stringify(settledFacts),
@@ -567,6 +576,57 @@ function main() {
     check('a call without an id is still settled into one row',
       rows.length === 1 && rows[0].querySelector('.tool-card__pill').classList.contains('tool-card__pill--ok'),
       'rows=' + rows.length + ' ' + rows.map((r) => r.children.map((c) => c.className).join('>')).join(' | '));
+  }
+
+  // ---- 12. Nested rows fold like top-level cards -------------------
+  //
+  // A settled nested row used to paste its whole result preview inline,
+  // with no way to hide it: a run that read five files showed five files.
+  // Rows now fold — clean results closed, failures open — and the user's
+  // own toggle wins, including across the live → settled rebuild.
+  {
+    const card = makeCard();
+    mod.renderSubagentChat(card, { name: 'subagent', result: subagentResult({ chat: [
+      { role: 'assistant', content: null, tool_calls: [
+        { id: 'ok1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.js"}' } },
+        { id: 'err1', type: 'function', function: { name: 'read_file', arguments: '{"path":"missing.js"}' } }
+      ] },
+      { role: 'tool', tool_call_id: 'ok1', name: 'read_file', content: '{"ok":true,"lines":3,"text":"x"}' },
+      { role: 'tool', tool_call_id: 'err1', name: 'read_file', content: '{"ok":false,"error":"ENOENT"}' },
+      { role: 'assistant', content: 'done' }
+    ] }) });
+    const rows = nestedToolRows(card.querySelector('.tool-card__subagent-chat'));
+    const [okRow, errRow] = rows;
+    const toggleOf = (row) => row.querySelector('.tool-card__subagent-toggle');
+    check('a nested row has a real toggle button', !!toggleOf(okRow) && toggleOf(okRow).tagName === 'BUTTON'
+      && toggleOf(okRow).type === 'button');
+    check('a clean nested result starts folded', !okRow.classList.contains('is-open')
+      && toggleOf(okRow).getAttribute('aria-expanded') === 'false', okRow.className);
+    check('a failed nested result starts open', errRow.classList.contains('is-open')
+      && toggleOf(errRow).getAttribute('aria-expanded') === 'true', errRow.className);
+
+    toggleOf(okRow).click();
+    check('tapping the toggle opens the row', okRow.classList.contains('is-open')
+      && toggleOf(okRow).getAttribute('aria-expanded') === 'true' && okRow._userOpen === true);
+    okRow.querySelector('.tool-card__name').click();
+    check('tapping the row line folds it again', !okRow.classList.contains('is-open') && okRow._userOpen === false);
+
+    // The live rows are replaced by the settled render; the user's choice
+    // is carried over by nested call id.
+    toggleOf(okRow).click();
+    const snap = mod.snapshotNestedRowState(card);
+    check('the user choice is snapshotted by nested call id', snap.get('ok1') === true && !snap.has('err1'),
+      JSON.stringify(Array.from(snap.entries())));
+    const rebuilt = makeCard();
+    mod.renderSubagentChat(rebuilt, { name: 'subagent', result: subagentResult({ chat: [
+      { role: 'assistant', content: null, tool_calls: [{ id: 'ok1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.js"}' } }] },
+      { role: 'tool', tool_call_id: 'ok1', name: 'read_file', content: '{"ok":true,"lines":3,"text":"x"}' }
+    ] }) });
+    const rebuiltRow = nestedToolRows(rebuilt.querySelector('.tool-card__subagent-chat'))[0];
+    check('a rebuilt clean row is folded before restore', !rebuiltRow.classList.contains('is-open'));
+    mod.restoreNestedRowState(rebuilt, snap);
+    check('a rebuilt row adopts the user\'s open choice', rebuiltRow.classList.contains('is-open')
+      && rebuiltRow._userOpen === true);
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
