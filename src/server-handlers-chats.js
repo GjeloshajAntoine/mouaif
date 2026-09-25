@@ -127,17 +127,7 @@ if (typeof body.promptId !== 'string' || !prompts.getPrompt(dir, body.promptId))
 return sendJSON(res, 400, { error: 'Unknown promptId' });
 }
 }
-// An exclusive prompt preset (e.g. the "Chat" template: no tools) seeds
-// the new chat's own allowlist, so the chat's Tools card shows the real
-// state and the user can turn tools back on from there.
-let createBody = body || {};
-if (createBody.promptId && !Array.isArray(createBody.tools)) {
-const preset = prompts.getPromptPreset(dir, createBody.promptId);
-if (preset && preset.exclusive && Array.isArray(preset.tools)) {
-createBody = Object.assign({}, createBody, { tools: preset.tools.slice() });
-}
-}
-const chat = chats.createChat(dir, createBody);
+const chat = chats.createChat(dir, body || {});
       return sendJSON(res, 201, { chat });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -367,7 +357,7 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
       const skillState = agentSkills.resolve({ chat: effectiveChat, projectDir: dir });
       const skillCatalog = agentSkills.catalogMessage(dir, effectiveChat);
       if (skillCatalog) parts.push(skillCatalog);
-      if (prompt && prompt.content && prompt.content.trim()) parts.push(prompt.content);
+      if (prompt && prompt.content) parts.push(prompt.content);
       // Also expose the project-level gate so the UI can render the
       // per-chat toggle as locked off when the project has it disabled.
       let projectAgentFiles = null;
@@ -889,7 +879,7 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
   if (effectivePromptId) {
     try {
       const prompt = prompts.getPrompt(projectDir, effectivePromptId);
-      if (prompt && prompt.content && prompt.content.trim()) {
+      if (prompt && prompt.content) {
         upstreamMessages.push({ role: prompt.role, content: prompt.content });
       }
     } catch { /* non-fatal; stream proceeds without the prompt */ }

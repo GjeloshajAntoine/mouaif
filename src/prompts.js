@@ -12,8 +12,7 @@
 //     title:     'Concise label',            // shown in the UI picker
 //     icon:      'sparkles',                 // safe built-in icon key
 //     showOnProjectCard: false,               // quick new-chat icon button
-//     content:   'You are a helpful…',       // the prompt text; may be
-//                                            // empty when a preset is set
+//     content:   'You are a helpful…',       // the prompt text
 //     role:      'system',                   // locked; the field is kept
 //                                            // for forward-compat and for
 //                                            // hand-edits, but the editor
@@ -23,9 +22,6 @@
 //                                            // before the transcript, which
 //                                            // is not the intended use.
 //     preset:    { tools?: ['shell','file',...],
-//                  exclusive?: boolean,      // true: `tools` is the chat's
-//                                            // whole default allowlist
-//                                            // (an empty list = no tools)
 //                  agentFiles?: boolean,
 //                  skills?: boolean },       // OPTIONAL chat preset: when a
 //                                            // chat references this prompt,
@@ -62,7 +58,7 @@ function newPromptId() {
 // anything else to 'system' so the field stays valid.
 const VALID_ROLES = new Set(['system']);
 const DEFAULT_ICON = 'sparkles';
-const PROMPT_ICONS = new Set(['sparkles', 'chat', 'code', 'search', 'pencil', 'bug', 'book']);
+const PROMPT_ICONS = new Set(['sparkles', 'code', 'search', 'pencil', 'bug', 'book']);
 function normalizeIcon(icon) {
 return typeof icon === 'string' && PROMPT_ICONS.has(icon) ? icon : DEFAULT_ICON;
 }
@@ -83,7 +79,7 @@ const PRESET_TOOL_NAMES = new Set(['shell', 'file', 'subagent', 'report_progress
 // mirroring `chat.tools`.
 const MCP_TOOL_PREFIX = 'mcp__';
 
-// normalizePreset(raw) -> { tools, exclusive, agentFiles, skills } | null
+// normalizePreset(raw) -> { tools, agentFiles, skills } | null
 //
 // A preset is an OPTIONAL attachment to a prompt. It is normalized to a
 // small, stable shape:
@@ -94,11 +90,6 @@ const MCP_TOOL_PREFIX = 'mcp__';
 //     accepted. Anything else is dropped. An empty array means "this
 //     preset grants no additional tools" — equivalent to omitting the
 //     field, but kept when the user explicitly cleared it.
-//   - `exclusive` (boolean, optional): when true, `tools` is not merged
-//     in but IS the chat's default allowlist — only those tools are
-//     advertised, and an empty list means "no tools at all". A chat's
-//     own per-chat allowlist (set by the user from the Tools card) still
-//     wins. An exclusive preset never collapses to null, even when empty.
 //   - `agentFiles` is a boolean: when true the chat referencing this
 //     prompt turns agent-file injection on.
 //   - `skills` is a boolean: when true the chat referencing this prompt
@@ -115,37 +106,27 @@ function normalizePreset(raw) {
     : undefined;
   const agentFiles = typeof raw.agentFiles === 'boolean' ? raw.agentFiles : undefined;
   const skills = typeof raw.skills === 'boolean' ? raw.skills : undefined;
-  const exclusive = raw.exclusive === true;
 
-  if (!exclusive && (!tools || !tools.length) && agentFiles === undefined && skills === undefined) return null;
+  if ((!tools || !tools.length) && agentFiles === undefined && skills === undefined) return null;
   return {
-    tools: exclusive ? (tools || []) : (tools || undefined),
-    exclusive: exclusive || undefined,
+    tools: tools || undefined,
     agentFiles,
     skills
   };
 }
 
-// A prompt needs text, unless it carries a preset: a preset-only prompt
-// (e.g. the built-in "Chat" template — no text, no tools) is a valid way
-// to package chat settings without adding a system message.
-function hasContent(content) {
-  return typeof content === 'string' && !!content.trim();
-}
-
 function normalizePrompt(raw) {
   if (!raw || typeof raw !== 'object') return null;
   if (typeof raw.id !== 'string' || !raw.id) return null;
-  const preset = normalizePreset(raw.preset);
-  if (!hasContent(raw.content) && !preset) return null;
+  if (typeof raw.content !== 'string' || !raw.content.trim()) return null;
   return {
     id: raw.id,
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim() : raw.id,
 icon: normalizeIcon(raw.icon),
 showOnProjectCard: raw.showOnProjectCard === true,
-content: typeof raw.content === 'string' ? raw.content : '',
+content: raw.content,
 role: 'system',
-preset,
+preset: normalizePreset(raw.preset),
     createdAt: raw.createdAt || new Date().toISOString(),
     updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString()
   };
@@ -153,42 +134,12 @@ preset,
 
 // ---- CRUD ---------------------------------------------------------------
 
-// Default app prompts, written ONCE into the app store the first time the
-// app prompt list is read. After that they are ordinary saved prompts:
-// listed, edited, deleted, and used by chats exactly like user-created
-// ones. The `promptsSeeded` flag keeps a deleted default from coming back.
-//   - "Chat": no prompt text, a chat icon, and an exclusive preset with no
-//     tools, so a chat started from it is a plain conversation.
-const DEFAULT_APP_PROMPTS = [
-  {
-    id: 'chat',
-    title: 'Chat',
-    icon: 'chat',
-    showOnProjectCard: false,
-    content: '',
-    role: 'system',
-    preset: { tools: [], exclusive: true }
-  }
-];
-
-function seedDefaultAppPrompts(app) {
-  if (app.promptsSeeded === true) return app;
-  const list = Array.isArray(app.prompts) ? app.prompts.slice() : [];
-  const now = new Date().toISOString();
-  for (const def of DEFAULT_APP_PROMPTS) {
-    if (list.some((p) => p && p.id === def.id)) continue;
-    list.push(Object.assign({}, def, { createdAt: now, updatedAt: now }));
-  }
-  try { return settings.setApp({ prompts: list, promptsSeeded: true }); }
-  catch { return app; }
-}
-
 function getPromptsList(projectDir) {
   if (projectDir) {
     const project = settings.getProject(projectDir);
     return Array.isArray(project.prompts) ? project.prompts : [];
   }
-  const app = seedDefaultAppPrompts(settings.getApp());
+  const app = settings.getApp();
   return Array.isArray(app.prompts) ? app.prompts : [];
 }
 
@@ -261,8 +212,8 @@ function getPrompt(projectDir, promptId, opts = {}) {
 }
 
 function createPrompt(projectDir, opts) {
-  if (!opts || (!hasContent(opts.content) && !normalizePreset(opts.preset))) {
-    const e = new Error('content is required (or a chat preset)');
+  if (!opts || typeof opts.content !== 'string' || !opts.content.trim()) {
+    const e = new Error('content is required');
     e.code = 'EBADINPUT';
     throw e;
   }
@@ -274,7 +225,7 @@ function createPrompt(projectDir, opts) {
     title: typeof opts.title === 'string' && opts.title.trim() ? opts.title.trim() : '',
 icon: normalizeIcon(opts.icon),
 showOnProjectCard: opts.showOnProjectCard === true,
-content: typeof opts.content === 'string' ? opts.content : '',
+content: opts.content,
 role: 'system',
 preset: normalizePreset(opts.preset),
     createdAt: new Date().toISOString(),
@@ -315,7 +266,7 @@ function updatePrompt(projectDir, promptId, patch) {
   if (patch && typeof patch.title === 'string') {
     current.title = patch.title.trim() || current.id;
   }
-  if (patch && typeof patch.content === 'string') {
+  if (patch && typeof patch.content === 'string' && patch.content.trim()) {
 current.content = patch.content;
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'icon')) {
@@ -326,12 +277,6 @@ current.showOnProjectCard = patch.showOnProjectCard === true;
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'preset')) {
     current.preset = patch.preset == null ? null : normalizePreset(patch.preset);
-  }
-  // Never persist a prompt that normalizePrompt would drop on read.
-  if (!hasContent(current.content) && !current.preset) {
-    const e = new Error('content is required (or a chat preset)');
-    e.code = 'EBADINPUT';
-    throw e;
   }
   if (patch && Object.prototype.hasOwnProperty.call(patch, 'role') && !VALID_ROLES.has(patch.role)) {
     // no-op
@@ -392,12 +337,7 @@ function getPromptPreset(projectDir, promptId) {
 // Merge a prompt's preset onto a chat's own per-chat config. Returns a
 // partial update object the chat pipeline reads as the effective values.
 //
-// Exclusive presets (`preset.exclusive`) are the one exception: their
-// `tools` list becomes the chat's allowlist when the chat has none of its
-// own, so an empty list turns every tool off. A chat's own allowlist (the
-// user toggled the Tools card) always wins over an exclusive preset.
-//
-// Otherwise tools are ADDITIVE, never downgrading: a chat with no per-chat
+// Tools are ADDITIVE, never downgrading: a chat with no per-chat
 // allowlist already inherits every project tool, so emitting the preset's
 // list here would silently restrict the chat to just those tools — the
 // opposite of "enable". Only when the chat already restricts its tools
@@ -415,9 +355,7 @@ function effectivePresetConfig(chat, preset) {
     if (Array.isArray(preset.tools)) {
       // Merge ONLY onto an existing per-chat allowlist. `chat.tools`
       // being undefined means "all project tools" — leave it that way.
-      if (preset.exclusive) {
-        if (!Array.isArray(chat.tools)) out.tools = preset.tools.slice();
-      } else if (Array.isArray(chat.tools)) {
+      if (Array.isArray(chat.tools)) {
         out.tools = Array.from(new Set(chat.tools.concat(preset.tools)));
       }
     }
@@ -429,7 +367,6 @@ function effectivePresetConfig(chat, preset) {
 
 module.exports = {
   newPromptId,
-DEFAULT_APP_PROMPTS,
 VALID_ROLES,
 DEFAULT_ICON,
 PROMPT_ICONS,

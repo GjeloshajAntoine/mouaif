@@ -24,16 +24,6 @@ import { PromptIcon, PROMPT_ICONS } from './PromptIcon.jsx';
 // Sentinel id used by the "new prompt" entry in the picker dropdown.
 const NEW_PROMPT_ID = '__new__';
 
-function presetFromRecord(pp) {
-  if (!pp || !(Array.isArray(pp.tools) || typeof pp.agentFiles === 'boolean' || typeof pp.skills === 'boolean' || pp.exclusive === true)) return null;
-  return {
-    tools: new Set(Array.isArray(pp.tools) ? pp.tools : []),
-    exclusive: pp.exclusive === true,
-    agentFiles: pp.agentFiles === true,
-    skills: pp.skills === true
-  };
-}
-
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text || '');
@@ -76,15 +66,14 @@ function presetsEqual(a, b) {
     const tools = p.tools instanceof Set
       ? Array.from(p.tools).sort()
       : (Array.isArray(p.tools) ? p.tools.slice().sort() : []);
-    const hasAny = tools.length || p.agentFiles || p.skills || p.exclusive;
+    const hasAny = tools.length || p.agentFiles || p.skills;
     if (!hasAny) return null;
-    return { tools, exclusive: !!p.exclusive, agentFiles: !!p.agentFiles, skills: !!p.skills };
+    return { tools, agentFiles: !!p.agentFiles, skills: !!p.skills };
   };
   const A = norm(a);
   const B = norm(b);
   if (A === null && B === null) return true;
   if (!A || !B) return false;
-  if (A.exclusive !== B.exclusive) return false;
   if (A.agentFiles !== B.agentFiles) return false;
   if (A.skills !== B.skills) return false;
   if (A.tools.length !== B.tools.length) return false;
@@ -210,7 +199,14 @@ setPreset(snap.preset);
       dirtyRef.current = false;
       return;
     }
-    const nextPreset = presetFromRecord(p.preset);
+    const pp = p.preset;
+    const nextPreset = (pp && (Array.isArray(pp.tools) || typeof pp.agentFiles === 'boolean' || typeof pp.skills === 'boolean'))
+      ? {
+          tools: new Set(Array.isArray(pp.tools) ? pp.tools : []),
+          agentFiles: pp.agentFiles === true,
+          skills: pp.skills === true
+        }
+      : null;
     const itemScope = p.scope || (projectDir ? 'project' : 'app');
 const snap = {
 title: p.title || '',
@@ -243,43 +239,37 @@ if (content !== loadedSnapshot.content) return true;
   function presetActive() { return !!preset; }
   function setToolSelected(name, checked) {
     setPreset((prev) => {
-      const base = prev || { tools: new Set(), exclusive: false, agentFiles: false, skills: false };
+      const base = prev || { tools: new Set(), agentFiles: false, skills: false };
       const next = new Set(base.tools);
       if (checked) next.add(name); else next.delete(name);
-      return { tools: next, exclusive: !!base.exclusive, agentFiles: !!base.agentFiles, skills: !!base.skills };
+      return { tools: next, agentFiles: !!base.agentFiles, skills: !!base.skills };
     });
   }
   function setToolsSelected(names, checked) {
     setPreset((prev) => {
-      const base = prev || { tools: new Set(), exclusive: false, agentFiles: false, skills: false };
+      const base = prev || { tools: new Set(), agentFiles: false, skills: false };
       const next = new Set(base.tools);
       for (const n of names) {
         if (checked) next.add(n); else next.delete(n);
       }
-      return { tools: next, exclusive: !!base.exclusive, agentFiles: !!base.agentFiles, skills: !!base.skills };
+      return { tools: next, agentFiles: !!base.agentFiles, skills: !!base.skills };
     });
   }
   function setAgentFiles(checked) {
     setPreset((prev) => {
-      const base = prev || { tools: new Set(), exclusive: false, agentFiles: false, skills: false };
-      return { tools: new Set(base.tools), exclusive: !!base.exclusive, agentFiles: !!checked, skills: !!base.skills };
+      const base = prev || { tools: new Set(), agentFiles: false, skills: false };
+      return { tools: new Set(base.tools), agentFiles: !!checked, skills: !!base.skills };
     });
   }
   function setSkills(checked) {
     setPreset((prev) => {
-      const base = prev || { tools: new Set(), exclusive: false, agentFiles: false, skills: false };
-      return { tools: new Set(base.tools), exclusive: !!base.exclusive, agentFiles: !!base.agentFiles, skills: !!checked };
-    });
-  }
-  function setExclusive(checked) {
-    setPreset((prev) => {
-      const base = prev || { tools: new Set(), exclusive: false, agentFiles: false, skills: false };
-      return { tools: new Set(base.tools), exclusive: !!checked, agentFiles: !!base.agentFiles, skills: !!base.skills };
+      const base = prev || { tools: new Set(), agentFiles: false, skills: false };
+      return { tools: new Set(base.tools), agentFiles: !!base.agentFiles, skills: !!checked };
     });
   }
   function togglePresetOn(checked) {
     if (checked) {
-      setPreset({ tools: new Set(), exclusive: false, agentFiles: false, skills: false });
+      setPreset({ tools: new Set(), agentFiles: false, skills: false });
       return;
     }
     setPreset(null);
@@ -358,7 +348,7 @@ if (content !== loadedSnapshot.content) return true;
   async function save() {
     const t = title.trim();
     const c = content.trim();
-    if (!c && !presetActive()) { setStatusMsg({ text: 'prompt content is required (or turn on a chat preset)', kind: 'error' }); return; }
+    if (!c) { setStatusMsg({ text: 'prompt content is required', kind: 'error' }); return; }
 
     setIsSaving(true);
     setStatusMsg({ text: 'saving…', kind: 'busy' });
@@ -378,10 +368,9 @@ content: c
 
     if (presetActive()) {
       const p = preset;
-      const hasAny = (p.tools && p.tools.size > 0) || p.agentFiles || p.skills || p.exclusive;
+      const hasAny = (p.tools && p.tools.size > 0) || p.agentFiles || p.skills;
       body.preset = hasAny ? {
         tools: Array.from(p.tools || []),
-        exclusive: p.exclusive === true,
         agentFiles: p.agentFiles === true,
         skills: p.skills === true
       } : null;
@@ -816,9 +805,7 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
           class: 'input prompts__textarea',
           id: 'spe-content',
           rows: 6,
-          placeholder: presetActive()
-            ? 'Optional with a chat preset — leave empty for no system prompt'
-            : 'You are a helpful assistant specialized in…'
+          placeholder: 'You are a helpful assistant specialized in…'
         }),
         h('div', { class: 'prompts__from-default' },
           h('button', {
@@ -881,34 +868,13 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
           )
         ),
         h('p', { class: 'hint hint--compact prompts__preset-note' },
-          'Tools are additive unless “Only these tools” is on — then new chats start with just the checked tools. The project’s Off/Ask/Allow always wins. ',
+          'Tools are additive — a chat that already has a tool keeps it, and the project’s Off/Ask/Allow still wins. ',
           'Agent files inject AGENTS.md / CLAUDE.md. Skills inject .agents/skills/*/SKILL.md. ',
           'The project can lock any of these off; the preset cannot override that lock.'
         )
       ),
 
       !presetActive() ? null : h('div', { class: 'row prompts__preset-body' },
-        h('label', { class: 'prompts__quick-launch' },
-          h('span', { class: 'switch' },
-            h('input', {
-              id: 'spe-preset-exclusive',
-              type: 'checkbox',
-              role: 'switch',
-              checked: !!(preset && preset.exclusive),
-              'aria-checked': String(!!(preset && preset.exclusive)),
-              onChange: (e) => setExclusive(e.currentTarget.checked)
-            }),
-            h('span', { class: 'switch__track', 'aria-hidden': 'true' },
-              h('span', { class: 'switch__thumb' })
-            )
-          ),
-          h('span', null,
-            h('span', { class: 'prompts__quick-launch-title' }, 'Only these tools'),
-            h('span', { class: 'prompts__quick-launch-desc' },
-              'New chats start with just the tools checked below — none checked means no tools. The chat’s Tools card can still turn more on.'
-            )
-          )
-        ),
         dataLoaded
           ? h(ToolTree, {
               groups,

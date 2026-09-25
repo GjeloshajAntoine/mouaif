@@ -61,16 +61,6 @@ function pickFreePort() {
 }
 
 async function run() {
-  // 0. Default "Chat" prompt is seeded once as an ordinary app prompt.
-  const seeded = prompts.listPrompts('', { scope: 'app' });
-  const seededChat = seeded.find((p) => p.id === 'chat');
-  t('default Chat prompt is seeded as an app prompt', !!seededChat && seededChat.scope === 'app' && seededChat.icon === 'chat' && seededChat.content === '');
-  t('default Chat prompt has no tools', !!seededChat && seededChat.preset && seededChat.preset.exclusive === true && seededChat.preset.tools.length === 0);
-  const renamed = prompts.updatePrompt('', 'chat', { title: 'Plain chat', scope: 'app' });
-  t('default Chat prompt is editable like any prompt', renamed && renamed.title === 'Plain chat');
-  t('default Chat prompt can be deleted', prompts.deletePrompt('', 'chat', { scope: 'app' }) === true);
-  t('deleted default prompt is not re-seeded', !prompts.listPrompts('', { scope: 'app' }).some((p) => p.id === 'chat'));
-
   // 1. Direct module tests
   const appPrompt = prompts.createPrompt('', { title: 'Global Helper', icon: 'code', showOnProjectCard: true, content: 'You are global.', scope: 'app' });
 t('create app prompt has scope app', appPrompt.scope === 'app');
@@ -92,23 +82,6 @@ t('project-card option only accepts true', projPrompt.showOnProjectCard === fals
   // Preset check
   const preset = prompts.getPromptPreset(root, appPrompt.id);
   t('getPromptPreset finds app prompt in project scope', preset === null);
-
-  // "Chat" template: no text, chat icon, exclusive preset with no tools.
-  const chatPrompt = prompts.createPrompt(root, { title: 'Chat', icon: 'chat', content: '', preset: { tools: [], exclusive: true, agentFiles: false, skills: false }, scope: 'project' });
-  t('preset-only prompt can be created with empty content', chatPrompt.content === '' && chatPrompt.icon === 'chat');
-  t('exclusive empty preset is kept', chatPrompt.preset && chatPrompt.preset.exclusive === true && Array.isArray(chatPrompt.preset.tools) && chatPrompt.preset.tools.length === 0);
-  t('preset-only prompt is listed', !!prompts.getPrompt(root, chatPrompt.id));
-  const eff = prompts.effectivePresetConfig({}, chatPrompt.preset);
-  t('exclusive preset gives a chat with no allowlist no tools', Array.isArray(eff.tools) && eff.tools.length === 0);
-  const effOwn = prompts.effectivePresetConfig({ tools: ['shell'] }, chatPrompt.preset);
-  t('chat allowlist wins over an exclusive preset', effOwn.tools === undefined);
-  let threw = false;
-  try { prompts.updatePrompt(root, chatPrompt.id, { preset: null }); } catch (e) { threw = e.code === 'EBADINPUT'; }
-  t('removing the preset from an empty prompt is rejected', threw);
-  let threwCreate = false;
-  try { prompts.createPrompt(root, { content: '  ' }); } catch (e) { threwCreate = e.code === 'EBADINPUT'; }
-  t('empty prompt without a preset is still rejected', threwCreate);
-  prompts.deletePrompt(root, chatPrompt.id, { scope: 'project' });
 
   // Close direct settings connection before spawning server
   settings.close();
