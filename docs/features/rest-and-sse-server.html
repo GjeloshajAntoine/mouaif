@@ -52,6 +52,9 @@ mouaif info                    # show package version and default port</code></p
 safeDecode(&#39;%zz&#39;);  // &#39;%zz&#39;  — malformed escape, no throw
 safeDecode(&#39;a%20b&#39;); // &#39;a b&#39;</code></pre>
 <p>A malformed escape therefore becomes an ordinary <code>400</code>/<code>404</code> rather than<br>a crash. <code>scripts/test-url-decode-safety.js</code> drives the real server with<br>malformed paths and asserts the process stays alive.</p>
+<h2 id="no-deprecation-warnings">No deprecation warnings</h2>
+<p>The request target is split by <code>parseRequestTarget()</code> (<code>src/util.js</code>), not<br>by the deprecated <code>url.parse()</code>. The old call printed a <code>DEP0169</code><br><code>DeprecationWarning</code> on the first request of every <code>mouaif serve</code>; the<br>replacement keeps the raw, still-encoded path and parses the query with<br><code>querystring.parse</code>, so routing and every <code>?projectDir=…</code> value behave<br>exactly as before. The WHATWG <code>URL</code> class is deliberately <strong>not</strong> used:<br>it percent-decodes and dot-normalizes the path, which would let<br><code>/api/projects/%2e%2e/x</code> match a route the client never named.</p>
+<p><code>scripts/test-request-target-parsing.js</code> pins the equivalence and runs the<br>real server in a fresh process to prove no warning is emitted.</p>
 <h2 id="related">Related</h2>
 <ul><li><p><a href="chat-ui.html">Chat UI</a> — the web interface.</p></li><li><p><a href="app-and-project-settings.html">App and project settings</a> — configuration hierarchy and defaults.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>

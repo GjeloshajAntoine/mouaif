@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Chat streaming performance — mouaif docs</title>
-  <meta name="description" content="The chat transcript renders assistant text **incrementally** while an SSE turn is streaming. Each token delta is appended as a single text node instead of…" />
+  <meta name="description" content="The chat transcript renders streamed text **incrementally** while an SSE turn is streaming. Each delta is appended as a single text node instead of rebuilding…" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
@@ -34,11 +34,14 @@
     <main class="main">
       <h1 id="chat-streaming-performance">Chat streaming performance</h1>
 <h2 id="overview">Overview</h2>
-<p>The chat transcript renders assistant text <strong>incrementally</strong> while an SSE turn is streaming. Each token delta is appended as a single text node instead of rebuilding the whole assistant bubble from the full accumulated string. This removes the O(n²) re-encode and per-token DOM teardown/recreate that made long turns burn CPU and memory.</p>
+<p>The chat transcript renders streamed text <strong>incrementally</strong> while an SSE turn is streaming. Each delta is appended as a single text node instead of rebuilding the whole element from the full accumulated string. This removes the O(n²) re-encode and per-delta DOM teardown/recreate that made long turns burn CPU and memory.</p>
+<p>The same treatment applies to the live previews that stream <em>beside</em> the reply: a shell command&#39;s output and a delegated subagent&#39;s nested answer.</p>
 <h2 id="usage">Usage</h2>
-<p>No user-visible controls — the behavior is automatic. Open a chat and watch a long response stream: the text appears progressively with the same look as before, but the page stays responsive.</p>
+<p>No user-visible controls — the behavior is automatic. Open a chat and watch a long response stream, run a long build through the shell tool, or delegate to a subagent: the text appears progressively with the same look as before, but the page stays responsive.</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Assistant reply</strong> — token deltas append to the answer element in the live bubble.</p></li><li><p><strong>Shell output</strong> — chunks append to the card&#39;s live preview. The preview is capped (120 KiB); past the cap the tail is replaced by a one-time truncation notice, and the full output still arrives with the tool result, which replaces the preview entirely.</p></li><li><p><strong>Subagent reply</strong> — nested deltas append to the delegated bubble, and nested shell output appends the same way.</p></li><li><p><strong>Preview scrolling</strong> — the live preview is pinned to its bottom at most once per animation frame, so a burst of chunks costs one layout instead of two per chunk. A command that streams output faster than the frame rate no longer stalls the page.</p></li></ul>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="chat-ui.html">Chat UI</a> — the Preact + Vite shell that hosts the transcript.</p></li><li><p><a href="usage-metrics.html">Usage metrics</a> — the live token-speed meta line repaints on a separate 120 ms throttle, independent of this path.</p></li></ul>
+<ul><li><p><a href="chat-ui.html">Chat UI</a> — the Preact + Vite shell that hosts the transcript.</p></li><li><p><a href="usage-metrics.html">Usage metrics</a> — the live token-speed meta line repaints on a separate 120 ms throttle, independent of this path.</p></li><li><p><a href="live-tool-preview.html">Live tool preview</a> — the follower stream that replays this content into a returning page.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Local OpenAI-compatible servers (llama.cpp, LM Studio) — mouaif docs</title>
+  <meta name="description" content="The **OpenAI compatible** provider connects mouaif to any OpenAI-shaped HTTP endpoint. Two of the most common are local inference servers you run yourself:…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="local-openai-compatible-servers-llama-cpp-lm-studio">Local OpenAI-compatible servers (llama.cpp, LM Studio)</h1>
+<h2 id="overview">Overview</h2>
+<p>The <strong>OpenAI compatible</strong> provider connects mouaif to any OpenAI-shaped HTTP endpoint. Two of the most common are local inference servers you run yourself: <strong>llama.cpp</strong>&#39;s <code>llama-server</code> (default <code>http://127.0.0.1:8080/v1</code>) and <strong>LM Studio</strong> (<code>http://127.0.0.1:1234/v1</code>). Neither requires an API key, so an OpenAI-compatible connection may now be saved with a <strong>blank key</strong> and a custom base URL. When no key is stored, mouaif sends <strong>no <code>Authorization</code> header</strong> — a local server that runs unauthenticated accepts the request, and a hosted endpoint that really needs a key still fails cleanly with a <code>401</code> you can act on.</p>
+<h2 id="usage">Usage</h2>
+<h3 id="point-a-connection-at-llama-cpp">Point a connection at llama.cpp</h3>
+<ol><li><p>Start llama.cpp&#39;s server (the OpenAI-compatible surface lives under <code>/v1</code>):</p></li></ol>
+<pre><code class="language-bash">llama-server -m ./model.gguf --port 8080</code></pre>
+<ol><li><p>In mouaif, open <strong>Settings → Providers → + Add provider</strong>.</p></li><li><p>Choose <strong>OpenAI compatible</strong>.</p></li><li><p>Set <strong>API base URL</strong> to the server&#39;s <code>/v1</code> root — for llama.cpp that is <code>http://127.0.0.1:8080/v1</code>.</p></li><li><p>Leave the <strong>provider API key</strong> field <strong>empty</strong>.</p></li><li><p><strong>Save provider.</strong> A blank key on a key-optional provider is accepted; the row shows <code>no key</code>.</p></li><li><p>In the project&#39;s <strong>Models</strong> editor add a model whose <code>provider</code> is <code>openai-compatible</code> and whose <code>id</code> is the served model name, then use the model picker&#39;s refresh (↻) to list the server&#39;s models live.</p></li></ol>
+<pre><code class="language-jsonc">// &lt;projectDir&gt;/.mouaif.json
+{
+  &quot;models&quot;: [
+    { &quot;id&quot;: &quot;local-model&quot;, &quot;provider&quot;: &quot;openai-compatible&quot;, &quot;label&quot;: &quot;llama.cpp (local)&quot; }
+  ]
+}</code></pre>
+<h3 id="lm-studio">LM Studio</h3>
+<p>Identical flow with the base URL <code>http://127.0.0.1:1234/v1</code> and the LM Studio model identifier as <code>id</code>. LM Studio does not require a key either.</p>
+<h3 id="hosted-openai-shaped-endpoints">Hosted OpenAI-shaped endpoints</h3>
+<p>Hosted providers (OpenAI, Together, Groq, and the first-class Azure/Mistral/DeepSeek connections) still require a key. The Settings form refuses to save an OpenAI-compatible connection with a blank key <strong>only</strong> when the chosen provider is not key-optional; for <code>openai-compatible</code> you may leave it blank, but a hosted base URL without a key will return a <code>401</code> from upstream.</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>Key is optional for <code>openai-compatible</code>.</strong> The provider carries <code>keyOptional: true</code>. <code>requireApiKey</code> accepts a model with no <code>apiKey</code>, and <code>buildOpenAIRequest</code> omits the auth header entirely instead of emitting <code>Authorization: Bearer undefined</code>.</p></li><li><p><strong>The base URL is a live-list input.</strong> The model-list refresh reads the connection&#39;s configured base URL, so a connection pointed at a local server lists that server&#39;s models rather than the hosted <code>api.openai.com</code> default. Trailing slashes are normalized before <code>/models</code> is appended.</p></li><li><p><strong>The list cache is base-URL aware.</strong> The <code>/api/ai/models/live</code> cache key includes the base URL, so switching a keyless connection between two local servers (llama.cpp <code>:8080</code> vs LM Studio <code>:1234</code>) cannot serve the previous server&#39;s catalog.</p></li><li><p><strong>Errors are still typed.</strong> A local server that is not running throws <code>EUNREACHABLE</code>, which the live route maps to <code>503</code> and the picker renders as &quot;not running&quot;. A hosted endpoint that returns <code>401</code> on a keyless list is still surfaced as a typed error.</p></li><li><p><strong>Not Ollama.</strong> Ollama keeps its own provider and native <code>/api/chat</code> shape (see <a href="ai-client.html">ai-client.md</a>); use this provider only for the OpenAI-compatible <code>/v1</code> surface, which Ollama also exposes if you prefer that shape.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="ai-client.html">docs/features/ai-client.md</a> — the proxy architecture every provider rides on.</p></li><li><p><a href="cloud-providers.html">docs/features/cloud-providers.md</a> — the other OpenAI-shaped providers.</p></li><li><p><a href="authentication.html">docs/features/authentication.md</a> — where credentials are stored.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>
