@@ -1205,10 +1205,15 @@ useEffect(() => {
         c.cdpOn('Page.navigatedWithinDocument', handlers.onNavigatedWithinDocument);
       });
     result.ws.addEventListener('close', (ev) => {
-      setCdpReady(false);
-      const code = ev && typeof ev.code === 'number' ? ev.code : 0;
-      setStatus('disconnected (code ' + code + ')');
-      
+    // A socket we closed ourselves (back arrow, re-attach, close tab)
+    // fires its close event after disconnect() already reset the UI;
+    // reporting it would leave a stale "disconnected (code 1000)" pill
+    // on the targets screen. Only a socket still owned by this view
+    // reports its own close.
+    if (conn.current !== c) return;
+    setCdpReady(false);
+    const code = ev && typeof ev.code === 'number' ? ev.code : 0;
+    setStatus('disconnected (code ' + code + ')');
     });
     result.ws.addEventListener('error', () => {
       // The browser WS error event carries no message. If the server
