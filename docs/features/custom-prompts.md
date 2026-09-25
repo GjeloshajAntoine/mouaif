@@ -21,13 +21,25 @@ Prompts can be managed from two locations in Settings:
 1. **Settings → App defaults → Custom prompts** (`#/settings/prompts`): Manage global custom prompts that apply across all projects.
 2. **Settings → This project → Custom prompts** (`#/settings/prompts?projectDir=...`): Manage project-specific prompts and view inherited app-wide prompts.
 
-The **Prompt** picker lists every saved prompt (with a `preset` tag for ones that carry a tool/agent-file/skills preset; scope badges only appear on the project screen, where the two scopes are mixed, and are omitted on the single-scope App-defaults screen) plus a `+ New prompt` entry for a blank form. Below the saved prompts, a **Start from a default** section lists the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`, each tagged `default`); tapping one opens a fresh unsaved prompt pre-filled with that profile's title and `systemMessage`, ready to edit and Create. This means the picker is never empty even before you have saved anything. It uses an in-app, theme-matched list instead of the platform select overlay, keeping the prompt content visible and avoiding oversized native menus on mobile. On first open the picker defaults to the first saved prompt so the editor is already populated; tapping **New** starts a blank form instead. Pick a prompt to load its title, content, and preset into the editor.
+The **Prompt** picker lists every saved prompt (with a `preset` tag for ones that carry a tool/agent-file/skills preset; scope badges only appear on the project screen, where the two scopes are mixed, and are omitted on the single-scope App-defaults screen) plus a `+ New prompt` entry for a blank form. Below the saved prompts, a **Start from a default** section lists the built-in **Chat** template and the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`, each tagged `default`); tapping one opens a fresh unsaved prompt pre-filled with that template or profile, ready to edit and Create. This means the picker is never empty even before you have saved anything. It uses an in-app, theme-matched list instead of the platform select overlay, keeping the prompt content visible and avoiding oversized native menus on mobile. On first open the picker defaults to the first saved prompt so the editor is already populated; tapping **New** starts a blank form instead. Pick a prompt to load its title, content, and preset into the editor.
 
 - **Scope** — when creating a new prompt while a project is active, choose between **This project** and **App default**.
 - **Title** (optional until saved) and **Prompt content** are edited in place. Toggle **Chat preset** to attach or detach the tool/agent-file/skills bundle.
-- **Icon** — choose Sparkles, Code, Search, Writing, Debug, or Research. Enable **Add to project card** to show the icon beside **+ New chat**. Tapping it creates and opens a chat with this prompt already selected. Chats created this way also show the prompt icon in their project-card row.
+- **Icon** — choose Sparkles, Chat, Code, Search, Writing, Debug, or Research. Enable **Add to project card** to show the icon beside **+ New chat**. Tapping it creates and opens a chat with this prompt already selected. Chats created this way also show the prompt icon in their project-card row.
 - **Copy from default** — under the Prompt content field, tap **Copy from default** to reveal the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`). Tap one to load its `systemMessage` into the content editor as a starting point, then edit and Save as your own custom prompt.
 - Tap **Save** (or **Create** for a new prompt) to persist. Tap **Delete** to remove the selected prompt — the API cascade-clears `promptId` on every chat that referenced it.
+
+### The Chat template
+
+**Chat** is a built-in template for a plain conversation with no extras:
+
+- **no prompt text** — no custom system message is added, so only the prompt-size profile is sent;
+- a **chat bubble** icon;
+- a chat preset with **Only these tools** on and nothing checked, so a chat started from it has **no tools**.
+
+Pick **Chat** under **Start from a default**, adjust anything you want (for example, turn on **Add to project card**), then tap **Create**. When you create a chat from this prompt, the chat's own tool allowlist starts empty, so its **Tools** card shows every tool off. You can still turn tools on for that one chat, and the project's Off/Ask/Allow setting still applies.
+
+Prompt content is optional only when a chat preset is on. A prompt with no text and no preset is rejected.
 
 ### Legacy deep links
 Older `settings/prompts/:id` URLs still resolve to the same screen with the picker pre-selected to that prompt, so saved links keep working.
@@ -40,7 +52,7 @@ When creating or editing a prompt, toggle **Chat preset** on to attach a preset.
 - a synthetic **Agent files** group at the bottom of the tree. Toggle it to inject `AGENTS.md` / `CLAUDE.md` / `.github/copilot-instructions.md` (the project's `agentFileNames` setting) into every chat that uses this prompt.
 - a synthetic **Skills** group. Toggle it to inject `.agents/skills/*/SKILL.md` (the project's skill catalog) into every chat that uses this prompt.
 
-Presets are **additive**: a chat that already inherits all project tools keeps them (the preset never restricts a chat to just its listed tools), and the project's Off/Ask/Allow gate for each tool stays authoritative — a tool the project turned `off` remains off even if a preset lists it. The project's master switches (`agentFiles: false`, `skills: false`) lock the matching preset group off, just like the chat's ToolPopup does; the preset cannot override a project lock. Turning the preset off clears `preset` from the prompt record. The prompt list shows a short `preset: …` badge so the attachment is visible at a glance.
+Turn on **Only these tools** to make the preset *exclusive*: chats using the prompt get only the checked tools, and none checked means no tools. Without it, presets are **additive**: a chat that already inherits all project tools keeps them (the preset never restricts a chat to just its listed tools), and the project's Off/Ask/Allow gate for each tool stays authoritative — a tool the project turned `off` remains off even if a preset lists it. The project's master switches (`agentFiles: false`, `skills: false`) lock the matching preset group off, just like the chat's ToolPopup does; the preset cannot override a project lock. Turning the preset off clears `preset` from the prompt record. The prompt list shows a short `preset: …` badge so the attachment is visible at a glance.
 
 ### Using a prompt in a chat
 
@@ -67,6 +79,7 @@ Each prompt is stored as an object:
   "role": "system",
   "preset": {
     "tools": ["shell", "file", "mcp__chrome_debug__navigate"],
+    "exclusive": false,
     "agentFiles": true,
     "skills": true
   },
@@ -75,25 +88,29 @@ Each prompt is stored as an object:
 }
 ```
 
-The `icon` field is restricted to built-in keys (`sparkles`, `code`, `search`, `pencil`, `bug`, or `book`); unknown values safely fall back to `sparkles`. `showOnProjectCard` defaults to `false` for existing prompts.
+The `icon` field is restricted to built-in keys (`sparkles`, `chat`, `code`, `search`, `pencil`, `bug`, or `book`); unknown values safely fall back to `sparkles`. `showOnProjectCard` defaults to `false` for existing prompts.
 
 The `role` field is preserved on disk for forward-compat and hand-edits, but the editor and the validator only accept `system`. A non-system role in the file is silently coerced to `system` on read.
 
-`preset` is optional. It is normalized to `{ tools?, agentFiles?, skills? }`:
+`content` may be an empty string when the prompt has a preset; an empty prompt adds no system message.
+
+`preset` is optional. It is normalized to `{ tools?, exclusive?, agentFiles?, skills? }`:
 
 - `tools` is a de-duped array of model-facing tool names — the native family names (`shell`, `file`, `subagent`, `report_progress`, `task`, `ask_user`) and MCP tool ids (`mcp__<slug>__<tool>`). Unknown entries are dropped.
+- `exclusive` is a boolean: when `true`, `tools` is the chat's full default allowlist instead of an addition. An empty `tools` list then means no tools.
 - `agentFiles` is a boolean: when `true`, the chat referencing this prompt turns agent-file injection on.
 - `skills` is a boolean: when `true`, the chat referencing this prompt turns skill injection on.
 
-A preset whose `tools` is empty (or missing) AND whose `agentFiles` and `skills` are both absent collapses to `null` (no preset). An explicit `agentFiles: false` or `skills: false` is preserved (it sets the per-chat toggle to its off state for chats using this prompt) and is not collapsed.
+A non-exclusive preset whose `tools` is empty (or missing) AND whose `agentFiles` and `skills` are both absent collapses to `null` (no preset). An exclusive preset is never collapsed, even with no tools. An explicit `agentFiles: false` or `skills: false` is preserved (it sets the per-chat toggle to its off state for chats using this prompt) and is not collapsed.
 
 ### Chat integration (presets)
 
-When the server processes `POST /api/chats/:id/messages/stream`, if the chat record has a `promptId` referencing an existing prompt, the server prepends `{ role: 'system', content: prompt.content }` to the upstream message array before calling `ai.streamChat`. The prompt is not stored in the chat transcript — it is ephemeral and only sent to the model.
+When the server processes `POST /api/chats/:id/messages/stream`, if the chat record has a `promptId` referencing an existing prompt, the server prepends `{ role: 'system', content: prompt.content }` (skipped when the content is empty) to the upstream message array before calling `ai.streamChat`. The prompt is not stored in the chat transcript — it is ephemeral and only sent to the model.
 
 If the referenced prompt carries a `preset`, the chat's **effective** per-chat config for that turn also picks it up (via `prompts.effectivePresetConfig`):
 
-- **Tools** (from `preset.tools`) are unioned onto the chat's own per-chat tool allowlist (`chat.tools`). A chat with **no** allowlist already inherits every project tool, so the preset deliberately does *not* replace it with just the preset's list — that would downgrade capability to "enable".
+- **Exclusive tools** (`preset.exclusive: true`): when the chat has no allowlist of its own, `preset.tools` becomes its allowlist, so an empty list advertises no tools. `POST /api/chats` with a `promptId` for an exclusive preset also copies the list into the new chat's `tools`, so the chat's Tools card shows the real state. A chat's own allowlist always takes priority.
+- **Tools** (from a non-exclusive `preset.tools`) are unioned onto the chat's own per-chat tool allowlist (`chat.tools`). A chat with **no** allowlist already inherits every project tool, so the preset deliberately does *not* replace it with just the preset's list — that would downgrade capability to "enable".
 - **Agent files** (`preset.agentFiles`) become the per-chat toggle value passed to `agentFiles.resolveEnabled`, so a preset can turn injection on for a chat.
 - **Skills** (`preset.skills`) become the per-chat value passed to `agentSkills.resolve` and the `list_features` summary, so a preset can turn skill injection on (or back on for a chat that has it explicitly off) for a chat.
 
