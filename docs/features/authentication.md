@@ -1,9 +1,5 @@
 # Authentication
 
-App access decides who is allowed to open mouaif, and it is off by default: anyone who can reach the server can open it. Turn it on when you start the server, and people must then log in with a username and password, or a passkey.
-
-This is separate from AI provider credentials — connecting a provider lets mouaif call that provider, it does not protect your app. See [AI providers](./providers.md).
-
 ## Usage
 
 App access is on for a run when you pass `--auth`, `--auth-setup`, or `--user`. Without one of them the server does not ask for a login, even if you created a user before; the stored user is kept for the next time you turn access on.
