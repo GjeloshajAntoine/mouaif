@@ -41,6 +41,10 @@ Each compressed body is produced once per `(encoding, file, mtime, size)` and ke
 | entry CSS | 162 kB | 27 kB | ~26 kB |
 | CodeMirror chunk (lazy) | 631 kB | 222 kB | ~207 kB |
 
+## Lazy chat overlays
+
+`frontend/src/components/chat/Chat.jsx` loads `WebpreviewModal` and `DraftCraftAnnotator` (with its `DraftCraftSheet`) through a small `useLazyView(wanted, loader, name)` hook. The chunk is fetched the first time the overlay should open, then kept. This follows the file editor's existing lazy import. It takes about 21 kB off the entry bundle.
+
 ## Verifying
 
 ```sh

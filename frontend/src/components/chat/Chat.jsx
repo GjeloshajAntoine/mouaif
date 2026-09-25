@@ -13,13 +13,11 @@ import { FileToolbar } from './FileToolbar.jsx';
 import { ToolPopup } from './ToolPopup.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
 import { WebpreviewDock } from './WebpreviewDock.jsx';
-import { WebpreviewModal } from './WebpreviewModal.jsx';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
 import { formatCost } from '../../usage.js';
 import { subscribe as subscribeWebPreview, clearActive as clearWebPreview, getActivePayload, publish as publishWebPreview } from './webpreviewState.js';
-import { DraftCraftAnnotator } from '../inspector/DraftCraftAnnotator.jsx';
 import { teardownImageLightbox } from './toolRender.js';
 import { saveComposerDraftNow } from './composer.js';
 import { updateUsageSummary } from './usage.js';
@@ -274,6 +272,11 @@ const [webPreviewOpen, setWebPreviewOpen] = useState(false);
 // PreviewUrlPrompt — the "Preview" entry in the FileToolbar asks for a URL
 // and runs a fresh web-preview capture directly (no model round-trip).
 const [previewPromptOpen, setPreviewPromptOpen] = useState(false);
+
+  // The web-preview viewer and the image annotator only open on a tap, so
+  // they load on first use instead of riding the chat view's entry bundle.
+  const WebpreviewModal = useLazyView(webPreviewOpen && !!webPreviewPayload, () => import('./WebpreviewModal.jsx'), 'WebpreviewModal');
+  const DraftCraftAnnotator = useLazyView(!!annotateTarget, () => import('../inspector/DraftCraftAnnotator.jsx'), 'DraftCraftAnnotator');
 
   useEffect(() => {
     if (!fileEditorOpen || FileEditor) return;
@@ -592,7 +595,7 @@ h('div', { class: 'chat-view__status-row' },
 fileEditorOpen && FileEditor
 ? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false), onDraftCraftAdded })
 : null,
-webPreviewOpen && webPreviewPayload
+webPreviewOpen && webPreviewPayload && WebpreviewModal
 ? h(WebpreviewModal, {
 preview: webPreviewPayload,
 onClose: () => setWebPreviewOpen(false),
@@ -610,7 +613,7 @@ onSubmit: (url) => runPreviewFromPrompt(url, { projectDir, chatId, refs, onPromp
 onClose: () => setPreviewPromptOpen(false)
 })
 : null,
-annotateTarget
+annotateTarget && DraftCraftAnnotator
 ? h(DraftCraftAnnotator, {
 image: annotateTarget.attachment,
 originalDataUrl: originalImageDataUrl(annotateTarget.attachment),
@@ -622,6 +625,18 @@ onClose: () => setAnnotateTarget(null)
 })
 : null
 );
+}
+// useLazyView — resolve a named export from a dynamic import the first time
+// `wanted` turns true, then keep it. Returns null until the chunk has loaded.
+function useLazyView(wanted, loader, name) {
+  const [View, setView] = useState(null);
+  useEffect(() => {
+    if (!wanted || View) return undefined;
+    let cancelled = false;
+    loader().then((mod) => { if (!cancelled) setView(() => mod[name]); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [wanted, View]);
+  return View;
 }
 // recaptureWebPreview — user-initiated re-capture of the web preview at a
 // chosen resolution. Uses the direct /api/tools/webpreview endpoint (NOT a
