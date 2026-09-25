@@ -813,7 +813,6 @@ html { scroll-padding-top: 72px; }
   margin: 0 0 12px;
   color: var(--accent);
   font-size: 13px;
-  line-height: 1.45;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   font-weight: 600;
@@ -821,7 +820,6 @@ html { scroll-padding-top: 72px; }
 .hero h1 {
   font-size: 52px;
   margin: 0 0 14px;
-  line-height: 1.1;
   letter-spacing: -0.02em;
 }
 .hero .tagline {
@@ -1239,7 +1237,7 @@ const landingShots = [
 
 const body = `
 <section class="hero">
-<p class="eyebrow">Mobile Web first — mobile-first AI coding assistant</p>
+<p class="eyebrow">Mobile Ouaib first</p>
 <h1>mouaif</h1>
 <p class="tagline">Run an AI coding workspace for your local projects, connect the model providers you choose, and control which tools the assistant may use.</p>
 <div class="hero-actions">
@@ -1311,7 +1309,7 @@ return `<a class="feature-card" href="features/${f.slug}.html"><h3>${escapeHtml(
 }).join('\n        ');
 const body = `
 <h1>mouaif user guide</h1>
-<p class="lead">Mobile Web first.</p>
+<p class="lead">Mobile Ouaib first.</p>
 <p>Everything needed to install, run, authenticate, and use the app.</p>
 <div class="features-grid">
 ${cards}

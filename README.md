@@ -1,6 +1,6 @@
 # mouaif 🚀
 
-**Mobile Web first.** mouaif is a mobile-first AI coding assistant for local projects. It runs as a small server on your computer; you open it in a browser — on the same computer or on your phone — connect the AI providers you choose, chat about a project, and decide which coding tools the assistant may use.
+**Mobile Ouaib first.** mouaif is a mobile-first AI coding assistant for local projects. It runs as a small server on your computer; you open it in a browser — on the same computer or on your phone — connect the AI providers you choose, chat about a project, and decide which coding tools the assistant may use.
 
 ## Quick start
 
