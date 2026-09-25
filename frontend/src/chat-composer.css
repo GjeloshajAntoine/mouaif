@@ -1477,6 +1477,24 @@ transform: translateX(14px);
   white-space: pre-wrap;
   word-break: break-word;
 }
+.gm__notice--ok {
+  color: var(--success);
+  background: var(--success-soft);
+}
+/* Refresh icon spins while a background reload keeps the content on screen */
+.gm__iconbtn--spinning svg { animation: gm-spin 0.9s linear infinite; }
+@keyframes gm-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .gm__iconbtn--spinning svg { animation: none; }
+}
+/* A file past the server's diff cap: say so instead of looking diff-less */
+.gm__file-note {
+  flex: 0 0 auto;
+  font-size: 0.6rem;
+  color: var(--muted);
+  font-style: italic;
+}
+.gm__empty--error { color: var(--danger); }
 
 /* Stash toolbar (stash-up button) */
 .gm__stash-toolbar {
