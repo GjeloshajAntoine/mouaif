@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CLI commands — mouaif docs</title>
-  <meta name="description" content="The `mouaif` command starts the app, prints build information, and imports chats from a legacy storage format. The web UI ships already built inside the…" />
+  <meta name="description" content="The `mouaif` command starts the app server and has two small helper commands. This page lists every command, option, and environment variable, with…" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
@@ -13,6 +13,7 @@
 <div class="topnav-links">
 <a href="../index.html">Home</a>
 <a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
 <a href="../features/authentication.html">Authentication</a>
 <a href="../features/app-abilities.html">App abilities</a>
 <a href="../features/draft-craft.html">Draft Craft</a>
@@ -26,6 +27,7 @@
 <ul>
 <li><a href="../index.html">Home</a></li>
 <li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a class="is-active" href="../features/cli-commands.html">CLI commands</a></li>
 <li><a href="../features/authentication.html">Authentication</a></li>
 <li><a href="../features/app-abilities.html">App abilities</a></li>
 <li><a href="../features/draft-craft.html">Draft Craft</a></li>
@@ -34,51 +36,77 @@
     <main class="main">
       <h1 id="cli-commands">CLI commands</h1>
 <h2 id="overview">Overview</h2>
-<p>The <code>mouaif</code> command starts the app, prints build information, and imports chats from a legacy storage format. The web UI ships already built inside the package, so installing mouaif never runs a frontend build.</p>
-<h2 id="usage">Usage</h2>
-<h3 id="install">Install</h3>
-<p>Run the app without installing anything, straight from the registry:</p>
-<pre><code class="language-bash">npx mouaif serve</code></pre>
-<p><code>npx</code> unpacks the package into its own cache (<code>~/.npm/_npx</code>) and launches the CLI from there, so it never writes to the directory you run it from. The first run downloads the native binaries (<code>better-sqlite3</code>, <code>@napi-rs/keyring</code>) and can take a few minutes; later runs reuse the cache. To pin an exact version, quote the argument — a bare <code>mouaif@0.3.0</code> is a glob to <code>zsh</code> and fails with <code>no matches found</code>:</p>
-<pre><code class="language-bash">npx --yes --package &quot;mouaif@0.3.0&quot; mouaif info</code></pre>
-<p>Install the published package globally:</p>
-<pre><code class="language-bash">npm install -g mouaif</code></pre>
-<p>Or install from a checkout of this repository:</p>
-<pre><code class="language-bash">git clone &lt;repo-url&gt;
-cd mouaif
-npm install
-npm link</code></pre>
-<p><code>npm install</code> also builds the web UI through the package <code>prepare</code> script when the Vite toolchain is present, so a fresh clone works even if <code>frontend/dist/</code> is missing from the checkout. <code>npm link</code> makes the <code>mouaif</code> command available in your terminal.</p>
-<p>Every published tarball contains the pre-built UI in <code>frontend/dist/</code>, so <code>npm install -g mouaif</code> and <code>npx mouaif</code> serve the shipped bundle without building anything. <code>better-sqlite3</code> and <code>@napi-rs/keyring</code> ship prebuilt binaries for common platforms; where none exists, Node compiles them during install and the first install takes a few minutes.</p>
-<h3 id="publish-a-release">Publish a release</h3>
-<p>The package is configured to publish publicly to the official npm registry. Authenticate as a maintainer, choose a new semantic version, and publish from a clean checkout:</p>
-<pre><code class="language-bash">npm login
-npm version patch
-npm publish</code></pre>
-<p><code>npm publish</code> runs the full <code>prepublishOnly</code> verification before uploading. The <code>publishConfig</code> in <code>package.json</code> pins <code>https://registry.npmjs.org/</code> and public access, so a developer-level registry override cannot accidentally send the CLI to another registry.</p>
-<h3 id="serve">Serve</h3>
-<p>Starts the HTTP server for the web UI at <code>http://127.0.0.1:5732/</code> and keeps running until <code>Ctrl+C</code>.</p>
-<div class="table-wrap"><table><thead><tr><th>Option</th><th>Default</th><th>Purpose</th></tr></thead><tbody><tr><td><code>-p, --port &lt;port&gt;</code></td><td><code>5732</code></td><td>Port to listen on.</td></tr><tr><td><code>-h, --host &lt;host&gt;</code></td><td><code>127.0.0.1</code></td><td>Host to bind to. Use <code>0.0.0.0</code> to reach the app from other devices.</td></tr><tr><td><code>--public-origin &lt;origin&gt;</code></td><td><code>MOUAIF_PUBLIC_ORIGIN</code></td><td>Public HTTP(S) origin when the app is served through a proxy.</td></tr><tr><td><code>-w, --watch</code></td><td>off</td><td>Restart the server when local source files change.</td></tr><tr><td><code>--auth</code></td><td>off</td><td>Require app access authentication.</td></tr><tr><td><code>--user &lt;user&gt;</code></td><td>—</td><td>Set the app access user before serving.</td></tr><tr><td><code>--password &lt;password&gt;</code></td><td><code>MOUAIF_PASSWORD</code></td><td>Set the app access password before serving. Prefer the environment variable to keep the password out of shell history.</td></tr><tr><td><code>--auth-setup</code></td><td>off</td><td>Print a one-time setup link, QR code, and short code, then exit.</td></tr></tbody></table></div>
-<pre><code class="language-bash">mouaif serve --port 9000
-mouaif serve --host 0.0.0.0
-mouaif serve --watch</code></pre>
-<h4 id="access-authentication">Access authentication</h4>
-<pre><code class="language-bash"># One-time setup link, QR code, and short code
+<p>The <code>mouaif</code> command starts the app server and has two small helper commands. This page lists every command, option, and environment variable, with ready-to-copy examples. New to mouaif? Start with <a href="getting-started.html">Getting started</a>.</p>
+<h2 id="quick-reference">Quick reference</h2>
+<div class="table-wrap"><table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody><tr><td><code>mouaif serve [options]</code></td><td>Start the app (web UI + API).</td></tr><tr><td><code>mouaif info</code></td><td>Print the version, description, and default port.</td></tr><tr><td><code>mouaif import-chats &lt;projectDir&gt;</code></td><td>Import legacy JSON chat files.</td></tr><tr><td><code>mouaif --version</code> (<code>-V</code>)</td><td>Print the version number.</td></tr><tr><td><code>mouaif --help</code>, <code>mouaif help &lt;cmd&gt;</code></td><td>Show help for mouaif or one command.</td></tr></tbody></table></div>
+<p>Every example works with <code>npx</code> too: replace <code>mouaif</code> with <code>npx mouaif</code>, for example <code>npx mouaif serve --auth</code>.</p>
+<h2 id="common-recipes">Common recipes</h2>
+<pre><code class="language-bash"># Start on this computer only, login required (recommended)
+mouaif serve --auth
+
+# Reach it from a phone on the same Wi-Fi
+mouaif serve --auth --host 0.0.0.0
+
+# Use another port
+mouaif serve --auth --port 9000
+
+# Print a fresh setup link / QR code (new user, lost password)
 mouaif serve --auth-setup
 
-# Set a user without putting the password in shell history
-MOUAIF_PASSWORD=&#39;a-long-password&#39; \
-  mouaif serve --auth --user alice</code></pre>
-<p><code>--user</code> and <code>--password</code> (or <code>MOUAIF_PASSWORD</code>) must be supplied together. After setup, <code>mouaif serve --auth</code> requires login on every start. Use HTTPS and <code>--public-origin</code> before exposing the app outside the machine that runs it.</p>
-<h3 id="info">Info</h3>
+# Create or replace the login without an interactive setup page
+MOUAIF_PASSWORD=&#39;a-long-password&#39; mouaif serve --auth --user alice
+
+# Behind an HTTPS reverse proxy
+mouaif serve --auth --public-origin https://mouaif.example.com
+
+# Keep data in another folder (for a second, separate instance)
+MOUAIF_HOME=&quot;$HOME/.mouaif-work&quot; mouaif serve --auth --port 5733</code></pre>
+<h2 id="mouaif-serve"><code>mouaif serve</code></h2>
+<p>Starts the web interface and API, by default at <code>http://127.0.0.1:5732/</code>, and runs until you press <code>Ctrl+C</code>.</p>
+<pre><code class="language-text">mouaif serve [--port &lt;port&gt;] [--host &lt;host&gt;] [--public-origin &lt;origin&gt;]
+             [--auth] [--auth-setup] [--user &lt;user&gt; [--password &lt;password&gt;]]
+             [--watch]</code></pre>
+<h3 id="options">Options</h3>
+<div class="table-wrap"><table><thead><tr><th>Option</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>-p, --port &lt;port&gt;</code></td><td><code>5732</code></td><td>Port to listen on.</td></tr><tr><td><code>-h, --host &lt;host&gt;</code></td><td><code>127.0.0.1</code></td><td>Address to listen on. <code>127.0.0.1</code> = this computer only; <code>0.0.0.0</code> = every network interface (phone, LAN).</td></tr><tr><td><code>--public-origin &lt;origin&gt;</code></td><td><code>$MOUAIF_PUBLIC_ORIGIN</code></td><td>The public <code>https://…</code> address when mouaif is behind a reverse proxy. Used for setup links, passkeys, and push notifications.</td></tr><tr><td><code>--auth</code></td><td>off</td><td>Require a login to open the app.</td></tr><tr><td><code>--auth-setup</code></td><td>off</td><td>Turn on login and print a new one-time setup link, QR code, and short code, then keep serving.</td></tr><tr><td><code>--user &lt;user&gt;</code></td><td>—</td><td>Create or replace the login user before starting. Turns on login. Needs a password.</td></tr><tr><td><code>--password &lt;password&gt;</code></td><td><code>$MOUAIF_PASSWORD</code></td><td>Password for <code>--user</code> (at least 8 characters). Prefer the environment variable, which stays out of shell history.</td></tr><tr><td><code>-w, --watch</code></td><td>off</td><td>Restart the server when a file under <code>bin/</code> or <code>src/</code> changes. For development in a source checkout.</td></tr><tr><td><code>--help</code></td><td>—</td><td>Show the option list.</td></tr></tbody></table></div>
+<p>Note that <code>-h</code> means <code>--host</code> for <code>serve</code>; use <code>--help</code> to see help.</p>
+<h3 id="access-and-login">Access and login</h3>
+<p>Login is <strong>off unless you ask for it</strong>. It is on for a run when you pass <code>--auth</code>, <code>--auth-setup</code>, or <code>--user</code>. A user created earlier is kept when you start without these flags, but the app does not ask for a login during that run.</p>
+<div class="table-wrap"><table><thead><tr><th>You want to…</th><th>Run</th></tr></thead><tbody><tr><td>Require login; create the first user from a setup page</td><td><code>mouaif serve --auth</code> (the invitation prints automatically when no user exists)</td></tr><tr><td>Get a new setup invitation (expired link, lost password, new user)</td><td><code>mouaif serve --auth-setup</code></td></tr><tr><td>Set the user from a script, without a setup page</td><td><code>MOUAIF_PASSWORD=&#39;…&#39; mouaif serve --auth --user alice</code></td></tr></tbody></table></div>
+<ul><li><p>The setup invitation works once and expires after 15 minutes. Open the link, scan the QR code, or go to <code>/#/setup</code> and type the <code>XXXX-XXXX</code> code.</p></li><li><p><code>--user</code> and a password must be given together; otherwise the command exits with an error.</p></li><li><p>A <strong>different</strong> username or password replaces the user, signs out every browser, and removes passkeys. The <strong>same</strong> username and password change nothing, so they are safe in a start script.</p>
+<p>PowerShell:</p></li></ul>
+<pre><code class="language-powershell">$env:MOUAIF_PASSWORD = &#39;a-long-password&#39;
+mouaif serve --auth --user alice</code></pre>
+<p>Details, passkeys, and session management: <a href="authentication.html">Authentication</a>.</p>
+<h3 id="reach-mouaif-from-other-devices">Reach mouaif from other devices</h3>
+<pre><code class="language-bash">mouaif serve --auth --host 0.0.0.0</code></pre>
+<p>The terminal prints the computer&#39;s network address (for example <code>http://192.168.1.20:5732</code>); open it on the other device. Always combine <code>--host 0.0.0.0</code> with <code>--auth</code>. Over plain <code>http://</code> only password login works; passkeys need HTTPS.</p>
+<h3 id="behind-a-reverse-proxy">Behind a reverse proxy</h3>
+<p>When a proxy (Caddy, nginx, a tunnel) serves mouaif over HTTPS, keep mouaif on <code>127.0.0.1</code> and tell it its public address:</p>
+<pre><code class="language-bash">mouaif serve --auth --public-origin https://mouaif.example.com</code></pre>
+<p>The proxy must forward WebSocket upgrades and must not buffer responses, because chats stream over Server-Sent Events.</p>
+<h3 id="restarts">Restarts</h3>
+<p><code>mouaif serve</code> runs a small supervisor that starts the actual server as a child process. When the app restarts itself — through the assistant&#39;s <strong>Restart app</strong> tool or <code>POST /api/restart</code> — only the child is replaced, so the terminal and the port stay the same. See <a href="chat-app-restart.html">Restart from chat</a> and <a href="restart-api.html">Restart API</a>.</p>
+<p>Press <code>Ctrl+C</code> once to stop everything.</p>
+<h2 id="mouaif-info"><code>mouaif info</code></h2>
 <pre><code class="language-bash">mouaif info</code></pre>
-<p>Prints the package version, the description, and the default port. It does not start the server.</p>
-<h3 id="import-chats">Import chats</h3>
+<pre><code class="language-text">📦 mouaif v0.3.5
+   Mobile-first AI coding assistant for local projects
+   Default port: 5732</code></pre>
+<p>Prints the installed version, description, and default port. It does not start a server. <code>mouaif --version</code> prints only the version number.</p>
+<h2 id="mouaif-import-chats"><code>mouaif import-chats</code></h2>
 <pre><code class="language-bash">mouaif import-chats &lt;projectDir&gt; [--skip-existing]</code></pre>
-<p>Imports chat transcripts from the legacy <code>.mouaif.messages.*.json</code> files of one project into the SQLite chat store. <code>&lt;projectDir&gt;</code> must be an absolute path to an existing directory; <code>--skip-existing</code> imports only chats and messages that are not stored yet. The command reports the number of chats and messages imported and lists per-file errors without aborting.</p>
-<p>The automatic startup migration that used to run this import has been retired, so this is the only entry point for a JSON transcript history.</p>
+<p>Only needed if you used a very old mouaif that saved chats as <code>.mouaif.messages.&lt;id&gt;.json</code> files in the project folder. It copies those chats into the app store so they appear in the app again.</p>
+<div class="table-wrap"><table><thead><tr><th>Argument / option</th><th>What it does</th></tr></thead><tbody><tr><td><code>&lt;projectDir&gt;</code></td><td>The project folder that contains the JSON files. A relative path is resolved from the current folder.</td></tr><tr><td><code>--skip-existing</code></td><td>Import only chats and messages that are not already in the store. Use it when running the import a second time.</td></tr></tbody></table></div>
+<pre><code class="language-bash">mouaif import-chats ~/code/my-app --skip-existing</code></pre>
+<p>The command prints how many chats and messages it imported and lists any file it could not read, without stopping. The JSON files are left in place.</p>
+<h2 id="environment-variables">Environment variables</h2>
+<div class="table-wrap"><table><thead><tr><th>Variable</th><th>Used by</th><th>What it does</th></tr></thead><tbody><tr><td><code>MOUAIF_PASSWORD</code></td><td><code>serve --user</code></td><td>Password for the login user, instead of <code>--password</code>.</td></tr><tr><td><code>MOUAIF_PUBLIC_ORIGIN</code></td><td><code>serve</code></td><td>Default for <code>--public-origin</code>.</td></tr><tr><td><code>MOUAIF_HOME</code></td><td>all commands</td><td>Folder for the app store. Default <code>~/.mouaif</code>. Use a different value to run a fully separate instance.</td></tr><tr><td><code>MOUAIF_ALLOW_ANY_ROOT</code></td><td><code>serve</code></td><td>Set to <code>1</code> to allow projects and file browsing outside your home folder.</td></tr><tr><td><code>MOUAIF_CHROME_URL</code></td><td><code>serve</code></td><td>Default debugger address for the Inspector. Default <code>http://127.0.0.1:9222</code>.</td></tr><tr><td><code>MOUAIF_RG_PATH</code></td><td><code>serve</code></td><td>Path to a <code>ripgrep</code> binary for project search, when it is not on <code>PATH</code>.</td></tr><tr><td><code>MOUAIF_RG_DISABLE</code></td><td><code>serve</code></td><td>Set to any value to skip <code>ripgrep</code> and use the built-in search.</td></tr></tbody></table></div>
+<h2 id="exit-codes-and-errors">Exit codes and errors</h2>
+<div class="table-wrap"><table><thead><tr><th>Situation</th><th>Result</th></tr></thead><tbody><tr><td><code>--user</code> without a password, or a password without <code>--user</code></td><td>Prints <code>--user and --password (or MOUAIF_PASSWORD) must be supplied together</code>, exit code <code>1</code>.</td></tr><tr><td>Password shorter than 8 characters</td><td>Prints <code>Could not set app access: …</code>, exit code <code>1</code>.</td></tr><tr><td>Port already in use (<code>EADDRINUSE</code>)</td><td>Another program — often a running mouaif — uses the port. Stop it or pick <code>--port</code>.</td></tr><tr><td><code>import-chats</code> folder does not exist</td><td>Prints <code>Project directory does not exist</code>, exit code <code>1</code>.</td></tr><tr><td>Unknown command or option</td><td>Prints an error and the help text.</td></tr></tbody></table></div>
+<h2 id="install-update-and-release">Install, update, and release</h2>
+<ul><li><p>Install, update, and uninstall: <a href="getting-started.html#update">Getting started</a>.</p></li><li><p>Package contents and publishing a release (maintainers): <a href="npm-package.html">npm package</a>.</p></li></ul>
 <h2 id="related">Related</h2>
-<ul><li><p><a href="getting-started.html">Getting started</a> — install the app and complete first setup.</p></li><li><p><a href="npm-package.html">npm package</a> — the published package name, release flow, tarball contents, and the pre-publish name guard.</p></li><li><p><a href="authentication.html">Authentication</a> — connect AI providers and protect app access.</p></li><li><p><a href="rest-and-sse-server.html">REST and SSE server</a> — the HTTP surface that <code>mouaif serve</code> exposes.</p></li></ul>
+<ul><li><p><a href="getting-started.html">Getting started</a> — install and complete first setup.</p></li><li><p><a href="authentication.html">Authentication</a> — provider credentials and app access.</p></li><li><p><a href="rest-and-sse-server.html">REST and SSE server</a> — the HTTP API that <code>mouaif serve</code> exposes.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

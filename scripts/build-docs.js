@@ -57,10 +57,11 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const DOCS_DIR = path.join(ROOT, 'docs');
 const OUT_DIR = path.join(ROOT, 'docs-dist');
-const PUBLIC_GUIDE_SLUGS = ['getting-started', 'authentication', 'app-abilities', 'draft-craft'];
+const PUBLIC_GUIDE_SLUGS = ['getting-started', 'cli-commands', 'authentication', 'app-abilities', 'draft-craft'];
 // Short labels for the top navigation; the sidebar uses each page's H1.
 const PUBLIC_GUIDE_TITLES = {
   'getting-started': 'Getting started',
+  'cli-commands': 'CLI',
   authentication: 'Authentication',
   'app-abilities': 'App abilities',
   'draft-craft': 'Draft Craft'

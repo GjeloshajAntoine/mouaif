@@ -1,113 +1,46 @@
 # mouaif 🚀
 
-mouaif is a mobile-first AI coding assistant for local projects. Connect your preferred AI providers, chat about a project, and choose which coding tools the assistant may use.
+mouaif is a mobile-first AI coding assistant for local projects. It runs as a small server on your computer; you open it in a browser — on the same computer or on your phone — connect the AI providers you choose, chat about a project, and decide which coding tools the assistant may use.
 
-## Requirements
+## Quick start
 
-- Node.js 20 or newer
-- A supported AI provider account, or a local Ollama installation
+You need **Node.js 20 or newer** (`node --version`) and an AI provider: an API key, a browser sign-in (Anthropic, OpenRouter, GitHub Copilot), or a local model with Ollama, llama.cpp, or LM Studio.
+
+```bash
+npx mouaif serve --auth
+```
+
+1. **Create your login.** Open the setup link printed in the terminal (or scan its QR code) and choose a username and password. Keep the terminal open — `Ctrl+C` stops mouaif.
+2. **Connect a provider.** In the app, open **Settings → Providers**, tap **+**, and enter a key or tap **Sign in**.
+3. **Add a project.** On the **Chats** tab, tap **+** and pick a folder.
+4. **Chat.** Tap **New chat** on the project card, pick a model in the header, and send a message.
+
+The full walkthrough, with troubleshooting, is in [Getting started](docs/features/getting-started.md).
 
 ## Install
 
-The npm package name is [`mouaif`](https://www.npmjs.com/package/mouaif). Start it directly with `npx`, without a global install, and require a login:
+| Method | Command |
+|---|---|
+| Run without installing | `npx mouaif serve --auth` |
+| Global command | `npm install -g mouaif` then `mouaif serve --auth` |
+| From source | `git clone https://github.com/GjeloshajAntoine/mouaif.git && cd mouaif && npm install && npm link` |
+
+The npm package is [`mouaif`](https://www.npmjs.com/package/mouaif) and ships a pre-built web UI, so there is no build step. In a source checkout, `npm install` builds the UI for you.
+
+## CLI at a glance
 
 ```bash
-npx mouaif serve --auth
-```
-
-On the first authenticated start, the terminal prints a setup link, QR code, and short code for creating your username and password. Later starts reuse those access settings and show the login screen.
-
-Install the `mouaif` command globally:
-
-```bash
-npm install -g mouaif
-```
-
-Or install from a checkout of this repository:
-
-```bash
-git clone https://github.com/GjeloshajAntoine/mouaif.git
-cd mouaif
-npm install
-npm link
-```
-`npm install` builds the web UI once when its sources are newer than `frontend/dist/` (the Vite toolchain is present in a source checkout), so there is no separate build step. `npm link` makes the `mouaif` command available in your terminal.
-
-Every install ships the pre-built web UI in `frontend/dist/`, so `mouaif serve` never builds the frontend. The package depends on `better-sqlite3` and `@napi-rs/keyring`, which ship prebuilt binaries for common platforms; on an unusual platform Node compiles them, so the first install can take a few minutes.
-
-## Run
-
-With `npx`:
-
-```bash
-npx mouaif serve --auth
-```
-
-Or, after a global install:
-
-```bash
-mouaif serve --auth
-```
-
-Open `http://127.0.0.1:5732/` in a browser and create or enter your access credentials. Keep the terminal open while using mouaif and press `Ctrl+C` to stop it. Omit `--auth` only when you intentionally want the app to be accessible without a login.
-
-Useful commands:
-
-```bash
-mouaif serve --port 9000     # use another port
-mouaif serve --host 0.0.0.0 # listen on your local network
-mouaif info                  # show version and default port
-```
-
-## First setup
-
-1. Open the **Chats** tab and tap **Add project**.
-2. Choose an existing folder or create one.
-3. Open **Settings → Providers** and connect an AI provider.
-4. Open the project settings and add or select a model.
-5. Create a chat and send your first message.
-
-## Authentication
-
-### Connect an AI provider
-
-Open **Settings → Providers**, select a provider, then enter its API key or use **Sign in** when offered. Supported connections include OpenAI-compatible services, Anthropic, Google Gemini, Ollama, OpenRouter, GitHub Copilot, Azure OpenAI, Mistral, Groq, and DeepSeek.
-
-### Protect access to mouaif
-
-The recommended command requires login and creates a setup invitation when no user exists yet:
-
-```bash
-npx mouaif serve --auth
-```
-
-To replace the access user or explicitly generate a fresh expiring setup link, QR code, and short code:
-
-```bash
-npx mouaif serve --auth-setup
-```
-
-You can also set credentials while keeping the password out of shell history:
-
-```bash
+mouaif serve --auth                     # start, login required (recommended)
+mouaif serve --auth --host 0.0.0.0      # reach it from a phone on your Wi-Fi
+mouaif serve --auth --port 9000         # use another port (default 5732)
+mouaif serve --auth-setup               # print a new setup link / QR code
 MOUAIF_PASSWORD='a-long-password' \
-  npx mouaif serve --auth --user alice
+  mouaif serve --auth --user alice      # set the login from a script
+mouaif info                             # version and default port
+mouaif --help                           # all commands
 ```
 
-PowerShell:
-
-```powershell
-$env:MOUAIF_PASSWORD = 'a-long-password'
-npx mouaif serve --auth --user alice
-```
-
-After setup, require login on future starts with:
-
-```bash
-npx mouaif serve --auth
-```
-
-If you installed `mouaif` globally, the shorter equivalent is `mouaif serve --auth`; the auth options are identical. Use HTTPS and `--public-origin` before making mouaif available outside the computer running it.
+Every option and environment variable: [CLI commands](docs/features/cli-commands.md). Login, passkeys, and provider credentials: [Authentication](docs/features/authentication.md).
 
 ## App abilities
 
@@ -124,7 +57,8 @@ If you installed `mouaif` globally, the shorter equivalent is `mouaif serve --au
 
 ## Documentation
 
-- [Getting started](docs/features/getting-started.md) — install, run, update, and first setup.
+- [Getting started](docs/features/getting-started.md) — step-by-step install, first setup, phone access, update, and troubleshooting.
+- [CLI commands](docs/features/cli-commands.md) — every command, option, and environment variable.
 - [Authentication](docs/features/authentication.md) — connect AI providers and protect app access.
 - [App abilities](docs/features/app-abilities.md) — projects, chats, coding tools, agents, MCP, and Inspector.
 - [Draft Craft](docs/features/draft-craft.md) — add selected code or annotated Inspector images to a chat draft.

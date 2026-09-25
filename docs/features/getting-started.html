@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Getting started — mouaif docs</title>
-  <meta name="description" content="Install mouaif, start the app, and open its web interface. Node.js 20 or newer is required." />
+  <meta name="description" content="Install mouaif, create your login, connect a provider, and send your first chat about a project — in about five minutes. mouaif runs as a small server on your…" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
@@ -13,6 +13,7 @@
 <div class="topnav-links">
 <a href="../index.html">Home</a>
 <a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
 <a href="../features/authentication.html">Authentication</a>
 <a href="../features/app-abilities.html">App abilities</a>
 <a href="../features/draft-craft.html">Draft Craft</a>
@@ -26,6 +27,7 @@
 <ul>
 <li><a href="../index.html">Home</a></li>
 <li><a class="is-active" href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
 <li><a href="../features/authentication.html">Authentication</a></li>
 <li><a href="../features/app-abilities.html">App abilities</a></li>
 <li><a href="../features/draft-craft.html">Draft Craft</a></li>
@@ -34,46 +36,79 @@
     <main class="main">
       <h1 id="getting-started">Getting started</h1>
 <h2 id="overview">Overview</h2>
-<p>Install mouaif, start the app, and open its web interface. Node.js 20 or newer is required.</p>
-<h2 id="install">Install</h2>
-<p>The npm package name is <a href="https://www.npmjs.com/package/mouaif" target="_blank" rel="noopener noreferrer"><code>mouaif</code></a>. Run it straight from the registry with <code>npx</code>, without installing it globally, and require a login:</p>
+<p>Install mouaif, create your login, connect a provider, and send your first chat about a project — in about five minutes. mouaif runs as a small server on your computer, and you use it from a browser on that computer or on your phone.</p>
+<h2 id="before-you-start">Before you start</h2>
+<p>You need:</p>
+<ul><li><p><strong>Node.js 20 or newer.</strong> Check with <code>node --version</code>. If it is missing or older, install it from <a href="https://nodejs.org/" target="_blank" rel="noopener noreferrer">nodejs.org</a>.</p></li><li><p><strong>An AI provider.</strong> Either an account and API key (OpenAI, Anthropic, Google Gemini, OpenRouter, Mistral, Groq, DeepSeek, Azure OpenAI), a GitHub Copilot or Anthropic account for browser sign-in, or a model running locally with Ollama, llama.cpp, or LM Studio (no key needed).</p></li><li><p><strong>A project folder</strong> under your home directory that you want to work on. It can be empty.</p></li></ul>
+<pre><code class="language-bash">node --version   # must print v20 or higher</code></pre>
+<h2 id="step-1-start-mouaif">Step 1 — Start mouaif</h2>
+<p>Pick one of the three ways to run it. If you are not sure, use the first.</p>
+<ul><li><p><strong>Option A — <code>npx</code>:</strong> try it without installing, always the latest release.</p></li><li><p><strong>Option B — global install:</strong> daily use with a short <code>mouaif</code> command.</p></li><li><p><strong>From source:</strong> only if you want to change mouaif itself.</p></li></ul>
+<h3 id="option-a-run-with-npx-no-install">Option A — run with npx (no install)</h3>
 <pre><code class="language-bash">npx mouaif serve --auth</code></pre>
-<p>On the first authenticated start, use the setup link, QR code, or short code printed in the terminal to create your username and password. Later starts reuse those access settings and show the login screen.</p>
-<p><code>npx</code> keeps the package in its own cache, so it never writes to the directory you run it from. The first run downloads the package; later runs start immediately. On an uncommon platform the first install can take a few minutes while Node compiles two native modules.</p>
-<p>To pin an exact version, quote the argument. A bare <code>mouaif@0.3.0</code> is read as a glob in <code>zsh</code> and fails with <code>no matches found</code>:</p>
-<pre><code class="language-bash">npx --yes --package &quot;mouaif@0.3.0&quot; mouaif info</code></pre>
-<p>Install the <code>mouaif</code> command globally:</p>
-<pre><code class="language-bash">npm install -g mouaif</code></pre>
-<p>Or install from a checkout of this repository:</p>
+<p>The first run downloads the package, which can take a minute. <code>npx</code> keeps it in its own cache, so nothing is written to the folder you run it from.</p>
+<h3 id="option-b-install-the-command-globally">Option B — install the command globally</h3>
+<pre><code class="language-bash">npm install -g mouaif
+mouaif serve --auth</code></pre>
+<h3 id="install-from-source">Install from source</h3>
 <pre><code class="language-bash">git clone https://github.com/GjeloshajAntoine/mouaif.git
 cd mouaif
 npm install
-npm link</code></pre>
-<p><code>npm install</code> also builds the web UI, and <code>npm link</code> makes the <code>mouaif</code> command available in your terminal. The npm package already includes the built web UI, so <code>npm install -g mouaif</code> and <code>npx mouaif</code> need no build step.</p>
-<p>See <a href="cli-commands.html">CLI commands</a> for the complete command list and every <code>mouaif serve</code> option.</p>
-<h2 id="run-the-app">Run the app</h2>
-<p>Start mouaif on the default local address with access authentication enabled:</p>
-<pre><code class="language-bash">npx mouaif serve --auth</code></pre>
-<p>If you installed it globally, use <code>mouaif serve --auth</code> instead. Open <code>http://127.0.0.1:5732/</code> in a browser and create or enter your access credentials. Keep the terminal open while using the app, and press <code>Ctrl+C</code> when you want to stop it. Omit <code>--auth</code> only when you intentionally want the app to be accessible without a login.</p>
-<p>Useful alternatives:</p>
-<pre><code class="language-bash"># Use another port
-mouaif serve --port 9000
+npm link
+mouaif serve --auth</code></pre>
+<p><code>npm install</code> also builds the web interface, and <code>npm link</code> puts the <code>mouaif</code> command on your <code>PATH</code>.</p>
+<h3 id="what-you-should-see">What you should see</h3>
+<p>The terminal prints the address of the app and, the first time, a setup invitation:</p>
+<pre><code class="language-text">🚀 mouaif server running at http://127.0.0.1:5732
+   Web:    /             — mobile UI
+   ...
 
-# Listen on your local network
-mouaif serve --host 0.0.0.0
-
-# Show the installed version and default port
-mouaif info</code></pre>
-<p>When listening on your network, use the address printed by mouaif. Enable access authentication before making the app available to other devices.</p>
-<h2 id="first-setup">First setup</h2>
-<ol><li><p>Open the <strong>Chats</strong> tab.</p></li><li><p>Tap the <strong>+</strong> (Add project) button and choose a folder.</p></li><li><p>Open <strong>Settings → Providers</strong> and connect an AI provider.</p></li><li><p>Open the project&#39;s settings and add or select a model.</p></li><li><p>Create a chat, select the model, and send a message.</p>
-<p>Provider connections are shared by the app. Project settings control the models and abilities available in each project.</p></li></ol>
-<h2 id="update-a-source-installation">Update a source installation</h2>
-<pre><code class="language-bash">git pull
-npm install</code></pre>
-<p><code>npm install</code> rebuilds the web UI, so there is no separate build step. Restart <code>mouaif serve</code> after updating.</p>
+🔐 Set up app access (expires in 15 minutes)
+   Link:   http://127.0.0.1:5732/#/setup?code=XXXX-XXXX
+   Code:   XXXX-XXXX
+   (QR code)
+   Press Ctrl+C to stop</code></pre>
+<p><strong>Leave this terminal open</strong> — closing it or pressing <code>Ctrl+C</code> stops mouaif.</p>
+<p><code>--auth</code> means a login is required to open the app. It is strongly recommended; leave it out only on a computer nobody else can reach. See <a href="authentication.html">Authentication</a> for every access option.</p>
+<h2 id="step-2-create-your-login">Step 2 — Create your login</h2>
+<ol><li><p>Open the <strong>Link</strong> printed in the terminal (or scan the QR code with your phone if the phone can reach this computer — see <a href="#use-mouaif-from-your-phone">Use mouaif from your phone</a>).</p></li><li><p>Choose a username and a password of at least 8 characters.</p></li><li><p>Optionally add a passkey to sign in with your fingerprint, face, or device PIN.</p>
+<p>The invitation works once and expires after 15 minutes. If it expired, stop the server and start it again with <code>--auth-setup</code> to get a new one.</p>
+<p>From now on, opening <code>http://127.0.0.1:5732/</code> shows the login screen.</p></li></ol>
+<h2 id="step-3-connect-an-ai-provider">Step 3 — Connect an AI provider</h2>
+<ol><li><p>Open the <strong>Settings</strong> tab, then <strong>Providers</strong>.</p></li><li><p>Tap <strong>+</strong> (Add provider) and choose a provider.</p></li><li><p>Paste its API key, or tap <strong>Sign in</strong> for Anthropic, OpenRouter, or GitHub Copilot.</p></li></ol>
+<ul><li><p><strong>Ollama</strong>: no key; make sure Ollama is running.</p></li><li><p><strong>llama.cpp / LM Studio</strong>: choose <strong>OpenAI-compatible</strong>, leave the key empty, and set the base URL (for example <code>http://127.0.0.1:8080/v1</code>). See <a href="local-openai-servers.html">Local OpenAI-compatible servers</a>.</p></li></ul>
+<ol><li><p>Tap <strong>Add provider</strong>.</p>
+<p>Providers are shared by all your projects. Keys stay on the computer running mouaif; the browser never receives them.</p></li></ol>
+<h2 id="step-4-add-a-project">Step 4 — Add a project</h2>
+<ol><li><p>Open the <strong>Chats</strong> tab.</p></li><li><p>Tap <strong>+</strong> (Add project).</p></li><li><p>Browse to your project folder and select it, or create a new folder.</p>
+<p>The project appears as a card on the Chats tab. Adding a project never deletes or moves anything; removing it later leaves the folder on disk.</p></li></ol>
+<h2 id="step-5-start-your-first-chat">Step 5 — Start your first chat</h2>
+<ol><li><p>On the project card, tap <strong>New chat</strong>.</p></li><li><p>Tap the <strong>model</strong> button in the chat header. The picker lists the models of every provider you connected; tap ↻ if the list is empty.</p></li><li><p>Pick a model and send a message, for example <em>&quot;Summarize what this project does.&quot;</em></p>
+<p>The assistant can only look at or change your files after you allow it. To let it read files or run commands, open the project&#39;s settings and set <strong>File tools</strong> or <strong>Shell</strong> to <strong>Ask</strong> (you approve each call) or <strong>Allow</strong>. See <a href="app-abilities.html">App abilities</a>.</p></li></ol>
+<h2 id="use-mouaif-from-your-phone">Use mouaif from your phone</h2>
+<p>By default mouaif only listens on the computer that runs it. To open it from a phone on the same Wi-Fi network:</p>
+<pre><code class="language-bash">mouaif serve --auth --host 0.0.0.0</code></pre>
+<p>The terminal then prints an address such as <code>http://192.168.1.20:5732</code> — open that on the phone. If it does not load, allow port <code>5732</code> through the computer&#39;s firewall.</p>
+<p>Keep <code>--auth</code> on whenever other devices can reach the app. Passkeys need HTTPS on a remote device; over plain <code>http://</code> on your network, sign in with the password. To reach mouaif from outside your network, put it behind an HTTPS reverse proxy and pass <code>--public-origin</code> — see <a href="cli-commands.html#behind-a-reverse-proxy">CLI commands</a>.</p>
+<h2 id="everyday-use">Everyday use</h2>
+<pre><code class="language-bash">mouaif serve --auth            # start (login required)
+mouaif serve --auth --port 9000 # start on another port
+mouaif --version               # show the installed version</code></pre>
+<p>Stop mouaif with <code>Ctrl+C</code> in its terminal. Your projects, chats, and settings are kept and reappear on the next start.</p>
+<p>The full list of commands and options is in <a href="cli-commands.html">CLI commands</a>.</p>
+<h2 id="update">Update</h2>
+<div class="table-wrap"><table><thead><tr><th>Installed with</th><th>Update command</th></tr></thead><tbody><tr><td><code>npx</code></td><td>Nothing to do — <code>npx mouaif</code> fetches the latest release. Use <code>npx mouaif@latest serve --auth</code> if an old copy is cached.</td></tr><tr><td><code>npm install -g</code></td><td><code>npm install -g mouaif@latest</code></td></tr><tr><td>Source checkout</td><td><code>git pull &amp;&amp; npm install</code></td></tr></tbody></table></div>
+<p>Restart <code>mouaif serve</code> after updating. Your data is not touched by an update.</p>
+<h2 id="where-your-data-lives">Where your data lives</h2>
+<div class="table-wrap"><table><thead><tr><th>What</th><th>Where</th></tr></thead><tbody><tr><td>App settings, provider keys, chats, login</td><td><code>~/.mouaif/store.sqlite</code> (change with <code>MOUAIF_HOME</code>)</td></tr><tr><td>Browser sign-in tokens (Anthropic, OpenRouter, Copilot, MCP)</td><td>Your operating system&#39;s keychain</td></tr><tr><td>Project settings</td><td><code>&lt;project&gt;/.mouaif.json</code> (can be moved into the app store per project)</td></tr><tr><td>Chat traces, when enabled</td><td><code>&lt;project&gt;/.mouaif/traces/</code></td></tr></tbody></table></div>
+<h2 id="uninstall">Uninstall</h2>
+<pre><code class="language-bash">npm uninstall -g mouaif   # global install
+npm unlink -g mouaif      # source checkout linked with npm link</code></pre>
+<p>This removes the command but keeps your data. To also delete every setting, key, and chat, remove the <code>~/.mouaif</code> folder. Project folders keep their <code>.mouaif.json</code>, which you can delete by hand.</p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<div class="table-wrap"><table><thead><tr><th>Problem</th><th>Fix</th></tr></thead><tbody><tr><td><code>mouaif: command not found</code></td><td>Use <code>npx mouaif …</code>, or install globally with <code>npm install -g mouaif</code>. After <code>npm link</code>, open a new terminal.</td></tr><tr><td><code>EADDRINUSE</code> when starting</td><td>Another program uses port 5732 — often a mouaif that is already running. Stop it, or start with <code>--port 9000</code>.</td></tr><tr><td>Install fails while building <code>better-sqlite3</code> or <code>@napi-rs/keyring</code></td><td>Your platform has no prebuilt binary. Install build tools (Python 3 and a C/C++ compiler; on Windows the &quot;Desktop development with C++&quot; workload) and retry.</td></tr><tr><td><code>zsh: no matches found: mouaif@0.3.0</code></td><td>Quote the version: <code>npx --yes --package &quot;mouaif@0.3.0&quot; mouaif serve --auth</code>.</td></tr><tr><td>The setup link expired</td><td>Restart with <code>mouaif serve --auth-setup</code> to print a new one.</td></tr><tr><td>Forgot the password</td><td>Restart with <code>mouaif serve --auth-setup</code>, or set a new one with <code>MOUAIF_PASSWORD=&#39;…&#39; mouaif serve --auth --user &lt;name&gt;</code>.</td></tr><tr><td>The phone cannot open the app</td><td>Start with <code>--host 0.0.0.0</code>, use the network address printed in the terminal (not <code>127.0.0.1</code>), and check the firewall.</td></tr><tr><td>The model picker is empty</td><td>Check the provider in <strong>Settings → Providers</strong>, then tap ↻ in the picker. For Ollama or a local server, make sure it is running.</td></tr><tr><td>&quot;Path must be under the user home&quot; when adding a project</td><td>Move the project under your home folder, or start mouaif with <code>MOUAIF_ALLOW_ANY_ROOT=1</code>.</td></tr></tbody></table></div>
 <h2 id="next-steps">Next steps</h2>
-<ul><li><p><a href="cli-commands.html">CLI commands</a> — every command and <code>serve</code> option.</p></li><li><p><a href="authentication.html">Authentication</a> — connect AI providers and protect app access.</p></li><li><p><a href="app-abilities.html">App abilities</a> — learn what chats, tools, projects, and the Inspector can do.</p></li></ul>
+<ul><li><p><a href="cli-commands.html">CLI commands</a> — every command, option, and environment variable.</p></li><li><p><a href="authentication.html">Authentication</a> — provider credentials, logins, passkeys, and sessions.</p></li><li><p><a href="app-abilities.html">App abilities</a> — projects, chats, coding tools, agents, MCP, and the Inspector.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

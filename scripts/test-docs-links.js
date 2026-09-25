@@ -131,7 +131,7 @@ try {
   check('every public guide is in the top navigation', () => {
     const html = fs.readFileSync(path.join(pub.out, 'documentation.html'), 'utf8');
     const nav = html.slice(html.indexOf('<nav class="topnav"'), html.indexOf('</nav>'));
-    for (const slug of ['getting-started', 'authentication', 'app-abilities', 'draft-craft']) {
+    for (const slug of ['getting-started', 'cli-commands', 'authentication', 'app-abilities', 'draft-craft']) {
       assert.ok(nav.includes('href="features/' + slug + '.html"'), slug + ' missing from the top nav');
     }
   });

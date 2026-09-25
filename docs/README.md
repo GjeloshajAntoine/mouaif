@@ -4,9 +4,10 @@ The published site is served by GitHub Pages from `docs/` on `master`. Start wit
 
 ## User guide
 
-The four guides linked from the site navigation.
+The guides linked from the site navigation.
 
-- [Getting started](features/getting-started.md) — install with `npx`, `npm install -g`, or a repo checkout; run, update, and complete first setup.
+- [Getting started](features/getting-started.md) — step-by-step install, first login, provider, project, and chat; phone access, update, uninstall, and troubleshooting.
+- [CLI commands](features/cli-commands.md) — every `mouaif` command, `serve` option, and environment variable, with recipes.
 - [Authentication](features/authentication.md) — connect AI providers and protect app access, with CLI examples.
 - [App abilities](features/app-abilities.md) — projects, chats, coding tools, agents, MCP, and Inspector.
 - [Draft Craft](features/draft-craft.md) — add selected code, annotated images, or Inspector entries to any chat draft.
@@ -17,7 +18,6 @@ One page per feature: what it does and how to use it.
 
 ### Install and access
 
-- [CLI commands](features/cli-commands.md) — every `mouaif` command and `serve` option.
 - [npm package](features/npm-package.md) — the published package, what an install contains, and the release flow.
 - [Login notification](features/login-notification.md) — a browser alert on a new sign-in, sent to every subscribed device.
 - [Push notifications](features/push-notifications.md) — follow a running chat and answer approvals from a notification.
