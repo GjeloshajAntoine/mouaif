@@ -813,11 +813,13 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
   if (request.callId) card.dataset.authCallId = request.callId;
   const head = document.createElement('div');
   head.className = 'tool-card__head';
-  const chev = document.createElement('span');
-  chev.className = 'tool-card__chev';
-  chev.setAttribute('aria-hidden', 'true');
-  chev.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M9 5.5 15.5 12 9 18.5l1.4 1.4L18.3 12l-7.9-7.9L9 5.5Z"/></svg>';
-  head.appendChild(chev);
+  // A static icon, not the collapse chevron: this card has no toggle,
+  // and a chevron that does nothing on tap reads as broken.
+  const icon = document.createElement('span');
+  icon.className = 'tool-card__ask-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 16.2a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4Zm1.3-5.1v.6h-2.5v-.9c0-1.4.8-2 1.6-2.6.7-.5 1.2-.9 1.2-1.6 0-.8-.7-1.4-1.6-1.4-1 0-1.7.6-1.8 1.6H7.7C7.8 6.6 9.6 5 12 5c2.4 0 4.2 1.4 4.2 3.5 0 1.5-.9 2.3-1.8 3-.6.4-1.1.8-1.1 1.6Z"/></svg>';
+  head.appendChild(icon);
   const role = document.createElement('span');
   role.className = 'tool-card__role';
   role.textContent = 'the model is asking';
@@ -867,13 +869,33 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
     }
     body.appendChild(presetsHost);
   }
-  const optionsHost = document.createElement('div');
-  optionsHost.className = 'tool-card__ask-options';
-  body.appendChild(optionsHost);
   const options = Array.isArray(request.options) ? request.options : [];
   const multi = !!request.multiSelect;
+  const optionsHost = document.createElement('div');
+  optionsHost.className = 'tool-card__ask-options' + (multi ? ' tool-card__ask-options--multi' : '');
+  optionsHost.setAttribute('role', multi ? 'group' : 'radiogroup');
+  optionsHost.setAttribute('aria-label', request.question || 'Options');
+  if (multi) {
+    const hint = document.createElement('span');
+    hint.className = 'tool-card__ask-hint';
+    hint.textContent = 'Pick one or more';
+    body.appendChild(hint);
+  }
+  body.appendChild(optionsHost);
   let selectedValues = multi ? new Set() : null;
   let lastTapped = null;
+  // Declared below; refreshSelectedUi() also relabels the submit button.
+  let submit = null;
+  let extra = null;
+  function hasChoice() { return multi ? selectedValues.size > 0 : !!lastTapped; }
+  function refreshSubmitUi() {
+    if (!submit) return;
+    // With no option picked, the button still sends a typed note, and
+    // only dismisses when there is nothing to send. The label says which.
+    const note = !!(extra && extra.value.trim());
+    submit.textContent = hasChoice() ? 'Send answer' : (note ? 'Send note' : 'Pick an option');
+    submit.disabled = !hasChoice() && !note;
+  }
   function refreshSelectedUi() {
     for (const optEl of optionsHost.querySelectorAll('.tool-card__ask-option')) {
       const v = optEl.dataset.value || '';
@@ -881,6 +903,7 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
       optEl.classList.toggle('is-selected', !!on);
       optEl.setAttribute('aria-checked', on ? 'true' : 'false');
     }
+    refreshSubmitUi();
   }
   for (let i = 0; i < options.length; i++) {
     const opt = options[i] || {};
@@ -890,16 +913,24 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
     optEl.dataset.value = String(opt.value || '');
     optEl.setAttribute('role', multi ? 'checkbox' : 'radio');
     optEl.setAttribute('aria-checked', 'false');
+    // Visible radio / checkbox mark so the selection reads without colour.
+    const mark = document.createElement('span');
+    mark.className = 'tool-card__ask-option-mark';
+    mark.setAttribute('aria-hidden', 'true');
+    optEl.appendChild(mark);
+    const text = document.createElement('span');
+    text.className = 'tool-card__ask-option-text';
     const label = document.createElement('span');
     label.className = 'tool-card__ask-option-label';
     label.textContent = opt.label || opt.value || ('option ' + (i + 1));
-    optEl.appendChild(label);
+    text.appendChild(label);
     if (opt.description) {
-      const desc = document.createElement('span');
-      desc.className = 'tool-card__ask-option-desc';
-      desc.textContent = opt.description;
-      optEl.appendChild(desc);
+    const desc = document.createElement('span');
+    desc.className = 'tool-card__ask-option-desc';
+    desc.textContent = opt.description;
+    text.appendChild(desc);
     }
+    optEl.appendChild(text);
     optEl.addEventListener('click', () => {
       if (multi) {
         if (selectedValues.has(optEl.dataset.value)) selectedValues.delete(optEl.dataset.value);
@@ -918,46 +949,32 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
     });
     optionsHost.appendChild(optEl);
   }
+  const extraId = 'ask-extra-' + card.dataset.toolId;
   const extraLabel = document.createElement('label');
   extraLabel.className = 'tool-card__ask-extra-label';
-  extraLabel.textContent = 'Add an extra answer (always optional)';
+  extraLabel.htmlFor = extraId;
+  extraLabel.textContent = 'Note for the model (optional)';
   body.appendChild(extraLabel);
-  const extra = document.createElement('textarea');
+  extra = document.createElement('textarea');
+  extra.id = extraId;
   extra.className = 'input tool-card__ask-extra';
   extra.rows = 2;
-  extra.spellcheck = false;
   extra.maxLength = 1000;
-  extra.placeholder = 'Add context, a follow-up, or just a note for the model.';
+  extra.placeholder = 'Add context, or answer in your own words.';
+  extra.addEventListener('input', refreshSubmitUi);
   body.appendChild(extra);
   const actions = document.createElement('div');
   actions.className = 'tool-card__actions';
-  const submit = document.createElement('button');
+  submit = document.createElement('button');
   submit.type = 'button';
   submit.className = 'btn btn--primary';
-  submit.textContent = 'Send answer';
+  refreshSubmitUi();
   submit.addEventListener('click', async () => {
-    const choice = multi
-      ? Array.from(selectedValues)
-      : (lastTapped ? [lastTapped.value] : []);
-    if (!choice.length) {
-      // No option selected: treat as a dismiss so the model gets a
-      // clean `cancelled: true` result instead of an empty answer.
-      for (const child of actions.querySelectorAll('button')) child.disabled = true;
-      const r = await fetchJson('/api/tools/authorization/decision', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision: 'deny' })
-      });
-      if (r.status !== 200) {
-        for (const child of actions.querySelectorAll('button')) child.disabled = false;
-        setChatStatus('ask_user failed: HTTP ' + r.status, 'error');
-        return;
-      }
-      card.remove();
-      setChatStatus('question dismissed', 'success');
-      return;
-    }
-    for (const child of actions.querySelectorAll('button')) child.disabled = true;
+    // No option and no note: nothing to send (the button is disabled
+    // then, this is a guard). A note with no option is still an answer —
+    // it used to be sent as a dismissal, which discarded the typed text.
+    if (!hasChoice() && !extra.value.trim()) return;
+    for (const child of card.querySelectorAll('button')) child.disabled = true;
     const payload = {
       choice: multi ? Array.from(selectedValues) : (lastTapped ? lastTapped.value : ''),
       extra: extra.value || ''
@@ -968,7 +985,8 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
       body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision: 'allow-once', payload })
     });
     if (r.status !== 200) {
-      for (const child of actions.querySelectorAll('button')) child.disabled = false;
+      for (const child of card.querySelectorAll('button')) child.disabled = false;
+      refreshSubmitUi();
       setChatStatus('ask_user failed: HTTP ' + r.status, 'error');
       return;
     }
@@ -981,14 +999,15 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
   dismiss.className = 'btn';
   dismiss.textContent = 'Dismiss';
   dismiss.addEventListener('click', async () => {
-    for (const child of actions.querySelectorAll('button')) child.disabled = true;
+    for (const child of card.querySelectorAll('button')) child.disabled = true;
     const r = await fetchJson('/api/tools/authorization/decision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision: 'deny' })
     });
     if (r.status !== 200) {
-      for (const child of actions.querySelectorAll('button')) child.disabled = false;
+      for (const child of card.querySelectorAll('button')) child.disabled = false;
+      refreshSubmitUi();
       setChatStatus('ask_user failed: HTTP ' + r.status, 'error');
       return;
     }
@@ -1000,6 +1019,12 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
   card.appendChild(body);
   refs.transcript.current.appendChild(card);
   afterTranscriptAppend(refs, true);
+  const updateMore = () => {
+    const more = optionsHost.scrollHeight - optionsHost.scrollTop - optionsHost.clientHeight > 2;
+    optionsHost.classList.toggle('has-more', more);
+  };
+  optionsHost.addEventListener('scroll', updateMore, { passive: true });
+  requestAnimationFrame(updateMore);
   // Mobile-first: scroll the card into view and move keyboard focus
   // to the first option so the user can answer with the on-screen
   // keyboard. The `extra` textarea is below the options; tapping
