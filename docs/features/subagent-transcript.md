@@ -8,12 +8,20 @@ A `subagent` tool card keeps the delegated conversation in its expanded body. Th
 
 | Nested turn | Rendered as |
 | --- | --- |
-| `system` | The collapsed **System prompt · N lines** card the main transcript uses for the active system prompt. Its role label names the agent the run dispatched (`Search`), or `agent` for a generic delegation. |
+| `system` | The collapsed **System prompt · N lines** card the main transcript uses for the active system prompt. Its role label names the agent the run dispatched (`Search`), or `agent` for a generic delegation. Expanding it wraps the prompt inside the card at the transcript's own width — see [Wrapping](#wrapping). |
 | `user` | A user chat bubble, right-aligned, with the `user` role label. |
 | `assistant` | An assistant chat bubble with markdown, labelled with the model that ran the delegated call. |
 | `tool` | A compact nested tool row (verb label, one-line arguments, per-tool result summary, status dot, per-tool preview) — not a chat bubble, so the assistant→tool→assistant loop stays readable. |
 
 While the run is in flight, streamed answer deltas land in a single assistant bubble under the **Subagent is working…** line; the card is re-rendered into the final transcript above once the run settles.
+
+## Wrapping
+
+The system prompt row is a shared component — `buildSystemPromptRow` renders both the top-level prompt card and the nested one inside an expanded subagent card — and its body is a `<pre class="chat-msg__system-body">` that wraps with `white-space: pre-wrap`.
+
+The prompt is **plain text, not a fenced code block**: its own line breaks and blank lines survive, but a long line wraps instead of running off the card. On a phone this is the difference between reading the instructions the model was given and guessing at a clipped fragment of them — an unwrapped prompt renders as one ~2000 px line inside a horizontally scrolling box, and the sideways scroll is invisible.
+
+The markdown renderer's code-block rule (`chat-markdown.css`, `… .chat-msg__body pre`) deliberately **excludes** `.chat-msg__system-body`. That rule sets `white-space: pre` and, at one point of extra specificity over the prompt's own rule in `chat-transcript.css`, used to win the cascade: the prompt lost its wrapping in both the top-level and the nested card. Fenced code blocks in assistant replies are unaffected — they keep `white-space: pre` and scroll horizontally, which is what a code block should do.
 
 ## Nested tool rows
 

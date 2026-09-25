@@ -16,6 +16,8 @@
 
 The active system prompt (the profile instructions plus any attached custom prompt) is displayed in an expandable **System prompt** card at the top of the chat transcript. Tap it anytime to inspect the exact instructions given to the model.
 
+The expanded prompt wraps to the card's width — long lines fold rather than running off the card inside a horizontally scrolling box, so the instructions are readable on a phone. The same wrapping applies to the nested prompt card inside an expanded subagent card. Fenced code blocks in a reply are unaffected: they keep their own no-wrap, horizontally scrolling rendering.
+
 ### The three profiles
 
 | ID | Label | When to use it |

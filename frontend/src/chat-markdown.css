@@ -80,7 +80,17 @@
   border-left: 3px solid var(--border-strong);
   color: var(--muted);
 }
-:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body pre {
+/* Markdown code blocks. `.chat-msg__system-body` is EXCLUDED: it is the
+   active system prompt rendered as plain text by chat-transcript.js, not a
+   fenced code block, and it has its own rule in chat-transcript.css. While
+   this selector matched it, the code-block `white-space: pre` here
+   (specificity 0,2,1) beat that rule's `pre-wrap` (0,2,0), so an expanded
+   system prompt — the top-level one and the nested one inside a subagent
+   card — never wrapped: on a phone it rendered one 2000 px line in a
+   horizontally scrolling box, hiding the prompt behind an invisible
+   sideways swipe. Excluding it lets the dedicated rule own the type,
+   wrapping and single-card geometry below the summary. */
+:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body pre:not(.chat-msg__system-body) {
   margin: 2px 0 3px 0;
   padding: 4px 6px;
   background: var(--surface);
