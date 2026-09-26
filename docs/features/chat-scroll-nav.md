@@ -14,4 +14,4 @@ A small stack of round arrows floats over the bottom-right corner of the chat tr
 
 - The arrows step between **messages** (yours, the assistant's, and system notes). Tool cards are skipped, so one tap does not stop at every command in an agentic turn.
 - Tapping ↑ or ↓ stops auto-follow, as scrolling up does. A streaming reply keeps arriving below, and the Bottom arrow's counter goes up.
-- Each arrow is a 44 × 44 px tap target, sits inside the right safe-area inset, and works by tap alone. Nothing depends on hover.
+- Each arrow is a small 26 px circle, so it covers little of the text beneath it. Its tap area is still 44 × 44 px, and the arrows are spaced so their tap areas never overlap. The arrows sit inside the right safe-area inset and work by tap alone. Nothing depends on hover.

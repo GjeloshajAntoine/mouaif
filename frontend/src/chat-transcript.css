@@ -431,7 +431,10 @@
    A vertical stack of round arrows floating over the transcript's
    bottom-right corner. While pinned to the bottom only "previous"
    shows; reading history adds "next" and "bottom" (with the count of
-   rows that arrived meanwhile). 44px targets, tap-only — no hover
+   rows that arrived meanwhile). The visible circles are small (26px)
+   so they cover little text; an invisible ::before grows each one's
+   tap area to 44 x 44px. The 18px gap is exactly what lets those tap
+   areas meet without overlapping. Tap-only — no hover
    affordance. */
 
 .chat-view__scroll-nav {
@@ -444,39 +447,46 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: 18px;
   pointer-events: none;
 }
 .chat-view__scroll-nav[hidden] { display: none; }
 .chat-view__scroll-nav[data-mode="pinned"] .chat-view__nav-btn--next { display: none; }
 
 .chat-view__nav-btn {
+  position: relative;
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  min-width: 44px;
-  height: 44px;
-  padding: 0 12px;
+  gap: 3px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 5px;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);
   background: var(--surface-3);
   color: var(--accent);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
   cursor: pointer;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.68rem;
   font-weight: 600;
-  opacity: 0.88;
+  opacity: 0.8;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   transition: transform var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
+/* 44 x 44px tap area around the 26px circle (9px on every side). */
+.chat-view__nav-btn::before {
+  content: "";
+  position: absolute;
+  inset: -9px;
+}
 .chat-view__nav-btn[hidden] { display: none; }
 .chat-view__nav-btn:active { transform: scale(0.92); opacity: 1; }
 .chat-view__nav-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; opacity: 1; }
-.chat-view__nav-btn svg { display: block; flex: 0 0 auto; }
+.chat-view__nav-btn svg { display: block; flex: 0 0 auto; width: 14px; height: 14px; }
 .chat-view__jump { opacity: 1; }
 .chat-view__jump-count:empty { display: none; }
 .chat-view__jump-count {

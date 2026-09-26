@@ -526,7 +526,7 @@ h('button', {
       'aria-label': 'Previous message',
       title: 'Previous message'
     },
-      h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+      h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
         h('path', { d: 'M12 7.5 19.5 15l-1.4 1.4-6.1-6.1-6.1 6.1L4.5 15 12 7.5Z', fill: 'currentColor' })
       )
     ),
@@ -537,7 +537,7 @@ h('button', {
       'aria-label': 'Next message',
       title: 'Next message'
     },
-      h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+      h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
         h('path', { d: 'M12 16.5 4.5 9l1.4-1.4 6.1 6.1 6.1-6.1L19.5 9 12 16.5Z', fill: 'currentColor' })
       )
     ),
@@ -550,7 +550,7 @@ ref: refs.jumpBtn,
       'aria-label': 'Jump to latest messages',
       title: 'Bottom'
     },
-      h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+      h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
         h('path', { d: 'M12 13.5 4.5 6l1.4-1.4 6.1 6.1 6.1-6.1L19.5 6 12 13.5ZM4.5 17.5h15v2h-15z', fill: 'currentColor' })
       ),
 h('span', { class: 'chat-view__jump-count' }, '')
