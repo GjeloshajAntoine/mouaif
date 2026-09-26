@@ -26,6 +26,17 @@ The chat composer supports `@` autocomplete: typing `@` followed by text shows a
 - **Tools with known parameters** (from the server's `parameters` JSON Schema) insert ``` @toolName:firstArg=`` ``` with the cursor between the backticks, and show a **chip bar** below the textarea listing the remaining parameters. Tap a chip to append ``` key=`` ```. Required parameters are highlighted in bold/accent. This generated colon/backtick syntax dispatches directly for MCP tools. The inserted description is a placeholder: the caret lands immediately after the opening backtick, so the user's first keystroke replaces it. Regression test: [scripts/test-at-mention-caret.js](../../scripts/test-at-mention-caret.js).
 - The popup refreshes periodically (every 5 s) to pick up changed tags, tools, or custom actions. The project **file scan** is a disk walk, so it is not repeated on that timer; instead, typing a fresh `@` rescans when the last scan is older than 10 s, so files created after the chat opened can be mentioned. Its refreshed custom-action list is also used for direct dispatch, so an action shown in the popup runs without reopening the chat.
 
+## File mentions attach the file
+
+Sending a message that contains `@<file>` (anywhere in the text) attaches that file's current working-tree content to the turn as a `user` message, so the model sees it without calling a tool. This works for **every file the popup offers**: tagged files and untagged scanned files alike. A bare basename (`@users.js`) resolves to the matching project path.
+
+- Tagged files use their saved excerpt and tags; untagged files attach in full with `# Tags: (none)`.
+- A file above the size cap (default 256 KB, `app.fileTagMaxBytes`) is not attached. The model gets a one-line note that the file exists and is too large, so it can read the parts it needs with a file tool.
+- Lines hidden in **Settings → Hide file content** are replaced with `[hidden]`, the same as in `read_file`.
+- Binary files, missing paths, and paths outside the project are skipped silently.
+
+The resolution rules are documented in [File tagging](./file-tagging.md#in-a-chat).
+
 ## Direct agent invocation
 
 When the composer text starts with `@` followed by a defined **agent name** and a non-empty task, pressing Enter dispatches that agent directly via `POST /api/tools/subagent` — no model round-trip decides whether to delegate:
@@ -51,9 +62,9 @@ Rules:
 
 - `@shell <cmd>` dispatches the native shell tool with `{ cmd: "<cmd>" }`.
 - `@mcp__<server>__<tool> <args>` dispatches the MCP tool with parsed args. The direct call uses the catalog's stable MCP server ID plus the current chat/call IDs, so the normal per-tool authorization gate still applies without a model round-trip.
-- **Native file tools** (`read_file`, `list_files`, search_files`, etc.) are never dispatched directly — the `@` text is sent to the model, which can use the tool naturally.
+- **Native file tools** (`read_file`, `list_files`, `search_files`, etc.) are never dispatched directly — the `@` text is sent to the model, which can use the tool naturally.
 - If `@` is in the middle of the text (not at the start), it is always sent to the model as a normal message — only the leading `@` triggers direct invocation.
-- An `@` tool name with no parseable arguments also falls through to normal model send (the model can pick up the file reference).
+- An `@` tool name with no parseable arguments also falls through to normal model send. Any `@<file>` in that message is attached as described above.
 
 The argument parser (`parseToolArgs` in `tools.js`) tries JSON first, then `key=value` pairs. Quotes in values allow spaces: `name="my file.js"`.
 

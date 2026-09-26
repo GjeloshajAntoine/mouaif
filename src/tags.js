@@ -33,6 +33,7 @@ const fs = require('fs');
 const path = require('path');
 const { err } = require('./util.js');
 const settings = require('./settings.js');
+const hideFileContent = require('./hideFileContent.js');
 
 // ---- Constants ----------------------------------------------------------
 
@@ -56,6 +57,8 @@ const DEFAULT_EXTS = [
   '.eslintrc', '.prettierrc', '.babelrc', '.npmrc', '.nvmrc', '.yarnrc',
   '.dockerignore', '.gitmodules', '.htaccess', '.dockerfile', '.makefile'
 ];
+
+const DEFAULT_EXT_SET = new Set(DEFAULT_EXTS);
 
 // Directories the scan never descends into. `.mouaif` holds the tag map
 // itself (and traces) — scanning it would just show `.mouaif.json`.
@@ -172,6 +175,19 @@ function removeTag(projectDir, relPathOrAbs) {
 
 // ---- Scan ---------------------------------------------------------------
 
+// True when a file name is on the text allowlist. The check is against the
+// extension (`app.vue` -> `.vue`, `my.config.js` -> `.js`), never the whole
+// name, so a dot inside the base name never hides a file. Extensionless
+// names match when allowlisted as `.<name>` (`Makefile`), and leading-dot
+// names keep the dot in the key (`.env`, `.gitignore`, `.dockerignore`).
+function isTextName(name, allow) {
+  const set = allow || DEFAULT_EXT_SET;
+  const ext = path.extname(name).toLowerCase();
+  return set.has(ext)
+    || (ext === '' && set.has('.' + name.toLowerCase()))
+    || (ext === '' && /^\.[A-Za-z0-9_-]+$/.test(name) && set.has(name.toLowerCase()));
+}
+
 // One-pass directory walk. Returns text-ish files with size + ext and a
 // `binary` flag for out-of-allowlist extensions. Skips heavy build dirs
 // and nested tooling dirs (node_modules, .git, dist, build, .next, .cache,
@@ -226,9 +242,7 @@ function scanFiles(projectDir, exts, limit) {
       //     is allowlisted (`.env` -> `.env`, `.gitignore` -> `.gitignore`).
       //     Leading-dot names keep the dot in the extension key so the
       //     same allowlist covers `Dockerfile` and `.dockerignore`.
-      const isText = allow.has(ext)
-        || (ext === '' && allow.has('.' + dirent.name.toLowerCase()))
-        || (ext === '' && /^\.[A-Za-z0-9_-]+$/.test(dirent.name) && allow.has(dirent.name.toLowerCase()));
+      const isText = isTextName(dirent.name, allow);
       out.push({
         path: path.relative(rootResolved, full).split(path.sep).join('/'),
         size,
@@ -290,7 +304,13 @@ function buildInjectedMessage(projectDir, relPath, entry, opts) {
     '# Tags: ' + (entry.tags.length ? entry.tags.join(', ') : '(none)') + '\n' +
     excerptHeader(entry.excerpt) +
     '\n' +
-    readExcerpt(body, entry.excerpt);
+    // Same per-project redaction read_file applies, so lines the user
+    // hid in Settings → Hide file content never ride in via a tag or an
+    // @-mention either. startLine keeps excerpt line numbers aligned.
+    hideFileContent.redactText(
+      projectDir, relPath, readExcerpt(body, entry.excerpt),
+      entry.excerpt ? Math.max(1, entry.excerpt.start) : 1
+    ).text;
 
   return { role: forced ? 'user' : 'system', content, relPath };
 }
@@ -320,15 +340,55 @@ function resolveForInjection(projectDir, opts) {
   }
 
   const out = [];
-  const paths = Object.keys(map).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  const byPath = (a, b) => a.toLowerCase().localeCompare(b.toLowerCase());
+  const paths = Object.keys(map).sort(byPath);
   for (const rel of paths) {
     const entry = map[rel];
     const referenced = forceUserPaths.has(rel);
     if (!entry.includeInChat && !referenced) continue;
     const msg = buildInjectedMessage(projectDir, rel, entry, { maxBytes, forceUserPaths });
     if (msg) out.push(msg);
+    else if (referenced) out.push(skippedReferenceMessage(projectDir, rel, entry, maxBytes));
   }
-  return out;
+  // @-references to files that carry no tag entry. The composer popup
+  // offers every scanned project file, so an explicit mention must attach
+  // the file even when it was never tagged. Only text files on the scan
+  // allowlist are attached; anything else is skipped silently, exactly as
+  // parseReferences drops unresolvable tokens.
+  const untagged = Array.from(forceUserPaths)
+    .filter(rel => !Object.prototype.hasOwnProperty.call(map, rel))
+    .sort(byPath);
+  for (const rel of untagged) {
+    if (!isTextName(path.posix.basename(rel))) continue;
+    const entry = { tags: [], excerpt: null, includeInChat: false };
+    const msg = buildInjectedMessage(projectDir, rel, entry, { maxBytes, forceUserPaths });
+    if (msg) out.push(msg);
+    else {
+      const note = skippedReferenceMessage(projectDir, rel, entry, maxBytes);
+      if (note) out.push(note);
+    }
+  }
+  return out.filter(Boolean);
+}
+
+// An explicit @-reference the loader could not attach because the file is
+// over the size cap. Returning a short note (instead of dropping it) tells
+// the model the file exists and is large, so it can read it with a tool
+// rather than guess. Missing, non-file, or escaping paths return null.
+function skippedReferenceMessage(projectDir, relPath, entry, maxBytes) {
+  let stat;
+  try { stat = fs.statSync(toAbsInside(projectDir, relPath)); }
+  catch { return null; }
+  if (!stat.isFile() || entry.excerpt || stat.size <= maxBytes) return null;
+  return {
+    role: 'user',
+    relPath,
+    skipped: 'size',
+    content:
+      '# File: ' + relPath + '\n' +
+      '# Not attached: ' + stat.size + ' bytes exceeds the ' + maxBytes + '-byte mention limit.\n' +
+      'Read the parts you need with a file tool.'
+  };
 }
 
 // Parse @<relPath> tokens out of a composer message. Returns the list of

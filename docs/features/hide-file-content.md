@@ -56,7 +56,7 @@ The preview uses the existing 1 MiB file-editor read limit; if a file cannot be 
 
 ### Protection limits
 
-This is **not a security boundary**. Only `read_file` and `search_files` are filtered. Shell, MCP, and other access can still read the original content. These limits are visible on the list and editor, not hidden in a help popup. Rules track line numbers and column positions, not text, so review them after editing or moving file content.
+This is **not a security boundary**. Only `read_file`, `search_files`, and files attached to a chat by a tag or an `@` mention are filtered. Shell, MCP, and other access can still read the original content. These limits are visible on the list and editor, not hidden in a help popup. Rules track line numbers and column positions, not text, so review them after editing or moving file content.
 
 ```text
 # Settings → Project → More settings → Hide file content

@@ -175,6 +175,43 @@ tags.setTags(PROJ, { 'src/App.vue': true });
 const bareEntry = tags.getTags(PROJ)['src/App.vue'];
 check('bare true entry normalizes to includeInChat=false', bareEntry && bareEntry.includeInChat === false);
 
+// ---- @-references to untagged files -----------------------------------
+// The composer popup offers every scanned file, so an explicit mention of
+// a file with no tag entry must still attach it (as a `user` message).
+tags.setTags(PROJ, {});
+const untaggedInj = tags.resolveForInjection(PROJ, {
+  referencedPaths: tags.parseReferences(PROJ, 'read @notes.txt and @src/App.vue')
+});
+const notesMsg = untaggedInj.find(m => m.relPath === 'notes.txt');
+check('untagged @-reference is injected', !!notesMsg);
+check('untagged @-reference is a user message', notesMsg && notesMsg.role === 'user');
+check('untagged @-reference carries the file body', notesMsg && notesMsg.content.includes('some notes'));
+check('untagged @-reference header says no tags', notesMsg && notesMsg.content.includes('# Tags: (none)'));
+check('untagged exact-path @-reference is injected', untaggedInj.some(m => m.relPath === 'src/App.vue'));
+const binInj = tags.resolveForInjection(PROJ, { referencedPaths: ['logo.png'] });
+check('untagged binary @-reference is skipped', binInj.length === 0);
+const missingInj = tags.resolveForInjection(PROJ, { referencedPaths: ['nope.js'] });
+check('missing @-reference is skipped', missingInj.length === 0);
+const bigInj = tags.resolveForInjection(PROJ, { referencedPaths: ['big.txt'] });
+check('oversize @-reference yields a short note', bigInj.length === 1 && bigInj[0].skipped === 'size'
+  && bigInj[0].content.includes('# Not attached') && bigInj[0].content.length < 500);
+// Hide-file-content rules apply to injected bodies exactly as read_file.
+require('../src/settings.js').setProject(PROJ, {
+  hideFileContent: [{ path: 'src/a.js', ranges: [{ start: 2, end: 2 }] }]
+});
+const hidInj = tags.resolveForInjection(PROJ, { referencedPaths: ['src/a.js'] });
+const hidMsg = hidInj.find(m => m.relPath === 'src/a.js');
+check('hidden line is redacted in an @-reference', hidMsg && !hidMsg.content.includes('line2')
+  && hidMsg.content.includes('[hidden]') && hidMsg.content.includes('line3'));
+tags.setTags(PROJ, { 'src/a.js': { tags: ['api'], excerpt: { start: 2, end: 3 }, includeInChat: true } });
+const hidEx = tags.resolveForInjection(PROJ, {}).find(m => m.relPath === 'src/a.js');
+check('hidden line is redacted inside a tagged excerpt', hidEx && !hidEx.content.includes('line2')
+  && hidEx.content.includes('[hidden]') && hidEx.content.includes('line3'));
+require('../src/settings.js').setProject(PROJ, { hideFileContent: [] });
+tags.setTags(PROJ, {});
+const noRefInj = tags.resolveForInjection(PROJ, {});
+check('untagged files are not injected without a mention', noRefInj.length === 0);
+
 // ---- Summary ------------------------------------------------------------
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

@@ -106,8 +106,8 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', filePath
       h('p', { class: 'hidden-content__intro' }, 'Choose a file, then tap the line numbers you want hidden from the agent file tools, or select text and hide just that span. Your file stays unchanged.'),
       h('p', { class: 'hidden-content__scope' },
         h('strong', null, 'Not a security boundary. '),
-        'Only ', h('code', null, 'read_file'), ' and ', h('code', null, 'search_files'),
-        ' are filtered. Shell, MCP, and other access can still read the original content.'
+        'Only ', h('code', null, 'read_file'), ', ', h('code', null, 'search_files'),
+        ', and files attached by a tag or an @ mention are filtered. Shell, MCP, and other access can still read the original content.'
       ),
       error ? h('div', { role: 'alert' }, h('p', null, error), dir && h('button', { class: 'btn', onClick: () => setReload((n) => n + 1) }, 'Retry'))
         : rules === null ? h('p', { role: 'status' }, 'Loading hidden files…')

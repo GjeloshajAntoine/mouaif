@@ -34,6 +34,8 @@ When the user sends a message, the server pre-appends the tagged files to the up
 
 The leading header block lets the model reason about provenance. The role is `system` by default (the tagged files are project context); when the user types `@src/api/users.js` in the composer, the role is `user` so the model treats it as a direct reference.
 
+An `@` mention does not require a tag. Mentioning a file that has **no tag entry** attaches it too, in full, with a `# Tags: (none)` header and the `user` role. Only text files on the scan allowlist are attached this way. A mentioned file above the size cap (tagged without an excerpt, or untagged) is replaced by a short `# Not attached: … exceeds the …-byte mention limit` note, so the model knows to read it with a file tool.
+
 A bare basename mention — `@users.js` instead of the full path — is also accepted. `parseReferences` resolves it against the tagged map first and the on-disk scan second, so `@users.js` promotes `src/api/users.js` when that basename is unambiguous (an ambiguous basename resolves to the shortest path rather than being dropped, and a mention with no match at all is silently ignored).
 
 ## Behavior
@@ -42,6 +44,7 @@ A bare basename mention — `@users.js` instead of the full path — is also acc
 - **Path normalization.** Paths are stored as POSIX-style relative paths from the project root (`src/api/users.js`, never `src\\api\\users.js`). The chat loader resolves them with `path.join(projectDir, rel)` and refuses anything that escapes the project root (`..` segments or absolute paths yield `EOUTSIDE_PROJECT`).
 - **Excerpt format.** `{ start, end }` are 1-indexed inclusive line numbers. An absent excerpt means the whole file; `{ start: 2, end: 2 }` injects line 2.
 - **File size cap.** Files above a soft cap (default 256 KB, configurable via `app.fileTagMaxBytes`) are not auto-injected; the tagged entry stays in the project file with `includeInChat: false` and a `note: "exceeds fileTagMaxBytes"`. The user can pin a smaller excerpt to bypass the cap.
+- **Hidden content.** Injected bodies (tagged or mentioned) use the same **Hide file content** redaction as `read_file`. Hidden lines and character spans become `[hidden]`, and excerpt line numbers match the file on disk.
 - **Stale path handling.** If a tagged file is moved, renamed, or deleted, the entry is kept (the user may be in the middle of a refactor) but is silently skipped at injection time. The UI shows a `missing` badge on stale entries and offers a "Remove" action.
 - **Commit-friendliness.** Because the tag map lives in `.mouaif.json`, the user can `git add` it next to the source. The chat injects the current working-tree version of each file at message-send time, not whatever was committed.
 - **No tags on a missing project.** Tag CRUD requires the project to be registered; a PUT against an unregistered project returns `404`.
