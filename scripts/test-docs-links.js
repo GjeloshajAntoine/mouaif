@@ -136,7 +136,7 @@ try {
     }
   });
 
-  check('the landing page bar has no brand row', () => {
+  check('the landing page bar has no brand row and no extra gap under it', () => {
     // The landing page shows "mouaif" as the hero H1 right under the bar, so
     // its bar is the link row alone (topnav--minimal); every other page keeps
     // the brand, the only place the site name appears there.
@@ -147,6 +147,10 @@ try {
     const guide = fs.readFileSync(path.join(pub.out, 'documentation.html'), 'utf8');
     const guideNav = guide.slice(guide.indexOf('<nav class="topnav"'), guide.indexOf('</nav>'));
     assert.ok(guideNav.includes('topnav-brand'), 'guide pages lost the brand row');
+    // Two spacings stacked between the bar and the hero: the shared .main
+    // padding plus the hero's own. Only the hero's should remain.
+    const css = fs.readFileSync(path.join(pub.out, 'assets', 'site.css'), 'utf8');
+    assert.match(css, /\.site--full \.main \{[^}]*padding: 0;/, 'landing main still carries page padding');
   });
 
   check('guide card summaries do not end on a dangling colon', () => {

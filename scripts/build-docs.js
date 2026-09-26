@@ -659,10 +659,15 @@ table tr:last-child td { border-bottom: 0; }
 .site--full {
   grid-template-columns: minmax(0, 1fr);
 }
+/* Full-width layout (landing page has no sidebar). The page's own sections
+   carry their spacing, so the shared .main padding — tuned for a Markdown
+   page — is cancelled here; leaving it on stacked a second gap on top of the
+   hero's padding between the bar and the eyebrow. */
 .site--full .main {
   max-width: 1180px;
   width: 100%;
   margin: 0 auto;
+  padding: 0;
 }
 .sidebar {
   background: var(--surface);
@@ -972,7 +977,7 @@ html { scroll-padding-top: 72px; }
 .topnav-links { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); padding-right: 24px; }
 /* Two rows of sticky navigation (~110 px). */
 html { scroll-padding-top: 120px; }
-.hero { padding: 40px 16px 32px; }
+.hero { padding: 24px 16px 32px; }
 .hero h1 { font-size: 40px; }
 .hero .tagline { font-size: 15px; }
 .feature { grid-template-columns: 1fr; gap: 20px; }
