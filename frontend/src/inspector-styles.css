@@ -198,20 +198,21 @@ color: var(--accent);
 copy the selector. It used to be a chip in the card header, published upward
 because the row it shared with three labelled buttons (Clear / Refresh /
 Pick) left it ~100 px and it ellipsized first. Those buttons are in the card
-header now, so the identity owns this row: one line, untruncated at 360 px,
-and `min-height: --tap` keeps it a full tap target. The name still
-ellipsizes rather than wrapping, so a pathological label costs nothing
-below. */
+header now, so the identity owns this row: one line, untruncated at 360 px.
+It is a compact 32 px row rather than a 44 px one — it spans the full panel
+width, so the target stays wide, and every pixel it gives back goes to the
+property list under the pin. The name still ellipsizes rather than wrapping,
+so a pathological label costs nothing below. */
 .inspector__styles-elem {
 display: flex;
-/* Centred, not baseline: the chip is a 44 px target and baseline alignment
-pinned the one line of text to the top of it, leaving an empty band under the
-label that read as a missing second line. */
+/* Centred, not baseline: baseline alignment pinned the one line of text to
+the top of the chip, leaving an empty band under the label that read as a
+missing second line. */
 align-items: center;
-gap: 8px;
+gap: 6px;
 width: 100%;
-min-height: var(--tap);
-padding: 6px 10px;
+min-height: 32px;
+padding: 3px 8px;
 font: inherit;
 font-family: var(--font-mono);
 text-align: left;
@@ -225,7 +226,7 @@ cursor: pointer;
 .inspector__styles-elem:hover { background: var(--surface-3); }
 .inspector__styles-elem-name {
 min-width: 0;
-font-size: 0.8rem;
+font-size: 0.74rem;
 font-weight: 700;
 white-space: nowrap;
 overflow: hidden;
@@ -234,7 +235,7 @@ text-overflow: ellipsis;
 .inspector__styles-elem-size {
 flex: 0 0 auto;
 margin-left: auto;
-font-size: 0.66rem;
+font-size: 0.62rem;
 font-variant-numeric: tabular-nums;
 color: var(--muted);
 white-space: nowrap;
