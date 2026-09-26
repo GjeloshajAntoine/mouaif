@@ -276,7 +276,10 @@ files: 'file'
           })
         ),
         h('div', { class: 'tool-popup__foot' },
-h('label', { class: 'switch switch--sm' },
+// The whole row is the tap target (≥ 44px tall); the switch keeps its
+// own fixed-size box and the label text sits beside it, not inside it.
+h('label', { class: 'tool-popup__foot-row' },
+h('span', { class: 'switch switch--sm' },
 h('input', {
 type: 'checkbox',
 role: 'switch',
@@ -286,6 +289,7 @@ onChange: () => onToggleAutoRetry && onToggleAutoRetry()
 }),
 h('span', { class: 'switch__track', 'aria-hidden': 'true' },
 h('span', { class: 'switch__thumb' })
+)
 ),
 h('span', { class: 'tool-popup__foot-label' }, 'Auto-retry failed sends')
 ),
