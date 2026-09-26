@@ -72,10 +72,14 @@ export function mergeServerRows(state, rows) {
   // append-ordered), so align them positionally first — this keeps
   // two identical consecutive assistants (same text) in the right
   // order instead of swapping them by content match.
+  //
+  // The run is held by object reference, not index: a persisted row with no
+  // twin is spliced in ahead of the run, which shifts every later index, so a
+  // stored index would then point at the row BEFORE the intended twin.
   const trailing = [];
   for (let i = out.length - 1; i >= 0; i--) {
     if (out[i] && typeof out[i].seq === 'number') break;
-    trailing.unshift(i);
+    trailing.unshift(out[i]);
   }
   let ti = 0;
   for (const row of rows) {
@@ -83,13 +87,20 @@ export function mergeServerRows(state, rows) {
     if (typeof row.seq === 'number') {
       if (seen.has(row.seq)) continue; // already merged — drop
       seen.add(row.seq);
-      // Positional align with the trailing optimistic run when this
-      // row is plausibly the next one (same role).
-      while (ti < trailing.length) {
-        const idx = trailing[ti];
-        const m = out[idx];
-        ti++;
-        if (m && typeof m.seq !== 'number' && m.role === row.role) { replaceIdx = idx; break; }
+      // Positional align with the trailing optimistic run: the next
+      // trailing row of the same role is this row's twin. Skipped rows
+      // are consumed only on a match — a persisted row with no optimistic
+      // twin (a tool call/result the client never held as a message) must
+      // not burn the slot of the answer that follows it, or that answer's
+      // persisted twin is appended below its optimistic copy (a duplicate).
+      for (let j = ti; j < trailing.length; j++) {
+      const m = trailing[j];
+      if (!m || m.role !== row.role) continue;
+      const idx = out.indexOf(m);
+      if (idx === -1) continue;
+      replaceIdx = idx;
+      ti = j + 1;
+      break;
       }
       // Fall back to a content match among remaining seq-less rows.
       if (replaceIdx === -1) {
@@ -157,12 +168,23 @@ export function tailSyncDomAction(prev, merged) {
 // Index at which a persisted row with `seq` belongs in an array that may end
 // in a run of seq-less optimistic rows. The optimistic tail represents content
 // the server has not persisted yet, so it always sorts after every persisted
-// row: it takes precedence over the seq comparison by being skipped.
+// row.
+//
+// Seq-less rows are not only the tail: a client-side error card (or a
+// subagent answer) stays in the MIDDLE of the transcript, seq-less, once later
+// turns are persisted below it. Such a row says nothing about where `seq`
+// belongs, so it must not end the scan — stopping at the first seq-less row
+// spliced a new turn's rows ABOVE every older turn that followed the error
+// (the answer landing above its question). Only persisted rows are compared:
+// the row goes before the first one that sorts after it, else right after the
+// last persisted row (i.e. ahead of the optimistic tail).
 function insertionPointFor(out, seq) {
+  let afterLastPersisted = 0;
   for (let i = 0; i < out.length; i++) {
     const m = out[i];
-    if (!m || typeof m.seq !== 'number') return i; // start of the optimistic tail
+    if (!m || typeof m.seq !== 'number') continue;
     if (m.seq > seq) return i;                     // first persisted row that sorts after
+    afterLastPersisted = i + 1;
   }
-  return out.length;
+  return afterLastPersisted;
 }

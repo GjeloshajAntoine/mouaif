@@ -102,20 +102,83 @@ async function run() {
   t('the optimistic tail rows were replaced, not duplicated',
     out.length === 4 && out.filter((m) => m.role === 'user').length === 1, out.length);
 
-  // Case 9: the same, with a LIVE optimistic assistant segment in play. The
-  // seq-less tail must sort after every persisted row, so the new tool rows
-  // land between the persisted prefix and the live segment instead of after it.
+  // Case 9: a seq-less tail row with no twin in the batch (here an optimistic
+  // user bubble whose POST is still in flight) sorts after every persisted
+  // row, so new tool/answer rows land between the prefix and that tail.
   s = { seenSeqs: new Set([0]), messages: [
     { role: 'user', content: 'q', ts: 'S', seq: 0 },
-    { role: 'assistant', content: 'live partial', reasoning: '', ts: 'C' }
+    { role: 'user', content: 'q2', ts: 'C' }
   ] };
   out = mergeServerRows(s, [
     { role: 'tool', phase: 'call', name: 'shell', ts: 'S', seq: 1 },
     { role: 'assistant', content: 'done', reasoning: '', ts: 'S', seq: 2 }
   ]);
-  t('a live optimistic tail stays last while new persisted rows insert before it',
-    out.map((m) => m.role + ':' + (m.seq == null ? 'x' : m.seq)).join(',') === 'user:0,tool:1,assistant:2,assistant:x',
+  t('an unmatched optimistic tail stays last while new persisted rows insert before it',
+    out.map((m) => m.role + ':' + (m.seq == null ? 'x' : m.seq)).join(',') === 'user:0,tool:1,assistant:2,user:x',
     out.map((m) => m.role + ':' + (m.seq == null ? 'x' : m.seq)).join(','));
+
+  // Case 9b: a tool row (never held client-side as a message) must not burn
+  // the positional slot of the answer that follows it. The answer's twin is
+  // replaced even when its text differs slightly (so the content fallback
+  // cannot rescue it) — otherwise the optimistic copy stays below the
+  // persisted one: a duplicate, out of order.
+  s = { seenSeqs: new Set(), messages: [
+    { role: 'user', content: 'q', ts: 'C' },
+    { role: 'assistant', content: 'ans', reasoning: 'r', ts: 'C' }
+  ] };
+  out = mergeServerRows(s, [
+    { role: 'user', content: 'q', ts: 'S', seq: 0 },
+    { role: 'tool', phase: 'call', name: 'shell', ts: 'S', seq: 1 },
+    { role: 'tool', phase: 'result', name: 'shell', ts: 'S', seq: 2 },
+    { role: 'assistant', content: 'ans', reasoning: 'r ', ts: 'S', seq: 3 }
+  ]);
+  t('a tool row does not steal the answer\'s optimistic slot',
+    out.map((m) => m.role + ':' + (m.seq == null ? 'x' : m.seq)).join(',') === 'user:0,tool:1,tool:2,assistant:3',
+    out.map((m) => m.role + ':' + (m.seq == null ? 'x' : m.seq)).join(','));
+
+  // Case 9c: multi-segment turn — tool rows between segments, every segment's
+  // twin replaced in order, even with non-matching text.
+  s = { seenSeqs: new Set(), messages: [
+    { role: 'user', content: 'q', ts: 'C' },
+    { role: 'assistant', content: 'seg1', ts: 'C' },
+    { role: 'assistant', content: 'seg2', ts: 'C' },
+    { role: 'assistant', content: 'final', ts: 'C' }
+  ] };
+  out = mergeServerRows(s, [
+    { role: 'user', content: 'q', seq: 0 },
+    { role: 'assistant', content: 'seg1 ', seq: 1 },
+    { role: 'tool', phase: 'call', seq: 2 },
+    { role: 'tool', phase: 'result', seq: 3 },
+    { role: 'assistant', content: 'seg2 ', seq: 4 },
+    { role: 'tool', phase: 'call', seq: 5 },
+    { role: 'tool', phase: 'result', seq: 6 },
+    { role: 'assistant', content: 'final ', seq: 7 }
+  ]);
+  t('multi-segment turn keeps seq order with no duplicates',
+    out.map((m) => m.seq == null ? 'x' : m.seq).join(',') === '0,1,2,3,4,5,6,7',
+    out.map((m) => m.seq == null ? 'x' : m.seq).join(','));
+
+  // Case 9d: a client-only error card stays seq-less in the MIDDLE of the
+  // transcript once later turns are persisted below it. A new turn's rows
+  // must land at the bottom, not spliced above that card (which put the
+  // answer above its question and above every turn after the error).
+  s = { seenSeqs: new Set([0, 1, 2, 3]), messages: [
+    { role: 'user', content: 'q1', seq: 0 },
+    { role: 'assistant', content: 'a1', seq: 1 },
+    { role: 'system', content: 'Network error' },
+    { role: 'user', content: 'q2', seq: 2 },
+    { role: 'assistant', content: 'a2', seq: 3 },
+    { role: 'user', content: 'q3' }
+  ] };
+  out = mergeServerRows(s, [
+    { role: 'user', content: 'q3', seq: 4 },
+    { role: 'tool', phase: 'call', seq: 5 },
+    { role: 'tool', phase: 'result', seq: 6 },
+    { role: 'assistant', content: 'a3', seq: 7 }
+  ]);
+  t('a mid-transcript error card does not pull a new turn above older turns',
+    out.map((m) => m.seq == null ? 'x' : m.seq).join(',') === '0,1,x,2,3,4,5,6,7',
+    out.map((m) => m.seq == null ? 'x' : m.seq).join(','));
 
   // Case 10: rows already held at/above the new seq are not displaced — the
   // insertion point must skip past every persisted row that sorts before.

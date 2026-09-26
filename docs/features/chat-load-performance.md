@@ -35,6 +35,13 @@ A long transcript paints its newest rows first and backfills older history above
 
 Tail sync (`mergeServerRows` in [frontend/src/components/chat/msgMerge.js](../../frontend/src/components/chat/msgMerge.js)) keeps the array in **seq order**. A persisted row that has no seq-less optimistic twin to replace is inserted at its seq position rather than pushed onto the end: the known prefix stays first, any trailing seq-less optimistic rows sort last (the server has not persisted them yet), and the row lands between them. Pushing instead reorders the batch — on an early turn the tail fetch returns the whole transcript, and the tool call/result rows of that turn (which have no optimistic twin) would be appended **after** the assistant answer that followed them. Regression cases: `scripts/test-msg-merge.js` cases 8–10.
 
+Two more rules keep that order under real turns:
+
+- **Only persisted rows set the insertion point.** A client-only row, like a network-error card, stays seq-less in the *middle* of the transcript once later turns are persisted below it. The insertion scan skips seq-less rows. It places the new row before the first persisted row with a higher seq, otherwise right after the last persisted row. Before this, the scan stopped at the first seq-less row it met, so a new turn was spliced in above the error card and every turn after it: the answer showed above its question.
+- **A row with no twin does not use up a twin's slot.** The trailing optimistic rows are matched to the batch by role, in order, and tracked by object reference. A tool call/result row has no optimistic twin, so it no longer consumes the slot of the assistant answer that follows it. Before this, the answer's persisted copy was appended below its optimistic copy (a duplicate, out of order) whenever the texts differed even slightly.
+
+Regression cases: `scripts/test-msg-merge.js` cases 9b–9d.
+
 ## Related
 
 - [Chat storage](./chat-storage.md) — SQLite-backed messages.
