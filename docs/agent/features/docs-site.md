@@ -26,9 +26,11 @@ The script is CommonJS, dependency-free, and runs under plain `node`. `node -c s
 
 On a phone the top navigation's links sit on one sideways-scrolling row whose trailing edge is faded with a CSS mask, so a clipped label reads as "more to the right". `html { scroll-padding-top }` (72 px, 120 px under 760 px) keeps an anchored heading clear of the sticky bar. `renderTopNav({ brand: false })` drops the brand row for the landing page, whose bar is then the link row alone (`topnav topnav--minimal`, one 44 px row on a phone instead of two, since the brand rule was what pushed the links down); `scripts/test-docs-links.js` asserts the landing nav has no `topnav-brand` and that the guide pages still do. `extractBlurb()` drops a trailing lead-in sentence that ends with a colon (a paragraph introducing a table or list), so a card summary never ends mid-thought.
 
-### Landing-page bar without the brand
+### Landing-page bar and spacing
 
 `buildLandingPage()` calls `renderTopNav({ brand: false })`: the landing page already shows "mouaif" as a 52 px H1 inside the hero, so repeating the `m mouaif` brand row directly above it wasted a full sticky row on a 360–430 px phone. Every other page keeps the brand — there the bar is the only place the site name appears.
+
+The hero also inherited `.main`'s padding (`28px 32px 64px`, `20px 16px 48px` under 760 px), which is tuned for a Markdown page and stacked on top of the hero's own padding: 65 px of dead space between the bar and the eyebrow on a phone, 85 px on a laptop. `.site--full .main { padding: 0 }` cancels it for the landing page only, so the gap under the bar is exactly the hero's own padding (56 px laptop / 24 px phone); the landing sections carry their own `.section` margins.
 
 Under 760 px the CSS brand rule (`flex: 1 0 100%`) was what pushed the links onto a second row; with no brand the minimal bar stays one 44 px row that scrolls sideways, and `.topnav--minimal` drops the 6 px vertical padding the two-row layout needed. `scroll-padding-top` stays at 120 px under 760 px for both bar shapes because it is a single rule shared by the landing page and the feature pages, and the landing hero is not an anchor target.
 `docs/README.md` is no longer rendered into a page: the build only looks for an optional `## Feature source index` section to order cards. The landing page copy lives in `buildLandingPage()`.
