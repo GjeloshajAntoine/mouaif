@@ -55,6 +55,25 @@ Two traps worth remembering:
 - **The same `chromePort` (9222) is both the capture browser and the Inspector's target**, so a capture Chrome already running on the machine has to be stopped first (or the `--base` path used). The fixture root is a fixed path (`<tmp>/mouaif-demo`), not a `mkdtemp` name, because the project path is rendered inside the captures — a random suffix would end up published on the page.
 - The Inspector shot's `recipe` types the preview page URL and the fixture writes `inspector.debuggerUrl` through `PUT /api/inspector/config`, which is what fills the setup form before the tap on **Open & inspect**.
 
+### Link-preview tags
+
+`htmlPage()` takes a `previewImage` (site-root-relative) and a `path` (the page's output path relative to the site root) and emits the social tags into `<head>`:
+
+| Tag | Value |
+|-----|-------|
+| `og:site_name` | `mouaif docs` |
+| `og:type` | `website` |
+| `og:title` / `og:description` | The same title/description the page already uses |
+| `og:url` | `SITE_ORIGIN + '/' + path` |
+| `og:image` (and `twitter:image`) | `SITE_ORIGIN + '/' + previewImage`, only when that file exists |
+| `og:image:width` / `og:image:height` | Read from the PNG IHDR header by `pngSize()` (bytes 16–23), so the declared size is the real one without decoding the image |
+| `og:image:alt` / `twitter:image:alt` | The page description |
+| `twitter:card` | `summary_large_image` |
+
+The image URL is absolute because link scrapers fetch the tags out of context — a relative `og:image` is ignored by every major consumer. `SITE_ORIGIN` is a single constant near the top of the script (`https://gjeloshajantoine.github.io/mouaif`, the `<owner>.github.io/<repo>` shape the branch deploy produces); a CNAME domain or a renamed repository changes exactly that line. `fullPreviewImage()` verifies the file is on disk before it is advertised, so the build never publishes a dead image URL, and `firstPreviewImage(slug)` scrapes the page's own Markdown for its first `![alt](url)` (the same rule `renderInline` uses, including an optional quoted title) and resolves `./images/…` against `docs/features/`, which yields the site-root path `features/images/…`.
+
+Both callers pass `path` so `og:url` is the page's own absolute URL: `index.html`, `documentation.html`, `decisions.html`, `agent-notes.html`, `features/<slug>.html`, `agent/<slug>.html`. The `noindex` meta-refresh pages `buildRedirectPages()` writes are deliberately left with their canonical link only — they are not preview targets. `scripts/test-docs-links.js` asserts every non-redirect page has an `og:url` with the right shape, that the landing page previews the first landing capture with a size matching the PNG header, that a page with a screenshot previews its own first image, and that a page without one carries no `og:image` at all.
+
 ### Internal gating
 
 `main()` parses `--out <dir>` and `--with-internal` (alias `--internal`). `buildDecisionsPage`, `buildAgentNotesPage`, and `buildAgentFeaturePages` are called only when `withInternal` is true, so a public build produces no file a crawler could reach under `decisions.html`, `agent-notes.html`, or `agent/`. The agent pages keep their own sidebar, which links to `../decisions.html` and `../agent-notes.html`; those targets only exist in an internal build, which is why the two halves must be built together.

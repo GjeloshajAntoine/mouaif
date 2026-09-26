@@ -160,6 +160,45 @@ try {
     for (const b of blurbs) assert.ok(!/:\s*$/.test(b), 'card ends with a colon: ' + b);
   });
 
+  check('every page carries a link-preview og:url', () => {
+    for (const file of htmlFiles(pub.out)) {
+      const html = fs.readFileSync(file, 'utf8');
+      // The tiny forwarding pages for a merged slug carry a canonical only.
+      if (/http-equiv="refresh"/.test(html)) continue;
+      const m = /<meta property="og:url" content="([^"]+)"/.exec(html);
+      assert.ok(m, path.relative(pub.out, file) + ' has no og:url');
+      assert.match(m[1], /^https:\/\/[^/]+\/[^"]+\.html$/, path.relative(pub.out, file));
+    }
+  });
+
+  check('the landing page previews the first landing capture', () => {
+    const html = fs.readFileSync(path.join(pub.out, 'index.html'), 'utf8');
+    const img = /<meta property="og:image" content="([^"]+)"/.exec(html);
+    assert.ok(img, 'landing page has no og:image');
+    assert.match(img[1], /^https:\/\/[^"]+\/features\/images\/landing\/chat-tools\.png$/);
+    assert.match(html, /<meta name="twitter:card" content="summary_large_image" \/>/);
+    // The declared size must be the real PNG size, read without decoding it.
+    const png = fs.readFileSync(path.join(ROOT, 'docs', 'features', 'images', 'landing', 'chat-tools.png'));
+    const w = /<meta property="og:image:width" content="(\d+)"/.exec(html);
+    const h = /<meta property="og:image:height" content="(\d+)"/.exec(html);
+    assert.ok(w && h, 'og:image size is not declared');
+    assert.strictEqual(Number(w[1]), png.readUInt32BE(16), 'og:image:width');
+    assert.strictEqual(Number(h[1]), png.readUInt32BE(20), 'og:image:height');
+  });
+
+  check('a feature page previews its own first image', () => {
+    const inspector = fs.readFileSync(path.join(pub.out, 'features', 'inspector.html'), 'utf8');
+    assert.match(inspector, /og:image" content="https:\/\/[^"]+\/features\/images\/inspector\/mobile-360-all-on\.png"/);
+    const draft = fs.readFileSync(path.join(pub.out, 'features', 'draft-craft.html'), 'utf8');
+    assert.match(draft, /og:image" content="https:\/\/[^"]+\/features\/images\/draft-craft\/annotator-canvas-360\.png"/);
+  });
+
+  check('a page with no image advertises no preview image', () => {
+    const html = fs.readFileSync(path.join(pub.out, 'features', 'getting-started.html'), 'utf8');
+    assert.ok(!/property="og:image"/.test(html), 'getting-started.html declares an og:image');
+    assert.ok(/property="og:url"/.test(html), 'getting-started.html lost its og:url');
+  });
+
   check('inline code keeps a literal [text](url) as text', () => {
     const html = fs.readFileSync(path.join(pub.out, 'features', 'markdown-renderer.html'), 'utf8');
     assert.match(html, /<code>\[text\]\(url\)<\/code>/);

@@ -79,6 +79,17 @@ const REDIRECTED_SLUGS = {
 // Set by main(). When false (the default, published build) the maintainer
 // pages are not written and links to them are rendered as plain text.
 let includeInternalPages = false;
+// Absolute origin the published site is served from. Link previews (og:image,
+// twitter:image) are read by scrapers that fetch the page out of context, so
+// those URLs must be absolute — a relative one is simply ignored. GitHub Pages
+// for a project repo lives under /<repo>/, so the repository name is part of
+// the origin. A CNAME domain would change it: edit this one line.
+const SITE_ORIGIN = 'https://gjeloshajantoine.github.io/mouaif';
+// Every phone capture is shot at 390 × 700 @2x (see capture-landing-shots.js).
+// The real size is declared on og:image:width/height so a first-fetch scraper
+// does not have to download the PNG to lay out its card.
+const PREVIEW_IMAGE_WIDTH = 780;
+const PREVIEW_IMAGE_HEIGHT = 1400;
 // GitHub Pages serves only docs/, so a link to a repository file outside the
 // built site (src/…, scripts/…, .github/…, docs/README.md) is sent to the file
 // on GitHub instead of a relative path that would 404 on the published site.
@@ -996,8 +1007,69 @@ html { scroll-padding-top: 120px; }
 }
 `;
 
-function htmlPage({ title, body, sidebar, description, topnav = '', fullWidth = false }) {
+// Intrinsic size of a PNG, read from the IHDR chunk (bytes 16–23) — no image
+// decoder needed. Returns null for anything that is not a PNG or too short.
+function pngSize(absPath) {
+  let buf;
+  try {
+    buf = fs.readFileSync(absPath);
+  } catch (_e) {
+    return null;
+  }
+  if (buf.length < 24 || buf.toString('latin1', 1, 4) !== 'PNG') return null;
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}
+
+// The site-root-relative URL of a preview image ('' when the file is missing),
+// so a page never advertises an image the build does not ship.
+function fullPreviewImage(rel) {
+  rel = String(rel || '').replace(/^\.?\//, '');
+  if (!rel) return '';
+  return fs.existsSync(path.join(DOCS_DIR, rel)) ? rel : '';
+}
+
+// The first image a published Markdown page embeds, resolved to its site-root
+// URL, used as that page's preview image. Feature pages are rendered from
+// docs/features/<slug>.md, where images are written `./images/…`; a page with
+// no image simply has no preview. The match mirrors the inline renderer's
+// image rule, including an optional quoted title.
+function firstPreviewImage(slug) {
+  let src;
+  try {
+    src = readDocFile('features/' + slug + '.md');
+  } catch (_e) {
+    return '';
+  }
+  const m = /!\[[^\]]*\]\(([^)\s]+)(?:\s+(?:"[^"]*"|&quot;[^&]*&quot;))?\)/.exec(src);
+  if (!m || /^[a-z][a-z0-9+.-]*:/i.test(m[1])) return '';
+  // The .md sits at docs/features/<slug>.md, so `./images/...` lands at the
+  // site-root path features/images/… — the same tree the build copies.
+  return fullPreviewImage(path.posix.normalize(path.posix.join('features', m[1].replace(/^\.\//, ''))));
+}
+
+function htmlPage({ title, body, sidebar, description, topnav = '', fullWidth = false, previewImage = '', path: pagePath = '' }) {
   const siteClass = fullWidth ? ' class="site site--full"' : ' class="site"';
+  // Absolute URL of this page, for og:url. The caller passes the output path
+  // relative to the site root ('index.html', 'features/<slug>.html').
+  const ogUrl = SITE_ORIGIN + '/' + String(pagePath || '').replace(/^\.?\//, '');
+  // Link-preview tags. `previewImage` is a site-root-relative path
+  // ('features/images/…'), the caller having checked that the file exists;
+  // og:image needs an absolute URL, so it is prefixed with SITE_ORIGIN. The
+  // pairing routes to twitter:image as well, and summary_large_image gives the
+  // wide card these phone captures deserve.
+  let preview = '';
+  if (previewImage) {
+    const abs = SITE_ORIGIN + '/' + previewImage.replace(/^\.?\//, '');
+    const size = pngSize(path.join(DOCS_DIR, previewImage));
+    preview = `  <meta property="og:image" content="${escapeAttr(abs)}" />
+  <meta property="og:image:alt" content="${escapeAttr(description || title)}" />
+${size ? `  <meta property="og:image:width" content="${size.width}" />
+  <meta property="og:image:height" content="${size.height}" />
+` : ''}  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="${escapeAttr(abs)}" />
+  <meta name="twitter:image:alt" content="${escapeAttr(description || title)}" />
+`;
+  }
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -1005,7 +1077,12 @@ function htmlPage({ title, body, sidebar, description, topnav = '', fullWidth = 
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(title)} — mouaif docs</title>
   <meta name="description" content="${escapeAttr(description || title)}" />
-  <link rel="stylesheet" href="./assets/site.css" />
+  <meta property="og:site_name" content="mouaif docs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="${escapeAttr(title)} — mouaif docs" />
+  <meta property="og:description" content="${escapeAttr(description || title)}" />
+  <meta property="og:url" content="${escapeAttr(ogUrl)}" />
+${preview}  <link rel="stylesheet" href="./assets/site.css" />
 </head>
 <body>
   ${topnav}
@@ -1073,11 +1150,13 @@ function buildFeaturePages(features, renderSidebar, outDir) {
     const ctx = { rewriteMd: true, srcRel: 'features/' + f.slug + '.md', outRel: 'features/' + f.slug + '.html' };
     const body = renderMarkdown(src, ctx);
     const html = htmlPage({
-      title: f.title,
-      body,
-      sidebar: renderSidebar(f.slug),
-      description: f.blurb || f.title,
-      topnav: renderTopNav()
+    title: f.title,
+    body,
+    sidebar: renderSidebar(f.slug),
+    description: f.blurb || f.title,
+    topnav: renderTopNav(),
+    previewImage: firstPreviewImage(f.slug),
+    path: 'features/' + f.slug + '.html'
     });
     // Feature pages are at features/<slug>.html, so the CSS path is
     // ../assets/site.css, and root-level links (index, documentation,
@@ -1157,8 +1236,9 @@ ${agentFeatures.map((a) => linkItem(a.slug, a.title)).join('\n    ')}
       body,
       sidebar,
       description: 'Agent-facing implementation notes for ' + f.title,
-      topnav: renderTopNav()
-    });
+      topnav: renderTopNav(),
+      path: 'agent/' + f.slug + '.html'
+      });
     // Agent pages are at agent/<slug>.html (one level deep), so root-level
     // links need a ../ prefix, and sibling agent pages are relative.
     const out = html
@@ -1199,7 +1279,8 @@ ${cards}
     body,
     sidebar,
     description: 'mouaif — agent-facing implementation notes index',
-    topnav: renderTopNav()
+    topnav: renderTopNav(),
+    path: 'agent-notes.html'
   });
   fs.writeFileSync(path.join(outDir, 'agent-notes.html'), html);
 }
@@ -1335,7 +1416,9 @@ body,
 sidebar: '',
 description: 'Install, configure, and use the mouaif AI coding assistant.',
 topnav: renderTopNav({ brand: false }),
-fullWidth: true
+fullWidth: true,
+previewImage: fullPreviewImage('features/images/landing/chat-tools.png'),
+path: 'index.html'
 });
 fs.writeFileSync(path.join(outDir, 'index.html'), html);
 }
@@ -1360,7 +1443,9 @@ ${cards}
     body,
     sidebar: sidebarHtmlStr,
     description: 'mouaif — feature documentation index',
-    topnav: renderTopNav()
+    topnav: renderTopNav(),
+    previewImage: fullPreviewImage('features/images/landing/chat-tools.png'),
+    path: 'documentation.html'
   });
   fs.writeFileSync(path.join(outDir, 'documentation.html'), html);
 }
@@ -1373,7 +1458,8 @@ function buildDecisionsPage(sidebarHtmlStr, outDir) {
     body,
     sidebar: sidebarHtmlStr,
     description: 'Locked-in stack, storage, and build order for mouaif.',
-    topnav: renderTopNav()
+    topnav: renderTopNav(),
+    path: 'decisions.html'
   });
   fs.writeFileSync(path.join(outDir, 'decisions.html'), html);
 }

@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Retry and auto-retry — mouaif docs</title>
   <meta name="description" content="Failed turns get two recoveries. Every inline error card in a chat now carries a **Retry** button that re-sends the failed user message. A per-chat…" />
+  <meta property="og:site_name" content="mouaif docs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Retry and auto-retry — mouaif docs" />
+  <meta property="og:description" content="Failed turns get two recoveries. Every inline error card in a chat now carries a **Retry** button that re-sends the failed user message. A per-chat…" />
+  <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/retry-and-auto-retry.html" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
@@ -41,7 +46,7 @@
 <h3 id="manual-retry">Manual retry</h3>
 <ul><li><p>Send a message that fails. The red error bubble in the transcript<br>  includes a <strong>Retry</strong> button.</p></li><li><p>Retry re-posts the same user message the model was working on. The<br>  failed response stays visible above the new attempt, so nothing is<br>  silently discarded.</p></li></ul>
 <h3 id="auto-retry">Auto-retry</h3>
-<ul><li><p>Open a chat and tap the tools button, then toggle <strong>Auto-retry failed<br>  sends</strong> in the footer.</p></li><li><p>The app-level default lives in <strong>Settings → App defaults</strong>, where it<br>  defaults to on. A per-chat choice overrides the app default.</p></li><li><p>When a turn fails before any response starts, the client immediately<br>  resends it once and shows an <code>auto-retrying…</code> status. Retried sends<br>  are themselves never auto-retried again, so a persistently failing<br>  message cannot loop.</p></li></ul>
+<ul><li><p>The setting lives in <strong>Settings → App defaults → Chat defaults</strong>, where it<br>  defaults to on.</p></li><li><p>When a turn fails before any response starts, the client immediately<br>  resends it once and shows an <code>auto-retrying…</code> status. Retried sends<br>  are themselves never auto-retried again, so a persistently failing<br>  message cannot loop.</p></li><li><p>A chat created before the setting was turned off keeps its own recorded<br>  choice; new chats follow the app default.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>
