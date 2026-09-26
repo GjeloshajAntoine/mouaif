@@ -98,6 +98,36 @@ c.messageCount = pageCounts[c.id] || 0;
     }
   }
 
+  // GET /api/chats/search?projectDir=<abs>&q=<term>[&limit=20]
+  //
+  // The project card's magnifier. The term is matched against chat titles,
+  // composer drafts, and persisted message text; the response is the same
+  // chat-list summary rows with two extra fields (`matchField`, `snippet`).
+  // A blank `q` is an empty result, not an error: clearing the field is how
+  // the user leaves search, and it must not produce a failed request.
+  if (urlPath === '/api/chats/search' && method === 'GET') {
+    const dir = qs(q, 'projectDir');
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+    const term = qs(q, 'q').trim();
+    const limitRaw = parseInt(typeof q.limit === 'string' ? q.limit : '0', 10) || 0;
+    const limit = limitRaw > 0 ? limitRaw : 20;
+    try {
+    const found = term ? chats.searchChats(dir, term, { limit }) : [];
+    // Same enrichment the chat list applies (see the GET /api/chats branch):
+    // the card infers "draft-only" from `messageCount`, and a search result
+    // renders through that same path, so the fields must be present. One
+    // bulk COUNT for the whole page, and the response-only liveness flag.
+    const pageCounts = messages.projectMessageCounts(dir, found.map((c) => c.id));
+    for (const c of found) {
+      if (runningChats.has(runningKey(dir, c.id))) c.running = true;
+      c.messageCount = pageCounts[c.id] || 0;
+    }
+    return sendJSON(res, 200, { chats: found, query: term, total: found.length });
+    } catch (e) {
+    return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // GET /api/chats/:id?projectDir=<abs>
   let m = urlPath.match(/^\/api\/chats\/([^/]+)$/);
   if (m && method === 'GET') {

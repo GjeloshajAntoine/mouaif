@@ -43,6 +43,7 @@ One page per feature: what it does and how to use it.
 ### Projects and settings
 
 - [Project card](features/project-card.md) — each project's chats, New chat, and options menu on the Chats tab.
+- [Project card search](features/project-card-search.md) — the magnifier on a project card: search that project's chats, drafts, and messages.
 - [New-project folder picker](features/folder-picker.md) — browse to a folder or create one to add a project.
 - [Projects in Settings](features/projects-in-settings.md) — the registered projects listed under Settings.
 - [App and project settings](features/app-and-project-settings.md) — defaults, app settings, and project overrides.

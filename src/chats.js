@@ -58,6 +58,14 @@ return getChatDb().listChats(projectDir, options);
 function countChats(projectDir) {
 return getChatDb().countChats(projectDir);
 }
+// searchChats(projectDir, query, { limit }) — the project card's magnifier.
+// Matches chat titles, composer drafts, and message text; returns chat-list
+// summaries plus `matchField` and `snippet`. See the long note in
+// src/chatdb.js for why it reads message bodies one row at a time.
+function searchChats(projectDir, query, options) {
+if (!projectDir || typeof projectDir !== 'string') return [];
+return getChatDb().searchChats(projectDir, query, options || {});
+}
 function getChat(projectDir, chatId) {
 if (!chatId || typeof chatId !== 'string') return null;
 return getChatDb().getChat(projectDir, chatId);
@@ -266,6 +274,7 @@ module.exports = {
 PROJECT_FILE,
 listChats,
 countChats,
+searchChats,
 getChat,
 createChat,
 updateChat,

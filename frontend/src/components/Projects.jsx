@@ -7,6 +7,12 @@ import { formatCost } from '../usage.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
 import { PromptIcon } from './PromptIcon.jsx';
 const CHAT_PAGE_SIZE = 30;
+// A card's search is a peek, not a page: the card holds about three rows and
+// the server caps the list at its own maximum anyway.
+const CHAT_SEARCH_LIMIT = 30;
+// Typing is what the user does; a request per keystroke is not. Long enough to
+// coalesce a burst of typing, short enough that a pause feels answered.
+const CHAT_SEARCH_DEBOUNCE_MS = 220;
 
 function fmtChatDate(chat) {
   const iso = chat && (chat.lastOpenedAt || chat.createdAt);
@@ -50,6 +56,17 @@ function ProjectMenu({ project, onRename, onUnregister }) {
   );
 }
 
+function ProjectSearchIcon({ size = 18 }) {
+  return h('svg', {
+    viewBox: '0 0 24 24', width: size, height: size, fill: 'none',
+    stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round',
+    'stroke-linejoin': 'round', 'aria-hidden': 'true'
+  },
+    h('circle', { cx: '11', cy: '11', r: '7' }),
+    h('path', { d: 'M20 20l-3.9-3.9' })
+  );
+}
+
 function ChatList({ project }) {
   const [chats, setChats] = useState([]);
   const [total, setTotal] = useState(0);
@@ -58,6 +75,16 @@ function ChatList({ project }) {
   const [loadingMore, setLoadingMore] = useState(false);
 const [isCreating, setIsCreating] = useState(false);
 const [prompts, setPrompts] = useState([]);
+// Search state. `searchOpen` is the field's presence, `term` what the user
+// typed, `results` the last answered query. While `results.query === term` the
+// list renders the results; the moment the term moves on it falls back to the
+// normal chat page, so a stale result can never be attributed to a new term.
+const [searchOpen, setSearchOpen] = useState(false);
+const [term, setTerm] = useState('');
+const [results, setResults] = useState(null);
+const [searching, setSearching] = useState(false);
+const searchInputRef = useRef(null);
+const searchSeq = useRef(0);
 useEffect(() => {
 let canceled = false;
 async function init() {
@@ -102,6 +129,60 @@ const list = r.body.chats || [];
     setLoadingMore(false);
   }
 
+  // Debounced search. The field is a controlled input, so every keystroke
+  // re-renders; only a settled term goes to the network. Each request carries a
+  // sequence number: the response that is not the newest one is dropped, since
+  // a slow early request must never overwrite a later answer.
+  useEffect(() => {
+    const q = term.trim();
+    if (!searchOpen) return;
+    if (!q) { setResults(null); setSearching(false); return; }
+    setSearching(true);
+    const mine = ++searchSeq.current;
+    const timer = setTimeout(async () => {
+      try {
+        const r = await fetchJson(
+          '/api/chats/search?projectDir=' + encodeURIComponent(project.path)
+          + '&q=' + encodeURIComponent(q) + '&limit=' + CHAT_SEARCH_LIMIT
+        );
+        if (mine !== searchSeq.current) return;
+        if (r.status === 200) setResults({ query: q, chats: r.body.chats || [] });
+        else setResults({ query: q, chats: [], error: 'HTTP ' + r.status });
+      } catch (err) {
+        if (mine === searchSeq.current) setResults({ query: q, chats: [], error: 'network error' });
+      }
+      if (mine === searchSeq.current) setSearching(false);
+    }, CHAT_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [term, searchOpen, project.path]);
+
+  function openSearch() {
+    setSearchOpen(true);
+    // Focus after the field exists — the input is mounted by the same render
+    // that sets the flag, so it is not in the tree yet when this runs.
+    requestAnimationFrame(() => {
+      const el = searchInputRef.current;
+      if (el && el.focus) el.focus();
+    });
+  }
+
+  function closeSearch() {
+    searchSeq.current++;   // drop any answer still in flight
+    setSearchOpen(false);
+    setTerm('');
+    setResults(null);
+    setSearching(false);
+  }
+
+  // A chat deleted from inside a search result must also leave the normal list
+  // and the counts, so both views read from the same state.
+  function dropChat(chatId) {
+    setChats(prev => prev.filter(c => c.id !== chatId));
+    setTotal(prev => Math.max(0, prev - 1));
+    setOffset(prev => Math.max(0, prev - 1));
+    setResults(prev => prev ? Object.assign({}, prev, { chats: prev.chats.filter(c => c.id !== chatId) }) : prev);
+  }
+
   async function createChat(promptId = null) {
 setIsCreating(true);
 try {
@@ -133,25 +214,17 @@ const r = await fetchJson('/api/chats', { method: 'POST', headers: { 'Content-Ty
     if (!confirm('Delete chat "' + (chat.title || chat.id) + '"?')) return;
     const r = await fetchJson('/api/chats/' + encodeURIComponent(chat.id) + '?projectDir=' + encodeURIComponent(project.path), { method: 'DELETE' });
     if (r.status !== 200) { alert('delete failed: HTTP ' + r.status); return; }
-    setChats(prev => prev.filter(c => c.id !== chat.id));
-    setTotal(prev => Math.max(0, prev - 1));
-    setOffset(prev => Math.max(0, prev - 1));
+    dropChat(chat.id);
   }
 
-  return h(Fragment, null,
-    h('ul', {
-      class: 'project-card__chats',
-      'aria-label': 'Chats in ' + (project.name || project.path),
-      onScroll: (e) => {
-        const el = e.currentTarget;
-        if (el.scrollTop + el.clientHeight >= el.scrollHeight - 48) {
-          loadMore();
-        }
-      }
-    },
-      loading ? h('li', { class: 'project-card__chats-empty' }, 'loading chats…') :
-      (chats.length === 0) ? h('li', { class: 'project-card__chats-empty' }, 'No chats yet. Tap "+ New chat" below to start one.') :
-      chats.map(c => {
+  // chatRow(c, match) — one row of the card's chat list.
+  //
+  // The same renderer serves the normal page and the search results, because a
+  // search hit *is* a chat and must behave identically (tap to open, × to
+  // delete, running dot, draft marker). `match` — the `matchField` the search
+  // returned — adds the one thing a plain row cannot show: the snippet, which
+  // is why this row is in the list when the title alone does not explain it.
+  function chatRow(c, match) {
 const costBits = c.totalCost || { total: 0, known: false, currency: 'USD' };
 const costStr = costBits.known ? formatCost(costBits.total) : '--';
 const dateBits = fmtChatDate(c);
@@ -175,19 +248,37 @@ const draftSnippet = draftOnly
 ? (draftText.replace(/\s+/g, ' ').trim().slice(0, 120) || 'Image draft')
 : '';
 const chatPrompt = c.promptId ? prompts.find((prompt) => prompt.id === c.promptId) : null;
+const isMatch = match === 'message' || match === 'draft';
+// The snippet is only worth a line when it says something the title does not.
+// A title hit whose snippet is the title would print the same words twice.
+const showSnippet = isMatch && typeof c.snippet === 'string' && c.snippet.trim() !== ''
+  && c.snippet.trim() !== titleStr;
 return h('li', {
 key: c.id,
+'data-match': match || undefined,
+class: showSnippet ? 'project-card__chat project-card__chat--match' : 'project-card__chat',
 onClick: () => nav('chat/' + c.id + '?projectDir=' + encodeURIComponent(project.path)),
-'aria-label': c.running ? titleStr + ' (running)' : draftOnly ? draftSnippet + ' (draft)' : undefined
+'aria-label': showSnippet
+  ? titleStr + ' — ' + (match === 'draft' ? 'draft: ' : '') + c.snippet
+  : c.running ? titleStr + ' (running)' : draftOnly ? draftSnippet + ' (draft)' : undefined
 },
-chatPrompt ? h('span', {
-class: 'project-card__chat-prompt',
-title: chatPrompt.title,
-'aria-label': 'Prompt: ' + chatPrompt.title
-}, h(PromptIcon, { name: chatPrompt.icon, size: 17 })) : null,
-draftOnly
-? h('span', { class: 'project-card__chat-title project-card__chat-title--draft' }, draftSnippet)
-: h('span', { class: 'project-card__chat-title' }, titleStr),
+h('div', { class: 'project-card__chat-main' },
+  h('div', { class: 'project-card__chat-line' },
+    chatPrompt ? h('span', {
+      class: 'project-card__chat-prompt',
+      title: chatPrompt.title,
+      'aria-label': 'Prompt: ' + chatPrompt.title
+    }, h(PromptIcon, { name: chatPrompt.icon, size: 17 })) : null,
+    draftOnly
+      ? h('span', { class: 'project-card__chat-title project-card__chat-title--draft' }, draftSnippet)
+      : h('span', { class: 'project-card__chat-title' }, titleStr),
+    showSnippet ? h('span', {
+      class: 'project-card__chat-badge',
+      'data-match': match
+    }, match === 'draft' ? 'draft' : 'text') : null
+  ),
+  showSnippet ? h('div', { class: 'project-card__chat-snippet' }, c.snippet) : null
+),
 draftOnly
 ? h('span', { class: 'project-card__chat-draft', 'aria-hidden': 'true' })
 : c.running ? h('span', { class: 'project-card__chat-running', 'aria-hidden': 'true' }) : null,
@@ -205,7 +296,61 @@ type: 'button',
 onClick: (e) => { e.stopPropagation(); deleteChat(c); }
 }, '×')
 );
-}),
+  }
+
+  // `results.query` is the term the server actually answered. Comparing it to
+  // the live `term` is what keeps a stale result off the screen: while the user
+  // types, the list falls back to the normal page instead of showing hits for
+  // the previous word.
+  const answered = results && results.query === term.trim() ? results : null;
+  const searchMode = searchOpen && term.trim().length > 0;
+  const rows = searchMode
+    ? (answered ? answered.chats.map((c) => chatRow(c, c.matchField)) : [])
+    : chats.map((c) => chatRow(c, undefined));
+
+  return h(Fragment, null,
+    searchOpen ? h('div', { class: 'project-card__search' },
+      h('span', { class: 'project-card__search-icon', 'aria-hidden': 'true' }, h(ProjectSearchIcon, { size: 16 })),
+      h('input', {
+        ref: searchInputRef,
+        class: 'project-card__search-input',
+        type: 'search',
+        value: term,
+        placeholder: 'Search titles, drafts, messages…',
+        'aria-label': 'Search chats in ' + (project.name || project.path),
+        autocomplete: 'off',
+        autocapitalize: 'none',
+        spellcheck: 'false',
+        enterkeyhint: 'search',
+        onInput: (e) => setTerm(e.currentTarget.value),
+        onKeyDown: (e) => { if (e.key === 'Escape') { e.preventDefault(); closeSearch(); } }
+      }),
+      h('button', {
+        class: 'project-card__search-close',
+        type: 'button',
+        'aria-label': 'Close search',
+        onClick: closeSearch
+      }, '×')
+    ) : null,
+    h('ul', {
+      class: 'project-card__chats',
+      'aria-label': 'Chats in ' + (project.name || project.path),
+      onScroll: (e) => {
+        const el = e.currentTarget;
+        if (!searchMode && el.scrollTop + el.clientHeight >= el.scrollHeight - 48) {
+          loadMore();
+        }
+      }
+    },
+      searchMode ?
+        (searching && !answered ? h('li', { class: 'project-card__chats-empty' }, 'searching…')
+        : answered && answered.error ? h('li', { class: 'project-card__chats-empty' }, 'search failed: ' + answered.error)
+        : answered && answered.chats.length === 0 ? h('li', { class: 'project-card__chats-empty' }, 'No chat matches “' + term.trim() + '”.')
+        : rows)
+      : (loading ? h('li', { class: 'project-card__chats-empty' }, 'loading chats…')
+        : (chats.length === 0) ? h('li', { class: 'project-card__chats-empty' }, 'No chats yet. Tap "+ New chat" below to start one.')
+        : rows),
+      searchMode ? null :
       loadingMore ? h('li', { class: 'project-card__chats-more' }, 'Loading more…') :
       (!loading && offset < total) ? h('li', { class: 'project-card__chats-more' }, 'Scroll for more…') : null
     ),
@@ -224,7 +369,15 @@ onClick: () => createChat(prompt.id),
 disabled: isCreating,
 'aria-label': 'New chat with ' + prompt.title,
 title: 'New chat with ' + prompt.title
-}, h(PromptIcon, { name: prompt.icon, size: 20 })))
+}, h(PromptIcon, { name: prompt.icon, size: 20 }))),
+h('button', {
+class: 'project-card__search-open',
+type: 'button',
+'aria-expanded': String(searchOpen),
+onClick: () => { if (searchOpen) closeSearch(); else openSearch(); },
+'aria-label': searchOpen ? 'Close chat search' : 'Search chats in ' + (project.name || project.path),
+title: searchOpen ? 'Close search' : 'Search chats'
+}, h(ProjectSearchIcon, { size: 18 }))
 )
 );
 }

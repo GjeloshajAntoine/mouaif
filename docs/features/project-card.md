@@ -18,6 +18,7 @@ The Project card is the main organizational view in mouaif: each registered proj
 - A quick delete (`×`) action.
 - **Draft-only chats** — a chat with no persisted messages but a non-empty composer draft renders the start of that draft instead of the title, tinted yellow (`--warning`) with a small yellow rectangle indicator — the inverse of the blue "running" dot. An image-only draft (a pending picture in the composer, no text yet) reads as `Image draft` so the row still shows that something is waiting there.
 - **+ New chat button** — creates a fresh conversation and navigates directly into it.
+- **Search** — the magnifier at the end of the action row opens a field that searches this project's chats by title, message text, and composer draft. See [Project card search](./project-card-search.md).
 - **Custom prompt buttons** — prompts with **Add to project card** enabled appear as icon buttons beside **+ New chat**. Tapping one creates a chat with that prompt attached; its icon also identifies the prompt on the resulting chat row.
 
 ## Behavior
@@ -31,5 +32,6 @@ The Project card is the main organizational view in mouaif: each registered proj
 ## Related
 
 - [Folder picker](./folder-picker.md) — registering new project directories.
+- [Project card search](./project-card-search.md) — the magnifier on a card: search that project's chats, drafts, and messages.
 - [App and project settings](./app-and-project-settings.md) — configuring project-specific prompts and tools.
 - [Chat UI](./chat-ui.md) — the chat conversation view.

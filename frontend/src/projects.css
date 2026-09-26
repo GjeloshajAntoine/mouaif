@@ -186,8 +186,42 @@ scrollbar-width: thin;
 .project-card__chats li:first-child { border-top: 0; }
 .project-card__chats li:hover  { background: var(--surface-2); }
 .project-card__chats li:active { background: var(--surface-3); }
+/* A row is a line plus, for a search hit, a snippet. The row itself stays a
+   flex line so the running dot, the metadata and the × keep their places;
+   .project-card__chat-main is the only part allowed to grow and clip. */
+.project-card__chat-main { flex: 1; min-width: 0; overflow: hidden; }
+.project-card__chat-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .project-card__chat-prompt { display: grid; place-items: center; flex: none; color: var(--accent); }
 .project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; }
+/* Why a row is in the search results, when the title does not say it: the
+   match came from a message body ("text") or the composer draft ("draft"). */
+.project-card__chat-badge {
+  flex: none;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.project-card__chat-badge[data-match="draft"] { background: var(--warning-soft); color: var(--warning); }
+/* The matching message text, one line, under the title. Two lines at most:
+   the card holds three rows and a snippet is a reminder, not a transcript. */
+.project-card__chat-snippet {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.3;
+  margin-top: 1px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.project-card__chat--match { align-items: flex-start; }
+.project-card__chat--match .project-card__chat-meta,
+.project-card__chat--match .project-card__chat-delete { margin-top: 2px; }
 /* Draft-only chat: the row shows the start of the composer draft instead of
 the title, tinted yellow (--warning) to signal "unfinished, not yet sent".
 The title becomes a single line; multi-line drafts collapse to a snippet. */
@@ -268,6 +302,56 @@ border-left: 1px solid var(--border);
 .project-card__new:hover, .project-card__prompt-new:hover { background: var(--surface-2); }
 .project-card__new:active, .project-card__prompt-new:active { background: var(--surface-3); }
 .project-card__new:disabled, .project-card__prompt-new:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Search — a magnifier at the end of the card's action row.
+   Same 44px target as "+ New chat" and the prompt buttons, and the same
+   border-left separator, so the row reads as one control strip. The button
+   toggles: tapping it with the field open closes and clears. */
+.project-card__search-open {
+  display: grid; place-items: center; flex: 0 0 var(--tap); min-width: var(--tap);
+  font: inherit; color: var(--muted); background: transparent; border: 0;
+  border-left: 1px solid var(--border);
+  min-height: var(--tap); cursor: pointer; transition: background 80ms ease, color 120ms ease;
+}
+.project-card__search-open:hover { background: var(--surface-2); color: var(--fg); }
+.project-card__search-open:active { background: var(--surface-3); }
+.project-card__search-open[aria-expanded="true"] { color: var(--accent); background: var(--accent-soft); }
+.project-card__search-open svg { display: block; }
+
+/* The field sits between the card header and the chat list, so the list it
+   filters is directly under it. It is not sticky and does not overlay: the
+   card's chat list stays the scroll owner. */
+.project-card__search {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.project-card__search-icon { display: grid; place-items: center; flex: none; color: var(--muted); }
+.project-card__search-input {
+  flex: 1; min-width: 0;
+  font: inherit; font-size: 0.86rem;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+  min-height: var(--tap-sm);
+  /* iOS gives a search input its own chrome (inner shadow, rounded ends);
+     the card's own field should look like the rest of the app. */
+  -webkit-appearance: none;
+  appearance: none;
+}
+.project-card__search-input::-webkit-search-cancel-button { display: none; }
+.project-card__search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.project-card__search-close {
+  font: inherit; color: var(--muted); background: transparent; border: 0;
+  min-height: var(--tap); min-width: var(--tap);
+  font-size: 1rem; line-height: 1; cursor: pointer; border-radius: var(--r-sm);
+  display: grid; place-items: center; flex: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+.project-card__search-close:hover { color: var(--danger); background: var(--danger-soft); }
 
 /* ---- Picker ------------------------------------------------------- */
 

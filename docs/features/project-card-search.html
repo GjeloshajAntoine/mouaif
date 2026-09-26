@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Project card search — mouaif docs</title>
+  <meta name="description" content="Every project card on the Chats tab has a magnifier button. Tapping it opens a search field that narrows that project&#39;s chats to the ones matching what you…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="project-card-search">Project card search</h1>
+<h2 id="overview">Overview</h2>
+<p>Every project card on the Chats tab has a magnifier button. Tapping it opens a search field that narrows that project&#39;s chats to the ones matching what you type — matching the chat title, the text of messages you already sent or received, and the text still sitting in a chat&#39;s composer draft.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>On the <strong>Chats</strong> tab, find the project card you want to search.</p></li><li><p>Tap the magnifier at the right end of the card&#39;s action row, next to <strong>+ New chat</strong>.</p></li><li><p>Type a word or phrase. Results appear under the field as you stop typing.</p></li><li><p>Tap a result to open that chat. Tap <strong>×</strong> inside the field, tap the magnifier again, or press <code>Escape</code> to leave search and get the normal chat list back.</p>
+<p>Only the card you searched changes; every other project card keeps its own list.</p></li></ol>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p><strong>What is searched</strong> — the chat title, every stored message of the chat, and the composer draft. A chat appears once even when all three match.</p></li><li><p><strong>Match label</strong> — a result whose title matched shows nothing extra. A result that matched in a message shows a <code>TEXT</code> badge and a one-line preview of the matching message; a draft match shows a <code>DRAFT</code> badge and the start of the draft.</p></li><li><p><strong>Results are the project&#39;s most recent matches</strong>, in the same order as the card&#39;s normal chat list.</p></li><li><p><strong>Only a settled term is sent.</strong> Typing is not a request per keystroke, and the previous term&#39;s results are never shown against a new term.</p></li><li><p><strong>No match is not an error</strong> — the card says the term matched nothing. A request that actually failed says so instead.</p></li><li><p><strong>Search is per project card and per session.</strong> Closing the field clears the term, the results, and any error; reopening starts empty.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="project-card.html">Project card</a> — the chat list, <strong>+ New chat</strong>, and the project options menu that this button sits beside.</p></li><li><p><a href="chat-switcher.html">Chat switcher</a> — switching between chats of the current project from inside a chat.</p></li><li><p><a href="chat-ui.html">Chat UI</a> — the conversation view a result opens.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>
