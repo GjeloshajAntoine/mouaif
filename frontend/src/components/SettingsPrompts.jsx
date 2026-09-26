@@ -21,6 +21,7 @@ import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
 import { ToolTree, buildToolGroups } from './ToolTree.jsx';
 import { PromptIcon, PROMPT_ICONS } from './PromptIcon.jsx';
+import { presetToolSelection, applyToolToggle } from './settings/presetTools.js';
 // Sentinel id used by the "new prompt" entry in the picker dropdown.
 const NEW_PROMPT_ID = '__new__';
 
@@ -63,10 +64,11 @@ function skillIdOf(entry) {
 function presetsEqual(a, b) {
   const norm = (p) => {
     if (!p) return null;
+    // `tools: null` is the all-on baseline; a Set is an explicit allowlist.
     const tools = p.tools instanceof Set
       ? Array.from(p.tools).sort()
       : (Array.isArray(p.tools) ? p.tools.slice().sort() : []);
-    const hasAny = tools.length || p.agentFiles || p.skills;
+    const hasAny = p.tools instanceof Set || p.agentFiles || p.skills;
     if (!hasAny) return null;
     return { tools, agentFiles: !!p.agentFiles, skills: !!p.skills };
   };
@@ -201,12 +203,12 @@ setPreset(snap.preset);
     }
     const pp = p.preset;
     const nextPreset = (pp && (Array.isArray(pp.tools) || typeof pp.agentFiles === 'boolean' || typeof pp.skills === 'boolean'))
-      ? {
-          tools: new Set(Array.isArray(pp.tools) ? pp.tools : []),
-          agentFiles: pp.agentFiles === true,
-          skills: pp.skills === true
-        }
-      : null;
+    ? {
+      tools: Array.isArray(pp.tools) ? new Set(pp.tools) : null,
+      agentFiles: pp.agentFiles === true,
+      skills: pp.skills === true
+      }
+    : null;
     const itemScope = p.scope || (projectDir ? 'project' : 'app');
 const snap = {
 title: p.title || '',
@@ -237,39 +239,48 @@ if (content !== loadedSnapshot.content) return true;
   }
 
   function presetActive() { return !!preset; }
+  // setToolSelected / setToolsSelected — one row or a whole group.
+  //
+  // Delegates to settings/presetTools.js, which owns the all-on baseline
+  // (`tools: null`) and the first-uncheck snapshot. Both are exercised by
+  // scripts/test-preset-tools.js.
   function setToolSelected(name, checked) {
     setPreset((prev) => {
-      const base = prev || { tools: new Set(), agentFiles: false, skills: false };
-      const next = new Set(base.tools);
-      if (checked) next.add(name); else next.delete(name);
-      return { tools: next, agentFiles: !!base.agentFiles, skills: !!base.skills };
+      const base = prev || { tools: null, agentFiles: false, skills: false };
+      return {
+        tools: applyToolToggle({ tools: base.tools, allIds: allToolIds(), ids: [name], checked }),
+        agentFiles: !!base.agentFiles,
+        skills: !!base.skills
+      };
     });
   }
   function setToolsSelected(names, checked) {
     setPreset((prev) => {
-      const base = prev || { tools: new Set(), agentFiles: false, skills: false };
-      const next = new Set(base.tools);
-      for (const n of names) {
-        if (checked) next.add(n); else next.delete(n);
-      }
-      return { tools: next, agentFiles: !!base.agentFiles, skills: !!base.skills };
+      const base = prev || { tools: null, agentFiles: false, skills: false };
+      return {
+        tools: applyToolToggle({ tools: base.tools, allIds: allToolIds(), ids: names, checked }),
+        agentFiles: !!base.agentFiles,
+        skills: !!base.skills
+      };
     });
   }
   function setAgentFiles(checked) {
     setPreset((prev) => {
-      const base = prev || { tools: new Set(), agentFiles: false, skills: false };
-      return { tools: new Set(base.tools), agentFiles: !!checked, skills: !!base.skills };
+      const base = prev || { tools: null, agentFiles: false, skills: false };
+      return { tools: base.tools, agentFiles: !!checked, skills: !!base.skills };
     });
   }
   function setSkills(checked) {
     setPreset((prev) => {
-      const base = prev || { tools: new Set(), agentFiles: false, skills: false };
-      return { tools: new Set(base.tools), agentFiles: !!base.agentFiles, skills: !!checked };
+      const base = prev || { tools: null, agentFiles: false, skills: false };
+      return { tools: base.tools, agentFiles: !!base.agentFiles, skills: !!checked };
     });
   }
   function togglePresetOn(checked) {
+    // `tools: null` is the all-on baseline — a preset only ever grants
+    // tools, and the tree must open with every row checked.
     if (checked) {
-      setPreset({ tools: new Set(), agentFiles: false, skills: false });
+      setPreset({ tools: null, agentFiles: false, skills: false });
       return;
     }
     setPreset(null);
@@ -367,15 +378,20 @@ content: c
 };
 
     if (presetActive()) {
-      const p = preset;
-      const hasAny = (p.tools && p.tools.size > 0) || p.agentFiles || p.skills;
-      body.preset = hasAny ? {
-        tools: Array.from(p.tools || []),
-        agentFiles: p.agentFiles === true,
-        skills: p.skills === true
-      } : null;
+    const p = preset;
+    // `tools: null` is the all-on baseline — it grants nothing specific, so
+    // it must not be persisted as a tool list. The preset still survives on
+    // the strength of agentFiles / skills; if none of the three is set,
+    // `normalizePreset()` collapses it to "no preset", which is correct:
+    // a chat already has every tool.
+    const hasAny = (p.tools instanceof Set) || p.agentFiles || p.skills;
+    body.preset = hasAny ? {
+      tools: p.tools instanceof Set ? Array.from(p.tools) : undefined,
+      agentFiles: p.agentFiles === true,
+      skills: p.skills === true
+    } : null;
     } else {
-      body.preset = null;
+    body.preset = null;
     }
 
     const url = isNew
@@ -414,7 +430,9 @@ title: t,
 icon,
 showOnProjectCard,
 content: c,
-preset: preset ? { ...preset, tools: new Set(preset.tools) } : null,
+  // Shallow copy is enough: every toggle replaces `tools` with a new Set
+  // rather than mutating it, so the snapshot can share the reference.
+  preset: preset ? { ...preset } : null,
 scope: effectiveScope
 });
       dirtyRef.current = false;
@@ -528,12 +546,26 @@ setPreset(null);
     setStatusMsg({ text: 'loaded ' + (profile.label || profile.id) + ' profile', kind: 'success' });
   }
 
+  // buildPresetGroups() -> ToolTree groups
+  //
+  // The selection rule (empty set = all on) lives in settings/presetTools.js
+  // so it is unit-tested; see scripts/test-preset-tools.js.
+  //
+  // allToolIds() -> string[] — every tool id currently rendered, used to
+  // snapshot the implicit all-on set the first time a preset tool is
+  // unchecked (the same move the chat Tools card makes).
+  function allToolIds() {
+    const ids = [];
+    for (const g of groups) {
+      for (const t of (g.tools || [])) {
+        if (t && t.id) ids.push(t.id);
+      }
+    }
+    return ids;
+  }
+
   function buildPresetGroups() {
-    // `buildToolGroups` takes a Set/array of selected tool names (or null
-    // for "everything on"). Feed it the preset's selected tool names so the
-    // group and leaf checkboxes reflect the saved preset, not a hardcoded
-    // all-on state.
-    const selected = preset && preset.tools ? Array.from(preset.tools) : [];
+    const selected = presetToolSelection(preset && preset.tools);
     const rawGroups = buildToolGroups(toolsCatalog, mcpServers, selected, new Set());
 
     const out = rawGroups.slice();
