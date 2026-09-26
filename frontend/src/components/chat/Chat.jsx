@@ -47,7 +47,7 @@ setFileEditorOpen,
     picker,
     send, onPickerPick, onPickerTogglePin, onPickerOpen, onRefreshAllProviders, onPickerOpenChange,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
-    onRemoveImage, onJumpToBottom, onJumpToPrevMessage, onJumpToNextMessage, onCancelRunning, onBack, onToggleAutoRetry,
+    onRemoveImage, onJumpToBottom, onJumpToPrevMessage, onJumpToNextMessage, onCancelRunning, onBack,
 onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refreshCustomActions, updateChat
 } = s;
 
@@ -490,8 +490,6 @@ setPreviewPromptOpen(false);
 usedTools: s.state.usedTools,
 agentFiles: s.state.agentFiles,
 skills: s.state.skills,
-autoRetry: s.state.autoRetry,
-onToggleAutoRetry,
 toolAuth: s.state.toolAuth,
 mcpAuth: s.state.mcpAuth,
 onToggleTool: s.state._toggleTool,

@@ -1483,10 +1483,6 @@ onComposerInput(refs, projectDir, chatId, updateChatBound);
     onJumpToPrevMessage: () => scrollToAdjacentMessage(refs, -1),
     onJumpToNextMessage: () => scrollToAdjacentMessage(refs, 1),
 onCancelRunning,
-onToggleAutoRetry: () => {
-state.autoRetry = !state.autoRetry;
-updateChatBound({ autoRetry: state.autoRetry });
-},
 onBack: () => { window.location.hash = '#/projects'; },
     // ---- Chat switcher -------------------------------------------
     chatSwitcherOpen,

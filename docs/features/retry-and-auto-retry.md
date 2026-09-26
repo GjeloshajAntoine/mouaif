@@ -20,11 +20,11 @@ or an HTTP rejection other than an already-running `409`).
 
 ### Auto-retry
 
-- Open a chat and tap the tools button, then toggle **Auto-retry failed
-  sends** in the footer.
-- The app-level default lives in **Settings → App defaults**, where it
-  defaults to on. A per-chat choice overrides the app default.
+- The setting lives in **Settings → App defaults → Chat defaults**, where it
+  defaults to on.
 - When a turn fails before any response starts, the client immediately
   resends it once and shows an `auto-retrying…` status. Retried sends
   are themselves never auto-retried again, so a persistently failing
   message cannot loop.
+- A chat created before the setting was turned off keeps its own recorded
+  choice; new chats follow the app default.

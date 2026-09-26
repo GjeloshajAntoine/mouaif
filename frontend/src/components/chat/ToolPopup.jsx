@@ -57,8 +57,6 @@ export function ToolPopup(props) {
     onReloadMcpServer,
     mcpStartBusy,
     mcpStartErrors,
-    autoRetry,
-    onToggleAutoRetry
   } = props;
   const [open, setOpen] = useState(false);
   const popupRef = useRef(null);
@@ -276,27 +274,10 @@ files: 'file'
           })
         ),
         h('div', { class: 'tool-popup__foot' },
-// The whole row is the tap target (≥ 44px tall); the switch keeps its
-// own fixed-size box and the label text sits beside it, not inside it.
-h('label', { class: 'tool-popup__foot-row' },
-h('span', { class: 'switch switch--sm' },
-h('input', {
-type: 'checkbox',
-role: 'switch',
-'aria-checked': String(!!autoRetry),
-checked: !!autoRetry,
-onChange: () => onToggleAutoRetry && onToggleAutoRetry()
-}),
-h('span', { class: 'switch__track', 'aria-hidden': 'true' },
-h('span', { class: 'switch__thumb' })
-)
-),
-h('span', { class: 'tool-popup__foot-label' }, 'Auto-retry failed sends')
-),
-h('span', { class: 'tool-popup__foot-note' },
-'Actions run immediately. Off / Ask / Allow here applies to this chat only; project-wide modes live in Settings → Project. Tools marked \u25CF have been used in this chat.'
-)
-)
+        h('span', { class: 'tool-popup__foot-note' },
+          'Actions run immediately. Off / Ask / Allow here applies to this chat only; project-wide modes live in Settings → Project. Tools marked \u25CF have been used in this chat.'
+        )
+        )
       )
     )
   );

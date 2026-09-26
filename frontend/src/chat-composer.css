@@ -1200,34 +1200,6 @@ gap: 6px;
 font-size: 0.6rem;
 color: var(--muted);
 }
-.tool-popup__foot-row {
-display: flex;
-align-items: center;
-gap: 8px;
-min-height: 44px;
-cursor: pointer;
--webkit-tap-highlight-color: transparent;
-}
-.tool-popup__foot-label {
-flex: 1 1 auto;
-min-width: 0;
-font-size: 0.74rem;
-color: var(--fg-soft);
-}
-/* Compact auto-retry switch in the popup footer */
-.tool-popup .switch--sm {
-width: 34px;
-height: 20px;
-}
-.tool-popup .switch--sm .switch__thumb {
-width: 14px;
-height: 14px;
-top: 2px;
-left: 2px;
-}
-.tool-popup .switch--sm input[type="checkbox"]:checked + .switch__track .switch__thumb {
-transform: translateX(14px);
-}
 
 /* Segments inside the popup use a more compact style */
 .tool-popup .seg {
