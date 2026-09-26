@@ -20,6 +20,7 @@ No settings and no toggles: the layout responds to the window.
 - The header and the tab bar paint to the edges of the frame; above 720 px the three tab labels keep a comfortable width instead of stretching across the frame.
 - Every non-chat route renders its content as one column — the view head, hint paragraphs, groups, cards and page bars all share the 896 px measure, so a title lines up with the rows under it instead of starting at the frame edge.
 - Chat keeps the transcript scroller full width (the overlay scrollbar sits at the frame edge) while every row spans that scroller's inner box, so all rows — prose bubbles, thinking cards, tool cards, the system card — share one left edge and one right edge, and long text keeps the 704 px readable measure on a wide frame. The bubble inside still hugs its text from the shared left edge and user bubbles stay right-aligned. The chat head (back button, title, usage chips, model row) and the composer row are centred on the same measure, so the controls stop a screen apart from each other on a wide window.
+- The chat transcript fills the full height between the chat head and the composer at every width, so the composer stays pinned to the bottom of the screen on a tablet or desktop. The transcript has no viewport-height cap; its flex sizing (`flex: 1 1 auto; min-height: 0`) is what bounds it.
 - Wide tool surfaces do not join the 896 px column: the file editor and the other modal sheets keep their own card widths (520–1120 px) from `sheets.css` and `file-editor.css`.
 
 ## Related

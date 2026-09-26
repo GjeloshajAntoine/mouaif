@@ -409,9 +409,6 @@ transition: background 80ms ease;
   .chat-msg:not(.chat-msg--system) .chat-msg__body { max-width: 78%; }
 }
 
-@media (min-width: 600px) {
-  .chat-view__transcript { max-height: 50dvh; }
-}
 /* ---- Shared model picker field (.mp) -------------------------------
 Mirrors the chat top bar's picker look (two-line trigger + searchable,
 provider-filtered, grouped modal) for the subagent authorization card
