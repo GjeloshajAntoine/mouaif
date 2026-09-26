@@ -1117,9 +1117,15 @@ async function startServer(projectDir, serverId) {
   try { persistToolCache(projectDir, serverId, session.tools); } catch { /* ignore */ }
 
   // Wire transport-close -> errored status so the next call surfaces
-  // EMCP_TRANSPORT instead of a hung connection.
+  // EMCP_TRANSPORT instead of a hung connection. Chain, never replace:
+  // client.connect() installed its own transport.onclose, and that
+  // handler is what rejects in-flight requests with "Connection closed".
+  // Overwriting it left a call to a server that died mid-request
+  // waiting for the full 60 s request timeout.
   try {
+    const sdkOnclose = transport.onclose;
     transport.onclose = () => {
+      try { if (typeof sdkOnclose === 'function') sdkOnclose(); } catch { /* keep marking the session */ }
       if (_sessions.get(keyOf(projectDir, serverId)) === session) {
         session.status = 'errored';
         session.error = { code: 'EMCP_TRANSPORT', message: 'Server process exited' };

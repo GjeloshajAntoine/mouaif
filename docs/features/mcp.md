@@ -110,9 +110,9 @@ The authorization module ([docs/features/tool-authorization.md](./tool-authoriza
 | **Delete** | Tap Delete on a row | Close the child and clear the cached tool list with the entry. |
 | **Refresh tools** | Tap Refresh on a ready server | Re-run `tools/list` without restarting the child; the cache is overwritten. Useful when the server's tool set changes at runtime. |
 | **Restart** | Tap Start on a ready server | Stop, then re-start; a fresh `tools/list` runs and overwrites the cache. |
-| **Errored** | Child crashes, JSON-RPC fails, or `initialize` times out | The session marks itself errored; the next call returns `EMCP_NOSESSION`. The Settings UI shows the typed error inline. |
+| **Errored** | Child crashes, JSON-RPC fails, or `initialize` times out | The session marks itself errored (`EMCP_TRANSPORT` for a closed connection). The Settings UI shows the typed error inline. The next tool call against an enabled server re-spawns it on demand. |
 
-A server that crashes mid-chat is treated as `ETOOL_DISABLED` for the rest of the chat and re-arms on next chat open (the user can tap Start to re-spawn).
+A server that crashes while a tool call is in flight fails that call immediately with an `EMCP_RPC` "Connection closed" error — it does not wait for the 60 s request timeout. mouaif chains the SDK's own `transport.onclose` handler (which rejects pending requests) rather than replacing it. The model sees the error as the tool result; its next call to the same server restarts it transparently.
 
 ## Behavior
 
