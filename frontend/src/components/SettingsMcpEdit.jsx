@@ -112,7 +112,10 @@ const from = typeof props.from === 'string' ? props.from : '';
       return h('li', { class: 'mcp__tools-empty' }, (currentServer && currentServer.status === 'ready') ? 'No tools reported by this server.' : 'Start the server to see its tools.');
     }
     return toolsState.map((t) => {
-      const composed = 'mcp__' + (currentServer && currentServer.slug || '') + '__' + t.name;
+      // The server returns the provider-safe name the model sees; it can
+      // differ from mcp__<slug>__<name> when the raw name has characters
+      // or a length providers reject. Fall back for older API responses.
+      const composed = t.composedName || ('mcp__' + (currentServer && currentServer.slug || '') + '__' + t.name);
       const entry = toolAuths[composed];
       const value = (entry && entry.mode) || 'inherit';
       return h('li', { key: composed, class: 'mcp__tools-row' },

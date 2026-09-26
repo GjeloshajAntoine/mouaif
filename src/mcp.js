@@ -102,8 +102,40 @@ function slugify(s) {
 // Compose the model-facing tool name. Anything <serverSlug>__<toolName>
 // is reserved for MCP-discovered tools so the AI client can route them
 // without colliding with built-in tool names like `shell`.
+//
+// Providers validate function names: OpenAI-shaped APIs require
+// ^[a-zA-Z0-9_-]{1,64}$ (Anthropic and Gemini accept a superset), and one
+// bad name fails the whole request, not just that tool. MCP servers may
+// report names with dots, slashes, or any length, so a name that is not
+// already valid gets its invalid characters replaced with `_`, is
+// truncated to fit, and gets a short hash of the raw name appended so
+// two raw names never collapse onto one composed name ("a.b" vs "a_b").
+// Names that are already valid pass through unchanged, so existing
+// per-tool authorization keys keep matching. The mapping is idempotent:
+// composing an already-composed tool part returns it as-is, which lets
+// callTool accept either the raw or the model-facing tool name.
+const PROVIDER_TOOL_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const PROVIDER_TOOL_NAME_MAX = 64;
 function composedToolName(serverSlug, toolName) {
-  return 'mcp__' + serverSlug + '__' + toolName;
+  const prefix = 'mcp__' + serverSlug + '__';
+  const raw = String(toolName == null ? '' : toolName);
+  const plain = prefix + raw;
+  if (raw && PROVIDER_TOOL_NAME_RE.test(plain)) return plain;
+  const hash = crypto.createHash('sha1').update(raw).digest('hex').slice(0, 6);
+  const budget = Math.max(0, PROVIDER_TOOL_NAME_MAX - prefix.length - hash.length - 1);
+  const safe = raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, budget);
+  return prefix + (safe ? safe + '_' : '') + hash;
+}
+
+// Find a server's tool descriptor by the name a caller used: the raw MCP
+// name (direct REST calls, custom actions) or the model-facing part of the
+// composed name (the model's tool_call). Exact match wins.
+function findToolByCallName(tools, serverSlug, toolName) {
+  const list = Array.isArray(tools) ? tools : [];
+  const exact = list.find(t => t && t.name === toolName);
+  if (exact) return exact;
+  const wanted = composedToolName(serverSlug, toolName);
+  return list.find(t => t && composedToolName(serverSlug, t.name) === wanted) || null;
 }
 
 function parseServerSlugAndToolName(composedName) {
@@ -761,7 +793,12 @@ function decorate(entry, projectDir, rawEntry) {
   // Live tools win; the persisted cache (app DB) is the fallback so a
   // stopped server still shows what it advertised the last time it ran.
   const cache = loadToolCache(projectDir, rawEntry || entry);
-  const tools = session ? session.tools.slice() : cache;
+  // Each tool carries the model-facing composed name so the UI keys
+  // per-tool authorization and agent allowlists on exactly the name the
+  // model sees (it can differ from `mcp__<slug>__<name>`; see
+  // composedToolName).
+  const tools = (session ? session.tools : cache).map(t =>
+    Object.assign({}, t, { composedName: composedToolName(entry.slug, t.name) }));
   const error = session && session.error ? session.error : null;
   // `enabled` reflects the per-server authorization gate (not `off`).
   // A disabled server surfaces its tools from cache but can never be
@@ -1318,7 +1355,10 @@ async function callTool(projectDir, serverSlug, toolName, args) {
   // Confirm the tool is in the discovered list. The MCP spec allows
   // the client to call any tool the server has; this is a defensive
   // check against a stale slug or a tool that disappeared after start.
-  const tool = session.tools.find(t => t.name === toolName);
+  // The model calls the provider-safe composed name, which may differ
+  // from the raw MCP name (see composedToolName); map it back so the
+  // server receives the name it advertised.
+  const tool = findToolByCallName(session.tools, serverSlug, toolName);
   if (!tool) throw err('EMCP_NOTFOUND', 'Tool not found on MCP server: ' + toolName, { serverSlug, toolName });
 
   // args must be a JSON object; the MCP spec requires an object even
@@ -1334,7 +1374,7 @@ async function callTool(projectDir, serverSlug, toolName, args) {
 
   let result;
   try {
-    result = await session.client.callTool({ name: toolName, arguments: callArgs }, undefined, { timeout: 60000 });
+    result = await session.client.callTool({ name: tool.name, arguments: callArgs }, undefined, { timeout: 60000 });
   } catch (e) {
     throw err('EMCP_RPC', session.oauthKey ? 'MCP tool call failed. Check server availability and sign-in in Settings.' : 'tools/call failed: ' + (e && e.message || e), { serverSlug, toolName });
   }

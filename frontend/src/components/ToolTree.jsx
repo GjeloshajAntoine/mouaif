@@ -279,7 +279,11 @@ tools: [{ id: c.value, name: c.label, checked: isOn(c.value) }]
       const rawName = typeof tool === 'string' ? tool : tool && tool.name;
       if (!rawName) return null;
       const name = rawName.startsWith(prefix) ? rawName.slice(prefix.length) : rawName;
-      const id = rawName.startsWith('mcp__') ? rawName : prefix + rawName;
+      // Allowlist ids must be the model-facing composed name, which the
+      // server supplies (it differs from prefix + rawName for names that
+      // providers would reject).
+      const composed = tool && typeof tool === 'object' && tool.composedName;
+      const id = composed || (rawName.startsWith('mcp__') ? rawName : prefix + rawName);
       return {
         id,
         name,
