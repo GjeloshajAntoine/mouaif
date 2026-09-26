@@ -51,6 +51,7 @@ function mcpErrorStatus(err) {
     case 'EKEYRING':           return 503;
     case 'EMCP_TIMEOUT':       return 504;
     case 'EMCP_TRANSPORT':     return 502;
+    case 'EABORTED':           return 499;
     case 'EMODULE':            return 500;
     case 'MOUAIF_PROJECT_PARSE_ERROR': return 422;
     default:                   return 500;
@@ -294,8 +295,17 @@ async function handleMcp(req, res, parsed) {
           timeoutMs: authorization.timeoutMs
         });
       }
-      const out = await mcp.callTool(dir, entry.slug, body.toolName, body.args || {});
-      return sendJSON(res, 200, out);
+      // A client that goes away (tab closed, request aborted) cancels
+      // the call on the server too.
+      const callCtl = new AbortController();
+      const onGone = () => { if (!res.writableEnded) callCtl.abort(new Error('client disconnected')); };
+      res.on('close', onGone);
+      try {
+        const out = await mcp.callTool(dir, entry.slug, body.toolName, body.args || {}, { signal: callCtl.signal });
+        return sendJSON(res, 200, out);
+      } finally {
+        res.off('close', onGone);
+      }
     } catch (e) {
       return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
     }

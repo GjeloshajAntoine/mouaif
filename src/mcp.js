@@ -1321,7 +1321,48 @@ function resolveMcpOutputPaths(projectDir, args) {
 // normalized result. `serverSlug` is the slug the model saw in the
 // tool name; `toolName` is the bare tool name from the server. Used
 // directly by src/ai.js when intercepting a tool_call.
-async function callTool(projectDir, serverSlug, toolName, args) {
+//
+// callOpts (optional):
+//   signal    — AbortSignal. Aborting (the user tapped Stop) rejects the
+//               call at once with EABORTED and the SDK sends the server
+//               notifications/cancelled for the in-flight request.
+//   timeoutMs — per-call request timeout override. When absent, the
+//               MCP authorization block's defaultTimeoutMs / maxTimeoutMs
+//               apply (resolveCallTimeoutMs), else 60 s. Expiry surfaces
+//               as EMCP_TIMEOUT.
+const DEFAULT_CALL_TIMEOUT_MS = 60000;
+const MAX_CALL_TIMEOUT_MS = 600000;
+
+// Request timeout for one MCP call. Only values the user explicitly set
+// in the MCP authorization block (per tool > per server > project > app,
+// the same layering as the mode) apply; the authorization gate's generic
+// 30 s fallback is a shell default and would silently halve MCP's 60 s.
+// Loaded lazily at call time: authorization.js requires this module.
+function resolveCallTimeoutMs(projectDir, serverSlug, toolName) {
+  let raw = {};
+  try {
+    const authz = require('./tools/authorization.js');
+    const settingsMod = require('./settings.js');
+    const composed = composedToolName(serverSlug, toolName);
+    const layered = authz.mcpLayeredConfig(projectDir, settingsMod.getProject(projectDir), settingsMod.getApp(), composed);
+    raw = (layered && layered.value) || {};
+  } catch { raw = {}; }
+  const max = Number.isFinite(raw.maxTimeoutMs) && raw.maxTimeoutMs > 0
+    ? Math.min(MAX_CALL_TIMEOUT_MS, Math.round(raw.maxTimeoutMs))
+    : MAX_CALL_TIMEOUT_MS;
+  const wanted = Number.isFinite(raw.defaultTimeoutMs) && raw.defaultTimeoutMs > 0
+    ? Math.round(raw.defaultTimeoutMs)
+    : DEFAULT_CALL_TIMEOUT_MS;
+  return Math.max(1, Math.min(max, wanted));
+}
+
+async function callTool(projectDir, serverSlug, toolName, args, callOpts) {
+  const signal = callOpts && callOpts.signal;
+  const timeoutMs = callOpts && Number.isFinite(callOpts.timeoutMs) && callOpts.timeoutMs > 0
+    ? Math.min(MAX_CALL_TIMEOUT_MS, Math.round(callOpts.timeoutMs))
+    : resolveCallTimeoutMs(projectDir, serverSlug, toolName);
+  const abortedError = () => err('EABORTED', 'MCP tool call cancelled', { serverSlug, toolName });
+  if (signal && signal.aborted) throw abortedError();
   let found = findSessionBySlug(projectDir, serverSlug);
   // On-demand start: the model called a tool on a server that is
   // *enabled* (auth mode not `off`) but not currently running. Start it
@@ -1347,8 +1388,10 @@ async function callTool(projectDir, serverSlug, toolName, args) {
       throw err((e && e.code) || 'EMCP_START', 'Failed to start MCP server: ' + ((e && e.message) || String(e)), { serverSlug });
     }
     found = findSessionBySlug(projectDir, serverSlug);
+    // Starting can take seconds; honor a Stop that landed meanwhile.
+    if (signal && signal.aborted) throw abortedError();
   }
-  const { session } = found;
+  const { session } = found || {};
   if (!session || session.status !== 'ready') {
     throw err('EMCP_NOSESSION', 'MCP server not ready after start: ' + serverSlug, { serverSlug, status: session && session.status });
   }
@@ -1374,8 +1417,16 @@ async function callTool(projectDir, serverSlug, toolName, args) {
 
   let result;
   try {
-    result = await session.client.callTool({ name: tool.name, arguments: callArgs }, undefined, { timeout: 60000 });
+    const requestOpts = { timeout: timeoutMs };
+    if (signal) requestOpts.signal = signal;
+    result = await session.client.callTool({ name: tool.name, arguments: callArgs }, undefined, requestOpts);
   } catch (e) {
+    if (signal && signal.aborted) throw abortedError();
+    // -32001 is the SDK's RequestTimeout (McpError code). Keep it typed so
+    // callers can tell a slow server from a failing one.
+    if (e && e.code === -32001) {
+      throw err('EMCP_TIMEOUT', 'MCP tool call timed out after ' + timeoutMs + ' ms', { serverSlug, toolName, timeoutMs });
+    }
     throw err('EMCP_RPC', session.oauthKey ? 'MCP tool call failed. Check server availability and sign-in in Settings.' : 'tools/call failed: ' + (e && e.message || e), { serverSlug, toolName });
   }
   if (!result || typeof result !== 'object') {

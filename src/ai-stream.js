@@ -1995,7 +1995,13 @@ if (parsed) {
 let error = null;
 let out;
 try {
-out = await mcpMod.callTool(callOpts.projectDir, parsed.serverSlug, parsed.toolName, args);
+out = await mcpMod.callTool(callOpts.projectDir, parsed.serverSlug, parsed.toolName, args, {
+  // Stop cancels the call (and the SDK sends notifications/cancelled).
+  // The request timeout comes from the MCP authorization block inside
+  // callTool, not callOpts.toolTimeoutMs: the gate's 30 s default is a
+  // shell default and would silently halve the MCP 60 s default.
+  signal: callOpts.signal
+});
 } catch (e) {
 error = {
 code: (e && e.code) || 'EMCP_RPC',
