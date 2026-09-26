@@ -67,6 +67,10 @@ The counts are raised 3D solids, not a letterpress. Each glyph's `text-shadow` s
 
 The **echo** — a translucent navy copy of the whole count, blurred `0.06em` and offset `0.11em / 0.15em` down-right — is drawn *under* the glyph by `__count-echo`. It is the shadow the raised digit casts on the folder face, landing beyond the side wall.
 
+**Transparency.** The face (`rgba(…, 0.78)`) and every wall step (alpha 0.72 → 0.42, back to front) are translucent, so the folder shows through and the side wall reads through the face — coloured glass rather than enamel.
+
+**Texture.** `FileToolbar` sets `data-text` on each orb `__count-face`; its `::after` repeats the glyph via `content: attr(data-text)` with `color: transparent`, `text-shadow: none`, and a `background-clip: text` stack screened over the face: a 172° specular sweep (bright top, gone by mid-height), 118° striations every `0.09em`, and an inline-SVG `feTurbulence` grain tiled at `0.9em` (allowed by the CSP's `img-src data:`). The texture can only paint inside the letterforms. The face is `display: block` so the copy shares the glyph's line box; left inline, it rode a different baseline and floated up-right as a white ghost.
+
 Each orb count is `overflow: visible` (the flat rule clips each count to its own box, which sliced the side wall off the last digit); the stats box still clips at the tile.
 
 The bloom is a glow rather than a different ink, so the contrast the colors are chosen for is unchanged. Pushing it harder is a mistake worth recording: at a higher opacity the fill lifts toward pastel and the saturated hues the colors are chosen for are lost — measured, the glyph core read `rgb(39,134,45)` instead of `#006600`'s `rgb(0,102,0)`. Trimmed back, the same glyph reads `rgb(34,100,40)`.

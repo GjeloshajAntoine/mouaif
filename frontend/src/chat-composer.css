@@ -629,6 +629,13 @@ filter: blur(0.06em);
 .file-toolbar__count-face {
 position: relative;
 }
+/* Block, so the absolutely positioned texture copy (`::after`, block by
+definition) lays out in the same line box as the glyph. Left inline, the
+copy's line box sat on a different baseline and floated up-right of the
+digits as a white ghost. */
+.file-toolbar--orb .file-toolbar__count-face {
+display: block;
+}
 /* Four stacked shadows per glyph, and the ORDER is the material. Read top to
 bottom as the light travels over a raised letter:
 1. the bevel: a dark bite along the glyph's top-inner edge, where a
@@ -653,23 +660,56 @@ four hard copies step down-right in ever darker shades of the glyph's own
 hue — that stack is the extruded side wall the reference shows. The steps
 are 0.03em apart so they merge into one continuous side at 6–8px instead of
 reading as separate outlines. The bloom sits last, under everything. */
+/* Transparency: the face and every wall step are translucent, so the pale
+folder shows through the digit and the side wall reads through the face —
+coloured glass rather than enamel. The face alpha stays high enough that
+the glyph core still lands on the validated ink (the wall behind it darkens
+what little of the folder shows through). */
 .file-toolbar--orb .file-toolbar__git-additions .file-toolbar__count-face {
+color: rgba(8, 128, 30, 0.78);
 text-shadow:
--0.02em -0.03em 0 rgba(255, 255, 255, 0.55),
-0.02em 0.03em 0 #06631a,
-0.04em 0.06em 0 #055416,
-0.06em 0.09em 0 #044512,
-0.08em 0.12em 0 #03370e,
+-0.02em -0.03em 0 rgba(255, 255, 255, 0.6),
+0.02em 0.03em 0 rgba(6, 99, 26, 0.72),
+0.04em 0.06em 0 rgba(5, 84, 22, 0.62),
+0.06em 0.09em 0 rgba(4, 69, 18, 0.52),
+0.08em 0.12em 0 rgba(3, 55, 14, 0.42),
 0 0 0.18em rgba(0, 165, 50, 0.22);
 }
 .file-toolbar--orb .file-toolbar__git-deletions .file-toolbar__count-face {
+color: rgba(214, 24, 24, 0.78);
 text-shadow:
--0.02em -0.03em 0 rgba(255, 255, 255, 0.5),
-0.02em 0.03em 0 #a81212,
-0.04em 0.06em 0 #8f0e0e,
-0.06em 0.09em 0 #760a0a,
-0.08em 0.12em 0 #5e0707,
+-0.02em -0.03em 0 rgba(255, 255, 255, 0.55),
+0.02em 0.03em 0 rgba(168, 18, 18, 0.72),
+0.04em 0.06em 0 rgba(143, 14, 14, 0.62),
+0.06em 0.09em 0 rgba(118, 10, 10, 0.52),
+0.08em 0.12em 0 rgba(94, 7, 7, 0.42),
 0 0 0.18em rgba(200, 22, 22, 0.22);
+}
+/* Texture: a copy of the glyph (from `data-text`) laid exactly over the face
+with its background clipped to the letterforms, so the texture never
+touches the folder around them. Three layers, top first:
+1. a specular sweep — bright at the top of the glyph, gone by mid-height,
+the way light pools on the upper face of a glass solid;
+2. fine diagonal striations, the brushed/moulded grain;
+3. fractal noise (an inline SVG, allowed by `img-src data:`) for grain.
+Every size is in `em`, so the texture scales with `--orb-count`. The copy
+has its own `text-shadow: none`, or it would inherit the wall and paint a
+second extrusion over the first. */
+.file-toolbar--orb .file-toolbar__count-face::after {
+content: attr(data-text);
+position: absolute;
+inset: 0;
+color: transparent;
+text-shadow: none;
+pointer-events: none;
+background:
+linear-gradient(172deg, rgba(255, 255, 255, 0.58) 0%, rgba(255, 255, 255, 0.12) 38%, rgba(255, 255, 255, 0) 52%, rgba(0, 0, 0, 0.14) 100%),
+repeating-linear-gradient(118deg, rgba(255, 255, 255, 0.15) 0 0.035em, rgba(255, 255, 255, 0) 0.035em 0.09em),
+url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.42 0'/></filter><rect width='32' height='32' filter='url(%23n)'/></svg>");
+background-size: 100% 100%, auto, 0.9em 0.9em;
+-webkit-background-clip: text;
+background-clip: text;
+mix-blend-mode: screen;
 }
 
 /* The SVG gradients the folder faces reference. Zero-sized and unreferenced

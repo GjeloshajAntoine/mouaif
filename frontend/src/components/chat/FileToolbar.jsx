@@ -270,15 +270,18 @@ const delText = '−' + formatCount(deleted);
 // The orb's emboss steps are set in `em`, so they scale with the font the
 // sizer picked: a 1px extrusion on 7.5px digits is a smear, and a 0.4px one on
 // 14px digits is invisible. `--orb-count` is read by every emboss rule.
+// `data-text` feeds the face's `::after`, which lays the glass texture and
+// specular over the glyph only (text-shadow would paint over a clipped
+// background on the face itself).
 const style = glow ? { '--orb-count': fontSize || orbCountFont(2) } : null;
 return h('span', { class: 'file-toolbar__git-stats', style },
 showAdditions ? h('span', { class: 'file-toolbar__git-additions' + suffix },
 glow ? h('span', { class: 'file-toolbar__count-echo', 'aria-hidden': 'true' }, addText) : null,
-h('span', { class: 'file-toolbar__count-face' }, addText)
+h('span', { class: 'file-toolbar__count-face', 'data-text': glow ? addText : null }, addText)
 ) : null,
 showDeletions ? h('span', { class: 'file-toolbar__git-deletions' + suffix },
 glow ? h('span', { class: 'file-toolbar__count-echo', 'aria-hidden': 'true' }, delText) : null,
-h('span', { class: 'file-toolbar__count-face' }, delText)
+h('span', { class: 'file-toolbar__count-face', 'data-text': glow ? delText : null }, delText)
 ) : null
 );
 }

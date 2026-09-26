@@ -305,8 +305,16 @@ check('the emboss scales with the font instead of being a fixed length', () => {
   assert.match(block, /-0\.\d+em -0\.\d+em 0 rgba\(255, 255, 255/, 'the lit rim is in em');
   // The depth: a stack of hard, progressively darker copies stepping
   // down-right. At least three steps, or the side wall reads as an outline.
-  const steps = block.match(/0\.\d+em 0\.\d+em 0 #[0-9a-f]{6}/gi) || [];
+  const steps = block.match(/0\.\d+em 0\.\d+em 0 rgba\((?!255, 255, 255)/g) || [];
   assert.ok(steps.length >= 6, 'each count has an extruded side of at least three em steps');
+  // Transparency and texture: a translucent face, and a glyph-clipped
+  // texture copy that never paints the folder around the digits.
+  assert.match(block, /count-face \{[^}]*color:\s*rgba\([^)]*0\.\d+\)/, 'the face is translucent');
+  const tex = block.match(/\.file-toolbar__count-face::after \{([^}]*)\}/);
+  assert.ok(tex, 'found the texture layer');
+  assert.match(tex[1], /content:\s*attr\(data-text\)/, 'the texture copy is the glyph itself');
+  assert.match(tex[1], /background-clip:\s*text/, 'the texture is clipped to the letterforms');
+  assert.match(tex[1], /text-shadow:\s*none/, 'the copy does not repeat the extrusion');
   const statsRule = css.match(/\.file-toolbar--orb \.file-toolbar__git-stats \{([^}]*)\}/);
   assert.ok(statsRule, 'found the orb stats rule');
   assert.match(statsRule[1], /font-size:\s*var\(--orb-count/, 'the size is driven by the inline variable');
