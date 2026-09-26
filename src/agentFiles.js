@@ -115,16 +115,16 @@ function load(projectDir, names) {
 //   true  -> inject agent files
 //   false -> do not inject
 //   undefined / null -> fall through to the profile default
-// The profile default is: very-small / chat = OFF, average/extensive = ON.
+// The profile default is: very-small = OFF, average/extensive/chat = ON.
 function isEnabledForChat(chat) {
   if (!chat || typeof chat !== 'object') return true;
   if (chat.agentFiles === false) return false;
   if (chat.agentFiles === true) return true;
   // No explicit per-chat choice: fall back to the prompt-size profile.
   // very-small is meant to be the tightest context, so agent files are
-  // off there. average and extensive get them by default.
+  // off there. average, extensive, and chat get them by default.
   const size = chat.promptSize || 'average';
-  return size !== 'very-small' && size !== 'chat';
+  return size !== 'very-small';
 }
 
 // resolveEnabled({ chat, projectDir }) -> boolean

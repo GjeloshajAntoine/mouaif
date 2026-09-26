@@ -462,6 +462,31 @@ description: 'Normalize project directory keys in the project-scoped app tables'
 run() {
 canonicalizeProjectKeys();
 }
+},
+{
+name: '2026-09-26-drop-seeded-chat-prompt',
+description: 'Remove the retired auto-seeded Chat prompt and promptsSeeded flag from app settings',
+run() {
+// An earlier commit seeded a built-in "Chat" prompt (id `chat`, empty
+// content, an exclusive empty-tool preset) into app settings and set a
+// `promptsSeeded` flag so a deleted default would not come back. That
+// behaviour was reverted, but the value it wrote is still stored, so the
+// picker keeps listing a prompt the code no longer creates. Drop the flag
+// and any still-empty `chat` prompt. A prompt the user gave content to is
+// kept: the id must still match and the content must still be empty.
+const app = getAppRaw();
+const hasFlag = Object.prototype.hasOwnProperty.call(app, 'promptsSeeded');
+const list = Array.isArray(app.prompts) ? app.prompts : null;
+const isSeededChat = (p) => p && p.id === 'chat'
+  && typeof p.content === 'string' && !p.content.trim();
+const seeded = !!list && list.some(isSeededChat);
+if (!hasFlag && !seeded) return;
+const next = { ...app };
+delete next.promptsSeeded;
+if (seeded) next.prompts = list.filter((p) => !isSeededChat(p));
+// setAppReplace() writes the object as-is, so the deleted key stays deleted.
+setAppReplace(next);
+}
 }
 ];
 
