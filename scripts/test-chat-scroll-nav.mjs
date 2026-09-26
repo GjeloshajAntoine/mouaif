@@ -74,6 +74,32 @@ function makeRefs(el) {
 }
 
 {
+  // At the bottom the last row is usually cut off just above the top edge.
+  // "Previous" must go to that row's start only if it is a real step; a
+  // few-pixel nudge stayed inside the 48px pin band and re-pinned at once.
+  const el = makeTranscript([{ top: 0 }, { top: 600 }, { top: 1480 }], 500, 2000);
+  el.scrollTop = 1500;
+  const { refs } = makeRefs(el);
+  scrollToAdjacentMessage(refs, -1);
+  assert.equal(el.scrollTop, 600 - 6, 'prev skips a row that starts only a few px above the top');
+  assert.equal(refs.pinnedToBottom.current, false);
+  console.log('PASS prev from the bottom moves past the pin band');
+}
+
+{
+  // The last row can never reach the top when it is shorter than the view:
+  // "next" to it is the bottom, so it re-pins instead of unpinning in place.
+  const el = makeTranscript([{ top: 0 }, { top: 600 }, { top: 1800 }], 500, 2000);
+  el.scrollTop = 1200;
+  const { refs, jump } = makeRefs(el);
+  refs.pinnedToBottom.current = false;
+  scrollToAdjacentMessage(refs, 1);
+  assert.equal(refs.pinnedToBottom.current, true, 'next to an unreachable tail row re-pins');
+  assert.equal(jump.hidden, true);
+  console.log('PASS next to the tail row re-pins');
+}
+
+{
   const el = makeTranscript([]);
   const { refs, nav, jump, count } = makeRefs(el);
   updateJumpButton(refs);

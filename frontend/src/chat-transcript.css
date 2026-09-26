@@ -64,6 +64,12 @@
   content-visibility: auto;
   contain-intrinsic-size: auto 120px;
 }
+/* Rows never shrink. The transcript is a height-bounded flex column, and a
+   skipped (content-visibility) row's min-content height is 0, so default
+   `flex-shrink: 1` squeezed every off-screen row to nothing: a 40-message
+   history collapsed to a few pixels, the scrollbar lied, and the scroll-nav
+   arrows jumped to rows sitting at the wrong offsets. */
+.chat-view__transcript > * { flex-shrink: 0; }
 /* ---- Row alignment: one full-width column --------------------------
    The transcript scroller stays full width — the overlay scrollbar sits
    at the frame edge and the pinned composer below depends on its flex
@@ -437,12 +443,23 @@
    areas meet without overlapping. Tap-only — no hover
    affordance. */
 
+/* Positioned box around the transcript: takes the transcript's old flex
+   slot so the rail below can anchor to the transcript's own edges. */
+.chat-view__transcript-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .chat-view__scroll-nav {
   position: absolute;
   right: calc(10px + env(safe-area-inset-right, 0px));
-  /* Clear both the composer and the home-indicator inset now owned by
-     the status row at the bottom of the chat. */
-  bottom: calc(64px + var(--safe-bottom));
+  /* Anchored to the transcript box, so it always clears whatever sits
+     below it (composer, web-preview dock, a multi-line draft). 18px
+     keeps the 44px tap area of the bottom arrow inside the transcript. */
+  bottom: 18px;
   z-index: 6;
   display: flex;
   flex-direction: column;

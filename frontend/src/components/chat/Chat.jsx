@@ -512,6 +512,11 @@ onToggleTool: s.state._toggleTool,
           })
         )
     ),
+// The transcript and its scroll-nav rail share a positioned box, so the
+// rail is anchored to the transcript's own bottom edge — not to a guessed
+// offset above the composer, which a multi-line draft or the web-preview
+// dock grows past.
+h('div', { class: 'chat-view__transcript-box' },
 h('div', { ref: refs.transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
 // Scroll-nav rail: previous message / next message / bottom. While
 // pinned only the "previous" arrow shows; scroll.js updateJumpButton()
@@ -552,6 +557,7 @@ ref: refs.jumpBtn,
         h('path', { d: 'M12 13.5 4.5 6l1.4-1.4 6.1 6.1 6.1-6.1L19.5 6 12 13.5ZM4.5 17.5h15v2h-15z', fill: 'currentColor' })
       ),
 h('span', { class: 'chat-view__jump-count' }, '')
+)
 )
 ),
 h(WebpreviewDock, {

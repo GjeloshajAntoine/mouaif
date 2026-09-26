@@ -293,6 +293,13 @@ export function findAdjacentMessage(tops, line, dir, slop = 4) {
 
 // Gap kept between the transcript's top edge and a jumped-to row.
 const NAV_TOP_GAP = 6;
+// Smallest distance one arrow tap may move the view. A row starting just
+// above the top edge (the one cut off there) would otherwise be the
+// "previous" target, and the tap nudged the view a few pixels — at the
+// bottom of a chat that landed inside the 48px pin band and re-pinned, so
+// the arrow looked dead. Matches the isNearBottom() threshold, so a
+// "previous" tap from the bottom always leaves the pin band.
+const NAV_MIN_STEP = 48;
 
 function messageRows(el) {
   const rows = [];
@@ -319,8 +326,11 @@ export function scrollToAdjacentMessage(refs, dir) {
   if (!el) return;
   const rows = messageRows(el);
   const line = el.scrollTop + NAV_TOP_GAP;
-  const idx = findAdjacentMessage(rows.map((r) => contentTop(el, r)), line, dir);
-  if (idx < 0 && dir > 0) {
+  const idx = findAdjacentMessage(rows.map((r) => contentTop(el, r)), line, dir, NAV_MIN_STEP);
+  // Past the last row — or the next row is the tail that can never reach
+  // the top because the view is already as low as it goes — is "bottom":
+  // re-pin rather than unpinning at the bottom with nothing to scroll.
+  if (dir > 0 && (idx < 0 || contentTop(el, rows[idx]) - NAV_TOP_GAP >= el.scrollHeight - el.clientHeight - 1)) {
     scrollTranscriptToBottom(refs);
     return;
   }
