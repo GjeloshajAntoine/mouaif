@@ -2,7 +2,7 @@
 
 ## Overview
 
-Settings → App defaults → Chat defaults has a **Glass orb file button** switch. With it off (the default) the button beside the message box is the flat circle the composer has always used. With it on, the same button is drawn as a glass ball: a window reflection sweeps its upper-left, refracted light runs along its lower-inner wall and its lower-right falls away to a dark limb ringed by a bright meniscus. Inside it, cool near-white bevelled chevrons frame one broad, pale-blue extruded folder with the `+N` / `−N` counts embossed directly into its face. The separate rectangular backing is transparent, matching the reference's clean folder silhouette. The pictogram stays front-on and pixel-aligned for clarity while highlights drift across the glass.
+Settings → App defaults → Chat defaults has a **Glass orb file button** switch. With it off (the default) the button beside the message box is the flat circle the composer has always used. With it on, the same button is drawn as a clear glass bubble: a near-transparent dark body, a glowing meniscus round the rim, a bright crescent reflection hugging the upper-left edge with a thinner one on the right, a small hard glint, a caustic on the lower-left inner wall, and a soft blue bloom around the outside. Inside it, frosted near-white chevrons frame one broad, pale-blue extruded folder with the `+N` / `−N` counts embossed directly into its face. The separate rectangular backing is transparent, matching the reference's clean folder silhouette. The pictogram stays front-on and pixel-aligned for clarity while highlights drift across the glass.
 
 The option changes **how the button is painted, never what it does**. Same 44 × 44 tap target, same `aria-label`, same menu.
 
@@ -16,8 +16,8 @@ Turn it back off to return to the flat circle. Nothing else about the composer m
 
 | Setting | Off (default) | On |
 |---------|---------------|-----|
-| Painted circle | Flat `--surface-2` with a 1px border | Glass ball: a window reflection sweeping the upper-left, a hard specular blob, refracted light along the lower-inner wall, a dark limb and a bright meniscus round the rim |
-| Chevrons | One `currentColor` bar each | White bars with a dark under-edge, so they read over both the lit and the dark half of the ball |
+| Painted circle | Flat `--surface-2` with a 1px border | Clear glass bubble: near-transparent dark body, a glowing meniscus rim, crescent reflections along the upper-left and right edges, a hard glint, a lower-left caustic and an outer blue bloom |
+| Chevrons | One `currentColor` bar each | Frosted glass bars: a translucent near-white face over a pale-blue thickness, with a faint blue glow |
 | Folder | One flat silhouette | One broad extruded silhouette: a 1px dark side, a near-white face with a cool hairline outline, ambient occlusion, and a rim light along its top edges |
 | Tile | — | Transparent; retained only as the folder's 3D positioning layer so no second rectangular card shows |
 | Counts | Flat colored glyphs at a fixed `0.46rem` | Embossed, corner-aligned, and sized per render from the longest count drawn (8px down to 6px) |

@@ -207,54 +207,47 @@ flex: 0 0 auto;
    highlight lands on top of it. */
 .file-toolbar--orb .file-toolbar__trigger::before {
 background:
-/* tight specular blob, up and slightly right of centre — the small hard
-reflection of the light source itself */
-radial-gradient(circle at 56% 19%,
-rgba(255, 255, 255, 0.96) 0%,
-rgba(255, 255, 255, 0.34) 11%,
-rgba(255, 255, 255, 0) 32%),
-/* the window: a broad, soft reflection sweeping the upper-left of the ball.
-This is the layer that makes the ball read as *glass* rather than as a
-shaded disc — a solid sphere lit this way has one gradient, a transparent
-one has a second, sharper reflection of its surroundings on top of it. */
-radial-gradient(104% 84% at 20% 18%,
-rgba(255, 255, 255, 0.50) 0%,
-rgba(230, 241, 255, 0.20) 40%,
-rgba(255, 255, 255, 0) 72%),
-/* refracted light hugging the lower-left inner wall: light enters the top
-left, crosses the glass and brightens the far inside of the curve. */
-radial-gradient(94% 80% at 18% 98%,
-rgba(202, 224, 255, 0.55) 0%,
-rgba(196, 218, 255, 0.20) 44%,
-rgba(198, 220, 255, 0) 78%),
-/* the limb: the glass is thickest at the edge, so the lower-right quarter
-falls away to near-black. */
-radial-gradient(128% 128% at 76% 116%,
-rgba(0, 0, 0, 0.74) 0%,
-rgba(0, 0, 0, 0.34) 38%,
-rgba(0, 0, 0, 0) 70%),
-/* the body stays dark navy, like the reference, so the pale pictogram reads
-without the whole sphere turning into a powder-blue disc. */
-linear-gradient(154deg,
-#7894c2 0%,
-#3f587f 34%,
-#1e2d49 66%,
-#0c1425 100%);
-border-color: rgba(222, 235, 255, 0.72);
+/* the hard glint: the light source itself, a small hot ellipse on the
+upper-left of the rim */
+radial-gradient(3.5px 2.2px at 31% 16%,
+rgba(255, 255, 255, 0.95) 0%,
+rgba(255, 255, 255, 0) 100%),
+/* the top-left crescent: a ring centred down-right of the ball, so it hugs
+the rim across the top-left and leaves the ball before it reaches the
+lower-right. This is the broad reflection that makes a bubble read as
+glass rather than as a shaded disc. */
+radial-gradient(circle 28px at 60% 62%,
+rgba(210, 228, 255, 0) 76%,
+rgba(210, 228, 255, 0.26) 84%,
+rgba(240, 247, 255, 0.70) 91%,
+rgba(240, 247, 255, 0) 97%),
+/* the thinner right-hand crescent, mirrored */
+radial-gradient(circle 23px at 36% 48%,
+rgba(200, 222, 255, 0) 82%,
+rgba(214, 232, 255, 0.40) 93%,
+rgba(214, 232, 255, 0) 100%),
+/* the caustic: light crossing the glass pools on the lower-left inner
+wall */
+radial-gradient(9px 6px at 24% 80%,
+rgba(196, 220, 255, 0.55) 0%,
+rgba(196, 220, 255, 0) 100%),
+/* the body is *clear*: almost the background, one step bluer, so the
+pictogram sits inside a bubble rather than on a painted ball */
+radial-gradient(circle at 50% 44%,
+#1a2436 0%,
+#0f1726 55%,
+#080d17 100%);
+border-color: rgba(214, 230, 255, 0.70);
 box-shadow:
-/* the lit upper-left edge and its dark counter-edge */
-inset 1.5px 1.5px 0 -0.5px rgba(255, 255, 255, 0.72),
-inset -1.5px -2.5px 1.5px -1.5px rgba(2, 8, 20, 0.70),
-inset 0 5px 8px -5px rgba(255, 255, 255, 0.42),
-inset 0 -8px 12px -7px rgba(0, 0, 0, 0.60),
-/* outer rim light: the reference render has a bright meniscus all the way
-round the ball, and it is what keeps the silhouette readable where the
-sphere's own dark lower half meets its drop shadow (the two are within
-~2/255 of each other without it). */
-0 0 0 1px rgba(168, 202, 255, 0.26),
-/* the bloom: the ball is lit, so it spills */
-0 0 12px -2px rgba(146, 188, 255, 0.34),
-0 5px 15px -6px rgba(0, 0, 0, 0.80);
+/* the meniscus: the glass is thickest at the edge, so the rim glows from
+the inside as well as the outside */
+inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+inset 0 0 4px 1px rgba(170, 205, 255, 0.55),
+inset 0 0 11px 2px rgba(110, 150, 220, 0.22),
+0 0 0 0.5px rgba(200, 225, 255, 0.50),
+/* the bloom: the bubble is lit, so it spills */
+0 0 8px 1px rgba(130, 180, 255, 0.34),
+0 0 18px 2px rgba(90, 140, 230, 0.16);
 transition: background 80ms ease, border-color 80ms ease, box-shadow 80ms ease;
 }
 /* The chevrons are the brightest thing on the ball in the reference render —
@@ -268,10 +261,13 @@ overflow: visible;
 thickness under it. The bar crosses the window reflection at the top of the
 ball, where a bare white bar measured 2.78:1 — the silhouette is what keeps
 it readable there. */
-filter: drop-shadow(0 0 0.35px rgba(10, 18, 34, 0.92)) drop-shadow(0 1px 0 rgba(10, 18, 34, 0.72));
+filter: drop-shadow(0 0 1.2px rgba(170, 205, 255, 0.45));
 }
 .file-toolbar--orb .file-toolbar__chevron-face {
 fill: #e8f2ff;
+/* Frosted, not opaque: the reference's chevrons are glass bars, so a little
+of the bubble shows through the face. */
+fill-opacity: 0.82;
 /* A cool face and restrained rim keep the chevrons glass-like instead of
 reading as high-contrast black-and-white emoji. */
 filter: drop-shadow(0 -0.35px 0 rgba(255, 255, 255, 0.72));
@@ -280,7 +276,7 @@ tone. It is what gives the bar an edge over the *light* half of the sphere —
 measured at 1.36:1 for a bare white bar, because the up-chevron crosses the
 window reflection at the top of the ball. */
 .file-toolbar--orb .file-toolbar__chevron-side {
-fill: rgba(93, 123, 170, 0.88);
+fill: rgba(150, 178, 218, 0.62);
 /* In the SVG's user units: the viewBox is 12x6 drawn at 11x6 px, so one
 unit is ~0.92px of extrusion at the button's real size. */
 transform: translateY(1px);
@@ -289,14 +285,14 @@ transform: translateY(1px);
    would otherwise replace every gradient with a flat --surface-3. */
 .file-toolbar--orb .file-toolbar__trigger:hover::before,
 .file-toolbar--orb .file-toolbar__trigger[aria-expanded="true"]::before {
-border-color: rgba(210, 226, 255, 0.44);
+border-color: rgba(232, 242, 255, 0.90);
 box-shadow:
-inset 1.5px 1.5px 0 -0.5px rgba(255, 255, 255, 0.58),
-inset -1.5px -2.5px 1px -1.5px rgba(0, 0, 0, 0.64),
-inset 0 5px 9px -5px rgba(255, 255, 255, 0.52),
-inset 0 -8px 12px -7px rgba(0, 0, 0, 0.66),
-0 0 15px -2px rgba(140, 185, 255, 0.42),
-0 5px 15px -6px rgba(0, 0, 0, 0.76);
+inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+inset 0 0 5px 1px rgba(180, 212, 255, 0.66),
+inset 0 0 12px 2px rgba(120, 160, 230, 0.28),
+0 0 0 0.5px rgba(210, 232, 255, 0.60),
+0 0 10px 1px rgba(140, 188, 255, 0.44),
+0 0 22px 3px rgba(96, 146, 236, 0.20);
 }
 /* A press flattens the lit upper edge and drops the bloom — the ball reads as
    pushed into the row. */
@@ -328,9 +324,9 @@ z-index: 1;
 border-radius: inherit;
 pointer-events: none;
 background: radial-gradient(circle at 50% 50%,
-rgba(255, 255, 255, 0.50) 0%,
-rgba(255, 255, 255, 0.12) 32%,
-rgba(255, 255, 255, 0) 60%);
+rgba(255, 255, 255, 0.26) 0%,
+rgba(255, 255, 255, 0.06) 30%,
+rgba(255, 255, 255, 0) 56%);
 filter: blur(4px);
 transform: translate3d(-30%, -34%, 0) scale(1.05);
 opacity: 0.8;
@@ -483,7 +479,8 @@ fill: url(#fileToolbarFolderShade);
 }
 .file-toolbar__folder-face {
 z-index: 4;
-filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.58));
+/* A frosted slab glows at its edges instead of casting a hard black step. */
+filter: drop-shadow(0 0.5px 0 rgba(10, 20, 40, 0.45)) drop-shadow(0 0 1.6px rgba(190, 215, 255, 0.55));
 }
 /* The face's own silhouette outline. The pale solid sits on a mid-tone pane
 now, and a hairline of the pane's darkest tone traced around the outline is
@@ -604,9 +601,9 @@ z-index: -1;
    colors are tuned for is unchanged. */
 .file-toolbar__count-echo {
 position: absolute;
-left: 0.07em;
-top: 0.09em;
-color: rgba(2, 6, 14, 0.45);
+left: 0.05em;
+top: 0.07em;
+color: rgba(2, 6, 14, 0.24);
 }
 .file-toolbar__count-face {
 position: relative;
