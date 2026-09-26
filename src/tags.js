@@ -188,6 +188,51 @@ function isTextName(name, allow) {
     || (ext === '' && /^\.[A-Za-z0-9_-]+$/.test(name) && set.has(name.toLowerCase()));
 }
 
+// Content sniff for files the extension allowlist does not cover
+// (`LICENSE`, `data.csv`, `icon.svg`, `pom.xml`). Reads the first 8 KB:
+// a NUL byte, or more than 10% control characters outside tab/CR/LF/FF,
+// means binary. An empty file counts as text. Unreadable files are binary.
+const SNIFF_BYTES = 8192;
+function isTextBuffer(buf) {
+  if (!buf || !buf.length) return true;
+  let control = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const b = buf[i];
+    if (b === 0) return false;
+    if (b < 7 || (b > 13 && b < 32) || b === 127) control++;
+  }
+  return control / buf.length <= 0.1;
+}
+
+function looksLikeTextFile(abs) {
+  let fd;
+  try {
+    fd = fs.openSync(abs, 'r');
+    const buf = Buffer.alloc(SNIFF_BYTES);
+    const n = fs.readSync(fd, buf, 0, SNIFF_BYTES, 0);
+    return isTextBuffer(buf.subarray(0, n));
+  } catch { return false; }
+  finally { if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* ignore */ } } }
+}
+
+// A file is text when its name is on the allowlist or, failing that, its
+// content sniffs as text. The name check runs first so most files never
+// touch the disk.
+const KNOWN_BINARY_EXTS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.tif', '.tiff',
+  '.avif', '.heic', '.pdf', '.zip', '.gz', '.tgz', '.bz2', '.xz', '.7z',
+  '.rar', '.tar', '.jar', '.war', '.class', '.exe', '.dll', '.so', '.dylib',
+  '.o', '.a', '.wasm', '.node', '.bin', '.dat', '.db', '.sqlite', '.sqlite3',
+  '.mp3', '.mp4', '.m4a', '.wav', '.ogg', '.webm', '.mov', '.avi', '.mkv',
+  '.flac', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.psd', '.pyc'
+]);
+
+function isTextFile(abs, name, allow) {
+  if (isTextName(name, allow)) return true;
+  if (KNOWN_BINARY_EXTS.has(path.extname(name).toLowerCase())) return false;
+  return looksLikeTextFile(abs);
+}
+
 // One-pass directory walk. Returns text-ish files with size + ext and a
 // `binary` flag for out-of-allowlist extensions. Skips heavy build dirs
 // and nested tooling dirs (node_modules, .git, dist, build, .next, .cache,
@@ -242,7 +287,8 @@ function scanFiles(projectDir, exts, limit) {
       //     is allowlisted (`.env` -> `.env`, `.gitignore` -> `.gitignore`).
       //     Leading-dot names keep the dot in the extension key so the
       //     same allowlist covers `Dockerfile` and `.dockerignore`.
-      const isText = isTextName(dirent.name, allow);
+      //   - otherwise, its first bytes sniff as text (`LICENSE`, `.csv`).
+      const isText = isTextFile(full, dirent.name, allow);
       out.push({
         path: path.relative(rootResolved, full).split(path.sep).join('/'),
         size,
@@ -298,6 +344,8 @@ function buildInjectedMessage(projectDir, relPath, entry, opts) {
   let body;
   try { body = fs.readFileSync(abs, 'utf8'); }
   catch { return null; }
+  // Binary content never attaches, even behind an allowlisted extension.
+  if (body.indexOf('\u0000') !== -1) return null;
 
   const content =
     '# File: ' + relPath + '\n' +
@@ -352,14 +400,16 @@ function resolveForInjection(projectDir, opts) {
   }
   // @-references to files that carry no tag entry. The composer popup
   // offers every scanned project file, so an explicit mention must attach
-  // the file even when it was never tagged. Only text files on the scan
-  // allowlist are attached; anything else is skipped silently, exactly as
-  // parseReferences drops unresolvable tokens.
+  // the file even when it was never tagged. Every text file is attached
+  // (allowlisted name or text content); binary files are skipped silently,
+  // exactly as parseReferences drops unresolvable tokens.
   const untagged = Array.from(forceUserPaths)
     .filter(rel => !Object.prototype.hasOwnProperty.call(map, rel))
     .sort(byPath);
   for (const rel of untagged) {
-    if (!isTextName(path.posix.basename(rel))) continue;
+    let abs;
+    try { abs = toAbsInside(projectDir, rel); } catch { continue; }
+    if (!isTextFile(abs, path.posix.basename(rel))) continue;
     const entry = { tags: [], excerpt: null, includeInChat: false };
     const msg = buildInjectedMessage(projectDir, rel, entry, { maxBytes, forceUserPaths });
     if (msg) out.push(msg);

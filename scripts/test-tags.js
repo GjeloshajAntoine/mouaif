@@ -54,6 +54,11 @@ fs.writeFileSync(path.join(PROJ, '.github', 'workflows', 'ci.yml'), 'name: ci\n'
 fs.writeFileSync(path.join(PROJ, '.env'), 'KEY=value\n');
 fs.writeFileSync(path.join(PROJ, '.gitignore'), 'node_modules\n');
 fs.writeFileSync(path.join(PROJ, 'src', '.hidden.js'), 'tool noise\n'); // nested hidden file — skipped
+// Text files outside the extension allowlist (sniffed as text) and a
+// binary blob with an unknown extension (sniffed as binary).
+fs.writeFileSync(path.join(PROJ, 'LICENSE'), 'MIT License\n');
+fs.writeFileSync(path.join(PROJ, 'data.csv'), 'a,b\n1,2\n');
+fs.writeFileSync(path.join(PROJ, 'blob.xyz'), Buffer.from([0x00, 0x01, 0x02, 0xff, 0x00]));
 
 // ---- Path normalization -------------------------------------------------
 
@@ -77,6 +82,9 @@ check('scan treats webpack.config.js as text', (scan.find(f => f.path === 'webpa
 check('scan treats extensionless Makefile as text', (scan.find(f => f.path === 'Makefile') || {}).binary === false);
 check('scan includes root-level .github dir', scanPaths.includes('.github/workflows/ci.yml'));
 check('scan includes root-level .env as text', (scan.find(f => f.path === '.env') || {}).binary === false);
+check('scan sniffs extensionless LICENSE as text', (scan.find(f => f.path === 'LICENSE') || {}).binary === false);
+check('scan sniffs .csv as text', (scan.find(f => f.path === 'data.csv') || {}).binary === false);
+check('scan sniffs unknown binary blob as binary', (scan.find(f => f.path === 'blob.xyz') || {}).binary === true);
 check('scan includes root-level .gitignore as text', (scan.find(f => f.path === '.gitignore') || {}).binary === false);
 check('scan skips nested hidden files', !scanPaths.some(p => p.includes('.hidden.js')));
 
@@ -190,6 +198,13 @@ check('untagged @-reference header says no tags', notesMsg && notesMsg.content.i
 check('untagged exact-path @-reference is injected', untaggedInj.some(m => m.relPath === 'src/App.vue'));
 const binInj = tags.resolveForInjection(PROJ, { referencedPaths: ['logo.png'] });
 check('untagged binary @-reference is skipped', binInj.length === 0);
+const csvInj = tags.resolveForInjection(PROJ, {
+  referencedPaths: tags.parseReferences(PROJ, 'see @data.csv and @LICENSE')
+});
+check('untagged non-code text @-reference is injected', csvInj.some(m => m.relPath === 'data.csv' && m.content.includes('1,2')));
+check('untagged extensionless text @-reference is injected', csvInj.some(m => m.relPath === 'LICENSE'));
+const blobInj = tags.resolveForInjection(PROJ, { referencedPaths: ['blob.xyz'] });
+check('untagged binary-content @-reference is skipped', blobInj.length === 0);
 const missingInj = tags.resolveForInjection(PROJ, { referencedPaths: ['nope.js'] });
 check('missing @-reference is skipped', missingInj.length === 0);
 const bigInj = tags.resolveForInjection(PROJ, { referencedPaths: ['big.txt'] });

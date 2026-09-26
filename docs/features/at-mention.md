@@ -33,6 +33,7 @@ Sending a message that contains `@<file>` (anywhere in the text) attaches that f
 - Tagged files use their saved excerpt and tags; untagged files attach in full with `# Tags: (none)`.
 - A file above the size cap (default 256 KB, `app.fileTagMaxBytes`) is not attached. The model gets a one-line note that the file exists and is too large, so it can read the parts it needs with a file tool.
 - Lines hidden in **Settings → Hide file content** are replaced with `[hidden]`, the same as in `read_file`.
+- Any text file attaches, not only code: Markdown, JSON, CSV, `LICENSE`, `.env`, and other text files whose extension is not on the allowlist (their content is sniffed).
 - Binary files, missing paths, and paths outside the project are skipped silently.
 
 The resolution rules are documented in [File tagging](./file-tagging.md#in-a-chat).
