@@ -163,7 +163,13 @@ v ? 'the status line under the composer is shown again' : 'the status line under
       h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
       h('h2', { class: 'view-title' }, 'App defaults')
     ),
-    h('div', { class: 'group' },
+    // The scroll container. Flush routes (no tab bar) only scroll when
+    // <main> has a single root <section> child — `.app__main--flush >
+    // section` is the rule that turns it into the internal scroll
+    // container. A bare Fragment left every card below the fold clipped
+    // with no way to reach it.
+    h('section', null,
+      h('div', { class: 'group' },
       h('div', { class: 'group__title' },
         'Chat defaults',
         h('span', { class: 'group__title-note' }, 'Apply to every project')
@@ -364,6 +370,7 @@ v ? 'the status line under the composer is shown again' : 'the status line under
               h('p', { class: 'hint hint--compact' },
         'Chats and messages are stored in the app database. To keep a chat history you can commit, ' +
         'turn on tracing for that chat in project settings — it writes a project-local trace file you can add to source control.')
+    )
     )
   );
 }

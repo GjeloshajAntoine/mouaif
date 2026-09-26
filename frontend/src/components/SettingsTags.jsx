@@ -326,12 +326,20 @@ export function SettingsTagsView(props) {
       h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '‹'),
       h('h2', { class: 'view-title' }, 'File tags')
     ),
+    // The scroll container. Flush routes (no tab bar) only scroll when
+    // <main> has a single root <section> child — `.app__main--flush >
+    // section` is the rule that turns it into the internal scroll
+    // container. This view previously returned a bare Fragment, so the
+    // hint rows and page bar below the fixed-height tag list were clipped
+    // with no way to reach them.
+    h('section', null,
     h('p', { class: 'hint hint--compact' }, projectDir || '(project)'),
     h('p', { class: 'hint hint--compact' }, 'Tag project files, then toggle “Include in chat” to auto-inject them into every chat send. Reference one explicitly with @path in the composer.'),
     h('div', { id: 'tags-list-container', class: 'tags__list', role: 'list', 'aria-label': 'Project files' }),
     h('div', { class: 'page-bar' },
       h('span', { class: 'status page-bar__status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text),
       h('button', { class: 'btn', type: 'button', onClick: scan, disabled: isScanning }, 'Scan')
+    )
     )
   );
 }

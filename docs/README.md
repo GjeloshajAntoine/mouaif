@@ -135,6 +135,7 @@ Published pages about how the app is built. They are reachable by URL but not li
 - [Chat transcript rendering](features/chat-transcript-rendering.md) — unchanged rows are reused instead of rebuilt.
 - [Run settle latch](features/run-settle-latch.md) — no status flicker when returning to a finished run.
 - [iOS touch scroll](features/ios-touch-scroll.md) — the transcript scrolls with a finger on iOS Safari.
+- [Flush-route scrolling](features/flush-route-scroll.md) — every settings sub-page scrolls to the bottom on a phone.
 - [Virtual list](features/virtual-list.md) — the windowed list behind long lists.
 - [Markdown renderer](features/markdown-renderer.md) — the safe renderer for chat messages.
 - [Lazy-loaded settings](features/frontend-lazy-settings.md) — settings pages load on demand for a faster first paint.

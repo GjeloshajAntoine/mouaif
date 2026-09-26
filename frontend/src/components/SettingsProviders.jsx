@@ -35,6 +35,12 @@ export function SettingsProvidersView() {
       h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '‹'),
       h('h2', { class: 'view-title' }, 'Providers')
     ),
+    // The scroll container. Flush routes (no tab bar) only scroll when
+    // <main> has a single root <section> child — `.app__main--flush >
+    // section` is the rule that turns it into the internal scroll
+    // container. A bare Fragment left a long provider list clipped with
+    // no way to reach it.
+    h('section', null,
     h('p', { class: 'hint hint--compact' }, 'Credentials live in the app store. Each project\'s models reference one of these.'),
     h('ul', { class: 'providers__list', 'aria-label': 'Configured providers' },
       list === null ? null :
@@ -65,6 +71,7 @@ export function SettingsProvidersView() {
     h('div', { class: 'page-bar' },
       h('span', { class: 'status page-bar__status' + (statusType ? ' status--' + statusType : ''), 'aria-live': 'polite' }, statusMsg),
       h('a', { href: '#/settings/providers/new', class: 'page-bar__add', 'aria-label': 'Add provider' }, '+')
+    )
     )
   );
 }

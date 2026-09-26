@@ -84,6 +84,12 @@ h('div', { class: 'view-head' },
 h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
 h('h2', { class: 'view-title' }, 'Projects')
 ),
+// The scroll container. Flush routes (no tab bar) only scroll when
+// <main> has a single root <section> child — `.app__main--flush >
+// section` is the rule that turns it into the internal scroll
+// container. A bare Fragment left a long project list clipped with no
+// way to reach it.
+h('section', null,
 h('p', { class: 'hint hint--compact' }, 'Projects the app remembers. Removing one only unregisters it — the folder on disk is never touched.'),
 h('div', { class: 'page-bar' },
 h('span', { class: 'status page-bar__status' + (statusType ? ' status--' + statusType : ''), 'aria-live': 'polite' }, statusText),
@@ -104,6 +110,7 @@ h('div', { class: 'sprojects__meta' }, p.path)
 h('span', { class: 'sprojects__chev', 'aria-hidden': 'true' }, '›'),
 h(RowMenu, { project: p, onRename: renameProject, onUnregister: unregisterProject })
 ))
+)
 )
 );
 }
