@@ -1313,7 +1313,8 @@ const summary = (toolResult.ok || isExpectedToolFailure(toolResult && toolResult
 // Publish a successful capture immediately. Tool result bodies are lazy and
 // usually stay collapsed, so relying on renderToolResultBody would delay the
 // dock until the user expanded a transcript card.
-if (toolResult.ok && normalizeToolName(toolResult.name) === 'webpreview' && rawR && rawR.thumbnail) {
+// A capture carries `thumbnail`; a Live (iframe) result carries mode:'live' + url.
+if (toolResult.ok && normalizeToolName(toolResult.name) === 'webpreview' && rawR && (rawR.thumbnail || (rawR.mode === 'live' && rawR.url))) {
 publishWebPreview(rawR);
 }
 // A `tool_result` frame carries only the result, so recover the call

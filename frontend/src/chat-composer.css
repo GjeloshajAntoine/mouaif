@@ -865,6 +865,43 @@ border-radius: var(--r-md);
 background: var(--bg);
 box-shadow: var(--shadow-sm);
 }
+/* Live (iframe) dock: the page renders at its viewport size and is scaled
+   to the card width; the card keeps the viewport's aspect ratio and shares
+   the image's height cap, cropped to the top. The frame is inert here so a
+   tap opens the full viewer, where it is interactive. */
+.webpreview-dock__live {
+display: block;
+position: relative;
+width: 100%;
+max-height: min(24dvh, 11rem);
+overflow: hidden;
+border: 1px solid var(--border);
+border-radius: var(--r-md);
+background: #fff;
+box-shadow: var(--shadow-sm);
+}
+.webpreview-dock__frame {
+position: absolute;
+top: 0;
+left: 0;
+border: 0;
+background: #fff;
+transform-origin: 0 0;
+pointer-events: none;
+}
+.webpreview-dock__badge {
+position: absolute;
+left: 4px;
+bottom: 4px;
+padding: 1px 5px;
+font-size: 0.56rem;
+font-weight: 700;
+letter-spacing: 0.04em;
+color: var(--on-accent);
+background: var(--accent);
+border-radius: 999px;
+pointer-events: none;
+}
 .webpreview-dock__dismiss {
   position: absolute;
   top: -0.45rem;
@@ -2410,15 +2447,6 @@ position: static;
   border: 0;
   background: #fff;
   transform-origin: 0 0;
-}
-.wp__live-hint {
-  flex: 0 0 auto;
-  margin: 0;
-  padding: 4px 10px;
-  font-size: 0.68rem;
-  color: var(--muted);
-  background: var(--surface-2);
-  border-top: 1px solid var(--border);
 }
 .wp__mode {
   flex: 0 0 auto;

@@ -486,7 +486,7 @@ function renderWebpreviewToolResult(body, r) {
   if (!r || r.error) {
     return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
   }
-  renderPreviewPre(body, 'Preview ready for the user.', 'tool-preview__pre');
+  renderPreviewPre(body, r.mode === 'live' ? 'Live preview open for the user.' : 'Preview ready for the user.', 'tool-preview__pre');
 }
 
 // renderGenericToolResult(body, r)

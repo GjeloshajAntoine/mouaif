@@ -1973,6 +1973,7 @@ promptSize: callOpts && callOpts.promptSize,
 const out = await wp.runWebpreview({
 url: args && args.url,
 viewport: args && args.viewport,
+mode: args && args.mode,
 signal: callOpts && callOpts.signal
 });
 return out;

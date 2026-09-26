@@ -44,7 +44,12 @@
 //                              'phone+', 'tablet', 'laptop') or a
 //                              'WIDTHxHEIGHT' string; it overrides the
 //                              default 375 × 667 phone capture.
+//                              `mode` is 'screenshot' (default) or 'live':
+//                              live skips Chrome entirely and returns a
+//                              payload the UI renders as an unrestricted
+//                              <iframe> of the URL (dock + viewer).
 //   resolveViewport(raw)            — normalize a viewport arg.
+//   resolveMode(raw)                — normalize a mode arg.
 //   VIEWPORTS / DEFAULT_VIEWPORT_ID — the preset table + default.
 
 const { openInspectorTarget, sendTargetCommand, closeInspectorTarget, fetchInspectorTargets } = require('../inspector.js');
@@ -224,6 +229,8 @@ const finalUrl = url.href;
 // Resolve the capture size up front so both the emulation step and the
 // result meta report the same rectangle the user (or model) asked for.
 const captureVp = resolveViewport(opts && opts.viewport);
+const mode = resolveMode(opts && opts.mode);
+if (mode === 'live') return liveResult(url, captureVp);
 
   let target;
   try {
@@ -399,6 +406,37 @@ return { ok: true, content: JSON.stringify(summary), result };
   }
 }
 
+// Preview modes. 'screenshot' captures a JPEG in the debug Chrome; 'live'
+// hands the URL to the UI, which frames the page itself.
+const MODES = Object.freeze(['screenshot', 'live']);
+function resolveMode(raw) {
+  const v = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  if (v === 'live' || v === 'iframe') return 'live';
+  if (!v || v === 'screenshot' || v === 'image') return 'screenshot';
+  throw err('EBADINPUT', 'mode must be "screenshot" or "live"');
+}
+
+// liveResult — the Live (iframe) payload. No Chrome round-trip: the user's
+// browser loads the page in the dock and viewer. The model gets the same
+// compact summary shape as a capture, minus image stats.
+function liveResult(url, vp) {
+  const finalUrl = url.href;
+  const viewportMeta = { id: vp.id, label: viewportLabel(vp), width: vp.width, height: vp.height };
+  const title = url.hostname || finalUrl.slice(0, 120);
+  const result = {
+    ok: true,
+    mode: 'live',
+    url: finalUrl,
+    title,
+    width: vp.width,
+    height: vp.height,
+    viewport: viewportMeta,
+    capturedAt: new Date().toISOString()
+  };
+  const summary = { ok: true, mode: 'live', url: finalUrl, width: vp.width, height: vp.height, viewport: viewportMeta };
+  return { ok: true, content: JSON.stringify(summary), result };
+}
+
 const SPEC = {
   type: 'function',
   function: {
@@ -411,7 +449,8 @@ const SPEC = {
       'The screenshot is shown only to the user in a small dock between the chat scroll and textbox; tapping it opens the full image. ' +
       'Call this tool again with the URL whenever the user preview should reload. The screenshot is not returned to you for visual analysis. ' +
       'Any absolute URL Chrome can open is accepted (http, https, file, data, about, …). Optionally set `viewport` to capture at a different size: ' +
-      'a preset id ("phone", "phone+", "tablet", "laptop") or any "WIDTHxHEIGHT" string (e.g. "1280x800").',
+      'a preset id ("phone", "phone+", "tablet", "laptop") or any "WIDTHxHEIGHT" string (e.g. "1280x800"). ' +
+      'Set `mode` to "live" to show the page itself, interactive, in an iframe in the user\'s browser instead of a screenshot (use it when the user should click around, or for pages that animate); "screenshot" is the default.',
       parameters: {
       type: 'object',
       properties: {
@@ -419,6 +458,11 @@ const SPEC = {
         viewport: {
         type: 'string',
         description: 'Capture size. One of "phone" (375x667), "phone+" (414x896), "tablet" (768x1024), "laptop" (1280x800), or any "WIDTHxHEIGHT" string (positive integers, no range limit). Defaults to "phone".'
+        },
+        mode: {
+          type: 'string',
+          enum: ['screenshot', 'live'],
+          description: '"screenshot" (default) captures an image in the debug Chrome. "live" shows the page as an interactive iframe in the user\'s browser, rendered at `viewport` size.'
         }
       },
       required: ['url'],
@@ -433,6 +477,8 @@ module.exports = {
   // exported for tests
   parseUrl,
   resolveViewport,
+  resolveMode,
+  MODES,
   VIEWPORTS,
   DEFAULT_VIEWPORT_ID,
   THUMB_WIDTH_MAX,

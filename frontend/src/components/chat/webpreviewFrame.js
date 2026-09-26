@@ -1,28 +1,25 @@
 // mouaif web — webpreview Live (iframe) mode helpers
 //
-// Pure functions used by WebpreviewModal.jsx; kept free of Preact so
-// scripts/test-webpreview-iframe.mjs can import them directly.
+// Pure functions used by WebpreviewModal.jsx and WebpreviewDock.jsx; kept
+// free of Preact so scripts/test-webpreview-iframe.mjs can import them.
 // See docs/features/webpreview.md (Live mode).
 
-// Only http(s) pages can be framed by the app (CSP frame-src); file:, data:
-// and about: stay screenshot-only.
-export function canFrameUrl(url) {
-  try {
-    const u = new URL(url);
-    return u.protocol === 'http:' || u.protocol === 'https:';
-  } catch { return false; }
+// Permissions delegated to the live frame. Live mode is unrestricted: no
+// sandbox, no referrer policy, and every powerful feature the page may ask
+// for is delegated so it behaves as it would in its own tab.
+export const FRAME_ALLOW = [
+  'accelerometer', 'autoplay', 'camera', 'clipboard-read', 'clipboard-write',
+  'display-capture', 'encrypted-media', 'fullscreen', 'geolocation', 'gyroscope',
+  'magnetometer', 'microphone', 'midi', 'payment', 'picture-in-picture',
+  'screen-wake-lock', 'web-share', 'xr-spatial-tracking'
+].join('; ');
+
+// A preview payload is live when the agent (or user) asked for it. Live
+// payloads carry no screenshot; the page itself is framed.
+export function isLivePayload(payload) {
+  return !!payload && payload.mode === 'live' && typeof payload.url === 'string' && !!payload.url;
 }
-// Sandbox tokens for the live frame. A page on the app's own origin (e.g. the
-// mouaif UI itself) never gets allow-same-origin: with allow-scripts that
-// would let it reach the parent document and the /api surface. A
-// cross-origin page keeps its own origin either way, so it may have it.
-export function frameSandbox(url, appOrigin) {
-  const tokens = ['allow-scripts', 'allow-forms', 'allow-popups', 'allow-modals'];
-  let origin = '';
-  try { origin = new URL(url).origin; } catch { /* opaque */ }
-  if (origin && origin !== appOrigin) tokens.unshift('allow-same-origin');
-  return tokens.join(' ');
-}
+
 export function viewportDims(value, preview, presets = []) {
   const preset = presets.find((p) => p.id === value);
   if (preset) return { width: preset.width, height: preset.height };
@@ -30,6 +27,7 @@ export function viewportDims(value, preview, presets = []) {
   if (match) return { width: Number(match[1]), height: Number(match[2]) };
   return { width: (preview && preview.width) || 375, height: (preview && preview.height) || 667 };
 }
+
 // Scale that fits a WIDTHxHEIGHT frame inside the body box minus `pad`
 // pixels, never upscaling. Returns 1 until the box has been measured.
 export function frameScale(dims, box, pad = 0) {

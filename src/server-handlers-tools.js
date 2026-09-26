@@ -614,7 +614,7 @@ try {
     return sendJSON(res, 200, { ok: true });
   }
 
-  // POST /api/tools/webpreview  body: { projectDir, chatId, url, viewport? }
+  // POST /api/tools/webpreview  body: { projectDir, chatId, url, viewport?, mode? }
   // Direct user-facing refresh of the web preview from the full-screen
   // viewer (and the dock's Dismiss/Refresh cycle). The user may change the
   // capture resolution with `viewport` (preset id or "WIDTHxHEIGHT"). The
@@ -630,6 +630,7 @@ try {
     const chatId = body && typeof body.chatId === 'string' ? body.chatId : '';
     const url = body && typeof body.url === 'string' ? body.url.trim() : '';
     const viewport = body && typeof body.viewport === 'string' ? body.viewport : '';
+    const mode = body && typeof body.mode === 'string' ? body.mode : '';
     const callId = (body && typeof body.callId === 'string' && body.callId) ||
       ('ui_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
@@ -668,7 +669,7 @@ try {
       return sendJSON(res, 500, { ok: false, error: 'webpreview tool module unavailable: ' + (e.message || e), code: 'EMODULE' });
     }
     try {
-      const out = await wp.runWebpreview({ url, viewport: viewport || undefined });
+      const out = await wp.runWebpreview({ url, viewport: viewport || undefined, mode: mode || undefined });
       return sendJSON(res, 200, out);
     } catch (e) {
       return sendJSON(res, 500, { ok: false, error: e.message || String(e), code: e.code || 'EWEBPREVIEW' });

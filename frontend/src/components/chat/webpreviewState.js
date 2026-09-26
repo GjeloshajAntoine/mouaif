@@ -7,8 +7,16 @@
 const listeners = new Set();
 let activePreview = null;
 
+// A payload is either a screenshot ({ thumbnail }) or a Live iframe
+// ({ mode: 'live', url }) requested by the agent.
+export function isPublishable(payload) {
+  if (!payload) return false;
+  if (payload.thumbnail) return true;
+  return payload.mode === 'live' && typeof payload.url === 'string' && !!payload.url;
+}
+
 export function publish(payload) {
-  if (!payload || !payload.thumbnail) return;
+  if (!isPublishable(payload)) return;
   if (!isNewer(payload, activePreview)) return;
   activePreview = payload;
   emit();

@@ -13,12 +13,13 @@
 // small metadata (dimensions, size, capture time), a Screenshot / Live
 // toggle, and an "Open in new tab" link.
 //
-// Live mode swaps the screenshot for a sandboxed <iframe> of the same URL,
-// sized to the selected viewport and scaled down to fit the sheet. It is
-// loaded by the user's own browser (not the server's debug Chrome), so it is
-// interactive but `localhost` means the device, and sites that forbid framing
-// (X-Frame-Options / frame-ancestors) stay blank. In Live mode Refresh
+// Live mode swaps the screenshot for an unrestricted <iframe> of the same
+// URL (any scheme, no sandbox, every permission delegated), sized to the
+// selected viewport and scaled down to fit the sheet. It is loaded by the
+// user's own browser, not the server's debug Chrome. In Live mode Refresh
 // reloads the frame and the Size control resizes it — no capture runs.
+// A payload the agent published with mode: "live" has no screenshot and
+// always opens in Live mode.
 //
 // Props:
 //   preview     { url, title, thumbnail, width, height, sizeBytes, capturedAt, viewport }
@@ -29,7 +30,7 @@
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
-import { canFrameUrl, frameSandbox, frameScale as fitScale, viewportDims } from './webpreviewFrame.js';
+import { FRAME_ALLOW, frameScale as fitScale, isLivePayload, viewportDims } from './webpreviewFrame.js';
 // Keep this small list aligned with VIEWPORTS in src/tools/webpreview.js.
 const VIEWPORT_PRESETS = [
   { id: 'phone', label: 'Phone', width: 375, height: 667 },
@@ -80,7 +81,8 @@ export function WebpreviewModal({ preview, onClose, onRecapture }) {
   const [customWidth, setCustomWidth] = useState(String(initialCustomSize.width));
   const [customHeight, setCustomHeight] = useState(String(initialCustomSize.height));
   const [customError, setCustomError] = useState('');
-  const [viewMode, setViewModeState] = useState(readViewMode);
+  // An agent-requested live preview opens live; otherwise the stored choice.
+  const [viewMode, setViewModeState] = useState(() => (isLivePayload(preview) ? 'live' : readViewMode()));
   const [frameKey, setFrameKey] = useState(0);
   const [bodySize, setBodySize] = useState({ width: 0, height: 0 });
   const bodyRef = useRef(null);
@@ -100,12 +102,25 @@ export function WebpreviewModal({ preview, onClose, onRecapture }) {
   const sizeBytes = preview && preview.sizeBytes;
   const capturedAt = preview && preview.capturedAt;
   const host = hostFromUrl(url);
-  const frameable = canFrameUrl(url);
-  const live = viewMode === 'live' && frameable;
+  // Live works for any URL. Screenshot needs a capture: a live-only payload
+  // switching to Screenshot runs one through onRecapture.
+  const live = viewMode === 'live' && !!url;
   function setViewMode(mode) {
     setViewModeState(mode);
     writeViewMode(mode);
+    if (mode === 'image' && !thumbnail && url && onRecapture) {
+      captureAt(selectedViewport);
+    }
   }
+  // The agent can switch an open viewer to Live by publishing a live payload
+  // (webpreview mode: "live"); follow it and its viewport.
+  const liveStamp = isLivePayload(preview) ? (preview.capturedAt || preview.url) : '';
+  useEffect(() => {
+    if (!liveStamp) return;
+    setViewModeState('live');
+    setSelectedViewport(viewportValue(preview && preview.viewport));
+    setFrameKey((k) => k + 1);
+  }, [liveStamp]);
   // Track the body box so the live frame can be scaled to fit it.
   useEffect(() => {
     if (!live) return undefined;
@@ -134,6 +149,9 @@ const [recapturing, setRecapturing] = useState(false);
       else setFrameKey((k) => k + 1);
       return;
     }
+    return captureAt(nextViewport);
+  }
+  async function captureAt(nextViewport) {
     if (recapturing || !onRecapture) return;
     const previousViewport = selectedViewport;
     const viewport = nextViewport || selectedViewport || 'phone';
@@ -270,8 +288,8 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
                 class: 'wp__frame',
                 src: url,
                 title: 'Live preview of ' + url,
-                sandbox: frameSandbox(url, typeof location !== 'undefined' ? location.origin : ''),
-                referrerpolicy: 'no-referrer',
+                allow: FRAME_ALLOW,
+                allowFullScreen: true,
                 loading: 'eager',
                 style: {
                   width: frameDims.width + 'px',
@@ -293,12 +311,8 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
               h('p', { class: 'wp__empty-hint' }, 'The webpreview call finished without a captured image.')
             )
       ),
-      live
-        ? h('p', { class: 'wp__live-hint' },
-            'Loaded by this device, not the server. Pages that block embedding stay blank — use Screenshot or Open in new tab.')
-        : null,
       h('div', { class: 'wp__foot' },
-        frameable
+        url
           ? h('div', { class: 'wp__mode', role: 'group', 'aria-label': 'Preview mode' },
               VIEW_MODES.map((m) => h('button', {
                 key: m.id,
