@@ -302,7 +302,11 @@ check('the emboss scales with the font instead of being a fixed length', () => {
   assert.ok(from > -1 && to > from, 'found the emboss block');
   assert.match(block, /left:\s*0\.\d+em;/, 'the echo offset is in em');
   assert.match(block, /top:\s*0\.\d+em;/, 'the echo offset is in em');
-  assert.match(block, /0 0\.\d+em 0 rgba\(255, 255, 255/, 'the white lip is in em');
+  assert.match(block, /-0\.\d+em -0\.\d+em 0 rgba\(255, 255, 255/, 'the lit rim is in em');
+  // The depth: a stack of hard, progressively darker copies stepping
+  // down-right. At least three steps, or the side wall reads as an outline.
+  const steps = block.match(/0\.\d+em 0\.\d+em 0 #[0-9a-f]{6}/gi) || [];
+  assert.ok(steps.length >= 6, 'each count has an extruded side of at least three em steps');
   const statsRule = css.match(/\.file-toolbar--orb \.file-toolbar__git-stats \{([^}]*)\}/);
   assert.ok(statsRule, 'found the orb stats rule');
   assert.match(statsRule[1], /font-size:\s*var\(--orb-count/, 'the size is driven by the inline variable');

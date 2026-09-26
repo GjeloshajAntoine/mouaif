@@ -589,6 +589,10 @@ color: #cf1818;
 black echo escape to the top of the folder and appear as a duplicate number. */
 position: relative;
 max-width: none;
+/* The flat rule clips each count to its own box; here that sliced the
+extruded side wall off the right edge of every last digit. The stats box
+still clips at the tile, so nothing can escape the folder. */
+overflow: visible;
 display: block;
 width: max-content;
 }
@@ -612,11 +616,15 @@ z-index: -1;
    highlight the solid's edge catches), then the bloom in the glyph's own hue.
    The bloom is a glow rather than a different ink, so the 6:1 contrast the
    colors are tuned for is unchanged. */
+/* The echo is now the *cast* shadow: the raised digits float a hair off the
+face, so their shadow lands further down-right than the extrusion and is
+soft-edged. Blur is in `em` too so it tracks the font. */
 .file-toolbar__count-echo {
 position: absolute;
-left: 0.05em;
-top: 0.07em;
-color: rgba(2, 6, 14, 0.12);
+left: 0.11em;
+top: 0.15em;
+color: rgba(8, 22, 48, 0.34);
+filter: blur(0.06em);
 }
 .file-toolbar__count-face {
 position: relative;
@@ -640,19 +648,28 @@ they are capped well below a full glyph width. The previous 0.8em halo was
 19px across on a 24px tile: the two counts' glows met in the middle and the
 whole tile turned into a coloured cloud with unreadable digits inside it,
 which is the "smear" the button was showing. */
+/* Depth: the digits are raised solids, not ink. After the lit top-left rim,
+four hard copies step down-right in ever darker shades of the glyph's own
+hue — that stack is the extruded side wall the reference shows. The steps
+are 0.03em apart so they merge into one continuous side at 6–8px instead of
+reading as separate outlines. The bloom sits last, under everything. */
 .file-toolbar--orb .file-toolbar__git-additions .file-toolbar__count-face {
 text-shadow:
-0 -0.04em 0 rgba(0, 34, 0, 0.36),
-0 0.07em 0 rgba(255, 255, 255, 0.44),
-0 0 0.08em rgba(0, 200, 64, 0.42),
-0 0 0.18em rgba(0, 165, 50, 0.20);
+-0.02em -0.03em 0 rgba(255, 255, 255, 0.55),
+0.02em 0.03em 0 #06631a,
+0.04em 0.06em 0 #055416,
+0.06em 0.09em 0 #044512,
+0.08em 0.12em 0 #03370e,
+0 0 0.18em rgba(0, 165, 50, 0.22);
 }
 .file-toolbar--orb .file-toolbar__git-deletions .file-toolbar__count-face {
 text-shadow:
-0 -0.04em 0 rgba(52, 0, 0, 0.36),
-0 0.07em 0 rgba(255, 255, 255, 0.42),
-0 0 0.08em rgba(236, 46, 46, 0.42),
-0 0 0.18em rgba(200, 22, 22, 0.20);
+-0.02em -0.03em 0 rgba(255, 255, 255, 0.5),
+0.02em 0.03em 0 #a81212,
+0.04em 0.06em 0 #8f0e0e,
+0.06em 0.09em 0 #760a0a,
+0.08em 0.12em 0 #5e0707,
+0 0 0.18em rgba(200, 22, 22, 0.22);
 }
 
 /* The SVG gradients the folder faces reference. Zero-sized and unreferenced

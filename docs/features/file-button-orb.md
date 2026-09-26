@@ -20,7 +20,7 @@ Turn it back off to return to the flat circle. Nothing else about the composer m
 | Chevrons | One `currentColor` bar each | Frosted glass bars: a translucent near-white face over a pale-blue thickness, with a faint blue glow |
 | Folder | One flat silhouette | One broad extruded silhouette: a 1px dark side, a near-white face with a cool hairline outline, ambient occlusion, and a rim light along its top edges |
 | Tile | — | Transparent; retained only as the folder's 3D positioning layer so no second rectangular card shows |
-| Counts | Flat colored glyphs at a fixed `0.46rem` | Embossed, corner-aligned, and sized per render from the longest count drawn (8px down to 6px) |
+| Counts | Flat colored glyphs at a fixed `0.46rem` | Raised 3D digits: a lit top-left rim, a stepped side wall in darker shades of the digit's own green/red extruding down-right, and a soft cast shadow on the folder face; corner-aligned and sized per render from the longest count drawn (8px down to 6px). Every depth step is in `em`, so it scales with the digits |
 | Motion | None | Pictogram stays pixel-aligned; only the rim streak (a slow ±11° glide) and the folder highlight move |
 | Tap target | `44 × 44` | `44 × 44` (unchanged) |
 | `aria-label` | Exact counts in words | Exact counts in words (unchanged) |

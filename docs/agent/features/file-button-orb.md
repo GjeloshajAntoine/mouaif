@@ -59,14 +59,15 @@ Two consequences worth knowing:
 - The **count text is HTML**, not SVG, and it is laid out against the transparent plate/folder box. So the plate's size in `FileToolbar.jsx` and in the CSS has to be the *same number*; the test asserts that equality, because otherwise the sizer's width/height budgets describe a rectangle that no longer exists.
 - the whole pictogram is only 32px tall, so the extrusion offsets (1px) are a meaningful fraction of the glyph. The orb SVG uses a 22 × 18 viewBox at the same rendered size, avoiding another source of subpixel blur.
 
-The counts are embossed, and the emboss has **four** stacked shadows per glyph. Read top to bottom as light travels over a raised letter:
+The counts are raised 3D solids, not a letterpress. Each glyph's `text-shadow` stack, read top to bottom:
 
-1. the **bevel** — a dark bite along the glyph's top-inner edge, where a raised solid turns away from an overhead light. This is the shadow that makes the digits look milled rather than printed;
-2. the **lip** — a bright edge on the far side, where the solid's base meets the tile;
-3. the **bloom**, in the glyph's own hue, kept modest on purpose;
-4. a soft **halo**, one radius out, so the glow reaches the tile rather than stopping at the glyph's edge.
+1. the **rim** — a white hairline one step up-left, where the top face catches the light;
+2. the **side wall** — four hard copies stepping `0.02em / 0.03em` down-right, each a darker shade of the glyph's own hue (`#06631a` → `#03370e` for green, `#a81212` → `#5e0707` for red). The steps are close enough to merge into one continuous extrusion at 6–8px rather than reading as outlines;
+3. a soft **halo** in the glyph's hue, so the glow reaches the tile.
 
-The **echo** — a near-black copy of the whole count, offset down-right — is drawn *under* the glyph by `__count-echo`. It is the letterpress shadow the raised glyph casts on the tile, and the bloom radii are deliberately kept small enough (see below) that it stays visible.
+The **echo** — a translucent navy copy of the whole count, blurred `0.06em` and offset `0.11em / 0.15em` down-right — is drawn *under* the glyph by `__count-echo`. It is the shadow the raised digit casts on the folder face, landing beyond the side wall.
+
+Each orb count is `overflow: visible` (the flat rule clips each count to its own box, which sliced the side wall off the last digit); the stats box still clips at the tile.
 
 The bloom is a glow rather than a different ink, so the contrast the colors are chosen for is unchanged. Pushing it harder is a mistake worth recording: at a higher opacity the fill lifts toward pastel and the saturated hues the colors are chosen for are lost — measured, the glyph core read `rgb(39,134,45)` instead of `#006600`'s `rgb(0,102,0)`. Trimmed back, the same glyph reads `rgb(34,100,40)`.
 
