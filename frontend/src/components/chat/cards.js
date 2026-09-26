@@ -959,18 +959,15 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
     });
     optionsHost.appendChild(optEl);
   }
-  const extraId = 'ask-extra-' + card.dataset.toolId;
-  const extraLabel = document.createElement('label');
-  extraLabel.className = 'tool-card__ask-extra-label';
-  extraLabel.htmlFor = extraId;
-  extraLabel.textContent = 'Note for the model (optional)';
-  body.appendChild(extraLabel);
+  // No visible label row: the placeholder says what the field is and the
+  // aria-label names it for screen readers, which saves a line of height.
   extra = document.createElement('textarea');
-  extra.id = extraId;
+  extra.id = 'ask-extra-' + card.dataset.toolId;
   extra.className = 'input tool-card__ask-extra';
-  extra.rows = 2;
+  extra.rows = 1;
   extra.maxLength = 1000;
-  extra.placeholder = 'Add context, or answer in your own words.';
+  extra.setAttribute('aria-label', 'Note for the model (optional)');
+  extra.placeholder = 'Optional note, or answer in your own words';
   extra.addEventListener('input', refreshSubmitUi);
   body.appendChild(extra);
   const actions = document.createElement('div');
