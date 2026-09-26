@@ -66,6 +66,24 @@ server.listen(0, '127.0.0.1', () => {
       for (const expected of ['mcp__file_config_server__echo', 'mcp__file_config_server__add']) {
         if (names.indexOf(expected) >= 0) throw new Error('MCP tool auto-exposed before start: ' + expected);
       }
+
+      // 1b. projectDir is OPTIONAL. The native catalog is identical for
+      // every project, so the app-level surfaces (Custom prompts → Chat
+      // preset) ask for it with no project at all. It must answer 200 with
+      // the full native set — and, being project-scoped, no MCP tools.
+      const r1b0 = await req('GET', '/api/tools/list');
+      if (r1b0.status !== 200) throw new Error('list without projectDir failed: HTTP ' + r1b0.status);
+      const namesNoProject = r1b0.body.tools.map((t) => t.name);
+      for (const expected of ['shell', 'report_progress', 'subagent', 'task', 'webpreview', 'restart_app', 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'ask_user', 'list_features']) {
+        if (namesNoProject.indexOf(expected) < 0) {
+          throw new Error('missing native tool without projectDir: ' + expected);
+        }
+      }
+      for (const n of namesNoProject) {
+        if (n.indexOf('mcp__') === 0) throw new Error('MCP tool leaked without a projectDir: ' + n);
+      }
+      console.log('GET /api/tools/list (no projectDir) ->', namesNoProject.length, 'native tools');
+
       // On-demand lifecycle: opening a chat (tools/list) never cold-starts
       // a configured MCP server. The server here is enabled (default ask)
       // but not running, so its tools are absent until started explicitly.

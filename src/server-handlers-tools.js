@@ -364,16 +364,20 @@ async function handleTools(req, res, parsed) {
   const method = req.method;
   const q = parsed.query || {};
 
-  // GET /api/tools/list?projectDir=<abs>
+  // GET /api/tools/list[?projectDir=<abs>]
   // The catalog is read-only; it does not require a chat id. Native
   // tools are always present; MCP tools are filtered to servers
   // whose session is currently 'ready' (decisions §18: tools belong
   // to a running session). A server that is not running is not
   // listed — the user can start it from Settings → MCP, and a
   // subsequent call will pick up the newly discovered tools.
+  //
+  // `projectDir` is OPTIONAL: the native tools are the same for every
+  // project, so the app-level surfaces (Custom prompts → Chat preset)
+  // ask for the catalog with no project. Only the MCP half is
+  // project-scoped, and it is simply skipped when no project is given.
   if (urlPath === '/api/tools/list' && method === 'GET') {
     const projectDir = qs(q, 'projectDir');
-    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     // A chat opening (or the mobile UI re-loading a project) should
     // re-attach the MCP servers it needs. The Settings UI documents
     // this as "open a chat that references a stopped server" — without
@@ -384,7 +388,8 @@ async function handleTools(req, res, parsed) {
     // no cache yet), and callers have no completion signal to know when
     // to retry. ensureServersRunning isolates failures per server, so one
     // broken MCP process does not fail the native-tool catalog.
-    await mcp.ensureServersRunning(projectDir).catch(() => []);
+    // Both MCP calls are project-scoped — skipped when no project is given.
+    if (projectDir) await mcp.ensureServersRunning(projectDir).catch(() => []);
     const tools = [];
 pushNativeTool(tools, { load: './tools/shell.js', name: 'shell', source: 'shell', fallback: 'Run a shell command in the project directory.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/progress.js', name: 'report_progress', source: 'progress', fallback: 'Report real-time progress on a long-running operation.', spec: (m) => m.SPEC && m.SPEC.function });
@@ -409,9 +414,10 @@ try {
       }
     } catch { /* files module unavailable; omit */ }
     try {
-      const mcpMod = require('./mcp.js');
-      const specs = mcpMod.listComposedToolSpecs(projectDir);
-      for (const s of (specs || [])) {
+    const mcpMod = require('./mcp.js');
+    // No projectDir -> no MCP tools to advertise (they are per-project).
+    const specs = projectDir ? mcpMod.listComposedToolSpecs(projectDir) : [];
+    for (const s of (specs || [])) {
         tools.push({
           name: s.name,
           kind: 'mcp',
