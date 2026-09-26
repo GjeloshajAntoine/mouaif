@@ -1,8 +1,8 @@
 import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
-import { EditorState, StateEffect, StateField } from '@codemirror/state';
-import { EditorView, gutter, GutterMarker, Decoration, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view';
+import { EditorState, RangeSet, StateEffect, StateField } from '@codemirror/state';
+import { EditorView, GutterMarker, Decoration, gutterLineClass, lineNumbers } from '@codemirror/view';
 import { syntaxHighlighting } from '@codemirror/language';
 import { oneDark, oneDarkHighlightStyle } from '@codemirror/theme-one-dark';
 import { javascript } from '@codemirror/lang-javascript';
@@ -11,7 +11,7 @@ import { css } from '@codemirror/lang-css';
 import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
 import { python } from '@codemirror/lang-python';
-import { charSpanCount, describeHidden, isValidCharSpan, lineIsSelected, normalizeChars, normalizeRanges, toggleChar, toggleLine } from './hiddenRanges.js';
+import { describeHidden, isValidCharSpan, normalizeChars, normalizeRanges, toggleChar, toggleLine } from './hiddenRanges.js';
 import './hiddenContent.css';
 // Retain only line numbers (never file content) across in-app navigation.
 // Explicit Cancel/Save clears the draft; a reload clears this in-memory cache.
@@ -115,18 +115,13 @@ return value;
 }
 });
 
-  // A check / empty marker rendered in the toggle gutter for one line.
-  class HideToggleMarker extends GutterMarker {
-    constructor(selected) { super(); this.selected = selected; }
-    eq(other) { return other instanceof HideToggleMarker && other.selected === this.selected; }
-    toDOM() {
-      const el = document.createElement('span');
-      el.className = 'hc__toggle-marker';
-      el.textContent = this.selected ? '✓' : '+';
-      el.setAttribute('aria-hidden', 'true');
-      return el;
-    }
+  // Class-only marker: paints a hidden line's number as a filled accent pill
+  // in the (single, tappable) line-number gutter.
+  class HiddenLineMarker extends GutterMarker {
+    eq(other) { return other instanceof HiddenLineMarker; }
   }
+  HiddenLineMarker.prototype.elementClass = 'hc__gutter-hidden';
+  const hiddenLineMarker = new HiddenLineMarker();
 
   // Highlight every line covered by the marked ranges. Ranges are clamped to
 // the document so a stale rule (file shrunk since it was saved) never throws.
@@ -183,35 +178,36 @@ return Decoration.set(deco, true);
 }
 );
 
-  const toggleGutter = gutter({
-class: 'hc__toggle',
-lineMarker(view, block) {
-const number = view.state.doc.lineAt(block.from).number;
-return new HideToggleMarker(lineIsSelected(view.state.field(hiddenRangesField), number));
-},
-lineMarkerChange(update) {
-return update.docChanged ||
-update.transactions.some((tr) => tr.effects.some((e) => e.is(setHidden)));
-},
-domEventHandlers: {
-click(view, block) {
-const number = view.state.doc.lineAt(block.from).number;
-const next = toggleLine(view.state.field(hiddenRangesField), number);
-view.dispatch({ effects: setHidden.of(next) });
-onChange(next);
-return true;
-}
-}
-});
+  // One gutter: the line numbers themselves are the toggle. A tap on a
+  // number hides / shows that line; hidden numbers are painted as a filled
+  // pill (class via gutterLineClass) so state never depends on a glyph.
+  const hiddenGutterClass = gutterLineClass.compute([hiddenRangesField], (state) => {
+    const marks = [];
+    const docLines = state.doc.lines;
+    for (const { start, end } of state.field(hiddenRangesField)) {
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start) continue;
+      for (let n = start; n <= Math.min(end, docLines); n++) marks.push(hiddenLineMarker.range(state.doc.line(n).from));
+    }
+    return RangeSet.of(marks, true);
+  });
+  const toggleGutter = lineNumbers({
+    domEventHandlers: {
+      click(view, block) {
+        const number = view.state.doc.lineAt(block.from).number;
+        const next = toggleLine(view.state.field(hiddenRangesField), number);
+        view.dispatch({ effects: setHidden.of(next) });
+        onChange(next);
+        return true;
+      }
+    }
+  });
 const state = EditorState.create({
 doc,
 extensions: [
 hiddenRangesField,
 hiddenCharsField,
-lineNumbers(),
-highlightActiveLine(),
-highlightActiveLineGutter(),
 toggleGutter,
+hiddenGutterClass,
 lineDecorations,
 charDecorations,
 syntaxHighlighting(oneDarkHighlightStyle),
@@ -266,6 +262,7 @@ const [preview, setPreview] = useState({ loading: true, content: null, error: ''
 const [reload, setReload] = useState(0);
 const [error, setError] = useState('');
 const [saving, setSaving] = useState(false);
+const [showManual, setShowManual] = useState(false);
 const savingRef = useRef(false);
 const mounted = useRef(true);
 const heading = useRef(null);
@@ -282,11 +279,17 @@ const dirty = JSON.stringify(ranges) !== JSON.stringify(initialRanges) || JSON.s
 let normalized = [], validation = '';
 try { normalized = normalizeRanges(ranges); } catch (e) { validation = e.message; }
 const count = normalized.reduce((n, r) => n + r.end - r.start + 1, 0);
-const charCount = normalizeChars(chars).length;
+const normalizedChars = normalizeChars(chars);
+const charCount = normalizedChars.length;
 const selectionSummary = (count ? `${count} ${count === 1 ? 'line' : 'lines'}` : '')
 + (count && charCount ? ', ' : '')
 + (charCount ? `${charCount} ${charCount === 1 ? 'text span' : 'text spans'}` : '')
 || 'Nothing hidden';
+// A selection that exactly matches a saved span un-hides it on tap, so the
+// button says so instead of always claiming "Hide".
+const selMatches = !!(sel.hasSelection && sel.span && normalizedChars.some((s) =>
+  s.startLine === sel.span.startLine && s.endLine === sel.span.endLine && s.startCol === sel.span.startCol && s.endCol === sel.span.endCol));
+const hideLabel = selMatches ? 'Show selection' : 'Hide selection';
 
   useEffect(() => {
     mounted.current = true;
@@ -419,68 +422,79 @@ if (draftVal && draftVal.ranges === ranges && draftVal.chars === chars) drafts.d
   }
   }
 
+  const slash = filePath.lastIndexOf('/');
+  const fileName = slash >= 0 ? filePath.slice(slash + 1) : filePath;
+  const fileDir = slash >= 0 ? filePath.slice(0, slash + 1) : '';
+  const manualOpen = showManual || !!preview.error;
+  const hideDisabled = saving || !sel.hasSelection;
   return h(Fragment, null,
     h('div', { class: 'view-head hidden-content__head' },
       h('button', { class: 'view-back', type: 'button', disabled: saving, onClick: onBack, 'aria-label': 'Back to hidden files' }, '←'),
-      h('h2', { class: 'view-title', tabIndex: -1, ref: heading }, 'Select hidden content')
+      h('div', { class: 'hidden-content__titles' },
+        h('h2', { class: 'view-title hidden-content__title', tabIndex: -1, ref: heading, title: filePath }, fileName),
+        h('p', { class: 'hidden-content__subtitle' }, 'Select hidden content', fileDir && h('span', { class: 'hidden-content__dir' }, ' · ' + fileDir))
+      )
     ),
-    h('form', { class: 'hidden-content', onSubmit, noValidate: true },
-      h('p', { class: 'hidden-content__path' }, filePath),
-      h('p', { class: 'hidden-content__intro' }, 'Tap a line number in the left gutter to hide the whole line, or drag to select text and hide just that span. Either way, the redacted text is replaced with [hidden] for the agent file tools.'),
-      h('p', { class: 'hidden-content__scope' }, 'Only read_file and search_files are filtered—not shell, MCP, or other access. This preview shows the original file to you; saving does not edit it.'),
+    h('form', { class: 'hidden-content hidden-content--editor', onSubmit, noValidate: true },
+      h('p', { id: 'hidden-content-editor-help', class: 'hidden-content__hint' },
+        h('span', null, h('strong', null, 'Tap a number'), ' to hide a line. ', h('strong', null, 'Select text'), ' to hide part of it.'),
+        h('span', { class: 'hidden-content__scope-note' }, 'Only read_file and search_files see [hidden]; shell and MCP still read the file. Your file is never edited.')
+      ),
       h('fieldset', { class: 'hidden-content__fields', disabled: saving },
         h('legend', { class: 'hidden-content__sr-only' }, 'Hidden content selection'),
-        preview.loading ? h('p', { role: 'status' }, 'Loading file preview…')
+        preview.loading ? h('p', { class: 'hidden-content__placeholder', role: 'status' }, 'Loading file preview…')
           : preview.error ? h('div', { class: 'hidden-content__preview-error' },
-              h('p', { role: 'alert' }, preview.error + ' You can still edit ranges manually.'),
+              h('p', { role: 'alert' }, preview.error + ' You can still enter line ranges below.'),
               h('button', { class: 'btn', type: 'button', onClick: () => setReload((n) => n + 1) }, 'Retry preview')
             )
-          : h(Fragment, null,
-              h('div', { class: 'hidden-content__editor', ref: editorHost, role: 'region', 'aria-label': 'Numbered file content', 'aria-describedby': 'hidden-content-editor-help' }),
-              h('div', { class: 'hidden-content__toolbar' },
-              h('p', { id: 'hidden-content-editor-help', class: 'hidden-content__muted' }, 'Tap a line in the gutter to hide or show it, or drag to select text and tap Hide selected text in the footer. The file is read-only.')
-              )
-            ),
-        h('details', { class: 'hidden-content__manual', open: !!preview.error },
-          h('summary', null, 'Enter line ranges manually'),
-          h('p', { class: 'hidden-content__muted' }, 'From and To are inclusive. Use the same number to hide one line.'),
+          : h('div', { class: 'hidden-content__editor', ref: editorHost, role: 'region', 'aria-label': 'Numbered file content', 'aria-describedby': 'hidden-content-editor-help' }),
+        h('div', { id: 'hidden-content-manual', class: 'hidden-content__manual', hidden: !manualOpen },
+          h('div', { class: 'hidden-content__manual-head' },
+            h('strong', null, 'Line ranges'),
+            h('span', { class: 'hidden-content__muted' }, 'Inclusive. Same number = one line.')
+          ),
           ranges.map((range, index) => h('div', { class: 'hidden-content__range', key: index },
-            ...['start', 'end'].map((field) => h('label', { key: field }, field === 'start' ? 'From' : 'To',
+            ...['start', 'end'].map((field) => h('label', { key: field }, h('span', null, field === 'start' ? 'From' : 'To'),
               h('input', {
-                class: 'input', type: 'number', min: 1, step: 1,
+                class: 'input', type: 'number', min: 1, step: 1, inputMode: 'numeric',
                 'aria-label': `${field === 'start' ? 'From' : 'To'} line for range ${index + 1}`,
                 value: range[field], onInput: (e) => onRangeField(index, field, e.target.value)
               })
             )),
-            h('button', { class: 'btn', type: 'button', 'aria-label': `Remove range ${index + 1}`, onClick: () => { setError(''); setRanges(ranges.filter((_, i) => i !== index)); } }, '×')
+            h('button', { class: 'btn btn--ghost hidden-content__range-remove', type: 'button', 'aria-label': `Remove range ${index + 1}`, onClick: () => { setError(''); setRanges(ranges.filter((_, i) => i !== index)); } }, '×')
           )),
-          h('button', { class: 'btn', type: 'button', onClick: () => {
+          h('button', { class: 'btn hidden-content__add-range', type: 'button', onClick: () => {
             const start = normalized.length ? normalized[normalized.length - 1].end + 1 : 1;
             setRanges([...ranges, { start, end: start }]);
-          } }, '+ Add range')
-        ),
-        validation && h('p', { class: 'hidden-content__error', role: 'alert' }, validation)
+          } }, '+ Add range'),
+          validation && h('p', { class: 'hidden-content__error', role: 'alert' }, validation)
+        )
       ),
       h('footer', { class: 'hidden-content__footer' },
-        h('div', { class: 'hidden-content__selection', role: 'status' },
-          h('strong', null, selectionSummary),
-          h('span', { class: 'hidden-content__muted' }, validation
-          ? 'Fix the range values to continue.'
-          : ((count || charCount) ? describeHidden({ ranges: normalized, chars }) : 'Tap a line number, or select text and tap Hide selected text.')),
-          dirty && h('span', { class: 'hidden-content__muted' }, 'Unsaved selection')
+        h('div', { class: 'hidden-content__status' },
+          h('div', { class: 'hidden-content__selection', role: 'status' },
+            h('strong', null, selectionSummary, dirty && h('span', { class: 'hidden-content__badge' }, 'Unsaved')),
+            h('span', { class: 'hidden-content__muted hidden-content__detail' }, validation
+              ? 'Fix the range values to continue.'
+              : ((count || charCount) ? describeHidden({ ranges: normalized, chars }) : 'Tap a line number, or select text.'))
+          ),
+          preview.error ? null : h('button', {
+            class: 'btn btn--ghost hidden-content__manual-toggle', type: 'button',
+            'aria-expanded': manualOpen ? 'true' : 'false', 'aria-controls': 'hidden-content-manual',
+            onClick: () => setShowManual(!showManual)
+          }, manualOpen ? 'Hide ranges' : 'Ranges')
         ),
         error && h('p', { class: 'hidden-content__error', role: 'alert' }, error),
         h('div', { class: 'hidden-content__actions' },
-        h('button', {
-        class: 'btn hidden-content__hide-action', type: 'button',
-        disabled: saving || !sel.hasSelection,
-        onPointerDown: onHidePointerDown,
-        onClick: onHideClick,
-        'aria-label': 'Hide selected text',
-        'aria-describedby': 'hidden-content-editor-help'
-        }, 'Hide selected text'),
-        h('button', { class: 'btn', type: 'button', disabled: saving, onClick: onCancel }, 'Cancel'),
-        h('button', { class: 'btn btn--primary', type: 'submit', disabled: saving || !!validation || (!dirty && !initialRanges.length) }, saving ? 'Saving…' : 'Save')
+          h('button', {
+            class: 'btn hidden-content__hide-action' + (hideDisabled ? '' : ' hidden-content__hide-action--ready'), type: 'button',
+            disabled: hideDisabled,
+            onPointerDown: onHidePointerDown,
+            onClick: onHideClick,
+            'aria-describedby': 'hidden-content-editor-help'
+          }, sel.hasSelection ? hideLabel : 'Select text to hide'),
+          h('button', { class: 'btn', type: 'button', disabled: saving, onClick: onCancel }, 'Cancel'),
+          h('button', { class: 'btn btn--primary', type: 'submit', disabled: saving || !!validation || (!dirty && !initialRanges.length) }, saving ? 'Saving…' : 'Save')
         )
       )
     )

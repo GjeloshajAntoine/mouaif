@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MCP Registry Browser — mouaif docs</title>
-  <meta name="description" content="The **MCP Registry Browser** integrates the official community-owned registry at `registry.modelcontextprotocol.io` into the Settings UI. Users can search,…" />
+  <title>MCP store — mouaif docs</title>
+  <meta name="description" content="The **MCP store** lets you find and install servers from the official [MCP Registry](https://registry.modelcontextprotocol.io) like apps from an app store.…" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
@@ -34,19 +34,20 @@
 </ul>
 </aside>
     <main class="main">
-      <h1 id="mcp-registry-browser">MCP Registry Browser</h1>
+      <h1 id="mcp-store">MCP store</h1>
 <h2 id="overview">Overview</h2>
-<p>The <strong>MCP Registry Browser</strong> integrates the official community-owned registry at <code>registry.modelcontextprotocol.io</code> into the Settings UI. Users can search, sort, explore popularity-scored server entries, and add any server as a project-scoped or app-wide MCP server without leaving the app. Browsing is stateless: mouaif requests the Registry API directly through its backend proxy and does not store or cache registry responses.</p>
+<p>The <strong>MCP store</strong> lets you find and install servers from the official <a href="https://registry.modelcontextprotocol.io" target="_blank" rel="noopener noreferrer">MCP Registry</a> like apps from an app store. Search as you type, see which servers are hosted or run locally and which need an API key, then install one from a sheet that asks only for what that server needs. Browsing is stateless: mouaif sends Registry requests through its backend and does not store or cache the responses.</p>
 <h2 id="usage">Usage</h2>
-<ol><li><p>Go to <strong>Settings → MCP servers</strong> (app or project scoped).</p></li><li><p>Tap the <strong>Browse Registry</strong> button in the bottom bar.</p></li><li><p>Browse the paginated list, or type a search term and hit Enter.</p></li><li><p>Each server card shows:</p></li></ol>
-<ul><li><p><strong>Name</strong> (short display name) + version badge</p></li><li><p><strong>Status</strong> badge (active / deprecated)</p></li><li><p><strong>Description</strong> (first 200 characters)</p></li><li><p><strong>Qualified name</strong> (e.g. <code>io.github.user/weather</code>)</p></li><li><p><strong>Package count</strong></p></li><li><p><strong>Last updated</strong> date</p></li><li><p><strong>Popularity score</strong> (0–100) — a visual bar computed from update recency, package count, and version metadata</p></li></ul>
-<ol><li><p>Tap <strong>Add to project</strong> (or <strong>Add to app</strong>) to install the server instantly. The form auto-fills:</p></li></ol>
-<ul><li><p>Command (<code>uvx</code>, <code>npx</code>, or the package&#39;s declared command)</p></li><li><p>Arguments from the first package</p></li><li><p>Environment variables (defaults, if any)</p></li></ul>
-<ol><li><p>After adding, the view navigates to the new server&#39;s edit screen. The new server is always on — there is no <code>enabled</code> flag to set.</p></li></ol>
-<h2 id="popularity-scoring">Popularity Scoring</h2>
-<p>Since the official registry does not expose download counts or star ratings, mouaif computes a composite score (0–100):</p>
-<div class="table-wrap"><table><thead><tr><th>Component</th><th>Max</th><th>Source</th></tr></thead><tbody><tr><td>Update recency</td><td>50</td><td>Days since <code>updatedAt</code> (≤ 90 days = max)</td></tr><tr><td>Package count</td><td>30</td><td>Each package = 10 pts (3+ = max)</td></tr><tr><td>Version activity</td><td>20</td><td>Has latest version flag = 20 pts</td></tr><tr><td><strong>Total</strong></td><td><strong>100</strong></td><td>Capped at 100</td></tr></tbody></table></div>
-<p>A green bar (≥ 70) means actively maintained; yellow (40–69) means moderately active; grey (&lt; 40) means stable or older.</p>
+<ol><li><p>Open <strong>Settings → MCP servers</strong> (app-wide or project) and tap <strong>Browse store</strong>. An empty server list also links to the store.</p></li><li><p>Type in the search bar. Results update as you type; there is no Search button.</p></li><li><p>Narrow the list with the filter chips:</p></li></ol>
+<ul><li><p><strong>Hosted</strong> — a remote endpoint, so there is nothing to install locally.</p></li><li><p><strong>Local</strong> — a package mouaif runs on this machine (npm, PyPI, Docker, NuGet).</p></li><li><p><strong>No key</strong> — can be installed without typing any required value.</p></li></ul>
+<ol><li><p>Sort by <strong>Recommended</strong> (servers mouaif can install first, then the most actively maintained — the Registry publishes no download counts, so mouaif scores recent updates and package count), <strong>Newest</strong>, or <strong>Name A–Z</strong>. Tap <strong>Load more servers</strong> at the bottom to read the next page.</p></li><li><p>Each card shows a letter avatar, the server&#39;s display name, its publisher namespace, when it was last updated, a two-line description, and badges: <strong>Installed</strong>, <strong>Hosted</strong>, the runtime (for example <strong>Node.js (npx)</strong>), <strong>Needs API key</strong> / <strong>No key</strong>, <strong>Manual setup</strong>, or <strong>Deprecated</strong>.</p></li><li><p>Tap a card or <strong>Get</strong> to open the install sheet:</p></li></ol>
+<ul><li><p><strong>How to run it</strong> — every way the server can run, best option first (hosted, then local packages). Hosted endpoints that only offer the older SSE transport are installable and listed after Streamable HTTP. Options mouaif cannot run, such as non-stdio local packages, are listed with the reason and cannot be selected. Local options show the exact command and the runtime it needs.</p></li><li><p><strong>Sign-in</strong> (hosted only) — <strong>API key</strong> or <strong>OAuth sign-in</strong>. OAuth is selected by default when the server declares no headers.</p></li><li><p><strong>Required</strong> — only the values the publisher marked as required, with their descriptions. Secret values use password fields.</p></li><li><p><strong>More options</strong> — the name the server gets in mouaif, plus optional variables and headers. Values left empty use the server&#39;s own defaults.</p></li><li><p><strong>Install for</strong> (when a project is open) — <strong>This project</strong> (<code>.mcp.json</code>) or <strong>All projects</strong> (the app store).</p></li></ul>
+<ol><li><p>Tap <strong>Install</strong>. The button stays disabled until every required value is filled in. After installing:</p></li></ol>
+<ul><li><p><strong>Start now</strong> starts the server and reports how many tools it offers, or shows the start error. The first run of a local package can take a while because the package is downloaded then.</p></li><li><p>For OAuth servers, <strong>Sign in</strong> opens the server editor, where you complete the <a href="mcp-oauth.html">OAuth sign-in</a>.</p></li><li><p><strong>Settings</strong> opens the full <a href="mcp.html">server editor</a>.</p></li></ul>
+<ol><li><p>A server that is already configured shows <strong>Installed</strong> on its card and an <strong>Open</strong> button that goes to its settings. Mouaif matches a configured server when it uses the same endpoint URL or the same package.</p>
+<p>If a server is not listed, use <strong>Add one by hand</strong> at the bottom of the store.</p></li></ol>
+<h2 id="trust">Trust</h2>
+<p>Anyone can publish to the Registry. The store says so in its footer. Local packages run with the permissions of the mouaif process, so install only servers you trust. Project-scoped installs write any secret values you enter to <code>.mcp.json</code>. Review that file before committing it, or install the server for <strong>All projects</strong> instead.</p>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

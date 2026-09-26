@@ -9,11 +9,11 @@ Per-project settings page that marks specific lines or character ranges of a sou
 Open **Settings → This project → More settings → Hide file content**, or navigate directly to `#/settings/project/hide`.
 
 1. Tap **+ Add file**, or tap a saved file row to edit it.
-2. The file opens in the real CodeMirror text editor (**Select hidden content**, dark theme, line numbers, syntax highlighting) with the original content. It is **read-only** — the text cannot be edited, only marked.
-3. **Whole-line hiding** — tap a line number in the toggle gutter (the column left of the text) to hide that line; tap it again to show it. Hidden lines get a highlighted background and a ✓ in the gutter. Each gutter cell is exactly as tall as the line it belongs to and 2rem wide, so a tap always lands on the line you aimed at.
-4. **Character-range hiding** — drag to select text inside the editor. The status bar updates with the column range, and **Hide selected text** in the sticky footer becomes enabled. Tap it to mark that span; tap it again with the same selection to clear it. A span on a single line hides the exact columns; a span that crosses line breaks hides the full middle lines plus the boundary columns.
-5. For larger whole-line selections, expand **Enter line ranges manually** and enter inclusive **From** / **To** numbers. Invalid values are explained rather than silently changed. Adjacent and overlapping ranges are merged on save; the same is done for character spans.
-6. Tap **Save**. Every action (hide selection, cancel, save) lives in the sticky footer, so it stays reachable and tappable no matter how far the editor or the manual ranges scroll. The editor returns to the file list only after saving succeeds. A failed save keeps the selection available for retry, and controls are disabled while a save is in progress.
+2. The file opens in the real CodeMirror text editor (dark theme, line numbers, syntax highlighting) with the original content. It is **read-only** — the text cannot be edited, only marked. The header shows the **file name as the title** and the containing directory beneath it, so the page title names the file instead of the screen.
+3. **Whole-line hiding** — tap a line number in the gutter (the column left of the text) to hide that line; tap it again to show it. Hidden lines get a highlighted, struck-through background and their **line number is painted as a filled accent pill** — the gutter has no separate toggle column and no ✓ / + glyph, so the state never depends on a character few fonts render identically. Each gutter cell spans its whole (possibly wrapped) line and is at least 44 × 44 px, so a tap always lands on the line you aimed at.
+4. **Character-range hiding** — drag to select text inside the editor. The status bar updates with the column range, and the leading footer button becomes enabled. It reads **Hide selection**, or **Show selection** when the current selection exactly matches a saved span (tap it again to clear that span). A span on a single line hides the exact columns; a span that crosses line breaks hides the full middle lines plus the boundary columns.
+5. For larger whole-line selections, tap **Ranges** in the footer status row to open the **Line ranges** panel and enter inclusive **From** / **To** numbers. Invalid values are explained rather than silently changed. Adjacent and overlapping ranges are merged on save; the same is done for character spans.
+6. Tap **Save**. Every action (hide selection, ranges, cancel, save) lives in the sticky footer, so it stays reachable and tappable no matter how far the editor or the ranges panel scroll. The editor returns to the file list only after saving succeeds. A failed save keeps the selection available for retry, and controls are disabled while a save is in progress.
 
 ### Removing a hiding
 
@@ -22,8 +22,8 @@ Every file row on the list carries its own **Remove** action, so a file can be u
 | Goal | Action |
 | --- | --- |
 | Un-hide one saved line | Tap the line number again in the editor gutter, then **Save**. |
-| Un-hide one saved manual range | **Enter line ranges manually** → **×** on that row → **Save**. |
-| Un-hide selected text | Re-select the same span and tap **Hide selected text** again (an exact match removes it). |
+| Un-hide one saved manual range | **Ranges** → **×** on that row → **Save**. |
+| Un-hide selected text | Re-select the same span and tap **Show selection** again (an exact match removes it). |
 | Un-hide a whole file | Tap **Remove** on its row and confirm **Stop hiding content in `<path>`?** |
 | Un-hide everything | Remove each row, or clear the selection in every editor. |
 
@@ -39,15 +39,18 @@ The footer is the only interactive band: it is `position: sticky; bottom: 0` and
 
 ```text
 ┌─────────────────────────────┐
+│ file.js            ← header │
+│ Tap a number / Select text  │
 │ editor (read-only, scrolls) │
-│ …help line (non-interactive)│
 ├─────────────────────────────┤  ← sticky footer starts here
-│ [Hide selected text]  Cancel Save │
+│ 2 lines · Lines 1–2 · Unsaved   Ranges │
+│ [Hide selection]  Cancel Save │
 └─────────────────────────────┘
 ```
 
 Do not move an action back into the editor body: a control rendered outside the footer can overlap the footer band and swallow taps meant for Cancel/Save.
-The preview uses the existing 1 MiB file-editor read limit; if a file cannot be previewed, manual ranges remain available.
+The preview fills the flush main column and only the editor (or the ranges panel) scrolls, so the footer never moves; on a very short screen the page itself scrolls instead.
+The preview uses the existing 1 MiB file-editor read limit; if a file cannot be previewed, the line-ranges panel opens automatically.
 
 **Back** retains an unsaved selection in memory for a return visit to the same file and project. **Cancel** asks before discarding changes. Drafts contain only paths and ranges, not file content; they do not survive a reload, which warns while an editor has unsaved changes. To stop hiding a file, remove its ranges and save; removing all saved ranges and characters requires confirmation.
 
@@ -82,7 +85,7 @@ Every summary label comes from one helper, `describeHidden({ ranges, chars })`, 
 | selected text only | `Text on line 8, cols 4–9` |
 | selected text across lines | `Text on lines 4–7` |
 | lines and text | `Lines 3–5 · Text on line 8, cols 4–9` |
-| nothing | file list: `Nothing hidden yet…`; editor: `Tap a line number, or select text and tap Hide selected text.` |
+| nothing | file list: `Nothing hidden yet…`; editor: `Tap a line number, or select text.` |
 
 - A rule that hides only characters is labelled as text, never as lines, so no row ever reads "No lines selected".
 - Overlapping spans on the same line are merged before they are labelled, and several spans are separated with `;`.

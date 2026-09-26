@@ -64,7 +64,7 @@ const server = http.createServer((req, res) => {
     res.end(files[req.url]);
   } else {
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end('<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><main id="root" class="app__main app__main--flush"></main><script type="module" src="/app.js"></script></html>');
+    res.end('<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><div id="app"><div class="app__shell"><main id="root" class="app__main app__main--flush"></main></div></div><script type="module" src="/app.js"></script></html>');
   }
 });
 server.listen(0, '127.0.0.1', () => console.log('Hidden content UI fixture: http://127.0.0.1:' + server.address().port));

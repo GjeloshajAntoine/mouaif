@@ -99,10 +99,19 @@ return out;
 const footer = nodes.find(n => n.tag === 'footer' && n.attrs.class === 'hidden-content__footer');
 assert.ok(footer, 'the sticky footer renders');
 const footerNodes = descendants(footer);
-const hideAction = footerNodes.find(n => n.attrs['aria-label'] === 'Hide selected text');
+const isHideAction = n => n.tag === 'button' && String(n.attrs.class || '').includes('hidden-content__hide-action');
+const hideAction = footerNodes.find(isHideAction);
 assert.ok(hideAction, 'the hide-selection action lives in the sticky footer');
 assert.equal(hideAction.attrs.type, 'button', 'the hide-selection action never submits the form');
-assert.ok(button('Hide selected text') === hideAction, 'the hide-selection action is not rendered outside the footer');
+assert.equal(nodes.filter(isHideAction).length, 1, 'the hide-selection action is not rendered outside the footer');
+assert.ok(hideAction.children.includes('Select text to hide') && hideAction.attrs.disabled, 'with no selection the action is disabled and says what to do');
+const rangesToggle = footerNodes.find(n => n.attrs['aria-controls'] === 'hidden-content-manual');
+assert.ok(rangesToggle && rangesToggle.attrs['aria-expanded'] === 'false', 'the manual-ranges toggle lives in the footer, collapsed');
+const manualPanel = nodes.find(n => n.attrs.id === 'hidden-content-manual');
+assert.equal(manualPanel.attrs.hidden, true, 'manual ranges start collapsed');
+rangesToggle.attrs.onClick();
+render();
+assert.equal(nodes.find(n => n.attrs.id === 'hidden-content-manual').attrs.hidden, false, 'Ranges opens the manual panel');
 for (const label of ['Cancel', 'Save']) {
 assert.ok(footerNodes.some(n => n.tag === 'button' && n.children.includes(label)), label + ' lives in the sticky footer');
 }
