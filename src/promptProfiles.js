@@ -4,8 +4,8 @@
 //
 // Implements the "Three prompt-size profiles" feature from
 // .github/copilot-instructions.md §4. The chat record carries a
-// `promptSize` field ('very-small' | 'average' | 'extensive') and
-// `handleChatStream` in src/index.js prepends the matching profile's
+// `promptSize` field ('very-small' | 'average' | 'extensive' | 'chat')
+// and `handleChatStream` in src/index.js prepends the matching profile's
 // system message to the upstream `messages` array, immediately before
 // any custom-prompt block.
 //
@@ -24,9 +24,12 @@
 //     The recommended default, with full tool schemas.
 //   - extensive  : all average guidance + planning, verification, and
 //     concrete workflow examples. Also uses full tool schemas.
+//   - chat       : an intentionally empty system message (a plain
+//     conversation). Purely a prompt-style choice: it does not change
+//     the chat's tools or any other per-chat setting.
 //
 // Public surface:
-//   PROFILES                          : { 'very-small', 'average', 'extensive' }
+//   PROFILES                          : { 'very-small', 'average', 'extensive', 'chat' }
 //   DEFAULT_PROFILE                   : 'average'
 //   isValidProfile(value)             : boolean
 //   profileSystemMessage(value)       : string
@@ -94,21 +97,17 @@ const PROFILES = Object.freeze({
     summary: 'core rules + workflow + examples',
     systemMessage: AVERAGE_GUIDANCE + '\n\n' + EXTENSIVE_GUIDANCE
   },
-  // Plain conversation: no system prompt, and new chats start with no
-  // tool checked (see NO_TOOLS_PROFILES / chats.js). The user can still
-  // check tools in the chat's Tools card.
+  // Plain conversation: no system prompt. Like the other profiles it is
+  // purely a prompt-style choice — it does not touch the chat's tool list
+  // or any other per-chat setting.
   'chat': {
     id: 'chat',
     label: 'Chat',
-    description: 'Empty system prompt and no tools checked. For a plain conversation.',
-    summary: 'empty prompt + no tools',
+    description: 'Empty system prompt. For a plain conversation.',
+    summary: 'empty prompt',
     systemMessage: ''
   }
 });
-
-// Profiles whose new chats start with an empty tool allowlist
-// (`chat.tools = []`), i.e. every tool unchecked in the Tools card.
-const NO_TOOLS_PROFILES = new Set(['chat']);
 
 const DEFAULT_PROFILE = 'average';
 
@@ -260,7 +259,6 @@ function resolveProfile(opts) {
 module.exports = {
   PROFILES,
   DEFAULT_PROFILE,
-  NO_TOOLS_PROFILES,
   isValidProfile,
   profileSystemMessage,
   describeProfile,

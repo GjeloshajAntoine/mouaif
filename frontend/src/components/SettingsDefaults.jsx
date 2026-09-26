@@ -34,7 +34,7 @@ const PROMPT_SIZE_OPTIONS = [
   { value: 'very-small', label: 'Very small — tool names only, no schemas' },
   { value: 'average',    label: 'Average — full tools, recommended' },
   { value: 'extensive',  label: 'Extensive — full tools + best-practice guidance' },
-  { value: 'chat',       label: 'Chat — empty prompt, no tools checked' }
+  { value: 'chat',       label: 'Chat — empty prompt' }
 ];
 
 // Localised human label for the prompt-size value, used by the live-region

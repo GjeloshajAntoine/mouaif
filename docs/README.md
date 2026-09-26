@@ -49,7 +49,7 @@ One page per feature: what it does and how to use it.
 - [Project settings storage](features/project-settings-storage.md) — keep settings in `.mouaif.json` or in the app store.
 - [Settings](features/settings-ui.md) — the Settings tab and what each section controls.
 - [Custom prompts](features/custom-prompts.md) — reusable system prompts at app and project scope.
-- [Prompt-size profiles](features/prompt-profiles.md) — `very-small`, `average`, and `extensive` system prompts.
+- [Prompt-size profiles](features/prompt-profiles.md) — `very-small`, `average`, `extensive`, and `chat` system prompts.
 - [Agents](features/agents.md) — named personas the model can delegate work to.
 - [Agent file picker](features/agent-file-picker.md) — choose which instruction files (`AGENTS.md`, …) a project reads.
 - [Skills](features/skills.md) — reusable instruction sets discovered from `.agents/skills/`.

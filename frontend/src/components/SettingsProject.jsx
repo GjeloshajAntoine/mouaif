@@ -1335,7 +1335,7 @@ class: 'view-back',
               h('option', { value: 'very-small' }, 'Very small — tool names only, no schemas'),
               h('option', { value: 'average' }, 'Average — full tools, recommended'),
               h('option', { value: 'extensive' }, 'Extensive — full tools + best-practice guidance'),
-              h('option', { value: 'chat' }, 'Chat — empty prompt, no tools checked')
+              h('option', { value: 'chat' }, 'Chat — empty prompt')
             )
           ),
           h('li', null,

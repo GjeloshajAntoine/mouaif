@@ -25,11 +25,11 @@ The expanded prompt wraps to the card's width — long lines fold rather than ru
 | `very-small` | Very small | Shared core rules for concise answers, safe changes, progress, and verification. The smallest prompt; tools are listed in compact form and schemas are retrieved on demand. |
 | `average` | Average | The recommended default. Adds an explicit inspect/edit/verify workflow, precise file-editing guidance, and full tool schemas. |
 | `extensive` | Extensive | All Average guidance plus planning, regression testing, mobile UI checks, and concrete workflow examples. Uses the same full tool schemas. |
-| `chat` | Chat | A plain conversation: an empty system prompt and no tools checked. Agent files are off by default, as with Very small. |
+| `chat` | Chat | A plain conversation: an empty system prompt. Agent files are off by default, as with Very small. |
 
 ### The Chat profile
 
-`chat` sends no profile system message. A new chat created with this profile starts with its tool list empty (`chat.tools = []`), so every tool is unchecked in the chat's **Tools** card. You can check tools there as with any chat. Switching an empty chat to `chat` unchecks every tool; switching it back to another profile restores all tools.
+`chat` sends no profile system message. It is purely a prompt-style value, like the other three: creating a chat with it (or switching a chat to it) does **not** change the chat's tool list or any other per-chat setting. Every tool stays exactly as it was — check or uncheck them in the chat's **Tools** card as usual.
 
 ## Shared behavior
 

@@ -59,12 +59,12 @@ async function main() {
       typeof (p && p.systemMessage) === 'string' && p.systemMessage.length > 0);
   }
 
-  // 2b) The `chat` profile: empty system prompt, no tools checked.
+  // 2b) The `chat` profile: empty system prompt, but otherwise a normal
+  //     prompt-style value — it does not touch the chat's tool list.
   const chatP = pp.PROFILES['chat'];
   check('PROFILES[chat] exists with a label', chatP && chatP.id === 'chat' && chatP.label === 'Chat');
   check('PROFILES[chat] has an empty systemMessage', chatP && chatP.systemMessage === '');
   check('profileSystemMessage(chat) stays empty', pp.profileSystemMessage('chat') === '');
-  check('chat profile starts with no tools', pp.NO_TOOLS_PROFILES.has('chat') && !pp.NO_TOOLS_PROFILES.has('average'));
 
   // 3) The three profiles carry distinct messages (the "very-small" one
   //    is intentionally the shortest).
@@ -273,15 +273,17 @@ async function main() {
       r.body && r.body.profiles.every(p =>
         typeof p.systemMessage === 'string' && (p.systemMessage.length > 0 || p.id === 'chat') &&
         p.systemMessage === pp.PROFILES[p.id].systemMessage));
-    // A chat created with the `chat` profile has every tool unchecked;
-    // switching away restores all tools, switching back unchecks them.
+    // The `chat` profile is a plain prompt-style value: it must NOT change
+    // a chat's tool list (that was the old behaviour being removed).
     const chats = require('../src/chats.js');
     const c1 = chats.createChat(projectDir, { promptSize: 'chat' });
-    check('createChat(chat) starts with tools = []', c1.promptSize === 'chat' && Array.isArray(c1.tools) && c1.tools.length === 0);
+    check('createChat(chat) keeps all tools', c1.promptSize === 'chat' && c1.tools == null,
+    'tools=' + JSON.stringify(c1.tools));
     const c2 = chats.updateChat(projectDir, c1.id, { promptSize: 'average' });
-    check('switching chat -> average restores all tools', c2 && c2.promptSize === 'average' && c2.tools == null);
+    check('switching chat -> average keeps all tools', c2 && c2.promptSize === 'average' && c2.tools == null);
     const c3 = chats.updateChat(projectDir, c2.id, { promptSize: 'chat' });
-    check('switching to chat unchecks every tool', c3 && Array.isArray(c3.tools) && c3.tools.length === 0);
+    check('switching to chat keeps all tools', c3 && c3.promptSize === 'chat' && c3.tools == null,
+    'tools=' + JSON.stringify(c3 && c3.tools));
     const c4 = chats.createChat(projectDir, { promptSize: 'average' });
     check('other profiles keep all tools', c4.tools == null);
   } finally {
