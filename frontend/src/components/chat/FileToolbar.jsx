@@ -333,8 +333,8 @@ step, falling to near-black where the side turns away. Kept one stop
 lighter than the first pass, which read as a dark plastron under the
 folder at 1x. */
 h('stop', { offset: '0', 'stop-color': '#dbeaff' }),
-h('stop', { offset: '0.42', 'stop-color': '#7895c2' }),
-h('stop', { offset: '1', 'stop-color': '#344c72' })
+h('stop', { offset: '0.42', 'stop-color': '#9fb8dc' }),
+h('stop', { offset: '1', 'stop-color': '#6d88b3' })
 ),
 h('linearGradient', { id: 'fileToolbarFolderBody', x1: '0.12', y1: '0', x2: '0.7', y2: '1' },
 h('stop', { offset: '0', 'stop-color': '#f6fbff' }),

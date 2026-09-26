@@ -209,8 +209,9 @@ flex: 0 0 auto;
 background:
 /* the hard glint: the light source itself, a small hot ellipse on the
 upper-left of the rim */
-radial-gradient(3.5px 2.2px at 31% 16%,
-rgba(255, 255, 255, 0.95) 0%,
+radial-gradient(2.4px 1.5px at 30% 17%,
+rgba(255, 255, 255, 1) 0%,
+rgba(255, 255, 255, 0.85) 45%,
 rgba(255, 255, 255, 0) 100%),
 /* the top-left crescent: a ring centred down-right of the ball, so it hugs
 the rim across the top-left and leaves the ball before it reaches the
@@ -221,6 +222,12 @@ rgba(210, 228, 255, 0) 76%,
 rgba(210, 228, 255, 0.26) 84%,
 rgba(240, 247, 255, 0.70) 91%,
 rgba(240, 247, 255, 0) 97%),
+/* the lower-right rim arc: light that crossed the ball exits on the far
+side as a short bright band just inside the edge */
+radial-gradient(circle 25px at 34% 34%,
+rgba(200, 222, 255, 0) 84%,
+rgba(226, 238, 255, 0.55) 93%,
+rgba(226, 238, 255, 0) 99%),
 /* the thinner right-hand crescent, mirrored */
 radial-gradient(circle 23px at 36% 48%,
 rgba(200, 222, 255, 0) 82%,
@@ -234,9 +241,10 @@ rgba(196, 220, 255, 0) 100%),
 /* the body is *clear*: almost the background, one step bluer, so the
 pictogram sits inside a bubble rather than on a painted ball */
 radial-gradient(circle at 50% 44%,
-#1a2436 0%,
-#0f1726 55%,
-#080d17 100%);
+#162033 0%,
+#0c1322 60%,
+#141e31 88%,
+#1d2a42 100%);
 border-color: rgba(214, 230, 255, 0.70);
 box-shadow:
 /* the meniscus: the glass is thickest at the edge, so the rim glows from
@@ -261,7 +269,7 @@ overflow: visible;
 thickness under it. The bar crosses the window reflection at the top of the
 ball, where a bare white bar measured 2.78:1 — the silhouette is what keeps
 it readable there. */
-filter: drop-shadow(0 0 1.2px rgba(170, 205, 255, 0.45));
+filter: drop-shadow(0 0 0.8px rgba(170, 205, 255, 0.40));
 }
 .file-toolbar--orb .file-toolbar__chevron-face {
 fill: #e8f2ff;
@@ -276,10 +284,10 @@ tone. It is what gives the bar an edge over the *light* half of the sphere —
 measured at 1.36:1 for a bare white bar, because the up-chevron crosses the
 window reflection at the top of the ball. */
 .file-toolbar--orb .file-toolbar__chevron-side {
-fill: rgba(150, 178, 218, 0.62);
+fill: rgba(170, 196, 232, 0.42);
 /* In the SVG's user units: the viewBox is 12x6 drawn at 11x6 px, so one
 unit is ~0.92px of extrusion at the button's real size. */
-transform: translateY(1px);
+transform: translateY(0.5px);
 }
 /* Hover / open brighten the sheen in place. The flat trigger's own hover rules
    would otherwise replace every gradient with a flat --surface-3. */
@@ -323,13 +331,18 @@ inset: 3px;
 z-index: 1;
 border-radius: inherit;
 pointer-events: none;
-background: radial-gradient(circle at 50% 50%,
-rgba(255, 255, 255, 0.26) 0%,
-rgba(255, 255, 255, 0.06) 30%,
-rgba(255, 255, 255, 0) 56%);
-filter: blur(4px);
-transform: translate3d(-30%, -34%, 0) scale(1.05);
-opacity: 0.8;
+/* A crisp window reflection: a thin ring just inside the rim, masked to the
+upper-left so it reads as a curved streak of light, not a fuzzy blob. */
+background: radial-gradient(closest-side circle at 50% 50%,
+rgba(255, 255, 255, 0) 80%,
+rgba(255, 255, 255, 0.80) 87%,
+rgba(255, 255, 255, 0.28) 92%,
+rgba(255, 255, 255, 0) 96%);
+-webkit-mask-image: linear-gradient(135deg, #000 18%, transparent 46%);
+mask-image: linear-gradient(135deg, #000 18%, transparent 46%);
+filter: blur(0.25px);
+transform: rotate(0deg);
+opacity: 0.9;
 }
 
 /* ---- The orbit: real 3D, not a 2D wobble ---------------------------- */
@@ -568,7 +581,7 @@ the rendered button, against the 4.5:1 the small-text budget asks for. */
 color: #087a1c;
 }
 .file-toolbar--orb .file-toolbar__git-deletions {
-color: #c11b1b;
+color: #cf1818;
 }
 .file-toolbar--orb .file-toolbar__git-additions,
 .file-toolbar--orb .file-toolbar__git-deletions {
@@ -603,7 +616,7 @@ z-index: -1;
 position: absolute;
 left: 0.05em;
 top: 0.07em;
-color: rgba(2, 6, 14, 0.24);
+color: rgba(2, 6, 14, 0.12);
 }
 .file-toolbar__count-face {
 position: relative;
@@ -654,13 +667,15 @@ overflow: hidden;
 @media (prefers-reduced-motion: no-preference) {
 /* Only highlights move. The pictogram itself stays pixel-aligned so the tiny
 chevrons, folder edge, and counts remain crisp on a phone. */
+/* The window streak glides a few degrees round the rim and back, the way a
+reflection shifts on a bubble as it turns. */
 @keyframes file-orb-sheen {
 0%, 100% {
-transform: translate3d(-36%, -40%, 0) scale(1.02);
-opacity: 0.72;
+transform: rotate(-10deg);
+opacity: 0.75;
 }
 50% {
-transform: translate3d(26%, 30%, 0) scale(0.94);
+transform: rotate(12deg);
 opacity: 1;
 }
 }
