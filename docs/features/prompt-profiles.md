@@ -25,7 +25,7 @@ The expanded prompt wraps to the card's width — long lines fold rather than ru
 | `very-small` | Very small | Shared core rules for concise answers, safe changes, progress, and verification. The smallest prompt; tools are listed in compact form and schemas are retrieved on demand. |
 | `average` | Average | The recommended default. Adds an explicit inspect/edit/verify workflow, precise file-editing guidance, and full tool schemas. |
 | `extensive` | Extensive | All Average guidance plus planning, regression testing, mobile UI checks, and concrete workflow examples. Uses the same full tool schemas. |
-| `chat` | Chat | A plain conversation: an empty system prompt. Agent files are off by default, as with Very small. |
+| `chat` | Chat | A plain conversation: an empty system prompt. Behaves like Average everywhere else — same tools, same agent files. |
 
 ### The Chat profile
 
