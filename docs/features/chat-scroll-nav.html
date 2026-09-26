@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat scroll navigation — mouaif docs</title>
+  <meta name="description" content="A small stack of round arrows floats over the bottom-right corner of the chat transcript. Use it to step to the previous message, step to the next message, or…" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="chat-scroll-navigation">Chat scroll navigation</h1>
+<h2 id="overview">Overview</h2>
+<p>A small stack of round arrows floats over the bottom-right corner of the chat transcript. Use it to step to the previous message, step to the next message, or jump back to the bottom, without long swipes through a long agentic chat.</p>
+<h2 id="usage">Usage</h2>
+<div class="table-wrap"><table><thead><tr><th>Arrow</th><th>What it does</th><th>When it shows</th></tr></thead><tbody><tr><td><strong>↑ Previous message</strong></td><td>Scrolls so the start of the message you are reading sits at the top. Tap again to go to the message before it. Past the first message it goes to the very top, which also loads older messages.</td><td>When the transcript is longer than the screen.</td></tr><tr><td><strong>↓ Next message</strong></td><td>Scrolls so the start of the next message sits at the top. After the last message it goes back to the bottom.</td><td>After you scroll up.</td></tr><tr><td><strong>⤓ Bottom</strong></td><td>Goes back to the newest message and follows the reply again. A number next to it counts the rows that arrived while you were scrolled up.</td><td>After you scroll up.</td></tr></tbody></table></div>
+<ul><li><p>The arrows step between <strong>messages</strong> (yours, the assistant&#39;s, and system notes). Tool cards are skipped, so one tap does not stop at every command in an agentic turn.</p></li><li><p>Tapping ↑ or ↓ stops auto-follow, as scrolling up does. A streaming reply keeps arriving below, and the Bottom arrow&#39;s counter goes up.</p></li><li><p>Each arrow is a small 26 px circle, so it covers little of the text beneath it. Its tap area is still 44 × 44 px, and the arrows are spaced so their tap areas never overlap. The arrows sit inside the right safe-area inset and work by tap alone. Nothing depends on hover.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>
