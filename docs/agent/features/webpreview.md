@@ -20,3 +20,13 @@
 - The full-screen viewer (`WebpreviewModal.jsx`) shows the capture resolution in its footer meta and exposes a **Refresh** button plus a native **Size** selector. Its **Custom** option validates width and height before sending a `WIDTHxHEIGHT` viewport. These controls call `POST /api/tools/webpreview` (implemented in `src/server-handlers-tools.js`) to re-capture at a chosen size. That endpoint goes through the same `webpreview` authorization gate as the model path; `Chat.jsx` handles `EAUTH_REQUIRED` by mounting the shared authorization card and retrying with the original call ID after approval.
 - Screenshot bytes are emitted in the rich UI result only. `src/ai-stream.js` does not append them as model image input; the model receives compact URL, title, size, dimension, and viewport metadata.
 - Repeating the tool call opens a fresh temporary tab, so each call functions as a reload.
+- **Live (iframe) mode.** The Live frame lives in [`frontend/src/components/chat/WebpreviewModal.jsx`](../../../frontend/src/components/chat/WebpreviewModal.jsx); its pure helpers (`canFrameUrl`, `frameSandbox`, `viewportDims`, `frameScale`) are in [`frontend/src/components/chat/webpreviewFrame.js`](../../../frontend/src/components/chat/webpreviewFrame.js) and tested by `scripts/test-webpreview-iframe.mjs`.
+- Sandbox: `allow-scripts allow-forms allow-popups allow-modals`, plus `allow-same-origin` only when the page is on a **different** origin from the app. A same-origin page (such as the mouaif UI itself) never gets it, since with scripts that would let the page reach the parent document and the `/api/*` surface. Top-level navigation is never granted.
+- The app CSP ([`src/server-web-static.js`](../../../src/server-web-static.js)) allows frames from `'self' http: https:` so Live mode can load them. The change takes effect after the server restarts.
+
+```js
+frameSandbox('https://example.com/', 'http://localhost:5732');
+// 'allow-same-origin allow-scripts allow-forms allow-popups allow-modals'
+```
+
+- The frame renders at the viewport's full CSS size inside `.wp__frame-box`, which reserves the *scaled* size; `transform: scale()` with `transform-origin: 0 0` shrinks it. A `ResizeObserver` on `.wp__body` feeds the fit (8 px padding per side). Keying the `<iframe>` on a counter is how Refresh reloads it.

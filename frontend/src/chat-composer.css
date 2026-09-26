@@ -2390,6 +2390,65 @@ position: static;
   height: auto;
   object-fit: contain;
 }
+/* Live (iframe) mode: the frame renders at the chosen viewport size and is
+   scaled down with a transform to fit the body. The box reserves the scaled
+   size so the flex centring and scrolling stay correct. */
+.wp__body--live {
+  padding: 8px;
+  background: var(--surface-2);
+}
+.wp__frame-box {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.wp__frame {
+  display: block;
+  border: 0;
+  background: #fff;
+  transform-origin: 0 0;
+}
+.wp__live-hint {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 0.68rem;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+}
+.wp__mode {
+  flex: 0 0 auto;
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+.wp__mode-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 0.625rem;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.wp__mode-btn + .wp__mode-btn { border-left: 1px solid var(--border); }
+.wp__mode-btn--on {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.wp__mode-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .wp__empty {
   padding: 24px;
   text-align: center;

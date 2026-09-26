@@ -104,7 +104,10 @@ function applyPwaHeaders(res, absPath, relPath) {
 //                               browsers that do not implement that)
 //   worker-src 'self' blob:     the service worker is /sw.js (same origin)
 //   manifest-src 'self'         /manifest.webmanifest
-//   frame-src 'self'            nothing frames anything today
+//   frame-src 'self' http: https:
+//                               the web preview viewer's Live mode frames
+//                               the previewed page in a sandboxed <iframe>
+//                               (docs/features/webpreview.md)
 //   base-uri 'none'             no <base> in the app shell, so a <base>
 //                               injection cannot retarget every relative URL
 //   object-src 'none'           no <embed>/<object>/<applet>
@@ -123,7 +126,7 @@ const WEB_CSP = [
   "connect-src 'self' ws: wss:",
   "worker-src 'self' blob:",
   "manifest-src 'self'",
-  "frame-src 'self'",
+  "frame-src 'self' http: https:",
   "base-uri 'none'",
   "object-src 'none'",
   "form-action 'self'",

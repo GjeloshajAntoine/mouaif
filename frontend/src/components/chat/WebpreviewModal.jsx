@@ -10,8 +10,15 @@
 // re-captures the current URL at the chosen size, the Size dropdown, and a
 // close button. Body: the screenshot, centered, object-fit:contain so a
 // tall page keeps its full strip visible without horizontal scroll. Footer:
-// small metadata (dimensions, size, capture time) and an "Open in new tab"
-// link.
+// small metadata (dimensions, size, capture time), a Screenshot / Live
+// toggle, and an "Open in new tab" link.
+//
+// Live mode swaps the screenshot for a sandboxed <iframe> of the same URL,
+// sized to the selected viewport and scaled down to fit the sheet. It is
+// loaded by the user's own browser (not the server's debug Chrome), so it is
+// interactive but `localhost` means the device, and sites that forbid framing
+// (X-Frame-Options / frame-ancestors) stay blank. In Live mode Refresh
+// reloads the frame and the Size control resizes it — no capture runs.
 //
 // Props:
 //   preview     { url, title, thumbnail, width, height, sizeBytes, capturedAt, viewport }
@@ -20,8 +27,9 @@
 //                               capture at the chosen resolution. `viewport`
 //                               is a preset id or a 'WIDTHxHEIGHT' string.
 import { h } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
+import { canFrameUrl, frameSandbox, frameScale as fitScale, viewportDims } from './webpreviewFrame.js';
 // Keep this small list aligned with VIEWPORTS in src/tools/webpreview.js.
 const VIEWPORT_PRESETS = [
   { id: 'phone', label: 'Phone', width: 375, height: 667 },
@@ -30,6 +38,18 @@ const VIEWPORT_PRESETS = [
   { id: 'laptop', label: 'Laptop', width: 1280, height: 800 }
 ];
 const CUSTOM_VIEWPORT_ID = 'custom';
+// Screenshot vs Live (iframe) view, remembered across opens.
+const VIEW_MODE_KEY = 'mouaif.webpreview.viewMode';
+const VIEW_MODES = [
+  { id: 'image', label: 'Screenshot' },
+  { id: 'live', label: 'Live' }
+];
+function readViewMode() {
+  try { return localStorage.getItem(VIEW_MODE_KEY) === 'live' ? 'live' : 'image'; } catch { return 'image'; }
+}
+function writeViewMode(mode) {
+  try { localStorage.setItem(VIEW_MODE_KEY, mode); } catch { /* ignore */ }
+}
 // Custom sizes have no range limit (the server passes them to Chrome as-is);
 // only a positive whole number is required.
 const MIN_VIEWPORT_DIM = 1;
@@ -60,6 +80,10 @@ export function WebpreviewModal({ preview, onClose, onRecapture }) {
   const [customWidth, setCustomWidth] = useState(String(initialCustomSize.width));
   const [customHeight, setCustomHeight] = useState(String(initialCustomSize.height));
   const [customError, setCustomError] = useState('');
+  const [viewMode, setViewModeState] = useState(readViewMode);
+  const [frameKey, setFrameKey] = useState(0);
+  const [bodySize, setBodySize] = useState({ width: 0, height: 0 });
+  const bodyRef = useRef(null);
   // Escape, the Tab cycle and focus restore come from the shared sheet hook
   // (frontend/src/hooks/useModal.js); the backdrop and the close button are
   // this component's own.
@@ -76,6 +100,24 @@ export function WebpreviewModal({ preview, onClose, onRecapture }) {
   const sizeBytes = preview && preview.sizeBytes;
   const capturedAt = preview && preview.capturedAt;
   const host = hostFromUrl(url);
+  const frameable = canFrameUrl(url);
+  const live = viewMode === 'live' && frameable;
+  function setViewMode(mode) {
+    setViewModeState(mode);
+    writeViewMode(mode);
+  }
+  // Track the body box so the live frame can be scaled to fit it.
+  useEffect(() => {
+    if (!live) return undefined;
+    const el = bodyRef.current;
+    if (!el) return undefined;
+    const measure = () => setBodySize({ width: el.clientWidth, height: el.clientHeight });
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [live]);
     function onBackdropClick(e) {
     // Only close when the tap lands on the backdrop itself, not on
     // the sheet. Same pattern as the Git modal.
@@ -86,6 +128,12 @@ export function WebpreviewModal({ preview, onClose, onRecapture }) {
 // controls disabled while the capture runs.
 const [recapturing, setRecapturing] = useState(false);
   async function onRecaptureClick(nextViewport) {
+    if (live) {
+      // Live frame: resize or reload in place, no screenshot capture.
+      if (nextViewport && nextViewport !== selectedViewport) setSelectedViewport(nextViewport);
+      else setFrameKey((k) => k + 1);
+      return;
+    }
     if (recapturing || !onRecapture) return;
     const previousViewport = selectedViewport;
     const viewport = nextViewport || selectedViewport || 'phone';
@@ -121,10 +169,16 @@ const [recapturing, setRecapturing] = useState(false);
   }
   const isCustomViewport = !VIEWPORT_PRESETS.some((preset) => preset.id === selectedViewport);
   const meta = [];
-  if (width && height) meta.push(width + ' × ' + height);
-  if (preview && preview.viewport && preview.viewport.label) meta.push('viewport ' + preview.viewport.label);
-  if (sizeBytes) meta.push(formatBytes(sizeBytes));
-  if (capturedAt) meta.push('captured ' + formatTime(capturedAt));
+  const frameDims = viewportDims(selectedViewport, preview, VIEWPORT_PRESETS);
+  const safeScale = fitScale(frameDims, bodySize, 16);
+  if (live) {
+    meta.push('live · ' + frameDims.width + ' × ' + frameDims.height);
+    if (safeScale < 1) meta.push(Math.round(safeScale * 100) + '%');
+  }
+  else if (width && height) meta.push(width + ' × ' + height);
+  if (!live && preview && preview.viewport && preview.viewport.label) meta.push('viewport ' + preview.viewport.label);
+  if (!live && sizeBytes) meta.push(formatBytes(sizeBytes));
+  if (!live && capturedAt) meta.push('captured ' + formatTime(capturedAt));
   return h('div', {
     class: 'wp__overlay',
     role: 'dialog',
@@ -144,8 +198,8 @@ class: 'wp__action wp__action--refresh',
 type: 'button',
 disabled: recapturing,
 onClick: () => onRecaptureClick(selectedViewport),
-'aria-label': 'Refresh preview',
-title: 'Refresh preview'
+'aria-label': live ? 'Reload live page' : 'Refresh preview',
+title: live ? 'Reload live page' : 'Refresh preview'
 },
 h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
 h('path', { d: 'M4 12a8 8 0 0 1 13.66-5.66L20 4 M20 4v5h-5 M20 12a8 8 0 0 1-13.66 5.66L4 20 M4 20v-5h5', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
@@ -205,8 +259,28 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
             customError ? h('div', { class: 'wp__custom-error', role: 'alert' }, customError) : null
           )
         : null,
-      h('div', { class: 'wp__body' },
-        thumbnail
+      h('div', { class: 'wp__body' + (live ? ' wp__body--live' : ''), ref: bodyRef },
+        live
+          ? h('div', {
+              class: 'wp__frame-box',
+              style: { width: Math.floor(frameDims.width * safeScale) + 'px', height: Math.floor(frameDims.height * safeScale) + 'px' }
+            },
+              h('iframe', {
+                key: frameKey,
+                class: 'wp__frame',
+                src: url,
+                title: 'Live preview of ' + url,
+                sandbox: frameSandbox(url, typeof location !== 'undefined' ? location.origin : ''),
+                referrerpolicy: 'no-referrer',
+                loading: 'eager',
+                style: {
+                  width: frameDims.width + 'px',
+                  height: frameDims.height + 'px',
+                  transform: safeScale < 1 ? 'scale(' + safeScale + ')' : 'none'
+                }
+              })
+            )
+          : thumbnail
           ? h('img', {
               class: 'wp__img',
               src: thumbnail,
@@ -219,7 +293,22 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
               h('p', { class: 'wp__empty-hint' }, 'The webpreview call finished without a captured image.')
             )
       ),
+      live
+        ? h('p', { class: 'wp__live-hint' },
+            'Loaded by this device, not the server. Pages that block embedding stay blank — use Screenshot or Open in new tab.')
+        : null,
       h('div', { class: 'wp__foot' },
+        frameable
+          ? h('div', { class: 'wp__mode', role: 'group', 'aria-label': 'Preview mode' },
+              VIEW_MODES.map((m) => h('button', {
+                key: m.id,
+                type: 'button',
+                class: 'wp__mode-btn' + ((live ? 'live' : 'image') === m.id ? ' wp__mode-btn--on' : ''),
+                'aria-pressed': String((live ? 'live' : 'image') === m.id),
+                onClick: () => setViewMode(m.id)
+              }, m.label))
+            )
+          : null,
         h('span', { class: 'wp__foot-meta' }, meta.filter(Boolean).join(' · ')),
         url
           ? h('a', {
