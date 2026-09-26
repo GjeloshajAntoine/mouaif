@@ -36,7 +36,7 @@ Older `settings/prompts/:id` URLs still resolve to the same screen with the pick
 
 When creating or editing a prompt, toggle **Chat preset** on to attach a preset. The preset uses the same controls as the rest of the settings:
 
-- the **tool tree** — the same `ToolTree` shown by the chat Tools card and Settings → Project. Native tools (`shell`, `file`, `subagent`, `report_progress`, `task`, `ask_user`) and MCP server tools (`mcp__<slug>__<tool>`) are both listed; the project's tool catalog drives which rows are shown.
+- the **tool tree** — the same `ToolTree` shown by the chat Tools card and Settings → Project. Native tools (`shell`, `file`, `subagent`, `report_progress`, `task`, `ask_user`) and MCP server tools (`mcp__<slug>__<tool>`) are both listed; the project's tool catalog drives which rows are shown. On the **app-defaults** screen there is no project to scope MCP tools to, so `GET /api/tools/list` is called without `projectDir` and returns the native catalog only — `projectDir` is optional on that route.
 - a synthetic **Agent files** group at the bottom of the tree. Toggle it to inject `AGENTS.md` / `CLAUDE.md` / `.github/copilot-instructions.md` (the project's `agentFileNames` setting) into every chat that uses this prompt.
 - a synthetic **Skills** group. Toggle it to inject `.agents/skills/*/SKILL.md` (the project's skill catalog) into every chat that uses this prompt.
 
