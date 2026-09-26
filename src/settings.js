@@ -487,9 +487,46 @@ if (seeded) next.prompts = list.filter((p) => !isSeededChat(p));
 // setAppReplace() writes the object as-is, so the deleted key stays deleted.
 setAppReplace(next);
 }
+},
+{
+name: '2026-09-27-snapshot-chat-prompts',
+description: 'Pin the custom prompt text already attached to each chat',
+run() {
+// Chats used to resolve their custom prompt live from `prompt_id`, so
+// editing a shared prompt silently rewrote every chat that referenced it.
+// Pin the text as it stands right now, which freezes existing chats at the
+// behaviour they already have and leaves later edits to new chats only.
+//
+// `prompt_snapshot` is created by chatdb.ensureChatTables(); migrations run
+// at startup before any chat is touched, so the column may not exist yet on
+// a brand-new store. A chat whose prompt is already gone is left alone: it
+// has nothing to pin, and a NULL snapshot keeps resolving to "no prompt",
+// which is what it does today.
+require('./chatdb.js').ensureChatTables();
+const prompts = require('./prompts.js');
+const chats = require('./chats.js');
+const d = db();
+const rows = d.prepare(
+  'SELECT DISTINCT project_dir FROM chat_store WHERE prompt_id IS NOT NULL AND prompt_snapshot IS NULL'
+).all();
+for (const row of rows) {
+const dir = row && row.project_dir;
+if (!dir) continue;
+let list;
+try { list = chats.listChats(dir); } catch { continue; }
+for (const chat of list) {
+  if (!chat || !chat.promptId || chat.promptSnapshot) continue;
+  try {
+    const snap = prompts.snapshotPrompt(dir, chat.promptId);
+    if (snap) chats.updateChat(dir, chat.id, { promptSnapshot: snap });
+  } catch (e) {
+    console.error('  [migration] prompt snapshot failed for ' + chat.id + ': ' + e.message);
+  }
+}
+}
+}
 }
 ];
-
 function runMigrations() {
   const d = db();
   const ran = new Set();

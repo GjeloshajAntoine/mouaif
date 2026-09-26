@@ -11,6 +11,8 @@ The role is fixed to `system`: a custom prompt is always the opening system mess
 
 A prompt can additionally define a **preset** (`preset.tools` + `preset.agentFiles` + `preset.skills`). Presets are chat-default packaging: when a chat references the prompt, those tool, agent-file, and skill settings apply to that chat. They are purely additive and never override the project's authorization gate (see [Presets](#presets) below).
 
+When a chat is attached to a prompt it pins a **snapshot** of that prompt's title, text, and preset. The chat then sends the pinned copy on every turn, so editing the prompt later never rewrites a chat that already uses it — only chats attached afterwards see the new text (see [Prompt snapshots](#prompt-snapshots) below).
+
 Each prompt also has a safe built-in icon (a set of hand-drawn, stroke-based SVG glyphs). The optional **Add to project card** setting exposes that icon as a one-tap new-chat action on every project card where the prompt is available.
 
 ## Usage
@@ -27,7 +29,7 @@ The **Prompt** picker lists every saved prompt (with a `preset` tag for ones tha
 - **Title** (optional until saved) and **Prompt content** are edited in place. Toggle **Chat preset** to attach or detach the tool/agent-file/skills bundle.
 - **Icon** — choose Sparkles, Code, Search, Writing, Debug, or Research. Enable **Add to project card** to show the icon beside **+ New chat**. Tapping it creates and opens a chat with this prompt already selected. Chats created this way also show the prompt icon in their project-card row.
 - **Copy from default** — under the Prompt content field, tap **Copy from default** to reveal the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`). Tap one to load its `systemMessage` into the content editor as a starting point, then edit and Save as your own custom prompt.
-- Tap **Save** (or **Create** for a new prompt) to persist. Tap **Delete** to remove the selected prompt — the API cascade-clears `promptId` on every chat that referenced it.
+- Tap **Save** (or **Create** for a new prompt) to persist. Tap **Delete** to remove the selected prompt — the API cascade-clears `promptId` on every chat that referenced it, while those chats keep the pinned copy of the prompt's text (see [Prompt snapshots](#prompt-snapshots)).
 
 ### Legacy deep links
 Older `settings/prompts/:id` URLs still resolve to the same screen with the picker pre-selected to that prompt, so saved links keep working.
@@ -50,6 +52,8 @@ Presets are **additive**: a chat that already inherits all project tools keeps t
 4. The prompt is resolved from the selected agent and injected on every stream turn.
 
 The REST API can still set `chat.promptId` directly for a chat-specific override. Its precedence is higher than the selected agent's prompt.
+
+Attaching a prompt this way also pins a snapshot of its current text onto the chat (see [Prompt snapshots](#prompt-snapshots)).
 
 The prompt is not visible in the transcript — it is prepended server-side when building the upstream message array.
 
@@ -85,16 +89,62 @@ The `role` field is preserved on disk for forward-compat and hand-edits, but the
 - `agentFiles` is a boolean: when `true`, the chat referencing this prompt turns agent-file injection on.
 - `skills` is a boolean: when `true`, the chat referencing this prompt turns skill injection on.
 
+### Chat schema
+
+A chat references a prompt through `promptId` and carries the pinned copy in `promptSnapshot`:
+
+```json
+{
+  "id": "9f2c1ab3",
+  "title": "Refactor the parser",
+  "promptId": "a1b2c3d4",
+  "promptSnapshot": {
+    "title": "Code reviewer",
+    "content": "You are an expert code reviewer. Be thorough and constructive.",
+    "role": "system",
+    "preset": {
+      "tools": ["shell", "file"],
+      "agentFiles": true,
+      "skills": true
+    }
+  }
+}
+```
+
+- `promptId` is provenance and the fallback path. It becomes `null` when the prompt is deleted.
+- `promptSnapshot` is the copy the turn actually sends. It is stored as JSON in the `prompt_snapshot` column of `chat_store`, and a chat written before snapshots existed has `NULL` there — those chats resolve live by `promptId`.
+- `promptSnapshot.preset` is optional and only present when the prompt had a preset at attach time.
+
 A preset whose `tools` is empty (or missing) AND whose `agentFiles` and `skills` are both absent collapses to `null` (no preset). An explicit `agentFiles: false` or `skills: false` is preserved (it sets the per-chat toggle to its off state for chats using this prompt) and is not collapsed.
+
+### Prompt snapshots
+
+Attaching a prompt to a chat pins a **snapshot** of it onto that chat: the prompt's `title`, `content`, `role`, and `preset` as they were at attach time. Every later turn sends the snapshot, not the live prompt.
+
+This is what makes a shared prompt safe to edit. A prompt is a library entry that many chats can reference; if the server re-read `promptId` on every turn, fixing a typo in a prompt would silently rewrite the system message of every chat that had ever used it — including chats whose transcripts were already built around the old wording, and whose cached prompt prefix would then be invalidated. With a snapshot:
+
+- Editing a prompt affects **new** chats only. Chats already attached keep the text they were attached with.
+- Re-attaching a chat to a prompt (PATCHing `promptId`) re-pins it to the prompt's current text.
+- Detaching (`promptId: null`) clears the pin, leaving the chat with no custom prompt.
+- **Deleting** a prompt drops the reference (`promptId` becomes `null`) but keeps the pinned text, so a chat that used the prompt goes on behaving exactly as it did.
+
+Two fallbacks keep this client-safe:
+
+- A chat with no snapshot — any chat written before snapshots existed — resolves live by `promptId`, which is the old behaviour exactly.
+- A snapshot that is unreadable, or that names a prompt with no usable text, is ignored and the live lookup is used instead. A malformed snapshot degrades to the old behaviour rather than to no prompt.
+
+`promptSnapshot` is server-owned: it is derived from `promptId` on create and PATCH, and a client-supplied `promptSnapshot` is stripped from `POST /api/chats` and `PATCH /api/chats/:id`. The one internal writer is the delete cascade in `chats.clearPromptId`.
 
 ### Chat integration (presets)
 
-When the server processes `POST /api/chats/:id/messages/stream`, if the chat record has a `promptId` referencing an existing prompt, the server prepends `{ role: 'system', content: prompt.content }` to the upstream message array before calling `ai.streamChat`. The prompt is not stored in the chat transcript — it is ephemeral and only sent to the model.
+When the server processes `POST /api/chats/:id/messages/stream`, the chat's custom prompt is resolved through `prompts.resolveChatPrompt(projectDir, chat)`, which prefers the pinned `promptSnapshot` and falls back to a live lookup by `promptId`. The resolved content is appended to the upstream message array as a `{ role: 'system', content }` entry before `ai.streamChat` is called. The prompt is not stored in the chat transcript — it is ephemeral and only sent to the model.
 
-If the referenced prompt carries a `preset`, the chat's **effective** per-chat config for that turn also picks it up (via `prompts.effectivePresetConfig`):
+If the resolved prompt carries a `preset` (from the snapshot, or from the live prompt on the fallback path), the chat's **effective** per-chat config for that turn also picks it up (via `prompts.effectivePresetConfig`):
 
 - **Tools** (from `preset.tools`) are unioned onto the chat's own per-chat tool allowlist (`chat.tools`). A chat with **no** allowlist already inherits every project tool, so the preset deliberately does *not* replace it with just the preset's list — that would downgrade capability to "enable".
 - **Agent files** (`preset.agentFiles`) become the per-chat toggle value passed to `agentFiles.resolveEnabled`, so a preset can turn injection on for a chat.
 - **Skills** (`preset.skills`) become the per-chat value passed to `agentSkills.resolve` and the `list_features` summary, so a preset can turn skill injection on (or back on for a chat that has it explicitly off) for a chat.
 
 The preset is merged onto the chat record **in memory only** for that request (`effectiveChat`); the persisted chat record is never modified. The project's authorization gate (`off` / `ask` / `allow` per tool, the project-level `agentFiles: false` lock, and the project-level `skills: false` lock) is read *after* the merge and stays authoritative — a project lock overrides a preset's value.
+
+Because the preset travels with the snapshot, `GET /api/chats/:id/system-prompt` resolves it the same way and shows exactly what the next turn will send.

@@ -26,6 +26,7 @@ const CREATE_CHAT_TABLE = `
     trace         INTEGER NOT NULL DEFAULT 0,
     prompt_size   TEXT NOT NULL DEFAULT 'average',
     prompt_id     TEXT,
+    prompt_snapshot TEXT,
     provider_id   TEXT,
     model_id      TEXT,
     thinking_level TEXT DEFAULT '',
@@ -109,10 +110,46 @@ d.exec('ALTER TABLE chat_store ADD COLUMN disabled_skills TEXT');
 if (!chatColumns.some((column) => column.name === 'tool_auth')) {
 d.exec('ALTER TABLE chat_store ADD COLUMN tool_auth TEXT');
 }
+// The prompt text a chat was attached to, pinned at attach time (JSON:
+// { title, content, role, preset }). NULL means the chat predates the
+// snapshot and still resolves live from prompt_id. See src/prompts.js
+// snapshotPrompt / resolveChatPrompt.
+if (!chatColumns.some((column) => column.name === 'prompt_snapshot')) {
+d.exec('ALTER TABLE chat_store ADD COLUMN prompt_snapshot TEXT');
+}
 d.exec(INDEX_SQL);
 }
 
 // ---- Row <-> object mappers -----------------------------------------------
+
+// normalizePromptSnapshot(raw) -> { title, content, role, preset } | undefined
+//
+// `prompt_snapshot` is the custom prompt a chat was attached to, pinned at
+// attach time so editing the prompt later never rewrites an existing chat
+// (docs/features/custom-prompts.md, "Prompt snapshots"). It is stored as
+// JSON so the shape can gain fields without another column.
+//
+// A snapshot is only meaningful with a `content` string — that is the text
+// the server prepends. Anything unparseable, non-object, or without content
+// resolves to `undefined` ("no snapshot"), which sends the reader back to
+// the live `prompt_id` lookup. That is what every chat written before this
+// column existed has, so old chats keep behaving exactly as they did.
+function normalizePromptSnapshot(raw) {
+  if (typeof raw !== 'string' || !raw) return undefined;
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch { return undefined; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+  if (typeof parsed.content !== 'string' || !parsed.content.trim()) return undefined;
+  const out = {
+    title: typeof parsed.title === 'string' ? parsed.title : '',
+    content: parsed.content,
+    role: 'system'
+  };
+  if (parsed.preset && typeof parsed.preset === 'object' && !Array.isArray(parsed.preset)) {
+    out.preset = parsed.preset;
+  }
+  return out;
+}
 
 function rowToChat(row) {
   if (!row) return null;
@@ -124,6 +161,7 @@ function rowToChat(row) {
     trace: row.trace === 1,
     promptSize: row.prompt_size,
     promptId: row.prompt_id || null,
+    promptSnapshot: normalizePromptSnapshot(row.prompt_snapshot),
     providerId: row.provider_id || null,
     modelId: row.model_id || null,
     thinkingLevel: row.thinking_level || '',
@@ -234,6 +272,7 @@ function chatToRow(projectDir, chat) {
     trace: chat.trace ? 1 : 0,
     prompt_size: chat.promptSize || 'average',
     prompt_id: chat.promptId || null,
+    prompt_snapshot: chat.promptSnapshot ? JSON.stringify(chat.promptSnapshot) : null,
     provider_id: chat.providerId || null,
     model_id: chat.modelId || null,
     thinking_level: chat.thinkingLevel || '',
@@ -500,10 +539,10 @@ function createChat(projectDir, chat) {
   const row = chatToRow(projectDir, chat);
   d.prepare(`
 INSERT INTO chat_store (project_dir, id, title, created_at, last_opened_at,
-trace, prompt_size, prompt_id, provider_id, model_id, thinking_level, max_output_tokens, draft, draft_attachments, tools,
+trace, prompt_size, prompt_id, prompt_snapshot, provider_id, model_id, thinking_level, max_output_tokens, draft, draft_attachments, tools,
 agent_id, agent_files, skills, disabled_skills, tool_auth, auto_retry, total_cost, cost_known_count)
 VALUES (@project_dir, @id, @title, @created_at, @last_opened_at,
-@trace, @prompt_size, @prompt_id, @provider_id, @model_id, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
+@trace, @prompt_size, @prompt_id, @prompt_snapshot, @provider_id, @model_id, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
 @agent_id, @agent_files, @skills, @disabled_skills, @tool_auth, @auto_retry, @total_cost, @cost_known_count)
 `).run(row);
   return rowToChat(d.prepare(
@@ -525,7 +564,8 @@ d.prepare(`
 UPDATE chat_store SET
 title = @title, last_opened_at = @last_opened_at,
 trace = @trace, prompt_size = @prompt_size,
-prompt_id = @prompt_id, provider_id = @provider_id,
+prompt_id = @prompt_id, prompt_snapshot = @prompt_snapshot,
+provider_id = @provider_id,
 model_id = @model_id, thinking_level = @thinking_level,
 max_output_tokens = @max_output_tokens,
 draft = @draft, draft_attachments = @draft_attachments, tools = @tools,

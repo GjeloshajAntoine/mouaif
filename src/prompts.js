@@ -349,6 +349,51 @@ function getPromptPreset(projectDir, promptId) {
 // it never relaxes the project's authorization gate (a tool the project
 // turned `off` stays off; agent files and skills silently follow the
 // project lock).
+// snapshotPrompt(projectDir, promptId) -> { title, content, role, preset? } | null
+//
+// The immutable copy of a prompt a chat pins when it is attached to one.
+// A chat must not change behaviour because somebody edited a shared
+// prompt afterwards, so the text and the preset are copied onto the chat
+// record at attach time and every later read uses that copy (see
+// resolveChatPrompt). `promptId` stays alongside it as provenance and as
+// the fallback for chats written before snapshots existed.
+//
+// Returns null when the prompt is missing, so a caller can tell "nothing
+// to pin" from "pinned an empty prompt".
+function snapshotPrompt(projectDir, promptId) {
+  if (!promptId) return null;
+  try {
+    const p = getPrompt(projectDir, promptId);
+    if (!p || typeof p.content !== 'string' || !p.content.trim()) return null;
+    const snap = { title: p.title || '', content: p.content, role: 'system' };
+    if (p.preset) snap.preset = p.preset;
+    return snap;
+  } catch { return null; }
+}
+
+// resolveChatPrompt(projectDir, chat) -> { content, role, preset } | null
+//
+// The prompt a chat actually sends, preferring the pinned snapshot and
+// falling back to a live lookup by `promptId`. That fallback is what
+// keeps chats created before snapshots existed working, and what makes a
+// missing prompt resolve to null so the stream proceeds without one.
+function resolveChatPrompt(projectDir, chat) {
+  if (!chat || typeof chat !== 'object') return null;
+  const snap = chat.promptSnapshot;
+  if (snap && typeof snap.content === 'string' && snap.content.trim()) {
+    const out = { content: snap.content, role: VALID_ROLES.has(snap.role) ? snap.role : 'system' };
+    if (snap.preset && typeof snap.preset === 'object') out.preset = snap.preset;
+    return out;
+  }
+  if (!chat.promptId) return null;
+  try {
+    const p = getPrompt(projectDir, chat.promptId);
+    if (!p || typeof p.content !== 'string' || !p.content.trim()) return null;
+    const out = { content: p.content, role: p.role, preset: p.preset || null };
+    return out;
+  } catch { return null; }
+}
+
 function effectivePresetConfig(chat, preset) {
   const out = {};
   if (chat && typeof chat === 'object' && preset && typeof preset === 'object') {
@@ -377,6 +422,8 @@ normalizePreset,
   listPrompts,
   getPrompt,
   getPromptPreset,
+  snapshotPrompt,
+  resolveChatPrompt,
   effectivePresetConfig,
   createPrompt,
   updatePrompt,

@@ -157,7 +157,11 @@ if (typeof body.promptId !== 'string' || !prompts.getPrompt(dir, body.promptId))
 return sendJSON(res, 400, { error: 'Unknown promptId' });
 }
 }
-const chat = chats.createChat(dir, body || {});
+// `promptSnapshot` is derived server-side from `promptId` (see
+// chats.createChat). Never let a client post its own prompt text.
+const safeCreate = Object.assign({}, body || {});
+delete safeCreate.promptSnapshot;
+const chat = chats.createChat(dir, safeCreate);
       return sendJSON(res, 201, { chat });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -179,8 +183,13 @@ const chat = chats.createChat(dir, body || {});
     // fields intentionally and don't come through here.
     const safeBody = Object.assign({}, body || {});
     delete safeBody.id;
-delete safeBody.createdAt;
-delete safeBody.lastOpenedAt;
+  delete safeBody.createdAt;
+  delete safeBody.lastOpenedAt;
+  // The pinned prompt snapshot is server-owned: it is derived from
+  // `promptId` on create/PATCH so a client cannot forge prompt text, and it
+  // is only ever written directly by the internal delete cascade
+  // (chats.clearPromptId).
+  delete safeBody.promptSnapshot;
 try {
 if (safeBody.promptId != null && safeBody.promptId !== '') {
 if (typeof safeBody.promptId !== 'string' || !prompts.getPrompt(dir, safeBody.promptId)) {
@@ -350,16 +359,26 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
       // stream uses (see resolveChatEffective). It only ADDS to the
       // per-chat toggle (see prompts.effectivePresetConfig), never
       // overrides the project's authorization gate.
+      //
+      // Both the text and the preset come from the chat's pinned snapshot
+      // (falling back to a live lookup for older chats), so this preview
+      // shows exactly what the stream would send.
       let effectiveChat = chat;
-      if (chat.promptId) {
-        try {
-          const cp = prompts.getPrompt(dir, chat.promptId);
-          if (cp) {
-            prompt = { id: cp.id, title: cp.title, role: cp.role, content: cp.content, preset: cp.preset || null };
-            if (cp.preset) effectiveChat = Object.assign({}, chat, prompts.effectivePresetConfig(chat, cp.preset));
-          }
-        } catch { /* custom prompt stays null */ }
+      try {
+      const resolved = prompts.resolveChatPrompt(dir, chat);
+      if (resolved) {
+      prompt = {
+        id: chat.promptId || null,
+        title: (chat.promptSnapshot && chat.promptSnapshot.title) || '',
+        role: resolved.role,
+        content: resolved.content,
+        preset: resolved.preset || null
+      };
+      if (resolved.preset) {
+        effectiveChat = Object.assign({}, chat, prompts.effectivePresetConfig(chat, resolved.preset));
       }
+      }
+      } catch { /* custom prompt stays null */ }
       // The combined text mirrors the order handleChatStream uses:
       // profile system message first, then agent files, selected agent,
       // skills, then the custom prompt.
@@ -683,11 +702,15 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
   // prompts.effectivePresetConfig) without touching the persisted chat
   // record or the project's authorization gate. Falls back to `chat`
   // when the prompt has no preset.
+  //
+  // The preset comes from the chat's pinned snapshot, so re-attaching a
+  // prompt (or editing it) never retroactively changes a chat that
+  // already carried it.
   let effectiveChat = chat;
   try {
-    if (chat.promptId) {
-      const preset = prompts.getPromptPreset(projectDir, chat.promptId);
-      if (preset) effectiveChat = Object.assign({}, chat, prompts.effectivePresetConfig(chat, preset));
+    const resolved = prompts.resolveChatPrompt(projectDir, chat);
+    if (resolved && resolved.preset) {
+      effectiveChat = Object.assign({}, chat, prompts.effectivePresetConfig(chat, resolved.preset));
     }
   } catch { /* preset best-effort; fall back to plain chat */ }
 
@@ -905,15 +928,17 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
       }
     }
   } catch { /* non-fatal; stream proceeds without tagged files */ }
-  const effectivePromptId = chat.promptId || null;
-  if (effectivePromptId) {
-    try {
-      const prompt = prompts.getPrompt(projectDir, effectivePromptId);
-      if (prompt && prompt.content) {
-        upstreamMessages.push({ role: prompt.role, content: prompt.content });
-      }
-    } catch { /* non-fatal; stream proceeds without the prompt */ }
-  }
+  // The custom prompt, read from the chat's PINNED snapshot rather than
+  // from the prompt store: a chat keeps the text it was attached with, so
+  // editing a shared prompt never rewrites an existing chat. Chats written
+  // before snapshots existed fall back to a live lookup by `promptId`
+  // inside resolveChatPrompt (docs/features/custom-prompts.md).
+  try {
+    const resolved = prompts.resolveChatPrompt(projectDir, chat);
+    if (resolved && resolved.content) {
+      upstreamMessages.push({ role: resolved.role, content: resolved.content });
+    }
+  } catch { /* non-fatal; stream proceeds without the prompt */ }
   function upstreamContentForMessage(m) {
     if (!m || m.role !== 'user' || !Array.isArray(m.attachments) || !m.attachments.length) return m && m.content;
     const parts = [];

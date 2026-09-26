@@ -12,7 +12,12 @@
 //
 // Schema (per chat):
 //   { id, title, createdAt, lastOpenedAt, trace, promptSize, promptId,
-//     providerId, modelId, draft, tools, agentFiles, skills, toolAuth }
+//     promptSnapshot, providerId, modelId, draft, tools, agentFiles,
+//     skills, toolAuth }
+//
+// `promptSnapshot` pins the custom prompt a chat was attached to at attach
+// time, so editing that prompt later never rewrites an existing chat. See
+// src/prompts.js snapshotPrompt().
 //
 // API enrichment (added by GET /api/chats, NOT persisted):
 //   { totalCost: { total, known, currency } }
@@ -70,6 +75,24 @@ function getChat(projectDir, chatId) {
 if (!chatId || typeof chatId !== 'string') return null;
 return getChatDb().getChat(projectDir, chatId);
 }
+// resolvePromptSnapshot(projectDir, opts) -> snapshot | undefined
+//
+// The snapshot to pin on a chat when it is created or re-attached to a
+// prompt. `opts.promptSnapshot` lets a caller pass one through verbatim
+// (the DB import path); otherwise the prompt is read from the store now.
+// A missing prompt yields undefined — the chat then has no snapshot and
+// resolves live, which is the pre-snapshot behaviour.
+function resolvePromptSnapshot(projectDir, opts) {
+  if (opts && opts.promptSnapshot && typeof opts.promptSnapshot === 'object') {
+    return opts.promptSnapshot;
+  }
+  const id = opts && typeof opts.promptId === 'string' ? opts.promptId : '';
+  if (!id) return undefined;
+  try {
+    return require('./prompts.js').snapshotPrompt(projectDir, id) || undefined;
+  } catch { return undefined; }
+}
+
 function createChat(projectDir, opts) {
 ensureDir(projectDir);
 const resolved = settings.getResolved(projectDir);
@@ -84,6 +107,11 @@ promptSize: opts && promptProfiles.isValidProfile(opts.promptSize) ? opts.prompt
 thinkingLevel: opts && typeof opts.thinkingLevel === 'string' ? opts.thinkingLevel : '',
 maxOutputTokens: opts && typeof opts.maxOutputTokens === 'string' ? opts.maxOutputTokens : '',
 promptId: opts && typeof opts.promptId === 'string' && opts.promptId ? opts.promptId : null,
+// Pin the prompt's text at attach time (docs/features/custom-prompts.md).
+// Editing the prompt afterwards must not rewrite this chat, so the text
+// rides on the record from here on; `promptId` stays as provenance and as
+// the fallback for chats that have no snapshot.
+promptSnapshot: resolvePromptSnapshot(projectDir, opts),
 skills: opts && typeof opts.skills === 'boolean' ? opts.skills : undefined,
 disabledSkills: opts && Array.isArray(opts.disabledSkills) && opts.disabledSkills.length
   ? opts.disabledSkills.map((n) => String(n)).filter(Boolean)
@@ -110,6 +138,22 @@ dbPatch.promptSize = patch.promptSize;
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'promptId')) {
 dbPatch.promptId = (patch.promptId === null || patch.promptId === '') ? null : String(patch.promptId);
+}
+// The pinned snapshot is its own patchable field so the two intents stay
+// apart: re-attaching (`promptId` set) derives a fresh snapshot, an
+// explicit `promptSnapshot` (used by clearPromptId when a prompt is
+// deleted) wins, and detaching (`promptId` null with no explicit
+// snapshot) clears it. Without this split, deleting a prompt would wipe
+// the text of every chat that had pinned it — the exact retroactive
+// change the snapshot exists to prevent (src/prompts.js snapshotPrompt).
+if (patch && Object.prototype.hasOwnProperty.call(patch, 'promptSnapshot')) {
+dbPatch.promptSnapshot = patch.promptSnapshot && typeof patch.promptSnapshot === 'object'
+  ? patch.promptSnapshot
+  : null;
+} else if (patch && Object.prototype.hasOwnProperty.call(patch, 'promptId')) {
+dbPatch.promptSnapshot = dbPatch.promptId
+  ? resolvePromptSnapshot(projectDir, { promptId: dbPatch.promptId })
+  : null;
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'providerId')) {
 dbPatch.providerId = (patch.providerId === null || patch.providerId === '') ? null : String(patch.providerId);
@@ -236,7 +280,18 @@ const chats = listChats(projectDir);
 let changed = 0;
 for (const c of chats) {
 if (c.promptId === promptId) {
-updateChat(projectDir, c.id, { promptId: null });
+// Read the full record: the chat-list projection deliberately omits
+// `promptSnapshot` (it is only needed here and by the stream path).
+const full = getChat(projectDir, c.id);
+// Drop the reference but KEEP the pinned text: a chat that was
+// attached to this prompt keeps behaving as it always did, so deleting
+// a shared prompt is not a silent behaviour change for every chat that
+// used it. The snapshot was already the source of truth at stream time,
+// so the chat's next turn sends exactly the same prompt as the last one.
+updateChat(projectDir, c.id, {
+  promptId: null,
+  promptSnapshot: (full && full.promptSnapshot) || null
+});
 changed++;
 }
 }
