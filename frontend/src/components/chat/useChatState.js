@@ -25,7 +25,7 @@ import {
 renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills, toggleSkill } from './cards.js';
-import { scrollTranscriptToBottom, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
+import { scrollTranscriptToBottom, scrollToAdjacentMessage, noteTranscriptScrollTop, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
   updateMetaLine, refreshSystemPrompt, activeProfileId, updateSwitch, updateSetupVisibility
@@ -155,6 +155,7 @@ const switcherRefreshArmed = useRef(false);
   const stopBtn = useRef(null);
   const status = useRef(null);
   const jumpBtn = useRef(null);
+  const scrollNav = useRef(null);
   const toolsCard = useRef(null);
   const agentFilesCard = useRef(null);
   const skillsCard = useRef(null);
@@ -384,7 +385,7 @@ setCustomActions(next);
     setupCard, transcript,
     thinkingLevel, thinkingLevelCustom, maxOutputTokens,
     promptInput, imageInput, draftSaveTimer, sendBtn, stopBtn, status,
-    jumpBtn, toolsCard, agentFilesCard, skillsCard,
+    jumpBtn, scrollNav, toolsCard, agentFilesCard, skillsCard,
     pinnedToBottom, pendingCount,
     chatSwitcherTrigger, chatSwitcherPop,
     _autoresize: () => autoresize({ promptInput })
@@ -1116,7 +1117,9 @@ setRunningVisible(false);
     // anchoring) and height grown by streaming between our pin and the
     // event must not strand a live reply below the fold.
     const intent = trackUserScrollIntent(el);
+    refs._transcriptOverflows = false;
   function onScroll() {
+  noteTranscriptScrollTop(refs, el.scrollTop);
   if (isTranscriptPinScroll(refs, el.scrollTop)) return;
   const near = isNearBottom(el);
   if (near && !pinnedToBottom.current) {
@@ -1477,6 +1480,8 @@ onComposerInput(refs, projectDir, chatId, updateChatBound);
     },
     onRemoveImage: (idx) => removeImageAttachment(idx, setImageAttachments, updateChatBound),
     onJumpToBottom: () => scrollTranscriptToBottom(refs),
+    onJumpToPrevMessage: () => scrollToAdjacentMessage(refs, -1),
+    onJumpToNextMessage: () => scrollToAdjacentMessage(refs, 1),
 onCancelRunning,
 onToggleAutoRetry: () => {
 state.autoRetry = !state.autoRetry;

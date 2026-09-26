@@ -60,6 +60,7 @@ One page per feature: what it does and how to use it.
 ### Chat
 
 - [Chat](features/chat-ui.md) — the conversation view, composer, and per-chat controls.
+- [Chat scroll navigation](features/chat-scroll-nav.md) — arrows to step to the previous / next message or jump to the bottom.
 - [Chat switcher](features/chat-switcher.md) — jump between a project's chats from the chat header.
 - [@-mentions](features/at-mention.md) — insert files, agents, actions, and tools from the composer.
 - [Message copy](features/message-copy.md) — copy any message with one tap.

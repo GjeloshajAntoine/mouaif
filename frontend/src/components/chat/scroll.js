@@ -3,9 +3,10 @@
 // The transcript auto-scrolls to the newest message on every append
 // while the user is "pinned" to the bottom. Once they scroll up
 // more than a threshold we treat them as reading history: appends
-// no longer yank the view down, a floating "↓" button appears, and
-// a counter tracks how many new rows arrived in the meantime.
-// Tapping the button (or scrolling back to the very bottom) re-pins.
+// no longer yank the view down, the floating scroll-nav rail grows
+// "next message" / "bottom" arrows, and a counter on the bottom arrow
+// tracks how many new rows arrived in the meantime. Tapping it (or
+// scrolling back to the very bottom) re-pins.
 
 // isNearBottom(el) -> bool
 //
@@ -236,19 +237,119 @@ export function cancelToolBodyScroll(descendant) {
 
 // updateJumpButton(refs)
 //
-// Show or hide the floating "↓ N" button based on the current
-// pinned state and pending count.
+// Sync the floating scroll-nav rail with the pinned state. While pinned
+// to the bottom only the "previous message" arrow shows (and only once
+// the transcript actually overflows); once the user reads history the
+// rail grows "next message" and "bottom" arrows, the latter carrying a
+// counter of rows that arrived in the meantime.
 export function updateJumpButton(refs) {
+  const pinned = refs.pinnedToBottom.current;
+  const nav = refs.scrollNav && refs.scrollNav.current;
+  if (nav) {
+    const mode = pinned ? 'pinned' : 'free';
+    if (nav.dataset.mode !== mode) nav.dataset.mode = mode;
+    const hide = pinned && !refs._transcriptOverflows;
+    if (nav.hidden !== hide) nav.hidden = hide;
+  }
   const btn = refs.jumpBtn.current;
   if (!btn) return;
-  const show = !refs.pinnedToBottom.current && refs.pendingCount.current > 0;
-  btn.hidden = !show;
-  if (show) {
-    const label = btn.querySelector('.chat-view__jump-count');
-    if (label) {
-      label.textContent = refs.pendingCount.current > 99 ? '99+' : String(refs.pendingCount.current);
-    }
+  btn.hidden = pinned;
+  const label = btn.querySelector('.chat-view__jump-count');
+  if (label) {
+    const n = refs.pendingCount.current;
+    const text = pinned || n <= 0 ? '' : (n > 99 ? '99+' : String(n));
+    if (label.textContent !== text) label.textContent = text;
   }
+}
+
+// noteTranscriptScrollTop(refs, scrollTop)
+//
+// Called from the transcript scroll listener with the scrollTop it has
+// already read (no extra layout read). A non-zero scrollTop means the
+// content overflows, which is when the "previous message" arrow is
+// worth showing while pinned.
+export function noteTranscriptScrollTop(refs, scrollTop) {
+  const overflows = scrollTop > 0;
+  if (refs._transcriptOverflows === overflows) return;
+  refs._transcriptOverflows = overflows;
+  updateJumpButton(refs);
+}
+
+// findAdjacentMessage(tops, line, dir, slop?) -> index | -1
+//
+// Pure helper: given the ascending content-space tops of the message
+// rows and the current reading line (scrollTop + padding), return the
+// row to jump to. dir < 0 picks the last row starting above the line
+// (the start of the row being read, or the one before it); dir > 0
+// picks the first row starting below it.
+export function findAdjacentMessage(tops, line, dir, slop = 4) {
+  if (dir < 0) {
+    for (let i = tops.length - 1; i >= 0; i--) if (tops[i] < line - slop) return i;
+    return -1;
+  }
+  for (let i = 0; i < tops.length; i++) if (tops[i] > line + slop) return i;
+  return -1;
+}
+
+// Gap kept between the transcript's top edge and a jumped-to row.
+const NAV_TOP_GAP = 6;
+
+function messageRows(el) {
+  const rows = [];
+  for (const row of el.children) {
+    if (row.classList && row.classList.contains('chat-msg')) rows.push(row);
+  }
+  return rows;
+}
+
+function contentTop(el, row) {
+  return row.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;
+}
+
+// scrollToAdjacentMessage(refs, dir)
+//
+// Step the transcript to the previous (dir -1) or next (dir 1) message
+// row, aligning its top with the top of the transcript. Tool cards are
+// skipped so an agentic turn steps between what was said, not every
+// command. Past the last row it re-pins to the bottom; before the first
+// it scrolls to the very top (which also triggers the older-page loader).
+// Layout is only read on the tap, never on the scroll hot path.
+export function scrollToAdjacentMessage(refs, dir) {
+  const el = refs.transcript.current;
+  if (!el) return;
+  const rows = messageRows(el);
+  const line = el.scrollTop + NAV_TOP_GAP;
+  const idx = findAdjacentMessage(rows.map((r) => contentTop(el, r)), line, dir);
+  if (idx < 0 && dir > 0) {
+    scrollTranscriptToBottom(refs);
+    return;
+  }
+  // A tap on the rail is outside the transcript, so the user-intent
+  // tracker cannot see it: unpin explicitly or the scroll listener would
+  // treat the jump as a browser clamp and yank the view back down.
+  cancelTranscriptPin(refs);
+  refs.pinnedToBottom.current = false;
+  updateJumpButton(refs);
+  if (idx < 0) {
+    el.scrollTop = 0;
+    return;
+  }
+  const target = rows[idx];
+  const align = () => {
+    if (!target.isConnected || refs.pinnedToBottom.current) return false;
+    const delta = target.getBoundingClientRect().top - el.getBoundingClientRect().top - NAV_TOP_GAP;
+    if (Math.abs(delta) < 1) return false;
+    el.scrollTop += delta;
+    return true;
+  };
+  align();
+  // Off-screen rows use `content-visibility: auto` placeholders, so the
+  // target can shift once the rows around it lay out for real. Re-align
+  // for a couple of frames.
+  if (typeof requestAnimationFrame !== 'function') return;
+  let frames = 0;
+  const step = () => { if (align() && ++frames < 3) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
 }
 
 // afterTranscriptAppend(refs, countNew)
