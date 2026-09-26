@@ -136,6 +136,19 @@ try {
     }
   });
 
+  check('the landing page bar has no brand row', () => {
+    // The landing page shows "mouaif" as the hero H1 right under the bar, so
+    // its bar is the link row alone (topnav--minimal); every other page keeps
+    // the brand, the only place the site name appears there.
+    const landing = fs.readFileSync(path.join(pub.out, 'index.html'), 'utf8');
+    const nav = landing.slice(landing.indexOf('<nav class="topnav'), landing.indexOf('</nav>'));
+    assert.ok(nav.includes('topnav--minimal'), 'landing nav is not the minimal bar');
+    assert.ok(!nav.includes('topnav-brand'), 'landing nav still renders the brand row');
+    const guide = fs.readFileSync(path.join(pub.out, 'documentation.html'), 'utf8');
+    const guideNav = guide.slice(guide.indexOf('<nav class="topnav"'), guide.indexOf('</nav>'));
+    assert.ok(guideNav.includes('topnav-brand'), 'guide pages lost the brand row');
+  });
+
   check('guide card summaries do not end on a dangling colon', () => {
     const html = fs.readFileSync(path.join(pub.out, 'documentation.html'), 'utf8');
     const blurbs = [...html.matchAll(/<a class="feature-card"[^>]*>[\s\S]*?<p>([\s\S]*?)<\/p>/g)].map((m) => m[1]);

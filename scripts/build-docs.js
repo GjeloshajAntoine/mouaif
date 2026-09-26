@@ -953,12 +953,16 @@ html { scroll-padding-top: 72px; }
 .site.site--full .main { margin: 0; max-width: none; }
 .sidebar { position: static; max-height: none; order: 2; }
 .main { padding: 20px 16px 48px 16px; order: 1; }
-/* Compact top nav: the brand always occupies its own full-width line, so the
-* links reliably drop to a full-width second row beneath it at every mobile
-* width (there is no awkward mid-range state where the links sit beside the
-* brand but are no longer right-pushed). Both rows fill the available width;
-* links stay on one horizontally-scrolling row with tap-friendly ≥44px height. */
+/* Compact top nav. With a brand, the brand always occupies its own
+* full-width line, so the links reliably drop to a full-width second row
+* beneath it at every mobile width (there is no awkward mid-range state where
+* the links sit beside the brand but are no longer right-pushed). The landing
+* page's minimal bar has no brand, so there the links are the whole bar: it
+* drops the bar's vertical padding and stays a single 44px row. Both forms fill
+* the available width; links stay on one horizontally-scrolling row with
+* tap-friendly ≥44px height. */
 .topnav { padding: 6px 14px; gap: 6px 14px; align-items: center; }
+.topnav--minimal { padding-top: 0; padding-bottom: 0; }
 .topnav-brand { flex: 1 0 100%; min-height: 44px; }
 .topnav-links { flex: 1 1 100%; min-width: 0; gap: 4px; margin-left: 0; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .topnav-links::-webkit-scrollbar { display: none; }
@@ -1014,10 +1018,18 @@ function htmlPage({ title, body, sidebar, description, topnav = '', fullWidth = 
 
 // Shared public navigation. Maintainer references may still be generated for
 // direct use, but they are intentionally absent from the user-facing menu.
-function renderTopNav() {
-return `<nav class="topnav" aria-label="Primary">
-<a class="topnav-brand" href="index.html"><span class="logo">m</span> mouaif</a>
-<div class="topnav-links">
+//
+// `brand: false` drops the brand row for callers that already show the name as
+// the page's H1. The landing page does exactly that (a 52 px "mouaif" heading
+// right under the bar), so repeating "m mouaif" in the bar wasted a full row
+// on a phone; without the brand the bar is the link row alone. On mobile the
+// brand was the only reason for the extra wrapping row, so the minimal bar
+// stays a single sticky row that scrolls sideways like the rest of the links.
+function renderTopNav({ brand = true } = {}) {
+const brandHtml = brand ? '<a class="topnav-brand" href="index.html"><span class="logo">m</span> mouaif</a>\n' : '';
+const navClass = brand ? 'topnav' : 'topnav topnav--minimal';
+return `<nav class="${navClass}" aria-label="Primary">
+${brandHtml}<div class="topnav-links">
 <a href="index.html">Home</a>
 ${PUBLIC_GUIDE_SLUGS.map((slug) => '<a href="features/' + slug + '.html">' + escapeHtml(PUBLIC_GUIDE_TITLES[slug] || slug) + '</a>').join('\n')}
 </div>
@@ -1317,7 +1329,7 @@ title: 'mouaif',
 body,
 sidebar: '',
 description: 'Install, configure, and use the mouaif AI coding assistant.',
-topnav: renderTopNav(),
+topnav: renderTopNav({ brand: false }),
 fullWidth: true
 });
 fs.writeFileSync(path.join(outDir, 'index.html'), html);
