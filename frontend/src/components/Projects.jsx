@@ -68,6 +68,41 @@ function ProjectSearchIcon({ size = 18 }) {
   );
 }
 
+// cleanSnippet(text) — a message body as a reader would see it.
+//
+// Tool calls and results are stored as JSON, so a matching message often reads
+// `…\"path\":\"src/x.js\",\n …`. For a one-line preview the escapes are noise:
+// escaped newlines/tabs become spaces, escaped quotes and backslashes become
+// the characters they stand for, and whitespace runs collapse.
+function cleanSnippet(text) {
+  return String(text || '')
+    .replace(/\\[nrt]/g, ' ')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// highlight(text, needle) -> children with every case-insensitive occurrence
+// of `needle` wrapped in <mark>, so the eye lands on why the row matched.
+function highlight(text, needle) {
+  const str = String(text || '');
+  const q = String(needle || '').toLowerCase();
+  if (!q) return [str];
+  const lower = str.toLowerCase();
+  const out = [];
+  let from = 0;
+  let at = lower.indexOf(q, from);
+  while (at >= 0) {
+    if (at > from) out.push(str.slice(from, at));
+    out.push(h('mark', { class: 'project-card__chat-hit', key: 'm' + at }, str.slice(at, at + q.length)));
+    from = at + q.length;
+    at = lower.indexOf(q, from);
+  }
+  if (from < str.length) out.push(str.slice(from));
+  return out;
+}
+
 function ChatList({ project }) {
   const [chats, setChats] = useState([]);
   const [total, setTotal] = useState(0);
@@ -266,6 +301,18 @@ const isMatch = match === 'message' || match === 'draft';
 // A title hit whose snippet is the title would print the same words twice.
 const showSnippet = isMatch && typeof c.snippet === 'string' && c.snippet.trim() !== ''
   && c.snippet.trim() !== titleStr;
+const needle = searchMode ? term.trim() : '';
+const meta = h('span', {
+class: 'project-card__chat-meta',
+'data-trace': c.trace ? '1' : undefined,
+'data-running': c.running ? '1' : undefined,
+'data-draft': draftOnly ? '1' : undefined,
+'data-cost-known': costBits.known ? '1' : '0'
+}, costStr + ' · ' + dateStr + traceStr);
+// A search hit is a two-line card: title + metadata on top, then the badge
+// and the matching text across the full row width, with the term marked.
+// Keeping the metadata on the title line is what gives the snippet room —
+// squeezed beside it, a 360 px row fit a dozen characters per line.
 return h('li', {
 key: c.id,
 'data-match': match || undefined,
@@ -284,24 +331,21 @@ h('div', { class: 'project-card__chat-main' },
     }, h(PromptIcon, { name: chatPrompt.icon, size: 17 })) : null,
     draftOnly
       ? h('span', { class: 'project-card__chat-title project-card__chat-title--draft' }, draftSnippet)
-      : h('span', { class: 'project-card__chat-title' }, titleStr),
-    showSnippet ? h('span', {
+      : h('span', { class: 'project-card__chat-title' }, needle ? highlight(titleStr, needle) : titleStr),
+    showSnippet ? meta : null
+  ),
+  showSnippet ? h('div', { class: 'project-card__chat-sub' },
+    h('span', {
       class: 'project-card__chat-badge',
       'data-match': match
-    }, match === 'draft' ? 'draft' : 'text') : null
-  ),
-  showSnippet ? h('div', { class: 'project-card__chat-snippet' }, c.snippet) : null
+    }, match === 'draft' ? 'draft' : 'text'),
+    h('span', { class: 'project-card__chat-snippet' }, highlight(cleanSnippet(c.snippet), needle))
+  ) : null
 ),
 draftOnly
 ? h('span', { class: 'project-card__chat-draft', 'aria-hidden': 'true' })
 : c.running ? h('span', { class: 'project-card__chat-running', 'aria-hidden': 'true' }) : null,
-h('span', {
-class: 'project-card__chat-meta',
-'data-trace': c.trace ? '1' : undefined,
-'data-running': c.running ? '1' : undefined,
-'data-draft': draftOnly ? '1' : undefined,
-'data-cost-known': costBits.known ? '1' : '0'
-}, costStr + ' · ' + dateStr + traceStr),
+showSnippet ? null : meta,
 h('button', {
 class: 'project-card__chat-delete',
 type: 'button',
@@ -323,8 +367,9 @@ onClick: (e) => { e.stopPropagation(); deleteChat(c); }
 
   return h(Fragment, null,
     searchOpen ? h('div', { class: 'project-card__search' },
-      h('span', { class: 'project-card__search-icon', 'aria-hidden': 'true' }, h(ProjectSearchIcon, { size: 16 })),
-      h('input', {
+    h('label', { class: 'project-card__search-box' },
+    h('span', { class: 'project-card__search-icon', 'aria-hidden': 'true' }, h(ProjectSearchIcon, { size: 16 })),
+    h('input', {
         ref: searchInputRef,
         class: 'project-card__search-input',
         type: 'search',
@@ -333,12 +378,13 @@ onClick: (e) => { e.stopPropagation(); deleteChat(c); }
         'aria-label': 'Search chats in ' + (project.name || project.path),
         autocomplete: 'off',
         autocapitalize: 'none',
+        autocorrect: 'off',
         spellcheck: 'false',
         enterkeyhint: 'search',
         onInput: (e) => setTerm(e.currentTarget.value),
         onKeyDown: (e) => { if (e.key === 'Escape') { e.preventDefault(); closeSearch(); } }
-      }),
-      h('button', {
+        })),
+        h('button', {
         class: 'project-card__search-close',
         type: 'button',
         'aria-label': 'Close search',

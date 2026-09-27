@@ -168,15 +168,19 @@ function createCard() {
   const chatRows = () => select(isChatRow);
   const rowTitles = () => chatRows().map((node) => node.attrs.key);
   const rowMatches = () => chatRows().map((node) => node.attrs['data-match'] || null);
-  const snippetText = () => select((node) => node.attrs.class === 'project-card__chat-snippet')
-    .map((node) => node.children.filter((c) => typeof c === 'string').join(''));
-  const badgeText = () => select((node) => node.attrs.class === 'project-card__chat-badge')
-    .map((node) => node.children.filter((c) => typeof c === 'string').join(''));
+  // Text content of a node: strings, nested arrays, and child nodes (the <mark>
+  // that highlights the search term) all flattened.
+  const textOf = (c) => typeof c === 'string' ? c
+    : Array.isArray(c) ? c.map(textOf).join('')
+    : c && c.children ? textOf(c.children) : '';
+  const snippetText = () => select((node) => node.attrs.class === 'project-card__chat-snippet').map(textOf);
+  const badgeText = () => select((node) => node.attrs.class === 'project-card__chat-badge').map(textOf);
+  const marks = () => select((node) => node.tag === 'mark').map(textOf);
 
   const settle = async () => { await new Promise((r) => setTimeout(r, 260)); await new Promise((r) => setImmediate(r)); };
 
   return {
-    requests, render, field, magnifier, closeBtn, empty, rowTitles, rowMatches, snippetText, badgeText,
+    requests, render, field, magnifier, closeBtn, empty, rowTitles, rowMatches, snippetText, badgeText, marks,
     project: PROJECT,
     setMode: (next) => { mode = next; },
     answer: (q, body) => { const resolve = pending.get(q); pending.delete(q); resolve(body); },
@@ -233,6 +237,17 @@ assert.deepEqual(card.rowMatches(), ['title', 'message', 'draft'], 'each row rep
 assert.deepEqual(card.snippetText(), ['the kumquat handler moved', 'kumquats not sent yet'],
   'a message or draft hit shows its snippet; a title hit does not repeat the title');
 assert.deepEqual(card.badgeText(), ['text', 'draft'], 'the badge distinguishes a message hit from a draft hit');
+assert.deepEqual(card.marks(), ['kumquat', 'kumquat', 'kumquat'],
+  'the term is marked in the matching title and in each snippet');
+
+// ---- 2b. a JSON-shaped snippet reads as text ------------------------------
+{
+  const context = vm.createContext({ h: (tag, attrs, ...children) => ({ tag, attrs, children }) });
+  vm.runInContext(source('components/Projects.jsx').match(/function cleanSnippet[\s\S]*?\n}\n/)[0]
+    + ';this.cleanSnippet = cleanSnippet;', context);
+  assert.equal(context.cleanSnippet('…"test:chat-\\n  view\\": \\"node a\\\\b'),
+    '…"test:chat- view": "node a\\b', 'escaped newlines, quotes, and backslashes are unescaped');
+}
 
 // ---- 3. an unanswered term shows no stale rows ---------------------------
 card.typeImmediate('kumquat no');
