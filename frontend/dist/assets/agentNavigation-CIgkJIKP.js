@@ -1,0 +1,1 @@
+function a({projectDir:e="",from:r="",chatId:t="",returnTo:s=""}={}){const n=new URLSearchParams;return e&&n.set("projectDir",e),t&&n.set("chatId",t),r&&n.set("from",r),s==="project"&&n.set("returnTo",s),n.toString()}function o(e,r){const t=a(r);return"settings/agents/"+encodeURIComponent(e)+(t?"?"+t:"")+(e==="new"?(t?"&":"?")+"edit=1":"")}export{o as a,a as b};

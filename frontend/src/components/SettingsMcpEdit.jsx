@@ -4,7 +4,7 @@ import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
 import { nav } from '../router.js';
-import { projectQS } from './settings/projectQS.js';
+import { navTarget, settingsLink } from './settings/projectNavigation.js';
 import { McpArguments } from './settings/McpArguments.jsx';
 import { McpOAuth } from './settings/McpOAuth.jsx';
 
@@ -12,6 +12,7 @@ export function SettingsMcpEditView(props) {
 const id = props.id || '';
 const routeProjectDir = props.projectDir || '';
 const from = typeof props.from === 'string' ? props.from : '';
+const chatId = typeof props.chatId === 'string' ? props.chatId : '';
   const activeDir = (activeProject.value && activeProject.value.dir) || '';
   const projectDir = id ? routeProjectDir : (routeProjectDir || activeDir);
   const [addScope, setAddScope] = useState(
@@ -200,7 +201,7 @@ const from = typeof props.from === 'string' ? props.from : '';
     setIsSaving(false);
     if (r.status !== 200 && r.status !== 201) { setStatusMsg({text: 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), kind: 'error'}); return; }
     setStatusMsg({text: 'saved', kind: 'success'});
-nav('settings/mcp' + projectQS(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''));
+nav(listTarget);
 }
 
   async function deleteServer() {
@@ -213,14 +214,23 @@ nav('settings/mcp' + projectQS(projectDir) + (from ? '&from=' + encodeURICompone
     try { r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + qs, { method: 'DELETE' }); }
     catch (e) { setStatusMsg({text: 'network error', kind: 'error'}); setIsDeleting(false); return; }
     if (r.status !== 200) { setStatusMsg({text: 'HTTP ' + r.status, kind: 'error'}); setIsDeleting(false); return; }
-nav('settings/mcp' + projectQS(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''));
+nav(listTarget);
 }
 
   useEffect(() => { load(); }, [id]);
 
   const title = id ? 'Edit MCP server' : 'Add MCP server';
-const backQSPath = id ? routeProjectDir : projectDir;
-const backHref = '#/settings/mcp' + projectQS(backQSPath) + (from ? '&from=' + encodeURIComponent(from) : '');
+// The list this editor was opened from, rebuilt the same way the list's
+// own rows build their links: an edit keeps the list's projectDir, an add
+// follows the scope being created (so an app-wide add returns to the
+// app-wide list instead of the active project's). `listScope` is sent back
+// explicitly, so a project add that saw no projectDir does not come back as
+// an app list.
+const listScope = id ? currentScope : addScope;
+const backQSPath = id ? routeProjectDir : (listScope === 'app' ? '' : projectDir);
+const listContext = { projectDir: backQSPath, chatId, from };
+const listTarget = navTarget('settings/mcp', listContext, { scope: listScope });
+const backHref = settingsLink('settings/mcp', listContext, { scope: listScope });
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },

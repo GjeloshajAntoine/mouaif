@@ -5,10 +5,15 @@ import { nav } from '../router.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 import { HiddenContentEditor } from './settings/HiddenContentEditor.jsx';
 import { describeHidden, hiddenContentPath } from './settings/hiddenRanges.js';
+import { settingsLink } from './settings/projectNavigation.js';
 import './settings/hiddenContent.css';
 
-export function SettingsHiddenContentView({ projectDir = '', from = '', filePath = '' }) {
+export function SettingsHiddenContentView({ projectDir = '', from = '', chatId = '', filePath = '' }) {
   const dir = projectDir || activeProject.value?.dir || '';
+  // The context every outgoing link (and the Back arrow) is built from:
+  // the project, the chat the drill-down started in, and the project list
+  // the project page itself was entered from.
+  const context = { projectDir: dir, chatId, from };
   const [rules, setRules] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -39,10 +44,10 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', filePath
   function onOpen(path) {
     setPicking(false);
     setNotice('');
-    nav(hiddenContentPath({ projectDir: dir, from, filePath: path }));
+    nav(hiddenContentPath({ ...context, filePath: path }));
   }
   function onClose() {
-    nav(hiddenContentPath({ projectDir: dir, from }));
+    nav(hiddenContentPath(context));
   }
   async function onSave(path, { ranges, chars }) {
     const next = rules.filter((rule) => rule.path !== path);
@@ -95,11 +100,9 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', filePath
     initialRule: rules.find((rule) => rule.path === filePath),
     onSave, onClose
   });
-  const backParams = new URLSearchParams({ projectDir: dir });
-  if (from) backParams.set('from', from);
   return h(Fragment, null,
     h('div', { class: 'view-head hidden-content__head' },
-      h('a', { class: 'view-back', href: '#/settings/project?' + backParams, 'aria-label': 'Back to project settings' }, '←'),
+      h('a', { class: 'view-back', href: settingsLink('settings/project', context), 'aria-label': 'Back to project settings' }, '←'),
       h('h2', { class: 'view-title' }, 'Hide file content')
     ),
     h('section', { class: 'hidden-content', 'aria-label': 'Hidden files' },

@@ -8,7 +8,7 @@
 import { h, Fragment } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
-import { projectQS } from './settings/projectQS.js';
+import { settingsLink } from './settings/projectNavigation.js';
 import { McpStoreSheet, avatarStyle, initial, editorHref } from './settings/McpStoreSheet.jsx';
 import { friendlyName, publisher, summary, findInstalled, registryMeta, relativeDate } from './settings/mcpRegistryInstall.js';
 
@@ -56,6 +56,7 @@ function compare(sort) {
 export function SettingsMcpRegistryView(props = {}) {
   const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
   const from = typeof props.from === 'string' ? props.from : '';
+  const chatId = typeof props.chatId === 'string' ? props.chatId : '';
   const [entries, setEntries] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [search, setSearch] = useState('');
@@ -122,7 +123,7 @@ export function SettingsMcpRegistryView(props = {}) {
   }, [entries, configured, filter, sort]);
 
   const openRow = openKey ? entries.find((e) => entryKey(e) === openKey) : null;
-  const backHref = '#/settings/mcp' + projectQS(projectDir) + (from ? (projectDir ? '&' : '?') + 'from=' + encodeURIComponent(from) : '');
+  const backHref = settingsLink('settings/mcp', { projectDir, chatId, from }, { scope: projectDir ? 'project' : 'app' });
   const hiddenByFilter = entries.length - rows.length;
 
   function card(row) {
@@ -211,16 +212,16 @@ export function SettingsMcpRegistryView(props = {}) {
         'Listings come from the ',
         h('a', { href: 'https://registry.modelcontextprotocol.io', target: '_blank', rel: 'noopener noreferrer' }, 'official MCP Registry'),
         '. Anyone can publish there — install servers you trust. Not listed? ',
-        h('a', { href: '#/settings/mcp/new' + (projectDir ? projectQS(projectDir) + '&scope=project' : '?scope=app') + (from ? '&from=' + encodeURIComponent(from) : '') }, 'Add one by hand'),
+        h('a', { href: settingsLink('settings/mcp/new', { projectDir, chatId, from }, { scope: projectDir ? 'project' : 'app' }) }, 'Add one by hand'),
         '.')
     ),
     openRow
-      ? h(McpStoreSheet, {
-          entry: openRow, projectDir, from,
-          installed: findInstalled(openRow, configured),
-          onClose: () => setOpenKey(''),
-          onInstalled: () => loadConfigured()
-        })
-      : null
+    ? h(McpStoreSheet, {
+      entry: openRow, projectDir, from, chatId,
+      installed: findInstalled(openRow, configured),
+      onClose: () => setOpenKey(''),
+      onInstalled: () => loadConfigured()
+      })
+    : null
   );
 }

@@ -49,6 +49,7 @@ One page per feature: what it does and how to use it.
 - [App and project settings](features/app-and-project-settings.md) — defaults, app settings, and project overrides.
 - [Project settings storage](features/project-settings-storage.md) — keep settings in `.mouaif.json` or in the app store.
 - [Settings](features/settings-ui.md) — the Settings tab and what each section controls.
+- [Settings back navigation](features/settings-back-navigation.md) — where the Back arrow of every settings page goes, and why.
 - [Custom prompts](features/custom-prompts.md) — reusable system prompts at app and project scope.
 - [Prompt-size profiles](features/prompt-profiles.md) — `very-small`, `average`, `extensive`, and `chat` system prompts.
 - [Agents](features/agents.md) — named personas the model can delegate work to.

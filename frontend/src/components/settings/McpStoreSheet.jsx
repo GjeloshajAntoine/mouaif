@@ -10,7 +10,7 @@ import { h } from 'preact';
 import { useMemo, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
-import { projectQS } from './projectQS.js';
+import { settingsLink } from './projectNavigation.js';
 import {
   friendlyName, publisher, installOptions, missingRequired, buildServerBody,
   registryMeta, relativeDate
@@ -26,10 +26,9 @@ function safeHttpUrl(value) {
   catch { return ''; }
 }
 
-export function editorHref(server, projectDir, from) {
+export function editorHref(server, projectDir, from, chatId = '') {
   const scope = server.scope === 'app' ? 'app' : 'project';
-  const qs = projectDir ? projectQS(projectDir) + '&scope=' + scope : '?scope=app';
-  return '#/settings/mcp/' + encodeURIComponent(server.id) + qs + (from ? '&from=' + encodeURIComponent(from) : '');
+  return settingsLink('settings/mcp/' + encodeURIComponent(server.id), { projectDir, chatId, from }, { scope });
 }
 
 export function McpStoreSheet(props) {

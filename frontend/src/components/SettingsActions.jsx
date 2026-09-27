@@ -3,8 +3,9 @@ import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { nav } from '../router.js';
+import { navTarget, settingsLink } from './settings/projectNavigation.js';
 import { schemaJson } from './settings/actionSchema.js';
-function projectQS(projectDir) { return '?projectDir=' + encodeURIComponent(projectDir || ''); }
+function projectQS(projectDir) { return projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : ''; }
 function emptyAction() {
 return { id: '', label: '', description: '', kind: 'cli', command: '', timeoutMs: '', serverId: '', toolName: '', argsText: '{}' };
 }
@@ -15,7 +16,15 @@ timeoutMs: action.timeoutMs || '',
 argsText: JSON.stringify(action.args || {}, null, 2)
 };
 }
-export function SettingsActionsView({ projectDir = '', from = '' }) {
+export function SettingsActionsView({ projectDir = '', from = '', chatId = '', scope = '' }) {
+// The list belongs to whichever scope the user came from: 'app' is the
+// App-defaults sibling (projectDir-less), otherwise the project list.
+// An old link without `scope` answers from `projectDir` so Back still
+// returns to the list the page was opened from instead of projecting an
+// app-scoped page onto the active project.
+const listScope = scope === 'app' ? 'app' : (scope === 'project' ? 'project' : (projectDir ? 'project' : 'app'));
+const ctx = { projectDir: listScope === 'app' ? '' : projectDir, chatId, from };
+const listHref = settingsLink('settings/actions', ctx, { scope: listScope });
 const [actions, setActions] = useState([]);
 const [status, setStatus] = useState('loading…');
 useEffect(() => {
@@ -29,14 +38,14 @@ return () => { cancelled = true; };
 }, [projectDir]);
 return h(Fragment, null,
 h('div', { class: 'view-head' },
-h('a', { href: '#/settings/project' + projectQS(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
+h('a', { href: listHref, class: 'view-back', 'aria-label': 'Back to custom actions' }, '←'),
 h('h2', { class: 'view-title' }, 'Custom actions')
 ),
 h('section', null,
 h('p', { class: 'hint hint--compact' }, 'Project shortcuts backed by a CLI command or MCP tool. Pick one by name from the composer menu or type ', h('code', null, '@action-id'), '.'),
 h('ul', { class: 'prompts__list', 'aria-label': 'Custom actions' },
 actions.length ? actions.map((action) => h('li', { key: action.id, class: 'prompt-row' },
-h('a', { class: 'prompt-row__main', href: '#/settings/actions/' + encodeURIComponent(action.id) + projectQS(projectDir) },
+h('a', { class: 'prompt-row__main', href: settingsLink('settings/actions/' + encodeURIComponent(action.id), ctx, { scope: listScope }) },
 h('div', { class: 'prompt-row__title' }, action.label || action.id),
 h('div', { class: 'prompt-row__meta' }, '@' + action.id + ' · ' + (action.kind === 'mcp' ? action.serverId + ' / ' + action.toolName : action.command)),
 h('div', { class: 'prompt-row__chev', 'aria-hidden': 'true' }, '›')
@@ -44,16 +53,20 @@ h('div', { class: 'prompt-row__chev', 'aria-hidden': 'true' }, '›')
 )) : h('li', { class: 'prompts__empty' }, status || 'No custom actions yet.')
 ),
 h('div', { class: 'row row--actions' },
-h('a', { class: 'btn btn--primary', href: '#/settings/actions/new' + projectQS(projectDir) }, '+ Add action'),
+h('a', { class: 'btn btn--primary', href: settingsLink('settings/actions/new', ctx, { scope: listScope }) }, '+ Add action'),
 h('span', { class: 'status', 'aria-live': 'polite' }, status)
 )
 )
 );
 }
-export function SettingsActionEditView({ id = '', projectDir = '', from = '' }) {
+export function SettingsActionEditView({ id = '', projectDir = '', from = '', chatId = '', scope = '' }) {
 const isNew = !id || id === 'new';
-const fromQS = from ? '&from=' + encodeURIComponent(from) : '';
-const actionsListHref = '#/settings/actions' + projectQS(projectDir) + fromQS;
+// Same scope resolution as the list: 'app' keeps the editor (and the
+// return link) projectDir-less.
+const listScope = scope === 'app' ? 'app' : (scope === 'project' ? 'project' : (projectDir ? 'project' : 'app'));
+const ctx = { projectDir: listScope === 'app' ? '' : projectDir, chatId, from };
+const actionsListHref = settingsLink('settings/actions', ctx, { scope: listScope });
+const actionsListPath = navTarget('settings/actions', ctx, { scope: listScope });
 const [form, setForm] = useState(emptyAction);
 const [servers, setServers] = useState([]);
 const [tools, setTools] = useState([]);
@@ -108,12 +121,12 @@ method: 'POST', headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({ projectDir, originalId: isNew ? '' : id, action })
 });
 if (r.status !== 200) { setStatus((r.body && r.body.error) || ('HTTP ' + r.status)); return; }
-nav('settings/actions' + projectQS(projectDir) + fromQS);
+nav(actionsListPath);
 }
 async function remove() {
 if (!confirm('Delete custom action "' + id + '"?')) return;
 const r = await fetchJson('/api/actions/' + encodeURIComponent(id) + projectQS(projectDir), { method: 'DELETE' });
-if (r.status === 200) nav('settings/actions' + projectQS(projectDir) + fromQS);
+if (r.status === 200) nav(actionsListPath);
 else setStatus((r.body && r.body.error) || ('HTTP ' + r.status));
 }
 return h(Fragment, null,

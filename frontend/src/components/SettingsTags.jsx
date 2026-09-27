@@ -25,10 +25,18 @@ folder: separator >= 0 ? normalized.slice(0, separator) : 'Project root'
 
 export function SettingsTagsView(props) {
   const projectDir = props.projectDir || '';
+  // Where this page was opened from: the project settings page (which
+  // re-emits the origin it was entered from) or the Settings → Projects
+  // list. The old link was the legacy `#/projects`, which lands on the
+  // chat list and drops the project context entirely.
+  const from = typeof props.from === 'string' ? props.from : '';
+  const back = from === 'settings/projects'
+    ? { path: 'settings/projects', label: 'Back to project list' }
+    : (from === 'projects' ? { path: 'projects', label: 'Back to projects' } : { path: 'settings', label: 'Back to settings' });
+  const [resolvedId, setResolvedId] = useState(props.projectId || '');
   // The view may be reached with only a projectDir (Settings → Active
   // project → File tags). Resolve the registered project id from the
   // path in that case; a passed-in id always wins.
-  const [resolvedId, setResolvedId] = useState(props.projectId || '');
 
   const [statusMsg, setStatusMsg] = useState({text: '', kind: ''});
   const [tagMap, setTagMap] = useState({});
@@ -323,7 +331,7 @@ export function SettingsTagsView(props) {
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '‹'),
+      h('a', { href: '#/' + back.path, class: 'view-back', 'aria-label': back.label }, '‹'),
       h('h2', { class: 'view-title' }, 'File tags')
     ),
     // The scroll container. Flush routes (no tab bar) only scroll when

@@ -21,6 +21,7 @@ import { useState, useEffect, useMemo, useRef } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
 import { ToolTree, buildToolGroups } from './ToolTree.jsx';
 import { PromptIcon, PROMPT_ICONS } from './PromptIcon.jsx';
+import { settingsLink } from './settings/projectNavigation.js';
 import { presetToolSelection, applyToolToggle } from './settings/presetTools.js';
 import {
   PROFILE_PREFIX, readLaunchers, launcherSource, effectiveLauncher, withLauncher
@@ -91,6 +92,7 @@ function presetsEqual(a, b) {
 export function SettingsPromptsView(props) {
 const rawProjectDir = resolveProjectDir(props);
 const from = (props && typeof props.from === 'string') ? props.from : '';
+const chatId = (props && typeof props.chatId === 'string') ? props.chatId : '';
   // If explicitly opened from Settings -> App defaults (via route or props.scope === 'app'),
   // or if there is no projectDir, target scope is app.
   const isAppScopedRoute = (props && props.scope === 'app') || !rawProjectDir;
@@ -725,9 +727,10 @@ scope: effectiveScope
   // may be project-owned or inherited from the app.
   const showScopeBadge = !!projectDir;
 
-  const backHref = projectDir
-? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''))
-: '#/settings';
+  // Project scope goes back to project settings (keeping the chat and the
+  // origin); the App-defaults scope is the Settings root, never a project
+  // page built from an unrelated active project.
+  const backHref = projectDir ? settingsLink('settings/project', { projectDir, chatId, from }) : '#/settings';
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },

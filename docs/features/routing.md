@@ -23,22 +23,23 @@ Every view has a hash. Deep links are stable and old names keep working.
 | `#/settings/pricing` | Pricing |
 | `#/settings/about` | About |
 | `#/settings/project?projectDir=…&chatId=…` | Project settings |
-| `#/settings/project/technical` | Project settings → Technical details |
-| `#/settings/project/output` | Project settings → File tool options (Layout: Hierarchical / Full JSON) |
-| `#/settings/project/preview` | Project settings → Web preview |
-| `#/settings/project/hide?file=…` | Project settings → Hide file content |
+| `#/settings/project/technical?projectDir=…&chatId=…&from=…` | Project settings → Technical details |
+| `#/settings/project/output?projectDir=…&chatId=…&from=…` | Project settings → File tool options (Layout: Hierarchical / Full JSON) |
+| `#/settings/project/preview?projectDir=…&chatId=…&from=…` | Project settings → Web preview |
+| `#/settings/project/hide?projectDir=…&chatId=…&from=…&file=…` | Project settings → Hide file content |
 | `#/settings/agents?projectDir=…` | Agents list |
 | `#/settings/agents/<name>?…` | Agent editor (`new` is a draft unless `?edit=1`) |
-| `#/settings/actions?projectDir=…`, `#/settings/actions/<id>` | Custom actions |
+| `#/settings/actions?projectDir=…&scope=project\|app`, `#/settings/actions/<id>?…` | Custom actions (list and editor) |
 | `#/settings/prompts?projectDir=…&scope=app\|project` | Custom prompts (both scopes) |
 | `#/settings/mcp`, `#/settings/mcp/registry`, `#/settings/mcp/new?scope=…`, `#/settings/mcp/<id>` | MCP servers |
-| `#/settings/tags?projectId=…` | File tagging |
+| `#/settings/tags?projectId=…&projectDir=…&from=…` | File tagging |
 
 ### Query parameters
 
 - `projectDir` — which project a project-scoped page is editing. It defaults to the active project; the hash value only overrides it for deep links and tests.
 - `from=projects|settings/projects` — where the user entered project settings from, so **Back** returns there. Any other value is dropped.
-- `chatId` — carries the chat context into project settings and the agent editor.
+- `chatId` — carries the chat context through the whole project drill-down (project settings, its sub-pages, and the project-scoped views), so **Back** can return to the chat it started in.
+- `scope=app\|project` — which list a custom action was opened from, so its Back link returns to that list (inferred from `projectDir` on older links).
 - `scope=app|project` — pre-selects the scope for an MCP add, and tells an edit which list it came from. Any other value is dropped.
 - `file` — the file to open in **Hide file content**.
 - `dir` — the folder to start the project picker in.

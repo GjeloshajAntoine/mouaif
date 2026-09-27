@@ -126,9 +126,13 @@ export function charSpanCount(chars) {
   }, 0);
 }
 
-export function hiddenContentPath({ projectDir = '', from = '', filePath = '' } = {}) {
+export function hiddenContentPath({ projectDir = '', from = '', chatId = '', filePath = '' } = {}) {
   const params = new URLSearchParams({ projectDir });
   if (from) params.set('from', from);
+  // `chatId` rides through the hide page (list ⇄ per-file editor) so the
+  // whole project drill-down can hand it back on the way out and return to
+  // the chat it started in.
+  if (chatId) params.set('chatId', chatId);
   if (filePath) params.set('file', filePath);
   return 'settings/project/hide?' + params.toString();
 }

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings back navigation — mouaif docs</title>
+  <meta name="description" content="Every page under **Settings** has a Back arrow in its header, and every page that belongs to a project is part of a drill-down: the project card (or Settings…" />
+  <meta property="og:site_name" content="mouaif docs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Settings back navigation — mouaif docs" />
+  <meta property="og:description" content="Every page under **Settings** has a Back arrow in its header, and every page that belongs to a project is part of a drill-down: the project card (or Settings…" />
+  <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/settings-back-navigation.html" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="settings-back-navigation">Settings back navigation</h1>
+<h2 id="overview">Overview</h2>
+<p>Every page under <strong>Settings</strong> has a Back arrow in its header, and every page that belongs to a project is part of a drill-down: the project card (or Settings → Projects) opens <strong>Project settings</strong>, which links to <strong>File tool options</strong>, <strong>Web preview</strong>, <strong>Technical details</strong>, <strong>Hide file content</strong>, <strong>MCP servers</strong>, <strong>Custom prompts</strong>, <strong>Custom actions</strong>, and <strong>Agents</strong> — and each of those links onward again. Back navigation is what makes that safe to explore: at any depth, one or two taps return you to where you started, without re-finding the project or the chat.</p>
+<h2 id="usage">Usage</h2>
+<p>The Back arrow points at whichever page you actually came from, most specific first:</p>
+<div class="table-wrap"><table><thead><tr><th>You opened the page from</th><th>Back goes to</th></tr></thead><tbody><tr><td>A chat (its header gear, or any project page reached from a chat)</td><td>that chat</td></tr><tr><td>Project settings</td><td>project settings (keeping the project)</td></tr><tr><td>Settings → Projects</td><td>the registered-projects list</td></tr><tr><td>The Chats tab&#39;s project card</td><td>the Chats tab</td></tr><tr><td>Settings → App defaults (MCP servers, Custom prompts, Custom actions)</td><td>the Settings root</td></tr></tbody></table></div>
+<p>Two examples, both from a phone:</p>
+<ol><li><p><strong>Chat → project settings → File tool options → back → back</strong> returns to the chat. The header gear on a chat opens <code>#/settings/project?projectDir=…&amp;chatId=…</code>; that <code>chatId</code> rides through every sub-page, so the second Back knows which chat to reopen.</p></li><li><p><strong>Settings → MCP servers (app defaults) → Add → Back</strong> returns to the app-wide server list. The list is a project-less page, so its links stay project-less instead of silently adopting the active project.</p></li></ol>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

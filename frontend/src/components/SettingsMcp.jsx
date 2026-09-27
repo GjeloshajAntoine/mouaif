@@ -12,6 +12,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { fetchJson, setActiveProject, activeProject } from '../api.js';
 import { nav } from '../router.js';
 import { projectQS } from './settings/projectQS.js';
+import { settingsLink } from './settings/projectNavigation.js';
 import { McpErrorModal } from './chat/McpErrorModal.jsx';
 
 export function SettingsMcpView(props = {}) {
@@ -21,6 +22,9 @@ export function SettingsMcpView(props = {}) {
   // when an active project exists.
   const projectDir = typeof props.projectDir === 'string' ? props.projectDir : '';
 const from = typeof props.from === 'string' ? props.from : '';
+  // The chat a project drill-down was opened from, carried through every
+  // list/editor link so Back can return to it instead of the Settings root.
+  const chatId = typeof props.chatId === 'string' ? props.chatId : '';
   const projectName = projectDir ? projectDir.split(/[/\\]/).filter(Boolean).pop() || projectDir : '';
 
   const [isOpenBusy, setIsOpenBusy] = useState(false);
@@ -111,8 +115,8 @@ function serverRow(s) {
     // links projectDir-less, the project list links with projectDir and
     // the row's scope so an edit returns to the same list.
     const qs = projectDir
-? projectQS(projectDir) + '&scope=' + encodeURIComponent(s.scope || 'project') + (from ? '&from=' + encodeURIComponent(from) : '')
-: '?scope=app' + (from ? '&from=' + encodeURIComponent(from) : '');
+  ? projectQS(projectDir) + '&scope=' + encodeURIComponent(s.scope || 'project') + (chatId ? '&chatId=' + encodeURIComponent(chatId) : '') + (from ? '&from=' + encodeURIComponent(from) : '')
+  : '?scope=app' + (chatId ? '&chatId=' + encodeURIComponent(chatId) : '') + (from ? '&from=' + encodeURIComponent(from) : '');
 const href = '#/settings/mcp/' + encodeURIComponent(s.id) + qs;
     const showStop = status === 'ready' || status === 'errored' || status === 'starting';
     // Why is Start unavailable? A server mid-start cannot be started
@@ -243,12 +247,14 @@ showServerError(server, error);
 
   useEffect(() => { load(); }, [projectDir]);
 
-// The store route: `from` needs `?` when there is no projectDir query.
-const storeHref = '#/settings/mcp/registry' + projectQS(projectDir) + (from ? (projectDir ? '&' : '?') + 'from=' + encodeURIComponent(from) : '');
-const newHref = '#/settings/mcp/new' + (projectDir ? projectQS(projectDir) + '&scope=project' : '?scope=app') + (from ? '&from=' + encodeURIComponent(from) : '');
-const backHref = projectDir
-? ('#/settings/project?projectDir=' + encodeURIComponent(projectDir) + (from ? '&from=' + encodeURIComponent(from) : ''))
-: '#/settings';
+// Outgoing links. The app list (no projectDir) is the app-defaults
+// sibling; the project list is the project drill-down, so its links carry
+// the chat the drill-down started in and its Back arrow points at project
+// settings (or the chat, when there is one).
+const ctx = { projectDir, chatId, from };
+const storeHref = settingsLink('settings/mcp/registry', ctx);
+const newHref = settingsLink('settings/mcp/new', ctx, { scope: projectDir ? 'project' : 'app' });
+const backHref = projectDir ? settingsLink('settings/project', ctx) : '#/settings';
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },

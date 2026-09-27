@@ -7,6 +7,7 @@ const source = (file) => fs.readFileSync(new URL('../frontend/src/components/' +
   .replace(/^import .*;$/gm, '').replace(/^export /gm, '');
 const projectDir = '/fixture/project & name';
 const from = 'settings/projects';
+const chatId = 'chat-1';
 
 function createView(project) {
   const states = [];
@@ -47,11 +48,13 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
       return { status: 200, body: bodies[endpoint] };
     }
   });
+  const PROJECT_NAV = source('settings/projectNavigation.js');
+  vm.runInContext(PROJECT_NAV, context);
   vm.runInContext(source('settingsProjectUi.js'), context);
   vm.runInContext(source('SettingsProject.jsx'), context);
   function render(page = 'main') {
     cursor = 0; nodes = []; effects = [];
-    context.SettingsProjectView({ projectDir, from, page });
+    context.SettingsProjectView({ projectDir, chatId, from, page });
     first = false;
     return nodes;
   }
@@ -79,12 +82,27 @@ for (const [project, summary] of [
   const after = view.render();
   const link = after.find(node => node.attrs['aria-label'] === 'Hide file content');
   assert.ok(link, 'parent page includes hidden-content navigation');
-  assert.equal(link.attrs.href, '#/settings/project/hide?projectDir=' + encodeURIComponent(projectDir) + '&from=' + encodeURIComponent(from));
+  // The drill-down keeps the chat and the origin it was opened from, so a
+  // round-trip through a sub-page can return to the chat/chat list instead
+  // of degrading to the Settings root.
+  assert.equal(link.attrs.href, '#/settings/project/hide?projectDir=' + encodeURIComponent(projectDir)
+    + '&chatId=' + encodeURIComponent(chatId) + '&from=' + encodeURIComponent(from));
   const detail = link.children.find(node => node.attrs?.class === 'group__row-detail');
   assert.equal(detail.children[0], summary);
   assert.equal(view.requests.some(url => url.includes('/hide-file-content')), false, 'summary reuses loaded project settings');
   for (const [page, title] of [['output', 'File tool options'], ['preview', 'Web preview'], ['technical', 'Technical details']]) {
-    assert.ok(view.render(page).some(node => node.tag === 'h2' && node.children.includes(title)));
+    const nodes = view.render(page);
+    assert.ok(nodes.some(node => node.tag === 'h2' && node.children.includes(title)));
+    // Every sub-page's Back arrow returns to project settings, carrying the
+    // chat and origin with it.
+    const back = nodes.find(node => node.attrs.class === 'view-back');
+    assert.equal(back.attrs.href, '#/settings/project?projectDir=' + encodeURIComponent(projectDir)
+      + '&chatId=' + encodeURIComponent(chatId) + '&from=' + encodeURIComponent(from), page + ' back link');
+    assert.equal(back.attrs['aria-label'], 'Back to project settings');
   }
+  // With a chat in context the project page's own Back arrow returns to it.
+  const mainBack = view.render().find(node => node.attrs.class === 'view-back');
+  assert.equal(mainBack.attrs['aria-label'], 'Back to chat');
+  assert.equal(mainBack.attrs.href, '#/chat/' + chatId + '?projectDir=' + encodeURIComponent(projectDir));
 }
-console.log('PASS project settings initial/loaded renders, hidden-file counts, scoped links and all sibling pages');
+console.log('PASS project settings initial/loaded renders, hidden-file counts, scoped links, sibling pages and Back targets');

@@ -138,22 +138,28 @@ const ROUTES = [
     from: fromParam(m.params)
   })),
   // `File tool options` (size / structure / JSON), a sibling of Technical
-  // details under Settings → Project.
+  // details under Settings → Project. `chatId` (like every project sub-page
+  // below) keeps the chat the user came from, so the whole drill-down can
+  // hand it back on the way out instead of losing it at the first sub-page
+  // and dumping the user on the Settings root.
   exactOrQuery('settings/project/output', (m) => ({
     name: 'settingsProjectOutput',
     projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
     from: fromParam(m.params)
   })),
   // `Web preview`, a sibling of File tool options.
   exactOrQuery('settings/project/preview', (m) => ({
     name: 'settingsProjectPreview',
     projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
     from: fromParam(m.params)
   })),
   // `Hide file content`: redaction rules for the agent file tools.
   exactOrQuery('settings/project/hide', (m) => ({
     name: 'settingsProjectHide',
     projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
     from: fromParam(m.params),
     filePath: m.params.get('file') || ''
   })),
@@ -183,14 +189,22 @@ const ROUTES = [
   })),
 
   // ---- Custom actions ------------------------------------------------
+  // `scope` is the list the user came from ('project' or 'app'); the editor
+  // answers an empty scope from `projectDir` so an old link that predates
+  // it still goes back to the list it was opened from. `chatId` rides along
+  // so the project drill-down can return to its chat.
   exactOrQuery('settings/actions', (m) => ({
     name: 'settingsActions',
     projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
+    scope: m.params.get('scope') === 'app' ? 'app' : (m.params.get('scope') === 'project' ? 'project' : ''),
     from: fromParam(m.params)
   })),
   prefix('settings/actions/', (m) => ({
     name: 'settingsActionEdit', id: decodeId(m.id),
     projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
+    scope: m.params.get('scope') === 'app' ? 'app' : (m.params.get('scope') === 'project' ? 'project' : ''),
     from: fromParam(m.params)
   })),
 
@@ -201,6 +215,7 @@ const ROUTES = [
     name: 'settingsPrompts', id: '',
     projectDir: m.params.get('projectDir') || '',
     scope: m.params.get('scope') || '',
+    chatId: m.params.get('chatId') || '',
     from: fromParam(m.params)
   })),
   prefix('settings/prompts/', (m) => ({
@@ -210,6 +225,7 @@ const ROUTES = [
     name: 'settingsPrompts', id: m.id,
     projectDir: m.params.get('projectDir') || '',
     scope: m.params.get('scope') || '',
+    chatId: m.params.get('chatId') || '',
     from: fromParam(m.params)
   })),
 
@@ -219,14 +235,17 @@ const ROUTES = [
   exactOrQuery('settings/mcp/registry', (m) => ({
     name: 'settingsMcpRegistry',
     projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
     from: fromParam(m.params)
   })),
   // Settings → MCP lists servers in both scopes (app-wide + per project).
   // The active project is the source of truth for the Project tab; the
   // hash can override it via `?projectDir=…` for deep links and tests.
+  // `chatId` keeps the chat a project drill-down came from.
   exactOrQuery('settings/mcp', (m) => ({
     name: 'settingsMcp',
     projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
     from: fromParam(m.params)
   })),
   // "New" is matched before the generic `/:id` entry, so
@@ -236,12 +255,14 @@ const ROUTES = [
   exactOrQuery('settings/mcp/new', (m) => ({
     name: 'settingsMcpEdit', id: '',
     projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
     scope: m.params.get('scope') === 'app' ? 'app' : (m.params.get('scope') === 'project' ? 'project' : ''),
     from: fromParam(m.params)
   })),
   prefix('settings/mcp/', (m) => ({
     name: 'settingsMcpEdit', id: m.id,
     projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
     scope: m.params.get('scope') === 'app' ? 'app' : (m.params.get('scope') === 'project' ? 'project' : ''),
     from: fromParam(m.params)
   })),
@@ -250,7 +271,8 @@ const ROUTES = [
   exactOrQuery('settings/tags', (m) => ({
     name: 'settingsTags',
     projectId: m.params.get('projectId') || '',
-    projectDir: m.params.get('projectDir') || ''
+    projectDir: m.params.get('projectDir') || '',
+    from: fromParam(m.params)
   })),
 
   // ---- Chat + project picker -----------------------------------------

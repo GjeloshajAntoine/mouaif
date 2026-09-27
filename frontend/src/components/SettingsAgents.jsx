@@ -11,7 +11,8 @@
 import { h, Fragment } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { createAgentAutosave } from './settings/agentAutosave.js';
-import { agentQuery, agentEditorPath, agentBackPath } from './settings/agentNavigation.js';
+import { agentQuery, agentEditorPath } from './settings/agentNavigation.js';
+import { backHref, backTarget } from './settings/projectNavigation.js';
 import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
 import { nav } from '../router.js';
 import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
@@ -132,11 +133,12 @@ export function SettingsAgentsView(props) {
     );
   }
 
+  // The list has no `back` object of its own — the editor below declares
+  // one — so it resolves the shared chain inline.
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/settings/project?' + agentQuery(context), class: 'view-back', 'aria-label': 'Back to project' }, '←'),
-      h('h2', { class: 'view-title' }, 'Agents')
-    ),
+      h('a', { href: backHref(context), class: 'view-back', 'aria-label': backTarget(context).label }, '←'),
+      h('h2', { class: 'view-title' }, 'Agents')    ),
     h('section', null,
       h('p', { class: 'hint hint--compact' }, 'Subagent delegation personas, saved in the project\'s .mouaif.json. The subagent tool and @-mentions can delegate to them.'),
       h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
@@ -175,8 +177,10 @@ export function SettingsAgentEditView(props) {
   const agentName = isNew ? '' : (props.id || '');
   const projectDir = resolveProjectDir(props);
   const context = { ...props, projectDir };
-  const backPath = agentBackPath(context);
-  const backLabel = props.returnTo === 'project' ? 'Back to project settings' : 'Back to agents';
+  // One Back chain for the whole project drill-down: the chat it started
+  // in, then project settings (the editor's immediate caller when it was
+  // opened from the Agents row), then the list, then Settings.
+  const back = backTarget(context);
   const mounted = useRef(false);
   const leaving = useRef(false);
   const mutationBusy = useRef(false);
@@ -314,7 +318,7 @@ export function SettingsAgentEditView(props) {
     if (mutationBusy.current) return;
     leaving.current = true;
     if (!isNew && !await autosave.flush()) { leaving.current = false; return; }
-    if (mounted.current) nav(backPath);
+    if (mounted.current) nav(back.path);
   }
 
   function onNameInput(value) {
@@ -395,7 +399,7 @@ export function SettingsAgentEditView(props) {
       setStatusMsg({ text: 'deleting…', kind: 'busy' });
       const r = await fetchJson('/api/agents/' + encodeURIComponent(autosave.name) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' });
       if (r.status !== 200) throw new Error('HTTP ' + r.status);
-      if (mounted.current) nav(backPath);
+      if (mounted.current) nav(back.path);
     } catch (error) { setStatusMsg({ text: error.message || 'network error', kind: 'error' }); }
     finally { mutationBusy.current = false; setIsDeleting(false); }
   }
@@ -403,8 +407,8 @@ export function SettingsAgentEditView(props) {
   if (!projectDir) {
     return h(Fragment, null,
       h('div', { class: 'view-head' },
-        h('a', { href: '#/settings/project', class: 'view-back', 'aria-label': 'Back' }, '←'),
-        h('h2', { class: 'view-title' }, isNew ? 'Add agent' : 'Edit agent')
+      h('a', { href: backHref(context), class: 'view-back', 'aria-label': back.label }, '←'),
+      h('h2', { class: 'view-title' }, isNew ? 'Add agent' : 'Edit agent')
       ),
       h('section', null,
         h('p', { class: 'hint' }, 'No project selected. Open a chat to pick a project, or use the picker to add a new one.'),
@@ -418,7 +422,7 @@ export function SettingsAgentEditView(props) {
   if (!agent) {
     return h(Fragment, null,
       h('div', { class: 'view-head' },
-        h('a', { href: '#/' + backPath, onClick: onBack, class: 'view-back', 'aria-label': backLabel }, '←'),
+        h('a', { href: backHref(context), onClick: onBack, class: 'view-back', 'aria-label': back.label }, '←'),
         h('h2', { class: 'view-title' }, isNew ? 'Add agent' : 'Edit agent')
       ),
       h('section', null, h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text || 'loading…'))
@@ -442,7 +446,7 @@ catalog: toolsCatalog
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
-      h('a', { href: '#/' + backPath, onClick: onBack, class: 'view-back', 'aria-label': backLabel }, '←'),
+      h('a', { href: backHref(context), onClick: onBack, class: 'view-back', 'aria-label': back.label }, '←'),
       h('h2', { class: 'view-title' }, isNew ? 'Add agent' : agent.name)
     ),
     h('section', { class: 'agent-editor' },

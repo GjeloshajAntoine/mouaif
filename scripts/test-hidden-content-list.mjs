@@ -100,6 +100,7 @@ function createList(seed) {
       return { status: 200, body: { rules: server.rules } };
     }
   });
+  vm.runInContext(source('components/settings/projectNavigation.js').replace(/^import .*;$/gm, '').replace(/^export /gm, ''), context);
   vm.runInContext(source('components/settings/hiddenRanges.js').replace(/^import .*;$/gm, '').replace(/^export /gm, ''), context);
   vm.runInContext(source('components/SettingsHiddenContent.jsx').replace(/^import .*;$/gm, '').replace(/^export /gm, ''), context);
 

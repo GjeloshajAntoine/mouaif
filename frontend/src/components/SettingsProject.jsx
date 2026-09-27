@@ -17,6 +17,7 @@ import { McpAuthSeg, segMode } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 
 import { agentEditorPath } from './settings/agentNavigation.js';
+import { backHref, backTarget, settingsLink } from './settings/projectNavigation.js';
 // Web-preview components were previously chat-only. The dedicated
 // "Web preview" page in project settings reuses the same capture
 // endpoint and full-screen viewer so the two surfaces behave identically.
@@ -140,10 +141,17 @@ const [skillsOn, setSkillsOn] = useState(true);
 const [loadedChatId] = useState((initialChatId || '').trim());
 function dir() { return loadedDir; }
 function chatId() { return loadedChatId; }
+// Navigation context for this page's own outgoing links and for the Back
+// arrow. `projectDir` is the loaded dir once load() has run (the seed is
+// used before that), so a link is never built from an empty path.
+function navContext() {
+  const d = dir() || initialDir || '';
+  return { projectDir: d, chatId: chatId(), from };
+}
 // Query-string fragment for navigating back to a project-scoped route.
 // Preserves the `from` context (where project settings were opened from)
-// so a round-trip through a sub-page keeps the correct back target. Put
-// `from` last so an existing ?projectDir=… (or &chatId=…) base is reused.
+// and the `chatId` (the chat the drill-down started in) so a round-trip
+// through a sub-page keeps the correct back target.
 function projectBackQS(targetFrom) {
 const d = dir() || initialDir || '';
 const base = 'projectDir=' + encodeURIComponent(d);
@@ -1089,7 +1097,7 @@ if (struct === 'json') {
 
   if (page === 'output') return h(Fragment, null,
 h('div', { class: 'view-head' },
-h('a', { href: '#/settings/project?' + projectBackQS(), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
+h('a', { href: settingsLink('settings/project', navContext()), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
 h('h2', { class: 'view-title' }, 'File tool options')
 ),
     h('section', { class: 'settings-project' },
@@ -1127,7 +1135,7 @@ h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, outp
   if (page === 'preview') return h(Fragment, null,
 h('div', { class: 'view-head' },
 h('a', {
-href: '#/settings/project?' + projectBackQS(),
+href: settingsLink('settings/project', navContext()),
 class: 'view-back',
 'aria-label': 'Back to project settings'
 }, '←'),
@@ -1194,7 +1202,7 @@ h('h2', { class: 'view-title' }, 'Web preview')
 ;
 if (page === 'technical') return h(Fragment, null,
 h('div', { class: 'view-head' },
-h('a', { href: chatId() ? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || '')) : ('#/settings/project?' + projectBackQS()), class: 'view-back', 'aria-label': chatId() ? 'Back to chat' : 'Back to project settings' }, '←'),
+h('a', { href: settingsLink('settings/project', navContext()), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
 h('h2', { class: 'view-title' }, 'Technical details')
 ),
     h('section', { class: 'settings-project' },
@@ -1286,21 +1294,9 @@ h('h2', { class: 'view-title' }, 'Technical details')
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', {
-href: chatId()
-? ('#/chat/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir() || initialDir || ''))
-: from === 'projects'
-? '#/projects'
-: from === 'settings/projects'
-? '#/settings/projects'
-: '#/settings',
+href: backHref(navContext()),
 class: 'view-back',
-'aria-label': chatId()
-? 'Back to chat'
-: from === 'projects'
-? 'Back to projects'
-: from === 'settings/projects'
-? 'Back to project list'
-: 'Back to settings'
+'aria-label': backTarget(navContext()).label
 }, '←'),
       h('h2', { class: 'view-title' }, 'Project settings')
     ),

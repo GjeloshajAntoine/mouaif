@@ -124,14 +124,16 @@ function check(name, fn) {
     eq('#/settings/project/technical?projectDir=%2Fp&chatId=c1&from=projects', {
       name: 'settingsProjectTechnical', projectDir: '/p', chatId: 'c1', from: 'projects'
     });
-    eq('#/settings/project/output?projectDir=%2Fp&from=projects', {
-      name: 'settingsProjectOutput', projectDir: '/p', from: 'projects'
+    // Every sub-page carries the chat (and the origin): the drill-down must
+    // be able to walk back to the chat it started in, not only to the root.
+    eq('#/settings/project/output?projectDir=%2Fp&chatId=c1&from=projects', {
+      name: 'settingsProjectOutput', projectDir: '/p', chatId: 'c1', from: 'projects'
     });
     eq('#/settings/project/preview?projectDir=%2Fp&from=projects', {
-      name: 'settingsProjectPreview', projectDir: '/p', from: 'projects'
+      name: 'settingsProjectPreview', projectDir: '/p', chatId: '', from: 'projects'
     });
-    eq('#/settings/project/hide?projectDir=%2Fp&from=projects&file=src%2Fa.js', {
-      name: 'settingsProjectHide', projectDir: '/p', from: 'projects', filePath: 'src/a.js'
+    eq('#/settings/project/hide?projectDir=%2Fp&chatId=c1&from=projects&file=src%2Fa.js', {
+      name: 'settingsProjectHide', projectDir: '/p', chatId: 'c1', from: 'projects', filePath: 'src/a.js'
     });
   });
 
@@ -168,28 +170,43 @@ function check(name, fn) {
   // ---- Actions, prompts, MCP, tags ------------------------------------
 
   check('custom actions list and editor', () => {
-    eq('#/settings/actions?projectDir=%2Fp&from=projects', { name: 'settingsActions', projectDir: '/p', from: 'projects' });
-    eq('#/settings/actions/lint?projectDir=%2Fp&from=projects', { name: 'settingsActionEdit', id: 'lint', projectDir: '/p', from: 'projects' });
+    eq('#/settings/actions?projectDir=%2Fp&from=projects', {
+      name: 'settingsActions', projectDir: '/p', chatId: '', scope: '', from: 'projects'
+    });
+    eq('#/settings/actions?scope=app&from=projects', {
+      name: 'settingsActions', projectDir: '', chatId: '', scope: 'app', from: 'projects'
+    });
+    eq('#/settings/actions/lint?projectDir=%2Fp&chatId=c1&scope=project&from=projects', {
+      name: 'settingsActionEdit', id: 'lint', projectDir: '/p', chatId: 'c1', scope: 'project', from: 'projects'
+    });
   });
 
   check('prompts: both scopes and the editor', () => {
-    eq('#/settings/prompts', { name: 'settingsPrompts', id: '', projectDir: '', scope: '', from: '' });
-    eq('#/settings/prompts?scope=app', { name: 'settingsPrompts', id: '', projectDir: '', scope: 'app', from: '' });
-    eq('#/settings/prompts?projectDir=%2Fp&from=projects', { name: 'settingsPrompts', id: '', projectDir: '/p', scope: '', from: 'projects' });
-    eq('#/settings/prompts/pr1?projectDir=%2Fp&scope=project', { name: 'settingsPrompts', id: 'pr1', projectDir: '/p', scope: 'project', from: '' });
+    eq('#/settings/prompts', { name: 'settingsPrompts', id: '', projectDir: '', scope: '', chatId: '', from: '' });
+    eq('#/settings/prompts?scope=app', { name: 'settingsPrompts', id: '', projectDir: '', scope: 'app', chatId: '', from: '' });
+    eq('#/settings/prompts?projectDir=%2Fp&chatId=c1&from=projects', {
+      name: 'settingsPrompts', id: '', projectDir: '/p', scope: '', chatId: 'c1', from: 'projects'
+    });
+    eq('#/settings/prompts/pr1?projectDir=%2Fp&scope=project', { name: 'settingsPrompts', id: 'pr1', projectDir: '/p', scope: 'project', chatId: '', from: '' });
   });
 
   check('mcp: registry, list, new and editor are distinct', () => {
-    eq('#/settings/mcp/registry?projectDir=%2Fp&from=projects', { name: 'settingsMcpRegistry', projectDir: '/p', from: 'projects' });
-    eq('#/settings/mcp?projectDir=%2Fp&from=projects', { name: 'settingsMcp', projectDir: '/p', from: 'projects' });
-    eq('#/settings/mcp/new?scope=app', { name: 'settingsMcpEdit', id: '', projectDir: '', scope: 'app', from: '' });
-    eq('#/settings/mcp/new', { name: 'settingsMcpEdit', id: '', projectDir: '', scope: '', from: '' });
-    eq('#/settings/mcp/server-1?scope=project', { name: 'settingsMcpEdit', id: 'server-1', projectDir: '', scope: 'project', from: '' });
-    eq('#/settings/mcp/server-1?scope=weird', { name: 'settingsMcpEdit', id: 'server-1', projectDir: '', scope: '', from: '' });
+    eq('#/settings/mcp/registry?projectDir=%2Fp&from=projects', {
+      name: 'settingsMcpRegistry', projectDir: '/p', chatId: '', from: 'projects'
+    });
+    eq('#/settings/mcp?projectDir=%2Fp&chatId=c1&from=projects', {
+      name: 'settingsMcp', projectDir: '/p', chatId: 'c1', from: 'projects'
+    });
+    eq('#/settings/mcp/new?scope=app', { name: 'settingsMcpEdit', id: '', projectDir: '', chatId: '', scope: 'app', from: '' });
+    eq('#/settings/mcp/new', { name: 'settingsMcpEdit', id: '', projectDir: '', chatId: '', scope: '', from: '' });
+    eq('#/settings/mcp/server-1?scope=project', { name: 'settingsMcpEdit', id: 'server-1', projectDir: '', chatId: '', scope: 'project', from: '' });
+    eq('#/settings/mcp/server-1?scope=weird', { name: 'settingsMcpEdit', id: 'server-1', projectDir: '', chatId: '', scope: '', from: '' });
   });
 
-  check('tags carry projectId and projectDir', () =>
-    eq('#/settings/tags?projectId=p1&projectDir=%2Fp', { name: 'settingsTags', projectId: 'p1', projectDir: '/p' }));
+  check('tags carry projectId, projectDir and the origin it was opened from', () =>
+    eq('#/settings/tags?projectId=p1&projectDir=%2Fp&from=settings%2Fprojects', {
+      name: 'settingsTags', projectId: 'p1', projectDir: '/p', from: 'settings/projects'
+    }));
 
   // ---- Chat and the folder picker -------------------------------------
 
