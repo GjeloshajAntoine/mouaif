@@ -7,6 +7,7 @@ import { nav } from '../router.js';
 import { navTarget, settingsLink } from './settings/projectNavigation.js';
 import { McpArguments } from './settings/McpArguments.jsx';
 import { McpOAuth } from './settings/McpOAuth.jsx';
+import { McpSecretKeys } from './settings/McpSecretKeys.jsx';
 
 // Saving stops a running server (src/mcp.js updateServer), so the next
 // start picks up the new settings.
@@ -198,10 +199,17 @@ const chatId = typeof props.chatId === 'string' ? props.chatId : '';
     };
     const envText = env || '';
     const headersText = headers || '';
-    if (clearEnv) body.env = {};
-    else if (envText.trim()) body.env = parseEnv(envText);
-    if (clearHeaders) body.headers = {};
-    else if (headersText.trim()) body.headers = parseHeaders(headersText);
+    // Typed values replace the whole map (the server does not merge), so
+    // they win over a pending Clear all. Text with no valid line would parse
+    // to {} and silently wipe every stored key, so it is rejected instead.
+    if (envText.trim()) {
+      body.env = parseEnv(envText);
+      if (!Object.keys(body.env).length) { setStatusMsg({text: 'Environment: use one KEY=value per line', kind: 'error'}); setIsSaving(false); return; }
+    } else if (clearEnv) body.env = {};
+    if (headersText.trim()) {
+      body.headers = parseHeaders(headersText);
+      if (!Object.keys(body.headers).length) { setStatusMsg({text: 'HTTP headers: use one Name: value per line', kind: 'error'}); setIsSaving(false); return; }
+    } else if (clearHeaders) body.headers = {};
     if (!body.name) { setStatusMsg({text: 'name is required', kind: 'error'}); setIsSaving(false); return; }
     if (transport === 'stdio' && !body.command) { setStatusMsg({text: 'command is required', kind: 'error'}); setIsSaving(false); return; }
     if (transport !== 'stdio' && !body.url) { setStatusMsg({text: 'URL is required', kind: 'error'}); setIsSaving(false); return; }
@@ -308,14 +316,12 @@ const backHref = settingsLink('settings/mcp', listContext, { scope: listScope })
       h(McpArguments, { value: args, onChange: setArgs }),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'mcp-env' }, 'Environment (one KEY=value per line)'),
-        h('textarea', { class: 'input', id: 'mcp-env', rows: 4, spellcheck: false, placeholder: envPlaceholder, 'aria-describedby': 'mcp-env-hint', value: env, onInput: (e) => setEnv(e.target.value) }),
+        h('textarea', { class: 'input', id: 'mcp-env', rows: 4, spellcheck: false, placeholder: clearEnv ? 'KEY=value (optional)' : envPlaceholder, 'aria-describedby': 'mcp-env-hint', value: env, onInput: (e) => setEnv(e.target.value) }),
         h('span', { id: 'mcp-env-hint', class: 'hint hint--compact' }, 'Values are write-only and are never returned by the API. Leave blank to preserve existing values.'),
-        id && configuredEnvKeys.length
-          ? h('div', { class: 'row row--inline', style: 'margin-top:4px' },
-              h('span', { class: 'hint', style: 'font-size:0.72rem;color:var(--muted);flex:1' }, 'Configured keys: ' + configuredEnvKeys.join(', ')),
-              h('button', { class: 'btn btn--small', type: 'button', style: 'color:var(--danger);border-color:var(--danger)', onClick: () => { setClearEnv(true); setEnv(''); setEnvPlaceholder(''); } }, 'Clear all')
-            )
-          : null
+        id ? h(McpSecretKeys, {
+          keys: configuredEnvKeys, noun: 'keys', typed: !!env.trim(), cleared: clearEnv,
+          onClear: () => setClearEnv(true), onUndo: () => setClearEnv(false)
+        }) : null
       ),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'mcp-cwd' }, 'Working directory (optional, relative to project)'),
@@ -330,14 +336,12 @@ const backHref = settingsLink('settings/mcp', listContext, { scope: listScope })
       h(McpOAuth, { id, projectDir, saved: currentServer, value: { ...oauth, url }, onChange: setOauth }),
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'mcp-headers' }, 'HTTP headers (one Name: value per line)'),
-        h('textarea', { class: 'input', id: 'mcp-headers', rows: 4, spellcheck: false, placeholder: headersPlaceholder, 'aria-describedby': 'mcp-headers-hint', value: headers, onInput: (e) => setHeaders(e.target.value) }),
+        h('textarea', { class: 'input', id: 'mcp-headers', rows: 4, spellcheck: false, placeholder: clearHeaders ? 'Name: value (optional)' : headersPlaceholder, 'aria-describedby': 'mcp-headers-hint', value: headers, onInput: (e) => setHeaders(e.target.value) }),
         h('span', { id: 'mcp-headers-hint', class: 'hint hint--compact' }, 'Header values are write-only and are never returned by the API. Leave blank to preserve existing values.'),
-        id && configuredHeaderKeys.length
-          ? h('div', { class: 'row row--inline', style: 'margin-top:4px' },
-              h('span', { class: 'hint', style: 'font-size:0.72rem;color:var(--muted);flex:1' }, 'Configured keys: ' + configuredHeaderKeys.join(', ')),
-              h('button', { class: 'btn btn--small', type: 'button', style: 'color:var(--danger);border-color:var(--danger)', onClick: () => { setClearHeaders(true); setHeaders(''); setHeadersPlaceholder(''); } }, 'Clear all')
-            )
-          : null
+        id ? h(McpSecretKeys, {
+          keys: configuredHeaderKeys, noun: 'headers', typed: !!headers.trim(), cleared: clearHeaders,
+          onClear: () => setClearHeaders(true), onUndo: () => setClearHeaders(false)
+        }) : null
       )
     ),
     id && currentScope !== 'app' && projectDir ? h('div', { class: 'row' },

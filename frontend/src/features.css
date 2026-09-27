@@ -44,6 +44,13 @@ cursor: pointer;
 .mcp__tools-row { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 5px 8px; }
 .mcp__tools-name { font-family: var(--font-mono); font-size: 0.76rem; color: var(--accent); word-break: break-all; }
 .mcp__tools-desc { font-size: 0.76rem; color: var(--fg-soft); margin-top: 1px; }
+/* Configured env / header keys under the editor's textarea. --pending
+  flags a Save that will replace or remove them (McpSecretKeys). */
+.mcp__keys { margin-top: 4px; flex-wrap: wrap; }
+.mcp__keys-text { flex: 1 1 12rem; min-width: 0; font-size: 0.72rem; color: var(--muted); overflow-wrap: anywhere; }
+.mcp__keys--pending { padding: 6px 8px; border-radius: var(--r-sm); background: var(--warning-soft); }
+.mcp__keys--pending .mcp__keys-text { color: var(--warning); }
+.mcp__keys .btn { min-height: var(--tap); }
 
 /* Scope badge: marks a server row as app-wide vs project-committed. */
 .mcp__scope {
