@@ -2,7 +2,7 @@
 import { h, Fragment } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { fetchJson, projectsReload } from '../api.js';
-import { nav } from '../router.js';
+import { nav, back } from '../router.js';
 
 export function ProjectPickerView(props) {
   const [currentDir, setCurrentDir] = useState(typeof props.dir === 'string' ? props.dir : '');
@@ -42,7 +42,7 @@ const [dbBacked, setDbBacked] = useState(false);
       return;
     }
     projectsReload.value++;
-    nav('projects');
+    back('projects');
   }
 
   async function createFolder() {

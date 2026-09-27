@@ -2,7 +2,7 @@
 import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
-import { nav } from '../router.js';
+import { back } from '../router.js';
 import { navTarget, settingsLink } from './settings/projectNavigation.js';
 import { schemaJson } from './settings/actionSchema.js';
 function projectQS(projectDir) { return projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : ''; }
@@ -121,12 +121,12 @@ method: 'POST', headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({ projectDir, originalId: isNew ? '' : id, action })
 });
 if (r.status !== 200) { setStatus((r.body && r.body.error) || ('HTTP ' + r.status)); return; }
-nav(actionsListPath);
+back(actionsListPath);
 }
 async function remove() {
 if (!confirm('Delete custom action "' + id + '"?')) return;
 const r = await fetchJson('/api/actions/' + encodeURIComponent(id) + projectQS(projectDir), { method: 'DELETE' });
-if (r.status === 200) nav(actionsListPath);
+if (r.status === 200) back(actionsListPath);
 else setStatus((r.body && r.body.error) || ('HTTP ' + r.status));
 }
 return h(Fragment, null,

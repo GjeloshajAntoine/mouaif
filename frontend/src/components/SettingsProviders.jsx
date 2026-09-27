@@ -2,7 +2,7 @@
 import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, loadApp, saveApp, appProviders, loadAccounts, SETTINGS_PROVIDERS, providerDef, authNsForProvider } from '../api.js';
-import { nav } from '../router.js';
+import { back } from '../router.js';
 
 export function SettingsProvidersView() {
   const [list, setList] = useState(null);
@@ -361,7 +361,7 @@ export function SettingsProviderEditView(props) {
     if (r.status !== 200) { setStatusMsg('HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : '')); setStatusType('error'); return; }
     setStatusMsg('saved ' + providerId);
     setStatusType('success');
-    nav('settings/providers');
+    back('settings/providers');
   }
 
   async function deleteProvider() {
@@ -375,7 +375,7 @@ export function SettingsProviderEditView(props) {
       r = await fetchJson('/api/settings/app/providers/' + encodeURIComponent(id), { method: 'DELETE' });
     } catch (err) { setStatusMsg('network error'); setStatusType('error'); setIsDeleting(false); return; }
     if (r.status !== 200) { setStatusMsg('HTTP ' + r.status); setStatusType('error'); setIsDeleting(false); return; }
-    nav('settings/providers');
+    back('settings/providers');
   }
 
   useEffect(() => { load(); }, [id]);

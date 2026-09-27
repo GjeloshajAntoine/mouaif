@@ -16,7 +16,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { fetchJson, loadModels, loadApp } from '../../api.js';
-import { nav } from '../../router.js';
+import { nav, back as goBack } from '../../router.js';
 import {
   refreshActiveProvider, refreshAllProviders, activeProviderId, touchRecent,
   loadPinned, togglePin, modelsForPicker, loadRecent, loadRecentFromServer
@@ -1483,7 +1483,7 @@ onComposerInput(refs, projectDir, chatId, updateChatBound);
     onJumpToPrevMessage: () => scrollToAdjacentMessage(refs, -1),
     onJumpToNextMessage: () => scrollToAdjacentMessage(refs, 1),
 onCancelRunning,
-onBack: () => { window.location.hash = '#/projects'; },
+onBack: () => { goBack('projects'); },
     // ---- Chat switcher -------------------------------------------
     chatSwitcherOpen,
     setChatSwitcherOpen,

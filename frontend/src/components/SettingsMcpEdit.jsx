@@ -3,7 +3,7 @@
 import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
-import { nav } from '../router.js';
+import { back, replace } from '../router.js';
 import { navTarget, settingsLink } from './settings/projectNavigation.js';
 import { McpArguments } from './settings/McpArguments.jsx';
 import { McpOAuth } from './settings/McpOAuth.jsx';
@@ -229,10 +229,10 @@ const chatId = typeof props.chatId === 'string' ? props.chatId : '';
     const saved = r.body && r.body.server;
     if (!id && saved && saved.id) {
     savedFlash = SAVED_TEXT;
-    nav(navTarget('settings/mcp/' + encodeURIComponent(saved.id), listContext, { scope: listScope }));
+    replace(navTarget('settings/mcp/' + encodeURIComponent(saved.id), listContext, { scope: listScope }));
     return;
     }
-    if (!id) { setIsSaving(false); nav(listTarget); return; }
+    if (!id) { setIsSaving(false); back(listTarget); return; }
     const reloaded = await load();
     setIsSaving(false);
     // A failed reload keeps its own error visible; the save itself worked.
@@ -249,7 +249,7 @@ const chatId = typeof props.chatId === 'string' ? props.chatId : '';
     try { r = await fetchJson('/api/mcp/servers/' + encodeURIComponent(id) + qs, { method: 'DELETE' }); }
     catch (e) { setStatusMsg({text: 'network error', kind: 'error'}); setIsDeleting(false); return; }
     if (r.status !== 200) { setStatusMsg({text: 'HTTP ' + r.status, kind: 'error'}); setIsDeleting(false); return; }
-nav(listTarget);
+back(listTarget);
 }
 
   useEffect(() => { load(); }, [id]);

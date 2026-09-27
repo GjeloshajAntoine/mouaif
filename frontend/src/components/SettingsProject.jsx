@@ -10,7 +10,7 @@
 import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage, requestWebpreview } from '../api.js';
-import { nav } from '../router.js';
+import { nav, back } from '../router.js';
 import { ToolTree, shortDesc } from './ToolTree.jsx';
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg, segMode } from './settings/toolAuth.js';
@@ -418,7 +418,7 @@ setSkillsOn(cp.skills !== false);
     const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId()) + '?projectDir=' + encodeURIComponent(dir()), { method: 'DELETE' });
     if (r.status === 200) {
       projectsReload.value++;
-      nav('projects');
+      back('projects');
     } else {
       setChatTraceStatusMsg('delete failed: HTTP ' + r.status);
     }

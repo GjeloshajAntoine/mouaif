@@ -2,7 +2,7 @@
 
 ## Overview
 
-The web UI is a single page with a hash router: no history API, no server-side rewrite. `window.location.hash` decides which view renders, so a deep link, a bookmark and an installed PWA all land in the same place. The whole hash → route mapping is one ordered table in `frontend/src/routes.js`; `frontend/src/router.js` is only the browser wiring (the `hashchange` listener and `nav()`).
+The web UI is a single page with a hash router: every URL is a `/#/…` hash, never a real path, so the server needs no rewrite. `window.location.hash` decides which view renders, so a deep link, a bookmark and an installed PWA all land in the same place. The whole hash → route mapping is one ordered table in `frontend/src/routes.js`; `frontend/src/router.js` is only the browser wiring (the `hashchange` listener, `nav()`, `back()` and `replace()`). In-app Back never adds a history entry, so the phone's Back gesture can't bounce you into the page you just left (see [Back and history](#back-and-history)).
 
 ## Usage
 
@@ -52,3 +52,27 @@ Every view has a hash. Deep links are stable and old names keep working.
 | `#/auth` | `#/settings` |
 | `#/settings/copilot` | `#/settings/providers/github-copilot` |
 | `#/settings/project/agents/<name>?…` | `#/settings/agents/<name>?…` (with `returnTo=project`) |
+
+## Back and history
+
+Every in-app Back control *returns* to the page it names instead of pushing it as a new page. That covers the chat header ←, the ← arrow at the top of every settings page, and the jump back to a list after a save or delete. The browser history therefore stays in step with what you did, and the system Back gesture (Android Back, iOS swipe, the browser button) continues from there:
+
+| You did | In-app ← then system Back |
+|---|---|
+| Chats → a chat → ← | back on Chats; system Back leaves the app (it used to reopen the chat) |
+| Chat → gear → File tool options → ← → ← | back in the chat on its original entry; system Back goes to Chats |
+| Tapped a notification (or opened a deep link) straight into a chat → ← | Chats replaces the chat entry, so no loop |
+| Settings → MCP servers → Add → Save | the new server's editor *replaces* the blank "new" form; its ← goes to the list |
+| Deleted a chat | the list you came from; the deleted chat is not one Back away |
+
+### Using it in code
+
+```js
+import { nav, back, replace } from '../router.js';
+
+nav('settings/providers/new');   // go forward: pushes an entry
+back('settings/providers');      // return: pops to it, or replaces if it isn't behind us
+replace('settings/mcp/fx');      // swap the current entry (a "new" form that was saved)
+```
+
+Header arrows need no code: any `<a class="view-back" href="#/…">` tap is routed through `back()` by a document click listener. Modified clicks (open in a new tab) and links whose own `onClick` calls `preventDefault()` are left alone.

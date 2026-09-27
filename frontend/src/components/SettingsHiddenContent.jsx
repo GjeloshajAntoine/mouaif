@@ -1,7 +1,7 @@
 import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
-import { nav } from '../router.js';
+import { nav, back } from '../router.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 import { HiddenContentEditor } from './settings/HiddenContentEditor.jsx';
 import { describeHidden, hiddenContentPath } from './settings/hiddenRanges.js';
@@ -47,7 +47,7 @@ export function SettingsHiddenContentView({ projectDir = '', from = '', chatId =
     nav(hiddenContentPath({ ...context, filePath: path }));
   }
   function onClose() {
-    nav(hiddenContentPath(context));
+    back(hiddenContentPath(context));
   }
   async function onSave(path, { ranges, chars }) {
     const next = rules.filter((rule) => rule.path !== path);

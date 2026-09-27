@@ -14,7 +14,7 @@ import { createAgentAutosave } from './settings/agentAutosave.js';
 import { agentQuery, agentEditorPath } from './settings/agentNavigation.js';
 import { backHref, backTarget } from './settings/projectNavigation.js';
 import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
-import { nav } from '../router.js';
+import { back as goBack, replace, replaceUrl } from '../router.js';
 import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { ThinkingSelectField } from './ThinkingSelectField.jsx';
@@ -297,7 +297,7 @@ export function SettingsAgentEditView(props) {
       // Replace the URL without remounting the form or adding rename entries
       // to browser history. Future queued saves use the server's current name.
       if (!leaving.current) {
-        window.history.replaceState(null, '', '#/' + agentEditorPath(saved.name, context));
+        replaceUrl(agentEditorPath(saved.name, context));
       }
     }
   }));
@@ -318,7 +318,7 @@ export function SettingsAgentEditView(props) {
     if (mutationBusy.current) return;
     leaving.current = true;
     if (!isNew && !await autosave.flush()) { leaving.current = false; return; }
-    if (mounted.current) nav(back.path);
+    if (mounted.current) goBack(back.path);
   }
 
   function onNameInput(value) {
@@ -386,7 +386,7 @@ export function SettingsAgentEditView(props) {
       return;
     }
     // Replace the creation page so browser Back doesn't reopen a blank form.
-    window.location.replace('#/' + agentEditorPath(r.body.agent.name, context));
+    replace(agentEditorPath(r.body.agent.name, context));
   }
 
   async function deleteAgent() {
@@ -399,7 +399,7 @@ export function SettingsAgentEditView(props) {
       setStatusMsg({ text: 'deleting…', kind: 'busy' });
       const r = await fetchJson('/api/agents/' + encodeURIComponent(autosave.name) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' });
       if (r.status !== 200) throw new Error('HTTP ' + r.status);
-      if (mounted.current) nav(back.path);
+      if (mounted.current) goBack(back.path);
     } catch (error) { setStatusMsg({ text: error.message || 'network error', kind: 'error' }); }
     finally { mutationBusy.current = false; setIsDeleting(false); }
   }

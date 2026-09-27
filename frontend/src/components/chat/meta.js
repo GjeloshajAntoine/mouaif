@@ -7,7 +7,7 @@
 // handler without re-creating closures on every render.
 
 import { fetchJson, projectsReload } from '../../api.js';
-import { nav } from '../../router.js';
+import { back } from '../../router.js';
 import { renderSystemPromptMessage } from './transcript.js';
 import { setChatStatus } from './usage.js';
 
@@ -104,7 +104,7 @@ export function deleteThisChat(state, refs) {
   const { projectDir, chatId } = state.props;
   fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' })
     .then((r) => {
-      if (r.status === 200) { projectsReload.value++; nav('projects'); }
+      if (r.status === 200) { projectsReload.value++; back('projects'); }
       else if (refs.status.current) refs.status.current.textContent = 'delete failed: HTTP ' + r.status;
     })
     .catch(() => { if (refs.status.current) refs.status.current.textContent = 'network error'; });
