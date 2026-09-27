@@ -58,6 +58,20 @@ The app-level table is editable through the existing Settings UI so a user can l
 }
 ```
 
+## Account balance
+
+Next to **Context** and **Total**, the chat header shows a third chip — **Balance** — with the credit your provider account has left:
+
+```text
+Context 14.8K   Total $0.08306   Balance $12.41
+```
+
+- If your connection is **OpenRouter**, the balance is the remaining credit of the key you stored, read live from OpenRouter.
+- If your connection is **OpenAI compatible**, **Mistral**, **Groq**, or **DeepSeek**, the balance comes from the provider's own billing endpoints: prepaid credit when the account has any, otherwise the account's spending limit minus what it has used.
+- Every other provider, a local OpenAI-compatible server with no key, and a key without billing access simply show no chip. Nothing is guessed, so a chip that is there is a real number.
+
+The chip is informational: it refreshes when a chat opens and when you switch model or provider, so a long-open chat may show a slightly stale figure.
+
 ## Behavior
 
 - **Live counter, single turn.** The token/s counter only ticks for the turn that is currently streaming. When a new turn starts, it resets to `0` and follows the new assistant deltas.

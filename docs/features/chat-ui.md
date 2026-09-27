@@ -6,7 +6,7 @@ The chat view provides a mobile-first AI conversation interface with real-time s
 
 ## Interface structure
 
-- **Header bar** — includes the chat switcher to jump between conversations in the same project, the active model picker button, a quick model refresh action, and options to rename, export trace, or delete the chat. The header is a compact two-line bar: the back button, chat title, and usage chips sit on the top line, while the model picker (a text-sized dropdown showing the model id only) and thinking-level select drop to a second line. The two header icons (project-settings gear and tool-popup globe) stack one per line on the right, matching the top line's height. The head has no vertical padding — vertical rhythm comes only from the flex `gap` and the bottom border — so there is no visible gap between the app header and the title, and no gap between the usage chips and the model row below.
+- **Header bar** — includes the chat switcher to jump between conversations in the same project, the active model picker button, a quick model refresh action, and options to rename, export trace, or delete the chat. The header is a compact two-line bar: the back button, chat title, and usage chips sit on the top line, while the model picker (a text-sized dropdown showing the model id only) and thinking-level select drop to a second line. The usage chips are **Context**, **Total**, and — when the provider reports one — **Balance**, the account's remaining credit (see [Usage metrics](./usage-metrics.md#account-balance)). The two header icons (project-settings gear and tool-popup globe) stack one per line on the right, matching the top line's height. The head has no vertical padding — vertical rhythm comes only from the flex `gap` and the bottom border — so there is no visible gap between the app header and the title, and no gap between the usage chips and the model row below.
 - **Transcript area** — displays conversational messages with markdown support, expandable system prompt details, inline tool run cards with live execution status, and per-message usage metrics. Every row spans the full width of the transcript's inner box, so short rows (a one-line `Read …` card) line up with long ones instead of shrinking and floating; the message bubble inside still hugs its text from that shared left edge, and user bubbles stay right-aligned.
 - **Floating composer** — includes actions to attach files or images, an auto-expanding input box, keyboard shortcuts (`Enter` to send, `Shift+Enter` for newlines), and a responsive send button.
 
@@ -37,5 +37,5 @@ The chat view provides a mobile-first AI conversation interface with real-time s
 
 - [Model picker](./model-picker.md) — browsing and switching AI models.
 - [Tool authorization](./tool-authorization.md) — approving or gating tool execution.
-- [Usage metrics](./usage-metrics.md) — token and cost tracking details.
+- [Usage metrics](./usage-metrics.md) — token and cost tracking details, and the account Balance chip.
 - [Custom prompts](./custom-prompts.md) — managing system prompt presets.

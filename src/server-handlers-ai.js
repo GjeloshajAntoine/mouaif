@@ -9,11 +9,13 @@ const {
   readJsonOr400,
   resolveModel,
   credentialForProvider,
+  baseUrlForProvider,
   settings,
   projects,
   ai
 } = require('./server-shared.js');
 const modelList = require('./modelList.js');
+const providerCredit = require('./providerCredit.js');
 
 async function handleAI(req, res, parsed) {
   const urlPath = parsed.pathname;
@@ -87,16 +89,46 @@ async function handleAI(req, res, parsed) {
   }
 
   // GET /api/ai/provider-credit?provider=<id> -> { supported, remaining? }
-  // Provider-specific account balance lookup. Only OpenRouter exposes a
-  // simple key-scoped credits endpoint; unsupported providers return
-  // { supported: false } so the chat head can hide the pill.
+  // Provider-specific account balance lookup. OpenRouter exposes a simple
+  // key-scoped credits endpoint; the OpenAI-shaped providers (OpenAI
+  // compatible, Mistral, Groq, DeepSeek) are asked through the OpenAI billing
+  // routes — credit grants first, then the subscription limit minus usage —
+  // in src/providerCredit.js. Every other provider returns { supported: false }
+  // so the chat head hides the pill instead of showing a guessed number.
   if (urlPath === '/api/ai/provider-credit' && method === 'GET') {
     const provider = typeof parsed.query.provider === 'string' ? parsed.query.provider : '';
-    if (provider !== 'openrouter') return sendJSON(res, 200, { provider, supported: false });
+    const openAIShaped = providerCredit.supportsOpenAIShaped(provider);
+    if (provider !== 'openrouter' && !openAIShaped) {
+      return sendJSON(res, 200, { provider, supported: false });
+    }
     let cred;
     try { cred = credentialForProvider(provider); }
     catch (e) { return sendJSON(res, 400, { provider, supported: true, error: e.message, code: e.code || 'ENO_APIKEY' }); }
-    if (!cred) return sendJSON(res, 400, { provider, supported: true, error: 'OpenRouter API key required', code: 'ENO_APIKEY' });
+    if (!cred) {
+      // A local OpenAI-shaped server needs no key at all, so it simply has no
+      // account balance to report rather than being an error.
+      if (openAIShaped) return sendJSON(res, 200, { provider, supported: false });
+      return sendJSON(res, 400, { provider, supported: true, error: 'OpenRouter API key required', code: 'ENO_APIKEY' });
+    }
+    if (openAIShaped) {
+      // The configured base URL wins: a connection pointed at a self-hosted or
+      // gateway endpoint must be asked there, not at api.openai.com.
+      const baseUrl = baseUrlForProvider(provider) || ai.ENDPOINTS[provider].baseUrl;
+      const result = await providerCredit.lookupOpenAIShaped({ provider, baseUrl, cred });
+      if (!result.ok) {
+        if (result.code === 'EUNREACHABLE') {
+          return sendJSON(res, 503, { provider, supported: true, error: 'Provider unreachable', code: 'EUNREACHABLE' });
+        }
+        // A provider that answers but reports no account balance (a local
+        // server, or a key with no billing scope) is not an error the UI can
+        // act on — report it as "no balance pill" instead of a failure.
+        return sendJSON(res, 200, { provider, supported: false });
+      }
+      const okBody = { provider, supported: true, label: result.label || 'Balance', remaining: result.remaining };
+      if (isFinite(result.totalCredits)) okBody.totalCredits = result.totalCredits;
+      if (isFinite(result.totalUsage)) okBody.totalUsage = result.totalUsage;
+      return sendJSON(res, 200, okBody);
+    }
     let r;
     try {
       r = await fetch(ai.ENDPOINTS.openrouter.baseUrl + '/credits', {

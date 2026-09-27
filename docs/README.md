@@ -38,7 +38,7 @@ One page per feature: what it does and how to use it.
 - [Thinking level](features/thinking-level.md) — choose how much the model reasons, when the provider supports it.
 - [Max output tokens](features/max-output-tokens.md) — cap how many tokens a model may write per turn.
 - [Prompt caching](features/prompt-caching.md) — how cached prompt prefixes lower Anthropic costs.
-- [Usage metrics](features/usage-metrics.md) — per-turn cost and live token speed in the chat.
+- [Usage metrics](features/usage-metrics.md) — per-turn cost, live token speed, and the account **Balance** chip.
 
 ### Projects and settings
 
