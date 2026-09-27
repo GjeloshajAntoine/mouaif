@@ -78,12 +78,7 @@ color: var(--fg-soft); cursor: pointer;
 .prompts__copy.is-copied { color: var(--success, #2e7d32); border-color: var(--success, #2e7d32); }
 .prompts__copy.is-error { color: var(--danger, #c62828); border-color: var(--danger, #c62828); }
 /* Prompt preset editor section (inline in SettingsPromptsView). */
-.prompts__preset { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
-.prompts__preset-head { display: flex; flex-direction: column; gap: 4px; }
-.prompts__preset-main { display: flex; align-items: center; gap: 10px; min-height: var(--tap); cursor: pointer; }
-.prompts__preset-desc { font-size: 0.78rem; color: var(--fg-soft); line-height: 1.35; }
-.prompts__preset-note { margin-top: 2px; }
-.prompts__preset-body { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; border-top: 1px solid var(--border); padding-top: 10px; min-width: 0; }
+.prompts__preset { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; min-width: 0; }
 .prompts__preset-tree { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 4px 6px; min-width: 0; }
 .prompts__preset-loading { font-size: 0.78rem; color: var(--fg-soft); padding: 8px 2px; }
 .prompts__textarea { min-height: 80px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }

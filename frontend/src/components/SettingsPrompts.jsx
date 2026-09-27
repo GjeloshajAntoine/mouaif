@@ -280,15 +280,6 @@ if (content !== loadedSnapshot.content) return true;
       return { tools: base.tools, agentFiles: !!base.agentFiles, skills: !!checked };
     });
   }
-  function togglePresetOn(checked) {
-    // `tools: null` is the all-on baseline — a preset only ever grants
-    // tools, and the tree must open with every row checked.
-    if (checked) {
-      setPreset({ tools: null, agentFiles: false, skills: false });
-      return;
-    }
-    setPreset(null);
-  }
 
   useEffect(() => { loadPrompts(); }, [projectDir]);
   useEffect(() => { loadProjectData(); }, [projectDir]);
@@ -579,13 +570,14 @@ setPreset(null);
       const count = agentFilesAvailable.length;
       out.push({
         id: 'agent-files',
-        title: 'Agent files',
-        subtitle: count + (count === 1 ? ' file' : ' files') + ' · ' + agentFilesAvailable.join(', '),
+        // ToolTree renders `name` / `description`; the old `title` /
+        // `subtitle` keys left this row nameless (just "off").
+        name: 'Agent files',
+        description: isLocked
+          ? 'locked off by project settings'
+          : count + (count === 1 ? ' file' : ' files') + ' · ' + agentFilesAvailable.join(', '),
         checked: !isLocked && !!(preset && preset.agentFiles),
         disabled: isLocked,
-        description: isLocked
-          ? 'Locked off by project settings'
-          : ((preset && preset.agentFiles) ? 'on for chats using this prompt' : 'off'),
         tools: []
       });
     }
@@ -595,13 +587,12 @@ setPreset(null);
       const count = skillsAvailable.length;
       out.push({
         id: 'skills',
-        title: 'Skills',
-        subtitle: count + (count === 1 ? ' skill' : ' skills') + ' · ' + skillsAvailable.join(', '),
+        name: 'Skills',
+        description: isLocked
+          ? 'locked off by project settings'
+          : count + (count === 1 ? ' skill' : ' skills') + ' · ' + skillsAvailable.join(', '),
         checked: !isLocked && !!(preset && preset.skills),
         disabled: isLocked,
-        description: isLocked
-          ? 'Locked off by project settings'
-          : ((preset && preset.skills) ? 'on for chats using this prompt' : 'off'),
         tools: []
       });
     }
@@ -887,38 +878,10 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
       ),
 
       // ---- Prompt preset --------------------------------------------
+      // Always visible. `preset === null` renders as the all-on baseline,
+      // which saves as "no preset", so there is no separate on/off switch.
       h('div', { class: 'row prompts__preset' },
-        // A plain div + one label: the old markup nested a <label> inside
-        // another <label>, which is invalid and made taps toggle twice.
-        h('div', { class: 'prompts__preset-head' },
         h('span', { class: 'label prompt-label' }, 'Chat preset'),
-        h('label', { class: 'prompts__preset-main', for: 'spe-preset-on' },
-        h('span', { class: 'switch' },
-              h('input', {
-                id: 'spe-preset-on',
-                type: 'checkbox',
-                role: 'switch',
-                'aria-checked': String(!!presetActive()),
-                checked: !!presetActive(),
-                onChange: (e) => togglePresetOn(e.currentTarget.checked)
-              }),
-              h('span', { class: 'switch__track', 'aria-hidden': 'true' },
-                h('span', { class: 'switch__thumb' })
-              )
-            ),
-            h('span', { class: 'prompts__preset-desc' },
-              'Tools, agent files, and skills a chat gets when it uses this prompt.'
-            )
-          )
-        ),
-        h('p', { class: 'hint hint--compact prompts__preset-note' },
-          'Tools are additive — a chat that already has a tool keeps it, and the project’s Off/Ask/Allow still wins. ',
-          'Agent files inject AGENTS.md / CLAUDE.md. Skills inject .agents/skills/*/SKILL.md. ',
-          'The project can lock any of these off; the preset cannot override that lock.'
-        )
-      ),
-
-      !presetActive() ? null : h('div', { class: 'row prompts__preset-body' },
         dataLoaded
           ? h(ToolTree, {
               groups,
