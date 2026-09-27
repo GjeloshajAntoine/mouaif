@@ -310,7 +310,8 @@ const backHref = projectDir ? settingsLink('settings/project', ctx) : '#/setting
       h('div', { class: 'page-bar' },
       h('a', { href: storeHref, class: 'btn btn--small btn--primary' }, 'Browse store'),
       h('span', {
-        class: 'status page-bar__status' + (listStatus.kind ? ' status--' + listStatus.kind : ''),
+        class: 'status page-bar__status',
+        'data-state': listStatus.kind || undefined,
         'aria-live': 'polite'
       }, listStatus.text),
       h('button', {

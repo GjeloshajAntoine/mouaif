@@ -326,7 +326,7 @@ const backHref = settingsLink('settings/mcp', listContext, { scope: listScope })
       id ? h('button', { class: 'btn btn--danger', type: 'button', onClick: deleteServer, disabled: isDeleting }, 'Delete') : null
     ),
     h('div', { class: 'row' },
-      h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text)
+      h('span', { class: 'status', 'data-state': statusMsg.kind || undefined, 'aria-live': 'polite' }, statusMsg.text)
     )
     )
   );
