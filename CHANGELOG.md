@@ -1,0 +1,179 @@
+# Changelog
+
+All notable changes to `mouaif` are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Releases are cut from `package.json` with `npm version <patch|minor|major>`,
+which is the version shown by `mouaif info` and printed by `mouaif --help`.
+
+## [0.8.0] — Unreleased
+
+### Added
+
+- **Built-in prompts in the prompt editor** — Very small, Average, Extensive,
+  and Chat open in the same editor as a custom prompt; the title and text are
+  read-only, while each profile can be given an icon and pinned to a project
+  card to start a chat with that prompt size.
+- **Project card search** — a magnifier on a project card searches that
+  project's chats, drafts, and messages.
+
+### Fixed
+
+- **Settings Back arrow** — the app-scoped sub-pages (MCP servers, custom
+  prompts, custom actions) and the chat-scoped project settings now build their
+  Back links through one URL-safe helper, so Back returns where you came from
+  instead of falling back to the Chats tab.
+- **@-mention category filter** — tapping a category chip and then typing keeps
+  the filter applied instead of expanding back to every category.
+- **Subagent progress** — a `report_progress` / `task` call made by a subagent
+  shows its title and percentage inside the nested row, tagged with its parent
+  call, instead of drawing a separate card at the bottom of the transcript.
+- **Status notification usage** — each round is counted once in the token and
+  cost row, so a 262-token turn no longer reports 671 tok.
+- **Custom-prompt editor on mobile** — no empty Chat profile in the picker,
+  `<title> (new)` for an unsaved prefilled prompt, Create/Save disabled until
+  the prompt has content, a full-width scope segment, and the Save / Create /
+  Delete bar pinned to the bottom of the screen.
+- **Chat preset tree** — always shown, with the Agent files and Skills rows
+  named instead of rendering as a bare `off`.
+
+## [0.5.7] — 2026-09-26
+
+### Added
+
+- **Chat scroll navigation** — 26 px previous / next / bottom arrows anchored to
+  the transcript, each with a 44 px tap area.
+- **Web preview Live mode** — an unrestricted `Live` iframe the viewer can show,
+  and that the agent can open by calling the preview tool with `mode: live`.
+- **Per-chat prompt snapshot** — pin a chat's custom prompt so the chat keeps
+  using that text even if the prompt is later edited.
+- **Attach any text file** — an `@`-mention attaches every text file, not only
+  allowlisted code files.
+
+### Changed
+
+- **Prompt profiles** — `chat` is a plain prompt-style value that no longer
+  unchecks every tool, and a chat preset starts from the all-on tool baseline.
+- **Tools popup** — the auto-retry switch and its label sit side by side, and
+  the redundant auto-retry row is gone from the footer.
+- **Chat UI** — the `ask_user` question card is compacted for phones, the file
+  orb is a clear glass bubble with translucent, textured counts, and the
+  transcript fills the screen above 600 px so the composer stays at the bottom.
+- **Inspector** — the Styles panel's element identity chip is smaller.
+
+### Fixed
+
+- **MCP robustness** — tool calls are cancelled on Stop and honour server
+  timeouts, in-flight calls fail fast when a server crashes, and composed tool
+  names are sanitized to provider limits.
+- **Chat ordering** — message rows keep their `seq` order around client-only
+  rows and tool turns.
+- **Retired prompt** — the auto-seeded Chat prompt is dropped from app settings.
+- **Tool list** — `/api/tools/list` answers without a `projectDir`.
+
+## [0.5.0] — 2026-09-26
+
+### Added
+
+- **MCP OAuth** — the client-credentials grant, confidential clients with a
+  keychain-stored secret, RFC 7009 revocation, and the legacy SSE transport.
+- **GitHub Copilot provider** — GitHub device-code sign-in, a per-chat Copilot
+  token exchange, and a live model list.
+- **Background terminal** — a CLI shell session that survives closing the sheet.
+- **MCP store** — the registry browser is a user-friendly store.
+- **`chat` prompt profile** — an empty system prompt with no tools checked.
+- **Hide the status line** — an option to drop the status line under the chat
+  composer.
+- **Web preview flexibility** — any URL scheme and any viewport size.
+
+### Changed
+
+- **Performance** — the web-preview viewer and image annotator load lazily,
+  static assets are served brotli/gzip-compressed, and the server lazily loads
+  `ws`, `web-push`, and `keyring` with bounded in-memory tables.
+- **Chat** — tok/s is measured per round and stored on each assistant row,
+  in-flight subagent cost stays in the live total, the transcript stays pinned
+  while a reply streams, and every message has a Copy action.
+- **CLI modal** — runs on a pseudo-terminal (ConPTY on Windows), with Tab
+  completion, suggestion rows, and key rows.
+- **Git modal** — one reducer, 44 px controls, real stash refs, and a guard
+  against option injection in `/api/git`.
+- **Settings** — the hide-file-content editor is redesigned for touch, and the
+  Settings sub-pages scroll to the bottom on flush routes.
+
+### Fixed
+
+- Streaming replies and early shell output reach chat followers, the persisted
+  segment's real `seq` is broadcast, and the tail append no longer draws a live
+  reply twice.
+- MCP start failures explain themselves and the start control is recognizable.
+- The Inspector opens a new window when Chrome has no browser window left, and
+  the Styles tab is easier to read.
+- Several chat card fixes: tool rows folded inside a subagent card, one scroller
+  per tool card, the Thinking block stays open when the reply finalizes, and
+  the expanded system prompt wraps inside its card.
+
+## [0.3.5] — 2026-09-24
+
+### Added
+
+- **Local OpenAI-compatible servers** — connect llama.cpp's `llama-server` or
+  LM Studio with no API key.
+- **`@`-mention ranking** — suggestions are ranked, highlighted, and
+  fuzzy-matched.
+- **CLI terminal modal** — suggestion rows, key rows, and Tab behavior on
+  phones and with a hardware keyboard.
+- **Chat streaming performance** — incremental live previews, coalesced progress
+  updates, and no layout or paint for off-screen transcript rows.
+
+### Fixed
+
+- Refreshed OAuth tokens are persisted under the resolved account.
+- The `url.parse` deprecation warning no longer fires on every request.
+- CLI sessions hold escape sequences and UTF-8 characters split across output
+  chunks, resolve symlinked project paths, stop backgrounded jobs on close, and
+  always run on a pty.
+- The tail append no longer draws a live reply twice.
+
+## [0.3.2] — 2026-09-22
+
+### Added
+
+- **`search_files` on ripgrep** — with a bounded JavaScript walk as fallback.
+
+### Changed
+
+- npm publishing metadata: license, author, and the public registry.
+- `better-sqlite3` upgraded to `^12.11.1` for Windows prebuilts.
+- The Inspector panel switcher scrolls with the inspect view.
+
+### Fixed
+
+- Both search backends agree, and a redaction leak in search results is closed.
+- The Inspector preview and Styles strip no longer blink.
+- No light flash before the bundle stylesheet loads.
+- A stale PWA update intent no longer reloads the page later, and an
+  unrequested controller change no longer reloads open tabs.
+- The Docker image builds (`prepare-web.js` is copied before `npm ci`).
+- The status percentage stays on the push bar's line.
+- Composer send is guarded during live follow and syncs immediately at run end.
+
+## [0.3.0] — 2026-09-16
+
+### Added
+
+- **Initial public release on npm** — `mouaif` published with a pre-built web UI,
+  so `npx mouaif serve --auth` needs no build step.
+- Mobile-first tabbed UI (Chats, Dictate, Inspector, Settings) served by
+  `mouaif serve` on port `5732`.
+- Projects, chats, providers, MCP servers, and the coding tools (shell, files,
+  subagents) with per-project **Off / Ask / Allow** gating.
+- Access authentication with a setup link and QR code.
+
+[0.8.0]: https://www.npmjs.com/package/mouaif
+[0.5.7]: https://www.npmjs.com/package/mouaif/v/0.5.7
+[0.5.0]: https://www.npmjs.com/package/mouaif/v/0.5.0
+[0.3.5]: https://www.npmjs.com/package/mouaif/v/0.3.5
+[0.3.2]: https://www.npmjs.com/package/mouaif/v/0.3.2
+[0.3.0]: https://www.npmjs.com/package/mouaif/v/0.3.0
