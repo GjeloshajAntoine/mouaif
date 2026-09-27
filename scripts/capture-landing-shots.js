@@ -40,7 +40,7 @@ const OUT_DIR = path.join(ROOT, 'docs/features/images/landing');
 // CDP client, and the throwaway demo project both capture scripts shoot.
 const {
   findChrome, createCdp, waitForFile, isPortFree, freePort,
-  writeFixtureProject, gitInit
+  writeFixtureProject, gitInit, listenFixtureUpstream
 } = require(path.join(ROOT, 'scripts/lib/capture-fixture.js'));
 
 // ---- args ---------------------------------------------------------------
@@ -227,6 +227,19 @@ async function main() {
 
       process.env.MOUAIF_HOME = home;
       process.env.MOUAIF_ALLOW_ANY_ROOT = '1';
+
+      // The OpenAI-compatible connection's endpoint. Started before the app
+      // server so the connection stores its real origin in one pass, and before
+      // any module reads the fixture's model records. Port 8081 first: the
+      // provider row renders this URL in the captures, and a stable port keeps
+      // a re-capture comparable (an ephemeral one is used if 8081 is taken).
+      const upstream = await listenFixtureUpstream({
+      models: require(path.join(ROOT, 'scripts/lib/landing-fixture.js')).MODELS,
+      port: 8081
+      });
+      servers.push(upstream.server);
+      logs.push('fixture upstream on ' + upstream.baseUrl);
+
       const settings = require(path.join(ROOT, 'src/settings.js'));
       const projects = require(path.join(ROOT, 'src/projects.js'));
       const chats = require(path.join(ROOT, 'src/chats.js'));
@@ -242,7 +255,13 @@ async function main() {
       fs.writeFileSync(path.join(secondDir, 'README.md'), '# api-server\n');
       projects.registerProject(secondDir);
       seed.seedSecondProject(secondDir, chats);
-      seed.installProviders(settings);
+      seed.installProviders(settings, {
+      // The fixture's models run on an OpenAI-compatible connection pointed
+      // at this stub, so the chat head's Balance chip is a real answer from a
+      // local server instead of a live billing call to a third party.
+      // See listenFixtureUpstream in scripts/lib/capture-fixture.js.
+      'openai-compatible': { baseUrl: upstream.baseUrl, apiKey: 'sk-demo-not-a-real-key' }
+      });
       seed.installProjectModels(projectDir);
       const seeded = seed.seedChats(projectDir, chats, messages);
       state.chatId = seeded.chatId;

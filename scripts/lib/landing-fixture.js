@@ -15,22 +15,40 @@ const CHAT_ID = '1f7c2a90';
 const CHAT_TITLE = 'Fix task ordering after restart';
 
 const PROVIDERS = [
-  { id: 'anthropic', baseUrl: 'https://api.anthropic.com', apiKey: 'sk-ant-demo-not-a-real-key', auth: 'apikey' },
+  // Providers first, models second: a project model names the connection it
+  // runs on, so a connection added afterwards would leave the seeded chats
+  // pointing at a provider the app store does not list.
   { id: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', apiKey: 'sk-demo-not-a-real-key', auth: 'apikey' },
+  { id: 'anthropic', baseUrl: 'https://api.anthropic.com', apiKey: 'sk-ant-demo-not-a-real-key', auth: 'apikey' },
+  { id: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', apiKey: 'demo-not-a-real-key', auth: 'apikey' },
   { id: 'ollama', baseUrl: 'http://127.0.0.1:11434', auth: 'apikey' },
   { id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'sk-or-demo-not-a-real-key', auth: 'apikey' },
-  { id: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com', apiKey: 'demo-not-a-real-key', auth: 'apikey' },
   { id: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'demo-not-a-real-key', auth: 'apikey' },
   { id: 'groq', baseUrl: 'https://api.groq.com/openai/v1', apiKey: 'gsk-demo-not-a-real-key', auth: 'apikey' }
 ];
 
 const MODELS = [
-  { id: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Claude Sonnet 4.6', contextWindow: 200000 },
-  { id: 'gpt-5.4-mini', provider: 'openai-compatible', label: 'GPT-5.4 mini', contextWindow: 128000 }
+  // The transcript chat runs on the OpenAI-compatible model on purpose: its
+  // provider is the one whose account balance the capture script can serve
+  // from a local stub, so the chat head in the landing capture shows the
+  // Context / Total / Balance row the app really renders. The model id has a
+  // built-in price in src/usage.js (`gpt-4o`) so Total is a real total.
+  { id: 'gpt-4o', provider: 'openai-compatible', label: 'GPT-4o', contextWindow: 128000 },
+  { id: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Claude Sonnet 4.6', contextWindow: 200000 }
 ];
 
-function installProviders(settings) {
-  settings.setApp({ providers: PROVIDERS });
+// installProviders(settings, overrides)
+//
+// Writes the fixture's provider connections. `overrides` maps a provider id to
+// fields that replace the shipped ones — the capture script points the
+// OpenAI-compatible connection at its own local stub, because a docs build must
+// not put a placeholder key on the wire to a third-party endpoint.
+function installProviders(settings, overrides) {
+  const providers = PROVIDERS.map((p) => {
+    const patch = overrides && overrides[p.id];
+    return patch ? Object.assign({}, p, patch) : Object.assign({}, p);
+  });
+  settings.setApp({ providers });
 }
 
 // Chats the project card shows alongside the seeded one. Titles and drafts
@@ -117,14 +135,14 @@ function seedChats(projectDir, chats, messages) {
   const main = chats.createChat(projectDir, { title: CHAT_TITLE });
   for (const row of transcript()) messages.appendMessage(projectDir, main.id, row);
   chats.updateChat(projectDir, main.id, {
-    modelId: 'claude-sonnet-4-6',
-    providerId: 'anthropic',
+    modelId: 'gpt-4o',
+    providerId: 'openai-compatible',
     draft: 'Now add a done toggle to the board view.'
   });
   const empty = chats.createChat(projectDir, { title: 'New chat' });
   chats.updateChat(projectDir, empty.id, {
-    modelId: 'claude-sonnet-4-6',
-    providerId: 'anthropic'
+    modelId: 'gpt-4o',
+    providerId: 'openai-compatible'
   });
   chats.recomputeProjectTotalCost(projectDir);
   return { chatId: main.id, emptyChatId: empty.id };
@@ -184,7 +202,7 @@ function transcript() {
       role: 'assistant',
       content: "I'll read the store first, then check what happens to the order on load.",
       reasoning: 'Two places can reorder: the in-memory Map, and whatever rebuilds it on load. Read the store before changing anything.',
-      usage: usage(3140, 96), cost: cost(0.01571, 0.00288), modelId: 'claude-sonnet-4-6', streamingMs: 1840
+      usage: usage(3140, 96), cost: cost(0.01571, 0.00288), modelId: 'gpt-4o', streamingMs: 1840
     },
     {
       role: 'tool', phase: 'call', toolCallId: 'call_demo_read', name: 'read_file',
@@ -200,7 +218,7 @@ function transcript() {
     {
       role: 'assistant',
       content: 'Tasks live in a `Map`, so the order in memory is insertion order. Something rebuilding that map on load must sort it. Let me find the query.',
-      usage: usage(3412, 88), cost: cost(0.01706, 0.00264), modelId: 'claude-sonnet-4-6', streamingMs: 1520
+      usage: usage(3412, 88), cost: cost(0.01706, 0.00264), modelId: 'gpt-4o', streamingMs: 1520
     },
     {
       role: 'tool', phase: 'call', toolCallId: 'call_demo_search', name: 'search_files',
@@ -220,7 +238,7 @@ function transcript() {
     {
       role: 'assistant',
       content: 'Found it: `src/store.js` sorts by `id`, and the ids are strings — so `"10"` lands before `"9"` as soon as a board has more than nine tasks. I\'ll read that file before changing it.',
-      usage: usage(3624, 104), cost: cost(0.01812, 0.00312), modelId: 'claude-sonnet-4-6', streamingMs: 1990
+      usage: usage(3624, 104), cost: cost(0.01812, 0.00312), modelId: 'gpt-4o', streamingMs: 1990
     },
     {
       role: 'tool', phase: 'call', toolCallId: 'call_demo_read2', name: 'read_file',
@@ -267,7 +285,7 @@ function transcript() {
     {
       role: 'assistant',
       content: 'All three tests pass, including the restart-ordering case. The board keeps insertion order now; the fix is one line in `src/store.js`.',
-      usage: usage(3980, 121), cost: cost(0.01990, 0.00363), modelId: 'claude-sonnet-4-6', streamingMs: 2410
+      usage: usage(3980, 121), cost: cost(0.01990, 0.00363), modelId: 'gpt-4o', streamingMs: 2410
     }
   ];
   return rows.map((row) => ({ ...row, ts: ts() }));

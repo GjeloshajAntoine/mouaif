@@ -32,7 +32,7 @@ const ROOT = path.resolve(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'docs/features/images/draft-craft');
 const {
   findChrome, createCdp, waitForFile, isPortFree, freePort,
-  writeFixtureProject, gitInit
+  writeFixtureProject, gitInit, listenFixtureUpstream
 } = require(path.join(ROOT, 'scripts/lib/capture-fixture.js'));
 
 const argv = process.argv.slice(2);
@@ -320,6 +320,13 @@ async function main() {
     const messages = require(path.join(ROOT, 'src/messages.js'));
     const seed = require(path.join(ROOT, 'scripts/lib/landing-fixture.js'));
 
+    // The models the capture runs on. Started before the providers are written
+    // so the OpenAI-compatible connection stores this stub's origin — which is
+    // also what makes the chat head's Balance pill answerable locally.
+    const upstream = await listenFixtureUpstream({ models: seed.MODELS, port: 8081 });
+    servers.push(upstream.server);
+    logs.push('fixture upstream on ' + upstream.baseUrl);
+
     settings.runMigrations();
     projects.registerProject(projectDir);
     const secondDir = path.join(tempRoot, 'api-server');
@@ -327,7 +334,9 @@ async function main() {
     fs.writeFileSync(path.join(secondDir, 'README.md'), '# api-server\n');
     projects.registerProject(secondDir);
     seed.seedSecondProject(secondDir, chats);
-    seed.installProviders(settings);
+    seed.installProviders(settings, {
+    'openai-compatible': { baseUrl: upstream.baseUrl, apiKey: 'sk-demo-not-a-real-key' }
+    });
     seed.installProjectModels(projectDir);
     const seeded = seed.seedChats(projectDir, chats, messages);
     state.chatId = seeded.chatId;

@@ -226,6 +226,75 @@ function gitInit(dir) {
   } catch { /* a missing git binary must not fail the capture */ }
 }
 
+// ---- The OpenAI-compatible fixture connection ---------------------------
+//
+// The demo project's models run on an OpenAI-compatible connection on purpose.
+// Two things follow, both deliberate:
+//
+//   * the connection points at a local stub that answers the model list and the
+//     OpenAI billing routes, because a docs capture must not put the fixture's
+//     placeholder key on the wire to a real third-party endpoint;
+//   * the stub answers OpenAI's `/dashboard/billing/credit_grants`, so the chat
+//     head's Balance pill (GET /api/ai/provider-credit, see
+//     src/providerCredit.js) has a real number on screen — the same pill the
+//     app renders for a real OpenAI-shaped account. Without it a capture could
+//     only ever show Context and Total.
+//
+// The three figures are fixed so a re-capture is byte-comparable: $20 granted,
+// $16.58 used, $3.42 left.
+const FIXTURE_BALANCE = Object.freeze({
+  total_granted: 20,
+  total_used: 16.58,
+  total_available: 3.42
+});
+
+// listenFixtureUpstream({ models, port }) -> { server, baseUrl }
+//
+// The base URL is the connection's `/v1` root (what a provider row stores); the
+// stub also accepts the same routes without the `/v1` prefix, because the
+// billing lookup asks the origin.
+//
+// `port` is a *preference*, exactly like the Chrome debugging port below: the
+// provider row renders this URL inside the captures, so a stable port keeps a
+// re-capture byte-comparable. When the port is taken, an ephemeral one is used
+// rather than failing the run.
+function listenFixtureUpstream({ models, port = 0 } = {}) {
+  const rows = (models || []).filter((m) => m && m.provider === 'openai-compatible');
+  const server = require('http').createServer((req, res) => {
+    const url = (req.url || '').split('?')[0];
+    const send = (body, status) => {
+      res.writeHead(status || 200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(body));
+    };
+    if (/^\/(?:v1\/)?dashboard\/billing\/credit_grants$/.test(url)) return send(FIXTURE_BALANCE);
+    if (/^\/(?:v1\/)?models$/.test(url)) {
+      return send({
+        object: 'list',
+        data: rows.map((m) => ({ id: m.id, object: 'model', owned_by: 'openai' }))
+      });
+    }
+    return send({ error: { message: 'the capture fixture answers the model list and billing only' } }, 404);
+  });
+  const listen = (p) => new Promise((resolve, reject) => {
+    const onError = (err) => {
+      server.removeListener('error', onError);
+      reject(err);
+    };
+    server.once('error', onError);
+    server.listen(p, '127.0.0.1', () => {
+      server.removeListener('error', onError);
+      resolve();
+    });
+  });
+  return listen(port).catch((err) => {
+    if (err && err.code === 'EADDRINUSE' && port !== 0) return listen(0);
+    throw err;
+  }).then(() => ({
+    server,
+    baseUrl: 'http://127.0.0.1:' + server.address().port + '/v1'
+  }));
+}
+
 module.exports = {
   findChrome,
   createCdp,
@@ -233,5 +302,7 @@ module.exports = {
   isPortFree,
   freePort,
   writeFixtureProject,
-  gitInit
+  gitInit,
+  FIXTURE_BALANCE,
+  listenFixtureUpstream
 };

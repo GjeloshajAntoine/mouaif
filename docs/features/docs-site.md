@@ -37,7 +37,7 @@ The eight captures, in page order:
 | `chat-tools.png` | A brand-new chat — the system-prompt card and the **Tools** card, one checkbox and one **Off / Ask / Allow** control per tool |
 | `subagent-auth.png` | A **subagent** approval card on a paused run — the delegated task, the per-run model picker and thinking select, and the **Allow once / Allow session / Always allow / Deny** buttons |
 | `chats-list.png` | The Chats tab — two project cards, each holding its own scrolling chat list and **New chat** |
-| `chat-view.png` | A chat at the end of a run — the model header, per-turn cost lines, and the **Read**, **Searched**, **Wrote** and **Ran** tool cards |
+| `chat-view.png` | A chat at the end of a run — the **Context**, **Total** and **Balance** chips, per-turn cost lines, and the **Read**, **Searched**, **Wrote** and **Ran** tool cards |
 | `providers.png` | Settings → Providers — seven connected providers, each naming its endpoint and whether a key is stored |
 | `project-settings.png` | Project settings — prompt style, then every tool with its own **Off / Ask / Allow** control |
 | `inspector.png` | The Inspector attached to a page over CDP — target bar, panel chips, live preview, console input |

@@ -1327,7 +1327,7 @@ const landingShots = [
   ],
   [
     'features/images/landing/chat-view.png',
-    'A chat at 390 px: the model header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
+    'A chat at 390 px: the Context, Total and Balance chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
     'Chats — a run reads, searches, edits and tests'
   ],
   [
