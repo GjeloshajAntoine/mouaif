@@ -1738,9 +1738,14 @@ promptSize: callOpts && callOpts.promptSize,
           // `progress_update` never gets persisted by the parent, so it is
           // safe to reuse the event name directly (no transcript corruption,
           // unlike tool_call / tool_result / message below).
+          // `parentCallId` names the subagent card the update belongs to, so
+          // the chat UI draws the bar on the nested tool row inside that card
+          // instead of as a detached top-level progress card.
           if (eventName === 'progress_update') {
-            onEvent('progress_update', data);
-            return;
+          onEvent('progress_update', Object.assign({}, data, {
+          parentCallId: (callOpts && callOpts.callId) || null
+          }));
+          return;
           }
           // Forward nested progress under a distinct event name. The
           // parent's SSE layer persists every `tool_call` / `tool_result`

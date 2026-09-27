@@ -17,6 +17,7 @@ import {
   isExpectedToolFailure,
   coerceToolResult,
   formatReadableToolResult,
+  progressLevelOf,
   TOOL_ARGS_PREVIEW_CHARS
 } from './tools.js';
 import { renderToolResultBody } from './toolRender.js';
@@ -748,6 +749,11 @@ function fillSubagentToolRow(row, name, raw, args, okHint) {
     }
     summaryEl.textContent = summary;
   }
+  // A delegated `report_progress` / `task` call carries a progress level.
+  // Draw it on the row itself (always visible, not behind the fold) so the
+  // settled card still shows how far the subagent got.
+  const level = ok ? progressLevelOf(toolName, r) : null;
+  if (level) setNestedRowProgress(row, level);
   const oldPreview = row.querySelector('.tool-card__subagent-preview');
   if (oldPreview) oldPreview.remove();
   renderSubagentToolPreview(row, name, raw, args);
@@ -756,6 +762,52 @@ function fillSubagentToolRow(row, name, raw, args, okHint) {
   // the user's choice.
   setNestedRowOpen(row, typeof row._userOpen === 'boolean' ? row._userOpen : !ok);
   return r;
+}
+
+// setNestedRowProgress(row, level)
+//
+// Draw (or update) the progress bar on one nested subagent tool row.
+// `level` is progressLevelOf()'s shape. The bar sits on its own full-width
+// line under the row head and stays visible when the row is folded — the
+// level IS the summary of a progress call. Reused by the live path
+// (updateProgressCard routes a nested progress_update here) and the settled
+// render (fillSubagentToolRow), so both views draw the same bar.
+function setNestedRowProgress(row, level) {
+  if (!row || !level) return;
+  let wrap = row.querySelector('.tool-card__subagent-progress');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.className = 'tool-card__subagent-progress';
+    const line = document.createElement('div');
+    line.className = 'tool-card__progress-row';
+    const barWrap = document.createElement('div');
+    barWrap.className = 'tool-card__progress-bar-wrap';
+    const bar = document.createElement('div');
+    bar.className = 'tool-card__progress-bar';
+    barWrap.appendChild(bar);
+    const pct = document.createElement('span');
+    pct.className = 'tool-card__progress-pct';
+    line.appendChild(barWrap);
+    line.appendChild(pct);
+    const msg = document.createElement('div');
+    msg.className = 'tool-card__progress-msg';
+    wrap.appendChild(line);
+    wrap.appendChild(msg);
+    // Before the preview so the fold only hides the raw payload.
+    const preview = row.querySelector('.tool-card__subagent-preview');
+    if (preview) row.insertBefore(wrap, preview);
+    else row.appendChild(wrap);
+  }
+  wrap.dataset.status = level.status;
+  const bar = wrap.querySelector('.tool-card__progress-bar');
+  if (bar) bar.style.width = level.percent + '%';
+  const pct = wrap.querySelector('.tool-card__progress-pct');
+  if (pct) pct.textContent = level.percent + '%';
+  const msg = wrap.querySelector('.tool-card__progress-msg');
+  if (msg) {
+    msg.textContent = level.message || '';
+    msg.hidden = !level.message;
+  }
 }
 
 // setNestedRowOpen(row, open)
@@ -1741,12 +1793,45 @@ function getOrCreateProgressCard(refs, callId, title) {
   return card;
 }
 
+// updateNestedProgress(refs, data) -> bool
+//
+// Route a `progress_update` frame to the nested subagent row that reported
+// it. The row is found by the nested call id (`data.callId` is the id of the
+// report_progress / task call, and the nested row is keyed by the same id).
+// A frame tagged with `parentCallId` but no usable call id falls back to the
+// newest row in that subagent card. Returns false when no nested row owns
+// the frame, so a top-level progress call keeps its own card.
+function updateNestedProgress(refs, data) {
+  const root = refs.transcript.current;
+  let row = null;
+  if (data.callId != null && data.callId !== '') {
+    row = root.querySelector('.tool-card--subagent [data-nested-tool-id="' + cssEscape(String(data.callId)) + '"]');
+  }
+  if (!row && data.parentCallId !== undefined) {
+    const card = findSubagentCard(refs, data.parentCallId);
+    const rows = card ? card.querySelectorAll('.tool-card__subagent-tool') : [];
+    row = rows.length ? rows[rows.length - 1] : null;
+  }
+  if (!row) return false;
+  const level = progressLevelOf(null, data);
+  if (!level) return true;
+  setNestedRowProgress(row, level);
+  return true;
+}
+
 // updateProgressCard(refs, data)
 //
 // Update an existing progress card with new values (current, total,
 // status, message). Creates one if no card matches `callId`.
 export function updateProgressCard(refs, data) {
   if (!refs.transcript.current || !data) return;
+  // A progress call made INSIDE a subagent run belongs to that run's card:
+  // draw the level on the nested tool row instead of detaching a top-level
+  // progress card below the transcript.
+  if (updateNestedProgress(refs, data)) {
+    afterTranscriptAppend(refs, false);
+    return;
+  }
   const card = getOrCreateProgressCard(refs, data.callId, data.title);
   if (!card) return;
 

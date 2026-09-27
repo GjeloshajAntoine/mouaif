@@ -34,6 +34,23 @@ A tool row inside the subagent card is rendered with the **same classes the main
 - **Rows fold.** Each nested row has its own chevron, a real `<button>` with `aria-expanded`. The result preview is hidden until the row is opened, so a run that read five files lists five compact rows (label, arguments, summary, status dot) instead of pasting five files into the nested transcript. Tap the chevron, or anywhere on the row line, to open or fold it; taps inside the revealed output don't fold it, so you can select text.
 - **Same policy as a top-level card.** A clean result is folded, a failed one opens so the error is visible, and a nested shell command that is still streaming opens on its first output chunk so you can watch it run, then folds when it succeeds. Once you have tapped a row, your choice wins over all of these defaults, including when the settled render replaces the live rows and when the transcript is rebuilt: the choice is carried over by the nested call id (`scripts/test-subagent-transcript-parity.js`).
 
+## Progress inside a delegated run
+
+When the subagent calls `report_progress`, or moves a `task` forward, its progress is shown **on that call's nested row** inside the subagent card:
+
+- The row head reads `report_progress · <title> · <percent>` (`completed` / `failed · N%` once the call finishes).
+- A progress bar, the percentage and the optional message sit on their own line under the row head. They stay visible when the row is folded, because the level is what the row is about. The fold only hides the raw result payload.
+- **Live:** the server forwards the nested `progress_update` frame with `parentCallId` (the subagent call's id). The chat UI finds the nested row by the frame's `callId` (or, if there is none, uses the newest row in that card) and updates its bar in place. No separate progress card is added to the bottom of the transcript.
+- **Settled:** the rebuilt card reads the level from the nested tool result, so the bar is still there after the run ends and after a reload.
+
+A top-level `report_progress` call (not inside a subagent) still gets its own progress card, as described in [`report_progress` tool](progress-tool.md). Push notifications for nested progress are the same as before.
+
+```json
+{ "callId": "call_nested", "parentCallId": "call_parent", "title": "Build", "current": 4, "total": 8, "status": "running", "message": "" }
+```
+
+Regression test: `scripts/test-subagent-nested-progress.js`.
+
 ## Naming the agent
 
 A delegated run names the agent it dispatched, in two places:

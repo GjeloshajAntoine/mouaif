@@ -452,6 +452,19 @@ color: var(--fg-soft);
 .tool-card__subagent-tool.is-open > .tool-card__subagent-toggle svg { transform: rotate(90deg); }
 .tool-card__subagent-tool:not(.is-open) > .tool-card__subagent-preview,
 .tool-card__subagent-tool:not(.is-open) > .tool-card__shell-live-pre { display: none; }
+/* Progress level of a nested report_progress / task call. Its own full-width
+   line under the row head, indented past the chevron, and NOT hidden by the
+   fold: the level is the row's summary, the preview is the raw payload. */
+.tool-card__subagent-progress {
+  flex: 1 0 100%;
+  min-width: 0;
+  padding-left: 23px;
+  cursor: auto;
+}
+.tool-card__subagent-progress .tool-card__progress-row { margin: 0; }
+.tool-card__subagent-progress[data-status="completed"] .tool-card__progress-bar { background: var(--success); }
+.tool-card__subagent-progress[data-status="failed"] .tool-card__progress-bar { background: var(--danger); }
+.tool-card__subagent-progress .tool-card__progress-msg[hidden] { display: none; }
 .tool-card__subagent-preview,
 .tool-card__subagent-tool > .tool-card__shell-live-pre {
   flex: 1 0 100%;

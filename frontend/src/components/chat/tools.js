@@ -169,6 +169,7 @@ export function formatToolArgs(args, toolName) {
   if (name === 'subagent') return args.task || '';
   if (name === 'ask_user') return args.question || '';
   if (name === 'task') return (args.action || '') + (args.title ? ': ' + args.title : '');
+  if (name === 'report_progress') return args.title || '';
 if (name === 'webpreview') return args.url || '';
 if (name === 'restart_app') return args.reason || '';
 try { return JSON.stringify(args, null, 2); }
@@ -293,6 +294,13 @@ export function formatResultSummary(name, r) {
     if (!choice.length) return null;
     return choice.length > 1 ? choice.length + ' choices' : String(choice[0]);
   }
+  if (n === 'report_progress') {
+    const p = progressLevelOf(n, r);
+    if (!p) return null;
+    if (p.status === 'completed') return 'completed';
+    if (p.status === 'failed') return 'failed · ' + p.percent + '%';
+    return p.percent + '%';
+  }
   if (n === 'task') {
     if (r.action === 'completed' && r.task) return r.task.title + ' ✓';
     if (r.task && r.task.status) return r.task.status;
@@ -300,6 +308,33 @@ export function formatResultSummary(name, r) {
     return null;
   }
   return null;
+}
+
+// progressLevelOf(name, r) -> { current, total, percent, status, message } | null
+//
+// The progress level a tool result carries, when it carries one:
+// `report_progress` echoes its validated args ({ title, current, total,
+// status, message }) and a single-task `task` result carries `task.current`
+// / `task.total`. Also accepts a raw `progress_update` frame (name null).
+// Used by the nested subagent rows so a delegated run's progress is visible
+// inside its card, live and after the run settles.
+export function progressLevelOf(name, r) {
+  if (!r || typeof r !== 'object' || r.error) return null;
+  const n = normalizeToolName(name);
+  let src = r;
+  if (n === 'task') {
+    if (!r.task || typeof r.task !== 'object') return null;
+    src = r.task;
+  } else if (n && n !== 'report_progress') {
+    return null;
+  }
+  const total = Number(src.total);
+  if (!isFinite(total) || total <= 0) return null;
+  const current = Math.max(0, Math.min(Number(src.current) || 0, total));
+  const status = src.status === 'completed' || src.status === 'failed' ? src.status : 'running';
+  const percent = status === 'completed' ? 100 : Math.round((current / total) * 100);
+  const message = typeof src.message === 'string' ? src.message : '';
+  return { current, total, percent, status, message };
 }
 
 // formatReadableToolResult(r) -> string
