@@ -121,6 +121,7 @@ function createCard() {
     nav() {},
     Fragment: 'fragment',
     PromptIcon: 'prompt-icon',
+    pinnedProfiles: () => [],
     useClickOutside() {},
     formatCost: (n) => '$' + n.toFixed(2),
     confirm: () => true,
