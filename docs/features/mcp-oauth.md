@@ -15,7 +15,7 @@ Remote MCP servers (Streamable HTTP or legacy SSE) can use OAuth instead of a ma
    - Enter a pre-registered **public client** ID if the server has no registration.
    - For a **confidential client**, enter its ID and **Client secret**. mouaif picks `client_secret_basic` or `client_secret_post` from the server's metadata.
 4. Optionally enter space-separated OAuth scopes. Scopes the server advertises take priority.
-5. **Save**, then reopen the server and tap **Sign in**.
+5. Tap **Save**. The editor stays open and shows **Sign in**; tap it.
 6. Tap **Open sign-in page**, approve access, and return to mouaif. The editor picks up the result by itself. Tap **Start** in the server list to connect and discover tools.
 
 The sign-in opens as a separate link, so it works in mobile browsers and PWAs without relying on a popup. A pending request expires after ten minutes. If it is declined or expires, start sign-in again.
@@ -26,7 +26,7 @@ For manual client registration, use the callback URL shown in the editor: your m
 
 1. Set **Authentication → OAuth** and **Grant → Client credentials**.
 2. Enter the **Client ID** and **Client secret**, and scopes if the server needs them.
-3. **Save**, reopen the server, and tap **Connect**. mouaif requests a token straight from the token endpoint.
+3. Tap **Save**, then **Connect** in the editor that stays open. mouaif requests a token straight from the token endpoint.
 
 When the token expires or the server returns `401`, mouaif requests a new one automatically.
 

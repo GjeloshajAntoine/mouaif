@@ -1,12 +1,19 @@
 // mouaif web — SettingsMcpEditView (MCP server editor)
 // Extracted from SettingsMcp.jsx for a smaller file size.
 import { h, Fragment } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
 import { nav } from '../router.js';
 import { navTarget, settingsLink } from './settings/projectNavigation.js';
 import { McpArguments } from './settings/McpArguments.jsx';
 import { McpOAuth } from './settings/McpOAuth.jsx';
+
+// Saving stops a running server (src/mcp.js updateServer), so the next
+// start picks up the new settings.
+const SAVED_TEXT = 'Saved. Start the server from the MCP servers list to use these settings.';
+// Confirmation carried across the add → new-server-editor navigation, which
+// remounts the view. Read once by the next editor mount, then cleared.
+let savedFlash = '';
 
 export function SettingsMcpEditView(props) {
 const id = props.id || '';
@@ -43,16 +50,19 @@ const chatId = typeof props.chatId === 'string' ? props.chatId : '';
   const [configuredHeaderKeys, setConfiguredHeaderKeys] = useState([]);
   const [clearEnv, setClearEnv] = useState(false);
   const [clearHeaders, setClearHeaders] = useState(false);
+  // Taken once per mount so a stale flash never leaks into a later editor.
+  const flashRef = useRef(null);
+  if (flashRef.current === null) { flashRef.current = savedFlash; savedFlash = ''; }
 
   async function load() {
     if (id) {
       const qs = projectDir ? '?projectDir=' + encodeURIComponent(projectDir) : '';
       let r;
       try { r = await fetchJson('/api/mcp/servers' + qs); }
-      catch (e) { setStatusMsg({text: 'network error', kind: 'error'}); return; }
-      if (r.status !== 200) { setStatusMsg({text: 'HTTP ' + r.status, kind: 'error'}); return; }
+      catch (e) { setStatusMsg({text: 'network error', kind: 'error'}); return false; }
+      if (r.status !== 200) { setStatusMsg({text: 'HTTP ' + r.status, kind: 'error'}); return false; }
       const current = (r.body.servers || []).find(s => s.id === id) || null;
-      if (!current) { setStatusMsg({text: 'Server not found', kind: 'error'}); return; }
+      if (!current) { setStatusMsg({text: 'Server not found', kind: 'error'}); return false; }
       setCurrentServer(current);
       setCurrentScope(current.scope === 'app' ? 'app' : 'project');
       setName(current.name || '');
@@ -62,12 +72,14 @@ const chatId = typeof props.chatId === 'string' ? props.chatId : '';
       setOauth({ enabled: !!current.oauth?.enabled, clientId: current.oauth?.clientId || '', scope: current.oauth?.scope || '', grant: current.oauth?.grant || 'authorization_code', clientSecret: '', clearClientSecret: false });
       setArgs(current.args || []);
       setEnv('');
+      setClearEnv(false);
       const envKeys = Object.keys(current.env || {}).filter(k => current.env[k] && current.env[k].configured);
       setConfiguredEnvKeys(envKeys);
       setEnvPlaceholder(envKeys.length
         ? 'Already configured: ' + envKeys.join(', ') + '. Enter new values or leave blank to keep.'
         : 'API_TOKEN=...\nLOG_LEVEL=info');
       setHeaders('');
+      setClearHeaders(false);
       const headerKeys = Object.keys(current.headers || {}).filter(k => current.headers[k] && current.headers[k].configured);
       setConfiguredHeaderKeys(headerKeys);
       setHeadersPlaceholder(headerKeys.length
@@ -84,7 +96,10 @@ const chatId = typeof props.chatId === 'string' ? props.chatId : '';
         } catch { /* keep empty map */ }
       }
     }
-    setStatusMsg({text: '', kind: ''});
+    const flash = flashRef.current;
+    flashRef.current = '';
+    setStatusMsg(flash ? { text: flash, kind: 'success' } : { text: '', kind: '' });
+    return true;
   }
 
   async function saveToolAuth(composedName, value) {
@@ -198,11 +213,23 @@ const chatId = typeof props.chatId === 'string' ? props.chatId : '';
         body: JSON.stringify(body)
       });
     } catch (e) { setStatusMsg({text: 'network error', kind: 'error'}); setIsSaving(false); return; }
+    if (r.status !== 200 && r.status !== 201) { setIsSaving(false); setStatusMsg({text: 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), kind: 'error'}); return; }
+    // Save keeps the user on the editor with visible confirmation, so a
+    // follow-up step (OAuth sign-in, checking the configured keys) is right
+    // there. An edit reloads in place; an add opens the new server's editor
+    // (a different route, so the view remounts and reads the flash).
+    const saved = r.body && r.body.server;
+    if (!id && saved && saved.id) {
+    savedFlash = SAVED_TEXT;
+    nav(navTarget('settings/mcp/' + encodeURIComponent(saved.id), listContext, { scope: listScope }));
+    return;
+    }
+    if (!id) { setIsSaving(false); nav(listTarget); return; }
+    const reloaded = await load();
     setIsSaving(false);
-    if (r.status !== 200 && r.status !== 201) { setStatusMsg({text: 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), kind: 'error'}); return; }
-    setStatusMsg({text: 'saved', kind: 'success'});
-nav(listTarget);
-}
+    // A failed reload keeps its own error visible; the save itself worked.
+    if (reloaded) setStatusMsg({ text: SAVED_TEXT, kind: 'success' });
+  }
 
   async function deleteServer() {
     if (!id) return;
