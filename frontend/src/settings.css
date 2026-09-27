@@ -60,9 +60,13 @@ color: var(--fg-soft); cursor: pointer;
 }
 .prompts__dirty {
   margin: 4px 0 0;
-  color: #b35900; /* amber: warn, not error */
+  color: var(--warning, #f0c46a); /* amber: warn, not error */
   font-size: 0.74rem;
 }
+/* Scope segment fills the row so both halves are equal tap targets. */
+.prompts__scope-seg { width: 100%; }
+.prompts__scope-seg .seg__item { flex: 1 1 0; }
+.prompts__scope-seg .seg__pill { width: 100%; min-height: 36px; }
 /* Copy button (sits in the picker row, next to the dropdown). */
 .prompts__copy {
   min-height: var(--tap); /* ≥44px touch target */
@@ -76,14 +80,22 @@ color: var(--fg-soft); cursor: pointer;
 /* Prompt preset editor section (inline in SettingsPromptsView). */
 .prompts__preset { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
 .prompts__preset-head { display: flex; flex-direction: column; gap: 4px; }
-.prompts__preset-main { display: flex; align-items: center; gap: 10px; }
+.prompts__preset-main { display: flex; align-items: center; gap: 10px; min-height: var(--tap); cursor: pointer; }
 .prompts__preset-desc { font-size: 0.78rem; color: var(--fg-soft); line-height: 1.35; }
 .prompts__preset-note { margin-top: 2px; }
 .prompts__preset-body { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; border-top: 1px solid var(--border); padding-top: 10px; min-width: 0; }
 .prompts__preset-tree { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 4px 6px; min-width: 0; }
 .prompts__preset-loading { font-size: 0.78rem; color: var(--fg-soft); padding: 8px 2px; }
 .prompts__textarea { min-height: 80px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
-.prompts__from-default { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.prompts__from-default { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.prompts__from-default-btn { flex: none; min-height: var(--tap); }
+.prompts__from-default-hint { color: var(--muted); font-size: 0.74rem; line-height: 1.35; min-width: 0; }
+/* Save / Create / Delete stay pinned to the bottom of the scroller. */
+.prompts__actions {
+  position: sticky; bottom: 0; z-index: 5;
+  margin: 10px 0 0; padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg); border-top: 1px solid var(--border);
+}
 .prompts__profile-pick { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
 .prompts__profile-option {
 display: flex; flex-direction: column; align-items: flex-start; gap: 2px;

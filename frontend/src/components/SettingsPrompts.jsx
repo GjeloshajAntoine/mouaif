@@ -150,7 +150,11 @@ const [preset, setPreset] = useState(null);
     try {
       const r = await fetchJson('/api/prompt-profiles');
       if (r.status === 200 && Array.isArray(r.body.profiles)) {
-        setProfiles(r.body.profiles.map((p) => ({
+        // Only profiles with prompt text are useful starting points: the
+        // `chat` profile is an empty system prompt, and a custom prompt
+        // needs content to be created, so offering it produced a form
+        // titled "Chat" that could never be saved.
+        setProfiles(r.body.profiles.filter((p) => p && typeof p.systemMessage === 'string' && p.systemMessage.trim()).map((p) => ({
           id: p.id,
           label: p.label || p.id,
           description: p.description || '',
@@ -630,8 +634,11 @@ setPreset(null);
   const dirty = isDirty();
   dirtyRef.current = dirty;
   const currentPrompt = !isNew ? prompts.find((p) => p.id === selectedId) : null;
-  const pickerLabel = isNew ? '+ New prompt' : ((currentPrompt && (currentPrompt.title || currentPrompt.id)) || 'Choose a prompt');
-  const copyDisabled = isNew && !content;
+  const pickerLabel = isNew
+    ? (title.trim() ? title.trim() + ' (new)' : '+ New prompt')
+    : ((currentPrompt && (currentPrompt.title || currentPrompt.id)) || 'Choose a prompt');
+  const copyDisabled = !content;
+  const hasContent = !!content.trim();
 
   // On the App-defaults screen every prompt is app-scoped by definition, so the
   // per-option scope badge (["app"]) is redundant noise that reads as a weird
@@ -744,13 +751,16 @@ h('span', { class: 'prompts__picker-preset' }, 'default')
             onClick: startNewPrompt
           }, 'New')
         ),
-        dirty ? h('p', { class: 'hint prompts__dirty' }, 'Unsaved changes — switch prompts to discard or hit Save.') : null
+        dirty
+        ? h('p', { class: 'hint prompts__dirty' },
+        isNew ? 'Not created yet — tap Create below to keep it.' : 'Unsaved changes — tap Save below to keep them.')
+        : null
       ),
 
       // ---- Scope selector (when creating a new prompt with an active project) ----
       isNew && projectDir ? h('div', { class: 'row' },
         h('label', { class: 'label' }, 'Scope'),
-        h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Prompt scope' },
+        h('div', { class: 'seg prompts__scope-seg', role: 'radiogroup', 'aria-label': 'Prompt scope' },
           [
             { value: 'project', label: 'This project' },
             { value: 'app', label: 'App default' }
@@ -779,7 +789,7 @@ h('span', { class: 'prompts__picker-preset' }, 'default')
       // ---- Editor ----------------------------------------------------
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'spe-title' },
-          isNew ? 'Title (optional until saved)' : 'Title'
+          'Title (optional)'
         ),
         h('input', {
           value: title,
@@ -841,9 +851,9 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
         }),
         h('div', { class: 'prompts__from-default' },
           h('button', {
-            type: 'button',
-            class: 'btn btn--ghost',
-            onClick: () => {
+          type: 'button',
+          class: 'btn btn--small prompts__from-default-btn',
+          onClick: () => {
               const next = !showProfileCopy;
               setShowProfileCopy(next);
               // Reload the built-in prompt-size profiles each time the
@@ -854,11 +864,11 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
               if (next) loadProfiles();
             },
             'aria-expanded': String(showProfileCopy)
-          }, 'Copy from default'),
-          h('span', { class: 'hint hint--compact' },
-            'Start from a built-in prompt-size profile, then edit.'
+          }, showProfileCopy ? 'Hide defaults' : 'Insert a default…'),
+          h('span', { class: 'prompts__from-default-hint' },
+          'Replace the content with a built-in profile, then edit.'
           )
-        ),
+          ),
         showProfileCopy ? h('div', { class: 'prompts__profile-pick' },
           profiles.length
             ? profiles.map((p) =>
@@ -878,10 +888,12 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
 
       // ---- Prompt preset --------------------------------------------
       h('div', { class: 'row prompts__preset' },
-        h('label', { class: 'prompts__preset-head' },
-          h('span', { class: 'label prompt-label' }, 'Chat preset'),
-          h('span', { class: 'prompts__preset-main' },
-            h('label', { class: 'switch' },
+        // A plain div + one label: the old markup nested a <label> inside
+        // another <label>, which is invalid and made taps toggle twice.
+        h('div', { class: 'prompts__preset-head' },
+        h('span', { class: 'label prompt-label' }, 'Chat preset'),
+        h('label', { class: 'prompts__preset-main', for: 'spe-preset-on' },
+        h('span', { class: 'switch' },
               h('input', {
                 id: 'spe-preset-on',
                 type: 'checkbox',
@@ -919,12 +931,15 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
       ),
 
       // ---- Actions ---------------------------------------------------
-      h('div', { class: 'row row--actions' },
+      // Sticky so Save/Create stays reachable on a phone without scrolling
+      // past the preset tree. Disabled until there is content to save.
+      h('div', { class: 'row row--actions prompts__actions' },
         h('button', {
           class: 'btn btn--primary',
           type: 'button',
           onClick: save,
-          disabled: isSaving || (!dirty && !isNew)
+          disabled: isSaving || !hasContent || (!dirty && !isNew),
+          title: hasContent ? undefined : 'Add prompt content first'
         }, isSaving ? 'Saving…' : (isNew ? 'Create' : 'Save')),
         h('button', {
           class: 'btn btn--danger',
