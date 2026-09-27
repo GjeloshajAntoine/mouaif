@@ -7,7 +7,7 @@ All notable changes to `mouaif` are documented here. The format follows
 Releases are cut from `package.json` with `npm version <patch|minor|major>`,
 which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
-## [0.8.0] — Unreleased
+## [0.8.0] — 2026-09-27
 
 ### Added
 
