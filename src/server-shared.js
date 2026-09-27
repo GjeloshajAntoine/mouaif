@@ -182,6 +182,10 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
 // See docs/features/dictation.md.
 'dictation',
 'prompts',        // app-level custom prompts
+// Icon + project-card pin for the built-in prompt-size profiles:
+// `{ [profileId]: { icon, showOnProjectCard } }`. Non-secret display state;
+// see docs/features/custom-prompts.md "Built-in prompts".
+'profileLaunchers',
   'githubCopilot',  // { clientId } for the custom OAuth app
   'modelPricing',   // per-model cost table
   'authAccounts',   // non-secret OAuth account index
@@ -199,7 +203,7 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
 // can't reach settings like the custom pricing table or the remembered
 // dictation model.
 const RESETTABLE_APP_KEYS = Object.freeze(
-new Set([...Object.keys(settings.DEFAULTS), 'modelPricing', 'githubCopilot', 'dictation'])
+new Set([...Object.keys(settings.DEFAULTS), 'modelPricing', 'githubCopilot', 'dictation', 'profileLaunchers'])
 );
 
 // Allowlist projection for the APP-level store only. Project payloads must

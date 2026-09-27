@@ -81,6 +81,8 @@ color: var(--fg-soft); cursor: pointer;
 .prompts__preset { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; min-width: 0; }
 .prompts__preset-tree { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 4px 6px; min-width: 0; }
 .prompts__preset-loading { font-size: 0.78rem; color: var(--fg-soft); padding: 8px 2px; }
+.prompts__builtin-note { margin: 4px 0 0; }
+.input.is-readonly { color: var(--fg-soft); background: var(--surface); cursor: default; }
 .prompts__textarea { min-height: 80px; resize: vertical; font-family: var(--font-mono); font-size: 0.8rem; }
 .prompts__from-default { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .prompts__from-default-btn { flex: none; min-height: var(--tap); }

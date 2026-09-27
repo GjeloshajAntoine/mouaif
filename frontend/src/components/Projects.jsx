@@ -6,6 +6,7 @@ import { nav } from '../router.js';
 import { formatCost } from '../usage.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
 import { PromptIcon } from './PromptIcon.jsx';
+import { pinnedProfiles } from './settings/profileLaunchers.js';
 const CHAT_PAGE_SIZE = 30;
 // A card's search is a peek, not a page: the card holds about three rows and
 // the server caps the list at its own maximum anyway.
@@ -75,6 +76,8 @@ function ChatList({ project }) {
   const [loadingMore, setLoadingMore] = useState(false);
 const [isCreating, setIsCreating] = useState(false);
 const [prompts, setPrompts] = useState([]);
+// Built-in prompt-size profiles pinned to this card (icon + promptSize).
+const [pinnedBuiltins, setPinnedBuiltins] = useState([]);
 // Search state. `searchOpen` is the field's presence, `term` what the user
 // typed, `results` the last answered query. While `results.query === term` the
 // list renders the results; the moment the term moves on it falls back to the
@@ -90,12 +93,19 @@ let canceled = false;
 async function init() {
 setLoading(true);
 try {
-const [r, promptRes] = await Promise.all([
+const none = { status: 0, body: {} };
+const [r, promptRes, profileRes, resolvedRes] = await Promise.all([
 fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=0&limit=' + CHAT_PAGE_SIZE),
-fetchJson('/api/prompts?projectDir=' + encodeURIComponent(project.path)).catch(() => ({ status: 0, body: {} }))
+fetchJson('/api/prompts?projectDir=' + encodeURIComponent(project.path)).catch(() => none),
+fetchJson('/api/prompt-profiles').catch(() => none),
+fetchJson('/api/settings/resolved?projectDir=' + encodeURIComponent(project.path)).catch(() => none)
 ]);
 if (canceled) return;
 setPrompts(promptRes.status === 200 ? (promptRes.body.prompts || []) : []);
+setPinnedBuiltins(pinnedProfiles(
+profileRes.status === 200 ? profileRes.body.profiles : [],
+resolvedRes.status === 200 && resolvedRes.body.resolved ? resolvedRes.body.resolved.profileLaunchers : null
+));
 if (r.status === 200) {
 const list = r.body.chats || [];
           setChats(list);
@@ -183,11 +193,14 @@ const list = r.body.chats || [];
     setResults(prev => prev ? Object.assign({}, prev, { chats: prev.chats.filter(c => c.id !== chatId) }) : prev);
   }
 
-  async function createChat(promptId = null) {
+  // createChat(promptId?, promptSize?) — a custom prompt launcher passes
+  // its id; a built-in launcher passes its prompt-size profile id.
+  async function createChat(promptId = null, promptSize = null) {
 setIsCreating(true);
 try {
 const body = { projectDir: project.path };
 if (promptId) body.promptId = promptId;
+if (promptSize) body.promptSize = promptSize;
 const r = await fetchJson('/api/chats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (r.status !== 201) { alert('create chat failed: HTTP ' + r.status); setIsCreating(false); return; }
       const chat = r.body && r.body.chat;
@@ -370,6 +383,15 @@ disabled: isCreating,
 'aria-label': 'New chat with ' + prompt.title,
 title: 'New chat with ' + prompt.title
 }, h(PromptIcon, { name: prompt.icon, size: 20 }))),
+pinnedBuiltins.map((p) => h('button', {
+class: 'project-card__prompt-new',
+type: 'button',
+key: 'profile:' + p.id,
+onClick: () => createChat(null, p.id),
+disabled: isCreating,
+'aria-label': 'New chat with ' + p.label,
+title: 'New chat with ' + p.label
+}, h(PromptIcon, { name: p.icon, size: 20 }))),
 h('button', {
 class: 'project-card__search-open',
 type: 'button',

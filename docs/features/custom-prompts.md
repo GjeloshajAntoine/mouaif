@@ -23,13 +23,34 @@ Prompts can be managed from two locations in Settings:
 1. **Settings → App defaults → Custom prompts** (`#/settings/prompts`): Manage global custom prompts that apply across all projects.
 2. **Settings → This project → Custom prompts** (`#/settings/prompts?projectDir=...`): Manage project-specific prompts and view inherited app-wide prompts.
 
-The **Prompt** picker lists every saved prompt (with a `preset` tag for ones that carry a tool/agent-file/skills preset; scope badges only appear on the project screen, where the two scopes are mixed, and are omitted on the single-scope App-defaults screen) plus a `+ New prompt` entry for a blank form. Below the saved prompts, a **Start from a default** section lists the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`, each tagged `default`); tapping one opens a fresh unsaved prompt pre-filled with that profile's title and `systemMessage` (the picker then shows `<title> (new)`), ready to edit and Create. The empty `Chat` profile is not listed: a custom prompt needs content, so it could never be created. This means the picker is never empty even before you have saved anything. It uses an in-app, theme-matched list instead of the platform select overlay, keeping the prompt content visible and avoiding oversized native menus on mobile. On first open the picker defaults to the first saved prompt so the editor is already populated; tapping **New** starts a blank form instead. Pick a prompt to load its title, content, and preset into the editor.
+The **Prompt** picker lists every saved prompt (with a `preset` tag for ones that carry a tool/agent-file/skills preset; scope badges only appear on the project screen, where the two scopes are mixed, and are omitted on the single-scope App-defaults screen) plus a `+ New prompt` entry for a blank form. Below the saved prompts, a **Built-in** section lists the four prompt-size profiles (`Very small`, `Average`, `Extensive`, `Chat`, each tagged `built-in`, plus `on card` when pinned). Picking one opens it in the same editor — see [Built-in prompts](#built-in-prompts). This means the picker is never empty even before you have saved anything. It uses an in-app, theme-matched list instead of the platform select overlay, keeping the prompt content visible and avoiding oversized native menus on mobile. On first open the picker defaults to the first saved prompt so the editor is already populated; tapping **New** starts a blank form instead. Pick a prompt to load its title, content, and preset into the editor.
 
 - **Scope** — when creating a new prompt while a project is active, choose between **This project** and **App default**.
 - **Title** (optional) and **Prompt content** (required — **Create** / **Save** stay disabled while it is empty) are edited in place. An amber hint under the picker says when the form has changes that are not saved yet. The **Chat preset** tool tree is always shown below the content.
 - **Icon** — choose Sparkles, Code, Search, Writing, Debug, or Research. Enable **Add to project card** to show the icon beside **+ New chat**. Tapping it creates and opens a chat with this prompt already selected. Chats created this way also show the prompt icon in their project-card row.
-- **Insert a default…** — under the Prompt content field, tap **Insert a default…** to reveal the three built-in prompt-size profiles (`Very small`, `Average`, `Extensive`). Tap one to load its `systemMessage` into the content editor as a starting point, then edit and Save as your own custom prompt.
+- **Insert a default…** — under the Prompt content field of a custom prompt, tap **Insert a default…** to reveal the three built-in prompt-size profiles that have text (`Very small`, `Average`, `Extensive`). Tap one to load its `systemMessage` into the content editor as a starting point, then edit and Save as your own custom prompt.
 - Tap **Save** (or **Create** for a new prompt) to persist. The action bar is pinned to the bottom of the screen, so it stays reachable on a phone without scrolling past the preset tree. Tap **Delete** to remove the selected prompt — the API cascade-clears `promptId` on every chat that referenced it, while those chats keep the pinned copy of the prompt's text (see [Prompt snapshots](#prompt-snapshots)).
+
+### Built-in prompts
+
+The built-in prompt-size profiles appear in the same picker and open in the same editor as a custom prompt, with these differences:
+
+- **Title** and **Prompt content** are read-only — the text is defined in `src/promptProfiles.js`. `Chat` shows an empty content field because it sends no system prompt.
+- **Icon** and **Add to project card** work exactly as for a custom prompt. When pinned, the icon appears on the project card beside **+ New chat**; tapping it creates a chat with that prompt style (`POST /api/chats` with `promptSize: "<profile id>"`).
+- On a project screen, **Save icon settings to** chooses **This project** (the project's `.mouaif.json`) or **App default** (the app SQLite store). Saving to App default also removes this project's override for that profile, so the app value applies. On the App-defaults screen it always saves to the app store.
+- There is no **Chat preset** and no **Delete** — a built-in cannot be removed.
+
+The launcher settings are stored under the `profileLaunchers` settings key, resolved defaults → app → project like any other setting:
+
+```json
+{
+  "profileLaunchers": {
+    "chat": { "icon": "pencil", "showOnProjectCard": true }
+  }
+}
+```
+
+`icon` is one of `sparkles`, `code`, `search`, `pencil`, `bug`, `book` (anything else falls back to `sparkles`). The key is written through the existing `PUT /api/settings/app` and `PUT /api/settings/project` routes and is on the app-settings client allowlist.
 
 ### Legacy deep links
 Older `settings/prompts/:id` URLs still resolve to the same screen with the picker pre-selected to that prompt, so saved links keep working.

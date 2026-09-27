@@ -22,6 +22,9 @@ import { fetchJson, activeProject } from '../api.js';
 import { ToolTree, buildToolGroups } from './ToolTree.jsx';
 import { PromptIcon, PROMPT_ICONS } from './PromptIcon.jsx';
 import { presetToolSelection, applyToolToggle } from './settings/presetTools.js';
+import {
+  PROFILE_PREFIX, readLaunchers, launcherSource, effectiveLauncher, withLauncher
+} from './settings/profileLaunchers.js';
 // Sentinel id used by the "new prompt" entry in the picker dropdown.
 const NEW_PROMPT_ID = '__new__';
 
@@ -114,6 +117,9 @@ const [preset, setPreset] = useState(null);
   const [copyStatus, setCopyStatus] = useState('Copy');
 
   const [profiles, setProfiles] = useState([]);
+  // Built-in prompt launchers (icon + project-card pin), per store.
+  // See settings/profileLaunchers.js.
+  const [launchers, setLaunchers] = useState({ app: {}, project: {} });
   const [showProfileCopy, setShowProfileCopy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -150,11 +156,10 @@ const [preset, setPreset] = useState(null);
     try {
       const r = await fetchJson('/api/prompt-profiles');
       if (r.status === 200 && Array.isArray(r.body.profiles)) {
-        // Only profiles with prompt text are useful starting points: the
-        // `chat` profile is an empty system prompt, and a custom prompt
-        // needs content to be created, so offering it produced a form
-        // titled "Chat" that could never be saved.
-        setProfiles(r.body.profiles.filter((p) => p && typeof p.systemMessage === 'string' && p.systemMessage.trim()).map((p) => ({
+        // Every built-in profile is listed in the picker (Chat included —
+        // its icon and project-card pin are editable). Only the ones with
+        // text are offered by "Insert a default…" (see `insertProfiles`).
+        setProfiles(r.body.profiles.filter((p) => p && p.id).map((p) => ({
           id: p.id,
           label: p.label || p.id,
           description: p.description || '',
@@ -162,6 +167,18 @@ const [preset, setPreset] = useState(null);
         })));
       }
     } catch { /* ignore */ }
+  }
+
+  async function loadAppLaunchers() {
+    try {
+      const r = await fetchJson('/api/settings');
+      if (r.status === 200 && r.body && r.body.app) {
+        const app = readLaunchers(r.body.app.profileLaunchers);
+        setLaunchers((prev) => ({ app, project: prev.project }));
+        return app;
+      }
+    } catch { /* ignore */ }
+    return null;
   }
 
   async function loadProjectData() {
@@ -187,6 +204,7 @@ const [preset, setPreset] = useState(null);
     setSkillsAvailable(Array.isArray(sk.items) ? sk.items.map(skillIdOf).filter(Boolean) : []);
     const projectBody = (projectRes.status === 200 && projectRes.body && projectRes.body.project) || {};
     setAgentFilesProjectLocked(projectBody.agentFiles === false);
+    setLaunchers((prev) => ({ app: prev.app, project: readLaunchers(projectBody.profileLaunchers) }));
     setSkillsProjectLocked(projectBody.skills === false);
     setDataLoaded(true);
   }
@@ -283,7 +301,7 @@ if (content !== loadedSnapshot.content) return true;
 
   useEffect(() => { loadPrompts(); }, [projectDir]);
   useEffect(() => { loadProjectData(); }, [projectDir]);
-  useEffect(() => { loadProfiles(); }, []);
+  useEffect(() => { loadProfiles(); loadAppLaunchers(); }, []);
   useEffect(() => {
     if (!pickerOpen) return undefined;
     function onPointerDown(event) {
@@ -347,11 +365,99 @@ if (content !== loadedSnapshot.content) return true;
       applyPromptToForm(null);
       return;
     }
+    if (nextId.startsWith(PROFILE_PREFIX)) {
+      applyBuiltinToForm(profiles.find((x) => PROFILE_PREFIX + x.id === nextId));
+      return;
+    }
     const p = prompts.find((x) => x.id === nextId);
     applyPromptToForm(p || null);
   }
 
+  // applyBuiltinToForm(profile) — load a built-in prompt-size profile.
+  //
+  // Its title and text are fixed server-side, so the editor shows them
+  // read-only; only the launcher fields (icon + project-card pin) and the
+  // store they are saved to (the Scope control) can change. No preset.
+  function applyBuiltinToForm(profile, maps = launchers) {
+    if (!profile) { applyPromptToForm(null); return; }
+    const hasProject = !!projectDir;
+    const eff = effectiveLauncher(maps, profile.id, hasProject);
+    const scope = launcherSource(maps, profile.id, hasProject);
+    const snap = {
+      title: profile.label || profile.id,
+      icon: eff.icon,
+      showOnProjectCard: eff.showOnProjectCard,
+      content: profile.systemMessage || '',
+      preset: null,
+      scope
+    };
+    setTitle(snap.title);
+    setIcon(snap.icon);
+    setShowOnProjectCard(snap.showOnProjectCard);
+    setContent(snap.content);
+    setPreset(null);
+    setPromptScope(scope);
+    setLoadedSnapshot(snap);
+    dirtyRef.current = false;
+  }
+
+  // saveBuiltin() — write the launcher for the selected built-in profile
+  // into the chosen store (app SQLite or the project's .mouaif.json).
+  // Moving it between stores also removes the entry from the other one
+  // on this screen, so the old value cannot keep winning.
+  async function saveBuiltin() {
+    const profileId = selectedId.slice(PROFILE_PREFIX.length);
+    const entry = { icon, showOnProjectCard };
+    const toProject = !!projectDir && promptScope === 'project';
+    setIsSaving(true);
+    setStatusMsg({ text: 'saving…', kind: 'busy' });
+    const put = (url, body) => fetchJson(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    let r;
+    try {
+      if (toProject) {
+        r = await put('/api/settings/project', { projectDir, profileLaunchers: withLauncher(launchers.project, profileId, entry) });
+      } else {
+        r = await put('/api/settings/app', { profileLaunchers: withLauncher(launchers.app, profileId, entry) });
+        // Saving to the app store from a project screen: drop this
+        // project's override so the app value is the one that applies.
+        if (r.status === 200 && projectDir && Object.prototype.hasOwnProperty.call(launchers.project, profileId)) {
+          const rest = Object.assign({}, launchers.project);
+          delete rest[profileId];
+          const r2 = await put('/api/settings/project', { projectDir, profileLaunchers: rest });
+          if (r2.status !== 200) r = r2;
+        }
+      }
+    } catch {
+      setIsSaving(false);
+      setStatusMsg({ text: 'network error', kind: 'error' });
+      return;
+    }
+    setIsSaving(false);
+    if (r.status !== 200) {
+      setStatusMsg({ text: 'HTTP ' + r.status + (r.body && r.body.error ? ': ' + r.body.error : ''), kind: 'error' });
+      return;
+    }
+    // Re-read both stores so the form reflects exactly what was persisted.
+    const app = (await loadAppLaunchers()) || launchers.app;
+    let project = launchers.project;
+    if (projectDir) {
+      try {
+        const pr = await fetchJson('/api/settings/project?projectDir=' + encodeURIComponent(projectDir));
+        if (pr.status === 200 && pr.body) project = readLaunchers(pr.body.project && pr.body.project.profileLaunchers);
+      } catch { /* keep the previous map */ }
+    }
+    const maps = { app, project };
+    setLaunchers(maps);
+    applyBuiltinToForm(profiles.find((x) => x.id === profileId), maps);
+    setStatusMsg({ text: 'saved.', kind: 'success' });
+  }
+
   async function save() {
+    if (selectedId.startsWith(PROFILE_PREFIX)) { await saveBuiltin(); return; }
     const t = title.trim();
     const c = content.trim();
     if (!c) { setStatusMsg({ text: 'prompt content is required', kind: 'error' }); return; }
@@ -502,34 +608,6 @@ scope: effectiveScope
     setShowProfileCopy(false);
   }
 
-  function startFromProfile(profile) {
-    // Start a fresh (unsaved) prompt pre-filled from a built-in
-    // prompt-size profile. Chosen from the picker dropdown so the
-    // list never looks empty even before the user has saved anything.
-    if (!profile) return;
-    setPickerOpen(false);
-    if (dirtyRef.current) {
-      const ok = confirm('Discard unsaved changes to this prompt?');
-      if (!ok) return;
-    }
-    userPickedRef.current = true;
-    setSelectedId(NEW_PROMPT_ID);
-    const defaultScope = projectDir ? 'project' : 'app';
-const snap = { title: '', icon: 'sparkles', showOnProjectCard: false, content: '', preset: null, scope: defaultScope };
-setTitle(profile.label || '');
-setIcon('sparkles');
-setShowOnProjectCard(false);
-setContent(profile.systemMessage || '');
-setPreset(null);
-    setPromptScope(defaultScope);
-    // Snapshot stays blank so the pre-filled fields register as dirty and
-    // the Create button is enabled immediately.
-    setLoadedSnapshot(snap);
-    dirtyRef.current = true;
-    setShowProfileCopy(false);
-    setStatusMsg({ text: 'started from ' + (profile.label || profile.id) + ' profile', kind: 'success' });
-  }
-
   function copyProfileIntoContent(profile) {
     if (!profile) return;
     if (content.trim()) {
@@ -622,14 +700,24 @@ setPreset(null);
   ]);
 
   const isNew = selectedId === NEW_PROMPT_ID;
+  const isBuiltin = selectedId.startsWith(PROFILE_PREFIX);
+  const currentBuiltin = isBuiltin ? profiles.find((p) => PROFILE_PREFIX + p.id === selectedId) : null;
   const dirty = isDirty();
   dirtyRef.current = dirty;
-  const currentPrompt = !isNew ? prompts.find((p) => p.id === selectedId) : null;
+  const currentPrompt = !isNew && !isBuiltin ? prompts.find((p) => p.id === selectedId) : null;
   const pickerLabel = isNew
     ? (title.trim() ? title.trim() + ' (new)' : '+ New prompt')
-    : ((currentPrompt && (currentPrompt.title || currentPrompt.id)) || 'Choose a prompt');
+    : isBuiltin
+      ? ((currentBuiltin && currentBuiltin.label) || 'Built-in prompt')
+      : ((currentPrompt && (currentPrompt.title || currentPrompt.id)) || 'Choose a prompt');
   const copyDisabled = !content;
-  const hasContent = !!content.trim();
+  // A built-in has fixed (possibly empty — Chat) text, so it saves on any
+  // launcher change; a custom prompt needs content.
+  const hasContent = isBuiltin || !!content.trim();
+  // "Insert a default…" only offers profiles that actually have text.
+  const insertProfiles = profiles.filter((p) => p.systemMessage && p.systemMessage.trim());
+  // Scope control: new custom prompts and built-ins (on a project screen).
+  const showScopeSeg = !!projectDir && (isNew || isBuiltin);
 
   // On the App-defaults screen every prompt is app-scoped by definition, so the
   // per-option scope badge (["app"]) is redundant noise that reads as a weird
@@ -711,21 +799,28 @@ p.preset ? h('span', { class: 'prompts__picker-preset' }, 'preset') : null
 )
 );
 }),
-profiles.length ? h('div', { class: 'prompts__picker-section', role: 'presentation' }, 'Start from a default') : null,
-profiles.map((p) => h('button', {
+profiles.length ? h('div', { class: 'prompts__picker-section', role: 'presentation' }, 'Built-in') : null,
+profiles.map((p) => {
+const id = PROFILE_PREFIX + p.id;
+const selected = id === selectedId;
+const eff = effectiveLauncher(launchers, p.id, !!projectDir);
+return h('button', {
 type: 'button',
-key: 'profile:' + p.id,
-class: 'prompts__picker-option prompts__picker-option--profile',
+key: id,
+class: 'prompts__picker-option prompts__picker-option--profile' + (selected ? ' is-selected' : ''),
 role: 'option',
-'aria-selected': 'false',
-onClick: () => startFromProfile(p)
+'aria-selected': String(selected),
+onClick: () => handleSelectPrompt(id)
 },
-h('span', { class: 'prompts__picker-check', 'aria-hidden': 'true' }, ''),
+h('span', { class: 'prompts__picker-check', 'aria-hidden': 'true' }, selected ? '✓' : ''),
 h('span', { class: 'prompts__picker-option-label' },
+h(PromptIcon, { name: eff.icon, size: 17, class: 'prompts__picker-icon' }),
 h('span', null, p.label),
-h('span', { class: 'prompts__picker-preset' }, 'default')
+h('span', { class: 'prompts__picker-preset' }, 'built-in'),
+eff.showOnProjectCard ? h('span', { class: 'prompts__picker-preset' }, 'on card') : null
 )
-))
+);
+})
 ) : null
 ),
           h('button', {
@@ -745,12 +840,16 @@ h('span', { class: 'prompts__picker-preset' }, 'default')
         dirty
         ? h('p', { class: 'hint prompts__dirty' },
         isNew ? 'Not created yet — tap Create below to keep it.' : 'Unsaved changes — tap Save below to keep them.')
+        : null,
+      isBuiltin
+        ? h('p', { class: 'hint hint--compact prompts__builtin-note' },
+            'Built-in prompt: its text is fixed. You can change its icon and pin it to the project card.')
         : null
       ),
 
       // ---- Scope selector (when creating a new prompt with an active project) ----
-      isNew && projectDir ? h('div', { class: 'row' },
-        h('label', { class: 'label' }, 'Scope'),
+      showScopeSeg ? h('div', { class: 'row' },
+        h('label', { class: 'label' }, isBuiltin ? 'Save icon settings to' : 'Scope'),
         h('div', { class: 'seg prompts__scope-seg', role: 'radiogroup', 'aria-label': 'Prompt scope' },
           [
             { value: 'project', label: 'This project' },
@@ -780,12 +879,13 @@ h('span', { class: 'prompts__picker-preset' }, 'default')
       // ---- Editor ----------------------------------------------------
       h('div', { class: 'row' },
         h('label', { class: 'label', for: 'spe-title' },
-          'Title (optional)'
+          isBuiltin ? 'Title' : 'Title (optional)'
         ),
         h('input', {
           value: title,
           onInput: (e) => setTitle(e.currentTarget.value),
-          class: 'input',
+          readOnly: isBuiltin,
+          class: 'input' + (isBuiltin ? ' is-readonly' : ''),
           id: 'spe-title',
           type: 'text',
           placeholder: 'My custom prompt'
@@ -835,12 +935,13 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
         h('textarea', {
           value: content,
           onInput: (e) => setContent(e.currentTarget.value),
-          class: 'input prompts__textarea',
+          readOnly: isBuiltin,
+          class: 'input prompts__textarea' + (isBuiltin ? ' is-readonly' : ''),
           id: 'spe-content',
           rows: 6,
-          placeholder: 'You are a helpful assistant specialized in…'
+          placeholder: isBuiltin ? '(empty — no system prompt)' : 'You are a helpful assistant specialized in…'
         }),
-        h('div', { class: 'prompts__from-default' },
+        isBuiltin ? null : h('div', { class: 'prompts__from-default' },
           h('button', {
           type: 'button',
           class: 'btn btn--small prompts__from-default-btn',
@@ -860,9 +961,9 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
           'Replace the content with a built-in profile, then edit.'
           )
           ),
-        showProfileCopy ? h('div', { class: 'prompts__profile-pick' },
-          profiles.length
-            ? profiles.map((p) =>
+        !isBuiltin && showProfileCopy ? h('div', { class: 'prompts__profile-pick' },
+          insertProfiles.length
+            ? insertProfiles.map((p) =>
                 h('button', {
                   type: 'button',
                   class: 'btn btn--ghost prompts__profile-option',
@@ -880,7 +981,7 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
       // ---- Prompt preset --------------------------------------------
       // Always visible. `preset === null` renders as the all-on baseline,
       // which saves as "no preset", so there is no separate on/off switch.
-      h('div', { class: 'row prompts__preset' },
+      isBuiltin ? null : h('div', { class: 'row prompts__preset' },
         h('span', { class: 'label prompt-label' }, 'Chat preset'),
         dataLoaded
           ? h(ToolTree, {
@@ -908,7 +1009,7 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
           class: 'btn btn--danger',
           type: 'button',
           onClick: deletePrompt,
-          hidden: isNew,
+          hidden: isNew || isBuiltin,
           disabled: isDeleting
         }, isDeleting ? 'Deleting…' : 'Delete'),
         h('span', {
