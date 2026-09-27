@@ -378,6 +378,26 @@ border-left: 1px solid var(--border);
 .project-card__search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .project-card__search-box:focus-within .project-card__search-icon { color: var(--accent); }
 .project-card__search-icon { display: grid; place-items: center; flex: none; color: var(--muted); transition: color 120ms ease; }
+/* The answered hit count, between the pill and the close button. Muted and
+   non-scrolling: it states whether the three visible rows are the whole
+   answer. The word drops out on a very narrow card (the grid below) so the
+   field and the × keep their space there; the number alone still answers
+   "is this all of it?". */
+.project-card__search-count {
+  flex: none;
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding: 0 8px;
+}
+.project-card__search-count[hidden] { display: none; }
+@media (max-width: 360px) {
+  .project-card__search-count-word { display: none; }
+}
 .project-card__search-input {
   flex: 1; min-width: 0;
   /* 16px keeps iOS Safari from zooming the page when the field is focused. */

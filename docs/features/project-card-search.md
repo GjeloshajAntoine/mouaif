@@ -19,6 +19,7 @@ Only the card you searched changes; every other project card keeps its own list.
 - **Match label** — a result whose title matched shows nothing extra. A result that matched in a message shows a `TEXT` badge and up to two lines of the matching message; a draft match shows a `DRAFT` badge and the start of the draft. The preview sits on its own line under the title (the cost and time move up beside the title), so it gets the whole width of the card.
 - **Highlighted term** — the search term is marked wherever it appears in a result's title and preview.
 - **Readable previews** — tool calls and results are stored as JSON, so escaped newlines, quotes, and backslashes (`\n`, `\"`, `\\`) are shown as plain text in the preview.
+- **Match count** — the number of chats the settled term answered with is shown beside the field, so three visible rows are not mistaken for the whole answer. On a card narrower than 360 px the unit is dropped and only the number remains.
 - **Results are the project's most recent matches**, in the same order as the card's normal chat list.
 - **Only a settled term is sent.** Typing is not a request per keystroke, and the previous term's results are never shown against a new term.
 - **No match is not an error** — the card says the term matched nothing. A request that actually failed says so instead.

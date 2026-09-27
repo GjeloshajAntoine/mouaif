@@ -176,11 +176,16 @@ function createCard() {
   const snippetText = () => select((node) => node.attrs.class === 'project-card__chat-snippet').map(textOf);
   const badgeText = () => select((node) => node.attrs.class === 'project-card__chat-badge').map(textOf);
   const marks = () => select((node) => node.tag === 'mark').map(textOf);
+  // The answered match count beside the field: its two spans flattened, and
+  // `hidden` reported so a test can tell "no count" from "count of zero".
+  const countNode = () => select((node) => node.attrs.class === 'project-card__search-count')[0] || null;
+  const countText = () => countNode() ? textOf(countNode().children) : null;
 
   const settle = async () => { await new Promise((r) => setTimeout(r, 260)); await new Promise((r) => setImmediate(r)); };
 
   return {
     requests, render, field, magnifier, closeBtn, empty, rowTitles, rowMatches, snippetText, badgeText, marks,
+    countNode, countText,
     project: PROJECT,
     setMode: (next) => { mode = next; },
     answer: (q, body) => { const resolve = pending.get(q); pending.delete(q); resolve(body); },
@@ -239,6 +244,8 @@ assert.deepEqual(card.snippetText(), ['the kumquat handler moved', 'kumquats not
 assert.deepEqual(card.badgeText(), ['text', 'draft'], 'the badge distinguishes a message hit from a draft hit');
 assert.deepEqual(card.marks(), ['kumquat', 'kumquat', 'kumquat'],
   'the term is marked in the matching title and in each snippet');
+assert.equal(card.countText(), '3 matches', 'the answered hit count is stated beside the field');
+assert.equal(card.countNode().attrs.hidden, false, 'a non-empty answer shows the count');
 
 // ---- 2b. a JSON-shaped snippet reads as text ------------------------------
 {
@@ -287,11 +294,13 @@ assert.deepEqual(failing.rowTitles(), [], 'a failed search shows no rows');
 assert.ok(failing.empty(), 'a failed search says so');
 assert.ok(/search failed/.test(String(failing.empty().children[0])), 'the message names the failure');
 assert.ok(/500/.test(String(failing.empty().children[0])), 'the message carries the status');
+assert.equal(failing.countNode().attrs.hidden, true, 'a failed search shows no count');
 
 failing.setMode('ok');
 await failing.type('nope');
 assert.ok(failing.empty(), 'no match shows the empty state');
 assert.ok(/No chat matches/.test(String(failing.empty().children[0])), 'the empty state quotes the term');
+assert.equal(failing.countNode().attrs.hidden, true, 'an empty answer shows no count');
 
 // ---- 6. closing resets everything; reopening starts fresh ---------------
 failing.click(failing.closeBtn());

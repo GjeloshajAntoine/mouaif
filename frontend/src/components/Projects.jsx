@@ -365,26 +365,41 @@ onClick: (e) => { e.stopPropagation(); deleteChat(c); }
     ? (answered ? answered.chats.map((c) => chatRow(c, c.matchField)) : [])
     : chats.map((c) => chatRow(c, undefined));
 
+  // How many hits the current term answered with, stated beside the field so
+  // the user knows whether three rows is the whole answer or the first three.
+  // Only for a non-empty answer: "no match" is the empty row's job, and a
+  // failed search says so there too.
+  const hitCount = answered && !answered.error ? answered.chats.length : 0;
+
   return h(Fragment, null,
     searchOpen ? h('div', { class: 'project-card__search' },
-    h('label', { class: 'project-card__search-box' },
-    h('span', { class: 'project-card__search-icon', 'aria-hidden': 'true' }, h(ProjectSearchIcon, { size: 16 })),
-    h('input', {
-        ref: searchInputRef,
-        class: 'project-card__search-input',
-        type: 'search',
-        value: term,
-        placeholder: 'Search titles, drafts, messages…',
-        'aria-label': 'Search chats in ' + (project.name || project.path),
-        autocomplete: 'off',
-        autocapitalize: 'none',
-        autocorrect: 'off',
-        spellcheck: 'false',
-        enterkeyhint: 'search',
-        onInput: (e) => setTerm(e.currentTarget.value),
-        onKeyDown: (e) => { if (e.key === 'Escape') { e.preventDefault(); closeSearch(); } }
-        })),
-        h('button', {
+      h('label', { class: 'project-card__search-box' },
+        h('span', { class: 'project-card__search-icon', 'aria-hidden': 'true' }, h(ProjectSearchIcon, { size: 16 })),
+        h('input', {
+          ref: searchInputRef,
+          class: 'project-card__search-input',
+          type: 'search',
+          value: term,
+          placeholder: 'Search titles, drafts, messages…',
+          'aria-label': 'Search chats in ' + (project.name || project.path),
+          autocomplete: 'off',
+          autocapitalize: 'none',
+          autocorrect: 'off',
+          spellcheck: 'false',
+          enterkeyhint: 'search',
+          onInput: (e) => setTerm(e.currentTarget.value),
+          onKeyDown: (e) => { if (e.key === 'Escape') { e.preventDefault(); closeSearch(); } }
+        })
+      ),
+      h('span', {
+      class: 'project-card__search-count',
+      hidden: hitCount === 0,
+      'aria-live': 'polite'
+      },
+      h('span', { class: 'project-card__search-count-n' }, String(hitCount)),
+      h('span', { class: 'project-card__search-count-word' }, hitCount === 1 ? ' match' : ' matches')
+      ),
+      h('button', {
         class: 'project-card__search-close',
         type: 'button',
         'aria-label': 'Close search',
