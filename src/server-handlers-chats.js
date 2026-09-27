@@ -1000,7 +1000,8 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
   // `done` handler computes the final cost from aggregated usage.
   let pendingRoundUsage = null;
   // Running token/cost totals across all upstream rounds in this turn,
-  // used by the task progress push notification title ("12.4K tok · $0.0312").
+  // used by the status notification's usage row ("12.4K tok · $0.0312").
+  // Fed by onRoundCommit (once per round), never by onRoundUsage snapshots.
   let turnTokens = 0;
   let turnCost = 0;
   let turnCostKnown = false;
@@ -1235,7 +1236,12 @@ promptSize: resolvedProfileId,
     // Per-round usage snapshot (one per upstream API call, including
     // tool rounds). Stashed so `assistant_turn_end` can attach cost
     // to the intermediate segment it persists.
-    onRoundUsage: (roundUsage) => { pendingRoundUsage = roundUsage; accumulateRoundUsage(roundUsage); },
+    onRoundUsage: (roundUsage) => { pendingRoundUsage = roundUsage; },
+    // The running turn totals (status notification usage row, subagent
+    // remainder cost) fold in once per finished round. onRoundUsage is a
+    // snapshot stream — Anthropic fires one cumulative snapshot per
+    // message_delta — so summing it counted a round once per delta.
+    onRoundCommit: (roundUsage) => { accumulateRoundUsage(roundUsage); },
     onEvent: (name, data) => {
       if (name === 'message' && typeof data.delta === 'string') {
       if (!streamStartedAt) streamStartedAt = Date.now();

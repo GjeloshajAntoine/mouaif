@@ -109,6 +109,8 @@ The same table bounds a measured value that is implausibly far from what the pla
 | 5 | Tool | `shell` |
 | 6 | Model | `gpt-5-mini` |
 
+The turn usage row is the sum over every upstream round of the turn (tool rounds included): each round's prompt plus completion tokens, and its cost when pricing is known. A round is counted once, when its stream ends. Mid-round usage snapshots (Anthropic sends one per `message_delta`) are never added, so a round with many output deltas does not inflate the count.
+
 A one-line surface keeps the bar and its single most important fact; a preview-sized one shows the top three; an expanded notification shows all six. Missing facts simply do not appear, so a plain model round shows only the model and no tool. A slot that would wrap is dropped rather than wrapped, and a path or model id that has to be clipped keeps its tail (`...transcript.js`) rather than its prefix. A completion replaces the counts row (the position is no longer the news), and an error keeps its message plus whatever context the turn had reached.
 
 The notification title carries the chat name and does not change with the device.
