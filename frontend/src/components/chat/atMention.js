@@ -337,18 +337,24 @@ const cb = catOrder[b.category] ?? 6;
 
 // ---- Filtering + rendering ----------------------------------------------
 
-function filterItems(searchQuery) {
-// During a search (query typed) the category filter is ignored so the
-// user sees every matching result across all categories.
-let matches = searchQuery
-? items
-: (activeFilter ? items.filter(item => item.category === activeFilter) : items);
-if (searchQuery) {
-matches = rankAtMentionItems(matches, searchQuery);
-}
-// With an active query there is no per-category cap — the user is
-// searching. Files still get the large global cap.
-  if (searchQuery) {
+// filterAtMentionItems(candidates, searchQuery, categoryFilter)
+//
+// Pure filter+rank step shared by the live popup and the regression tests.
+// The category filter is honored even while a query is typed: picking
+// "Tools" and then writing narrows the search to tools instead of silently
+// expanding back to every category. An empty searchQuery means "at rest".
+export function filterAtMentionItems(candidateItems, searchQuery, categoryFilter) {
+  const q = searchQuery || '';
+  // A category filter always applies first, with or without a query.
+  let matches = categoryFilter
+    ? candidateItems.filter(item => item.category === categoryFilter)
+    : candidateItems;
+  if (q) {
+    matches = rankAtMentionItems(matches, q);
+  }
+  // With an active query there is no per-category cap — the user is
+  // searching. Files still get the large global cap.
+  if (q) {
     let fileCount = 0;
     const cappedMatches = matches.filter(item => {
       if (item.category !== CATEGORY.FILES) return true;
@@ -363,7 +369,7 @@ matches = rankAtMentionItems(matches, searchQuery);
     const loose = cappedMatches.filter(item => item.fuzzy);
     return prioritizeAtMentionFiles(strong).concat(prioritizeAtMentionFiles(loose));
   }
-  if (activeFilter) {
+  if (categoryFilter) {
     // Single-category view: show everything in that category.
     return prioritizeAtMentionFiles(matches);
   }
@@ -378,13 +384,18 @@ matches = rankAtMentionItems(matches, searchQuery);
   return prioritizeAtMentionFiles(cappedMatches);
 }
 
+function filterItems(searchQuery) {
+  return filterAtMentionItems(items, searchQuery, activeFilter);
+}
+
 // ---- Category filter bar ------------------------------------------------
-// Renders a row of tappable type chips at the top of the popup (at rest,
-// no query). Tapping a chip filters the list to a single category; tapping
-// the active chip again returns to the mixed "All" view.
+// Renders a row of tappable type chips at the top of the popup. Tapping a
+// chip filters the list to a single category; tapping the active chip again
+// returns to the mixed "All" view. At rest the bar is always shown; while a
+// query is typed it stays visible only when a category is active, so the
+// user can see (and clear) the filter that is narrowing their search.
 function renderFilterBar(root) {
-// Never show the bar while the user is typing a search query.
-if (query) return;
+if (query && !activeFilter) return;
 const bar = document.createElement('div');
 bar.className = 'at-mention__filter';
 for (const { key, label } of FILTER_ORDER) {
@@ -436,13 +447,19 @@ function renderPopup() {
   const f = filtered;
 
   popup.hidden = false;
-  // If the filter bar is shown (at rest, no query) but there are no items
-  // in the active category, keep the popup open with just the filter bar so
-  // the user can switch back to another type instead of losing the popup.
+  // With no rows, keep the popup open (and the filter bar, when a category
+  // is active) so the user can switch category or clear the filter instead
+  // of losing the popup. Otherwise say "no match" for a typed query.
   if (!visible || !f.length) {
-    if (visible && !query) {
+    if (visible && (!query || activeFilter)) {
       popup.innerHTML = '';
       renderFilterBar(popup);
+      if (query) {
+        const empty = document.createElement('div');
+        empty.className = 'at-mention__empty';
+        empty.textContent = 'No matches for @' + query;
+        popup.appendChild(empty);
+      }
       return;
     }
     if (visible && query) {
