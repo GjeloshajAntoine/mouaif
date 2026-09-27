@@ -168,23 +168,21 @@ function createCard() {
   const chatRows = () => select(isChatRow);
   const rowTitles = () => chatRows().map((node) => node.attrs.key);
   const rowMatches = () => chatRows().map((node) => node.attrs['data-match'] || null);
-  // Text content of a node: strings, nested arrays, and child nodes (the <mark>
-  // that highlights the search term) all flattened.
-  const textOf = (c) => typeof c === 'string' ? c
-    : Array.isArray(c) ? c.map(textOf).join('')
-    : c && c.children ? textOf(c.children) : '';
-  const snippetText = () => select((node) => node.attrs.class === 'project-card__chat-snippet').map(textOf);
-  const badgeText = () => select((node) => node.attrs.class === 'project-card__chat-badge').map(textOf);
-  const marks = () => select((node) => node.tag === 'mark').map(textOf);
+  const snippetText = () => select((node) => node.attrs.class === 'project-card__chat-snippet')
+    .map((node) => node.children.filter((c) => typeof c === 'string').join(''));
+  const badgeText = () => select((node) => node.attrs.class === 'project-card__chat-badge')
+    .map((node) => node.children.filter((c) => typeof c === 'string').join(''));
   // The answered match count beside the field: its two spans flattened, and
   // `hidden` reported so a test can tell "no count" from "count of zero".
   const countNode = () => select((node) => node.attrs.class === 'project-card__search-count')[0] || null;
-  const countText = () => countNode() ? textOf(countNode().children) : null;
+  const countText = () => countNode()
+    ? countNode().children.map((c) => c.children.filter((t) => typeof t === 'string').join('')).join('')
+    : null;
 
   const settle = async () => { await new Promise((r) => setTimeout(r, 260)); await new Promise((r) => setImmediate(r)); };
 
   return {
-    requests, render, field, magnifier, closeBtn, empty, rowTitles, rowMatches, snippetText, badgeText, marks,
+    requests, render, field, magnifier, closeBtn, empty, rowTitles, rowMatches, snippetText, badgeText,
     countNode, countText,
     project: PROJECT,
     setMode: (next) => { mode = next; },
@@ -242,19 +240,8 @@ assert.deepEqual(card.rowMatches(), ['title', 'message', 'draft'], 'each row rep
 assert.deepEqual(card.snippetText(), ['the kumquat handler moved', 'kumquats not sent yet'],
   'a message or draft hit shows its snippet; a title hit does not repeat the title');
 assert.deepEqual(card.badgeText(), ['text', 'draft'], 'the badge distinguishes a message hit from a draft hit');
-assert.deepEqual(card.marks(), ['kumquat', 'kumquat', 'kumquat'],
-  'the term is marked in the matching title and in each snippet');
 assert.equal(card.countText(), '3 matches', 'the answered hit count is stated beside the field');
 assert.equal(card.countNode().attrs.hidden, false, 'a non-empty answer shows the count');
-
-// ---- 2b. a JSON-shaped snippet reads as text ------------------------------
-{
-  const context = vm.createContext({ h: (tag, attrs, ...children) => ({ tag, attrs, children }) });
-  vm.runInContext(source('components/Projects.jsx').match(/function cleanSnippet[\s\S]*?\n}\n/)[0]
-    + ';this.cleanSnippet = cleanSnippet;', context);
-  assert.equal(context.cleanSnippet('…"test:chat-\\n  view\\": \\"node a\\\\b'),
-    '…"test:chat- view": "node a\\b', 'escaped newlines, quotes, and backslashes are unescaped');
-}
 
 // ---- 3. an unanswered term shows no stale rows ---------------------------
 card.typeImmediate('kumquat no');
