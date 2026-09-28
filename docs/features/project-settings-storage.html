@@ -43,6 +43,8 @@
 <h2 id="overview">Overview</h2>
 <p>By default a project&#39;s settings live in <code>&lt;projectDir&gt;/.mouaif.json</code> so they can be committed and hand-edited. When the project should stay untouched, <strong>Store settings in app DB</strong> keeps the same raw settings object in the app SQLite store (<code>~/.mouaif/store.sqlite</code>) and never writes <code>.mouaif.json</code>. This is a per-project, reversible toggle.</p>
 <h2 id="usage">Usage</h2>
+<h3 id="when-adding-a-project">When adding a project</h3>
+<p>The folder picker asks where the project&#39;s settings live before you register it. <strong>Config file in the folder</strong> (the default) writes a <code>.mouaif.json</code> into the folder, or adopts the one already there; <strong>Store in app DB</strong> keeps them in the app store and writes nothing. See <a href="folder-picker.html">New-project folder picker</a>.</p>
 <h3 id="in-the-app">In the app</h3>
 <p>Open <strong>Settings → Project → Technical details</strong>. The <strong>Project settings storage</strong> card has a single switch:</p>
 <ul><li><p><strong>Off</strong> (default): settings live in <code>.mouaif.json</code>.</p></li><li><p><strong>On</strong>: settings live in the app DB; the raw JSON editor becomes read-only and the <code>Save file</code> button is disabled.</p>
