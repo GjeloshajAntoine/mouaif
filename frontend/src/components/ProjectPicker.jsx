@@ -39,6 +39,11 @@ export function ProjectPickerView(props) {
   // Which config file the folder in view already carries ('root' | 'folder' |
   // null). Answered by the directory listing, refreshed as the user navigates.
   const [dirConfigLayout, setDirConfigLayout] = useState(null);
+  // The storage choice is collapsed by default: it is an optional detail, and
+  // leaving it open eats the bottom of a phone screen above the Add button.
+  // The collapsed row still names the current choice, so nothing is hidden
+  // that the user needs to decide.
+  const [storageOpen, setStorageOpen] = useState(false);
 
   async function load(dir) {
     const useDir = dir ?? currentDir;
@@ -124,6 +129,16 @@ export function ProjectPickerView(props) {
         ? 'Writes ' + CONFIG_DIR + CONFIG_FILE + ' — one folder for all mouaif files.'
         : 'Writes ' + CONFIG_FILE + ' at the folder root.';
 
+  // Label for the collapsed storage row: the current choice plus a short
+  // qualifier so the closed state is still self-explanatory — and the
+  // qualifier never repeats the label (it would read ".mouaif.json ·
+  // .mouaif.json"). An already-existing config file wins, because that is the
+  // case the user cannot guess from the folder name.
+  const storageOption = STORAGE_OPTIONS.find(o => o.value === storage) || STORAGE_OPTIONS[0];
+  const storageWhere = dirConfigLayout
+    ? 'existing file'
+    : storage === 'folder' ? CONFIG_DIR + CONFIG_FILE : storageOption.hint.toLowerCase();
+
   function goUp() {
     const parent = parentDir();
     if (parent != null) nav('projects/new?dir=' + encodeURIComponent(parent));
@@ -136,8 +151,9 @@ export function ProjectPickerView(props) {
   // Layout, top to bottom: header, current path + Up, the folder list (the
   // thing being browsed, first on screen), "Create new folder", then a sticky
   // bottom bar with the storage choice and one explicit "Add <folder>" button.
-  // The choice only matters at the moment of adding, so it sits next to the
-  // button that acts on it instead of pushing the list below the fold.
+  // The storage choice is collapsed to a single row naming the current choice,
+  // so the list keeps the screen and the default path one tap away; it expands
+  // into the three-way control only when tapped.
   const busy = status === 'registering…';
   return h('section', { class: 'picker' },
     h('div', { class: 'view-head' },
@@ -201,27 +217,38 @@ export function ProjectPickerView(props) {
       )
     ),
     h('div', { class: 'picker__footer' },
-      h('fieldset', { class: 'picker__storage' },
-        h('legend', { class: 'picker__storage-legend' }, 'Settings stored in'),
-        h('div', { class: 'picker__seg', role: 'radiogroup' },
-          STORAGE_OPTIONS.map(opt => h('label', {
-            key: opt.value,
-            class: 'picker__seg-opt' + (storage === opt.value ? ' is-on' : ''),
-            title: opt.hint
-          },
-            h('input', {
-              type: 'radio',
-              name: 'picker-storage',
-              value: opt.value,
-              checked: storage === opt.value,
-              onChange: () => setStorage(opt.value),
-              'aria-label': opt.label + ' — ' + opt.hint
-            }),
-            h('span', { class: 'picker__seg-label' }, opt.label)
-          ))
-        ),
-        h('p', { class: 'picker__storage-note', 'aria-live': 'polite' }, storageNote)
+    h('details', {
+      class: 'picker__storage-details',
+      open: storageOpen,
+      onToggle: (e) => setStorageOpen(e.currentTarget.open)
+    },
+      h('summary', { class: 'picker__storage-summary' },
+      h('span', { class: 'picker__storage-summary-label' }, 'Settings in'),
+      h('span', { class: 'picker__storage-summary-value' }, ' · ' + storageOption.label),
+      h('span', { class: 'picker__storage-summary-where' }, ' · ' + storageWhere)
       ),
+      h('fieldset', { class: 'picker__storage' },
+      h('legend', { class: 'picker__storage-legend' }, 'Settings stored in'),
+      h('div', { class: 'picker__seg', role: 'radiogroup' },
+        STORAGE_OPTIONS.map(opt => h('label', {
+        key: opt.value,
+        class: 'picker__seg-opt' + (storage === opt.value ? ' is-on' : ''),
+        title: opt.hint
+        },
+        h('input', {
+          type: 'radio',
+          name: 'picker-storage',
+          value: opt.value,
+          checked: storage === opt.value,
+          onChange: () => setStorage(opt.value),
+          'aria-label': opt.label + ' — ' + opt.hint
+        }),
+        h('span', { class: 'picker__seg-label' }, opt.label)
+        ))
+      ),
+      h('p', { class: 'picker__storage-note', 'aria-live': 'polite' }, storageNote)
+      )
+    ),
       h('button', {
         class: 'btn btn--primary picker__add',
         type: 'button',

@@ -516,6 +516,48 @@ border-left: 1px solid var(--border);
   background: var(--bg);
   border-top: 1px solid var(--border);
 }
+.picker__storage-details {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+/* Collapsed state: one tappable row (>= 44px) that names the current choice
+   so the user never has to open it just to see where settings go. */
+.picker__storage-summary {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--tap);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  list-style: none;
+}
+.picker__storage-summary::-webkit-details-marker { display: none; }
+.picker__storage-summary::before {
+  content: "›";
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  margin-right: 2px;
+  color: var(--muted);
+  font-weight: 600;
+  transition: transform 120ms ease;
+}
+.picker__storage-details[open] .picker__storage-summary::before { transform: rotate(90deg); }
+.picker__storage-summary-label { flex: none; color: var(--muted); }
+.picker__storage-summary-value { flex: none; color: var(--fg); font-weight: 600; }
+.picker__storage-summary-where {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.picker__storage-details[open] .picker__storage-summary { border-bottom: 1px solid var(--border); }
+.picker__storage-details[open] .picker__storage { padding: 8px 10px 2px; }
 .picker__storage {
   margin: 0;
   padding: 0;
