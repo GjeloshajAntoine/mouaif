@@ -10,7 +10,14 @@ const projects = require('mouaif/src/projects.js');
 // List immediate subdirs at <abs>. Hidden entries (dotfiles) are skipped.
 // Entries sorted case-insensitive by name.
 projects.listDir('C:/Users/Admin');
-// -> { dir: 'C:\\Users\\Admin', entries: [{ name, path, hasChildren }, ...] }
+// -> { dir: 'C:\\Users\\Admin', dirHasConfig, dirConfigLayout,
+//      entries: [{ name, path, hasChildren, hasConfig, configLayout }, ...] }
+// configLayout: 'root' (<dir>/.mouaif.json) | 'folder' (<dir>/.mouaif/.mouaif.json) | null
+
+// Create or adopt the project config file. layout: 'root' (default) | 'folder'.
+// An existing file in either layout is adopted, never moved or duplicated.
+projects.ensureProjectConfig('/home/me/app', { layout: 'folder' });
+// -> { path: '/home/me/app/.mouaif/.mouaif.json', layout: 'folder', created: true, adopted: false, name: 'app' }
 
 // Create a new directory. Throws EEXIST if the directory already exists.
 projects.createDir('C:/Users/Admin/mouaif-projects/my-new-app');
@@ -28,10 +35,10 @@ projects.removeProject(id); // -> true | false   (does NOT delete the folder)
 
 | Method | Path                                      | Body / Query                                              | Response                                                  |
 |--------|-------------------------------------------|-----------------------------------------------------------|-----------------------------------------------------------|
-| GET    | `/api/projects`                           | `?dir=<abs>` (defaults to home)                           | `{ dir, entries: [{ name, path, hasChildren }] }`         |
+| GET    | `/api/projects`                           | `?dir=<abs>` (defaults to home)                           | `{ dir, dirHasConfig, dirConfigLayout, entries: [{ name, path, hasChildren, hasConfig, configLayout }] }` |
 | POST   | `/api/projects`                           | `{ "action": "list",    "dir": "<abs>" }`                 | same as GET                                               |
 | POST   | `/api/projects`                           | `{ "action": "create",  "parent": "<abs>", "name": "x" }` | `201 { path, parent, name }`                              |
-| POST   | `/api/projects`                           | `{ "action": "register","dir": "<abs>" }`                 | `{ project: { id, path, name, createdAt } }`              |
+| POST   | `/api/projects`                           | `{ "action": "register","dir": "<abs>", "configFile"?, "configLayout"?: "root"\|"folder", "dbBacked"? }` | `{ project: { id, path, name, createdAt }, dbBacked, config: { path, layout, created, adopted, name } \| null }` |
 | GET    | `/api/projects/registered`                | —                                                         | `{ projects: [...] }`                                     |
 | DELETE | `/api/projects/registered/:id`            | —                                                         | `{ ok: true }` (404 if unknown id)                        |
 
@@ -59,4 +66,5 @@ curl -X DELETE http://localhost:5732/api/projects/registered/<id>
 - Storage: registered projects live in the app settings under the `projects` key (added to `DEFAULTS` in this commit, additive).
 - Server wiring: [src/index.js](../../../src/index.js) → `handleProjects()`. Errors are mapped to typed HTTP statuses via `projectsErrorStatus()`.
 - Error codes the UI can branch on: `EBADPATH` (400), `EOUTSIDE_HOME` (403), `ENOENT` (404), `ENOTDIR` (400), `EACCES` (403), `EEXIST` (409), `EREAD` (500).
-- Component: [frontend/src/main.jsx](../../../frontend/src/main.jsx) (`ProjectPickerView` component and the `projects/new?dir=…` route).
+- Config layouts: `settings.getProjectPath(dir)` returns `<dir>/.mouaif/.mouaif.json` when that file exists, else `<dir>/.mouaif.json`; every project read/write goes through it, so the layout is discovered, not stored.
+- Component: [frontend/src/components/ProjectPicker.jsx](../../../frontend/src/components/ProjectPicker.jsx) (`ProjectPickerView`, routed as `projects/new?dir=…`). Folder list first; a sticky `.picker__footer` holds the three-way storage control and the `Add "<folder>"` button.

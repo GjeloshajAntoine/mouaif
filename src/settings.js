@@ -13,7 +13,9 @@
 //   - getDefaults()             : built-in defaults (in-code, not stored).
 //   - getApp() / setApp()       : the whole app-level settings object.
 //   - getProject(dir) / set()   : one project, resolved (merged) or raw.
-//   - getProjectPath()          : the canonical <projectDir>/.mouaif.json path.
+//   - getProjectPath()          : the project's settings file — either
+//                                 <projectDir>/.mouaif/.mouaif.json (folder
+//                                 layout, when present) or <projectDir>/.mouaif.json.
 //
 // Concurrency: better-sqlite3 is synchronous and single-process; we do not
 // need transactions beyond what a single prepared statement gives us. The
@@ -27,6 +29,9 @@ const Database = require('better-sqlite3');
 
 const MOUAIF_HOME = process.env.MOUAIF_HOME || path.join(os.homedir(), '.mouaif');
 const PROJECT_FILE = '.mouaif.json';
+// Optional per-project folder holding the config file for complex projects:
+// <projectDir>/.mouaif/.mouaif.json. See getProjectPath().
+const PROJECT_DIR = '.mouaif';
 const APP_DB = 'store.sqlite';
 const APP_KV_TABLE = 'app_kv';
 const APP_KEY = 'settings';
@@ -716,11 +721,39 @@ function setAppReplace(next) {
 
 // ---- Project-level store ------------------------------------------------
 
-function getProjectPath(projectDir) {
+// Two on-disk layouts for the same file name:
+//   - root:   <projectDir>/.mouaif.json          (the default, simple projects)
+//   - folder: <projectDir>/.mouaif/.mouaif.json  (complex projects that keep
+//             every mouaif file — config, traces — under one `.mouaif/` dir)
+// The layout is discovered, not stored: when the folder file exists it is the
+// project's settings file, otherwise the root file is. So a project switches
+// layout by moving the file, and nothing else has to know which one it uses.
+function getProjectRootPath(projectDir) {
   if (!projectDir || typeof projectDir !== 'string') {
     throw new TypeError('projectDir must be a non-empty string');
   }
   return path.join(projectDir, PROJECT_FILE);
+}
+
+function getProjectFolderPath(projectDir) {
+  if (!projectDir || typeof projectDir !== 'string') {
+    throw new TypeError('projectDir must be a non-empty string');
+  }
+  return path.join(projectDir, PROJECT_DIR, PROJECT_FILE);
+}
+
+// 'folder' when <projectDir>/.mouaif/.mouaif.json is a file, else 'root'.
+function getProjectLayout(projectDir) {
+  try {
+    if (fs.statSync(getProjectFolderPath(projectDir)).isFile()) return 'folder';
+  } catch { /* no folder file */ }
+  return 'root';
+}
+
+function getProjectPath(projectDir) {
+  return getProjectLayout(projectDir) === 'folder'
+    ? getProjectFolderPath(projectDir)
+    : getProjectRootPath(projectDir);
 }
 
 function getProjectRaw(projectDir) {
@@ -921,6 +954,7 @@ module.exports = {
   // introspection
   MOUAIF_HOME,
   PROJECT_FILE,
+  PROJECT_DIR,
   PROJECT_SETTINGS_TABLE,
   DEFAULTS,
   // app
@@ -930,6 +964,9 @@ module.exports = {
   listQuarantinedAppSettings,
   // project
   getProjectPath,
+  getProjectRootPath,
+  getProjectFolderPath,
+  getProjectLayout,
   getProject,
   getProjectRaw,
   setProject,

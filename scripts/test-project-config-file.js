@@ -83,6 +83,47 @@ fs.mkdirSync(noneDir);
 t('a plain subfolder is flagged false',
   projects.listDir(root).entries.find((e) => e.name === 'plain').hasConfig === false);
 
+// ---- folder layout: <dir>/.mouaif/.mouaif.json --------------------------
+const settings = require('../src/settings.js');
+const layered = path.join(root, 'layered');
+fs.mkdirSync(layered);
+t('settings default to the root file when nothing exists',
+  settings.getProjectPath(layered) === path.join(layered, '.mouaif.json'));
+const madeFolder = projects.ensureProjectConfig(layered, { layout: 'folder' });
+const folderFile = path.join(layered, '.mouaif', '.mouaif.json');
+t('folder layout writes .mouaif/.mouaif.json',
+  madeFolder.created === true && madeFolder.layout === 'folder' && madeFolder.path === folderFile && fs.existsSync(folderFile),
+  JSON.stringify(madeFolder));
+t('folder layout writes no root file', !fs.existsSync(path.join(layered, '.mouaif.json')));
+t('configLayout reports folder', projects.configLayout(layered) === 'folder');
+t('hasConfig is true for the folder layout', projects.hasConfig(layered) === true);
+t('settings.getProjectPath follows the folder file', settings.getProjectPath(layered) === folderFile);
+settings.setProject(layered, { promptSize: 'chat' });
+t('settings writes land in the folder file',
+  JSON.parse(fs.readFileSync(folderFile, 'utf8')).promptSize === 'chat'
+  && !fs.existsSync(path.join(layered, '.mouaif.json')));
+t('settings reads come from the folder file', settings.getProject(layered).name === 'layered');
+const againFolder = projects.ensureProjectConfig(layered, { layout: 'root' });
+t('an existing folder file is adopted even when root is asked for',
+  againFolder.adopted === true && againFolder.layout === 'folder' && !fs.existsSync(path.join(layered, '.mouaif.json')),
+  JSON.stringify(againFolder));
+const rootOnly = projects.ensureProjectConfig(existing, { layout: 'folder' });
+t('an existing root file is adopted when folder is asked for',
+  rootOnly.adopted === true && rootOnly.layout === 'root' && !fs.existsSync(path.join(existing, '.mouaif', '.mouaif.json')),
+  JSON.stringify(rootOnly));
+t('an unknown layout falls back to root',
+  (() => {
+    const d = path.join(root, 'odd-layout');
+    fs.mkdirSync(d);
+    const r = projects.ensureProjectConfig(d, { layout: 'nope' });
+    return r.layout === 'root' && fs.existsSync(path.join(d, '.mouaif.json'));
+  })());
+t('the listing reports each layout',
+  (() => {
+    const by = new Map(projects.listDir(root).entries.map((e) => [e.name, e.configLayout]));
+    return by.get('layered') === 'folder' && by.get('existing-project') === 'root' && by.get('plain') === null;
+  })());
+
 // ---- guard rails --------------------------------------------------------
 t('hasConfig refuses a relative path', projects.hasConfig('relative/dir') === false);
 let outsideErr = null;

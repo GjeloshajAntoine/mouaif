@@ -4,9 +4,26 @@ import { useState, useEffect } from 'preact/hooks';
 import { fetchJson, projectsReload } from '../api.js';
 import { nav, back } from '../router.js';
 
-// The per-project settings file. Kept next to the label so the two strings a
-// user reads ("Config file in the folder" / the file name) never drift.
+// The per-project settings file. Kept next to the labels so the strings a
+// user reads (the option labels / the file name) never drift.
 const CONFIG_FILE = '.mouaif.json';
+const CONFIG_DIR = '.mouaif/';
+
+// Where a new project's settings live. Same file name in both file layouts;
+// `folder` keeps it (and traces etc.) under one `.mouaif/` dir for complex
+// projects. `db` writes nothing to the folder.
+const STORAGE_OPTIONS = [
+  { value: 'root', label: CONFIG_FILE, hint: 'File at the folder root' },
+  { value: 'folder', label: CONFIG_DIR, hint: 'File inside a .mouaif/ folder' },
+  { value: 'db', label: 'App DB', hint: 'Nothing written to the folder' }
+];
+
+// Last path segment, for the "Add <name>" button.
+function baseName(dir) {
+  const norm = String(dir || '').replace(/[\\/]+$/, '');
+  const idx = Math.max(norm.lastIndexOf('\\'), norm.lastIndexOf('/'));
+  return (idx >= 0 ? norm.slice(idx + 1) : norm) || norm || 'home';
+}
 
 export function ProjectPickerView(props) {
   const [currentDir, setCurrentDir] = useState(typeof props.dir === 'string' ? props.dir : '');
@@ -14,14 +31,14 @@ export function ProjectPickerView(props) {
   const [status, setStatus] = useState('loading…');
   const [newName, setNewName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
-  // Where the project's settings will live. `configFile` is the default: the
-  // folder gets/has a `.mouaif.json`. `dbBacked` is the opt-out that keeps the
-  // working tree untouched. They are mutually exclusive — a DB-backed project
-  // reads no file, so offering to write one would be a lie.
-  const [storage, setStorage] = useState('configFile');
-  // Does the folder we are currently looking at already carry a config file?
-  // Answered by the directory listing, refreshed as the user navigates.
-  const [dirHasConfig, setDirHasConfig] = useState(false);
+  // Where the project's settings will live: 'root' (default, <dir>/.mouaif.json),
+  // 'folder' (<dir>/.mouaif/.mouaif.json) or 'db' (app store, folder
+  // untouched). Mutually exclusive — a DB-backed project reads no file, so
+  // offering to write one would be a lie.
+  const [storage, setStorage] = useState('root');
+  // Which config file the folder in view already carries ('root' | 'folder' |
+  // null). Answered by the directory listing, refreshed as the user navigates.
+  const [dirConfigLayout, setDirConfigLayout] = useState(null);
 
   async function load(dir) {
     const useDir = dir ?? currentDir;
@@ -40,16 +57,21 @@ export function ProjectPickerView(props) {
     setCurrentDir(nextDir);
     const nextEntries = r.body.entries || [];
     setEntries(nextEntries);
-    setDirHasConfig(r.body.dirHasConfig === true);
+    const layout = r.body.dirConfigLayout;
+    setDirConfigLayout(layout === 'root' || layout === 'folder'
+      ? layout
+      : (r.body.dirHasConfig === true ? 'root' : null));
     setStatus(nextEntries.length + ' folders');
   }
 
   async function selectDir(dir) {
     setStatus('registering…');
     const dbBacked = storage === 'db';
-    const configFile = storage === 'configFile';
+    const configFile = !dbBacked;
+    const payload = { action: 'register', dir, dbBacked, configFile };
+    if (configFile) payload.configLayout = storage;
     let r;
-    try { r = await fetchJson('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'register', dir, dbBacked, configFile }) }); }
+    try { r = await fetchJson('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); }
     catch (err) { setStatus('network error'); return; }
     if (r.status !== 200) {
       setStatus((r.body && r.body.error) ? r.body.error : ('HTTP ' + r.status));
@@ -89,66 +111,51 @@ export function ProjectPickerView(props) {
 
   useEffect(() => { load(props.dir || ''); }, [props.dir]);
 
-  // What the storage row promises for the folder in view — the option text is
-  // concrete about "this folder" so the user knows which of the two cases they
-  // are picking before they commit.
-  const storageNote = storage !== 'configFile'
-    ? 'Settings live in the app SQLite store. No file is written to the folder.'
-    : dirHasConfig
-      ? 'This folder already has a ' + CONFIG_FILE + ' — it is used as the project’s settings.'
-      : 'A ' + CONFIG_FILE + ' is written into the folder and can be committed with the project.';
+  // What the chosen option does to the folder in view. Concrete about "this
+  // folder" so the user knows which case they are in before they commit. An
+  // existing config file is always adopted where it is — never moved or
+  // duplicated — so the note says so when the choice would differ.
+  const existingPath = dirConfigLayout === 'folder' ? CONFIG_DIR + CONFIG_FILE : CONFIG_FILE;
+  const storageNote = storage === 'db'
+    ? 'Settings go in the app database. Nothing is written to the folder.'
+    : dirConfigLayout
+      ? 'Uses the existing ' + existingPath + ' as-is.'
+      : storage === 'folder'
+        ? 'Writes ' + CONFIG_DIR + CONFIG_FILE + ' — one folder for all mouaif files.'
+        : 'Writes ' + CONFIG_FILE + ' at the folder root.';
 
-  // The picker is a single full-bleed list. Each row is the whole
-  // row tap target (open the folder). A trailing select button on
-  // each row lets the user pick it without navigating in. The
-  // current directory is shown as a single small breadcrumb above
-  // the list; the action row is a single "Select this folder"
-  // button for the current path.
-  return h('section', null,
+  function goUp() {
+    const parent = parentDir();
+    if (parent != null) nav('projects/new?dir=' + encodeURIComponent(parent));
+  }
+
+  function openEntry(e) {
+    nav('projects/new?dir=' + encodeURIComponent(e.path));
+  }
+
+  // Layout, top to bottom: header, current path + Up, the folder list (the
+  // thing being browsed, first on screen), "Create new folder", then a sticky
+  // bottom bar with the storage choice and one explicit "Add <folder>" button.
+  // The choice only matters at the moment of adding, so it sits next to the
+  // button that acts on it instead of pushing the list below the fold.
+  const busy = status === 'registering…';
+  return h('section', { class: 'picker' },
     h('div', { class: 'view-head' },
       h('a', { href: '#/projects', class: 'view-back', 'aria-label': 'Back to projects' }, '‹'),
-      h('h2', { class: 'view-title' }, 'Pick a folder')
+      h('h2', { class: 'view-title' }, 'Add project')
     ),
-    h('p', { class: 'picker__path' }, currentDir || 'user home'),
-    h('div', { class: 'page-bar' },
-      h('span', { class: 'status page-bar__status', 'aria-live': 'polite' }, status),
-      h('button', { class: 'btn', type: 'button', onClick: () => {
-        const parent = parentDir();
-        if (parent != null) nav('projects/new?dir=' + encodeURIComponent(parent));
-      }, 'aria-label': 'Go to parent folder' }, '↑ Up'),
-      h('button', { class: 'page-bar__add', type: 'button', onClick: () => selectDir(currentDir), 'aria-label': 'Select this folder' }, '✓')
-      ),
-      h('fieldset', { class: 'picker__storage' },
-      h('legend', { class: 'picker__storage-legend' }, 'Where do this folder’s settings live?'),
-      h('label', { class: 'picker__option' },
-        h('input', {
-        type: 'radio',
-        name: 'picker-storage',
-        value: 'configFile',
-        checked: storage === 'configFile',
-        onChange: () => setStorage('configFile')
-        }),
-        h('span', { class: 'picker__option-text' },
-        h('span', { class: 'picker__option-title' }, 'Config file in the folder'),
-        h('span', { class: 'picker__option-note' }, 'Settings are kept in ' + CONFIG_FILE + ' inside the folder.')
-        )
-      ),
-      h('label', { class: 'picker__option' },
-        h('input', {
-        type: 'radio',
-        name: 'picker-storage',
-        value: 'db',
-        checked: storage === 'db',
-        onChange: () => setStorage('db')
-        }),
-        h('span', { class: 'picker__option-text' },
-        h('span', { class: 'picker__option-title' }, 'Store in app DB'),
-        h('span', { class: 'picker__option-note' }, 'Settings are kept in the app database — the folder stays untouched.')
-        )
-      ),
-      h('p', { class: 'picker__storage-note', 'aria-live': 'polite' }, storageNote)
-      ),
-      h('ul', { class: 'picker__list', 'aria-label': 'Subfolders' },
+    h('div', { class: 'picker__bar' },
+      h('button', {
+        class: 'btn picker__up',
+        type: 'button',
+        onClick: goUp,
+        disabled: !currentDir || parentDir() == null,
+        'aria-label': 'Go to parent folder'
+      }, '↑'),
+      h('p', { class: 'picker__path', title: currentDir || 'user home' }, currentDir || 'user home')
+    ),
+    h('p', { class: 'status picker__status', 'aria-live': 'polite' }, status),
+    h('ul', { class: 'picker__list', 'aria-label': 'Subfolders' },
       entries.length === 0
         ? h('li', { class: 'picker__empty' }, 'no subfolders here')
         : entries.map(e => h('li', {
@@ -156,22 +163,23 @@ export function ProjectPickerView(props) {
             class: 'picker__row',
             role: 'button',
             tabIndex: 0,
-            onClick: () => nav('projects/new?dir=' + encodeURIComponent(e.path)),
+            onClick: () => openEntry(e),
             onKeyDown: (ev) => {
               if (ev.key === 'Enter' || ev.key === ' ') {
                 ev.preventDefault();
-                nav('projects/new?dir=' + encodeURIComponent(e.path));
+                openEntry(e);
               }
             }
           },
           h('span', { class: 'picker__name' }, e.name),
           e.hasConfig
-            ? h('span', { class: 'picker__badge', title: 'Has ' + CONFIG_FILE }, CONFIG_FILE)
+            ? h('span', { class: 'picker__badge', title: 'Has a config file' },
+                e.configLayout === 'folder' ? CONFIG_DIR : CONFIG_FILE)
             : null,
-          h('span', { class: 'picker__meta' }, '›')
-          ))
-        ),
-        h('details', { class: 'picker__create' },
+          h('span', { class: 'picker__meta', 'aria-hidden': 'true' }, '›')
+        ))
+    ),
+    h('details', { class: 'picker__create' },
       h('summary', null, 'Create new folder'),
       h('div', { class: 'row' },
         h('input', {
@@ -191,6 +199,36 @@ export function ProjectPickerView(props) {
           disabled: isCreating
         }, 'Create')
       )
+    ),
+    h('div', { class: 'picker__footer' },
+      h('fieldset', { class: 'picker__storage' },
+        h('legend', { class: 'picker__storage-legend' }, 'Settings stored in'),
+        h('div', { class: 'picker__seg', role: 'radiogroup' },
+          STORAGE_OPTIONS.map(opt => h('label', {
+            key: opt.value,
+            class: 'picker__seg-opt' + (storage === opt.value ? ' is-on' : ''),
+            title: opt.hint
+          },
+            h('input', {
+              type: 'radio',
+              name: 'picker-storage',
+              value: opt.value,
+              checked: storage === opt.value,
+              onChange: () => setStorage(opt.value),
+              'aria-label': opt.label + ' — ' + opt.hint
+            }),
+            h('span', { class: 'picker__seg-label' }, opt.label)
+          ))
+        ),
+        h('p', { class: 'picker__storage-note', 'aria-live': 'polite' }, storageNote)
+      ),
+      h('button', {
+        class: 'btn btn--primary picker__add',
+        type: 'button',
+        onClick: () => selectDir(currentDir),
+        disabled: busy || !currentDir,
+        'aria-label': 'Select this folder'
+      }, busy ? 'Adding…' : ('Add “' + baseName(currentDir) + '”'))
     )
   );
 }

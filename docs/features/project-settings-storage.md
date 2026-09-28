@@ -6,7 +6,9 @@ By default a project's settings live in `<projectDir>/.mouaif.json` so they can 
 ## Usage
 
 ### When adding a project
-The folder picker asks where the project's settings live before you register it. **Config file in the folder** (the default) writes a `.mouaif.json` into the folder, or adopts the one already there; **Store in app DB** keeps them in the app store and writes nothing. See [New-project folder picker](./folder-picker.md).
+The folder picker asks where the project's settings live before you register it. **`.mouaif.json`** (the default) writes the file at the folder root; **`.mouaif/`** writes the same file inside a `.mouaif/` folder (`<projectDir>/.mouaif/.mouaif.json`) for complex projects; an existing file in either place is adopted instead. **App DB** keeps them in the app store and writes nothing. See [New-project folder picker](./folder-picker.md).
+
+A file-backed project reads `<projectDir>/.mouaif/.mouaif.json` when it exists, otherwise `<projectDir>/.mouaif.json`. Everything below that says `.mouaif.json` means whichever of the two the project uses.
 
 ### In the app
 Open **Settings → Project → Technical details**. The **Project settings storage** card has a single switch:

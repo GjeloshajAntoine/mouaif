@@ -98,6 +98,10 @@ async function run() {
     const created = path.join(root, 'created');
     fs.mkdirSync(created);
 
+    // A folder that will get its config file inside a `.mouaif/` folder.
+    const layered = path.join(root, 'layered');
+    fs.mkdirSync(layered);
+
     const fileCreated = await request('POST', '/api/projects', { action: 'register', dir: created, configFile: true });
     t('register { configFile: true } 200', fileCreated.status === 200, JSON.stringify(fileCreated));
     t('response reports the file was created', fileCreated.body && fileCreated.body.config
@@ -121,6 +125,31 @@ async function run() {
     const dbRes = await request('POST', '/api/projects', { action: 'register', dir: dbOnly, configFile: true, dbBacked: true });
     t('register { configFile + dbBacked } 200', dbRes.status === 200, JSON.stringify(dbRes));
     t('a DB-backed project is not given a file', !fs.existsSync(path.join(dbOnly, '.mouaif.json')));
+    t('a DB-backed project is not given a .mouaif/ file either', !fs.existsSync(path.join(dbOnly, '.mouaif', '.mouaif.json')));
+
+    // Folder layout: the same file name, inside a `.mouaif/` folder.
+    const folderRes = await request('POST', '/api/projects', { action: 'register', dir: layered, configFile: true, configLayout: 'folder' });
+    t('register { configLayout: folder } 200', folderRes.status === 200, JSON.stringify(folderRes));
+    const layeredFile = path.join(layered, '.mouaif', '.mouaif.json');
+    t('the file lands inside .mouaif/', fs.existsSync(layeredFile));
+    t('no root file is written for the folder layout', !fs.existsSync(path.join(layered, '.mouaif.json')));
+    t('response reports the folder layout', folderRes.body && folderRes.body.config
+    && folderRes.body.config.layout === 'folder' && folderRes.body.config.path === layeredFile, JSON.stringify(folderRes.body));
+    // Settings reads and writes follow the folder file.
+    const put = await request('PUT', '/api/settings/project', { projectDir: layered, promptSize: 'chat' });
+    t('project settings save 200', put.status === 200, JSON.stringify(put));
+    t('settings report the .mouaif/ path', put.body && put.body.path === layeredFile, JSON.stringify(put.body));
+    t('the save lands in the .mouaif/ file',
+    JSON.parse(fs.readFileSync(layeredFile, 'utf8')).promptSize === 'chat');
+    t('the save still writes no root file', !fs.existsSync(path.join(layered, '.mouaif.json')));
+
+    // Asking for the folder layout on a folder that already has a root file
+    // adopts the root file rather than creating a second, ignored one.
+    const crossRes = await request('POST', '/api/projects', { action: 'register', dir: adopted, configFile: true, configLayout: 'folder' });
+    t('folder layout on a root-configured folder adopts the root file',
+    crossRes.body && crossRes.body.config && crossRes.body.config.adopted === true && crossRes.body.config.layout === 'root',
+    JSON.stringify(crossRes.body));
+    t('no .mouaif/ file is added next to an existing root file', !fs.existsSync(path.join(adopted, '.mouaif', '.mouaif.json')));
 
     // The picker listing flags which subfolders already carry a config file.
     const list = await request('GET', '/api/projects?dir=' + encodeURIComponent(root));
@@ -130,6 +159,11 @@ async function run() {
     t('listing flags the adopted folder', byName.get('adopted') && byName.get('adopted').hasConfig === true);
     t('listing leaves the plain folder unflagged', byName.get('plain') && byName.get('plain').hasConfig === false);
     t('listing reports the browsed folder itself', list.body.dirHasConfig === false);
+    t('listing reports the root layout', byName.get('adopted') && byName.get('adopted').configLayout === 'root');
+    t('listing reports the folder layout', byName.get('layered') && byName.get('layered').configLayout === 'folder'
+    && byName.get('layered').hasConfig === true);
+    t('listing reports no layout for a plain folder', byName.get('plain') && byName.get('plain').configLayout === null);
+    t('listing reports the browsed folder layout', list.body.dirConfigLayout === null);
   } finally {
     child.kill('SIGTERM');
   }

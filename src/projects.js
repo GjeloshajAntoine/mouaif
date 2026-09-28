@@ -9,8 +9,9 @@
 // Two surfaces:
 //
 //   Filesystem surface (the picker):
-//     listDir(absPath)        -> { dir, dirHasConfig, entries: [{ name, path,
-//                                  hasChildren, hasConfig }] }
+//     listDir(absPath)        -> { dir, dirHasConfig, dirConfigLayout,
+//                                  entries: [{ name, path, hasChildren,
+//                                  hasConfig, configLayout }] }
 //     createDir(absPath)      -> { path }
 //
 //   Registered-project surface (the user's chosen projects):
@@ -19,11 +20,14 @@
 //     registerProject(path)   -> { id, path, name, createdAt }
 //     removeProject(id)       -> true | false
 //
-//   Project config file (the per-project settings file, `.mouaif.json`):
-//     configPath(absPath)     -> <absPath>/.mouaif.json
+//   Project config file (the per-project settings file, `.mouaif.json`,
+//   either at the folder root or inside a `.mouaif/` folder):
+//     configPath(absPath, layout?) -> <absPath>/.mouaif.json
+//                                     | <absPath>/.mouaif/.mouaif.json
+//     configLayout(absPath)   -> 'root' | 'folder' | null
 //     hasConfig(absPath)      -> true | false
-//     ensureProjectConfig(absPath)
-//                             -> { path, created, adopted, name }
+//     ensureProjectConfig(absPath, { layout })
+//                             -> { path, layout, created, adopted, name }
 //
 // Registered projects are stored in the app settings under the `projects`
 // key. They survive restarts. Removing a registered project does NOT
@@ -120,14 +124,16 @@ function listDir(absPath) {
       name,
       path: full,
       hasChildren: hasImmediateSubdirs(full),
-      // Whether this folder already carries a `.mouaif.json`. The picker
-      // uses it to offer "Use this config file" instead of writing one.
-      hasConfig: hasConfig(full)
+      // Whether this folder already carries a config file, and where
+      // ('root' | 'folder' | null). The picker badges it and adopts it
+      // instead of writing a second one.
+      hasConfig: hasConfig(full),
+      configLayout: configLayout(full)
     });
   }
   // Stable order: case-insensitive name.
   entries.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-  return { dir: safe, dirHasConfig: hasConfig(safe), entries };
+  return { dir: safe, dirHasConfig: hasConfig(safe), dirConfigLayout: configLayout(safe), entries };
 }
 
 function hasImmediateSubdirs(absPath) {
@@ -161,35 +167,63 @@ function createDir(absPath) {
 
 // ---- Project config file ------------------------------------------------
 
-// The per-project settings file inside a folder.
-function configPath(absPath) {
-  return path.join(absPath, PROJECT_CONFIG_FILE);
+// Where a project's config file can sit. Same file name in both layouts:
+//   'root'   -> <absPath>/.mouaif.json          (default, simple projects)
+//   'folder' -> <absPath>/.mouaif/.mouaif.json  (complex projects that keep
+//               every mouaif file under one `.mouaif/` dir)
+// settings.getProjectPath() discovers the layout the same way, so a file
+// written here is the file every settings read/write then uses.
+const CONFIG_LAYOUTS = ['root', 'folder'];
+
+function normalizeLayout(layout) {
+  return CONFIG_LAYOUTS.includes(layout) ? layout : 'root';
 }
 
-// Whether a folder already carries a config file. A plain file check, not a
-// parse: the picker only asks "is one here?" so it can offer to adopt it, and
-// a project whose file happens to be malformed must still be registerable
-// (the settings route reports the parse error where the user can fix it).
+// The per-project settings file inside a folder. With no layout, the file the
+// project uses right now (folder file when present, else root file).
+function configPath(absPath, layout) {
+  if (layout === undefined) return settings.getProjectPath(absPath);
+  return normalizeLayout(layout) === 'folder'
+    ? settings.getProjectFolderPath(absPath)
+    : settings.getProjectRootPath(absPath);
+}
+
+function isFile(p) {
+  try { return fs.statSync(p).isFile(); } catch { return false; }
+}
+
+// Which config file a folder already carries: 'folder', 'root', or null.
+// The folder file wins when both exist, matching settings.getProjectPath().
+function configLayout(absPath) {
+  if (!absPath || !isAbsolutePath(absPath)) return null;
+  if (isFile(settings.getProjectFolderPath(absPath))) return 'folder';
+  if (isFile(settings.getProjectRootPath(absPath))) return 'root';
+  return null;
+}
+
+// Whether a folder already carries a config file (either layout). A plain
+// file check, not a parse: the picker only asks "is one here?" so it can offer
+// to adopt it, and a project whose file happens to be malformed must still be
+// registerable (the settings route reports the parse error where the user can
+// fix it).
 function hasConfig(absPath) {
-  if (!absPath || !isAbsolutePath(absPath)) return false;
-  try {
-    return fs.statSync(configPath(absPath)).isFile();
-  } catch {
-    return false;
-  }
+  return configLayout(absPath) !== null;
 }
 
-// ensureProjectConfig(absPath, opts) — the "Config file in the folder" action
-// of the add-project flow.
+// ensureProjectConfig(absPath, opts) — the "Config file" actions of the
+// add-project flow. `opts.layout` is 'root' (default) or 'folder'.
 //
-//   * The folder already has a `.mouaif.json`: it is adopted — the file is
-//     read (so a malformed one fails loudly instead of being silently
+//   * The folder already has a config file (in either layout): it is adopted
+//     — read (so a malformed one fails loudly instead of being silently
 //     overwritten), left byte-for-byte untouched, and `adopted: true` comes
-//     back with the name it carries (if any).
-//   * No file yet: one is written with `{ name }` (the folder's basename) so
-//     the project starts from a file that is there to be committed and
-//     hand-edited. Writes go through settings.writeProjectJson — the same
-//     staged + fsync + atomic-rename writer every other project write uses.
+//     back with the name it carries (if any) and the layout it actually uses.
+//     Asking for the other layout never moves or duplicates an existing file:
+//     two files would leave one of them silently ignored.
+//   * No file yet: one is written with `{ name }` (the folder's basename) at
+//     the requested layout, so the project starts from a file that is there
+//     to be committed and hand-edited. Writes go through
+//     settings.writeProjectJson — the same staged + fsync + atomic-rename
+//     writer every other project write uses (it creates `.mouaif/` as needed).
 //
 // Filesystem-backed only: a folder that is opted into DB-backed settings is
 // never given a file by this call (its storage choice wins).
@@ -202,25 +236,29 @@ function ensureProjectConfig(absPath, opts) {
     e.path = safe;
     throw e;
   }
-  const file = configPath(safe);
   const name = (opts && typeof opts.name === 'string' && opts.name.trim())
     ? opts.name.trim()
     : path.basename(safe);
 
-  if (fs.existsSync(file)) {
+  const existingLayout = configLayout(safe);
+  if (existingLayout) {
+    const file = configPath(safe, existingLayout);
     // Read it through settings so a corrupt file is reported as
     // MOUAIF_PROJECT_PARSE_ERROR rather than adopted as-is.
     const existing = settings.readProjectJson(file, {});
     return {
       path: file,
+      layout: existingLayout,
       created: false,
       adopted: true,
       name: (existing && typeof existing.name === 'string' && existing.name.trim()) ? existing.name.trim() : null
     };
   }
 
+  const layout = normalizeLayout(opts && opts.layout);
+  const file = configPath(safe, layout);
   settings.writeProjectJson(file, { name });
-  return { path: file, created: true, adopted: false, name };
+  return { path: file, layout, created: true, adopted: false, name };
 }
 
 // ---- Registered-project surface ----------------------------------------
@@ -349,6 +387,8 @@ module.exports = {
   createDir,
   // project config file
   configPath,
+  configLayout,
+  CONFIG_LAYOUTS,
   hasConfig,
   ensureProjectConfig,
   PROJECT_CONFIG_FILE,

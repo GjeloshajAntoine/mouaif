@@ -76,7 +76,7 @@ These features exist or are planned. Keep this list in sync with the codebase as
   - Scaffold: **Preact + Vite**, served by `mouaif serve` at `/` (frontend in the `frontend/` dir at the repo root). See [docs/decisions.md](../docs/decisions.md) §7.
 - **Project folder picker** — creating a project opens a folder list of existing dirs (anywhere on the filesystem) plus a "create new folder" action. See [docs/decisions.md](../docs/decisions.md) §4.
 - **Project card actions** — "New chat" and a per-project options menu on each project card.
-- **New-project folder picker** — creating a project opens a folder list (existing dirs) plus a "create new folder" action.
+- **New-project folder picker** — creating a project opens a folder list (existing dirs) plus a "create new folder" action, with a sticky bottom bar choosing where settings live: `<dir>/.mouaif.json`, `<dir>/.mouaif/.mouaif.json` (complex projects), or the app DB. See [docs/features/folder-picker.md](../docs/features/folder-picker.md).
 
 ## 5. Stack reminder
 

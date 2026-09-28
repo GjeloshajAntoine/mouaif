@@ -2,43 +2,42 @@
 
 ## Overview
 
-The folder picker allows you to browse local directories and register any codebase as a project in mouaif, or create a brand-new directory in one tap. When you register a folder you also choose **where that project's settings live**: in a `.mouaif.json` config file inside the folder, or in the app database so the folder stays untouched.
+The folder picker allows you to browse local directories and register any codebase as a project in mouaif, or create a brand-new directory in one tap. When you add a folder you also choose **where that project's settings live**: a `.mouaif.json` at the folder root, the same file inside a `.mouaif/` folder, or the app database so the folder stays untouched.
 
 ## Usage
 
 1. In the **Projects** (Chats) tab, tap **+ Add project**.
-2. Browse your folder tree:
-   - Tap a folder to view its subdirectories.
-   - Tap **Up** to navigate to the parent folder.
-   - Tap **Select this folder** or the **✓** button to register the current folder immediately.
-3. Choose the **storage** for this project's settings (see below), then select the folder.
-4. **Create a new folder** — enter a name in the *Create new folder* input at the bottom and tap **Create**. The folder is created on disk and opened immediately so you can select and register it.
+2. Browse your folder tree — the folder list is the first thing on the page:
+   - Tap a folder to open it.
+   - Tap **↑** (next to the current path) to go to the parent folder.
+3. Pick where the settings live in the bar pinned to the bottom of the screen (see below). A one-line note under it says exactly what will happen to the folder you are in.
+4. Tap **Add "<folder>"** to register the folder you are in. The button always names the folder it acts on.
+5. **Create a new folder** — expand *Create new folder* under the list, enter a name, and tap **Create**. The new folder is opened so you can add it.
 
 ## Where a project's settings live
 
-The storage choice appears under the folder list and applies to the folder you are about to register:
+The three options sit in a segmented control above the **Add** button:
 
-| Option | What happens |
-| --- | --- |
-| **Config file in the folder** (default) | The project's settings are kept in `.mouaif.json` at the folder root. If the folder does not have one yet, it is **written now** with the project's name, so the file is there to be committed and hand-edited. If the folder **already** has one, that file is **adopted as-is** — it is never overwritten. |
-| **Store in app DB** | The settings are kept in the app SQLite store (`~/.mouaif/store.sqlite`). **No file is written** to the folder, so nothing shows up in git. |
+| Option | File | What happens |
+| --- | --- | --- |
+| **`.mouaif.json`** (default) | `<folder>/.mouaif.json` | The settings file sits at the folder root. Written now with the project's name, ready to commit and hand-edit. |
+| **`.mouaif/`** | `<folder>/.mouaif/.mouaif.json` | Same file, same name, inside a `.mouaif/` folder. For complex projects that want every mouaif file (config, traces) in one folder instead of the root. |
+| **App DB** | none | Settings are kept in the app SQLite store (`~/.mouaif/store.sqlite`). **Nothing is written** to the folder, so nothing shows up in git. |
 
-The two options are mutually exclusive: a project whose settings live in the app database never reads `.mouaif.json`, so the picker will not write one for it.
+If the folder **already** has a config file (in either place), it is **adopted as-is**: never overwritten, moved, or duplicated, even if you picked the other file option. The note says `Uses the existing …` when that is the case.
 
-Rows for folders that already contain a `.mouaif.json` show a small `.mouaif.json` badge, so an existing config file is visible before you open the folder.
+Rows for folders that already contain a config file show a small badge — `.mouaif.json` or `.mouaif/` — so you can see an existing config before opening the folder.
+
+### Which file is read
+
+A project uses `<folder>/.mouaif/.mouaif.json` when that file exists, otherwise `<folder>/.mouaif.json`. There is no separate switch: to change layout later, move the file.
 
 ## Behavior
 
-- **Safety & clean view** — hidden folders (dotfiles such as `.git` or `.cache`) are filtered out to keep the picker clean. A folder's own `.mouaif.json` is still reported as a badge.
+- **Safety & clean view** — hidden folders (dotfiles such as `.git`, `.cache`, or `.mouaif`) are filtered out to keep the picker clean. A folder's config file is still reported as a badge.
 - **Non-destructive** — unregistering a project from mouaif only removes it from your project list; your files and folders on disk are never deleted. Adopting an existing config file leaves its bytes untouched.
-- **Corrupt config file** — adopting a `.mouaif.json` that does not parse fails with a parse error rather than overwriting your bytes. Repair the file (or register with **Store in app DB**) and try again.
+- **Corrupt config file** — adopting a `.mouaif.json` that does not parse fails with a parse error rather than overwriting your bytes. Repair the file (or register with **App DB**) and try again.
 - **Home directory default** — the picker starts at your user home directory and lets you navigate into any workspace.
-
-## Implementation notes
-
-- `POST /api/projects` with `{ action: 'register', dir, configFile, dbBacked }`. `configFile: true` runs the ensure step; it is ignored when `dbBacked: true`. The response carries `config: { path, created, adopted, name }` (or `null`).
-- The create/adopt logic lives in `src/projects.js` (`ensureProjectConfig`, `hasConfig`, `configPath`). Writes reuse the staged + fsync + atomic-rename writer in `src/settings.js`, so an interrupted write can never leave a truncated file.
-- `GET /api/projects?dir=<abs>` reports `dirHasConfig` for the listed folder and `hasConfig` on each entry, which is what the picker turns into the badge and the live option note.
 
 ## Related
 

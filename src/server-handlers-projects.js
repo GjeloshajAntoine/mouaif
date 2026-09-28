@@ -111,14 +111,17 @@ async function handleProjects(req, res, parsed) {
     if (body.dbBacked === true) {
     settings.setDbBacked(row.path, true);
     }
-    // "Config file in the folder" (and only when the project is file-backed):
-    // adopt an existing `.mouaif.json` or write a fresh one, so the settings
-    // file is present in the folder from the moment the project is added.
-    // A project opted into the app DB must not be given a file it would never
-    // read, so the two add-time choices are mutually exclusive.
+    // Config file choices (only when the project is file-backed): adopt an
+    // existing `.mouaif.json` (root or `.mouaif/` folder) or write a fresh one
+    // at the requested layout — `configLayout: 'root'` (default) for
+    // `<dir>/.mouaif.json`, `'folder'` for `<dir>/.mouaif/.mouaif.json` — so
+    // the settings file is present from the moment the project is added. A
+    // project opted into the app DB must not be given a file it would never
+    // read, so the add-time choices are mutually exclusive.
     let config = null;
     if (body.configFile === true && body.dbBacked !== true) {
-      config = projects.ensureProjectConfig(row.path);
+    const layout = body.configLayout === 'folder' ? 'folder' : 'root';
+    config = projects.ensureProjectConfig(row.path, { layout });
     }
     // Seed persisted chat and project totals once for existing histories.
     try { chats.recomputeProjectTotalCost(row.path); } catch { /* non-fatal */ }
