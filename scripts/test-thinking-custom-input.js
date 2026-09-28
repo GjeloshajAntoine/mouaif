@@ -1,23 +1,24 @@
 'use strict';
-// Regression test: the thinking-level control is a popover, and nothing
-// outside a Preact render hides the custom field.
+// Regression test: the custom thinking-level field survives focus changes.
 //
-// History, because this file is the guard for it. The control used to be a
-// bare <select> plus a `hidden` <input> that `syncThinkingSelect()` rebuilt
-// by hand outside Preact's render cycle. Two bugs came from that:
+// The field is revealed by the "Custom…" row and must stay visible while
+// the user works in it. Two independent mechanisms used to hide it:
 //
-//   1. A background model-catalog fetch called syncThinkingSelect, which
-//      reset `hidden = true` on the input — the field vanished while the
-//      user was typing, and the focus() in the same tick fired on a
-//      display:none element so no keyboard opened.
-//   2. The input's own onBlur hid it. A blur is not a dismissal (tapping the
-//      composer, the keyboard opening and the closing native picker all fire
-//      one), so "Custom…" flashed and vanished.
+//  1. syncThinkingSelect() rebuilds the <select> imperatively on every
+//     background live-model fetch (useChatState.js _onLiveModels), which
+//     reset `hidden = true` on the custom input. The focus() in the same
+//     change handler then fired on a display:none element, so no keyboard
+//     opened.
+//  2. The input's own onBlur hid it. A blur is not a dismissal — tapping
+//     the composer, the keyboard opening and the closing native picker all
+//     fire one — so "Custom…" flashed and vanished: the field never
+//     appeared.
 //
-// The fix removed the imperative path: ThinkingPicker.jsx derives the
-// field's visibility from the selected value every render. This test pins
-// the invariants that the popover rewrite must keep — the option shaping in
-// thinking.js, and that the sentinel never reaches the wire.
+// The fix keeps the open flag in the refs bag (`_thinkingCustomOpen`),
+// lets syncThinkingSelect() see it, and splits the two endings: blur
+// commits a typed value (leaving visibility to the sync), and
+// commitThinkingCustom() clears the flag WITHOUT hiding anything. This
+// test drives the real thinking.js against a minimal DOM stub.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
@@ -28,114 +29,138 @@ function check(name, condition, detail) {
   else { failed++; console.log('  FAIL - ' + name + (detail ? '  -- ' + detail : '')); }
 }
 
-// A levels descriptor: the OpenRouter / Copilot reasoning shape (the one in
-// the original bug report — Minimal/Low/Medium/High/Xhigh + Custom…).
+// ---- a DOM just big enough for syncThinkingSelect ------------------
+function makeEl(tag) {
+  return {
+    tagName: String(tag).toUpperCase(),
+    children: [],
+    textContent: '',
+    value: '',
+    hidden: false,
+    style: {},
+    focused: 0,
+    appendChild(child) { this.children.push(child); return child; },
+    replaceChildren() { this.children = []; },
+    focus() { this.focused++; }
+  };
+}
+const document = { createElement: makeEl };
+globalThis.document = document;
+
+const refsFor = () => {
+  const sel = makeEl('select');
+  const custom = makeEl('input');
+  custom.hidden = true;
+  return {
+    thinkingLevel: { current: sel },
+    thinkingLevelCustom: { current: custom },
+    _sel: sel,
+    _custom: custom
+  };
+};
+
+// A levels descriptor: the OpenRouter / Copilot reasoning shape that
+// produced the report (Minimal/Low/Medium/High/Xhigh + Custom…).
 const DESCRIPTOR = { kind: 'levels', levels: ['minimal', 'low', 'medium', 'high', 'xhigh'] };
+const stateWith = (thinkingLevel) => ({
+  chat: { thinkingLevel, providerId: 'p1', modelId: 'm1' },
+  liveByProvider: { p1: [{ id: 'm1', thinking: DESCRIPTOR }] }
+});
 
 (async () => {
   const thinking = await import(path.join('..', 'frontend', 'src', 'components', 'chat', 'thinking.js'));
   const {
-    thinkingOptionsFor, thinkingOptionsForSelect, effectiveThinkingLevel, thinkingLabelFor
+    syncThinkingSelect, setThinkingCustomOpen, commitThinkingCustom,
+    thinkingCustomOpen, thinkingOptionsFor
   } = thinking;
 
-  // ---- the option list the popover renders -------------------------
+  const opts = thinkingOptionsFor(DESCRIPTOR);
+  check('levels descriptor appends the Custom… sentinel',
+    opts.some((o) => o.value === '__custom__' && o.label === 'Custom…'));
+
+  // ---- mechanism 2: a blur / focus move must not hide the field ----
   {
-    const opts = thinkingOptionsFor(DESCRIPTOR);
-    check('a levels descriptor lists the reported levels',
-      DESCRIPTOR.levels.every((lv) => opts.some((o) => o.value === lv)));
-    check('levels append the Custom… sentinel',
-      opts.some((o) => o.value === '__custom__' && o.label === 'Custom…'));
-    check('No thinking is always first',
-      opts[0].value === '' && opts[0].label === 'No thinking');
+    const refs = refsFor();
+    const state = stateWith('');
+    syncThinkingSelect(refs, state);
+    check('a fresh sync leaves the custom input hidden', refs._custom.hidden === true);
 
-    const budget = thinkingOptionsFor({ kind: 'budget' });
-    check('a budget descriptor keeps the presets and offers Custom…',
-      budget.some((o) => o.value === 'low') && budget.some((o) => o.value === '__custom__'));
+    setThinkingCustomOpen(refs, true);            // user taps "Custom…"
+    check('picking Custom… reveals the input', refs._custom.hidden === false);
+    check('picking Custom… focuses the input', refs._custom.focused === 1);
 
-    const toggle = thinkingOptionsFor({ kind: 'toggle' });
-    check('a toggle descriptor offers no free-form input',
-      !toggle.some((o) => o.value === '__custom__'),
-      'a toggle model has no Custom… row');
-    check('a toggle descriptor offers Thinking',
-      toggle.some((o) => o.value === 'on' && o.label === 'Thinking'));
+    // The user taps the composer: the input blurs with nothing typed.
+    // Chat.jsx returns early on an empty value and does NOT hide it.
+    commitThinkingCustom(refs);
+    check('commitThinkingCustom clears the open flag', thinkingCustomOpen(refs) === false);
+    check('commitThinkingCustom does NOT hide the input', refs._custom.hidden === false,
+      'blur hid the field — "Custom…" flashes and vanishes');
 
-    check('the no-descriptor fallback still offers Custom…',
-      thinkingOptionsFor(null).some((o) => o.value === '__custom__'));
-
-    // The shared <select> consumers (Agents editor, auth card) must not
-    // receive the sentinel — they render no free-form input.
-    check('thinkingOptionsForSelect drops the sentinel',
-      !thinkingOptionsForSelect(DESCRIPTOR).some((o) => o.value === '__custom__'));
-
-    // ---- the sentinel must never reach the wire --------------------
-    // Picking "Custom…" used to store '__custom__' on the chat; the old
-    // stream.js read the input's live DOM value to compensate. Now the
-    // committed value is stored directly, but a chat saved by that build
-    // can still carry the sentinel.
-    check('a stored __custom__ resolves to no value',
-      effectiveThinkingLevel('__custom__') === '',
-      'the sentinel would be sent as reasoning_effort');
-    check('a reported level passes through',
-      effectiveThinkingLevel('xhigh') === 'xhigh');
-    check('a free-form number passes through',
-      effectiveThinkingLevel('4096') === '4096');
-    check('a non-string resolves to empty',
-      effectiveThinkingLevel(undefined) === '' && effectiveThinkingLevel(null) === '');
-    check('surrounding whitespace is trimmed',
-      effectiveThinkingLevel('  high  ') === 'high');
-
-    // ---- the trigger label -----------------------------------------
-    check('a reported level shows its label',
-      thinkingLabelFor(opts, 'xhigh') === 'Xhigh');
-    check('no value shows No thinking',
-      thinkingLabelFor(opts, '') === 'No thinking');
-    check('a value outside the reported set shows itself',
-      thinkingLabelFor(opts, '4096') === '4096',
-      'a stored custom number must not read as "No thinking"');
+    // A later background re-sync may now reconcile against the stored
+    // (still empty) value, which legitimately returns to "No thinking".
+    syncThinkingSelect(refs, state);
+    check('a later re-sync reconciles an abandoned empty field',
+      refs._sel.value === '' && refs._custom.hidden === true);
   }
 
-  // ---- the component has no imperative DOM writer -------------------
-  // The whole class of bug came from a module poking `.hidden` at a node
-  // Preact owns. Guard the shape, not just the behaviour.
+  // ---- mechanism 1: a live-catalog re-sync must not close it -------
   {
-    const fs = require('node:fs');
-    const src = fs.readFileSync(
-      path.join(__dirname, '..', 'frontend', 'src', 'components', 'chat', 'ThinkingPicker.jsx'), 'utf8');
-    check('ThinkingPicker declares the custom field with a value binding',
-      /value:\s*draft/.test(src), 'the input must be controlled, not patched');
-    check('ThinkingPicker never writes .hidden imperatively',
-      !/\.hidden\s*=/.test(src) && !/customInput/.test(src));
-    check('ThinkingPicker is a <dialog> popover, not a native <select>',
-      /h\('dialog'/.test(src) && !/h\('select'/.test(src));
-    check('ThinkingPicker publishes the visual-viewport vars the sheet needs',
-      /--model-picker-viewport-height/.test(src) && /--model-picker-viewport-top/.test(src));
-    check('ThinkingPicker commits a typed value on blur',
-    /onBlur:\s*\([^)]*\)\s*=>\s*commitDraft\(/.test(src));
-    check('ThinkingPicker does not hide the field on blur',
-    !/onBlur:[^,]*setOpen\(false\)/.test(src),
-    'blur is not a dismissal');
-    check('ThinkingPicker clears the draft through a ref before closing',
-    /draftRef\.current\s*=\s*''/.test(src),
-    'a stale draft would PATCH over the row the user picked');
-    check('a blur into the panel does not commit',
-    /relatedTarget/.test(src) && /popRef\.current\.contains\(to\)/.test(src));
+    const refs = refsFor();
+    const state = stateWith('');
+    syncThinkingSelect(refs, state);
 
-    const chat = fs.readFileSync(
-      path.join(__dirname, '..', 'frontend', 'src', 'components', 'chat', 'Chat.jsx'), 'utf8');
-    check('Chat.jsx no longer renders the native thinking <select>',
-      !/chat-view__thinking-select/.test(chat));
-    check('Chat.jsx no longer renders the hidden custom input',
-      !/chat-view__thinking-custom/.test(chat));
-    check('Chat.jsx renders ThinkingPicker',
-      /h\(ThinkingPicker,\s*\{/.test(chat));
+    state.thinkingLevel = '__custom__';
+    setThinkingCustomOpen(refs, true);
+    syncThinkingSelect(refs, state);              // background catalog lands
+    check('the input is STILL visible after a re-sync', refs._custom.hidden === false);
+    check('the select still shows Custom… after a re-sync', refs._sel.value === '__custom__');
+    check('the flag survives the re-sync', thinkingCustomOpen(refs) === true);
+    check('the re-sync does not re-fire focus', refs._custom.focused === 1);
+  }
 
-    const hook = fs.readFileSync(
-      path.join(__dirname, '..', 'frontend', 'src', 'components', 'chat', 'useChatState.js'), 'utf8');
-    check('useChatState no longer calls syncThinkingSelect',
-      !/syncThinkingSelect/.test(hook),
-      'the imperative rebuild is gone');
-    check('useChatState no longer holds the thinking DOM refs',
-      !/thinkingLevelCustom/.test(hook) && !/thinkingLevel\s*=\s*useRef/.test(hook));
+  // ---- a committed free-form number keeps the field open -----------
+  {
+    const refs = refsFor();
+    const state = stateWith('');
+    state.thinkingLevel = '__custom__';
+    setThinkingCustomOpen(refs, true);
+
+    refs._custom.value = '4096';
+    commitThinkingCustom(refs);
+    state.chat.thinkingLevel = '4096';
+    syncThinkingSelect(refs, state);
+    check('a stored free-form number keeps the input visible', refs._custom.hidden === false);
+    check('a stored free-form number re-fills the input', refs._custom.value === '4096');
+    check('a stored free-form number shows Custom…', refs._sel.value === '__custom__');
+  }
+
+  // ---- a committed KNOWN level closes the field --------------------
+  {
+    const refs = refsFor();
+    const state = stateWith('');
+    state.thinkingLevel = '__custom__';
+    setThinkingCustomOpen(refs, true);
+
+    refs._custom.value = 'xhigh';
+    commitThinkingCustom(refs);
+    state.chat.thinkingLevel = 'xhigh';
+    syncThinkingSelect(refs, state);
+    check('a known level hides the input', refs._custom.hidden === true);
+    check('a known level is selected in the dropdown', refs._sel.value === 'xhigh');
+  }
+
+  // ---- a toggle descriptor has no sentinel to hold open -----------
+  {
+    const refs = refsFor();
+    const state = {
+      chat: { providerId: 'p1', modelId: 'm1', thinkingLevel: '__custom__' },
+      liveByProvider: { p1: [{ id: 'm1', thinking: { kind: 'toggle' } }] }
+    };
+    setThinkingCustomOpen(refs, true);
+    syncThinkingSelect(refs, state);
+    check('a toggle model never shows the custom input', refs._custom.hidden === true);
+    check('a toggle model shows Thinking / No thinking only',
+      refs._sel.value === '' || refs._sel.value === 'on');
   }
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');

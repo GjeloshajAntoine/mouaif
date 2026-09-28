@@ -25,7 +25,6 @@ prependOlderTranscript,
 cancelTranscriptRender,
 whenTranscriptSettled
 } from './transcript.js';
-import { effectiveThinkingLevel as effectiveThinkingLevelFrom } from './thinking.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
 import { refreshChatTitle, updateChat } from './meta.js';
@@ -936,12 +935,15 @@ if (state._updateSetupVisibility) state._updateSetupVisibility();
   // replaces the heuristic on the final tick.
   const counter = createCounter();
 
-  // Read the effective thinking level. The control no longer writes a
-  // sentinel into state — picking "Custom…" is UI-only and the committed
-  // value is stored directly — but a chat saved by the old build can still
-  // carry '__custom__', so resolve it to "no value" rather than sending the
-  // literal string as reasoning_effort.
-  const effectiveThinkingLevel = effectiveThinkingLevelFrom(state);
+  // Read the effective thinking level: if the dropdown is set to
+  // __custom__, use the custom input value instead of the sentinel.
+  const effectiveThinkingLevel = (() => {
+    const tl = state.thinkingLevel || '';
+    if (tl === '__custom__') {
+      return (refs.thinkingLevelCustom && refs.thinkingLevelCustom.current && refs.thinkingLevelCustom.current.value.trim()) || '';
+    }
+    return tl;
+  })();
 
   let resp;
   // Abortable so leaving the chat (or unmounting) stops this reader; see

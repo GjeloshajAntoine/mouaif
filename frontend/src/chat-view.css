@@ -158,33 +158,22 @@ font-weight: 500;
 font-size: 0.62rem;
 color: var(--muted);
 }
-/* ---- Thinking level picker (popover) ----------------------------- */
-/* The chat head's reasoning-effort control. It is a popover, not a native
-   <select>: a native select's popup renders in flow and covers the
-   transcript beneath it on a phone (the same reason the dictation model
-   picker uses the sheet variant). It mirrors ModelPickerField's chat/sheet
-   idiom and reuses its visual-visionport variables, but keeps one row of
-   the head: the trigger stays 26px tall and as wide as its label needs.
+/* ---- Thinking level select + custom input ------------------------ */
 
-   .thinking-picker__trigger keeps the compact sizing the old
-   .chat-view__thinking-select had. The 44px floor is right for a control
-   whose box can stay small, but this trigger *is* its box; at 44px the
-   chat head doubled. The effective target is wide x 26, not a 26px square.
-   See docs/agent/features/responsive-layout.md. */
-.thinking-picker {
-  position: relative;
-  flex: 0 1 auto;
-  min-width: 0;
-}
-.thinking-picker__trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 11rem;
-  height: 26px;
-  min-height: 26px;
-  padding: 0 6px 0 8px;
-  font: inherit;
+.chat-view__thinking-select {
+flex: 0 1 auto;
+min-width: 72px;
+max-width: 110px;
+/* Compact on purpose. The 44 px floor is right for a control whose box can
+   stay small — a glyph button grows its hit area with `.tap-target` — but a
+   <select> *is* its box: there is no way to keep a 26 px look and a 44 px
+   target. At 44 px this control and the model picker beside it doubled the
+   chat header, so both stay compact and rely on being wide: the effective
+   target is 110 x 26, not a 26 px square. Reverting this means owning the
+   header height, not the target size — see docs/features/responsive-layout.md. */
+height: 26px;
+min-height: 26px;
+padding: 0 16px 0 8px;
   font-size: 0.72rem;
   color: var(--fg);
   background: var(--surface-2);
@@ -193,185 +182,36 @@ color: var(--muted);
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
-  box-shadow: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath fill='%23888' d='M1 2l3 3 3-3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  background-size: 8px 8px;
+  position: relative;
+  /* Show a small "🧠" label on the left so the user knows what it is */
 }
-.thinking-picker__trigger:hover,
-.thinking-picker__trigger:focus-visible {
+.chat-view__thinking-select:hover {
+  border-color: var(--accent);
+}
+.chat-view__thinking-select:focus {
   border-color: var(--accent);
   outline: none;
 }
-.thinking-picker__trigger[aria-expanded='true'] {
+.chat-view__thinking-custom {
+flex: 0 1 auto;
+max-width: 90px;
+/* Kept in step with the select above: same row, same reason. */
+height: 26px;
+min-height: 26px;
+padding: 0 6px;
+  font-size: 0.72rem;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.chat-view__thinking-custom:focus {
   border-color: var(--accent);
-  background: var(--surface-3);
-}
-.thinking-picker__trigger:disabled { opacity: 0.5; cursor: not-allowed; }
-.thinking-picker__trigger.is-empty .thinking-picker__label { color: var(--muted); }
-.thinking-picker__label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.thinking-picker__caret {
-  flex: 0 0 auto;
-  color: var(--muted);
-  font-size: 0.7rem;
-  line-height: 1;
-}
-
-/* The panel. Anchored under the trigger on desktop (an ordinary popover);
-   promoted to a fixed sheet at phone widths by the media query below, where
-    also places it in the top layer so no clipping or
-   transformed ancestor can cut it off. */
-.thinking-picker__pop {
-  position: fixed;
-  z-index: 46;
-  margin: 0;
-  padding: 0;
-  color: var(--fg);
-  font: inherit;
-  top: var(--model-picker-anchor-top, 0px);
-  left: clamp(0px, var(--model-picker-anchor-left, 0px), max(0px, calc(100% - 22rem)));
-  right: auto;
-  bottom: auto;
-  width: min(22rem, 100%);
-  max-width: 100%;
-  max-height: min(60dvh, var(--model-picker-available-height, 100dvh));
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-md);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.thinking-picker__pop:not([open]) { display: none; }
-.thinking-picker__pop::backdrop { background: rgba(0, 0, 0, 0.2); }
-.thinking-picker__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 6px 6px 12px;
-  border-bottom: 1px solid var(--border);
-  flex: 0 0 auto;
-}
-.thinking-picker__title {
-  font-size: 0.74rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.thinking-picker__close {
-  flex: 0 0 auto;
-  width: var(--tap);
-  height: var(--tap);
-  min-width: var(--tap);
-  min-height: var(--tap);
-  font: inherit;
-  font-size: 1.15rem;
-  line-height: 1;
-  color: var(--fg-soft);
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-sm);
-  padding: 0;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.thinking-picker__close:hover { background: var(--surface-3); color: var(--fg); }
-.thinking-picker__list {
-  list-style: none;
-  margin: 0;
-  padding: 4px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-.thinking-picker__row { margin: 0; }
-/* Every row is a full-width 44px target: the popover is where the user
-   actually picks, so this is the surface that must meet the floor. */
-.thinking-picker__opt {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: var(--tap);
-  padding: 6px 10px;
-  font: inherit;
-  font-size: 0.85rem;
-  color: var(--fg);
-  text-align: left;
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-}
-.thinking-picker__opt:hover { background: var(--surface-3); }
-.thinking-picker__opt.is-on { color: var(--accent); }
-.thinking-picker__check {
-  flex: 0 0 auto;
-  width: 1rem;
-  color: var(--accent);
-  font-size: 0.9rem;
-  line-height: 1;
-}
-.thinking-picker__opt-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.thinking-picker__custom {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px 10px;
-  border-top: 1px solid var(--border);
-  background: var(--surface-2);
-}
-.thinking-picker__custom-label {
-  font-size: 0.74rem;
-  font-weight: 500;
-  color: var(--muted);
-}
-.thinking-picker__custom-input {
-  width: 100%;
-  min-height: var(--tap);
-  font-size: 1rem;   /* 16px: avoids iOS focus zoom */
-}
-.thinking-picker__hint {
-  margin: 0;
-  font-size: 0.7rem;
-  line-height: 1.35;
-  color: var(--muted);
-}
-
-/* Phone widths: the panel becomes the fixed visual-viewport sheet the
-   model picker uses, anchored below the chat head and ending above the
-   keyboard. Same variables (--model-picker-viewport-height / -top). */
-@media (max-width: 480px), (pointer: coarse) and (max-height: 480px) {
-  .thinking-picker__pop {
-    top: calc(var(--model-picker-viewport-top, 0px) + 48px + var(--safe-top, 0px));
-    left: 0;
-    right: 0;
-    bottom: auto;
-    width: 100%;
-    max-height: none;
-    min-height: 0;
-    height: max(0px, calc(var(--model-picker-viewport-height, 100dvh) - 48px - var(--safe-top, 0px)));
-    padding-bottom: var(--safe-bottom, 0px);
-    overflow: hidden;
-    touch-action: manipulation;
-    overscroll-behavior: none;
-    border-radius: var(--r-lg) var(--r-lg) 0 0;
-    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.35);
-  }
+  outline: none;
 }
 
 /* Inline max-output-tokens slot rendered as a child of <ModelPickerField>.

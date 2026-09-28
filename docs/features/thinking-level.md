@@ -39,10 +39,9 @@ Where the descriptor comes from, per provider:
 ## Usage
 
 1. Open a chat.
-2. Tap the **thinking level** trigger next to the model picker. It opens a **popover** — an anchored panel on a wide screen, a fixed sheet ending just below the chat header on a phone.
-3. Tap a level. The value is persisted immediately on the chat record and takes effect on the next message sent. The panel closes and the trigger shows the chosen level.
-
-The panel is the app's own control rather than a native `<select>`: a native select's popup renders in flow and covers the transcript (and the tool panel) directly beneath it on a phone. The same reasoning applies to the dictation model picker — see [Dictation](./dictation.md).
+2. Tap the **thinking level** dropdown next to the model picker.
+3. Select one of the provider-reported options (or a preset when no provider info is available).
+4. The value is persisted immediately on the chat record and takes effect on the next message sent.
 
 ### Fallback presets
 
@@ -53,15 +52,15 @@ The panel is the app's own control rather than a native `<select>`: a native sel
 | Medium | `"medium"` | `reasoning_effort: "medium"` | `thinking.budget_tokens: 8192` | `thinkingConfig.thinkingBudget: 8192` |
 | High | `"high"` | `reasoning_effort: "high"` | `thinking.budget_tokens: 16384` | `thinkingConfig.thinkingBudget: 16384` |
 
-When the provider reports a `levels` descriptor, its level list replaces the Low/Medium/High rows. A `budget` descriptor keeps the presets (mapped to token counts server-side) and offers the custom field. A `toggle` descriptor shows just "No thinking" / "Thinking" and no custom row.
+When the provider reports a `levels` descriptor, its level list replaces the Low/Medium/High rows. A `budget` descriptor keeps the presets (mapped to token counts server-side) and adds the custom input. A `toggle` descriptor shows just "No thinking" / "Thinking".
 
 ### Custom values
 
-For `levels` and `budget` models, tap **Custom…** in the panel to reveal a text field. Type any value and press **Enter**, or move focus away (blur), to save it. The value is saved immediately.
+For `levels` and `budget` models, select "Custom…" from the dropdown to reveal a text input. Type any value and press Enter or blur the field. The value is saved immediately.
 
 - For Anthropic and Gemini, a numeric string is parsed as the token budget. Anthropic caps at 100000 and raises `max_tokens` to at least `budget_tokens + 256`.
 - For OpenAI-compatible providers, the value is passed as-is as `reasoning_effort`.
 
-**Leaving the field is not a dismissal.** Turning away from the field — tapping the composer, the keyboard opening, closing the panel — does not hide it while it holds an uncommitted entry. A typed value is committed on blur and the panel continues to show the field, because a free-form number is not one of the listed levels; the trigger shows the number. Press **Enter** to commit and close explicitly, including an empty field, which resets to "No thinking".
+While the field is open, the dropdown stays on "Custom…" even if the model's reported level set is refreshed in the background: the catalog fetch that lands a few seconds after the chat opens no longer closes the field or drops the focus, so the keyboard stays up and the value can be typed.
 
-While the field is open, the level list keeps whatever the provider last reported, so the panel is still usable if the model catalog refreshes behind it.
+**Leaving the field is not a dismissal.** Tapping the composer, the keyboard opening, and the closing native picker all move focus away, so the field deliberately stays visible on blur — a typed value is committed and the field then follows the stored value: a known level closes it and shows that level's label, a free-form number keeps it open. Press **Enter** to commit explicitly, including an empty field, which resets to "No thinking".
