@@ -9,7 +9,8 @@
 // Two surfaces:
 //
 //   Filesystem surface (the picker):
-//     listDir(absPath)        -> { dir, entries: [{ name, path, hasChildren }] }
+//     listDir(absPath)        -> { dir, dirHasConfig, entries: [{ name, path,
+//                                  hasChildren, hasConfig }] }
 //     createDir(absPath)      -> { path }
 //
 //   Registered-project surface (the user's chosen projects):
@@ -17,6 +18,12 @@
 //     getProject(id)          -> { id, path, name, createdAt } | null
 //     registerProject(path)   -> { id, path, name, createdAt }
 //     removeProject(id)       -> true | false
+//
+//   Project config file (the per-project settings file, `.mouaif.json`):
+//     configPath(absPath)     -> <absPath>/.mouaif.json
+//     hasConfig(absPath)      -> true | false
+//     ensureProjectConfig(absPath)
+//                             -> { path, created, adopted, name }
 //
 // Registered projects are stored in the app settings under the `projects`
 // key. They survive restarts. Removing a registered project does NOT
@@ -27,6 +34,11 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const settings = require('./settings.js');
+
+// The per-project config file. Same name as settings.PROJECT_FILE: this is the
+// file the "Config file in the folder" option writes at add time and adopts
+// when it is already there.
+const PROJECT_CONFIG_FILE = '.mouaif.json';
 
 const ALLOW_ANY_ROOT = process.env.MOUAIF_ALLOW_ANY_ROOT === '1';
 
@@ -107,12 +119,15 @@ function listDir(absPath) {
     entries.push({
       name,
       path: full,
-      hasChildren: hasImmediateSubdirs(full)
+      hasChildren: hasImmediateSubdirs(full),
+      // Whether this folder already carries a `.mouaif.json`. The picker
+      // uses it to offer "Use this config file" instead of writing one.
+      hasConfig: hasConfig(full)
     });
   }
   // Stable order: case-insensitive name.
   entries.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
-  return { dir: safe, entries };
+  return { dir: safe, dirHasConfig: hasConfig(safe), entries };
 }
 
 function hasImmediateSubdirs(absPath) {
@@ -142,6 +157,70 @@ function createDir(absPath) {
     throw e;
   }
   return { path: safe };
+}
+
+// ---- Project config file ------------------------------------------------
+
+// The per-project settings file inside a folder.
+function configPath(absPath) {
+  return path.join(absPath, PROJECT_CONFIG_FILE);
+}
+
+// Whether a folder already carries a config file. A plain file check, not a
+// parse: the picker only asks "is one here?" so it can offer to adopt it, and
+// a project whose file happens to be malformed must still be registerable
+// (the settings route reports the parse error where the user can fix it).
+function hasConfig(absPath) {
+  if (!absPath || !isAbsolutePath(absPath)) return false;
+  try {
+    return fs.statSync(configPath(absPath)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+// ensureProjectConfig(absPath, opts) — the "Config file in the folder" action
+// of the add-project flow.
+//
+//   * The folder already has a `.mouaif.json`: it is adopted — the file is
+//     read (so a malformed one fails loudly instead of being silently
+//     overwritten), left byte-for-byte untouched, and `adopted: true` comes
+//     back with the name it carries (if any).
+//   * No file yet: one is written with `{ name }` (the folder's basename) so
+//     the project starts from a file that is there to be committed and
+//     hand-edited. Writes go through settings.writeProjectJson — the same
+//     staged + fsync + atomic-rename writer every other project write uses.
+//
+// Filesystem-backed only: a folder that is opted into DB-backed settings is
+// never given a file by this call (its storage choice wins).
+function ensureProjectConfig(absPath, opts) {
+  const safe = ensureSafeRoot(absPath);
+  const stat = fs.statSync(safe);
+  if (!stat.isDirectory()) {
+    const e = new Error('Path is not a directory');
+    e.code = 'ENOTDIR';
+    e.path = safe;
+    throw e;
+  }
+  const file = configPath(safe);
+  const name = (opts && typeof opts.name === 'string' && opts.name.trim())
+    ? opts.name.trim()
+    : path.basename(safe);
+
+  if (fs.existsSync(file)) {
+    // Read it through settings so a corrupt file is reported as
+    // MOUAIF_PROJECT_PARSE_ERROR rather than adopted as-is.
+    const existing = settings.readProjectJson(file, {});
+    return {
+      path: file,
+      created: false,
+      adopted: true,
+      name: (existing && typeof existing.name === 'string' && existing.name.trim()) ? existing.name.trim() : null
+    };
+  }
+
+  settings.writeProjectJson(file, { name });
+  return { path: file, created: true, adopted: false, name };
 }
 
 // ---- Registered-project surface ----------------------------------------
@@ -268,6 +347,11 @@ module.exports = {
   // filesystem
   listDir,
   createDir,
+  // project config file
+  configPath,
+  hasConfig,
+  ensureProjectConfig,
+  PROJECT_CONFIG_FILE,
   // registered projects
   listProjects,
   getProject,
