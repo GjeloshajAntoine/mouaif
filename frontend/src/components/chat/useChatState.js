@@ -31,7 +31,6 @@ import {
   updateMetaLine, refreshSystemPrompt, activeProfileId, updateSwitch, updateSetupVisibility
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
-import { syncThinkingSelect, commitThinkingCustom } from './thinking.js';
 import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat, loadOlderMessages, loadAllOlderMessages, abortStream } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
@@ -145,8 +144,6 @@ const switcherRefreshArmed = useRef(false);
   const providerCreditRef = useRef(null);
   const setupCard = useRef(null);
   const transcript = useRef(null);
-  const thinkingLevel = useRef(null);
-  const thinkingLevelCustom = useRef(null);
   const maxOutputTokens = useRef(null);
   const promptInput = useRef(null);
   const imageInput = useRef(null);
@@ -383,7 +380,7 @@ setCustomActions(next);
   if (!refsRef.current) refsRef.current = {
     back, chatName, chatMeta, usageSummaryRef, usageSummary: usageSummaryRef, providerCreditRef,
     setupCard, transcript,
-    thinkingLevel, thinkingLevelCustom, maxOutputTokens,
+    maxOutputTokens,
     promptInput, imageInput, draftSaveTimer, sendBtn, stopBtn, status,
     jumpBtn, scrollNav, toolsCard, agentFilesCard, skillsCard,
     pinnedToBottom, pendingCount,
@@ -500,19 +497,18 @@ draftAttachments: Array.isArray(draftAttachments) && draftAttachments.length ? d
     updateMetaLine(refs, state);
     refreshProviderCredit(state, refs);
     syncPickerState();
-    // The chat record just changed server-side: let the head reconcile
-    // the elements that read from it. This is what lands the thinking
-    // dropdown on the newly stored level (a known level shows its label
-    // and closes the free-form field; a custom number keeps it open).
+    // The chat record just changed server-side: let the head reconcile the
+    // elements that read from it. The thinking picker needs no patching of
+    // its own now (it is declarative — see ThinkingPicker.jsx), but this
+    // hook is what keeps the model trigger and its credit current.
     if (typeof state._onChatChanged === 'function') state._onChatChanged();
     return true;
   }, [projectDir, chatId]);
 
   function updateModelTriggerLocal() {
-    // The trigger is now rendered declaratively by ModelPickerField, so
-    // there is no imperative DOM to patch. Keep the thinking-level select
-    // in sync with the active provider/model descriptor instead.
-    syncThinkingSelect(refs, state);
+    // Both head controls are declarative now: ModelPickerField renders from
+    // `picker` and ThinkingPicker from `state.chat` + the model descriptor,
+    // so a chat change needs no imperative DOM patch here.
   }
   // Rebuild the atomic props snapshot rendered by ModelPickerField.
   function syncPickerState() {
@@ -573,9 +569,10 @@ recent: loadRecent(state)
   // Wire the model-picker's onChatChanged hook so the head
   // elements re-render when updateChat fires.
   state._onChatChanged = () => updateModelTriggerLocal();
-  // Re-sync the thinking dropdown when live model data arrives —
-  // provider-reported descriptors replace the seeded/fallback options.
-  state._onLiveModels = () => { syncThinkingSelect(refs, state); syncPickerState(); };
+  // Live model data carries the provider-reported thinking descriptors.
+  // The thinking control renders from that cache directly, so it needs no
+  // rebuild here — only the picker snapshot has to be refreshed.
+  state._onLiveModels = () => { syncPickerState(); };
   state._openModelPicker = () => { openPickerWithFreshRecent(); };
   // The empty-state card in the picker can fire the same refresh
   // the head's ↻ button does, but it lives inside the picker
@@ -659,7 +656,6 @@ await sendTurn(state, refs, {
       recent: loadRecent(state),
       open: false
     }));
-    syncThinkingSelect(refs, state);
     refreshProviderCredit(state, refs);
     updateChatBound({ providerId, modelId });
   }, [updateChatBound]);
@@ -975,15 +971,6 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
         if (chatName.current) chatName.current.textContent = c.title || chatId;
         state.thinkingLevel = c.thinkingLevel || '';
         state.maxOutputTokens = c.maxOutputTokens || '';
-        // A custom entry belongs to the chat it was typed in: clear it
-        // before the sync below, or the dropdown would reopen the
-        // free-form field for a chat whose value is a plain preset.
-        // (Clears the flag only — the field's visibility is the sync's
-        // job, below.)
-        commitThinkingCustom(refs);
-        // Sync thinking level select after initial load — options come
-        // from the provider's reported descriptor when available.
-        syncThinkingSelect(refs, state);
         updateMetaLine(refs, state);
         updateUsageSummary(state, null, refs);
         refreshProviderCredit(state, refs);
@@ -1093,8 +1080,8 @@ setRunningVisible(false);
     const live = Array.isArray(r.body && r.body.models) ? r.body.models : [];
     liveByProvider.current = Object.assign({}, liveByProvider.current, { [provider]: live });
     // Live data may carry per-model thinking descriptors that the
-    // seeded project-level records lack — rebuild the dropdown options.
-    syncThinkingSelect(refs, state);
+    // seeded project-level records lack; ThinkingPicker reads them from
+    // this cache on its next render, so only the picker needs syncing.
     // The picker renders from modelsForPicker(state), which unions the
     // live cache — reflect the freshly fetched catalog in the sheet.
     syncPickerState();
