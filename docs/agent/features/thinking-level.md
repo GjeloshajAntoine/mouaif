@@ -24,12 +24,12 @@ In `src/ai.js`:
 
 ### Frontend
 
-- **`thinking.js`** (new): `thinkingDescriptorFor(state)` resolves the active model's descriptor from the live model cache; `thinkingOptionsFor(descriptor)` builds the option list; `syncThinkingSelect(refs, state)` rebuilds the `<select>` options and restores the stored selection.
-- **`Chat.jsx`**: the `<select>` is rendered empty and populated by `syncThinkingSelect`; the custom input is shown for the `__custom__` sentinel.
+- **`thinking.js`** (new): `thinkingDescriptorFor(state)` resolves the active model's descriptor from the live model cache; `thinkingOptionsFor(descriptor)` builds the option list; `syncThinkingSelect(refs, state)` rebuilds the `<select>` options and restores the stored selection; `setThinkingCustomOpen(refs, open, value)` / `thinkingCustomOpen(refs)` own the custom input's open state in the refs bag (`_thinkingCustomOpen`) so a background re-sync cannot close a field the user is typing in.
+- **`Chat.jsx`**: the `<select>` is rendered empty and populated by `syncThinkingSelect`; the custom input is shown for the `__custom__` sentinel via `setThinkingCustomOpen`, which clears the flag on commit (blur / Enter).
 - **`useChatState.js`**: seeds the live cache with project-model descriptors, calls `syncThinkingSelect` on load, on chat patch, and whenever live model data arrives (`state._onLiveModels` hook, fired by the model picker's refresh paths).
 - **`stream.js`**: passes `thinkingLevel` in the stream request body.
 - **`chat-view.css`**: `.chat-view__thinking-select` and `.chat-view__thinking-custom` styles.
 
 ### Persistence
 
-The thinking level is persisted on the chat record and survives reloads. If the stored value is not in the provider-reported option set (e.g. the model changed), it is kept via the custom input where available; for `toggle` models the dropdown shows "No thinking" without destroying the stored value.
+The thinking level is persisted on the chat record and survives reloads. If the stored value is not in the provider-reported option set (e.g. the model changed), it is kept via the custom input where available; for `toggle` models the dropdown shows "No thinking" without destroying the stored value. Switching chats clears the in-progress custom-entry flag first, so an entry typed in one chat's field cannot reopen the field for the next chat.

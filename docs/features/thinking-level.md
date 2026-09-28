@@ -60,3 +60,5 @@ For `levels` and `budget` models, select "Custom…" from the dropdown to reveal
 
 - For Anthropic and Gemini, a numeric string is parsed as the token budget. Anthropic caps at 100000 and raises `max_tokens` to at least `budget_tokens + 256`.
 - For OpenAI-compatible providers, the value is passed as-is as `reasoning_effort`.
+
+While the field is open, the dropdown stays on "Custom…" even if the model's reported level set is refreshed in the background: the catalog fetch that lands a few seconds after the chat opens no longer closes the field or drops the focus, so the keyboard stays up and the value can be typed. Committing the field (blur or Enter) ends that state; leaving it empty falls back to "No thinking".

@@ -56,6 +56,32 @@ export function thinkingOptionsFor(descriptor) {
   return opts;
 }
 
+// setThinkingCustomOpen(refs, open, value)
+//
+// Reveal / hide the free-form custom input for the '__custom__'
+// sentinel. Kept here rather than inline in the chat view because the
+// open state has to survive `syncThinkingSelect` (see its note) and
+// both live in this module.
+export function setThinkingCustomOpen(refs, open, value) {
+  if (refs) refs._thinkingCustomOpen = !!open;
+  const input = refs && refs.thinkingLevelCustom && refs.thinkingLevelCustom.current;
+  if (!input) return;
+  input.hidden = !open;
+  if (open) {
+    if (typeof value === 'string') input.value = value;
+    input.focus();
+  }
+}
+
+// thinkingCustomOpen(refs) -> bool
+//
+// True while the user is mid-entry in the custom input. Cleared by the
+// commit paths (blur / Enter) before they persist, so the next sync
+// falls back to normal reconciliation.
+export function thinkingCustomOpen(refs) {
+  return !!(refs && refs._thinkingCustomOpen);
+}
+
 // syncThinkingSelect(refs, state)
 //
 // Rebuild the thinking <select> options from the active model's
@@ -63,6 +89,17 @@ export function thinkingOptionsFor(descriptor) {
 // thinkingLevel selection. Falls back to the generic presets when
 // the provider reports nothing. Called whenever the chat record or
 // the live model data changes.
+//
+// This is an imperative DOM rebuild that leaves Preact's render cycle
+// alone — which is exactly why it must not close an open custom
+// input. It runs on every background live-model fetch (the provider
+// catalog can land seconds after the chat paints), and rebuilding the
+// <select> used to reset `hidden = true` on the custom input: the
+// field the user had just revealed vanished under their finger, and
+// the focus() that ran alongside it fired on a display:none element
+// so no keyboard ever opened. An in-progress entry now wins over the
+// stored value until it is committed.
+
 // thinkingOptionsForSelect(descriptor) -> [{ value, label }]
 //
 // The same options as thinkingOptionsFor but without the __custom__
@@ -112,5 +149,12 @@ export function syncThinkingSelect(refs, state) {
   } else {
     sel.value = '';
     if (custom) custom.hidden = true;
+  }
+  // An entry in progress outranks everything reconciled above: the user
+  // is typing a value that is not stored yet, so a re-sync must leave
+  // the sentinel selected and the field visible (and keep the focus).
+  if (thinkingCustomOpen(refs) && opts.some((o) => o.value === '__custom__')) {
+    sel.value = '__custom__';
+    if (custom) custom.hidden = false;
   }
 }

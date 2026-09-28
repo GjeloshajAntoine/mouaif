@@ -8,6 +8,7 @@
 import { h } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { useChatState } from './useChatState.js';
+import { setThinkingCustomOpen, thinkingCustomOpen } from './thinking.js';
 import { mountAtMention, refreshAtMentionItems } from './atMention.js';
 import { FileToolbar } from './FileToolbar.jsx';
 import { ToolPopup } from './ToolPopup.jsx';
@@ -439,17 +440,15 @@ setPreviewPromptOpen(false);
           'aria-label': 'Thinking level',
           'data-allow-custom': '1',
           onChange: (e) => {
-            const v = e.currentTarget.value;
-            s.state.thinkingLevel = v;
-            // Show/hide the custom input
-            const customInput = s.refs.thinkingLevelCustom && s.refs.thinkingLevelCustom.current;
-            if (customInput) {
-              customInput.hidden = v !== '__custom__';
-              if (v === '__custom__') customInput.focus();
-            }
-            if (v !== '__custom__' && s.state.chat) {
-              s.updateChat({ thinkingLevel: v });
-            }
+          const v = e.currentTarget.value;
+          s.state.thinkingLevel = v;
+          // Reveal / hide the free-form input. The open flag lives in
+          // the refs bag so the background live-model re-sync can see
+          // an entry is in progress and leave the field alone.
+          setThinkingCustomOpen(s.refs, v === '__custom__');
+          if (v !== '__custom__' && s.state.chat) {
+          s.updateChat({ thinkingLevel: v });
+          }
           }
         }),
         h('input', {
@@ -460,11 +459,22 @@ setPreviewPromptOpen(false);
           placeholder: 'e.g. 4096, minimal, low, high',
           'aria-label': 'Custom thinking level',
           onBlur: (e) => {
-            const v = e.currentTarget.value.trim();
-            if (v && s.state.chat) {
-              s.state.thinkingLevel = v;
-              s.updateChat({ thinkingLevel: v });
-            }
+          const v = e.currentTarget.value.trim();
+          // The entry is committed (or abandoned) now, so the next
+          // sync may reconcile the dropdown against the stored value
+          // again instead of holding the custom row open.
+          const wasOpen = thinkingCustomOpen(s.refs);
+          setThinkingCustomOpen(s.refs, false);
+          if (v && s.state.chat) {
+          s.state.thinkingLevel = v;
+          s.updateChat({ thinkingLevel: v });
+          } else if (!v && wasOpen && s.state.chat) {
+          // Committed an empty field: fall back to "No thinking"
+          // rather than leaving the dropdown on a sentinel that
+          // sends an empty reasoning_effort.
+          s.state.thinkingLevel = '';
+          s.updateChat({ thinkingLevel: '' });
+          }
           },
           onKeydown: (e) => {
             if (e.key === 'Enter') {
