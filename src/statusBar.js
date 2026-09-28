@@ -340,11 +340,21 @@ function detailLines(plan, percent, info) {
   if (info && info.usage) tiers.usage = String(info.usage);
 
   const out = [];
+  // A fact must appear at most once. The running message a progress event
+  // carries often restates a derived tier — the `task` tool sends
+  // `message: '2 of 5'` alongside `current`/`total`, which the counts tier
+  // renders again — and two identical rows read as a bug, not as emphasis.
+  const seen = new Set();
+  const push = (line) => {
+    if (!line) return;
+    const key = line.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(line);
+  };
   if (info && info.message) {
     const message = String(info.message).replace(/\s+/g, ' ').trim();
-    if (message) {
-      out.push(chars ? clipSmart(message, chars) : message);
-    }
+    if (message) push(chars ? clipSmart(message, chars) : message);
   }
   for (const tier of DETAIL_TIERS) {
     // A completion ('nothing left to do') makes the position in the work
@@ -354,8 +364,7 @@ function detailLines(plan, percent, info) {
     if (!value) continue;
     if (out.length >= maxLines) break;
     const line = chars ? clipSmart(value, budget) : value;
-    if (!line) continue;
-    out.push(line);
+    push(line);
   }
   return out.slice(0, maxLines);
 }

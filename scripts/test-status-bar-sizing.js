@@ -157,6 +157,20 @@ assert.ok(richLines.includes('12.4K tok · $0.0312'), 'the turn usage is a detai
 assert.equal(richLines.length, ios.detailLines, 'the detail rows stay within the surface height');
 assert.ok(!richLines.some((l) => l.includes('Fix push layout')), 'a task no longer duplicates its title into the body');
 
+// A fact never renders twice. The `task` tool sends `message: '2 of 5'`
+// alongside `current`/`total`, which the counts tier derives a second time;
+// without dedup the body showed the same row back to back.
+const taskEcho = statusBar.detailLines(ios, 40, {
+  kind: 'task', message: '2 of 5', current: 2, total: 5, usage: '12K tok'
+});
+assert.equal(taskEcho.filter((l) => l === '2 of 5').length, 1, 'a message that restates a tier does not duplicate it');
+assert.ok(taskEcho.includes('12K tok'), 'the tiers after the duplicate still fill the body');
+const taskEchoBody = statusBar.composeStatusBody(ios, 40, {
+  kind: 'task', message: '2 of 5', current: 2, total: 5, usage: '12K tok'
+});
+assert.equal(taskEchoBody, statusBar.asciiStatusBar(40, ios.cells) + '\n2 of 5\n12K tok',
+  'the composed body carries the restated fact exactly once');
+
 // A taller surface shows the lower tiers; a preview-sized one does not.
 const expandedPlan = statusBar.statusBarPlan({ chars: 34, viewportWidth: 360, os: 'android', osVersion: 13, style: 'expanded' });
 const expandedLines = statusBar.detailLines(expandedPlan, 40, richInfo);
