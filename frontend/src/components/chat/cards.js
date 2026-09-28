@@ -9,6 +9,7 @@ import { afterTranscriptAppend } from './scroll.js';
 import { h, render } from 'preact';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
+import { READ_GROUP_ID, EDIT_GROUP_ID } from '../settings/fileToolGroups.js';
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
 import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
 
@@ -89,8 +90,8 @@ head.appendChild(scoped);
   }
 
   // Build hierarchical groups from the catalog + MCP servers.
-  // The tree shows: Shell, Subagent, Ask user, File tools, then one
-  // group per MCP server. Used tools are auto-checked and badged.
+  // The tree shows: Shell, Subagent, Ask user, Read tools, Edit tools,
+  // then one group per MCP server. Used tools are auto-checked and badged.
   const groups = buildToolGroups(
     t.catalog,
     state.mcpServers || [],
@@ -127,14 +128,22 @@ head.appendChild(scoped);
     report_progress: 'report_progress',
     webpreview: 'webpreview',
     restart_app: 'restart_app',
-    files: 'file'
+    // Read tools and Edit tools are two rows over ONE authorization family:
+    // the server gates every file operation through `tools.file`, so the
+    // segment on either row writes — and reads back — the same mode. Both
+    // rows must therefore still resolve to `file`.
+    [READ_GROUP_ID]: 'file',
+    [EDIT_GROUP_ID]: 'file'
   };
   for (const g of groups) {
     const toolName = toolByGroup[g.id];
     if (!toolName) continue;
     const cur = auth[toolName] || { mode: 'ask' };
     g.control = h(ToolAuthSeg, {
-      tool: toolName,
+      // Radio-group identity is per ROW (`tool`), not per family: two rows
+      // over `file` sharing one radio name would render as a single group,
+      // and picking a mode on one row would visibly clear the other.
+      tool: g.id,
       name: toolName,
       mode: cur.mode,
       allowlist: cur.allowlist,

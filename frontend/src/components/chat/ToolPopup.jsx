@@ -12,6 +12,7 @@ import { h } from 'preact';
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
+import { READ_GROUP_ID, EDIT_GROUP_ID } from '../settings/fileToolGroups.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { useVisualViewport } from '../../hooks/useVisualViewport.js';
 
@@ -21,10 +22,13 @@ import { useVisualViewport } from '../../hooks/useVisualViewport.js';
 // is the shared ToolAuthSeg (../settings/toolAuth.js) — the same
 // component the chat tools card and project settings render, so every
 // tool row (subagent included) is built by one code path.
-function AuthSegment({ toolName, current, onSave }) {
+function AuthSegment({ toolName, rowId, current, onSave }) {
 if (!current || !current.mode) return null;
 return h(ToolAuthSeg, {
-tool: toolName,
+// `tool` is the ROW identity (radio name); `toolName` is the
+// authorization key the write uses. They differ for the two file rows,
+// which share the `file` family but are separate rows.
+tool: rowId || toolName,
 name: toolName,
 mode: current.mode,
 allowlist: Array.isArray(current.allowlist) ? current.allowlist : [],
@@ -102,7 +106,9 @@ export function ToolPopup(props) {
     task: 'task',
 webpreview: 'webpreview',
 restart_app: 'restart_app',
-files: 'file'
+// Two rows, one authorization family (see settings/fileToolGroups.js).
+[READ_GROUP_ID]: 'file',
+[EDIT_GROUP_ID]: 'file'
 
   };
   for (const g of groups) {
@@ -110,7 +116,10 @@ files: 'file'
     if (authName) {
       const cur = auth[authName] || { mode: 'ask' };
       g.control = h(AuthSegment, {
+        // Per-row radio identity: both file rows write the same `file`
+        // mode, so they must not share one radio group.
         toolName: authName,
+        rowId: g.id,
         current: { mode: segMode(cur.mode), allowlist: Array.isArray(cur.allowlist) ? cur.allowlist : [] },
         onSave: onSaveToolAuth
       });

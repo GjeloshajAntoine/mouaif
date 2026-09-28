@@ -39,6 +39,7 @@
 
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { partitionFileTools, groupMeta, FILE_TOOL_NAMES, READ_GROUP_ID, EDIT_GROUP_ID } from './settings/fileToolGroups.js';
 
 export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedByDefault = false, initialCollapsed, onCollapseChange, alwaysExpanded = false, class: className = '', onReloadServer = null }) {
   const [collapsed, setCollapsed] = useState(() => {
@@ -221,8 +222,9 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
 
 // buildAgentToolGroups({ choices, restricted, selected, mcpServers }) -> groups
 //
-// Agent-editor flavour: one group per native tool, a "File tools"
-// group, and one group per configured MCP server — the same shape
+// Agent-editor flavour: one group per native tool, a "Read tools" /
+// "Edit tools" pair for the file operations, and one group per configured
+// MCP server — the same shape
 // as the chat tools card and the project Tools section, minus the
 // authorization controls (an agent allowlist has no auth meaning).
 //
@@ -247,7 +249,7 @@ export function buildAgentToolGroups({ choices, restricted, selected, mcpServers
 const isOn = (value) => !restricted || selected(value);
 const groups = [];
 const natives = choices.filter((c) => !c.value.startsWith('mcp__'));
-  const files = natives.filter((c) => ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file'].includes(c.value));
+  const files = natives.filter((c) => FILE_TOOL_NAMES.includes(c.value));
 for (const c of natives) {
 if (files.includes(c)) continue;
 const entry = catalog.find((t) => t && t.name === c.value);
@@ -260,13 +262,19 @@ checked: isOn(c.value),
 tools: [{ id: c.value, name: c.label, checked: isOn(c.value) }]
 });
 }
-  if (files.length) {
+  // File tools split into Read / Edit by effect (see
+  // settings/fileToolGroups.js): the read half inspects, the edit half
+  // mutates. An agent can be granted one without the other.
+  const { read: readFiles, edit: editFiles } = partitionFileTools(files);
+  for (const [kind, list] of [['read', readFiles], ['edit', editFiles]]) {
+    if (!list.length) continue;
+    const meta = groupMeta(kind);
     groups.push({
-      id: 'files',
-      name: 'File tools',
-      description: 'read, list, search, write, edit',
-      checked: files.every((c) => isOn(c.value)),
-      tools: files.map((c) => ({ id: c.value, name: c.label, checked: isOn(c.value) }))
+      id: meta.id,
+      name: meta.name,
+      description: meta.description,
+      checked: list.every((c) => isOn(c.value)),
+      tools: list.map((c) => ({ id: c.value, name: c.label, checked: isOn(c.value) }))
     });
   }
   for (const c of choices) {
@@ -364,13 +372,20 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
   }
 
   const fileTools = catalog.filter((t) => t && t.kind === 'native' && t.source === 'files');
-  if (fileTools.length) {
+  // One "File tools" group became Read tools + Edit tools, split by
+  // effect. Both still resolve the same `tools.file` authorization family
+  // (the tree's auth control uses `toolByGroup` below), so the split is
+  // purely which rows a user sees and can toggle together.
+  const { read: readFiles, edit: editFiles } = partitionFileTools(fileTools);
+  for (const [kind, list] of [['read', readFiles], ['edit', editFiles]]) {
+    if (!list.length) continue;
+    const meta = groupMeta(kind);
     groups.push({
-      id: 'files',
-      name: 'File tools',
-      description: 'read, list, search, write, edit',
-      checked: allToolsOn(fileTools),
-      tools: fileTools.map((t) => leaf(t))
+      id: meta.id,
+      name: meta.name,
+      description: meta.description,
+      checked: allToolsOn(list),
+      tools: list.map((t) => leaf(t))
     });
   }
 

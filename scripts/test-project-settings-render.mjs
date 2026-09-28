@@ -9,7 +9,7 @@ const projectDir = '/fixture/project & name';
 const from = 'settings/projects';
 const chatId = 'chat-1';
 
-function createView(project) {
+function createView(project, toolCatalog = []) {
   const states = [];
   let cursor = 0, first = true, nodes = [], effects = [];
   const requests = [];
@@ -23,6 +23,7 @@ function createView(project) {
 ToolAuthSeg: 'auth-seg', TOOL_MODE_CHOICES: [{ value: 'off', label: 'Off' }],
 ASK_USER_MODE_CHOICES: [{ value: 'off', label: 'Off' }],
 segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
+shortDesc: (text) => String(text || '').replace(/\s+/g, ' ').trim(),
     AgentFilePicker: 'file-picker', WebpreviewModal: 'preview-modal', PreviewUrlPrompt: 'preview-prompt',
     useState: (initial) => {
       const i = cursor++;
@@ -39,7 +40,7 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
         '/api/settings/project': { project, path: projectDir + '/.mouaif.json' },
         '/api/settings/resolved': { resolved: {} },
         '/api/tools/authorization': { tools: {}, mcp: {} },
-        '/api/tools/list': { tools: [] },
+        '/api/tools/list': { tools: toolCatalog },
         '/api/mcp/servers': { servers: [] },
         '/api/prompts': { prompts: [] },
         '/api/agents': { agents: [] }
@@ -49,7 +50,9 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
     }
   });
   const PROJECT_NAV = source('settings/projectNavigation.js');
+  const FILE_GROUPS = source('settings/fileToolGroups.js');
   vm.runInContext(PROJECT_NAV, context);
+  vm.runInContext(FILE_GROUPS, context);
   vm.runInContext(source('settingsProjectUi.js'), context);
   vm.runInContext(source('SettingsProject.jsx'), context);
   function render(page = 'main') {
@@ -106,3 +109,44 @@ for (const [project, summary] of [
   assert.equal(mainBack.attrs.href, '#/chat/' + chatId + '?projectDir=' + encodeURIComponent(projectDir));
 }
 console.log('PASS project settings initial/loaded renders, hidden-file counts, scoped links, sibling pages and Back targets');
+
+// ---- Read tools / Edit tools rows over one family ----------------------
+//
+// With a file-tool catalog present, the Tools tree must render TWO rows
+// instead of the old single "File tools" group, and both segments must
+// target the shared `tools.file` family. The ToolTree component is stubbed
+// to the string 'tool-tree', so its `groups` prop is inspectable.
+{
+  const catalog = [
+    { name: 'read_file', kind: 'native', source: 'files', description: 'Read a text file.' },
+    { name: 'list_files', kind: 'native', source: 'files', description: 'List files under the project.' },
+    { name: 'search_files', kind: 'native', source: 'files', description: 'Search project files.' },
+    { name: 'write_file', kind: 'native', source: 'files', description: 'Create or overwrite a file.' },
+    { name: 'edit_file', kind: 'native', source: 'files', description: 'Replace one block in a file.' }
+  ];
+  const view = createView({ tools: { file: { mode: 'ask' } } }, catalog);
+  view.render();
+  await view.load();
+  const nodes = view.render();
+  const tree = nodes.find((node) => node.tag === 'tool-tree');
+  assert.ok(tree, 'tools tree is rendered');
+  const groups = tree.attrs.groups;
+  const read = groups.find((g) => g.id === 'files-read');
+  const edit = groups.find((g) => g.id === 'files-edit');
+  assert.ok(read, 'Read tools group exists');
+  assert.ok(edit, 'Edit tools group exists');
+  assert.equal(read.name, 'Read tools');
+  assert.equal(edit.name, 'Edit tools');
+  assert.deepEqual(JSON.parse(JSON.stringify(read.tools.map((t) => t.id))), ['read_file', 'list_files', 'search_files']);
+  assert.deepEqual(JSON.parse(JSON.stringify(edit.tools.map((t) => t.id))), ['write_file', 'edit_file']);
+  assert.equal(groups.some((g) => g.id === 'files'), false, 'the old single File tools group is gone');
+  // With the family on `ask`, both rows start checked and their segments
+  // point at the same family control.
+  assert.equal(read.checked, true);
+  assert.equal(edit.checked, true);
+  assert.equal(read.control.attrs.name, 'Read tools');
+  assert.equal(edit.control.attrs.name, 'Edit tools');
+  // The two segments must not share a radio group.
+  assert.notEqual(read.control.attrs.tool, edit.control.attrs.tool);
+}
+console.log('PASS Read tools and Edit tools render as two rows over the shared file family');

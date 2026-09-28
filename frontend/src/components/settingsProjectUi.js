@@ -39,9 +39,14 @@ export function sectionIcon(kind) {
 // render, so `subagent` and every other tool row are built by one code
 // path. This wrapper only adapts the settings call signature (a display
 // name plus a one-argument picker) to the component's props.
-export function toolModeSegs(name, activeMode, onPick, modes) {
+export function toolModeSegs(name, activeMode, onPick, modes, rowId) {
   return h(ToolAuthSeg, {
-    tool: name,
+    // `rowId` overrides the radio-group identity. It exists for the Read /
+    // Edit file-tool rows: they are two controls over ONE `tools.file`
+    // family, so they share a label and a write target but must not share a
+    // radio group — otherwise picking a mode on one row would visibly clear
+    // the other. Defaults to `name`, which leaves every other row unchanged.
+    tool: rowId || name,
     name,
     mode: activeMode,
     namePrefix: 'sp',

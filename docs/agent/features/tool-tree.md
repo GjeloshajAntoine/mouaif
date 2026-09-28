@@ -79,7 +79,8 @@ Authorization keys in the project file:
 | shell | `tools.shell` | off / ask / allowlist / allow |
 | subagent | `tools.subagent` | off / ask / allowlist / allow |
 | ask_user | `tools.ask_user` | off / ask (binary) |
-| File tools | `tools.file` | off / ask / allowlist / allow |
+| Read tools | `tools.file` (family) + `tools.<name>` per-leaf | off / ask / allowlist / allow |
+| Edit tools | `tools.file` (family) + `tools.<name>` per-leaf | off / ask / allowlist / allow |
 | (each MCP server) | `mcp.authorization.servers.<slug>` (segment + group checkbox) | off / ask / allowlist / allow |
 
 The settings tree renders one group per configured MCP server (group checkbox = that server's override's `Off ↔ Ask`, segment = the full per-server authorization override showing the effective mode). Servers always render, even when stopped: `/api/tools/list` only reports running servers, so the settings page loads the merged server list from `/api/mcp/servers` and falls back to the cached tool list on the server record.

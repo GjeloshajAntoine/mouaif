@@ -433,7 +433,8 @@ export function SettingsAgentEditView(props) {
 const toolChoices = toolChoicesWithMcp(mcpServers);
 // Same group structure AND row content as the chat tools card and
 // the project Tools section: one group per native tool (each with
-// its catalog description), "File tools", one group per MCP server
+// its catalog description), "Read tools" / "Edit tools", one group per MCP
+// server
 // — minus the authorization controls, which are a project-level
 // setting and have no meaning in an agent allowlist.
 const agentToolGroups = buildAgentToolGroups({
