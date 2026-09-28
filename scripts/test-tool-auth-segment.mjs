@@ -137,35 +137,5 @@ const radioFor = (tree, label) => radios(tree).find((n) => n.props.value === lab
     String((hook.match(/seq !== state\._authSaveSeq/g) || []).length));
 }
 
-// ---- 5. Read tools / Edit tools share ONE family, not one radio group ---
-//
-// The two file-tool rows are two controls over a single `tools.file`
-// authorization family. They must not share a radio-group name: with the
-// same `name`, the browser treats them as one group, so picking a mode on
-// Read tools would visibly clear Edit tools. This pins both halves of the
-// contract — distinct radio names, one shared write target.
-{
-  const rowName = (tree) => (radios(tree)[0] || { props: {} }).props.name;
-  const read = ToolAuthSeg({ tool: 'files-read', name: 'file', mode: 'ask', namePrefix: 'sp', onPick: () => {} });
-  const edit = ToolAuthSeg({ tool: 'files-edit', name: 'file', mode: 'ask', namePrefix: 'sp', onPick: () => {} });
-  check('the two file rows use DIFFERENT radio-group names', rowName(read) !== rowName(edit), rowName(read) + ' vs ' + rowName(edit));
-  check('each radio name keys off the row id', /files-read/.test(rowName(read)) && /files-edit/.test(rowName(edit)), rowName(read));
-
-  const settingsTree = await readFile(new URL('../frontend/src/components/SettingsProject.jsx', import.meta.url), 'utf8');
-  check('the settings tree writes the file family through pickFileMode on both rows',
-    (settingsTree.match(/toolModeSegs\(meta\.name, segMode\(fileAuth\.mode\), pickFileMode, \[/g) || []).length === 1 && /for \(const \[kind, list\] of \[\['read', readFiles\], \['edit', editFiles\]\]\)/.test(settingsTree));
-  check('the settings group checkbox writes per-leaf overrides, not the family',
-    /pickFileLeavesMode\(names, mode\)/.test(settingsTree) && !/'file', \.\.\.toolNames/.test(settingsTree));
-
-  const cards = await readFile(new URL('../frontend/src/components/chat/cards.js', import.meta.url), 'utf8');
-  const popup = await readFile(new URL('../frontend/src/components/chat/ToolPopup.jsx', import.meta.url), 'utf8');
-  check('the chat card maps both file rows to the `file` family',
-    /\[READ_GROUP_ID\]: 'file'/.test(cards) && /\[EDIT_GROUP_ID\]: 'file'/.test(cards));
-  check('the popup maps both file rows to the `file` family',
-    /\[READ_GROUP_ID\]: 'file'/.test(popup) && /\[EDIT_GROUP_ID\]: 'file'/.test(popup));
-  check('the chat card keys the radio name on the row id, not the family',
-    /tool:\s*g\.id,/.test(cards));
-}
-
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

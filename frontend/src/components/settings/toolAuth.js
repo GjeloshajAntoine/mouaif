@@ -62,14 +62,9 @@ export function ToolAuthSeg({
 
 // Thin wrapper kept for the settings call sites, which pass a display
 // name and a one-argument picker. It renders the shared ToolAuthSeg.
-//
-// `rowId` overrides the radio-group identity, matching the sibling copy in
-// ../../settingsProjectUi.js — the Read / Edit file-tool rows are two
-// controls over ONE `tools.file` family, so they must not share a radio
-// group. Defaults to `name`.
-export function toolModeSegs(name, activeMode, onPick, modes, rowId) {
+export function toolModeSegs(name, activeMode, onPick, modes) {
   return h(ToolAuthSeg, {
-    tool: rowId || name,
+    tool: name,
     name,
     mode: activeMode,
     namePrefix: 'sp',

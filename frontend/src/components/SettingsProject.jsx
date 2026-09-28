@@ -14,7 +14,6 @@ import { nav, back } from '../router.js';
 import { ToolTree, shortDesc } from './ToolTree.jsx';
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg, segMode } from './settings/toolAuth.js';
-import { partitionFileTools, groupMeta, READ_TOOL_NAMES, EDIT_TOOL_NAMES, READ_GROUP_ID, EDIT_GROUP_ID } from './settings/fileToolGroups.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 
 import { agentEditorPath } from './settings/agentNavigation.js';
@@ -459,19 +458,14 @@ setSkillsOn(cp.skills !== false);
     setFileToolAuth((prev) => Object.assign({}, prev, { [toolName]: next }));
     saveToolAuthorization(toolName, next.mode, next.allowlist, setFileStatusMsg);
   }
-  // The Read tools / Edit tools group checkbox. It toggles ONLY that
-  // group's leaves, writing per-leaf `tools.<name>` overrides and leaving
-  // the shared `tools.file` family mode alone — otherwise unchecking Read
-  // tools would also gate the Edit half, and the two rows would be one
-  // control wearing two labels. The segment on either row is still the way
-  // to change the family mode.
-  async function pickFileLeavesMode(toolNames, newMode) {
+  async function pickFileGroupMode(toolNames, newMode) {
     const allowlist = newMode === 'allow' ? [] : fileAuth.allowlist;
     const next = { mode: newMode, allowlist, source: 'project-tool' };
+    setFileAuth((prev) => Object.assign({}, prev, { mode: newMode, allowlist }));
     setFileToolAuth((prev) => Object.assign({}, prev,
       Object.fromEntries(toolNames.map((name) => [name, next]))));
     setFileStatusMsg('saving…');
-    const tools = Object.fromEntries(toolNames.map((name) => [name, { mode: newMode, allowlist }]));
+    const tools = Object.fromEntries(['file', ...toolNames].map((name) => [name, { mode: newMode, allowlist }]));
     const r = await fetchJson('/api/tools/authorization', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -878,40 +872,25 @@ if (askTool) {
     }
 
     const fileTools = catalog.filter((t) => t.kind === 'native' && t.source === 'files');
-    // Read tools + Edit tools replace the single "File tools" row. Each is
-    // its own tree row with its own checkbox and segment, but both edit the
-    // SAME `tools.file` authorization family: the segment reads `fileAuth`
-    // and writes through `pickFileMode`, so a tap on either row sets the
-    // family mode for every file operation. The split is which leaves the
-    // row groups (read ⇒ read/list/search, edit ⇒ write/edit), so the
-    // per-leaf `tools.<name>` overrides stay reachable one operation at a
-    // time.
-    const { read: readFiles, edit: editFiles } = partitionFileTools(fileTools);
-    // A leaf's effective mode: its own `tools.<name>` override when one
-    // exists, otherwise the shared `tools.file` family mode.
-    const leafMode = (t) => (fileToolAuth[t.name] && fileToolAuth[t.name].mode) || fileAuth.mode;
-    for (const [kind, list] of [['read', readFiles], ['edit', editFiles]]) {
-    if (!list.length) continue;
-    const meta = groupMeta(kind);
-    groups.push({
-      id: meta.id,
-      name: meta.name,
-      description: meta.description,
-      // The row checkbox reflects THIS group's leaves, not the family:
-      // with the family on `ask`, unchecking Read tools must leave Edit
-      // tools checked, which is the whole point of the split.
-      checked: list.every((t) => isOn(leafMode(t))),
-      control: toolModeSegs(meta.name, segMode(fileAuth.mode), pickFileMode, [
-      { value: 'off', label: 'Off' },
-      { value: 'ask', label: 'Ask' },
-      { value: 'allow', label: 'Allow' }
-      ], meta.id),
-      // Leaves inherit tools.file until a leaf checkbox creates an
-      // explicit per-tool override. The source marker keeps inherited
-      // leaves synchronized when the family mode changes.
-      tools: list.map((t) => leaf(t, { checked: isOn(leafMode(t)) })),
-      extra: fileStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileStatusMsg) : null
-    });
+    if (fileTools.length) {
+      groups.push({
+        id: 'files',
+        name: 'File tools',
+        description: 'read, list, search, write, edit, draw',
+        checked: isOn(fileAuth.mode),
+        control: toolModeSegs('File tools', segMode(fileAuth.mode), pickFileMode, [
+          { value: 'off', label: 'Off' },
+          { value: 'ask', label: 'Ask' },
+          { value: 'allow', label: 'Allow' }
+        ]),
+        // Leaves inherit tools.file until a leaf checkbox creates an
+        // explicit per-tool override. The source marker keeps inherited
+        // leaves synchronized when the family mode changes.
+        tools: fileTools.map((t) => leaf(t, {
+          checked: isOn((fileToolAuth[t.name] && fileToolAuth[t.name].mode) || fileAuth.mode)
+        })),
+        extra: fileStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileStatusMsg) : null
+      });
     }
 
     const servers = (mcpServers || []).filter((s) => s && s.id);
@@ -1014,13 +993,11 @@ else if (groupId === 'restart_app') pickRestartMode(mode);
 else if (groupId === 'report_progress') pickProgressMode(mode);
 
     else if (groupId === 'ask_user') pickAskUserMode(mode);
-    else if (groupId === READ_GROUP_ID || groupId === EDIT_GROUP_ID) {
-    const readHalf = groupId === READ_GROUP_ID;
-    const names = toolsCatalog
-      .filter((tool) => tool && tool.kind === 'native' && tool.source === 'files')
-      .filter((tool) => (readHalf ? READ_TOOL_NAMES : EDIT_TOOL_NAMES).includes(tool.name))
-      .map((tool) => tool.name);
-    pickFileLeavesMode(names, mode);
+    else if (groupId === 'files') {
+      const names = toolsCatalog
+        .filter((tool) => tool && tool.kind === 'native' && tool.source === 'files')
+        .map((tool) => tool.name);
+      pickFileGroupMode(names, mode);
     }
     else if (groupId.startsWith('mcp-')) toggleMcpServerAuth(groupId.slice(4), checked);
   }
@@ -1397,9 +1374,9 @@ href: '#/settings/prompts?' + projectBackQS()
                 groups: buildSettingsToolGroups(toolsCatalog),
                 onToggleGroup: toggleSettingsGroup,
                 onToggleTool: (groupId, toolId, checked) => {
-                if (groupId.startsWith('mcp-')) toggleMcpToolAuth(toolId, checked);
-                else if (groupId === READ_GROUP_ID || groupId === EDIT_GROUP_ID) pickFileToolMode(toolId, checked ? 'ask' : 'off');
-                else toggleSettingsGroup(groupId, checked);
+                  if (groupId.startsWith('mcp-')) toggleMcpToolAuth(toolId, checked);
+                  else if (groupId === 'files') pickFileToolMode(toolId, checked ? 'ask' : 'off');
+                  else toggleSettingsGroup(groupId, checked);
                 },
                 // Groups with more than one nested tool start collapsed,
                 // matching the chat tree. The ToolTree holds its own
