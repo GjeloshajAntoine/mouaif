@@ -10,13 +10,13 @@ The folder picker allows you to browse local directories and register any codeba
 2. Browse your folder tree — the folder list is the first thing on the page:
    - Tap a folder to open it.
    - Tap **↑** (next to the current path) to go to the parent folder.
-3. By default you are done: the bar pinned to the bottom of the screen shows one collapsed row, `Settings in · .mouaif.json`, and the folder gets a `.mouaif.json` at its root. Tap that row only if you want to change where the settings live (see below). A one-line note under the options says exactly what will happen to the folder you are in.
+3. Pick where the settings live — the three options are always visible in the bar pinned to the bottom of the screen, one row each. A one-line note under them says exactly what will happen to the folder you are in.
 4. Tap **Add "<folder>"** to register the folder you are in. The button always names the folder it acts on.
 5. **Create a new folder** — expand *Create new folder* under the list, enter a name, and tap **Create**. The new folder is opened so you can add it.
 
 ## Where a project's settings live
 
-The choice is collapsed into a single row above the **Add** button, so the folder list keeps the screen. The row always names the current choice (`Settings in · .mouaif.json`) with a short qualifier (`file at the folder root`, `existing file`, `nothing written to the folder`), so you never have to open it just to see where the settings go. Tap the row to expand the three options, stacked one per row with the file name and what happens spelled out:
+The three options sit above the **Add** button as a stacked list — one row per choice, with the file name and what happens spelled out. Nothing is collapsed, so where the settings go is never hidden behind a tap.
 
 | Option | File | What happens |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ The choice is collapsed into a single row above the **Add** button, so the folde
 | **`.mouaif/`** | `<folder>/.mouaif/.mouaif.json` | Same file, same name, inside a `.mouaif/` folder. For complex projects that want every mouaif file (config, traces) in one folder instead of the root. |
 | **App DB** | none | Settings are kept in the app SQLite store (`~/.mouaif/store.sqlite`). **Nothing is written** to the folder, so nothing shows up in git. |
 
-If the folder **already** has a config file (in either place), it is **adopted as-is**: never overwritten, moved, or duplicated, even if you picked the other file option. The qualifier reads `existing file` and the note says `Uses the existing …` when that is the case. Picking **App DB** says `nothing written to the folder` even on such a folder, because a DB-backed project reads no file at all.
+If the folder **already** has a config file (in either place), it is **adopted as-is**: never overwritten, moved, or duplicated, even if you picked the other file option. The note says `Uses the existing …` when that is the case.
 
 Rows for folders that already contain a config file show a small badge — `.mouaif.json` or `.mouaif/` — so you can see an existing config before opening the folder.
 
