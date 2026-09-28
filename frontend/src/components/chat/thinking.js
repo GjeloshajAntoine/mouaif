@@ -73,6 +73,18 @@ export function setThinkingCustomOpen(refs, open, value) {
   }
 }
 
+// commitThinkingCustom(refs)
+//
+// End an in-progress entry *without* hiding the field. Blur is not a
+// dismissal — tapping the composer, the keyboard opening and the
+// closing native picker all fire one — so the visibility is left to the
+// next `syncThinkingSelect`, which reconciles it against the value that
+// was just stored (a known level hides the field and shows its label; a
+// free-form number keeps it visible). This clears only the open flag.
+export function commitThinkingCustom(refs) {
+  if (refs) refs._thinkingCustomOpen = false;
+}
+
 // thinkingCustomOpen(refs) -> bool
 //
 // True while the user is mid-entry in the custom input. Cleared by the

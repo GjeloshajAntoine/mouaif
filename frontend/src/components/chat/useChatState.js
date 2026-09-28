@@ -31,7 +31,7 @@ import {
   updateMetaLine, refreshSystemPrompt, activeProfileId, updateSwitch, updateSetupVisibility
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
-import { syncThinkingSelect, setThinkingCustomOpen } from './thinking.js';
+import { syncThinkingSelect, commitThinkingCustom } from './thinking.js';
 import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat, loadOlderMessages, loadAllOlderMessages, abortStream } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
@@ -500,6 +500,11 @@ draftAttachments: Array.isArray(draftAttachments) && draftAttachments.length ? d
     updateMetaLine(refs, state);
     refreshProviderCredit(state, refs);
     syncPickerState();
+    // The chat record just changed server-side: let the head reconcile
+    // the elements that read from it. This is what lands the thinking
+    // dropdown on the newly stored level (a known level shows its label
+    // and closes the free-form field; a custom number keeps it open).
+    if (typeof state._onChatChanged === 'function') state._onChatChanged();
     return true;
   }, [projectDir, chatId]);
 
@@ -973,7 +978,9 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
         // A custom entry belongs to the chat it was typed in: clear it
         // before the sync below, or the dropdown would reopen the
         // free-form field for a chat whose value is a plain preset.
-        setThinkingCustomOpen(refs, false);
+        // (Clears the flag only — the field's visibility is the sync's
+        // job, below.)
+        commitThinkingCustom(refs);
         // Sync thinking level select after initial load — options come
         // from the provider's reported descriptor when available.
         syncThinkingSelect(refs, state);

@@ -8,7 +8,7 @@
 import { h } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { useChatState } from './useChatState.js';
-import { setThinkingCustomOpen, thinkingCustomOpen } from './thinking.js';
+import { setThinkingCustomOpen, commitThinkingCustom, thinkingCustomOpen, syncThinkingSelect } from './thinking.js';
 import { mountAtMention, refreshAtMentionItems } from './atMention.js';
 import { FileToolbar } from './FileToolbar.jsx';
 import { ToolPopup } from './ToolPopup.jsx';
@@ -436,53 +436,67 @@ setPreviewPromptOpen(false);
       ),
       h('select', {
         ref: refs.thinkingLevel,
-          class: 'input chat-view__thinking-select',
-          'aria-label': 'Thinking level',
-          'data-allow-custom': '1',
-          onChange: (e) => {
+        class: 'input chat-view__thinking-select',
+        'aria-label': 'Thinking level',
+        'data-allow-custom': '1',
+        onChange: (e) => {
           const v = e.currentTarget.value;
           s.state.thinkingLevel = v;
           // Reveal / hide the free-form input. The open flag lives in
-          // the refs bag so the background live-model re-sync can see
-          // an entry is in progress and leave the field alone.
+          // the refs bag so a background re-sync (live model catalog)
+          // can see an entry in progress and leave the field alone.
           setThinkingCustomOpen(s.refs, v === '__custom__');
           if (v !== '__custom__' && s.state.chat) {
-          s.updateChat({ thinkingLevel: v });
+            s.updateChat({ thinkingLevel: v });
           }
-          }
-        }),
-        h('input', {
-          ref: refs.thinkingLevelCustom,
-          class: 'input chat-view__thinking-custom',
-          type: 'text',
-          hidden: true,
-          placeholder: 'e.g. 4096, minimal, low, high',
-          'aria-label': 'Custom thinking level',
-          onBlur: (e) => {
+        }
+      }),
+      h('input', {
+        ref: refs.thinkingLevelCustom,
+        class: 'input chat-view__thinking-custom',
+        type: 'text',
+        hidden: true,
+        placeholder: 'e.g. 4096, minimal, low, high',
+        'aria-label': 'Custom thinking level',
+        onBlur: (e) => {
+          // A blur is not a dismissal: tapping the composer, the
+          // keyboard opening and the closing native picker all fire
+          // one. Commit a typed value and let the sync reconcile
+          // visibility, but never hide a field the user has not
+          // finished with — hiding on blur is what made 'Custom…'
+          // flash and vanish, so the field never appeared.
           const v = e.currentTarget.value.trim();
-          // The entry is committed (or abandoned) now, so the next
-          // sync may reconcile the dropdown against the stored value
-          // again instead of holding the custom row open.
-          const wasOpen = thinkingCustomOpen(s.refs);
-          setThinkingCustomOpen(s.refs, false);
-          if (v && s.state.chat) {
-          s.state.thinkingLevel = v;
-          s.updateChat({ thinkingLevel: v });
-          } else if (!v && wasOpen && s.state.chat) {
-          // Committed an empty field: fall back to "No thinking"
-          // rather than leaving the dropdown on a sentinel that
-          // sends an empty reasoning_effort.
-          s.state.thinkingLevel = '';
-          s.updateChat({ thinkingLevel: '' });
+          if (!thinkingCustomOpen(s.refs)) return;
+          if (!v) return;   // nothing typed yet: stay open, on 'Custom…'
+          commitThinkingCustom(s.refs);
+          if (s.state.chat) {
+            s.state.thinkingLevel = v;
+            s.updateChat({ thinkingLevel: v });
           }
-          },
-          onKeydown: (e) => {
-            if (e.key === 'Enter') {
-              e.currentTarget.blur();
+          // Safe now: the field only hides once it no longer holds an
+          // uncommitted entry. A known level closes it and shows its
+          // label; a free-form number keeps it open.
+          syncThinkingSelect(s.refs, s.state);
+        },
+        onKeydown: (e) => {
+          if (e.key === 'Enter') {
+            // Enter is the explicit commit — including an empty field,
+            // which resets to 'No thinking' (rather than leaving
+            // reasoning_effort empty on the next send).
+            const v = e.currentTarget.value.trim();
+            if (thinkingCustomOpen(s.refs)) {
+              commitThinkingCustom(s.refs);
+              if (s.state.chat) {
+                s.state.thinkingLevel = v;
+                s.updateChat({ thinkingLevel: v });
+              }
+              syncThinkingSelect(s.refs, s.state);
             }
+            e.currentTarget.blur();
           }
-        }),
-      ),
+        }
+      }),
+    ),
       h('div', { class: 'chat-view__head-icons' },
           h('a', {
             class: 'chat-view__iconbtn',
