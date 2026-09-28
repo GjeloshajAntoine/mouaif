@@ -16,7 +16,7 @@ The folder picker allows you to browse local directories and register any codeba
 
 ## Where a project's settings live
 
-The choice is collapsed into a single row above the **Add** button, so the folder list keeps the screen. The row always names the current choice (`Settings in · .mouaif.json`) with a short qualifier (`file at the folder root`, `existing file`, `nothing written to the folder`), so you never have to open it just to see where the settings go. Tap the row to expand the three options:
+The choice is collapsed into a single row above the **Add** button, so the folder list keeps the screen. The row always names the current choice (`Settings in · .mouaif.json`) with a short qualifier (`file at the folder root`, `existing file`, `nothing written to the folder`), so you never have to open it just to see where the settings go. Tap the row to expand the three options, stacked one per row with the file name and what happens spelled out:
 
 | Option | File | What happens |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ The choice is collapsed into a single row above the **Add** button, so the folde
 | **`.mouaif/`** | `<folder>/.mouaif/.mouaif.json` | Same file, same name, inside a `.mouaif/` folder. For complex projects that want every mouaif file (config, traces) in one folder instead of the root. |
 | **App DB** | none | Settings are kept in the app SQLite store (`~/.mouaif/store.sqlite`). **Nothing is written** to the folder, so nothing shows up in git. |
 
-If the folder **already** has a config file (in either place), it is **adopted as-is**: never overwritten, moved, or duplicated, even if you picked the other file option. The qualifier reads `existing file` and the note says `Uses the existing …` when that is the case.
+If the folder **already** has a config file (in either place), it is **adopted as-is**: never overwritten, moved, or duplicated, even if you picked the other file option. The qualifier reads `existing file` and the note says `Uses the existing …` when that is the case. Picking **App DB** says `nothing written to the folder` even on such a folder, because a DB-backed project reads no file at all.
 
 Rows for folders that already contain a config file show a small badge — `.mouaif.json` or `.mouaif/` — so you can see an existing config before opening the folder.
 

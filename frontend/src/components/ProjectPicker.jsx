@@ -132,12 +132,16 @@ export function ProjectPickerView(props) {
   // Label for the collapsed storage row: the current choice plus a short
   // qualifier so the closed state is still self-explanatory — and the
   // qualifier never repeats the label (it would read ".mouaif.json ·
-  // .mouaif.json"). An already-existing config file wins, because that is the
-  // case the user cannot guess from the folder name.
+  // .mouaif.json"). Precedence mirrors storageNote: a DB-backed project reads
+  // and writes no file, so "existing file" would be a lie there even if the
+  // folder has one; otherwise an already-existing config file wins, because
+  // it is adopted as-is and the user cannot infer that from the folder name.
   const storageOption = STORAGE_OPTIONS.find(o => o.value === storage) || STORAGE_OPTIONS[0];
-  const storageWhere = dirConfigLayout
-    ? 'existing file'
-    : storage === 'folder' ? CONFIG_DIR + CONFIG_FILE : storageOption.hint.toLowerCase();
+  const storageWhere = storage === 'db'
+    ? storageOption.hint.toLowerCase()
+    : dirConfigLayout
+      ? 'existing file'
+      : storage === 'folder' ? CONFIG_DIR + CONFIG_FILE : storageOption.hint.toLowerCase();
 
   function goUp() {
     const parent = parentDir();
@@ -229,21 +233,29 @@ export function ProjectPickerView(props) {
       ),
       h('fieldset', { class: 'picker__storage' },
       h('legend', { class: 'picker__storage-legend' }, 'Settings stored in'),
-      h('div', { class: 'picker__seg', role: 'radiogroup' },
-        STORAGE_OPTIONS.map(opt => h('label', {
-        key: opt.value,
-        class: 'picker__seg-opt' + (storage === opt.value ? ' is-on' : ''),
-        title: opt.hint
+      // A stacked list, not a segmented row: each choice gets its own row
+      // with the file name and what happens in words, so a small screen
+      // reads the consequence instead of decoding a chip.
+      h('ul', { class: 'picker__storage-list', role: 'radiogroup' },
+        STORAGE_OPTIONS.map(opt => h('li', { key: opt.value },
+        h('label', {
+          class: 'picker__storage-item' + (storage === opt.value ? ' is-on' : ''),
+          title: opt.hint
         },
-        h('input', {
+          h('input', {
           type: 'radio',
           name: 'picker-storage',
           value: opt.value,
           checked: storage === opt.value,
           onChange: () => setStorage(opt.value),
           'aria-label': opt.label + ' — ' + opt.hint
-        }),
-        h('span', { class: 'picker__seg-label' }, opt.label)
+          }),
+          h('span', { class: 'picker__storage-item-mark', 'aria-hidden': 'true' }),
+          h('span', { class: 'picker__storage-item-text' },
+          h('span', { class: 'picker__storage-item-label' }, opt.label),
+          h('span', { class: 'picker__storage-item-hint' }, opt.hint)
+          )
+        )
         ))
       ),
       h('p', { class: 'picker__storage-note', 'aria-live': 'polite' }, storageNote)
