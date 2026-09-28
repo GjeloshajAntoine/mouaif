@@ -86,10 +86,17 @@ export function WebpreviewModal({ preview, onClose, onRecapture }) {
   const [frameKey, setFrameKey] = useState(0);
   const [bodySize, setBodySize] = useState({ width: 0, height: 0 });
   const bodyRef = useRef(null);
+  // Fullscreen presentation of the whole viewer. The overlay — not the iframe —
+  // is the fullscreen element: the framed page is cross-origin, so we cannot
+  // call `requestFullscreen()` on it, and promoting the overlay gives the page
+  // the rest of the screen anyway (the header/footer stay as the app's own
+  // chrome). The page's own fullscreen button still works on its own.
+  const overlayRef = useRef(null);
+  const [fsOpen, setFsOpen] = useState(false);
   // Escape, the Tab cycle and focus restore come from the shared sheet hook
   // (frontend/src/hooks/useModal.js); the backdrop and the close button are
   // this component's own.
-  const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
+  const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); }, escape: !fsOpen });
   // Defensive: render the modal shell even when the preview payload
   // is missing — the close button still has to work and the body
   // shows the model-facing error so the user knows nothing useful
@@ -133,6 +140,34 @@ export function WebpreviewModal({ preview, onClose, onRecapture }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [live]);
+  // Keep the button in sync with the real fullscreen state. Leaving fullscreen
+  // with Escape, a swipe, or the browser's own chrome fires this too, so the
+  // toggle never claims the wrong mode.
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const onChange = () => setFsOpen(document.fullscreenElement === overlayRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  // Mirror the class on the overlay so CSS can drop the phone sheet's
+  // safe-area padding / rounded edges while it owns the whole screen. Deriving
+  // it from state keeps it correct when fullscreen ends by any route.
+  const fullscreenSupported = typeof document !== 'undefined'
+    && !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  function toggleFullscreen() {
+    if (typeof document === 'undefined') return;
+    const el = overlayRef.current;
+    if (!el) return;
+    const doc = document;
+    if (doc.fullscreenElement === el || doc.webkitFullscreenElement === el) {
+      const exit = doc.exitFullscreen || doc.webkitExitFullscreen;
+      if (exit) Promise.resolve(exit.call(doc)).catch(() => {});
+      return;
+    }
+    const request = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!request) return;
+    Promise.resolve(request.call(el)).catch(() => {});
+  }
     function onBackdropClick(e) {
     // Only close when the tap lands on the backdrop itself, not on
     // the sheet. Same pattern as the Git modal.
@@ -198,13 +233,14 @@ const [recapturing, setRecapturing] = useState(false);
   if (!live && sizeBytes) meta.push(formatBytes(sizeBytes));
   if (!live && capturedAt) meta.push('captured ' + formatTime(capturedAt));
   return h('div', {
-    class: 'wp__overlay',
+    class: 'wp__overlay' + (fsOpen ? ' wp__overlay--fs' : ''),
     role: 'dialog',
     'aria-modal': 'true',
     'aria-label': title,
+    ref: overlayRef,
     onClick: onBackdropClick
   },
-    h('div', { class: 'wp__sheet', ref: sheetRef },
+    h('div', { class: 'wp__sheet' + (fsOpen ? ' wp__sheet--fs' : ''), ref: sheetRef },
 h('div', { class: 'wp__head' },
 h('div', { class: 'wp__head-text' },
 h('div', { class: 'wp__title', title: title }, title || 'Web preview'),
@@ -224,6 +260,30 @@ h('path', { d: 'M4 12a8 8 0 0 1 13.66-5.66L20 4 M20 4v5h-5 M20 12a8 8 0 0 1-13.6
 ),
 h('span', null, 'Refresh')
 ),
+// Fullscreen the whole viewer. Only offered when the eye can't be beaten by
+// the page's own controls: the framed page may ship no fullscreen button (or
+// forbid being its own fullscreen element), so the viewer provides one. The
+// overlay is the fullscreen element, so the header/footer chrome stays.
+fullscreenSupported
+? h('button', {
+class: 'wp__action wp__action--fs',
+type: 'button',
+'aria-pressed': String(fsOpen),
+onClick: toggleFullscreen,
+'aria-label': fsOpen ? 'Exit full screen' : 'Full screen preview',
+title: fsOpen ? 'Exit full screen' : 'Full screen preview'
+},
+h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+h('path', {
+d: fsOpen
+? 'M9 4v5H4 M15 4v5h5 M9 20v-5H4 M15 20v-5h5'
+: 'M4 9V4h5 M20 9V4h-5 M4 15v5h5 M20 15v5h-5',
+fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+})
+),
+h('span', null, fsOpen ? 'Exit' : 'Full')
+)
+: null,
           h(SizeSelect, {
             value: selectedViewport,
             busy: recapturing,

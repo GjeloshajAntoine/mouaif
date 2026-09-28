@@ -99,6 +99,21 @@ await ok('viewer and dock frames carry no sandbox or referrer restriction', () =
     assert.match(src, /allow: FRAME_ALLOW/, file);
   }
 });
+await ok('viewer offers a fullscreen toggle for the whole overlay', () => {
+  const src = fs.readFileSync(path.join(here, '../frontend/src/components/chat/WebpreviewModal.jsx'), 'utf8');
+  // The overlay — not the cross-origin frame — is the fullscreen element, so a
+  // page with no fullscreen button of its own can still fill the screen.
+  assert.match(src, /ref: overlayRef/, 'no overlay ref');
+  assert.match(src, /requestFullscreen/, 'no requestFullscreen call');
+  assert.match(src, /fullscreenchange/, 'fullscreen state is not synced');
+  assert.match(src, /class: 'wp__action wp__action--fs'/, 'no fullscreen button');
+});
+await ok('full-screen overlay keeps the app chrome on a white surface', () => {
+  const css = fs.readFileSync(path.join(here, '../frontend/src/chat-composer.css'), 'utf8');
+  const block = css.split('.wp__overlay--fs')[1] || '';
+  assert.match(block, /background:\s*#fff/, 'no white fullscreen surface');
+  assert.match(block, /padding:\s*0/, 'fullscreen overlay still pads for the sheet');
+});
 
 if (fail) { console.log(fail + ' failed'); process.exit(1); }
 console.log('all passed');

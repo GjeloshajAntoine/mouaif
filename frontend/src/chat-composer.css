@@ -2234,6 +2234,30 @@ border-color: var(--accent);
 opacity: 0.6;
 cursor: default;
 }
+/* Full screen presentation of the viewer. The overlay owns the whole screen,
+   so the phone sheet's safe-area padding and desktop card bounds are dropped:
+   the white surface fills it edge to edge and the page gets the rest of the
+   viewport below the app's own header/footer. */
+.wp__overlay--fs {
+  padding: 0;
+  background: #fff;
+}
+.wp__overlay--fs .wp__sheet--fs {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.wp__overlay--fs .wp__body,
+.wp__overlay--fs .wp__body--live {
+  background: #fff;
+}
+.wp__action--fs {
+color: var(--fg-soft);
+}
 /* A native select keeps capture-size controls compact and uses the phone's
 own touch picker instead of maintaining a custom popover. */
 .wp__size-select {
@@ -2388,6 +2412,12 @@ min-width: 44px;
 padding: 4px;
 }
 .wp__sheet:not(.wp__prompt-sheet) .wp__action--refresh span {
+display: none;
+}
+/* The full-screen button is glyph-only at phone widths too, for the same
+  reason the Refresh control is: the header has to stay one row with five
+  controls (Refresh, Full, Size, and Close plus the title block). */
+.wp__sheet:not(.wp__prompt-sheet) .wp__action--fs span {
 display: none;
 }
 .wp__sheet:not(.wp__prompt-sheet) .wp__size-select {
