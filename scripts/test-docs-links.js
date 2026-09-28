@@ -153,19 +153,19 @@ try {
     assert.match(css, /\.site--full \.main \{[^}]*padding: 0;/, 'landing main still carries page padding');
   });
 
-  check('the landing hero is a title and one tagline', () => {
-    // Plain copy: no eyebrow line above the H1 and no feature-list tagline.
+  check('the landing page ends with the at-a-glance block', () => {
+    // The screenshot hero stays untouched; the plain summary is added below
+    // the existing sections, last on the page.
     const landing = fs.readFileSync(path.join(pub.out, 'index.html'), 'utf8');
-    const hero = landing.slice(landing.indexOf('<section class="hero">'), landing.indexOf('</section>', landing.indexOf('<section class="hero">')));
-    assert.ok(!/class="eyebrow"/.test(hero), 'landing hero still renders an eyebrow');
-    assert.match(hero, /<h1>mouaif<\/h1>/);
-    assert.match(hero, /<p class="tagline">A mobile-first AI coding assistant for your local projects\.<\/p>/);
-  });
-
-  check('no public page carries the retired Mobile Ouaib first line', () => {
-    for (const file of htmlFiles(pub.out)) {
-      const html = fs.readFileSync(file, 'utf8');
-      assert.ok(!/Mobile Ouaib first/.test(html), path.relative(pub.out, file) + ' still says Mobile Ouaib first');
+    const glance = landing.indexOf('<section class="section" id="at-a-glance">');
+    assert.ok(glance > landing.indexOf('id="abilities"'), 'at-a-glance is not after the abilities section');
+    for (const line of [
+      'Runs locally on port 5732',
+      'OpenAI-shaped endpoint',
+      'grouped by project',
+      'Off, Ask, or Allow'
+    ]) {
+      assert.ok(landing.slice(glance).includes(line), 'at-a-glance is missing: ' + line);
     }
   });
 
