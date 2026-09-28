@@ -24,9 +24,12 @@ import { fetchJson } from '../../api.js';
 //   modes       — TOOL_MODE_CHOICES (default) or ASK_USER_MODE_CHOICES.
 //   namePrefix  — surface-specific radio-name prefix, so two cards on one
 //                 page never share a radio group.
-//   onClear     — when set, a pick first calls this to drop the surface's
-//                 own override (the chat's 「use project default」 reset).
-//   onPick      — (mode, allowlist) => void.
+//   onPick      — (mode, allowlist) => void. Exactly ONE write per tap.
+//                 The endpoint replaces the entry outright, so a tap never
+//                 needs a separate "clear" write first — and firing two
+//                 un-awaited writes let the slower one (the clear) land
+//                 last and snap the segment back, which is the bug this
+//                 signature exists to prevent.
 export function ToolAuthSeg({
   tool,
   name,
@@ -34,8 +37,7 @@ export function ToolAuthSeg({
   allowlist,
   modes = TOOL_MODE_CHOICES,
   namePrefix = 'auth',
-  onPick,
-  onClear
+  onPick
 }) {
   const active = segMode(mode || 'ask');
   const list = Array.isArray(allowlist) ? allowlist : [];
@@ -49,11 +51,10 @@ export function ToolAuthSeg({
           value: m.value,
           checked: active === m.value,
           onChange: () => {
-          if (onClear) onClear();
           if (onPick) onPick(m.value, m.value === 'allow' ? [] : list);
           }
-        }),
-        h('span', { class: 'seg__pill' }, m.label)
+          }),
+          h('span', { class: 'seg__pill' }, m.label)
       )
     )
   );
@@ -168,7 +169,12 @@ export function mcpEffective(servers, slug, shared) {
 //     Picking a mode writes `{ mode, allowlist }`.
 // Picking "Ask" while allowlist patterns exist persists `allowlist`
 // mode so the patterns survive the round-trip.
-export function McpAuthSeg({ name, slug, servers, shared, namePrefix = 'mcp', onSave, onClear }) {
+//
+// One tap = ONE save. The chat surfaces used to call `onClear()` and then
+// `onSave()`, two un-awaited PUTs whose responses both overwrote the whole
+// auth state; whichever landed last won, so a slow clear reverted the tap.
+// The endpoint replaces the entry, so the single save is sufficient.
+export function McpAuthSeg({ name, slug, servers, shared, namePrefix = 'mcp', onSave }) {
   const eff = slug ? mcpEffective(servers, slug, shared) : { overridden: false, mode: (shared && shared.mode) || 'ask', allowlist: (shared && shared.allowlist) || [] };
   const active = segMode(eff.mode);
   const seg = h('div', { class: 'seg', role: 'radiogroup', 'aria-label': name + ' authorization' },
@@ -185,12 +191,6 @@ export function McpAuthSeg({ name, slug, servers, shared, namePrefix = 'mcp', on
           let list = Array.isArray(eff.allowlist) ? eff.allowlist : [];
           if (mode === 'allow') list = [];
           else if (mode === 'ask' && list.length) mode = 'allowlist';
-          // In the chat surfaces the segment carries a 「use project
-          // default」 reset: without it a per-chat override could never
-          // be removed, because every tap writes one. Settings passes
-          // no onClear (its writes go to the project file, and the
-          // project value IS the default).
-          if (onClear) onClear();
           onSave(slug
           ? { servers: { [slug]: { mode, allowlist: list } } }
           : { mode, allowlist: list });

@@ -140,17 +140,14 @@ head.appendChild(scoped);
       allowlist: cur.allowlist,
       modes: toolName === 'ask_user' ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
       namePrefix: 'chat-auth',
-      // In the chat, a pick means "use this mode FOR THIS CHAT": the reset
-      // clears the chat's own override first, so the stored value always
-      // reflects the tap and a stale chat override can never shadow the
-      // project's mode afterwards (decisions §17).
-      onClear: () => {
-      if (state._saveToolAuth) state._saveToolAuth(toolName, null, []);
-      },
+      // A tap writes THIS CHAT's mode in one request. The endpoint
+      // replaces the entry, so the stored value always equals the tap;
+      // a separate "clear" write is both redundant and harmful — the two
+      // un-awaited responses raced, and a slow clear reverted the pick.
       onPick: (mode, allowlist) => {
       if (state._saveToolAuth) state._saveToolAuth(toolName, mode, allowlist);
       }
-    });
+      });
   }
 
   // MCP authorization — one Off/Ask/Allow segment per MCP server group
@@ -166,14 +163,10 @@ head.appendChild(scoped);
       servers: mcpAuth.servers,
       shared: mcpAuth,
       namePrefix: 'chat-mcp',
-      // Same as the native rows: a tap pins the mode for this chat; the
-      // reset drops the chat's own override so the server falls back to
-      // the project's `.mcp.json` value.
-      onClear: () => {
-      if (state._saveMcpAuth) state._saveMcpAuth({ servers: { [slug]: null } });
-      },
+      // One write per tap (see the native rows above): the clear-then-write
+      // pair raced, and a slow clear reverted the segment.
       onSave: (patch) => state._saveMcpAuth && state._saveMcpAuth(patch)
-    });
+      });
   }
 
   // Render the Preact ToolTree into a container div.

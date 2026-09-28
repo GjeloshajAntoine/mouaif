@@ -687,11 +687,22 @@ await sendTurn(state, refs, {
   //
   // `mode: null` clears this chat's override for that tool, so the row
   // falls back to the project / app value.
+  // Monotonic counter shared by the two auth-save paths. Every save takes
+  // the next ticket and only the response holding the newest ticket may
+  // apply its echo to the auth state. Without it two in-flight saves could
+  // resolve out of order and an older response (e.g. a previous tap) would
+  // overwrite the newer one — the segment would flip back on its own.
+  // It lives on `state` (which persists across renders) because this block
+  // runs on every render and a plain local would reset the ticket each time.
+  if (typeof state._authSaveSeq !== 'number') state._authSaveSeq = 0;
+
   state._saveToolAuth = async (tool, mode, allowlist) => {
     const d = projectDir;
     if (!d || !chatId) return;
     const entry = mode == null ? null : { mode, allowlist: allowlist || [] };
+    const seq = ++state._authSaveSeq;
     const r = await saveChatToolAuthorization(d, chatId, { native: { [tool]: entry } });
+    if (seq !== state._authSaveSeq) return;
     if (r.status === 200 && r.body) {
       // The response is the chat-scoped view of EVERY tool (chat override
       // layered over the project value), so one save cannot leave the other
@@ -710,7 +721,9 @@ await sendTurn(state, refs, {
   state._saveMcpAuth = async (patch) => {
     const d = projectDir;
     if (!d || !chatId || !patch || typeof patch !== 'object') return;
+    const seq = ++state._authSaveSeq;
     const r = await saveChatMcpAuthorization(d, chatId, patch);
+    if (seq !== state._authSaveSeq) return;
     if (r.status === 200 && r.body) {
       applyChatAuthResponse(r.body);
       if (state._updateToolsCard) state._updateToolsCard();

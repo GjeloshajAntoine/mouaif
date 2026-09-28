@@ -31,9 +31,8 @@ allowlist: Array.isArray(current.allowlist) ? current.allowlist : [],
 modes: toolName === 'ask_user' ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
 namePrefix: 'popup-auth',
 // Same contract as the transcript tools card: the popup's pick is a
-// per-chat override, so the reset drops this chat's stored value first
-// and the chat falls back to the project's mode (decisions §17).
-onClear: () => { if (onSave) onSave(toolName, null, []); },
+// per-chat override, written in ONE request (decisions §17). The old
+// clear-then-write pair raced, so a slow clear could revert the pick.
 onPick: (mode, allowlist) => { if (onSave) onSave(toolName, mode, allowlist); }
 });
 }
@@ -132,7 +131,6 @@ files: 'file'
     servers: mcpAuthState.servers,
     shared: mcpAuthState,
     namePrefix: 'popup-mcp',
-    onClear: () => { if (onSaveMcpAuth) onSaveMcpAuth({ servers: { [slug]: null } }); },
     onSave: (patch) => onSaveMcpAuth && onSaveMcpAuth(patch)
     });
     // Busy marker for the row's "…" start control. Without it the button
