@@ -1354,9 +1354,8 @@ const landingShots = [
 
 const body = `
 <section class="hero">
-<p class="eyebrow">Mobile Ouaib first</p>
 <h1>mouaif</h1>
-<p class="tagline">Run an AI coding workspace for your local projects, with a web inspector, a CodeMirror-based code editor, subagents, and custom prompts.</p>
+<p class="tagline">A mobile-first AI coding assistant for your local projects.</p>
 <div class="hero-install">
 <pre><code class="language-bash">npx mouaif serve
 npx mouaif serve --auth
@@ -1377,37 +1376,37 @@ ${landingShots}
 </section>
 <section class="section" id="start">
 <h2>Install and run</h2>
-<p>Node.js 20 or newer is required. Run mouaif straight from npm, with a login:</p>
+<p>Node.js 20 or newer is required. Start mouaif with a login:</p>
 <pre><code class="language-bash">npx mouaif serve --auth</code></pre>
-<p>Use the setup link or QR code printed in the terminal to create your username and password, then open <code>http://127.0.0.1:5732/</code>, add a project folder, connect a provider in <strong>Settings → Providers</strong>, and create your first chat.</p>
-<p>Or install from a checkout of the repository:</p>
+<p>Open the setup link or QR code printed in the terminal to create your username and password. Then open <code>http://127.0.0.1:5732/</code>, connect a provider in <strong>Settings → Providers</strong>, add a project folder, and start a chat.</p>
+<p>From a source checkout:</p>
 <pre><code class="language-bash">git clone https://github.com/GjeloshajAntoine/mouaif.git
 cd mouaif
 npm install
 npm link
 mouaif serve --auth</code></pre>
-<p><a href="features/getting-started.html">Read the complete getting-started guide →</a></p>
+<p><a href="features/getting-started.html">Getting started →</a></p>
 </section>
 <section class="section" id="auth">
 <h2>Protect app access</h2>
-<p>Generate an expiring setup link, QR code, and short code:</p>
+<p>Print a new setup link, QR code, and short code:</p>
 <pre><code class="language-bash">mouaif serve --auth-setup</code></pre>
-<p>Or set a user while keeping the password out of shell history:</p>
+<p>Or set the login without putting the password in shell history:</p>
 <pre><code class="language-bash">MOUAIF_PASSWORD='a-long-password' \\
   mouaif serve --auth --user alice</code></pre>
-<p><a href="features/authentication.html">Read the full authentication guide →</a></p>
+<p><a href="features/authentication.html">Authentication →</a></p>
 </section>
 <section class="section" id="abilities">
 <h2>What you can do</h2>
 <ul>
-<li>Organize chats by local project and choose models per chat.</li>
+<li>Group chats by project and pick a model per chat.</li>
 <li>Let the assistant read and edit files, run approved commands, track tasks, and delegate to agents.</li>
-<li>Connect extra tools through MCP.</li>
-<li>Preview and inspect browser pages from the mobile-friendly Inspector.</li>
-<li>Use <strong>Draft Craft</strong> to add selected code or an annotated Inspector image to any chat draft.</li>
-<li>Control every tool with Off, Ask, or Allow permissions.</li>
+<li>Connect more tools through MCP.</li>
+<li>Preview and inspect pages from the mobile Inspector.</li>
+<li>Send selected code or an annotated Inspector image to a draft with <strong>Draft Craft</strong>.</li>
+<li>Gate every tool with Off, Ask, or Allow.</li>
 </ul>
-<p><a href="features/app-abilities.html">See all app abilities and safety tips →</a></p>
+<p><a href="features/app-abilities.html">App abilities →</a></p>
 </section>
 `;
 const html = htmlPage({
@@ -1432,8 +1431,7 @@ return `<a class="feature-card" href="features/${f.slug}.html"><h3>${escapeHtml(
 }).join('\n        ');
 const body = `
 <h1>mouaif user guide</h1>
-<p class="lead">Mobile Ouaib first.</p>
-<p>Everything needed to install, run, authenticate, and use the app.</p>
+<p class="lead">How to install, run, authenticate, and use the app.</p>
 <div class="features-grid">
 ${cards}
 </div>

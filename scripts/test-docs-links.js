@@ -153,6 +153,22 @@ try {
     assert.match(css, /\.site--full \.main \{[^}]*padding: 0;/, 'landing main still carries page padding');
   });
 
+  check('the landing hero is a title and one tagline', () => {
+    // Plain copy: no eyebrow line above the H1 and no feature-list tagline.
+    const landing = fs.readFileSync(path.join(pub.out, 'index.html'), 'utf8');
+    const hero = landing.slice(landing.indexOf('<section class="hero">'), landing.indexOf('</section>', landing.indexOf('<section class="hero">')));
+    assert.ok(!/class="eyebrow"/.test(hero), 'landing hero still renders an eyebrow');
+    assert.match(hero, /<h1>mouaif<\/h1>/);
+    assert.match(hero, /<p class="tagline">A mobile-first AI coding assistant for your local projects\.<\/p>/);
+  });
+
+  check('no public page carries the retired Mobile Ouaib first line', () => {
+    for (const file of htmlFiles(pub.out)) {
+      const html = fs.readFileSync(file, 'utf8');
+      assert.ok(!/Mobile Ouaib first/.test(html), path.relative(pub.out, file) + ' still says Mobile Ouaib first');
+    }
+  });
+
   check('guide card summaries do not end on a dangling colon', () => {
     const html = fs.readFileSync(path.join(pub.out, 'documentation.html'), 'utf8');
     const blurbs = [...html.matchAll(/<a class="feature-card"[^>]*>[\s\S]*?<p>([\s\S]*?)<\/p>/g)].map((m) => m[1]);
