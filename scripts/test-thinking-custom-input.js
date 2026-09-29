@@ -165,6 +165,23 @@ const stateWith = (thinkingLevel) => ({
     vm.runInNewContext(handler[1], { s });
     check('editing a saved field starts a new custom draft', thinkingCustomOpen(s.refs));
     check('sending an edited field reads its draft', s.state.thinkingLevel === '__custom__');
+
+    const apply = source.match(/function onApplyThinkingCustom\(\) \{([\s\S]*?)\n  \}/);
+    assert.ok(apply, 'custom editor has an explicit Apply action');
+    const patches = [];
+    s.updateChat = (patch) => { patches.push(patch); Object.assign(s.state.chat, patch); };
+    s.refs._custom.blur = () => {};
+    s.refs._custom.value = ' 8192 ';
+    const applyDraft = () => vm.runInNewContext('(() => {' + apply[1] + '})()', {
+      refs: s.refs, s, commitThinkingCustom, syncThinkingSelect
+    });
+    applyDraft();
+    check('Apply saves a trimmed custom value', patches[0].thinkingLevel === '8192');
+    check('Apply ends the custom draft', !thinkingCustomOpen(s.refs));
+    s.refs._custom.value = '';
+    applyDraft();
+    check('Apply with an empty value turns thinking off', patches[1].thinkingLevel === '');
+    check('empty Apply closes the custom editor', s.refs._custom.hidden);
   }
 
   // ---- a committed KNOWN level closes the field --------------------

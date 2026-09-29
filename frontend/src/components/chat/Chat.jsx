@@ -335,6 +335,19 @@ setPreviewPromptOpen(false);
     };
   }, [refs.promptInput, refs.promptInput.current, s.state.props && s.state.props.projectDir]);
 
+  function onApplyThinkingCustom() {
+    const input = refs.thinkingLevelCustom.current;
+    if (!input) return;
+    const value = input.value.trim();
+    commitThinkingCustom(s.refs);
+    if (s.state.chat) {
+      s.state.thinkingLevel = value;
+      s.updateChat({ thinkingLevel: value });
+    }
+    syncThinkingSelect(s.refs, s.state);
+    input.blur();
+  }
+
   return h('section', { class: 'chat-view' },
     h('div', { class: 'chat-view__head' },
       h('button', { ref: refs.back, class: 'chat-view__back', type: 'button', onClick: onBack, 'aria-label': 'Back to projects' }, '←'),
@@ -434,8 +447,10 @@ setPreviewPromptOpen(false);
           })
         )
       ),
+      h('label', { class: 'chat-view__thinking-field' },
+      h('span', { class: 'chat-view__control-label' }, 'Thinking'),
       h('select', {
-        ref: refs.thinkingLevel,
+      ref: refs.thinkingLevel,
         class: 'input chat-view__thinking-select',
         'aria-label': 'Thinking level',
         'data-allow-custom': '1',
@@ -451,12 +466,19 @@ setPreviewPromptOpen(false);
           }
         }
       }),
+      ),
+      h('div', { class: 'chat-view__thinking-editor' },
+      h('label', { class: 'chat-view__thinking-editor-label' },
+      h('span', { class: 'chat-view__control-label' }, 'Custom thinking value'),
       h('input', {
-        ref: refs.thinkingLevelCustom,
+      ref: refs.thinkingLevelCustom,
         class: 'input chat-view__thinking-custom',
         type: 'text',
         hidden: true,
-        placeholder: 'e.g. 4096, minimal, low, high',
+        placeholder: 'Token budget or effort level',
+        enterKeyHint: 'done',
+        autoComplete: 'off',
+        spellcheck: false,
         'aria-label': 'Custom thinking level',
         onInput: () => {
         // A saved custom value remains visible after commit. Editing it
@@ -486,23 +508,19 @@ setPreviewPromptOpen(false);
         },
         onKeydown: (e) => {
           if (e.key === 'Enter') {
-            // Enter is the explicit commit — including an empty field,
-            // which resets to 'No thinking' (rather than leaving
-            // reasoning_effort empty on the next send).
-            const v = e.currentTarget.value.trim();
-            if (thinkingCustomOpen(s.refs)) {
-              commitThinkingCustom(s.refs);
-              if (s.state.chat) {
-                s.state.thinkingLevel = v;
-                s.updateChat({ thinkingLevel: v });
-              }
-              syncThinkingSelect(s.refs, s.state);
-            }
-            e.currentTarget.blur();
+            e.preventDefault();
+            onApplyThinkingCustom();
           }
         }
-      }),
-    ),
+      })),
+      h('button', {
+        class: 'chat-view__thinking-apply',
+        type: 'button',
+        onClick: onApplyThinkingCustom
+      }, 'Apply'),
+      h('p', { class: 'chat-view__thinking-hint' }, 'For example: 4096 or high. Leave blank to turn thinking off.')
+      ),
+      ),
       h('div', { class: 'chat-view__head-icons' },
           h('a', {
             class: 'chat-view__iconbtn',
