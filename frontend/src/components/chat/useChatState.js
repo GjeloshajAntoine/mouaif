@@ -1267,11 +1267,13 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
       const el = refs.promptInput.current;
       const outgoingText = el ? el.value : '';
       const outgoingAtts = toPublicImageAttachments(imageAttachmentsRef.current);
-      if (draftSaveTimer.current) {
-        clearTimeout(draftSaveTimer.current);
-        draftSaveTimer.current = null;
+      const hadPendingDraftSave = draftSaveTimer.current != null;
+      if (hadPendingDraftSave) {
+      clearTimeout(draftSaveTimer.current);
+      draftSaveTimer.current = null;
       }
-      if (projectDir && chatId && (outgoingText || outgoingAtts.length)) {
+      // An empty pending draft is a deletion, not an untouched composer.
+      if (projectDir && chatId && (hadPendingDraftSave || outgoingText || outgoingAtts.length)) {
         patchChatDraft(projectDir, chatId, outgoingText, outgoingAtts).catch(() => {});
       }
       if (el) {

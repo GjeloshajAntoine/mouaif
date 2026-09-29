@@ -7,10 +7,45 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/
 const start = source.indexOf('  const updateChatBound = useCallback(');
 const end = source.indexOf('\n  function updateModelTriggerLocal()', start);
 
+async function checkDraftCleanup() {
+  const marker = source.indexOf('  // Composer draft is per chat');
+  const cleanupStart = source.indexOf('  useEffect(() => {', marker);
+  const cleanupEnd = source.indexOf('  useEffect(() => () => {', cleanupStart);
+  for (const [name, text, attachments, pending, expected] of [
+    ['empty pending draft is flushed on navigation', '', [], 1, 1],
+    ['untouched empty composer needs no save', '', [], null, 0],
+    ['nonempty text is flushed', 'latest text', [], null, 1],
+    ['image draft is flushed', '', [{ type: 'image', dataUrl: 'image' }], null, 1]
+  ]) {
+    let cleanup;
+    const saves = [];
+    const cancelled = [];
+    const refs = { promptInput: { current: { value: text } } };
+    const timer = { current: pending };
+    const context = vm.createContext({
+      projectDir: '/outgoing', chatId: 'outgoing', refs,
+      imageAttachmentsRef: { current: attachments }, draftSaveTimer: timer,
+      toPublicImageAttachments: (items) => items,
+      useEffect: (fn) => { cleanup = fn(); },
+      clearTimeout: (id) => { cancelled.push(id); },
+      patchChatDraft: async (...args) => { saves.push(args); },
+      autoresize() {}, setComposerText() {}, setImageAttachments() {}
+    });
+    vm.runInContext(source.slice(cleanupStart, cleanupEnd), context);
+    cleanup();
+    assert.equal(saves.length, expected);
+    if (expected) assert.deepEqual(saves[0], ['/outgoing', 'outgoing', text, attachments]);
+    assert.equal(cancelled.length, pending == null ? 0 : 1);
+    assert.equal(timer.current, null);
+    assert.equal(refs.promptInput.current.value, '');
+    console.log('PASS ' + name);
+  }
+}
 (async () => {
+  await checkDraftCleanup();
   let credit = 0, picker = 0, meta = 0, requests = 0;
   let response = { status: 200, body: { chat: { providerId: 'old', modelId: 'old', draft: 'saved', draftAttachments: null, title: 'old title' } } };
-  const state = { chat: { providerId: 'new', modelId: 'new', title: 'new title' }, _persistedModelPair: 'new|new' };
+  const state = { props: { projectDir: '/test', chatId: 'test' }, chat: { providerId: 'new', modelId: 'new', title: 'new title' }, _persistedModelPair: 'new|new' };
   const context = vm.createContext({
     projectDir: '/test', chatId: 'test', state, refs: {}, status: { current: {} },
     useCallback: (fn) => fn,

@@ -23,7 +23,7 @@ The chat view provides a mobile-first AI conversation interface with real-time s
 - **Model selection** — tap the model button in the header to search, switch, or bookmark models across your connected providers.
 - **Prompt profiles** — pick between `Very small`, `Average`, and `Extensive` prompt profiles when starting a new chat.
 - **Custom prompt presets** — attach custom system prompts from the chat options menu.
-- **Draft preservation** — unsent text and image attachments are preserved per chat so you never lose your place. The composer stays editable while a send is being prepared. If its text or images change during persistence, the send stops without posting the outdated message, keeps and saves the edited draft, and asks you to send again. Retrying a failed turn leaves any newer composer draft untouched.
+- **Draft preservation** — unsent text and image attachments are preserved per chat so you never lose your place. The composer stays editable while a send is being prepared. If its text or images change during persistence, the send stops without posting the outdated message, keeps and saves the edited draft, and asks you to send again. Retrying a failed turn leaves any newer composer draft untouched. Leaving a chat flushes a pending draft save even when all text has been deleted, so an old saved draft does not reappear on return.
 - **Trace export** — export the full event trace of a chat session directly from the chat menu.
 
 ## Keyboard & Mobile considerations
