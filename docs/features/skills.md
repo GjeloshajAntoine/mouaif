@@ -30,6 +30,8 @@ The **Tools** popup (globe icon in the chat top bar) shows the same always-expan
 
 Custom prompt presets use the same effective skill setting for the metadata catalog, activation tool, and activation result. Delegated subagents inherit that setting and this chat's individual skill opt-outs; they cannot reactivate a skill unchecked in the parent chat. The project-level off switch always wins.
 
+Skill activation is controlled by the **Skills** switches independently of the ordinary tool selection: unchecking Shell or File tools (even unchecking every ordinary tool) does not disable checked skills. An agent's explicit tool allowlist still restricts its delegated run; include `activate_skill` there if that agent should load skills.
+
 Project settings use this shape:
 
 ```json

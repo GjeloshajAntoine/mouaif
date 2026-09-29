@@ -575,15 +575,17 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
 
   // Per-chat tool filter. opts.enabledTools === null / undefined:
   //   legacy behavior — every collected spec is advertised. An array
-  //   (even empty): restrict to those names exactly. Unknown names
-  //   are dropped silently so a stale chat (a tool that was renamed
+  //   (even empty): restrict ordinary tools to those names. Skill activation
+  //   is governed by the separate Skills switches, not this tool allowlist.
+  //   Unknown names are dropped silently so a stale chat (a tool that was renamed
   //   or whose MCP server was stopped) does not fail the request.
   //   The array is captured here once — the chat UI persists the
   //   same set on the chat record, so we don't need to re-read it.
   let visibleToolSpecs = toolSpecs;
   if (opts && Array.isArray(opts.enabledTools)) {
     const allow = new Set(opts.enabledTools.map((n) => String(n)));
-    visibleToolSpecs = toolSpecs.filter((s) => s && s.function && allow.has(s.function.name));
+    visibleToolSpecs = toolSpecs.filter((s) => s && s.function
+    && (allow.has(s.function.name) || (!opts.nestedSubagent && s.function.name === 'activate_skill')));
   }
 
   // Shrink the tool declaration according to the active prompt-size
@@ -1692,12 +1694,11 @@ return { ok: false, content: JSON.stringify(r), result: r };
       }
 
       const nestedEvents = [];
-      const parentEnabled = callOpts && Array.isArray(callOpts.enabledTools) ? callOpts.enabledTools : null;
-      let nestedEnabled = parentEnabled
-        ? parentEnabled.filter((toolName) => toolName !== 'subagent')
-        : visibleToolSpecs
-            .map((spec) => spec && spec.function && spec.function.name)
-            .filter((toolName) => toolName && toolName !== 'subagent');
+      // Inherit the actually advertised surface, including skill activation
+      // controlled independently of the parent's ordinary tool selection.
+      let nestedEnabled = visibleToolSpecs
+      .map((spec) => spec && spec.function && spec.function.name)
+      .filter((toolName) => toolName && toolName !== 'subagent');
       // An agent's tool allowlist restricts the nested call's surface.
       // Agent tool entries can be exact tool names (e.g. "shell") or MCP
       // server slugs (e.g. "mcp__fs") which should allow every tool from

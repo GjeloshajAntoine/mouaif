@@ -100,6 +100,21 @@ async function main() {
     assert.deepEqual(skillNames(nested.requests[1]), ['other']);
     assert.match(activationFeedback(nested.requests[2]), /ENO_SKILL/);
 
+    for (const tools of [['shell'], []]) {
+    const selected = await run({ tools }, [activation, null]);
+    assert.deepEqual(skillNames(selected.requests[0]), ['other', 'testing']);
+    assert.match(activationFeedback(selected.requests[1]), /INSTRUCTIONS_testing/);
+    assert.equal(selected.requests[0].tools.some((s) => s.function.name === 'subagent'), false);
+    }
+    const filteredNested = await run({ tools: ['subagent'] }, [delegate, activation, null, null]);
+    assert.deepEqual(skillNames(filteredNested.requests[1]), ['other', 'testing']);
+    assert.match(activationFeedback(filteredNested.requests[2]), /INSTRUCTIONS_testing/);
+
+    const restricted = await run({ tools: ['subagent'] }, [
+    { name: 'subagent', args: { task: 'Review', agent: 'Limited' } }, null, null
+    ], { agents: [{ name: 'Limited', content: 'Use shell only.', tools: ['shell'] }] });
+    assert.deepEqual(skillNames(restricted.requests[1]), []);
+
     const locked = await run({ skills: true }, [activation, null], { skills: false });
     assert.deepEqual(skillNames(locked.requests[0]), []);
     assert.match(activationFeedback(locked.requests[1]), /ENO_SKILL/);
