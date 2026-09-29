@@ -137,7 +137,14 @@ background: var(--bg);
 }
 .draft-craft__annotator-head { flex: 0 0 auto; background: var(--surface); }
 .draft-craft__canvas-wrap {
-flex: 1 1 auto;
+/* A zero flex-basis, not `auto`: the frame must be sized from the space the
+annotator has left, never from its content. With `auto` the frame's base size
+was the zoomed stage's height, so zooming in grew the frame, shrank the tools
+panel below it (measured 309 -> 174 -> 121 px while only the zoom changed), and
+at one step the frame was taller than the room the tools panel needed so the
+stage's flex base hit zero, the frame collapsed to the 0 px `min-height` and the
+screenshot vanished. The stage keeps its full size inside the frame's overflow. */
+flex: 1 1 0;
 min-height: 0;
 overflow: auto;
 display: flex;
@@ -210,10 +217,12 @@ transform: translate(-50%, -50%);
 pointer-events: none;
 }
 .draft-craft__annotator-tools {
-flex: 0 1 auto;
+/* Never shrink: the panel's height is its own (capped by max-height, with its
+body own-scrolling), so the canvas frame's flex-basis ruling above is what
+decides how much room the screenshot gets. When the strip is collapsed it is
+just its toggle bar, and the frame's flex growth takes the freed space. */
+flex: 0 0 auto;
 max-height: 52dvh;
-/* When collapsed the tools strip shrinks to just its toggle bar; the
-flex-basis tidies up so the canvas gets the freed vertical space. */
 overflow: hidden;
 overscroll-behavior: contain;
 display: flex;

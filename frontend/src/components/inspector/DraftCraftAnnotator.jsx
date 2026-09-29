@@ -18,15 +18,46 @@ return Math.min(MAX_ZOOM, Math.max(min, value));
 // frameHeight / (frameWidth * h/w). We never zoom out past 1 — width already
 // fills the frame there — so a short/wide page fits at 1. The fit gives the
 // "show whole screenshot" default instead of the top-left corner only.
-function fitZoomFor(wrap, canvas) {
-if (!wrap || !canvas) return MIN_ZOOM;
+//
+// Returns null when the frame or the image cannot be measured yet. A zero-sized
+// read is not a fit level: the annotator opens inside an animated overlay, so
+// the first measurement can legitimately be 0x0. Treating that as a level made
+// `fit()` clamp the image to the 10% safety floor and then *disable* **Fit**
+// (the gate compared 0.1 with 0.1), leaving a thumbnail-sized screenshot on
+// screen with no one-tap way back to the full view.
+export function fitZoomFor(wrap, canvas) {
+if (!wrap || !canvas) return null;
 const wrapW = wrap.clientWidth || wrap.offsetWidth;
 const wrapH = wrap.clientHeight || wrap.offsetHeight;
-const natW = canvas.width || canvas.naturalWidth || 1;
-const natH = canvas.height || canvas.naturalHeight || 1;
-if (wrapW <= 0 || wrapH <= 0 || natW <= 0 || natH <= 0) return MIN_ZOOM;
+const natW = canvas.width || canvas.naturalWidth || 0;
+const natH = canvas.height || canvas.naturalHeight || 0;
+if (wrapW <= 0 || wrapH <= 0 || natW <= 0 || natH <= 0) return null;
 const displayHeightAtOne = wrapW * (natH / natW);
+if (!(displayHeightAtOne > 0)) return null;
 return Math.max(MIN_ZOOM, Math.min(1, wrapH / displayHeightAtOne));
+}
+// The smallest zoom the frame will show: the fit level once it is measurable,
+// and the hard safety floor while it is not.
+function minZoomFor(wrap, canvas) {
+const fit = fitZoomFor(wrap, canvas);
+return fit == null ? MIN_ZOOM : fit;
+}
+// The stage is centred by `margin: auto` while it is narrower than the frame,
+// so the image's own offset inside the frame grows and shrinks with the zoom.
+// That centring lead is what keeps a fit-to-view narrow column in the middle
+// of the frame, and it is why a zoom must account for it when it holds a point.
+function centredLead(frameSize, contentSize) {
+return Math.max(0, (frameSize - contentSize) / 2);
+}
+// Where the frame must scroll (in frame content coordinates) so the image
+// fraction `fraction` that sat at content position `anchor` before the zoom
+// still sits under the same spot afterwards. Pure, so the centring maths is
+// pinned by scripts/test-inspector-annotator-zoom.js rather than only by a
+// browser.
+export function zoomTargetScroll({ anchor, fraction, lead, content, maxScroll = Infinity }) {
+const clampToRange = (value) => Math.max(0, Math.min(maxScroll, value));
+if (!(content > 0)) return clampToRange(anchor);
+return clampToRange(anchor - lead - fraction * content);
 }
 function clamp(value) {
 return Math.min(1, Math.max(0, value));
@@ -143,7 +174,9 @@ return () => { cancelled = true; };
 // deliberately zoomed in past the fit level — otherwise collapsing the tools
 // panel would yank a magnified image back to full-page. Toggling the tools
 // panel changes the wrap's height (it is flex:1), so this keeps the whole
-// screenshot visible as the free space grows.
+// screenshot visible as the free space grows: the observer's first read fires
+// before the flex children have their new height, which is why each callback
+// re-measures on the next frame as well.
 useEffect(() => {
 const wrap = wrapRef.current;
 const canvas = canvasRef.current;
@@ -152,11 +185,15 @@ const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
 const tryFit = () => {
 if (!wrapRef.current || !canvasRef.current) return;
 const fitLevel = fitZoomFor(wrapRef.current, canvasRef.current);
+// The open-time fit never landed (the frame was 0x0 on the first
+// attempt). This resize is the first real measurement, so take it.
+if (lastFitZoomRef.current == null) { fit(false); return; }
+if (fitLevel == null) return;
 // If the user is still at (or below) the previous fit, re-fit to the
 // new size so the whole image stays visible. Otherwise leave it alone.
 const current = zoomRef.current;
 const prevFit = lastFitZoomRef.current;
-const shouldRefit = current <= (prevFit != null ? prevFit : fitLevel) + 0.005;
+const shouldRefit = current <= prevFit + 0.005;
 if (shouldRefit) fit(false);
 };
 tryFit();
@@ -182,28 +219,44 @@ function applyZoom(value, focus) {
 const wrap = wrapRef.current;
 const canvas = canvasRef.current;
 const before = canvas && canvas.getBoundingClientRect();
-const next = clampZoom(value, fitZoomFor(wrap, canvas));
+const next = clampZoom(value, minZoomFor(wrap, canvas));
 zoomRef.current = next;
 setZoom(next);
 if (!wrap || !before || !focus || before.width <= 0 || before.height <= 0) return;
 const wrapRect = wrap.getBoundingClientRect();
+// The image fraction under the focus point, and where that point sits in the
+// frame's content box — both measured before the zoom.
 const imageX = (focus.x - before.left) / before.width;
 const imageY = (focus.y - before.top) / before.height;
 const viewportX = focus.x - wrapRect.left;
 const viewportY = focus.y - wrapRect.top;
-requestAnimationFrame(() => {
+const anchorX = wrap.scrollLeft + viewportX;
+const anchorY = wrap.scrollTop + viewportY;
+const settle = () => {
 const canvas = canvasRef.current;
-if (!canvas || !wrap) return;
+if (!canvas || !wrapRef.current) return;
+const frame = wrapRef.current;
 const after = canvas.getBoundingClientRect();
-wrap.scrollLeft = Math.max(0, imageX * after.width - viewportX);
-wrap.scrollTop = Math.max(0, imageY * after.height - viewportY);
-});
+const leadX = centredLead(frame.clientWidth, after.width);
+const leadY = centredLead(frame.clientHeight, after.height);
+frame.scrollLeft = zoomTargetScroll({ anchor: anchorX, fraction: imageX, lead: leadX, content: after.width, maxScroll: Math.max(0, frame.scrollWidth - frame.clientWidth) });
+frame.scrollTop = zoomTargetScroll({ anchor: anchorY, fraction: imageY, lead: leadY, content: after.height, maxScroll: Math.max(0, frame.scrollHeight - frame.clientHeight) });
+};
+// Measured on the frame *after* the zoomed stage has re-laid out: the
+// synchronous read still describes the old stage, and the frame's client and
+// scroll boxes both move with the new one (a scrollbar can appear).
+requestAnimationFrame(settle);
 }
 function fit(resetScroll = true) {
 const wrap = wrapRef.current;
 const canvas = canvasRef.current;
 if (!wrap || !canvas) return;
-const next = clampZoom(fitZoomFor(wrap, canvas), MIN_ZOOM);
+const fitLevel = fitZoomFor(wrap, canvas);
+// Nothing measurable yet — leave the zoom alone and let the ResizeObserver
+// (or the next open) take the first real measurement instead of clamping to
+// the 10% floor and calling that a fit.
+if (fitLevel == null) return;
+const next = clampZoom(fitLevel, MIN_ZOOM);
 zoomRef.current = next;
 setZoom(next);
 lastFitZoomRef.current = next;
@@ -434,10 +487,10 @@ h('span', { class: 'draft-craft__tools-toggle-chevron', 'aria-hidden': 'true' },
 ),
 toolsOpen ? h('div', { id: 'draftCraftToolsBody', class: 'draft-craft__tools-body' },
 h('div', { class: 'draft-craft__zoom', role: 'group', 'aria-label': 'Image zoom' },
-h('button', { class: 'btn btn--small', type: 'button', onClick: () => applyZoom(zoomRef.current - 0.25), disabled: zoom <= fitZoomFor(wrapRef.current, canvasRef.current), 'aria-label': 'Zoom out' }, '−'),
+h('button', { class: 'btn btn--small', type: 'button', onClick: () => applyZoom(zoomRef.current - 0.25), disabled: zoom <= minZoomFor(wrapRef.current, canvasRef.current) + 0.005, 'aria-label': 'Zoom out' }, '−'),
 h('span', { 'aria-live': 'polite' }, Math.round(zoom * 100) + '%'),
 h('button', { class: 'btn btn--small', type: 'button', onClick: () => applyZoom(zoomRef.current + 0.25), disabled: zoom >= MAX_ZOOM, 'aria-label': 'Zoom in' }, '+'),
-h('button', { class: 'btn btn--small', type: 'button', onClick: () => fit(), disabled: Math.abs(zoom - fitZoomFor(wrapRef.current, canvasRef.current)) < 0.005, 'aria-label': 'Show whole image', title: 'Fit image to view' }, 'Fit'),
+h('button', { class: 'btn btn--small', type: 'button', onClick: () => fit(), disabled: (() => { const fitLevel = fitZoomFor(wrapRef.current, canvasRef.current); return fitLevel != null && Math.abs(zoom - fitLevel) < 0.005; })(), 'aria-label': 'Show whole image', title: 'Fit image to view' }, 'Fit'),
 h('button', { class: 'btn btn--small' + (mode === 'pan' ? ' is-active' : ''), type: 'button', onClick: () => setMode((value) => value === 'pan' ? 'draw' : 'pan'), 'aria-pressed': String(mode === 'pan') }, mode === 'pan' ? 'Draw' : 'Pan')
 ),
 h('div', { class: 'draft-craft__colors', role: 'group', 'aria-label': 'Annotation color' },
