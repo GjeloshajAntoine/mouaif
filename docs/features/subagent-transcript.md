@@ -60,6 +60,42 @@ A delegated run names the agent it dispatched, in two places:
 
 The name comes from the `subagent` call's `agent` argument, which the server echoes back on the result as `result.agent`. It has to ride the result payload: the nested transcript does not contain it (an agent's system message is its instructions, not its name), so without it a `@reviewer` dispatch and a model-driven generic delegation render identically. A run with no `agent` argument shows no chip and labels its system row `agent`.
 
+## What the run costs
+
+A subagent bills its own upstream calls, and the server streams that increment
+with every nested round as a `usage_update` event tagged
+`{ source: 'subagent', callId }`. The chat-wide **Total** pill has always grown
+from those frames, but the card that owned the work showed nothing — a user
+watching a long delegated run could see the chat total move without any way to
+tell which run was spending.
+
+The card head now carries the running cost of **that** run, as a
+`.tool-card__cost` label between the task summary and the status dot:
+
+```text
+Subagent   research the pricing table   $0.0042   ●
+```
+
+- **Live.** Every `usage_update` for the parent call id re-reads the card's
+  running figure and adds the frame's increment, so the number climbs as the
+  run works through its rounds.
+- **Settled.** When the run returns, the result's own resolved price
+  (`result.totalCost`, falling back to `result.providerCost`) replaces the
+  running figure, and `renderSubagentChat` re-draws it on the new head.
+- **Across renders.** The figure is held on the card element
+  (`card._subagentCost`) and re-applied whenever the head is rebuilt, so it
+  survives the live→settled re-render and a full transcript rebuild instead of
+  vanishing exactly when the run ends.
+- **Unknown stays unknown.** A run whose price could not be resolved draws no
+  label at all, rather than a confident `$0.00` — the same rule the per-turn
+  meta line follows. A price that really is zero (`$0.00`) is shown.
+
+The chat-wide **Total** is unchanged: the card label is a second view of the
+same numbers, never an extra charge. See
+[Usage metrics](usage-metrics.md#subagents-are-included-and-billed-as-they-run).
+
+Regression test: `scripts/test-subagent-card-cost.js`.
+
 ## Usage
 
 1. Enable the **Subagent** tool for the project in Settings → Project and approve a delegation (or use an `@agent` mention in the composer).

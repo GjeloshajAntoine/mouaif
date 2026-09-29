@@ -95,7 +95,7 @@ One page per feature: what it does and how to use it.
 - [Legacy progress tool](features/legacy-progress-tool.md) — compatibility for older `report_progress` calls.
 - [Web preview tool](features/webpreview.md) — a phone-sized screenshot of a page above the composer.
 - [Web preview page](features/webpreview-project-page.md) — capture and view a URL from project settings.
-- [Subagent transcript](features/subagent-transcript.md) — the delegated conversation inside a subagent card.
+- [Subagent transcript](features/subagent-transcript.md) — the delegated conversation inside a subagent card, and what that run cost.
 - [Model choice on subagent approval](features/auth-model-picker.md) — pick the model when approving a subagent run.
 - [Tool output profile](features/tool-output.md) — how much of each tool result is sent back to the model.
 - [Tool feedback compaction](features/tool-feedback-compaction.md) — large results stay complete in the chat but are trimmed for the model.

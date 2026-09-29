@@ -23,6 +23,7 @@ import {
 import { renderToolResultBody } from './toolRender.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
 import { cssEscape, copyText, messageCopyText } from './utils.js';
+import { formatCost } from '../../usage.js';
 import { buildSetupCard, mountToolsCard, mountAgentFilesCard, mountSkillsCard } from './cards.js';
 import { headerCardIndex, isHeaderCardNode, orderHeaderCards, placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
 import { setPromptSize } from './meta.js';
@@ -1260,6 +1261,15 @@ export function handleSubagentStreamEvent(ev, data, refs) {
   if (!refs.transcript.current) return false;
   const card = findSubagentCard(refs, data && data.parentCallId);
   if (!card) return false;
+  // A delegated round just settled: re-read the running cost from the frame's
+  // own result (its `totalCost` is the run's price SO FAR) and redraw it on
+  // the head. The mid-run `usage_update` frames land while the run is still
+  // streaming; this keeps the figure correct through the gaps between them —
+  // notably on a live follower that attached after the updates were sent.
+  if (ev && ev.eventName === 'tool_result' && data && data.name === 'subagent') {
+    const settled = subagentCostFromResult(data.result);
+    if (settled != null) setSubagentCardCost(card, settled);
+  }
   const live = ensureSubagentLive(card);
   if (!live) return false;
   if (ev.eventName === 'message' && typeof data.delta === 'string') {
@@ -1590,6 +1600,87 @@ function renderSearchFilesInto(host, r) { renderSearchFilesToolResult(host, r); 
 function renderEditFileInto(host, r) { renderEditFileToolResult(host, r); }
 function renderWriteFileInto(host, r, args) { renderWriteFileToolResult(host, r, args); }
 
+// ---- per-subagent-card cost ------------------------------------------
+//
+// A delegated run bills its own upstream calls, and the server streams that
+// increment with every nested round (`usage_update`, `source: 'subagent'`).
+// The chat-wide "Total" pill has always grown from those frames; the CARD
+// showed nothing, so the user could watch a subagent work without any idea
+// what it was costing until the chat total moved. The number belongs on the
+// card that owns the work.
+//
+// The figure is the running delegated cost of THIS run, held on the card
+// element (`_subagentCost`) so it survives the head being rebuilt and the
+// live container being replaced by the settled transcript. `renderSubagentChat`
+// carries it over explicitly; the persisted row writes it back so a reopened
+// chat shows what the run cost.
+
+// subagentCostFromResult(result) -> number | null
+//
+// The delegated cost a settled subagent result carries. `totalCost` is what
+// ai-stream's aggregate resolved for the nested run (provider-reported, or an
+// estimate priced with the nested model); a result without one has no known
+// price and must render nothing rather than a confident `$0.00`.
+function subagentCostFromResult(result) {
+  const r = result && typeof result === 'object' ? result : null;
+  if (!r) return null;
+  const total = r.totalCost != null ? Number(r.totalCost) : NaN;
+  if (Number.isFinite(total) && total >= 0) return total;
+  const exact = r.providerCost != null ? Number(r.providerCost) : NaN;
+  if (Number.isFinite(exact) && exact >= 0) return exact;
+  const block = r.cost && typeof r.cost === 'object' ? r.cost : null;
+  if (block && block.known && Number.isFinite(Number(block.total))) return Number(block.total);
+  return null;
+}
+
+// setSubagentCardCost(card, amount)
+//
+// Write the current delegated cost onto a subagent card's head. Amount null
+// clears a previously drawn label (a run that turned out to be unpriced must
+// not keep a stale figure). Called on the live stream, whenever the head is
+// rebuilt, and after the run settles — never as a one-shot, because the head
+// element is recreated by `rebuildToolCardHead` and a label written into the
+// old head would silently vanish.
+export function setSubagentCardCost(card, amount) {
+  if (!card || !card.querySelector) return;
+  const total = amount == null ? NaN : Number(amount);
+  const known = Number.isFinite(total) && total >= 0;
+  card._subagentCost = known ? total : null;
+  const head = card.querySelector('.tool-card__head');
+  if (!head) return;
+  let el = head.querySelector('.tool-card__cost');
+  if (!known) {
+    if (el) el.remove();
+    return;
+  }
+  if (!el) {
+    el = document.createElement('span');
+    el.className = 'tool-card__cost';
+    // Before the status dot, after the result summary: the collapsed head
+    // reads "Subagent · task · $0.0042 ●".
+    const pill = head.querySelector('.tool-card__pill');
+    if (pill) head.insertBefore(el, pill);
+    else head.appendChild(el);
+  }
+  el.textContent = formatCost(total);
+  el.title = 'Delegated cost of this run';
+}
+
+// rememberSubagentCardCost(card) -> number | null
+//
+// Read the cost already on a card: the element property first (survives a
+// head rebuild), then the label's own text as a fallback for a card that was
+// on screen before this feature shipped.
+export function rememberSubagentCardCost(card) {
+  if (!card) return null;
+  if (Number.isFinite(card._subagentCost)) return card._subagentCost;
+  const head = card.querySelector ? card.querySelector('.tool-card__head') : null;
+  const el = head ? head.querySelector('.tool-card__cost') : null;
+  if (!el) return null;
+  const parsed = Number(String(el.textContent || '').replace(/[^0-9.]/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 // renderSubagentChat(card, toolResult)
 //
 // Final render of a subagent's nested conversation as polished chat
@@ -1597,10 +1688,24 @@ function renderWriteFileInto(host, r, args) { renderWriteFileToolResult(host, r,
 // live container so the user sees a single coherent view.
 export function renderSubagentChat(card, toolResult) {
   if (!card) return;
+  // Cost label the card is already showing. The head is REPLACED by this
+  // render's caller (rebuildToolCardHead), and on a full transcript rebuild
+  // the card is rebuilt from persisted data with no live figure at all — so
+  // the running cost has to survive the settle and the rebuild, or the
+  // number the user was watching disappears exactly when the run ends.
+  const carriedCost = rememberSubagentCardCost(card);
   // Drop any prior chat render so re-runs don't stack copies.
   const old = card.querySelector('.tool-card__subagent-chat');
   if (old) old.remove();
   const r = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
+  // Draw the delegated cost on the (freshly rebuilt) head before anything
+  // else, so the early return below — a run that produced no transcript at
+  // all, typically a failure — still shows what it cost. The settled result's
+  // own price wins; otherwise the running figure the card was showing while
+  // the run streamed is carried over. `carriedCost` was read before this
+  // render's caller replaced the head.
+  const settledCost = subagentCostFromResult(r);
+  setSubagentCardCost(card, settledCost != null ? settledCost : carriedCost);
   const chat = r && Array.isArray(r.chat) ? r.chat : null;
   if ((!chat || !chat.length) && !(r && typeof r.text === 'string' && r.text)) return;
   const wrap = document.createElement('div');
@@ -2018,7 +2123,11 @@ export function rekeyToolCard(refs, id, card) {
 // Indexed lookup with the original query as the fallback. A card that was
 // removed from the tree is dropped from the index on the way out rather than
 // returned, matching what `querySelector` would have done.
-function findToolCard(refs, id) {
+//
+// Exported for the stream layer: a mid-run `usage_update` names the subagent
+// card it belongs to and must locate that same card to draw the running cost
+// on it (see setSubagentCardCost).
+export function findToolCard(refs, id) {
   if (!id || !refs.transcript || !refs.transcript.current) return null;
   const key = String(id);
   const index = cardIndexFor(refs);

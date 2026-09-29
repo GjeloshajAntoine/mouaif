@@ -1231,6 +1231,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // `delegatedCostTotal()` requires one known-cost report per counted run,
   // so the counters are only touched on completion: a run in flight must
   // not make the aggregate look "known" while rounds are still unbilled.
+  //
+  // `report.callId` (optional) is the parent `subagent` call's id. It rides
+  // the emitted `usage_update` so the chat can attribute the increment to
+  // the card the user is watching, not just the chat-wide total.
   function reportDelegatedUsage(report) {
     if (!report) return;
     const promptTokens = Number(report.promptTokens);
@@ -1248,6 +1252,11 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // final `done` event folds the same number into the parent
       // remainder; the client clears the running delta at that point so
       // nothing is double-counted.
+      // `callId` names the subagent card this delta belongs to, so the chat
+      // can draw the running figure on that card's head instead of only
+      // folding it into the chat-wide "Total" pill. A run whose caller did
+      // not pass a call id still bills; the client simply has no card to
+      // label and keeps the old Total-only behaviour.
       onEvent('usage_update', {
         cost: {
           known: true,
@@ -1257,7 +1266,8 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
           currency: 'USD'
         },
         source: 'subagent',
-        modelId: report.modelId
+        modelId: report.modelId,
+        callId: report.callId || undefined
       });
     }
     if (report.complete && report.ok) {
@@ -1676,7 +1686,8 @@ return { ok: false, content: JSON.stringify(r), result: r };
           promptTokens: promptDelta,
           completionTokens: completionDelta,
           cost: costDelta,
-          modelId: nestedModelRef ? nestedModelRef.id : undefined
+          modelId: nestedModelRef ? nestedModelRef.id : undefined,
+          callId: (callOpts && callOpts.callId) || undefined
         });
       }
 
@@ -1843,7 +1854,8 @@ promptSize: callOpts && callOpts.promptSize,
         if (finalCost > forwarded.cost) {
           reportDelegatedUsage({
             cost: finalCost - forwarded.cost,
-            modelId: nestedModelRef ? nestedModelRef.id : undefined
+            modelId: nestedModelRef ? nestedModelRef.id : undefined,
+            callId: (callOpts && callOpts.callId) || undefined
           });
           forwarded.cost = finalCost;
         }

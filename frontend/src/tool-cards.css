@@ -103,6 +103,23 @@
   color: var(--muted);
   margin: 0 2px;
 }
+/* Delegated cost of one subagent run, drawn on that card's head. The
+   chat-wide "Total" pill already grows from the same `usage_update` frames,
+   but a card that explains neither where the money went nor how much it cost
+   leaves the user watching an unexplained number move. Kept on one line and
+   first out of the way (flex-shrink) so a long task argument cannot push it
+   off the row on a 360 px phone. */
+.tool-card__cost {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-hi);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .tool-card__pill {
   flex: 0 0 auto;
   align-self: center;

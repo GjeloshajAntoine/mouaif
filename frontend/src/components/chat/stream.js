@@ -15,10 +15,12 @@ appendMessageToTranscript,
 appendErrorCard,
 appendToolCallCard,
 appendToolResultCard,
+findToolCard,
 rekeyToolCard,
 finalizeLiveMessage,
 handleShellOutputEvent,
 handleSubagentStreamEvent,
+setSubagentCardCost,
 syncTranscriptAppend,
 updateProgressCard,
 prependOlderTranscript,
@@ -1249,6 +1251,22 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       const updateCost = data && data.cost;
       if (updateCost && updateCost.known && typeof updateCost.total === 'number' && updateCost.total > 0) {
         liveSubagentCost += updateCost.total;
+        // Draw the running delegated cost on the subagent card the frame
+        // names, so the user watches what the run is costing on the card
+        // that owns it — not only as a chat-wide "Total" that moves for
+        // reasons the card itself never explains. `data.callId` is the
+        // parent subagent call id; when a frame has none (an older server)
+        // the card simply shows nothing and Total is unchanged.
+        if (data.callId) {
+          // The card property is the authority: it survives every head
+          // rebuild and the live→settled re-render, so the figure keeps
+          // climbing instead of restarting at this frame's delta.
+          const card = findToolCard(refs, data.callId);
+          if (card) {
+            const prior = Number.isFinite(card._subagentCost) ? card._subagentCost : 0;
+            setSubagentCardCost(card, prior + updateCost.total);
+          }
+        }
         // No repaintLiveRate(): the per-turn meta line is for the
         // parent's own cost, not the running subagent total. The
         // head summary is the only surface that needs to grow
