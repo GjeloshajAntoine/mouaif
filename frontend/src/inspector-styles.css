@@ -148,7 +148,9 @@ transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 -webkit-tap-highlight-color: transparent;
 }
 .inspector__styles-tap svg { display: block; }
-.inspector__styles-tap:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__styles-tap:hover { background: var(--surface-3); }
+}
 .inspector__styles-tap:disabled {
 opacity: 0.55;
 cursor: default;
@@ -223,7 +225,9 @@ color: var(--fg);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__styles-elem:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__styles-elem:hover { background: var(--surface-3); }
+}
 .inspector__styles-elem-name {
 min-width: 0;
 font-size: 0.74rem;
@@ -533,7 +537,9 @@ overflow: hidden;
 -webkit-tap-highlight-color: transparent;
 }
 .inspector__styles-shot:disabled { opacity: 0.7; cursor: default; }
-.inspector__styles-shot:not(:disabled):hover { border-color: var(--border-strong); }
+@media (hover: hover) {
+  .inspector__styles-shot:not(:disabled):hover { border-color: var(--border-strong); }
+}
 /* Sticky only inside the panel; the edit sheet's copy is a normal block. */
 .inspector__panel-body .inspector__styles-shot:not(.inspector__styles-shot--sheet) {
 width: 100%;
@@ -774,7 +780,9 @@ overflow: hidden;
 white-space: nowrap;
 text-overflow: ellipsis;
 }
-.inspector__styles-crumb:not(.is-here):hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .inspector__styles-crumb:not(.is-here):hover { background: var(--surface-3); color: var(--fg); }
+}
 /* The selected element is not a tap target (it is already selected), so it
 reads as a static accent chip rather than a button. */
 .inspector__styles-crumb.is-here {
@@ -853,7 +861,9 @@ overflow: hidden;
 white-space: nowrap;
 text-overflow: ellipsis;
 }
-.inspector__styles-kid:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__styles-kid:hover { background: var(--surface-3); }
+}
 .inspector__styles-kid:active { transform: scale(0.98); }
 .inspector__styles-kids-more {
 flex: 0 0 auto;
@@ -927,8 +937,12 @@ border-radius: var(--r-sm);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__rules-toggle:hover { background: var(--surface-3); }
-.inspector__rules-ua:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__rules-toggle:hover { background: var(--surface-3); }
+}
+@media (hover: hover) {
+  .inspector__rules-ua:hover { background: var(--surface-3); }
+}
 .inspector__rules-ua.is-on {
 color: var(--on-accent);
 background: var(--accent);
@@ -976,7 +990,9 @@ border: 0;
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__rule-head:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__rule-head:hover { background: var(--surface-3); }
+}
 .inspector__rule-caret {
 flex: 0 0 auto;
 width: 10px;
@@ -1060,7 +1076,9 @@ cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
 .inspector__rule-props > li:first-child .inspector__rule-prop { border-top: 0; }
-.inspector__rule-prop:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__rule-prop:hover { background: var(--surface-3); }
+}
 .inspector__rule-prop.is-off { text-decoration: line-through; opacity: 0.6; }
 .inspector__rule-pname {
 flex: 0 0 auto;
@@ -1167,7 +1185,9 @@ border-radius: calc(var(--r-sm) - 2px);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__computed-filter:hover { color: var(--fg); }
+@media (hover: hover) {
+  .inspector__computed-filter:hover { color: var(--fg); }
+}
 .inspector__computed-filter.is-on {
 color: var(--on-accent);
 background: var(--accent);
@@ -1192,7 +1212,9 @@ border-radius: var(--r-sm);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__computed-clear:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__computed-clear:hover { background: var(--surface-3); }
+}
 /* The render cap's release valve: a full-width 44 px row, so "show all" is
 findable by thumb at the end of a long list. */
 .inspector__computed-more {
@@ -1210,7 +1232,9 @@ border-radius: var(--r-sm);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__computed-more:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__computed-more:hover { background: var(--surface-3); }
+}
 /* Value row in the edit sheet: − [input] + . The steppers nudge numeric
 values by one unit and apply immediately, which is the fastest way to size
 something on a phone. */
@@ -1287,7 +1311,9 @@ cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
-.inspector__style-priority:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__style-priority:hover { background: var(--surface-3); }
+}
 .inspector__style-priority.is-on {
 color: var(--accent);
 border-color: var(--accent);

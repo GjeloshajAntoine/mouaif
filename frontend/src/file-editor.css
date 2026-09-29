@@ -54,8 +54,10 @@
 /* Icon buttons use the shared .icon-btn utility (forms.css); the file
    editor bumps the glyph size and adds a sticky "active" toggle state. */
 .fe__iconbtn { font-size: 0.8rem; }
-.fe__iconbtn.is-active,
-.fe__iconbtn.is-active:hover { background: var(--accent-soft); color: var(--accent); }
+.fe__iconbtn.is-active { background: var(--accent-soft); color: var(--accent); }
+@media (hover: hover) {
+  .fe__iconbtn.is-active:hover { background: var(--accent-soft); color: var(--accent); }
+}
 /* Layout toggle (split ↔ full editor). The phone split stacks the list
    above the editor and wider screens put it on the left, so the glyph
    carries both panel shapes and shows the one that matches. */
@@ -93,7 +95,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.fe__crumb:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .fe__crumb:hover { background: var(--surface-3); color: var(--fg); }
+}
 .fe__crumb--root { color: var(--fg); font-weight: 600; }
 .fe__crumb-sep { color: var(--muted); flex: 0 0 auto; }
 
@@ -169,10 +173,14 @@
   color: var(--fg);
   user-select: none;
 }
-.fe__row:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .fe__row:hover { background: var(--surface-3); }
+}
 .fe__row.is-open { background: var(--accent-soft); }
 .fe__row--binary { opacity: 0.55; cursor: not-allowed; }
-.fe__row--binary:hover { background: transparent; }
+@media (hover: hover) {
+  .fe__row--binary:hover { background: transparent; }
+}
 .fe__row-icon {
   flex: 0 0 auto;
   width: 18px;

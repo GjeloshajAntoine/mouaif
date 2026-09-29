@@ -74,7 +74,9 @@ color: var(--fg);
 cursor: pointer;
 transition: background 80ms ease;
 }
-.inspector__row-target-main:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .inspector__row-target-main:hover { background: var(--surface-2); }
+}
 .inspector__row-target-main:active { background: var(--surface-3); }
 /* The type chip. Color follows the row's tone (set by TargetRow) so
 the user can spot a service worker vs a tab at a glance. */
@@ -157,10 +159,15 @@ margin: 0 4px 0 0;
 cursor: pointer;
 transition: background 80ms ease, color 80ms ease;
 }
-.inspector__row-menu-btn:hover,
 .inspector__row-menu-btn[aria-expanded="true"] {
 color: var(--fg);
 background: var(--surface-2);
+}
+@media (hover: hover) {
+  .inspector__row-menu-btn:hover {
+color: var(--fg);
+background: var(--surface-2);
+}
 }
 .inspector__row-menu-pop {
 position: absolute;

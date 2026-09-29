@@ -70,7 +70,9 @@
   white-space: nowrap;
   line-height: 1.2;
 }
-.project-card__identity:hover .project-card__name { color: var(--accent); }
+@media (hover: hover) {
+  .project-card__identity:hover .project-card__name { color: var(--accent); }
+}
 .project-card__cost {
   color: var(--muted);
   font-size: 0.75rem;
@@ -112,10 +114,10 @@
   letter-spacing: 1px;
   border-radius: var(--r-sm);
 }
-.project-card__menu-btn:hover,
-.sprojects__menu-btn:hover,
-.project-card__menu-btn[aria-expanded="true"],
-.sprojects__menu-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
+.project-card__menu-btn[aria-expanded="true"], .sprojects__menu-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
+@media (hover: hover) {
+  .project-card__menu-btn:hover, .sprojects__menu-btn:hover { background: var(--surface-2); color: var(--fg); }
+}
 .project-card__menu-pop,
 .sprojects__menu-pop {
   position: absolute;
@@ -148,8 +150,10 @@
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
-.project-card__menu-pop button:hover,
+@media (hover: hover) {
+  .project-card__menu-pop button:hover,
 .sprojects__menu-pop button:hover { background: var(--surface-2); }
+}
 .project-card__menu-pop button[data-danger="1"],
 .sprojects__menu-pop button[data-danger="1"] { color: var(--danger); }
 
@@ -184,7 +188,9 @@ scrollbar-width: thin;
   border-top: 1px solid var(--border);
 }
 .project-card__chats li:first-child { border-top: 0; }
-.project-card__chats li:hover  { background: var(--surface-2); }
+@media (hover: hover) {
+  .project-card__chats li:hover  { background: var(--surface-2); }
+}
 .project-card__chats li:active { background: var(--surface-3); }
 /* A row is a line plus, for a search hit, a snippet. The row itself stays a
    flex line so the running dot, the metadata and the × keep their places;
@@ -270,7 +276,9 @@ flex-shrink: 0;
   border-radius: var(--r-sm);
   transition: background 120ms ease, color 120ms ease;
 }
-.project-card__chat-delete:hover { color: var(--danger); background: var(--danger-soft); }
+@media (hover: hover) {
+  .project-card__chat-delete:hover { color: var(--danger); background: var(--danger-soft); }
+}
 .project-card__chats-empty,
 .project-card__chats-more {
   color: var(--muted);
@@ -281,7 +289,9 @@ flex-shrink: 0;
   background: transparent;
   cursor: default;
 }
-.project-card__chats-more:hover { background: transparent; }
+@media (hover: hover) {
+  .project-card__chats-more:hover { background: transparent; }
+}
 .project-card__new-actions {
 display: flex; align-items: stretch; overflow-x: auto; scrollbar-width: none;
 border-top: 1px solid var(--border);
@@ -299,7 +309,9 @@ flex: 1 0 auto;
 display: grid; place-items: center; flex: 0 0 var(--tap); min-width: var(--tap);
 border-left: 1px solid var(--border);
 }
-.project-card__new:hover, .project-card__prompt-new:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .project-card__new:hover, .project-card__prompt-new:hover { background: var(--surface-2); }
+}
 .project-card__new:active, .project-card__prompt-new:active { background: var(--surface-3); }
 .project-card__new:disabled, .project-card__prompt-new:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -313,7 +325,9 @@ border-left: 1px solid var(--border);
   border-left: 1px solid var(--border);
   min-height: var(--tap); cursor: pointer; transition: background 80ms ease, color 120ms ease;
 }
-.project-card__search-open:hover { background: var(--surface-2); color: var(--fg); }
+@media (hover: hover) {
+  .project-card__search-open:hover { background: var(--surface-2); color: var(--fg); }
+}
 .project-card__search-open:active { background: var(--surface-3); }
 .project-card__search-open[aria-expanded="true"] { color: var(--accent); background: var(--accent-soft); }
 .project-card__search-open svg { display: block; }
@@ -370,7 +384,9 @@ border-left: 1px solid var(--border);
   display: grid; place-items: center; flex: none;
   transition: background 120ms ease, color 120ms ease;
 }
-.project-card__search-close:hover { color: var(--danger); background: var(--danger-soft); }
+@media (hover: hover) {
+  .project-card__search-close:hover { color: var(--danger); background: var(--danger-soft); }
+}
 
 /* ---- Picker ------------------------------------------------------- */
 
@@ -409,7 +425,9 @@ border-left: 1px solid var(--border);
   transition: background 80ms ease;
   outline: none;
 }
-.picker__row:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .picker__row:hover { background: var(--surface-2); }
+}
 .picker__row:active { background: var(--surface-3); }
 .picker__row:focus-visible { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--accent); }
 .picker__name {

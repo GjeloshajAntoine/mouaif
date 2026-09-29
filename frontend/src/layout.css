@@ -207,7 +207,9 @@ padding-bottom: 0;
   text-align: left;
   transition: background 80ms ease;
 }
-.group__row:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .group__row:hover { background: var(--surface-2); }
+}
 .group__row:active { background: var(--surface-3); }
 .group__row[disabled] { opacity: 0.5; cursor: not-allowed; }
 .group__row-label {
@@ -417,7 +419,9 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   padding: 0;
   transition: background 80ms ease, transform 80ms ease;
 }
-.page-bar__add:hover  { background: var(--accent-press); }
+@media (hover: hover) {
+  .page-bar__add:hover  { background: var(--accent-press); }
+}
 .page-bar__add:active { transform: scale(0.95); }
 
 /* ---- Bottom tab bar ------------------------------------------------ */
@@ -492,7 +496,9 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   -webkit-tap-highlight-color: transparent;
   transition: color 80ms ease;
 }
-.app__tab:hover        { color: var(--fg); }
+@media (hover: hover) {
+  .app__tab:hover        { color: var(--fg); }
+}
 .app__tab:active       { transform: scale(.96); }
 .app__tab.is-active    { color: var(--accent); }
 
@@ -541,7 +547,9 @@ box-shadow: 0 1px 4px rgba(110,168,254,.25), inset 0 1px 0 rgba(255,255,255,.25)
   line-height: 1;
   transition: opacity 120ms ease;
 }
-.view-back:hover { opacity: 0.7; }
+@media (hover: hover) {
+  .view-back:hover { opacity: 0.7; }
+}
 .view-back:active { opacity: 0.5; }
 
 /* ---- Sections & headings ------------------------------------------ */

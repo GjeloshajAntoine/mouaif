@@ -98,7 +98,9 @@ border-radius: var(--r-pill);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__touch-tab:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .inspector__touch-tab:hover { background: var(--surface-3); color: var(--fg); }
+}
 .inspector__touch-tab:active { transform: scale(0.98); }
 .inspector__touch-tab.is-on {
 color: var(--on-accent);
@@ -189,7 +191,9 @@ text-overflow: ellipsis;
 white-space: nowrap;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__touch-value:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__touch-value:hover { background: var(--surface-3); }
+}
 .inspector__touch-value.is-set {
 color: var(--accent-hi);
 border-color: var(--accent);
@@ -233,7 +237,9 @@ border-radius: var(--r-sm);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__touch-step:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__touch-step:hover { background: var(--surface-3); }
+}
 .inspector__touch-step:active { transform: scale(0.96); }
 .inspector__touch-step:disabled { opacity: 0.4; }
 /* The slider is a native range input with the whole 44 px row as its hit area:
@@ -314,7 +320,9 @@ border-radius: var(--r-pill);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__touch-chip:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .inspector__touch-chip:hover { background: var(--surface-3); color: var(--fg); }
+}
 .inspector__touch-chip:active { transform: scale(0.98); }
 .inspector__touch-chip.is-on {
 color: var(--on-accent);
@@ -350,7 +358,9 @@ border-radius: var(--r-sm);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__touch-segbtn:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .inspector__touch-segbtn:hover { background: var(--surface-3); color: var(--fg); }
+}
 .inspector__touch-segbtn:active { transform: scale(0.98); }
 .inspector__touch-segbtn.is-on {
 color: var(--on-accent);
@@ -454,7 +464,9 @@ text-overflow: ellipsis;
 white-space: nowrap;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__touch-edge:hover { color: var(--fg); border-color: var(--accent); }
+@media (hover: hover) {
+  .inspector__touch-edge:hover { color: var(--fg); border-color: var(--accent); }
+}
 .inspector__touch-edge.is-set { color: var(--accent-hi); }
 .inspector__touch-edge.is-on {
 color: var(--on-accent);
@@ -508,7 +520,9 @@ border-radius: var(--r-md);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__touch-add:hover { background: var(--accent-press); }
+@media (hover: hover) {
+  .inspector__touch-add:hover { background: var(--accent-press); }
+}
 .inspector__touch-add:active { transform: scale(0.99); }
 .inspector__touch-add:disabled { opacity: 0.5; }
 /* Open state of the disclosure: the browser below is showing, so the button that
@@ -615,7 +629,9 @@ border-radius: var(--r-md);
 cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__addprop-card:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__addprop-card:hover { background: var(--surface-3); }
+}
 .inspector__addprop-card:active { transform: scale(0.995); }
 .inspector__addprop-card.is-set { border-color: var(--accent); }
 .inspector__addprop-text {

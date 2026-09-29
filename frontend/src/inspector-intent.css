@@ -260,7 +260,9 @@ overscroll-behavior: contain;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-button.inspector__receipt-main:hover { background: var(--surface-3); border-radius: var(--r-sm); }
+@media (hover: hover) {
+  button.inspector__receipt-main:hover { background: var(--surface-3); border-radius: var(--r-sm); }
+}
 .inspector__receipt-was {
   flex: 0 1 auto;
   min-width: 0;
@@ -299,7 +301,9 @@ button.inspector__receipt-main:hover { background: var(--surface-3); border-radi
   border-radius: var(--r-sm);
   -webkit-tap-highlight-color: transparent;
 }
-.inspector__receipt-revert:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .inspector__receipt-revert:hover { background: var(--surface-3); }
+}
 .inspector__receipt-revert:disabled { opacity: 0.4; cursor: default; }
 /* The scope block in the edit sheet. */
 .inspector__scope {

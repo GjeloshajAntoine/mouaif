@@ -55,7 +55,9 @@
   -webkit-appearance: none;
   appearance: none;
 }
-.tool-tree__chev:hover { color: var(--fg); background: var(--surface-3); }
+@media (hover: hover) {
+  .tool-tree__chev:hover { color: var(--fg); background: var(--surface-3); }
+}
 .tool-tree__chev:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tool-tree__chev svg { display: block; transition: transform 120ms ease; }
 .tool-tree__chev.is-collapsed svg { transform: rotate(-90deg); }
@@ -142,7 +144,9 @@ cursor: pointer;
 -webkit-appearance: none;
 appearance: none;
 }
-.tool-tree__reload:hover { color: var(--fg); background: var(--surface-3); }
+@media (hover: hover) {
+  .tool-tree__reload:hover { color: var(--fg); background: var(--surface-3); }
+}
 .tool-tree__reload:active { background: var(--surface-3); }
 .tool-tree__reload:disabled { opacity: 0.5; cursor: default; }
 /* Starting state: a plain dimmed "…" read as a dead button during the

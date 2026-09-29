@@ -71,12 +71,16 @@
   cursor: pointer;
   min-height: var(--tap);
 }
-.inspector__actions-pop button:hover,
+@media (hover: hover) {
+  .inspector__actions-pop button:hover,
 .inspector__row-menu-pop button:hover { background: var(--surface-2); }
+}
 .inspector__actions-pop button[data-danger="1"],
 .inspector__row-menu-pop button[data-danger="1"] { color: var(--danger); }
-.inspector__actions-pop button[data-danger="1"]:hover,
+@media (hover: hover) {
+  .inspector__actions-pop button[data-danger="1"]:hover,
 .inspector__row-menu-pop button[data-danger="1"]:hover { background: rgba(255, 138, 138, 0.12); }
+}
 .inspector__actions-pop-sep {
   margin: 4px 0;
   border-top: 1px solid var(--border);
@@ -97,9 +101,11 @@
   background: var(--surface-2);
   color: var(--fg-soft);
 }
-.inspector__nav-reload:hover {
+@media (hover: hover) {
+  .inspector__nav-reload:hover {
   background: var(--surface-3);
   color: var(--fg);
+}
 }
 .inspector__nav-back,
 .inspector__nav-forward {
@@ -112,10 +118,12 @@
   background: var(--surface-2);
   color: var(--fg-soft);
 }
-.inspector__nav-back:hover,
+@media (hover: hover) {
+  .inspector__nav-back:hover,
 .inspector__nav-forward:hover {
   background: var(--surface-3);
   color: var(--fg);
+}
 }
 /* History arrows with nowhere to go. The tab's session history is read
   after each navigation (see refreshNavHistory), so an arrow that cannot
@@ -131,10 +139,12 @@
   opacity: 0.4;
   cursor: default;
 }
-.inspector__nav-back:disabled:hover,
+@media (hover: hover) {
+  .inspector__nav-back:disabled:hover,
 .inspector__nav-forward:disabled:hover {
   background: var(--surface-2);
   color: var(--fg-soft);
+}
 }
 .inspector__nav-input {
   flex: 1 1 auto;
@@ -193,7 +203,9 @@
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
   -webkit-tap-highlight-color: transparent;
 }
-.inspector__size-btn:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .inspector__size-btn:hover { background: var(--surface-3); color: var(--fg); }
+}
 .inspector__size-btn[aria-expanded="true"] {
   background: var(--surface-3);
   color: var(--fg);
@@ -234,7 +246,9 @@
   cursor: pointer;
   min-height: var(--tap);
 }
-.inspector__size-opt:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .inspector__size-opt:hover { background: var(--surface-2); }
+}
 .inspector__size-opt.is-on {
   background: var(--surface-2);
 }
@@ -310,7 +324,9 @@ cursor: pointer;
 transition: background 120ms ease, color 120ms ease;
 -webkit-tap-highlight-color: transparent;
 }
-.inspector__panel-fs:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .inspector__panel-fs:hover { background: var(--surface-3); color: var(--fg); }
+}
 .inspector__panel-fs:disabled { opacity: 0.5; cursor: not-allowed; }
 .inspector__panel-fs.is-on { color: var(--accent); }
 .inspector__panel-head-actions {
@@ -336,7 +352,9 @@ transition: background 120ms ease, color 120ms ease;
   transition: background 120ms ease, color 120ms ease;
   -webkit-tap-highlight-color: transparent;
 }
-.inspector__panel-refresh:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .inspector__panel-refresh:hover { background: var(--surface-3); color: var(--fg); }
+}
 .inspector__panel-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
 .inspector__panel-eye {
   flex: 0 0 auto;
@@ -355,12 +373,16 @@ transition: background 120ms ease, color 120ms ease;
   transition: background 120ms ease, color 120ms ease;
   -webkit-tap-highlight-color: transparent;
 }
-.inspector__panel-eye:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .inspector__panel-eye:hover { background: var(--surface-3); color: var(--fg); }
+}
 .inspector__panel-eye.is-visible {
   color: var(--accent);
 }
-.inspector__panel-eye.is-visible:hover {
+@media (hover: hover) {
+  .inspector__panel-eye.is-visible:hover {
   color: var(--accent-press);
+}
 }
 .inspector__panel-body {
   flex: 1 1 auto;

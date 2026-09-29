@@ -225,7 +225,9 @@
   border-radius: var(--r-md) var(--r-md) 0 0;
   border-bottom: 1px solid var(--border);
 }
-.chat-msg--system .chat-msg__system-details[open] > summary:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .chat-msg--system .chat-msg__system-details[open] > summary:hover { background: var(--surface-2); }
+}
 .chat-msg--system .chat-msg__system-body {
   margin: 0;
   padding: 6px 8px 8px;
@@ -257,10 +259,15 @@
   border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
   background: transparent;
 }
-.chat-msg--system.is-error .chat-msg__retry:hover,
 .chat-msg--system.is-error .chat-msg__retry:active {
   background: var(--danger-soft);
   border-color: var(--danger);
+}
+@media (hover: hover) {
+  .chat-msg--system.is-error .chat-msg__retry:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
 }
 
 /* ---- Per-message copy action ------------------------------------- */
@@ -299,24 +306,37 @@
   transition: background 80ms ease, color 80ms ease;
 }
 .chat-msg__copy svg { display: block; }
-.chat-msg__copy:hover,
 .chat-msg__copy:active {
   color: var(--fg);
   background: var(--surface-2);
 }
+@media (hover: hover) {
+  .chat-msg__copy:hover {
+  color: var(--fg);
+  background: var(--surface-2);
+}
+}
 .chat-msg__copy.is-copied {
   color: var(--success);
 }
-.chat-msg__copy.is-copied:hover,
 .chat-msg__copy.is-copied:active {
   background: color-mix(in srgb, var(--success) 14%, transparent);
+}
+@media (hover: hover) {
+  .chat-msg__copy.is-copied:hover {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+}
 }
 .chat-msg__copy.is-failed {
   color: var(--danger);
 }
-.chat-msg__copy.is-failed:hover,
 .chat-msg__copy.is-failed:active {
   background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+@media (hover: hover) {
+  .chat-msg__copy.is-failed:hover {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
 }
 
 /* ---- Per-turn usage meta ----------------------------------------- */

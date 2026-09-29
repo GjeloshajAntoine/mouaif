@@ -234,11 +234,15 @@ body {
   justify-content: center;
   transition: background 80ms ease, color 80ms ease;
 }
-.icon-btn:hover { background: var(--surface-2); color: var(--fg); }
+@media (hover: hover) {
+  .icon-btn:hover { background: var(--surface-2); color: var(--fg); }
+}
 .icon-btn:active { background: var(--surface-3); }
 .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .icon-btn--close { color: var(--fg-soft); }
-.icon-btn--close:hover { color: var(--danger); background: var(--danger-soft); }
+@media (hover: hover) {
+  .icon-btn--close:hover { color: var(--danger); background: var(--danger-soft); }
+}
 
 /* ---- .tap-target — hit-area expansion ---------------------------- */
 /* Grow a compact control's *hit* area to the 44 px minimum without

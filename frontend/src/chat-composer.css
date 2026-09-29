@@ -64,8 +64,12 @@ width: 100%;
   border-radius: inherit;
   transition: background 80ms ease, border-color 80ms ease;
 }
-.file-toolbar__trigger:hover { color: var(--fg); }
-.file-toolbar__trigger:hover::before { background: var(--surface-3); }
+@media (hover: hover) {
+  .file-toolbar__trigger:hover { color: var(--fg); }
+}
+@media (hover: hover) {
+  .file-toolbar__trigger:hover::before { background: var(--surface-3); }
+}
 .file-toolbar__trigger:active::before { background: var(--surface); }
 .file-toolbar__trigger[aria-expanded="true"] { color: var(--accent); }
 .file-toolbar__trigger[aria-expanded="true"]::before { background: var(--surface-3); }
@@ -291,7 +295,6 @@ transform: translateY(0.5px);
 }
 /* Hover / open brighten the sheen in place. The flat trigger's own hover rules
    would otherwise replace every gradient with a flat --surface-3. */
-.file-toolbar--orb .file-toolbar__trigger:hover::before,
 .file-toolbar--orb .file-toolbar__trigger[aria-expanded="true"]::before {
 border-color: rgba(232, 242, 255, 0.90);
 box-shadow:
@@ -301,6 +304,18 @@ inset 0 0 12px 2px rgba(120, 160, 230, 0.28),
 0 0 0 0.5px rgba(210, 232, 255, 0.60),
 0 0 10px 1px rgba(140, 188, 255, 0.44),
 0 0 22px 3px rgba(96, 146, 236, 0.20);
+}
+@media (hover: hover) {
+  .file-toolbar--orb .file-toolbar__trigger:hover::before {
+border-color: rgba(232, 242, 255, 0.90);
+box-shadow:
+inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+inset 0 0 5px 1px rgba(180, 212, 255, 0.66),
+inset 0 0 12px 2px rgba(120, 160, 230, 0.28),
+0 0 0 0.5px rgba(210, 232, 255, 0.60),
+0 0 10px 1px rgba(140, 188, 255, 0.44),
+0 0 22px 3px rgba(96, 146, 236, 0.20);
+}
 }
 /* A press flattens the lit upper edge and drops the bloom — the ball reads as
    pushed into the row. */
@@ -792,7 +807,9 @@ animation-play-state: paused;
   transition: background 80ms ease;
   -webkit-tap-highlight-color: transparent;
 }
-.file-toolbar__menu-item:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .file-toolbar__menu-item:hover { background: var(--surface-2); }
+}
 .file-toolbar__menu-item:active { background: var(--surface); }
 .file-toolbar__menu-item:disabled { opacity: 0.45; cursor: not-allowed; }
 
@@ -838,9 +855,13 @@ cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 overflow: hidden;
 }
-.webpreview-dock__open:hover,
 .webpreview-dock__open:focus-visible {
   outline: 0;
+}
+@media (hover: hover) {
+  .webpreview-dock__open:hover {
+  outline: 0;
+}
 }
 .webpreview-dock__open:active { opacity: 0.86; }
 .webpreview-dock__image {
@@ -926,11 +947,17 @@ pointer-events: none;
   width: 12px;
   height: 12px;
 }
-.webpreview-dock__dismiss:hover,
 .webpreview-dock__dismiss:focus-visible {
   background: var(--surface-3);
   color: var(--fg);
   outline: 0;
+}
+@media (hover: hover) {
+  .webpreview-dock__dismiss:hover {
+  background: var(--surface-3);
+  color: var(--fg);
+  outline: 0;
+}
 }
 .webpreview-dock__dismiss:active {
   background: var(--surface);
@@ -968,7 +995,9 @@ padding: 3px 2px 3px 4px;
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background 80ms ease, color 80ms ease;
 }
-.chat-view__toolbar-btn:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .chat-view__toolbar-btn:hover { background: var(--surface-3); color: var(--fg); }
+}
 .chat-view__toolbar-btn:active { background: var(--surface); }
 
 .chat-view__textarea {
@@ -995,7 +1024,10 @@ padding: 3px 2px 3px 4px;
   scrollbar-width: none;
 }
 .chat-view__textarea::-webkit-scrollbar { display: none; }
-.chat-view__textarea:hover, .chat-view__textarea:focus { background: transparent; box-shadow: none; }
+.chat-view__textarea:focus { background: transparent; box-shadow: none; }
+@media (hover: hover) {
+  .chat-view__textarea:hover { background: transparent; box-shadow: none; }
+}
 .chat-view__image-input { display: none; }
 .chat-view__image-preview {
   flex: 1 0 100%;
@@ -1116,7 +1148,9 @@ line-height: 0;
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background 80ms ease, color 80ms ease;
 }
-.chat-view__image-btn:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .chat-view__image-btn:hover { background: var(--surface-3); color: var(--fg); }
+}
 .chat-view__image-btn:active { background: var(--surface); }
 
 /* ---- Tool popup --------------------------------------------------- */
@@ -1133,7 +1167,9 @@ line-height: 0;
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background 80ms ease, color 80ms ease;
 }
-.tool-popup__trigger:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .tool-popup__trigger:hover { background: var(--surface-3); color: var(--fg); }
+}
 .tool-popup__trigger:active { background: var(--surface); }
 
 .tool-popup__trigger svg {
@@ -1195,7 +1231,9 @@ line-height: 0;
   line-height: 1;
   transition: background 80ms ease, color 80ms ease;
 }
-.tool-popup__close:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .tool-popup__close:hover { background: var(--surface-3); color: var(--fg); }
+}
 
 .tool-popup__body {
 flex: 1 1 auto;
@@ -1649,7 +1687,9 @@ min-height: var(--tap);
   text-align: center;
   transition: background 80ms ease;
 }
-.gm__load-more:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .gm__load-more:hover { background: var(--surface-3); }
+}
 .gm__load-more:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Stash rows */
@@ -1707,9 +1747,13 @@ min-height: var(--tap);
   cursor: pointer;
   transition: background 80ms ease;
 }
-.gm__stash-btn:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .gm__stash-btn:hover { background: var(--surface-3); }
+}
 .gm__stash-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.gm__stash-btn--danger:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+@media (hover: hover) {
+  .gm__stash-btn--danger:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+}
 
 .gm__body {
   flex: 1 1 auto;
@@ -1741,7 +1785,9 @@ min-height: var(--tap);
   transition: background 80ms ease;
   -webkit-tap-highlight-color: transparent;
 }
-.gm__section-head:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .gm__section-head:hover { background: var(--surface-2); }
+}
 .gm__section-head.is-open { color: var(--accent); }
 .gm__section-caret {
   flex: 0 0 auto;
@@ -1783,7 +1829,9 @@ text-align: left;
 transition: background 80ms ease;
 -webkit-tap-highlight-color: transparent;
 }
-.gm__file-head:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .gm__file-head:hover { background: var(--surface-2); }
+}
 .gm__file-toggle {
 flex: 1 1 auto;
 min-width: 0;
@@ -1802,7 +1850,9 @@ cursor: pointer;
 transition: background 80ms ease;
 -webkit-tap-highlight-color: transparent;
 }
-.gm__file-toggle:hover { background: transparent; }
+@media (hover: hover) {
+  .gm__file-toggle:hover { background: transparent; }
+}
 .gm__file-status {
 flex: 0 0 auto;
 min-width: 64px;
@@ -1853,10 +1903,14 @@ cursor: pointer;
 transition: background 80ms ease;
 -webkit-tap-highlight-color: transparent;
 }
-.gm__file-action:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .gm__file-action:hover { background: var(--surface-3); }
+}
 .gm__file-action:disabled { opacity: 0.45; cursor: not-allowed; }
-.gm__file-action--unstage:hover,
 .gm__file-action--unstage:disabled { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+@media (hover: hover) {
+  .gm__file-action--unstage:hover { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+}
 /* Commit bar (message input + Commit button) in the staged section */
 .gm__commit-bar {
 display: flex;
@@ -1897,7 +1951,9 @@ cursor: pointer;
 transition: background 80ms ease, opacity 80ms ease;
 -webkit-tap-highlight-color: transparent;
 }
-.gm__commit-btn:hover { background: var(--accent-hi); }
+@media (hover: hover) {
+  .gm__commit-btn:hover { background: var(--accent-hi); }
+}
 .gm__commit-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 /* Stage-all button between the staged and unstaged sections */
 .gm__stage-all {
@@ -1916,7 +1972,9 @@ cursor: pointer;
 transition: background 80ms ease;
 -webkit-tap-highlight-color: transparent;
 }
-.gm__stage-all:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .gm__stage-all:hover { background: var(--surface-3); }
+}
 .gm__stage-all:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Diff */
@@ -1966,7 +2024,9 @@ cursor: pointer;
 transition: background 80ms ease;
 -webkit-tap-highlight-color: transparent;
 }
-.gm__commit-head:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .gm__commit-head:hover { background: var(--surface-2); }
+}
 .gm__commit-head.is-open { color: var(--accent); }
 .gm__commit-caret {
   flex: 0 0 auto;
@@ -2028,8 +2088,10 @@ border-radius: var(--r-sm);
 -webkit-tap-highlight-color: transparent;
 transition: background 80ms ease, color 80ms ease;
 }
-.gm__commit-menu-btn:hover,
 .gm__commit-menu-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--fg); }
+@media (hover: hover) {
+  .gm__commit-menu-btn:hover { background: var(--surface-2); color: var(--fg); }
+}
 .gm__commit-menu-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .gm__commit-menu-pop {
 position: absolute;
@@ -2060,7 +2122,9 @@ border-radius: var(--r-sm);
 cursor: pointer;
 transition: background 120ms ease, color 120ms ease;
 }
-.gm__commit-menu-pop button:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .gm__commit-menu-pop button:hover { background: var(--surface-2); }
+}
 .gm__commit-menu-pop button:disabled { opacity: 0.45; cursor: not-allowed; }
 .gm__commit-menu-sep {
 height: 1px;
@@ -2210,12 +2274,19 @@ padding: 4px 10px;
   -webkit-tap-highlight-color: transparent;
   transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
 }
-.wp__action:hover,
 .wp__action:focus-visible {
   background: var(--surface-3);
   color: var(--fg);
   border-color: var(--border-strong);
   outline: 0;
+}
+@media (hover: hover) {
+  .wp__action:hover {
+  background: var(--surface-3);
+  color: var(--fg);
+  border-color: var(--border-strong);
+  outline: 0;
+}
 }
 .wp__action:active {
 background: var(--surface);
@@ -2224,11 +2295,17 @@ background: var(--surface);
 color: var(--accent);
 border-color: var(--accent);
 }
-.wp__action--refresh:hover,
 .wp__action--refresh:focus-visible {
 background: var(--accent);
 color: var(--on-accent);
 border-color: var(--accent);
+}
+@media (hover: hover) {
+  .wp__action--refresh:hover {
+background: var(--accent);
+color: var(--on-accent);
+border-color: var(--accent);
+}
 }
 .wp__action:disabled {
 opacity: 0.6;
@@ -2353,13 +2430,17 @@ border-radius: var(--r-sm);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.wp__close:hover,
-.wp__close:focus-visible,
-.mcp-err__close:hover,
-.mcp-err__close:focus-visible {
+.wp__close:focus-visible, .mcp-err__close:focus-visible {
   background: var(--surface-3);
   color: var(--fg);
   outline: 0;
+}
+@media (hover: hover) {
+  .wp__close:hover, .mcp-err__close:hover {
+  background: var(--surface-3);
+  color: var(--fg);
+  outline: 0;
+}
 }
 .wp__close svg {
   width: 14px;
@@ -2549,11 +2630,17 @@ position: static;
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
 }
-.wp__open-link:hover,
 .wp__open-link:focus-visible {
   background: var(--accent);
   color: var(--on-accent);
   outline: 0;
+}
+@media (hover: hover) {
+  .wp__open-link:hover {
+  background: var(--accent);
+  color: var(--on-accent);
+  outline: 0;
+}
 }
 /* ---- Web preview URL prompt ---------------------------------------- */
 /* Small overlay asking for a URL to preview. Reuses the web-preview

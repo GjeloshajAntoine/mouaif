@@ -117,7 +117,9 @@ cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
-.inspector__zoom:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .inspector__zoom:hover { background: var(--surface-3); color: var(--fg); }
+}
 .inspector__zoom.is-on {
 color: var(--accent);
 border-color: var(--accent);
@@ -198,7 +200,9 @@ border-top: 1px solid var(--border);
   transition: background 120ms ease, color 120ms ease;
   -webkit-tap-highlight-color: transparent;
 }
-.inspector__panel-typebar:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .inspector__panel-typebar:hover { background: var(--surface-3); color: var(--fg); }
+}
 .inspector__panel-typebar:disabled { opacity: 0.5; cursor: default; }
 /* Full-screen live preview viewport. Portaled to document.body so it sits
 above the app dock (same approach as the Draft Craft / webpreview / Git
@@ -284,12 +288,19 @@ cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
 }
-.inspector__preview-fs-refresh:hover,
 .inspector__preview-fs-refresh:focus-visible {
 background: var(--accent);
 color: var(--on-accent);
 border-color: var(--accent);
 outline: 0;
+}
+@media (hover: hover) {
+  .inspector__preview-fs-refresh:hover {
+background: var(--accent);
+color: var(--on-accent);
+border-color: var(--accent);
+outline: 0;
+}
 }
 .inspector__preview-fs-refresh:disabled {
 opacity: 0.6;
@@ -329,11 +340,17 @@ cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
 }
-.inspector__preview-fs-zoom:hover,
 .inspector__preview-fs-zoom:focus-visible {
 background: var(--surface-3);
 color: var(--fg);
 outline: 0;
+}
+@media (hover: hover) {
+  .inspector__preview-fs-zoom:hover {
+background: var(--surface-3);
+color: var(--fg);
+outline: 0;
+}
 }
 .inspector__preview-fs-zoom.is-on {
 color: var(--accent);
@@ -356,11 +373,17 @@ cursor: pointer;
 -webkit-tap-highlight-color: transparent;
 transition: background 80ms ease, color 80ms ease;
 }
-.inspector__preview-fs-close:hover,
 .inspector__preview-fs-close:focus-visible {
 background: var(--surface-3);
 color: var(--fg);
 outline: 0;
+}
+@media (hover: hover) {
+  .inspector__preview-fs-close:hover {
+background: var(--surface-3);
+color: var(--fg);
+outline: 0;
+}
 }
 @media (max-width: 430px) {
 /* Mirror the .wp__head mobile wrap: the title block grows to a

@@ -200,7 +200,9 @@ background: var(--danger);
 color: var(--bg);
 border-color: transparent;
 }
-.inspector__confirm-actions .btn[data-danger="1"]:hover {
+@media (hover: hover) {
+  .inspector__confirm-actions .btn[data-danger="1"]:hover {
 background: var(--danger-soft);
 color: var(--danger);
+}
 }

@@ -174,7 +174,9 @@
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-button.inspector__crumb:hover { background: var(--surface-2); color: var(--fg); }
+@media (hover: hover) {
+  button.inspector__crumb:hover { background: var(--surface-2); color: var(--fg); }
+}
 .inspector__crumb.is-here {
   color: var(--on-accent);
   background: var(--accent);
@@ -311,7 +313,9 @@ button.inspector__crumb:hover { background: var(--surface-2); color: var(--fg); 
   text-overflow: ellipsis;
   max-width: 100%;
 }
-.inspector__panelchip:hover { color: var(--fg); }
+@media (hover: hover) {
+  .inspector__panelchip:hover { color: var(--fg); }
+}
 .inspector__panelchip.is-on {
   color: var(--on-accent);
   background: var(--accent);

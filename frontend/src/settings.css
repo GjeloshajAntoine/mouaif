@@ -140,7 +140,9 @@ background: var(--surface-2); color: var(--fg); cursor: pointer;
   color: var(--fg);
   transition: background 80ms ease;
 }
-.sprojects__main:hover  { background: var(--surface-2); }
+@media (hover: hover) {
+  .sprojects__main:hover  { background: var(--surface-2); }
+}
 .sprojects__main:active { background: var(--surface-3); }
 .sprojects__name {
   font-weight: 600;
@@ -233,7 +235,9 @@ font-size: 0.78rem;
   border-top: 1px solid var(--border);
 }
 .provider-row:first-child .provider-row__main { border-top: 0; }
-.provider-row__main:hover  { background: var(--surface-2); }
+@media (hover: hover) {
+  .provider-row__main:hover  { background: var(--surface-2); }
+}
 .provider-row__main:active { background: var(--surface-3); }
 .provider-row__main > div:first-child { flex: 1; }
 .provider-row__name {
@@ -296,8 +300,10 @@ font-size: 0.78rem;
 .settings-project .group { margin-top: 8px; }
 .settings-project .group__list { background: var(--surface); border: 1px solid var(--border); }
 .settings-project .group .input { background: var(--surface-2); border: 1px solid var(--border-strong); }
-.settings-project .group .input:hover,
 .settings-project .group .input:focus { background: var(--surface-3); border-color: var(--accent); box-shadow: none; }
+@media (hover: hover) {
+  .settings-project .group .input:hover { background: var(--surface-3); border-color: var(--accent); box-shadow: none; }
+}
 
 /* Compact page header: path + save status on one line, one-line lede. */
 .settings-project__intro {
@@ -933,7 +939,9 @@ textarea#projectEditor {
   cursor: pointer;
   user-select: none;
 }
-.afp__row:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .afp__row:hover { background: var(--surface-2); }
+}
 .afp__row--binary { opacity: 0.5; cursor: not-allowed; }
 .afp__row-icon { flex: 0 0 auto; width: 18px; height: 18px; color: var(--fg-soft); display: inline-flex; align-items: center; justify-content: center; }
 .afp__row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; }

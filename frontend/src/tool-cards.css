@@ -166,8 +166,12 @@ color: var(--fg-soft);
   -webkit-touch-callout: default;
 }
 
-.tool-card__head:hover .tool-card__name { color: var(--fg); }
-.tool-card__head:hover .tool-card__chev { color: var(--fg-soft); }
+@media (hover: hover) {
+  .tool-card__head:hover .tool-card__name { color: var(--fg); }
+}
+@media (hover: hover) {
+  .tool-card__head:hover .tool-card__chev { color: var(--fg-soft); }
+}
 .tool-card__head:active { background: var(--surface-3); border-radius: var(--r-sm); }
 
 /* ---- ask_user tool card -------------------------------------------- */
@@ -558,8 +562,12 @@ color: var(--fg-soft);
   user-select: none;
   -webkit-user-select: none;
 }
-.tool-card--progress .tool-card__head:hover .tool-card__name { color: var(--fg); }
-.tool-card--progress .tool-card__head:hover .tool-card__chev { color: var(--fg-soft); }
+@media (hover: hover) {
+  .tool-card--progress .tool-card__head:hover .tool-card__name { color: var(--fg); }
+}
+@media (hover: hover) {
+  .tool-card--progress .tool-card__head:hover .tool-card__chev { color: var(--fg-soft); }
+}
 .tool-card--progress.is-expanded .tool-card__body { display: block; }
 .tool-card--progress:not(.is-expanded) .tool-card__body { display: block; }
 

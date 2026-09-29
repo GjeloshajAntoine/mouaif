@@ -121,7 +121,9 @@
   text-decoration: underline;
   word-break: break-word;
 }
-:is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body a:hover { color: var(--fg); }
+@media (hover: hover) {
+  :is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body a:hover { color: var(--fg); }
+}
 :is(.chat-msg--assistant, .chat-msg--system) .chat-msg__body img {
   max-width: 100%;
   height: auto;

@@ -41,7 +41,9 @@
   width: 100%;
   transition: background 80ms ease, box-shadow 80ms ease;
 }
-.input:hover  { background: var(--surface-2); }
+@media (hover: hover) {
+  .input:hover  { background: var(--surface-2); }
+}
 .input:focus  { background: var(--surface-2); box-shadow: 0 0 0 2px var(--accent); }
 .input::placeholder { color: var(--muted-2); }
 
@@ -90,7 +92,9 @@ select.input {
   transition: background 80ms ease, border-color 80ms ease;
   flex-shrink: 0;
 }
-.checkbox:hover { border-color: var(--accent); }
+@media (hover: hover) {
+  .checkbox:hover { border-color: var(--accent); }
+}
 .checkbox:checked,
 .checkbox:indeterminate {
   background: var(--accent);
@@ -131,7 +135,9 @@ select.input {
   transition: background 80ms ease, transform 80ms ease, color 80ms ease;
   white-space: nowrap;
 }
-.btn:hover  { background: var(--surface-3); border-color: var(--border-strong); }
+@media (hover: hover) {
+  .btn:hover  { background: var(--surface-3); border-color: var(--border-strong); }
+}
 .btn:active { transform: scale(0.98); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
@@ -140,7 +146,9 @@ select.input {
   background: var(--accent);
   font-weight: 600;
 }
-.btn--primary:hover  { background: var(--accent-press); }
+@media (hover: hover) {
+  .btn--primary:hover  { background: var(--accent-press); }
+}
 .btn--primary:active { background: var(--accent-press); transform: scale(0.98); }
 
 .btn--danger {
@@ -148,7 +156,9 @@ select.input {
   background: transparent;
   border-color: rgba(255,138,138,.3);
 }
-.btn--danger:hover  { background: var(--danger-soft); border-color: var(--danger); }
+@media (hover: hover) {
+  .btn--danger:hover  { background: var(--danger-soft); border-color: var(--danger); }
+}
 
 /* The default UA `[hidden] { display: none }` is shadowed by our
    .btn's `display: inline-flex` declaration. Reassert it for the
@@ -160,7 +170,9 @@ select.input {
   background: transparent;
   border-color: transparent;
 }
-.btn--ghost:hover  { background: var(--surface-2); color: var(--fg); }
+@media (hover: hover) {
+  .btn--ghost:hover  { background: var(--surface-2); color: var(--fg); }
+}
 
 /* Compact inline buttons (table rows, MCP lifecycle, registry, etc.).
    The plain .btn has min-height: var(--tap) (44px) for primary

@@ -96,7 +96,9 @@
   transition: background 80ms ease, transform 80ms ease;
 }
 
-.dictation__record:hover:not(:disabled)  { background: var(--accent-press); }
+@media (hover: hover) {
+  .dictation__record:hover:not(:disabled)  { background: var(--accent-press); }
+}
 .dictation__record:active:not(:disabled) { transform: scale(0.97); }
 .dictation__record:disabled { opacity: 0.55; cursor: not-allowed; }
 
@@ -110,7 +112,9 @@
   min-height: 44px;
 }
 
-.dictation__record.is-secondary:hover:not(:disabled) { background: var(--surface-3); }
+@media (hover: hover) {
+  .dictation__record.is-secondary:hover:not(:disabled) { background: var(--surface-3); }
+}
 
 /* The transcribe row. It appears only when there is an untranscribed take,
    and holds both the "ready" state and the action so the two never drift. */
@@ -145,7 +149,9 @@
   transition: background 80ms ease, transform 80ms ease;
 }
 
-.dictation__transcribe:hover:not(:disabled)  { background: var(--accent-press); }
+@media (hover: hover) {
+  .dictation__transcribe:hover:not(:disabled)  { background: var(--accent-press); }
+}
 .dictation__transcribe:active:not(:disabled) { transform: scale(0.97); }
 .dictation__transcribe:disabled { opacity: 0.55; cursor: not-allowed; }
 
@@ -277,7 +283,9 @@ font-size: 0.85rem;
   transition: background 80ms ease, border-color 80ms ease;
 }
 
-.dictation__refresh:hover:not(:disabled)  { background: var(--surface-2); border-color: var(--border-strong); }
+@media (hover: hover) {
+  .dictation__refresh:hover:not(:disabled)  { background: var(--surface-2); border-color: var(--border-strong); }
+}
 .dictation__refresh:active:not(:disabled) { background: var(--surface-3); }
 .dictation__refresh:disabled { opacity: 0.55; cursor: not-allowed; }
 
@@ -392,7 +400,9 @@ font-size: 0.85rem;
   transition: background 80ms ease, color 80ms ease;
 }
 
-.chat-view__mic-btn:hover { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .chat-view__mic-btn:hover { background: var(--surface-3); color: var(--fg); }
+}
 .chat-view__mic-btn:active { background: var(--surface); }
 
 /* Waiting: the model is being resolved or the take is being transcribed, so

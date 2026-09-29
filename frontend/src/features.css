@@ -179,7 +179,9 @@ cursor: pointer;
   cursor: pointer;
   transition: background 80ms ease;
 }
-.pwa-banner__btn:hover { background: var(--accent-soft); }
+@media (hover: hover) {
+  .pwa-banner__btn:hover { background: var(--accent-soft); }
+}
 .pwa-banner__btn:active { transform: scale(0.97); }
 
 .pwa-banner--offline { color: var(--warning); }

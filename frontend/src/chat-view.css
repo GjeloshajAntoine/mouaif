@@ -69,7 +69,9 @@ align-items: center;
 justify-content: center;
 transition: background 80ms ease, color 80ms ease;
 }
-.chat-view__back:hover { background: var(--surface-2); color: var(--fg); }
+@media (hover: hover) {
+  .chat-view__back:hover { background: var(--surface-2); color: var(--fg); }
+}
 .chat-view__back:active { background: var(--surface-3); }
 
 /* ---- Model row + picker ------------------------------------------ */
@@ -134,9 +136,11 @@ matching pair when stacked. */
   cursor: pointer;
   transition: background 80ms ease, color 80ms ease;
 }
-.chat-view__head-icons > .chat-view__iconbtn:hover {
+@media (hover: hover) {
+  .chat-view__head-icons > .chat-view__iconbtn:hover {
   background: var(--surface-3);
   color: var(--fg);
+}
 }
 .chat-view__head-icons > .chat-view__iconbtn:active {
   background: var(--surface);
@@ -189,8 +193,10 @@ padding: 0 16px 0 8px;
   position: relative;
   /* Show a small "🧠" label on the left so the user knows what it is */
 }
-.chat-view__thinking-select:hover {
+@media (hover: hover) {
+  .chat-view__thinking-select:hover {
   border-color: var(--accent);
+}
 }
 .chat-view__thinking-select:focus {
   border-color: var(--accent);
@@ -257,7 +263,9 @@ padding: 0 6px;
   white-space: nowrap;
   cursor: pointer;
 }
-.chat-view__name:hover { color: var(--accent); }
+@media (hover: hover) {
+  .chat-view__name:hover { color: var(--accent); }
+}
 .chat-view__meta { color: var(--muted); font-size: 0.62rem; }
 
 /* Chat switcher trigger: the entire title area is clickable */
@@ -286,7 +294,9 @@ text-align: left;
 transition: background 80ms ease;
 -webkit-tap-highlight-color: var(--accent-soft, transparent);
 }
-.chat-view__chat-switcher-trigger:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .chat-view__chat-switcher-trigger:hover { background: var(--surface-2); }
+}
 .chat-view__chat-switcher-trigger:active { background: var(--surface-3); }
 .chat-view__chat-switcher-trigger:focus-visible {
   outline: 2px solid var(--accent);
@@ -347,7 +357,9 @@ transition: background 80ms ease;
   min-width: 0;
   transition: background 80ms ease;
 }
-.chat-view__chat-switcher-item:hover { background: var(--surface-2); }
+@media (hover: hover) {
+  .chat-view__chat-switcher-item:hover { background: var(--surface-2); }
+}
 .chat-view__chat-switcher-item.is-current {
   background: var(--surface-2);
   color: var(--accent);
@@ -439,7 +451,9 @@ text-align: left;
 cursor: pointer;
 transition: background 80ms ease, border-color 80ms ease;
 }
-.mp__trigger:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .mp__trigger:hover { background: var(--surface-3); }
+}
 .mp__trigger:active { background: var(--surface-3); }
 .mp__trigger[aria-expanded="true"] {
 border-color: var(--accent);
@@ -544,10 +558,10 @@ align-items: center;
 justify-content: center;
 transition: background 80ms ease, color 80ms ease;
 }
-.mp__options:hover,
-.mp__options.is-active,
-.mp__refresh:hover,
-.mp__close:hover { background: var(--surface-3); color: var(--fg); }
+.mp__options.is-active { background: var(--surface-3); color: var(--fg); }
+@media (hover: hover) {
+  .mp__options:hover, .mp__refresh:hover, .mp__close:hover { background: var(--surface-3); color: var(--fg); }
+}
 .mp__options.is-active { color: var(--accent); }
 .mp__refresh:disabled { opacity: 0.5; cursor: wait; }
 .mp__options-panel {
@@ -587,7 +601,9 @@ cursor: pointer;
 white-space: nowrap;
 transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
 }
-.mp__chip:hover { color: var(--fg); background: var(--surface-3); }
+@media (hover: hover) {
+  .mp__chip:hover { color: var(--fg); background: var(--surface-3); }
+}
 .mp__chip.is-active {
 color: var(--on-accent);
 background: var(--accent);
@@ -636,7 +652,9 @@ cursor: pointer;
 min-height: var(--tap);
 position: relative;
 }
-.mp__clear:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .mp__clear:hover { background: var(--surface-3); }
+}
 .mp__clear.is-active {
 background: var(--accent-soft);
 padding: 6px 8px 6px 6px;
@@ -700,7 +718,9 @@ transition: background 80ms ease;
 min-height: var(--tap);
 position: relative;
 }
-.mp__row:hover { background: var(--surface-3); }
+@media (hover: hover) {
+  .mp__row:hover { background: var(--surface-3); }
+}
 .mp__row:active { background: var(--surface-3); }
 .mp__row.is-active {
 background: var(--accent-soft);
@@ -787,7 +807,9 @@ border-radius: var(--r-sm);
 cursor: pointer;
 transition: color 80ms ease, background 80ms ease;
 }
-.mp__pin:hover { color: var(--accent); background: var(--surface-3); }
+@media (hover: hover) {
+  .mp__pin:hover { color: var(--accent); background: var(--surface-3); }
+}
 .mp__pin[aria-pressed="true"] { color: var(--accent-hi); }
 .mp__pin:active { transform: scale(0.92); }
 /* Ghost row (active model that is no longer in the catalog) */
@@ -814,9 +836,13 @@ border-radius: var(--r-sm);
 background: var(--surface-2);
 border: 1px solid var(--border);
 }
-.mp--sheet > .mp__trigger:hover,
 .mp--sheet > .mp__trigger:active {
 border-color: var(--accent);
+}
+@media (hover: hover) {
+  .mp--sheet > .mp__trigger:hover {
+border-color: var(--accent);
+}
 }
 .mp--sheet > .mp__trigger[aria-expanded="true"] {
 border-color: var(--accent);
