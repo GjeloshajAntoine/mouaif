@@ -41,6 +41,8 @@ When the server emits a `progress_update` SSE event, the frontend renders a `.to
 
 Completed/failed statuses auto-expand the card; running cards stay collapsed.
 
+The title takes the whole head row on one line (a long title ends with an ellipsis), and a top-level progress card keeps a right-hand strip clear so the floating scroll-nav rail never covers the percentage label when the card is the latest row.
+
 When the call is made **inside a subagent run**, the frame also carries `parentCallId` (the subagent call's id). The progress bar is then drawn on the nested tool row inside that subagent card, both live and after the run settles, and no separate progress card is added. See [Subagent transcript](subagent-transcript.md#progress-inside-a-delegated-run). The status pill also shows a short progress summary (e.g. "Building project 42%").
 
 ## Notifications
