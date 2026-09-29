@@ -158,6 +158,7 @@ Kept in the repository for contributors and never published.
 
 - [Architectural decisions](decisions.md) — the numbered decision log.
 - `agent/features/<slug>.md` — implementation notes for each feature page: source files, data shapes, endpoints, and tests.
+- [Chat element mockup](agent/features/chat-element-mockup.md) — the dev-only harness that mounts every chat element from the real renderers.
 
 ## Build the documentation
 
