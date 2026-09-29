@@ -24,6 +24,25 @@ No controls are involved — the behavior is automatic while a run is in flight.
 - **Immediate completion sync** — when execution completes, the follower receives `run_end`, drops any un-finalized live bubble, resumes loading older history, and immediately reconciles the final persisted turn without waiting on background poll intervals.
 - **Seamless completion** — when execution completes, the tool card transitions to its finalized result state.
 
+## Recovery and replay
+
+- Foreground (`visibilitychange`, `pageshow`, or window focus) replaces an established local stream with a live follower and performs an immediate incremental revision sync. This detaches only the browser reader; the server keeps executing. Requests still preparing or waiting for headers are left alone. Overlapping resume events and polls are serialized.
+- Both message and reasoning deltas are broadcast to followers. One current segment snapshot is maintained even without subscribers, so the first returning page receives the full partial reply. Reconnect snapshots replace retained partial text rather than appending it twice.
+- `GET /api/chats/:id/live` accepts an optional `runId` alongside `fromLiveSeq`. The `live_subscribed` frame includes the server's run ID. A missing or different ID replays from zero and resets the client's cursor; a matching ID replays only unseen buffered events. This prevents an earlier turn's cursor from hiding a new turn's tools or approvals.
+- Recovery restores pending prompts and live replay, and keeps the running controls and send guard active until the server reports completion. Unchanged transcript rows do not imply completion, and successful synchronization resets the consecutive-failure budget so slow generation or tools cannot time out locally.
+
+Regression checks:
+
+```bash
+node scripts/test-chat-reentry.js
+node scripts/test-chat-stream-abort.js
+node scripts/test-live-subscription.js
+npm run build:web
+node scripts/test-chat-reentry-ui.mjs
+```
+
+The browser check uses a temporary API fixture and the built app at 360, 390, and 430 px. It does not restart the app server.
+
 ## Related
 
 - [Chat UI](chat-ui.md)

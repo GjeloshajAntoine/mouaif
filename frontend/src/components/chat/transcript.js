@@ -540,10 +540,8 @@ export function restoreLiveSegment(data, refs, state) {
     liveRow = refs.transcript.current.querySelector('[data-live="1"]');
   }
   if (!liveRow || !liveRow._body) return;
-  // Already streaming this segment (a delta arrived first): leave the DOM
-  // alone. Overwriting from the snapshot would drop whatever the deltas
-  // appended after the server built it.
-  if (liveRow._streaming) return;
+  // The subscription sends its snapshot BEFORE subsequent deltas. Replace
+  // retained partial text on reconnect, including tokens missed while away.
   liveRow._content = text;
   liveRow._reasoning = reasoning;
   // One render of the snapshot, then flip to append mode so the next delta
@@ -594,14 +592,13 @@ export function finalizeLiveSegment(refs, state, seq) {
 // before its `assistant_turn_end` arrived. The final persisted row comes from
 // the poll the caller kicks right after, so the un-finalized node would
 // otherwise show the turn a second time.
-export function clearLiveSegment(refs) {
+export function clearLiveSegment(refs, state, preservePendingOutput = false) {
   if (!refs.transcript.current) return;
   const liveRow = refs.transcript.current.querySelector('[data-live="1"]');
   if (liveRow && liveRow.parentNode) liveRow.remove();
-  // Drop any output still held for a card that never appeared (see
-  // bufferPendingShellOutput). The run is over, so its tool_result — the
-  // authoritative rendering — is what the poll below will draw.
-  refs._pendingShellOutput = null;
+  // A reconnect preserves chunks already consumed before their cards painted;
+  // run completion drops them because the persisted result is authoritative.
+  if (!preservePendingOutput) refs._pendingShellOutput = null;
 }
 
 // appendReasoningToLive(delta, refs, state)

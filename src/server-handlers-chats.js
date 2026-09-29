@@ -653,7 +653,10 @@ return sendJSON(res, 200, { ok: true, imported: result });
       const rk = runningKey(dir, id);
       if (!runningChats.has(rk)) return sendJSON(res, 404, { error: 'No live run for this chat', id });
       const fromLiveSeq = typeof q.fromLiveSeq === 'string' ? parseInt(q.fromLiveSeq, 10) : 0;
-      return liveChat.addSubscriber(rk, req, res, { fromLiveSeq: isFinite(fromLiveSeq) && fromLiveSeq >= 0 ? fromLiveSeq : 0 });
+      return liveChat.addSubscriber(rk, req, res, {
+      fromLiveSeq: isFinite(fromLiveSeq) && fromLiveSeq >= 0 ? fromLiveSeq : 0,
+      runId: typeof q.runId === 'string' ? q.runId : ''
+      });
     } catch (e) {
       const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500;
       return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
@@ -1249,18 +1252,17 @@ promptSize: resolvedProfileId,
       if (!streamStartedAt) streamStartedAt = Date.now();
       if (!turnStartedAt) turnStartedAt = streamStartedAt;
       assistantContent += data.delta;
-      // Keep the follower's mid-turn snapshot current (see
-      // liveChat.setSegment). Cheap — two string concats and one snapshot
-      // object — and only while someone is actually following the run.
-      if (liveChat.hasSubscribers(runKey)) liveChat.setSegment(runKey, assistantContent, assistantReasoning);
-      try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
+      // Keep one current segment even before the first follower joins.
+      // No per-token replay log: the strings are already accumulated here.
+      liveChat.setSegment(runKey, assistantContent, assistantReasoning);
+      emit(name, data);
       return;
       } else if (name === 'reasoning' && typeof data.delta === 'string') {
       if (!streamStartedAt) streamStartedAt = Date.now();
       if (!turnStartedAt) turnStartedAt = streamStartedAt;
       assistantReasoning += data.delta;
-      if (liveChat.hasSubscribers(runKey)) liveChat.setSegment(runKey, assistantContent, assistantReasoning);
-      try { res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
+      liveChat.setSegment(runKey, assistantContent, assistantReasoning);
+      emit(name, data);
       return;
       } else if (name === 'assistant_turn_end') {
         // A tool round is starting: fold the window that just ended into

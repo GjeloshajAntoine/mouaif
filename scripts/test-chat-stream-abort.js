@@ -25,7 +25,8 @@ const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/
 const chunk = source
   .slice(source.indexOf('export function abortStream('), source.indexOf('async function recoverFromDisk('))
   .replace('export async function send(', 'async function send(')
-  .replace('export function abortStream(', 'function abortStream(');
+  .replace('export function abortStream(', 'function abortStream(')
+  .replace('export function resumeRunningChat(', 'function resumeRunningChat(');
 
 let passed = 0;
 let failed = 0;
@@ -109,6 +110,7 @@ function makeContext(net) {
   }));
   vm.runInContext(chunk + '; this.send = send; this.abortStream = abortStream;', context);
   context.effects = effects;
+  context.resumeRunningChat = vm.runInContext('resumeRunningChat', context);
   return context;
 }
 
@@ -214,6 +216,26 @@ function makeRefs() {
     check('the controller is released', !state.streamAbort);
     check('the transcript is left as it was before the abort',
       state.messages.length === messagesBefore, 'messages=' + state.messages.length);
+  }
+
+  // ---- foreground handoff must not let the old reader settle the run ----
+  {
+    const context = makeContext({
+      fetch: async (url, opts) => ({ ok: true, body: { getReader: () => makeReader(opts.signal) } })
+    });
+    context.closeLive = () => {};
+    context.clearLiveSegment = () => {};
+    const state = makeState({ reconnect: { active: false }, _setRunningVisible(value) { this.visible = value; } });
+    const refs = makeRefs();
+    const pending = context.send(state, refs, { clearComposerDraft: async () => true, setImageAttachments: () => {} });
+    await new Promise((r) => setTimeout(r, 10));
+    const controller = state.streamAbort;
+    context.resumeRunningChat(state, refs);
+    await pending;
+    check('foreground handoff aborts only the client reader', controller.signal.aborted && controller.resumeFollowing);
+    check('old reader leaves follower running controls visible', state.visible === true && state.watchingRun === true);
+    check('foreground handoff does not finalize a partial assistant row', state.messages.length === 1);
+    check('foreground handoff shows no error or retry', context.effects.errorCards.length === 0 && context.effects.autoRetry === 0);
   }
 
   // ---- a chat switch is noticed even before the abort arrives ------

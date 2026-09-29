@@ -32,7 +32,7 @@ import {
 } from './meta.js';
 import { autoresize, onComposerInput, onComposerKey, clearComposerDraft, queueComposerDraftSave } from './composer.js';
 import { syncThinkingSelect, commitThinkingCustom } from './thinking.js';
-import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat, loadOlderMessages, loadAllOlderMessages, abortStream } from './stream.js';
+import { send as sendTurn, retryFailedTurn, runShellCommand, runMcpCommand, runCustomAction, runRestartCommand, startStreamRecovery, stopStreamRecovery, reconcileRunningChat, loadPendingAuthorization, cancelRunningChat, loadOlderMessages, loadAllOlderMessages, abortStream, resumeRunningChat } from './stream.js';
 import { subscribeLive, closeLive } from './live.js';
 import { addImagesFromFiles, removeImageAttachment } from './imageInput.js';
 import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.js';
@@ -1381,10 +1381,9 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
     if (!chatId || !projectDir) return undefined;
     let stopped = false;
     let timer = null;
-    // Poll cadence: 1 s while the tab is visible (the user is watching
-    // the chat, possibly following a run from another tab); 5 s while
-    // hidden — a backgrounded tab only needs eventual consistency and
-    // a per-second tick is pure battery/network cost there.
+    let inFlight = false;
+    let queued = false;
+    let resumePending = false;
     function schedule() {
       if (stopped) return;
       // Cadence:
@@ -1398,19 +1397,28 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
       let delay;
       // While recovering a dropped SSE turn, keep the same snappy 1 s
       // cadence as when following a run (recovery is a variant of that).
-      if (reconnect.current.active || watchingRun.current) delay = 1000;
-      else if (typeof document !== 'undefined' && document.visibilityState === 'hidden') delay = 6000;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') delay = 6000;
+      else if (reconnect.current.active || watchingRun.current) delay = 1000;
       else delay = 3000;
-      timer = setTimeout(tick, delay);
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(tick, queued ? 0 : delay);
     }
     async function tick() {
-      if (stopped) return;
-      // Recovery syncs while `streaming` stays true (the local SSE died
-      // but the turn is still in flight server-side); the idle reconcile
-      // must NOT run over an active SSE. So: reconcile when recovering,
-      // or when idle (not streaming).
+    if (stopped) return;
+    timer = null;
+    if (inFlight) { queued = true; return; }
+    inFlight = true;
+    queued = false;
+    try {
+      if (resumePending) {
+      resumePending = false;
+      resumeRunningChat(state, refs);
+      }
       if (reconnect.current.active || !streaming.current) await reconcileRunningChat(state, refs);
+    } finally {
+      inFlight = false;
       schedule();
+    }
     }
     // Expose a way for stream recovery to kick the poll immediately (it
     // may be parked at the idle 3 s/6 s interval). Reset any pending
@@ -1421,8 +1429,9 @@ useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
       tick();
     };
     function resumeNow() {
-      if (stopped) return;
-      if (timer) clearTimeout(timer);
+    if (stopped) return;
+    resumePending = true;
+    if (timer) clearTimeout(timer);
       // Queue rather than calling tick directly so pageshow, focus, and
       // visibilitychange emitted in the same resume collapse to one sync.
       timer = setTimeout(tick, 0);

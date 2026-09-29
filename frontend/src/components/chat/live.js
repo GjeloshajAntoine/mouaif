@@ -63,7 +63,8 @@ export function subscribeLive(state, refs) {
   setLiveRunState(state, key, { active: true, connected: false, ended: false, failed: false });
   const fromLiveSeq = Number.isFinite(state.nextLiveSeq) ? state.nextLiveSeq : 0;
 
-  fetch('/api/chats/' + encodeURIComponent(chatId) + '/live?projectDir=' + encodeURIComponent(projectDir) + '&fromLiveSeq=' + fromLiveSeq, {
+  fetch('/api/chats/' + encodeURIComponent(chatId) + '/live?projectDir=' + encodeURIComponent(projectDir)
+    + '&fromLiveSeq=' + fromLiveSeq + '&runId=' + encodeURIComponent(state.liveRunId || ''), {
     signal: ctl.signal
   }).then((resp) => {
     if (!ownsSubscription()) return null;
@@ -166,13 +167,21 @@ function dispatchLiveEvent(ev, refs, state, key) {
   let data = null;
   try { data = JSON.parse(ev.data || 'null'); } catch { return; }
   if (!data || typeof data !== 'object') return;
+  if (ev.eventName === 'live_subscribed') {
+    if (typeof data.runId === 'string' && data.runId !== state.liveRunId) {
+      state.liveRunId = data.runId;
+      state.nextLiveSeq = 0;
+      state.runSettled = false;
+      clearLiveSegment(refs, state);
+    }
+    return;
+  }
   const liveSeq = typeof data.liveSeq === 'number' ? data.liveSeq : null;
   if (liveSeq != null) {
     if (liveSeq < (state.nextLiveSeq || 0)) return;
     state.nextLiveSeq = liveSeq + 1;
   }
   const { projectDir, chatId } = state.props;
-  if (ev.eventName === 'live_subscribed') return;
   // Assistant text deltas. Not buffered server-side (a turn emits one per
   // token), so these carry no liveSeq and never advance the replay cursor —
   // the cursor must stay comparable with the buffered events it gates.

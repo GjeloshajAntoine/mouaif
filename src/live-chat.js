@@ -8,6 +8,7 @@
 // uses a separate `liveSeq` cursor for transient events so a reconnect can
 // replay only the live chunks the client has not consumed yet.
 
+const { randomUUID } = require('node:crypto');
 const runs = new Map();
 
 function sseFrame(name, data) {
@@ -17,7 +18,7 @@ function sseFrame(name, data) {
 function ensureLiveChat(runKey) {
   let r = runs.get(runKey);
   if (!r) {
-    r = { nextLiveSeq: 0, buffer: [], subscribers: new Set(), segment: { text: '', reasoning: '' } };
+    r = { runId: randomUUID(), nextLiveSeq: 0, buffer: [], subscribers: new Set(), segment: { text: '', reasoning: '' } };
     runs.set(runKey, r);
   }
   return r;
@@ -106,10 +107,8 @@ function pushTransient(runKey, name, data) {
 
 // hasSubscribers(runKey) -> bool
 //
-// Whether anyone is currently following this run. The text-delta path uses it
-// to skip maintaining the mid-turn snapshot when no follower exists — the
-// common case (the sending tab is on the primary SSE socket, not the live
-// stream), so the snapshot costs nothing on an ordinary turn.
+// Whether anyone is currently following this run. Segment snapshots are
+// maintained regardless, so the first follower can catch up mid-reply.
 function hasSubscribers(runKey) {
   const r = runs.get(runKey);
   return !!(r && r.subscribers.size);
@@ -171,7 +170,8 @@ function pruneLive(runKey, toolId) {
 
 function addSubscriber(runKey, req, res, options) {
   const r = ensureLiveChat(runKey);
-  const fromLiveSeq = options && Number.isFinite(options.fromLiveSeq) ? options.fromLiveSeq : 0;
+  const sameRun = !options || options.runId === undefined || options.runId === r.runId;
+  const fromLiveSeq = sameRun && options && Number.isFinite(options.fromLiveSeq) ? options.fromLiveSeq : 0;
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -179,6 +179,7 @@ function addSubscriber(runKey, req, res, options) {
   });
   const replay = r.buffer.filter((e) => e.liveSeq >= fromLiveSeq);
   res.write(sseFrame('live_subscribed', {
+    runId: r.runId,
     count: replay.length,
     nextLiveSeq: r.nextLiveSeq,
     fromLiveSeq

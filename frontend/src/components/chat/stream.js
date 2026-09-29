@@ -25,7 +25,8 @@ syncTranscriptAppend,
 updateProgressCard,
 prependOlderTranscript,
 cancelTranscriptRender,
-whenTranscriptSettled
+whenTranscriptSettled,
+clearLiveSegment
 } from './transcript.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
@@ -33,7 +34,7 @@ import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
 import { normalizeToolName, parseAtInvocation, findCustomActionInvocation, buildDirectMcpCall, parseDirectRestartInvocation, parseToolArgs } from './tools.js';
 import { saveComposerDraftNow } from './composer.js';
-import { subscribeLive } from './live.js';
+import { subscribeLive, closeLive } from './live.js';
 import { mergeServerRows, nextServerMessageIndex, tailSyncDomAction } from './msgMerge.js';
 import { toPublicImageAttachments } from './annotation.js';
 import { mountOverlayCard } from './overlay.js';
@@ -797,6 +798,24 @@ export function abortStream(state) {
   return true;
 }
 
+// Foreground handoff: replace a possibly stalled owner/follower socket with
+// a replay subscription. Never abort a request still preparing/awaiting headers.
+// Aborting this reader does not cancel the server-owned run.
+export function resumeRunningChat(state, refs) {
+  const controller = state.streamAbort;
+  if (state.streaming && !state.reconnect.active && !(controller && controller.readerReady)) return;
+  if (controller && controller.readerReady) {
+    controller.resumeFollowing = true;
+    state.streamAbort = null;
+    controller.abort();
+    state.streaming = false;
+    state.watchingRun = true; // keep sends blocked during the revision request
+  }
+  closeLive(state);
+  clearLiveSegment(refs, state, true);
+  state.runSettled = false;
+}
+
 export async function send(state, refs, options) {
 const { content, attachments, clearComposerDraft, setImageAttachments, retry, manualRetry } = options || {};
 const { projectDir, chatId } = state.props;
@@ -1057,6 +1076,7 @@ state.messages = state.messages.filter((m) => m !== userMsg);
     return;
   }
   const reader = resp.body.getReader();
+  streamAbort.readerReady = true;
   const decoder = new TextDecoder('utf-8');
   let buf = '', assembled = '', reasoning = '';
   let usage = null;
@@ -1410,15 +1430,15 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
       break;
       }
       const { value, done } = await reader.read();
-      if (done) break;
+      if (done || streamAbort.signal.aborted) break;
       buf += decoder.decode(value, { stream: true });
       let idx;
       while ((idx = buf.indexOf('\n\n')) !== -1) {
-        const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
-        const ev = parseSSEFrame(frame); if (!ev) continue;
-        let data; try { data = JSON.parse(ev.data); } catch { continue; }
-        try {
-          handleStreamEvent(ev, data);
+      const frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      const ev = parseSSEFrame(frame); if (!ev) continue;
+      let data; try { data = JSON.parse(ev.data); } catch { continue; }
+      try {
+      handleStreamEvent(ev, data);
         } catch (eventError) {
           // A rendering failure in one tool card must not cancel
           // the network reader: the model may still be producing
@@ -1457,6 +1477,9 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
     // belongs to is no longer mounted. Hand the flags back so the chat the
     // user moved to does not start out stuck on "streaming…".
     counter.reset();
+    // A foreground handoff already transferred the flags to the follower.
+    // Its old reader must not unlock sending or hide the new running state.
+    if (streamAbort.resumeFollowing) return;
     state.streaming = false;
     if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
     return;
@@ -1465,7 +1488,7 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
     // The SSE socket dropped mid-turn, but the server-side agent
     // may still be appending to the persisted transcript. Hand the
     // partial turn over to a backoff poll that syncs from disk.
-    finalizeLiveMessage({ content: assembled, reasoning }, refs);
+    clearLiveSegment(refs, state, true);
     counter.reset();
     startStreamRecovery(state, refs, assembled);
     return;
@@ -1527,11 +1550,8 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
 }
 
 // recoverFromDisk — one recovery sync for a dropped local SSE turn.
-// Polls the authoritative transcript (server keeps writing the run to
-// disk while we were disconnected) with attempt-based backoff, collapsing
-// the old self-timer recovery into the single shared poll. Returns true
-// while still recovering, false once recovered (or failed) so the poll
-// drops back to its idle cadence.
+// Reattach live replay and pending prompts while the server owns the run.
+// Only consecutive failed requests exhaust recovery; silence is not completion.
 async function recoverFromDisk(state, refs) {
   const { projectDir, chatId } = state.props;
   const st = state.reconnect;
@@ -1549,18 +1569,21 @@ async function recoverFromDisk(state, refs) {
     if (st.attempts < 6) return true;
     return finishRecovery(state, refs, 'could not reconnect — tap to retry', true);
   }
-  if (applied !== 'stable') {
-    st.stableTicks = 0;
-    setChatStatus(refs, 'reconnected — syncing…', 'busy');
-    return true;
+  st.attempts = 0;
+  if (!run.running) {
+    closeLive(state);
+    clearLiveSegment(refs, state);
+    state.pendingAuthCount = 0;
+    state.watchingRun = false;
+    removePendingAuthorizationCards(refs);
+    const result = finishRecovery(state, refs, null, false);
+    if (typeof state._drainOlderMessages === 'function') state._drainOlderMessages();
+    return result;
   }
-
-  const last = state.messages[state.messages.length - 1];
-  const midTool = last && last.role === 'tool' && last.phase === 'call';
-  st.stableTicks = (st.stableTicks || 0) + 1;
-  if (!run.running && !midTool) return finishRecovery(state, refs, null, false);
-  if (!midTool && st.stableTicks >= 2) return finishRecovery(state, refs, null, false);
-  if (st.attempts >= 8) return finishRecovery(state, refs, 'reconnect timed out — pull to retry', true);
+  state.runSettled = false;
+  state.pendingAuthCount = await loadPendingAuthorization(state, refs);
+  subscribeLive(state, refs);
+  setChatStatus(refs, state.pendingAuthCount > 0 ? 'waiting for you…' : 'reconnected — following…', 'busy');
   return true;
 }
 
@@ -1597,53 +1620,18 @@ export async function reconcileRunningChat(state, refs) {
     const rev = await fetchRunState(projectDir, chatId);
     if (!rev) return;
     const running = !!rev.running;
-    const prevWatching = state.watchingRun;
-    const applied = await syncToNextSeq(state, refs, rev.nextSeq);
-    const moved = applied && applied !== 'stable';
-    if (moved && state.runSettled) state.runSettled = false;
+    await syncToNextSeq(state, refs, rev.nextSeq);
 
     if (running) {
-      const liveKey = projectDir + '::' + chatId;
-      subscribeLive(state, refs);
-      const liveState = state.liveRun && state.liveRun.key === liveKey ? state.liveRun : null;
-      const liveConnected = !!(liveState && (liveState.active || liveState.connected) && !liveState.ended && !liveState.failed);
-      const last = state.messages[state.messages.length - 1];
-      const midTool = last && last.role === 'tool' && last.phase === 'call';
-      const stable = !moved && !midTool && state.messages.length > 0 && !liveConnected;
-// Even a locally settled run must re-check the pending queue. The page can
-// remain open in the background after the stable-tick guard latches; if an
-// authorization request arrives later, returning to the same hash does not
-// remount ChatView. Checking before the settled early-return lets the prompt
-// clear the latch and become actionable immediately.
-if (!prevWatching || moved || stable || state.pendingAuthCount > 0 || state.runSettled) {
-state.pendingAuthCount = await loadPendingAuthorization(state, refs);
-}
-if (state.pendingAuthCount > 0) state.runSettled = false;
-if (state.runSettled) {
-state.watchingRun = false;
-state.watchingStableTicks = 0;
-if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
-return;
-}
-state.watchingRun = true;
-if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
-if (state.pendingAuthCount > 0) {
-        state.watchingStableTicks = 0;
-        setChatStatus(refs, 'waiting for you…', 'busy');
-      } else if (stable) {
-        setChatStatus(refs, 'streaming…', 'busy');
-        state.watchingStableTicks = (state.watchingStableTicks || 0) + 1;
-        if (state.watchingStableTicks >= 2) {
-          state.watchingRun = false;
-          state.watchingStableTicks = 0;
-          state.runSettled = true;
-          if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
-          setChatStatus(refs, 'done', 'success');
-        }
-      } else {
-        setChatStatus(refs, 'streaming…', 'busy');
-        state.watchingStableTicks = 0;
-      }
+    // Persisted rows may remain unchanged throughout thinking, a slow tool,
+    // or an approval. The server's running flag, not stable ticks, owns busy.
+    state.runSettled = false;
+    state.watchingRun = true;
+    state.watchingStableTicks = 0;
+    if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
+    state.pendingAuthCount = await loadPendingAuthorization(state, refs);
+    subscribeLive(state, refs);
+    setChatStatus(refs, state.pendingAuthCount > 0 ? 'waiting for you…' : 'streaming…', 'busy');
       } else if (state.watchingRun) {
       state.pendingAuthCount = 0;
       state.watchingRun = false;

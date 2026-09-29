@@ -184,7 +184,7 @@ function transientTest() {
   liveChat.addSubscriber(rk, null, sub4);
   t('an empty segment is not handed over', !collectFrames(sub4).some((f) => f.name === 'live_segment'));
 
-  // hasSubscribers gates the per-delta snapshot maintenance.
+  // Subscriber presence is exposed independently of snapshot maintenance.
   liveChat.finishLiveChat(rk);
   t('hasSubscribers is false with no run entry', liveChat.hasSubscribers(rk) === false);
   liveChat.ensureLiveChat(rk);
@@ -268,11 +268,11 @@ function clientHandlerTest() {
   t('the owner SSE path does not append its own live deltas', !streamSrc.includes('appendDeltaToLive(data.delta, refs, state, true)'));
 
   // The server must broadcast deltas transiently (no buffer) and keep the
-  // segment snapshot current only while someone follows.
+  // segment snapshot current even before the first follower joins.
   const serverSrc = fs.readFileSync(path.join(__dirname, '../src/server-handlers-chats.js'), 'utf8');
   t('server broadcasts message deltas transiently', serverSrc.includes("liveChat.pushTransient(runKey, name, data)"));
   t('server broadcasts the segment boundary with a seq', serverSrc.includes('seq: assistantSegmentSeq'));
-  t('server maintains the segment snapshot only with subscribers', serverSrc.includes('if (liveChat.hasSubscribers(runKey)) liveChat.setSegment('));
+  t('server maintains the segment snapshot before a follower joins', serverSrc.includes('liveChat.setSegment(runKey, assistantContent, assistantReasoning)') && !serverSrc.includes('if (liveChat.hasSubscribers(runKey)) liveChat.setSegment('));
 }
 
 // ---- HTTP: GET /api/chats/:id/live -------------------------------------
