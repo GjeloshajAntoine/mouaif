@@ -804,9 +804,11 @@ const { projectDir, chatId } = state.props;
   const c = state.chat || {};
   const modelId = c.modelId || '';
   const providerId = c.providerId || '';
-  const text = (content != null ? content : (refs.promptInput.current.value || '')).trim();
+  const composerAtSend = refs.promptInput.current ? refs.promptInput.current.value : '';
+  const text = (content != null ? content : composerAtSend).trim();
 const localAtts = attachments || state.imageAttachments;
 const atts = toPublicImageAttachments(localAtts);
+const composerAttachmentsAtSend = Array.isArray(state.imageAttachments) ? state.imageAttachments.slice() : [];
 if (!text && !atts.length) {
 if (refs.status.current) refs.status.current.textContent = 'type something or add an image';
 return;
@@ -918,6 +920,26 @@ if (customAction) return runCustomAction(customAction, state, refs);
     if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
     setChatStatus(refs, 'Could not prepare message — your draft is unchanged. Try sending again.', 'error');
     return;
+  }
+  if (!retry) {
+    const currentAttachments = Array.isArray(state.imageAttachments) ? state.imageAttachments : [];
+    const draftChanged = (refs.promptInput.current && refs.promptInput.current.value !== composerAtSend)
+      || currentAttachments.length !== composerAttachmentsAtSend.length
+      || currentAttachments.some((item, index) => item !== composerAttachmentsAtSend[index]);
+    if (draftChanged) {
+      // Preparation cleared the persisted draft, not the editable composer.
+      // Do not submit an outdated snapshot or erase edits made during the await.
+      if (state._updateChat) {
+        saveComposerDraftNow(refs.promptInput.current ? refs.promptInput.current.value : '', refs, state._updateChat, {
+          draftAttachments: toPublicImageAttachments(currentAttachments)
+        }).catch(() => {});
+      }
+      state.streaming = false;
+      if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
+      if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
+      setChatStatus(refs, 'Draft changed while preparing — nothing sent. Send again when ready.', 'busy');
+      return;
+    }
   }
   setChatStatus(refs, 'streaming…', 'busy');
 if (!retry) {
