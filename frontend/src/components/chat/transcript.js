@@ -673,6 +673,9 @@ function shortToolText(text, max) {
 // rows truncate the same call at the same length. The value lives in
 // tools.js, next to formatToolArgsFull — the full form the expanded card
 // renders — so the two halves of the truncation rule cannot drift.
+//
+// The head also keeps the untruncated text on `title` (see finishToolCardHead),
+// so a task clipped by the row width can still be read in full.
 
 // buildSubagentToolRow(name, id, argsText, argsObj)
 //
@@ -929,7 +932,12 @@ function finishToolCardHead(head, toolName, args, pillClass, pillText, resultSum
     const argsEl = document.createElement('pre');
     argsEl.className = 'tool-card__args';
     argsEl.textContent = shortToolText(argText, TOOL_ARGS_PREVIEW_CHARS);
-    if (argsEl.textContent !== argText) argsEl.title = argText;
+    // Keep the full text on the element whenever it may not be fully
+    // visible: the character budget above, or — on a subagent head, which
+    // carries an agent chip and a cost beside the task — the row width,
+    // which the budget cannot predict. A clipped task then still reads in
+    // full on hover / long-press.
+    if (argsEl.textContent !== argText || isSubagentTool(toolName)) argsEl.title = argText;
     head.appendChild(argsEl);
   }
   // Collapsed result-summary: shown only when the card is a finished

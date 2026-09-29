@@ -103,6 +103,28 @@ Regression test: `scripts/test-subagent-card-cost.js`.
 3. Read the delegated conversation top to bottom: the subagent's prompt (already expanded — see below), the delegated task, its tool calls, and its final answer.
 4. To see which agent ran, read the chip in the head or the nested system row's role label.
 
+## The head shows the task and the agent in full
+
+The subagent head is one row: chevron · `Subagent` · agent chip · task · cost
+· status dot. The task is the part that gives up room, and the two pieces that
+identify the run never truncate:
+
+- **The task stays on one line**, clipped by the row width like every other
+  tool card, with the full text kept on the element's `title` (hover /
+  long-press), instead of reading `Read src/index.js and report the…` with no
+  way to recover the rest.
+- **The agent chip is never truncated** — it is the only place the dispatched
+  agent's name appears, so a clipped `revie…` chip makes an `@reviewer`
+  dispatch unreadable. It may use the full head width and never shrinks away.
+- **The cost is never truncated** either — it is the running figure the user
+  is watching, and it never shrinks or ellipsizes.
+
+Implementation notes: `.tool-card--subagent .tool-card__head .tool-card__agent`
+and `… .tool-card__cost` take `flex: 0 0 auto`, and the cost also clears the
+shared `overflow: hidden` / `text-overflow: ellipsis`. The task keeps the
+generic single-line rules, so no expand-state override is needed. Regression
+test: `scripts/test-subagent-head-wrap.js`.
+
 ## Expand and collapse
 
 - **A settled card opens itself.** `appendToolResultCard` leaves a successful `subagent` card `is-expanded` (unless the user collapsed it), because the nested transcript IS its body — a collapsed card would render as a bare `Subagent · task · ok` header with the conversation hidden behind an undiscoverable tap.
