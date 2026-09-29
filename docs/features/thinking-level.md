@@ -56,7 +56,7 @@ When the provider reports a `levels` descriptor, its level list replaces the Low
 
 ### Custom values
 
-For `levels` and `budget` models, select "Custom…" from the dropdown to reveal a text input. Type any value and press Enter or blur the field. The value is saved immediately.
+For `levels` and `budget` models, select "Custom…" from the dropdown to reveal a full-width text input below the model controls. The field has a mobile-sized touch target and text that avoids automatic iOS input zoom. Type any value and press Enter or blur the field. The value is saved immediately. You can edit a saved custom value directly; background model-list refreshes preserve your draft instead of restoring the previous value.
 
 - For Anthropic and Gemini, a numeric string is parsed as the token budget. Anthropic caps at 100000 and raises `max_tokens` to at least `budget_tokens + 256`.
 - For OpenAI-compatible providers, the value is passed as-is as `reasoning_effort`.

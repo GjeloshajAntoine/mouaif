@@ -203,13 +203,14 @@ padding: 0 16px 0 8px;
   outline: none;
 }
 .chat-view__thinking-custom {
-flex: 0 1 auto;
-max-width: 90px;
-/* Kept in step with the select above: same row, same reason. */
-height: 26px;
-min-height: 26px;
-padding: 0 6px;
-  font-size: 0.72rem;
+/* Custom entry gets its own row instead of squeezing the model picker.
+   A full-size field is also usable with the mobile keyboard open. */
+flex: 1 1 100%;
+width: 100%;
+min-width: 0;
+min-height: var(--tap);
+padding: 0.5rem;
+  font-size: 1rem;
   color: var(--fg);
   background: var(--surface-2);
   border: 1px solid var(--border);

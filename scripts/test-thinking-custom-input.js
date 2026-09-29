@@ -134,6 +134,39 @@ const stateWith = (thinkingLevel) => ({
     check('a stored free-form number shows Custom…', refs._sel.value === '__custom__');
   }
 
+  // ---- editing a saved custom budget survives catalog refresh ------
+  {
+    const refs = refsFor();
+    const state = stateWith('4096');
+    syncThinkingSelect(refs, state);
+    setThinkingCustomOpen(refs, true);
+    refs._custom.value = '8192';
+    syncThinkingSelect(refs, state);
+    check('refresh preserves edits to a saved custom value', refs._custom.value === '8192');
+    refs._custom.value = '';
+    syncThinkingSelect(refs, state);
+    check('refresh preserves clearing a saved custom value', refs._custom.value === '');
+    check('editing a saved custom value stays visible', refs._custom.hidden === false);
+    commitThinkingCustom(refs);
+    state.chat.thinkingLevel = '8192';
+    syncThinkingSelect(refs, state);
+    check('the edited custom value reconciles after commit', refs._custom.value === '8192');
+  }
+
+  // The visible saved field must start a new draft when edited. Exercise
+  // the actual JSX handler without mounting the rest of the chat view.
+  {
+    const fs = require('node:fs');
+    const vm = require('node:vm');
+    const source = fs.readFileSync('frontend/src/components/chat/Chat.jsx', 'utf8');
+    const handler = source.match(/'aria-label': 'Custom thinking level',\s*onInput: \(\) => \{([\s\S]*?)\n        \},/);
+    assert.ok(handler, 'custom field has an input handler');
+    const s = { refs: refsFor(), state: stateWith('4096') };
+    vm.runInNewContext(handler[1], { s });
+    check('editing a saved field starts a new custom draft', thinkingCustomOpen(s.refs));
+    check('sending an edited field reads its draft', s.state.thinkingLevel === '__custom__');
+  }
+
   // ---- a committed KNOWN level closes the field --------------------
   {
     const refs = refsFor();

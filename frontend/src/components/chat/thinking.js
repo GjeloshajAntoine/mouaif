@@ -141,6 +141,13 @@ export function syncThinkingSelect(refs, state) {
   }
 
   const custom = refs.thinkingLevelCustom && refs.thinkingLevelCustom.current;
+  // Do not restore a saved custom value over an in-progress draft.
+  // Catalog refreshes can arrive while an existing budget is being edited.
+  if (thinkingCustomOpen(refs) && opts.some((o) => o.value === '__custom__')) {
+    sel.value = '__custom__';
+    if (custom) custom.hidden = false;
+    return;
+  }
   const inOpts = opts.some((o) => o.value === tlVal);
   if (inOpts) {
     sel.value = tlVal;
@@ -161,12 +168,5 @@ export function syncThinkingSelect(refs, state) {
   } else {
     sel.value = '';
     if (custom) custom.hidden = true;
-  }
-  // An entry in progress outranks everything reconciled above: the user
-  // is typing a value that is not stored yet, so a re-sync must leave
-  // the sentinel selected and the field visible (and keep the focus).
-  if (thinkingCustomOpen(refs) && opts.some((o) => o.value === '__custom__')) {
-    sel.value = '__custom__';
-    if (custom) custom.hidden = false;
   }
 }

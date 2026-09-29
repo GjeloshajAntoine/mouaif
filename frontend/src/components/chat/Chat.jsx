@@ -458,6 +458,12 @@ setPreviewPromptOpen(false);
         hidden: true,
         placeholder: 'e.g. 4096, minimal, low, high',
         'aria-label': 'Custom thinking level',
+        onInput: () => {
+        // A saved custom value remains visible after commit. Editing it
+        // starts a new draft, which must survive refresh and save on blur.
+        s.refs._thinkingCustomOpen = true;
+        s.state.thinkingLevel = '__custom__';
+        },
         onBlur: (e) => {
           // A blur is not a dismissal: tapping the composer, the
           // keyboard opening and the closing native picker all fire
