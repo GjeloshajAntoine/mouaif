@@ -72,6 +72,7 @@ async function checkDraftCleanup() {
   assert.equal(credit, 1);
   assert.equal(picker, 1);
   assert.equal(meta, 1);
+  response.body.chat.trace = true;
   await context.save({ draft: 'saved', trace: true });
   assert.equal(credit, 2);
   console.log('PASS model changes and mixed metadata patches retain normal refresh behavior');
@@ -81,4 +82,74 @@ async function checkDraftCleanup() {
   assert.equal(state.chat, previous);
   assert.equal(credit, 2);
   console.log('PASS rejected draft saves preserve state and report failure');
+
+  // Use deferred responses to exercise the production PATCH queue.
+  const pending = [];
+  const orderedState = {
+    props: { projectDir: '/test', chatId: 'test' },
+    chat: { providerId: 'p', modelId: 'initial', thinkingLevel: 'high' },
+    _persistedModelPair: 'p|initial'
+  };
+  let refreshes = 0;
+  const ordered = vm.createContext({
+    projectDir: '/test', chatId: 'test', state: orderedState, refs: {}, status: { current: {} },
+    useCallback: (fn) => fn, toPublicImageAttachments: (items) => items,
+    fetchJson: (url, options) => new Promise((resolve, reject) => {
+      pending.push({ patch: JSON.parse(options.body), resolve, reject });
+    }),
+    updateMetaLine() {}, refreshProviderCredit() {}, syncPickerState() { refreshes++; }
+  });
+  vm.runInContext(source.slice(start, end) + '; this.save = updateChatBound;', ordered);
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  const reply = (index, chat) => pending[index].resolve({ status: 200, body: { chat } });
+  const first = ordered.save({ providerId: 'p', modelId: 'first' });
+  orderedState.chat.modelId = 'second';
+  const second = ordered.save({ providerId: 'p', modelId: 'second' });
+  await flush();
+  assert.equal(pending.length, 1, 'second model write waits for the first');
+  reply(0, { providerId: 'p', modelId: 'first', thinkingLevel: 'low' });
+  await first;
+  assert.equal(orderedState.chat.modelId, 'second', 'old echo cannot replace the optimistic choice');
+  assert.equal(refreshes, 0);
+  await flush();
+  assert.equal(pending.length, 2);
+  reply(1, { providerId: 'p', modelId: 'second', thinkingLevel: 'low' });
+  await second;
+  assert.equal(orderedState.chat.modelId, 'second');
+  assert.equal(orderedState.chat.thinkingLevel, 'high', 'model echo cannot reset unrelated metadata');
+  assert.equal(orderedState._persistedModelPair, 'p|second');
+  console.log('PASS model writes are ordered and old echoes cannot revert newer or unrelated choices');
+
+  const thinking = ordered.save({ thinkingLevel: 'medium' });
+  await flush();
+  reply(2, { providerId: 'p', modelId: 'initial', thinkingLevel: 'medium' });
+  await thinking;
+  assert.equal(orderedState.chat.modelId, 'second');
+  assert.equal(orderedState._persistedModelPair, 'p|second');
+  assert.equal(orderedState.chat.thinkingLevel, 'medium');
+
+  const failed = ordered.save({ trace: true });
+  const afterFailure = ordered.save({ draft: 'new draft' });
+  await flush();
+  pending[3].reject(new Error('offline'));
+  await assert.rejects(failed, /offline/);
+  await flush();
+  reply(4, { draft: 'new draft', modelId: 'initial' });
+  assert.equal(await afterFailure, true);
+  assert.equal(orderedState.chat.draft, 'new draft');
+  assert.equal(orderedState.chat.modelId, 'second');
+  console.log('PASS unrelated metadata and draft saves preserve model choice; network failures release the queue');
+
+  const prompt = ordered.save({ promptId: 'preset' });
+  await flush();
+  reply(5, { promptId: 'preset', promptSnapshot: { content: 'pinned' }, modelId: 'initial' });
+  await prompt;
+  assert.equal(orderedState.chat.promptSnapshot.content, 'pinned');
+  const switched = ordered.save({ modelId: 'late' });
+  await flush();
+  orderedState.props = { projectDir: '/test', chatId: 'other' };
+  reply(6, { modelId: 'late' });
+  await switched;
+  assert.equal(orderedState.chat.modelId, 'second');
+  console.log('PASS prompt snapshots follow prompt writes and acknowledgements stay in their original chat');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

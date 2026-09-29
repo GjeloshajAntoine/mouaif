@@ -476,11 +476,25 @@ draftAttachments: Array.isArray(draftAttachments) && draftAttachments.length ? d
     if (Object.prototype.hasOwnProperty.call(safePatch, 'draftAttachments') && Array.isArray(safePatch.draftAttachments)) {
       safePatch.draftAttachments = toPublicImageAttachments(safePatch.draftAttachments);
     }
-    const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ projectDir }, safePatch))
-    });
+    // Keep writes in invocation order on the server as well as in the UI.
+    // A field's older echo cannot replace a newer optimistic choice, even
+    // when the newer PATCH is still waiting in this queue.
+    let session = state._chatSaveSession;
+    if (!session || session.projectDir !== projectDir || session.chatId !== chatId) {
+    session = { projectDir, chatId, tail: Promise.resolve(), seq: 0, latest: new Map() };
+    state._chatSaveSession = session;
+    }
+    const patchKeys = Object.keys(safePatch);
+    const responseKeys = patchKeys.includes('promptId') ? patchKeys.concat('promptSnapshot') : patchKeys;
+    const ticket = ++session.seq;
+    for (const key of responseKeys) session.latest.set(key, ticket);
+    const request = session.tail.then(() => fetchJson('/api/chats/' + encodeURIComponent(chatId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ projectDir }, safePatch))
+    }));
+    session.tail = request.catch(() => {});
+    const r = await request;
     // Persist to the original chat, but never apply a late acknowledgement
     // (including a queued skill save) to the chat now mounted in this hook.
     if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) return r.status === 200;
@@ -488,19 +502,21 @@ draftAttachments: Array.isArray(draftAttachments) && draftAttachments.length ? d
     if (status.current) status.current.textContent = 'HTTP ' + r.status;
     return false;
     }
-    const patchKeys = Object.keys(safePatch);
-    const draftOnly = patchKeys.length > 0 && patchKeys.every((key) => key === 'draft' || key === 'draftAttachments');
-    if (draftOnly) {
-      // Draft acknowledgements are not a fresh metadata snapshot. In
-      // particular, a slow autosave must not replace an optimistic model
-      // choice or rebuild the picker / fetch provider credit while typing.
-      const draftFields = {};
-      for (const key of patchKeys) draftFields[key] = r.body.chat[key];
-      state.chat = Object.assign({}, state.chat, draftFields);
-      return true;
+    // The response contains the entire chat, but it acknowledges only the
+    // fields we wrote. Unrelated metadata can contain older model/draft data.
+    const acknowledged = {};
+    for (const key of responseKeys) {
+    if (session.latest.get(key) === ticket && Object.prototype.hasOwnProperty.call(r.body.chat, key)) {
+      acknowledged[key] = r.body.chat[key];
     }
-    state.chat = r.body.chat;
+    }
+    const acknowledgedKeys = Object.keys(acknowledged);
+    if (!acknowledgedKeys.length) return true;
+    state.chat = Object.assign({}, state.chat, acknowledged);
+    if (acknowledgedKeys.every((key) => key === 'draft' || key === 'draftAttachments')) return true;
+    if (acknowledgedKeys.includes('providerId') || acknowledgedKeys.includes('modelId')) {
     state._persistedModelPair = (r.body.chat.providerId || '') + '|' + (r.body.chat.modelId || '');
+    }
     updateMetaLine(refs, state);
     refreshProviderCredit(state, refs);
     syncPickerState();
