@@ -98,11 +98,11 @@ The bar is adapted to the device that receives it: **every phone size**, the **n
 
 The same table bounds a measured value that is implausibly far from what the platform expects at the reported viewport, so a broken measurement cannot produce a bar that overflows the notification card. A device that reports nothing at all is treated as a phone on an unknown platform: one body line, conservative width.
 
-**Everything else rides the body, under the bar.** The notification title is always just the chat name — the slot the OS clips first — so the status facts live in the body, where a wider/taller device simply shows more of them. Each fact is a tier, added top-down while it fits the surface's width **and** height:
+**Everything else rides the body, under the bar.** The notification title is always just the chat name — the slot the OS clips first — so the status facts live in the body. A progress update without a message uses its operation title; task updates use that title instead of generic counts or "Task complete". Failed operations are labelled **Failed** and show an unlabelled empty bar; completed operations are labelled **Completed** and show 100%, even if their counters lag behind. Each fact is a tier, added top-down while it fits the surface's width **and** height:
 
 | Order | Fact | Example |
 |-------|------|---------|
-| 1 | Running message | `Refactoring the composer` |
+| 1 | Running message, or operation title when no useful message exists | `Refactoring the composer` |
 | 2 | Position in the work | `2 of 5` |
 | 3 | Turn usage | `12.4K tok · $0.0312` |
 | 4 | Elapsed time | `12s` |
@@ -111,7 +111,7 @@ The same table bounds a measured value that is implausibly far from what the pla
 
 The turn usage row is the sum over every upstream round of the turn (tool rounds included): each round's prompt plus completion tokens, and its cost when pricing is known. A round is counted once, when its stream ends. Mid-round usage snapshots (Anthropic sends one per `message_delta`) are never added, so a round with many output deltas does not inflate the count.
 
-A one-line surface keeps the bar and its single most important fact; a preview-sized one shows the top three; an expanded notification shows all six. Missing facts simply do not appear, so a plain model round shows only the model and no tool. A slot that would wrap is dropped rather than wrapped, and a path or model id that has to be clipped keeps its tail (`...transcript.js`) rather than its prefix. A fact never appears twice: the `task` tool sends `message: '2 of 5'` alongside `current`/`total`, and the counts tier derives the same string, so a row identical to one already in the block is skipped. A completion replaces the counts row (the position is no longer the news), and an error keeps its message plus whatever context the turn had reached.
+A one-line surface keeps the bar and its single most important fact. A two-line preview shows the bar plus one fact — the bar counts toward the total line budget, rather than adding hidden detail rows. Expanded cards add lower-priority facts only within the OS height budget, up to six detail rows. Missing facts simply do not appear. Messages and errors preserve their beginning when clipped so a path cannot hide the status; path or model-id facts retain their identifying tail (`...transcript.js`). A fact never appears twice. A completed operation omits redundant counts, and an error keeps its message plus whatever context the turn had reached. The server captures that context when the event arrives, so deferred per-device rendering cannot lose it after the turn resets.
 
 The notification title carries the chat name and does not change with the device.
 
@@ -120,8 +120,6 @@ Every status shares one shape. A two-line surface:
 ```text
 [####------] 40%
 Refactoring the composer
-2 of 5
-12.4K tok · $0.0312
 ```
 
 A one-line surface, where the bar shares its row:

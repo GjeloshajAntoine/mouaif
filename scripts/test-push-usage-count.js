@@ -136,8 +136,67 @@ function mockRes() {
   assert.match(completion.body, /(^|\n)262 tok(\n| ·|$)/,
     'the usage row counts each round once (100+7 + 150+5 = 262); body was:\n' + completion.body);
 
+  // Exercise the chat handler's status normalization, not only the body
+  // formatter: report_progress carries `status`, while task updates also
+  // carry a title with a generic message.
+  const ai = require('../src/ai.js');
+  const originalStreamChat = ai.streamChat;
+  const offset = deliveries.length;
+  const bodyResolvers = [];
+  const originalSend = push.sendPushToSession;
+  push.sendPushToSession = (sid, payload) => {
+    bodyResolvers.push({ kind: payload.data.kind, bodyFor: payload.bodyFor });
+    return originalSend(sid, payload);
+  };
+  ai.streamChat = async ({ onEvent }) => {
+    onEvent('tool_call', { id: 'progress-call', name: 'report_progress', args: {} });
+    onEvent('progress_update', { title: 'Build project', current: 2, total: 5, status: 'running' });
+    onEvent('progress_update', { title: 'Run tests', current: 2, total: 5, status: 'failed' });
+    onEvent('progress_update', { kind: 'task', title: 'Lint project', message: 'Task complete', current: 2, total: 5, status: 'completed' });
+    onEvent('done', { usage: { promptTokens: 0, completionTokens: 0 } });
+    return { ok: true };
+  };
+  try {
+    const statusRes = mockRes();
+    await handleChatStream(mockReq({ projectDir, modelId: 'claude-mock', content: 'show status' }), statusRes, chat.id, sessionToken);
+    assert.equal(statusRes.statusCode, 200, 'status stream completed');
+    const progress = deliveries.slice(offset).filter((d) => d.data.kind === 'progress');
+    assert.equal(progress.length, 3, 'every progress state sent a status');
+    assert.match(progress[0].body, /40%\nBuild project/, 'running status retains its operation title');
+    assert.match(progress[1].body, /^\[-+\]\nFailed: Run tests/, 'failure has no misleading percentage and retains its state');
+    assert.match(progress[2].body, /100%\nCompleted: Lint project/, 'completed status is full even if counts lag');
+    assert.ok(!progress[2].body.includes('2 of 5'), 'completed status omits stale counts');
+    assert.ok(progress.every((d) => d.title === chat.title && d.tag === 'chat-' + chat.id + '-status'),
+      'status titles and the replacement slot remain stable');
+    const sub = push.listSubscriptions(push.sessionIdFromToken(sessionToken))[0];
+    for (let i = 0; i < bodyResolvers.length; i++) {
+    assert.equal(bodyResolvers[i].bodyFor(sub), deliveries[offset + i].body,
+      'a deferred ' + bodyResolvers[i].kind + ' resolver keeps its context after the turn resets');
+    }
+
+    // Both error paths keep the last tool and elapsed time, including a
+    // throw from streamChat (whose cleanup used to erase those facts first).
+    for (const throws of [false, true]) {
+    const errorOffset = deliveries.length;
+    const resolverOffset = bodyResolvers.length;
+    ai.streamChat = async ({ onEvent }) => {
+      onEvent('tool_call', { id: 'shell-call', name: 'shell', args: {} });
+      if (throws) throw new Error('mock stream failure');
+      return { ok: false, error: { code: 'EMOCK', message: 'mock upstream failure' } };
+    };
+    await handleChatStream(mockReq({ projectDir, modelId: 'claude-mock', content: 'show error' }), mockRes(), chat.id, sessionToken);
+    const failure = deliveries[errorOffset];
+    assert.equal(failure.data.kind, 'error', 'the failure sends an error status');
+    assert.match(failure.body, /\n\d+s\nshell(?:\n|$)/, 'error status retains elapsed time and tool context');
+    assert.equal(bodyResolvers[resolverOffset].bodyFor(sub), failure.body, 'error rendering remains stable after cleanup');
+    }
+  } finally {
+    ai.streamChat = originalStreamChat;
+    push.sendPushToSession = originalSend;
+  }
+
   fs.rmSync(tmp, { recursive: true, force: true });
-  console.log('push usage count: all assertions passed');
+  console.log('push usage count and status content: all assertions passed');
 })().catch((err) => {
   console.error(err);
   process.exit(1);

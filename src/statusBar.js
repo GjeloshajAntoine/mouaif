@@ -47,11 +47,9 @@ const INLINE_SEPARATOR = SEPARATOR;
 // Below this many characters a message would be a meaningless stub, so a
 // one-line style drops it and keeps the bar instead of a two-letter tease.
 const MIN_INLINE_INFO_CHARS = 8;
-// Detail rows below the bar. A one-line style shares its row with the bar, so
-// it has room for the single most important fact. A multi-line banner or
-// toast shows the bar plus the top few facts; an expanded notification is
-// tall enough for every tier. This is the whole "show more on a bigger
-// device" mechanism — no per-device special case.
+// Maximum detail rows below the bar. A one-line style shares its row with
+// the bar; a stacked style reserves one of its OS-visible lines for the bar.
+// Expanded surfaces can show more tiers without exceeding their height.
 const DETAIL_LINES_INLINE = 1;
 const DETAIL_LINES_PREVIEW = 3;
 const DETAIL_LINES_EXPANDED = 6;
@@ -312,20 +310,21 @@ const DETAIL_TIERS = Object.freeze([
 // detailLines(plan, percent, info) -> [] of detail rows, widest tier set that
 // fits the device's line budget.
 //
-// `info` carries the status facts: { message, kind, title, current, total,
-// time, tool, model, usage }. Every field is optional; a missing one simply
-// does not offer its tier. A tier line is included only while it fits BOTH
-// the body line and the remaining height — so a phone keeps '2 of 5' and the
-// token count and drops the rest, while a desktop shows everything.
+// `info` carries the status facts: { message, kind, status, title, current,
+// total, time, tool, model, usage }. Every field is optional. Rows are
+// clipped to the body's width and lower-priority tiers are omitted when
+// the surface's total height (including the bar) is exhausted.
 function detailLines(plan, percent, info) {
   const p = plan || {};
   const chars = Number(p.chars) > 0 ? Number(p.chars) : 0;
-  const maxLines = Math.max(1, Number(p.detailLines) || 1);
-  const share = p.layout === 'inline' ? INLINE_BAR_SHARE : 1;
-  const budget = chars ? Math.max(0, Math.floor(chars * share)) : 0;
+  // A stacked body spends one visible line on the bar. Detail limits are
+  // ceilings, not extra lines beyond the OS surface's total height.
+  const availableLines = p.layout === 'inline' ? 1
+    : (Number(p.lines) > 0 ? Math.max(0, Math.floor(Number(p.lines)) - 1) : 1);
+  const maxLines = Math.min(availableLines, Math.max(1, Number(p.detailLines) || 1));
+  if (!maxLines) return [];
 
   const tiers = {};
-  const kind = info && info.kind;
   const current = Number(info && info.current);
   const total = Number(info && info.total);
   if (Number.isFinite(current) && Number.isFinite(total) && total > 0) {
@@ -352,18 +351,25 @@ function detailLines(plan, percent, info) {
     seen.add(key);
     out.push(line);
   };
-  if (info && info.message) {
-    const message = String(info.message).replace(/\s+/g, ' ').trim();
-    if (message) push(chars ? clipSmart(message, chars) : message);
+  const title = String((info && info.title) || '').replace(/\s+/g, ' ').trim();
+  let message = String((info && info.message) || '').replace(/\s+/g, ' ').trim();
+  // Task events use generic messages; retain the operation's identity rather
+  // than showing only a count or an anonymous "Task complete".
+  const countMessage = Number.isFinite(current) && Number.isFinite(total) && total > 0
+    && message === current + ' of ' + total;
+  if (title && (!message || countMessage || (info.kind === 'task' && message === 'Task complete'))) {
+    message = title;
   }
+  if (info && info.status === 'failed') message = 'Failed' + (message ? ': ' + message : '');
+  else if (info && info.status === 'completed') message = 'Completed' + (message ? ': ' + message : '');
+  if (message) push(chars ? clip(message, chars) : message);
   for (const tier of DETAIL_TIERS) {
-    // A completion ('nothing left to do') makes the position in the work
-    // redundant, so the counts tier steps aside for a completer.
-    if (tier === 'counts' && info && info.kind === 'complete') continue;
+    // A completed operation no longer needs its counts repeated.
+    if (tier === 'counts' && info && (info.kind === 'complete' || info.status === 'completed')) continue;
     const value = tiers[tier];
     if (!value) continue;
     if (out.length >= maxLines) break;
-    const line = chars ? clipSmart(value, budget) : value;
+    const line = chars ? clipSmart(value, chars) : value;
     push(line);
   }
   return out.slice(0, maxLines);
@@ -400,7 +406,8 @@ function composeStatusBody(plan, percent, info) {
   // the whole line rather than a truncated stub.
   const room = chars ? Math.max(0, chars - bar.length - INLINE_SEPARATOR.length) : 0;
   if (room < MIN_INLINE_INFO_CHARS) return bar;
-  return bar + INLINE_SEPARATOR + clipSmart(lines[0], room);
+  const clipInline = facts.message || facts.title || facts.status ? clip : clipSmart;
+  return bar + INLINE_SEPARATOR + clipInline(lines[0], room);
 }
 
 // statusBarPlan(report) -> { os, osVersion, chars, lines, style, cells, layout, clamped }
@@ -459,7 +466,7 @@ function statusBarPlan(report) {
   // that makes a bigger device show more facts, exactly like the width budget
   // makes it show a longer bar.
   const detailLines = layout === 'inline' ? DETAIL_LINES_INLINE
-    : (expanded ? DETAIL_LINES_EXPANDED : DETAIL_LINES_PREVIEW);
+    : Math.min(lines - 1, expanded ? DETAIL_LINES_EXPANDED : DETAIL_LINES_PREVIEW);
 
   // Available cell width for the bar itself. A stacked bar may use most of
   // the line; an inline bar keeps to INLINE_BAR_SHARE so text remains.

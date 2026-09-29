@@ -103,6 +103,7 @@ assert.ok(!chatPushSource.includes("'-progress'"), 'chat streams do not send pro
 assert.ok(chatPushSource.includes("function statusBody(sub, percent, info)"), 'chat streams build one per-device ASCII status body');
 assert.ok(chatPushSource.includes("function statusInfo(data, extra)"), 'chat streams assemble the status facts once');
 assert.ok(/statusInfo\(\{\s*kind: 'complete'/.test(chatPushSource), 'completion uses the shared fact set');
+assert.ok(chatPushSource.includes('statusBody(sub, 100, info)'), 'completion renders captured context rather than reset turn state');
 assert.ok(chatPushSource.includes('statusInfo(data)'), 'progress uses the shared fact set');
 // Every status title is the chat name. The facts (usage, model, tool, time)
 // ride the body, where the OS does not clip them and a wider device shows

@@ -150,37 +150,38 @@ const richInfo = {
   time: '12s', tool: 'shell', model: 'gpt-5-mini',
   usage: '12.4K tok · $0.0312'
 };
-const richLines = statusBar.detailLines(ios, 40, richInfo);
+const detailPlan = statusBar.statusBarPlan({ chars: 40, viewportWidth: 390, os: 'ios', osVersion: 17, style: 'expanded' });
+const richLines = statusBar.detailLines(detailPlan, 40, richInfo);
 assert.equal(richLines[0], 'Refactoring the composer', 'the running message is the first detail row');
 assert.equal(richLines[1], '2 of 5', 'the position in the work is the next detail row');
 assert.ok(richLines.includes('12.4K tok · $0.0312'), 'the turn usage is a detail row');
-assert.equal(richLines.length, ios.detailLines, 'the detail rows stay within the surface height');
+assert.equal(richLines.length, detailPlan.detailLines, 'the detail rows stay within the surface height');
 assert.ok(!richLines.some((l) => l.includes('Fix push layout')), 'a task no longer duplicates its title into the body');
 
 // A fact never renders twice. The `task` tool sends `message: '2 of 5'`
 // alongside `current`/`total`, which the counts tier derives a second time;
 // without dedup the body showed the same row back to back.
-const taskEcho = statusBar.detailLines(ios, 40, {
+const taskEcho = statusBar.detailLines(detailPlan, 40, {
   kind: 'task', message: '2 of 5', current: 2, total: 5, usage: '12K tok'
 });
 assert.equal(taskEcho.filter((l) => l === '2 of 5').length, 1, 'a message that restates a tier does not duplicate it');
 assert.ok(taskEcho.includes('12K tok'), 'the tiers after the duplicate still fill the body');
-const taskEchoBody = statusBar.composeStatusBody(ios, 40, {
+const taskEchoBody = statusBar.composeStatusBody(detailPlan, 40, {
   kind: 'task', message: '2 of 5', current: 2, total: 5, usage: '12K tok'
 });
-assert.equal(taskEchoBody, statusBar.asciiStatusBar(40, ios.cells) + '\n2 of 5\n12K tok',
+assert.equal(taskEchoBody, statusBar.asciiStatusBar(40, detailPlan.cells) + '\n2 of 5\n12K tok',
   'the composed body carries the restated fact exactly once');
 
-// A taller surface shows the lower tiers; a preview-sized one does not.
+// A taller expanded surface shows the lower tiers; a shorter one does not.
 const expandedPlan = statusBar.statusBarPlan({ chars: 34, viewportWidth: 360, os: 'android', osVersion: 13, style: 'expanded' });
 const expandedLines = statusBar.detailLines(expandedPlan, 40, richInfo);
 assert.ok(expandedLines.length > richLines.length, 'an expanded notification shows more facts than a preview');
 assert.ok(expandedLines.some((l) => l.includes('shell')), 'the tool surfaces once the surface is tall enough');
 assert.ok(expandedLines.some((l) => l.includes('gpt-5-mini')), 'the model surfaces once the surface is tall enough');
-assert.ok(!richLines.some((l) => l.includes('gpt-5-mini')), 'a preview-sized surface drops the lowest tier rather than wrapping');
-// A wider body line is what brings the tool and model in on a preview surface.
+assert.ok(!richLines.some((l) => l.includes('gpt-5-mini')), 'a shorter expanded surface drops the lowest tier rather than wrapping');
+// A wider body does not create extra visible lines on a collapsed toast.
 const richDesktop = statusBar.detailLines(statusBar.statusBarPlan({ chars: 110, viewportWidth: 1280, os: 'macos', osVersion: 14 }), 40, richInfo);
-assert.ok(richDesktop.length >= richLines.length, 'a wider surface shows at least as many detail rows');
+assert.equal(richDesktop.length, 1, 'a collapsed desktop toast reserves its first line for the bar');
 // A narrower surface drops the lowest tiers instead of wrapping.
 const narrow = statusBar.statusBarPlan({ chars: 26, viewportWidth: 300, os: 'android', osVersion: 13 });
 const narrowLines = statusBar.detailLines(narrow, 40, richInfo);
@@ -218,13 +219,43 @@ const tiny = statusBar.statusBarPlan({ chars: 8, os: 'android', osVersion: 13 })
 assert.ok(!statusBar.composeStatusBody(tiny, 40, { message: INFO }).includes(statusBar.INLINE_SEPARATOR),
   'a line too narrow for a message shows the bar only');
 // The stacked body carries every detail row the plan allows.
-const richBody = statusBar.composeStatusBody(ios, 40, richInfo).split('\n');
-assert.equal(richBody[0], statusBar.asciiStatusBar(40, ios.cells), 'the rich body still leads with the bar');
+const richBody = statusBar.composeStatusBody(detailPlan, 40, richInfo).split('\n');
+assert.equal(richBody[0], statusBar.asciiStatusBar(40, detailPlan.cells), 'the rich body still leads with the bar');
 assert.equal(richBody.length, 1 + richLines.length, 'the rich body carries exactly the planned detail rows');
 assert.equal(statusBar.clip('Fix push layout — 2 of 5', 12), 'Fix push...', 'a clipped message is ellipsized');
 assert.ok(statusBar.clip('Fix push layout — 2 of 5', 12).length <= 12, 'a clipped message fits its budget');
 assert.equal(statusBar.clip('short', 12), 'short', 'a message inside the budget is untouched');
 assert.equal(statusBar.clip('  padded  ', 40), 'padded', 'a clip trims surrounding whitespace');
+
+// Preview height is a total budget, including the bar, at narrow mobile
+// widths too. Expanded cards may show more facts, never more than their cap.
+for (const width of [320, 360, 390, 430]) {
+  for (const os of ['android', 'ios', 'macos']) {
+    for (const style of ['collapsed', 'expanded']) {
+      const plan = statusBar.statusBarPlan({ viewportWidth: width, os, osVersion: 17, style });
+      const body = statusBar.composeStatusBody(plan, 100, richInfo);
+      assert.ok(body.split('\n').length <= plan.lines, os + ' ' + width + ' ' + style + ' fits its height');
+      for (const line of body.split('\n')) assert.ok(line.length <= plan.chars, 'each row fits its width');
+    }
+  }
+}
+const titleOnly = { title: 'Building project', current: 2, total: 5 };
+assert.match(statusBar.composeStatusBody(android, 40, titleOnly), /Building/, 'title-only progress identifies the operation');
+assert.equal(statusBar.detailLines(ios, 40, titleOnly)[0], 'Building project', 'a stacked preview retains the title');
+assert.equal(statusBar.detailLines(ios, 40, { kind: 'task', title: 'Run tests', message: '2 of 5', current: 2, total: 5 })[0],
+  'Run tests', 'a task title takes priority over generic counts');
+assert.equal(statusBar.detailLines(ios, 0, { kind: 'task', title: 'Run tests', message: '0 of 5', current: 0, total: 5 })[0],
+  'Run tests', 'a new task retains its title even when the zero-count tier is omitted');
+assert.equal(statusBar.detailLines(ios, null, { ...titleOnly, status: 'failed' })[0],
+  'Failed: Building project', 'a failed operation is explicitly labelled');
+assert.equal(statusBar.detailLines(ios, 100, { kind: 'task', title: 'Run tests', message: 'Task complete', status: 'completed' })[0],
+  'Completed: Run tests', 'a completed task keeps its identity and state');
+assert.equal(statusBar.detailLines(ios, null, { message: 'Error: request failed at /a/very/long/path/to/file.js' })[0],
+  statusBar.clip('Error: request failed at /a/very/long/path/to/file.js', ios.chars),
+  'message truncation preserves the error rather than replacing it with a path tail');
+assert.equal(statusBar.detailLines(android, 40, { model: 'provider/a-very-long-model-name' })[0],
+  statusBar.clipSmart('provider/a-very-long-model-name', android.chars),
+  'inline facts are not prematurely clipped to the bar share');
 
 // ---- Legacy stored shape ----------------------------------------------
 
@@ -336,15 +367,13 @@ async function postSubscription(sessionToken, endpoint, subscription) {
     'the one-line Android device gets a single-line body');
   assert.ok(bodies.get('https://android.example').includes(INFO.slice(0, 8)),
     'the one-line Android body still shows the message');
-  // iOS: two body lines, so the bar keeps its own row and the facts follow in
-  // the planned order (message, then counts, then usage) — not one long row.
+  // iOS: two visible body lines — the bar and the most important fact.
   const iosBody = bodies.get('https://ios.example');
   const iosPlan = planBodies.get('https://ios.example');
   assert.equal(iosBody.split('\n')[0], statusBar.asciiStatusBar(40, iosPlan.cells),
     'the two-line iOS body keeps the bar on its own row');
   assert.ok(iosBody.includes(INFO), 'the two-line iOS body still carries the message');
-  assert.ok(iosBody.includes('2 of 5'), 'the two-line iOS body carries the position in the work');
-  assert.ok(iosBody.includes('12.4K tok'), 'the two-line iOS body carries the turn usage');
+  assert.ok(!iosBody.includes('12.4K tok'), 'the two-line iOS preview omits lower-priority facts');
   assert.equal(iosBody.split('\n').length, 1 + iosPlan.detailLines, 'the iOS body uses exactly its height budget');
   // The extra facts ride the body, never the title: the title is the chat name
   // on every device, however much detail the body shows.

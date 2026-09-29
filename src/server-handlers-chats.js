@@ -1120,6 +1120,7 @@ function accumulateRoundUsage(roundUsage) {
       title: data && data.title ? String(data.title) : '',
       message: data && data.message ? String(data.message) : '',
       kind: o.kind || (data && data.kind) || '',
+      status: data && data.status ? String(data.status) : '',
       current: data && data.current != null ? data.current : undefined,
       total: data && data.total != null ? data.total : undefined,
       // The activity row's parts. A tool the stream named wins over the last
@@ -1128,9 +1129,8 @@ function accumulateRoundUsage(roundUsage) {
       tool: o.tool || lastToolName || '',
       model: modelName,
       time: turnStartedAt ? Math.max(1, Math.round((Date.now() - turnStartedAt) / 1000)) + 's' : '',
-      // The title is the chat's own name for a task, which reads as the
-      // notification title it already is; the running usage is the fact
-      // worth a row here.
+      // The operation title is distinct from the chat name and is retained
+      // as a fallback when a progress event has no useful message.
       usage: pushUsageLabel()
     };
   }
@@ -1377,9 +1377,12 @@ promptSize: resolvedProfileId,
       // Updatable per-chat push notification for real-time progress.
       // Uses a stable tag so each new progress_update replaces the
       // previous OS notification for this chat (no notification spam).
-      const pctNum = data.current != null && data.total != null
+      const pctNum = data.status === 'failed' ? null
+      : data.status === 'completed' ? 100
+      : data.current != null && data.total != null
       ? Math.round((Number(data.current) / Math.max(1, Number(data.total))) * 100)
       : null;
+      const info = statusInfo(data);
       // Everything the status shows rides in the BODY, under the bar, as a
       // set of optional facts (src/statusBar.js detailLines()): the message,
       // the position in the work, the turn usage, the elapsed time, the
@@ -1389,16 +1392,14 @@ promptSize: resolvedProfileId,
       // title row plus a separate task row.
       sendChatPush('progress', {
       title: (chat && chat.title) || 'mouaif',
-      bodyFor: (sub) => statusBody(sub, pctNum, statusInfo(data)),
+      bodyFor: (sub) => statusBody(sub, pctNum, info),
       tag: statusPushTag
       });
       } else if (name === 'done') {
+      const info = statusInfo({ kind: 'complete', message: 'Response complete' });
       sendChatPush('completion', {
       title: (chat && chat.title) || 'mouaif',
-      bodyFor: (sub) => statusBody(sub, 100, statusInfo({
-        kind: 'complete',
-        message: 'Response complete'
-      })),
+      bodyFor: (sub) => statusBody(sub, 100, info),
       tag: statusPushTag
       });
         // Compute the enrichment once. `cost.known` is true when at
@@ -1511,11 +1512,12 @@ promptSize: resolvedProfileId,
     // marker or the chat would look busy forever after a reload.
     runningChats.delete(runKey);
     runningChatCancels.delete(runKey);
-    // The turn is over (either way), so its status facts stop applying.
-    lastToolName = '';
-    turnStartedAt = 0;
     if (traceStream) trace.close(traceStream);
     const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
+    const info = statusInfo({ kind: 'error', message: 'Error: ' + errPayload.message });
+    // Capture the failure's context before resetting the completed turn.
+    lastToolName = '';
+    turnStartedAt = 0;
     persistStreamError(errPayload);
     try { emit('error', errPayload); } catch { /* socket closed */ }
     liveChat.finishLiveChat(runKey);
@@ -1523,7 +1525,7 @@ promptSize: resolvedProfileId,
       title: (chat && chat.title) || 'mouaif',
       // An error is a fact set too: the message, then whatever usage and
       // context the turn had reached before it failed.
-      bodyFor: (sub) => statusBody(sub, null, statusInfo({ kind: 'error', message: 'Error: ' + (errPayload.message || 'stream failed') })),
+      bodyFor: (sub) => statusBody(sub, null, info),
       tag: statusPushTag
     });
     res.end();
@@ -1552,9 +1554,10 @@ promptSize: resolvedProfileId,
     }
     persistStreamError(errPayload);
     emit('error', errPayload);
+    const info = statusInfo({ kind: 'error', message: 'Error: ' + (errPayload.message || 'upstream error') });
     sendChatPush('error', {
       title: (chat && chat.title) || 'mouaif',
-      bodyFor: (sub) => statusBody(sub, null, statusInfo({ kind: 'error', message: 'Error: ' + (errPayload.message || 'upstream error') })),
+      bodyFor: (sub) => statusBody(sub, null, info),
       tag: statusPushTag
     });
   }
