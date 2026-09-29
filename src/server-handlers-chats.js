@@ -1232,7 +1232,9 @@ promptSize: resolvedProfileId,
     // `effectiveChat` folds in the prompt's preset tools (if any) the
     // same way it feeds agent-files above.
     enabledTools: Array.isArray(effectiveChat.tools) ? effectiveChat.tools : null,
-    chat,
+    // Skill declarations and activation must use the same preset-resolved
+    // configuration as the metadata catalog above.
+    chat: effectiveChat,
     // Per-round usage snapshot (one per upstream API call, including
     // tool rounds). Stashed so `assistant_turn_end` can attach cost
     // to the intermediate segment it persists.

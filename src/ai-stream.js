@@ -1720,7 +1720,9 @@ return { ok: false, content: JSON.stringify(r), result: r };
         signal,
         projectDir: callOpts && callOpts.projectDir,
         chatId: callOpts && callOpts.chatId,
-appSettings: callOpts && callOpts.appSettings,
+        // Inherit the parent's effective skill gates and per-skill opt-outs.
+        chat: callOpts && callOpts.chat,
+      appSettings: callOpts && callOpts.appSettings,
 lifecycle: callOpts && callOpts.lifecycle,
 promptSize: callOpts && callOpts.promptSize,
 

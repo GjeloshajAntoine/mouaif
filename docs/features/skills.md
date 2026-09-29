@@ -28,6 +28,8 @@ In a chat, the transcript shows a **Skills** card below tools and agent files. E
 
 The **Tools** popup (globe icon in the chat top bar) shows the same always-expanded **Skills** group. There the group checkbox is the explicit all-on / all-off shortcut for the chat, while each row is that one skill's switch.
 
+Custom prompt presets use the same effective skill setting for the metadata catalog, activation tool, and activation result. Delegated subagents inherit that setting and this chat's individual skill opt-outs; they cannot reactivate a skill unchecked in the parent chat. The project-level off switch always wins.
+
 Project settings use this shape:
 
 ```json
