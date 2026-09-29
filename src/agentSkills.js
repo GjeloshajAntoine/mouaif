@@ -11,41 +11,127 @@ const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function parseScalar(raw) {
   const s = String(raw || '').trim();
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1);
-  return s;
+  if (s[0] === '"' || s[0] === "'") {
+    const quote = s[0];
+    let value = '';
+    for (let i = 1; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === quote) {
+        if (quote === "'" && s[i + 1] === "'") { value += "'"; i++; continue; }
+        if (!/^\s*(?:#.*)?$/.test(s.slice(i + 1))) throw new Error('unexpected text after quoted scalar');
+        return value;
+      }
+      if (quote === '"' && ch === '\\') {
+        const escape = s[++i];
+        const escapes = { '0': '\0', a: '\x07', b: '\b', t: '\t', n: '\n', v: '\v', f: '\f', r: '\r', e: '\x1b', ' ': ' ', '"': '"', '/': '/', '\\': '\\', N: '\u0085', _: '\u00a0', L: '\u2028', P: '\u2029' };
+        if (Object.prototype.hasOwnProperty.call(escapes, escape)) value += escapes[escape];
+        else if (['x', 'u', 'U'].includes(escape)) {
+          const digits = { x: 2, u: 4, U: 8 }[escape];
+          const hex = s.slice(i + 1, i + 1 + digits);
+          if (hex.length !== digits || !/^[a-f0-9]+$/i.test(hex) || parseInt(hex, 16) > 0x10ffff) throw new Error('invalid quoted escape');
+          value += String.fromCodePoint(parseInt(hex, 16));
+          i += digits;
+        } else throw new Error('unsupported quoted escape');
+      } else value += ch;
+    }
+    throw new Error('unterminated quoted scalar');
+  }
+  const value = s.replace(/(?:^|\s+)#.*$/, '').trim();
+  // This reader supports the spec's string fields, not arbitrary YAML
+  // collections, aliases, tags, or multiline plain/quoted scalars.
+  if (/^[\[\]{}&*!|>@`]/.test(value) || /:\s|:$/.test(value)) throw new Error('unsupported YAML scalar');
+  return value;
 }
 
-// Parse the spec's shallow frontmatter fields without adding a YAML runtime.
-// metadata is retained as string pairs; malformed/unsupported YAML is diagnosed.
+function parseBlockScalar(lines, start, header, parentIndent) {
+  const marker = header.replace(/\s+#.*$/, '').trim();
+  if (!/^[|>](?:[+-][1-9]?|[1-9][+-]?)?$/.test(marker)) throw new Error('unsupported block scalar header');
+  const explicit = marker.match(/[1-9]/);
+  let indent = explicit ? parentIndent + Number(explicit[0]) : null;
+  const values = [];
+  let next = start;
+  for (; next < lines.length; next++) {
+    const line = lines[next];
+    if (!line.trim()) { values.push(''); continue; }
+    const spaces = /^ */.exec(line)[0].length;
+    if (spaces <= parentIndent) break;
+    if (indent === null) indent = spaces;
+    if (spaces < indent || line[spaces] === '\t') throw new Error('invalid block scalar indentation');
+    values.push(line.slice(indent));
+  }
+  let value = '';
+  for (let i = 0; i < values.length; i++) {
+    const current = values[i];
+    const following = values[i + 1];
+    value += current;
+    // Fold normal adjacent lines; preserve paragraphs and more-indented text.
+    if (marker[0] === '>' && following !== undefined && current && following
+      && !/^\s/.test(current) && !/^\s/.test(following)) value += ' ';
+    else if (marker[0] === '>' && current && following === '' && !/^\s/.test(current)) { /* paragraph break follows */ }
+    else value += '\n';
+  }
+  if (marker.includes('-')) value = value.replace(/\n+$/, '');
+  else if (!marker.includes('+')) value = value.replace(/\n+$/, '') + (values.some((line) => line.length) ? '\n' : '');
+  return { value, next };
+}
+
+// Read the spec's shallow string fields without a YAML dependency. Support
+// quoted/plain scalars, comments, block scalars, and a string metadata map.
+// Reject unsupported or malformed YAML rather than advertising corrupted text.
 function parseSkillFile(text, directoryName) {
   const diagnostics = [];
   if (!text.startsWith('---\n') && !text.startsWith('---\r\n')) return { valid: false, diagnostics: ['missing YAML frontmatter'] };
   const lines = text.split(/\r?\n/);
   const close = lines.indexOf('---', 1);
   if (close < 0) return { valid: false, diagnostics: ['unterminated YAML frontmatter'] };
-  const metadata = {};
+  const metadata = Object.create(null);
   let map = null;
-  for (const line of lines.slice(1, close)) {
+  let mapIndent = null;
+  const headerLines = lines.slice(1, close);
+  for (let i = 0; i < headerLines.length; i++) {
+    const line = headerLines[i];
     if (!line.trim() || /^\s*#/.test(line)) continue;
-    const nested = line.match(/^\s+([A-Za-z0-9_.-]+):\s*(.*)$/);
-    if (nested && map) { map[nested[1]] = parseScalar(nested[2]); continue; }
-    const m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    const m = line.match(/^( *)([A-Za-z0-9_.-]+):(?:\s+(.*)|$)/);
     if (!m) { diagnostics.push('unsupported YAML line: ' + line.trim()); continue; }
-    if (m[1] === 'metadata' && !m[2]) { metadata.metadata = {}; map = metadata.metadata; continue; }
-    map = null;
-    metadata[m[1]] = parseScalar(m[2]);
+    const indent = m[1].length;
+    const key = m[2];
+    const raw = m[3] || '';
+    let target = metadata;
+    if (indent) {
+      if (!map || (mapIndent !== null && indent !== mapIndent)) {
+        diagnostics.push('unsupported YAML indentation: ' + line.trim()); continue;
+      }
+      mapIndent = indent;
+      target = map;
+    } else {
+      map = null;
+      mapIndent = null;
+    }
+    if (Object.prototype.hasOwnProperty.call(target, key)) { diagnostics.push('duplicate YAML key: ' + key); continue; }
+    if (!indent && key === 'metadata' && !raw.replace(/(?:^|\s+)#.*$/, '').trim()) {
+      metadata.metadata = Object.create(null);
+      map = metadata.metadata;
+      continue;
+    }
+    try {
+      if (/^[|>]/.test(raw.trim())) {
+        const block = parseBlockScalar(headerLines, i + 1, raw.trim(), indent);
+        target[key] = block.value;
+        i = block.next - 1;
+      } else target[key] = parseScalar(raw);
+    } catch (e) { diagnostics.push(key + ': ' + e.message); }
   }
   const name = metadata.name || '';
   const description = metadata.description || '';
   if (!name) diagnostics.push('name is required');
-  if (!description) diagnostics.push('description is required');
+  if (!description.trim()) diagnostics.push('description is required');
   if (name && (!NAME_RE.test(name) || name.length > 64 || name !== directoryName)) diagnostics.push('name must match its directory and use 1-64 lowercase letters, numbers, or single hyphens');
   if (description.length > 1024) diagnostics.push('description exceeds 1024 characters');
   if (metadata.compatibility && metadata.compatibility.length > 500) diagnostics.push('compatibility exceeds 500 characters');
   const validName = !!name && NAME_RE.test(name) && name.length <= 64 && name === directoryName;
-  const validDescription = !!description && description.length <= 1024;
+  const validDescription = !!description.trim() && description.length <= 1024;
   const validCompatibility = !metadata.compatibility || metadata.compatibility.length <= 500;
-  return { valid: validName && validDescription && validCompatibility, name, description, metadata, body: lines.slice(close + 1).join('\n').trim(), diagnostics };
+  return { valid: diagnostics.length === 0 && validName && validDescription && validCompatibility, name, description, metadata, body: lines.slice(close + 1).join('\n').trim(), diagnostics };
 }
 
 function safeSkillFile(projectDir, root, entry) {

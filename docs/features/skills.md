@@ -18,6 +18,17 @@ Run the narrowest relevant tests first, then the full suite.
 
 Save it as `.agents/skills/testing/SKILL.md`. Optional `scripts/`, `references/`, and `assets/` directories may sit beside it.
 
+Descriptions may use YAML block scalars and comments:
+
+```yaml
+name: testing # matches the directory name
+description: >-
+  Run and diagnose project tests.
+  Use when changing code or investigating failures.
+```
+
+The dependency-free reader supports plain and quoted strings, inline comments, literal (`|`) and folded (`>`) blocks (including chomping/indentation indicators), and a shallow string-valued `metadata` map. Unsupported constructs (such as flow collections, aliases, tags, or multiline plain/quoted strings), malformed quoting, duplicate keys, and invalid indentation cause the skill to be skipped rather than advertised with corrupted metadata.
+
 Open **Settings → Project → Tools** to toggle skills on or off. Off locks skills out of every chat; on lets each chat opt out.
 
 In a chat, the transcript shows a **Skills** card below tools and agent files. Every discovered skill has its own checkbox:

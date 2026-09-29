@@ -15,6 +15,30 @@ const chats = require('../src/chats.js');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-skills-'));
 try {
+  const parse = (fields) => skills.parseSkillFile('---\nname: testing\n' + fields + '\n---\nInstructions', 'testing');
+  assert.strictEqual(parse('description: >\n  Run tests\n  when code changes.').description, 'Run tests when code changes.\n');
+  assert.strictEqual(parse('description: |-\n  Run tests.\n  Diagnose failures.').description, 'Run tests.\nDiagnose failures.');
+  assert.strictEqual(parse('description: >-\n  First paragraph.\n\n  Next paragraph.').description, 'First paragraph.\nNext paragraph.');
+  assert.strictEqual(parse('description: |+\n  Keep\n\n').description, 'Keep\n\n\n');
+  assert.strictEqual(parse('description: |2-\n  Explicit indentation.').description, 'Explicit indentation.');
+  assert.strictEqual(skills.parseSkillFile('---\nname: testing # comment\ndescription: Run tests. # comment\n---\nBody', 'testing').valid, true);
+  assert.strictEqual(parse('description: "Use # tags and \\"quotes\\"." # comment').description, 'Use # tags and "quotes".');
+  assert.strictEqual(parse("description: 'It''s a test.' # comment").description, "It's a test.");
+  assert.strictEqual(parse('description: Use foo#bar.').description, 'Use foo#bar.');
+  assert.strictEqual(parse('description: "\\u0052un tests."').description, 'Run tests.');
+  const mapped = parse('description: Run tests.\nmetadata: # metadata comment\n  author: \'test\'\n  notes: >-\n    Test metadata.');
+  assert.strictEqual(mapped.valid, true);
+  assert.strictEqual(mapped.metadata.metadata.notes, 'Test metadata.');
+  for (const invalid of [
+    'description: |', 'description: "unterminated', 'description: "test" garbage',
+    'description: "bad\\q"', 'description: [tests]', 'description: &alias test',
+    'description: Run tests.\nunsupported line', 'description: A\ndescription: B',
+    'description: >\n  line\n unindented', 'description: "   "',
+    'description: Run tests.\nmetadata:\n  nested:\n    deeper: value'
+  ]) assert.strictEqual(parse(invalid).valid, false, invalid);
+  assert.strictEqual(parse('description: ' + 'a'.repeat(1025)).valid, false);
+  assert.strictEqual(parse('description: >-\n  ' + 'a'.repeat(1025)).valid, false);
+
   const dir = path.join(root, '.agents', 'skills', 'pdf-processing');
   fs.mkdirSync(path.join(dir, 'references'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'SKILL.md'), '---\nname: pdf-processing\ndescription: Process PDFs when users mention forms.\ncompatibility: Requires PDF tools\nmetadata:\n  author: test\n---\n# PDF instructions\nRead references/guide.md as needed.\n');
@@ -83,7 +107,7 @@ try {
   // nothing in the discovered catalog).
   assert.deepStrictEqual(chats.updateChat(root, chat.id, { disabledSkills: ['testing', 'testing', 'ghost'] }).disabledSkills, ['testing', 'ghost']);
 
-  console.log('agent skills: 28 assertions passed');
+  console.log('agent skills: discovery, YAML parsing, opt-outs, and persistence passed');
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
   fs.rmSync(HOME, { recursive: true, force: true });
