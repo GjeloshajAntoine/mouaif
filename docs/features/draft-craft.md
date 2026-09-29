@@ -53,7 +53,7 @@ Paths A and B share the same annotator. Do the steps you need, in this order; ev
 ![Numbered dots and the scrollable list of dot texts](./images/draft-craft/annotator-marker-edit-360.png)
 
 1. **Open the tools.** Tap **Tools** (*Annotate & zoom*) under the image to show the controls. Tap it again later to hide them and give the image the full screen.
-2. **Frame the area.** Tap **+** to zoom in, **−** to zoom out, or pinch with two fingers — the point between your fingers stays in place. Tap **Pan** and drag to move around a zoomed image, then tap **Draw** to go back to drawing. **Fit** shows the whole image again. Zooming never steals room from the tools panel, and folding the tools open or closed keeps the whole image in view.
+2. **Frame the area.** Tap **+** to zoom in, **−** to zoom out, or pinch with two fingers — the point between your fingers stays in place. Tap **Pan** and drag to move around a zoomed image, then tap **Draw** to go back to drawing. **Fit** shows the whole image again. Zooming keeps that point where your fingers are, never steals room from the tools panel, and folding the tools open or closed keeps the whole image in view.
 3. **Pick a color.** Tap one of the four color swatches. Both pen strokes and new dots use it.
 4. **Draw.** Drag a finger on the image to circle or underline what matters.
 5. **Place marker dots.** Under **Marker dots**, drag the colored dot button onto the image. Each dot gets the next label; choose **1, 2, 3** or **A, B, C** in the menu beside it. Drag a placed dot to move it. Up to 26 dots per image.

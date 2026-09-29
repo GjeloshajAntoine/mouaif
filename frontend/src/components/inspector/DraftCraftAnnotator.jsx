@@ -49,15 +49,20 @@ return fit == null ? MIN_ZOOM : fit;
 function centredLead(frameSize, contentSize) {
 return Math.max(0, (frameSize - contentSize) / 2);
 }
-// Where the frame must scroll (in frame content coordinates) so the image
-// fraction `fraction` that sat at content position `anchor` before the zoom
-// still sits under the same spot afterwards. Pure, so the centring maths is
+// Where the frame must scroll so the image fraction `fraction` that sat under
+// the viewport offset `viewport` before the zoom still sits under it afterwards.
+// Inside the frame's content box the image point sits at `lead + fraction x
+// content` (the stage's centring lead plus its position in the image), so the
+// scroll that puts it back under the viewport offset is that position minus the
+// offset. Sanity check: at an unchanged zoom this reduces to the current scroll
+// — the frame's own invariant `viewport = lead + fraction x content - scroll` —
+// so a zoom that changes nothing cannot move the image. Pure, so the maths is
 // pinned by scripts/test-inspector-annotator-zoom.js rather than only by a
 // browser.
-export function zoomTargetScroll({ anchor, fraction, lead, content, maxScroll = Infinity }) {
+export function zoomTargetScroll({ viewport, fraction, lead, content, maxScroll = Infinity }) {
 const clampToRange = (value) => Math.max(0, Math.min(maxScroll, value));
-if (!(content > 0)) return clampToRange(anchor);
-return clampToRange(anchor - lead - fraction * content);
+if (!(content > 0)) return clampToRange(0);
+return clampToRange(lead + fraction * content - viewport);
 }
 function clamp(value) {
 return Math.min(1, Math.max(0, value));
@@ -224,14 +229,12 @@ zoomRef.current = next;
 setZoom(next);
 if (!wrap || !before || !focus || before.width <= 0 || before.height <= 0) return;
 const wrapRect = wrap.getBoundingClientRect();
-// The image fraction under the focus point, and where that point sits in the
-// frame's content box — both measured before the zoom.
+// The image fraction under the focus point and where that point sits in the
+// frame's viewport — both measured before the zoom.
 const imageX = (focus.x - before.left) / before.width;
 const imageY = (focus.y - before.top) / before.height;
 const viewportX = focus.x - wrapRect.left;
 const viewportY = focus.y - wrapRect.top;
-const anchorX = wrap.scrollLeft + viewportX;
-const anchorY = wrap.scrollTop + viewportY;
 const settle = () => {
 const canvas = canvasRef.current;
 if (!canvas || !wrapRef.current) return;
@@ -239,8 +242,8 @@ const frame = wrapRef.current;
 const after = canvas.getBoundingClientRect();
 const leadX = centredLead(frame.clientWidth, after.width);
 const leadY = centredLead(frame.clientHeight, after.height);
-frame.scrollLeft = zoomTargetScroll({ anchor: anchorX, fraction: imageX, lead: leadX, content: after.width, maxScroll: Math.max(0, frame.scrollWidth - frame.clientWidth) });
-frame.scrollTop = zoomTargetScroll({ anchor: anchorY, fraction: imageY, lead: leadY, content: after.height, maxScroll: Math.max(0, frame.scrollHeight - frame.clientHeight) });
+frame.scrollLeft = zoomTargetScroll({ viewport: viewportX, fraction: imageX, lead: leadX, content: after.width, maxScroll: Math.max(0, frame.scrollWidth - frame.clientWidth) });
+frame.scrollTop = zoomTargetScroll({ viewport: viewportY, fraction: imageY, lead: leadY, content: after.height, maxScroll: Math.max(0, frame.scrollHeight - frame.clientHeight) });
 };
 // Measured on the frame *after* the zoomed stage has re-laid out: the
 // synchronous read still describes the old stage, and the frame's client and

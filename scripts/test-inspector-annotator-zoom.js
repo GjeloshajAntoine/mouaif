@@ -78,22 +78,49 @@ assert.equal(ctx.centredLead(375, 457), 0, 'an overflowing stage is pinned left'
 assert.equal(ctx.centredLead(652, 1304), 0, 'an overflowing stage is pinned top');
 
 // ---- zoomTargetScroll: keep the focused fraction under the same viewport spot ----
-// Centred stage, no scrolling before or after: the content under the anchor is
-// the centring lead plus the image fraction, so the scroll needed is the anchor
-// minus that content offset.
-const centred = { anchor: 300, fraction: 0.5, lead: 106, content: 163, maxScroll: 99999 };
-assert.equal(ctx.zoomTargetScroll(centred), 300 - 106 - 0.5 * 163,
-  'a centred stage scrolls by the anchor minus the centred image point');
-// The same anchor with the image overflowing (no lead): the scroll must follow
-// the point as it grows.
-assert.equal(ctx.zoomTargetScroll({ anchor: 500, fraction: 0.5, lead: 0, content: 652, maxScroll: 99999 }), 500 - 326,
-  'an overflowing stage scrolls to the point under the anchor');
-assert.equal(ctx.zoomTargetScroll({ anchor: 10, fraction: 0.9, lead: 0, content: 652, maxScroll: 99999 }), 0,
+// Inside the frame's content box the image point sits at `lead + fraction x
+// content`; the scroll that puts it back under a viewport offset is that minus
+// the offset. frameW x frameH = 375 x 652, joined for both axes below.
+// A centred stage (lead 106) at a middle viewport offset and a middle fraction:
+// correct scroll = 106 + 0.5*163 - 200 = -12.5 -> clamped to 0.
+assert.equal(ctx.zoomTargetScroll({ viewport: 200, fraction: 0.5, lead: 106, content: 163, maxScroll: 99999 }), 0,
+  'a centred stage clamps the scroll when the point sits left of the stage');
+// A centred stage (lead 106, content 163, fraction 0.5 -> the image point sits
+// at content 187.5). Asking for scroll 50 means the point must be 50 past the
+// viewport's left edge, i.e. a viewport offset of 137.5.
+assert.equal(ctx.zoomTargetScroll({ viewport: 137.5, fraction: 0.5, lead: 106, content: 163, maxScroll: 99999 }), 50,
+  'a centred stage scrolls by the point\'s offset inside the stage');
+// The identity that makes this formula right: for any state the frame can be
+// in, re-deriving the scroll from that state's own geometry returns the scroll
+// it already has. `viewport = lead + fraction*content - scroll` is the frame's
+// invariant, so feeding it back cannot move the image.
+for (const state of [
+  { scroll: 0, lead: 106, content: 163, fraction: 0 },
+  { scroll: 0, lead: 106, content: 163, fraction: 1 },
+  { scroll: 40, lead: 106, content: 163, fraction: 0.75 },
+  { scroll: 1500, lead: 0, content: 3750, fraction: 0.5027 },
+  { scroll: 0, lead: 0, content: 3750, fraction: 0.9 }
+]) {
+  const viewport = state.lead + state.fraction * state.content - state.scroll;
+  assert.equal(
+    ctx.zoomTargetScroll({ viewport, fraction: state.fraction, lead: state.lead, content: state.content, maxScroll: 99999 }),
+    state.scroll,
+    'an unchanged zoom is a fixed point at scroll ' + state.scroll
+  );
+}
+// A point already at the image's top or bottom edge keeps the scroll at that
+// edge instead of drifting.
+assert.equal(ctx.zoomTargetScroll({ viewport: 300, fraction: 0, lead: 0, content: 652, maxScroll: 99999 }), 0,
+  'a point at the image top clamps to scroll 0');
+assert.equal(ctx.zoomTargetScroll({ viewport: 300, fraction: 1, lead: 0, content: 652, maxScroll: 99999 }), 352,
+  'a point at the image bottom lands where that edge must sit');
+// Bounds.
+assert.equal(ctx.zoomTargetScroll({ viewport: 0, fraction: 0, lead: 0, content: 100, maxScroll: 250 }), 0,
   'a target above the content start clamps to 0');
-assert.equal(ctx.zoomTargetScroll({ anchor: 9999, fraction: 0, lead: 0, content: 100, maxScroll: 250 }), 250,
+assert.equal(ctx.zoomTargetScroll({ viewport: -9999, fraction: 0, lead: 0, content: 100, maxScroll: 250 }), 250,
   'a target past the last scrollable pixel clamps to maxScroll');
-assert.equal(ctx.zoomTargetScroll({ anchor: 40, fraction: 0.5, lead: 0, content: 0, maxScroll: 99 }), 40,
-  'a stage that has not laid out yet keeps the anchor');
+assert.equal(ctx.zoomTargetScroll({ viewport: 40, fraction: 0.5, lead: 0, content: 0, maxScroll: 99 }), 0,
+  'a stage that has not laid out yet scrolls to 0 rather than to a stale offset');
 
 // ---- wiring: the gates use the measurable-aware helpers ----
 assert.equal(/disabled: zoom <= fitZoomFor\(/.test(source), false,
