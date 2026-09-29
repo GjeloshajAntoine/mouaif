@@ -177,18 +177,29 @@ function renderReadFileToolResult(body, r) {
   renderPreviewPre(body, r.body || '', 'tool-preview__pre tool-preview__pre--content');
 }
 
-// zoomableImage(img, label) -> HTMLButtonElement
+// zoomableImage(img, label, opts) -> HTMLButtonElement
 //
-// Wrap a tool-card thumbnail in a button that opens it in the full-screen
-// lightbox. Every inline tool image goes through here — read_file images,
-// and the image / image-resource blocks an MCP (or any generic) tool
-// returns — because the inline thumbnail is capped at 220 px, too small to
-// read a screenshot, chart or diagram on a phone.
-function zoomableImage(img, label) {
-  img.className = 'tool-card__image tool-card__image--zoomable';
+// Wrap an inline image in a button that opens it in the full-screen lightbox.
+// Every inline tool image goes through here — read_file images, and the
+// image / image-resource blocks an MCP (or any generic) tool returns — because
+// the inline thumbnail is capped at 220 px, too small to read a screenshot,
+// chart or diagram on a phone.
+//
+// `opts` tunes the wrapper for the caller:
+//   - `buttonClass` overrides the tool-card button class (a chat bubble uses
+//     its own so the thumbnail keeps the message layout).
+//   - `imgClass` overrides the classes forced onto the image; pass `null` to
+//     leave the caller's own class untouched.
+function zoomableImage(img, label, opts) {
+  const options = opts || {};
+  if (options.imgClass === null) {
+    img.classList.add('tool-card__image--zoomable');
+  } else {
+    img.className = options.imgClass || 'tool-card__image tool-card__image--zoomable';
+  }
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'tool-card__image-button';
+  button.className = options.buttonClass || 'tool-card__image-button';
   button.setAttribute('aria-label', 'Open ' + (label || 'image') + ' full screen');
   button.appendChild(img);
   button.addEventListener('click', () => openImageLightbox(img.src, img.alt));

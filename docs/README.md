@@ -66,6 +66,7 @@ One page per feature: what it does and how to use it.
 - [Chat switcher](features/chat-switcher.md) — jump between a project's chats from the chat header.
 - [@-mentions](features/at-mention.md) — insert files, agents, actions, and tools from the composer.
 - [Message copy](features/message-copy.md) — copy any message with one tap.
+- [Full-screen images in the chat](features/chat-image-zoom.md) — tap any picture to open it full screen.
 - [Touch taps](features/touch-taps.md) — every control answers a single tap on a phone; hover styling is scoped to mouse devices.
 - [Retry and auto-retry](features/retry-and-auto-retry.md) — retry a failed turn, or let the app retry once automatically.
 - [Chat error surfacing](features/chat-error-surfacing.md) — how a failed request shows up in the chat.

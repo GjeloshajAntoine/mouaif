@@ -143,6 +143,29 @@
   object-fit: contain;
   border: 1px solid rgba(255,255,255,0.35);
 }
+/* Each attachment image is wrapped in a button so a tap opens the full-screen
+   viewer. The button is a bare, 44 px-tall tap target that keeps the thumbnail
+   layout unchanged. */
+.chat-msg__attachment-button {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+  border-radius: var(--r-sm);
+  min-height: var(--tap);
+}
+/* Markdown-rendered images (assistant turn / system prompt) get the same
+   full-screen treatment; the wrapper is a bare block tap target. */
+.chat-msg__image-button {
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+  min-height: var(--tap);
+}
 .chat-msg__body[data-error="1"] {
   background: var(--danger-soft);
   color: var(--danger);

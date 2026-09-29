@@ -20,7 +20,7 @@ import {
   progressLevelOf,
   TOOL_ARGS_PREVIEW_CHARS
 } from './tools.js';
-import { renderToolResultBody } from './toolRender.js';
+import { renderToolResultBody, zoomableImage } from './toolRender.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
 import { cssEscape, copyText, messageCopyText } from './utils.js';
 import { formatCost } from '../../usage.js';
@@ -165,6 +165,11 @@ function transcriptInsert(refs, node) {
 }
 
 // renderImageAttachments(host, attachments)
+//
+// A user turn's image attachments render as a wrapped thumbnail grid. Each
+// thumbnail is wrapped by the shared `zoomableImage` button so a tap opens the
+// full-screen viewer (the same one tool-card images use), giving a readable
+// view of an image the user sent from a phone-sized bubble.
 function renderImageAttachments(host, attachments) {
   const wrap = document.createElement('div');
   wrap.className = 'chat-msg__attachments';
@@ -174,7 +179,10 @@ function renderImageAttachments(host, attachments) {
     img.className = 'chat-msg__attachment-img';
     img.src = a.dataUrl;
     img.alt = a.name || 'attached image';
-    wrap.appendChild(img);
+    wrap.appendChild(zoomableImage(img, a.name || 'attached image', {
+    imgClass: 'chat-msg__attachment-img',
+    buttonClass: 'chat-msg__attachment-button'
+    }));
   }
   host.appendChild(wrap);
 }
@@ -196,6 +204,33 @@ function textOfContent(content) {
   }
   if (content && typeof content === 'object') return JSON.stringify(content, null, 2);
   return '';
+}
+
+// makeMarkdownImagesZoomable(container)
+//
+// Markdown-rendered images (an assistant turn or a system prompt can embed
+// `![alt](url)`) arrive as bare <img> nodes inside the innerHTML. Wrap each in
+// the shared zoomable button so a tap opens the full-screen viewer instead of
+// leaving a picture the user cannot enlarge. Already-wrapped images (a
+// re-render would nest) and empty/non-image nodes are skipped.
+function makeMarkdownImagesZoomable(container) {
+  if (!container || typeof container.querySelectorAll !== 'function') return;
+  const imgs = Array.from(container.querySelectorAll('img'));
+  for (const img of imgs) {
+    if (!img.closest || img.closest('.chat-msg__image-button') || img.closest('.tool-card__image-button')) continue;
+    // Note the slot before wrapping: zoomableImage moves the image into the
+    // button, so afterwards the image is no longer a child of `container` and
+    // `img.replaceWith(button)` would be a no-op. Splice the button back into
+    // the slot the image occupied.
+    const parent = img.parentNode;
+    const next = img.nextSibling;
+    const button = zoomableImage(img, img.getAttribute('alt') || 'image', {
+      imgClass: null,
+      buttonClass: 'chat-msg__image-button'
+    });
+    if (parent && typeof parent.insertBefore === 'function') parent.insertBefore(button, next);
+    else container.appendChild(button);
+  }
 }
 
 // renderAssistantBody(body, content, reasoning, final)
@@ -227,14 +262,19 @@ function renderAssistantBody(body, content, reasoning, final) {
     thinkBody.className = 'chat-msg__reasoning-body' + (final ? '' : ' chat-msg__reasoning-body--raw');
     if (final) thinkBody.innerHTML = renderMarkdown(reasoning);
     else thinkBody.textContent = reasoning;
+    if (final) makeMarkdownImagesZoomable(thinkBody);
     details.appendChild(summary);
     details.appendChild(thinkBody);
     body.appendChild(details);
   }
   const answer = document.createElement('div');
   answer.className = 'chat-msg__answer';
-  if (final) answer.innerHTML = renderMarkdown(content || '');
-  else answer.textContent = content || '';
+  if (final) {
+    answer.innerHTML = renderMarkdown(content || '');
+    makeMarkdownImagesZoomable(answer);
+  } else {
+    answer.textContent = content || '';
+  }
   body.appendChild(answer);
 }
 
