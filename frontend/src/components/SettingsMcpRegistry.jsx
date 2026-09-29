@@ -9,6 +9,7 @@ import { h, Fragment } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { settingsLink } from './settings/projectNavigation.js';
+import { projectQS } from './settings/projectQS.js';
 import { McpStoreSheet, avatarStyle, initial, editorHref } from './settings/McpStoreSheet.jsx';
 import { friendlyName, publisher, summary, findInstalled, registryMeta, relativeDate } from './settings/mcpRegistryInstall.js';
 

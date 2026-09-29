@@ -8,6 +8,7 @@
 - **Store list**: `frontend/src/components/SettingsMcpRegistry.jsx` — debounced search-as-you-type (350 ms, stale responses dropped by a request sequence), client-side filter chips (Hosted / Local / No key) and sort (Recommended / Newest / Name), cards with Installed / Hosted / runtime / key / Popularity badges, and "Load more" cursor paging that appends and de-duplicates.
 - **Install sheet**: `frontend/src/components/settings/McpStoreSheet.jsx` — install option picker, API key vs OAuth for hosted servers, required fields first with optional ones folded under "More options", scope segment, then an installed state with **Start now** (`POST /api/mcp/servers/:id/start`).
 - **Pure helpers**: `frontend/src/components/settings/mcpRegistryInstall.js` — `installOptions`, `summary`, `buildServerBody`, `findInstalled`, `missingRequired`, `friendlyName`, `relativeDate`, and the placeholder resolution `isTemplate` / `fieldValue`. Tested by `scripts/test-mcp-registry-install.mjs`; `scripts/test-mcp-store-ui.mjs` is a manual browser fixture.
+- **Request wiring**: `scripts/test-mcp-registry-search.js` loads `SettingsMcpRegistry.jsx` through a faithful module loader (each file runs in its own scope, imports become real bindings) and asserts the view fetches both `/api/mcp/registry` and the project-scoped `/api/mcp/servers?projectDir=…`, including a typed search. A local helper the view calls without importing it is not in scope, so the test reproduces the browser's `ReferenceError` instead of a green build hiding it.
 - **Router**: `#/settings/mcp/registry` entry in the table in `frontend/src/routes.js`.
 - **Entry point**: primary "Browse store" button in the MCP server list view bar, plus a link in the empty-list message (`frontend/src/components/SettingsMcp.jsx`).
 
@@ -19,6 +20,7 @@
 | `frontend/src/components/settings/McpStoreSheet.jsx` | The install sheet (shared sheet idiom in `sheets.css`). |
 | `frontend/src/components/settings/mcpRegistryInstall.js` | Pure helpers that turn a Registry entry into install options and a `POST /api/mcp/servers` body. |
 | `scripts/test-mcp-registry-install.mjs` | Unit tests for the helpers. |
+| `scripts/test-mcp-registry-search.js` | Renders the store through a scope-faithful module loader and asserts it fetches registry results (including a typed search) and the project-scoped configured servers. |
 | `scripts/test-mcp-store-ui.mjs` | Manual browser fixture: the real store view with live Registry data and an in-memory server API. |
 
 ## From Registry entry to server config
