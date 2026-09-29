@@ -151,14 +151,14 @@ async function main() {
   // ---- cancel does not silently discard typed work ----------------------
   assert.match(panel, /function dismiss\(\)/,
     'cancel routes through a dismiss guard');
-  assert.match(panel, /if \(dirty && !applied && check\.ok\) \{ setConfirmDiscard\(true\); return; \}/,
+  assert.match(panel, /if \(dirty && !applied && check\.ok\) \{\s*setConfirmDiscard\(true\);/,
     'an unapplied edit asks before leaving, an applied one does not');
-  assert.match(panel, /onClick: \(e\) => e\.stopPropagation\(\)/,
-    'the sheet body does not close the sheet when tapped');
-  assert.match(panel, /class: 'btn inspector__sheet-close', type: 'button', onClick: dismiss \}/,
-    'the sheet close button uses the guard');
-  assert.match(panel, /class: 'inspector__overlay', onClick: busy \? undefined : dismiss/,
-    'tapping the backdrop uses the guard too');
+  assert.match(panel, /class: 'btn inspector__value-editor-close', type: 'button', disabled: busy, onClick: dismiss \}/,
+    'the in-flow close button uses the guard');
+  assert.ok(!panel.includes("class: 'inspector__overlay'"),
+    'the value editor has no overlay or accidental backdrop dismissal');
+  assert.match(panel, /class: 'inspector__value-discard', role: 'group'/,
+    'discard confirmation stays in the editor, not another modal');
   assert.match(panel, /confirmDiscard[\s\S]{0,400}Discard this change\?/,
     'the discard confirmation is rendered from that state');
 

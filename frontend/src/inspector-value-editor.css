@@ -1,4 +1,4 @@
-/* Touch value editing: wraps inside the existing safe-area-aware edit sheet. */
+/* Touch value editing: one in-flow editor, one Styles scroller. */
 .inspector__value-units,
 .inspector__value-presets,
 .inspector__value-parts,
@@ -74,3 +74,74 @@
 .inspector__kindseg { flex-wrap: wrap; }
 .inspector__kindseg-btn { min-width: 2.75rem; }
 .inspector__computed-filter { min-width: 2.75rem; }
+
+/* Local contrast tokens: captions are readable text, never grey-on-grey.
+   Neutral controls have a 3:1+ boundary; selection is a solid accent fill. */
+.inspector__value-editor {
+  --fg: #f5f7ff;
+  --fg-soft: #d1d8eb;
+  --muted: #c1ccdf;
+  --muted-2: #b6c3db;
+  --border: #8194b8;
+  --border-strong: #8194b8;
+  --surface: #111827;
+  --surface-2: #202d43;
+  --surface-3: #293a54;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  min-width: 0;
+  color: var(--fg);
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: var(--r-md);
+  overflow-wrap: anywhere;
+}
+.inspector__value-editor-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.inspector__value-editor-head > strong { flex: 1 1 auto; min-width: 0; font-size: 0.9rem; }
+.inspector__value-editor-head .btn { min-height: 2.75rem; min-width: 2.75rem; padding: 0 0.625rem; font-size: 0.85rem; }
+.inspector__value-editor .inspector__style-apply {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 700;
+  max-width: none;
+}
+.inspector__value-editor .inspector__style-apply:disabled {
+  color: var(--fg-soft);
+  background: var(--surface-3);
+  border-color: var(--border);
+  opacity: 1;
+}
+.inspector__value-editor-body { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+.inspector__value-editor-context { margin: 0; color: var(--fg-soft); font-size: 0.8rem; }
+.inspector__value-editor .label,
+.inspector__value-editor .inspector__shape-note,
+.inspector__value-editor .inspector__style-step-note,
+.inspector__value-editor .inspector__scope-note { color: var(--fg-soft); font-size: 0.8rem; line-height: 1.5; }
+.inspector__value-editor .inspector__unitchip,
+.inspector__value-editor .inspector__shape-chip,
+.inspector__value-editor .opt { min-width: 2.75rem; min-height: 2.75rem; font-size: 0.85rem; }
+.inspector__value-editor .is-on:disabled { opacity: 1; }
+.inspector__value-editor .inspector__style-valuerow { flex-wrap: wrap; }
+.inspector__value-editor .input { min-width: 0; min-height: 2.75rem; font-size: 1rem; background: var(--surface-2); border: 1px solid var(--border); }
+.inspector__value-editor .inspector__style-input--value { width: 0; }
+.inspector__value-editor .inspector__value-unit-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.inspector__value-convert { display: inline-flex; gap: 0.5rem; align-items: center; min-height: 2.75rem; padding: 0 0.375rem; font-size: 0.85rem; }
+.inspector__value-convert input { width: 1.25rem; height: 1.25rem; accent-color: var(--accent); }
+.inspector__value-other-units summary,
+.inspector__value-editor-options summary { min-height: 2.75rem; padding: 0.75rem 0; cursor: pointer; font-weight: 600; color: var(--fg); }
+.inspector__value-editor-options { border-top: 1px solid var(--border); }
+.inspector__value-editor-options[open] { display: flex; flex-direction: column; gap: 0.75rem; }
+.inspector__value-discard { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem; border: 1px solid var(--warning); border-radius: var(--r-sm); }
+.inspector__value-discard p { flex: 1 1 100%; margin: 0; }
+.inspector__value-discard .btn { min-height: 2.75rem; }
+/* While reading the editor, a second pinned chip strip must not cover it. */
+.inspector__styles.is-editing .inspector__touch-tabs { position: static; }

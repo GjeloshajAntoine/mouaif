@@ -41,17 +41,15 @@ import { alternatives, unitOptions, classify, seedValue } from './valueKinds.js'
 import { buildValueIndex, scaleFor, tokensFor, scaleNote, valuesFor } from './valueIndex.js';
 import { stepFor, snapValue, stepValue as stepValuePure } from './snapping.js';
 import { validateDeclaration } from './declaration.js';
-import { ConfirmSheet } from './ConfirmSheet.jsx';
 import { Suggestions } from './Suggestions.jsx';
 import { ValueRail } from './ValueRail.jsx';
 import { ValueKindsView } from './ValueKindsView.jsx';
 import { ValueUnitPicker } from './ValueUnitPicker.jsx';
 import { ValuePresets } from './ValuePresets.jsx';
 import { NumericValueParts } from './NumericValueParts.jsx';
-import { StyleControls } from './StyleControls.jsx';
+import { StyleControls, revealInPanel } from './StyleControls.jsx';
 import { AddPropertyBrowser } from './AddPropertyBrowser.jsx';
 import { createLiveShot } from './liveShot.js';
-import { sheetPortal } from './sheetPortal.js';
 import { valueShape } from './valueShapes.js';
 import { writtenNames } from './shorthand.js';
 // findDeclaration is also the read-before-write fallback in applyEdit/removeEdit:
@@ -309,17 +307,10 @@ function stepValue(value, dir, step) {
 if (!STEP_RE.test(String(value == null ? '' : value).trim())) return null;
 return stepValuePure(value, dir, step);
 }
-// StyleEditSheet — bottom sheet that edits one property. Shown when the
-// user taps a property row or an add-chip. Big inputs, a pinned preview of
-// the element being edited, and three actions: Apply (commits to the
-// element and keeps the sheet open so the user can keep nudging the same
-// property), Remove (drops the property), Cancel/Done.
-//
-// Applying used to close the sheet, which forced a scroll back to the
-// Preview panel to check the result and then a re-open of the sheet to try
-// another value. Keeping it open, with the element preview at the top of
-// the sheet, turns "edit → look → edit" into one continuous loop.
-function StyleEditSheet(props) {
+// StyleValueEditor — one property edited in the Styles card's scroll flow.
+// No portal, scrim or extra scroller. Apply stays open; Cancel/Done restores
+// the property-list position. Secondary controls are native disclosures.
+function StyleValueEditor(props) {
 const [prop, setProp] = useState(props.prop || '');
 // A property with nothing to copy starts on its family's neutral value rather
 // than an empty field (see seedValue): a blank value has no type, so the
@@ -411,19 +402,29 @@ if (live) setSiblings(Array.isArray(rows) ? rows : []);
 }).catch(() => { if (live) setSiblings([]); });
 return () => { live = false; };
 }, [propName]);
-// dismiss — leave the sheet, but never silently throw away typed work. The
-// sheet is a one-property editor that stays open across several applies, so
-// `dirty` (an edit made since the last write) is the only honest signal that
-// there is something to lose. Cancel and a tap on the overlay both route
-// through here; an unedited sheet — and one whose last edit was already
-// applied — closes immediately, which is the common case and must not gain a
-// dialogue.
+// Cancel/Done uses an in-flow discard guard. No backdrop or second layer:
+// valid pending touch/typed work remains visible until explicitly discarded.
 const [confirmDiscard, setConfirmDiscard] = useState(false);
+const discardRef = useRef(null);
+useLayoutEffect(() => {
+if (!confirmDiscard || !discardRef.current) return;
+const node = discardRef.current;
+const panel = node.closest('.inspector__styles');
+if (panel) revealInPanel(panel, node);
+}, [confirmDiscard]);
+function keepEditing() {
+setConfirmDiscard(false);
+const node = props.editorRef && props.editorRef.current;
+if (node) revealInPanel(node.closest('.inspector__styles'), node);
+}
 function dismiss() {
 if (busy) return;
 // `applied` means the field was written and kept: there is nothing pending,
 // even though it is still "dirty" relative to the value it opened with.
-if (dirty && !applied && check.ok) { setConfirmDiscard(true); return; }
+if (dirty && !applied && check.ok) {
+setConfirmDiscard(true);
+return;
+}
 props.onCancel();
 }
 // The page's own step for this property, when it has one: the steppers move by
@@ -588,53 +589,33 @@ setError((e && e.message) || 'Could not remove ' + propName);
 setBusy(false);
 }
 }
-return sheetPortal(h('div', { class: 'inspector__overlay', onClick: busy ? undefined : dismiss },
-h('div', {
-class: 'inspector__sheet inspector__sheet--style',
-role: 'dialog',
-'aria-modal': 'true',
-'aria-label': 'Edit ' + (propName || 'style'),
-onClick: (e) => e.stopPropagation()
+return h('section', {
+class: 'inspector__value-editor',
+ref: props.editorRef,
+role: 'region',
+'aria-label': 'Edit ' + (propName || 'style')
 },
-h('div', { class: 'inspector__sheet-head' },
-h('strong', { class: 'inspector__sheet-title' }, propName ? 'Edit ' + propName : 'Add style'),
-h('button', { class: 'btn inspector__sheet-close', type: 'button', onClick: dismiss }, applied ? 'Done' : 'Cancel')
+h('div', { class: 'inspector__value-editor-head' },
+h('strong', null, propName ? 'Edit ' + propName : 'Add style'),
+h('button', { class: 'btn inspector__value-editor-close', type: 'button', disabled: busy, onClick: dismiss }, applied ? 'Done' : 'Cancel'),
+h('button', { class: 'btn inspector__style-apply', type: 'button', disabled: busy || !check.ok,
+title: check.ok ? 'Apply this declaration to the element' : check.error, onClick: apply }, busy ? 'Applying…' : 'Apply')
 ),
-h('div', { class: 'inspector__sheet-body inspector__sheet-body--style' },
-// Pinned element preview — the reason the sheet can stay open. Tap it to
-// re-capture when a property changed the page outside this edit.
-props.shot
-? h('button', {
-class: 'inspector__styles-shot inspector__styles-shot--sheet',
-type: 'button',
-title: 'Tap to refresh the element preview',
-'aria-label': 'Refresh the element preview',
-disabled: !!props.shotBusy,
-onClick: props.onRefreshShot
-},
-h('img', { class: 'inspector__styles-shot-img', src: props.shot, alt: 'Preview of the edited element', draggable: 'false' })
-)
-: null,
-h('label', { class: 'label' }, 'Property'),
-h('input', {
-class: 'input inspector__style-input',
-type: 'text',
-value: prop,
-placeholder: 'e.g. background-color',
-autocapitalize: 'off',
-autocorrect: 'off',
-spellcheck: false,
-onInput: (e) => { setProp(e.currentTarget.value); setApplied(false); setDirty(true); }
-}),
-h('label', { class: 'label' }, 'Value'),
-// The value-type switch sits directly above the value field: it changes the
-// form of that value, so it has to be read before the field, not after.
-h(ValueTypes, {
-prop: propName,
-value,
-ctx: props.unitCtx,
-onChange: onField
-}),
+h('p', { class: 'inspector__value-editor-context' }, 'Editing element.style — this element only'),
+h('div', { class: 'inspector__value-editor-body' },
+h('label', { class: 'label', for: 'inspector-edit-value' }, 'Value'),
+// The actual field comes first; units and suggestions should never push it
+// several screens down. One scroller: the Styles panel, not an overlay body.
+h('div', { class: 'inspector__style-valuerow' },
+h('button', { class: 'inspector__style-step', type: 'button', disabled: busy || down == null,
+'aria-label': 'Decrease ' + (propName || 'value'), onClick: () => nudge(down) }, '−'),
+h('input', { class: 'input inspector__style-input inspector__style-input--value',
+id: 'inspector-edit-value', type: 'text', ref: valueInputRef, value,
+'aria-label': 'Value for ' + propName, autocapitalize: 'off', autocorrect: 'off', spellcheck: false,
+onInput: (e) => onField(e.currentTarget.value) }),
+h('button', { class: 'inspector__style-step', type: 'button', disabled: busy || up == null,
+'aria-label': 'Increase ' + (propName || 'value'), onClick: () => nudge(up) }, '+')
+),
 h(ValueUnitPicker, { prop: propName, value, ctx: props.unitCtx, onChange: onField,
 accepts: (next) => validateDeclaration(propName, next,
 typeof CSS !== 'undefined' && CSS.supports ? (p, v) => CSS.supports(p, v) : null).ok }),
@@ -666,36 +647,7 @@ onPick: onField
 }),
 ...valueChangers,
 h(NumericValueParts, { prop: propName, value, ctx: props.unitCtx, onChange: onField }),
-h('div', { class: 'inspector__style-valuerow' },h('button', {
-class: 'inspector__style-step',
-type: 'button',
-disabled: busy || down == null,
-'aria-label': 'Decrease ' + (propName || 'value'),
-title: down == null ? 'Not a number'
-: 'Decrease to ' + down + (pageStep ? ' — the page\'s ' + pageStep + (pageScale.unit || '') + ' step' : ''),
-onClick: () => nudge(down)
-}, '−'),
-h('input', {
-class: 'input inspector__style-input inspector__style-input--value',
-type: 'text',
-ref: valueInputRef,
-value,
-placeholder: 'e.g. #ffcc00',
-autocapitalize: 'off',
-autocorrect: 'off',
-spellcheck: false,
-onInput: (e) => { setValue(e.currentTarget.value); setApplied(false); setDirty(true); }
-}),
-h('button', {
-class: 'inspector__style-step',
-type: 'button',
-disabled: busy || up == null,
-'aria-label': 'Increase ' + (propName || 'value'),
-title: up == null ? 'Not a number'
-: 'Increase to ' + up + (pageStep ? ' — the page\'s ' + pageStep + (pageScale.unit || '') + ' step' : ''),
-onClick: () => nudge(up)
-}, '+')
-),
+
 // The page's step and where the typed value sits on it. The nudge pair moves in
 // whole steps, so this line is the answer to "why did + jump by 4?".
 pageStep && snap
@@ -704,6 +656,13 @@ pageStep && snap
 snap.offScale && snap.nearest ? ' · nearest ' + snap.nearest.value : ''
 )
 : null,
+h('details', { class: 'inspector__value-editor-options' },
+h('summary', null, 'More options: property, type & priority'),
+h('label', { class: 'label', for: 'inspector-edit-property' }, 'Property'),
+h('input', { class: 'input inspector__style-input', id: 'inspector-edit-property', type: 'text', value: prop,
+'aria-label': 'CSS property', autocapitalize: 'off', autocorrect: 'off', spellcheck: false,
+onInput: (e) => { setProp(e.currentTarget.value); setApplied(false); setDirty(true); } }),
+h(ValueTypes, { prop: propName, value, ctx: props.unitCtx, onChange: onField }),
 // Priority — the `!important` toggle, as one 44 px hit target.
 //
 // It is a toggle rather than a checkbox so the state is the label: the button
@@ -758,7 +717,8 @@ scope.added
 : null,
 h('p', { class: 'inspector__scope-note inspector__scope-kept' }, 'Every other declaration on this element is kept as it is.')
 );
-})(),
+})()
+),
 applied ? h('p', { class: 'inspector__style-applied', role: 'status' }, 'Applied — keep editing or tap Done') : null,
 // The live verdict from declaration.js. Shown in place of the post-write error
 // while the user is still typing, so an invalid value is named *before*
@@ -785,23 +745,15 @@ onClick: remove
 : null
 )
 ),
-// Discard guard for typed-but-unapplied work. Reuses the Inspector's own
-// in-app sheet (not window.confirm, which some embedded web views suppress —
-// see ConfirmSheet's header), so it appears where the user is looking and
-// keeps both buttons at the tap minimum.
+// Discard confirmation stays in the same flow too; no second layer to exit.
 confirmDiscard
-? h(ConfirmSheet, {
-open: true,
-title: 'Discard this change?',
-message: 'Your edit to ' + (propName || 'this property') + ' has not been applied. Leaving now keeps the value the element has.',
-confirmLabel: 'Discard',
-cancelLabel: 'Keep editing',
-onCancel: () => setConfirmDiscard(false),
-onConfirm: () => { setConfirmDiscard(false); props.onCancel(); }
-})
-: null
+? h('div', { class: 'inspector__value-discard', role: 'group', ref: discardRef, 'aria-label': 'Discard this change?' },
+h('p', { role: 'status' }, 'Discard this change? The pending value has not been applied.'),
+h('button', { class: 'btn', type: 'button', onClick: keepEditing }, 'Keep editing'),
+h('button', { class: 'btn btn--danger', type: 'button', onClick: () => { setConfirmDiscard(false); props.onCancel(); } }, 'Discard')
 )
-));
+: null
+);
 }
 
 // MatchedRulesSection — the read-only "where does this value come from"
@@ -948,6 +900,31 @@ const [model, setModel] = useState(null);
 const [loading, setLoading] = useState(false);
 const [error, setError] = useState('');
 const [edit, setEdit] = useState(null); // { prop, value } when editing
+const editorRef = useRef(null);
+const editorOrigin = useRef(null);
+const editScroll = useRef(null);
+function openEditor(next) {
+if (!edit) {
+editScroll.current = panelRef.current ? panelRef.current.scrollTop : 0;
+editorOrigin.current = typeof document === 'undefined' ? null : document.activeElement;
+}
+setEdit(next);
+}
+function closeEditor() {
+setEdit(null);
+}
+useLayoutEffect(() => {
+const panel = panelRef.current;
+if (edit && panel && editorRef.current) {
+revealInPanel(panel, editorRef.current);
+} else if (!edit && editScroll.current != null) {
+if (panel) panel.scrollTop = editScroll.current;
+editScroll.current = null;
+const origin = editorOrigin.current;
+if (origin && origin.isConnected && origin.focus) origin.focus({ preventScroll: true });
+editorOrigin.current = null;
+}
+}, [edit && edit.prop]);
 // addOpen — whether the "Add property" card sheet is up. The sheet is the browse
 // step between the touch surface's primary button and the edit sheet: it chooses
 // a *property*, then hands it to the same editor a declared row opens.
@@ -1898,8 +1875,31 @@ const computedPageLimit = pageEnd(computedVisible, computedSteps);
 const computedPage = computedVisible.slice(0, computedPageLimit);
 const computedMore = moreAfter(computedVisible, computedSteps);
 computedMoreRef.current = computedMore;
+const valueEditor = edit ? h(StyleValueEditor, {
+key: 'editor-' + edit.prop,
+editorRef,
+prop: edit.prop,
+value: edit.value,
+priority: edit.priority || (findDeclaration(model.inlineCss, edit.prop) || {}).priority || '',
+isInline: true,
+isRemove: groupedRows.some((x) => x.prop === edit.prop) || inlineRows.some((x) => x.prop === edit.prop),
+box: model.box,
+declared: inlineRows,
+valueIndex,
+colourCandidates: valuesFor(valueIndex, edit.prop, 8),
+from: ((props.receipt || []).find((r) => r.prop === edit.prop) || {}).from,
+unitCtx,
+contrastCtx: { bg: (computedRows.find((r) => r.prop === 'background-color') || {}).value,
+color: (computedRows.find((r) => r.prop === 'color') || {}).value },
+onRefreshShot: captureShot,
+readSiblings: props.readSiblingValues && model.objectId ? (property) => props.readSiblingValues(model.objectId, property) : null,
+onApply: applyEdit,
+onRemove: removeEdit,
+onDone: closeEditor,
+onCancel: closeEditor
+}) : null;
 return h('div', {
-class: 'inspector__styles',
+class: 'inspector__styles' + (edit ? ' is-editing' : ''),
 ref: panelRef,
 role: 'group',
 'aria-label': 'Element styles',
@@ -1953,6 +1953,7 @@ error
 ? h('p', { class: 'inspector__style-error', role: 'alert' }, error)
 : null
 ),
+valueEditor,
 // Pinned element preview: a clipped screenshot of the selected element, so
 // the result of an edit is readable without scrolling back to the Preview
 // panel. It is the *first row of the scroll flow*, immediately under the
@@ -2008,7 +2009,7 @@ onUndoAll: () => { setChanged([]); if (props.onUndoAll) props.onUndoAll(); },
 // Tapping a changed value reopens its editor on the value that is on the
 // page now, so the strip at the top of the panel is also the shortest way
 // back to the property that was just changed.
-onEditRow: (row) => setEdit({ prop: row.prop, value: row.to })
+onEditRow: (row) => openEditor({ prop: row.prop, value: row.to })
 }),
 // Deliberately *inside the scroll flow*, not in the sticky block above it.
 // Both strips are horizontal scrollers a full tap-target tall, and pinning
@@ -2173,7 +2174,7 @@ onApply: applyControl,
 // The value button and the colour swatch open the same editor a declared row
 // opens: exact typing, the value-type switch, the unit row and the page's own
 // suggestions live there, and no touch control replaces them.
-onEdit: (prop, value) => setEdit({ prop, value }),
+onEdit: (prop, value) => openEditor({ prop, value }),
 // A disclosure, not an action: the property browser is a block in this panel,
 // so the same tap that opens it closes it (see the aria-expanded wiring in
 // StyleControls).
@@ -2201,7 +2202,7 @@ suggestions: COMMON_CSS,
 onClose: () => setAddOpen(false),
 onPick: (row) => {
 setAddOpen(false);
-setEdit({ prop: row.prop, value: row.isSet ? row.value : '' });
+openEditor({ prop: row.prop, value: row.isSet ? row.value : '' });
 }
 }),
 h('div', { class: 'inspector__styles-section' },
@@ -2235,7 +2236,7 @@ type: 'button',
 title: 'Edit ' + row.prop + (row.longhands && row.longhands.length
 ? ' — shorthand for ' + memberNames(row).slice(1).join(', ')
 : ''),
-onClick: () => setEdit({ prop: row.prop, value: row.value, priority: row.priority || '' })
+onClick: () => openEditor({ prop: row.prop, value: row.value, priority: row.priority || '' })
 },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
 groupChanged(row, changed) ? h('span', { class: 'inspector__styles-changed', 'aria-hidden': 'true' }, 'changed') : null,
@@ -2268,7 +2269,7 @@ showUa,
 selectionKey: model.objectId,
 onToggle: () => setRulesOpen(!rulesOpen),
 onToggleUa: () => setShowUa(!showUa),
-onEdit: (prop, value) => setEdit({ prop, value })
+onEdit: (prop, value) => openEditor({ prop, value })
 })
 ),
 h('div', { class: 'inspector__styles-section' },
@@ -2363,7 +2364,7 @@ type: 'button',
 // Label in name: the row visibly reads `{prop} {value}` and its source.
 'aria-label': (changedRow ? 'Changed. ' : '') + 'Edit ' + row.prop + ', value ' + (row.value || '') + ', from ' + sourceText,
 title: 'Edit ' + row.prop + ' — ' + sourceText,
-onClick: () => setEdit({ prop: row.prop, value: row.value })
+onClick: () => openEditor({ prop: row.prop, value: row.value })
 },
 h('span', { class: 'inspector__computed-line' },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
@@ -2395,66 +2396,6 @@ onClick: () => setComputedSteps(0)
 : h('p', { class: 'inspector__styles-none', role: 'status' },
 emptyMessage({ query: computedQuery, filter: computedFilter }))
 ),
-edit ? h(StyleEditSheet, {
-// Keyed by property so a different row remounts the sheet: its own value state,
-// its colour format and its sticky shape all reset together, rather than leaking
-// between two different edits.
-key: 'sheet-' + edit.prop,
-prop: edit.prop,
-value: edit.value,
-// The priority the element stores for this property right now, so the sheet's
-// `!important` toggle opens on the truth and an edit keeps it.
-priority: edit.priority || '',
-isInline: true,
-isRemove: groupedRows.some((x) => x.prop === edit.prop) || inlineRows.some((x) => x.prop === edit.prop),
-// The element's own box, for the value rail's length range (0…4× its size).
-box: model.box,
-// What the element declares right now, so the sheet can count what the write
-// keeps as well as what it changes (see scopeSummary).
-declared: inlineRows,
-valueIndex,
-// The colours this page uses for the property being edited: the colour view's
-// palette. It comes from the index the panel already built, so it costs no page
-// read. The keyword list is derived inside the sheet from the live property.
-colourCandidates: valuesFor(valueIndex, edit.prop, 8),
-// The value the property had before this session's first edit on it: the rail's
-// header prints it struck through, so a drag always shows what it replaced.
-from: (() => {
-const entry = (props.receipt || []).find((r) => r.prop === edit.prop);
-return entry ? entry.from : null;
-})(),
-shot: shot && shot.src,
-shotBusy,
-// The real base font sizes (root for rem, parent for em / font-size %) so the
-// value-type switch converts with numbers instead of assuming 16px.
-unitCtx: model.bases ? { rootFontSize: model.bases.root, parentFontSize: model.bases.parent, fontSize: model.bases.self } : undefined,
-// The element's resolved background and text colours: what a colour chip's
-// WCAG ratio is measured against (see contrast.js). Read from the computed
-// list the panel already has, so the badge costs no extra CDP call.
-contrastCtx: (() => {
-  const resolved = (name) => {
-    const row = computedRows.find((r) => r.prop === name);
-    return row ? row.value : '';
-  };
-  const bg = resolved('background-color');
-  return {
-    bg,
-    color: resolved('color'),
-    // A transparent background has nothing to measure against, so the ratio
-    // is read against the page's own background instead of against `rgba(0,0,0,0)`.
-    fallbackBg: /rgba?\(0,\s*0,\s*0,\s*0\)|transparent/i.test(bg) ? resolved('background-color') : ''
-  };
-})(),
-onRefreshShot: captureShot,
-// The sibling read the sheet's Match-a-sibling group uses: bound to the
-// selected element's objectId here, so the sheet only has to name a property.
-readSiblings: props.readSiblingValues && model.objectId
-? (property) => props.readSiblingValues(model.objectId, property)
-: null,
-onApply: applyEdit,
-onRemove: removeEdit,
-onDone: () => setEdit(null),
-onCancel: () => setEdit(null)
-}) : null
+
 );
 }

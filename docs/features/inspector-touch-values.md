@@ -2,14 +2,14 @@
 
 ## Overview
 
-Every Styles row opens the same value editor, including rows outside the six Style controls groups. The editor offers common-value suggestions, explicit unit selection, and individual numeric-part controls for compound CSS, alongside the values and tokens already found on the page.
+Every Styles row opens the same value editor **inside the Styles card**, below the selected element's identity. No sheet or overlay covers the Inspector: the panel remains the only scroller, with the value field first, readable controls, suggestions and individual numeric-part editing.
 
 ## Usage
 
 1. Select an element in **Inspector → Styles**, then tap a Declared, Computed, or Matched rules value.
 2. Use **Suggested values** for common values and keywords. Grid tracks, ratios, fonts, borders, shadows, images, transforms and transitions have starter presets; numeric families offer numeric presets. **Show all** expands the list and adds search. These are examples, clearly separate from **On this page** suggestions.
-3. Use **Choose unit** to keep the number and deliberately change its unit. For example, `16px` becomes `16rem`, **not** `1rem`. With `auto` or an empty length value, choosing a unit starts at zero. Common units have chips; **All units** also offers physical and viewport units. Units that are invalid for the whole declaration are disabled.
-4. Use **Convert unit** to preserve the value when its basis is known: `16px` becomes `1rem` with a 16px root. Unmeasured percentage, viewport or glyph-based conversions are disabled with a reason; switch back to Choose unit if a new value, rather than a conversion, is intended.
+3. Tap a **Unit** chip to keep the number and deliberately change its unit. For example, `16px` becomes `16rem`, **not** `1rem`. With `auto` or an empty length value, choosing a unit starts at zero. Common units have chips; **Other units** expands a selector for physical and viewport units. Units that are invalid for the whole declaration are disabled.
+4. Check **Convert value** to preserve the value when its basis is known: `16px` becomes `1rem` with a 16px root. Unmeasured percentage, viewport or glyph-based conversions are disabled with a reason; uncheck it if a new value, rather than a conversion, is intended.
 5. For a compound value, use **Numeric parts**. Each recognized number has − / +, a numeric input, and its own unit picker. Changing one part preserves everything around it:
 
 ```css
@@ -18,7 +18,8 @@ box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.2);
 box-shadow: 0px 2px 1rem rgba(0, 0, 0, 0.2);
 ```
 
-6. Tap **Apply** to commit. Suggestions, unit changes and part controls only change the draft; Cancel asks before discarding a valid pending touch edit, just as it does for typed edits.
+6. Tap **Apply** in the editor header to commit without closing. **Cancel / Done** returns to the list's previous scroll position and focus. Pending edits get **Keep editing / Discard** in the same panel, not another modal.
+7. Expand **More options: property, type & priority** only when needed; it contains the property-name field, value-type conversion, `!important` control and scope summary. Common editing does not require another tab or screen.
 
 ## Limitations
 
@@ -32,7 +33,8 @@ box-shadow: 0px 2px 1rem rgba(0, 0, 0, 0.2);
 
 - Function/list rails only render for true numeric arguments, never for colour functions or identifiers. Mixed-unit fan-out sides keep their own unit unless Link all is explicitly used.
 - Relative-unit Style controls use measured font sizes for sliders and steppers, so nudging a rem value preserves its unit.
-- Controls wrap, use at least 44 × 44px targets, and remain inside the existing safe-area-aware bottom sheet.
+- Controls wrap and use at least 44 × 44px targets. The editor and discard prompt render in the Styles card's existing scroll flow, with no modal or independent viewport.
+- Editor text/captions meet WCAG AA contrast; neutral control boundaries meet 3:1 contrast. Selected units retain a solid accent background instead of disabled fading.
 - No new server endpoint or dependency is required.
 
 ## Related

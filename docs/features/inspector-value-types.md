@@ -8,7 +8,7 @@ A CSS declaration's **type** is invisible in the panel: `14px`, `14`, `87.5%`, `
 
 ## Usage
 
-Tap any declared style row (or a quick-add chip) in the Styles panel to open the edit sheet, then type or edit the value. Below the **Value** label:
+Tap any declared style row (or a quick-add chip) in the Styles panel to open its in-flow value editor. Unit chips are beside the value workflow; the explicit type switch is under **More options: property, type & priority**.
 
 > **A property the element does not declare yet opens on its family's neutral value** — `0px` for a length, `0` for a number, `0ms` for a time, `0deg` for an angle — rather than on an empty field, so the type switch, the unit row and the rail are all there from the first tap. A colour, a keyword and a custom property have no neutral form worth inventing (`#000000` is a choice, not an absence), so those fields stay empty and the page palette or the keyword chips are the input. Nothing is written to the page until **Apply**, and the seeded value is editable like any other.
 
@@ -17,7 +17,7 @@ Tap any declared style row (or a quick-add chip) in the Styles panel to open the
    - **Colour** and **Keyword** for a colour;
    - **Time** (**ms** / **s**) for a duration, **Angle** (**deg** / **turn** / **rad**) for a rotation.
    The type in force is highlighted and shows the current value. Tapping another type rewrites the field — nothing is written to the page until **Apply**.
-2. **Unit** — **Choose unit** keeps the digits and changes the unit (`16px` → `16rem`), explicitly changing its meaning; it also starts a numeric value from `auto` or an empty field. **Convert unit** preserves the measured value (`16px` ⇄ `1rem` with a 16 px root, `180ms` ⇄ `0.18s`, `0.5turn` ⇄ `180deg`) and disables unmeasured conversions rather than guessing a base. Common units have chips and **All units** offers viewport and physical units. Compound values have the same picker on each numeric part; see [Inspector touch value editing](./inspector-touch-values.md).
+2. **Unit** — unit chips keep the digits and change the unit (`16px` → `16rem`), explicitly changing its meaning; they also start a numeric value from `auto` or an empty field. Check **Convert value** to preserve the measured value (`16px` ⇄ `1rem` with a 16 px root, `180ms` ⇄ `0.18s`, `0.5turn` ⇄ `180deg`); unmeasured conversions are disabled rather than guessed. Common units have chips and **Other units** expands viewport and physical units. Compound values have the same picker on each numeric part; see [Inspector touch value editing](./inspector-touch-values.md).
 3. **The warning line** — names the cost of the lossy forms: `Number 16px becomes 16 — the unit is dropped; still undoable · Keyword discards 16px — the old value stays undoable`. Forms that cannot be derived are listed with the reason instead of offering a guessed number: `Percent: a percentage of font-size needs a base size the inspector does not read`.
 4. **Apply** — commits the value that is in the field. The switch itself never writes, so a type change is one property and one undo entry, and the element's other declarations are untouched.
 

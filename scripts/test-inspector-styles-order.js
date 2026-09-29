@@ -180,8 +180,8 @@ assert.ok(/const changedRow = isChanged\(changed, row\.prop\)/.test(panel),
   'the computed render asks per row whether it changed');
 assert.ok(/const changedRow = isChanged[\s\S]{0,1200}h\('button'[\s\S]{0,120}class: 'inspector__styles-row-main/.test(panel),
   'a changed computed row is rendered as an editor button (every computed row is)');
-assert.ok(/setEdit\(\{ prop: row\.prop, value: row\.value \}\)/.test(panel),
-  'opening it carries the computed value into the sheet');
+assert.ok(/openEditor\(\{ prop: row\.prop, value: row\.value \}\)/.test(panel),
+  'opening it carries the computed value into the inline editor');
 assert.ok(/isChanged\(changed, row\.prop\) \? ' inspector__styles-row--changed'/.test(panel)
   || /changedRow \? ' inspector__styles-row--changed'/.test(panel),
   'the highlight class is still applied from the same predicate as the button');

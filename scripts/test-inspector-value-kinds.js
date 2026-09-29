@@ -319,8 +319,9 @@ check('the switch keeps the property being edited',
   check('the parent font size falls back to the element font size',
     /if \(parent ?== null\) parent = parseFloat\(cs\.fontSize\) \|\| null;/.test(eventsSource)
     || /parent == null\) parent = parseFloat\(cs\.fontSize\)/.test(eventsSource));
-  check('the panel hands the bases to the sheet as the unit context',
-    /unitCtx: model\.bases \? \{ rootFontSize: model\.bases\.root, parentFontSize: model\.bases\.parent/.test(stylesSource));
+  check('the panel hands measured bases to the inline editor as the unit context',
+    /const unitCtx = model\.bases\s*\? \{ rootFontSize: model\.bases\.root, parentFontSize: model\.bases\.parent/.test(stylesSource)
+    && /colourCandidates:[\s\S]{0,250}unitCtx,/.test(stylesSource));
   check('the sheet passes the context through to the model',
     /ctx: props\.unitCtx/.test(stylesSource));
   check('a post-edit read keeps the bases on the model',

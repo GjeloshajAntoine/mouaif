@@ -379,7 +379,7 @@ TC.GRADIENT_PRESETS.every((g) => g.value === 'none' || /rgb|rgba/.test(g.value))
 // ---- the surface is wired to the panel --------------------------------
 
 check('the panel renders the touch surface',
-  /import \{ StyleControls \} from '\.\/StyleControls\.jsx'/.test(panelSource)
+  /import \{ StyleControls, revealInPanel \} from '\.\/StyleControls\.jsx'/.test(panelSource)
   && /h\(StyleControls, \{/.test(panelSource));
 check('the surface is given the same declared/computed pair the lists render',
   /ctx: \{ declared: inlineRows, computed: computedRows \}/.test(panelSource));
@@ -393,7 +393,7 @@ check('the surface writes through the panel\'s own apply path',
 check('a failed control write is reported in the panel, not as a rejection',
   /async function applyControl[\s\S]{0,220}catch \(e\) \{[\s\S]{0,120}setError/.test(panelSource));
 check('a control\'s value button opens the same editor a declared row opens',
-  /onEdit: \(prop, value\) => setEdit\(\{ prop, value \}\)/.test(panelSource));
+  /onEdit: \(prop, value\) => openEditor\(\{ prop, value \}\)/.test(panelSource));
 check('the value index answers the colour swatches, so they cost no page read',
   /swatchesFor: \(prop\) => valuesFor\(valueIndex, prop, 6\)/.test(panelSource));
 check('the primary button opens the property browser',
@@ -407,7 +407,7 @@ check('the browser carries the id its trigger points at',
 check('the property browser is rendered by the panel with its suggestions',
 /h\(AddPropertyBrowser, \{/.test(panelSource) && /suggestions: COMMON_CSS,/.test(panelSource));
 check('picking a card closes the browser and opens the value editor on that property',
-/onPick: \(row\) => \{[\s\S]{0,160}setAddOpen\(false\);[\s\S]{0,160}setEdit\(\{ prop: row\.prop, value: row\.isSet \? row\.value : '' \}\)/.test(panelSource));
+/onPick: \(row\) => \{[\s\S]{0,160}setAddOpen\(false\);[\s\S]{0,160}openEditor\(\{ prop: row\.prop, value: row\.isSet \? row\.value : '' \}\)/.test(panelSource));
 check('clearing the selection closes the property browser',
 /setEdit\(null\);[\s\S]{0,200}setAddOpen\(false\)/.test(panelSource));
 check('the surface uses a native range, so a phone already knows how to drag it',
@@ -630,8 +630,7 @@ check('the portal helper mounts at the document root, not in a panel',
 for (const file of [
 'ConfirmSheet.jsx',
 'DetailSheet.jsx',
-'InspectorProfilesSheet.jsx',
-'StylesPanel.jsx'
+'InspectorProfilesSheet.jsx'
 ]) {
 const src = read('frontend/src/components/inspector/' + file);
 const overlays = (src.match(/class: 'inspector__overlay'/g) || []).length;
@@ -645,8 +644,9 @@ overlays + ' overlay(s), ' + portalled + ' portalled');
 // { class: 'inspector__overlay' …` is the only one that can be portalled at the
 // root. Assert the helper is not called anywhere else in a way that would wrap
 // an unrelated node.
-check('no sheet overlay is left rendering inline in the panel stack',
-!/return h\('div', \{ class: 'inspector__overlay'/.test(panelSource));
+check('the style value editor is inline, not an overlay or portal',
+!/sheetPortal|inspector__overlay/.test(panelSource)
+&& /class: 'inspector__value-editor'/.test(panelSource));
 check('the add-property cards are not portalled and not a sheet',
 !/sheetPortal/.test(browserSource)
 && !/inspector__overlay/.test(browserSource)

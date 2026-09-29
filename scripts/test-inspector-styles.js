@@ -651,7 +651,7 @@ async function main() {
   // and names where the value comes from (element.style, a rule, inherited).
   assert.ok(/class: 'inspector__styles-row-main inspector__computed-rowbtn'/.test(panelSrc),
   'every computed row is rendered as an editor button');
-  assert.ok(/onClick: \(\) => setEdit\(\{ prop: row\.prop, value: row\.value \}\)/.test(panelSrc),
+  assert.ok(/onClick: \(\) => openEditor\(\{ prop: row\.prop, value: row\.value \}\)/.test(panelSrc),
   'a computed row opens the editor on the value the page reports now');
   assert.ok(/inspector__computed-source/.test(panelSrc) && /'browser default'/.test(panelSrc),
   'a computed row shows its source, and says so when it is a browser default');

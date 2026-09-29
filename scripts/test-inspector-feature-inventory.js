@@ -280,7 +280,7 @@ check('styles: the card header carries clear / refresh / pick', /inspector__styl
 check('styles: the identity is no longer a header chip', !/inspector__panel-elem/.test(inspector) && !/inspector__panel-elem/.test(css));
 check('styles: the body action row is gone', !/inspector__styles-head/.test(styles) && !/inspector__styles-tools/.test(styles));
 check('styles: clearing the selection drops the retained element', /onCleared/.test(styles) && /onCleared/.test(inspector));
-check('styles: inline edit sheet', /StyleEditSheet/.test(styles));
+check('styles: in-flow value editor', /StyleValueEditor/.test(styles) && !/sheetPortal/.test(styles));
 check('styles: quick-add chips', /COMMON_CSS/.test(styles));
 check('styles: changed-first ordering', /orderChangedFirst/.test(styles));
 check('console: level styling', /inspector__row-level/.test(consolePanel));
