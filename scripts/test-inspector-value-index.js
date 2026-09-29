@@ -547,8 +547,9 @@ check('the index is built from the rules and the computed style',
 /buildValueIndex\(\{ rules: \(rules && rules\.rules\) \|\| \[\], computed: computedRows \}\)/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
 check('the index is memoised so a CDP rerender does not rebuild it',
 /useMemo\(\s*\(\) => buildValueIndex/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
-check('picking a suggestion only rewrites the field',
-/onPick: \(next\) => \{ setValue\(next\); setApplied\(false\); setError\(''\); \}/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
+check('picking a suggestion only rewrites the field and marks pending work',
+/onPick: onField/.test(read('frontend/src/components/inspector/StylesPanel.jsx'))
+&& /const onField = \(next\) => \{ setValue\(next\); setApplied\(false\); setDirty\(true\); setError\(''\); \}/.test(read('frontend/src/components/inspector/StylesPanel.jsx')));
 check('the suggestion chips are styled', /\.inspector__suggest \{/.test(read('frontend/src/inspector.css')));
 // ---- Part V3: snapping and contrast in the same row ---------------------
 // The snap hint is rendered by this component too, so an off-scale value is

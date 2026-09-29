@@ -120,6 +120,7 @@ One page per feature: what it does and how to use it.
 - [Add Inspector entries to a chat](features/inspector-add-to-chat.md) — send a log, exception, or request to a chat draft.
 - [Inspector Styles](features/inspector-styles.md) — tap an element and edit its CSS.
 - [Inspector touch controls](features/inspector-touch-controls.md) — chips, sliders, a box model, and swatches for CSS.
+- [Inspector touch value editing](features/inspector-touch-values.md) — suggested values, choose/convert units, and numeric parts for compound CSS.
 - [Inspector value types](features/inspector-value-types.md) — switch a value between length, number, percentage, and keyword.
 - [Inspector value suggestions](features/inspector-value-suggestions.md) — values and design tokens the page already uses.
 - [Inspector value rail](features/inspector-value-rail.md) — one numeric control for every kind of value.

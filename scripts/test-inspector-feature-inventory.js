@@ -250,7 +250,9 @@ check('no breadcrumb that walks the tree from above the panels',
 check('the timeline of the selection is still published by the styles panel',
 /onSelectionChange/.test(styles));
 check('the edit sheet switches value types', /inspector__kindseg/.test(styles));
-check('the edit sheet offers the unit cycle', /inspector__unitchip/.test(styles));
+check('the edit sheet offers unit selection and conversion',
+  /h\(ValueUnitPicker,/.test(styles)
+  && /inspector__unitchip/.test(read('frontend/src/components/inspector/ValueUnitPicker.jsx')));
 check('the session receipt is shown with undo', /inspector__receipt/.test(styles));
 check('the edit sheet states the edit scope', /inspector__scope/.test(styles));
 check('the value-type context comes from the page, not a guessed root size',

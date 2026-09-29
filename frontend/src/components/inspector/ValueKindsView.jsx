@@ -31,6 +31,7 @@ contrastForValue, addableFunctions, addFunction, moveFunction, FUNCTIONS_NONE
 import { shorthandFor } from './shorthand.js';
 import { railRange, valueToRatio, ratioToValue, quantize, tickValues } from './valueRail.js';
 import { formatNumber } from './valueKinds.js';
+import { scalarValue } from './touchValues.js';
 // SubRail — the short rail the fan-out and function rows use. It is the same
 // math as the main rail (valueToRatio / ratioToValue / quantize) with a compact
 // presentation: name, track, thumb, value. No ticks and no footer, because four
@@ -230,7 +231,8 @@ const sides = Object.assign({}, split.sides);
 if (isLinked) {
 for (const s of def) sides[s.key] = formatNumber(n) + unit;
 } else {
-sides[key] = formatNumber(n) + unit;
+const own = scalarValue(split.sides[key]);
+sides[key] = formatNumber(n) + (own ? own.unit : unit);
 }
 const next = shorthandFor(props.prop, sides);
 if (next.ok && next.form === 'shorthand') props.onChange(next.value);
@@ -250,7 +252,9 @@ h('span', null, 'Link all sides — drag one, all move')
 h('div', { class: 'inspector__railcard' },
 def.map((s) => {
 const n = split.numbers[s.key];
-const range = railRange(props.prop, (n == null ? 0 : n) + unit, props.ctx || {});
+const own = scalarValue(split.sides[s.key]);
+if (!own) return h('p', { key: s.key, class: 'inspector__shape-note' }, s.label + ': ' + split.sides[s.key]);
+const range = railRange(props.prop, split.sides[s.key], props.ctx || {});
 return h('div', { key: s.key, class: 'inspector__subrail-row' },
 h(SubRail, {
 label: s.label,
@@ -355,16 +359,16 @@ type: 'button',
 onClick: () => remove(f.index)
 }, '✕')
 ),
-f.args.map((a, ai) => h('div', { key: 'a' + ai, class: 'inspector__subrail-row' },
+f.args.map((a, ai) => scalarValue(a.value) ? h('div', { key: 'a' + ai, class: 'inspector__subrail-row' },
 h(SubRail, {
 label: 'arg ' + (ai + 1),
-value: Number(String(a.value).replace(/[^\d.+-]/g, '')),
-range: railRange(props.prop, a.value, props.ctx || {}),
+value: scalarValue(a.value).number,
+range: railRange(f.name, a.value, props.ctx || {}),
 step: argStep(a.value, props.step),
 text: a.value,
 onChange: (v) => setArg(f.index, ai, formatNumber(v) + argUnit(a.value))
 })
-))
+) : h('p', { key: 'a' + ai, class: 'inspector__shape-note' }, 'Argument ' + (ai + 1) + ': ' + a.value))
 )),
 h('div', { class: 'inspector__fn-addrow', role: 'group', 'aria-label': 'Add a function' },
 h('span', { class: 'inspector__fn-addlabel' }, 'Add'),
@@ -426,16 +430,16 @@ disabled: ii === items.length - 1,
 onClick: () => moveItem(ii, 1)
 }, '▼')
 ),
-it.args.map((a, ai) => h('div', { key: 'a' + ai, class: 'inspector__subrail-row' },
+it.args.map((a, ai) => scalarValue(a.value) ? h('div', { key: 'a' + ai, class: 'inspector__subrail-row' },
 h(SubRail, {
 label: String(a.value).slice(0, 8),
-value: Number(String(a.value).replace(/[^\d.+-]/g, '')),
+value: scalarValue(a.value).number,
 range: railRange(props.prop, a.value, props.ctx || {}),
 step: argStep(a.value, props.step),
 text: a.value,
 onChange: (v) => setItem(ii, ai, formatNumber(v) + argUnit(a.value))
 })
-))
+) : h('p', { key: 'a' + ai, class: 'inspector__shape-note' }, a.value))
 ))
 );
 }
@@ -512,7 +516,7 @@ if (shape === 'rail') return null;
 if (shape === 'text') {
 // The honest fallback: the typed field is the control, and the line says why.
 return h('p', { class: 'inspector__shape-note' },
-'No shape view for this value — the typed field is the control.'
+'Use suggested values, numeric parts when available, or type an exact value. Unparsed content is preserved.'
 );
 }
 if (shape === 'colour') return h(ColourView, props);
@@ -521,11 +525,13 @@ if (shape === 'enum') return h(EnumView, props);
 if (shape === 'functions') return h(FunctionsView, props);
 if (shape === 'image') return h(ImageView, props);
 if (shape === 'time') {
+if (props.hideUnits) return null;
 return h('div', { class: 'inspector__shape' },
 h(UnitRow, { label: 'Time unit', options: timeOptions(props.value), onChange: props.onChange })
 );
 }
 if (shape === 'angle') {
+if (props.hideUnits) return null;
 return h('div', { class: 'inspector__shape' },
 h(UnitRow, { label: 'Angle unit', options: angleOptions(props.value), onChange: props.onChange })
 );

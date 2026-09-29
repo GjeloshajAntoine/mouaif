@@ -45,6 +45,9 @@ import { ConfirmSheet } from './ConfirmSheet.jsx';
 import { Suggestions } from './Suggestions.jsx';
 import { ValueRail } from './ValueRail.jsx';
 import { ValueKindsView } from './ValueKindsView.jsx';
+import { ValueUnitPicker } from './ValueUnitPicker.jsx';
+import { ValuePresets } from './ValuePresets.jsx';
+import { NumericValueParts } from './NumericValueParts.jsx';
 import { StyleControls } from './StyleControls.jsx';
 import { AddPropertyBrowser } from './AddPropertyBrowser.jsx';
 import { createLiveShot } from './liveShot.js';
@@ -197,21 +200,8 @@ h('span', { class: 'inspector__kindseg-name' }, a.label),
 h('span', { class: 'inspector__kindseg-val' }, a.isCurrent ? value : (a.ok ? a.value : '—'))
 ))
 ),
-units.length > 1
-? h('div', { class: 'inspector__unitrow', role: 'group', 'aria-label': 'Unit' },
-h('span', { class: 'inspector__unitrow-label' }, 'Unit'),
-units.map((u) => h('button', {
-class: 'inspector__unitchip' + (u.current ? ' is-on' : ''),
-type: 'button',
-key: u.unit,
-disabled: !u.ok,
-'aria-pressed': String(!!u.current),
-title: u.current ? u.unit + ' — the unit in use'
-  : u.ok ? 'Rewrite as ' + u.value + (u.note ? ' (' + u.note + ')' : '') : 'Not available: ' + u.reason,
-onClick: () => props.onChange(u.value)
-}, u.unit))
-)
-: null,
+// Unit selection is separate: it remains available for `auto` and an empty
+// field, and distinguishes choosing a new unit from a measured conversion.
 // The warning line: what a tap would cost. Shown for the alternatives so the
 // user reads it before tapping rather than after.
 (() => {
@@ -499,7 +489,7 @@ const shape = shapeRef.current.shape;
 // only rewrite the value field and neither writes to the page, so which one is
 // shown never changes what Apply will do.
 const railShape = shape === 'rail' || shape === 'time' || shape === 'angle';
-const onField = (next) => { setValue(next); setApplied(false); setError(''); };
+const onField = (next) => { setValue(next); setApplied(false); setDirty(true); setError(''); };
 // valueInputRef — the typed field, which the rail's double-tap focuses.
 const valueInputRef = useRef(null);
 const valueChangers = [
@@ -510,6 +500,7 @@ prop: propName,
 value,
 ctx: railCtx,
 from: props.from,
+hideUnits: true, // the sheet's explicit Choose/Convert picker owns this
 // The double-tap gesture: the rail writes the value under the finger, and a
 // second tap at the same place asks for the keypad, because "nearly 14px" is
 // the moment exact typing is the next move. The field is one tap away anyway;
@@ -540,6 +531,7 @@ step: railCtx.step,
 // would rank a different property's values. The index is the panel's, so this
 // still costs no page read.
 used: props.valueIndex ? valuesFor(props.valueIndex, propName, 12) : [],
+hideUnits: true,
 candidates: props.colourCandidates,
 background: props.contrastCtx && props.contrastCtx.bg,
 contrastCtx: props.contrastCtx,
@@ -641,8 +633,12 @@ h(ValueTypes, {
 prop: propName,
 value,
 ctx: props.unitCtx,
-onChange: (next) => { setValue(next); setApplied(false); setError(''); }
+onChange: onField
 }),
+h(ValueUnitPicker, { prop: propName, value, ctx: props.unitCtx, onChange: onField,
+accepts: (next) => validateDeclaration(propName, next,
+typeof CSS !== 'undefined' && CSS.supports ? (p, v) => CSS.supports(p, v) : null).ok }),
+h(ValuePresets, { key: 'presets-' + propName, prop: propName, value, onChange: onField }),
 // The page's own values and tokens for this property, once there is a property
 // to look up. Placed under the type switch so the order reads "what form, then
 // which value". `value` goes along so the row can place the value being typed on
@@ -666,9 +662,10 @@ shape: shape,
 // What the peers use for this property — the one group the page's own
 // stylesheets cannot answer.
 siblings: siblings,
-onPick: (next) => { setValue(next); setApplied(false); setError(''); }
+onPick: onField
 }),
 ...valueChangers,
+h(NumericValueParts, { prop: propName, value, ctx: props.unitCtx, onChange: onField }),
 h('div', { class: 'inspector__style-valuerow' },h('button', {
 class: 'inspector__style-step',
 type: 'button',
@@ -728,7 +725,7 @@ type: 'button',
 title: priority === 'important'
 ? 'Written as !important — it beats other declarations on this element'
 : 'Normal declaration — a stylesheet rule marked !important will still win',
-onClick: () => setPriority(priority === 'important' ? '' : 'important')
+onClick: () => { setPriority(priority === 'important' ? '' : 'important'); setDirty(true); setApplied(false); }
 }, priority === 'important' ? '!important' : 'normal'),
 h('span', { class: 'inspector__style-priorityhint' },
 priority === 'important'
@@ -1789,6 +1786,23 @@ if (props.onCleared) props.onCleared();
 setChanged([]);
 if (props.hideNodeHighlight) props.hideNodeHighlight().catch(() => {});
 }
+// Derived hooks must run in both the empty and selected states: opening a
+// selector, clearing it, and restoring it must not change hook order.
+const inlineRows = (model && model.inlineProps) || [];
+const computedRows = (model && model.computed) || [];
+const valueIndex = useMemo(
+  () => buildValueIndex({ rules: (rules && rules.rules) || [], computed: computedRows }),
+  [rules, computedRows]
+);
+const styledSourceMap = useMemo(
+  () => styledSources({ inline: inlineRows, rules: (rules && rules.rules) || [], changed }),
+  [inlineRows, rules, changed]
+);
+const styledNames = useMemo(() => {
+  const names = new Set();
+  for (const row of computedRows) if (sourceFor(styledSourceMap, row.prop)) names.add(row.prop);
+  return names;
+}, [computedRows, styledSourceMap]);
 // Idle state — nothing selected yet. Prompts the user to tap the preview
 // (if available) or type a selector.
 if (!model) {
@@ -1855,17 +1869,8 @@ const boxSize = cleanSize(boxSummary(model.box));
 const unitCtx = model.bases
 ? { rootFontSize: model.bases.root, parentFontSize: model.bases.parent, fontSize: model.bases.self }
 : {};
-const inlineRows = (model.inlineProps || []);
-const computedRows = (model.computed || []);
-// The value index: what values and tokens this page uses per property, built
-// from the rules and the computed style already in hand (see valueIndex.js).
-// Memoised because the panel re-renders on every CDP event (a console row, a
-// network response) while these two inputs change only on a selection or an
-// edit — and the index walks ~400 computed rows each time it is built.
-const valueIndex = useMemo(
-  () => buildValueIndex({ rules: (rules && rules.rules) || [], computed: computedRows }),
-  [rules, computedRows]
-);
+// The page value index and styled source maps were derived above the empty
+// state return, so selecting/clearing an element keeps hook order stable.
 // Hoist the properties changed in this session to the top of both lists
 // (most recent first) so the edit you just made is the first thing you see,
 // rather than something to hunt for in the ~400-row computed wall.
@@ -1881,20 +1886,7 @@ const orderedComputed = orderChangedFirst(computedRows, changed);
 // default values.
 const setNames = new Set(inlineRows.map((x) => x.prop));
 const changedNames = new Set(changed);
-// Where each styled value comes from (element.style, a rule's selector, or an
-// inherited rule), from the cascade already read for Matched rules — see
-// styledProps.js. It drives the default "Styled" filter and the source line
-// under every computed row, which is what turns ~400 look-alike rows into
-// "these are the values the page set, and this is who set them".
-const styledSourceMap = useMemo(
-  () => styledSources({ inline: inlineRows, rules: (rules && rules.rules) || [], changed }),
-  [inlineRows, rules, changed]
-);
-const styledNames = useMemo(() => {
-  const names = new Set();
-  for (const row of computedRows) if (sourceFor(styledSourceMap, row.prop)) names.add(row.prop);
-  return names;
-}, [computedRows, styledSourceMap]);
+// Sources come from the matched cascade, not from guessed browser defaults.
 const computedVisible = filterComputed(orderedComputed, {
 query: computedQuery,
 filter: computedFilter,

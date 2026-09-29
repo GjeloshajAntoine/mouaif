@@ -107,18 +107,19 @@ const steps = stepChoices(span);
 const step = fine ? steps.fine : steps.coarse;
 const parsed = parseNumber(value);
 const unit = unitFor(prop, value, span);
-const ratio = parsed ? percentFor(value, span) : 0;
+const ratio = parsed ? percentFor(value, span, unitCtx) : 0;
 const shown = draft == null ? value : draft;
-const down = nudgeValue(value, -1, span, step);
-const up = nudgeValue(value, 1, span, step);
+const down = nudgeValue(value, -1, span, step, unitCtx, prop);
+const up = nudgeValue(value, 1, span, step, unitCtx, prop);
 const units = unitChoices(prop, value, unitCtx);
-const writable = !!parsed;
+const writable = !!parsed && !!down && !!up;
 // The slider's own resolution: the row's step expressed as a percentage of the
 // span, so a Fine drag moves the thumb by a fraction of a percent instead of
 // lumping to whole percent.
 const rangeStep = Math.max(0.1, (step / (span.max - span.min)) * 100);
 function css(pct) {
-return toUnit(valueAtPercent(pct, span, step), prop, unit, unitCtx);
+const next = valueAtPercent(pct, span, step);
+return unit === '%' ? String(next) + '%' : toUnit(next, prop, unit, unitCtx);
 }
 function commitPct(pct) {
 const next = css(pct);
@@ -186,7 +187,7 @@ onClick: () => setFine(true)
 }, 'Fine')
 )
 )
-: h('p', { class: 'inspector__touch-note' }, 'Not a number (' + (value || 'unset') + ') — the value editor can rewrite it.'),
+: h('p', { class: 'inspector__touch-note' }, (parsed ? 'No measured scale' : 'Not a number') + ' (' + (value || 'unset') + ') — use the value editor and its unit picker.'),
 keywords && keywords.length
 ? h('div', { class: 'inspector__touch-chips', role: 'group', 'aria-label': 'Common values for ' + prop },
 keywords.map((k) => h('button', {

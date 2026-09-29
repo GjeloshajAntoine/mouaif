@@ -291,8 +291,8 @@ return (spec.units || ['px'])[0];
 // percentFor — where a value sits on its slider, 0…1. A value that does not
 // parse, or that lies outside the span, is pinned to the nearest end (a `120px`
 // gap reads as "at the maximum" rather than as a broken control).
-export function percentFor(value, spec) {
-const px = pxOf(value);
+export function percentFor(value, spec, ctx) {
+const px = pxOf(value, ctx);
 const s = spec || DEFAULT_SPEC;
 if (px == null) return 0;
 const span = s.max - s.min;
@@ -329,19 +329,26 @@ return Math.min(s.max, Math.max(s.min, n));
 // nudgeValue — what a − or + tap writes. Deliberately returns null for a value
 // the slider cannot move (a keyword): the steppers are disabled and say why,
 // rather than replacing `auto` with `4px` behind the user's back.
-export function nudgeValue(value, dir, spec, step) {
+export function nudgeValue(value, dir, spec, step, ctx, prop) {
 const s = spec || DEFAULT_SPEC;
 const parsed = parseNumber(value);
 // A keyword (`auto`, `min-content`, `var(--x)`) has no number to walk, so the
 // steppers are disabled: replacing `auto` with `4px` is not a nudge, it is a
 // different declaration.
 if (!parsed) return null;
-const base = pxOf(value);
+// Without a measured base there is no honest px-scale nudge of a relative
+// length. Leave exact/unit editing available rather than shrinking rem to px.
+if (parsed.unit === 'rem' && !(ctx && ctx.rootFontSize)) return null;
+if (parsed.unit === 'em' && !(ctx && (ctx.parentFontSize || ctx.fontSize))) return null;
+// The quick surface has a px span (or a native percentage span). Other
+// dimensions are edited by the sheet in their own units, never guessed as px.
+if (parsed.unit && !['px', 'rem', 'em', '%'].includes(parsed.unit)) return null;
+const base = pxOf(value, ctx);
 if (base == null) return null;
 const next = quantize(base + (Number(dir) < 0 ? -1 : 1) * (step || s.step), step || s.step);
 const clamped = Math.min(s.max, Math.max(s.min, next));
 const unit = parsed.unit || (s.units || ['px'])[0];
-return { px: clamped, css: toUnit(clamped, '', unit) };
+return { px: clamped, css: unit === '%' ? formatNumber(clamped) + '%' : toUnit(clamped, prop || '', unit, ctx) };
 }
 
 // unitChoices — the unit chips for a row, from valueKinds' unitOptions so the

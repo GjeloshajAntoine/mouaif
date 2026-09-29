@@ -374,7 +374,7 @@ onClick: () => { setPrecision(null); }
 }, 'page')
 : null
 ),
-units.length > 1
+!props.hideUnits && units.length > 1
 ? h('div', { class: 'inspector__rail-units', role: 'group', 'aria-label': 'Unit' },
 units.map((u) => h('button', {
 class: 'inspector__rail-unitchip' + (u.current ? ' is-on' : ''),

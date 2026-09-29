@@ -269,7 +269,7 @@ check('a load-complete capture re-reads document.title',
 // ---- C. The CSS contract --------------------------------------------------
 
 check('the full-screen part is imported last',
-  /@import '\.\/inspector-styles\.css';\s*\n@import '\.\/inspector-fullscreen\.css';/
+  /@import '\.\/inspector-value-editor\.css';\s*\n@import '\.\/inspector-fullscreen\.css';\s*$/
   .test(fs.readFileSync(path.join(root, 'frontend/src/inspector.css'), 'utf8')));
 
 const surface = ruleBody('.inspector__fs');
