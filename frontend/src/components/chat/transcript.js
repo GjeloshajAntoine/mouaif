@@ -63,7 +63,16 @@ export function agentLabel(agentName) {
 //
 // `roleLabel` overrides the head's role text (default `system`), which is
 // how a nested agent run labels WHICH agent answered — see agentLabel.
-export function buildSystemPromptRow(text, extraClass, roleLabel) {
+//
+// `startOpen` renders the <details> expanded (`open`) instead of collapsed.
+// Used for the NESTED prompt inside a subagent card: that card is opened
+// deliberately, and the prompt is the instructions the delegated run was
+// given — the first thing you want to read when auditing a delegation. The
+// top-level prompt card keeps its collapsed default, because there the
+// prompt can run to thousands of characters the user never asked to see and
+// showing it by default pushes the first real turn off-screen on a phone
+// (see renderSystemPromptMessage).
+export function buildSystemPromptRow(text, extraClass, roleLabel, startOpen) {
   const row = document.createElement('div');
   row.className = 'chat-msg chat-msg--system' + (extraClass ? ' ' + extraClass : '');
   const head = document.createElement('div');
@@ -88,6 +97,7 @@ export function buildSystemPromptRow(text, extraClass, roleLabel) {
   const lineCount = String(text || '').split(/\r?\n/).filter(l => l.length).length;
   const details = document.createElement('details');
   details.className = 'chat-msg__system-details';
+  if (startOpen) details.open = true;
   const summary = document.createElement('summary');
   summary.textContent = 'System prompt · ' + lineCount + ' line' + (lineCount === 1 ? '' : 's');
   const pre = document.createElement('pre');
@@ -1779,7 +1789,10 @@ export function renderSubagentChat(card, toolResult) {
     // carries its agent name on the tool call, so the row's role label names
     // WHICH agent answered instead of the generic `system`.
     if (role === 'system') {
-    const sysRow = buildSystemPromptRow(text, 'tool-card__subagent-msg', agentLabel(r && r.agent));
+    // Nested prompts start expanded: inside a subagent card the prompt is
+    // the delegated run's instructions, and the card is only on screen
+    // because the user opened the delegation to read it.
+    const sysRow = buildSystemPromptRow(text, 'tool-card__subagent-msg', agentLabel(r && r.agent), true);
       const sysCalls = Array.isArray(m.tool_calls) ? m.tool_calls : [];
       appendCallRows(sysRow, sysCalls);
       wrap.appendChild(sysRow);

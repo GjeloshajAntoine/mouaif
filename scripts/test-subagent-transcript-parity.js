@@ -330,12 +330,15 @@ function main() {
     // ---- 3. A system turn is a system card, not a JSON dump ----------
     const details = system && system.querySelector('.chat-msg__system-details');
     const summary = details && details.querySelector('summary');
-    check('the nested system prompt renders as the collapsed system card',
-      !!details && !!summary && summary.textContent === 'System prompt · 1 line',
-      summary && summary.textContent);
+    check('the nested system prompt renders as the system card',
+    !!details && !!summary && summary.textContent === 'System prompt · 1 line',
+    summary && summary.textContent);
+    check('the nested system prompt starts expanded',
+    !!details && details.open === true,
+    details && ('open=' + details.open));
     check('the nested system text is the prompt body, not serialized parts',
-      !!details && details.querySelector('.chat-msg__system-body').textContent === 'You are a focused subagent. Answer only the delegated task.',
-      details && details.querySelector('.chat-msg__system-body').textContent);
+    !!details && details.querySelector('.chat-msg__system-body').textContent === 'You are a focused subagent. Answer only the delegated task.',
+    details && details.querySelector('.chat-msg__system-body').textContent);
 
     // ---- 4. Tool turns stay compact rows -----------------------------
     check('the tool turn renders as a nested tool row, not a bubble',

@@ -100,15 +100,17 @@ Regression test: `scripts/test-subagent-card-cost.js`.
 
 1. Enable the **Subagent** tool for the project in Settings → Project and approve a delegation (or use an `@agent` mention in the composer).
 2. Read the delegated conversation directly under the card head — a settled `Subagent` card opens itself (`is-expanded`), because the nested transcript IS its body. Tap the header to collapse or re-expand it; `is-expanded` is authoritative, so a collapsed card really hides its transcript.
-3. Read the delegated conversation top to bottom: the subagent's prompt, the delegated task, its tool calls, and its final answer.
+3. Read the delegated conversation top to bottom: the subagent's prompt (already expanded — see below), the delegated task, its tool calls, and its final answer.
 4. To see which agent ran, read the chip in the head or the nested system row's role label.
 
 ## Expand and collapse
 
 - **A settled card opens itself.** `appendToolResultCard` leaves a successful `subagent` card `is-expanded` (unless the user collapsed it), because the nested transcript IS its body — a collapsed card would render as a bare `Subagent · task · ok` header with the conversation hidden behind an undiscoverable tap.
 - **A running card opens itself too.** The live body is created while the run is in flight so nested activity streams into a card the user can already see.
+- **The nested system prompt starts expanded.** A delegated run shows the exact instructions it ran on — the thing you read when auditing a delegation — and folds with a tap. The **top-level** prompt card keeps its collapsed default, where a long prompt would push the first turn off-screen.
 - **Collapsing works.** `is-expanded` is the single source of truth for a subagent card's body visibility, exactly as for every other card. Tapping the header collapses the card and hides the transcript; tapping again re-expands it.
 - **The user's collapse wins over auto-expand.** The header tap records `card._userCollapsed`, and both the settle path and the rebuild path honor it, so a card the user closed does not pop back open when its result lands or when the transcript reconciles.
+- **Nested tool rows still start folded.** A settled row hides its result preview behind its own chevron (a failed row opens itself), and the user's per-row choice survives the settle and a rebuild. See [Nested tool rows](#nested-tool-rows).
 
 ## Related
 

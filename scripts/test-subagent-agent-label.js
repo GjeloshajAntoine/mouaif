@@ -197,6 +197,7 @@ function loadTranscript(globals) {
     + ' this.appendToolCallCard = appendToolCallCard;'
     + ' this.appendToolResultCard = appendToolResultCard;'
     + ' this.renderSubagentChat = renderSubagentChat;'
+    + ' this.buildSystemPromptRow = buildSystemPromptRow;'
     + ' this.agentLabel = agentLabel;', context);
   return context;
 }
@@ -323,6 +324,26 @@ function main() {
     check('a generic delegation labels the nested system row "agent"',
       !!role && role.textContent === 'agent', role && role.textContent);
     check('a generic delegation still shows no chip', !card.querySelector('.tool-card__agent'));
+  }
+
+  // ---- 6. The nested system prompt starts expanded --------------------
+  //
+  // A subagent card is opened deliberately and its prompt IS the delegated
+  // run's instructions — the thing you read when auditing a delegation. The
+  // nested row therefore renders `open`, while the top-level prompt card
+  // keeps its collapsed default (a long prompt would push the first turn
+  // off-screen on a phone).
+  {
+    const nested = mod.buildSystemPromptRow('You are a reviewer.', 'tool-card__subagent-msg', 'reviewer', true);
+    const nestedDetails = nested.querySelector('.chat-msg__system-details');
+    check('the nested prompt row starts expanded',
+      !!nestedDetails && nestedDetails.open === true,
+      nestedDetails && ('open=' + nestedDetails.open));
+    const top = mod.buildSystemPromptRow('You are mouaif.');
+    const topDetails = top.querySelector('.chat-msg__system-details');
+    check('the top-level prompt row stays collapsed',
+      !!topDetails && !topDetails.open,
+      topDetails && ('open=' + topDetails.open));
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
