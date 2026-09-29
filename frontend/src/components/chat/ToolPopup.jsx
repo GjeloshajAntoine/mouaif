@@ -212,8 +212,8 @@ files: 'file'
       name: 'Skills',
       description: sk.enabled ? 'available metadata' : 'off',
       checked: !!sk.enabled && allOn,
-      disabled: !!sk.projectLocked,
-      disabledReason: sk.projectLocked ? 'Locked off by Settings → Project.' : '',
+      disabled: !!sk.projectLocked || !selectable.length,
+      disabledReason: sk.projectLocked ? 'Locked off by Settings → Project.' : (!selectable.length ? 'Every skill is disabled by the project.' : ''),
       alwaysExpanded: true,
       tools: sk.items.map((s) => ({
         id: s.id,

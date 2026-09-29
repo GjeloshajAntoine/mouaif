@@ -35,6 +35,7 @@ In a chat, the transcript shows a **Skills** card below tools and agent files. E
 
 - Unchecking one skill switches **only that skill** off for this chat. The other skills stay on, the project setting is untouched, and the choice is stored on the chat record, so it survives a reload.
 - Checking a skill switches it back on for this chat, again without touching its siblings.
+- Changes appear immediately in both the transcript card and the popup. Quick successive taps save in order; a failed save restores the last saved selection. After saving, both surfaces reconcile with the server's effective state, including prompt presets.
 - A chat whose skills are off shows every row unchecked. Checking any row turns the chat's skills back on with that one skill selected.
 
 The **Tools** popup (globe icon in the chat top bar) shows the same always-expanded **Skills** group. There the group checkbox is the explicit all-on / all-off shortcut for the chat, while each row is that one skill's switch.
@@ -58,4 +59,14 @@ An individual skill can also be switched off for the whole project from `.mouaif
   "skills": true,
   "disabledSkills": ["pdf-processing"]
 }
+```
+
+## Implementation notes
+
+`src/agentSkills.js` owns discovery and activation. The streaming handler passes the preset-resolved chat into the AI loop and delegated runs. The Skills UI shares response normalization and an ordered save queue in `frontend/src/components/chat/skillState.js`.
+
+Run focused parser, streaming, and UI regression coverage with:
+
+```bash
+npm run test:skills
 ```

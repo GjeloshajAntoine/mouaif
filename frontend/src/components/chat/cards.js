@@ -11,6 +11,7 @@ import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
 import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
+import { saveSkillSelection } from './skillState.js';
 
 // buildSetupCard()
 //
@@ -457,6 +458,11 @@ export function updateSkillsCard(refs, state) {
   refs.skillsCard.current = fresh;
 }
 
+function notifySkillSelection(state, refs) {
+  updateSkillsCard(refs, state);
+  if (typeof state._onSkillsChanged === 'function') state._onSkillsChanged();
+}
+
 // toggleAgentFiles(next, state, refs, updateChat, refreshSysPrompt)
 //
 // Flip the per-chat agent-files toggle and persist it. The first
@@ -484,22 +490,22 @@ export async function toggleAgentFiles(next, state, refs, updateChat, refreshSys
 export async function toggleSkills(next, state, refs, updateChat, refreshSysPrompt) {
   const cur = state.skills || { items: [], enabled: true, projectLocked: false };
   const items = Array.isArray(cur.items) ? cur.items : [];
+  if (cur.projectLocked || !items.some((s) => !s.disabled)) return false;
   state.skills = Object.assign({}, cur, {
     enabled: next,
     items: items.map((s) => Object.assign({}, s, {
       chatDisabled: s.disabled ? !!s.chatDisabled : !next
     }))
   });
-  updateSkillsCard(refs, state);
+  notifySkillSelection(state, refs);
   // "off" also lists every selectable skill as a per-chat opt-out: a prompt
   // preset can force the family flag back on for a turn, and the individual
   // opt-outs are what keep the catalog empty in that case.
   const selectable = items.filter((s) => !s.disabled);
-  await updateChat({
+  return saveSkillSelection({
     skills: next,
     disabledSkills: next || !selectable.length ? null : selectable.map((s) => s.id)
-  });
-  if (typeof refreshSysPrompt === 'function') await refreshSysPrompt();
+  }, cur, state, () => notifySkillSelection(state, refs), updateChat, refreshSysPrompt);
 }
 
 // toggleSkill(id, next, state, refs, updateChat, refreshSysPrompt)
@@ -517,6 +523,7 @@ export async function toggleSkill(id, next, state, refs, updateChat, refreshSysP
   // however the user moves the rows, and are never written as a per-chat
   // opt-out (that would leak a project decision into the chat record).
   const selectable = items.filter((s) => !s.disabled);
+  if (cur.projectLocked || !selectable.some((s) => s.id === id)) return false;
   const base = cur.enabled
     ? new Set(selectable.filter((s) => !s.chatDisabled).map((s) => s.id))
     : new Set();
@@ -539,9 +546,8 @@ export async function toggleSkill(id, next, state, refs, updateChat, refreshSysP
       chatDisabled: s.disabled ? !!s.chatDisabled : !base.has(s.id)
     }))
   });
-  updateSkillsCard(refs, state);
-  await updateChat(patch);
-  if (typeof refreshSysPrompt === 'function') await refreshSysPrompt();
+  notifySkillSelection(state, refs);
+  return saveSkillSelection(patch, cur, state, () => notifySkillSelection(state, refs), updateChat, refreshSysPrompt);
 }
 
 // updateToolsCard(refs, state)

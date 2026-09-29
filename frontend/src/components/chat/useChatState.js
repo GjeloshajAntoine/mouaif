@@ -40,6 +40,7 @@ import { fileOrbFromApp, FILE_ORB_DEFAULT } from './fileOrb.js';
 import { composerToolsFromApp, COMPOSER_TOOLS_DEFAULT } from './composerTools.js';
 import { createPager, recordInitialPage, shouldLoadOlder } from './pagination.js';
 import { costSnapshot } from './costSummary.js';
+import { skillStateFromResponse } from './skillState.js';
 import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings/toolAuth.js';
 
 // chatAuthUrl(projectDir, chatId) — the chat-scoped authorization view.
@@ -480,9 +481,12 @@ draftAttachments: Array.isArray(draftAttachments) && draftAttachments.length ? d
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(Object.assign({ projectDir }, safePatch))
     });
+    // Persist to the original chat, but never apply a late acknowledgement
+    // (including a queued skill save) to the chat now mounted in this hook.
+    if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) return r.status === 200;
     if (r.status !== 200) {
-      if (status.current) status.current.textContent = 'HTTP ' + r.status;
-      return false;
+    if (status.current) status.current.textContent = 'HTTP ' + r.status;
+    return false;
     }
     const patchKeys = Object.keys(safePatch);
     const draftOnly = patchKeys.length > 0 && patchKeys.every((key) => key === 'draft' || key === 'draftAttachments');
@@ -634,14 +638,12 @@ await sendTurn(state, refs, {
   }, [updateChatBound]);
   const onToggleSkills = useCallback((next) => {
     toggleSkills(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs));
-    setToolDataStamp((v) => v + 1);
   }, [updateChatBound]);
   // One skill row, one skill: the family toggle above stays available for
   // "all on / all off", but a row switch must never move its siblings.
   const onToggleSkill = useCallback((id, next) => {
     if (!id) return;
     toggleSkill(id, next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs));
-    setToolDataStamp((v) => v + 1);
   }, [updateChatBound]);
   const onCancelRunning = useCallback(() => cancelRunningChat(state, refs), [projectDir, chatId]);
   const onPickerPickBound = useCallback((selection, legacyModelId) => {
@@ -690,6 +692,8 @@ await sendTurn(state, refs, {
   state._toggleAgentFiles = onToggleAgentFiles;
   state._toggleSkills = onToggleSkills;
   state._toggleSkill = onToggleSkill;
+  state._onSkillsChanged = () => setToolDataStamp((v) => v + 1);
+  state._onSkillSaveError = (message) => setChatStatus(refs, message, 'error');
 
   // Save tool authorization (Off/Ask/Allow) for THIS CHAT (decisions §17).
   //
@@ -824,6 +828,8 @@ await sendTurn(state, refs, {
   // ---- Initial load ----------------------------------------
   useEffect(() => {
     let cancelled = false;
+    state._skillSaveSession = null;
+    state._skillSavePending = false;
     async function load() {
       if (!projectDir || !chatId) return;
       try {
@@ -927,27 +933,7 @@ models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [
           explicit: typeof c.agentFiles === 'boolean',
           projectLocked: projectGate === false  // project has it off → toggle locked
         };
-        const skillGate = rSys.status === 200 ? rSys.body.projectSkills : true;
-        // Each item carries two independent reasons to be off:
-        //   disabled     — the project switched that skill off (locked row)
-        //   chatDisabled — this chat's own `disabledSkills` opt-out, which
-        //                  the row's checkbox toggles on its own
-        const rawSkills = (rSys.status === 200 && Array.isArray(rSys.body.skills)) ? rSys.body.skills : [];
-        skills.current = {
-          items: rawSkills.map((s) => ({
-            id: s.id,
-            name: s.name,
-            description: s.description,
-            disabled: !!s.disabled,
-            chatDisabled: !!s.chatDisabled
-          })),
-          // Server truth first: it already folded in the project gate,
-          // the chat flag, and a prompt preset that forces skills on.
-          enabled: skillGate !== false && (typeof rSys.body.skillsEnabled === 'boolean'
-            ? rSys.body.skillsEnabled
-            : c.skills !== false),
-          projectLocked: skillGate === false
-        };
+        skills.current = skillStateFromResponse(rSys.status === 200 ? rSys.body : {}, c);
         mcpServers.current = rMcp.status === 200 && Array.isArray(rMcp.body.servers) ? rMcp.body.servers : [];
         agents.current = rAgents.status === 200 && Array.isArray(rAgents.body.agents) ? rAgents.body.agents : [];
 setCustomActions(rActions.status === 200 && Array.isArray(rActions.body.actions) ? rActions.body.actions : []);

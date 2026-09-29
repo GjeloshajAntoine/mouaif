@@ -10,6 +10,8 @@ import { fetchJson, projectsReload } from '../../api.js';
 import { back } from '../../router.js';
 import { renderSystemPromptMessage } from './transcript.js';
 import { setChatStatus } from './usage.js';
+import { updateSkillsCard } from './cards.js';
+import { skillStateFromResponse } from './skillState.js';
 
 // updateMetaLine(refs, state)
 //
@@ -63,12 +65,20 @@ export async function updateChat(patch, state, refs) {
 // custom prompt change) and re-render the first message.
 export async function refreshSystemPrompt(state, refs) {
   const { projectDir, chatId } = state.props;
+  const skillSelection = state.skills;
   if (!projectDir || !chatId) return;
   const r = await fetchJson(
     '/api/chats/' + encodeURIComponent(chatId) +
     '/system-prompt?projectDir=' + encodeURIComponent(projectDir)
   );
+  // A save/refresh can finish after navigation or a newer skill toggle.
+  if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) return;
   state.systemPrompt = r.status === 200 ? r.body : null;
+  if (r.status === 200 && Array.isArray(r.body.skills) && !state._skillSavePending && state.skills === skillSelection) {
+    state.skills = skillStateFromResponse(r.body, state.chat);
+    updateSkillsCard(refs, state);
+    if (typeof state._onSkillsChanged === 'function') state._onSkillsChanged();
+  }
   renderSystemPromptMessage(refs, state.systemPrompt);
 }
 
