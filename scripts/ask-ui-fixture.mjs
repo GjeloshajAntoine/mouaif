@@ -154,6 +154,8 @@ function Host() {
     long: async () => { reset(); mount(LONG); bump(); await frame(); },
     many: async () => { reset(); mount(MANY, { presets: ['use the default', 'ask me later'] }); bump(); await frame(); },
     wrap: async () => { reset(); mount(WRAP, { presets: ['Ask me later'] }); bump(); await frame(); },
+    presets: async () => { reset(); mount(OPTIONS, { presets: ['Use the recommended branch and keep the current release workflow unchanged', 'a'.repeat(120)] }); bump(); await frame(); },
+    multi: async () => { reset(); mount(OPTIONS, { multiSelect: true }); bump(); await frame(); },
     pair: async () => {
     reset();
     const id = 'call_dup_fixture';

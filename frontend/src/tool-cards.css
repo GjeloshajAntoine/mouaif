@@ -355,9 +355,7 @@ color: var(--fg-soft);
 .tool-card__ask-presets {
   display: flex;
   flex-wrap: wrap;
-  /* 8px between wrapped rows: exactly what the chips' 4px tap-area
-     overhang (::before below) needs to meet without overlapping. */
-  gap: 8px 6px;
+  gap: 0.5rem 0.375rem;
 }
 .tool-card__ask-preset-chip {
   font: inherit;
@@ -368,22 +366,18 @@ color: var(--fg-soft);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
   border-radius: 999px;
-  position: relative;
-  padding: 0 12px;
-  min-height: 36px;
-  min-width: 44px;
+  padding: 0.375rem 0.75rem;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background 80ms ease;
 }
 .tool-card__ask-preset-chip:active { background: var(--accent-soft); }
-/* The visible chip is 36px; this grows its tap area to 44px tall. */
-.tool-card__ask-preset-chip::before,
-.tool-card--ask-user .tool-card__actions .btn::before {
-  content: "";
-  position: absolute;
-  inset: -4px 0;
-}
+.tool-card__ask-preset-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tool-card__ask-preset-chip:disabled { opacity: 0.6; cursor: default; }
 .tool-card__ask-extra {
   width: 100%;
@@ -392,8 +386,9 @@ color: var(--fg-soft);
   min-height: var(--tap);
   padding-top: 10px;
   padding-bottom: 10px;
-  /* 16px keeps iOS Safari from zooming the page on focus. */
-  font-family: var(--font-sans);
+  /* 16px keeps iOS Safari from zooming the page on focus. Inherit the
+     app's system stack: --font-sans is not defined by the theme. */
+  font-family: inherit;
   font-size: 1rem;
   line-height: 1.4;
   resize: vertical;
@@ -403,10 +398,17 @@ color: var(--fg-soft);
   gap: 8px;
   margin: 0;
 }
+.tool-card__ask-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.tool-card__ask-error[hidden] { display: none; }
 .tool-card--ask-user .tool-card__actions .btn {
-  /* 36px visible, 44px tall tap area via the shared ::before above. */
-  position: relative;
-  min-height: 36px;
+  min-height: var(--tap);
+  min-width: var(--tap);
   font-size: 0.82rem;
   justify-content: center;
 }

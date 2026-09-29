@@ -858,22 +858,7 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
       chip.type = 'button';
       chip.className = 'tool-card__ask-preset-chip';
       chip.textContent = p;
-      chip.addEventListener('click', async () => {
-        for (const child of card.querySelectorAll('button')) child.disabled = true;
-        const payload = { choice: p, extra: '' };
-        const r = await fetchJson('/api/tools/authorization/decision', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision: 'allow-once', payload })
-        });
-        if (r.status !== 200) {
-          for (const child of card.querySelectorAll('button')) child.disabled = false;
-          setChatStatus('ask_user failed: HTTP ' + r.status, 'error');
-          return;
-        }
-        card.remove();
-        setChatStatus('answer sent', 'success');
-      });
+      chip.addEventListener('click', () => onDecision('allow-once', { choice: p, extra: '' }));
       presetsHost.appendChild(chip);
     }
     body.appendChild(presetsHost);
@@ -896,14 +881,46 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
   // Declared below; refreshSelectedUi() also relabels the submit button.
   let submit = null;
   let extra = null;
+  let pending = false;
+  const error = document.createElement('p');
+  error.className = 'tool-card__ask-error';
+  error.setAttribute('role', 'alert');
+  error.hidden = true;
   function hasChoice() { return multi ? selectedValues.size > 0 : !!lastTapped; }
   function refreshSubmitUi() {
     if (!submit) return;
-    // With no option picked, the button still sends a typed note, and
-    // only dismisses when there is nothing to send. The label says which.
     const note = !!(extra && extra.value.trim());
-    submit.textContent = hasChoice() ? 'Send answer' : (note ? 'Send note' : 'Pick an option');
-    submit.disabled = !hasChoice() && !note;
+    submit.textContent = pending ? 'Sending…' : (hasChoice() ? 'Send answer' : (note ? 'Send note' : 'Pick an option'));
+    submit.disabled = pending || (!hasChoice() && !note);
+  }
+  async function onDecision(decision, payload) {
+    if (pending) return;
+    pending = true;
+    error.hidden = true;
+    card.setAttribute('aria-busy', 'true');
+    for (const child of card.querySelectorAll('button')) child.disabled = true;
+    extra.disabled = true;
+    refreshSubmitUi();
+    try {
+      const r = await fetchJson('/api/tools/authorization/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision, ...(payload ? { payload } : {}) })
+      });
+      if (r.status !== 200) throw new Error('HTTP ' + r.status);
+      card.remove();
+      setChatStatus(decision === 'deny' ? 'question dismissed' : 'answer sent', 'success');
+    } catch (err) {
+      error.textContent = 'Could not send. Your answer is kept — try again.';
+      error.hidden = false;
+      setChatStatus('ask_user failed: ' + (err.message || 'network error'), 'error');
+    } finally {
+      pending = false;
+      card.setAttribute('aria-busy', 'false');
+      for (const child of card.querySelectorAll('button')) child.disabled = false;
+      extra.disabled = false;
+      refreshSubmitUi();
+    }
   }
   function refreshSelectedUi() {
     for (const optEl of optionsHost.querySelectorAll('.tool-card__ask-option')) {
@@ -980,47 +997,19 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
     // then, this is a guard). A note with no option is still an answer —
     // it used to be sent as a dismissal, which discarded the typed text.
     if (!hasChoice() && !extra.value.trim()) return;
-    for (const child of card.querySelectorAll('button')) child.disabled = true;
-    const payload = {
-      choice: multi ? Array.from(selectedValues) : (lastTapped ? lastTapped.value : ''),
-      extra: extra.value || ''
-    };
-    const r = await fetchJson('/api/tools/authorization/decision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision: 'allow-once', payload })
+    await onDecision('allow-once', {
+    choice: multi ? Array.from(selectedValues) : (lastTapped ? lastTapped.value : ''),
+    extra: extra.value || ''
     });
-    if (r.status !== 200) {
-      for (const child of card.querySelectorAll('button')) child.disabled = false;
-      refreshSubmitUi();
-      setChatStatus('ask_user failed: HTTP ' + r.status, 'error');
-      return;
-    }
-    card.remove();
-    setChatStatus('answer sent', 'success');
   });
   actions.appendChild(submit);
   const dismiss = document.createElement('button');
   dismiss.type = 'button';
   dismiss.className = 'btn';
   dismiss.textContent = 'Dismiss';
-  dismiss.addEventListener('click', async () => {
-    for (const child of card.querySelectorAll('button')) child.disabled = true;
-    const r = await fetchJson('/api/tools/authorization/decision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, chatId, callId: request.callId, decision: 'deny' })
-    });
-    if (r.status !== 200) {
-      for (const child of card.querySelectorAll('button')) child.disabled = false;
-      refreshSubmitUi();
-      setChatStatus('ask_user failed: HTTP ' + r.status, 'error');
-      return;
-    }
-    card.remove();
-    setChatStatus('question dismissed', 'success');
-  });
+  dismiss.addEventListener('click', () => onDecision('deny'));
   actions.appendChild(dismiss);
+  body.appendChild(error);
   body.appendChild(actions);
   card.appendChild(body);
   refs.transcript.current.appendChild(card);
