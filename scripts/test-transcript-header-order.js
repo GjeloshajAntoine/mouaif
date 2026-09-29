@@ -95,6 +95,15 @@ function createElement(tag) {
       node.childElementCount = node.children.length;
       return child;
     },
+    replaceChild(fresh, old) {
+    const i = node.children.indexOf(old);
+    if (i === -1) return old;
+    if (fresh.parentNode) fresh.parentNode.removeChild(fresh);
+    node.children.splice(node.children.indexOf(old), 1, fresh);
+    fresh.parentNode = node;
+    old.parentNode = null;
+    return old;
+    },
     remove() { if (node.parentNode) node.parentNode.removeChild(node); },
     get nextSibling() {
     if (!node.parentNode) return null;
@@ -515,6 +524,113 @@ function main() {
     check('reconcileTranscript with no rows yet falls back to a full render',
       el5.children.length >= 2 && el5.children[el5.children.length - 1]._rowKey === transcript.transcriptRowKey(a1),
       JSON.stringify(order(el5)));
+  }
+
+  // ---- 7. Rows built by the reconciler land at their message position --
+  //
+  // renderMessageRow stamps the row it builds with its key. The reconciler
+  // used to locate the new node by diffing for an UNKEYED child, so it never
+  // found it: the row stayed wherever the builder appended it (the bottom)
+  // and was never moved to its cursor. On resume, a tool call/result pair
+  // spliced in before an answer already on screen was drawn BELOW that
+  // answer — messages and tool cards out of order.
+  {
+    const transcript = loadModule('frontend/src/components/chat/transcript.js',
+      Object.assign({
+        placeHeaderCard: headerCards.placeHeaderCard,
+        orderHeaderCards: headerCards.orderHeaderCards,
+        headerCardIndex: headerCards.headerCardIndex,
+        isHeaderCardNode: headerCards.isHeaderCardNode,
+        HEADER_CARD_ORDER: H,
+        cssEscape: (s) => String(s)
+      }, dom.globals),
+      'this.reconcileTranscriptRows = reconcileTranscriptRows; this.transcriptRowKey = transcriptRowKey;');
+    const K = transcript.transcriptRowKey;
+    const mkRow = (el, cls, m, text) => {
+      const row = createElement('div');
+      row.className = cls;
+      row.textContent = text;
+      row._rowKey = K(m);
+      el.appendChild(row);
+      return row;
+    };
+    const noMutations = (el, fn) => {
+      let n = 0;
+      const ins = el.insertBefore, rem = el.removeChild, app = el.appendChild;
+      el.insertBefore = function (c, r) { n++; return ins.call(el, c, r); };
+      el.removeChild = function (c) { n++; return rem.call(el, c); };
+      el.appendChild = function (c) { n++; return app.call(el, c); };
+      fn();
+      el.insertBefore = ins; el.removeChild = rem; el.appendChild = app;
+      return n;
+    };
+
+    // 7a. A tool pair spliced in before an answer already on screen.
+    {
+      const el = createElement('div');
+      const refs = makeRefs(el);
+      const sys = card('chat-msg chat-msg--system');
+      sys.dataset.sysPrompt = '1';
+      el.appendChild(sys);
+      const u = { role: 'user', content: 'q', seq: 0 };
+      const call = { role: 'tool', phase: 'call', name: 'shell', toolCallId: 'c1', args: { cmd: 'ls' }, seq: 1 };
+      const res = { role: 'tool', phase: 'result', name: 'shell', toolCallId: 'c1', ok: true, content: 'x', seq: 2 };
+      const a = { role: 'assistant', content: 'done', seq: 3 };
+      mkRow(el, 'chat-msg chat-msg--user', u, 'q');
+      mkRow(el, 'chat-msg chat-msg--assistant', a, 'done');
+      const state = { messages: [u, call, res, a], chat: {} };
+      const stats = transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3]);
+      check('a spliced tool pair is placed between its question and its answer',
+        JSON.stringify(order(el)) === JSON.stringify(['system', 'msg:q', 'tool:c1', 'msg:done']),
+        JSON.stringify(order(el)));
+      check('the built tool card counts as created (so the view follows it)',
+        stats.created === 1, JSON.stringify(stats));
+      const n = noMutations(el, () => transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3]));
+      check('a second pass over the settled rows mutates nothing',
+        n === 0 && JSON.stringify(order(el)) === JSON.stringify(['system', 'msg:q', 'tool:c1', 'msg:done']),
+        'mutations=' + n + ' ' + JSON.stringify(order(el)));
+    }
+
+    // 7b. Parallel calls: call A, call B, result A, result B keep A above B.
+    {
+      const el = createElement('div');
+      const refs = makeRefs(el);
+      const u = { role: 'user', content: 'q', seq: 0 };
+      mkRow(el, 'chat-msg chat-msg--user', u, 'q');
+      const msgs = [
+        u,
+        { role: 'tool', phase: 'call', name: 'shell', toolCallId: 'ta', args: { cmd: 'a' }, seq: 1 },
+        { role: 'tool', phase: 'call', name: 'shell', toolCallId: 'tb', args: { cmd: 'b' }, seq: 2 },
+        { role: 'tool', phase: 'result', name: 'shell', toolCallId: 'ta', ok: true, content: 'A', seq: 3 },
+        { role: 'tool', phase: 'result', name: 'shell', toolCallId: 'tb', ok: true, content: 'B', seq: 4 }
+      ];
+      const state = { messages: msgs, chat: {} };
+      transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3, 4]);
+      check('parallel tool cards keep their call order when results arrive',
+        JSON.stringify(order(el)) === JSON.stringify(['msg:q', 'tool:ta', 'tool:tb']),
+        JSON.stringify(order(el)));
+      const n = noMutations(el, () => transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3, 4]));
+      check('a second pass over parallel tool cards mutates nothing',
+        n === 0 && JSON.stringify(order(el)) === JSON.stringify(['msg:q', 'tool:ta', 'tool:tb']),
+        'mutations=' + n + ' ' + JSON.stringify(order(el)));
+    }
+
+    // 7c. A tool card the live stream drew (no row key) is adopted, not culled.
+    {
+      const el = createElement('div');
+      const refs = makeRefs(el);
+      const u = { role: 'user', content: 'q', seq: 0 };
+      mkRow(el, 'chat-msg chat-msg--user', u, 'q');
+      const live = createElement('div');
+      live.className = 'tool-card';
+      live.dataset.toolId = 'c9';
+      el.appendChild(live);
+      const call = { role: 'tool', phase: 'call', name: 'shell', toolCallId: 'c9', args: { cmd: 'ls' }, seq: 1 };
+      transcript.reconcileTranscriptRows({ messages: [u, call], chat: {} }, refs, [0, 1]);
+      check('a live-streamed tool card is kept and keyed by its persisted row',
+        el.children.length === 2 && el.children[1] === live && live._rowKey === K(call),
+        JSON.stringify(order(el)));
+    }
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

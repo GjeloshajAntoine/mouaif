@@ -2126,6 +2126,13 @@ return null;
 // from the old renderTranscript loop body so the chunked pass and the
 // empty-transcript case can share the exact same rendering.
 function renderMessageRow(state, refs, m) {
+  // Forget the node the PREVIOUS build placed. A builder that inserts nothing
+  // (a de-duplicated call, a result that updates its call's card in place)
+  // would otherwise leave that stale node behind for stampLastTranscriptRow,
+  // which then restamped an unrelated row with this row's key — the next
+  // reconcile could not find that row under its own key and rebuilt it at the
+  // bottom, out of order.
+  refs._lastInsertedRow = null;
   if (m.role === 'tool' && m.phase === 'call') {
     // De-dup: skip a call row when a card for this tool id is already
     // on screen. Two paths need this: (1) latest-first render draws the
@@ -2645,33 +2652,58 @@ export function reconcileTranscriptRows(state, refs, order) {
     if (isOverlayCard(child)) { cursor = child; break; }
   }
 
-  const keep = new Set();
+  // Every node this pass put in position. A tool call and its result are two
+  // messages but ONE card: the card takes the call's slot, and the result row
+  // that follows must not move it again.
+  const placed = new Set();
   for (let i = 0; i < order.length; i++) {
     const m = state.messages[order[i]];
     const key = transcriptRowKey(m);
     if (!key) continue;
-    keep.add(key);
 
-    let node = existing.get(key) || null;
-    if (node) {
-      stats.reused++;
-    } else {
-      // Build the row. The row builders insert themselves (appendChild, or
-      // before refs._insertAnchor, which this path never sets), so the new
-      // node is found by diffing the child list immediately after.
-      const before = new Set(el.children);
-      renderMessageRow(state, refs, m);
-      for (const child of el.children) {
-        if (before.has(child) || !isMessageRowNode(child) || child._rowKey) continue;
-        node = child;
-        break;
+    let node = null;
+    if (m.role === 'tool' && m.toolCallId) {
+      // Tool rows resolve through their card, not their row key: the card is
+      // shared by the call and the result, and a card the live stream drew
+      // carries no row key at all. Keying it by row made the reconciler miss
+      // it (and build or cull the wrong node).
+      node = findToolCard(refs, m.toolCallId);
+      const needsResult = m.phase === 'result' && (!node || !hasClass(node, 'tool-card--result'));
+      if (!node || needsResult) {
+        // Builds a new card, or turns a waiting call card into its result
+        // in place. A result's content never changes, so a card that already
+        // shows one is left untouched.
+        const had = !!node;
+        renderMessageRow(state, refs, m);
+        node = findToolCard(refs, m.toolCallId);
+        if (node && !had) stats.created++;
+      } else {
+        stats.reused++;
       }
-      if (node) stats.created++;
+      if (node && (node.parentNode !== el || !isMessageRowNode(node))) node = null;
+    } else {
+      node = existing.get(key) || null;
+      if (node) {
+        stats.reused++;
+      } else {
+        // Build the row. Every builder inserts through transcriptInsert,
+        // which records the node it placed. (This used to diff the child
+        // list for an UNKEYED new node — but renderMessageRow stamps the
+        // key itself, so the node was never found and never moved: it
+        // stayed at the bottom, below rows that follow it.)
+        renderMessageRow(state, refs, m);
+        const built = refs._lastInsertedRow;
+        if (built && built.parentNode === el && isMessageRowNode(built)) node = built;
+        if (node) stats.created++;
+      }
     }
-    // A tool call row whose card is already owned by its result renders
-    // nothing (see renderMessageRow's de-dup): leave the cursor alone.
-    if (!node) continue;
-    node._rowKey = key;
+    // Nothing to place (a row the builders render as nothing), or a card
+    // already placed by an earlier row this pass: leave the cursor alone.
+    if (!node || placed.has(node)) continue;
+    placed.add(node);
+    // A tool card keeps the key stamped by whichever row built it; findKeyedRow
+    // (the cheap append path) only needs it to recognise the card as keyed.
+    if (!node._rowKey || !hasClass(node, 'tool-card')) node._rowKey = key;
 
     if (node === cursor) {
       cursor = node.nextElementSibling;
@@ -2681,12 +2713,10 @@ export function reconcileTranscriptRows(state, refs, order) {
     cursor = node.nextElementSibling;
   }
 
-  // Rows whose key is no longer in the transcript (a deleted chat, a
-  // diverged prefix) are the only nodes this pass removes.
+  // Rows no message placed this pass (a deleted chat, a diverged prefix) are
+  // the only nodes this pass removes.
   for (const child of Array.from(el.children)) {
-    if (!isMessageRowNode(child)) continue;
-    const key = child._rowKey;
-    if (key && keep.has(key)) continue;
+    if (!isMessageRowNode(child) || placed.has(child)) continue;
     child.remove();
     stats.removed++;
   }
