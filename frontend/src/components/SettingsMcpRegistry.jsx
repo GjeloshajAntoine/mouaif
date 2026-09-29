@@ -169,7 +169,7 @@ export function SettingsMcpRegistryView(props = {}) {
         )
       ),
       installed
-        ? h('a', { class: 'btn btn--small mcps-card__cta', href: editorHref(installed, projectDir, from), 'aria-label': 'Open ' + installed.name + ' settings' }, 'Open')
+        ? h('a', { class: 'btn btn--small mcps-card__cta', href: editorHref(installed, projectDir, from, chatId), 'aria-label': 'Open ' + installed.name + ' settings' }, 'Open')
         : h('button', { class: 'btn btn--small mcps-card__cta' + (info.supported ? ' btn--primary' : ''), type: 'button', onClick: () => setOpenKey(key) }, info.supported ? 'Get' : 'View')
     );
   }

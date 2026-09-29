@@ -26,6 +26,8 @@ The **MCP store** lets you find and install servers from the official [MCP Regis
    - **Settings** opens the full [server editor](./mcp.md).
 8. A server that is already configured shows **Installed** on its card and an **Open** button that goes to its settings. Mouaif matches a configured server when it uses the same endpoint URL or the same package.
 
+The store is part of the settings drill-down: when it was opened from a chat, every link it builds (**Open**, **Open its settings**, the post-install **Sign in** / **Settings**) keeps that chat in context, so the editor's Back arrow returns to the chat rather than the project page.
+
 If a server is not listed, use **Add one by hand** at the bottom of the store.
 
 ## Trust

@@ -32,7 +32,7 @@ export function editorHref(server, projectDir, from, chatId = '') {
 }
 
 export function McpStoreSheet(props) {
-  const { entry, projectDir = '', from = '', installed = null, onClose, onInstalled } = props;
+  const { entry, projectDir = '', from = '', chatId = '', installed = null, onClose, onInstalled } = props;
   const sheetRef = useModal({ onClose });
   const server = (entry && entry.server) || {};
   const options = useMemo(() => installOptions(entry), [entry]);
@@ -188,7 +188,7 @@ export function McpStoreSheet(props) {
         installed
           ? h('div', { class: 'mcps-note' },
               'Already installed as ', h('strong', null, installed.name), '. ',
-              h('a', { href: editorHref(installed, projectDir, from) }, 'Open its settings'))
+              h('a', { href: editorHref(installed, projectDir, from, chatId) }, 'Open its settings'))
           : null,
         !options.length
           ? h('div', { class: 'mcps-note mcps-note--warn' }, 'The publisher did not list a package or endpoint, so mouaif cannot install this server automatically. Check its website or source for setup steps.')
@@ -243,7 +243,7 @@ export function McpStoreSheet(props) {
 
   const foot = created
     ? [
-        h('a', { key: 'edit', class: 'btn', href: editorHref(created, projectDir, from) }, oauth ? 'Sign in' : 'Settings'),
+        h('a', { key: 'edit', class: 'btn', href: editorHref(created, projectDir, from, chatId) }, oauth ? 'Sign in' : 'Settings'),
         oauth ? null : h('button', { key: 'start', class: 'btn' + (started && started.ok ? '' : ' btn--primary'), type: 'button', disabled: !!busy || (started && started.ok), onClick: start },
           busy === 'start' ? 'Starting…' : (started && started.ok === false ? 'Try again' : (started && started.ok ? 'Running' : 'Start now'))),
         h('button', { key: 'done', class: 'btn' + (oauth || (started && started.ok) ? ' btn--primary' : ''), type: 'button', onClick: onClose }, 'Done')

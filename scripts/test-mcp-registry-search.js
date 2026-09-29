@@ -63,11 +63,16 @@ const STUBS = {
   '@preact/signals': { signal: (v) => ({ value: v }) }
 };
 
+// What the fake server hands back. Defaults to empty (the search-flow test
+// only cares about the requests); a later block fills them to render an
+// installed card and read the href it emits.
+const FIXTURE = { registry: [], servers: [] };
+
 const API_STUB = {
   fetchJson: async (url) => {
     REQUESTS.push(String(url));
-    if (String(url).startsWith('/api/mcp/registry')) return { status: 200, body: { servers: [], metadata: {} } };
-    return { status: 200, body: { servers: [] } };
+    if (String(url).startsWith('/api/mcp/registry')) return { status: 200, body: { servers: FIXTURE.registry, metadata: {} } };
+    return { status: 200, body: { servers: FIXTURE.servers } };
   },
   loadApp: async () => ({}), saveApp: async () => ({}), appProviders: () => [], loadAccounts: async () => ({}),
   invalidateModelsCache() {}, loadModels: async () => ({ models: [] })
@@ -206,7 +211,57 @@ async function run() {
   assert.ok(REQUESTS.some((u) => u.includes('search=github')),
     'typing sends a registry search request; it asked for ' + JSON.stringify(REQUESTS));
 
-  console.log('PASS MCP store requests results and search (registry + project-scoped configured servers)');
+  // ---- the store keeps the chat in every link it hands out ----------------
+  //
+  // The store is reached from a project page opened from a chat, so the
+  // registry route carries `chatId`. The view forwards it to the install
+  // sheet (commit 67efda56 did), and the sheet must forward it again on its
+  // own links: the "Open" button on an Installed card, the "Open its
+  // settings" note, and the "Sign in"/"Settings" button after installing.
+  // Dropping it makes the MCP editor's Back arrow walk to project settings
+  // (or the Settings root) instead of the chat the user came from — the exact
+  // class of bug the settings Back work was about.
+  const ENTRY = { server: { name: 'ac.example/widgets', version: '1.0.0', remotes: [{ type: 'streamable-http', url: 'https://api.example.com/mcp' }] } };
+  const configured = [{
+    id: 'srv-widgets', scope: 'project', name: 'Widgets', status: 'stopped',
+    command: '', args: [], url: 'https://api.example.com/mcp'
+  }];
+  FIXTURE.registry = [ENTRY];
+  FIXTURE.servers = configured;
+
+  const page = { projectDir, chatId: 'chat-1', from: 'projects' };
+  renderView(view, page, { fresh: true });
+  EFFECTS.slice().forEach((effect) => effect());
+  await sleep(30);
+  // The hook harness is not reactive: re-render to read the state the
+  // resolved fetches wrote.
+  renderView(view, page);
+  EFFECTS.slice().forEach((effect) => effect());
+  await sleep(10);
+
+  const links = NODES.filter((n) => n.tag === 'a' && /\/settings\/mcp\/srv-widgets\b/.test(String(n.attrs.href))).map((n) => n.attrs.href);
+  assert.ok(links.length, 'the installed card renders its editor link; nodes were ' + JSON.stringify(NODES.filter((n) => n.tag === 'a').map((n) => n.attrs.href)));
+  for (const href of links) {
+    assert.ok(href.includes('chatId=chat-1'), 'store editor link keeps the chat: ' + href);
+  }
+
+  // The install sheet: opened from a card, it must forward the same chat
+  // context on its editor links. Rendered as a separate component instance,
+  // so it gets fresh hook slots rather than the registry view's.
+  const sheet = loadModule(path.join(SRC, 'components/settings/McpStoreSheet.jsx'));
+  const sheetView = sheet.McpStoreSheet;
+  renderView(sheetView, {
+    entry: ENTRY, projectDir, from: 'projects', chatId: 'chat-1',
+    installed: configured[0], onClose() {}, onInstalled() {}
+  }, { fresh: true });
+  const sheetNodes = NODES;
+  const sheetLinks = sheetNodes.filter((n) => n.tag === 'a' && /\/settings\/mcp\/srv-widgets\b/.test(String(n.attrs.href))).map((n) => n.attrs.href);
+  assert.ok(sheetLinks.length, 'the sheet renders its editor link; nodes were ' + JSON.stringify(sheetNodes.filter((n) => n.tag === 'a').map((n) => ({ href: n.attrs.href, text: String(n.children).slice(0, 40) }))));
+  for (const href of sheetLinks) {
+    assert.ok(href.includes('chatId=chat-1'), 'sheet editor link keeps the chat: ' + href);
+  }
+
+  console.log('PASS MCP store requests results and search, and keeps chatId in its editor links');
 }
 
 run().catch((e) => {
