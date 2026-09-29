@@ -351,6 +351,36 @@ border: 1px solid var(--accent);
 border-radius: var(--r-sm);
 background: var(--accent-soft);
 }
+/* Every computed row is an editor button now (see StylesPanel.jsx): the value
+on one line, where it comes from on the next. The button — not the row — is the
+44 px tap target, so the flat hairline list keeps its look. */
+.inspector__styles-row-main.inspector__computed-rowbtn {
+min-height: var(--tap);
+flex-direction: column;
+align-items: stretch;
+justify-content: center;
+gap: 1px;
+padding: 4px 0;
+}
+.inspector__computed-line {
+display: flex;
+align-items: center;
+gap: 6px;
+min-width: 0;
+}
+.inspector__computed-source {
+font-family: var(--font-sans, system-ui, sans-serif);
+font-size: 0.68rem;
+color: var(--muted);
+overflow: hidden;
+text-overflow: ellipsis;
+white-space: nowrap;
+}
+.inspector__styles-row--default .inspector__computed-source { font-style: italic; }
+@media (hover: hover) {
+  .inspector__computed-rowbtn:hover { background: var(--surface-2); }
+}
+.inspector__computed-rowbtn:active { background: var(--surface-3); }
 .inspector__styles-row-main {
 flex: 1 1 auto;
 min-width: 0;

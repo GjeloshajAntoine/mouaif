@@ -53,7 +53,7 @@
 // The same reveal runs when the browser is opened.
 import { h } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { LIBRARY_GROUPS, searchLibrary, libraryRow } from './styleControls.js';
+import { LIBRARY_GROUPS, searchLibrary, libraryRow, extraProperties, hostPropertyNames, readDeclared, readValue } from './styleControls.js';
 import { revealInPanel } from './StyleControls.jsx';
 
 // PropertyPreview — the card's picture, drawn in CSS from the property's family
@@ -106,7 +106,24 @@ if (!props.open) return;
 revealHead();
 }, [group, query]);
 if (!props.open) return null;
-const rows = searchLibrary(query, group).map((entry) => libraryRow(entry, props.ctx || {}));
+const ctx = props.ctx || {};
+const rows = searchLibrary(query, group).map((entry) => libraryRow(entry, ctx));
+// Every other property the element resolves, when a search is on and the
+// category is All: the library is 32 hand-picked cards, and the field says
+// "Search every property".
+const extra = group === 'all'
+? extraProperties(
+  query,
+  (ctx.computed || []).map((r) => r.prop).concat(hostPropertyNames()),
+  undefined,
+  typeof CSS !== 'undefined' && CSS.supports ? (name) => { try { return CSS.supports(name, 'initial'); } catch { return false; } } : null
+)
+: { rows: [], more: 0 };
+const extraRows = extra.rows.map((entry) => {
+const declared = readDeclared(entry.prop, ctx);
+const value = declared != null ? declared : (readValue(entry.prop, ctx) || '');
+return { ...entry, value, isSet: declared != null };
+});
 const suggestions = (props.suggestions || []).map(([prop, desc, short]) => ({ prop, desc, short }));
 return h('div', { class: 'inspector__addprop', id: 'inspector-addprop', ref: rootRef, role: 'region', 'aria-label': 'Add a property' },
 h('div', { class: 'inspector__addprop-head' },
@@ -160,7 +177,7 @@ key: g.id,
 onClick: () => setGroup(g.id)
 }, g.label))
 ),
-rows.length
+rows.length || extraRows.length
 ? h('ul', { class: 'inspector__addprop-list' },
 rows.map((row) => h('li', { key: row.prop },
 h('button', {
@@ -182,8 +199,27 @@ row.isSet
 : null,
 h('span', { class: 'inspector__addprop-badge' }, row.action)
 )
-))
+)))
+.concat(extraRows.map((row) => h('li', { key: 'x-' + row.prop },
+h('button', {
+class: 'inspector__addprop-card inspector__addprop-card--plain' + (row.isSet ? ' is-set' : ''),
+type: 'button',
+title: (row.isSet ? 'Edit ' : 'Set ') + row.prop + (row.value ? ' — now ' + row.value : ''),
+'aria-label': (row.isSet ? 'Edit ' : 'Set ') + row.prop + (row.value ? ', now ' + row.value : ''),
+onClick: () => props.onPick(row)
+},
+h('span', { class: 'inspector__addprop-text' },
+h('code', { class: 'inspector__addprop-name' }, row.prop),
+row.blurb ? h('span', { class: 'inspector__addprop-blurb' }, row.blurb) : null
+),
+h('span', { class: 'inspector__addprop-action' },
+row.value ? h('span', { class: 'inspector__addprop-value' }, row.value) : null,
+h('span', { class: 'inspector__addprop-badge' }, row.isSet ? 'Edit' : 'Choose')
 )
+)
+)))
+.concat(extra.more ? [h('li', { key: 'more', class: 'inspector__addprop-more' },
+extra.more + ' more match — type more of the name to narrow it.')] : [])
 )
 : h('p', { class: 'inspector__styles-none', role: 'status' },
 'No property matches “' + query + '”. Try another word, or type the name in the editor\'s property field.'

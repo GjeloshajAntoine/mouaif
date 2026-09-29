@@ -47,13 +47,15 @@ const ROWS = [
 
 function main() {
   // --- the filter options are the documented three --------------------
-  assert.deepStrictEqual(arr(FILTERS).map((f) => f.id), ['all', 'set', 'changed'],
-    'the segmented control offers all / set / changed in that order');
-  assert.deepStrictEqual(arr(FILTERS).map((f) => f.label), ['All', 'Declared', 'Changed'],
-  'the labels name what each filter keeps: everything, what this element declares, what you changed');
+  assert.deepStrictEqual(arr(FILTERS).map((f) => f.id), ['styled', 'set', 'changed', 'all'],
+    'the segmented control offers styled / set / changed / all in that order');
+  assert.deepStrictEqual(arr(FILTERS).map((f) => f.label), ['Styled', 'Inline', 'Changed', 'All'],
+  'the labels name what each filter keeps: what the page styled, the inline style, what you changed, everything');
+  assert.strictEqual(vm.runInContext('DEFAULT_FILTER', context), 'styled',
+  'the list opens on the styled view, not the ~400-row wall of browser defaults');
 assert.ok(arr(FILTERS).every((f) => typeof f.hint === 'string' && f.hint.length > 10),
   'every filter carries a sentence for its title / accessible name');
-  assert.deepStrictEqual(arr(FILTER_IDS), ['all', 'set', 'changed']);
+  assert.deepStrictEqual(arr(FILTER_IDS), ['styled', 'set', 'changed', 'all']);
   assert.ok(COMPUTED_PAGE > 0 && COMPUTED_PAGE <= 100,
     'a page is large enough to scan and small enough to keep the scroll bounded');
 
@@ -85,6 +87,14 @@ assert.ok(arr(FILTERS).every((f) => typeof f.hint === 'string' && f.hint.length 
   assert.deepStrictEqual(props(filterComputed(ROWS, { filter: 'nonsense' })),
     props(filterComputed(ROWS, { filter: 'all' })),
     'an unknown filter id falls back to all instead of rendering an empty list');
+
+  // The styled filter keeps what a rule styled, plus inline and changed names.
+  const styledNames = new Set(['font-size']);
+  assert.deepStrictEqual(props(filterComputed(ROWS, { filter: 'styled', styledNames, setNames, changedNames })),
+    ['color', 'font-size', 'padding'],
+    'the styled filter keeps rule-styled, inline and changed properties, and drops browser defaults');
+  assert.deepStrictEqual(props(filterComputed(ROWS, { filter: 'styled' })), [],
+    'the styled filter with nothing styled yields nothing, not everything');
 
   // --- filter and query compose (AND) ---------------------------------
   assert.deepStrictEqual(props(filterComputed(ROWS, { filter: 'set', setNames, query: 'pad' })),
@@ -182,12 +192,14 @@ assert.ok(arr(FILTERS).every((f) => typeof f.hint === 'string' && f.hint.length 
   // --- empty-state copy -----------------------------------------------
   assert.match(emptyMessage({ filter: 'changed' }), /Nothing changed yet/,
     'the changed filter explains itself rather than looking broken');
-  assert.match(emptyMessage({ filter: 'set' }), /Nothing set on this element yet/,
+  assert.match(emptyMessage({ filter: 'set' }), /Nothing in this element's inline style yet/,
     'the set filter explains itself');
   assert.match(emptyMessage({ query: 'zzz' }), /zzz/,
     'a query with no matches names the query back to the user');
   assert.match(emptyMessage({ query: 'zzz', filter: 'set' }), /zzz/,
     'the query is named even when a filter is also active');
+  assert.match(emptyMessage({ filter: 'styled' }), /browser defaults/,
+    'the styled filter explains that an empty list means the element uses browser defaults');
   assert.match(emptyMessage({}), /No computed styles/,
     'the default empty state is about the element, not about a filter');
 
@@ -196,15 +208,17 @@ assert.ok(arr(FILTERS).every((f) => typeof f.hint === 'string' && f.hint.length 
   // distinguish "2 of 406 because you typed a search" from "2 of 406 because
   // the panel broke", which is the failure this line exists to prevent.
   assert.match(statusLine({ filter: 'all', shown: 406, total: 406 }),
-  /all resolved/, 'the default status names the filter in force');
+  /all resolved/, 'the all status names the filter in force');
+  assert.match(statusLine({ filter: 'styled', shown: 12, total: 406 }),
+  /Showing 12 of 406 · styled by the page/, 'the styled filter is spelled out');
   assert.match(statusLine({ filter: 'set', shown: 12, total: 406 }),
-  /Showing 12 of 406 · declared here/, 'the declared filter is spelled out');
+  /Showing 12 of 406 · inline on this element/, 'the inline filter is spelled out');
   assert.match(statusLine({ filter: 'changed', shown: 3, total: 406 }),
   /you changed here/, 'the changed filter is spelled out');
   assert.match(statusLine({ filter: 'all', shown: 2, total: 406, query: 'px' }),
   /2 of 406 match “px”/, 'a search is named with the count it produced');
   assert.strictEqual(statusLine({ filter: 'nonsense', shown: -1, total: 'x' }),
-  'Showing 0 of 0 · all resolved', 'an unknown filter and junk counts fall back safely');
+  'Showing 0 of 0 · all resolved, defaults included', 'an unknown filter and junk counts fall back safely');
   assert.ok(statusLine({ filter: 'all', shown: 406, total: 406 }).indexOf('\n') === -1,
   'the status line is one line');
   // --- the panel actually wires the filter in --------------------------
@@ -238,6 +252,9 @@ assert.ok(arr(FILTERS).every((f) => typeof f.hint === 'string' && f.hint.length 
     'the bar shows how many of the total are visible');
   assert.ok(/setNames = new Set\(inlineRows\.map/.test(panel),
     'the set filter is fed from the element\'s own declared properties');
+  assert.ok(/styledNames\s*\n?\}\);/.test(panel) && /styledSources\(\{/.test(panel),
+    'the styled filter is fed from the cascade the panel already read');
+  assert.ok(/filter: DEFAULT_FILTER/.test(panel), 'the panel opens on the default filter');
   assert.ok(/changedNames = new Set\(changed\)/.test(panel),
     'the changed filter is fed from the session edit set');
   assert.ok(/setComputedQueryState/.test(panel) && /steps: 0/.test(panel),

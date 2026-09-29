@@ -612,9 +612,8 @@ async function main() {
     'the row is --tap plus its 2 px of border, so the stretched button inside is a true 44 px target');
   assert.ok(!/padding:\s*\d+px\s+\d+px/.test(rowRule[1]),
   'the row carries no vertical padding — padding shrinks the tappable area while the row still looks full height');
-  // The computed list is read-only apart from the rows changed in this session:
-  // those open the value sheet, so they take the interactive 44 px row back while
-  // the other ~400 stay compact. If the exception rule ever stops outweighing the
+  // The computed row element stays compact (the button inside carries the tap
+  // target); a changed row takes the carded 44 px treatment. If the exception rule ever stops outweighing the
   // compact rule (or the hairline separator), a changed row silently drops back to
   // a 3 px strip that looks tappable and is not.
   const compactComputed = /\.inspector__styles-row--computed\s*\{([^}]*)\}/.exec(panelCss);
@@ -648,12 +647,17 @@ async function main() {
   const panelSrc = fs.readFileSync(path.join(__dirname, '../frontend/src/components/inspector/StylesPanel.jsx'), 'utf8');
   assert.ok(/inspector__styles-kid-label/.test(panelSrc) && /inspector__styles-crumb-label/.test(panelSrc),
   'the panel renders those label spans');
-  // A changed computed row is an editor button on the value the page reports now
-  // — the only row in that ~400-row read-only list that is interactive.
-  assert.ok(/changedRow\s*\?\s*h\('button',\s*\{\s*class: 'inspector__styles-row-main'/.test(panelSrc),
-  'only the changed computed row is rendered as a button');
+  // Every computed row is an editor button on the value the page reports now,
+  // and names where the value comes from (element.style, a rule, inherited).
+  assert.ok(/class: 'inspector__styles-row-main inspector__computed-rowbtn'/.test(panelSrc),
+  'every computed row is rendered as an editor button');
   assert.ok(/onClick: \(\) => setEdit\(\{ prop: row\.prop, value: row\.value \}\)/.test(panelSrc),
-  'a changed computed row opens the editor on the value the page reports now');
+  'a computed row opens the editor on the value the page reports now');
+  assert.ok(/inspector__computed-source/.test(panelSrc) && /'browser default'/.test(panelSrc),
+  'a computed row shows its source, and says so when it is a browser default');
+  const rowBtnRule = /\.inspector__styles-row-main\.inspector__computed-rowbtn\s*\{([^}]*)\}/.exec(panelCss);
+  assert.ok(rowBtnRule && /min-height:\s*var\(--tap\)/.test(rowBtnRule[1]),
+  'the computed row button is a full 44 px tap target');
 
   // --- the computed filter label never leaves its chips -----------------
   // The label ("Show") explains what the three chips under it do, so it has to

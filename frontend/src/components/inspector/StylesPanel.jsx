@@ -35,7 +35,8 @@ import { h } from 'preact';
 import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
 import { applyPinHeight, watchPin } from './pinnedStack.js';
-import { FILTERS, filterComputed, pageEnd, moreAfter, emptyMessage, statusLine } from './computedFilter.js';
+import { FILTERS, DEFAULT_FILTER, filterComputed, pageEnd, moreAfter, emptyMessage, statusLine } from './computedFilter.js';
+import { styledSources, sourceFor } from './styledProps.js';
 import { alternatives, unitOptions, classify, seedValue } from './valueKinds.js';
 import { buildValueIndex, scaleFor, tokensFor, scaleNote, valuesFor } from './valueIndex.js';
 import { stepFor, snapValue, stepValue as stepValuePure } from './snapping.js';
@@ -1127,7 +1128,7 @@ const rulesSerial = useRef(0);
 // asked for. They live in one state object so changing the query or the filter
 // can reset `steps` in the same update: a stale expanded view after narrowing
 // the list would render every row the user just filtered out.
-const [computedView, setComputedView] = useState({ query: '', filter: 'all', steps: 0 });
+const [computedView, setComputedView] = useState({ query: '', filter: DEFAULT_FILTER, steps: 0 });
 const computedQuery = computedView.query;
 const computedFilter = computedView.filter;
 const computedSteps = computedView.steps;
@@ -1880,11 +1881,26 @@ const orderedComputed = orderChangedFirst(computedRows, changed);
 // default values.
 const setNames = new Set(inlineRows.map((x) => x.prop));
 const changedNames = new Set(changed);
+// Where each styled value comes from (element.style, a rule's selector, or an
+// inherited rule), from the cascade already read for Matched rules — see
+// styledProps.js. It drives the default "Styled" filter and the source line
+// under every computed row, which is what turns ~400 look-alike rows into
+// "these are the values the page set, and this is who set them".
+const styledSourceMap = useMemo(
+  () => styledSources({ inline: inlineRows, rules: (rules && rules.rules) || [], changed }),
+  [inlineRows, rules, changed]
+);
+const styledNames = useMemo(() => {
+  const names = new Set();
+  for (const row of computedRows) if (sourceFor(styledSourceMap, row.prop)) names.add(row.prop);
+  return names;
+}, [computedRows, styledSourceMap]);
 const computedVisible = filterComputed(orderedComputed, {
 query: computedQuery,
 filter: computedFilter,
 setNames,
-changedNames
+changedNames,
+styledNames
 });
 const computedPageLimit = pageEnd(computedVisible, computedSteps);
 const computedPage = computedVisible.slice(0, computedPageLimit);
@@ -2328,37 +2344,43 @@ computedVisible.length
 ? [
 h('ul', { class: 'inspector__styles-list inspector__styles-list--computed', key: 'list' },
 computedPage.map((row) => {
-// The computed list is read-only by design — it is a ~400-row read-out, and a
-// tap target on every row would be 17 000 px of scrolling. A *changed* row is
-// the exception: there are only a handful, they are hoisted to the top, and the
-// row is the answer to "I just changed this — what is it now, and let me change
-// it again?". So it carries the same editor button a declared row does, with
-// the value the page reports now, which is also the shortest path into the
-// value sheet's type switch, unit chips and rail.
+// Every computed row opens the value editor on the value the page reports
+// now. The list used to be read-only apart from rows changed this session,
+// which left the one question the list answers ("this is 12px — change it")
+// with no way to act on it except retyping the property name elsewhere. The
+// default Styled filter keeps the list to the handful of values the page
+// actually set, so a full-height tap target per row is affordable, and the
+// All view is still paged (see computedFilter.js).
+//
+// Each row also names where its value comes from — `element.style`, the rule's
+// selector, or `inherited from div.card` — so a value supplied by a class is
+// visibly *not* on the element, and the edit (which lands on element.style)
+// reads as the override it is.
 const changedRow = isChanged(changed, row.prop);
-const cells = [
+const source = sourceFor(styledSourceMap, row.prop);
+const sourceText = changedRow ? 'changed here' : (source ? source.label : 'browser default');
+return h('li', {
+class: 'inspector__styles-row inspector__styles-row--computed'
++ (changedRow ? ' inspector__styles-row--changed' : '')
++ (source ? '' : ' inspector__styles-row--default'),
+key: row.prop
+},
+h('button', {
+class: 'inspector__styles-row-main inspector__computed-rowbtn',
+type: 'button',
+// Label in name: the row visibly reads `{prop} {value}` and its source.
+'aria-label': (changedRow ? 'Changed. ' : '') + 'Edit ' + row.prop + ', value ' + (row.value || '') + ', from ' + sourceText,
+title: 'Edit ' + row.prop + ' — ' + sourceText,
+onClick: () => setEdit({ prop: row.prop, value: row.value })
+},
+h('span', { class: 'inspector__computed-line' },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
 changedRow ? h('span', { class: 'inspector__styles-changed', 'aria-hidden': 'true' }, 'changed') : null,
 valueSwatch(row.prop, row.value),
 h('span', { class: 'inspector__styles-val' }, row.value || '')
-];
-return h('li', {
-class: 'inspector__styles-row inspector__styles-row--computed'
-+ (changedRow ? ' inspector__styles-row--changed' : ''),
-key: row.prop
-},
-changedRow
-? h('button', {
-class: 'inspector__styles-row-main',
-type: 'button',
-// Same label-in-name rule as a declared row: the row visibly reads
-// `{prop} {value}`, so the accessible name echoes both — plus the
-// changed state, which is colour-only for sighted users.
-'aria-label': 'Changed. Edit ' + row.prop + ', value ' + (row.value || ''),
-title: 'Edit ' + row.prop,
-onClick: () => setEdit({ prop: row.prop, value: row.value })
-}, cells)
-: cells
+),
+h('span', { class: 'inspector__computed-source', 'aria-hidden': 'true' }, sourceText)
+)
 );
 })
 ),

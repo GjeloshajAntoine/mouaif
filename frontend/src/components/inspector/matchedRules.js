@@ -113,6 +113,10 @@ function ruleEntry(rule, opts) {
     media: mediaTextOf(rule),
     inherited: opts.inherited || '',
     props: shown,
+    // Every enabled declaration, uncapped: what the panel's "where does this
+    // value come from" lookup reads (styledProps.js). The display cap above
+    // must not decide that a rule's 25th declaration styles nothing.
+    all: props.filter((p) => !p.disabled).map((p) => ({ name: p.name, value: p.value, important: p.important })),
     more: Math.max(0, props.length - shown.length)
   };
 }

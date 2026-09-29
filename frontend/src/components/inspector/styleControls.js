@@ -685,6 +685,76 @@ return (row.prop + ' ' + row.label + ' ' + row.blurb).toLowerCase().indexOf(q) >
 return rows;
 }
 
+// MAX_EXTRA — how many non-library matches a search lists. A query like `a`
+// matches most of the ~400 names; the list is a pick list, not a reference.
+export const MAX_EXTRA = 40;
+
+// extraProperties — the properties outside the card library that a search
+// matches, so "Search every property" is literally true. `names` is every
+// property the browser resolves for the element (its computed list), which is
+// the browser's own list of what it supports; the library's 32 cards were the
+// only thing searched before, so `z-index`, `transform` or `aspect-ratio` could
+// not be found at all. A query that is itself a property-shaped name the list
+// does not hold (a custom `--brand`, a shorthand like `inset`) is offered as-is
+// last, so anything can still be added from here.
+export function extraProperties(query, names, library, supports) {
+const q = String(query || '').trim().toLowerCase();
+if (!q) return { rows: [], more: 0 };
+const known = new Set((library || LIBRARY).map((row) => row.prop));
+const out = [];
+const seen = new Set();
+for (const raw of names || []) {
+const name = String(raw || '').trim().toLowerCase();
+if (!name || known.has(name) || seen.has(name)) continue;
+if (name.indexOf(q) === -1) continue;
+seen.add(name);
+out.push(name);
+}
+// Names that start with the query first, then the rest; prefixed (-webkit-)
+// names after the standard ones.
+out.sort((a, b) => {
+const va = a.charAt(0) === '-' && a.charAt(1) !== '-';
+const vb = b.charAt(0) === '-' && b.charAt(1) !== '-';
+if (va !== vb) return va ? 1 : -1;
+const sa = a.indexOf(q) === 0;
+const sb = b.indexOf(q) === 0;
+if (sa !== sb) return sa ? -1 : 1;
+return a < b ? -1 : a > b ? 1 : 0;
+});
+const rows = out.slice(0, MAX_EXTRA).map((prop) => ({ prop, group: 'other', label: prop, blurb: '', preview: 'none', extra: true }));
+// A typed name is offered as-is only when it can be a real declaration: a
+// custom property, or a name the browser's own `CSS.supports` accepts. Without
+// the check `aspect` was offered as a property the user could "choose".
+const typedOk = q.startsWith('--')
+? /^--[a-z0-9_-]+$/i.test(q)
+: (/^-?[a-z][a-z0-9-]*$/.test(q) && typeof supports === 'function' && supports(q));
+if (typedOk && !known.has(q) && !seen.has(q)) {
+rows.push({ prop: q, group: 'other', label: q, blurb: q.startsWith('--') ? 'Custom property' : 'Use this name', preview: 'none', extra: true, typed: true });
+}
+return { rows, more: Math.max(0, out.length - MAX_EXTRA) };
+}
+
+// hostPropertyNames — every CSS property the running browser knows, read from
+// a CSSStyleDeclaration's own keys (camelCase, converted to kebab-case). The
+// computed list alone is not the full set: `getComputedStyle` leaves out
+// properties such as `aspect-ratio` on some engines, so they were unfindable.
+// Memoised; returns [] outside a browser.
+let HOST_NAMES = null;
+export function hostPropertyNames() {
+if (HOST_NAMES) return HOST_NAMES;
+const out = new Set();
+try {
+const style = document.createElement('div').style;
+for (const key in style) {
+if (typeof style[key] !== 'string' || /^\d/.test(key) || key === 'cssText' || key === 'cssFloat') continue;
+const kebab = key.indexOf('-') >= 0 ? key : key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase()).replace(/^(webkit|moz|ms)-/, '-$1-');
+out.add(kebab);
+}
+} catch { /* not a browser */ }
+HOST_NAMES = Array.from(out);
+return HOST_NAMES;
+}
+
 // libraryRow — a card with the element's state attached: the value it has now
 // (from the panel's own read, so a card can say "16px" instead of "already
 // added" and leave the user guessing).

@@ -19,18 +19,27 @@
 
 // FILTERS — the segmented control's options, in render order.
 //
-//   all     — every computed property (the default; complete read-out)
-//   set     — only properties this element declares itself, in its inline
-//             style or via an edit made in this session. This is the
-//             "what is this element actually doing" view: a page's
-//             computed wall is mostly inherited and default values.
+//   styled  — the default: only properties an author actually styled — the
+//             element's inline style, this session's edits, and every
+//             declaration a non-browser rule supplies (inherited rules only
+//             for inheritable properties; see styledProps.js). This is the
+//             "what is this element actually doing" view: a page's computed
+//             wall is ~400 rows of which nearly all are browser defaults.
+//   set     — only properties the element declares in its own inline style
+//             (`element.style`), the one origin this panel writes.
 //   changed — only what the user edited in this session, which is the
 //             "what did I just do" view.
+//   all     — every computed property (the complete read-out).
 export const FILTERS = [
-{ id: 'all', label: 'All', hint: 'every property the browser resolves for this element' },
-{ id: 'set', label: 'Declared', hint: 'only the properties this element declares in its own inline style' },
-{ id: 'changed', label: 'Changed', hint: 'only the properties you changed in this session' }
+{ id: 'styled', label: 'Styled', hint: 'only the properties a stylesheet or this element sets, not browser defaults' },
+{ id: 'set', label: 'Inline', hint: 'only the properties this element declares in its own inline style' },
+{ id: 'changed', label: 'Changed', hint: 'only the properties you changed in this session' },
+{ id: 'all', label: 'All', hint: 'every property the browser resolves for this element, defaults included' }
 ];
+
+// DEFAULT_FILTER — what the list opens on. Not `all`: ~400 mostly-default rows
+// is the view that made the panel read as nonsense.
+export const DEFAULT_FILTER = 'styled';
 
 export const FILTER_IDS = FILTERS.map((f) => f.id);
 
@@ -67,10 +76,12 @@ export function filterComputed(rows, opts) {
   const filter = FILTER_IDS.indexOf(options.filter) === -1 ? 'all' : options.filter;
   const setNames = options.setNames || EMPTY;
   const changedNames = options.changedNames || EMPTY;
+  const styledNames = options.styledNames || EMPTY;
   const query = options.query;
   const out = [];
   for (const row of rows || []) {
     if (!row) continue;
+    if (filter === 'styled' && !styledNames.has(row.prop) && !setNames.has(row.prop) && !changedNames.has(row.prop)) continue;
     if (filter === 'set' && !setNames.has(row.prop)) continue;
     if (filter === 'changed' && !changedNames.has(row.prop)) continue;
     if (!matchesQuery(row, query)) continue;
@@ -157,7 +168,8 @@ const options = opts || {};
 const query = String(options.query == null ? '' : options.query).trim();
 if (query) return 'No property matches “' + query + '”.';
 if (options.filter === 'changed') return 'Nothing changed yet — edited properties appear here.';
-if (options.filter === 'set') return 'Nothing set on this element yet — tap a declared row or a chip to add one.';
+if (options.filter === 'set') return 'Nothing in this element\'s inline style yet — every edit here lands there.';
+if (options.filter === 'styled') return 'No stylesheet rule styles this element — it uses browser defaults. Tap All to see every value.';
 return 'No computed styles for this element.';
 }
 // statusLine — what the list below is showing, in one line and in words.
@@ -177,8 +189,9 @@ const query = String(o.query == null ? '' : o.query).trim();
 // "of the ones ..." is the qualifier for both halves: with a search the count
 // is of the matches, without one it is simply which filter is in force.
 const what = filter === 'changed' ? 'you changed here'
-: filter === 'set' ? 'declared here'
-: 'all resolved';
+: filter === 'set' ? 'inline on this element'
+: filter === 'styled' ? 'styled by the page'
+: 'all resolved, defaults included';
 return query
 ? shown + ' of ' + total + ' match “' + query + '” · ' + what
 : 'Showing ' + shown + ' of ' + total + ' · ' + what;

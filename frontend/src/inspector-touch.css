@@ -684,6 +684,15 @@ padding: 3px 10px;
 min-height: 28px;
 line-height: 20px;
 }
+/* A search hit outside the card library: a plain property name, no picture, a
+full tap-target tall — the long tail of what the browser supports. */
+.inspector__addprop-card--plain { min-height: var(--tap); padding: 6px 10px; }
+.inspector__addprop-card--plain .inspector__addprop-name { font-family: var(--font-mono); font-size: 0.78rem; }
+.inspector__addprop-more {
+padding: 4px 2px;
+font-size: 0.7rem;
+color: var(--muted);
+}
 .inspector__addprop-note {
 margin: 0;
 font-size: 0.66rem;
