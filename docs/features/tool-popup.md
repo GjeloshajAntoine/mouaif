@@ -3,7 +3,7 @@
 ## Overview
 A floating popover opened from the chat view top bar lets the user inspect and change which tools are available to the model, their authorization modes (Off/Ask/Allow), and toggle MCP servers and agent files — all without leaving the chat view. The mobile-first popover opens below the complete chat header, remains within the visual viewport, and scrolls its tool list independently.
 ## Usage
-1. Tap the globe icon (🌐) in the chat view top bar.
+1. Tap the wrench icon (**Tool settings**) beside the project-settings gear in the chat view top bar.
 2. The popup appears below the header showing the same hierarchical tool tree that is also rendered in the chat transcript's Tools card. *Custom actions are no longer listed here* — they moved to the **file toolbar** dropdown menu (see [custom-actions.md](custom-actions.md)).
 3. Each tool group can be expanded/collapsed with the chevron; each tool has a checkbox to toggle it on/off for the current chat.
 4. For built-in tool groups (shell, subagent, ask_user, task, progress updates, file tools), an Off/Ask/Allow segment control is shown inline. **These segments are chat-scoped**: a tap pins the mode for THIS chat only (stored on the chat record) and never rewrites the project's `.mouaif.json`. One tap is one write — the stored value always equals the tap, and a slow or out-of-order response can never revert the segment. Project-wide modes are edited in Settings → Project. The popup footer says so.
@@ -14,3 +14,5 @@ A floating popover opened from the chat view top bar lets the user inspect and c
 9. Tools that have been called in the current chat session show a dot badge (●).
 10. Changes are persisted immediately — there is no "Save" button. Saving authorization from the popup updates the transcript's Tools card in place and vice versa, because both surfaces read the same `toolAuth` / `mcpAuth` chat state and a save re-renders both.
 11. The Off/Ask/Allow choices here belong to **this chat**. They are saved on the chat record (`chat.toolAuth`, app SQLite store) through `PUT /api/tools/authorization` with `scope: 'chat'` — the project's `.mouaif.json` / `.mcp.json` are never written from a chat. A tool whose mode you change here keeps that mode when you reopen the chat, and the chat's other tools are unaffected. See [tool-authorization.md](tool-authorization.md).
+
+The wrench follows the button's theme and active color. Screen readers announce **Toggle available tools** and whether the popup is expanded; the decorative icon is not announced separately.

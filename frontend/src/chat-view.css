@@ -18,7 +18,7 @@ align-items: center;
 row pulled up by a -6px top margin, which made the two rows *overlap*:
 the model row started 5px inside the icon column and 3px inside the
 title stack, so the usage chips and the two dropdowns visually collided
-and the globe glyph sat between them. The padding is now explicit on all
+and the tools glyph sat between them. The padding is now explicit on all
 four sides instead of borrowed from a margin hack. */
 gap: 2px 4px;
 /* No top padding (the shell owns the space above the head) and 6px at the
@@ -117,7 +117,7 @@ min-width: 96px;
   margin: 0;
 }
 /* The gear is an anchor <a> with no built-in chrome — give it the
-same round icon-button look as the globe so the two read as a
+same round icon-button look as the tools wrench so the two read as a
 matching pair when stacked. */
 .chat-view__head-icons > .chat-view__iconbtn {
   width: var(--tap-sm);

@@ -38,7 +38,7 @@ In a chat, the transcript shows a **Skills** card below tools and agent files. E
 - Changes appear immediately in both the transcript card and the popup. Quick successive taps save in order; a failed save restores the last saved selection. After saving, both surfaces reconcile with the server's effective state, including prompt presets.
 - A chat whose skills are off shows every row unchecked. Checking any row turns the chat's skills back on with that one skill selected.
 
-The **Tools** popup (globe icon in the chat top bar) shows the same always-expanded **Skills** group. There the group checkbox is the explicit all-on / all-off shortcut for the chat, while each row is that one skill's switch.
+The **Tools** popup (wrench icon in the chat top bar) shows the same always-expanded **Skills** group. There the group checkbox is the explicit all-on / all-off shortcut for the chat, while each row is that one skill's switch.
 
 Custom prompt presets use the same effective skill setting for the metadata catalog, activation tool, and activation result. Delegated subagents inherit that setting and this chat's individual skill opt-outs; they cannot reactivate a skill unchecked in the parent chat. The project-level off switch always wins.
 
