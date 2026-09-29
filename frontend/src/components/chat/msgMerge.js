@@ -131,36 +131,66 @@ export function mergeServerRows(state, rows) {
   return out;
 }
 
-// tailSyncDomAction(prev, merged) -> 'noop' | 'append' | 'render'
+// tailSyncDomAction(prev, merged) -> 'noop' | 'append' | 'reconcile'
 //
 // Decide how the DOM must be updated after mergeServerRows turned `prev`
 // (state.messages before the merge) into `merged`.
 //
-//   - 'noop'   — nothing changed (same array reference, or identical rows).
-//   - 'append' — a PURE append: every prior row is still at its old index by
-//                reference, and rows were only added at the end. The cheap
-//                syncTranscriptAppend path (render just messages[prevLen…])
-//                is correct and flash-free here.
-//   - 'render' — the prefix moved: mergeServerRows either replaced a seq-less
-//                optimistic twin in place or spliced a late persisted row into
-//                the middle. Appending the tail would repaint an on-screen row
-//                (a visible duplicate) or drop a row at the bottom (wrong
-//                order), so a full reconcile render is required. The reconcile
-//                render reuses every unchanged node, so it does not re-animate.
+//   - 'noop'      — nothing changed (same array reference, or a same-length
+//                   array with every row still at its old index).
+//   - 'append'    — a PURE append: every prior row is still at its old index by
+//                   reference AND the old array ended on a persisted row, so
+//                   the new rows occupy exactly messages[prevLen…]. The cheap
+//                   syncTranscriptAppend path (render just that slice) is exact
+//                   and flash-free.
+//   - 'reconcile' — anything else that grew or rewrote the array: an optimistic
+//                   twin replaced in place, a persisted row spliced in before
+//                   the retained seq-less tail, or a tail expansion whose new
+//                   rows do not sit at prevLen. Appending the tail would repaint
+//                   an on-screen row or drop a row at the bottom, so this needs
+//                   the keyed reconciler — which REUSES every row already on
+//                   screen by key and only builds the genuinely new ones.
 //
-// This is the guard syncTranscriptAppend documents but never enforced at its
-// call site — the source of the duplicate/mis-ordered rows the next poll's
-// full rebuild "fixed" with a visible reload.
+// Why a reconcile and not a full renderTranscript:
+//
+//   A tail sync is always the same chat, and mergeServerRows only ever adds
+//   rows or replaces a seq-LESS optimistic twin in place — it never removes or
+//   edits a persisted row. So every persisted row already on screen is still in
+//   `merged` under the same key and is reused untouched; only the optimistic
+//   tail (which the DOM renders from the live stream, not from state.messages)
+//   changes identity. The header cards cannot have moved either: their inputs
+//   (system prompt, tool catalog, agent files, skills) come from other stores.
+//   Calling renderTranscript here therefore did work a reconcile does not need
+//   — most expensively, snapshotExpandedState + restoreExpandedState over every
+//   tool card twice — on the very first frame after returning to a running chat
+//   from another app. That full pass was the "the chat takes seconds to come
+//   back" cost, and the keyed reconcile it fell through to was already reusing
+//   the nodes; only the wrapper re-parsed and re-walked them.
+//
+// Callers must still route 'reconcile' through a helper that falls back to a
+// full render when the transcript has no message rows yet or a chunked pass is
+// mid-flight (see transcript.js reconcileTranscript): there the reconciler
+// would build the whole transcript in one blocking pass instead of painting the
+// tail first.
 export function tailSyncDomAction(prev, merged) {
   if (!Array.isArray(prev) || !Array.isArray(merged)) return 'noop';
   if (merged === prev) return 'noop';
   const prevLen = prev.length;
-  let pureAppend = true;
+  let prefixIntact = true;
   for (let i = 0; i < prevLen; i++) {
-    if (merged[i] !== prev[i]) { pureAppend = false; break; }
+    if (merged[i] !== prev[i]) { prefixIntact = false; break; }
   }
-  if (!pureAppend) return 'render';
-  return merged.length > prevLen ? 'append' : 'noop';
+  // Same length: an in-place optimistic replace (prefix moved) needs a reconcile
+  // to key the persisted row and drop the replaced node; an identical prefix is
+  // a genuine no-op.
+  if (merged.length <= prevLen) return prefixIntact ? 'noop' : 'reconcile';
+  // Growing array: the cheap append is exact only when the prefix is untouched
+  // and the old array ended on a persisted row, so the new rows start at
+  // prevLen. A retained seq-less tail makes those indices name the optimistic
+  // row instead, which is the resume case and must reconcile.
+  const lastOld = prevLen > 0 ? prev[prevLen - 1] : null;
+  if (prefixIntact && (!lastOld || typeof lastOld.seq === 'number')) return 'append';
+  return 'reconcile';
 }
 
 // insertionPointFor(out, seq) -> number

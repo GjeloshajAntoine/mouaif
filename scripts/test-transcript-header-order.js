@@ -97,10 +97,18 @@ function createElement(tag) {
     },
     remove() { if (node.parentNode) node.parentNode.removeChild(node); },
     get nextSibling() {
-      if (!node.parentNode) return null;
-      const sibs = node.parentNode.children;
-      const i = sibs.indexOf(node);
-      return i === -1 ? null : (sibs[i + 1] || null);
+    if (!node.parentNode) return null;
+    const sibs = node.parentNode.children;
+    const i = sibs.indexOf(node);
+    return i === -1 ? null : (sibs[i + 1] || null);
+    },
+    // reconcileTranscriptRows advances its cursor with nextElementSibling, so
+    // the stub must provide it; nextSibling above is the test's own helper.
+    get nextElementSibling() {
+    if (!node.parentNode) return null;
+    const sibs = node.parentNode.children;
+    const i = sibs.indexOf(node);
+    return i === -1 ? null : (sibs[i + 1] || null);
     },
     matches(selector) { return matchesSelector(node, selector); },
     querySelector(selector) { return findOne(node, selector); },
@@ -406,7 +414,7 @@ function main() {
         isHeaderCardNode: headerCards.isHeaderCardNode,
         HEADER_CARD_ORDER: H
       }, dom.globals),
-      'this.reconcileTranscriptRows = reconcileTranscriptRows; this.transcriptRowKey = transcriptRowKey;');
+      'this.reconcileTranscriptRows = reconcileTranscriptRows; this.transcriptRowKey = transcriptRowKey; this.reconcileTranscript = reconcileTranscript;');
     const el2 = createElement('div');
     const refs = makeRefs(el2);
     const sys = card('chat-msg chat-msg--system');
@@ -427,6 +435,86 @@ function main() {
       JSON.stringify(order(el2)));
     check('reconcile does not cull the system-prompt row',
       el2.children.indexOf(sys) !== -1, JSON.stringify(order(el2)));
+  }
+
+  // ---- 6. reconcileTranscript reuses rows and is a no-op when settled ------
+  //
+  // The resume fix: a tail sync after a retained optimistic run must place the
+  // new rows by key and reuse everything already on screen, not rebuild the
+  // transcript. These pin the properties that make it safe to route the tail
+  // sync there: an unchanged pass performs no DOM mutation, a genuinely new row
+  // is appended without touching the rows around it, and a transcript with no
+  // message rows yet still falls back to the full (latest-first) render.
+  {
+    const transcript = loadModule('frontend/src/components/chat/transcript.js',
+      Object.assign({
+        placeHeaderCard: headerCards.placeHeaderCard,
+        orderHeaderCards: headerCards.orderHeaderCards,
+        headerCardIndex: headerCards.headerCardIndex,
+        isHeaderCardNode: headerCards.isHeaderCardNode,
+        HEADER_CARD_ORDER: H
+      }, dom.globals),
+      'this.reconcileTranscript = reconcileTranscript; this.transcriptRowKey = transcriptRowKey;');
+
+    const el3 = createElement('div');
+    const refs = makeRefs(el3);
+    const sys = card('chat-msg chat-msg--system');
+    sys.dataset.sysPrompt = '1';
+    el3.appendChild(sys);
+    const u1 = { role: 'user', content: 'q1', seq: 0 };
+    const a1 = { role: 'assistant', content: 'a1', seq: 1 };
+    const rowU = createElement('div');
+    rowU.className = 'chat-msg chat-msg--user';
+    rowU._rowKey = transcript.transcriptRowKey(u1);
+    const rowA = createElement('div');
+    rowA.className = 'chat-msg chat-msg--assistant';
+    rowA._rowKey = transcript.transcriptRowKey(a1);
+    el3.appendChild(rowU);
+    el3.appendChild(rowA);
+
+    // Same rows -> no mutation at all (no replayed animation, no scroll move).
+    const before = el3.children.slice();
+    let mutations = 0;
+    const realInsert = el3.insertBefore;
+    const realRemoveChild = el3.removeChild;
+    el3.insertBefore = function (child, ref) { mutations++; return realInsert.call(el3, child, ref); };
+    el3.removeChild = function (child) { mutations++; return realRemoveChild.call(el3, child); };
+    transcript.reconcileTranscript({ messages: [u1, a1], chat: {} }, refs);
+    check('reconcileTranscript of unchanged rows touches nothing',
+      mutations === 0 && el3.children.every((child, i) => child === before[i]),
+      'mutations=' + mutations + ' ' + JSON.stringify(order(el3)));
+
+    // A new tool/answer pair appended after the prefix -> placed at the bottom,
+    // the existing rows kept by reference, the header block untouched.
+    const toolCall = { role: 'tool', phase: 'call', name: 'shell', seq: 2 };
+    const a2 = { role: 'assistant', content: 'done', seq: 4 };
+    const el4 = createElement('div');
+    const refs4 = makeRefs(el4);
+    const sys4 = card('chat-msg chat-msg--system');
+    sys4.dataset.sysPrompt = '1';
+    el4.appendChild(sys4);
+    const rU = createElement('div'); rU.className = 'chat-msg chat-msg--user'; rU._rowKey = transcript.transcriptRowKey(u1); el4.appendChild(rU);
+    const rA = createElement('div'); rA.className = 'chat-msg chat-msg--assistant'; rA._rowKey = transcript.transcriptRowKey(a1); el4.appendChild(rA);
+    transcript.reconcileTranscript({ messages: [u1, a1, toolCall, a2], chat: {} }, refs4);
+    check('reconcileTranscript appends new rows and reuses the existing ones',
+    el4.children[0] === sys4 && el4.children[1] === rU && el4.children[2] === rA
+      && el4.children.length === 5,
+    JSON.stringify(order(el4)));
+    check('reconcileTranscript puts the new rows at the bottom in order',
+    el4.children[3].dataset.toolId !== undefined
+      && el4.children[4]._rowKey === transcript.transcriptRowKey(a2),
+    JSON.stringify(order(el4)));
+
+    // No message rows yet -> falls back to renderTranscript (latest-first
+    // paint), because the reconciler would build the whole transcript in one
+    // blocking pass. The full render stamps the last row, so the assertion is
+    // that a row for the tail message now exists.
+    const el5 = createElement('div');
+    const refs5 = makeRefs(el5);
+    transcript.reconcileTranscript({ messages: [u1, a1], chat: {}, tools: {}, agentFiles: {}, skills: {} }, refs5);
+    check('reconcileTranscript with no rows yet falls back to a full render',
+      el5.children.length >= 2 && el5.children[el5.children.length - 1]._rowKey === transcript.transcriptRowKey(a1),
+      JSON.stringify(order(el5)));
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

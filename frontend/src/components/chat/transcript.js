@@ -2803,6 +2803,51 @@ function syncHeaderCards(state, refs, empty) {
   ensureEmptyState(refs, empty);
 }
 
+// reconcileTranscript(state, refs)
+//
+// Incremental pass for a tail sync: the rows already on screen are reused by
+// key and only genuinely new rows are built. This is a thin wrapper over
+// reconcileTranscriptRows — the same pass renderTranscript falls through to —
+// minus everything a rebuild needs and this path cannot: no expanded-state
+// snapshot (nothing is destroyed, so nothing has to be restored), no
+// header-card rebuild (the inputs cannot have changed when only the message
+// tail grew), and no chat-identity check (the caller is the same-chat tail
+// sync).
+//
+// The point is cost: renderTranscript re-walked every tool card twice
+// (snapshotExpandedState + restoreExpandedState) and re-validated all four
+// header-card signatures on every tail sync that moved the prefix. On resume
+// with a running chat that path ran on the first frame back, which is what
+// made the return feel slow. Here the cost is one keyed walk of the rows.
+//
+// Two cases still need the full render, because the incremental pass cannot
+// paint them correctly:
+//   - no message rows yet: reconcileTranscriptRows would build the entire
+//     transcript synchronously instead of renderTranscript's latest-first tail
+//     paint, back to the original blocking-open cost;
+//   - a chunked pass is mid-backfill: it is placing rows above its anchor and
+//     owns the scroll; a concurrent reconcile would fight it (and render only
+//     the tail that renderTranscript's chunked branch would have covered).
+export function reconcileTranscript(state, refs) {
+  const el = refs.transcript.current;
+  if (!el) return;
+  if (refs._pendingTranscriptChunk || !hasMessageRows(el)) {
+    renderTranscript(state, refs);
+    return;
+  }
+  const order = [];
+  for (let i = 0; i < state.messages.length; i++) {
+    if (isRenderableMessage(state.messages[i])) order.push(i);
+  }
+  const stats = reconcileTranscriptRows(state, refs, order);
+  reanchorOverlayCards(refs);
+  // Follow new content exactly like the append path does: only a pass that
+  // actually built or removed a row moves the scroll (and counts toward the
+  // jump-to-bottom badge), so a no-op tick leaves the reading position alone.
+  if (stats.created > 0 || stats.removed > 0) afterTranscriptAppend(refs, true);
+  updateUsageSummary(state, null, refs);
+}
+
 export function renderTranscript(state, refs) {
 if (!refs.transcript.current) return;
 // Preserve expand/collapse across the rebuild below: appending an

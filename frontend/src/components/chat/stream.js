@@ -616,15 +616,21 @@ function applyTailSync(state, refs, nextSeq, tail) {
   // appends it to the DOM, which is correct only for a pure append — every
   // prior row still at its old index by reference. mergeServerRows also
   // replaces a seq-less optimistic twin in place and splices a late-arriving
-  // persisted row into the MIDDLE, both of which move the prefix. Appending
-  // the tail then repaints an on-screen row (a visible duplicate) or drops a
-  // row at the bottom (wrong order), which the next poll's full rebuild
-  // corrects as a visible reload/flash. tailSyncDomAction picks the safe path:
-  // a full reconcile render (which reuses unchanged nodes — no re-animate) for
-  // a moved prefix, the cheap append only for a genuine append.
+  // persisted row in BEFORE the retained optimistic tail, both of which move
+  // the row indices. Appending messages[prevLen…] then repaints an on-screen
+  // row (a visible duplicate) or drops a row at the bottom (wrong order),
+  // which the next poll's rebuild corrects as a visible reload/flash.
+  // tailSyncDomAction picks the safe path: the cheap index-append only for a
+  // pure append, and the keyed reconciler (which reuses every row already on
+  // screen) for anything else — including the resume case, whose tail rows
+  // land after a retained optimistic run.
   const action = tailSyncDomAction(prev, merged);
-  if (action === 'render') {
-    if (state._renderTranscript) state._renderTranscript();
+  if (action === 'reconcile') {
+    // Rows were inserted after the optimistic tail: no rebuild is needed.
+    // Placing the new rows by key reuses every node already on screen and
+    // touches nothing else, which is what keeps returning to a running chat
+    // from re-rendering (and re-animating) the whole transcript.
+    if (state._reconcileTranscript) state._reconcileTranscript();
   } else if (action === 'append') {
     syncTranscriptAppend(state, refs, prevLen);
   }

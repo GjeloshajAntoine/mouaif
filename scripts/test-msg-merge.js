@@ -191,12 +191,14 @@ async function run() {
 
   // ---- tailSyncDomAction: which DOM path a merge outcome needs -----------
   //
-  // Regression for the "element appears twice / wrong order / random reload"
-  // bug: applyTailSync used to run the cheap append (render only the new tail)
-  // on EVERY merge that grew the array — but a merge that replaces an
-  // optimistic twin or splices a row into the middle moves the prefix, so the
-  // append repaints an on-screen row or drops one at the bottom. These assert
-  // the guard now steering those cases to a full reconcile render instead.
+  // A tail sync is always the same chat, and mergeServerRows only ever adds
+  // rows or replaces a seq-LESS optimistic twin in place. Every persisted row
+  // already on screen is therefore still in `merged` under the same key, so the
+  // keyed reconciler reuses it untouched. The only tail sync that can take the
+  // cheaper index-append is a pure append whose old array ended on a persisted
+  // row; everything else reconciles. None of these cases needs a full
+  // renderTranscript — which re-snapshotted and restored every tool card and
+  // re-validated every header card on the first frame back from another app.
 
   // Same array reference -> nothing to do.
   {
@@ -204,7 +206,8 @@ async function run() {
     t('tailSyncDomAction: same reference is a no-op', tailSyncDomAction(a, a) === 'noop');
   }
 
-  // Pure append: prefix rows unchanged by reference, one row added at the end.
+  // Pure append: prefix rows unchanged by reference, old array ends persisted,
+  // one row added at the end -> the cheap index-append is exact.
   {
     const u = { role: 'user', content: 'hi', seq: 0 };
     const prev = [u];
@@ -214,24 +217,35 @@ async function run() {
   }
 
   // Optimistic twin replaced in place: prev[0] (seq-less) becomes the
-  // persisted row (a NEW object) at index 0 -> prefix moved -> full render.
+  // persisted row (a NEW object) at index 0 -> reconcile, not a full render.
   {
     const prev = [{ role: 'user', content: 'hi' }];
     const merged = mergeServerRows({ seenSeqs: new Set(), messages: prev.slice() },
       [{ role: 'user', content: 'hi', seq: 0 }]);
-    t('tailSyncDomAction: an in-place optimistic replace needs a full render',
-      tailSyncDomAction(prev, merged) === 'render');
+    t('tailSyncDomAction: an in-place optimistic replace reconciles',
+      tailSyncDomAction(prev, merged) === 'reconcile');
   }
 
   // Middle splice: a late persisted row (seq 1) lands between held rows while a
-  // seq-less live segment stays last -> prefix moved -> full render, not append.
+  // seq-less live segment stays last -> reconcile, not a full render.
   {
     const live = { role: 'assistant', content: 'live', reasoning: '' };
     const prev = [{ role: 'user', content: 'q', seq: 0 }, live];
     const merged = mergeServerRows({ seenSeqs: new Set([0]), messages: prev.slice() },
       [{ role: 'tool', phase: 'call', name: 'shell', seq: 1 }]);
-    t('tailSyncDomAction: a middle splice needs a full render',
-      tailSyncDomAction(prev, merged) === 'render');
+    t('tailSyncDomAction: a middle splice reconciles',
+      tailSyncDomAction(prev, merged) === 'reconcile');
+  }
+
+  // A persisted row replaced in place (same length, no growth): reconcile, so
+  // the persisted node is keyed and the old node dropped. The example above
+  // grows; this pins the equal-length branch.
+  {
+    const prev = [{ role: 'user', content: 'q', seq: 0 }, { role: 'assistant', content: 'partial', reasoning: '' }];
+    const merged = mergeServerRows({ seenSeqs: new Set([0]), messages: prev.slice() },
+      [{ role: 'assistant', content: 'partial', reasoning: '', seq: 1 }]);
+    t('tailSyncDomAction: an equal-length conservative replace reconciles',
+      tailSyncDomAction(prev, merged) === 'reconcile');
   }
 
   // Bad input is a safe no-op.

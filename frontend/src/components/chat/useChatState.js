@@ -22,7 +22,7 @@ import {
   loadPinned, togglePin, modelsForPicker, loadRecent, loadRecentFromServer
 } from './modelPicker.js';
 import {
-renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender
+renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender, reconcileTranscript
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills, toggleSkill } from './cards.js';
 import { scrollTranscriptToBottom, scrollToAdjacentMessage, noteTranscriptScrollTop, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
@@ -675,6 +675,14 @@ await sendTurn(state, refs, {
     updateSwitch(activeProfileId(state), refs);
   }, []);
   state._renderTranscript = renderTranscriptBound;
+  // Incremental alternative to a full rebuild, used by the tail sync when the
+  // known prefix is unchanged and rows were only inserted at the end (after a
+  // retained optimistic run). reconcileTranscript reuses every row already on
+  // screen by key, so the transcript is not re-parsed or re-animated — the
+  // difference between a resume that silently fills in and one that visibly
+  // rebuilds. The switch indicator is left alone here: a reconcile keeps the
+  // same messages loaded, so the prompt-profile marker cannot have moved.
+  state._reconcileTranscript = () => { reconcileTranscript(state, refs); };
   state._retryFailedTurn = (payload) => retryFailedTurn(state, refs, payload);
   state._updateSetupVisibility = () => updateSetupVisibility(state, refs);
   state._toggleTool = onToggleTool;

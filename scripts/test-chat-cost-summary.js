@@ -70,9 +70,10 @@ const vm = require('node:vm');
   let reconciled;
   const context = vm.createContext({
     mergeServerRows, nextServerMessageIndex, costSnapshot,
-    // applyTailSync routes a moved prefix to a full reconcile render, so the
-    // slice needs the same helpers the module imports. `_renderTranscript`
-    // stands in for that render: this case only asserts the cost lines.
+    // applyTailSync routes a moved prefix to the keyed reconcile (which reuses
+    // every row already on screen) rather than a full transcript render, so the
+    // slice needs the same helpers the module imports. `_reconcileTranscript`
+    // stands in for that pass: this case only asserts the cost lines.
     // `syncTranscriptAppend` covers the cheap append path.
     tailSyncDomAction,
     fetchMessagesFromSeq: async () => ({ messages: [row(200, 2)], nextSeq: 201, totalCost: cost(12) }),
@@ -80,7 +81,7 @@ const vm = require('node:vm');
     updateUsageSummary: (state) => { painted = summarize(state.messages, state.costSnapshot, null, state.attributedCost).totalCost; }
   });
   vm.runInContext(syncSource + ';this.sync = syncToNextSeq;', context);
-  const state = { props: { projectDir: '/test', chatId: 'test' }, messages: [...page, row(undefined, 2)], seenSeqs: new Set([198, 199]), transcriptNextSeq: 200, costSnapshot: baseline, attributedCost: 0.5, _renderTranscript() { reconciled = true; } };
+  const state = { props: { projectDir: '/test', chatId: 'test' }, messages: [...page, row(undefined, 2)], seenSeqs: new Set([198, 199]), transcriptNextSeq: 200, costSnapshot: baseline, attributedCost: 0.5, _reconcileTranscript() { reconciled = true; } };
   await context.sync(state, {}, 201);
   assert.equal(painted, 12);
   assert.equal(state.messages.length, 3);
@@ -89,9 +90,9 @@ const vm = require('node:vm');
   // delta is rebased away in the same step — the 12 above is not 12.5.
   assert.equal(state.attributedCost, 0);
   // The merge replaced the seq-less optimistic twin in place, so the prefix
-  // moved and applyTailSync must take the reconcile render, not the cheap
+  // moved and applyTailSync must take the keyed reconcile, not the cheap
   // tail append that would repaint the on-screen row (see msgMerge.js).
-  assert.equal(reconciled, true, 'a replaced optimistic twin routes to the reconcile render');
+  assert.equal(reconciled, true, 'a replaced optimistic twin routes to the reconcile pass');
   console.log('PASS reconciliation replaces optimistic cost without double counting');
 
   // And the cheap path is kept for a genuine append: nothing on screen moves,
@@ -107,7 +108,7 @@ const vm = require('node:vm');
       updateUsageSummary() {}
     });
     vm.runInContext(syncSource + ';this.sync = syncToNextSeq;', ctx);
-    const appendState = { props: { projectDir: '/test', chatId: 'test' }, messages: [u], seenSeqs: new Set([210]), transcriptNextSeq: 211, costSnapshot: baseline, attributedCost: 0, _renderTranscript() { throw new Error('a pure append must not re-render the transcript'); } };
+    const appendState = { props: { projectDir: '/test', chatId: 'test' }, messages: [u], seenSeqs: new Set([210]), transcriptNextSeq: 211, costSnapshot: baseline, attributedCost: 0, _renderTranscript() { throw new Error('a pure append must not re-render the transcript'); }, _reconcileTranscript() { throw new Error('a pure append must not reconcile the transcript'); } };
     await ctx.sync(appendState, appendRefs, 212);
     assert.equal(appended, true, 'a pure append uses the cheap tail append');
     assert.equal(appendState.messages.length, 2);
