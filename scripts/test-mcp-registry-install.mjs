@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {
   friendlyName, publisher, installOptions, summary, missingRequired,
-  buildServerBody, findInstalled, relativeDate
+  buildServerBody, findInstalled, relativeDate, isTemplate, fieldValue
 } from '../frontend/src/components/settings/mcpRegistryInstall.js';
 
 let failed = 0;
@@ -69,9 +69,53 @@ check('streamable-http leads; sse is installable as the legacy transport', () =>
 });
 
 check('summary reports hosted/local and a needed key', () => {
-  assert.deepEqual(summary(npmEntry), { kind: 'local', runtime: 'Node.js (npx)', needsKey: true, supported: true });
+  assert.deepEqual(summary(npmEntry), { kind: 'local', runtime: 'Node.js (npx)', needsKey: true, supported: true, option: installOptions(npmEntry)[0] });
   assert.equal(summary(remoteEntry).kind, 'remote');
   assert.equal(summary({ server: {} }).supported, false);
+  assert.equal(summary({ server: {} }).option, null);
+});
+
+// A registry value can be a `{token}` template (KeyValueInput.value with a
+// `variables` map). mouaif cannot resolve that map, so the value must read as
+// missing: the card says "Needs API key", Install stays disabled, and the
+// placeholder is never written into a header.
+const templateEntry = { server: {
+  name: 'ai.smithery/github', title: 'Smithery GitHub',
+  remotes: [{ type: 'streamable-http', url: 'https://server.smithery.ai/@smithery-ai/github/mcp',
+    headers: [{ name: 'Authorization', value: 'Bearer {smithery_api_key}', isRequired: true, isSecret: true }] }]
+} };
+
+check('a {token} value is a placeholder, not a value', () => {
+  const [o] = installOptions(templateEntry);
+  assert.equal(o.fields[0].value, 'Bearer {smithery_api_key}');
+  assert.equal(o.fields[0].template, true);
+  assert.equal(isTemplate('Bearer {token}'), true);
+  assert.equal(isTemplate('Bearer abc123'), false);
+  assert.equal(fieldValue(o.fields[0]), '');
+  assert.equal(fieldValue(o.fields[0], { Authorization: ' Bearer real ' }), 'Bearer real');
+  assert.deepEqual(missingRequired(o, {}), ['Authorization']);
+});
+
+check('summary flags a template-only key, and prefers the option with nothing to fill', () => {
+  const s = summary(templateEntry);
+  assert.equal(s.needsKey, true);
+  assert.equal(s.option.fields[0].template, true);
+  // A hosted endpoint that asks for a key loses to one that does not.
+  const mixed = { server: { name: 'io.x/mixed', remotes: [
+    { type: 'streamable-http', url: 'https://a.example/mcp', headers: [{ name: 'X-Api-Key', value: '{key}', isRequired: true }] },
+    { type: 'streamable-http', url: 'https://b.example/mcp' }
+  ] } };
+  assert.equal(summary(mixed).option.url, 'https://b.example/mcp');
+  assert.equal(summary(mixed).needsKey, false);
+});
+
+check('buildServerBody omits a template value instead of sending it', () => {
+  const [o] = installOptions(templateEntry);
+  const body = buildServerBody(o, { name: 'Smithery GitHub', scope: 'app' });
+  assert.deepEqual(body.headers, {});
+  assert.equal(body.url, 'https://server.smithery.ai/@smithery-ai/github/mcp');
+  const typed = buildServerBody(o, { name: 'S', scope: 'app', values: { Authorization: 'Bearer tk' } });
+  assert.deepEqual(typed.headers, { Authorization: 'Bearer tk' });
 });
 
 check('missingRequired and buildServerBody (stdio)', () => {

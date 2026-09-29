@@ -12,7 +12,7 @@ import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
 import { settingsLink } from './projectNavigation.js';
 import {
-  friendlyName, publisher, installOptions, missingRequired, buildServerBody,
+  friendlyName, publisher, installOptions, summary, missingRequired, buildServerBody,
   registryMeta, relativeDate
 } from './mcpRegistryInstall.js';
 
@@ -36,7 +36,9 @@ export function McpStoreSheet(props) {
   const sheetRef = useModal({ onClose });
   const server = (entry && entry.server) || {};
   const options = useMemo(() => installOptions(entry), [entry]);
-  const firstOk = options.find((o) => o.supported) || null;
+  // Same option the card's badges describe, so "Needs API key" and the
+  // sheet's first section never disagree.
+  const firstOk = summary(entry).option;
 
   const [optionKey, setOptionKey] = useState(firstOk ? firstOk.key : '');
   const [values, setValues] = useState({});
@@ -114,9 +116,13 @@ export function McpStoreSheet(props) {
 
   function fieldRow(f) {
     const id = 'mcps-f-' + f.kind + '-' + f.name.replace(/[^A-Za-z0-9_-]/g, '_');
-    const value = values[f.name] != null ? values[f.name] : f.value;
+    // A `{token}` value is the publisher's example, not a value: show it as
+    // the placeholder and leave the input empty so it must be filled in.
+    const value = values[f.name] != null ? values[f.name] : (f.template ? '' : f.value);
     const set = (e) => setValues((prev) => Object.assign({}, prev, { [f.name]: e.target.value }));
     const isBearer = f.kind === 'header' && f.name.toLowerCase() === 'authorization';
+    const placeholder = f.placeholder || (f.template ? f.value : '')
+      || (isBearer ? 'Bearer your-token' : (f.value ? '' : (f.required ? '' : 'Leave empty for the default')));
     return h('div', { class: 'row mcps-field', key: id },
       h('label', { class: 'label mcps-field__label', for: id },
         h('span', { class: 'mcps-field__name' }, f.name),
@@ -132,8 +138,11 @@ export function McpStoreSheet(props) {
             class: 'input', id, value, onInput: set,
             type: f.secret ? 'password' : 'text',
             autocomplete: 'off', autocapitalize: 'off', spellcheck: false,
-            placeholder: f.placeholder || (isBearer ? 'Bearer your-token' : (f.value ? '' : (f.required ? '' : 'Leave empty for the default')))
+            placeholder
           }),
+      f.template
+        ? h('span', { class: 'hint hint--compact mcps-field__hint' }, 'The publisher wrote ' + f.value + ' as an example — replace it with your own value.')
+        : null,
       f.description ? h('span', { class: 'hint hint--compact mcps-field__hint' }, f.description) : null
     );
   }

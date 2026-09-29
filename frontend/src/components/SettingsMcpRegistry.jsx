@@ -33,6 +33,22 @@ function entryKey(entry) {
   return (s.name || '') + '@' + (s.version || '');
 }
 
+// popularity(entry) — the score the server computed for this entry (see
+// docs/features/mcp-registry-browser.md). The Registry publishes no download
+// counts, so this is the only ordering signal the store has; the card shows
+// it so "Recommended" is never an unexplained order.
+function popularity(entry) {
+  const p = entry && entry.popularity;
+  return p && Number.isFinite(p.score) ? p : null;
+}
+
+function popularityTitle(p) {
+  return 'Recommended score ' + p.score + '/100 — updated '
+    + (p.recencyScore != null ? p.recencyScore : '?') + '/50, packages '
+    + (p.pkgScore != null ? p.pkgScore : '?') + '/30, version '
+    + (p.versionScore != null ? p.versionScore : '?') + '/20. The MCP Registry publishes no download counts.';
+}
+
 function matchesFilter(info, filter) {
   if (filter === 'remote') return info.kind === 'remote' || info.kind === 'mixed';
   if (filter === 'local') return info.kind === 'local' || info.kind === 'mixed';
@@ -139,6 +155,8 @@ export function SettingsMcpRegistryView(props = {}) {
     if (info.supported) badges.push(info.needsKey ? ['warn', 'Needs API key'] : ['plain', 'No key']);
     else badges.push(['muted', 'Manual setup']);
     if (deprecated) badges.push(['muted', 'Deprecated']);
+    const pop = popularity(entry);
+    if (pop) badges.push(['plain', 'Popularity ' + pop.score, popularityTitle(pop)]);
     return h('li', { key, class: 'mcps-card' + (info.supported ? '' : ' mcps-card--manual') },
       h('button', { class: 'mcps-card__main', type: 'button', onClick: () => setOpenKey(key), 'aria-label': friendlyName(entry) + ' — details' },
         h('span', { class: 'mcps-avatar', style: avatarStyle(server.name), 'aria-hidden': 'true' }, initial(entry)),
@@ -146,7 +164,7 @@ export function SettingsMcpRegistryView(props = {}) {
           h('span', { class: 'mcps-card__title' }, friendlyName(entry)),
           h('span', { class: 'mcps-card__pub' }, publisher(entry) + (updated ? ' · ' + updated : '')),
           server.description ? h('span', { class: 'mcps-card__desc' }, server.description) : null,
-          h('span', { class: 'mcps-badges' }, badges.map(([tone, text]) => h('span', { key: text, class: 'mcps-badge mcps-badge--' + tone }, text)))
+          h('span', { class: 'mcps-badges' }, badges.map(([tone, text, title]) => h('span', { key: text, class: 'mcps-badge mcps-badge--' + tone, title: title || undefined }, text)))
         )
       ),
       installed

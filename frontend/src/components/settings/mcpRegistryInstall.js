@@ -31,6 +31,26 @@ export function publisher(entry) {
   return name.includes('/') ? name.slice(0, name.lastIndexOf('/')) : '';
 }
 
+// isTemplate(value) — a registry value can carry `{name}` tokens the registry
+// itself would substitute from the input's `variables` map (spec:
+// KeyValueInput.value). mouaif does not resolve that map, so such a value is
+// guidance for the user, not a value: text like
+// "Bearer {smithery_api_key}" sent as a header installs a server that can
+// never authenticate. Every reader below treats it as missing.
+export function isTemplate(value) {
+  return /\{[^}]*\}/.test(String(value == null ? '' : value));
+}
+
+// fieldValue(field, values) — the trimmed string a field resolves to right
+// now: what the user typed, else the field's own default, but never an
+// unresolved `{token}`.
+export function fieldValue(field, values) {
+  const v = values || {};
+  if (!field) return '';
+  if (v[field.name] != null) return String(v[field.name]).trim();
+  return isTemplate(field.value) ? '' : String(field.value == null ? '' : field.value).trim();
+}
+
 // Registry inputs (environment variables, headers, arguments) share one
 // shape. A field is what the sheet renders for one of them.
 function toField(input, kind) {
@@ -43,6 +63,9 @@ function toField(input, kind) {
     secret: input.isSecret === true,
     placeholder: typeof input.placeholder === 'string' ? input.placeholder : '',
     value,
+    // The value is a `{token}` template, so the sheet shows it as the input's
+    // placeholder and asks the user for a real value.
+    template: isTemplate(value),
     choices: Array.isArray(input.choices) ? input.choices.map(String) : []
   };
 }
@@ -163,34 +186,40 @@ export function installOptions(entry) {
     .map((x) => x.o);
 }
 
-// summary(entry) -> { kind: 'remote'|'local'|'mixed'|'none', needsKey, supported }
+// summary(entry) -> { kind, runtime, needsKey, supported, option }
 // The one-line facts the result card shows without opening the sheet.
+// `needsKey` is true only when a required field has no usable value: an
+// unresolved `{token}` counts as no value (see isTemplate).
 export function summary(entry) {
   const opts = installOptions(entry);
   const ok = opts.filter((o) => o.supported);
   const kinds = new Set(ok.map((o) => o.kind));
-  const best = ok[0];
+  // The option the sheet opens on: an option with nothing to fill in beats a
+  // hosted endpoint that would ask for a key.
+  const best = ok.find((o) => o.fields.every((f) => fieldValue(f))) || ok[0];
   return {
     kind: kinds.size === 2 ? 'mixed' : (kinds.has('remote') ? 'remote' : (kinds.has('local') ? 'local' : 'none')),
     runtime: ok.filter((o) => o.kind === 'local').map((o) => o.label)[0] || '',
-    needsKey: !!best && best.fields.some((f) => f.required && !f.value),
-    supported: ok.length > 0
+    needsKey: !!best && best.fields.some((f) => f.required && !fieldValue(f)),
+    supported: ok.length > 0,
+    option: best || null
   };
 }
 
 // missingRequired(option, values) -> string[]  names still empty
 export function missingRequired(option, values) {
-  const v = values || {};
-  return (option ? option.fields : []).filter((f) => f.required && !String(v[f.name] != null ? v[f.name] : f.value).trim()).map((f) => f.name);
+  return (option ? option.fields : []).filter((f) => f.required && !fieldValue(f, values)).map((f) => f.name);
 }
 
 // buildServerBody(option, { name, scope, projectDir, values, oauth }) -> body
 // for POST /api/mcp/servers. Empty optional fields are omitted so the
-// server's own defaults apply.
+// server's own defaults apply, and a `{token}` value is never written out
+// (fieldValue drops it) — the server gets its default instead of a literal
+// placeholder.
 export function buildServerBody(option, opts) {
   const o = opts || {};
   const values = o.values || {};
-  const pick = (f) => String(values[f.name] != null ? values[f.name] : f.value).trim();
+  const pick = (f) => fieldValue(f, values);
   const body = {
     projectDir: o.projectDir || null,
     scope: o.scope === 'project' && o.projectDir ? 'project' : 'app',
