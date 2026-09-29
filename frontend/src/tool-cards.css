@@ -769,19 +769,24 @@ color: var(--fg-soft);
   flex-direction: column;
   padding-left: 8px;
 }
+/* A listed path or a search match wraps instead of ellipsizing. These rows
+   used `white-space: nowrap` + `overflow: hidden` + `text-overflow:
+   ellipsis`, so a deep path or a long matched line was silently cut at the
+   card edge — the expanded card is the ONLY place a result is readable, and
+   a clipped row there means the content was nowhere at all. The grouped box
+   is already the scroller for its content, and `word-break` keeps a long
+   unbroken token (a minified line, a long URL) inside it. Matches which
+   `list_files`/`search_files` share with the terminal previews now wrap the
+   same way. */
 .tool-preview__file {
   color: var(--fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .tool-preview__match {
   display: flex;
   gap: 6px;
   align-items: baseline;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .tool-preview__match-line {
   flex: 0 0 auto;
@@ -791,9 +796,8 @@ color: var(--fg-soft);
 }
 .tool-preview__match-text {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .tool-preview__pre:empty { display: none; }
 .tool-preview__terminal {

@@ -1455,29 +1455,35 @@ if (!card) {
     // Keep the recovered call args on the card (same contract as the call
     // card), so any later re-render of this body still has them.
     card._toolArgs = callArgs;
-    // Show the command/args in the collapsed header for shell
-    // (and any tool that carries args on the result event).
-    const name = normalizeToolName(toolResult.name);
-    const headArgs = (isSubagent || name === 'shell' || (callArgs && callArgs.cmd))
-      ? formatToolArgs(callArgs, toolResult.name)
-      : null;
+    // Show the call's one-line arguments in the collapsed header for EVERY
+    // tool, whenever the arguments are known. This used to be gated to
+    // subagent / shell / a `cmd` field, so a card built from its result row
+    // (the tail-first chunked render, a pagination page, a reconcile that had
+    // lost the stashed `card._toolArgs`) rendered `Read | ok` — no path, no
+    // query, no scope — while the same card built from its call row showed
+    // them. Same chat, same data: the head read differently depending on
+    // which side of the call/result pair the render reached first.
+    const headArgs = callArgs != null ? formatToolArgs(callArgs, toolResult.name) : null;
     card.appendChild(buildToolCardHead(toolResult.name, headArgs, pillClass, pillText, summary, callArgs));
     const body = document.createElement('div');
     body.className = 'tool-card__body';
     card.appendChild(body);
     transcriptInsert(refs, card);
   } else {
-    // The call card becomes a result card. Preserve the command text
-    // from the old call card header so the collapsed view still shows
-    // the cmd (especially for shell results). Subagent cards keep the
-    // delegated task from the result payload.
+    // The call card becomes a result card. Preserve the one-line arguments
+    // from the old call card header so the collapsed view still shows them.
+    // The recovered `callArgs` win when present: they are the same call's
+    // arguments, but a replayed call card may have been built with no args at
+    // all (a de-dup skip, a rebuild that lost them), and `formatToolArgs`
+    // renders every tool's own argument form — path, query, scope — not only
+    // the command a shell card carries.
     card.classList.add('tool-card--result');
     card.classList.remove('tool-card--call');
     card.dataset.toolName = normalizeToolName(toolResult.name);
     const oldArgs = card.querySelector('.tool-card__args');
-    const headArgs = isSubagent
-      ? formatToolArgs(toolResult.args, toolResult.name)
-      : (oldArgs ? oldArgs.textContent : null);
+    const headArgs = callArgs != null
+    ? formatToolArgs(callArgs, toolResult.name)
+    : (oldArgs ? oldArgs.textContent : null);
     rebuildToolCardHead(card, toolResult.name, headArgs, pillClass, pillText, summary, callArgs);
     let body = card.querySelector('.tool-card__body');
     if (!body) {

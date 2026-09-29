@@ -47,7 +47,10 @@ function renderToolMeta(parent, items) {
 function buildToolArgs(args, name) {
   if (args == null) return null;
   const full = formatToolArgsFull(args, name);
-  if (!full) return null;
+  // An empty argument object (`{}`) or array stringifies to a two-character
+  // non-empty string, which would render an "Arguments" block containing
+  // nothing useful. A call with no arguments shows no block.
+  if (!full || !full.trim() || full.trim() === '{}' || full.trim() === '[]') return null;
   const wrap = document.createElement('div');
   wrap.className = 'tool-preview__args';
   const label = document.createElement('div');
@@ -346,11 +349,19 @@ function renderListFilesToolResult(body, r) {
 // renderSearchFilesToolResult(body, r)
 //
 // Grouped by file: one path label per file, then "line: text" rows.
-function renderSearchFilesToolResult(body, r) {
+//
+// `args` is the call's own arguments. The result carries the query but not
+// the scope it ran against, so the meta line named only half the call
+// (`search foo`) — a search restricted to one directory read exactly like a
+// project-wide one. The `path` the model passed is shown here, from the
+// args when they are available (the result itself has no such field).
+function renderSearchFilesToolResult(body, r, args) {
   body.classList.add('tool-preview', 'tool-preview--list');
   if (typeof r === 'string') r = parsePlainFileToolResult(r);
   if (!r || r.error) return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
   const meta = [];
+  const scope = args && typeof args === 'object' ? String(args.path || '').trim() : '';
+  if (scope) meta.push('in ' + scope);
   meta.push(r.query ? ('search ' + r.query) : 'no query');
   if (Array.isArray(r.matches)) meta.push(r.matches.length + ' matches');
   if (r.filesScanned != null) meta.push(r.filesScanned + ' files');
@@ -491,21 +502,44 @@ function renderShellToolResult(body, r, args) {
 // publishes when the result lands, and this body is built lazily on the
 // user's first expand — publishing here meant that opening an OLD webpreview
 // card swapped the dock back to that stale capture.
-function renderWebpreviewToolResult(body, r) {
+function renderWebpreviewToolResult(body, r, args) {
   body.classList.add('tool-preview', 'tool-preview--webpreview');
   if (typeof r === 'string') r = coerceToolResult(r, 'webpreview');
   if (!r || r.error) {
+    if (args != null) {
+      const block = buildToolArgs(args, 'webpreview');
+      if (block) body.appendChild(block);
+    }
     return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
   }
+  // The screenshot itself lives in the dock above the composer, so this card
+  // has only a status line — and without the URL that status says nothing
+  // about WHICH page was captured. The URL is not part of the result either;
+  // it is the call's own argument, so it is rendered here.
+  const url = (r && typeof r.url === 'string' && r.url)
+    || (args && typeof args === 'object' ? args.url : '');
+  const meta = [];
+  if (url) meta.push(url);
+  meta.push(r.mode === 'live' ? 'live' : 'screenshot');
+  renderToolMeta(body, meta);
   renderPreviewPre(body, r.mode === 'live' ? 'Live preview open for the user.' : 'Preview ready for the user.', 'tool-preview__pre');
 }
 
-// renderGenericToolResult(body, r)
+// renderGenericToolResult(body, r, args)
 //
 // Fallback for tools without a dedicated renderer (MCP tools, etc.).
 // Walks the `content` array of an MCP envelope and renders text
 // blocks, images, and resource stubs.
-function renderGenericToolResult(body, r) {
+//
+// `args` is the call's own arguments. Every dedicated renderer that has
+// arguments to show renders them (shell's command, write_file's content);
+// this fallback did not, so an MCP card showed only what came BACK and had
+// no record of what was asked — a response with no request beside it. Like
+// the shell card it is rendered ABOVE the result, so every expanded card
+// reads "what ran, then what came back".
+function renderGenericToolResult(body, r, args) {
+  const argsBlock = args != null ? buildToolArgs(args, null) : null;
+  if (argsBlock) body.appendChild(argsBlock);
   if (r && Array.isArray(r.content)) {
     const lines = [];
     for (const c of r.content) {
@@ -646,18 +680,18 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   if (name === 'shell') return renderShellToolResult(body, r, args);
   if (name === 'read_file') return renderReadFileToolResult(body, r);
   if (name === 'list_files') return renderListFilesToolResult(body, r);
-  if (name === 'search_files') return renderSearchFilesToolResult(body, r);
+  if (name === 'search_files') return renderSearchFilesToolResult(body, r, args);
   if (name === 'edit_file') return renderEditFileToolResult(body, r);
   if (name === 'write_file') return renderWriteFileToolResult(body, r, args);
   if (name === 'task') return renderTaskToolResult(body, r);
-  if (name === 'webpreview') return renderWebpreviewToolResult(body, r);
+  if (name === 'webpreview') return renderWebpreviewToolResult(body, r, args);
   if (isSubagentFn(toolResult && toolResult.name)) {
     // The full chat is rendered by renderSubagentChat in
     // transcript.js, which is called by the caller right after
     // this body fill. Nothing else to add here.
     return;
   }
-  renderGenericToolResult(body, r);
+  renderGenericToolResult(body, r, args);
 }
 
 // formatToolResult(toolResult) -> string
