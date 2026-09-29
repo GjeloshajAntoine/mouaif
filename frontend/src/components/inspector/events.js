@@ -649,12 +649,23 @@ function collect(node, list, cond, sink, seen){
 for (var i = 0; i < list.length; i++){
 var r = list[i];
 if (!r) continue;
+// A group rule (@media/@supports/@layer/@container) is walked with its
+// condition. Checked by *no selectorText*, not by the presence of cssRules:
+// with CSS nesting every CSSStyleRule carries a (usually empty) cssRules list,
+// and treating it as a group skipped every style rule on the page. The
+// condition is scoped to the group (a local, not a reassignment of cond), so it
+// does not leak onto the sibling rules that follow the group.
+if (!r.selectorText){
+// An @media block that does not apply right now contributes nothing, the same
+// answer CSS.getMatchedStylesForNode gives.
+var mq = r.media && r.media.mediaText;
+if (mq && window.matchMedia){ try { if (!window.matchMedia(mq).matches) continue; } catch (e) {} }
 if (r.cssRules){
-cond = r.conditionText ? (cond ? cond + " and " + r.conditionText : r.conditionText) : cond;
-seen = collect(node, r.cssRules, cond, sink, seen);
+var inner = r.conditionText ? (cond ? cond + " and " + r.conditionText : r.conditionText) : cond;
+seen = collect(node, r.cssRules, inner, sink, seen);
+}
 continue;
 }
-if (!r.selectorText) continue;
 if (++seen > RULE_BUDGET) return seen;
 var hit = false;
 try { hit = node.matches(r.selectorText); } catch (e) { hit = false; }
