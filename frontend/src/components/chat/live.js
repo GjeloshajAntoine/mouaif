@@ -57,14 +57,16 @@ export function subscribeLive(state, refs) {
 
   let active = true;
   const ctl = new AbortController();
-  liveByChat.set(key, { abort: ctl }); // reserve early so concurrent ticks don't double-open
+  const entry = { abort: ctl, state };
+  liveByChat.set(key, entry); // reserve early so concurrent ticks don't double-open
+  const ownsSubscription = () => active && !ctl.signal.aborted && liveByChat.get(key) === entry;
   setLiveRunState(state, key, { active: true, connected: false, ended: false, failed: false });
   const fromLiveSeq = Number.isFinite(state.nextLiveSeq) ? state.nextLiveSeq : 0;
 
   fetch('/api/chats/' + encodeURIComponent(chatId) + '/live?projectDir=' + encodeURIComponent(projectDir) + '&fromLiveSeq=' + fromLiveSeq, {
     signal: ctl.signal
   }).then((resp) => {
-    if (!active) return null;
+    if (!ownsSubscription()) return null;
     if (!resp.ok || !resp.body) {
       setLiveRunState(state, key, { active: false, connected: false, ended: false, failed: true });
       return null;
@@ -77,8 +79,9 @@ export function subscribeLive(state, refs) {
     let buf = '';
     try {
       for (;;) {
+        if (!ownsSubscription()) return;
         const { value, done } = await reader.read();
-        if (done) break;
+        if (done || !ownsSubscription()) break;
         buf += decoder.decode(value, { stream: true });
         let idx;
         while ((idx = buf.indexOf('\n\n')) !== -1) {
@@ -92,9 +95,16 @@ export function subscribeLive(state, refs) {
         }
       }
     } catch { /* socket closed / aborted */ }
+    finally {
+      try { reader.releaseLock(); } catch { /* already released */ }
+      try { ctl.abort(); } catch { /* already closed */ }
+    }
+  }).catch(() => {
+    if (ownsSubscription()) setLiveRunState(state, key, { active: false, connected: false, failed: true });
   }).finally(() => {
-    if (active) {
-      active = false;
+    active = false;
+    // A replacement may already own this chat after a quick return.
+    if (liveByChat.get(key) === entry) {
       liveByChat.delete(key);
       const current = state.liveRun;
       if (current && current.key === key && !current.ended && !current.failed) {
@@ -123,7 +133,7 @@ export function closeLive(state, projectDir, chatId) {
   if (!dir || !id) return false;
   const key = dir + '::' + id;
   const entry = liveByChat.get(key);
-  if (!entry) return false;
+  if (!entry || entry.state !== state) return false;
   liveByChat.delete(key);
   setLiveRunState(state, key, { active: false, connected: false });
   if (entry.abort) entry.abort.abort();
