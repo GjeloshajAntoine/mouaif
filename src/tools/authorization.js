@@ -160,6 +160,9 @@ const DEFAULT_OFF_TOOLS = new Set([]);
 // The model-facing file operations. Their specs are collected one per
 // name, and an `off` on the family (`tools.file`) hides all of them.
 const FILE_TOOL_NAMES = new Set(require('./files.js').FILE_TOOL_NAMES);
+// The grouped read/edit entry cap, read from the file-tool specs so the
+// allowlist gate can never drift from what the runners actually accept.
+const MAX_BATCH_ENTRIES = require('./files.js').MAX_BATCH_ENTRIES;
 // Every tool that resolves its authorization through the File tools family
 // (the `file` gate plus its per-leaf overrides). Used by the effective-mode
 // resolver, the chat-override reader/writer, and the GET /api/tools/
@@ -804,7 +807,7 @@ async function authorize(input) {
     const items = batchKey && input.args && input.args[batchKey];
     let allowed = false;
     if (batchKey) {
-      allowed = Array.isArray(items) && items.length > 0 && items.length <= 20;
+      allowed = Array.isArray(items) && items.length > 0 && items.length <= MAX_BATCH_ENTRIES;
       for (const item of allowed ? items : []) {
         const target = item && (item.path || item.file);
         if (typeof target !== 'string' || !target || !await matchesAllowlist(target, config.allowlist)) {

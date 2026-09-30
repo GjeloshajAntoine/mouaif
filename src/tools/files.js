@@ -991,7 +991,7 @@ function formatWriteFileResult(r) {
 
 // ---- Grouped reads / edits --------------------------------------------
 
-const MAX_BATCH_ENTRIES = 20;
+const MAX_BATCH_ENTRIES = 50;
 const MAX_BATCH_READ_BYTES = 2 * 1024 * 1024;
 
 // Reuse the single-file runners so containment, redaction, matching and
@@ -1185,7 +1185,7 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'read_files',
-      description: 'Read a group of up to 20 project files in one call. Each entry takes path and optional startLine/endLine, just like read_file (including images and hidden-content redaction). Returns ordered per-file results and errors. Combined output is capped at 2 MB; use slices or separate calls for larger reads.',
+      description: 'Read a group of up to 50 project files in one call. Each entry takes path and optional startLine/endLine, just like read_file (including images and hidden-content redaction). Returns ordered per-file results and errors. Combined output is capped at 2 MB; use slices or separate calls for larger reads.',
       parameters: {
         type: 'object',
         properties: {
@@ -1202,7 +1202,7 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'edit_files',
-      description: 'Edit a group of up to 20 unique-block replacements in one call. Read the relevant files first. Each entry takes path (or file), oldText and newText, just like edit_file. Entries run sequentially, including repeated paths. Returns per-entry diffs or errors; failed entries leave their file unchanged, but successful edits are NOT rolled back. Retry only failed entries.',
+      description: 'Edit a group of up to 50 unique-block replacements in one call. Read the relevant files first. Each entry takes path (or file), oldText and newText, just like edit_file. Entries run sequentially, including repeated paths. Returns per-entry diffs or errors; failed entries leave their file unchanged, but successful edits are NOT rolled back. Retry only failed entries.',
       parameters: {
         type: 'object',
         properties: {
@@ -1239,5 +1239,6 @@ module.exports = {
   DEFAULT_SEARCH_MAX_MATCHES,
   DEFAULT_SEARCH_MAX_BYTES,
   DEFAULT_WRITE_MAX_BYTES,
+  MAX_BATCH_ENTRIES,
   MAX_TIMEOUT_MS
 };

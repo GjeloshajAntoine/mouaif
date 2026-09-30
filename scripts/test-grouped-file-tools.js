@@ -23,7 +23,7 @@ async function main() {
     const key = name === 'read_files' ? 'files' : 'edits';
     assert.equal((await run(name, {})).result.error.code, 'EBADINPUT');
     assert.equal((await run(name, { [key]: [] })).result.error.code, 'EBADINPUT');
-    assert.equal((await run(name, { [key]: Array(21).fill({ path: 'a.txt' }) })).result.error.code, 'ETOOL_CAP');
+    assert.equal((await run(name, { [key]: Array(files.MAX_BATCH_ENTRIES + 1).fill({ path: 'a.txt' }) })).result.error.code, 'ETOOL_CAP');
   }
   write('a.txt', 'first\nprivate\nlast');
   write('b.txt', 'one\r\ntwo\r\n');

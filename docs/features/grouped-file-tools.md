@@ -21,7 +21,7 @@ Call `read_files` with a `files` array. Each entry accepts the same `path`, `sta
 }
 ```
 
-Images are attached as image parts, not base64 text. Hidden-content rules apply to each text read. A group accepts 1–20 entries and at most 2 MiB of returned text/image bytes; larger entries return a per-file cap error. Existing single-file caps still apply.
+Images are attached as image parts, not base64 text. Hidden-content rules apply to each text read. A group accepts 1–50 entries and at most 2 MiB of returned text/image bytes; larger entries return a per-file cap error. Existing single-file caps still apply.
 
 ### Edit a group
 
@@ -36,7 +36,7 @@ Read the relevant regions first, then call `edit_files` with an `edits` array. E
 }
 ```
 
-A group accepts 1–20 replacements. Entries run **in order**, so multiple edits to the same path see earlier successful edits. Matching, line-ending handling, indentation adjustment, and size limits are the same as `edit_file`.
+A group accepts 1–50 replacements. Entries run **in order**, so multiple edits to the same path see earlier successful edits. Matching, line-ending handling, indentation adjustment, and size limits are the same as `edit_file`.
 
 **Groups are not all-or-nothing transactions.** A failed entry leaves its file unchanged for that entry and does not stop later entries; earlier successful edits remain applied. Retry only the failed entries. Each successful replacement uses the existing atomic per-file write. Cancellation prevents subsequent entries from executing, without undoing edits already applied.
 
