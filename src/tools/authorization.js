@@ -803,7 +803,7 @@ async function authorize(input) {
   if (config.mode === 'allowlist') {
     // A batch is approved only when EVERY target matches. Matching just
     // the first path (or a combined summary) could approve unlisted files.
-    const batchKey = tool === 'read_files' ? 'files' : tool === 'edit_files' ? 'edits' : null;
+    const batchKey = tool === 'group_read' ? 'files' : tool === 'group_edit' ? 'edits' : null;
     const items = batchKey && input.args && input.args[batchKey];
     let allowed = false;
     if (batchKey) {

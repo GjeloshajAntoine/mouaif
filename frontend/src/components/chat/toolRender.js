@@ -667,7 +667,7 @@ export function renderFileBatchToolResult(body, r, name) {
     if (!entry.ok) {
       renderToolMeta(section, [entry.path || 'Invalid entry', 'failed']);
       renderPreviewPre(section, formatReadableToolResult(entry.result));
-    } else if (name === 'read_files') {
+    } else if (name === 'group_read') {
       renderReadFileToolResult(section, entry.result);
     } else {
       renderEditFileToolResult(section, entry.result);
@@ -697,7 +697,7 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   const args = (toolResult && toolResult.args) || (cardTool && cardTool._toolArgs) || null;
   if (name === 'shell') return renderShellToolResult(body, r, args);
   if (name === 'read_file') return renderReadFileToolResult(body, r);
-  if (name === 'read_files' || name === 'edit_files') return renderFileBatchToolResult(body, r, name);
+  if (name === 'group_read' || name === 'group_edit') return renderFileBatchToolResult(body, r, name);
   if (name === 'list_files') return renderListFilesToolResult(body, r);
   if (name === 'search_files') return renderSearchFilesToolResult(body, r, args);
   if (name === 'edit_file') return renderEditFileToolResult(body, r);

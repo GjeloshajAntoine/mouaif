@@ -247,7 +247,7 @@ export function buildAgentToolGroups({ choices, restricted, selected, mcpServers
 const isOn = (value) => !restricted || selected(value);
 const groups = [];
 const natives = choices.filter((c) => !c.value.startsWith('mcp__'));
-  const files = natives.filter((c) => ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'read_files', 'edit_files'].includes(c.value));
+  const files = natives.filter((c) => ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit'].includes(c.value));
 for (const c of natives) {
 if (files.includes(c)) continue;
 const entry = catalog.find((t) => t && t.name === c.value);

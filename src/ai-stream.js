@@ -237,8 +237,8 @@ async function runSingleToolCall(c, cx) {
         summary = (args && args.url) || '';
       }
       else if (authGate.FILE_TOOL_NAMES.has(c.name)) {
-      if (c.name === 'read_files' || c.name === 'edit_files') {
-      const items = args && args[c.name === 'read_files' ? 'files' : 'edits'];
+      if (c.name === 'group_read' || c.name === 'group_edit') {
+      const items = args && args[c.name === 'group_read' ? 'files' : 'edits'];
       summary = Array.isArray(items) ? items.map((item) => item && (item.path || item.file) || '?').join(', ') : '';
       } else {
       summary = (args && (args.path || args.file)) || (args && args.query) || '';

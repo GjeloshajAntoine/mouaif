@@ -157,8 +157,8 @@ export function formatToolArgs(args, toolName) {
   if (typeof args === 'string') return args;
   const name = normalizeToolName(toolName);
   if (name === 'shell') return args.cmd || '';
-  if (name === 'read_files' || name === 'edit_files') {
-    const items = args[name === 'read_files' ? 'files' : 'edits'];
+  if (name === 'group_read' || name === 'group_edit') {
+    const items = args[name === 'group_read' ? 'files' : 'edits'];
     return Array.isArray(items) ? items.map((item) => item && (item.path || item.file) || '?').join(', ') : '';
   }
   if (name === 'read_file') {
@@ -258,7 +258,7 @@ export function formatResultSummary(name, r) {
     if (r.durationMs != null) parts.push(r.durationMs + 'ms');
     return parts.join(' ');
   }
-  if (n === 'read_files' || n === 'edit_files') {
+  if (n === 'group_read' || n === 'group_edit') {
     return (r.succeededCount || 0) + ' succeeded' + (r.failedCount ? ' · ' + r.failedCount + ' failed' : '');
   }
   if (n === 'read_file') {

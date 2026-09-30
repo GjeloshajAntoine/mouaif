@@ -1,7 +1,7 @@
 'use strict';
 
 // Native file tools — `read_file`, `list_files`, `search_files`, `write_file`,
-// `edit_file`, plus grouped `read_files` and `edit_files`.
+// `edit_file`, plus grouped `group_read` and `group_edit`.
 //
 // Implements the "Native file tools" feature: read / list / search / write
 // inside the project directory, with the same authorization gate and
@@ -998,7 +998,7 @@ const MAX_BATCH_READ_BYTES = 2 * 1024 * 1024;
 // atomic per-file writes have exactly the same semantics. Entries execute
 // in order, including repeated paths; a failure does not undo earlier edits.
 async function runFileBatch(name, opts) {
-  const key = name === 'read_files' ? 'files' : 'edits';
+  const key = name === 'group_read' ? 'files' : 'edits';
   const items = opts.args && opts.args[key];
   if (!Array.isArray(items) || !items.length) throw err('EBADINPUT', key + ' must be a non-empty array');
   if (items.length > MAX_BATCH_ENTRIES) throw err('ETOOL_CAP', key + ' exceeds ' + MAX_BATCH_ENTRIES + ' entries');
@@ -1011,8 +1011,8 @@ async function runFileBatch(name, opts) {
       if (opts.signal && opts.signal.aborted) throw err('EABORTED', 'Batch cancelled; entry was not executed');
       if (!item || typeof item !== 'object' || Array.isArray(item)) throw err('EBADINPUT', 'Each entry must be an object');
       const childOpts = { ...opts, args: item };
-      const result = name === 'read_files' ? await runReadFile(childOpts) : await runEditFile(childOpts);
-      if (name === 'read_files') {
+      const result = name === 'group_read' ? await runReadFile(childOpts) : await runEditFile(childOpts);
+      if (name === 'group_read') {
         const bytes = result.kind === 'image' ? result.bytes : Buffer.byteLength(result.body || '', 'utf8');
         if (readBytes + bytes > MAX_BATCH_READ_BYTES) throw err('ETOOL_CAP', 'Batch read output exceeds 2 MB; use smaller slices or separate calls');
         readBytes += bytes;
@@ -1058,7 +1058,7 @@ async function runFileTool(name, opts) {
     else if (name === 'search_files') out = await runSearchFiles(opts);
     else if (name === 'write_file') out = await runWriteFile(opts);
     else if (name === 'edit_file') out = await runEditFile(opts);
-    else if (name === 'read_files' || name === 'edit_files') out = await runFileBatch(name, opts);
+    else if (name === 'group_read' || name === 'group_edit') out = await runFileBatch(name, opts);
     else throw err('EUNKNOWN_TOOL', 'Unknown file tool: ' + name);
   } catch (e) {
     const r = { error: { code: e.code || 'EUNKNOWN', message: e.message } };
@@ -1083,7 +1083,7 @@ async function runFileTool(name, opts) {
     else if (name === 'list_files') content = formatListFilesResult(out, structure);
     else if (name === 'search_files') content = formatSearchFilesResult(out, structure);
     else if (name === 'write_file' || name === 'edit_file') content = formatWriteFileResult(out);
-    else if (name === 'read_files' || name === 'edit_files') content = formatFileBatchResult(out);
+    else if (name === 'group_read' || name === 'group_edit') content = formatFileBatchResult(out);
     else content = JSON.stringify(out);
   } catch (e) {
     const r = { error: { code: 'EENCODE', message: 'failed to encode result: ' + e.message } };
@@ -1181,10 +1181,10 @@ const SINGLE_FILE_SPECS = Object.freeze({
 
 const SPECS = Object.freeze({
   ...SINGLE_FILE_SPECS,
-  read_files: {
+  group_read: {
     type: 'function',
     function: {
-      name: 'read_files',
+      name: 'group_read',
       description: 'Read a group of up to 50 project files in one call. Each entry takes path and optional startLine/endLine, just like read_file (including images and hidden-content redaction). Returns ordered per-file results and errors. Combined output is capped at 2 MB; use slices or separate calls for larger reads.',
       parameters: {
         type: 'object',
@@ -1198,10 +1198,10 @@ const SPECS = Object.freeze({
       }
     }
   },
-  edit_files: {
+  group_edit: {
     type: 'function',
     function: {
-      name: 'edit_files',
+      name: 'group_edit',
       description: 'Edit a group of up to 50 unique-block replacements in one call. Read the relevant files first. Each entry takes path (or file), oldText and newText, just like edit_file. Entries run sequentially, including repeated paths. Returns per-entry diffs or errors; failed entries leave their file unchanged, but successful edits are NOT rolled back. Retry only failed entries.',
       parameters: {
         type: 'object',

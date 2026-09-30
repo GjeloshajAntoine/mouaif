@@ -86,7 +86,7 @@ async function main() {
   settings.setProject(projectDir, {
     tools: { file: { enabled: true, mode: 'allow' } }
   });
-  for (const tool of ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'read_files', 'edit_files']) {
+  for (const tool of ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit']) {
     const allowed = await authz.authorize({
       projectDir, chatId: 'a1b2c3d4', callId: 'call_' + tool, tool, summary: 'README.md'
     });

@@ -680,8 +680,8 @@ afterTranscriptAppend(refs, true);
 // (MCP etc.) fall back to their raw name.
 const TOOL_VERBS = {
   read_file: 'Read',
-  read_files: 'Read group',
-  edit_files: 'Edited group',
+  group_read: 'Read group',
+  group_edit: 'Edited group',
   list_files: 'Listed',
   search_files: 'Searched',
   edit_file: 'Edited',
@@ -1623,7 +1623,7 @@ function renderSubagentToolPreview(parent, name, raw, args) {
   parent.appendChild(preview);
   if (toolName === 'shell') return renderShellInPreview(preview, r, args);
   if (toolName === 'read_file') return renderReadFileInPreview(preview, r);
-  if (toolName === 'read_files' || toolName === 'edit_files') return renderFileBatchToolResult(preview, r, toolName);
+  if (toolName === 'group_read' || toolName === 'group_edit') return renderFileBatchToolResult(preview, r, toolName);
   if (toolName === 'list_files') return renderListFilesInPreview(preview, r);
   if (toolName === 'search_files') return renderSearchFilesInPreview(preview, r);
   if (toolName === 'edit_file') return renderEditFileInPreview(preview, r);

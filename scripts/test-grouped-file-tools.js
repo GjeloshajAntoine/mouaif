@@ -16,11 +16,11 @@ const run = (name, args, extra = {}) => files.runFileTool(name, { projectDir, ar
 const write = (name, text) => fs.writeFileSync(path.join(projectDir, name), text);
 
 async function main() {
-  for (const name of ['read_files', 'edit_files']) {
+  for (const name of ['group_read', 'group_edit']) {
     assert.ok(files.isFileToolName(name));
     assert.ok(authz.FILE_FAMILY_TOOLS.has(name));
     assert.equal(files.SPECS[name].function.name, name);
-    const key = name === 'read_files' ? 'files' : 'edits';
+    const key = name === 'group_read' ? 'files' : 'edits';
     assert.equal((await run(name, {})).result.error.code, 'EBADINPUT');
     assert.equal((await run(name, { [key]: [] })).result.error.code, 'EBADINPUT');
     assert.equal((await run(name, { [key]: Array(files.MAX_BATCH_ENTRIES + 1).fill({ path: 'a.txt' }) })).result.error.code, 'ETOOL_CAP');
@@ -31,7 +31,7 @@ async function main() {
     hideFileContent: [{ path: 'a.txt', ranges: [{ start: 2, end: 2 }] }],
     tools: { file: { mode: 'allow' } }
   });
-  let batch = await run('read_files', { files: [
+  let batch = await run('group_read', { files: [
     { path: 'a.txt', startLine: 2, endLine: 3 },
     { path: 'missing.txt' }, { path: '../escape.txt' }, { path: 'b.txt' }, null
   ] });
@@ -47,24 +47,24 @@ async function main() {
 
   fs.writeFileSync(path.join(root, 'outside.txt'), 'test');
   fs.symlinkSync(path.join(root, 'outside.txt'), path.join(projectDir, 'link.txt'));
-  batch = await run('read_files', { files: [{ path: 'link.txt' }] });
+  batch = await run('group_read', { files: [{ path: 'link.txt' }] });
   assert.equal(batch.result.results[0].result.error.code, 'EOUTSIDE_PROJECT');
   write('large.txt', 'x'.repeat(2 * 1024 * 1024));
-  batch = await run('read_files', { files: [{ path: 'large.txt' }, { path: 'a.txt' }] });
+  batch = await run('group_read', { files: [{ path: 'large.txt' }, { path: 'a.txt' }] });
   assert.equal(batch.result.results[0].ok, true);
   assert.equal(batch.result.results[1].result.error.code, 'ETOOL_CAP');
-  batch = await run('read_files', { files: [{ path: 'a.txt' }] }, { settings: { fileReadMaxLines: 1 } });
+  batch = await run('group_read', { files: [{ path: 'a.txt' }] }, { settings: { fileReadMaxLines: 1 } });
   assert.equal(batch.result.results[0].result.error.code, 'ETOOL_CAP');
 
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
   write('pixel.png', Buffer.from(png, 'base64'));
-  batch = await run('read_files', { files: [{ path: 'pixel.png' }] });
+  batch = await run('group_read', { files: [{ path: 'pixel.png' }] });
   assert.equal(batch.ok, true);
   assert.equal(batch.result.content[0].type, 'image');
   assert.equal(batch.result.results[0].result.content[0].data, png);
   assert.ok(!batch.content.includes(png), 'pixels never become model-facing text');
 
-  batch = await run('edit_files', { edits: [
+  batch = await run('group_edit', { edits: [
     { path: 'b.txt', oldText: 'one\ntwo', newText: 'three\nfour' },
     { file: 'b.txt', oldText: 'three', newText: 'five' },
     { path: 'a.txt', oldText: 'not present', newText: 'bad' },
@@ -77,23 +77,23 @@ async function main() {
   assert.equal(fs.readFileSync(path.join(projectDir, 'a.txt'), 'utf8'), 'first\nprivate\nend');
   assert.ok(JSON.parse(batch.content).results[0].result.diff.includes('+three'));
   write('ambiguous.txt', 'same\nsame');
-  batch = await run('edit_files', { edits: [{ path: 'ambiguous.txt', oldText: 'same', newText: 'changed' }] });
+  batch = await run('group_edit', { edits: [{ path: 'ambiguous.txt', oldText: 'same', newText: 'changed' }] });
   assert.equal(batch.result.results[0].result.error.code, 'EMULTI_MATCH');
   assert.equal(fs.readFileSync(path.join(projectDir, 'ambiguous.txt'), 'utf8'), 'same\nsame');
   const controller = new AbortController();
   controller.abort();
-  batch = await run('edit_files', { edits: [{ path: 'b.txt', oldText: 'five', newText: 'bad' }] }, { signal: controller.signal });
+  batch = await run('group_edit', { edits: [{ path: 'b.txt', oldText: 'five', newText: 'bad' }] }, { signal: controller.signal });
   assert.equal(batch.result.results[0].result.error.code, 'EABORTED');
 
   let call = 0;
   const authorize = (tool, args) => authz.authorize({ projectDir, chatId: 'batch-test', callId: 'batch-' + ++call, tool, args, summary: 'a.txt' });
-  for (const tool of ['read_files', 'edit_files']) {
+  for (const tool of ['group_read', 'group_edit']) {
     settings.setProject(projectDir, { tools: { file: { mode: 'off' } } });
     await assert.rejects(authorize(tool, {}), { code: 'ETOOL_DISABLED' });
     settings.setProject(projectDir, { tools: { file: { mode: 'allow' }, [tool]: { mode: 'off' } } });
     await assert.rejects(authorize(tool, {}), { code: 'ETOOL_DISABLED' });
     settings.setProject(projectDir, { tools: { file: { mode: 'allowlist', allowlist: ['a\\.txt', 'b\\.txt'] } } });
-    const key = tool === 'read_files' ? 'files' : 'edits';
+    const key = tool === 'group_read' ? 'files' : 'edits';
     assert.equal((await authorize(tool, { [key]: [{ path: 'a.txt' }, { file: 'b.txt' }] })).decision, 'allow');
     const asked = await authorize(tool, { [key]: [{ path: 'a.txt' }, { path: 'unlisted.txt' }] });
     assert.equal(asked.decision, 'prompt', 'one allowed path must not approve an entire group');
@@ -109,16 +109,16 @@ async function main() {
   try {
     global.fetch = async (_url, init) => {
       const body = JSON.parse(init.body);
-      assert.ok(body.tools.some(tool => tool.function.name === 'read_files'));
-      assert.ok(body.tools.some(tool => tool.function.name === 'edit_files'));
+      assert.ok(body.tools.some(tool => tool.function.name === 'group_read'));
+      assert.ok(body.tools.some(tool => tool.function.name === 'group_edit'));
       let delta;
       if (rounds++ === 0) {
         delta = { tool_calls: [
-          { index: 0, id: 'group-read', type: 'function', function: { name: 'read_files', arguments: JSON.stringify({ files: [{ path: 'a.txt' }] }) } },
-          { index: 1, id: 'group-edit', type: 'function', function: { name: 'edit_files', arguments: JSON.stringify({ edits: [{ path: 'b.txt', oldText: 'five', newText: 'six' }] }) } }
+          { index: 0, id: 'group-read', type: 'function', function: { name: 'group_read', arguments: JSON.stringify({ files: [{ path: 'a.txt' }] }) } },
+          { index: 1, id: 'group-edit', type: 'function', function: { name: 'group_edit', arguments: JSON.stringify({ edits: [{ path: 'b.txt', oldText: 'five', newText: 'six' }] }) } }
         ] };
       } else {
-        assert.ok(body.messages.some(message => message.role === 'tool' && message.name === 'read_files'));
+        assert.ok(body.messages.some(message => message.role === 'tool' && message.name === 'group_read'));
         delta = { content: 'Done' };
       }
       return new Response('data: ' + JSON.stringify({ choices: [{ delta }] }) + '\n\ndata: [DONE]\n\n',
@@ -142,7 +142,7 @@ async function main() {
     const catalogResponse = await fetch(base + '/api/tools/list');
     assert.equal(catalogResponse.status, 200);
     const catalog = (await catalogResponse.json()).tools;
-    for (const name of ['read_files', 'edit_files']) {
+    for (const name of ['group_read', 'group_edit']) {
       assert.ok(catalog.some(tool => tool.name === name && tool.source === 'files'));
     }
     const page = await fetch(base + '/');
@@ -159,14 +159,14 @@ async function main() {
   vm.runInContext(load('ToolTree.jsx'), context);
   context.catalog = files.FILE_TOOL_NAMES.map(name => ({ name, kind: 'native', source: 'files' }));
   const groups = vm.runInContext('buildToolGroups(catalog, [], null)', context);
-  assert.ok(groups.find(g => g.id === 'files').tools.some(t => t.id === 'read_files'));
-  assert.ok(groups.find(g => g.id === 'files').tools.some(t => t.id === 'edit_files'));
-  assert.equal(vm.runInContext("formatToolArgs({ files: [{ path: 'a.txt' }, { path: 'b.txt' }] }, 'read_files')", context), 'a.txt, b.txt');
+  assert.ok(groups.find(g => g.id === 'files').tools.some(t => t.id === 'group_read'));
+  assert.ok(groups.find(g => g.id === 'files').tools.some(t => t.id === 'group_edit'));
+  assert.equal(vm.runInContext("formatToolArgs({ files: [{ path: 'a.txt' }, { path: 'b.txt' }] }, 'group_read')", context), 'a.txt, b.txt');
   context.batchContent = batch.content;
-  assert.equal(vm.runInContext("coerceToolResult(batchContent, 'edit_files').failedCount", context), 1);
-  assert.equal(vm.runInContext("formatResultSummary('edit_files', { succeededCount: 2, failedCount: 1 })", context), '2 succeeded · 1 failed');
+  assert.equal(vm.runInContext("coerceToolResult(batchContent, 'group_edit').failedCount", context), 1);
+  assert.equal(vm.runInContext("formatResultSummary('group_edit', { succeededCount: 2, failedCount: 1 })", context), '2 succeeded · 1 failed');
   const agentGroups = vm.runInContext('buildAgentToolGroups({ choices: catalog.map(t => ({ value: t.name, label: t.name })), restricted: false, selected: () => true })', context);
-  assert.ok(agentGroups.find(group => group.id === 'files').tools.some(tool => tool.id === 'edit_files'));
+  assert.ok(agentGroups.find(group => group.id === 'files').tools.some(tool => tool.id === 'group_edit'));
   function node(tag) {
     return { tag, children: [], classList: { add() {} }, textContent: '',
       appendChild(child) { this.children.push(child); }, closest() { return null; }, querySelector() { return null; } };
@@ -179,7 +179,7 @@ async function main() {
     { path: 'a.txt', ok: true, result: { relPath: 'a.txt', body: 'safe <script> text', startLine: 1, endLine: 1 } },
     { path: 'missing.txt', ok: false, result: { error: { code: 'ENOENT', message: 'not found' } } }
   ] };
-  vm.runInContext("renderToolResultBody(preview, { name: 'read_files', result }, () => false)", context);
+  vm.runInContext("renderToolResultBody(preview, { name: 'group_read', result }, () => false)", context);
   const textOf = (item) => [item.textContent, ...item.children.map(textOf)].join(' ');
   assert.ok(textOf(preview).includes('safe <script> text'), 'file bodies are rendered as text');
   assert.ok(textOf(preview).includes('missing.txt'));
@@ -189,7 +189,7 @@ async function main() {
   context.result = { succeededCount: 1, failedCount: 0, results: [
     { path: 'b.txt', ok: true, result: { relPath: 'b.txt', diff: '-old\n+new', addedChars: 3, removedChars: 3 } }
   ] };
-  vm.runInContext("renderFileBatchToolResult(preview, result, 'edit_files')", context);
+  vm.runInContext("renderFileBatchToolResult(preview, result, 'group_edit')", context);
   assert.ok(textOf(editPreview).includes('-old'));
   assert.ok(textOf(editPreview).includes('+new'));
   console.log('Grouped file tools: runners, safety, caps, authorization, stream/serve and preview checks passed');

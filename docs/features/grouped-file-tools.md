@@ -2,7 +2,7 @@
 
 ## Overview
 
-`read_files` and `edit_files` let the assistant read several files or apply several block replacements in one call. Both appear under **File tools** in chat tools, project settings, and agent tool selection, alongside the single-file tools.
+`group_read` and `group_edit` let the assistant read several files or apply several block replacements in one call. Both appear under **File tools** in chat tools, project settings, and agent tool selection, alongside the single-file tools.
 
 ## Usage
 
@@ -10,7 +10,7 @@ The tools inherit File tools authorization (**Off**, **Ask**, or **Allow**). Wit
 
 ### Read a group
 
-Call `read_files` with a `files` array. Each entry accepts the same `path`, `startLine`, and `endLine` arguments as `read_file`; ranges are 1-indexed and inclusive.
+Call `group_read` with a `files` array. Each entry accepts the same `path`, `startLine`, and `endLine` arguments as `read_file`; ranges are 1-indexed and inclusive.
 
 ```json
 {
@@ -25,7 +25,7 @@ Images are attached as image parts, not base64 text. Hidden-content rules apply 
 
 ### Edit a group
 
-Read the relevant regions first, then call `edit_files` with an `edits` array. Each entry takes `path` (or the compatibility alias `file`), a non-empty `oldText`, and `newText`.
+Read the relevant regions first, then call `group_edit` with an `edits` array. Each entry takes `path` (or the compatibility alias `file`), a non-empty `oldText`, and `newText`.
 
 ```json
 {

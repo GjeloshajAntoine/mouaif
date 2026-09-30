@@ -38,7 +38,7 @@ The mode, allowlist, and timeouts live in `<projectDir>/.mouaif.json` under `too
 
 ### Grouped reads and edits
 
-`read_files` accepts a `files` array of paths and optional line slices; `edit_files` accepts an `edits` array of `path`, `oldText`, and `newText` replacements. Both live in the File tools group and accept up to 50 entries, with ordered per-entry results and errors. Grouped reads honor hidden-content rules and cap combined output at 2 MiB. Grouped edits are sequential, not transactional: successful edits remain applied if another entry fails. See [Grouped file tools](./grouped-file-tools.md) for examples and retry guidance.
+`group_read` accepts a `files` array of paths and optional line slices; `group_edit` accepts an `edits` array of `path`, `oldText`, and `newText` replacements. Both live in the File tools group and accept up to 50 entries, with ordered per-entry results and errors. Grouped reads honor hidden-content rules and cap combined output at 2 MiB. Grouped edits are sequential, not transactional: successful edits remain applied if another entry fails. See [Grouped file tools](./grouped-file-tools.md) for examples and retry guidance.
 
 ### The file tools
 
