@@ -56,7 +56,7 @@ const CORE_GUIDANCE = [
   '- Prefer a reasonable, reversible action over a question, stating the assumption briefly.',
   '- Ask only when it changes what you do: destructive work, scope, or ambiguity that changes the code.',
   '- Get approval first for destructive actions, full-file rewrites, dependency installs, and pushes; leave unrelated code untouched.',
-  '- Use only the tools you have and respect their authorization; if one is denied, take another approach rather than retrying.',
+  '- Use only enabled tools; respect authorization. If denied, stop that operation even via other tools; ask or do permitted work.',
   '- If a tool declaration omits its parameters, call discover_tool with that name first.',
   '',
   'Editing',

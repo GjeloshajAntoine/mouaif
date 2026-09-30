@@ -21,6 +21,13 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
   other. Prompt ids, the `average` default, the resolution order, and tool
   reduction are unchanged.
 
+### Fixed
+
+- **Denied-operation prompt guidance** — all three non-empty built-in profiles
+  now instruct the assistant to stop a denied operation, including attempts
+  through another tool, and ask for clarification or continue only with
+  permitted work.
+
 ## [0.8.0] — 2026-09-27
 
 ### Added
