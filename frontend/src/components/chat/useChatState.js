@@ -45,6 +45,128 @@ import { costSnapshot } from './costSummary.js';
 import { skillStateFromResponse } from './skillState.js';
 import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings/toolAuth.js';
 
+// ---- Types (JSDoc only; no runtime effect) --------------------------------
+
+/** @typedef {import('./session.js').Message} Message */
+/** @typedef {import('./session.js').ChatSession} ChatSession */
+
+/**
+  * The mutable `state` bag shared by every imperative chat/* module. Created
+  * once per mount; most data fields are accessors backed by refs or by the
+  * current ChatSession, so reads are always live and writes never re-render.
+  *
+  * Data (accessors unless noted):
+  * @typedef {Object} ChatState
+  * @property {{projectDir: string, chatId: string}} props  Refreshed every render.
+  * @property {ChatSession} session  Read-only. Compare identities across an
+  *   await to detect a chat switch.
+  * @property {Message[]} messages  Current session's rows. Replace, never
+  *   mutate in place (frozen in dev builds).
+  * @property {Object|null} chat  The chat record.
+  * @property {Array<Object>} providers
+  * @property {Array<Object>} models
+  * @property {Object<string, Array<Object>>} liveByProvider
+  * @property {Array<Object>} prompts
+  * @property {{q: string, provider: string}} pickerFilter
+  * @property {Object|null} systemPrompt
+  * @property {{catalog: Array<Object>, filter: string[]|null}} tools
+  * @property {{files: string[], enabled: boolean, explicit: boolean,
+  *   projectLocked?: boolean}} agentFiles
+  * @property {{items: Array<Object>, enabled: boolean, projectLocked: boolean}} skills
+  * @property {Array<Object>} mcpServers
+  * @property {Array<Object>} agents
+  * @property {Set<string>} usedTools
+  * @property {number} transcriptNextSeq
+  * @property {number} nextLiveSeq
+  * @property {boolean} streaming
+  * @property {{active: boolean, attempts: number, timer: any,
+  *   stopped: boolean, partialText: string}} reconnect  Plain object.
+  * @property {boolean} watchingRun
+  * @property {number} watchingStableTicks
+  * @property {ChatSession['liveRun']} liveRun
+  * @property {boolean} runSettled
+  * @property {Object|null} providerCredit
+  * @property {Object} toolAuth
+  * @property {{mode: string, allowlist: string[], servers: Object,
+  *   tools: Object}} mcpAuth
+  * @property {string} thinkingLevel
+  * @property {string} maxOutputTokens
+  * @property {boolean} enterForNewline
+  * @property {boolean} autoRetry
+  * @property {Array<Object>} imageAttachments
+  * @property {Array<Object>} customActions  Plain field, mirrors render state.
+  *
+  * Plain fields other modules add on the fly (not declared in the bag):
+  * @property {Object|null} [costSnapshot]  costSummary.js
+  * @property {number} [attributedCost]
+  * @property {AbortController|null} [streamAbort]  stream.js
+  * @property {number} [pendingAuthCount]  stream.js
+  * @property {string} [liveRunId]  live.js
+  * @property {Array<Object>} [recentModels]  modelPicker.js
+  * @property {Object} [nestedRows]  transcript.js
+  *
+  * Callbacks the hook installs for the imperative modules. The hook assigns
+  * them in the body next to the code they wrap (see the "state._* callbacks"
+  * index below the `state` bag); these are the groups:
+  *
+  * Run / stream
+  * @property {(visible: boolean) => void} _setRunningVisible
+  * @property {() => void} _kickPoll
+  * @property {() => void} _drainOlderMessages
+  * @property {(payload: {content: string, attachments: Array<Object>}) => any} _retryFailedTurn
+  * @property {(action: Object) => any} _runCustomAction
+  * @property {(reason: string) => any} _runRestartCommand
+  * @property {(actions: Array<Object>) => void} _setCustomActions
+  *
+  * Transcript / view
+  * @property {() => void} _renderTranscript
+  * @property {() => void} _reconcileTranscript
+  * @property {() => void} _updateSetupVisibility
+  *
+  * Chat record / model picker
+  * @property {(patch: Object) => Promise<boolean|undefined>} _updateChat
+  * @property {() => void} _onChatChanged
+  * @property {() => void} _onLiveModels
+  * @property {() => void} _openModelPicker
+  * @property {(selection: Object, legacyModelId?: string) => void} _onPickerPick
+  * @property {() => any} _onRefreshAllProviders
+  * @property {() => Promise<any>} [_refreshAll]  Optional; modelPicker.js checks for it.
+  *
+  * Tools card / skills / agent files
+  * @property {() => void} _updateToolsCard
+  * @property {(name: string, next: boolean) => void} _toggleTool
+  * @property {(names: string[], next: boolean) => void} _toggleToolGroup
+  * @property {(next: boolean) => void} _toggleAgentFiles
+  * @property {(next: boolean) => void} _toggleSkills
+  * @property {(id: string, next: boolean) => void} _toggleSkill
+  * @property {() => void} _onSkillsChanged
+  * @property {(message: string) => void} _onSkillSaveError
+  *
+  * Authorization
+  * @property {(tool: string, mode: string|null, allowlist?: string[]) => Promise<void>} _saveToolAuth
+  * @property {(patch: Object) => Promise<void>} _saveMcpAuth
+  * @property {(body: Object) => void} _applyChatAuthResponse
+  *
+  * MCP server start
+  * @property {(serverId: string) => Promise<boolean>} _startMcpServer
+  * @property {(serverId: string) => Promise<boolean>} _reloadMcpServer
+  * @property {() => Promise<void>} _reloadMcpServerRefresh
+  *
+  * Internal bookkeeping (underscore fields that hold data, not callbacks):
+  * @property {string} _persistedModelPair  "providerId|modelId" last saved.
+  * @property {number} _authSaveSeq  Ticket for ordering auth saves.
+  * @property {Object|null} _chatAuthOverrides  This chat's own auth overrides.
+  * @property {Object|null} _chatSaveSession  updateChat write queue.
+  * @property {Object|null} _skillSaveSession  skillState.js write queue.
+  * @property {boolean} _skillSavePending
+  * @property {Object<string, string>} _mcpStartErrors  serverId -> last start error.
+  * @property {string|null} _mcpStartBusyServerId
+  * @property {(() => Object|null)|null} [_liveUsageInfo]  stream.js
+  * @property {number} [_recentLoadRequest]  modelPicker.js
+  * @property {Set<string>|null} [_toolTreeCollapsed]  cards.js
+  * @property {{messages: Message[], map: Map<string, Object>}} [_toolArgsIndexRev]  transcript.js
+  */
+
 // chatAuthUrl(projectDir, chatId) — the chat-scoped authorization view.
 // `chatId` makes the response resolve every mode chat-over-project and
 // echo the chat's own override maps under `chat`; without it the same
@@ -338,7 +460,24 @@ get autoRetry() { return autoRetryRef.current; },
 set autoRetry(v) { autoRetryRef.current = !!v; }
 };
 }
+/** @type {ChatState} */
 const state = stateRef.current;
+// ---- state._* callbacks index ----------------------------------
+// Callbacks are (re)assigned on every render, each next to the code it
+// wraps, so they close over the current props. Types and groups are in the
+// ChatState typedef at the top of this file. Where each group is assigned:
+//   run / stream        _setRunningVisible, _kickPoll, _drainOlderMessages
+//                       (bag literal above); _setCustomActions (below);
+//                       _runCustomAction, _runRestartCommand, _retryFailedTurn
+//   transcript / view   _renderTranscript, _reconcileTranscript,
+//                       _updateSetupVisibility
+//   chat / picker       _updateChat, _onChatChanged, _onLiveModels,
+//                       _openModelPicker, _onPickerPick, _onRefreshAllProviders
+//   tools / skills      _updateToolsCard, _toggleTool, _toggleToolGroup,
+//                       _toggleAgentFiles, _toggleSkills, _toggleSkill,
+//                       _onSkillsChanged, _onSkillSaveError
+//   authorization       _saveToolAuth, _saveMcpAuth, _applyChatAuthResponse
+//   MCP server start    _startMcpServer, _reloadMcpServer, _reloadMcpServerRefresh
 state.props = { projectDir, chatId };
 state.customActions = customActions;
 state._setCustomActions = (actions) => {

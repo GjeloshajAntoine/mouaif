@@ -51,6 +51,10 @@ npm run dev:web      # vite dev server on :5173 (not used by the Node server)
 
 The seqs already held are not stored separately. `heldSeqs(messages)` in `msgMerge.js` derives them when needed, and `mergeServerRows` is pure. The old `seenSeqs` set had to be rebuilt on load, on full rebuild and on chat switch, and could disagree with the list it described. Tests: `scripts/test-chat-session.mjs`.
 
+### Types
+
+The chat modules are plain JS with JSDoc types, and nothing checks them at build time. `session.js` defines `Message` (one transcript row: the fields `rowToMessage` in `src/chatdb.js` emits, plus the client-only `liveRate`) and `ChatSession`. `useChatState.js` defines `ChatState`, the shared `state` bag. Its `state._*` callbacks are grouped by area (run/stream, transcript, chat/picker, tools/skills, authorization, MCP start), and an index next to the bag lists where each group is assigned.
+
 ### Live runs after a reload
 
 When a chat page is reloaded while an agent run is still active on the
