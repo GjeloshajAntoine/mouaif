@@ -231,7 +231,7 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
         allowlist: file && Array.isArray(file.allowlist) ? file.allowlist : []
       });
       setFileToolAuth(Object.fromEntries(
-      ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file'].map((name) => [name, authz.status === 200 && authz.body.tools && authz.body.tools[name]])
+      ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'read_files', 'edit_files'].map((name) => [name, authz.status === 200 && authz.body.tools && authz.body.tools[name]])
       ));
       const sub = authz.status === 200 && authz.body.tools && authz.body.tools.subagent;
       setSubagentAuth({
@@ -876,7 +876,7 @@ if (askTool) {
       groups.push({
         id: 'files',
         name: 'File tools',
-        description: 'read, list, search, write, edit, draw',
+        description: 'read, list, search, write, edit · batches',
         checked: isOn(fileAuth.mode),
         control: toolModeSegs('File tools', segMode(fileAuth.mode), pickFileMode, [
           { value: 'off', label: 'Off' },

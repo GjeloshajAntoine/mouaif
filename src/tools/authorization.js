@@ -159,12 +159,11 @@ const BINARY_MODE_TOOLS = new Set(['ask_user']);
 const DEFAULT_OFF_TOOLS = new Set([]);
 // The model-facing file operations. Their specs are collected one per
 // name, and an `off` on the family (`tools.file`) hides all of them.
-const FILE_TOOL_NAMES = new Set(['read_file', 'list_files', 'search_files', 'write_file', 'edit_file']);
+const FILE_TOOL_NAMES = new Set(require('./files.js').FILE_TOOL_NAMES);
 // Every tool that resolves its authorization through the File tools family
 // (the `file` gate plus its per-leaf overrides). Used by the effective-mode
 // resolver, the chat-override reader/writer, and the GET /api/tools/
-// authorization view — the family's children, not just its five read/write
-// operations.
+// authorization view — including grouped reads and edits.
 const FILE_FAMILY_TOOLS = new Set([...FILE_TOOL_NAMES]);
 const MCP_FILE = '.mcp.json';
 
@@ -798,8 +797,25 @@ async function authorize(input) {
     }
   }
   if (config.mode === 'allow') return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
-  if (config.mode === 'allowlist' && await matchesAllowlist(input.summary || input.cmd || '', config.allowlist)) {
-    return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
+  if (config.mode === 'allowlist') {
+    // A batch is approved only when EVERY target matches. Matching just
+    // the first path (or a combined summary) could approve unlisted files.
+    const batchKey = tool === 'read_files' ? 'files' : tool === 'edit_files' ? 'edits' : null;
+    const items = batchKey && input.args && input.args[batchKey];
+    let allowed = false;
+    if (batchKey) {
+      allowed = Array.isArray(items) && items.length > 0 && items.length <= 20;
+      for (const item of allowed ? items : []) {
+        const target = item && (item.path || item.file);
+        if (typeof target !== 'string' || !target || !await matchesAllowlist(target, config.allowlist)) {
+          allowed = false;
+          break;
+        }
+      }
+    } else {
+      allowed = await matchesAllowlist(input.summary || input.cmd || '', config.allowlist);
+    }
+    if (allowed) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
   }
 
   const existing = session.pending.get(callId);
@@ -903,7 +919,7 @@ module.exports = {
 MODES,
 FILE_TOOL_NAMES,
 // Every tool that resolves through the File tools family (`file` gate plus
-// its per-leaf overrides): the five read/write operations.
+// its per-leaf overrides), including grouped reads and edits.
 FILE_FAMILY_TOOLS,
 readChatAuthOverrides,
 setChatAuthorization,

@@ -41,7 +41,9 @@ const NATIVE_TOOL_CHOICES = [
   { value: 'list_files', label: 'list_files' },
   { value: 'search_files', label: 'search_files' },
   { value: 'write_file', label: 'write_file' },
-  { value: 'edit_file', label: 'edit_file' }
+  { value: 'edit_file', label: 'edit_file' },
+  { value: 'read_files', label: 'read_files' },
+  { value: 'edit_files', label: 'edit_files' }
 ];
 
 function toolChoicesWithMcp(servers) {

@@ -236,8 +236,13 @@ async function runSingleToolCall(c, cx) {
         // `url` argument anyway.
         summary = (args && args.url) || '';
       }
-      else if (c.name === 'read_file' || c.name === 'list_files' || c.name === 'search_files' || c.name === 'write_file' || c.name === 'edit_file') {
-        summary = (args && (args.path || args.file)) || (args && args.query) || '';
+      else if (authGate.FILE_TOOL_NAMES.has(c.name)) {
+      if (c.name === 'read_files' || c.name === 'edit_files') {
+      const items = args && args[c.name === 'read_files' ? 'files' : 'edits'];
+      summary = Array.isArray(items) ? items.map((item) => item && (item.path || item.file) || '?').join(', ') : '';
+      } else {
+      summary = (args && (args.path || args.file)) || (args && args.query) || '';
+      }
       } else if (String(c.name).startsWith('mcp__')) {
         // MCP allowlists (shared or per-server/per-tool) match
         // against "<composedName> <firstStringArg>" so a pattern
@@ -1954,13 +1959,9 @@ promptSize: callOpts && callOpts.promptSize,
       return progMod.buildResult(validated);
     }
 
-    // Native file tools: read_file, list_files, search_files, write_file,
-    // edit_file (compatibility alias for a full-file write).
-    // Gated by callOpts.fileToolsEnabled (matches the spec-collection
-    // branch above). Dispatched in one shot — all four share the same
-    // path-safety, size-cap, and authorization story, so a single
-    // dispatch helper keeps the call site readable.
-    if (name === 'read_file' || name === 'list_files' || name === 'search_files' || name === 'write_file' || name === 'edit_file') {
+    // Native file operations, including grouped reads and edits, share
+    // the same path-safety, size-cap and authorization story.
+    if (require('./tools/files.js').isFileToolName(name)) {
       let ft;
       try { ft = require('./tools/files.js'); }
       catch (e) {
@@ -1970,6 +1971,7 @@ promptSize: callOpts && callOpts.promptSize,
       return await ft.runFileTool(name, {
       projectDir: callOpts && callOpts.projectDir,
       args,
+      signal: callOpts && callOpts.signal,
       settings: callOpts && callOpts.appSettings,
       toolOutput: callOpts && callOpts.toolOutput
       });

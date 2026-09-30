@@ -62,7 +62,7 @@ function writeFile(p, content) {
     assert(s && s.type === 'function' && s.function && s.function.parameters && s.function.parameters.type === 'object', n + ' has OpenAI shape');
     // read_file, search_files, write_file require at least one arg;
     // list_files takes an optional pattern only.
-    if (n === 'read_file' || n === 'search_files' || n === 'write_file' || n === 'edit_file') {
+    if (n !== 'list_files') {
       assert(Array.isArray(s.function.parameters.required) && s.function.parameters.required.length >= 1, n + ' has required[]');
     } else {
       assert(!s.function.parameters.required || s.function.parameters.required.length === 0, n + ' has empty required[]');

@@ -1,7 +1,7 @@
 'use strict';
 
 // Native file tools — `read_file`, `list_files`, `search_files`, `write_file`,
-// `edit_file`.
+// `edit_file`, plus grouped `read_files` and `edit_files`.
 //
 // Implements the "Native file tools" feature: read / list / search / write
 // inside the project directory, with the same authorization gate and
@@ -15,14 +15,14 @@
 // (src/ai-stream.js). See docs/features/read-file-images.md.
 //
 // Public surface:
-//   SPECS                       : { 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file' }
+//   SPECS                       : specs keyed by FILE_TOOL_NAMES
 //                                 each value is an OpenAI-compatible function spec
 //   runFileTool(name, opts)     -> Promise<{ ok, content, result }>
 //   resolveSandbox(projectDir)  -> string  (re-exported from shell.js for parity)
 //
 // Each runner is self-contained: path safety, size caps, and the textual
 // response shape are all enforced here. The AI client in src/ai.js maps
-// any tool_call whose name matches one of the five over to runFileTool().
+// any tool_call whose name matches FILE_TOOL_NAMES over to runFileTool().
 //
 // Path safety: every path the model supplies is normalized to a
 // POSIX-relative path under the project root, then resolved back to an
@@ -989,6 +989,59 @@ function formatWriteFileResult(r) {
   return out;
 }
 
+// ---- Grouped reads / edits --------------------------------------------
+
+const MAX_BATCH_ENTRIES = 20;
+const MAX_BATCH_READ_BYTES = 2 * 1024 * 1024;
+
+// Reuse the single-file runners so containment, redaction, matching and
+// atomic per-file writes have exactly the same semantics. Entries execute
+// in order, including repeated paths; a failure does not undo earlier edits.
+async function runFileBatch(name, opts) {
+  const key = name === 'read_files' ? 'files' : 'edits';
+  const items = opts.args && opts.args[key];
+  if (!Array.isArray(items) || !items.length) throw err('EBADINPUT', key + ' must be a non-empty array');
+  if (items.length > MAX_BATCH_ENTRIES) throw err('ETOOL_CAP', key + ' exceeds ' + MAX_BATCH_ENTRIES + ' entries');
+  const results = [];
+  const images = [];
+  let readBytes = 0;
+  for (const item of items) {
+    const requestedPath = item && (item.path || item.file);
+    try {
+      if (opts.signal && opts.signal.aborted) throw err('EABORTED', 'Batch cancelled; entry was not executed');
+      if (!item || typeof item !== 'object' || Array.isArray(item)) throw err('EBADINPUT', 'Each entry must be an object');
+      const childOpts = { ...opts, args: item };
+      const result = name === 'read_files' ? await runReadFile(childOpts) : await runEditFile(childOpts);
+      if (name === 'read_files') {
+        const bytes = result.kind === 'image' ? result.bytes : Buffer.byteLength(result.body || '', 'utf8');
+        if (readBytes + bytes > MAX_BATCH_READ_BYTES) throw err('ETOOL_CAP', 'Batch read output exceeds 2 MB; use smaller slices or separate calls');
+        readBytes += bytes;
+        if (Array.isArray(result.content)) images.push(...result.content);
+      }
+      results.push({ path: requestedPath, ok: true, result });
+    } catch (e) {
+      results.push({ path: typeof requestedPath === 'string' ? requestedPath : '', ok: false,
+        result: { error: { code: e.code || 'EUNKNOWN', message: e.message } } });
+    }
+  }
+  const failedCount = results.filter((entry) => !entry.ok).length;
+  return { results, succeededCount: results.length - failedCount, failedCount,
+    ...(images.length ? { content: images } : {}) };
+}
+
+// Keep structured batch results replayable without embedding image base64
+// in the model's text. The actual pixels ride the existing image-part path.
+function formatFileBatchResult(out) {
+  return JSON.stringify({
+    succeededCount: out.succeededCount,
+    failedCount: out.failedCount,
+    results: out.results.map((entry) => {
+      const { content, ...result } = entry.result;
+      return { ...entry, result };
+    })
+  });
+}
+
 // ---- Dispatcher --------------------------------------------------------
 
 // runFileTool(name, opts) -> Promise<{ ok, content, result }>
@@ -1005,6 +1058,7 @@ async function runFileTool(name, opts) {
     else if (name === 'search_files') out = await runSearchFiles(opts);
     else if (name === 'write_file') out = await runWriteFile(opts);
     else if (name === 'edit_file') out = await runEditFile(opts);
+    else if (name === 'read_files' || name === 'edit_files') out = await runFileBatch(name, opts);
     else throw err('EUNKNOWN_TOOL', 'Unknown file tool: ' + name);
   } catch (e) {
     const r = { error: { code: e.code || 'EUNKNOWN', message: e.message } };
@@ -1029,17 +1083,18 @@ async function runFileTool(name, opts) {
     else if (name === 'list_files') content = formatListFilesResult(out, structure);
     else if (name === 'search_files') content = formatSearchFilesResult(out, structure);
     else if (name === 'write_file' || name === 'edit_file') content = formatWriteFileResult(out);
+    else if (name === 'read_files' || name === 'edit_files') content = formatFileBatchResult(out);
     else content = JSON.stringify(out);
   } catch (e) {
     const r = { error: { code: 'EENCODE', message: 'failed to encode result: ' + e.message } };
     return { ok: false, content: JSON.stringify(r), result: r };
   }
-  return { ok: true, content, result: out };
+  return { ok: !out.failedCount, content, result: out };
 }
 
 // ---- Tool specs (OpenAI-compatible function shape) --------------------
 
-const SPECS = Object.freeze({
+const SINGLE_FILE_SPECS = Object.freeze({
   read_file: {
     type: 'function',
     function: {
@@ -1124,7 +1179,45 @@ const SPECS = Object.freeze({
   }
 });
 
-const FILE_TOOL_NAMES = Object.freeze(['read_file', 'list_files', 'search_files', 'write_file', 'edit_file']);
+const SPECS = Object.freeze({
+  ...SINGLE_FILE_SPECS,
+  read_files: {
+    type: 'function',
+    function: {
+      name: 'read_files',
+      description: 'Read a group of up to 20 project files in one call. Each entry takes path and optional startLine/endLine, just like read_file (including images and hidden-content redaction). Returns ordered per-file results and errors. Combined output is capped at 2 MB; use slices or separate calls for larger reads.',
+      parameters: {
+        type: 'object',
+        properties: {
+          files: { type: 'array', minItems: 1, maxItems: MAX_BATCH_ENTRIES,
+            description: 'Files or line slices to read, in order.',
+            items: SINGLE_FILE_SPECS.read_file.function.parameters }
+        },
+        required: ['files'],
+        additionalProperties: false
+      }
+    }
+  },
+  edit_files: {
+    type: 'function',
+    function: {
+      name: 'edit_files',
+      description: 'Edit a group of up to 20 unique-block replacements in one call. Read the relevant files first. Each entry takes path (or file), oldText and newText, just like edit_file. Entries run sequentially, including repeated paths. Returns per-entry diffs or errors; failed entries leave their file unchanged, but successful edits are NOT rolled back. Retry only failed entries.',
+      parameters: {
+        type: 'object',
+        properties: {
+          edits: { type: 'array', minItems: 1, maxItems: MAX_BATCH_ENTRIES,
+            description: 'Block replacements to apply in order; not an all-or-nothing transaction.',
+            items: SINGLE_FILE_SPECS.edit_file.function.parameters }
+        },
+        required: ['edits'],
+        additionalProperties: false
+      }
+    }
+  }
+});
+
+const FILE_TOOL_NAMES = Object.freeze(Object.keys(SPECS));
 
 function isFileToolName(name) {
   return FILE_TOOL_NAMES.indexOf(name) !== -1;

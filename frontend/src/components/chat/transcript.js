@@ -20,7 +20,7 @@ import {
   progressLevelOf,
   TOOL_ARGS_PREVIEW_CHARS
 } from './tools.js';
-import { renderToolResultBody, zoomableImage } from './toolRender.js';
+import { renderToolResultBody, renderFileBatchToolResult, zoomableImage } from './toolRender.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
 import { cssEscape, copyText, messageCopyText } from './utils.js';
 import { formatCost } from '../../usage.js';
@@ -680,6 +680,8 @@ afterTranscriptAppend(refs, true);
 // (MCP etc.) fall back to their raw name.
 const TOOL_VERBS = {
   read_file: 'Read',
+  read_files: 'Read group',
+  edit_files: 'Edited group',
   list_files: 'Listed',
   search_files: 'Searched',
   edit_file: 'Edited',
@@ -1621,6 +1623,7 @@ function renderSubagentToolPreview(parent, name, raw, args) {
   parent.appendChild(preview);
   if (toolName === 'shell') return renderShellInPreview(preview, r, args);
   if (toolName === 'read_file') return renderReadFileInPreview(preview, r);
+  if (toolName === 'read_files' || toolName === 'edit_files') return renderFileBatchToolResult(preview, r, toolName);
   if (toolName === 'list_files') return renderListFilesInPreview(preview, r);
   if (toolName === 'search_files') return renderSearchFilesInPreview(preview, r);
   if (toolName === 'edit_file') return renderEditFileInPreview(preview, r);

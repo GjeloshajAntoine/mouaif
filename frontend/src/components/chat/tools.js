@@ -157,6 +157,10 @@ export function formatToolArgs(args, toolName) {
   if (typeof args === 'string') return args;
   const name = normalizeToolName(toolName);
   if (name === 'shell') return args.cmd || '';
+  if (name === 'read_files' || name === 'edit_files') {
+    const items = args[name === 'read_files' ? 'files' : 'edits'];
+    return Array.isArray(items) ? items.map((item) => item && (item.path || item.file) || '?').join(', ') : '';
+  }
   if (name === 'read_file') {
     const range = args.startLine != null || args.endLine != null
       ? (' lines ' + (args.startLine || 1) + '-' + (args.endLine || 'end'))
@@ -253,6 +257,9 @@ export function formatResultSummary(name, r) {
     const parts = ['exit ' + (r.exitCode ?? 0)];
     if (r.durationMs != null) parts.push(r.durationMs + 'ms');
     return parts.join(' ');
+  }
+  if (n === 'read_files' || n === 'edit_files') {
+    return (r.succeededCount || 0) + ' succeeded' + (r.failedCount ? ' · ' + r.failedCount + ' failed' : '');
   }
   if (n === 'read_file') {
     if (r.kind === 'image') {
