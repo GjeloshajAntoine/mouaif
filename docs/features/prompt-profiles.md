@@ -22,9 +22,9 @@ The expanded prompt wraps to the card's width — long lines fold rather than ru
 
 | ID | Label | When to use it |
 |---|---|---|
-| `very-small` | Very small | Shared core rules for concise answers, safe changes, progress, and verification. The smallest prompt; tools are listed in compact form and schemas are retrieved on demand. |
-| `average` | Average | The recommended default. Adds an explicit inspect/edit/verify workflow, precise file-editing guidance, and full tool schemas. |
-| `extensive` | Extensive | All Average guidance plus planning, regression testing, mobile UI checks, and concrete workflow examples. Uses the same full tool schemas. |
+| `very-small` | Very small | The shared core rules alone: short answers, safe and reversible action, inspect-then-edit, non-interactive commands, and honest reporting. The smallest prompt; tools are listed in compact form and schemas are retrieved on demand. |
+| `average` | Average | The recommended default. Adds the project workflow — read first, change when asked, run and read the checks, report at milestones — on top of the shared core. |
+| `extensive` | Extensive | All Average guidance plus planning, root-cause tracing, regression tests, mobile-first UI checks, and three worked examples. Uses the same full tool schemas. |
 | `chat` | Chat | A plain conversation: an empty system prompt. Behaves like Average everywhere else — same tools, same agent files. |
 
 ### The Chat profile
@@ -33,18 +33,19 @@ The expanded prompt wraps to the card's width — long lines fold rather than ru
 
 ## Shared behavior
 
-Changing the profile adds detail, not a different set of permissions or safety rules. The three non-empty profiles (`very-small`, `average`, `extensive`) instruct the assistant to:
+Changing the profile adds detail, not a different set of permissions or safety rules. The three non-empty profiles (`very-small`, `average`, `extensive`) share one byte-identical core — Average appends the workflow section to it and Extensive appends planning and examples to that — so the common rules can never drift apart. The core groups its rules under four headings, and states each rule with the condition that triggers it and the tool or command form it depends on:
 
-- Answer concisely with project-relative paths and language-tagged code blocks.
-- Follow applicable project and custom instructions while respecting instruction priority.
-- Make reasonable, reversible decisions autonomously; ask when ambiguity affects scope, safety, or correctness.
-- Obtain explicit authorization for destructive actions, full-file rewrites, dependency installs, and pushes; preserve unrelated user work.
-- Use only enabled tools, respect authorization gates, and discover missing tool schemas before calling them.
-- Inspect before editing, keep changes focused, run relevant checks, and use non-interactive shell commands.
-- Report task start and completion when `report_progress` is enabled. Completed work uses `status: "completed"` with `current` equal to `total`; blocked work uses `status: "failed"`, not a false completion.
-- Report actual results, unrun checks, and limitations without inventing project facts or exposing secrets.
+**Answering** — keep replies short and lead with the result; short Markdown, fenced code blocks, project-relative paths; the project's own instructions and conventions outrank these defaults.
 
-Average and Extensive also distinguish implementation requests from questions/reviews: apply authorized changes for implementation, but do not edit files merely to answer a question. Their progress guidance uses real milestones and falls back to brief text when the progress tool is unavailable.
+**Acting** — prefer a reasonable, reversible action over a question, stating the assumption; ask only when it changes what you do (destructive work, scope, or ambiguity that changes the code); get approval first for destructive actions, full-file rewrites, dependency installs, and pushes; use only the tools you have and respect their authorization, taking another approach rather than retrying a denied tool; call `discover_tool` when a tool declaration omits its parameters.
+
+**Editing** — read the code, its callers, and its tests first, and match the naming and error handling used nearby; fix the cause, not the symptom, with the smallest change that works; patch with `edit_file` using an exact, unique `oldText`/`newText` block, and re-read when an edit does not match; shell stdin is closed, so use the one-shot form and feed input with a heredoc or pipe; read the failure before editing again.
+
+**Reporting** — call `report_progress` when available at the start (`status "running"`), at milestones, and at the end; finish with `status: "completed"` and `current` equal to `total`, or `status: "failed"` when blocked, never marking unfinished work complete; close with what changed, what was run, and what is still open, without claiming unverified results or exposing secrets.
+
+Average and Extensive add the project workflow: read the project instructions before acting, apply authorized changes for implementation requests but answer questions and reviews without editing, keep the change scoped, run the targeted tests/lint/build and say which checks did not run, report progress at real milestones rather than narrating, and close by citing the paths touched.
+
+Extensive adds planning and verification (plan first, trace the root cause, add a regression test, check the narrow mobile width first for UI work, parallelize independent reads) and three worked examples: a bug fix, the harmless-versus-material ambiguity split, and blocked verification.
 
 ## Chat integration
 

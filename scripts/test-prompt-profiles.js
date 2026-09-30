@@ -86,17 +86,23 @@ async function main() {
   check('average extends the complete compact core', average.startsWith(core + '\n\n'));
   check('extensive extends the complete average workflow', extensive.startsWith(average + '\n\n'));
   const sharedRules = [
-    ['mobile-friendly answers', /short Markdown.*language-tagged code fences.*project-relative paths/],
-    ['instruction priority', /project and custom instructions.*higher-priority instructions/],
-    ['safe autonomy', /reversible decisions.*Ask when ambiguity affects scope, safety, or correctness/],
-    ['explicit authorization for risky actions', /Ask before destructive actions.*unless explicitly authorized/],
-    ['preserves user work', /Preserve unrelated user work/],
-    ['enabled tools and schema discovery', /only enabled tools.*authorization gates.*discover_tool/],
-    ['inspect-edit-verify loop', /Inspect before editing.*run relevant checks.*fix introduced failures/],
-    ['non-interactive shell', /Shell has no stdin.*non-interactive commands.*never a REPL/],
-    ['conditional progress on every task', /If report_progress is enabled.*start of every task.*status: "running"/],
-    ['honest progress completion', /status: "completed" and current equal to total.*status: "failed" if blocked/],
-    ['evidence and privacy', /Never invent project facts or test results.*checks run.*limitations.*Do not expose secrets/]
+    ['mobile-friendly answers', /read on a narrow screen.*Lead with the result/],
+    ['code format', /fenced code blocks.*project-relative paths/],
+    ['instruction priority', /instructions and conventions outrank these defaults/],
+    ['safe autonomy', /reversible action.*stating the assumption briefly/],
+    ['ask only when it matters', /Ask only when it changes what you do.*ambiguity that changes the code/],
+    ['explicit authorization for risky actions', /approval first for destructive actions.*dependency installs.*pushes/],
+    ['preserves unrelated work', /leave unrelated code untouched/],
+    ['respects authorization gates', /respect their authorization.*denied.*take another approach/],
+    ['schema discovery', /omits its parameters.*discover_tool with that name/],
+    ['inspect before editing', /Read the code, its callers, and its tests first/],
+    ['root cause and minimal change', /Fix the cause, not the symptom.*smallest change that works/],
+    ['exact edit blocks', /edit_file using an exact, unique oldText\/newText block/],
+    ['non-interactive shell', /stdin is closed.*one-shot form.*heredoc or pipe/],
+    ['fix introduced failures', /Read the failure before editing again.*fix what your change caused/],
+    ['conditional progress reporting', /report_progress, when available, at the start.*status "running"/],
+    ['honest progress completion', /status "completed" and current equal to total.*"failed" when blocked.*never mark unfinished work complete/i],
+    ['evidence and privacy', /do not claim unverified results or expose secrets/]
   ];
   // `chat` is intentionally empty, so it carries none of the shared rules.
   for (const profile of pp.listProfiles().filter((p) => p.id !== 'chat')) {
@@ -107,11 +113,11 @@ async function main() {
   for (const id of ['average', 'extensive']) {
     const message = pp.profileSystemMessage(id);
     check(id + ' explains exact edits', message.includes('exact, unique oldText/newText'));
-    check(id + ' distinguishes implementation from review', message.includes('answer without changing files unless asked'));
-    check(id + ' reports unrun checks', message.includes('State clearly when checks could not run'));
-    check(id + ' supports progress-disabled projects', message.includes('If the tool is unavailable'));
+    check(id + ' distinguishes implementation from review', message.includes('For a question or review, answer without editing unless asked'));
+    check(id + ' reports unrun checks', message.includes('say which checks did not run'));
+    check(id + ' supports progress-disabled projects', message.includes('instead of narrating'));
   }
-  check('extensive includes concrete workflow examples', extensive.includes('Workflow examples:') && extensive.includes('Bug fix:') && extensive.includes('Blocked check:'));
+  check('extensive includes concrete workflow examples', extensive.includes('Examples') && extensive.includes('Bug fix:') && extensive.includes('Blocked verification:'));
   // 4) isValidProfile.
   check('isValidProfile("average")',     pp.isValidProfile('average') === true);
   check('isValidProfile("very-small")',  pp.isValidProfile('very-small') === true);

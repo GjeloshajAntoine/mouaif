@@ -7,6 +7,20 @@ All notable changes to `mouaif` are documented here. The format follows
 Releases are cut from `package.json` with `npm version <patch|minor|major>`,
 which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
+## [Unreleased]
+
+### Changed
+
+- **Rewritten built-in prompts** — the `very-small`, `average`, and `extensive`
+  system prompts now lead with a short role statement and group their rules
+  under four headings (`Answering`, `Acting`, `Editing`, `Reporting`). Every
+  rule is affirmative, states the condition that triggers it, and names the
+  tool argument or command form it depends on, so the model can act without
+  guessing. The three profiles still compose by appending, so the shared core
+  stays byte-identical and the profiles cannot drift into contradicting each
+  other. Prompt ids, the `average` default, the resolution order, and tool
+  reduction are unchanged.
+
 ## [0.8.0] — 2026-09-27
 
 ### Added
