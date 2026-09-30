@@ -166,6 +166,7 @@ function installContext() {
   };
   load('tools.js');
   load('toolRender.js');
+  load('messageKind.js');
   const transcript = fs.readFileSync(path.join(CHAT_DIR, 'transcript.js'), 'utf8')
     .replace(/^import[\s\S]*?from\s+'[^']+';$/gm, '')
     .replace(/^export /gm, '');

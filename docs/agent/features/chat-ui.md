@@ -55,6 +55,8 @@ The seqs already held are not stored separately. `heldSeqs(messages)` in `msgMer
 
 The chat modules are plain JS with JSDoc types, and nothing checks them at build time. `session.js` defines `Message` (one transcript row: the fields `rowToMessage` in `src/chatdb.js` emits, plus the client-only `liveRate`) and `ChatSession`. `useChatState.js` defines `ChatState`, the shared `state` bag. Its `state._*` callbacks are grouped by area (run/stream, transcript, chat/picker, tools/skills, authorization, MCP start), and an index next to the bag lists where each group is assigned.
 
+A row's kind comes from `messageKind(m)` in `messageKind.js`, which returns `'user' | 'assistant' | 'tool_call' | 'tool_result' | 'error' | 'system'`. It is computed from `role`, `phase` and the `⚠` error marker every time it is read. Nothing is stored on the row and the wire format is unchanged. `renderMessageRow`, `isRenderableMessage` and `retry.js` branch on it instead of testing role and phase themselves. A row with no more specific kind falls back to `'system'` and is drawn as a plain bubble, as before. Subagent transcripts (`tool_calls` / `tool_call_id`) are not covered by `messageKind`; they are classified where they are rendered. Tests: `scripts/test-message-kind.mjs`.
+
 ### Live runs after a reload
 
 When a chat page is reloaded while an agent run is still active on the

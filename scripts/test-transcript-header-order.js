@@ -220,6 +220,15 @@ function installDom() {
 
 // ---- Module loader ---------------------------------------------------
 
+// loadMessageKind() -> the real messageKind(), for the vm-loaded transcript.
+function loadMessageKind() {
+  const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/messageKind.js'), 'utf8')
+    .replace(/^export /gm, '');
+  const context = vm.createContext({ String });
+  vm.runInContext(source + '; this.messageKind = messageKind;', context);
+  return context.messageKind;
+}
+
 function loadModule(relPath, globals, exportsSource) {
   const source = fs.readFileSync(path.join(__dirname, '..', relPath), 'utf8');
   const body = source
@@ -228,6 +237,8 @@ function loadModule(relPath, globals, exportsSource) {
   const base = Object.assign({
     console, JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, WeakMap, Promise, Error,
     isFinite, parseFloat, parseInt, encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout,
+    // Real row classifier: the Proxy's auto-stub would make every row unknown.
+    messageKind: loadMessageKind(),
     afterTranscriptAppend() {},
     updateUsageSummary() {},
     scrollToolBodyToBottom() {},

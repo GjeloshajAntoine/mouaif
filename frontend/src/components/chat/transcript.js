@@ -38,7 +38,8 @@ import {
   renderWriteFileToolResult
 } from './toolRender.js';
 import { renderUsageMeta } from './usage.js';
-import { isPersistedTurnError, retryPayloadForError } from './retry.js';
+import { retryPayloadForError } from './retry.js';
+import { messageKind } from './messageKind.js';
 // agentLabel(agentName) -> string
 //
 // The role label a delegated run's system row shows. The model chooses an
@@ -2327,7 +2328,8 @@ function renderMessageRow(state, refs, m) {
   // reconcile could not find that row under its own key and rebuilt it at the
   // bottom, out of order.
   refs._lastInsertedRow = null;
-  if (m.role === 'tool' && m.phase === 'call') {
+  const kind = messageKind(m);
+  if (kind === 'tool_call') {
     // De-dup: skip a call row when a card for this tool id is already
     // on screen. Two paths need this: (1) latest-first render draws the
     // tail before the backfill, so a result whose call sits in the
@@ -2339,7 +2341,7 @@ function renderMessageRow(state, refs, m) {
       return;
     }
     appendToolCallCard({ id: m.toolCallId, name: m.name, args: m.args }, refs, true);
-} else if (m.role === 'tool' && m.phase === 'result') {
+} else if (kind === 'tool_result') {
 // A `tool_result` row carries only the result. Previews that render the
 // model's own payload need the call's arguments, so recover them from the
 // persisted call row whenever they are not on this row. `write_file`
@@ -2355,7 +2357,7 @@ id: m.toolCallId, name: m.name, ok: m.ok,
 args: recoveredArgs,
 result: m.content || ''
 }, refs);
-} else if (isPersistedTurnError(m)) {
+} else if (kind === 'error') {
 const payload = retryPayloadForError(state.messages, m);
 appendErrorCard(m.content, refs, state, {
 persist: false,
@@ -2403,7 +2405,7 @@ if (key) last._rowKey = key;
 // the loops skip. Extracted so the tail-first render and the backfill
 // share one predicate.
 function isRenderableMessage(m) {
-if (m.role === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) return false;
+if (messageKind(m) === 'assistant' && !String(m.content || '').trim() && !String(m.reasoning || '').trim()) return false;
 return true;
 }
 // OVERLAY_CARD_SELECTOR
