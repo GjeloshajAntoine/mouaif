@@ -640,7 +640,17 @@ scope: effectiveScope
   }
 
   function buildPresetGroups() {
-    const selected = presetToolSelection(preset && preset.tools);
+    // The tree starts from the preset baseline — every tool except the
+    // default-off family (group_read / group_edit), which render unchecked.
+    // The row SET is independent of the checked state, so enumerate ids with
+    // an all-on pass first (buildToolGroups still returns every row), then
+    // rebuild with the preset's real selection. `presetToolSelection` owns
+    // the default-off rule.
+    const allIds = [];
+    for (const g of buildToolGroups(toolsCatalog, mcpServers, null, new Set())) {
+      for (const t of (g.tools || [])) { if (t && t.id) allIds.push(t.id); }
+    }
+    const selected = presetToolSelection(preset && preset.tools, allIds);
     const rawGroups = buildToolGroups(toolsCatalog, mcpServers, selected, new Set());
 
     const out = rawGroups.slice();
