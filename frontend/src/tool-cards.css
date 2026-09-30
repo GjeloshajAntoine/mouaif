@@ -165,9 +165,8 @@
   border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: tool-card-spin 0.8s linear infinite;
+  animation: mouaif-spin 0.8s linear infinite;
 }
-@keyframes tool-card-spin { to { transform: rotate(360deg); } }
 
 .tool-card:where(:not(.is-expanded):not(.tool-card--authorization):not(.tool-card--ask-user):not(.tool-card--progress)) .tool-card__body { display: none; }
 /* A subagent card's body IS its delegated transcript, but it still obeys
@@ -386,8 +385,8 @@ color: var(--fg-soft);
   min-height: var(--tap);
   padding-top: 10px;
   padding-bottom: 10px;
-  /* 16px keeps iOS Safari from zooming the page on focus. Inherit the
-     app's system stack: --font-sans is not defined by the theme. */
+  /* 16px keeps iOS Safari from zooming the page on focus. Inherit so the
+     field matches the body's system stack. */
   font-family: inherit;
   font-size: 1rem;
   line-height: 1.4;

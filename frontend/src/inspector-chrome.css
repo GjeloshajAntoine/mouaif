@@ -42,48 +42,12 @@
   background: var(--surface-2);
   color: var(--fg);
 }
+/* Popover chrome is the shared `.menu-pop` (forms.css); only placement here. */
 .inspector__actions-pop {
-  position: absolute;
   right: 6px;
   top: calc(100% - 4px);
   z-index: 20;
   min-width: 200px;
-  background: var(--surface-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-md);
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.inspector__actions-pop[hidden] { display: none; }
-.inspector__actions-pop button,
-.inspector__row-menu-pop button {
-  font: inherit;
-  font-size: 0.85rem;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  color: var(--fg);
-  padding: 8px 10px;
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  min-height: var(--tap);
-}
-@media (hover: hover) {
-  .inspector__actions-pop button:hover,
-.inspector__row-menu-pop button:hover { background: var(--surface-2); }
-}
-.inspector__actions-pop button[data-danger="1"],
-.inspector__row-menu-pop button[data-danger="1"] { color: var(--danger); }
-@media (hover: hover) {
-  .inspector__actions-pop button[data-danger="1"]:hover,
-.inspector__row-menu-pop button[data-danger="1"]:hover { background: rgba(255, 138, 138, 0.12); }
-}
-.inspector__actions-pop-sep {
-  margin: 4px 0;
-  border-top: 1px solid var(--border);
 }
 .inspector__nav {
   display: flex;

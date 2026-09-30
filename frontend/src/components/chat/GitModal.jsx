@@ -220,10 +220,10 @@ function CommitMenu({ commit, busy, onAction }) {
       disabled: !!busy,
       onClick: (e) => { e.stopPropagation(); setOpen((v) => !v); }
     }, '⋯'),
-    h('div', { class: 'gm__commit-menu-pop', hidden: !open, role: 'menu', onClick: (e) => e.stopPropagation() },
+    h('div', { class: 'menu-pop gm__commit-menu-pop', hidden: !open, role: 'menu', onClick: (e) => e.stopPropagation() },
       h('button', { type: 'button', role: 'menuitem', onClick: () => pick('copy-hash') }, 'Copy hash'),
       h('button', { type: 'button', role: 'menuitem', onClick: () => pick('copy-message') }, 'Copy message'),
-      h('div', { class: 'gm__commit-menu-sep', role: 'separator' }),
+      h('div', { class: 'menu-pop__sep', role: 'separator' }),
       h('button', { type: 'button', role: 'menuitem', disabled: !!busy, onClick: () => pick('checkout') }, 'Checkout'),
       h('button', { type: 'button', role: 'menuitem', disabled: !!busy, onClick: () => pick('cherry-pick') }, 'Cherry-pick'),
       h('button', { type: 'button', role: 'menuitem', disabled: !!busy, onClick: () => pick('revert') }, 'Revert')

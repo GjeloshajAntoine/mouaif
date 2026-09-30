@@ -220,7 +220,7 @@ function TargetMenu(props) {
       onClick: (e) => { e.stopPropagation(); setOpen(!open); }
     }, '⋯'),
     h('div', {
-      class: 'inspector__row-menu-pop',
+      class: 'menu-pop inspector__row-menu-pop',
       hidden: !open,
       role: 'menu',
       onClick: (e) => e.stopPropagation()
@@ -577,7 +577,7 @@ function InspectActionsMenu(props) {
       onClick: (e) => { e.stopPropagation(); setOpen(!open); }
     }, '…'),
     h('div', {
-      class: 'inspector__actions-pop',
+      class: 'menu-pop inspector__actions-pop',
       hidden: !open,
       role: 'menu',
       onClick: (e) => e.stopPropagation()
@@ -585,7 +585,7 @@ function InspectActionsMenu(props) {
       h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onReload(); } }, 'Reload'),
       h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onOpenInNewTab(); } }, 'Open in new tab'),
       h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onShowAll(); } }, 'Show all panels'),
-      h('div', { class: 'inspector__actions-pop-sep' }),
+      h('div', { class: 'menu-pop__sep', role: 'separator' }),
       h('button', { type: 'button', role: 'menuitem', 'data-danger': '1', onClick: () => { setOpen(false); props.onClose(); } }, 'Close tab')
     )
   );

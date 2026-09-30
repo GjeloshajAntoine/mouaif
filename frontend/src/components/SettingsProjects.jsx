@@ -24,7 +24,7 @@ type: 'button',
 onClick: (e) => { e.stopPropagation(); setOpen(!open); }
 }, '⋯'),
 h('div', {
-class: 'sprojects__menu-pop',
+class: 'menu-pop sprojects__menu-pop',
 hidden: !open,
 role: 'menu',
 onClick: e => e.stopPropagation()

@@ -154,7 +154,7 @@ background: var(--surface-2); color: var(--fg); cursor: pointer;
 .sprojects__meta {
   color: var(--muted);
   font-size: 0.7rem;
-  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   word-break: break-all;
   line-height: 1.35;
 }

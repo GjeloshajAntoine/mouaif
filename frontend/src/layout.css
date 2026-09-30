@@ -586,7 +586,7 @@ section + .group { margin-top: 10px; }
   color: var(--muted);
 }
 .hint code {
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.85em;
   background: var(--surface-3);
   padding: 1px 5px;

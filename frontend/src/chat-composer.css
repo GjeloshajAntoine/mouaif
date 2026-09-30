@@ -1352,8 +1352,8 @@ color: var(--muted);
   height: 8px;
   margin-left: auto;
   border-radius: 50%;
-  background: var(--ok, #3fb950);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok, #3fb950) 30%, transparent);
+  background: var(--success);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--success) 30%, transparent);
 }
 
 .cli__body {
@@ -1645,8 +1645,7 @@ min-height: var(--tap);
   background: var(--success-soft);
 }
 /* Refresh icon spins while a background reload keeps the content on screen */
-.gm__iconbtn--spinning svg { animation: gm-spin 0.9s linear infinite; }
-@keyframes gm-spin { to { transform: rotate(360deg); } }
+.gm__iconbtn--spinning svg { animation: mouaif-spin 0.9s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
   .gm__iconbtn--spinning svg { animation: none; }
 }
@@ -1942,7 +1941,7 @@ min-height: var(--tap);
 padding: 4px 12px;
 border: 1px solid var(--accent);
 background: var(--accent);
-color: var(--accent-contrast, #fff);
+color: var(--on-accent);
 border-radius: var(--r-sm);
 font: inherit;
 font-size: 0.72rem;
@@ -2093,43 +2092,11 @@ transition: background 80ms ease, color 80ms ease;
   .gm__commit-menu-btn:hover { background: var(--surface-2); color: var(--fg); }
 }
 .gm__commit-menu-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Popover chrome is the shared `.menu-pop` (forms.css); only placement here. */
 .gm__commit-menu-pop {
-position: absolute;
-right: 4px;
-top: calc(100% + 2px);
-min-width: 180px;
-background: var(--surface-3);
-border: 1px solid var(--border-strong);
-border-radius: var(--r-sm);
-padding: 4px;
-display: flex;
-flex-direction: column;
-gap: 2px;
-z-index: 35;
-box-shadow: var(--shadow-md);
-}
-.gm__commit-menu-pop[hidden] { display: none !important; }
-.gm__commit-menu-pop button {
-font: inherit;
-font-size: 0.88rem;
-color: var(--fg);
-background: transparent;
-border: 0;
-text-align: left;
-padding: 5px 10px;
-min-height: var(--tap);
-border-radius: var(--r-sm);
-cursor: pointer;
-transition: background 120ms ease, color 120ms ease;
-}
-@media (hover: hover) {
-  .gm__commit-menu-pop button:hover { background: var(--surface-2); }
-}
-.gm__commit-menu-pop button:disabled { opacity: 0.45; cursor: not-allowed; }
-.gm__commit-menu-sep {
-height: 1px;
-margin: 2px;
-background: var(--border);
+  right: 4px;
+  top: calc(100% + 2px);
+  z-index: 35;
 }
 /* In-app confirm sheet layered above the Git modal for a commit's
 checkout / cherry-pick / revert actions. Reuses the .gm__overlay /

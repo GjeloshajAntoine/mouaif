@@ -97,6 +97,7 @@
   --tap-sm: 32px;
   --tap-xs: 26px;
   --tabbar-h: 44px;   /* minimum touch row; the tab bar adds the iOS inset */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   /* Radius scale — four stops, used everywhere. The codebase used to
      mix 4/5/6/8/10/12/14/18px one-offs; consolidation keeps cards,
@@ -160,7 +161,7 @@ body {
     radial-gradient(900px 420px at 50% 110%, rgba(110, 168, 254, 0.045), transparent 60%),
     var(--bg);
   color: var(--fg);
-  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font: 15px/1.45 var(--font-sans);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;

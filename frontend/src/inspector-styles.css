@@ -369,7 +369,7 @@ gap: 6px;
 min-width: 0;
 }
 .inspector__computed-source {
-font-family: var(--font-sans, system-ui, sans-serif);
+font-family: var(--font-sans);
 font-size: 0.68rem;
 color: var(--muted);
 overflow: hidden;
@@ -793,7 +793,7 @@ answers "where am I", and a `tag#id.class` label is the one string here that is
 read character by character. Slightly larger and non-uppercase, matching the
 child chips it lists. */
 font-size: 0.76rem;
-font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+font-family: var(--font-mono);
 color: var(--fg);
 background: var(--surface-2);
 border: 1px solid var(--border-strong);
@@ -875,7 +875,7 @@ height: var(--tap);
 padding: 0 12px;
 font: inherit;
 font-size: 0.74rem;
-font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+font-family: var(--font-mono);
 color: var(--fg);
 background: var(--surface-2);
 border: 1px solid var(--border-strong);
@@ -1049,7 +1049,7 @@ pushing its header to 51 px while every other rule head was 44. */
 .inspector__rule-sel {
 min-width: 0;
 flex: 1 1 auto;
-font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+font-family: var(--font-mono);
 font-size: 0.72rem;
 color: var(--accent-hi);
 overflow-wrap: anywhere;
@@ -1112,13 +1112,13 @@ cursor: pointer;
 .inspector__rule-prop.is-off { text-decoration: line-through; opacity: 0.6; }
 .inspector__rule-pname {
 flex: 0 0 auto;
-font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+font-family: var(--font-mono);
 color: var(--fg-soft);
 }
 .inspector__rule-pval {
 min-width: 0;
 flex: 1 1 auto;
-font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+font-family: var(--font-mono);
 color: var(--fg);
 text-align: right;
 /* One line, ellipsized. `overflow-wrap: anywhere` let a long value wrap to a

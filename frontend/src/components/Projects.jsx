@@ -45,7 +45,7 @@ function ProjectMenu({ project, onRename, onUnregister }) {
       onClick: (e) => { e.stopPropagation(); setOpen(!open); }
     }, '⋯'),
     h('div', {
-      class: 'project-card__menu-pop',
+      class: 'menu-pop project-card__menu-pop',
       hidden: !open,
       role: 'menu',
       onClick: e => e.stopPropagation()

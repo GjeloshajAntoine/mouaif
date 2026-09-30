@@ -183,6 +183,53 @@ select.input {
   font-size: 0.76rem;
 }
 
+/* ---- Popover menus ------------------------------------------------ */
+/* The "⋯" overflow menu. Project card, Settings → Projects, Git commit
+   row, Inspector tab actions and Inspector target row used to each ship
+   their own copy of this chrome, and the copies had drifted (two radii,
+   two item sizes, two danger treatments). Each instance now adds
+   `menu-pop` and keeps only a position + z-index rule of its own. Items
+   are plain `<button>` children; `data-danger="1"` marks a destructive
+   one; `.menu-pop__sep` is a hairline divider. */
+.menu-pop {
+  position: absolute;
+  min-width: 180px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-pop[hidden] { display: none !important; }
+.menu-pop > button {
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 6px 10px;
+  min-height: var(--tap);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
+}
+@media (hover: hover) {
+  .menu-pop > button:hover { background: var(--surface-2); }
+  .menu-pop > button[data-danger="1"]:hover { background: var(--danger-soft); }
+}
+.menu-pop > button:active { background: var(--surface-2); }
+.menu-pop > button:disabled { opacity: 0.45; cursor: not-allowed; background: transparent; }
+.menu-pop > button[data-danger="1"] { color: var(--danger); }
+.menu-pop__sep {
+  height: 1px;
+  margin: 2px;
+  background: var(--border);
+}
+
 .status {
   color: var(--muted);
   font-size: 0.74rem;

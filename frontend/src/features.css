@@ -204,6 +204,12 @@ from { opacity: 0; }
 to   { opacity: 1; }
 }
 
+/* ---- Shared spinner rotation ------------------------------------- */
+/* One full turn, used by every spinner (tool cards, Git refresh,
+  dictation). Replaces three byte-identical copies: tool-card-spin,
+  gm-spin and dictation-spin. Each caller keeps its own duration. */
+@keyframes mouaif-spin { to { transform: rotate(360deg); } }
+
 /* ---- Reduce motion ----------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {

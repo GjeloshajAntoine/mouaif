@@ -82,7 +82,7 @@
 .project-card__path {
   color: var(--muted);
   font-size: 0.7rem;
-  font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -118,44 +118,13 @@
 @media (hover: hover) {
   .project-card__menu-btn:hover, .sprojects__menu-btn:hover { background: var(--surface-2); color: var(--fg); }
 }
+/* Popover chrome is the shared `.menu-pop` (forms.css); only placement here. */
 .project-card__menu-pop,
 .sprojects__menu-pop {
-  position: absolute;
   right: 0;
   top: calc(100% + 4px);
-  min-width: 180px;
-  background: var(--surface-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-sm);
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   z-index: 35;
-  box-shadow: var(--shadow-md);
 }
-.project-card__menu-pop[hidden],
-.sprojects__menu-pop[hidden] { display: none !important; }
-.project-card__menu-pop button,
-.sprojects__menu-pop button {
-  font: inherit;
-  font-size: 0.88rem;
-  color: var(--fg);
-  background: transparent;
-  border: 0;
-  text-align: left;
-  padding: 5px 10px;
-  min-height: var(--tap);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
-}
-@media (hover: hover) {
-  .project-card__menu-pop button:hover,
-.sprojects__menu-pop button:hover { background: var(--surface-2); }
-}
-.project-card__menu-pop button[data-danger="1"],
-.sprojects__menu-pop button[data-danger="1"] { color: var(--danger); }
 
 .project-card__chats {
 /* Keep each project card compact and make this list the gesture owner.
@@ -391,7 +360,7 @@ border-left: 1px solid var(--border);
 /* ---- Picker ------------------------------------------------------- */
 
 .picker__path {
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.72rem;
   background: var(--surface-2);
   border-radius: var(--r-sm);
@@ -440,7 +409,7 @@ border-left: 1px solid var(--border);
 }
 .picker__badge {
   flex-shrink: 0;
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.66rem;
   color: var(--fg-soft);
   background: var(--surface-2);
@@ -602,7 +571,7 @@ border-left: 1px solid var(--border);
   gap: 1px;
 }
 .picker__storage-item-label {
-  font-family: ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.78rem;
   font-weight: 600;
   overflow: hidden;
