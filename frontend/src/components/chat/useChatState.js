@@ -1031,9 +1031,15 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
           if (cancelled) return;
           fetchJson('/api/tools/list?projectDir=' + encodeURIComponent(projectDir)).then((rTools) => {
             if (cancelled) return;
+            // Keep the filter that is live NOW, not the one captured when
+            // the chat loaded: the MCP cold start behind this request can
+            // take seconds, and a checkbox the user flipped in the
+            // meantime (or a used tool auto-checked by the stream) was
+            // silently reverted when the catalog landed — the tree showed
+            // the old selection while the PATCH had saved the new one.
             tools.current = {
-              catalog: rTools.status === 200 && Array.isArray(rTools.body.tools) ? rTools.body.tools : [],
-              filter: Array.isArray(c.tools) ? c.tools.slice() : null
+            catalog: rTools.status === 200 && Array.isArray(rTools.body.tools) ? rTools.body.tools : [],
+            filter: tools.current ? tools.current.filter : (Array.isArray(c.tools) ? c.tools.slice() : null)
             };
             setToolDataStamp((value) => value + 1);
             if (state._updateToolsCard) state._updateToolsCard();

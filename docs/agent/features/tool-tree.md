@@ -60,6 +60,16 @@ When a `tool_call` SSE event arrives, `markToolUsed(state, refs, name)` in `stre
 
 `state.usedTools` is reset when the chat switches.
 
+### Toggle races
+
+`toggleTool` delegates to `toggleToolGroup`, so single rows and group rows share one code path. Three rules keep a tapped checkbox from reverting:
+
+- **Derive from the live filter.** The next filter is always computed from the current `state.tools`, and the write keeps the current catalog object, so a catalog refresh landing between taps is not overwritten.
+- **The background catalog load keeps the live filter.** `/api/tools/list` can take seconds (MCP cold start). When it resolves, `useChatState` keeps `tools.current.filter` instead of restoring the filter captured at chat load — previously a checkbox flipped during that window snapped back in the tree while the PATCH had saved the new value.
+- **Known names include cached MCP rows.** The "all on" snapshot and the collapse-to-`null` check use `knownToolNames(state)`: the live catalog plus each MCP server's cached `tools` list when it has no live entries (the same fallback `buildToolGroups` renders). Snapshotting only the live catalog while a server was starting silently unchecked all its rows, and toggling one of those rows was a no-op. The collapse check compares membership, not size, so stale names in a stored list do not pin the chat. Re-enabling from the implicit all-on state stays `null`.
+
+A toggle for an unknown name does not PATCH but still re-renders the card, so a DOM checkbox the browser already flipped snaps back to the real state. PATCH ordering itself is handled by `updateChatBound` (per-chat queue + per-field tickets).
+
 ### Group expansion survives toggles
 
 The chat tools card rebuilds the tree in place on every checkbox toggle (`updateToolsCard` → `replaceChild`). To keep the currently expanded sections open instead of snapping shut, the card persists the collapse set on `state._toolTreeCollapsed` and passes it back as `initialCollapsed` on the rebuilt tree (via the `onCollapseChange` callback). `ToolTree` seeds its `collapsed` state from `initialCollapsed` when provided.

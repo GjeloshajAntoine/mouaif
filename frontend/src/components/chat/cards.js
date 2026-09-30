@@ -578,32 +578,37 @@ export function updateToolsCard(refs, state) {
 // every chip we go back to `null` so the chat record does not
 // grow stale as new tools are added to the catalog.
 export async function toggleTool(name, next, state, refs, updateChat) {
-  const cur = state.tools || { catalog: [], filter: null };
-  const catalog = cur.catalog || [];
-  if (!catalog.find((t) => t && t.name === name)) return;
-  const allNames = catalog.map((t) => t.name);
-  let nextFilter;
-  if (cur.filter == null) {
-    // First edit: snapshot the implicit "all" set, then apply
-    // the toggle. The full set minus the one the user just
-    // turned off.
-    nextFilter = allNames.filter((n) => n !== name);
-    if (next) nextFilter = allNames.slice();
-  } else {
-    const set = new Set(cur.filter);
-    if (next) set.add(name); else set.delete(name);
-    // If the explicit set covers every catalog entry, prefer
-    // `null` so the filter does not pin a chat to a stale
-    // catalog snapshot. Same idea when the set is empty — keep
-    // it as `[]` so "no tools" round-trips.
-    if (set.size === catalog.length) nextFilter = null;
-    else nextFilter = Array.from(set);
+  return toggleToolGroup([name], next, state, refs, updateChat);
+}
+
+// knownToolNames(state) -> string[]
+//
+// Every tool name the tree can show a checkbox for: the live catalog
+// plus the cached tool list of each MCP server (a stopped or
+// still-starting server has no live catalog entries yet, but
+// buildToolGroups still renders its rows from `server.tools`). The
+// "all on" snapshot and the collapse-back-to-null check must use this
+// set, not the live catalog alone: snapshotting only the live catalog
+// while a server was still starting silently unchecked every one of
+// its tools on the first tap, and toggling one of its rows was a no-op.
+function knownToolNames(state) {
+  const t = state.tools || { catalog: [], filter: null };
+  const names = new Set();
+  for (const tool of (t.catalog || [])) if (tool && tool.name) names.add(tool.name);
+  for (const server of (state.mcpServers || [])) {
+    if (!server || !server.id || !Array.isArray(server.tools)) continue;
+    const slug = server.slug || server.id;
+    // Same fallback rule as buildToolGroups: the cached list only stands
+    // in when the server has no live entries, so a stale cached name that
+    // has no row can never block the collapse back to `null`.
+    if ((t.catalog || []).some((x) => x && x.kind === 'mcp' && x.source === slug)) continue;
+    const prefix = 'mcp__' + slug + '__';
+    for (const entry of server.tools) {
+      const n = typeof entry === 'string' ? entry : (entry && entry.name);
+      if (n) names.add(n.startsWith(prefix) ? n : prefix + n);
+    }
   }
-  state.tools = { catalog, filter: nextFilter };
-  updateToolsCard(refs, state);
-  await updateChat({ tools: nextFilter == null ? null : nextFilter });
-  // updateChat already syncs state.chat from the server
-  // response, so the persisted value matches the local mirror.
+  return Array.from(names);
 }
 
 // authorizationCard(request, projectDir, chatId, refs, resume)
@@ -1029,27 +1034,44 @@ export function askUserCard(request, projectDir, chatId, refs, setChatStatus) {
 
 // toggleToolGroup(names, next, state, refs, updateChat)
 //
-// Group-row version of toggleTool: flip every named tool in one
-// state update + one PATCH. Same null/[] filter semantics as
-// toggleTool — enabling the full catalog collapses back to null.
+// Group-row version of toggleTool (toggleTool delegates here): flip
+// every named tool in one state update + one PATCH. Same null/[]
+// filter semantics as toggleTool — enabling every known tool
+// collapses back to null.
+//
+// Race notes: the filter is always derived from the CURRENT
+// `state.tools` (never a value captured before an await), and the
+// catalog object is re-read at write time, so a background catalog
+// refresh that lands between two taps keeps both the new catalog and
+// the latest selection. The PATCHes themselves are serialized by
+// updateChat (updateChatBound's per-chat queue + per-field tickets).
 export async function toggleToolGroup(names, next, state, refs, updateChat) {
   const cur = state.tools || { catalog: [], filter: null };
-  const catalog = cur.catalog || [];
-  const allNames = catalog.map((t) => t && t.name).filter(Boolean);
-  const wanted = new Set((names || []).filter((n) => allNames.includes(n)));
-  if (!wanted.size) return;
+  const allNames = knownToolNames(state);
+  const known = new Set(allNames);
+  const wanted = new Set((names || []).filter((n) => known.has(n)));
+  if (!wanted.size) {
+    // Nothing to change (e.g. the row belongs to a tool that is no
+    // longer known). Re-render anyway so a checkbox the browser already
+    // flipped snaps back to the real state instead of lying.
+    updateToolsCard(refs, state);
+    return;
+  }
   let nextFilter;
   if (cur.filter == null) {
-    nextFilter = next ? allNames.slice() : allNames.filter((n) => !wanted.has(n));
+    nextFilter = next ? null : allNames.filter((n) => !wanted.has(n));
   } else {
     const set = new Set(cur.filter);
     if (next) for (const n of wanted) set.add(n);
     else for (const n of wanted) set.delete(n);
-    nextFilter = set.size === catalog.length ? null : Array.from(set);
+    // Prefer `null` once every known tool is on, so the chat is not
+    // pinned to a stale snapshot. Compare by membership, not size: the
+    // stored list can carry names of tools that have since gone away.
+    nextFilter = allNames.every((n) => set.has(n)) ? null : Array.from(set);
   }
-  state.tools = { catalog, filter: nextFilter };
+  state.tools = Object.assign({}, state.tools || cur, { filter: nextFilter });
   updateToolsCard(refs, state);
-  await updateChat({ tools: nextFilter == null ? null : nextFilter });
+  await updateChat({ tools: nextFilter });
 }
 
 export { buildSetupCard, buildToolsCard };

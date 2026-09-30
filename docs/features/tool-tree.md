@@ -25,6 +25,8 @@ Each group row has:
 - a **count badge** (`3/5`) when partially checked
 - an **authorization segment** (`Off / Ask / Allow`) — every group carries one, MCP included: each MCP server row edits that server's override (`mcp.servers.<slug>`) while showing the *effective* mode. The compact tree does not show a separate override-reset button.
 
+Checkbox changes save immediately and stick even when you tap quickly, while MCP servers are still starting, or before the tool list has finished loading — a later catalog load never puts back an older selection.
+
 Leaf rows are individual tools. Only the checkbox is clickable — the row text is inert, so tapping a name never toggles anything accidentally. Tools that have been called in the current chat show a blue dot (`●`) and are automatically checked ("started when used").
 
 ### Project settings
