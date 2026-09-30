@@ -354,11 +354,11 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
         if (p) profile = { id: p.id, label: p.label, description: p.description, systemMessage: p.systemMessage };
       } catch { /* profile stays null; the stream would fall through too */ }
       let prompt = null;
-      // The prompt's optional `preset` (tools + agent-files) is part of
-      // the chat's effective config for this request — the same shape the
-      // stream uses (see resolveChatEffective). It only ADDS to the
-      // per-chat toggle (see prompts.effectivePresetConfig), never
-      // overrides the project's authorization gate.
+      // The prompt's optional `preset` turns agent files / skills on for
+      // this request — the same merge the stream uses (see
+      // prompts.effectivePresetConfig). Its disabled tools were already
+      // written onto `chat.tools` at attach time. It never overrides the
+      // project's authorization gate.
       //
       // Both the text and the preset come from the chat's pinned snapshot
       // (falling back to a live lookup for older chats), so this preview
@@ -699,12 +699,13 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
   }
   if (!chat) return sendJSON(res, 404, { error: 'Chat not found', id: chatId });
 
-  // The chat's effective per-chat config. A custom prompt with a `preset`
-  // (tools + agent-files) rides on the chat for THIS turn: it is merged
-  // into the per-chat tool filter and agent-files toggle (see
+  // The chat's effective per-chat config. A custom prompt's `preset` can
+  // turn agent files / skills on for THIS turn (see
   // prompts.effectivePresetConfig) without touching the persisted chat
-  // record or the project's authorization gate. Falls back to `chat`
-  // when the prompt has no preset.
+  // record or the project's authorization gate. Its disabled tools are not
+  // merged here: they were written onto `chat.tools` when the prompt was
+  // attached (chats.createChat / updateChat), so the user can re-enable
+  // them. Falls back to `chat` when the prompt has no preset.
   //
   // The preset comes from the chat's pinned snapshot, so re-attaching a
   // prompt (or editing it) never retroactively changes a chat that
@@ -1232,8 +1233,8 @@ promptSize: resolvedProfileId,
     // empty one) means "restrict to exactly these tool names". The
     // legacy fields above stay so existing API clients keep working.
     // Chat tool filter wins; otherwise all project tools are offered.
-    // `effectiveChat` folds in the prompt's preset tools (if any) the
-    // same way it feeds agent-files above.
+    // A prompt preset's disabled tools already live in `chat.tools`
+    // (written at attach time), so the filter reads the chat as is.
     enabledTools: Array.isArray(effectiveChat.tools) ? effectiveChat.tools : null,
     // Skill declarations and activation must use the same preset-resolved
     // configuration as the metadata catalog above.

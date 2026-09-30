@@ -79,9 +79,34 @@ t('project-card option only accepts true', projPrompt.showOnProjectCard === fals
   const projMergedList = prompts.listPrompts(root);
   t('listPrompts for project merges both app and project prompts', projMergedList.length === 2);
 
-  // Preset check
-  const preset = prompts.getPromptPreset(root, appPrompt.id);
-  t('getPromptPreset finds app prompt in project scope', preset === null);
+  // Preset check: a prompt created without a preset has none.
+  const found = prompts.getPrompt(root, appPrompt.id);
+  t('app prompt resolves in project scope with no preset', found && found.preset === null);
+
+  // Presets are restrictive (disabledTools) and only turn features on.
+  t('normalizePreset keeps real file-tool names',
+    JSON.stringify(prompts.normalizePreset({ disabledTools: ['read_file', 'group_edit', 'shell', 'mcp__x__y'] }))
+      === JSON.stringify({ disabledTools: ['read_file', 'group_edit', 'shell', 'mcp__x__y'] }));
+  t('normalizePreset drops family and unknown names',
+    prompts.normalizePreset({ disabledTools: ['file', 'nope'] }) === null);
+  t('normalizePreset drops false agentFiles / skills',
+    prompts.normalizePreset({ agentFiles: false, skills: false }) === null);
+  t('normalizePreset drops the legacy additive tools list',
+    JSON.stringify(prompts.normalizePreset({ tools: ['shell'], agentFiles: true })) === JSON.stringify({ agentFiles: true }));
+  t('effectivePresetConfig never turns a feature off',
+    JSON.stringify(prompts.effectivePresetConfig({ agentFiles: true, skills: true }, { agentFiles: false, skills: false })) === '{}');
+  t('effectivePresetConfig turns features on',
+    JSON.stringify(prompts.effectivePresetConfig({ agentFiles: false }, { agentFiles: true, skills: true })) === JSON.stringify({ agentFiles: true, skills: true }));
+  t('effectivePresetConfig leaves tools alone',
+    !('tools' in prompts.effectivePresetConfig({ tools: ['shell'] }, { disabledTools: ['shell'] })));
+  const allTools = prompts.presetChatTools(root, undefined, { disabledTools: ['shell', 'group_read'] });
+  t('presetChatTools expands "all tools" minus the disabled ones',
+    Array.isArray(allTools) && !allTools.includes('shell') && !allTools.includes('group_read')
+      && allTools.includes('read_file') && allTools.includes('group_edit') && allTools.includes('task'));
+  t('presetChatTools narrows an existing list',
+    JSON.stringify(prompts.presetChatTools(root, ['shell', 'task'], { disabledTools: ['shell'] })) === JSON.stringify(['task']));
+  t('presetChatTools leaves tools alone when nothing is disabled',
+    prompts.presetChatTools(root, ['shell'], { agentFiles: true }) === undefined);
 
   // Close direct settings connection before spawning server
   settings.close();

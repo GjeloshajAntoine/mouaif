@@ -22,7 +22,9 @@ import { fetchJson, activeProject } from '../api.js';
 import { ToolTree, buildToolGroups } from './ToolTree.jsx';
 import { PromptIcon, PROMPT_ICONS } from './PromptIcon.jsx';
 import { settingsLink } from './settings/projectNavigation.js';
-import { presetToolSelection, applyToolToggle } from './settings/presetTools.js';
+import {
+  presetToolSelection, applyToolToggle, presetBody, presetFromRecord, presetsEqual
+} from './settings/presetTools.js';
 import {
   PROFILE_PREFIX, readLaunchers, launcherSource, effectiveLauncher, withLauncher
 } from './settings/profileLaunchers.js';
@@ -63,30 +65,6 @@ function skillIdOf(entry) {
   if (!entry) return '';
   if (typeof entry === 'string') return entry;
   return entry.id || entry.name || '';
-}
-
-function presetsEqual(a, b) {
-  const norm = (p) => {
-    if (!p) return null;
-    // `tools: null` is the all-on baseline; a Set is an explicit allowlist.
-    const tools = p.tools instanceof Set
-      ? Array.from(p.tools).sort()
-      : (Array.isArray(p.tools) ? p.tools.slice().sort() : []);
-    const hasAny = p.tools instanceof Set || p.agentFiles || p.skills;
-    if (!hasAny) return null;
-    return { tools, agentFiles: !!p.agentFiles, skills: !!p.skills };
-  };
-  const A = norm(a);
-  const B = norm(b);
-  if (A === null && B === null) return true;
-  if (!A || !B) return false;
-  if (A.agentFiles !== B.agentFiles) return false;
-  if (A.skills !== B.skills) return false;
-  if (A.tools.length !== B.tools.length) return false;
-  for (let i = 0; i < A.tools.length; i++) {
-    if (A.tools[i] !== B.tools[i]) return false;
-  }
-  return true;
 }
 
 export function SettingsPromptsView(props) {
@@ -225,14 +203,7 @@ setPreset(snap.preset);
       dirtyRef.current = false;
       return;
     }
-    const pp = p.preset;
-    const nextPreset = (pp && (Array.isArray(pp.tools) || typeof pp.agentFiles === 'boolean' || typeof pp.skills === 'boolean'))
-    ? {
-      tools: Array.isArray(pp.tools) ? new Set(pp.tools) : null,
-      agentFiles: pp.agentFiles === true,
-      skills: pp.skills === true
-      }
-    : null;
+    const nextPreset = p.preset ? presetFromRecord(p.preset) : null;
     const itemScope = p.scope || (projectDir ? 'project' : 'app');
 const snap = {
 title: p.title || '',
@@ -262,43 +233,21 @@ if (content !== loadedSnapshot.content) return true;
     return false;
   }
 
-  function presetActive() { return !!preset; }
-  // setToolSelected / setToolsSelected — one row or a whole group.
-  //
-  // Delegates to settings/presetTools.js, which owns the all-on baseline
-  // (`tools: null`) and the first-uncheck snapshot. Both are exercised by
-  // scripts/test-preset-tools.js.
-  function setToolSelected(name, checked) {
-    setPreset((prev) => {
-      const base = prev || { tools: null, agentFiles: false, skills: false };
-      return {
-        tools: applyToolToggle({ tools: base.tools, allIds: allToolIds(), ids: [name], checked }),
-        agentFiles: !!base.agentFiles,
-        skills: !!base.skills
-      };
-    });
+  // Preset editing. The editor state is `{ disabled: Set, agentFiles,
+  // skills }` (null = nothing set); settings/presetTools.js owns the rules
+  // and is exercised by scripts/test-preset-tools.js. Every tool starts
+  // ticked; an unticked tool is saved in `disabledTools`.
+  function updatePreset(fn) {
+    setPreset((prev) => fn(prev || presetFromRecord(null)));
   }
   function setToolsSelected(names, checked) {
-    setPreset((prev) => {
-      const base = prev || { tools: null, agentFiles: false, skills: false };
-      return {
-        tools: applyToolToggle({ tools: base.tools, allIds: allToolIds(), ids: names, checked }),
-        agentFiles: !!base.agentFiles,
-        skills: !!base.skills
-      };
-    });
+    updatePreset((base) => Object.assign({}, base, { disabled: applyToolToggle({ disabled: base.disabled, ids: names, checked }) }));
   }
   function setAgentFiles(checked) {
-    setPreset((prev) => {
-      const base = prev || { tools: null, agentFiles: false, skills: false };
-      return { tools: base.tools, agentFiles: !!checked, skills: !!base.skills };
-    });
+    updatePreset((base) => Object.assign({}, base, { agentFiles: !!checked }));
   }
   function setSkills(checked) {
-    setPreset((prev) => {
-      const base = prev || { tools: null, agentFiles: false, skills: false };
-      return { tools: base.tools, agentFiles: !!base.agentFiles, skills: !!checked };
-    });
+    updatePreset((base) => Object.assign({}, base, { skills: !!checked }));
   }
 
   useEffect(() => { loadPrompts(); }, [projectDir]);
@@ -480,22 +429,9 @@ showOnProjectCard,
 content: c
 };
 
-    if (presetActive()) {
-    const p = preset;
-    // `tools: null` is the all-on baseline — it grants nothing specific, so
-    // it must not be persisted as a tool list. The preset still survives on
-    // the strength of agentFiles / skills; if none of the three is set,
-    // `normalizePreset()` collapses it to "no preset", which is correct:
-    // a chat already has every tool.
-    const hasAny = (p.tools instanceof Set) || p.agentFiles || p.skills;
-    body.preset = hasAny ? {
-      tools: p.tools instanceof Set ? Array.from(p.tools) : undefined,
-      agentFiles: p.agentFiles === true,
-      skills: p.skills === true
-    } : null;
-    } else {
-    body.preset = null;
-    }
+    // Unticked tools -> `disabledTools`; agent files / skills only when
+    // ticked (a preset turns them on, never off). Nothing set -> null.
+    body.preset = presetBody(preset);
 
     const url = isNew
       ? '/api/prompts'
@@ -623,34 +559,17 @@ scope: effectiveScope
 
   // buildPresetGroups() -> ToolTree groups
   //
-  // The selection rule (empty set = all on) lives in settings/presetTools.js
-  // so it is unit-tested; see scripts/test-preset-tools.js.
-  //
-  // allToolIds() -> string[] — every tool id currently rendered, used to
-  // snapshot the implicit all-on set the first time a preset tool is
-  // unchecked (the same move the chat Tools card makes).
-  function allToolIds() {
-    const ids = [];
-    for (const g of groups) {
-      for (const t of (g.tools || [])) {
-        if (t && t.id) ids.push(t.id);
-      }
-    }
-    return ids;
-  }
-
+  // The selection rule lives in settings/presetTools.js so it is
+  // unit-tested; see scripts/test-preset-tools.js.
   function buildPresetGroups() {
-    // The tree starts from the preset baseline — every tool except the
-    // default-off family (group_read / group_edit), which render unchecked.
-    // The row SET is independent of the checked state, so enumerate ids with
-    // an all-on pass first (buildToolGroups still returns every row), then
-    // rebuild with the preset's real selection. `presetToolSelection` owns
-    // the default-off rule.
+    // Every tool is ticked unless the preset disables it. The row SET is
+    // independent of the checked state, so enumerate ids with an all-on
+    // pass first, then rebuild with the preset's selection.
     const allIds = [];
     for (const g of buildToolGroups(toolsCatalog, mcpServers, null, new Set())) {
       for (const t of (g.tools || [])) { if (t && t.id) allIds.push(t.id); }
     }
-    const selected = presetToolSelection(preset && preset.tools, allIds);
+    const selected = presetToolSelection(preset && preset.disabled, allIds);
     const rawGroups = buildToolGroups(toolsCatalog, mcpServers, selected, new Set());
 
     const out = rawGroups.slice();
@@ -702,7 +621,7 @@ scope: effectiveScope
   function handlePresetToggleTool(groupId, toolId, checked) {
     if (groupId === 'agent-files') { setAgentFiles(checked); return; }
     if (groupId === 'skills') { setSkills(checked); return; }
-    setToolSelected(toolId, checked);
+    setToolsSelected([toolId], checked);
   }
 
   const groups = useMemo(() => dataLoaded ? buildPresetGroups() : [], [
@@ -992,10 +911,13 @@ h('label', { class: 'label', for: 'spe-content' }, 'Prompt content'),
       ),
 
       // ---- Prompt preset --------------------------------------------
-      // Always visible. `preset === null` renders as the all-on baseline,
-      // which saves as "no preset", so there is no separate on/off switch.
+      // Always visible. Every tool starts ticked; an unticked tool starts
+      // switched off in chats created from this prompt (the user can tick
+      // it again there). Nothing changed saves "no preset".
       isBuiltin ? null : h('div', { class: 'row prompts__preset' },
         h('span', { class: 'label prompt-label' }, 'Chat preset'),
+        h('p', { class: 'hint prompts__preset-hint' },
+          'Unticked tools start off in new chats with this prompt. You can turn them back on in the chat.'),
         dataLoaded
           ? h(ToolTree, {
               groups,

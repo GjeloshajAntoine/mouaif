@@ -256,6 +256,7 @@ function harness(globals) {
   const h = harness({
     nav() {}, Fragment: 'fragment', ToolTree: 'tree', PromptIcon: 'icon',
     PROMPT_ICONS: [], buildToolGroups: () => [], presetToolSelection: () => null, applyToolToggle: (s) => s,
+    presetBody: () => null, presetFromRecord: () => ({ disabled: new Set(), agentFiles: false, skills: false }), presetsEqual: () => true,
     PROFILE_PREFIX: 'profile:',
     readLaunchers: () => ({}), launcherSource: () => '', effectiveLauncher: (l) => l || {}, withLauncher: (l) => l,
     activeProject: { value: { dir: '' } },

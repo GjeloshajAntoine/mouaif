@@ -958,3 +958,4 @@ textarea#projectEditor {
   border-top: 1px solid var(--border);
 }
 .afp__foot .afp__up { margin-right: auto; }
+.prompts__preset-hint { margin: 0 0 4px; }

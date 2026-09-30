@@ -21,20 +21,19 @@
 //                                            // would have to be prepended
 //                                            // before the transcript, which
 //                                            // is not the intended use.
-//     preset:    { tools?: ['shell','file',...],
-//                  agentFiles?: boolean,
-//                  skills?: boolean },       // OPTIONAL chat preset: when a
-//                                            // chat references this prompt,
-//                                            // these tool + agent-file
-//                                            // settings apply to that chat.
-//                                            // See server-handlers-chats.js
-//                                            // resolveChatPreset. The preset
-//                                            // only *enables* a tool via the
-//                                            // per-chat allowlist and turns
-//                                            // agent files / skills on — it
-//                                            // never overrides the project's
-//                                            // authorization gate (off stays
-//                                            // off).
+//     preset:    { disabledTools?: ['shell','group_edit',...],
+//                  agentFiles?: true,
+//                  skills?: true },          // OPTIONAL chat preset. The
+//                                            // listed tools start switched
+//                                            // off in a chat created from
+//                                            // this prompt (the user can
+//                                            // tick them again in the chat);
+//                                            // agentFiles / skills turn those
+//                                            // features on. See
+//                                            // presetChatTools and
+//                                            // effectivePresetConfig. The
+//                                            // project's authorization gate
+//                                            // stays authoritative.
 //     createdAt: '2026-07-15T12:00Z',
 //     updatedAt: '2026-07-15T12:00Z'
 //   }
@@ -42,7 +41,8 @@
 // Each chat can reference a prompt via its `promptId` field (see chats.js).
 // At stream time, the server prepends the prompt as a `system` message
 // before the user message. If the prompt carries a `preset`, the chat's
-// tool / agent-file settings also pick it up (see below).
+// tool list is restricted when it is attached, and agent files / skills
+// are turned on at stream time (see below).
 const crypto = require('crypto');
 const settings = require('./settings.js');
 
@@ -62,57 +62,48 @@ const PROMPT_ICONS = new Set(['sparkles', 'code', 'search', 'pencil', 'bug', 'bo
 function normalizeIcon(icon) {
 return typeof icon === 'string' && PROMPT_ICONS.has(icon) ? icon : DEFAULT_ICON;
 }
-// The native tool *family* names a prompt preset may list. In addition
-// to these, MCP model-facing tool ids (e.g. `mcp__<slug>__<tool>`) are
-// accepted as-is — the same strings the chat's per-chat tool allowlist
-// stores and that the tool catalog advertises. The preset union-merges
-// them onto `chat.tools`, matching the chat's allowlist semantics.
-//
-// The preset only manipulates the per-chat allowlist — the project's
-// authorization gate (off/ask/allow for `file`, `shell`, …) stays
-// authoritative, so listing a tool here can never turn on something
-// the project turned off.
-const PRESET_TOOL_NAMES = new Set(['shell', 'file', 'subagent', 'report_progress', 'task', 'ask_user', 'webpreview', 'restart_app']);
+// Model-facing tool names a preset may disable. A preset is RESTRICTIVE:
+// `disabledTools` lists the tools a chat attached to this prompt starts
+// with switched off (see presetChatTools). The names are the same strings
+// the chat's per-chat allowlist (`chat.tools`) and the tool catalog use —
+// individual file operations (`read_file`, `group_edit`, …), native tools
+// (`shell`, `task`, …) and MCP tool ids (`mcp__<slug>__<tool>`). A family
+// name such as `file` would match nothing in the stream's exact-name
+// filter, so it is not accepted.
+const NATIVE_PRESET_TOOL_NAMES = ['shell', 'subagent', 'report_progress', 'task', 'ask_user', 'webpreview', 'restart_app'];
+function fileToolNames() {
+  try { return require('./tools/files.js').FILE_TOOL_NAMES.slice(); } catch { return []; }
+}
+const PRESET_TOOL_NAMES = new Set(NATIVE_PRESET_TOOL_NAMES.concat(fileToolNames()));
 
 // MCP tool ids in the catalog look like `mcp__<slug>__<tool>`. Anything
-// starting with this prefix is accepted as a tool name in the preset,
-// mirroring `chat.tools`.
+// starting with this prefix is accepted, mirroring `chat.tools`.
 const MCP_TOOL_PREFIX = 'mcp__';
 
-// normalizePreset(raw) -> { tools, agentFiles, skills } | null
+// normalizePreset(raw) -> { disabledTools?, agentFiles?, skills? } | null
 //
-// A preset is an OPTIONAL attachment to a prompt. It is normalized to a
-// small, stable shape:
-//   - `tools` is a de-duped array of model-facing tool names — the same
-//     names the chat's per-chat tool allowlist (`chat.tools`) stores.
-//     Native family names (shell, file, subagent, report_progress, task,
-//     ask_user) and MCP tool ids (`mcp__<slug>__<tool>`) are both
-//     accepted. Anything else is dropped. An empty array means "this
-//     preset grants no additional tools" — equivalent to omitting the
-//     field, but kept when the user explicitly cleared it.
-//   - `agentFiles` is a boolean: when true the chat referencing this
-//     prompt turns agent-file injection on.
-//   - `skills` is a boolean: when true the chat referencing this prompt
-//     turns skill injection on. Matches the per-chat `skills` toggle and
-//     the project-level `skills` lock.
-// Anything not an object, or with none of the three fields, collapses to
-// null (treated as "no preset").
+// A preset is an OPTIONAL attachment to a prompt, normalized to:
+//   - `disabledTools`: de-duped tool names (see PRESET_TOOL_NAMES) that a
+//     chat attached to this prompt starts with switched off. Unknown names
+//     are dropped. Empty -> omitted.
+//   - `agentFiles: true` / `skills: true`: the preset turns agent-file /
+//     skill injection ON for chats using the prompt. A preset only ever
+//     turns these on, so `false` is treated as "not set" and dropped —
+//     an untouched checkbox must never switch a chat's feature off.
+// The legacy `tools` allowlist (the old additive shape) is dropped: it
+// never restricted anything and its file-tool names were lost anyway.
+// A preset with nothing left collapses to null ("no preset").
 function normalizePreset(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const tools = Array.isArray(raw.tools)
-    ? Array.from(new Set(raw.tools
-        .filter((t) => typeof t === 'string' && (PRESET_TOOL_NAMES.has(t) || t.startsWith(MCP_TOOL_PREFIX)))
-        .map((t) => t)))
-    : undefined;
-  const agentFiles = typeof raw.agentFiles === 'boolean' ? raw.agentFiles : undefined;
-  const skills = typeof raw.skills === 'boolean' ? raw.skills : undefined;
-
-  if ((!tools || !tools.length) && agentFiles === undefined && skills === undefined) return null;
-  return {
-    tools: tools || undefined,
-    agentFiles,
-    skills
-  };
+  const disabledTools = Array.isArray(raw.disabledTools)
+    ? Array.from(new Set(raw.disabledTools.filter((t) => typeof t === 'string'
+      && (PRESET_TOOL_NAMES.has(t) || t.startsWith(MCP_TOOL_PREFIX)))))
+    : [];
+  const out = {};
+  if (disabledTools.length) out.disabledTools = disabledTools;
+  if (raw.agentFiles === true) out.agentFiles = true;
+  if (raw.skills === true) out.skills = true;
+  return Object.keys(out).length ? out : null;
 }
 
 function normalizePrompt(raw) {
@@ -318,37 +309,6 @@ function deletePrompt(projectDir, promptId, opts) {
   return true;
 }
 
-// getPromptPreset(projectDir, promptId) -> { tools, agentFiles } | null
-//
-// Convenience for the chat pipeline: resolves a prompt's preset without
-// callers having to reach into getPrompt()'s shape. Returns null when the
-// prompt is missing or carries no preset. Missing/corrupt project files
-// resolve to null so a bad preset never breaks the tool loop.
-function getPromptPreset(projectDir, promptId) {
-  if (!promptId) return null;
-  try {
-    const p = getPrompt(projectDir, promptId);
-    return p && p.preset ? p.preset : null;
-  } catch { return null; }
-}
-
-// effectivePresetConfig(chat, preset) -> { tools?, agentFiles?, skills? }
-//
-// Merge a prompt's preset onto a chat's own per-chat config. Returns a
-// partial update object the chat pipeline reads as the effective values.
-//
-// Tools are ADDITIVE, never downgrading: a chat with no per-chat
-// allowlist already inherits every project tool, so emitting the preset's
-// list here would silently restrict the chat to just those tools — the
-// opposite of "enable". Only when the chat already restricts its tools
-// does the preset union its list in. Absent preset fields are ignored, so
-// a preset granting only tools leaves the chat's agentFiles untouched and
-// vice-versa.
-//
-// The preset is a convenience layer over the existing per-chat settings —
-// it never relaxes the project's authorization gate (a tool the project
-// turned `off` stays off; agent files and skills silently follow the
-// project lock).
 // snapshotPrompt(projectDir, promptId) -> { title, content, role, preset? } | null
 //
 // The immutable copy of a prompt a chat pins when it is attached to one.
@@ -382,32 +342,73 @@ function resolveChatPrompt(projectDir, chat) {
   const snap = chat.promptSnapshot;
   if (snap && typeof snap.content === 'string' && snap.content.trim()) {
     const out = { content: snap.content, role: VALID_ROLES.has(snap.role) ? snap.role : 'system' };
-    if (snap.preset && typeof snap.preset === 'object') out.preset = snap.preset;
+    // Re-normalize: a snapshot pinned before presets were restrictive may
+    // carry the old `{ tools, agentFiles: false }` shape, whose `false`
+    // must not switch the chat's features off.
+    const preset = normalizePreset(snap.preset);
+    if (preset) out.preset = preset;
     return out;
   }
   if (!chat.promptId) return null;
   try {
     const p = getPrompt(projectDir, chat.promptId);
     if (!p || typeof p.content !== 'string' || !p.content.trim()) return null;
-    const out = { content: p.content, role: p.role, preset: p.preset || null };
-    return out;
+    return { content: p.content, role: p.role, preset: p.preset || null };
   } catch { return null; }
 }
 
+// effectivePresetConfig(chat, preset) -> { agentFiles?, skills? }
+//
+// The part of a preset that applies per stream turn, merged in memory onto
+// the chat (the persisted record is never modified). It can only turn
+// agent files and skills ON; the project locks (`agentFiles: false`,
+// `skills: false`) are read after the merge and still win, and a chat's
+// per-skill opt-outs (`disabledSkills`) still apply.
+//
+// Tools are NOT merged here: a preset's `disabledTools` is applied once,
+// when the prompt is attached (presetChatTools), so the user can tick a
+// tool back on in the chat's Tools card and have it stick.
 function effectivePresetConfig(chat, preset) {
   const out = {};
   if (chat && typeof chat === 'object' && preset && typeof preset === 'object') {
-    if (Array.isArray(preset.tools)) {
-      // Merge ONLY onto an existing per-chat allowlist. `chat.tools`
-      // being undefined means "all project tools" — leave it that way.
-      if (Array.isArray(chat.tools)) {
-        out.tools = Array.from(new Set(chat.tools.concat(preset.tools)));
-      }
-    }
-    if (typeof preset.agentFiles === 'boolean') out.agentFiles = preset.agentFiles;
-    if (typeof preset.skills === 'boolean') out.skills = preset.skills;
+    if (preset.agentFiles === true) out.agentFiles = true;
+    if (preset.skills === true) out.skills = true;
   }
   return out;
+}
+
+// knownToolNames(projectDir) -> string[]
+//
+// Every model-facing tool name a chat can be offered in this project: the
+// native tools, each file operation, `list_features`, and the MCP tools
+// (live or cached). Used to turn a chat's implicit "all tools" (`tools`
+// unset) into an explicit allowlist when a preset switches some off.
+function knownToolNames(projectDir) {
+  const names = NATIVE_PRESET_TOOL_NAMES.concat(['list_features'], fileToolNames());
+  if (projectDir) {
+    try {
+      for (const s of (require('./mcp.js').listComposedToolSpecs(projectDir) || [])) {
+        if (s && s.name) names.push(s.name);
+      }
+    } catch { /* no MCP tools */ }
+  }
+  return Array.from(new Set(names));
+}
+
+// presetChatTools(projectDir, chatTools, preset) -> string[] | undefined
+//
+// The per-chat tool allowlist for a chat that is being attached to a
+// prompt: its current list (or every known tool when it has none) minus
+// the preset's `disabledTools`. Returns undefined when the preset disables
+// nothing, meaning "leave `chat.tools` as it is". The result is written
+// onto the chat record, so the chat's Tools card shows those tools
+// unticked and the user can tick them again.
+function presetChatTools(projectDir, chatTools, preset) {
+  const disabled = preset && Array.isArray(preset.disabledTools) ? preset.disabledTools : [];
+  if (!disabled.length) return undefined;
+  const off = new Set(disabled);
+  const base = Array.isArray(chatTools) ? chatTools : knownToolNames(projectDir);
+  return base.filter((n) => !off.has(n));
 }
 
 module.exports = {
@@ -421,10 +422,11 @@ MCP_TOOL_PREFIX,
 normalizePreset,
   listPrompts,
   getPrompt,
-  getPromptPreset,
   snapshotPrompt,
   resolveChatPrompt,
   effectivePresetConfig,
+  knownToolNames,
+  presetChatTools,
   createPrompt,
   updatePrompt,
   deletePrompt
