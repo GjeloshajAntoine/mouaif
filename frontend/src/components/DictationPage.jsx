@@ -5,10 +5,8 @@
 //   * a big record button (the primary control, thumb-reachable);
 //   * a live timer and level meter while recording, so a silent mic is
 //     obvious before the user waits for a transcription;
-//   * a model picker + a request-shape picker, because what a model *is* and
-//     what dialect it speaks are separate facts — a self-hosted
-//     `whisper-large-v3` on an OpenAI-shaped endpoint and a Gemini model with
-//     an inline-audio endpoint behave differently and are selected separately;
+//   * a model picker with a read-only request-shape summary;
+//   * app-wide chat microphone settings, separate from the test-only hints;
 //   * optional language and vocabulary hints;
 //   * the transcript, editable in place (a transcript is a draft, not an
 //     answer), with Copy / Insert in chat / Send to chat.
@@ -655,6 +653,8 @@ function onPickModel(next) {
       h('a', { href: '#/settings', class: 'view-back', 'aria-label': 'Back to settings' }, '←'),
       h('h2', { class: 'view-title' }, 'Dictation')
     ),
+    h('p', { class: 'dictation__intro' },
+      'Choose a speech-to-text model, then try a recording. Model and chat settings save automatically for the app.'),
 
     // ---- 1. Model ---------------------------------------------------------
     h('div', { class: 'group' },
@@ -665,6 +665,7 @@ function onPickModel(next) {
       // between "where did these come from" and a named source.
       h('div', { class: 'group__title' }, 'Dictation model',
       scope ? h('span', { class: 'group__title-note' }, scope) : null),
+      h('div', { class: 'dictation__card dictation__model-card' },
       h('div', { class: 'dictation__fields' },
         h('div', { class: 'dictation__field' },
           h(ModelPickerField, {
@@ -704,78 +705,14 @@ function onPickModel(next) {
         // placeholder already says what the first step is, and repeating it in a
         // second row read as a broken control.
         selectedRow && effectiveKind
-          ? h('div', { class: 'dictation__field' },
-            h('span', { class: 'label' }, 'Sends as'),
+          ? h('div', { class: 'dictation__field dictation__field--route' },
+          h('span', { class: 'label' }, 'Sends as'),
             h('span', {
               class: 'dictation__kind-readout',
               title: kindLabel(kinds, effectiveKind) || effectiveKind
             }, kindShortLabel(effectiveKind))
           )
           : null
-      ),
-      // Per-run hints. They used to be folded behind an "Options" disclosure,
-      // which hid the live switch and the two hints behind a tap and left the
-      // row reading as a section label for the group (it had the same shape as
-      // the group titles above it). Everything here is a plain item instead:
-      // one list, no disclosure, each row a full-width touch target.
-      h('ul', { class: 'dictation__options' },
-        // Live transcription is a chat-side behaviour, and this page is
-        // where it is set because this page owns dictation settings. The
-        // switch is the control, so the whole row is one label and taps toggle
-        // it; the note says where it takes effect, so nobody waits for this
-        // page's transcript to appear word by word.
-        h('li', null,
-          h('label', { class: 'dictation__option-row', for: 'dictation-live' },
-            h('span', { class: 'dictation__option-body' },
-              h('span', { class: 'dictation__option-title' }, 'Live transcription'),
-              h('span', { class: 'dictation__option-note' },
-                'In a chat, the composer fills in as you speak instead of waiting for you to stop. This page still records and transcribes once.')
-            ),
-            h('span', { class: 'switch' },
-              h('input', {
-                id: 'dictation-live',
-                type: 'checkbox',
-                checked: live,
-                onChange: (e) => onToggleLive(!!(e.target && e.target.checked))
-              }),
-              h('span', { class: 'switch__track', 'aria-hidden': 'true' },
-                h('span', { class: 'switch__thumb' })
-              )
-            )
-          )
-        ),
-        h('li', null,
-          h('div', { class: 'dictation__option-row' },
-            h('span', { class: 'dictation__option-body' },
-              h('label', { class: 'dictation__option-title', for: 'dictation-language' }, 'Language'),
-              h('span', { class: 'dictation__option-note' },
-                'Optional. An ISO-639-1 or BCP-47 code (en, fr, de) that biases decoding instead of leaving it to guess.')
-            ),
-            h('input', {
-              class: 'input dictation__option-input',
-              id: 'dictation-language', type: 'text',
-              placeholder: 'en, fr, de…',
-              value: language,
-              onInput: (e) => setLanguage(e.target.value.slice(0, 20))
-            })
-          )
-        ),
-        h('li', null,
-          h('div', { class: 'dictation__option-row' },
-            h('span', { class: 'dictation__option-body' },
-              h('label', { class: 'dictation__option-title', for: 'dictation-prompt' }, 'Vocabulary hint'),
-              h('span', { class: 'dictation__option-note' },
-                'Optional. Names and jargon the provider should expect — the OpenAI-style prompt field.')
-            ),
-            h('input', {
-              class: 'input dictation__option-input',
-              id: 'dictation-prompt', type: 'text',
-              placeholder: 'mouaif, MediaRecorder, SSE…',
-              value: prompt,
-              onInput: (e) => setPrompt(e.target.value.slice(0, 400))
-            })
-          )
-        )
       ),
       // Where the rows came from, and the one action that can add more. The
       // live catalogs are memoized server-side for an hour, so a provider that
@@ -803,9 +740,8 @@ function onPickModel(next) {
           : null
       ),
       selectedBadge
-        ? h('p', { class: 'hint hint--compact dictation__selected-badge' },
-          selectedRow.id + ' — ' + selectedBadge)
-        : null,
+      ? h('p', { class: 'hint hint--compact dictation__selected-badge' }, selectedBadge)
+      : null,
       catalogError
         ? h('p', { class: 'hint hint--compact dictation__error' }, 'Could not read the model list: ' + catalogError)
         : null,
@@ -826,18 +762,91 @@ function onPickModel(next) {
       : null,
       !catalogBusy && !liveBusy && !models.length
         ? h('p', { class: 'hint hint--compact' }, providers.length
-          ? 'Your providers returned no usable models. Check the connection in Settings → Providers, then tap Refresh.'
-          : 'No models yet, and no provider connection to list them from. Connect a provider in Settings → Providers (or add a model to this project in .mouaif.json), then come back.')
-        : null
-    ),
+          ? 'Your providers returned no usable models. Check the connection, then tap Refresh.'
+          : 'Connect a provider or add a speech-to-text model to this project to get started.')
+          : null,
+        !catalogBusy && !liveBusy && (!models.length || liveFailures.length || catalogError)
+          ? h('a', { class: 'btn dictation__provider-link', href: '#/settings/providers' }, 'Manage providers')
+          : null
+        )
+        ),
 
-    // ---- 2. Test (speak) --------------------------------------------------
+        // ---- 2. Chat microphone ----------------------------------------------
+        h('div', { class: 'group' },
+        h('div', { class: 'group__title' }, 'Chat microphone'),
+        h('ul', { class: 'dictation__options' },
+          h('li', null,
+          h('label', { class: 'dictation__option-row', for: 'dictation-live' },
+          h('span', { class: 'dictation__option-body' },
+          h('span', { class: 'dictation__option-title' }, 'Live transcription'),
+          h('span', { class: 'dictation__option-note', id: 'dictation-live-note' },
+            'Fill the chat draft as you speak. Turn off to transcribe after you stop.')
+          ),
+          h('span', { class: 'switch' },
+          h('input', {
+            id: 'dictation-live',
+            type: 'checkbox',
+            checked: live,
+            'aria-describedby': 'dictation-live-note',
+            onChange: (e) => onToggleLive(!!(e.target && e.target.checked))
+          }),
+          h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+            h('span', { class: 'switch__thumb' })
+          )
+          )
+          )
+          )
+        )
+        ),
+
+        // ---- 3. Test (speak) --------------------------------------------------
     h('div', { class: 'group' },
       // The settings above decide what a take *does*, so they are answered
       // before the microphone is opened: a phone user picks a model once and
       // records many times, and the picker used to sit between the recording
       // and its transcript, pushing the result off the fold.
       h('div', { class: 'group__title' }, 'Test'),
+      h('p', { class: 'dictation__section-note' },
+      'Record, stop, then transcribe. This test always uses one recording; nothing is sent to a chat.'),
+      h('ul', { class: 'dictation__options dictation__options--test' },
+      h('li', null,
+      h('div', { class: 'dictation__option-row dictation__option-row--field' },
+        h('label', { class: 'dictation__option-title', for: 'dictation-language' },
+        'Language', h('span', { class: 'dictation__optional' }, 'Optional')),
+        h('input', {
+        class: 'input dictation__option-input',
+        id: 'dictation-language', type: 'text',
+        placeholder: 'Auto-detect',
+        value: language,
+        maxLength: 20,
+        autoCapitalize: 'none',
+        spellCheck: false,
+        'aria-describedby': 'dictation-language-note',
+        onInput: (e) => setLanguage(e.target.value.slice(0, 20))
+        }),
+        h('span', { class: 'dictation__option-note', id: 'dictation-language-note' },
+        'Leave blank to detect, or enter a language code: en, fr, de, en-US.')
+      )
+      ),
+      h('li', null,
+      h('div', { class: 'dictation__option-row dictation__option-row--field' },
+        h('label', { class: 'dictation__option-title', for: 'dictation-prompt' },
+        'Vocabulary hint', h('span', { class: 'dictation__optional' }, 'Optional')),
+        h('textarea', {
+        class: 'input dictation__option-input',
+        id: 'dictation-prompt',
+        rows: 2,
+        placeholder: 'mouaif, MediaRecorder, SSE…',
+        value: prompt,
+        maxLength: 400,
+        'aria-describedby': 'dictation-prompt-note',
+        onInput: (e) => setPrompt(e.target.value.slice(0, 400))
+        }),
+        h('span', { class: 'dictation__option-note', id: 'dictation-prompt-note' },
+        'Names or technical terms to recognize. Applies only to this test.')
+      )
+      )
+      ),
       h('div', { class: 'dictation__card dictation__card--recorder' },
         h('div', { class: 'dictation__clock' },
           h('span', { class: 'dictation__time', 'aria-live': 'polite' }, formatDuration(elapsedMs)),

@@ -14,11 +14,14 @@ Dictation turns speech into text using a model the user picks, and hands that te
 4. Tap **Transcribe**. The transcript appears in an editable field, and the line under it reports the run — model, size, duration, and **what it cost**.
 5. Choose what happens to it: **Copy**, **Insert in chat** (fills the newest chat's draft), **Send to chat**, or **Clear**.
 
-Optional per-run hints sit under the picker, one row each:
+The page separates saved app settings from test-only hints:
 
-- **Live transcription** — the composer microphone transcribes while you speak. On by default; off makes a chat take behave like this page (record, stop, one request).
-- **Language** — an ISO-639-1 or BCP-47 code (`en`, `fr`, `de`), passed to the provider so it biases decoding instead of guessing.
-- **Vocabulary hint** — names and jargon the provider should expect (`mouaif, MediaRecorder, SSE`).
+- **Dictation model** — one card groups the model and its provider, the read-only request route, catalog status, and **Refresh**. Empty catalogs and provider failures offer **Manage providers**, a direct link to connection settings.
+- **Chat microphone → Live transcription** — the composer microphone transcribes while you speak. On by default; off makes a chat take behave like this page (record, stop, one request). This preference and the model choice save automatically app-wide.
+- **Test → Language** — optional ISO-639-1 or BCP-47 code (`en`, `fr`, `de`, `en-US`), passed to the provider so it biases decoding. Leave the field blank (**Auto-detect**) to let the provider detect the language.
+- **Test → Vocabulary hint** — optional names and jargon the provider should expect (`mouaif, MediaRecorder, SSE`), entered in a full-width multiline field. Language and vocabulary hints apply only to this page's test; they are not saved as composer preferences.
+
+Fields use stacked labels and help text on phones, with accessible descriptions and at least 44 px touch targets. The test always records first and transcribes after stopping, regardless of the chat's live setting.
 
 ### The composer microphone
 

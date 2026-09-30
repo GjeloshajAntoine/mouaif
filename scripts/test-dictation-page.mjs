@@ -557,8 +557,10 @@ assert.equal(patch.dictation.modelId, 'gemini-2.5-flash',
   await view.settle();
   const nodes = view.render();
   const hints = all(nodes, (n) => n.tag === 'p' && buttonClass(n).includes('hint')).map((n) => n.children.join(''));
-  assert.ok(hints.some((text) => text.includes('no provider connection to list them from')),
-    'with nothing connected the copy says so: ' + JSON.stringify(hints));
+  assert.ok(hints.some((text) => text.includes('Connect a provider')),
+    'with nothing connected the copy offers a next step: ' + JSON.stringify(hints));
+  assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__provider-link')).attrs.href,
+    '#/settings/providers', 'the empty state links directly to provider setup');
   assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__refresh')), null,
     'there is nothing to refresh without a provider');
   // With no providers the live pass is skipped entirely: one catalog read.
@@ -688,8 +690,8 @@ assert.equal(patch.dictation.modelId, 'gemini-2.5-flash',
   // Settings, then the test, then the result: the model picker has to be
   // answered before a take *can* be transcribed, so it sits above the record
   // button rather than between the recording and its transcript.
-  assert.deepEqual(titles.map((t) => t.children[0]), ['Dictation model', 'Test', 'Transcript'],
-    'the page reads settings → test → transcript');
+  assert.deepEqual(titles.map((t) => t.children[0]), ['Dictation model', 'Chat microphone', 'Test', 'Transcript'],
+    'the page separates app settings from the recording test');
   assert.equal(titles[0].children[0], 'Dictation model', 'the group title is the label');
   assert.equal(
     all(nodes, (n) => n.tag === 'span' && buttonClass(n) === 'label' && String(n.children.join('')).includes('Dictation model')).length,
@@ -715,7 +717,24 @@ assert.equal(patch.dictation.modelId, 'gemini-2.5-flash',
   // Both hint fields are already visible, no tap needed.
   const languageInput = find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-language');
   assert.ok(languageInput, 'the language field is visible, not folded away');
-  assert.equal(find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-prompt').attrs.placeholder, 'mouaif, MediaRecorder, SSE…');
+  assert.equal(languageInput.attrs.placeholder, 'Auto-detect', 'blank language clearly means automatic detection');
+  assert.equal(languageInput.attrs.maxLength, 20);
+  assert.equal(languageInput.attrs.autoCapitalize, 'none', 'language codes are not capitalized by the keyboard');
+  assert.equal(languageInput.attrs.spellCheck, false);
+  const vocabularyInput = find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-prompt');
+  assert.equal(vocabularyInput.attrs.placeholder, 'mouaif, MediaRecorder, SSE…');
+  assert.equal(vocabularyInput.tag, 'textarea', 'vocabulary has room for multiple terms');
+  assert.equal(vocabularyInput.attrs.maxLength, 400);
+  for (const input of [languageInput, vocabularyInput]) {
+    assert.ok(find(nodes, (n) => n.attrs.id === input.attrs['aria-describedby']),
+      'each hint has a linked accessible description');
+  }
+  const testHints = find(nodes, (n) => buttonClass(n).includes('dictation__options--test'));
+  assert.equal(testHints.children.length, 2, 'only the per-test hints are grouped with the recording test');
+  assert.ok(find(nodes, (n) => buttonClass(n).includes('dictation__model-card')),
+    'model metadata and catalog controls share one card');
+  assert.equal(find(nodes, (n) => buttonClass(n).includes('dictation__provider-link')), null,
+    'healthy non-empty catalogs do not need a setup action');
   // The live switch is the first row, on by default — the chat composer's mic
   // reads it before it opens the microphone.
   const liveSwitch = find(nodes, (n) => n.attrs && n.attrs.id === 'dictation-live');

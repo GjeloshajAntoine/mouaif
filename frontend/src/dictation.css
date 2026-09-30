@@ -18,16 +18,56 @@
      the fold. */
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0.75rem;
   min-height: 0;
-  padding: 0 10px calc(10px + var(--safe-bottom));
+  padding: 0 0.75rem calc(0.75rem + var(--safe-bottom));
 }
+
+.dictation > .group {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.dictation .view-head { padding-inline: 0; }
+.dictation .group__title { margin-bottom: 0.5rem; }
+
+.dictation__intro,
+.dictation__section-note {
+  margin: 0;
+  color: var(--fg-soft);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.dictation__section-note { margin: 0 0.25rem 0.75rem; }
 
 .dictation__card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r);
-  padding: 12px;
+  border-radius: var(--r-md);
+  padding: 0.75rem;
+}
+
+.dictation__model-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.dictation__model-card .hint { margin: 0; }
+.dictation__provider-link { align-self: flex-start; }
+.dictation__model-card .mp__trigger {
+  min-height: var(--tap);
+  padding: 0.5rem 0.75rem;
+}
+.dictation__model-card .mp__trigger .mp__stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+.dictation__model-card .mp__trigger .mp__id { font-size: 1rem; }
+.dictation__model-card .mp__trigger .mp__provider {
+  display: block;
+  color: var(--fg-soft);
+  font-size: 0.75rem;
 }
 
 /* ---- Recorder ------------------------------------------------------- */
@@ -179,80 +219,89 @@
   font-size: 0.95rem;
 }
 
-/* ---- Model ---------------------------------------------------------- */
+/* ---- Model and settings --------------------------------------------- */
 .dictation__fields {
-display: flex;
-flex-wrap: wrap;
-gap: 10px;
-padding: 8px 10px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 .dictation__field {
-display: flex;
-flex-direction: column;
-gap: 4px;
-/* Full width on a phone: the model trigger and its read-out each need the
-whole row to stay legible at 360px. Two-up is the wider-screen layout, not
-the default — mobile first. */
-flex: 1 1 100%;
-min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
-/* The dialect the selected model will actually be sent in. A read-out, not a
-control: muted, one line, and only rendered once there is a model to report
-(see DictationPage.jsx). It inherits the input's text size so the row does not
-look like a form field that lost its border. */
+.dictation__field--route {
+  flex-direction: row;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 .dictation__kind-readout {
-font-size: 0.9rem;
-color: var(--muted-2);
+  font-size: 0.8rem;
+  color: var(--fg-soft);
 }
 
-/* Per-run hints, as a plain inset list. They used to be folded behind an
-  "Options" disclosure whose row borrowed the group-title shape (uppercase
-  label + caret) and read as a section heading rather than a control. Now
-  every setting is its own row: a 44px target, the label and its note on the
-  left, the control on the right — the same iOS-style list the rest of the
-  settings pages use. */
+/* A full-row switch for chats, stacked labels and full-width fields for the
+   test. Inputs never compete with explanatory copy for a phone's width. */
 .dictation__options {
-list-style: none;
-margin: 8px 10px 0;
-padding: 0;
-background: var(--surface);
-border: 1px solid var(--border);
-border-radius: var(--r-md);
-overflow: hidden;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
 }
+.dictation__options--test { margin-bottom: 0.75rem; }
 .dictation__options > li + li { border-top: 1px solid var(--border); }
 .dictation__option-row {
-display: flex;
-align-items: center;
-gap: 10px;
-width: 100%;
-min-height: var(--tap);
-padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0.75rem;
 }
 .dictation__option-body {
-display: flex;
-flex-direction: column;
-gap: 2px;
-flex: 1;
-min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
 }
 .dictation__option-title {
-font-size: 0.9rem;
-color: var(--fg);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--fg);
 }
 .dictation__option-note {
-font-size: 0.72rem;
-line-height: 1.35;
-color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--fg-soft);
 }
-/* The two text hints: one line each on a phone, and never wide enough to
-  squeeze the label beside them off the row. */
+.dictation__option-row--field {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+.dictation__option-row--field .dictation__option-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.dictation__optional {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--muted);
+}
 .dictation__option-input {
-flex: 0 0 42%;
-width: auto;
-min-width: 0;
-font-size: 0.85rem;
+  min-width: 0;
+  width: 100%;
+  font-size: 1rem; /* Avoid automatic zoom when focusing a field on iOS. */
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
 }
+.dictation__option-input::placeholder { color: var(--muted); }
 
 /* The catalog note: how many models, where they came from, and the refresh
    action. One row that wraps on a narrow phone (the label takes the line, the
@@ -263,7 +312,7 @@ font-size: 0.85rem;
   justify-content: space-between;
   gap: 8px;
   flex-wrap: wrap;
-  padding: 2px 10px 6px;
+  padding: 0;
 }
 
 .dictation__refresh {
@@ -297,7 +346,7 @@ font-size: 0.85rem;
    stays red (it *is* a failure) and carries the provider's own wording, so the
    eye lands on the cause first. */
 .dictation__failures {
-  padding: 2px 10px 4px;
+  overflow-wrap: anywhere;
 }
 .dictation__failures p {
   margin: 2px 0;
@@ -441,19 +490,15 @@ font-size: 0.85rem;
    "the phone layout with extra room", never a two-pane re-layout. */
 @media (min-width: 720px) {
   .dictation {
-    max-width: 680px;
+    width: 100%;
+    max-width: 42.5rem;
     margin: 0 auto;
-  }
-  /* Two fields per row once there is room for the wider of the two. */
-  .dictation__field {
-    flex: 1 1 260px;
   }
 }
 
-/* Explains why the selected model is on the list, when its name does not say
-   (a live row with audio input but a chat-model-looking id). Monospace for the
-   id so it is unambiguous which model is being described. */
+/* Capability metadata complements the model trigger without repeating a
+   potentially long model id. */
 .dictation__selected-badge {
-  font-family: var(--font-mono);
-  word-break: break-all;
+  color: var(--fg-soft);
+  overflow-wrap: anywhere;
 }
