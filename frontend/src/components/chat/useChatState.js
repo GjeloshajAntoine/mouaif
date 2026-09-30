@@ -39,10 +39,11 @@ import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.j
 import { fileOrbFromApp, FILE_ORB_DEFAULT } from './fileOrb.js';
 import { composerToolsFromApp, COMPOSER_TOOLS_DEFAULT } from './composerTools.js';
 import { createPager, recordInitialPage, shouldLoadOlder } from './pagination.js';
-import { newChatSession, ensureChatSession, emptyLiveRun } from './session.js';
+import { newChatSession, ensureChatSession, emptyLiveRun, freezeMessagesInDev } from './session.js';
 import { nextServerMessageIndex } from './msgMerge.js';
 import { costSnapshot } from './costSummary.js';
 import { skillStateFromResponse } from './skillState.js';
+import { sameCustomActions } from './tools.js';
 import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings/toolAuth.js';
 
 // ---- Types (JSDoc only; no runtime effect) --------------------------------
@@ -404,7 +405,7 @@ const kickPoll = useRef(null);
       // switch across an await (compare identities, not props).
       get session() { return session.current; },
       get messages() { return session.current.messages; },
-      set messages(v) { session.current.messages = Array.isArray(v) ? v : []; },
+      set messages(v) { session.current.messages = freezeMessagesInDev(Array.isArray(v) ? v : []); },
       get models() { return models.current; },
       set models(v) { models.current = v; },
       get liveByProvider() { return liveByProvider.current; },
@@ -482,7 +483,7 @@ state.props = { projectDir, chatId };
 state.customActions = customActions;
 state._setCustomActions = (actions) => {
 const next = Array.isArray(actions) ? actions : [];
-if (JSON.stringify(state.customActions || []) === JSON.stringify(next)) return;
+if (sameCustomActions(state.customActions || [], next)) return;
 state.customActions = next;
 setCustomActions(next);
 };
@@ -1004,7 +1005,7 @@ persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
 // Seed THIS chat's session from the first page. `cancelled` was checked
 // above, so the session on the ref is the one this load belongs to.
 const sess = session.current;
-sess.messages = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
+sess.messages = freezeMessagesInDev(rMsgs.status === 200 ? (rMsgs.body.messages || []) : []);
 state.costSnapshot = rMsgs.status === 200 ? costSnapshot(rMsgs.body) : null;
 state.attributedCost = 0;
 // Seed the backward-pagination cursor from the windowed first page. The

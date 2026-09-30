@@ -9,7 +9,7 @@
 // longer mutates shared state.
 
 import assert from 'node:assert/strict';
-import { newChatSession, ensureChatSession, chatSessionKey, emptyLiveRun } from '../frontend/src/components/chat/session.js';
+import { newChatSession, ensureChatSession, chatSessionKey, emptyLiveRun, freezeMessagesInDev } from '../frontend/src/components/chat/session.js';
 import { heldSeqs, mergeServerRows, nextServerMessageIndex } from '../frontend/src/components/chat/msgMerge.js';
 
 let passed = 0;
@@ -93,6 +93,24 @@ check('mergeServerRows is pure and drops re-delivered seqs', () => {
 check('nextServerMessageIndex follows the rows alone', () => {
   assert.equal(nextServerMessageIndex({ messages: [] }), 0);
   assert.equal(nextServerMessageIndex({ messages: [{ seq: 4 }, { role: 'user' }] }), 5);
+});
+
+check('freezeMessagesInDev is a no-op outside a Vite dev build', () => {
+  // Plain Node has no import.meta.env, so this is the production path: the
+  // same array comes back, still writable. The dev freeze itself is plain
+  // Object.freeze, which the next case pins.
+  const list = [{ role: 'user', content: 'a', ts: 't' }];
+  assert.equal(freezeMessagesInDev(list), list);
+  assert.equal(Object.isFrozen(list), false);
+  assert.equal(freezeMessagesInDev(null), null);
+});
+
+check('a frozen message array rejects an in-place push, a replacement works', () => {
+  const list = Object.freeze([{ role: 'user', content: 'a', ts: 't' }]);
+  assert.throws(() => { 'use strict'; list.push({ role: 'user', content: 'b', ts: 't' }); }, TypeError);
+  const next = list.concat([{ role: 'user', content: 'b', ts: 't' }]);
+  assert.equal(next.length, 2);
+  assert.equal(Object.isFrozen(next), false, 'concat returns a fresh, unfrozen array');
 });
 
 console.log('--- ' + passed + ' passed ---');

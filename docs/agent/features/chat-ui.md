@@ -57,6 +57,8 @@ The chat modules are plain JS with JSDoc types, and nothing checks them at build
 
 A row's kind comes from `messageKind(m)` in `messageKind.js`, which returns `'user' | 'assistant' | 'tool_call' | 'tool_result' | 'error' | 'system'`. It is computed from `role`, `phase` and the `⚠` error marker every time it is read. Nothing is stored on the row and the wire format is unchanged. `renderMessageRow`, `isRenderableMessage` and `retry.js` branch on it instead of testing role and phase themselves. A row with no more specific kind falls back to `'system'` and is drawn as a plain bubble, as before. Subagent transcripts (`tool_calls` / `tool_call_id`) are not covered by `messageKind`; they are classified where they are rendered. Tests: `scripts/test-message-kind.mjs`.
 
+`state.messages` must always be replaced, never changed in place, because `toolCallArgsIndex` (`transcript.js`) caches by array identity. In dev builds (`import.meta.env.DEV`), `freezeMessagesInDev` in `session.js` freezes every array assigned to it (the session's initial list, the first page, and the `state.messages` setter), so a stray `push` throws instead of silently leaving a stale index. Production builds skip the freeze. `state._setCustomActions` skips a re-render when the refetched list matches the held one. It compares with `sameCustomActions` in `tools.js`, which checks each action field by field and stops at the first difference, rather than calling `JSON.stringify` on both lists.
+
 ### Live runs after a reload
 
 When a chat page is reloaded while an agent run is still active on the

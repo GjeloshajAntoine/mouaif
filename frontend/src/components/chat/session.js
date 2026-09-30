@@ -69,6 +69,19 @@ import { createPager } from './pagination.js';
   * @property {Set<string>} usedTools  Tool names called in this chat (tools card).
   */
 
+// freezeMessagesInDev(list) -> list
+//
+// Dev builds only (Vite `import.meta.env.DEV`): shallow-freeze a message
+// array before it becomes `state.messages`, so an in-place push/splice
+// throws instead of silently desyncing toolCallArgsIndex (transcript.js),
+// which caches by array identity. Every legitimate path replaces the array.
+// Production (and plain Node, where `import.meta.env` is absent) returns the
+// array untouched.
+const DEV = !!(import.meta.env && import.meta.env.DEV);
+export function freezeMessagesInDev(list) {
+  return DEV && Array.isArray(list) ? Object.freeze(list) : list;
+}
+
 // chatSessionKey(projectDir, chatId) -> string
 //
 // Identity of the chat a session belongs to. The same format live.js and
@@ -99,7 +112,7 @@ export function emptyLiveRun() {
 export function newChatSession(projectDir, chatId) {
   return {
     key: chatSessionKey(projectDir, chatId),
-    messages: [],
+    messages: freezeMessagesInDev([]),
     pager: createPager(),
     transcriptNextSeq: 0,
     nextLiveSeq: 0,

@@ -69,6 +69,28 @@ if (!invocation || invocation.rest || !Array.isArray(actions)) return null;
 return actions.find((action) => action && action.id &&
 action.id.toLowerCase() === invocation.toolName.toLowerCase()) || null;
 }
+// sameCustomActions(a, b) -> bool
+//
+// True when two custom-action lists describe the same actions, so a refetch
+// can skip a re-render. The server normalizes each action (custom-actions.js)
+// and returns a fresh object per request, so reference equality alone never
+// matches; comparing the fields callers read (id, label, description, kind
+// and the kind's target) is enough, and stops at the first difference instead
+// of serializing both lists. `args` (mcp) is compared by its JSON form, since
+// it is an arbitrary object.
+const ACTION_FIELDS = ['id', 'label', 'description', 'kind', 'command', 'timeoutMs', 'serverId', 'toolName'];
+export function sameCustomActions(a, b) {
+if (a === b) return true;
+if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+for (let i = 0; i < a.length; i++) {
+const x = a[i], y = b[i];
+if (x === y) continue;
+if (!x || !y) return false;
+for (const key of ACTION_FIELDS) if (x[key] !== y[key]) return false;
+if ((x.args || y.args) && JSON.stringify(x.args || {}) !== JSON.stringify(y.args || {})) return false;
+}
+return true;
+}
 export function buildDirectMcpCall({ projectDir, chatId, callId, serverId, toolName, args }) {
 return { projectDir, chatId, callId, serverId, toolName, args: args || {} };
 }

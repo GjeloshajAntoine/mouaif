@@ -1,5 +1,5 @@
 // Regression tests for direct @ invocation parsing.
-import { buildDirectMcpCall, findCustomActionInvocation, parseAtInvocation, parseDirectRestartInvocation, parseToolArgs } from '../frontend/src/components/chat/tools.js';
+import { buildDirectMcpCall, findCustomActionInvocation, parseAtInvocation, parseDirectRestartInvocation, parseToolArgs, sameCustomActions } from '../frontend/src/components/chat/tools.js';
 
 let pass = 0;
 let fail = 0;
@@ -54,6 +54,23 @@ restart && restart.reason === 'apply the latest fix', restart);
 test('restart mention in normal prose is not direct-dispatched',
 parseDirectRestartInvocation('please use @restart_app') === null,
 parseDirectRestartInvocation('please use @restart_app'));
+
+// sameCustomActions: the cheap compare behind state._setCustomActions.
+const cli = { id: 'test', label: 'Run tests', description: '', kind: 'cli', command: 'npm test' };
+const mcp = { id: 'shot', label: 'shot', description: '', kind: 'mcp', serverId: 's', toolName: 't', args: { a: 1 } };
+test('equal action lists from separate fetches compare equal',
+sameCustomActions([cli, mcp], [{ ...cli }, { ...mcp, args: { a: 1 } }]), null);
+test('empty lists compare equal', sameCustomActions([], []), null);
+test('a changed label is a difference',
+!sameCustomActions([cli], [{ ...cli, label: 'Tests' }]), null);
+test('a changed command is a difference',
+!sameCustomActions([cli], [{ ...cli, command: 'npm run lint' }]), null);
+test('changed mcp args are a difference',
+!sameCustomActions([mcp], [{ ...mcp, args: { a: 2 } }]), null);
+test('a reordered list is a difference',
+!sameCustomActions([cli, mcp], [mcp, cli]), null);
+test('a different length is a difference',
+!sameCustomActions([cli], [cli, mcp]), null);
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
