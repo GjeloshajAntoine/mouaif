@@ -35,6 +35,10 @@ for (const from of ['projects', 'settings/projects', '']) {
 assert.equal(routeFor('#/settings/agents/new?' + agentQuery(context)).isNew, true);
 assert.equal(routeFor('#/' + agentEditorPath('new', context)).isNew, false);
 assert.equal(routeFor('#/settings/agents/%72eviewer?' + agentQuery(context)).id, 'reviewer');
+const defaultRoute = routeFor('#/' + agentEditorPath('_default', context));
+assert.equal(defaultRoute.name, 'settingsAgentEdit');
+assert.equal(defaultRoute.id, '_default');
+assert.equal(defaultRoute.isNew, false);
 const legacy = routeFor('#/settings/project/agents/reviewer?' + agentQuery(context));
 assert.equal(legacy.returnTo, 'project');
 assert.equal(legacy.chatId, context.chatId);

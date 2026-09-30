@@ -32,6 +32,29 @@ Open **Settings → Project → Agents**. The project settings list shows each a
 - **Thinking** is a dropdown of the presets for the agent's pinned model (from the model's provider-reported `thinking` descriptor) plus "Inherit chat thinking". The first row keeps the chat's level; picking a preset stores `thinkingLevel` on the agent so delegated runs use it even when the chat later changes.
 - **Delete** removes the agent. Nothing references agents, so no cleanup is needed.
 
+### Default subagent
+
+The first row under **Settings → Project → Agents** (and on the `#/settings/agents` list) is **Default subagent**. It configures the nested call used when `subagent` is called **without** an `agent` argument. It uses the same editor as a named agent, but has no name and no **Delete**:
+
+- **Instructions** — empty uses the built-in persona (shown as the placeholder): *"You are a focused subagent. Answer only the delegated task. Be concise. …"*
+- **Model**, **Thinking**, and **Tools** work exactly as on a named agent; unset values follow the chat.
+
+It is stored in `.mouaif.json` under `defaultAgent`. When every field is back to its default, the key is removed:
+
+```json
+{
+  "defaultAgent": {
+    "content": "Be terse. Cite file paths.",
+    "tools": ["read_file", "search_files"],
+    "modelId": "openai/gpt-4o-mini",
+    "providerId": "openrouter",
+    "thinkingLevel": "low"
+  }
+}
+```
+
+A model or thinking level picked on the approval card for a single run still overrides the default.
+
 ### Delegate with `subagent`
 
 The native `subagent` tool accepts an optional `agent` argument matched against the stored names:
@@ -57,6 +80,10 @@ The call card is opened before the request is made, so the server's call id is n
 | Method | Path | Body | Response |
 |---|---|---|---|
 | `POST` | `/api/tools/subagent` | `{ projectDir, chatId, task, agent?, context?, modelId?, providerId? }` | `{ ok, id, name, args, result, toolCall }`; 400 on missing task; 403 when the subagent tool is off/denied |
+| `GET` | `/api/agents/_default?projectDir=` | — | `{ agent }` — the default subagent (`isDefault`, `content`, `effectiveContent`, `builtinContent`, `tools?`, `modelId?`, `providerId?`, `thinkingLevel?`) |
+| `PATCH` | `/api/agents/_default` | `{ projectDir, content?, tools?, modelId?, providerId?, thinkingLevel? }` | `{ agent }`; `DELETE` returns 405 |
+
+`_default` can never collide with a user agent: names must start with a letter or digit.
 
 When a name is provided:
 
@@ -64,6 +91,8 @@ When a name is provided:
 - If the agent has a **tools** allowlist, the nested call is restricted to it.
 - If the agent has a **model** pin, the nested call runs on that project or live-catalog model (through its saved provider connection) instead of the chat's model.
 - Everything else is inherited from the parent: MCP surface and the authorization gate.
+
+When no name is provided, the [default subagent](#default-subagent) config applies the same way.
 
 An **unknown name returns a typed error** — no silent fallback to a generic subagent:
 

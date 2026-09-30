@@ -96,6 +96,9 @@ function toggleGroupInList(currentTools, group, checked, allChoices) {
 
 export { toggleToolInList, toggleGroupInList };
 
+// Reserved route/API id of the default subagent config (src/agents.js).
+const DEFAULT_AGENT_NAME = '_default';
+
 export function SettingsAgentsView(props) {
   const projectDir = resolveProjectDir(props);
   const context = { ...props, projectDir };
@@ -144,6 +147,15 @@ export function SettingsAgentsView(props) {
     h('section', null,
       h('p', { class: 'hint hint--compact' }, 'Subagent delegation personas, saved in the project\'s .mouaif.json. The subagent tool and @-mentions can delegate to them.'),
       h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
+      h('ul', { class: 'prompts__list', 'aria-label': 'Default subagent' },
+        h('li', { class: 'prompt-row' },
+          h('a', { class: 'prompt-row__main', href: '#/' + agentEditorPath(DEFAULT_AGENT_NAME, context) },
+            h('div', { class: 'prompt-row__title' }, 'Default subagent'),
+            h('div', { class: 'prompt-row__meta' }, 'Used when the subagent tool is called without an agent'),
+            h('div', { class: 'prompt-row__chev' }, '›')
+          )
+        )
+      ),
       h('ul', { class: 'prompts__list', 'aria-label': 'Agents' },
         agents.length === 0 ? h('li', { class: 'prompts__empty' }, 'No agents yet. Tap "Add agent" to create your first one.') : agents.map(a => {
           const bits = [];
@@ -177,6 +189,9 @@ export function SettingsAgentEditView(props) {
   // `edit=1` disambiguates an existing agent literally named "new".
   const isNew = props.isNew ?? (props.id === 'new');
   const agentName = isNew ? '' : (props.id || '');
+  // `_default` is the default subagent (used when `subagent` is called
+  // without `agent`): same editor, but no name, no delete.
+  const isDefault = !isNew && agentName === DEFAULT_AGENT_NAME;
   const projectDir = resolveProjectDir(props);
   const context = { ...props, projectDir };
   // One Back chain for the whole project drill-down: the chat it started
@@ -425,7 +440,7 @@ export function SettingsAgentEditView(props) {
     return h(Fragment, null,
       h('div', { class: 'view-head' },
         h('a', { href: backHref(context), onClick: onBack, class: 'view-back', 'aria-label': back.label }, '←'),
-        h('h2', { class: 'view-title' }, isNew ? 'Add agent' : 'Edit agent')
+        h('h2', { class: 'view-title' }, isNew ? 'Add agent' : (isDefault ? 'Default subagent' : 'Edit agent'))
       ),
       h('section', null, h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text || 'loading…'))
     );
@@ -449,12 +464,13 @@ catalog: toolsCatalog
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: backHref(context), onClick: onBack, class: 'view-back', 'aria-label': back.label }, '←'),
-      h('h2', { class: 'view-title' }, isNew ? 'Add agent' : agent.name)
+      h('h2', { class: 'view-title' }, isNew ? 'Add agent' : (isDefault ? 'Default subagent' : agent.name))
     ),
     h('section', { class: 'agent-editor' },
       h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
+      isDefault && h('p', { class: 'hint hint--compact' }, 'Used when the subagent tool (or the model) delegates without naming an agent. Every field is optional; empty fields use the built-in persona and follow the chat.'),
       h('fieldset', { class: 'agent-editor__fields', disabled: isCreating || isDeleting },
-        h('div', { class: 'row' },
+        !isDefault && h('div', { class: 'row' },
           h('label', { class: 'label', for: 'sae-name' }, 'Name'),
           h('input', {
             class: 'input', id: 'sae-name', type: 'text',
@@ -469,9 +485,11 @@ catalog: toolsCatalog
             class: 'input prompts__textarea', id: 'sae-content', rows: 6,
             value: agent.content || '',
             onInput: e => onContentInput(e.target.value),
-            placeholder: 'You are an assistant who…'
+            placeholder: isDefault ? (agent.builtinContent || '') : 'You are an assistant who…'
           }),
-          !isNew && h('p', { class: 'hint hint--compact' }, 'Saved automatically as you type.')
+          !isNew && h('p', { class: 'hint hint--compact' }, isDefault
+            ? 'Leave empty to use the built-in instructions shown above. Saved automatically as you type.'
+            : 'Saved automatically as you type.')
         ),
         h('div', { class: 'row' },
           h('span', { class: 'label' }, 'Model'),
@@ -517,7 +535,7 @@ catalog: toolsCatalog
         ),
         h('div', { class: 'row row--actions' },
           isNew && h('button', { class: 'btn btn--primary', type: 'button', onClick: create, disabled: isCreating }, 'Create'),
-          !isNew && h('button', { class: 'btn btn--danger', type: 'button', onClick: deleteAgent, disabled: isDeleting }, 'Delete'),
+          !isNew && !isDefault && h('button', { class: 'btn btn--danger', type: 'button', onClick: deleteAgent, disabled: isDeleting }, 'Delete'),
           !isNew && statusMsg.kind === 'error' && h('button', { class: 'btn', type: 'button', onClick: () => autosave.flush() }, 'Retry save'),
           h('span', { class: 'status' + (statusMsg.kind ? ' status--' + statusMsg.kind : ''), 'aria-live': 'polite' }, statusMsg.text)
         )

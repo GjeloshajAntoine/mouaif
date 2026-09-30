@@ -1508,8 +1508,17 @@ return { ok: false, content: JSON.stringify(r), result: r };
         const r = { error: { code: 'EBADINPUT', message: 'Model override must set providerId and modelId' } };
         return { ok: false, content: JSON.stringify(r), result: r };
       }
-      if (agentName) {
-        if (!callOpts || !callOpts.projectDir) {
+      // No `agent` argument: run the project's default subagent config
+      // (Settings → Project → Agents → Default subagent). Its fields are
+      // all optional; unset ones fall back to the built-in persona and
+      // the chat's model / thinking / tool surface.
+      let defaultAgent = null;
+      if (!agentName && callOpts && callOpts.projectDir) {
+        try { defaultAgent = require('./agents.js').getDefault(callOpts.projectDir); }
+        catch { defaultAgent = null; }
+      }
+      if (agentName || defaultAgent) {
+        if (agentName && (!callOpts || !callOpts.projectDir)) {
           const r = { error: { code: 'EUNKNOWN_AGENT', message: 'No project context to resolve agent "' + agentName + '"', available: [] } };
           return { ok: false, content: JSON.stringify(r), result: r };
         }
@@ -1518,9 +1527,13 @@ return { ok: false, content: JSON.stringify(r), result: r };
         let agentMod = null;
         try {
           agentMod = require('./agents.js');
-          const all = agentMod.list(callOpts.projectDir);
-          available = all.map((a) => a.name);
-          agent = all.find((a) => a.name === agentName) || null;
+          if (agentName) {
+            const all = agentMod.list(callOpts.projectDir);
+            available = all.map((a) => a.name);
+            agent = all.find((a) => a.name === agentName) || null;
+          } else {
+            agent = defaultAgent;
+          }
         } catch { /* fall through to typed error */ }
         if (!agent) {
           const r = { error: { code: 'EUNKNOWN_AGENT', message: 'Unknown agent "' + agentName + '"', available } };
@@ -1550,7 +1563,7 @@ return { ok: false, content: JSON.stringify(r), result: r };
             return { ok: false, content: JSON.stringify(r), result: r };
           }
         }
-        nestedMessages.push({ role: 'system', content: [{ type: 'text', text: agent.content, cache_control: { type: 'ephemeral' } }] });
+        nestedMessages.push({ role: 'system', content: [{ type: 'text', text: agent.isDefault ? agent.effectiveContent : agent.content, cache_control: { type: 'ephemeral' } }] });
         agentTools = Array.isArray(agent.tools) && agent.tools.length ? agent.tools : null;
         // Per-agent thinking level (optional). Applies only when no
         // explicit per-run override was chosen on the approval card.
@@ -1560,7 +1573,7 @@ return { ok: false, content: JSON.stringify(r), result: r };
       } else {
         nestedMessages.push({
           role: 'system',
-          content: [{ type: 'text', text: 'You are a focused subagent. Answer only the delegated task. Be concise. You may use the available project tools and MCP tools when they help; authorization prompts are handled by the parent chat.', cache_control: { type: 'ephemeral' } }]
+          content: [{ type: 'text', text: require('./agents.js').DEFAULT_CONTENT, cache_control: { type: 'ephemeral' } }]
         });
       }
       // Authorization-time model override. The user picked a model on

@@ -37,6 +37,13 @@ const settings = require('./settings.js');
 const MAX_BYTES = 64 * 1024;
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
+// Default subagent — the persona used when `subagent` is called without an
+// `agent` argument. Stored in .mouaif.json under `defaultAgent` with the
+// same optional fields as a named agent minus the name. `DEFAULT_NAME` can
+// never collide with a user agent: NAME_RE rejects a leading underscore.
+const DEFAULT_NAME = '_default';
+const DEFAULT_CONTENT = 'You are a focused subagent. Answer only the delegated task. Be concise. You may use the available project tools and MCP tools when they help; authorization prompts are handled by the parent chat.';
+
 function isValidName(name) {
   return typeof name === 'string' && NAME_RE.test(name);
 }
@@ -207,6 +214,53 @@ function update(projectDir, name, patch) {
   return merged;
 }
 
+// Default subagent config. `content` is '' when the built-in persona is
+// used; `effectiveContent` is what the nested call actually receives.
+function getDefault(projectDir) {
+  const project = projectDir ? settings.getProject(projectDir) : null;
+  const raw = project && project.defaultAgent && typeof project.defaultAgent === 'object' ? project.defaultAgent : {};
+  const normalized = normalizeAgent(Object.assign({}, raw, { name: 'default' }));
+  const content = normalized.content.trim() ? normalized.content : '';
+  return {
+    name: DEFAULT_NAME,
+    isDefault: true,
+    content,
+    effectiveContent: content || DEFAULT_CONTENT,
+    builtinContent: DEFAULT_CONTENT,
+    tools: normalized.tools,
+    modelId: normalized.modelId,
+    providerId: normalized.providerId,
+    thinkingLevel: normalized.thinkingLevel,
+    updatedAt: raw.updatedAt || undefined
+  };
+}
+
+function updateDefault(projectDir, patch) {
+  const current = getDefault(projectDir);
+  const has = (k) => Object.prototype.hasOwnProperty.call(patch || {}, k);
+  const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+  const next = {
+    content: has('content') ? capContent(patch.content) : current.content,
+    tools: has('tools')
+      ? (Array.isArray(patch.tools) ? patch.tools.map(String).map((s) => s.trim()).filter(Boolean) : undefined)
+      : current.tools,
+    modelId: has('modelId') ? str(patch.modelId) : current.modelId,
+    providerId: has('providerId') ? str(patch.providerId)
+      : (has('modelId') && !patch.modelId ? undefined : current.providerId),
+    thinkingLevel: has('thinkingLevel') ? str(patch.thinkingLevel) : current.thinkingLevel
+  };
+  if (next.tools && !next.tools.length) next.tools = undefined;
+  const stored = { updatedAt: new Date().toISOString() };
+  if (next.content && next.content.trim()) stored.content = next.content;
+  for (const k of ['tools', 'modelId', 'providerId', 'thinkingLevel']) {
+    if (next[k] !== undefined) stored[k] = next[k];
+  }
+  // Everything back to built-in: drop the key so .mouaif.json stays clean.
+  if (Object.keys(stored).length === 1) settings.unsetProjectKeys(projectDir, ['defaultAgent']);
+  else settings.setProject(projectDir, { defaultAgent: stored });
+  return getDefault(projectDir);
+}
+
 function remove(projectDir, name) {
   if (!isValidName(name)) return false;
   const agents = list(projectDir);
@@ -220,6 +274,10 @@ function remove(projectDir, name) {
 module.exports = {
   MAX_BYTES,
   NAME_RE,
+  DEFAULT_NAME,
+  DEFAULT_CONTENT,
+  getDefault,
+  updateDefault,
   isValidName,
   list,
   get,

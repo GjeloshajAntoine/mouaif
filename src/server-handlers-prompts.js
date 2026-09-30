@@ -165,6 +165,8 @@ async function handleFeatures(req, res, parsed) {
 //   GET    /api/agents/:name?projectDir=<abs>    -> { agent } | 404
 //   PATCH  /api/agents/:name  body: { projectDir, name?, content?, tools?, modelId? }
 //   DELETE /api/agents/:name?projectDir=<abs>
+//   GET    /api/agents/_default?projectDir=<abs> -> { agent } (default subagent)
+//   PATCH  /api/agents/_default  body: { projectDir, content?, tools?, modelId?, providerId?, thinkingLevel? }
 async function handleAgents(req, res, parsed) {
   const urlPath = parsed.pathname;
   const method = req.method;
@@ -211,6 +213,32 @@ async function handleAgents(req, res, parsed) {
       const status = e.code === 'EBADINPUT' ? 400 : 500;
       return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
     }
+  }
+
+  // GET|PATCH /api/agents/_default — the default subagent (used when
+  // `subagent` is called without `agent`). `_default` can never be a
+  // user agent name (NAME_RE rejects a leading underscore).
+  if (urlPath === '/api/agents/' + agents.DEFAULT_NAME) {
+    if (method === 'GET') {
+      if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
+      try {
+        return sendJSON(res, 200, { agent: agents.getDefault(dir) });
+      } catch (e) {
+        return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
+      }
+    }
+    if (method === 'PATCH') {
+      const body = await readJsonOr400(req, res);
+      if (!body) return;
+      const patchDir = agentDirFrom(body);
+      if (!patchDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+      try {
+        return sendJSON(res, 200, { agent: agents.updateDefault(patchDir, body || {}) });
+      } catch (e) {
+        return sendJSON(res, agentError(e), { error: e.message, code: e.code || 'INTERNAL' });
+      }
+    }
+    return sendJSON(res, 405, { error: 'Method not allowed' });
   }
 
   // GET|PATCH|DELETE /api/agents/:name

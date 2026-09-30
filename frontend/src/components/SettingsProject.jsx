@@ -1468,11 +1468,25 @@ href: '#/settings/project/output?' + projectBackQS()
           h('details', { class: 'settings-project__info' },
             h('summary', { 'aria-label': 'About agents' }, '?'),
             h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Agents are reusable sub-personas the main chat can delegate to. Each has its own name, instructions, an optional model override, and an optional tool allowlist (no allowlist = all tools). Tap an agent to edit it; edits save automatically.')
+              h('p', null, 'Agents are reusable sub-personas the main chat can delegate to. Each has its own name, instructions, an optional model override, and an optional tool allowlist (no allowlist = all tools). Tap an agent to edit it; edits save automatically. Default subagent configures the persona, model, thinking, and tools used when the subagent tool is called without naming an agent.')
             )
           )
         ),
         h('div', { class: 'settings-project__agents' },
+          h('ul', { class: 'settings-project__agents-list' },
+            h('li', null,
+              h('a', {
+                class: 'group__row settings-project__agent-link',
+                // `_default` = the default subagent config (src/agents.js).
+                href: '#/' + agentEditorPath('_default', { projectDir: dir(), from, chatId: chatId(), returnTo: 'project' }),
+                'aria-label': 'Configure default subagent'
+              },
+                h('span', { class: 'group__row-label' }, 'Default subagent'),
+                h('span', { class: 'group__row-detail' }, 'fallback'),
+                h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+              )
+            )
+          ),
           agentPresets.length > 0 && h('ul', { class: 'settings-project__agents-list' },
             agentPresets.map(a => h('li', { key: a.name },
               h('a', {

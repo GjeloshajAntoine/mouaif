@@ -161,4 +161,22 @@ ok(!agents.isValidName('x'.repeat(65)), 'too long invalid');
   passed++;
 }
 
+// ---- Default subagent ----------------------------------------------------
+{
+  const dir = tmpProject();
+  const d0 = agents.getDefault(dir);
+  ok(d0.isDefault && d0.name === '_default', 'getDefault returns the reserved default');
+  ok(d0.content === '' && d0.effectiveContent === agents.DEFAULT_CONTENT, 'unconfigured default uses built-in persona');
+  ok(!agents.isValidName(agents.DEFAULT_NAME), 'default name can never be a user agent');
+  const d1 = agents.updateDefault(dir, { content: 'Be terse.', tools: ['read_file'], modelId: 'm', providerId: 'openrouter', thinkingLevel: 'low' });
+  ok(d1.effectiveContent === 'Be terse.' && d1.tools[0] === 'read_file', 'updateDefault stores content + tools');
+  ok(d1.modelId === 'm' && d1.providerId === 'openrouter' && d1.thinkingLevel === 'low', 'updateDefault stores model + thinking');
+  ok(readProject(dir).defaultAgent.content === 'Be terse.', 'default persisted under defaultAgent');
+  ok(agents.list(dir).length === 0, 'default is not listed as a named agent');
+  const d2 = agents.updateDefault(dir, { modelId: '' });
+  ok(d2.modelId === undefined && d2.providerId === undefined, 'clearing modelId clears providerId');
+  agents.updateDefault(dir, { content: '', tools: [], thinkingLevel: '' });
+  ok(!('defaultAgent' in readProject(dir)), 'reset-to-builtin drops the defaultAgent key');
+}
+
 console.log('test-agents: ' + passed + ' assertions passed');

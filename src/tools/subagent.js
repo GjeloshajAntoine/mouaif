@@ -10,7 +10,7 @@
 
 const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call. The subagent can use the project tools and MCP tools, with normal authorization prompts. You may call subagent multiple times in a single turn; same-turn subagent calls run in parallel.';
 
-const AGENT_DESCRIPTION = 'Optional project agent name (from Settings → Project → Agents) to use for this delegation.';
+const AGENT_DESCRIPTION = 'Optional project agent name (from Settings → Project → Agents) to use for this delegation. Omit it to use the project\'s default subagent.';
 
 const SPEC = {
   type: 'function',

@@ -122,6 +122,14 @@ async function run() {
     t('DELETE /api/agents/:name 200', del.status === 200 && del.body.ok === true, JSON.stringify(del));
     const after = await request('GET', '/api/agents' + q);
     t('list empty after delete', after.body && after.body.agents.length === 0);
+
+    // Default subagent: GET/PATCH /api/agents/_default, never deletable.
+    const d0 = await request('GET', '/api/agents/_default' + q);
+    t('GET /api/agents/_default 200', d0.status === 200 && d0.body.agent.isDefault === true, JSON.stringify(d0));
+    const d1 = await request('PATCH', '/api/agents/_default', { projectDir: root, content: 'Be terse.', thinkingLevel: 'low' });
+    t('PATCH /api/agents/_default 200', d1.status === 200 && d1.body.agent.effectiveContent === 'Be terse.' && d1.body.agent.thinkingLevel === 'low', JSON.stringify(d1));
+    const d2 = await request('DELETE', '/api/agents/_default' + q);
+    t('DELETE /api/agents/_default 405', d2.status === 405, JSON.stringify(d2));
   } finally {
     child.kill('SIGTERM');
   }
