@@ -93,24 +93,10 @@ function resolvePromptSnapshot(projectDir, opts) {
   } catch { return undefined; }
 }
 
-// presetTools(projectDir, currentTools, snapshot) -> string[] | undefined
-//
-// The tool allowlist a prompt's preset gives a chat at attach time: the
-// preset's `disabledTools` are removed from the chat's list (or from every
-// known tool when the chat has no list). undefined = leave tools alone.
-// Written once, so the user can tick a tool back on in the chat.
-function presetTools(projectDir, currentTools, snapshot) {
-  if (!snapshot || !snapshot.preset) return undefined;
-  try {
-    return require('./prompts.js').presetChatTools(projectDir, currentTools, snapshot.preset);
-  } catch { return undefined; }
-}
-
 function createChat(projectDir, opts) {
 ensureDir(projectDir);
 const resolved = settings.getResolved(projectDir);
 const defaults = defaultsForProject(resolved);
-const promptSnapshot = resolvePromptSnapshot(projectDir, opts);
 const chat = {
 id: newChatId(),
 title: (opts && typeof opts.title === 'string' && opts.title.trim()) ? opts.title.trim() : 'New chat',
@@ -125,7 +111,7 @@ promptId: opts && typeof opts.promptId === 'string' && opts.promptId ? opts.prom
 // Editing the prompt afterwards must not rewrite this chat, so the text
 // rides on the record from here on; `promptId` stays as provenance and as
 // the fallback for chats that have no snapshot.
-promptSnapshot,
+promptSnapshot: resolvePromptSnapshot(projectDir, opts),
 skills: opts && typeof opts.skills === 'boolean' ? opts.skills : undefined,
 disabledSkills: opts && Array.isArray(opts.disabledSkills) && opts.disabledSkills.length
   ? opts.disabledSkills.map((n) => String(n)).filter(Boolean)
@@ -135,9 +121,7 @@ autoRetry: opts && typeof opts.autoRetry === 'boolean' ? opts.autoRetry : undefi
 toolAuth: (opts && opts.toolAuth && typeof opts.toolAuth === 'object' && !Array.isArray(opts.toolAuth) && Object.keys(opts.toolAuth).length)
 ? opts.toolAuth
 : undefined,
-// An explicit `tools` list wins; otherwise the prompt preset's
-// `disabledTools` start switched off (docs/features/custom-prompts.md).
-tools: opts && Array.isArray(opts.tools) ? opts.tools : presetTools(projectDir, undefined, promptSnapshot)
+tools: opts && Array.isArray(opts.tools) ? opts.tools : undefined
 };
 return getChatDb().createChat(projectDir, chat);
 }
@@ -170,15 +154,6 @@ dbPatch.promptSnapshot = patch.promptSnapshot && typeof patch.promptSnapshot ===
 dbPatch.promptSnapshot = dbPatch.promptId
   ? resolvePromptSnapshot(projectDir, { promptId: dbPatch.promptId })
   : null;
-// Attaching a different prompt applies its preset's disabled tools once,
-// unless the same PATCH sets `tools` itself.
-if (dbPatch.promptSnapshot && !Object.prototype.hasOwnProperty.call(patch, 'tools')) {
-  const current = getChat(projectDir, chatId);
-  if (current && current.promptId !== dbPatch.promptId) {
-    const tools = presetTools(projectDir, current.tools, dbPatch.promptSnapshot);
-    if (tools) dbPatch.tools = tools;
-  }
-}
 }
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'providerId')) {
 dbPatch.providerId = (patch.providerId === null || patch.providerId === '') ? null : String(patch.providerId);

@@ -42,16 +42,13 @@ function resolved(projectDir, chatId) {
 // ---- attach pins the text -------------------------------------------------
 const p1 = prompts.createPrompt(root, {
   title: 'Reviewer', content: 'You review code.', scope: 'project',
-  preset: { disabledTools: ['shell'] }
+  preset: { tools: ['shell'] }
 });
 const c1 = chats.createChat(root, { promptId: p1.id });
 t('createChat pins the prompt text', c1.promptSnapshot && c1.promptSnapshot.content === 'You review code.');
 t('createChat pins the prompt title', c1.promptSnapshot && c1.promptSnapshot.title === 'Reviewer');
-t('createChat pins the preset', c1.promptSnapshot && Array.isArray(c1.promptSnapshot.preset.disabledTools)
-  && c1.promptSnapshot.preset.disabledTools.includes('shell'));
-t('createChat starts the preset\'s disabled tools off', Array.isArray(c1.tools)
-  && !c1.tools.includes('shell') && c1.tools.includes('read_file') && c1.tools.includes('group_edit'),
-  JSON.stringify(c1.tools));
+t('createChat pins the preset', c1.promptSnapshot && Array.isArray(c1.promptSnapshot.preset.tools)
+  && c1.promptSnapshot.preset.tools.includes('shell'));
 t('resolve returns the pinned text', resolved(root, c1.id).content === 'You review code.');
 
 // ---- editing the prompt does not reach the existing chat ------------------
@@ -84,7 +81,7 @@ t('deleting the prompt keeps the pinned text',
   resolved(root, c1.id) && resolved(root, c1.id).content === 'You review code.',
   JSON.stringify(resolved(root, c1.id)));
 t('deleting the prompt keeps the pinned preset',
-  resolved(root, c1.id).preset && resolved(root, c1.id).preset.disabledTools.includes('shell'));
+  resolved(root, c1.id).preset && resolved(root, c1.id).preset.tools.includes('shell'));
 
 // ---- a legacy row (no snapshot) still resolves live -----------------------
 const p2 = prompts.createPrompt(root, { title: 'Legacy', content: 'Legacy text.', scope: 'project' });

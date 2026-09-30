@@ -90,15 +90,7 @@ async function main() {
     assert.deepEqual(skillNames(on.requests[0]), ['other', 'testing']);
     assert.match(activationFeedback(on.requests[1]), /INSTRUCTIONS_testing/);
 
-    // A preset only turns skills ON: a stored `skills: false` (the old
-    // editor saved one for every untouched checkbox) must not switch off a
-    // chat that has them on.
-    const kept = await run({ skills: true, promptSnapshot: { content: 'Prompt', preset: { skills: false } } }, [activation, null]);
-    assert.equal(kept.preview.skillsEnabled, true);
-    assert.deepEqual(skillNames(kept.requests[0]), ['other', 'testing']);
-    assert.match(activationFeedback(kept.requests[1]), /INSTRUCTIONS_testing/);
-
-    const off = await run({ skills: false }, [activation, null]);
+    const off = await run({ skills: true, promptSnapshot: { content: 'Prompt', preset: { skills: false } } }, [activation, null]);
     assert.equal(off.preview.skillsEnabled, false);
     assert.deepEqual(skillNames(off.requests[0]), []);
     assert.match(activationFeedback(off.requests[1]), /ENO_SKILL/);

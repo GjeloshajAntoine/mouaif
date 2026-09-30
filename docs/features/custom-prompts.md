@@ -9,7 +9,7 @@ Custom prompts let you define reusable system messages that are prepended to eve
 
 The role is fixed to `system`: a custom prompt is always the opening system message of the turn, never an injected `user` or `assistant` message. Prepending a fake user/assistant message before the transcript would bias the conversation; if you need that, write it into the actual transcript.
 
-A prompt can additionally define a **preset** (`preset.disabledTools` + `preset.agentFiles` + `preset.skills`). Presets are chat-default packaging: a chat created from (or attached to) the prompt starts with the preset's unticked tools switched off, and with agent files / skills turned on when the preset ticks them. The user can turn a switched-off tool back on in the chat, and the project's authorization gate stays authoritative (see [Presets](#defining-a-chat-preset) below).
+A prompt can additionally define a **preset** (`preset.tools` + `preset.agentFiles` + `preset.skills`). Presets are chat-default packaging: when a chat references the prompt, those tool, agent-file, and skill settings apply to that chat. They are purely additive and never override the project's authorization gate (see [Presets](#presets) below).
 
 When a chat is attached to a prompt it pins a **snapshot** of that prompt's title, text, and preset. The chat then sends the pinned copy on every turn, so editing the prompt later never rewrites a chat that already uses it — only chats attached afterwards see the new text (see [Prompt snapshots](#prompt-snapshots) below).
 
@@ -23,7 +23,7 @@ Prompts can be managed from two locations in Settings:
 1. **Settings → App defaults → Custom prompts** (`#/settings/prompts`): Manage global custom prompts that apply across all projects.
 2. **Settings → This project → Custom prompts** (`#/settings/prompts?projectDir=...`): Manage project-specific prompts and view inherited app-wide prompts.
 
-The **Prompt** picker lists every saved prompt (with a `preset` tag for ones that carry a preset; scope badges only appear on the project screen, where the two scopes are mixed, and are omitted on the single-scope App-defaults screen) plus a `+ New prompt` entry for a blank form. Below the saved prompts, a **Built-in** section lists the four prompt-size profiles (`Very small`, `Average`, `Extensive`, `Chat`, each tagged `built-in`, plus `on card` when pinned). Picking one opens it in the same editor — see [Built-in prompts](#built-in-prompts). This means the picker is never empty even before you have saved anything. It uses an in-app, theme-matched list instead of the platform select overlay, keeping the prompt content visible and avoiding oversized native menus on mobile. On first open the picker defaults to the first saved prompt so the editor is already populated; tapping **New** starts a blank form instead. Pick a prompt to load its title, content, and preset into the editor.
+The **Prompt** picker lists every saved prompt (with a `preset` tag for ones that carry a tool/agent-file/skills preset; scope badges only appear on the project screen, where the two scopes are mixed, and are omitted on the single-scope App-defaults screen) plus a `+ New prompt` entry for a blank form. Below the saved prompts, a **Built-in** section lists the four prompt-size profiles (`Very small`, `Average`, `Extensive`, `Chat`, each tagged `built-in`, plus `on card` when pinned). Picking one opens it in the same editor — see [Built-in prompts](#built-in-prompts). This means the picker is never empty even before you have saved anything. It uses an in-app, theme-matched list instead of the platform select overlay, keeping the prompt content visible and avoiding oversized native menus on mobile. On first open the picker defaults to the first saved prompt so the editor is already populated; tapping **New** starts a blank form instead. Pick a prompt to load its title, content, and preset into the editor.
 
 - **Scope** — when creating a new prompt while a project is active, choose between **This project** and **App default**.
 - **Title** (optional) and **Prompt content** (required — **Create** / **Save** stay disabled while it is empty) are edited in place. An amber hint under the picker says when the form has changes that are not saved yet. The **Chat preset** tool tree is always shown below the content.
@@ -59,15 +59,11 @@ Older `settings/prompts/:id` URLs still resolve to the same screen with the pick
 
 When creating or editing a prompt, the **Chat preset** tree is always visible under the prompt content — there is no separate on/off switch. It uses the same controls as the rest of the settings:
 
-- the **tool tree** — the same `ToolTree` shown by the chat Tools card and Settings → Project. Native tools (`shell`, `subagent`, `report_progress`, `task`, `ask_user`, `webpreview`, `restart_app`), each file operation (`read_file`, `list_files`, `search_files`, `write_file`, `edit_file`, `group_read`, `group_edit`), and MCP server tools (`mcp__<slug>__<tool>`) are listed; the project's tool catalog drives which rows are shown. On the **app-defaults** screen there is no project to scope MCP tools to, so `GET /api/tools/list` is called without `projectDir` and returns the native catalog only — `projectDir` is optional on that route.
-- a synthetic **Agent files** group at the bottom of the tree. Tick it to turn on `AGENTS.md` / `CLAUDE.md` / `.github/copilot-instructions.md` injection (the project's `agentFileNames` setting) for every chat that uses this prompt.
-- a synthetic **Skills** group. Tick it to turn on `.agents/skills/*/SKILL.md` injection (the project's skill catalog) for every chat that uses this prompt.
+- the **tool tree** — the same `ToolTree` shown by the chat Tools card and Settings → Project. Native tools (`shell`, `file`, `subagent`, `report_progress`, `task`, `ask_user`) and MCP server tools (`mcp__<slug>__<tool>`) are both listed; the project's tool catalog drives which rows are shown. On the **app-defaults** screen there is no project to scope MCP tools to, so `GET /api/tools/list` is called without `projectDir` and returns the native catalog only — `projectDir` is optional on that route.
+- a synthetic **Agent files** group at the bottom of the tree. Toggle it to inject `AGENTS.md` / `CLAUDE.md` / `.github/copilot-instructions.md` (the project's `agentFileNames` setting) into every chat that uses this prompt.
+- a synthetic **Skills** group. Toggle it to inject `.agents/skills/*/SKILL.md` (the project's skill catalog) into every chat that uses this prompt.
 
-Tools in a preset are **restrictive**: the tree starts with every tool ticked, and each tool you untick is saved in `preset.disabledTools`. When a chat is created from the prompt (or a chat is switched to it), those tools start **switched off** in that chat — they show unticked in the chat's Tools card, and the user can tick them again there for that chat. Ticked tools are simply left as the chat already had them; a preset never grants a tool the project turned `off` (the Off/Ask/Allow gate stays authoritative). Leaving every tool ticked restricts nothing.
-
-**Agent files** and **Skills** only turn features **on**: ticking them turns injection on for chats using the prompt; leaving them unticked leaves the chat's own setting alone (it is not saved as "off"). The project's master switches (`agentFiles: false`, `skills: false`) lock the matching preset group off, just like the chat's ToolPopup does; a preset cannot override a project lock, and a chat's per-skill opt-outs still apply.
-
-Leaving every tool ticked with Agent files and Skills unticked saves no preset at all (`preset` is cleared from the prompt record). The prompt list shows a `preset` tag so the attachment is visible at a glance.
+Presets are **additive**: a chat that already inherits all project tools keeps them (the preset never restricts a chat to just its listed tools), and the project's Off/Ask/Allow gate for each tool stays authoritative — a tool the project turned `off` remains off even if a preset lists it. Because a preset can only ever *grant* tools, the tree starts from a baseline: every tool row is checked **except the grouped file operations** (`group_read` / `group_edit`), which are unchecked so a fresh preset advertises the single-file tools and leaves the batch tools opt-in. Unchecking a row records the first explicit selection from that baseline; re-checking every default-on row collapses back to it, while turning a grouped tool on stays an explicit selection (so the checked row survives a reload). A preset can never mean "no tools at all" — a chat already has every tool, so the schema has no such state (an empty `tools` list normalizes to "absent"). The project's master switches (`agentFiles: false`, `skills: false`) lock the matching preset group off, just like the chat's ToolPopup does; the preset cannot override a project lock. Leaving every default-on tool checked (grouped tools off) with Agent files and Skills off saves no preset at all (`preset` is cleared from the prompt record). The prompt list shows a short `preset: …` badge so the attachment is visible at a glance.
 
 ### Using a prompt in a chat
 
@@ -95,7 +91,7 @@ Each prompt is stored as an object:
   "content": "You are an expert code reviewer. Be thorough and constructive.",
   "role": "system",
   "preset": {
-    "disabledTools": ["shell", "group_edit", "mcp__chrome_debug__navigate"],
+    "tools": ["shell", "file", "mcp__chrome_debug__navigate"],
     "agentFiles": true,
     "skills": true
   },
@@ -108,13 +104,11 @@ The `icon` field is restricted to built-in keys (`sparkles`, `code`, `search`, `
 
 The `role` field is preserved on disk for forward-compat and hand-edits, but the editor and the validator only accept `system`. A non-system role in the file is silently coerced to `system` on read.
 
-`preset` is optional. It is normalized to `{ disabledTools?, agentFiles?, skills? }`:
+`preset` is optional. It is normalized to `{ tools?, agentFiles?, skills? }`:
 
-- `disabledTools` is a de-duped array of model-facing tool names that start switched off in chats using the prompt — native tools (`shell`, `subagent`, `report_progress`, `task`, `ask_user`, `webpreview`, `restart_app`), individual file operations (`read_file`, …, `group_edit`), and MCP tool ids (`mcp__<slug>__<tool>`). Unknown names — including the family name `file`, which matches no advertised tool — are dropped.
-- `agentFiles: true` turns agent-file injection on for chats using the prompt.
-- `skills: true` turns skill injection on for chats using the prompt.
-
-`false` values are dropped: a preset never turns a feature off. The old additive `tools` list (presets saved before they became restrictive) is dropped too — it never restricted anything, so such a preset now keeps only its `agentFiles: true` / `skills: true`. A preset with nothing left normalizes to `null` (no preset).
+- `tools` is a de-duped array of model-facing tool names — the native family names (`shell`, `file`, `subagent`, `report_progress`, `task`, `ask_user`) and MCP tool ids (`mcp__<slug>__<tool>`). Unknown entries are dropped.
+- `agentFiles` is a boolean: when `true`, the chat referencing this prompt turns agent-file injection on.
+- `skills` is a boolean: when `true`, the chat referencing this prompt turns skill injection on.
 
 ### Chat schema
 
@@ -130,8 +124,9 @@ A chat references a prompt through `promptId` and carries the pinned copy in `pr
     "content": "You are an expert code reviewer. Be thorough and constructive.",
     "role": "system",
     "preset": {
-      "disabledTools": ["shell"],
-      "agentFiles": true
+      "tools": ["shell", "file"],
+      "agentFiles": true,
+      "skills": true
     }
   }
 }
@@ -141,7 +136,7 @@ A chat references a prompt through `promptId` and carries the pinned copy in `pr
 - `promptSnapshot` is the copy the turn actually sends. It is stored as JSON in the `prompt_snapshot` column of `chat_store`, and a chat written before snapshots existed has `NULL` there — those chats resolve live by `promptId`.
 - `promptSnapshot.preset` is optional and only present when the prompt had a preset at attach time.
 
-- `tools` on the chat is its own per-chat allowlist. When the prompt's preset has `disabledTools`, attaching the prompt writes `tools` once: the chat's current list (or every tool the project offers, if it had none) minus the disabled tools. A `POST /api/chats` or `PATCH /api/chats/:id` that sets `tools` itself wins; re-sending the same `promptId` does not re-apply the preset.
+A preset whose `tools` is empty (or missing) AND whose `agentFiles` and `skills` are both absent collapses to `null` (no preset). An explicit `agentFiles: false` or `skills: false` is preserved (it sets the per-chat toggle to its off state for chats using this prompt) and is not collapsed.
 
 ### Prompt snapshots
 
@@ -165,13 +160,12 @@ Two fallbacks keep this client-safe:
 
 When the server processes `POST /api/chats/:id/messages/stream`, the chat's custom prompt is resolved through `prompts.resolveChatPrompt(projectDir, chat)`, which prefers the pinned `promptSnapshot` and falls back to a live lookup by `promptId`. The resolved content is appended to the upstream message array as a `{ role: 'system', content }` entry before `ai.streamChat` is called. The prompt is not stored in the chat transcript — it is ephemeral and only sent to the model.
 
-The preset's **tools** are applied at attach time, not per turn: `chats.createChat` and `chats.updateChat` (when `promptId` changes) write the chat's `tools` list via `prompts.presetChatTools`, so the stream's ordinary per-chat tool filter (`enabledTools`) does the rest and the chat's Tools card shows the real state. That is what lets the user tick a tool back on.
+If the resolved prompt carries a `preset` (from the snapshot, or from the live prompt on the fallback path), the chat's **effective** per-chat config for that turn also picks it up (via `prompts.effectivePresetConfig`):
 
-If the resolved prompt carries a `preset` (from the snapshot, or from the live prompt on the fallback path), the chat's **effective** config for each turn also picks up its feature switches (via `prompts.effectivePresetConfig`):
+- **Tools** (from `preset.tools`) are unioned onto the chat's own per-chat tool allowlist (`chat.tools`). A chat with **no** allowlist already inherits every project tool, so the preset deliberately does *not* replace it with just the preset's list — that would downgrade capability to "enable".
+- **Agent files** (`preset.agentFiles`) become the per-chat toggle value passed to `agentFiles.resolveEnabled`, so a preset can turn injection on for a chat.
+- **Skills** (`preset.skills`) become the per-chat value passed to `agentSkills.resolve` and the `list_features` summary, so a preset can turn skill injection on (or back on for a chat that has it explicitly off) for a chat.
 
-- **Agent files** (`preset.agentFiles: true`) turn the per-chat value passed to `agentFiles.resolveEnabled` on.
-- **Skills** (`preset.skills: true`) turn the per-chat value passed to `agentSkills.resolve` and the `list_features` summary on (even for a chat that has skills explicitly off). Per-skill opt-outs (`disabledSkills`) still apply.
-
-A preset never turns either feature off — even a snapshot pinned before this rule, which may still carry `agentFiles: false` / `skills: false`, is re-normalized when read. The merge happens **in memory only** for that request (`effectiveChat`); the persisted chat record is not modified. The project's authorization gate (`off` / `ask` / `allow` per tool, the project-level `agentFiles: false` lock, and the project-level `skills: false` lock) is read *after* the merge and stays authoritative.
+The preset is merged onto the chat record **in memory only** for that request (`effectiveChat`); the persisted chat record is never modified. The project's authorization gate (`off` / `ask` / `allow` per tool, the project-level `agentFiles: false` lock, and the project-level `skills: false` lock) is read *after* the merge and stays authoritative — a project lock overrides a preset's value.
 
 Because the preset travels with the snapshot, `GET /api/chats/:id/system-prompt` resolves it the same way and shows exactly what the next turn will send.
