@@ -16,6 +16,8 @@ The guides linked from the site navigation.
 
 One page per feature: what it does and how to use it.
 
+- [mouaif feature reference](features/mouaif-features.md) — every feature on one page, in one-line summaries, so you can hand the link to an AI agent.
+
 ### Install and access
 
 - [npm package](features/npm-package.md) — the published package, what an install contains, and the release flow.

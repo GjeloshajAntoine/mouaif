@@ -1373,7 +1373,7 @@ npx mouaif serve --auth-setup</code></pre>
 <div class="shot-row">
 ${landingShots}
 </div>
-<p><a href="features/app-abilities.html">See every app ability →</a></p>
+<p><a href="features/app-abilities.html">See every app ability →</a> · <a href="features/mouaif-features.html">Feature reference for agents →</a></p>
 </section>
 <section class="section" id="start">
 <h2>Install and run</h2>
@@ -1406,6 +1406,7 @@ mouaif serve --auth</code></pre>
 <li>Preview and inspect browser pages from the mobile-friendly Inspector.</li>
 <li>Use <strong>Draft Craft</strong> to add selected code or an annotated Inspector image to any chat draft.</li>
 <li>Control every tool with Off, Ask, or Allow permissions.</li>
+<li>Hand the full feature list to your own AI agent — <a href="features/mouaif-features.html">mouaif feature reference</a>.</li>
 </ul>
 <p><a href="features/app-abilities.html">See all app abilities and safety tips →</a></p>
 </section>
