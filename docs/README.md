@@ -140,6 +140,7 @@ Published pages about how the app is built. They are reachable by URL but not li
 - [Chat streaming performance](features/chat-streaming-performance.md) — incremental rendering while a reply streams.
 - [Memory footprint and payload size](features/memory-footprint.md) — lazy server dependencies, bounded caches, compressed assets.
 - [Chat transcript rendering](features/chat-transcript-rendering.md) — unchanged rows are reused instead of rebuilt.
+- [Chat row identity](features/chat-client-row-ids.md) — messages shown before they are saved carry an id, so the saved copy replaces them exactly.
 - [Run settle latch](features/run-settle-latch.md) — no status flicker when returning to a finished run.
 - [iOS touch scroll](features/ios-touch-scroll.md) — the transcript scrolls with a finger on iOS Safari.
 - [Flush-route scrolling](features/flush-route-scroll.md) — every settings sub-page scrolls to the bottom on a phone.

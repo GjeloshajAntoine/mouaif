@@ -198,7 +198,7 @@ function dispatchLiveEvent(ev, refs, state, key) {
   // reconcile onto this node instead of drawing a second bubble. `seq` is
   // absent when the segment produced no text (nothing was persisted).
   if (ev.eventName === 'assistant_turn_end') {
-    finalizeLiveSegment(refs, state, data && data.seq);
+    finalizeLiveSegment(refs, state, data && data.seq, data && data.clientId);
     return;
   }
   // The in-progress segment, sent once to a follower that joined mid-turn

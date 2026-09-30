@@ -579,7 +579,7 @@ if (fileToolsEnabled) {
     if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
-      const msg = messages.appendMessage(dir, id, { role: body.role, content: body.content, ts: body.ts });
+      const msg = messages.appendMessage(dir, id, { role: body.role, content: body.content, ts: body.ts, clientId: body.clientId });
       return sendJSON(res, 201, { message: msg });
     } catch (e) {
       return sendJSON(res, 400, { error: e.message });
@@ -735,7 +735,10 @@ async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) 
   // If this is the first prompt in a new/default-named chat, also
   // derive a human title from that prompt and persist it immediately.
   let userMsg;
-  try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments }); }
+  // The client's id for its unsaved user bubble; stored and echoed so the
+  // UI swaps that bubble for this row by id (docs/features/chat-client-row-ids.md).
+  const userClientId = messages.normalizeClientId(body && body.clientId) || messages.newClientId('u');
+  try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments, clientId: userClientId }); }
   catch (e) { return sendJSON(res, 400, { error: e.message }); }
   // Read the full transcript once and reuse across the title-derivation
   // check and the upstream message assembly below. Two separate
@@ -1198,10 +1201,15 @@ function accumulateRoundUsage(roundUsage) {
   // chat history (errors belong in the chat, not just in a transient
   // status line). Kept best-effort: a read-only transcript must not
   // mask the original error.
+  // Returns the row's clientId (or '' when nothing was saved) so the `error`
+  // frame can carry it and the UI's error card is keyed to the saved row.
   function persistStreamError(err) {
     try {
-      messages.appendMessage(projectDir, chatId, { role: 'system', content: formatStreamError(err) });
-    } catch { /* non-fatal */ }
+      const row = messages.appendMessage(projectDir, chatId, {
+        role: 'system', content: formatStreamError(err), clientId: messages.newClientId('e')
+      });
+      return (row && row.clientId) || '';
+    } catch { return ''; }
   }
 
   // Keep the server-side chat run alive even if the browser tab or SSE
@@ -1303,7 +1311,8 @@ promptSize: resolvedProfileId,
         role: 'assistant', content: assistantContent, reasoning: assistantReasoning, modelId: model.id,
         usage: segmentUsage,
         cost: segmentCost || undefined,
-        streamingMs: segmentStreamingMs > 0 ? segmentStreamingMs : undefined
+        streamingMs: segmentStreamingMs > 0 ? segmentStreamingMs : undefined,
+        clientId: messages.newClientId('a')
         });
         segmentRow = assistantMsg;
         if (traceStream && assistantMsg) {
@@ -1321,11 +1330,14 @@ promptSize: resolvedProfileId,
         assistantReasoning = '';
         // Emit the enriched frame (cost + usage attached) and skip the
         // generic emit below so the client never sees a cost-less copy.
+        // `clientId` names the saved segment row (absent when nothing was
+        // saved); both the owner and live followers key their bubble by it.
         emit(name, Object.assign({}, data, {
         usage: segmentUsage,
         cost: segmentCost || undefined,
         streamingMs: segmentStreamingMs > 0 ? segmentStreamingMs : undefined,
-        modelId: model.id
+        modelId: model.id,
+        clientId: segmentRow && segmentRow.clientId ? segmentRow.clientId : undefined
         }));
         return;
       } else if (name === 'tool_call') {
@@ -1497,10 +1509,13 @@ promptSize: resolvedProfileId,
               usage: persistUsage,
               cost: remainderCost,
               streamingMs: enriched.streamingMs,
-              modelId: enriched.modelId
+              modelId: enriched.modelId,
+              clientId: messages.newClientId('a')
             });
           } catch { /* non-fatal */ }
         }
+        // The saved final row's id rides `done` so the UI keys its bubble by it.
+        if (assistantMsg && assistantMsg.clientId) enriched = Object.assign({}, enriched, { clientId: assistantMsg.clientId });
         if (traceStream && assistantMsg) {
           const event = trace.eventForMessage(assistantMsg);
           trace.write(traceStream, event.type, event.payload);
@@ -1522,7 +1537,8 @@ promptSize: resolvedProfileId,
     // Capture the failure's context before resetting the completed turn.
     lastToolName = '';
     turnStartedAt = 0;
-    persistStreamError(errPayload);
+    const errClientId = persistStreamError(errPayload);
+    if (errClientId) errPayload.clientId = errClientId;
     try { emit('error', errPayload); } catch { /* socket closed */ }
     liveChat.finishLiveChat(runKey);
     sendChatPush('error', {
@@ -1552,11 +1568,13 @@ promptSize: resolvedProfileId,
           role: 'assistant',
           content: assistantContent,
           reasoning: assistantReasoning,
-          modelId: model.id
+          modelId: model.id,
+          clientId: messages.newClientId('a')
         });
       } catch { /* non-fatal */ }
     }
-    persistStreamError(errPayload);
+    const errClientId = persistStreamError(errPayload);
+    if (errClientId) errPayload.clientId = errClientId;
     emit('error', errPayload);
     const info = statusInfo({ kind: 'error', message: 'Error: ' + (errPayload.message || 'upstream error') });
     sendChatPush('error', {

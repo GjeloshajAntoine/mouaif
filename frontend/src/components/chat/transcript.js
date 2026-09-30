@@ -409,6 +409,9 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
     row.appendChild(actions);
   }
   transcriptInsert(refs, row);
+  // An unsaved row drawn with its clientId (the user bubble, a direct agent
+  // answer) is keyed now, so the saved copy — same id — reuses this node.
+  if (!isLive && typeof m.clientId === 'string' && m.clientId) row._rowKey = transcriptRowKey(m);
   if (m.role === 'assistant' && isLive) {
     row._body = body;
     row._content = m.content || '';
@@ -573,7 +576,7 @@ export function restoreLiveSegment(data, refs, state) {
 //
 // The next delta creates a fresh live row (no `data-live` node remains),
 // which is the same one-row-per-segment shape the owner stream produces.
-export function finalizeLiveSegment(refs, state, seq) {
+export function finalizeLiveSegment(refs, state, seq, clientId) {
   if (!refs.transcript.current) return;
   const liveRow = refs.transcript.current.querySelector('[data-live="1"]');
   if (!liveRow) return;
@@ -586,7 +589,11 @@ export function finalizeLiveSegment(refs, state, seq) {
   // reconciles onto this node. `seq` is absent for a segment that was never
   // persisted (no text) — then the node is simply left for the next full
   // rebuild to drop.
-  if (typeof seq === 'number' && Number.isFinite(seq)) {
+  // The saved row's clientId wins (it is what transcriptRowKey returns for
+  // that row); seq is the fallback for a server that does not send one.
+  if (typeof clientId === 'string' && clientId) {
+    liveRow._rowKey = 'cid:' + clientId;
+  } else if (typeof seq === 'number' && Number.isFinite(seq)) {
     liveRow._rowKey = 'seq:' + seq;
   }
 }
@@ -674,7 +681,13 @@ row.appendChild(actions);
 }
 transcriptInsert(refs, row);
 if (state && (!opts || opts.persist !== false)) {
-state.messages = state.messages.concat([{ role: 'system', content: message, ts: new Date().toISOString() }]);
+// A stream error the server saved carries that row's clientId, so the saved
+// copy replaces this card on the next sync. A purely local failure (network,
+// HTTP reject) has none and stays client-only.
+const errRow = { role: 'system', content: message, ts: new Date().toISOString() };
+if (opts && typeof opts.clientId === 'string' && opts.clientId) errRow.clientId = opts.clientId;
+state.messages = state.messages.concat([errRow]);
+row._rowKey = transcriptRowKey(errRow);
 }
 afterTranscriptAppend(refs, true);
 }
@@ -2756,7 +2769,9 @@ function chatTranscriptKey(state) {
 // transcriptRowKey(m) -> string | null
 //
 // Stable identity for one transcript row across passes:
-//   - a persisted row is identified by its `seq`; the message store is
+//   - a row with a `clientId` is identified by it, saved or not (see
+//     docs/features/chat-client-row-ids.md);
+//   - a legacy persisted row is identified by its `seq`; the message store is
 //     append-only, so a given seq's content never changes and reusing the
 //     node is always correct;
 //   - a tool row pairs its call id with its phase, because a call and its
@@ -2766,6 +2781,10 @@ function chatTranscriptKey(state) {
 //     because mergeServerRows keeps untouched rows by reference.
 export function transcriptRowKey(m) {
   if (!m || typeof m !== 'object') return null;
+  // A row with a clientId keeps ONE key from the moment it is drawn unsaved
+  // to after its saved copy (same id, now with a seq) replaces it — so the
+  // reconciler reuses the node instead of dropping and rebuilding it.
+  if (typeof m.clientId === 'string' && m.clientId) return 'cid:' + m.clientId;
   if (typeof m.seq === 'number' && Number.isFinite(m.seq)) return 'seq:' + m.seq;
   if (m.role === 'tool' && m.toolCallId) return 'tool:' + m.toolCallId + ':' + (m.phase || '');
   let key = _rowKeys.get(m);
@@ -3262,6 +3281,10 @@ export function finalizeLiveMessage(message, refs) {
   const liveRow = refs.transcript.current.querySelector('[data-live="1"]');
   if (liveRow) {
     delete liveRow.dataset.live;
+    // Key the bubble by the saved row's id so the next sync reuses it.
+    if (message && typeof message.clientId === 'string' && message.clientId) {
+      liveRow._rowKey = 'cid:' + message.clientId;
+    }
     if (liveRow._body && message && typeof message.content === 'string') {
       // Render the assembled assistant turn as markdown. Non-assistant
       // roles (and the rare "stream interrupted" sentinel) stay as

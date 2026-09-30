@@ -45,6 +45,7 @@
 | `args` | TEXT | Nullable, JSON |
 | `ok` | INTEGER | Nullable, 0/1 |
 | `phase` | TEXT | `call` or `result` |
+| `client_id` | TEXT | Nullable. Row identity from before the row had a `seq`; unique per chat. See [chat-client-row-ids.md](chat-client-row-ids.md) |
 ### Module structure
 - **`src/chatdb.js`** — direct SQLite CRUD for chats and messages. Tables are created lazily with `IF NOT EXISTS`. Also keeps the legacy `importFromJson` one-shot importer.
 - **`src/chats.js`** — public API for chats, delegates to `chatdb.js`.
@@ -52,4 +53,4 @@
 ### Message `seq` — the stable per-chat row identity
 Every message exposed by `GET /api/chats/:id/messages` carries a `seq` field: its stable, monotonically increasing position within that `(project_dir, chat_id)`.
 - **SQLite backend:** `seq` is the `message_store` primary-key column, assigned at insert (append-only, so a row keeps its `seq` forever).
-`seq` is chat-scoped, so it is safe when many chats across many projects run concurrently. It is the single identity the frontend's reconcile/recovery path merges by — see [`chat-streaming-performance.md`](chat-streaming-performance.md) and `frontend/src/components/chat/msgMerge.js`.
+`seq` is chat-scoped, so it is safe when many chats across many projects run concurrently. It is the cursor the frontend's reconcile/recovery path syncs by. Rows the UI drew before they were saved are matched by their `clientId` instead (see [chat-client-row-ids.md](chat-client-row-ids.md)) — see [`chat-streaming-performance.md`](chat-streaming-performance.md) and `frontend/src/components/chat/msgMerge.js`.

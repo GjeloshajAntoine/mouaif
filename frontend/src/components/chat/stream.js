@@ -35,7 +35,7 @@ import { authorizationCard, askUserCard, removePendingAuthorizationCards } from 
 import { normalizeToolName, parseAtInvocation, findCustomActionInvocation, buildDirectMcpCall, parseDirectRestartInvocation, parseToolArgs } from './tools.js';
 import { saveComposerDraftNow } from './composer.js';
 import { subscribeLive, closeLive } from './live.js';
-import { mergeServerRows, nextServerMessageIndex, tailSyncDomAction } from './msgMerge.js';
+import { mergeServerRows, nextServerMessageIndex, tailSyncDomAction, newClientId } from './msgMerge.js';
 import { toPublicImageAttachments } from './annotation.js';
 import { mountOverlayCard } from './overlay.js';
 import { PAGE_SIZE_DEFAULT } from './pagination.js';
@@ -219,6 +219,7 @@ export async function runAgentCommand(agentName, task, state, refs) {
   // is retired instead of left hanging (the error card the same path renders
   // is the user-facing report).
   const pendingCard = appendToolCallCard({ id: 'pending', name: 'subagent', args }, refs);
+  const answerClientId = newClientId('g');
   setChatStatus(refs, 'running agent ' + agentName + '…', 'busy');
   if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
@@ -227,7 +228,9 @@ export async function runAgentCommand(agentName, task, state, refs) {
     r = await fetchJson('/api/tools/subagent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir, chatId, task, agent: agentName })
+      // The answer row is drawn here before the next sync; its id lets the
+      // saved copy replace it instead of the merge guessing by content.
+      body: JSON.stringify({ projectDir, chatId, task, agent: agentName, clientId: answerClientId })
     });
   } catch (err) {
     // Nothing will ever fold into the placeholder card: retire it so the
@@ -260,7 +263,8 @@ export async function runAgentCommand(agentName, task, state, refs) {
       ts: new Date().toISOString(),
       modelId: body.result.model && body.result.model.id,
       usage: body.result.usage || undefined,
-      cost: body.result.cost || undefined
+      cost: body.result.cost || undefined,
+      clientId: answerClientId
     };
     state.messages = state.messages.concat([msg]);
     appendMessageToTranscript(msg, false, refs, state);
@@ -824,6 +828,10 @@ export function resumeRunningChat(state, refs) {
 
 export async function send(state, refs, options) {
 const { content, attachments, clearComposerDraft, setImageAttachments, retry, manualRetry } = options || {};
+// The user row's identity before the server saves it. A retry re-sends the
+// id of the bubble already on screen, so the saved row replaces that bubble
+// instead of the merge guessing which unsaved row it belongs to.
+const userClientId = (options && typeof options.clientId === 'string' && options.clientId) || newClientId('u');
 const { projectDir, chatId } = state.props;
   if (!projectDir || !chatId) return;
   const c = state.chat || {};
@@ -973,7 +981,7 @@ if (setImageAttachments) setImageAttachments([]);
 if (refs.imageInput.current) refs.imageInput.current.value = '';
 refs._autoresize();
 }
-const userMsg = retry ? null : { role: 'user', content: text, attachments: atts, ts: new Date().toISOString() };
+const userMsg = retry ? null : { role: 'user', content: text, attachments: atts, ts: new Date().toISOString(), clientId: userClientId };
 if (!retry) {
 state.messages = state.messages.concat([userMsg]);
 appendMessageToTranscript(userMsg, false, refs, state);
@@ -1010,7 +1018,7 @@ resp = await fetch('/api/chats/' + encodeURIComponent(chatId) + '/messages/strea
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 signal: streamAbort.signal,
-body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '' })
+body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachments: atts, clientId: userClientId, thinkingLevel: effectiveThinkingLevel, maxOutputTokens: state.maxOutputTokens || '' })
 });
 } catch (err) {
     // Leaving the chat aborts the fetch. That is not a network failure, so
@@ -1025,7 +1033,7 @@ body: JSON.stringify({ projectDir, modelId, providerId, content: text, attachmen
 const failMsg = 'Network error — could not reach the server. Your message was sent to the transcript but the response never started.';
   // The retry flags ride along so the error card's Retry button keeps them
   // AND so maybeAutoRetry can see that this turn was already a retry.
-  const payload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments, retry, manualRetry };
+  const payload = { content: text, attachments: atts, clientId: userClientId, clearComposerDraft, setImageAttachments, retry, manualRetry };
     setChatStatus(refs, 'network error', 'error');
     appendErrorCard(failMsg + ' Try again.', refs, state, { onRetry: () => retryFailedTurn(state, refs, payload) });
     state.streaming = false;
@@ -1073,7 +1081,7 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       return;
     }
     setChatStatus(refs, errMsg, 'error');
-    const payload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments, retry, manualRetry };
+    const payload = { content: text, attachments: atts, clientId: userClientId, clearComposerDraft, setImageAttachments, retry, manualRetry };
     appendErrorCard(errMsg, refs, state, { onRetry: () => retryFailedTurn(state, refs, payload) });
     state.streaming = false;
     if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
@@ -1088,6 +1096,8 @@ state.messages = state.messages.filter((m) => m !== userMsg);
   let usage = null;
   let cost = null;
   let streamingMs = null;
+  // clientId of the saved final assistant row, from the `done` frame.
+  let finalClientId = '';
   // Subagent delegated cost accumulated mid-turn. The server emits
   // a `usage_update` event with the subagent's cost as soon as the
   // nested run finishes; the parent turn's `done` later carries
@@ -1234,6 +1244,7 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       }
       cost = data.cost || cost;
       streamingMs = typeof data.streamingMs === 'number' ? data.streamingMs : streamingMs;
+      if (typeof data.clientId === 'string') finalClientId = data.clientId;
       const doneRoundTokens = Number(data.roundCompletionTokens) > 0
         ? Number(data.roundCompletionTokens)
         : (roundCompletionTokens > 0 ? roundCompletionTokens : null);
@@ -1326,7 +1337,8 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       const segment = assembled;
       const thoughtSegment = reasoning;
       if (segment.trim() || thoughtSegment.trim()) {
-        finalizeLiveMessage({ content: segment, reasoning: thoughtSegment }, refs);
+        const segmentClientId = typeof data.clientId === 'string' && data.clientId ? data.clientId : undefined;
+        finalizeLiveMessage({ content: segment, reasoning: thoughtSegment, clientId: segmentClientId }, refs);
         // The server attaches the round's exact usage + cost to this
         // event (computed from the per-round snapshot, incl. OpenRouter's
         // real providerCost). Prefer it; fall back to locally tracked
@@ -1350,7 +1362,8 @@ state.messages = state.messages.filter((m) => m !== userMsg);
           role: 'assistant', content: segment, reasoning: thoughtSegment, ts: new Date().toISOString(), modelId,
           usage: segmentUsage,
           cost: segmentCost,
-          streamingMs: segmentStreamingMs
+          streamingMs: segmentStreamingMs,
+          clientId: segmentClientId
         }]);
         // Update the just-finalized row's meta line so the segment
         // shows its cost immediately without waiting for the
@@ -1413,8 +1426,9 @@ roundCompletionTokens = 0;
 // pill: the user asked for errors to be visible in the chat,
 // and a status line is overwritten by the next update while
 // the bubble stays where the conversation happened.
-const failPayload = { content: text, attachments: atts, clearComposerDraft, setImageAttachments, retry, manualRetry };
+const failPayload = { content: text, attachments: atts, clientId: userClientId, clearComposerDraft, setImageAttachments, retry, manualRetry };
 appendErrorCard((data.message || 'Request failed') + (data.detail ? '\n' + String(data.detail).slice(0, 500) : ''), refs, state, {
+clientId: typeof data.clientId === 'string' ? data.clientId : undefined,
 onRetry: () => retryFailedTurn(state, refs, failPayload)
 });
 setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 'error');
@@ -1504,7 +1518,7 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
     : null;
   const hasFinalAssistantText = !!(assembled.trim() || reasoning.trim());
   if (hasFinalAssistantText) {
-    finalizeLiveMessage({ content: assembled, reasoning }, refs);
+    finalizeLiveMessage({ content: assembled, reasoning, clientId: finalClientId || undefined }, refs);
     // Final meta line: the live counter has the authoritative
     // completionTokens; the cost is already on the `done` event.
     const rowRate = currentRate();
@@ -1517,7 +1531,8 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
       usage: usage || undefined,
       cost: cost || undefined,
       streamingMs: streamingMs || undefined,
-      liveRate: rowRate
+      liveRate: rowRate,
+      clientId: finalClientId || undefined
     };
     state.messages = state.messages.concat([persisted]);
     updateUsageSummary(state, null, refs);

@@ -759,7 +759,8 @@ try {
             content: result.text,
             usage: result.usage || undefined,
             cost,
-            modelId: result.model && result.model.id ? result.model.id : model.id
+            modelId: result.model && result.model.id ? result.model.id : model.id,
+            clientId: messages.normalizeClientId(body.clientId) || messages.newClientId('g')
           });
         } catch { /* direct dispatch still returns its result if persistence fails */ }
         result.cost = cost;

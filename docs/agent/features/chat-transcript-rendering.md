@@ -10,6 +10,7 @@ Each message row carries a stable key, computed by `transcriptRowKey(m)` in `fro
 
 | Row | Key |
 | --- | --- |
+| Row with a `clientId` | `cid:<clientId>` — the same key before and after the row is saved, so the node is reused (see [chat-client-row-ids.md](./chat-client-row-ids.md)) |
 | Persisted row | `seq:<n>` — the message store is append-only, so a given seq never changes |
 | Tool call / result | `tool:<toolCallId>:<phase>` — a call and its result are two messages but two distinct rows |
 | Optimistic or live row | object identity from a `WeakMap`, which survives a merge because untouched rows keep their reference |

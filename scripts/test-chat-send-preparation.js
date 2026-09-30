@@ -12,6 +12,7 @@ async function checkFailure(name, modelSave, draftSave, pair = 'provider|model')
   let appended = 0;
   const context = vm.createContext({
     toPublicImageAttachments: (items) => items,
+    newClientId: (prefix) => (prefix || 'c') + '_test',
     parseAtInvocation: () => null,
     parseDirectRestartInvocation: () => null,
     updateChat: modelSave,
@@ -73,6 +74,7 @@ async function checkEditedDraft(name, edit, retry = false) {
   const context = vm.createContext({
     AbortController,
     toPublicImageAttachments: (items) => items,
+    newClientId: (prefix) => (prefix || 'c') + '_test',
     parseAtInvocation: () => null, parseDirectRestartInvocation: () => null,
     setChatStatus: (refs, text) => { refs.status.current.textContent = text; },
     saveComposerDraftNow: async (text, refs, save, extra) => save({ ...extra, draft: text }),

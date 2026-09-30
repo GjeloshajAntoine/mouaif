@@ -59,7 +59,9 @@ return maxSeq + 1;
 // Merge server-persisted `rows` (each stamped with its stable seq)
 // into state.messages, never adding the same row twice:
 //   - a seq already in state.seenSeqs is a redundant re-delivery -> drop;
-//   - else a persisted row first tries to replace its seq-less
+//   - a row carrying a `clientId` replaces the held row with that id, or is
+//     inserted at its seq position when this client never drew it;
+//   - a legacy row (no clientId) first tries to replace its seq-less
 //     optimistic twin positionally (the trailing optimistic run maps
 //     1:1, in order), then a content match, before being appended.
 // Mutates state.seenSeqs (adds every seq it accepts).
@@ -87,7 +89,26 @@ export function mergeServerRows(state, rows) {
     if (typeof row.seq === 'number') {
       if (seen.has(row.seq)) continue; // already merged — drop
       seen.add(row.seq);
-      // Positional align with the trailing optimistic run: the next
+      // Exact identity first: a saved row that echoes the clientId of an
+      // unsaved row IS that row (docs/features/chat-client-row-ids.md).
+      // When the batch row carries an id, the guessing below never runs:
+      // an id that matches nothing held here means this client never drew
+      // the row (another tab's turn, a tool row), so it is inserted by seq
+      // and cannot steal the slot of an unrelated optimistic row.
+      if (typeof row.clientId === 'string' && row.clientId) {
+        replaceIdx = indexOfClientId(out, row.clientId);
+        if (replaceIdx >= 0) {
+          const t = trailing.indexOf(out[replaceIdx]);
+          if (t >= ti) ti = t + 1;
+          out[replaceIdx] = row;
+        } else {
+          out.splice(insertionPointFor(out, row.seq), 0, row);
+        }
+        continue;
+      }
+      // Legacy rows (saved before clientId existed, or from a server
+      // that does not echo it) fall back to guessing. Positional align
+      // with the trailing optimistic run: the next
       // trailing row of the same role is this row's twin. Skipped rows
       // are consumed only on a match — a persisted row with no optimistic
       // twin (a tool call/result the client never held as a message) must
@@ -191,6 +212,34 @@ export function tailSyncDomAction(prev, merged) {
   const lastOld = prevLen > 0 ? prev[prevLen - 1] : null;
   if (prefixIntact && (!lastOld || typeof lastOld.seq === 'number')) return 'append';
   return 'reconcile';
+}
+
+// indexOfClientId(list, clientId) -> number
+//
+// Index of the row carrying `clientId`, or -1.
+function indexOfClientId(list, clientId) {
+  for (let i = 0; i < list.length; i++) {
+    const m = list[i];
+    if (m && m.clientId === clientId) return i;
+  }
+  return -1;
+}
+
+// newClientId(prefix) -> string
+//
+// A fresh id for a row the client draws before the server saves it. Sent
+// with the request so the server stores it, then matched when the saved
+// row comes back. Random, so two tabs never collide.
+export function newClientId(prefix) {
+  let rand = '';
+  try {
+    const bytes = new Uint8Array(9);
+    globalThis.crypto.getRandomValues(bytes);
+    for (const b of bytes) rand += b.toString(36).padStart(2, '0');
+  } catch {
+    rand = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+  return (prefix || 'c') + '_' + rand.slice(0, 18);
 }
 
 // insertionPointFor(out, seq) -> number

@@ -189,6 +189,66 @@ async function run() {
   out = mergeServerRows(s, [{ role: 'tool', phase: 'call', name: 'shell', ts: 'S', seq: 2 }]);
   t('a later row lands after the persisted prefix', out.length === 3 && out[2].seq === 2, out.map((m) => m.seq));
 
+  // ---- clientId: exact identity for unsaved rows -------------------------
+  // docs/features/chat-client-row-ids.md. A saved row that echoes the id of
+  // an unsaved row replaces THAT row — no positional or content guessing.
+
+  // Case 11: edited-by-server content still matches by id (the legacy content
+  // fallback could not, and the positional pass relied on order).
+  s = { seenSeqs: new Set(), messages: [
+    { role: 'user', content: 'q', clientId: 'u_1' },
+    { role: 'assistant', content: 'seg', clientId: 'a_1' }
+  ] };
+  out = mergeServerRows(s, [
+    { role: 'user', content: 'q', seq: 0, clientId: 'u_1' },
+    { role: 'tool', phase: 'call', toolCallId: 't1', seq: 1 },
+    { role: 'assistant', content: 'seg (normalized)', seq: 2, clientId: 'a_1' }
+  ]);
+  t('clientId: each unsaved row is replaced by its own saved copy',
+    out.map((m) => (m.seq == null ? 'x' : m.seq) + ':' + (m.clientId || '-')).join(',') === '0:u_1,1:-,2:a_1',
+    out.map((m) => (m.seq == null ? 'x' : m.seq) + ':' + (m.clientId || '-')).join(','));
+
+  // Case 12: a saved row from ANOTHER tab (unknown id) must not steal the slot
+  // of this tab's own pending bubble, even though role and content match.
+  s = { seenSeqs: new Set([0]), messages: [
+    { role: 'user', content: 'hi', seq: 0, clientId: 'u_0' },
+    { role: 'user', content: 'same text', clientId: 'u_mine' }
+  ] };
+  out = mergeServerRows(s, [{ role: 'user', content: 'same text', seq: 1, clientId: 'u_other_tab' }]);
+  t('clientId: an unknown id is inserted by seq, the pending bubble is kept',
+    out.length === 3 && out[1].clientId === 'u_other_tab' && out[2].clientId === 'u_mine' && out[2].seq === undefined,
+    out.map((m) => m.clientId));
+
+  // Case 13: an error card the server saved replaces the local card in place,
+  // even when it sits in the middle of the transcript.
+  s = { seenSeqs: new Set([0]), messages: [
+    { role: 'user', content: 'q', seq: 0, clientId: 'u_0' },
+    { role: 'system', content: '⚠ boom', clientId: 'e_1' },
+    { role: 'user', content: 'q2', clientId: 'u_2' }
+  ] };
+  out = mergeServerRows(s, [
+    { role: 'system', content: '⚠ EUPSTREAM boom', seq: 1, clientId: 'e_1' },
+    { role: 'user', content: 'q2', seq: 2, clientId: 'u_2' }
+  ]);
+  t('clientId: a saved error row replaces its card and keeps order',
+    out.map((m) => m.seq).join(',') === '0,1,2' && out.length === 3, out.map((m) => m.seq));
+
+  // Case 14: mixing — legacy rows without ids still merge the old way.
+  s = { seenSeqs: new Set(), messages: [{ role: 'user', content: 'hi' }] };
+  out = mergeServerRows(s, [{ role: 'user', content: 'hi', seq: 0 }]);
+  t('clientId: legacy rows without ids keep the positional merge',
+    out.length === 1 && out[0].seq === 0, out);
+
+  // Case 15: newClientId produces distinct, selector-safe ids.
+  {
+    const { newClientId } = await import('../frontend/src/components/chat/msgMerge.js');
+    const ids = new Set();
+    for (let i = 0; i < 200; i++) ids.add(newClientId('u'));
+    const sample = newClientId('u');
+    t('newClientId: 200 ids are distinct and URL/selector-safe',
+      ids.size === 200 && /^u_[A-Za-z0-9_-]{1,62}$/.test(sample), sample);
+  }
+
   // ---- tailSyncDomAction: which DOM path a merge outcome needs -----------
   //
   // A tail sync is always the same chat, and mergeServerRows only ever adds

@@ -65,6 +65,7 @@ const CREATE_MESSAGE_TABLE = `
     args          TEXT,
     ok            INTEGER,
     phase         TEXT,
+    client_id     TEXT,
     PRIMARY KEY (project_dir, chat_id, seq)
   )
 `;
@@ -116,6 +117,13 @@ d.exec('ALTER TABLE chat_store ADD COLUMN tool_auth TEXT');
 // snapshotPrompt / resolveChatPrompt.
 if (!chatColumns.some((column) => column.name === 'prompt_snapshot')) {
 d.exec('ALTER TABLE chat_store ADD COLUMN prompt_snapshot TEXT');
+}
+// A message's identity before it had a seq (see src/messages.js). NULL for
+// every row written before this column existed; the UI then falls back to
+// its legacy positional merge for those rows.
+const messageColumns = d.prepare("PRAGMA table_info('message_store')").all();
+if (!messageColumns.some((column) => column.name === 'client_id')) {
+d.exec('ALTER TABLE message_store ADD COLUMN client_id TEXT');
 }
 d.exec(INDEX_SQL);
 }
@@ -311,6 +319,7 @@ function rowToMessage(row) {
   // (append-only), so a row kept its seq forever. The client merges
   // by seq and never re-adds a row it already holds.
   const msg = { role: row.role, content: row.content, ts: row.ts, seq: row.seq };
+  if (row.client_id) msg.clientId = row.client_id;
   if (row.role === 'user' && row.attachments) {
     try { msg.attachments = JSON.parse(row.attachments); } catch { /* ignore */ }
   }
@@ -349,7 +358,8 @@ function messageToRow(projectDir, chatId, seq, msg) {
     name: msg.role === 'tool' && msg.name ? msg.name : null,
     args: msg.role === 'tool' && msg.args ? JSON.stringify(msg.args) : null,
     ok: msg.role === 'tool' && msg.ok != null ? (msg.ok ? 1 : 0) : null,
-    phase: msg.role === 'tool' && msg.phase ? msg.phase : null
+    phase: msg.role === 'tool' && msg.phase ? msg.phase : null,
+    client_id: typeof msg.clientId === 'string' && msg.clientId ? msg.clientId : null
   };
 }
 
@@ -662,16 +672,26 @@ function appendMessage(projectDir, chatId, msg) {
     'SELECT COALESCE(MAX(seq), -1) AS max_seq FROM message_store WHERE project_dir = ? AND chat_id = ?'
   ).get(projectDir, chatId);
   const seq = (maxSeq ? maxSeq.max_seq : -1) + 1;
+  // clientId must be unique within a chat: the UI keys rows by it. A retry
+  // can re-send the id of a user row the server already saved (the failure
+  // raced the save), so a taken id is swapped for a fresh one instead of
+  // producing two rows under one identity.
+  if (msg.clientId) {
+    const taken = d.prepare(
+      'SELECT 1 FROM message_store WHERE project_dir = ? AND chat_id = ? AND client_id = ? LIMIT 1'
+    ).get(projectDir, chatId, msg.clientId);
+    if (taken) msg = Object.assign({}, msg, { clientId: require('./messages.js').newClientId('r') });
+  }
   const row = messageToRow(projectDir, chatId, seq, msg);
   const costDelta = knownCostDelta(msg);
   const tx = d.transaction(() => {
     d.prepare(`
       INSERT INTO message_store (project_dir, chat_id, seq, role, content, ts,
         reasoning, usage, cost, streaming_ms, model_id, attachments,
-        tool_call_id, name, args, ok, phase)
+        tool_call_id, name, args, ok, phase, client_id)
       VALUES (@project_dir, @chat_id, @seq, @role, @content, @ts,
         @reasoning, @usage, @cost, @streaming_ms, @model_id, @attachments,
-        @tool_call_id, @name, @args, @ok, @phase)
+        @tool_call_id, @name, @args, @ok, @phase, @client_id)
     `).run(row);
     if (costDelta !== null) {
       const updated = d.prepare(`
@@ -707,10 +727,10 @@ function replaceMessages(projectDir, chatId, list) {
     const insert = d.prepare(`
       INSERT INTO message_store (project_dir, chat_id, seq, role, content, ts,
         reasoning, usage, cost, streaming_ms, model_id, attachments,
-        tool_call_id, name, args, ok, phase)
+        tool_call_id, name, args, ok, phase, client_id)
       VALUES (@project_dir, @chat_id, @seq, @role, @content, @ts,
         @reasoning, @usage, @cost, @streaming_ms, @model_id, @attachments,
-        @tool_call_id, @name, @args, @ok, @phase)
+        @tool_call_id, @name, @args, @ok, @phase, @client_id)
     `);
     for (let i = 0; i < list.length; i++) {
       insert.run(messageToRow(projectDir, chatId, i, list[i]));
