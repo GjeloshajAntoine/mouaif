@@ -21,13 +21,13 @@ async function run() {
   );
 
   // Case 1: optimistic user msg (no seq) + server-persisted twin (seq 0).
-  let s = { seenSeqs: new Set(), messages: [{ role: 'user', content: 'hi', ts: 'C' }] };
+  let s = { messages: [{ role: 'user', content: 'hi', ts: 'C' }] };
   let out = mergeServerRows(s, [{ role: 'user', content: 'hi', ts: 'S', seq: 0 }]);
   t('optimistic user replaced, not duplicated',
     out.length === 1 && out[0].seq === 0 && out[0].ts === 'S', out);
 
   // Case 2: live assistant bubble (no seq) + persisted twin (seq 1).
-  s = { seenSeqs: new Set(), messages: [
+  s = { messages: [
     { role: 'user', content: 'hi', ts: 'C', seq: 0 },
     { role: 'assistant', content: 'answer', reasoning: '', ts: 'C' }
   ] };
@@ -36,7 +36,7 @@ async function run() {
     out.length === 2 && out[1].seq === 1, out);
 
   // Case 3: already-merged row re-delivered (same seq) — dropped.
-  s = { seenSeqs: new Set([0, 1]), messages: [
+  s = { messages: [
     { role: 'user', content: 'hi', ts: 'S', seq: 0 },
     { role: 'assistant', content: 'answer', reasoning: '', ts: 'S', seq: 1 }
   ] };
@@ -44,7 +44,7 @@ async function run() {
   t('already-seen seq dropped (no re-add)', out.length === 2, out);
 
   // Case 4: genuine new append.
-  s = { seenSeqs: new Set([0, 1]), messages: [
+  s = { messages: [
     { role: 'user', content: 'hi', ts: 'S', seq: 0 },
     { role: 'assistant', content: 'answer', reasoning: '', ts: 'S', seq: 1 }
   ] };
@@ -53,7 +53,7 @@ async function run() {
 
   // Case 5: two identical consecutive assistants stay in order (the
   // positional align must not swap them).
-  s = { seenSeqs: new Set([0]), messages: [
+  s = { messages: [
     { role: 'user', content: 'q', ts: 'S', seq: 0 },
     { role: 'assistant', content: 'same', reasoning: '', ts: 'C1' },
     { role: 'assistant', content: 'same', reasoning: '', ts: 'C2' }
@@ -69,7 +69,7 @@ async function run() {
   // length. A live client can hold optimistic seq-less rows while the
   // server has already persisted rows 1..N; using messages.length as
   // `since` would skip row 1 here.
-  s = { seenSeqs: new Set([0]), messages: [
+  s = { messages: [
     { role: 'user', content: 'hi', ts: 'S', seq: 0 },
     { role: 'assistant', content: 'live partial', reasoning: '', ts: 'C' }
   ] };
@@ -86,7 +86,7 @@ async function run() {
   // have no optimistic twin, and the old code pushed them onto the END of the
   // array, which placed the tool cards AFTER the assistant answer that
   // followed them and made syncTranscriptAppend render them out of order.
-  s = { seenSeqs: new Set(), messages: [
+  s = { messages: [
     { role: 'user', content: 'run it', ts: 'C' },
     { role: 'assistant', content: 'answer', reasoning: '', ts: 'C' }
   ] };
@@ -105,7 +105,7 @@ async function run() {
   // Case 9: a seq-less tail row with no twin in the batch (here an optimistic
   // user bubble whose POST is still in flight) sorts after every persisted
   // row, so new tool/answer rows land between the prefix and that tail.
-  s = { seenSeqs: new Set([0]), messages: [
+  s = { messages: [
     { role: 'user', content: 'q', ts: 'S', seq: 0 },
     { role: 'user', content: 'q2', ts: 'C' }
   ] };
@@ -122,7 +122,7 @@ async function run() {
   // replaced even when its text differs slightly (so the content fallback
   // cannot rescue it) — otherwise the optimistic copy stays below the
   // persisted one: a duplicate, out of order.
-  s = { seenSeqs: new Set(), messages: [
+  s = { messages: [
     { role: 'user', content: 'q', ts: 'C' },
     { role: 'assistant', content: 'ans', reasoning: 'r', ts: 'C' }
   ] };
@@ -138,7 +138,7 @@ async function run() {
 
   // Case 9c: multi-segment turn — tool rows between segments, every segment's
   // twin replaced in order, even with non-matching text.
-  s = { seenSeqs: new Set(), messages: [
+  s = { messages: [
     { role: 'user', content: 'q', ts: 'C' },
     { role: 'assistant', content: 'seg1', ts: 'C' },
     { role: 'assistant', content: 'seg2', ts: 'C' },
@@ -162,7 +162,7 @@ async function run() {
   // transcript once later turns are persisted below it. A new turn's rows
   // must land at the bottom, not spliced above that card (which put the
   // answer above its question and above every turn after the error).
-  s = { seenSeqs: new Set([0, 1, 2, 3]), messages: [
+  s = { messages: [
     { role: 'user', content: 'q1', seq: 0 },
     { role: 'assistant', content: 'a1', seq: 1 },
     { role: 'system', content: 'Network error' },
@@ -182,7 +182,7 @@ async function run() {
 
   // Case 10: rows already held at/above the new seq are not displaced — the
   // insertion point must skip past every persisted row that sorts before.
-  s = { seenSeqs: new Set([0, 1]), messages: [
+  s = { messages: [
     { role: 'user', content: 'q', ts: 'S', seq: 0 },
     { role: 'assistant', content: 'a1', reasoning: '', ts: 'S', seq: 1 }
   ] };
@@ -195,7 +195,7 @@ async function run() {
 
   // Case 11: edited-by-server content still matches by id (the legacy content
   // fallback could not, and the positional pass relied on order).
-  s = { seenSeqs: new Set(), messages: [
+  s = { messages: [
     { role: 'user', content: 'q', clientId: 'u_1' },
     { role: 'assistant', content: 'seg', clientId: 'a_1' }
   ] };
@@ -210,7 +210,7 @@ async function run() {
 
   // Case 12: a saved row from ANOTHER tab (unknown id) must not steal the slot
   // of this tab's own pending bubble, even though role and content match.
-  s = { seenSeqs: new Set([0]), messages: [
+  s = { messages: [
     { role: 'user', content: 'hi', seq: 0, clientId: 'u_0' },
     { role: 'user', content: 'same text', clientId: 'u_mine' }
   ] };
@@ -221,7 +221,7 @@ async function run() {
 
   // Case 13: an error card the server saved replaces the local card in place,
   // even when it sits in the middle of the transcript.
-  s = { seenSeqs: new Set([0]), messages: [
+  s = { messages: [
     { role: 'user', content: 'q', seq: 0, clientId: 'u_0' },
     { role: 'system', content: '⚠ boom', clientId: 'e_1' },
     { role: 'user', content: 'q2', clientId: 'u_2' }
@@ -234,7 +234,7 @@ async function run() {
     out.map((m) => m.seq).join(',') === '0,1,2' && out.length === 3, out.map((m) => m.seq));
 
   // Case 14: mixing — legacy rows without ids still merge the old way.
-  s = { seenSeqs: new Set(), messages: [{ role: 'user', content: 'hi' }] };
+  s = { messages: [{ role: 'user', content: 'hi' }] };
   out = mergeServerRows(s, [{ role: 'user', content: 'hi', seq: 0 }]);
   t('clientId: legacy rows without ids keep the positional merge',
     out.length === 1 && out[0].seq === 0, out);
@@ -280,7 +280,7 @@ async function run() {
   // persisted row (a NEW object) at index 0 -> reconcile, not a full render.
   {
     const prev = [{ role: 'user', content: 'hi' }];
-    const merged = mergeServerRows({ seenSeqs: new Set(), messages: prev.slice() },
+    const merged = mergeServerRows({ messages: prev.slice() },
       [{ role: 'user', content: 'hi', seq: 0 }]);
     t('tailSyncDomAction: an in-place optimistic replace reconciles',
       tailSyncDomAction(prev, merged) === 'reconcile');
@@ -291,7 +291,7 @@ async function run() {
   {
     const live = { role: 'assistant', content: 'live', reasoning: '' };
     const prev = [{ role: 'user', content: 'q', seq: 0 }, live];
-    const merged = mergeServerRows({ seenSeqs: new Set([0]), messages: prev.slice() },
+    const merged = mergeServerRows({ messages: prev.slice() },
       [{ role: 'tool', phase: 'call', name: 'shell', seq: 1 }]);
     t('tailSyncDomAction: a middle splice reconciles',
       tailSyncDomAction(prev, merged) === 'reconcile');
@@ -302,7 +302,7 @@ async function run() {
   // grows; this pins the equal-length branch.
   {
     const prev = [{ role: 'user', content: 'q', seq: 0 }, { role: 'assistant', content: 'partial', reasoning: '' }];
-    const merged = mergeServerRows({ seenSeqs: new Set([0]), messages: prev.slice() },
+    const merged = mergeServerRows({ messages: prev.slice() },
       [{ role: 'assistant', content: 'partial', reasoning: '', seq: 1 }]);
     t('tailSyncDomAction: an equal-length conservative replace reconciles',
       tailSyncDomAction(prev, merged) === 'reconcile');

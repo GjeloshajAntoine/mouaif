@@ -46,28 +46,38 @@ const list = state && Array.isArray(state.messages) ? state.messages : [];
 for (const m of list) {
 if (m && typeof m.seq === 'number' && Number.isFinite(m.seq) && m.seq > maxSeq) maxSeq = m.seq;
 }
-const seen = state && state.seenSeqs;
-if (seen && typeof seen.forEach === 'function') {
-seen.forEach((seq) => {
-if (typeof seq === 'number' && Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
-});
-}
 return maxSeq + 1;
+}
+
+// heldSeqs(messages) -> Set<number>
+//
+// The seqs of the saved rows the client holds. Derived from the message list
+// on demand instead of kept as a second store: a separate seen-set had to be
+// rebuilt on load, rebuild and chat switch, and any path that forgot left it
+// disagreeing with the list it described.
+export function heldSeqs(messages) {
+const set = new Set();
+if (!Array.isArray(messages)) return set;
+for (const m of messages) {
+if (m && typeof m.seq === 'number' && Number.isFinite(m.seq)) set.add(m.seq);
+}
+return set;
 }
 // mergeServerRows(state, rows) -> Message[]
 //
 // Merge server-persisted `rows` (each stamped with its stable seq)
 // into state.messages, never adding the same row twice:
-//   - a seq already in state.seenSeqs is a redundant re-delivery -> drop;
+//   - a seq the client already holds (or saw earlier in this batch) is a
+//     redundant re-delivery -> drop;
 //   - a row carrying a `clientId` replaces the held row with that id, or is
 //     inserted at its seq position when this client never drew it;
 //   - a legacy row (no clientId) first tries to replace its seq-less
 //     optimistic twin positionally (the trailing optimistic run maps
 //     1:1, in order), then a content match, before being appended.
-// Mutates state.seenSeqs (adds every seq it accepts).
+// Pure: returns a new array and never mutates `state`.
 export function mergeServerRows(state, rows) {
-  const seen = state.seenSeqs;
   const out = state.messages.slice();
+  const seen = heldSeqs(out);
   // Trailing seq-less rows are the optimistic/live copies the client
   // appended just now, in order. A batch of persisted rows arriving
   // now corresponds to those trailing rows IN ORDER (both are

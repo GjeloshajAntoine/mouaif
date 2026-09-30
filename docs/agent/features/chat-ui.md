@@ -32,6 +32,27 @@ npm run dev:web      # vite dev server on :5173 (not used by the Node server)
 
 ## Implementation notes
 
+### Per-chat session
+
+`ChatView` is reused across chat navigation: only its props change and it is never remounted. Everything that belongs to one chat lives in a single session object built by `newChatSession()` in `frontend/src/components/chat/session.js`:
+
+| Field | Purpose |
+| --- | --- |
+| `messages` | transcript rows held client-side (saved and unsaved) |
+| `pager` | backward-pagination cursor (`pagination.js`) |
+| `transcriptNextSeq` | next saved-row seq the reconcile poll expects |
+| `nextLiveSeq` | `/live?fromLiveSeq=` replay cursor |
+| `liveRun` | follower live-socket marker |
+| `runSettled` | latch that keeps a torn run settled |
+| `watchingStableTicks` | stable-tick counter for the reload follow poll |
+| `usedTools` | tool names called in this chat |
+
+`useChatState` holds the session in one ref, and the `state` bag exposes its fields through the same getters as before (`state.messages`, `state.transcriptNextSeq`, …), so the imperative modules did not change. One effect keyed on `[chatId, projectDir]` replaces the whole object when the chat changes (`ensureChatSession`). Before this, each field had its own reset effect, and some keyed on `chatId` alone, so the same chat id in another project kept the previous values. Because the object is replaced rather than cleared, a late write from the previous chat lands in the detached session. `state.session` exposes the current object so async code can compare identities across an `await`.
+
+The seqs already held are not stored separately. `heldSeqs(messages)` in `msgMerge.js` derives them when needed, and `mergeServerRows` is pure. The old `seenSeqs` set had to be rebuilt on load, on full rebuild and on chat switch, and could disagree with the list it described. Tests: `scripts/test-chat-session.mjs`.
+
+### Live runs after a reload
+
 When a chat page is reloaded while an agent run is still active on the
 server, the replacement page polls the persisted transcript once per second.
 New assistant segments, tool calls, and tool results therefore appear as they

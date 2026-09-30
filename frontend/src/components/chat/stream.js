@@ -35,7 +35,7 @@ import { authorizationCard, askUserCard, removePendingAuthorizationCards } from 
 import { normalizeToolName, parseAtInvocation, findCustomActionInvocation, buildDirectMcpCall, parseDirectRestartInvocation, parseToolArgs } from './tools.js';
 import { saveComposerDraftNow } from './composer.js';
 import { subscribeLive, closeLive } from './live.js';
-import { mergeServerRows, nextServerMessageIndex, tailSyncDomAction, newClientId } from './msgMerge.js';
+import { mergeServerRows, nextServerMessageIndex, tailSyncDomAction, newClientId, heldSeqs } from './msgMerge.js';
 import { toPublicImageAttachments } from './annotation.js';
 import { mountOverlayCard } from './overlay.js';
 import { PAGE_SIZE_DEFAULT } from './pagination.js';
@@ -469,7 +469,7 @@ if (typeof cancelTranscriptRender === 'function') cancelTranscriptRender(refs);
 // Dedup on seq: a row the server already gave us (e.g. a window edge
 // from a reconcile that landed between loads) must be skipped so the
 // same message never draws twice.
-const seen = state.seenSeqs;
+const seen = heldSeqs(state.messages);
 const fresh = body.messages.filter((m) => {
 if (typeof m.seq !== 'number') return true;
 if (seen.has(m.seq)) return false;
@@ -480,15 +480,12 @@ const inserted = prependOlderTranscript(state, refs, fresh);
 // Keep `state.messages` in sync with the paginated DOM so a later
 // rebuild (reconcile, recovery, full render) does not wipe the older
 // pages the user already loaded. Prepend the fresh rows to the front
-// of the list (they are the oldest known so far) and seed their seqs
-// into the seen-set. A rebuild re-renders the full array including
-// these rows in order.
+// of the list (they are the oldest known so far); `fresh` already
+// excludes every seq the list holds. A rebuild re-renders the full
+// array including these rows in order.
 if (fresh.length) {
 const have = Array.isArray(state.messages) ? state.messages : [];
-const haveSeqs = new Set();
-for (const m of have) if (typeof m.seq === 'number') haveSeqs.add(m.seq);
-const reallyFresh = fresh.filter((m) => typeof m.seq !== 'number' || !haveSeqs.has(m.seq));
-if (reallyFresh.length) state.messages = reallyFresh.concat(have);
+state.messages = fresh.concat(have);
 }
 // Advance the cursor from the server's authoritative next old bound,
 // NOT from the (possibly deduped) count, so pages never skip a seq.
@@ -611,7 +608,6 @@ async function fullRebuildFromServer(state, refs, nextSeq) {
   // A refreshed snapshot already covers every attributed run, so the client's
   // session delta is rebased away here rather than counted twice.
   state.attributedCost = 0;
-  state.seenSeqs = new Set(body.messages.filter((m) => typeof m.seq === 'number').map((m) => m.seq));
   state.transcriptNextSeq = typeof body.nextSeq === 'number' ? body.nextSeq : nextSeq;
   if (state._renderTranscript) state._renderTranscript();
   return 'rebuilt';

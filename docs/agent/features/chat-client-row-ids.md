@@ -40,7 +40,7 @@ Every message read (`GET /api/chats/:id/messages`, all window and `fromSeq` vari
 
 `mergeServerRows(state, rows)`:
 
-1. Drop a row whose `seq` is already in `seenSeqs`.
+1. Drop a row whose `seq` the client already holds (derived from `state.messages` by `heldSeqs`).
 2. **The row has a `clientId`:** replace the held row with the same id. If none matches, splice the row in by `seq` (`insertionPointFor`). Return. The guessing never runs for id-carrying rows, so an unknown id (another tab's turn) cannot take the slot of a pending row.
 3. **Legacy row (no `clientId`):** the unchanged positional pass, then the content fallback, then insert by `seq`.
 

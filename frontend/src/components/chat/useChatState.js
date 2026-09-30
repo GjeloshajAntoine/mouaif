@@ -39,6 +39,8 @@ import { rebaseAnnotationStarts, toPublicImageAttachments } from './annotation.j
 import { fileOrbFromApp, FILE_ORB_DEFAULT } from './fileOrb.js';
 import { composerToolsFromApp, COMPOSER_TOOLS_DEFAULT } from './composerTools.js';
 import { createPager, recordInitialPage, shouldLoadOlder } from './pagination.js';
+import { newChatSession, ensureChatSession, emptyLiveRun } from './session.js';
+import { nextServerMessageIndex } from './msgMerge.js';
 import { costSnapshot } from './costSummary.js';
 import { skillStateFromResponse } from './skillState.js';
 import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings/toolAuth.js';
@@ -165,18 +167,17 @@ const switcherRefreshArmed = useRef(false);
   const pinnedToBottom = useRef(true);
   const pendingCount = useRef(0);
   const streaming = useRef(false);
-  // Append-only cursor for the reconcile/recovery poll (see stream.js):
-// the next persisted message seq the client has merged.
-const transcriptNextSeq = useRef(0);
-// Transient live-tool cursor (`/live?fromLiveSeq=`), separate from
-// persisted message seq because shell/subagent/progress chunks are not
-// transcript rows.
-const nextLiveSeq = useRef(0);
+  // Everything that belongs to ONE chat — the transcript rows, the
+  // pagination and reconcile cursors, the live/run markers, the used-tool
+  // set — lives in a single session object (session.js). It is replaced as a
+  // whole when the chat changes (the reset effect below), so the next chat
+  // can never inherit a value some per-field reset forgot.
+  const session = useRef(null);
+  if (!session.current) session.current = newChatSession(projectDir, chatId);
 // "providerId|modelId" of the pair last persisted on the server
   // (from the load response or a successful PATCH). Lets send() skip
   // the redundant per-turn PATCH when the record is already current.
   const persistedModelPair = useRef('');
-const messages = useRef([]);
 const models = useRef([]);
 const liveByProvider = useRef({});
 const prompts = useRef([]);
@@ -186,10 +187,6 @@ const tools = useRef({ catalog: [], filter: null });
 const agentFiles = useRef({ files: [], enabled: true, explicit: false });
 const skills = useRef({ items: [], enabled: true, projectLocked: false });
 const mcpServers = useRef([]);
-// Backward-pagination cursor for the transcript scroll-up loader. A
-// single object per chat (reset on chat change): only the newest page
-// of a long transcript loads on open; older pages fetch on demand.
-const msgPager = useRef(null);
   // Project agents (subagent delegation personas). Feeds the @-mention
   // popup's Agents section and the leading @agent <task> direct dispatch.
   const agents = useRef([]);
@@ -224,46 +221,19 @@ const [fileOrb, setFileOrb] = useState(FILE_ORB_DEFAULT);
 // "both shown" until the settings read lands, so a slow fetch never makes a
 // button flicker out and back.
 const [composerTools, setComposerTools] = useState(() => Object.assign({}, COMPOSER_TOOLS_DEFAULT));
-  // Track which tools have been called in this chat session.
-  // Used to auto-check tools in the visibility tree.
-  const usedTools = useRef(new Set());
-  // Stable per-row identity set. Populated from the server's `seq`
-  // (both storage backends now emit it). Merging incoming rows keyed
-  // by this set — NOT by array length or role+ts — is what prevents
-  // the optimistic user message / live assistant bubble from being
-  // re-added when the server's persisted copy crosses the wire on the
-  // next reconcile, and prevents a reconnect from re-fetching rows it
-  // already merged. Reset per chat: seq is chat-scoped.
-  const seenSeqs = useRef(new Set());
   const reconnect = useRef({ active: false, attempts: 0, timer: null, stopped: false, partialText: '' });
 // Ref the single poll effect populates so stream recovery (which is
 // folded into that same poll) can kick it immediately when the SSE
 // drops mid-turn, instead of waiting out the idle 3 s/6 s interval.
 const kickPoll = useRef(null);
-  // Stable-tick counter for the reload follow poll (reconcileRunningChat).
-  // When a reloaded chat shows the server's `running` flag but the
-  // transcript has stopped moving, we must settle instead of looping
-  // "streaming…" forever (the SSE was cut; the server-side run may have
-  // finished without clearing the marker visibly). Mirrors the backoff
-  // stability logic used by the stream-recovery path (recoverFromDisk).
-  const watchingStableTicks = useRef(0);
+  // Per-chat run markers (session.js) — documented where they are used:
+  //   watchingStableTicks  reload follow poll (reconcileRunningChat) settles
+  //                        a silent `running` flag instead of looping;
+  //   liveRun              follower live socket (`/api/chats/:id/live`),
+  //                        tells a quiet-but-live run from a torn flag;
+  //   runSettled           keeps a torn run settled until a new turn lands,
+  //                        so the stale server flag cannot flip it back.
   const watchingRun = useRef(false);
-  // State for the follower live-replay socket (`/api/chats/:id/live`).
-  // The reconcile poll uses this to distinguish a genuinely active but
-  // quiet run (live socket connected, no transcript movement yet) from a
-  // stale/torn running flag. Keep it outside Preact render state: it is a
-  // hot-path transport marker, not view data.
-  const liveRun = useRef({ key: '', active: false, connected: false, ended: false, failed: false });
-  // Latch for a settled "torn" run. When a chat's server `running`
-  // flag is stale (the run finished while we were away, or its SSE
-  // socket died without clearing the flag), reconcileRunningChat
-  // settles it as done — but the server flag never clears, so the
-  // NEXT poll sees `running: true` and flips back to "streaming…"
-  // with the stop button, forever oscillating done/streaming. Once we
-  // settle a torn run, this latch keeps it settled UNTIL a genuinely
-  // new turn lands on disk (a revision change moves the latch to
-  // false), which is the only real signal that a fresh run started.
-  const runSettled = useRef(false);
   // Chat + provider WILL data. These were formerly dual (ref + useState)
   // to drive whole-view re-renders; nothing renders from them, so they
   // live only here and are exposed on `state` as plain accessors.
@@ -297,8 +267,9 @@ const kickPoll = useRef(null);
       // restarted it once the run ended — so older history only appeared when
       // the user scrolled to the top. Called on run_end.
       _drainOlderMessages: () => {
-      if (msgPager.current && msgPager.current.hasMore && msgPager.current.beforeSeq !== null) {
-      loadAllOlderMessages(state, refs, msgPager.current).catch(() => {});
+      const pager = session.current.pager;
+      if (pager && pager.hasMore && pager.beforeSeq !== null) {
+      loadAllOlderMessages(state, refs, pager).catch(() => {});
       }
       },
       get chat() { return chat.current; },
@@ -307,8 +278,11 @@ const kickPoll = useRef(null);
       set providers(v) { providers.current = Array.isArray(v) ? v : []; },
       get imageAttachments() { return imageAttachmentsRef.current; },
       set imageAttachments(v) { imageAttachmentsRef.current = v; },
-      get messages() { return messages.current; },
-      set messages(v) { messages.current = v; },
+      // The per-chat session itself, for code that must detect a chat
+      // switch across an await (compare identities, not props).
+      get session() { return session.current; },
+      get messages() { return session.current.messages; },
+      set messages(v) { session.current.messages = Array.isArray(v) ? v : []; },
       get models() { return models.current; },
       set models(v) { models.current = v; },
       get liveByProvider() { return liveByProvider.current; },
@@ -329,14 +303,12 @@ const kickPoll = useRef(null);
       set mcpServers(v) { mcpServers.current = v; },
       get agents() { return agents.current; },
       set agents(v) { agents.current = Array.isArray(v) ? v : []; },
-      get usedTools() { return usedTools.current; },
-      set usedTools(v) { usedTools.current = v instanceof Set ? v : new Set(v || []); },
-      get seenSeqs() { return seenSeqs.current; },
-      set seenSeqs(v) { seenSeqs.current = v instanceof Set ? v : new Set(v || []); },
-      get transcriptNextSeq() { return transcriptNextSeq.current; },
-      set transcriptNextSeq(v) { transcriptNextSeq.current = v; },
-      get nextLiveSeq() { return nextLiveSeq.current; },
-      set nextLiveSeq(v) { nextLiveSeq.current = v; },
+      get usedTools() { return session.current.usedTools; },
+      set usedTools(v) { session.current.usedTools = v instanceof Set ? v : new Set(v || []); },
+      get transcriptNextSeq() { return session.current.transcriptNextSeq; },
+      set transcriptNextSeq(v) { session.current.transcriptNextSeq = v; },
+      get nextLiveSeq() { return session.current.nextLiveSeq; },
+      set nextLiveSeq(v) { session.current.nextLiveSeq = v; },
       get _persistedModelPair() { return persistedModelPair.current; },
       set _persistedModelPair(v) { persistedModelPair.current = v; },
       get streaming() { return streaming.current; },
@@ -344,12 +316,12 @@ const kickPoll = useRef(null);
       reconnect: reconnect.current,
       get watchingRun() { return watchingRun.current; },
       set watchingRun(v) { watchingRun.current = v; },
-      get watchingStableTicks() { return watchingStableTicks.current; },
-      set watchingStableTicks(v) { watchingStableTicks.current = v; },
-      get liveRun() { return liveRun.current; },
-      set liveRun(v) { liveRun.current = v && typeof v === 'object' ? v : { key: '', active: false, connected: false, ended: false, failed: false }; },
-      get runSettled() { return runSettled.current; },
-      set runSettled(v) { runSettled.current = v; },
+      get watchingStableTicks() { return session.current.watchingStableTicks; },
+      set watchingStableTicks(v) { session.current.watchingStableTicks = v; },
+      get liveRun() { return session.current.liveRun; },
+      set liveRun(v) { session.current.liveRun = v && typeof v === 'object' ? v : emptyLiveRun(); },
+      get runSettled() { return session.current.runSettled; },
+      set runSettled(v) { session.current.runSettled = v; },
       get providerCredit() { return providerCredit.current; },
       set providerCredit(v) { providerCredit.current = v; },
       get toolAuth() { return toolAuth.current; },
@@ -890,26 +862,28 @@ state.autoRetry = typeof c.autoRetry === 'boolean'
 setFileOrb(fileOrbFromApp(app));
 setComposerTools(composerToolsFromApp(app));
 persistedModelPair.current = (c.providerId || '') + '|' + (c.modelId || '');
-messages.current = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
+// Seed THIS chat's session from the first page. `cancelled` was checked
+// above, so the session on the ref is the one this load belongs to.
+const sess = session.current;
+sess.messages = rMsgs.status === 200 ? (rMsgs.body.messages || []) : [];
 state.costSnapshot = rMsgs.status === 200 ? costSnapshot(rMsgs.body) : null;
 state.attributedCost = 0;
-// Seed the backward-pagination cursor from the windowed first page.
-// Only the newest PAGE is in memory; older pages load on scroll-up.
-msgPager.current = createPager();
-recordInitialPage(msgPager.current, rMsgs.status === 200
-? { messages: messages.current, total: rMsgs.body.total, hasMore: rMsgs.body.hasMore, beforeSeq: rMsgs.body.beforeSeq }
+// Seed the backward-pagination cursor from the windowed first page. The
+// newest page paints first; the background drain below then loads every
+// older page, so the whole transcript ends up in memory.
+sess.pager = createPager();
+recordInitialPage(sess.pager, rMsgs.status === 200
+? { messages: sess.messages, total: rMsgs.body.total, hasMore: rMsgs.body.hasMore, beforeSeq: rMsgs.body.beforeSeq }
 : { messages: [], total: 0, hasMore: false });
-// Seed the seen-set from the freshly loaded transcript so the
-// first reconcile / recovery tick never re-adds a row that the
-// initial load already has.
-{ const set = new Set(); for (const m of messages.current) { if (typeof m.seq === 'number') set.add(m.seq); } seenSeqs.current = set; }
-// Seed the append cursor so the first 1 s tick is a no-op. The
-// windowed first page still carries nextSeq (the authoritative total),
-// so tail syncs continue to work unchanged.
-transcriptNextSeq.current = rMsgs.status === 200 && rMsgs.body && typeof rMsgs.body.nextSeq === 'number'
+// Seed the append cursor so the first 1 s tick is a no-op. The windowed
+// first page still carries nextSeq (the authoritative total), so tail
+// syncs continue to work unchanged. The seqs already held are derived
+// from `sess.messages` by the merge (msgMerge.js heldSeqs), so there is
+// no separate seen-set to seed.
+sess.transcriptNextSeq = rMsgs.status === 200 && rMsgs.body && typeof rMsgs.body.nextSeq === 'number'
 ? rMsgs.body.nextSeq
-: (seenSeqs.current.size ? Math.max(...seenSeqs.current) + 1 : 0);
-nextLiveSeq.current = 0;
+: nextServerMessageIndex(state);
+sess.nextLiveSeq = 0;
 models.current = (rModels && Array.isArray(rModels.models)) ? rModels.models : [];
         state.providers = rProviders.status === 200 ? (rProviders.body.providers || []) : [];
         // Seed the per-provider live cache with the project-level
@@ -1016,8 +990,9 @@ if (Array.isArray(c.draftAttachments) && c.draftAttachments.length) {
         // drainer progressively prepends the rest above it and preserves the
         // reading position. It skips itself while a turn is running (the tail
         // is being written server-side) and on any chat/project change.
-        if (msgPager.current && msgPager.current.hasMore && msgPager.current.beforeSeq !== null) {
-            loadAllOlderMessages(state, refs, msgPager.current).catch(() => {});
+        const drainPager = session.current.pager;
+        if (drainPager && drainPager.hasMore && drainPager.beforeSeq !== null) {
+            loadAllOlderMessages(state, refs, drainPager).catch(() => {});
         }
         // Fetch the tool catalog in the background. The transcript just
         // painted with the fast data; the MCP cold-start inside
@@ -1181,8 +1156,9 @@ updateJumpButton(refs);
 // Backward pagination: reaching the top of a long transcript is the
 // signal to load the next older page. Defer to the loader so it can
 // latch its own in-flight flag; the loader preserves scroll position.
-if (msgPager.current && shouldLoadOlder(msgPager.current, el.scrollTop)) {
-loadOlderMessages(state, refs, msgPager.current).catch(() => {});
+const scrollPager = session.current.pager;
+if (scrollPager && shouldLoadOlder(scrollPager, el.scrollTop)) {
+loadOlderMessages(state, refs, scrollPager).catch(() => {});
 }
 }
     el.addEventListener('scroll', onScroll, { passive: true });
@@ -1249,10 +1225,14 @@ loadOlderMessages(state, refs, msgPager.current).catch(() => {});
     };
   }, [projectDir, chatId]);
 
-  useEffect(() => { usedTools.current = new Set(); }, [chatId]);
-// seq is chat-scoped; reset the seen-set with the chat so a stale
-  // seq from a previous chat can never suppress a load.
-  useEffect(() => { seenSeqs.current = new Set(); }, [chatId]);
+  // One reset for everything per-chat (session.js). It runs on a change of
+  // EITHER key: two projects can hold chats with the same id, and the old
+  // per-field effects disagreed on that (some keyed on chatId alone).
+  // Replacing the object, not clearing fields, is what makes a late write
+  // from the previous chat land in a detached session instead of this one.
+  useEffect(() => {
+    session.current = ensureChatSession(session.current, projectDir, chatId);
+  }, [chatId, projectDir]);
   // Scroll pinning is per-chat. ChatView is reused across chat
   // navigation (only props change, no remount), so a `pinnedToBottom`
   // left `false` by scrolling up in the previous chat would carry over
@@ -1264,23 +1244,7 @@ loadOlderMessages(state, refs, msgPager.current).catch(() => {});
     pendingCount.current = 0;
     updateJumpButton(refs);
   }, [chatId, projectDir]);
-  useEffect(() => { watchingStableTicks.current = 0; }, [chatId, projectDir]);
-useEffect(() => { liveRun.current = { key: '', active: false, connected: false, ended: false, failed: false }; }, [chatId, projectDir]);
-useEffect(() => { runSettled.current = false; }, [chatId, projectDir]);
 
-  // Per-chat cursors. These are seeded inside `load()` only on the success
-  // path, so a failed or early-returned load would leave the PREVIOUS
-  // chat's values behind: a stale `msgPager` (wrong `beforeSeq`) would then
-  // drive the scroll-up loader against the new chat, a stale
-  // `transcriptNextSeq` would skew the reconcile/recovery poll, and a stale
-  // `nextLiveSeq` would ask the live stream to replay from a cursor the new
-  // chat never reached — silently dropping its buffered events. Reset them
-  // on every chat change; `load()` re-seeds them when its page arrives.
-  useEffect(() => {
-    msgPager.current = createPager();
-    transcriptNextSeq.current = 0;
-    nextLiveSeq.current = 0;
-  }, [chatId, projectDir]);
 
   // Composer draft is per chat (docs/features/chat-ui.md "Draft
   // preservation"), but ChatView is reused across navigation — only props

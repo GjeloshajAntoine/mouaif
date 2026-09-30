@@ -81,7 +81,7 @@ const vm = require('node:vm');
     updateUsageSummary: (state) => { painted = summarize(state.messages, state.costSnapshot, null, state.attributedCost).totalCost; }
   });
   vm.runInContext(syncSource + ';this.sync = syncToNextSeq;', context);
-  const state = { props: { projectDir: '/test', chatId: 'test' }, messages: [...page, row(undefined, 2)], seenSeqs: new Set([198, 199]), transcriptNextSeq: 200, costSnapshot: baseline, attributedCost: 0.5, _reconcileTranscript() { reconciled = true; } };
+  const state = { props: { projectDir: '/test', chatId: 'test' }, messages: [...page, row(undefined, 2)], transcriptNextSeq: 200, costSnapshot: baseline, attributedCost: 0.5, _reconcileTranscript() { reconciled = true; } };
   await context.sync(state, {}, 201);
   assert.equal(painted, 12);
   assert.equal(state.messages.length, 3);
@@ -108,7 +108,7 @@ const vm = require('node:vm');
       updateUsageSummary() {}
     });
     vm.runInContext(syncSource + ';this.sync = syncToNextSeq;', ctx);
-    const appendState = { props: { projectDir: '/test', chatId: 'test' }, messages: [u], seenSeqs: new Set([210]), transcriptNextSeq: 211, costSnapshot: baseline, attributedCost: 0, _renderTranscript() { throw new Error('a pure append must not re-render the transcript'); }, _reconcileTranscript() { throw new Error('a pure append must not reconcile the transcript'); } };
+    const appendState = { props: { projectDir: '/test', chatId: 'test' }, messages: [u], transcriptNextSeq: 211, costSnapshot: baseline, attributedCost: 0, _renderTranscript() { throw new Error('a pure append must not re-render the transcript'); }, _reconcileTranscript() { throw new Error('a pure append must not reconcile the transcript'); } };
     await ctx.sync(appendState, appendRefs, 212);
     assert.equal(appended, true, 'a pure append uses the cheap tail append');
     assert.equal(appendState.messages.length, 2);

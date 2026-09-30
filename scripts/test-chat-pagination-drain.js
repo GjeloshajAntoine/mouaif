@@ -3,8 +3,8 @@
 // whose rows were all already in memory.
 //
 // fetchAndPrependOlderPage() advances the pagination cursor from the
-// server's authoritative `beforeSeq` and dedupes rows against
-// state.seenSeqs. A page can legitimately come back with every row
+// server's authoritative `beforeSeq` and dedupes rows against the seqs
+// already held in state.messages (msgMerge.js heldSeqs). A page can legitimately come back with every row
 // already seen — a window edge from a reconcile that landed between
 // loads — so it inserts nothing. Two things used to treat that as "no
 // more history":
@@ -24,6 +24,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+// msgMerge.js is an ES module; the harness only needs its pure heldSeqs.
+function heldSeqs(messages) {
+  const set = new Set();
+  for (const m of messages || []) if (m && typeof m.seq === 'number') set.add(m.seq);
+  return set;
+}
 
 function loadStream(globals) {
   const source = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/stream.js'), 'utf8');
@@ -60,15 +66,17 @@ function check(name, condition, detail) {
 function harness(pages, opts = {}) {
   const fetches = [];
   const prepends = [];
+  // `opts.seen` lists seqs already in memory; they are held as rows,
+  // because the dedup set is derived from state.messages.
   const state = {
-    seenSeqs: new Set(opts.seen || []),
-    messages: [],
+    messages: (opts.seen || []).map((seq) => ({ role: 'user', content: '', seq })),
     streaming: false,
     watchingRun: false,
     props: { projectDir: '/p', chatId: 'c' }
   };
   const refs = { transcript: { current: { tagName: 'DIV' } } };
   const mod = loadStream(Object.assign({
+    heldSeqs,
     whenTranscriptSettled: () => Promise.resolve(),
     cancelTranscriptRender() {},
     // fetchMessagesWindow() lives inside stream.js and builds the URL
