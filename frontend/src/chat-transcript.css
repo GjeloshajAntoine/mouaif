@@ -41,6 +41,9 @@
 .chat-msg:nth-child(2)   { animation-delay: 185ms; }
 .chat-msg:nth-child(1)   { animation-delay: 0ms; }
 .chat-msg--user { align-self: flex-end; align-items: flex-end; }
+/* Rows prepended above the viewport (older pages, chunked backfill) are not
+  seen arriving, so they skip the entry animation. */
+.chat-view__transcript > .is-backfilled { animation: none; }
 /* ---- Off-screen row skipping (cheap windowing) --------------------
    After every older page has loaded the whole chat stays in the DOM, so a
    long agentic transcript lays out and paints hundreds of rows that are
@@ -58,11 +61,22 @@
    Scoped away from the two hot paths: a live/streaming assistant row
    (which grows every frame and must stay laid out), and the overlay
    auth/ask cards (which are scrolled into view on mount, and a skipped
-   element cannot be measured). */
-.chat-view__transcript > .chat-msg:not([data-live="1"]),
-.chat-view__transcript > .tool-card:not([data-auth-call-id]) {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 120px;
+   element cannot be measured).
+
+   Only where the browser has CSS scroll anchoring. A skipped row reports the
+   120px placeholder until it first scrolls into view, then snaps to its real
+   height; above the viewport that pushes everything below it down. Scroll
+   anchoring (Chrome, Firefox) cancels the shift. WebKit (Safari, every iOS
+   browser) has no scroll anchoring, so there each placeholder resize was a
+   visible jump — nearly every step of a scroll up through freshly loaded
+   history jumped by up to a row's height. Those engines lay out every row
+   instead: a steady scroll is worth more than the skipped paint. */
+@supports (overflow-anchor: auto) {
+  .chat-view__transcript > .chat-msg:not([data-live="1"]),
+  .chat-view__transcript > .tool-card:not([data-auth-call-id]) {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 120px;
+  }
 }
 /* Rows never shrink. The transcript is a height-bounded flex column, and a
    skipped (content-visibility) row's min-content height is 0, so default

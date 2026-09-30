@@ -25,7 +25,7 @@ import {
 renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender, reconcileTranscript
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills, toggleSkill } from './cards.js';
-import { scrollTranscriptToBottom, scrollToAdjacentMessage, noteTranscriptScrollTop, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
+import { scrollTranscriptToBottom, scrollToAdjacentMessage, noteTranscriptScrollTop, noteTranscriptScroll, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
   updateMetaLine, refreshSystemPrompt, activeProfileId, updateSwitch, updateSetupVisibility
@@ -1157,8 +1157,13 @@ setRunningVisible(false);
     // anchoring) and height grown by streaming between our pin and the
     // event must not strand a live reply below the fold.
     const intent = trackUserScrollIntent(el);
+    // Older-page prepends wait for the transcript to go idle (see
+    // whenTranscriptScrollIdle) so they never interrupt a fling.
+    refs._scrollIntent = intent;
+    refs._lastScrollAt = 0;
     refs._transcriptOverflows = false;
   function onScroll() {
+  noteTranscriptScroll(refs);
   noteTranscriptScrollTop(refs, el.scrollTop);
   if (isTranscriptPinScroll(refs, el.scrollTop)) return;
   const near = isNearBottom(el);
@@ -1236,6 +1241,7 @@ loadOlderMessages(state, refs, msgPager.current).catch(() => {});
       el.removeEventListener('scroll', onScroll);
       el.removeEventListener('load', onLoadCapture, true);
       intent.dispose();
+      if (refs._scrollIntent === intent) refs._scrollIntent = null;
       if (mo) mo.disconnect();
       if (ro) ro.disconnect();
       observedRows.clear();

@@ -155,8 +155,13 @@ function transcriptInsert(refs, node) {
   const el = refs.transcript.current;
   if (!el) return;
   const anchor = refs._insertAnchor;
-  if (anchor && anchor.parentNode === el) el.insertBefore(node, anchor);
-  else el.appendChild(node);
+  if (anchor && anchor.parentNode === el) {
+    // Older history lands above the rows already on screen, out of view.
+    // Skip the entry animation: a page of 100 rows each running it is
+    // compositor work in the middle of the user's scroll, for nothing seen.
+    if (node.classList) node.classList.add('is-backfilled');
+    el.insertBefore(node, anchor);
+  } else el.appendChild(node);
   // Remember the node just placed. The transcript's row builders all insert
   // through here, and the reconciler stamps identity from this rather than
   // guessing "the last message row": the chunked backfill inserts ABOVE its

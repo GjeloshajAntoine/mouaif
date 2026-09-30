@@ -65,6 +65,8 @@ export function trackUserScrollIntent(el, now = () => Date.now()) {
   el.addEventListener('pointerdown', mark, opts);
   keyTarget.addEventListener('keydown', onKey);
   return {
+    // A finger is on the transcript (drag or the hold before momentum).
+    isTouching() { return touching; },
     isUserScroll() {
       if (touching) return true;
       if (now() > until) return false;
@@ -81,6 +83,39 @@ export function trackUserScrollIntent(el, now = () => Date.now()) {
       keyTarget.removeEventListener('keydown', onKey);
     }
   };
+}
+
+// noteTranscriptScroll(refs, now?)
+//
+// Stamp the time of the latest transcript scroll event. Called from the
+// scroll listener; read by whenTranscriptScrollIdle.
+export function noteTranscriptScroll(refs, now = Date.now()) {
+  refs._lastScrollAt = now;
+}
+
+// whenTranscriptScrollIdle(refs, opts?) -> Promise<void>
+//
+// Resolve once the transcript has stopped moving: no finger on it and no
+// scroll event for `quietMs`. Older-page prepends wait on this before they
+// write the compensating `scrollTop`. On WebKit (Safari, every iOS browser)
+// a programmatic `scrollTop` write during touch momentum cancels the fling
+// and the view lurches, so a page landing mid-swipe made history jump.
+// Bounded by `maxMs` so a transcript that never goes quiet cannot starve
+// pagination.
+export function whenTranscriptScrollIdle(refs, opts = {}) {
+  const quietMs = opts.quietMs == null ? 160 : opts.quietMs;
+  const maxMs = opts.maxMs == null ? 3000 : opts.maxMs;
+  const now = opts.now || (() => Date.now());
+  const wait = opts.wait || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const start = now();
+  const busy = () => {
+    const intent = refs._scrollIntent;
+    if (intent && typeof intent.isTouching === 'function' && intent.isTouching()) return true;
+    return typeof refs._lastScrollAt === 'number' && now() - refs._lastScrollAt < quietMs;
+  };
+  return (async () => {
+    while (busy() && now() - start < maxMs) await wait(Math.max(16, quietMs / 2));
+  })();
 }
 
 // scrollTranscriptToBottom(refs)

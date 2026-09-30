@@ -28,7 +28,7 @@ cancelTranscriptRender,
 whenTranscriptSettled,
 clearLiveSegment
 } from './transcript.js';
-import { afterTranscriptAppend } from './scroll.js';
+import { afterTranscriptAppend, whenTranscriptScrollIdle } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
 import { refreshChatTitle, updateChat } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
@@ -451,6 +451,12 @@ pager.hasMore = false;
 pager.beforeSeq = null;
 return true;
 }
+// Hold the prepend until the user stops scrolling: its scrollTop
+// compensation would cancel an iOS fling mid-swipe (a visible jump).
+// The chat may change while we wait — drop the page rather than write
+// it into the next chat's transcript; the cursor is left untouched.
+await whenTranscriptScrollIdle(refs);
+if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) return false;
 // Prepending could run while a chunked render or reconcile is in play;
 // guard against overlap by cancelling superseded transcript renders so
 // the inserted rows aren't wiped or duplicated. The reset also clears

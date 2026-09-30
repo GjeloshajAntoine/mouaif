@@ -15,6 +15,21 @@ No user-visible control — the behavior is automatic.
 
 The transcript cursor is the same stable per-chat `seq` used by the append-only tail sync, so the paginated view and the streaming/append path never disagree.
 
+## Scroll stability
+
+Scrolling up while older pages load keeps the rows you are reading in place on every browser, including iPhone and iPad:
+
+- **Pages land between swipes.** A fetched page waits until no finger is on the transcript and no scroll event has fired for 160 ms, capped at 3 s so loading cannot stall. The compensating `scrollTop` write therefore never cancels an iOS momentum fling mid-swipe.
+- **No placeholder jumps without scroll anchoring.** Off-screen row skipping (`content-visibility: auto`) is enabled only where the browser supports CSS scroll anchoring (`@supports (overflow-anchor: auto)`). WebKit (Safari and every iOS browser) has no scroll anchoring. There a skipped row snapped from its 120 px placeholder to its real height as it scrolled into view, which pushed the rows being read down on almost every step. Those engines now lay out every row.
+- **No entry animation for history.** Rows inserted above the viewport by a page prepend or the chunked open-time backfill get an `is-backfilled` class that disables the bubble-in animation. That saves compositor work in the middle of a scroll, for rows the user never sees arrive.
+
+## Implementation notes
+
+- `whenTranscriptScrollIdle(refs)` and `noteTranscriptScroll(refs)` in `frontend/src/components/chat/scroll.js`. The scroll listener in `useChatState.js` stamps `refs._lastScrollAt` and exposes the user-intent tracker as `refs._scrollIntent`, whose `isTouching()` reports a held finger.
+- `fetchAndPrependOlderPage` in `frontend/src/components/chat/stream.js` awaits the idle gate after the fetch. It drops the page, leaving the cursor unchanged, if the chat changed while it waited.
+- `transcriptInsert` in `frontend/src/components/chat/transcript.js` tags anchored (above-viewport) inserts with `is-backfilled`.
+- Test: `scripts/test-chat-pagination-scroll.mjs` (part of `npm run test:chat-view`).
+
 ## Related
 
 - [Chat load performance](./chat-load-performance.md) — the earlier load-time work (cost aggregation, revision cursor, lazy tool results).

@@ -96,6 +96,8 @@ On a chat switch, `renderTranscript` clears the card index along with the rows i
 
 `frontend/src/chat-transcript.css` applies `content-visibility: auto` with `contain-intrinsic-size: auto 120px` to the transcript's message rows and tool cards. After every older page has loaded the whole chat stays in the DOM, so a long transcript otherwise lays out and paints hundreds of off-screen rows; this lets the browser skip them, and the intrinsic size keeps the scrollbar geometry stable instead of collapsing skipped rows to zero. This is the cheap first step — the shared `frontend/src/virtual-list.js` is not wired into the chat.
 
+The rule is wrapped in `@supports (overflow-anchor: auto)`. A skipped row reports the placeholder until it first renders, then snaps to its real height; above the viewport that shift is cancelled only by CSS scroll anchoring, which WebKit lacks. On Safari/iOS the unguarded rule made nearly every step of a scroll up through fresh history jump by up to a row's height (measured in the pagination fixture with `overflow-anchor: none`: 318 of 332 steps jumped, max 199 px; 0 with the rule off).
+
 Two selectors are excluded on purpose:
 
 - `[data-live="1"]` — the streaming assistant row grows every frame and must stay laid out.
