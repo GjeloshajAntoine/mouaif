@@ -3,23 +3,31 @@ import { h } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
 import { fileToImageAttachment } from './imageInput.js';
+import { formatVideoTime, videoSampleTimes, waitForVideo, seekVideoFrame, releaseVideo } from './videoCapture.js';
 import { MAX_CAPTURE_FRAMES, captureCanvas, captureAttachment, exportCapture, frameDifference, normalizedZone } from './screenCapture.js';
 
 export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
   const [sharing, setSharing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [automatic, setAutomatic] = useState(false);
+  const [importedVideo, setImportedVideo] = useState(null);
+  const [videoPosition, setVideoPosition] = useState(0);
+  const [extracting, setExtracting] = useState(false);
   const [intervalSeconds, setIntervalSeconds] = useState(3);
   const [mode, setMode] = useState('changes');
   const [frames, setFrames] = useState([]);
   const [zones, setZones] = useState([]);
   const [drawing, setDrawing] = useState(false);
   const [draftZone, setDraftZone] = useState(null);
-  const [message, setMessage] = useState('Choose a screen or import screenshots. Nothing is sent automatically.');
+  const [message, setMessage] = useState('Choose a screen or import screenshots or a video. Nothing is sent automatically.');
   const [error, setError] = useState('');
   const [attaching, setAttaching] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const importedVideoRef = useRef(null);
+  const videoUrlRef = useRef(null);
+  const videoSourceRef = useRef(null);
+  const videoAbortRef = useRef(null);
   const aliveRef = useRef(true);
   const requestRef = useRef(0);
   const framesRef = useRef([]);
@@ -42,6 +50,10 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
   useEffect(() => () => {
     aliveRef.current = false;
     stopSharing(false);
+    videoAbortRef.current?.abort();
+    releaseVideo(videoSourceRef.current, videoUrlRef.current);
+    videoUrlRef.current = null;
+    videoSourceRef.current = null;
     framesRef.current = [];
   }, []);
 
@@ -70,7 +82,66 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
     }
   }
 
-  function addFrame(canvas) {
+  function onRemoveVideo() {
+    videoAbortRef.current?.abort();
+    videoAbortRef.current = null;
+    releaseVideo(videoSourceRef.current, videoUrlRef.current);
+    videoUrlRef.current = null;
+    videoSourceRef.current = null;
+    setImportedVideo(null); setVideoPosition(0); setBusy(false); setExtracting(false);
+  }
+
+  async function onImportVideo(event) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+    onRemoveVideo(); setError(''); setBusy(true);
+    const controller = new AbortController();
+    videoAbortRef.current = controller;
+    const video = importedVideoRef.current;
+    videoSourceRef.current = video;
+    const url = URL.createObjectURL(file);
+    videoUrlRef.current = url;
+    try {
+      await waitForVideo(video, 'loadeddata', () => { video.src = url; video.load(); }, controller.signal);
+      if (!aliveRef.current || controller.signal.aborted) return;
+      if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error('This video has no readable duration. Try a saved MP4 or WebM recording.');
+      setImportedVideo({ name: file.name || 'Imported video', duration: video.duration });
+      setMessage('Video loaded locally. Scrub to a moment and capture it, or extract images at the chosen interval. The video is never uploaded.');
+    } catch (e) {
+      if (aliveRef.current && !controller.signal.aborted) { onRemoveVideo(); setError(e.message); }
+    } finally {
+      if (aliveRef.current && videoAbortRef.current === controller) { videoAbortRef.current = null; setBusy(false); }
+    }
+  }
+
+  async function onExtractVideo(sample = false) {
+    if (!importedVideo || busy || attaching || framesRef.current.length >= MAX_CAPTURE_FRAMES) return;
+    const controller = new AbortController();
+    videoAbortRef.current = controller;
+    setBusy(true); setExtracting(true); setError('');
+    const video = importedVideoRef.current;
+    const start = video.currentTime;
+    const times = sample ? videoSampleTimes(start, importedVideo.duration, intervalSeconds, MAX_CAPTURE_FRAMES - framesRef.current.length) : [start];
+    const initialCount = framesRef.current.length;
+    try {
+      for (const time of times) {
+        await seekVideoFrame(video, time, controller.signal);
+        if (!aliveRef.current || controller.signal.aborted) return;
+        addFrame(captureCanvas(video), `Video ${formatVideoTime(time)}`);
+        setVideoPosition(time);
+      }
+      setMessage(`${framesRef.current.length - initialCount} video images added. Review the selection below; unchanged sampled frames are skipped in changed-area mode.`);
+    } catch (e) {
+      if (aliveRef.current && e.name !== 'AbortError') setError(e.message);
+    } finally {
+      if (aliveRef.current && videoAbortRef.current === controller) {
+        videoAbortRef.current = null; setBusy(false); setExtracting(false);
+      }
+    }
+  }
+
+  function addFrame(canvas, timeLabel = null) {
     const previous = framesRef.current;
     if (previous.length >= MAX_CAPTURE_FRAMES) {
       setAutomatic(false); setMessage('The review tray is full (8 images). Attach your selection or clear it.'); return;
@@ -82,7 +153,7 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
     if (sameSize && !bounds && settings.mode === 'changes') {
       setMessage('No changes outside the ignored zones. No new image saved.'); return;
     }
-    const frame = { id: previous.length + 1, canvas, selected: true, output: settings.mode, time: new Date().toLocaleTimeString() };
+    const frame = { id: previous.length + 1, canvas, selected: true, output: settings.mode, time: timeLabel || new Date().toLocaleTimeString() };
     const next = previous.concat(frame);
     framesRef.current = next; setFrames(next); setError('');
     setMessage(next.length === 1 ? 'Baseline captured. Later images can contain only the changed area.' : `Image ${next.length} captured. Review before attaching.`);
@@ -173,7 +244,7 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
     else setMessage('Drag across the preview to create an ignored rectangle.');
   }
   async function onConfirm() {
-    if (!chosen.length || chosen.length > availableSlots || attaching) return;
+    if (!chosen.length || chosen.length > availableSlots || attaching || busy) return;
     stopSharing(); setAttaching(true); setError('');
     try {
       await onAttach(chosen.map((frame) => captureAttachment(frame.dataUrl, frame.id - 1, frame.bounds)));
@@ -195,11 +266,24 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
         h('video', { ref: videoRef, muted: true, playsInline: true, class: 'capture__video', 'aria-hidden': 'true' }),
         h('section', { class: 'capture__card' },
           h('h3', null, '1. Choose a source'),
-          h('p', { class: 'capture__hint' }, sharing ? 'Screen sharing is active. Stop it at any time.' : supported ? 'Choose a browser tab, window or screen in the browser’s sharing dialog.' : 'This browser cannot share a screen. Import screenshots to compare them instead; desktop sharing requires HTTPS or localhost.'),
+          h('p', { class: 'capture__hint' }, sharing ? 'Screen sharing is active. Stop it at any time.' : supported ? 'Choose a browser tab, window or screen in the browser’s sharing dialog.' : 'This browser cannot share a screen. Import screenshots or a screen-recording video instead; desktop sharing requires HTTPS or localhost.'),
           h('div', { class: 'capture__actions' },
-            sharing ? button('Stop sharing', () => { stopSharing(); setMessage('Sharing stopped. Review your captures below.'); }) : button(busy ? 'Opening…' : 'Share screen', onStartSharing, !supported || busy || attaching, true),
+            sharing ? button('Stop sharing', () => { stopSharing(); setMessage('Sharing stopped. Review your captures below.'); }) : button(busy ? 'Opening…' : 'Share screen', onStartSharing, !supported || busy || attaching || !!importedVideo, true),
             h('label', { class: 'btn capture__import' + (busy || sharing || attaching || frames.length >= 8 ? ' capture__import--disabled' : '') }, 'Import screenshots',
-              h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, disabled: busy || sharing || attaching || frames.length >= 8, onChange: onImport, 'aria-label': 'Import screenshots' }))
+              h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', multiple: true, disabled: busy || sharing || attaching || frames.length >= 8, onChange: onImport, 'aria-label': 'Import screenshots' })),
+            h('label', { class: 'btn capture__import' + (busy || sharing || attaching ? ' capture__import--disabled' : '') }, 'Import video',
+              h('input', { type: 'file', accept: 'video/*,.mp4,.mov,.m4v,.webm', disabled: busy || sharing || attaching, onChange: onImportVideo, 'aria-label': 'Import video' }))
+          ),
+          h('div', { class: 'capture__video-source', hidden: !importedVideo },
+            h('p', { class: 'capture__hint' }, importedVideo ? `${importedVideo.name} · ${formatVideoTime(importedVideo.duration)} · Local only` : ''),
+            h('video', { ref: importedVideoRef, controls: !busy, muted: true, playsInline: true, preload: 'auto', 'aria-label': 'Imported video preview', onTimeUpdate: (e) => { if (!busy) setVideoPosition(e.currentTarget.currentTime); } }),
+            h('p', { class: 'capture__hint' }, `Selected moment: ${formatVideoTime(videoPosition)}. Use the video timeline to choose a frame.`),
+            h('div', { class: 'capture__actions' },
+              button('Capture this frame', () => onExtractVideo(), busy || attaching || frames.length >= 8, true),
+              button(`Extract every ${intervalSeconds}s`, () => onExtractVideo(true), busy || attaching || frames.length >= 8),
+              extracting ? button('Stop extracting', () => videoAbortRef.current?.abort()) : button('Remove video', onRemoveVideo, busy || attaching)
+            ),
+            h('p', { class: 'capture__hint' }, 'Extraction starts at the selected moment and samples up to the remaining tray slots. Only chosen PNG images will be attached; no video or audio is sent.')
           )
         ),
         h('section', { class: 'capture__card' },
@@ -231,7 +315,7 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
             button('Remove', () => setZones((previous) => previous.filter((_, i) => i !== index)), attaching)))) : null
         ),
         h('section', { class: 'capture__card' },
-          h('div', { class: 'capture__review-head' }, h('h3', null, `4. Review · ${frames.length}/8`), button('Clear tray', onClear, !frames.length || attaching)),
+          h('div', { class: 'capture__review-head' }, h('h3', null, `4. Review · ${frames.length}/8`), button('Clear tray', onClear, !frames.length || attaching || busy)),
           !frames.length ? h('div', { class: 'capture__empty' }, 'Your captures will appear here. Choose the images you want to attach.') : null,
           h('div', { class: 'capture__gallery' }, prepared.map((frame, index) => h('article', { key: frame.id, class: 'capture__frame' + (frame.selected && frame.eligible ? ' capture__frame--selected' : '') },
             h('label', { class: 'capture__selection' }, h('input', { type: 'checkbox', checked: frame.selected, disabled: !frame.eligible || attaching, onChange: (e) => updateFrame(frame.id, { selected: e.currentTarget.checked }) }), `Image ${index + 1}`, h('span', null, frame.time)),
@@ -245,7 +329,7 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
       ),
       h('footer', { class: 'capture__footer' },
         h('p', null, chosen.length > availableSlots ? `Choose at most ${availableSlots} images. The chat allows 8 attachments.` : `${chosen.length} selected · ${availableSlots} attachment slots available`),
-        button(attaching ? 'Saving…' : `Attach ${chosen.length || ''} image${chosen.length === 1 ? '' : 's'}`, onConfirm, !chosen.length || chosen.length > availableSlots || attaching, true),
+        button(attaching ? 'Saving…' : `Attach ${chosen.length || ''} image${chosen.length === 1 ? '' : 's'}`, onConfirm, !chosen.length || chosen.length > availableSlots || attaching || busy, true),
         h('small', null, 'Adds images to your draft. Use Send in chat when ready.')
       )
     )

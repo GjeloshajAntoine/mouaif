@@ -7,7 +7,7 @@ Capture a screen as selected PNG images instead of uploading a video. A send-sty
 ## Usage
 
 1. Tap **Capture screen images** beside the chat textbox.
-2. Choose **Share screen**, then pick a tab, window or screen in the browser's permission dialog. Alternatively, **Import screenshots** in chronological order; this also works on phones whose browsers do not support screen sharing.
+2. Choose **Share screen**, then pick a tab, window or screen in the browser's permission dialog. Alternatively, **Import screenshots** in chronological order or **Import video** from your saved screen recordings; both work without screen sharing.
 3. Choose **Changed area only** (the default) or **Full image**, then tap **Capture now**. Optionally enable **Capture automatically** at a 2, 3, 5 or 10 second interval. No video or audio is recorded.
 4. The first image is a full baseline. Later changed-area captures contain the smallest rectangular area covering meaningful changes from the previous captured image. Unchanged captures are skipped. A source-size change produces a new full image.
 5. Under **Ignore zones**, use **Ignore top 5% (status bar)** or tap **Draw ignored zone** and drag a rectangle across the full-image preview. Remove zones individually if needed. Up to eight zones apply to the entire review tray, including captures already taken.
@@ -16,13 +16,23 @@ Capture a screen as selected PNG images instead of uploading a video. A send-sty
 
 **Stop sharing** ends capture without discarding the review tray. **Clear tray** removes its captures and resets the baseline, but preserves ignored zones. Closing the sheet discards its unconfirmed images and stops sharing. A tray holds eight images; the chat draft also has an eight-attachment limit, including existing attachments.
 
+### Import a screen-recording video
+
+1. Tap **Import video** and select a saved video, such as a phone screen recording. The browser decodes it locally; supported codecs depend on your browser (MP4/H.264 is a good starting point, with MOV/M4V/WebM supported where the browser can decode them).
+2. Use the preview's video timeline to choose a moment, then tap **Capture this frame** for one still image.
+3. Or choose an interval in **Capture images**, then tap **Extract every 3s** (the label follows your interval). It samples from the selected moment forward, up to the remaining review-tray slots. It does not scan the entire recording: for later content, scrub further and extract again after clearing or attaching the current tray.
+4. Use the same full/changed-area mode, ignored zones, and image selection as other captures. Cards show the video's timestamp instead of the capture's wall-clock time. Small or unchanged differences are skipped in changed-area mode.
+5. **Stop extracting** cancels extraction while preserving the frames already extracted. **Remove video** releases the source video but keeps its extracted images. Closing the sheet releases the video too.
+
+Only confirmed PNG images are attached. The original video and its audio are **never uploaded or sent to the AI**. Sharing and video import are mutually exclusive sources: remove the imported video to enable Share screen again. If a video cannot be decoded, an error explains how to retry with another format.
+
 ### Disable the button
 
 Open **Settings → App defaults → Chat defaults** and turn off **Screen capture button in chat**. This app-wide preference hides the button; it does not change ordinary image attachments or pasted screenshots. The capture button is disabled when the draft already contains eight images.
 
 ### Browser support and privacy
 
-Live sharing uses the browser's `getDisplayMedia` permission dialog and needs a secure context (HTTPS or localhost). Many mobile browsers do not implement it: use imported screenshots there. An HTTP page on a phone connected over a LAN may also lack live-sharing support.
+Live sharing uses the browser's `getDisplayMedia` permission dialog and needs a secure context (HTTPS or localhost). Many mobile browsers do not implement it: use imported screenshots or video there. An HTTP page on a phone connected over a LAN may also lack live-sharing support.
 
 Raw frames stay in browser memory only while the sheet is open. Ignored zones both suppress change detection **and are blacked out in exported full and cropped images**. They are not merely comparison exclusions. Capture does not upload continuously, record video, or acquire audio. Only selected, masked images are saved to the existing chat draft attachment endpoint on confirmation; the provider receives them on the usual chat Send.
 

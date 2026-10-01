@@ -75,7 +75,7 @@ One page per feature: what it does and how to use it.
 - [Trace to file](features/trace.md) — save a chat's events to a file in the project.
 - [Dictation](features/dictation.md) — speech-to-text from a Settings page and from the composer microphone.
 - [Composer tool buttons](features/composer-tool-buttons.md) — show or hide the microphone, image button, screen capture button and composer status line.
-- [Chat screen capture](features/screen-capture.md) — review full or changed-area PNGs, ignore and mask zones, and attach selected screenshots instead of video.
+- [Chat screen capture](features/screen-capture.md) — review full or changed-area PNGs from screens, screenshots or imported videos, with ignored and masked zones.
 - [File button: glass orb](features/file-button-orb.md) — an optional animated look for the composer's file button.
 - [File toolbar](features/file-toolbar.md) — the composer menu for Files, Git, and the CLI.
 - [Files modal](features/files-modal-text-and-images.md) — edit any text file and preview images.
