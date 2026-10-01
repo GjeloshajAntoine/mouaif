@@ -21,6 +21,7 @@
 // install is the documented degraded mode, not a failure.
 
 'use strict';
+require('./lib/test-home.js').isolate('mouaif-cli-pty-');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');

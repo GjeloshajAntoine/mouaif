@@ -10,6 +10,7 @@
 // GET /api/tools/cli/sessions lists it as running, and POST /cli/close (the
 // explicit Stop) removes it.
 'use strict';
+require('./lib/test-home.js').isolate('mouaif-cli-bg-');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');

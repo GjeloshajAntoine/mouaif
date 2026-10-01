@@ -1,4 +1,5 @@
 'use strict';
+require('./lib/test-home.js').isolate('mouaif-restart-supervisor-');
 // Verifies the restart API: POST /api/restart respawns a fresh worker
 // process (so the latest code is loaded from disk) while the supervisor —
 // the process the user launched — keeps running. See docs/features/restart-api.md.
@@ -85,6 +86,9 @@ async function main() {
   try {
     await waitForBoots(1);
     check(true, 'server boots (worker #1)');
+    const initial = await getJson(PORT, '/api/settings');
+    check(initial.status === 200 && initial.body.home === process.env.MOUAIF_HOME,
+      'the initial worker uses the isolated test home');
 
     const r1 = await getJson(PORT, '/api/restart', 'POST', { reason: 'test', delayMs: 100 });
     check(r1.status === 200 && r1.body.ok && r1.body.mode === 'relaunch', `restart accepted: ${JSON.stringify(r1.body)}`);
@@ -100,6 +104,9 @@ async function main() {
 
     await waitForBoots(3);
     check(true, 'server boots a third time (worker #3)');
+    const restarted = await getJson(PORT, '/api/settings');
+    check(restarted.status === 200 && restarted.body.home === process.env.MOUAIF_HOME,
+      'restarted workers keep the isolated test home');
   } finally {
     await killTree(child);
   }

@@ -1,5 +1,7 @@
 'use strict';
 
+require('./lib/test-home.js').isolate('mouaif-trace-project-');
+
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');

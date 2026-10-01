@@ -8,6 +8,8 @@
 // served at the root / (no / prefix).
 'use strict';
 
+require('./lib/test-home.js').isolate('mouaif-pwa-');
+
 const http = require('http');
 const path = require('path');
 

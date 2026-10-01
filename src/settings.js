@@ -27,7 +27,56 @@ const os = require('os');
 const crypto = require('crypto');
 const Database = require('better-sqlite3');
 
-const MOUAIF_HOME = process.env.MOUAIF_HOME || path.join(os.homedir(), '.mouaif');
+const DEFAULT_HOME = path.join(os.homedir(), '.mouaif');
+const MOUAIF_HOME = process.env.MOUAIF_HOME || DEFAULT_HOME;
+// A test process must never open the real app store. Test/probe scripts run
+// in-process against src/ modules, and a missing — or too-late — MOUAIF_HOME
+// used to let them write to ~/.mouaif/store.sqlite: every
+// `settings.setApp({ providers: [...] })` then replaced the whole provider
+// array and dropped real connections (see the 2026-08-06 incident, fixed for
+// the checked-in tests in commit "isolate test app stores"). Refuse the
+// default home from a test process so the mistake fails loudly instead of
+// corrupting the running instance. The server and CLI are not test processes
+// and keep the default home; MOUAIF_ALLOW_REAL_HOME=1 is the deliberate
+// override for a one-off run against the real store.
+const REPO_SCRIPTS_DIR = path.join(__dirname, '..', 'scripts');
+function isTestProcess() {
+  if (process.env.NODE_TEST_CONTEXT) return true; // node --test
+  if (process.env.MOUAIF_TEST === '1') return true;
+  const entry = process.argv[1];
+  if (typeof entry !== 'string' || !entry) return false;
+  const resolved = path.resolve(entry);
+  if (!resolved.startsWith(REPO_SCRIPTS_DIR + path.sep)) return false;
+  return /^(test|probe)[-_.]/.test(path.basename(resolved));
+}
+// A test may spawn a child (`bin/mouaif.js serve`, a pty shell). The child has
+// its own argv and would look like the running server, so carry the marker in
+// the environment; the child's settings.js then refuses the real home too.
+if (isTestProcess()) process.env.MOUAIF_TEST = '1';
+// Resolve symlink aliases without creating directories. A fresh test home (or
+// the default home) may not exist yet; resolve its nearest existing parent
+// and append the missing path components instead.
+function canonicalStoreHome(home) {
+  const resolved = path.resolve(home);
+  try { return fs.realpathSync(resolved); }
+  catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+    const parent = path.dirname(resolved);
+    if (parent === resolved) throw err;
+    return path.join(canonicalStoreHome(parent), path.basename(resolved));
+  }
+}
+function assertStoreHomeSafe(home) {
+  if (process.env.MOUAIF_ALLOW_REAL_HOME === '1') return;
+  if (!isTestProcess()) return;
+  if (canonicalStoreHome(home) !== canonicalStoreHome(DEFAULT_HOME)) return;
+  const err = new Error('Refusing to open the real app store (' + DEFAULT_HOME
+    + ') from a test process. Set MOUAIF_HOME to a temp directory before requiring src/settings.js: '
+    + 'a test must never read or write the running instance. Use MOUAIF_ALLOW_REAL_HOME=1 only for a '
+    + 'deliberate run against the real store.');
+  err.code = 'MOUAIF_REAL_HOME_IN_TEST';
+  throw err;
+}
 const PROJECT_FILE = '.mouaif.json';
 // Optional per-project folder holding the config file for complex projects:
 // <projectDir>/.mouaif/.mouaif.json. See getProjectPath().
@@ -627,7 +676,10 @@ function writeProjectJson(filePath, obj) {
 
 let _appDb = null;
 function db() {
-  if (!_appDb) _appDb = openDb(MOUAIF_HOME);
+  if (!_appDb) {
+    assertStoreHomeSafe(MOUAIF_HOME);
+    _appDb = openDb(MOUAIF_HOME);
+  }
   return _appDb;
 }
 

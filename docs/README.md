@@ -164,6 +164,7 @@ Published pages about how the app is built. They are reachable by URL but not li
 Kept in the repository for contributors and never published.
 
 - [Architectural decisions](decisions.md) — the numbered decision log.
+- [Test isolation](agent/features/test-isolation.md) — the guard that stops a test from opening the real app store.
 - `agent/features/<slug>.md` — implementation notes for each feature page: source files, data shapes, endpoints, and tests.
 - [Chat element mockup](agent/features/chat-element-mockup.md) — the dev-only harness that mounts every chat element from the real renderers.
 

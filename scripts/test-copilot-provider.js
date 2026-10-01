@@ -8,6 +8,8 @@
 // the curated catalog, and the host allow-list for `endpoints.api`.
 'use strict';
 
+require('./lib/test-home.js').isolate('mouaif-copilot-');
+
 const ai = require('../src/ai-endpoints.js');
 const copilot = require('../src/oauth-github-copilot.js');
 const auth = require('../src/auth.js');

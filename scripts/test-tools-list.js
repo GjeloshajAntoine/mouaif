@@ -4,6 +4,8 @@
 // hit when a user toggles a tool chip on a brand-new chat.
 'use strict';
 
+require('./lib/test-home.js').isolate('mouaif-tl-');
+
 const http = require('http');
 const path = require('path');
 const fs = require('fs');

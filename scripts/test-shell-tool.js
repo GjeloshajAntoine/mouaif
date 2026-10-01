@@ -1,5 +1,7 @@
 'use strict';
 
+require('./lib/test-home.js').isolate('mouaif-shell-tool-');
+
 // Smoke test for the native shell tool (src/tools/shell.js) and the
 // multi-turn tool loop in ai.streamChat (src/ai.js). No real provider
 // is contacted: a local HTTP server mocks an OpenAI-compatible upstream

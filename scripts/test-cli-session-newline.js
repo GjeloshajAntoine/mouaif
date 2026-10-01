@@ -8,6 +8,7 @@
 // `$'ls\r': command not found`. This test drives the real endpoint over the
 // SSE channel and asserts that a plain `ls` lists files instead.
 'use strict';
+require('./lib/test-home.js').isolate('mouaif-cli-session-home-');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');

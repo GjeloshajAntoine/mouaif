@@ -1,5 +1,7 @@
 'use strict';
 
+require('./lib/test-home.js').isolate('mouaif-web-csp-');
+
 // Live-server test for the Content-Security-Policy the app ships with.
 //
 // The policy is defence in depth behind the escaping each surface already

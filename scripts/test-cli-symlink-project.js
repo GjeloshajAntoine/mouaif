@@ -9,6 +9,7 @@
 // command, close and the post-close state.
 
 'use strict';
+require('./lib/test-home.js').isolate('mouaif-cli-link-home-');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');

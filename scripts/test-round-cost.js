@@ -1,6 +1,7 @@
 // Verify that intermediate assistant segments (persisted at
 // assistant_turn_end before tool rounds) carry their own usage + cost.
 'use strict';
+require('./lib/test-home.js').isolate('mouaif-round-cost-home-');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');

@@ -6,6 +6,8 @@
 // answers plain JSON (409 EAUTH_REQUIRED in ask mode).
 'use strict';
 
+require('./lib/test-home.js').isolate('mouaif-shellstream-home-');
+
 const http = require('http');
 const path = require('path');
 const fs = require('fs');

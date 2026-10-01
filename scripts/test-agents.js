@@ -1,5 +1,7 @@
 'use strict';
 
+require('./lib/test-home.js').isolate('mouaif-agents-');
+
 // Offline tests for src/agents.js — the subagent-persona store.
 // Covers: name validation, create/read/update/remove, rename via update,
 // tool-allowlist normalization, the 64 KiB cap, and the legacy
