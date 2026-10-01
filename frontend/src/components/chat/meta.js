@@ -12,6 +12,7 @@ import { renderSystemPromptMessage } from './transcript.js';
 import { setChatStatus } from './usage.js';
 import { updateSkillsCard } from './cards.js';
 import { skillStateFromResponse } from './skillState.js';
+import { autoresize } from './composer.js';
 
 // updateMetaLine(refs, state)
 //
@@ -93,6 +94,76 @@ export async function refreshChatTitle(state, refs) {
       if (refs.chatName.current) refs.chatName.current.textContent = state.chat.title || chatId;
     }
   } catch { /* non-fatal */ }
+}
+
+// Refresh only successful mutations, not list/get results. The tool writes
+// directly to the store, so the mounted composer/picker must learn about it
+// without the user having to close and reopen the chat.
+export async function applyMouaifToolResult(data, state, refs) {
+  if (!data || data.name !== 'mouaif' || data.ok !== true || !data.result || data.result.ok !== true) return;
+  const result = data.result;
+  const { projectDir, chatId } = state.props;
+  const session = state.session;
+  const changed = Array.isArray(result.updated) && result.chat;
+  const attached = result.target === 'draft' && result.attached;
+  const deleted = typeof result.deleted === 'string';
+  const created = result.url && result.chat;
+  if (!changed && !attached && !deleted && !created) return;
+  let sync = state._mouaifSync;
+  if (!sync || sync.projectDir !== projectDir || sync.chatId !== chatId || sync.session !== session) {
+    sync = { projectDir, chatId, session, seen: new Set(), request: 0, fields: new Set() };
+    state._mouaifSync = sync;
+  }
+  const id = data.id;
+  if (id && sync.seen.has(id)) return;
+  if (id) {
+    sync.seen.add(id);
+    if (sync.seen.size > 200) sync.seen.delete(sync.seen.values().next().value);
+  }
+  projectsReload.value++;
+  if (deleted) {
+    if (result.deleted === chatId) back('projects');
+    return;
+  }
+  const targetId = changed ? result.chat.id : (attached ? result.chatId : null);
+  if (targetId !== chatId) return;
+  for (const key of changed ? result.updated : ['draftAttachments']) sync.fields.add(key);
+  const request = ++sync.request;
+  const input = refs.promptInput && refs.promptInput.current;
+  const draftBefore = input ? input.value : '';
+  const imagesBefore = state.imageAttachments;
+  try {
+    const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '?projectDir=' + encodeURIComponent(projectDir));
+    if (state.props.projectDir !== projectDir || state.props.chatId !== chatId || state.session !== session
+      || sync.request !== request || r.status !== 200 || !r.body || !r.body.chat) return;
+    const fresh = r.body.chat;
+    const fields = Array.from(sync.fields);
+    sync.fields.clear();
+    if (fields.includes('promptId')) fields.push('promptSnapshot');
+    const patch = {};
+    for (const key of fields) patch[key] = fresh[key];
+    state.chat = Object.assign({}, state.chat, patch);
+    if (fields.includes('title') && refs.chatName.current) refs.chatName.current.textContent = fresh.title || chatId;
+    if (fields.includes('draft') && input && input.value === draftBefore && typeof state._setComposerText === 'function') {
+    if (refs.draftSaveTimer && refs.draftSaveTimer.current) {
+      clearTimeout(refs.draftSaveTimer.current);
+      refs.draftSaveTimer.current = null;
+    }
+    input.value = fresh.draft || '';
+    state._setComposerText(input.value);
+    autoresize(refs);
+    }
+    if (fields.includes('draftAttachments') && state.imageAttachments === imagesBefore
+      && typeof state._setImageAttachments === 'function') state._setImageAttachments(fresh.draftAttachments || []);
+    if (fields.includes('modelId') || fields.includes('providerId')) {
+      state._persistedModelPair = (fresh.providerId || '') + '|' + (fresh.modelId || '');
+    }
+    if (fields.includes('modelId') || fields.includes('providerId')) {
+    if (typeof state._onLiveModels === 'function') state._onLiveModels();
+    else if (typeof state._onChatChanged === 'function') state._onChatChanged();
+    }
+    if (fields.includes('promptId') || fields.includes('promptSize')) refreshSystemPrompt(state, refs);
+  } catch { /* a later load can recover a failed metadata refresh */ }
 }
 
 // renameChat(state, refs)

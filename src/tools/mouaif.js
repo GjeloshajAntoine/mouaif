@@ -129,7 +129,7 @@ const SPEC = {
         },
         chatId: {
           type: 'string',
-          description: 'Target chat id. Required by get/update/delete/attach/list_attachments. Defaults to the current chat for attach/list_attachments and is ignored by the rest.'
+          description: 'Target chat id. Required by update/delete. Defaults to the current chat for get/attach/list_attachments and is ignored by the rest.'
         },
         title: { type: 'string', description: 'create/update: chat title (max 200 chars).' },
         topic: {
@@ -142,7 +142,7 @@ const SPEC = {
         },
         query: { type: 'string', description: 'search: text to match against chat titles, drafts, and messages.' },
         providerId: { type: 'string', description: 'create/update: provider connection id for the chat\u2019s model (e.g. "openai-compatible").' },
-        modelId: { type: 'string', description: 'create/update: model id from the project\u2019s model list to give the chat.' },
+        modelId: { type: 'string', description: 'create/update: project or live-catalog model id. A project model can infer its provider; a live model needs providerId. update: "" clears the model choice.' },
         promptId: { type: 'string', description: 'update: id of a custom prompt to attach to the chat ("" clears it).' },
         promptSize: {
           type: 'string',
@@ -265,20 +265,16 @@ function requireChat(projectDir, chatId) {
   return chat;
 }
 
-// Models are per project (docs/decisions.md §3) and a live catalog entry is
-// valid without being persisted, so "the model exists" means "the project
-// lists it, or a provider connection can serve it".
-function assertModel(projectDir, providerId, modelId) {
-  const resolved = settings.getResolved(projectDir);
-  const list = Array.isArray(resolved.models) ? resolved.models : [];
-  const inProject = list.some((m) => m && m.id === modelId && (!providerId || m.provider === providerId));
-  if (inProject) return;
-  const app = settings.getApp();
-  const connections = new Set((Array.isArray(app.providers) ? app.providers : []).map((p) => p && p.id));
-  if (providerId && connections.has(providerId)) return;
-  throw typedError('EBADINPUT',
-    'unknown model "' + modelId + '"' + (providerId ? ' for provider "' + providerId + '"' : '') +
-    ' — the project has no such model and no provider connection serves it. Add it in Settings \u2192 Project \u2192 Models.');
+// Use the REST model resolver for both persisted models and live catalog
+// selections. Return identity only: hydrated credentials must never reach
+// a tool response or a stored chat record.
+function modelSelection(projectDir, providerId, modelId) {
+  try {
+    const model = require('../server-shared.js').resolveModel(modelId, projectDir, providerId);
+    return { providerId: model.provider, modelId: model.id };
+  } catch (e) {
+    throw typedError('EBADINPUT', e.message || String(e));
+  }
 }
 
 // ---- chats area ----------------------------------------------------------
@@ -344,18 +340,14 @@ async function runChats(args, opts) {
   if (action === 'create') {
     const title = trimString(args.title, MAX_TITLE_CHARS);
     const topic = trimString(args.topic, MAX_TOPIC_CHARS);
-    let chat = chats.createChat(projectDir, { title: title || undefined });
     const providerId = trimString(args.providerId, 128);
     const modelId = trimString(args.modelId, 256);
-    // Both the opening line and the model land on the record with the same
-    // updateChat the UI uses (createChat only seeds title/profile defaults).
-    const patch = {};
+    // Validate before creating: a rejected selection must not leave a
+    // blank chat behind. Persist the inferred provider for project models.
+    if (providerId && !modelId) throw typedError('EBADINPUT', 'providerId needs a modelId for action "create"');
+    const patch = modelId ? modelSelection(projectDir, providerId, modelId) : {};
     if (topic) patch.draft = topic;
-    if (modelId) {
-    assertModel(projectDir, providerId, modelId);
-    patch.modelId = modelId;
-    if (providerId) patch.providerId = providerId;
-    }
+    let chat = chats.createChat(projectDir, { title: title || undefined });
     if (Object.keys(patch).length) chat = chats.updateChat(projectDir, chat.id, patch) || chat;
     return ok({
       ok: true,
@@ -378,15 +370,22 @@ async function runChats(args, opts) {
       }
       patch.promptSize = args.promptSize;
     }
-    if (typeof args.promptId === 'string') patch.promptId = trimString(args.promptId, 128) || null;
-    if (typeof args.providerId === 'string' && !Object.prototype.hasOwnProperty.call(patch, 'providerId')) {
-      patch.providerId = trimString(args.providerId, 128) || null;
+    if (typeof args.promptId === 'string') {
+    patch.promptId = trimString(args.promptId, 128) || null;
+    if (patch.promptId && !require('../prompts.js').getPrompt(projectDir, patch.promptId)) {
+      throw typedError('EBADINPUT', 'unknown promptId: ' + patch.promptId);
     }
-    if (typeof args.modelId === 'string') {
-      const providerId = trimString(args.providerId, 128) || current.providerId || '';
-      assertModel(projectDir, providerId, trimString(args.modelId, 256));
-      patch.modelId = trimString(args.modelId, 256) || null;
-      if (providerId) patch.providerId = providerId;
+    }
+    if (typeof args.modelId === 'string' || typeof args.providerId === 'string') {
+    const modelId = typeof args.modelId === 'string' ? trimString(args.modelId, 256) : current.modelId;
+    const providerId = typeof args.providerId === 'string' ? trimString(args.providerId, 128) : (modelId ? current.providerId || '' : '');
+    if (!modelId) {
+      if (providerId) throw typedError('EBADINPUT', 'providerId needs a modelId');
+      patch.modelId = null;
+      patch.providerId = null;
+    } else {
+      Object.assign(patch, modelSelection(projectDir, providerId, modelId));
+    }
     }
     if (!Object.keys(patch).length) {
       throw typedError('EBADINPUT', 'nothing to update: pass title, draft, promptId, promptSize, providerId, or modelId');
@@ -504,11 +503,11 @@ async function runAttachments(args, opts) {
 // Settings responses go through the same projections the HTTP layer uses, so
 // an app-level `apiKey` never reaches the model transcript: `providers` are
 // mapped to `connectionForClient` and `models` to `modelForClient`.
-function forClient(value) {
+function forClient(value, scope = 'app') {
   // Required lazily: server-shared pulls in the whole HTTP handler graph and
   // this module is loaded from the stream loop on every request.
   const shared = require('../server-shared.js');
-  return shared.settingsForClient(value);
+  return scope === 'project' ? shared.projectForClient(value) : shared.settingsForClient(value);
 }
 
 function selectKeys(value, keys) {
@@ -529,7 +528,7 @@ function runSettings(args, opts) {
   if (action === 'settings_get') {
     const scope = trimString(args.scope, 16) || 'app';
     if (scope === 'project') {
-      const value = selectKeys(settings.getProject(projectDir), args.keys);
+      const value = selectKeys(forClient(settings.getProject(projectDir), 'project'), args.keys);
       return ok({ ok: true, scope: 'project', projectDir, settings: value });
     }
     if (scope !== 'app') throw typedError('EBADINPUT', 'scope must be "app" or "project"');
@@ -541,13 +540,22 @@ function runSettings(args, opts) {
   if (scope !== 'app' && scope !== 'project') {
     throw typedError('EBADINPUT', 'scope must be "app" or "project"');
   }
-  const patch = (args.patch && typeof args.patch === 'object' && !Array.isArray(args.patch)) ? args.patch : null;
+  const patch = args.patch ? { ...args.patch } : null;
   const unset = Array.isArray(args.unset) ? args.unset.map((k) => trimString(k, 128)).filter(Boolean) : [];
-  if (!patch && !unset.length) {
-    throw typedError('EBADINPUT', 'settings_update needs a patch object (and/or an unset list for project scope)');
+  if ((!patch || !Object.keys(patch).length) && !unset.length) {
+    throw typedError('EBADINPUT', 'settings_update needs a non-empty patch object (and/or an unset list for project scope)');
   }
-  if (patch && Object.prototype.hasOwnProperty.call(patch, 'apiKey')) {
+  // Refuse credential writes at both supported locations before touching
+  // either store. Redacted provider/model snapshots remain round-trippable.
+  if (patch && (Object.prototype.hasOwnProperty.call(patch, 'apiKey')
+    || ['providers', 'models'].some((key) => Array.isArray(patch[key])
+      && patch[key].some((entry) => entry && Object.prototype.hasOwnProperty.call(entry, 'apiKey'))))) {
     throw typedError('EBADINPUT', 'apiKey is not writable through this tool — connect the provider in Settings \u2192 Providers');
+  }
+  if (patch) {
+    const current = scope === 'app' ? settings.getApp() : settings.getProject(projectDir);
+    const shared = require('../server-shared.js');
+    for (const key of ['providers', 'models']) shared.sanitizeClientEntries(patch, key, current[key]);
   }
   if (scope === 'app') {
     if (unset.length) throw typedError('EBADINPUT', 'unset is only supported for project scope');
@@ -555,15 +563,15 @@ function runSettings(args, opts) {
     const merged = settings.setApp(patch);
     return ok({ ok: true, scope: 'app', updated: Object.keys(patch), settings: forClient(merged) });
   }
-  if (unset.length) settings.unsetProjectKeys(projectDir, unset);
   if (patch) settings.setProject(projectDir, patch);
+  if (unset.length) settings.unsetProjectKeys(projectDir, unset);
   return ok({
     ok: true,
     scope: 'project',
     projectDir,
     updated: patch ? Object.keys(patch) : [],
     removed: unset,
-    settings: settings.getProject(projectDir)
+    settings: forClient(settings.getProject(projectDir), 'project')
   });
 }
 
@@ -610,10 +618,30 @@ const HANDLERS = {
   info: runInfo
 };
 
+// Providers do not all enforce JSON schemas. Validate the published shape
+// here too, before any action can mutate app state.
+function validateArgs(args) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    throw typedError('EBADINPUT', 'arguments must be an object');
+  }
+  const properties = SPEC.function.parameters.properties;
+  for (const [key, value] of Object.entries(args)) {
+    if (!Object.prototype.hasOwnProperty.call(properties, key)) throw typedError('EBADINPUT', 'unknown argument: ' + key);
+    const schema = properties[key];
+    const valid = schema.type === 'array' ? Array.isArray(value) && value.every((item) => typeof item === schema.items.type)
+      : schema.type === 'object' ? value !== null && typeof value === 'object' && !Array.isArray(value)
+      : typeof value === schema.type && (schema.type !== 'number' || Number.isFinite(value));
+    if (!valid) throw typedError('EBADINPUT', key + ' must be of type ' + schema.type);
+    if (schema.enum && !schema.enum.includes(value)) throw typedError('EBADINPUT', 'unknown ' + key + ': ' + value);
+  }
+}
+
 async function runMouaif(args, opts) {
-  const action = trimString(args && args.action, 64);
+  try { validateArgs(args); }
+  catch (e) { return fail(e.code || 'EBADINPUT', e.message); }
+  const action = args.action;
   if (!action) return fail('EBADINPUT', 'action is required');
-  const area = ACTIONS[action];
+  const area = Object.prototype.hasOwnProperty.call(ACTIONS, action) ? ACTIONS[action] : null;
   if (!area) {
     return fail('EBADINPUT', 'unknown action "' + action + '" — one of: ' + ACTION_NAMES.join(', '));
   }

@@ -35,7 +35,11 @@ What is my default prompt size, and switch this project to agentFiles off.
 
 ### Where the model's data comes from
 
-`attach`, `get`, and `info` default `chatId` to the chat the model is running in, so "attach this screenshot" needs no id. Every other action needs an explicit `chatId` — the tool never guesses between chats.
+`get`, `attach`, and `list_attachments` default `chatId` to the chat the model is running in, so "attach this screenshot" needs no id. `update` and `delete` require an explicit `chatId`; other actions do not target an individual chat.
+
+Successful changes to the mounted chat refresh its title, model picker, prompt, and composer draft/images without reopening it. The same refresh applies when following a turn from another tab or recovering a dropped stream. A late refresh cannot overwrite a different chat or text/images the user edited while the request was pending.
+
+A project model can infer its provider when creating a chat. A live-catalog model needs `providerId`; selections use the same resolver as sending a chat turn. Validation happens before creation, so a rejected model never leaves a blank chat. On update, `modelId: ""` clears the model/provider choice, `promptId: ""` detaches the prompt, and an unknown prompt is rejected.
 
 `attach` accepts only images (`png`, `jpeg`, `webp`, `gif`), because that is the only attachment the chat store understands. It reads the file with the file editor's boundary (the user home, or anywhere with `MOUAIF_ALLOW_ANY_ROOT=1`), so a path outside it fails with `EOUTSIDE_HOME` exactly like `read_file`.
 
@@ -74,11 +78,15 @@ Failures come back as a typed envelope the model can act on:
 
 | Code | Meaning |
 | --- | --- |
-| `EBADINPUT` | A missing or invalid argument (unknown action, unknown model, unknown profile, no chat, `apiKey` in a patch). |
+| `EBADINPUT` | A missing or invalid argument (wrong type, unknown argument/action/model/prompt/profile, no chat, invalid attachment target, empty patch, `apiKey` in a patch). |
 | `ENOTFOUND` | The chat does not exist. |
 | `ECONFIRM` | `delete` was called without `confirm: true`. The result also reports the title and message count that would be lost. |
 | `ENOTIMAGE` / `EBINARY` | `attach` was pointed at something that is not a readable image. |
 | `ETOOLARGE` | The image is too large, or the draft already holds 8 images. |
 | `EOUTSIDE_HOME` | The path escaped the file boundary. |
 | `ETOOL_DISABLED` | The `mouaif` family is `off`. |
+
+### Settings safety
+
+Both settings scopes redact provider/model credentials. Credential writes, including keys inside `providers` or `models`, must go through Settings → Providers instead. Round-tripping redacted settings preserves existing credentials. Project `unset` runs after `patch`, so a key present in both is removed.
 

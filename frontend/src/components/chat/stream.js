@@ -30,7 +30,7 @@ clearLiveSegment
 } from './transcript.js';
 import { afterTranscriptAppend, whenTranscriptScrollIdle } from './scroll.js';
 import { renderUsageMeta, updateUsageSummary, setChatStatus } from './usage.js';
-import { refreshChatTitle, updateChat } from './meta.js';
+import { refreshChatTitle, updateChat, applyMouaifToolResult } from './meta.js';
 import { authorizationCard, askUserCard, removePendingAuthorizationCards } from './cards.js';
 import { normalizeToolName, parseAtInvocation, findCustomActionInvocation, buildDirectMcpCall, parseDirectRestartInvocation, parseToolArgs } from './tools.js';
 import { saveComposerDraftNow } from './composer.js';
@@ -655,6 +655,14 @@ async function syncToNextSeq(state, refs, serverNextSeq) {
   if (!body) return null;
   if (typeof body.nextSeq === 'number' && body.nextSeq < localNextSeq) return fullRebuildFromServer(state, refs, body.nextSeq);
   const result = applyTailSync(state, refs, typeof body.nextSeq === 'number' ? body.nextSeq : serverNextSeq, body.messages);
+  // Followers/recovery receive settled tools via the incremental tail, not
+  // the owner's SSE. Apply the same mutations once per tool-call id.
+  for (const row of body.messages || []) {
+    if (!row || row.role !== 'tool' || row.phase !== 'result' || row.name !== 'mouaif' || row.ok !== true) continue;
+    try {
+      applyMouaifToolResult({ id: row.toolCallId, name: row.name, ok: row.ok, result: JSON.parse(row.content) }, state, refs);
+    } catch { /* malformed stored result */ }
+  }
   // Rebase only after optimistic segments have been replaced by server
   // rows. Metadata saves and older-page loads must not advance this cursor.
   const snapshot = costSnapshot(body);
@@ -1402,7 +1410,8 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       markToolUsed(state, refs, data && data.name);
       appendToolCallCard(data, refs);
     } else if (ev.eventName === 'tool_result') {
-      appendToolResultCard(data, refs);
+    appendToolResultCard(data, refs);
+    if (data && data.name === 'mouaif') applyMouaifToolResult(data, state, refs);
     } else if (ev.eventName === 'progress_update') {
       // Real-time progress bar from the model's report_progress tool.
       // Creates or updates a progress card in the transcript with a

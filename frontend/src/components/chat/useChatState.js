@@ -126,6 +126,8 @@ import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings
   *
   * Chat record / model picker
   * @property {(patch: Object) => Promise<boolean|undefined>} _updateChat
+  * @property {(text: string) => void} _setComposerText
+  * @property {(images: Array<Object>) => void} _setImageAttachments
   * @property {() => void} _onChatChanged
   * @property {() => void} _onLiveModels
   * @property {() => void} _openModelPicker
@@ -474,6 +476,7 @@ const state = stateRef.current;
 //                       _updateSetupVisibility
 //   chat / picker       _updateChat, _onChatChanged, _onLiveModels,
 //                       _openModelPicker, _onPickerPick, _onRefreshAllProviders
+//   composer sync       _setComposerText, _setImageAttachments (below)
 //   tools / skills      _updateToolsCard, _toggleTool, _toggleToolGroup,
 //                       _toggleAgentFiles, _toggleSkills, _toggleSkill,
 //                       _onSkillsChanged, _onSkillSaveError
@@ -481,6 +484,8 @@ const state = stateRef.current;
 //   MCP server start    _startMcpServer, _reloadMcpServer, _reloadMcpServerRefresh
 state.props = { projectDir, chatId };
 state.customActions = customActions;
+state._setComposerText = setComposerText;
+state._setImageAttachments = setImageAttachments;
 state._setCustomActions = (actions) => {
 const next = Array.isArray(actions) ? actions : [];
 if (sameCustomActions(state.customActions || [], next)) return;

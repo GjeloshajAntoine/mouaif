@@ -90,6 +90,18 @@ async function main() {
   check('relative projectDir is EBADINPUT', relative.ok === false && relative.result.code === 'EBADINPUT');
 
   const opts = { projectDir, chatId: null };
+  const chats = require('../src/chats.js');
+  const messages = require('../src/messages.js');
+  const prompts = require('../src/prompts.js');
+  for (const args of [null, [], { action: 'toString' }, { action: 'constructor' },
+    { action: 'create', title: 123 }, { action: 'list', limit: '2' },
+    { action: 'get', includeMessages: 'true' }, { action: 'settings_get', keys: [123] },
+    { action: 'settings_update', patch: [] }, { action: 'settings_update', unset: [null] },
+    { action: 'settings_get', unexpected: true }, { action: 'attach', target: 'unknown' }]) {
+    const result = await mouaif.runMouaif(args, opts);
+    check('malformed arguments return EBADINPUT: ' + JSON.stringify(args), result.ok === false && result.result.code === 'EBADINPUT');
+  }
+  check('invalid calls have no side effects', chats.countChats(projectDir) === 0);
 
   // --- 4) chats: create / list / get / update / search / delete ----------
   const created = await mouaif.runMouaif({ action: 'create', title: 'Release notes', topic: 'Draft the changelog' }, opts);
@@ -97,6 +109,12 @@ async function main() {
   check('create seeds the draft with the topic', created.result.chat.draftSnippet === 'Draft the changelog');
   const chatId = created.result.chat.id;
   check('create returns a chat url', created.result.url === '#/chat/' + encodeURIComponent(chatId));
+
+  const invalidCreate = await mouaif.runMouaif({ action: 'create', title: 'Must not exist', modelId: 'missing', providerId: 'ghost' }, opts);
+  check('create rejects an invalid model', invalidCreate.ok === false && invalidCreate.result.code === 'EBADINPUT');
+  check('failed model validation leaves no blank chat', chats.countChats(projectDir) === 1);
+  const providerOnly = await mouaif.runMouaif({ action: 'create', providerId: 'ghost' }, opts);
+  check('create rejects a provider without a model', providerOnly.result.code === 'EBADINPUT' && chats.countChats(projectDir) === 1);
 
   const created4 = await mouaif.runMouaif({ action: 'create', title: 'Fourth', topic: 'hello' }, opts);
   check('a second create works', created4.ok === true && created4.result.chat.title === 'Fourth');
@@ -111,6 +129,10 @@ async function main() {
   const got = await mouaif.runMouaif({ action: 'get', chatId, includeMessages: true }, opts);
   check('get returns the chat', got.ok === true && got.result.chat.id === chatId);
   check('get returns messages when asked', Array.isArray(got.result.chat.messages));
+  for (let i = 0; i < 3; i++) messages.appendMessage(projectDir, chatId, { role: 'user', content: 'message ' + i });
+  const recent = await mouaif.runMouaif({ action: 'get', includeMessages: true, messageLimit: 2 }, { projectDir, chatId });
+  check('get defaults to the running chat and returns the latest messages in order', recent.ok === true
+    && recent.result.chat.messages.map((m) => m.content).join(',') === 'message 1,message 2');
   const missing = await mouaif.runMouaif({ action: 'get', chatId: 'nosuchchat' }, opts);
   check('get on a missing chat is ENOTFOUND', missing.ok === false && missing.result.code === 'ENOTFOUND');
 
@@ -123,6 +145,28 @@ async function main() {
   check('update with an unknown promptSize is EBADINPUT', badProfile.ok === false && badProfile.result.code === 'EBADINPUT');
   const badModel = await mouaif.runMouaif({ action: 'update', chatId, modelId: 'no-such-model', providerId: 'ghost' }, opts);
   check('update with an unknown model is EBADINPUT', badModel.ok === false && badModel.result.code === 'EBADINPUT');
+  const badPrompt = await mouaif.runMouaif({ action: 'update', chatId, title: 'Must not change', promptId: 'missing' }, opts);
+  check('unknown prompts are rejected before any update', badPrompt.result.code === 'EBADINPUT' && chats.getChat(projectDir, chatId).title === 'Changelog v2');
+  const prompt = prompts.createPrompt(projectDir, { title: 'Review', content: 'Review the code.', scope: 'project' });
+  const pinned = await mouaif.runMouaif({ action: 'update', chatId, promptId: prompt.id }, opts);
+  check('update pins the selected prompt', pinned.ok === true && chats.getChat(projectDir, chatId).promptSnapshot.content === 'Review the code.');
+  await mouaif.runMouaif({ action: 'update', chatId, promptId: '' }, opts);
+  check('update can detach the prompt', chats.getChat(projectDir, chatId).promptSnapshot == null);
+
+  settings.setProject(projectDir, { models: [{ id: 'fixture-model', provider: 'openai-compatible' }] });
+  settings.setApp({ providers: [{ id: 'openai-compatible', baseUrl: 'http://fixture/v1', apiKey: 'fixture-secret' }] });
+  const modeled = await mouaif.runMouaif({ action: 'create', title: 'With model', modelId: 'fixture-model' }, opts);
+  check('create infers and persists the project model provider', modeled.ok === true
+    && modeled.result.chat.providerId === 'openai-compatible' && !modeled.content.includes('fixture-secret'));
+  const live = await mouaif.runMouaif({ action: 'update', chatId: modeled.result.chat.id, providerId: 'openai-compatible', modelId: 'live-model' }, opts);
+  check('update accepts a live-catalog selection without persisting a model', live.ok === true
+    && live.result.chat.modelId === 'live-model' && settings.getProject(projectDir).models.length === 1);
+  const badProvider = await mouaif.runMouaif({ action: 'update', chatId: modeled.result.chat.id, providerId: 'ghost' }, opts);
+  check('provider-only updates validate the resulting model pair', badProvider.result.code === 'EBADINPUT'
+    && chats.getChat(projectDir, modeled.result.chat.id).providerId === 'openai-compatible');
+  const clearedModel = await mouaif.runMouaif({ action: 'update', chatId: modeled.result.chat.id, modelId: '' }, opts);
+  check('empty modelId clears the model and provider together', clearedModel.ok === true
+    && clearedModel.result.chat.modelId === null && clearedModel.result.chat.providerId === null);
 
   const found = await mouaif.runMouaif({ action: 'search', query: 'Changelog' }, opts);
   check('search finds the renamed chat', found.ok === true && found.result.chats.some((c) => c.id === chatId));
@@ -147,6 +191,9 @@ async function main() {
   check('the draft holds one image', drafted.result.draftAttachments === 1);
   check('attach reports the mime type', drafted.result.attached.mimeType === 'image/png');
   check('attach defaults chatId to the current chat', (await mouaif.runMouaif({ action: 'attach', path: 'shot.png' }, { projectDir, chatId: imgChat })).ok === true);
+  const invalidTarget = await mouaif.runMouaif({ action: 'attach', path: 'shot.png', target: 'typo' }, chatOpts);
+  check('invalid attachment targets cannot silently modify the draft', invalidTarget.result.code === 'EBADINPUT'
+    && chats.getChat(projectDir, imgChat).draftAttachments.length === 2);
 
   const asMessage = await mouaif.runMouaif({
     action: 'attach', path: 'shot.png', target: 'message', content: 'here is the shot'
@@ -207,6 +254,36 @@ async function main() {
   check('settings_update refuses apiKey', secret.ok === false && secret.result.code === 'EBADINPUT');
   const badScope = await mouaif.runMouaif({ action: 'settings_get', scope: 'galaxy' }, opts);
   check('an unknown scope is EBADINPUT', badScope.ok === false && badScope.result.code === 'EBADINPUT');
+  const emptyPatch = await mouaif.runMouaif({ action: 'settings_update', patch: {} }, opts);
+  check('empty settings patches are rejected', emptyPatch.result.code === 'EBADINPUT');
+  for (const scope of ['app', 'project']) {
+    const seed = { providers: [{ id: 'openai-compatible', apiKey: 'provider-secret' }],
+      models: [{ id: 'fixture-model', provider: 'openai-compatible', apiKey: 'model-secret' }] };
+    if (scope === 'app') settings.setApp(seed);
+    else settings.setProject(projectDir, seed);
+    const get = await mouaif.runMouaif({ action: 'settings_get', scope }, opts);
+    check(scope + ' settings redact provider and model secrets', !get.content.includes('provider-secret')
+      && !get.content.includes('model-secret') && get.result.settings.providers[0].hasApiKey === true);
+    const patch = { providers: get.result.settings.providers, models: get.result.settings.models };
+    const put = await mouaif.runMouaif({ action: 'settings_update', scope, patch }, opts);
+    const stored = scope === 'app' ? settings.getApp() : settings.getProject(projectDir);
+    check(scope + ' redacted round-trip preserves secrets and drops response markers', put.ok === true
+      && stored.providers[0].apiKey === 'provider-secret' && stored.models[0].apiKey === 'model-secret'
+      && stored.providers[0].hasApiKey === undefined && stored.models[0].hasApiKey === undefined);
+    check(scope + ' writes return redacted settings without mutating caller arguments', !put.content.includes('provider-secret')
+      && !put.content.includes('model-secret') && patch.providers[0].apiKey === undefined);
+    for (const key of ['providers', 'models']) {
+      const deniedSecret = await mouaif.runMouaif({ action: 'settings_update', scope, patch: { [key]: [{ id: 'fixture', apiKey: 'forbidden' }] } }, opts);
+      check(scope + ' refuses nested credentials in ' + key, deniedSecret.result.code === 'EBADINPUT');
+    }
+  }
+  const both = await mouaif.runMouaif({ action: 'settings_update', scope: 'project', patch: { name: 'Must be unset' }, unset: ['name'] }, opts);
+  check('unset wins over patch like the REST endpoint', both.ok === true && both.result.settings.name === undefined);
+  settings.setDbBacked(projectDir, true);
+  const dbRead = await mouaif.runMouaif({ action: 'settings_get', scope: 'project' }, opts);
+  const dbWrite = await mouaif.runMouaif({ action: 'settings_update', patch: { name: 'DB project' } }, opts);
+  check('DB-backed reads and writes never expose the storage marker', dbRead.result.settings.__dbBacked === undefined
+    && dbWrite.result.settings.__dbBacked === undefined && settings.getProject(projectDir).__dbBacked === true);
 
   // --- 7) projects + info ------------------------------------------------
   projects.registerProject(projectDir);
