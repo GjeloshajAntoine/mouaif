@@ -843,6 +843,8 @@ align-self: flex-end;
 width: min(26%, 6.5rem);
 min-width: 5.5rem;
 margin: 0.4rem 0.75rem 0;
+/* Keep the preview above the composer's right edge as the frame grows. */
+margin-inline-end: max(0.75rem, calc((100% - var(--read-max, 44rem)) / 2 + 0.75rem));
 }
 .webpreview-dock__open {
 display: block;

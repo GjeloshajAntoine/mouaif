@@ -17,6 +17,12 @@
   touch-action: pan-y;
   scrollbar-width: thin;
 }
+/* Classic desktop scrollbars consume inline space. Reserve the same gutter
+   on both sides so the centred rows still align with the head/composer.
+   Phones retain their existing edge-to-edge scroll surface. */
+@media (min-width: 48rem) {
+  .chat-view__transcript { scrollbar-gutter: stable both-edges; }
+}
 .chat-view__transcript::-webkit-scrollbar { width: 6px; }
 .chat-view__transcript::-webkit-scrollbar-thumb {
   background: var(--border-strong);
@@ -512,7 +518,8 @@
 
 .chat-view__scroll-nav {
   position: absolute;
-  right: calc(10px + env(safe-area-inset-right, 0px));
+  /* Follow the reading column on wide windows, not the shell's far edge. */
+  right: max(calc(10px + env(safe-area-inset-right, 0px)), calc((100% - var(--read-max, 44rem)) / 2 + 10px));
   /* Anchored to the transcript box, so it always clears whatever sits
      below it (composer, web-preview dock, a multi-line draft). 18px
      keeps the 44px tap area of the bottom arrow inside the transcript. */

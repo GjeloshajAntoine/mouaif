@@ -23,6 +23,22 @@ No settings and no toggles: the layout responds to the window.
 - The chat transcript fills the full height between the chat head and the composer at every width, so the composer stays pinned to the bottom of the screen on a tablet or desktop. The transcript has no viewport-height cap; its flex sizing (`flex: 1 1 auto; min-height: 0`) is what bounds it.
 - Wide tool surfaces do not join the 896 px column: the file editor and the other modal sheets keep their own card widths (520–1120 px) from `sheets.css` and `file-editor.css`.
 
+## Desktop behaviour
+
+- Dictation keeps a narrower, centred column than general lists, so its controls and transcript remain easy to read on a large screen.
+- Chat messages stay aligned with the header and composer even when a desktop scrollbar occupies space.
+- Transcript navigation and the web preview dock follow the conversation instead of drifting into the frame's empty right gutter. Their phone insets stay unchanged.
+
+### Verification
+
+Run the browser regression with an installed Chrome/Chromium (or set `CHROME_PATH`):
+
+```bash
+node scripts/test-responsive-layout.mjs
+```
+
+It mounts the real app shell with local API fixtures and checks Chats, Settings, Chat defaults, Dictation, and Chat at 360–1920 px, including shorter windows and larger root text. It verifies horizontal fit, centred measures, a visible composer, preview/navigation placement, and flush-settings scrolling without starting or restarting `mouaif serve`.
+
 ## Related
 
 - [Inspector](inspector.md) — the desktop panel layout this frame now has room for.

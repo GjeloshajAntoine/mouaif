@@ -117,7 +117,9 @@ padding-bottom: 0;
    and staying out of the cascade means a phone keeps every element's own
    inline margin, so nothing about the narrow layout can drift. */
 @media (min-width: 900px) {
-  .app__main > *:not(.chat-view) {
+  /* Keep the shared cap low-specificity so routes such as Dictation can
+     retain their own narrower reading measure. */
+  .app__main > :where(:not(.chat-view)) {
     width: 100%;
     max-width: var(--list-max, 56rem);
     margin-inline: auto;
