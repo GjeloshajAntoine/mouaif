@@ -12,26 +12,15 @@
 // the shell running in the background. The screen shows a live terminal readout
 // with the shell label + project dir in the header.
 //
-// On a phone this modal is the app's one *terminal*, and a phone keyboard has
-// no Escape, Tab, arrow or Ctrl key — so the sheet carries the rows a hardware
-// keyboard would have provided:
-//
-//   * a **suggestion row** while typing, above the prompt (commands sent to
-//     the shell, the project's own top-level names from GET /api/files), which
-//     saves re-typing a command on a keyboard that covers most of the screen —
-//     see ./cliSuggest.js. A chip only rewrites the field; Enter still runs it.
-//   * an optional **key row**, opened via the keyboard icon (Esc, Tab, ↑, ↓,
-//     ^C, ^D). Esc, ^C and ^D
-//     are the keys a program needs, each a single raw write so ^C interrupts
-//     without also pressing Enter; Tab and ↑/↓ edit the *field itself*
-//     (completeLocally / stepHistory in ./cliSuggest.js) instead of pushing a
-//     draft onto the shell's line, so the text the user is looking at is never
-//     emptied and nothing reaches the child until Enter — see ./cliKeys.js.
+// The compact footer has only the command field and Run. Suggestions while
+// typing offer this session's commands and the project's top-level names;
+// a chip only rewrites the field, and Enter still runs it (see cliSuggest.js).
+// Tab completion remains available from a hardware or phone keyboard.
 //
 // Who reads stdin is taken from the shell itself: on a pseudo-terminal bash and
 // zsh switch bracketed paste on at their prompt and off when a command starts
-// (lineEditorState in ./cliKeys.js). That decides whether the key row marks
-// its readline keys, and whether a sent line is remembered — an answer typed to
+// (lineEditorState in ./cliKeys.js). That decides whether a sent line is
+// remembered — an answer typed to
 // a program (a password, a one-time code) never becomes a suggestion.
 //
 // A pty echoes the shell's command line itself, so the modal writes its own
@@ -41,8 +30,8 @@ import { h } from 'preact';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
-import { CLI_KEYS, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
-import { rememberCommand, suggestionsFor, completeLocally, stepHistory } from './cliSuggest.js';
+import { keepEditorFocus, lineEditorState, splitTypedTab } from './cliKeys.js';
+import { rememberCommand, suggestionsFor, completeLocally } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
 import { useVisualViewport } from '../../hooks/useVisualViewport.js';
 import { subscribeCliOutput } from './cliOutput.js';
@@ -63,26 +52,19 @@ export function CliModal(props) {
   const [error, setError] = useState('');
   const [shellLabel, setShellLabel] = useState('');
   const [dirLabel, setDirLabel] = useState(projectDir || '');
-  // The session's own commands, newest first — the history half of the
-  // suggestion row and what ↑/↓ recall from (see rememberCommand in
-  // cliSuggest.js).
+  // The session's own commands, newest first — used by suggestions and
+  // Tab completion (see rememberCommand in cliSuggest.js).
   const [history, setHistory] = useState([]);
   // `entries` — the project's top-level names, the file half of the suggestion
   // row (`null` until the listing answers: a fetch that has not happened
   // invents no chips).
   const [entries, setEntries] = useState(null);
-  const [keysOpen, setKeysOpen] = useState(false);
   // True once the shell reported an `exit` frame (or the session endpoint
   // refused). The prompt row cannot reach a dead session, so the sheet offers
   // Restart instead of an input that silently 410s on every send.
   const [exited, setExited] = useState(false);
   // Bumped by Restart to re-run the session effect against a fresh child.
   const [restartKey, setRestartKey] = useState(0);
-
-  // Where the field sits in the ↑/↓ walk over the session's own history: -1
-  // means "not walking" (the field holds a fresh line). Reset whenever the user
-  // types or sends, so the next ↑ starts from the newest command.
-  const recallIndexRef = useRef(-1);
 
   const outRef = useRef(null);       // <pre> terminal output
   const inputRef = useRef(null);
@@ -93,16 +75,13 @@ export function CliModal(props) {
   // pseudo-terminal — nothing can prompt), or null (unknown: not started yet,
   // exited, or a shell that never says). On a pty the shell says so itself by
   // switching bracketed paste on and off around every command line (see
-  // lineEditorState in cliKeys.js). The key row dims Tab and ↑/↓ for
-  // 'program', and the suggestion row only remembers lines sent to 'shell' or
+  // lineEditorState in cliKeys.js). Suggestions only remember lines sent to 'shell' or
   // 'piped', so a program's answer — possibly a password — is never kept.
-  const [owner, setOwner] = useState(null);
   const ownerRef = useRef(null);
   const editorTailRef = useRef('');
   const setOwnerBoth = useCallback((next) => {
     if (ownerRef.current === next) return;
     ownerRef.current = next;
-    setOwner(next);
   }, []);
   const interactiveRef = useRef(false);
 
@@ -295,7 +274,6 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     setOutBuffer('');
     setOwnerBoth(null);
     setCmdText('');
-    recallIndexRef.current = -1;
     setExited(false);
     setLoading(true);
     setError('');
@@ -345,22 +323,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     return queueRef.current;
   }, [projectDir, writeOut, setOwnerBoth]);
 
-  // sendKey(key) — one on-screen key from the row below the prompt (see
-  // keyPayload in cliKeys.js). Every key is a raw write: a terminator after
-  // Ctrl+C would also press Enter, answering a prompt the user has not seen.
-  // Tab and ↑/↓ are the exception: they edit the *local* field and write
-  // nothing to the child (see completeLocally / stepHistory in ./cliSuggest.js),
-  // so completion and recall never cost a round-trip and never move the text
-  // out of the box the user is looking at.
-  const sendKey = useCallback((key) => {
-    if (!key) return;
-    const payload = keyPayload(key);
-    if (payload.clearDraft) setCmdText('');
-    post(payload.seq, true);
-  }, [post]);
-
-  // complete() — what the key row's Tab, a hardware Tab, and a Tab a phone
-  // keyboard typed into the field all run. It rewrites the field with the
+  // complete() — what hardware Tab and a Tab typed by a phone keyboard run. It rewrites the field with the
   // completion and leaves the caret at the end; nothing reaches the shell until
   // Enter. A completion that does not change the text (no match, or several
   // matches that agree on nothing more) leaves the field alone.
@@ -373,26 +336,15 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     if (el) { el.value = next; el.setSelectionRange(next.length, next.length); }
   }
 
-  // recall(dir) — the key row's ↑/↓, walking the session's own history (newest
-  // first) into the field.
-  function recall(dir) {
-    const el = inputRef.current;
-    const stepped = stepHistory(history, recallIndexRef.current, dir);
-    if (stepped.text == null) { recallIndexRef.current = -1; return; }
-    recallIndexRef.current = stepped.index;
-    setCmdText(stepped.text);
-    if (el) { el.value = stepped.text; el.setSelectionRange(stepped.text.length, stepped.text.length); }
-  }
-
   // onPromptInput — the field's `input` handler. A phone keyboard's Tab key
   // usually arrives here as a literal HT in the text rather than as a Tab
   // `keydown` (see splitTypedTab in cliKeys.js), so the text before the tab is
-  // completed exactly like a tap on the key row's Tab, and anything after it
+  // completed exactly like hardware Tab, and anything after it
   // stays in the field.
   function onPromptInput(e) {
     const el = e.currentTarget;
     const typed = splitTypedTab(el.value);
-    if (!typed) { setCmdText(el.value); recallIndexRef.current = -1; return; }
+    if (!typed) { setCmdText(el.value); return; }
     el.value = typed.before;
     complete();
     const done = el.value;
@@ -406,7 +358,6 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     // harmless fresh prompt otherwise — always forward the Enter.
     const cmd = cmdText;
     setCmdText('');
-    recallIndexRef.current = -1;
     // Remember the line as history only when it is known to be a command for
     // the shell — never when a program might be reading it (a password, a
     // one-time code). `!!` is the shell's own history expansion and is not
@@ -425,7 +376,6 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   function runRaw() {
     const raw = cmdText;
     setCmdText('');
-    recallIndexRef.current = -1;
     post(raw, true);
   }
 
@@ -509,7 +459,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                       }, s.text))
                     )
                   : null,
-                  // A live session gets the prompt row and the key row. An exited
+                  // A live session gets the prompt row. An exited
                   // one gets a single footer instead: the shell is gone, and an
                   // input that 410s on every send is worse than no input at all.
                   // Restart is in the header, and repeated here where the thumb is.
@@ -546,8 +496,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     // closes a phone's keyboard. Writes are queued instead.
                     onKeyDown: (e) => {
                     if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    // A hardware Tab does what the key row's Tab does:
-                    // complete the line in the field itself.
+                    // Complete the line in the field itself.
                     e.preventDefault();
                     complete();
                     return;
@@ -560,16 +509,6 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                       else runCommand();
                     }
                     }),
-                    h('button', {
-                      class: 'cli__key-toggle',
-                      type: 'button',
-                      onClick: () => setKeysOpen((open) => !open),
-                      onMouseDown: keepEditorFocus,
-                      'aria-label': 'Terminal keys',
-                      'aria-expanded': keysOpen,
-                      'aria-controls': 'cli-terminal-keys',
-                      title: 'Show terminal keys'
-                    }, h('span', null, '⌨')),
                     // Run — the line in the prompt, made a visible action. On a
                     // phone the keyboard's own action key is the only "send", and
                     // it is labelled by `enterkeyhint` yet not by anything on the
@@ -589,40 +528,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
                     )
                     )
-                    ),
-                // The key row: the keys a phone keyboard does not have (see
-                // cliKeys.js). While a program owns stdin, the three readline
-                // keys (`shellOnly`) are marked; Esc, ^C and ^D stay lit.
-                keysOpen ? h('div', {
-                id: 'cli-terminal-keys',
-                class: 'cli__keys' + (owner === 'program' ? ' is-prompt' : ''),
-                  role: 'group',
-                  'aria-label': 'Terminal keys'
-                },
-                  CLI_KEYS.map((k) => h('button', {
-                    key: k.id,
-                    class: 'cli__key' + (k.shellOnly ? ' cli__key--shell' : ''),
-                    type: 'button',
-                    title: k.title,
-                    'aria-label': k.title,
-                    tabindex: '-1',
-                    onMouseDown: keepEditorFocus,
-                    onClick: () => {
-                    if (k.id === 'tab') complete();
-                    else if (k.id === 'up') recall('up');
-                    else if (k.id === 'down') recall('down');
-                    else sendKey(k);
-                    }
-                    }, h('span', null, k.label)))
-                    ) : null,
-                    // One-line hint under the row. It names the mode only when the
-                    // shell has said which one it is in; a piped session has no
-                    // line editor, so Tab and the arrows are client-side there too.
-                    keysOpen ? h('p', { class: 'cli__hint' },
-                    owner === 'program'
-                    ? 'A program owns the prompt — ^C stops it; Esc leaves it.'
-                    : 'Tab completes and ↑/↓ recall in the prompt. ^C stops the running command.'
-                    ) : null
+                    )
                     ]
                     )
       )

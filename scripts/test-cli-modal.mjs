@@ -111,12 +111,9 @@ ui.render();
 assert.equal(ui.outputNode.textContent, 'ready>', 'startup output paints when the terminal mounts');
 assert.ok(ui.node('Run command'), 'the compact send icon has an accessible Run label');
 assert.equal(ui.button('Run'), undefined, 'Run does not widen the prompt with extra text');
-assert.equal(ui.node('Terminal keys').attrs['aria-expanded'], false);
-assert.equal(ui.node('Terminal keys').tag, 'button', 'keys are behind a compact toggle by default');
-ui.node('Terminal keys').attrs.onClick();
-ui.render();
-assert.equal(ui.node('Terminal keys').attrs['aria-expanded'], true);
-assert.ok(ui.node('Ctrl+C — interrupt the running command'));
+assert.equal(ui.node('Terminal keys'), undefined, 'the added keyboard toggle and panel are removed');
+assert.equal(ui.node('Ctrl+C — interrupt the running command'), undefined);
+assert.ok(!source.includes('cli__key-toggle'));
 ui.node('Command line').attrs.onInput({ currentTarget: { value: 'echo hello' } });
 ui.render();
 ui.node('Run command').attrs.onClick();
@@ -135,7 +132,7 @@ ui.render();
 assert.ok(ui.node('Shell ended'));
 assert.equal(ui.node('Command line'), undefined);
 ui.cleanup();
-console.log('PASS startup output, compact Run, optional keys, writes, viewport pan and exit controls');
+console.log('PASS startup output, compact Run, no keyboard toggle, writes, viewport pan and exit controls');
 
 for (const commandStatus of [404, 410]) {
   ui = mount({ commandStatus });
@@ -184,5 +181,6 @@ assert.match(css, /\.cli__overlay \{[^}]*top: var\(--cli-viewport-top[^}]*height
 assert.match(css, /\.cli__suggest \{[^}]*overflow-x: auto/);
 assert.match(css, /\.cli__suggest-chip \{[^}]*min-height: var\(--tap\)/);
 assert.match(css, /\.cli__prompt \{[^}]*height: 2rem[^}]*font-size: 1rem/);
-assert.match(css, /\.cli__run::before,[\s\S]*?inset: 0\.5rem/);
+assert.match(css, /\.cli__run::before \{[\s\S]*?inset: 0\.5rem/);
+assert.ok(!css.includes('cli__key-toggle'));
 console.log('PASS keyboard-safe overlay and compact control faces');
