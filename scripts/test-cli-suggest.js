@@ -33,7 +33,7 @@ async function run() {
   const keys = await import('../frontend/src/components/chat/cliKeys.js');
   const suggest = await import('../frontend/src/components/chat/cliSuggest.js');
   const { CLI_KEYS, cursorKeyMode, keyById, keyForEvent, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab } = keys;
-  const { MAX_SUGGESTIONS, MAX_HISTORY, rememberCommand, suggestionsFor, completeLocally, stepHistory } = suggest;
+  const { MAX_SUGGESTIONS, MAX_HISTORY, rememberCommand, suggestionsFor, completeLocally, listDirFor, relativeDir, stepHistory } = suggest;
 
   // ---- 1. The key row -------------------------------------------------
 
@@ -295,6 +295,68 @@ async function run() {
   const completed = completeLocally('npm ru', cHist, cEntries);
   t('completion is never an emptied field',
     typeof completed === 'string' && completed.length >= 'npm ru'.length, completed);
+
+  // ---- 6b. Nested paths: completing *inside* a listed directory ----------
+  //
+  // The top-level listing can never answer `src/comp` — that is Tab's "it only
+  // completes some things". The directory the user completed into answers
+  // instead, and only for words that lie inside it.
+  const srcDir = { relDir: 'src', names: ['components/', 'styles.css', 'index.js'] };
+
+  t('a path inside the listed directory completes from its children',
+    completeLocally('ls src/comp', cHist, cEntries, srcDir) === 'ls src/components/',
+    completeLocally('ls src/comp', cHist, cEntries, srcDir));
+  t('several children settle on their common prefix',
+    completeLocally('cat src/i', cHist, cEntries, { relDir: 'src', names: ['index.js'] }) === 'cat src/index.js',
+    completeLocally('cat src/i', cHist, cEntries, { relDir: 'src', names: ['index.js'] }));
+  t('a deeper path keeps walking forward, one step per Tab',
+    completeLocally('ls src/styles.c', cHist, cEntries, srcDir) === 'ls src/styles.css',
+    completeLocally('ls src/styles.c', cHist, cEntries, srcDir));
+  t('the directory listing wins over the top level for a path inside it',
+    completeLocally('ls src/p', cHist, cEntries, { relDir: 'src', names: ['package.json'] }) === 'ls src/package.json',
+    completeLocally('ls src/p', cHist, cEntries, { relDir: 'src', names: ['package.json'] }));
+  t('a word outside the listed directory still uses the top level',
+    completeLocally('ls scr', cHist, cEntries, srcDir) === 'ls scripts/',
+    completeLocally('ls scr', cHist, cEntries, srcDir));
+  t('a directory that has not been listed yet completes nothing more',
+    completeLocally('ls src/zzz', cHist, cEntries, srcDir) === null,
+    completeLocally('ls src/zzz', cHist, cEntries, srcDir));
+  t('with no directory listed, a nested path falls back to the top level',
+    completeLocally('ls src/comp', cHist, cEntries, null) === null);
+  t('a history command still wins over a directory listing',
+    completeLocally('npm ru', cHist, cEntries, { relDir: 'npm', names: ['run'] }) === 'npm run ',
+    completeLocally('npm ru', cHist, cEntries, { relDir: 'npm', names: ['run'] }));
+
+  // listDirFor — which directory a Tab should list, derived from the text the
+  // user has, with two slashes as the only claim that a segment is a directory.
+  t('a nested path names the directory the path lives in',
+    listDirFor('git add src/components/', null) === 'src/components', listDirFor('git add src/components/', null));  t('one slash in is enough to know the segment is a directory',
+    listDirFor('cd src/', null) === 'src', listDirFor('cd src/', null));
+  t('the directory already listed is not re-requested',
+    listDirFor('cd src/comp', { relDir: 'src', names: [] }) === null,
+    listDirFor('cd src/comp', { relDir: 'src', names: [] }));
+  t('a bare name has no directory part',
+    listDirFor('ls package.json', null) === null, listDirFor('ls package.json', null));
+  t('an empty line asks for no directory', listDirFor('', null) === null);
+  t('a leading slash is not a directory to list', listDirFor('/usr', null) === null);
+  t("a './' prefix is dropped, so the path matches the listing",
+    listDirFor('ls ./src/comp', null) === 'src', listDirFor('ls ./src/comp', null));
+  t('an absolute path stays absolute',
+    listDirFor('ls /home/me/app/src/co', null) === '/home/me/app/src',
+    listDirFor('ls /home/me/app/src/co', null));
+  t('a trailing slash does not leave a trailing separator on the directory',
+    listDirFor('ls deep/nested/', null) === 'deep/nested', listDirFor('ls deep/nested/', null));
+
+  // relativeDir — the path a listing request is built from.
+  t('a directory under the project root is project-relative',
+    relativeDir('', 'src') === 'src', relativeDir('', 'src'));
+  t('a directory under a listed directory keeps the prefix',
+    relativeDir('src', 'components') === 'src/components', relativeDir('src', 'components'));
+  t('an absolute reference stays absolute',
+    relativeDir('/home/me/app', 'src') === '/home/me/app/src', relativeDir('/home/me/app', 'src'));
+  t('a trailing slash on the reference is not doubled',
+    relativeDir('src/', 'components') === 'src/components', relativeDir('src/', 'components'));
+  t('no name means no path', relativeDir('src', '') === null);
 
   // ---- 7. ↑/↓: recall in the field ---------------------------------------
 

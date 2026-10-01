@@ -23,6 +23,13 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **CLI Tab completes inside a folder** — Tab's only name source was a one-shot
+  listing of the project's top level, so a path into a folder (`ls src/comp`,
+  `git add src/…`) had no candidates at all and Tab changed nothing. The tap
+  that lands on a directory now lists it, so the next Tab completes its
+  children (`src/comp` → `src/components/`, then
+  `src/components/Ch` → `src/components/Chat.jsx`), one level per tap, each
+  directory listed at most once per sheet.
 - **CLI key row works inside programs** — Tab and the arrows used to do
   nothing while `less`, `top`, `vim` or an interactive picker ran; every key
   now sends its sequence to a running program (application-mode arrows

@@ -42,7 +42,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks'
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
 import { CLI_KEYS, cursorKeyMode, keepEditorFocus, keyForEvent, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
-import { rememberCommand, suggestionsFor, completeLocally, stepHistory } from './cliSuggest.js';
+import { rememberCommand, suggestionsFor, completeLocally, listDirFor, stepHistory } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
 
 export function CliModal(props) {
@@ -60,6 +60,17 @@ export function CliModal(props) {
   // row (`null` until the listing answers: a fetch that has not happened
   // invents no chips).
   const [entries, setEntries] = useState(null);
+  // `dirEntries` — the names of the directory the user has completed *into*
+  // (`{ relDir, names }`), so Tab can keep going past the project's top level:
+  // `ls src/` fixes src as that directory and `ls src/comp` then completes from
+  // its children. One directory is enough state — completion walks forward, one
+  // step per Tab — and keeping just one bounds the fetching. `null` until a
+  // path segment has been completed into that directory.
+  const [dirEntries, setDirEntries] = useState(null);
+  // The directories already asked for, so a Tab that finds no deeper listing
+  // does not re-request the same one on every tap.
+  const fetchedDirsRef = useRef(null);
+  if (!fetchedDirsRef.current) fetchedDirsRef.current = new Set();
 
   // Where the field sits in the ↑/↓ walk over the session's own history: -1
   // means "not walking" (the field holds a fresh line). Reset whenever the user
@@ -395,15 +406,46 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     post(payload.seq, true);
   }
 
+  // fetchDir(relDir) — list one directory and make it the completion source.
+  //
+  // Called when a completion reveals a directory (`src/`), and when the user
+  // types into one that was never listed. Each directory is fetched once per
+  // sheet; a failure simply leaves the source where it was, because a Tab with
+  // no candidates changes nothing — the same promise the suggestion row makes.
+  const fetchDir = useCallback((relDir) => {
+    const target = String(relDir == null ? '' : relDir).replace(/\/+$/, '');
+    if (!target || fetchedDirsRef.current.has(target)) return;
+    fetchedDirsRef.current.add(target);
+    fetchJson('/api/files?projectDir=' + encodeURIComponent(projectDir || '') + '&dir=' + encodeURIComponent(target))
+      .then((r) => {
+        if (r.status !== 200 || !r.body || !Array.isArray(r.body.entries)) return;
+        setDirEntries({ relDir: target, names: r.body.entries.map((e) => (e.type === 'dir' ? e.name + '/' : e.name)) });
+      })
+      .catch(() => {});
+  }, [projectDir]);
+
   // complete() — what the key row's Tab, a hardware Tab, and a Tab a phone
   // keyboard typed into the field all run. It rewrites the field with the
   // completion and leaves the caret at the end; nothing reaches the shell until
   // Enter. A completion that does not change the text (no match, or several
   // matches that agree on nothing more) leaves the field alone.
+  //
+  // The line is the cue to list a directory. `cd scr` → `cd src/` starts the
+  // listing of `src`, so the *next* Tab can complete inside it; `git add`
+  // `src/com` → `src/components/` does the same one level deeper. The listing is
+  // deliberately not used by the tap that triggers it — that one is the deep
+  // directory it just named — and is there for the next one, which is exactly
+  // the case no client-side source can ever answer.
   function complete() {
     const el = inputRef.current;
     const current = el ? el.value : cmdText;
-    const next = completeLocally(current, history, entries);
+    const next = completeLocally(current, history, entries, dirEntries);
+    // A completion that landed on a directory *is* the directory to list, so the
+    // next Tab is about its children. Otherwise the line in the field is what to
+    // look at — it names the directory the next Tab will complete inside.
+    const landedOnDir = next != null && next !== current && next.endsWith('/') ? next : null;
+    const dir = listDirFor(landedOnDir != null ? landedOnDir : current, dirEntries);
+    if (dir) fetchDir(dir);
     if (next == null || next === current) return;
     setCmdText(next);
     if (el) { el.value = next; el.setSelectionRange(next.length, next.length); }

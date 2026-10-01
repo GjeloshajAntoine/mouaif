@@ -55,7 +55,16 @@ const server = http.createServer((req, res) => {
     req.on('end', () => { posts.push(JSON.parse(body)); json(res, { ok: true }); });
     return;
   }
-  if (p === '/api/files') return json(res, { entries: [{ name: 'package.json', type: 'file' }, { name: 'src', type: 'dir' }] });
+  if (p === '/api/files') {
+    // The listing endpoint, one level deep, exactly as src/files.js answers:
+    // `?dir=<project-relative>` picks the directory, and a directory entry is
+    // `type: 'dir'`.
+    const dir = url.searchParams.get('dir') || '';
+    if (dir === 'src') return json(res, { relDir: 'src', entries: [{ name: 'components', type: 'dir' }, { name: 'index.js', type: 'file' }] });
+    if (dir === 'src/components') return json(res, { relDir: 'src/components', entries: [{ name: 'Chat.jsx', type: 'file' }, { name: 'cards.js', type: 'file' }] });
+    if (dir) return json(res, { relDir: dir, entries: [] });
+    return json(res, { relDir: '.', entries: [{ name: 'package.json', type: 'file' }, { name: 'src', type: 'dir' }] });
+  }
   if (p.endsWith('/revision')) return json(res, { running: false, nextSeq: 1 });
   if (p.endsWith('/messages')) return json(res, { messages: [{ role: 'user', content: 'hi', seq: 0 }], nextSeq: 1, total: 1, hasMore: false, beforeSeq: 0 });
   if (p === '/api/chats/abcd1234') return json(res, { chat: { id: 'abcd1234', title: 'CLI fixture chat', providerId: 'fixture', modelId: 'fixture-model' } });
@@ -172,13 +181,32 @@ try {
   assert.equal(await value(), 'src/', 'a folder still completes with its slash');
   assert.equal(posts.length, before, 'no completion ever reaches the child');
 
+  // 5. Nested paths: Tab keeps going past the project's top level. The tap that
+  //    lands on `src/` lists src, so the next one completes inside it — the
+  //    case the one-shot top-level listing could never answer.
+  await sleep(400); // let src's listing land
+  await type('src/comp');
+  await tapKey('Tab');
+  assert.equal(await value(), 'src/components/', 'a path inside a listed directory completes from its children');
+  await sleep(400); // let src/components' listing land
+  await type('src/components/Ch');
+  await tapKey('Tab');
+  assert.equal(await value(), 'src/components/Chat.jsx', 'and keeps walking deeper, one level per Tab');
+  assert.equal(posts.length, before, 'nested completion writes nothing to the child either');
+
+  // A path into a directory that was never listed changes nothing rather than
+  // inventing a candidate from the wrong listing.
+  await type('src/nothing');
+  await tapKey('Tab');
+  assert.equal(await value(), 'src/nothing', 'a path nothing matches is left alone');
+
   assert.deepEqual(await evaluate('window.__fixtureErrors'), [], 'no browser runtime errors');
 
-  // 5. Stays inside a 360 px column, like every other UI surface.
+  // 6. Stays inside a 360 px column, like every other UI surface.
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 844, deviceScaleFactor: 1, mobile: true });
   await sleep(150);
   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'no page overflow at 360 px');
-  console.log('PASS CLI modal leaves program mode when the shell prompt returns, and Tab completes in the prompt again');
+  console.log('PASS CLI modal leaves program mode when the shell prompt returns, and Tab completes in the prompt — including inside a listed directory');
 } finally {
   if (cdp) cdp.close();
   if (chrome && chrome.exitCode === null) {

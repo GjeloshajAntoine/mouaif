@@ -96,7 +96,7 @@ function nameTokens(entries) {
 // (`npm ru` with both `npm run test:cli` and `npm run build` extends to
 // `npm run `), which is where the suggestion row — now filtered by that longer
 // draft — takes over. An empty line completes nothing.
-export function completeLocally(text, history, entries) {
+export function completeLocally(text, history, entries, dirEntries) {
   const base = String(text == null ? '' : text);
 
   if (base.trim()) {
@@ -117,6 +117,20 @@ export function completeLocally(text, history, entries) {
   const word = at === -1 ? '' : base.slice(at);
   if (!word) return null;
   const prefix = at === -1 ? base : base.slice(0, at);
+
+  // A word that names a directory the modal has listed keeps its own source.
+  // `ls src/comp` needs src's children, and `entries` (the project's top level)
+  // has never heard of them — which is the whole of Tab's "it only completes
+  // some things": only a top-level name ever had a candidate.
+  const local = namesIn(dirEntries, word);
+  if (local != null) {
+    if (!local.names.length) return null;
+    // `local.head` is the word's own directory part (`src/`), which the match
+    // sits inside — dropping it would complete `ls src/comp` to `ls components/`.
+    const add = local.names.length === 1 ? local.names[0] : longestCommonPrefix(local.names);
+    return prefix + local.head + add;
+  }
+
   const needle = word.toLowerCase();
   const names = [];
   for (const name of nameTokens(entries)) {
@@ -127,6 +141,82 @@ export function completeLocally(text, history, entries) {
   if (!names.length) return null;
 
   return names.length === 1 ? prefix + names[0] : prefix + longestCommonPrefix(names);
+}
+
+// namesIn(dirEntries, word) — the directory-listing step of a completion, or
+// `null` when `word` is not a path into a listed directory (the caller then
+// falls back to the project's own top level).
+//
+// `dirEntries` is `{ relDir, names }`: the names of the directory the user
+// completed into last, as they were listed. `word` has to lie *inside* that
+// directory for it to answer — `src/components/` when `relDir` is `src` — and
+// its last segment is then completed from `names`.
+//
+// Returns `{ head, names }`, where `head` is everything of `word` up to that
+// last segment (`src/`). The caller has to keep it: `ls src/comp` completes to
+// `ls src/components/`, not `ls components/`.
+function namesIn(dirEntries, word) {
+  if (!dirEntries || typeof dirEntries.relDir !== 'string' || !Array.isArray(dirEntries.names)) return null;
+  const relDir = dirEntries.relDir;
+  // A directory's own name completes with its listing; the next Tab is then
+  // about the child, which is what the fetched listing is for.
+  if (word === relDir || word === relDir + '/') return null;
+  if (!word.startsWith(relDir + '/')) return null;
+  const rest = word.slice(relDir.length + 1);
+  const at = rest.lastIndexOf('/');
+  const typed = at === -1 ? rest : rest.slice(at + 1);
+  if (!typed) return null;
+  const head = word.slice(0, word.length - typed.length);
+  const needle = typed.toLowerCase();
+  const names = [];
+  for (const name of dirEntries.names) {
+    if (!name || name === typed) continue;
+    if (name.toLowerCase().indexOf(needle) !== 0) continue;
+    if (!names.includes(name)) names.push(name);
+  }
+  return { head, names };
+}
+
+// listDirFor(line, current) → the directory whose listing would complete the
+// line's trailing word, or `null`.
+//
+// Only the word after the last whitespace is a path — `git add src/components/`
+// names `src`, and `cd src/` names `src`. That word's own last slash then
+// splits it into the directory to list and the segment being typed:
+//
+//   `src/components/`  → `src`            (list src; complete its children)
+//   `./src/comp`       → `src`            (a `./` prefix is dropped, so the
+//                                          path matches a project-relative
+//                                          listing)
+//   `/home/me/app/src` → `/home/me/app/src` (absolute stays absolute — the
+//                                          listing endpoint resolves either)
+//   `package.json`     → `null`           (a bare name has no directory part)
+//
+// Two slashes are all a Tab needs to know a segment is a directory, so the
+// fetch is never guessed from a name. `current` is the directory already
+// listed: asking for it again would be a round-trip for nothing.
+export function listDirFor(line, current) {
+  const text = String(line == null ? '' : line);
+  const wordAt = text.search(/\S*$/);
+  const word = wordAt === -1 ? '' : text.slice(wordAt);
+  const at = word.lastIndexOf('/');
+  if (at <= 0) return null;
+  const dir = word.slice(0, at).replace(/\/+$/, '').replace(/^\.\//, '');
+  if (!dir) return null;
+  if (current && current.relDir === dir) return null;
+  return dir;
+}
+
+// relativeDir(ref, name) — the two halves of a listing request's path. Kept
+// beside `namesIn` so the string the modal *fetches* and the string it later
+// matches against come from one rule.
+export function relativeDir(ref, name) {
+  const base = String(ref == null ? '' : ref).trim();
+  const entry = String(name == null ? '' : name).replace(/\/+$/, '');
+  if (!entry) return null;
+  if (base.startsWith('/')) return base.replace(/\/+$/, '') + '/' + entry;
+  const clean = base.replace(/\/+$/, '');
+  return clean ? clean + '/' + entry : entry;
 }
 
 // longestCommonPrefix(list) — the shared head of every candidate, so a Tab with
