@@ -203,6 +203,7 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
                     h('span', { class: 'tool-tree__name' + (tool.description ? '' : ' tool-tree__name--wide') }, tool.name),
                     tool.description ? h('span', { class: 'tool-tree__desc' }, tool.description) : null,
                     tool.used ? h('span', { class: 'tool-tree__used', title: 'Used in this chat' }, '●') : null,
+                    tool.control ? h('span', { class: 'tool-tree__control' }, tool.control) : null,
                     tool.disabled && tool.disabledReason
                       ? h('span', { class: 'tool-tree__leaf-reason' }, tool.disabledReason)
                       : null
@@ -249,7 +250,7 @@ const groups = [];
 const natives = choices.filter((c) => !c.value.startsWith('mcp__'));
   const files = natives.filter((c) => ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit'].includes(c.value));
 for (const c of natives) {
-if (files.includes(c)) continue;
+if (files.includes(c) || APP_TOOL_NAMES.includes(c.value)) continue;
 const entry = catalog.find((t) => t && t.name === c.value);
 groups.push({
 id: c.value,
@@ -260,6 +261,12 @@ checked: isOn(c.value),
 tools: [{ id: c.value, name: c.label, checked: isOn(c.value) }]
 });
 }
+  for (const row of MOUAIF_TOOL_GROUPS) {
+    const tools = natives.filter((c) => row.tools.includes(c.value));
+    if (tools.length) groups.push({ id: row.id, name: row.name,
+      checked: tools.every((c) => isOn(c.value)),
+      tools: tools.map((c) => ({ id: c.value, name: c.label, checked: isOn(c.value) })) });
+  }
   if (files.length) {
     groups.push({
       id: 'files',
@@ -324,81 +331,28 @@ export function shortDesc(text, max = 40) {
 // separate "enabled" server switch — and their checkbox flips the
 // per-chat tool filter for the whole server. Used tools get the
 // dot badge.
-// The two categories the single `mouaif` tool renders as. Kept here (not
-// derived from the catalog) because the catalog advertises one tool while the
-// tree shows two: one for the project's chats and their image attachments, one
-// for app & project settings and the project list.
-//
-// `labels` are the per-action labels of the child rows. Each category shows its
-// own actions as children — a real category, not a second row that reads like
-// one more tool — and every child row maps to the same `mouaif` tool, so the
-// Off / Ask / Allow gate on the category row is the whole category's gate.
-// Keep the ids in step with `GROUPS` in src/tools/mouaif.js (the server's copy,
-// which drives the model-facing action table).
+// Categories are visual groups of ordinary catalog tools, not permissions.
 export const MOUAIF_TOOL_GROUPS = Object.freeze([
-  Object.freeze({
-    id: 'mouaif',
-    name: 'Chats',
-    description: 'list · read · create · rename · delete · search · attach images',
-    actions: Object.freeze(['list', 'get', 'create', 'update', 'delete', 'search', 'attach', 'list_attachments']),
-    labels: Object.freeze({
-      list: 'list chats',
-      get: 'read a chat',
-      create: 'create a chat',
-      update: 'rename / set model',
-      delete: 'delete a chat',
-      search: 'search chats',
-      attach: 'attach an image',
-      list_attachments: 'list a chat\u2019s images'
-    })
-  }),
-  Object.freeze({
-    id: 'mouaif-settings',
-    name: 'mouaif',
-    description: 'app & project settings · projects · feature info',
-    actions: Object.freeze(['settings_get', 'settings_update', 'project_list', 'info']),
-    labels: Object.freeze({
-      settings_get: 'read settings',
-      settings_update: 'update settings',
-      project_list: 'list projects',
-      info: 'feature state'
-    })
-  })
+  { id: 'chats', name: 'Chats', source: 'chats', tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments'] },
+  { id: 'mouaif-settings', name: 'mouaif', source: 'mouaif', tools: ['get_settings', 'update_settings', 'list_projects', 'get_app_info'] }
 ]);
 
-// mouaifCategoryTools(tool, category) -> leaf rows
-//
-// Action rows share a model-facing tool and family permission, but have
-// independent selection keys. Category ids keep collapse state separate.
-function mouaifCategoryTools(tool, category) {
-  return category.actions.map((action) => ({
-    id: category.id + ':' + action,
-    name: (category.labels && category.labels[action]) || action,
-    description: '',
-    title: 'mouaif action "' + action + '"',
-    toolName: tool.name,
-    selectionName: tool.name + ':' + action
-  }));
-}
+export const APP_TOOL_NAMES = MOUAIF_TOOL_GROUPS.flatMap((group) => group.tools);
 
 // groupToolNames(group) -> string[]
 //
-// Selection keys a group checkbox writes: tool names for catalog leaves,
-// or independent `mouaif:<action>` keys for category children. Tree ids are
-// presentation-only; settings children have a different category prefix.
+// Every checkbox stores the catalog function name, including group children.
 export function groupToolNames(group) {
   const tools = (group && group.tools) || [];
-  const names = tools.map((t) => t.selectionName || t.toolName || t.id).filter(Boolean);
+  const names = tools.map((t) => t.id).filter(Boolean);
   return Array.from(new Set(names));
 }
 
 // childToolName(group, toolId) -> string
 //
-// A child checkbox writes its canonical selectionName when present,
-// otherwise its toolName or catalog id.
+// Child ids are the model-facing function names.
 export function childToolName(group, toolId) {
-  const child = ((group && group.tools) || []).find((t) => t && t.id === toolId);
-  return (child && (child.selectionName || child.toolName)) || toolId;
+  return toolId;
 }
 
 // The chat authorization response already resolves app/project/chat layers.
@@ -408,7 +362,6 @@ export function toolPermission(name, native = {}, mcp = {}) {
     const slug = name.slice(5).split('__')[0];
     return (mcp.tools && mcp.tools[name]) || (mcp.servers && mcp.servers[slug]) || mcp;
   }
-  if (name.startsWith('mouaif:')) return native[name] || native.mouaif || {};
   const file = ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit'].includes(name);
   if (file && native.file && native.file.mode === 'off') return native.file;
   return native[name] || (file ? native.file : null) || {};
@@ -417,9 +370,8 @@ export function toolPermission(name, native = {}, mcp = {}) {
 export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set(), permissions = {}) {
   const groups = [];
   const selected = Array.isArray(filter) ? new Set(filter) : null;
-  const isOn = (name) => (selected == null || selected.has(name) || (name.startsWith('mouaif:') && selected.has('mouaif')))
-    && toolPermission(name, permissions.native, permissions.mcp).mode !== 'off'
-    && (!name.startsWith('mouaif:') || permissions.native?.mouaif?.mode !== 'off');
+  const isOn = (name) => (selected == null || selected.has(name))
+    && toolPermission(name, permissions.native, permissions.mcp).mode !== 'off';
   const allToolsOn = (tools) => tools.length > 0 && tools.every((t) => t && isOn(t.name));
   const leaf = (t, extra) => Object.assign({
     id: t.name,
@@ -443,29 +395,10 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
     });
   }
 
-  // The mouaif tool renders as TWO categories — "Chats" (chats + image
-  // attachments) and "mouaif" (app & project settings, projects, feature info).
-  // Each category lists its own actions as children, so it reads as a category
-  // (chevron, child rows, count) rather than as one more tool row. Every row
-  // maps to the single model-facing `mouaif` tool and therefore to the single
-  // `mouaif` authorization family; the segment on the category row writes that
-  // one gate. The ids are distinct so tree keys and collapse state stay
-  // independent. See docs/features/mouaif-tool.md.
-  const mouaifTool = catalog.find((x) => x && x.name === 'mouaif');
-  if (mouaifTool) {
-    for (const row of MOUAIF_TOOL_GROUPS) {
-      groups.push({
-        id: row.id,
-        name: row.name,
-        description: row.description,
-        title: mouaifTool.description || '',
-        checked: row.actions.every((action) => isOn('mouaif:' + action)),
-        tools: mouaifCategoryTools(mouaifTool, row).map((t) => Object.assign(t, {
-          checked: isOn(t.selectionName),
-          used: usedTools.has(mouaifTool.name)
-        }))
-      });
-    }
+  for (const row of MOUAIF_TOOL_GROUPS) {
+    const tools = catalog.filter((t) => t && t.kind === 'native' && t.source === row.source);
+    if (tools.length) groups.push({ id: row.id, name: row.name,
+      checked: allToolsOn(tools), tools: tools.map((t) => leaf(t)) });
   }
 
   const progressTool = catalog.find((x) => x && x.name === 'report_progress');

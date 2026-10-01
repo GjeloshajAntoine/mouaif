@@ -18,23 +18,26 @@ const { streamChat } = require('../src/ai-stream.js');
 const originalFetch = global.fetch;
 let nextId = 0;
 
-async function call(chat, args, { mode = 'allow', decision, advertised = mode !== 'off', actions } = {}) {
-  authz.setAuthorization(projectDir, { tools: { mouaif: { mode } } });
+async function call(chat, legacyArgs, { mode = 'allow', decision, advertised = mode !== 'off' } = {}) {
+  const { action, ...args } = legacyArgs;
+  const { DEFINITIONS } = require('../src/tools/appToolNames.js');
+  const name = Object.keys(DEFINITIONS).find((key) => DEFINITIONS[key].action === action);
+  authz.setAuthorization(projectDir, { tools: { [name]: { mode } } });
   const id = 'mouaif-call-' + ++nextId;
   const events = [];
   let rounds = 0;
   let returned;
   global.fetch = async (_url, init) => {
     const body = JSON.parse(init.body);
-    const spec = body.tools.find((tool) => tool.function.name === 'mouaif');
-    assert.equal(!!spec, advertised, 'the advertised spec follows the effective authorization mode');
-    if (spec && actions) assert.deepEqual(spec.function.parameters.properties.action.enum, actions);
-    else if (spec) assert.ok(spec.function.parameters.properties.action.enum.includes(args.action));
+    const spec = (body.tools || []).find((tool) => tool.function.name === name);
+    assert.equal(!!spec, advertised, 'ordinary native-tool filtering follows selection and permission');
+    assert.ok(!(body.tools || []).some((tool) => tool.function.name === 'mouaif'));
+    if (spec) assert.equal(spec.function.parameters.properties.action, undefined);
     let delta;
     if (rounds++ === 0) {
-      delta = { tool_calls: [{ index: 0, id, type: 'function', function: { name: 'mouaif', arguments: JSON.stringify(args) } }] };
+      delta = { tool_calls: [{ index: 0, id, type: 'function', function: { name, arguments: JSON.stringify(args) } }] };
     } else {
-      const row = body.messages.find((message) => message.role === 'tool' && message.name === 'mouaif');
+      const row = body.messages.find((message) => message.role === 'tool' && message.name === name);
       assert.ok(row, 'the next model turn receives the tool result');
       returned = JSON.parse(row.content);
       delta = { content: 'Done' };
@@ -49,7 +52,7 @@ async function call(chat, args, { mode = 'allow', decision, advertised = mode !=
     onEvent(type, payload) {
       events.push({ type, payload });
       if (type === 'authorization_required') {
-        assert.equal(payload.tool, 'mouaif');
+        assert.equal(payload.tool, name);
         assert.ok(decision, 'ask mode must have an explicit test decision');
         authz.recordDecision(projectDir, chat.id, payload.callId, decision);
       }
@@ -94,7 +97,7 @@ async function main() {
   assert.equal(out.result.code, 'ETOOL_DISABLED');
   assert.equal(chats.getChat(projectDir, createdId).title, 'Renamed by tool');
 
-  chats.updateChat(projectDir, host.id, { toolAuth: { native: { mouaif: { mode: 'off' } } } });
+  chats.updateChat(projectDir, host.id, { toolAuth: { native: { list_chats: { mode: 'off' } } } });
   out = await call(chats.getChat(projectDir, host.id), { action: 'list' }, { advertised: false });
   assert.equal(out.ok, false, 'per-chat off overrides project allow');
   chats.updateChat(projectDir, host.id, { toolAuth: null });
@@ -136,22 +139,15 @@ async function main() {
   out = await call(host, { action: 'delete', chatId: createdId, confirm: true });
   assert.equal(out.ok, true);
   assert.equal(chats.getChat(projectDir, createdId), null);
-  chats.updateChat(projectDir, host.id, { tools: ['mouaif:list'] });
-  out = await call(chats.getChat(projectDir, host.id), { action: 'list' }, { actions: ['list'] });
+  chats.updateChat(projectDir, host.id, { tools: ['list_chats'] });
+  out = await call(chats.getChat(projectDir, host.id), { action: 'list' });
   assert.equal(out.ok, true);
-  const before = chats.countChats(projectDir);
-  out = await call(chats.getChat(projectDir, host.id), { action: 'create', title: 'Not selected' }, { actions: ['list'] });
-  assert.equal(out.ok, false);
-  assert.equal(out.returned.code, 'ETOOL_DISABLED', 'forged calls cannot execute an unchecked action');
-  assert.equal(chats.countChats(projectDir), before);
   chats.updateChat(projectDir, host.id, { tools: null });
-  authz.setAuthorization(projectDir, { tools: { 'mouaif:create': { mode: 'off' } } });
-  out = await call(chats.getChat(projectDir, host.id), { action: 'create', title: 'Disabled project action' }, {
-    actions: require('../src/tools/mouaif.js').ACTION_NAMES.filter((name) => name !== 'create')
-  });
+  const before = chats.countChats(projectDir);
+  out = await call(chats.getChat(projectDir, host.id), { action: 'create', title: 'Disabled project tool' }, { mode: 'off' });
   assert.equal(out.ok, false);
   assert.equal(chats.countChats(projectDir), before);
-  assert.equal(out.events.some((event) => event.type === 'authorization_required'), false, 'disabled actions fail before approval');
+  assert.equal(out.events.some((event) => event.type === 'authorization_required'), false, 'Off tools fail before approval');
   console.log('mouaif tool stream: dispatch, result cards, authorization, independent action selection, errors, redaction, attachments, and deletion passed');
 }
 

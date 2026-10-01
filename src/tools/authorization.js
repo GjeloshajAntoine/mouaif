@@ -140,7 +140,8 @@ function normalizeConfig(raw, source, enabled, tool) {
 // has its own block under project.mcp.authorization). The same shape
 // works for any future native tool: { mode, allowlist, defaultTimeoutMs,
 // maxTimeoutMs } under project.tools.<name>.
-const NATIVE_TOOLS = new Set(['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'mouaif']);
+const APP_TOOL_NAMES = require('./appToolNames.js').TOOL_NAMES;
+const NATIVE_TOOLS = new Set(['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', ...APP_TOOL_NAMES]);
 // Tools that only support a binary `off` / `ask` mode. `ask_user` is
 // the first of its kind: the model can't predict the user's answer,
 // so allowlist / allow make no sense. The authorization module still
@@ -168,7 +169,6 @@ const MAX_BATCH_ENTRIES = require('./files.js').MAX_BATCH_ENTRIES;
 // resolver, the chat-override reader/writer, and the GET /api/tools/
 // authorization view — including grouped reads and edits.
 const FILE_FAMILY_TOOLS = new Set([...FILE_TOOL_NAMES]);
-const MOUAIF_ACTION_TOOLS = require('./mouaif.js').ACTION_NAMES.map((action) => 'mouaif:' + action);
 const MCP_FILE = '.mcp.json';
 
 // ---- Per-chat authorization overrides (decisions §17) --------------------
@@ -210,7 +210,7 @@ function readChatAuthOverrides(projectDir, chatId) {
   const nativeSource = (raw.native && typeof raw.native === 'object' && !Array.isArray(raw.native))
     ? raw.native
     : raw;
-  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS, ...MOUAIF_ACTION_TOOLS]) {
+  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS]) {
     const entry = nativeSource[name];
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     if (typeof entry.mode !== 'string' || !MODES.has(entry.mode)) continue;
@@ -416,16 +416,6 @@ function mcpServersBySlug(projectDir, servers) {
 }
 
 function effectiveConfig(projectDir, tool, chatId) {
-  if (MOUAIF_ACTION_TOOLS.includes(tool)) {
-    const family = effectiveConfig(projectDir, 'mouaif', chatId);
-    if (family.mode === 'off') return family;
-    const chatOverride = chatNativeOverride(projectDir, chatId, tool);
-    if (chatOverride) return normalizeConfig(chatOverride, 'chat', true, tool);
-    const project = settings.getProject(projectDir);
-    const app = settings.getApp();
-    const value = project.tools?.[tool] || app.tools?.[tool];
-    return value ? normalizeConfig(value, project.tools?.[tool] ? 'project-tool' : 'app-tool', true, tool) : family;
-  }
   const requestedTool = tool;
   tool = configToolName(tool);
   // Chat override wins over everything below it — the user made that
@@ -510,8 +500,7 @@ function getAuthorization(projectDir, chatId) {
 task: effectiveConfig(projectDir, 'task', chatId),
 webpreview: effectiveConfig(projectDir, 'webpreview', chatId),
 restart_app: effectiveConfig(projectDir, 'restart_app', chatId),
-mouaif: effectiveConfig(projectDir, 'mouaif', chatId),
-...Object.fromEntries(MOUAIF_ACTION_TOOLS.map((name) => [name, effectiveConfig(projectDir, name, chatId)]))
+...Object.fromEntries(APP_TOOL_NAMES.map((name) => [name, effectiveConfig(projectDir, name, chatId)]))
   },
     mcp
   };
@@ -598,7 +587,7 @@ function setChatAuthorization(projectDir, chatId, patch) {
   for (const [name, entry] of Object.entries(nativePatch)) {
     if (name === 'mcp' || name === 'native') continue;
     const family = configToolName(name);
-    if (!NATIVE_TOOLS.has(family) && !MOUAIF_ACTION_TOOLS.includes(family)) continue;
+    if (!NATIVE_TOOLS.has(family)) continue;
     if (entry === null) { delete next.native[family]; continue; }
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     const mode = MODES.has(entry.mode) ? entry.mode : 'ask';
@@ -647,7 +636,7 @@ function setAuthorization(projectDir, patch) {
   // defaultTimeoutMs, maxTimeoutMs }. The caller's `enabled` flag is
   // owned by the project tools toggle (a different setting) and is
   // not duplicated here.
-  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS, ...MOUAIF_ACTION_TOOLS]) {
+  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS]) {
     if (patch.tools && patch.tools[name]) {
       const cfg = normalizeConfig(patch.tools[name], 'project', true);
       // Preserve entries already applied from this patch. A request can
@@ -795,9 +784,7 @@ async function authorize(input) {
   if (!projectDir || !chatId || !tool || !callId) {
     throw typedError('EBADINPUT', 'projectDir, chatId, tool, and callId are required');
   }
-  const configName = tool === 'mouaif' && MOUAIF_ACTION_TOOLS.includes('mouaif:' + input.args?.action)
-    ? 'mouaif:' + input.args.action : tool;
-  const config = effectiveConfig(projectDir, configName, chatId);
+  const config = effectiveConfig(projectDir, tool, chatId);
   if (!config.enabled || config.mode === 'off') throw typedError('ETOOL_DISABLED', tool + ' is disabled');
 
   const session = getSession(projectDir, chatId);
@@ -934,6 +921,7 @@ function recordDecision(projectDir, chatId, callId, decision, payload) {
 }
 
 module.exports = {
+NATIVE_TOOLS,
 MODES,
 FILE_TOOL_NAMES,
 // Every tool that resolves through the File tools family (`file` gate plus

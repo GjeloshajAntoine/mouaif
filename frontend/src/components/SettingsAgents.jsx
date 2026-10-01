@@ -15,7 +15,7 @@ import { agentQuery, agentEditorPath } from './settings/agentNavigation.js';
 import { backHref, backTarget } from './settings/projectNavigation.js';
 import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
 import { back as goBack, replace, replaceUrl } from '../router.js';
-import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
+import { ToolTree, buildAgentToolGroups, APP_TOOL_NAMES } from './ToolTree.jsx';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { ThinkingSelectField } from './ThinkingSelectField.jsx';
 import './settings/agents.css';
@@ -33,7 +33,7 @@ const NATIVE_TOOL_CHOICES = [
   { value: 'task', label: 'task' },
 { value: 'webpreview', label: 'webpreview' },
 { value: 'restart_app', label: 'restart_app' },
-  { value: 'mouaif', label: 'mouaif' },
+  ...APP_TOOL_NAMES.map((name) => ({ value: name, label: name })),
 { value: 'report_progress', label: 'report_progress' },
 
   { value: 'ask_user', label: 'ask_user' },

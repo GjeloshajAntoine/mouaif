@@ -127,16 +127,20 @@ for (const [project, summary] of [
   // the query it re-emits (the path itself is the answer to "where to").
   assert.equal(view.agentBackPath(agentScope), 'settings/project?' + view.agentQuery(Object.assign({}, agentScope, { returnTo: '' })), 'the agent editor returns to project settings');
 }
-const actionView = createView({}, [{ name: 'mouaif' }]);
+const actionView = createView({}, [
+  { name: 'list_chats', kind: 'native', source: 'chats' },
+  { name: 'delete_chat', kind: 'native', source: 'chats' },
+  { name: 'get_settings', kind: 'native', source: 'mouaif' }
+]);
 actionView.render();
 await actionView.load();
 let tree = actionView.render().find((node) => typeof node.attrs.onToggleTool === 'function');
-tree.attrs.onToggleTool('mouaif', 'mouaif:list', false);
+tree.attrs.onToggleTool('chats', 'list_chats', false);
 tree = actionView.render().find((node) => typeof node.attrs.onToggleTool === 'function');
-const actionRows = tree.attrs.groups.filter((g) => g.id.startsWith('mouaif'));
-assert.equal(actionRows.flatMap((g) => g.tools).filter((t) => t.checked).length, 11, 'project checkbox only disables its action');
+const actionRows = tree.attrs.groups.filter((g) => ['chats', 'mouaif-settings'].includes(g.id));
+assert.equal(actionRows.flatMap((g) => g.tools).filter((t) => t.checked).length, 2, 'project checkbox only disables its tool');
 assert.equal(actionRows[0].tools[0].checked, false);
 assert.equal(actionRows[1].checked, true, 'other category remains selected');
-assert.ok(actionView.requests.some((request) => request.tools?.['mouaif:list']?.mode === 'off'), 'action mode is saved independently');
+assert.ok(actionView.requests.some((request) => request.tools?.list_chats?.mode === 'off'), 'action mode is saved independently');
 
 console.log('PASS project settings initial/loaded renders, independent action checkboxes, hidden-file counts, scoped links, sibling pages, agent links and Back targets');

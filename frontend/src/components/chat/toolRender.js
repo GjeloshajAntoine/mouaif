@@ -750,7 +750,7 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   if (name === 'write_file') return renderWriteFileToolResult(body, r, args);
   if (name === 'task') return renderTaskToolResult(body, r);
   if (name === 'webpreview') return renderWebpreviewToolResult(body, r, args);
-  if (name === 'mouaif') return renderMouaifToolResult(body, r);
+  if (['list_chats', 'search_chats', 'mouaif'].includes(name)) return renderMouaifToolResult(body, r);
   if (isSubagentFn(toolResult && toolResult.name)) {
     // The full chat is rendered by renderSubagentChat in
     // transcript.js, which is called by the caller right after

@@ -102,10 +102,6 @@ export function ToolPopup(props) {
     task: 'task',
 webpreview: 'webpreview',
 restart_app: 'restart_app',
-// Both mouaif rows ("Chats" and "mouaif") share the one `mouaif` family, so
-// each segment writes the same chat-scoped gate.
-mouaif: 'mouaif',
-'mouaif-settings': 'mouaif',
 files: 'file'
 
   };
@@ -119,6 +115,14 @@ files: 'file'
         current: { mode: segMode(cur.mode), allowlist: Array.isArray(cur.allowlist) ? cur.allowlist : [] },
         onSave: onSaveToolAuth
       });
+    }
+  }
+
+  for (const g of groups) {
+    if (!['chats', 'mouaif-settings'].includes(g.id)) continue;
+    for (const tool of g.tools || []) {
+      tool.control = h(AuthSegment, { toolName: tool.id, groupId: g.id,
+        current: auth[tool.id] || { mode: 'ask', allowlist: [] }, onSave: onSaveToolAuth });
     }
   }
 
@@ -181,9 +185,7 @@ files: 'file'
       if (onToggleSkill) onToggleSkill(toolId, checked);
       return;
     }
-    // A child row of a one-tool category (the two `mouaif` rows) toggles the
-    // tool it belongs to — the chat filter stores tool names, and the row's own
-    // id (`mouaif:list`) is only a tree key (see childToolName).
+    // Every child row toggles its own function name.
     const group = groups.find((g) => g.id === groupId);
     if (onToggleTool) onToggleTool(childToolName(group, toolId), checked);
   }

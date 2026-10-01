@@ -41,22 +41,21 @@ const same = (actual, expected, what) => assert.equal(JSON.stringify(actual), JS
 
 const catalog = [
   { name: 'shell', description: 'Run a shell command in the project directory.' },
-  { name: 'mouaif', description: 'Manage mouaif itself: chats, settings, projects.' },
+  ...MOUAIF_TOOL_GROUPS.flatMap((group) => group.tools.map((name) => ({ name, kind: 'native', source: group.source }))),
   { name: 'report_progress', description: 'Report real-time progress.' }
 ];
 
 // --- 1) Two categories, each with its actions as children ------------------
 const groups = buildToolGroups(catalog, [], null);
-const categories = groups.filter((g) => g.id.startsWith('mouaif'));
+const categories = groups.filter((g) => ['chats', 'mouaif-settings'].includes(g.id));
 assert.equal(categories.length, 2, 'one row per category');
 same(categories.map((g) => g.name), ['Chats', 'mouaif'], 'two categories, named for what they cover');
 same(categories[0].tools.map((t) => t.id), [
-  'mouaif:list', 'mouaif:get', 'mouaif:create', 'mouaif:update',
-  'mouaif:delete', 'mouaif:search', 'mouaif:attach', 'mouaif:list_attachments'
+  'list_chats', 'get_chat', 'create_chat', 'update_chat',
+  'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments'
 ], 'the chats category lists its eight actions');
 same(categories[1].tools.map((t) => t.id), [
-  'mouaif-settings:settings_get', 'mouaif-settings:settings_update',
-  'mouaif-settings:project_list', 'mouaif-settings:info'
+  'get_settings', 'update_settings', 'list_projects', 'get_app_info'
 ], 'the settings category lists its four actions');
 // More than one child is what gives the row its chevron and count in ToolTree.
 assert.ok(categories.every((g) => g.tools.length > 1), 'a category is collapsible');
@@ -71,24 +70,24 @@ assert.equal(without.filter((g) => g.id.startsWith('mouaif')).length, 0, 'no cat
 // The chat filter stores tool NAMES; `mouaif:list` is only a tree key. Without
 // `toolName` the card would write `mouaif:list` into the chat and the server
 // would see a tool that does not exist.
-assert.ok(categories.flatMap((g) => g.tools).every((t) => t.toolName === 'mouaif'), 'children resolve to the one tool');
-const used = buildToolGroups(catalog, [], null, new Set(['mouaif']));
-assert.ok(used.filter((g) => g.id.startsWith('mouaif')).flatMap((g) => g.tools).every((t) => t.used === true), 'the used dot marks the category');
+assert.ok(categories.flatMap((g) => g.tools).every((t) => !t.toolName && !t.selectionName), 'ordinary leaves have no aliases');
+const used = buildToolGroups(catalog, [], null, new Set(['list_chats']));
+assert.equal(used.flatMap((g) => g.tools).filter((t) => t.used).length, 1, 'used badges belong to individual tools');
 
 // --- 3) Off unchecks the category and every child --------------------------
 const off = buildToolGroups(catalog, [], ['shell', 'report_progress']);
-for (const g of off.filter((x) => x.id.startsWith('mouaif'))) {
+for (const g of off.filter((x) => ['chats', 'mouaif-settings'].includes(x.id))) {
   assert.equal(g.checked, false, g.id + ' unchecked when off');
   assert.ok(g.tools.every((t) => t.checked === false), g.id + ' children unchecked when off');
 }
 
-const onlyList = buildToolGroups(catalog, [], ['mouaif:list']);
-const independent = onlyList.filter((g) => g.id.startsWith('mouaif'));
+const onlyList = buildToolGroups(catalog, [], ['list_chats']);
+const independent = onlyList.filter((g) => ['chats', 'mouaif-settings'].includes(g.id));
 assert.equal(independent.flatMap((g) => g.tools).filter((t) => t.checked).length, 1, 'checking one action never selects siblings');
 assert.equal(independent[0].tools[0].checked, true);
 assert.equal(independent[1].tools.some((t) => t.checked), false, 'the other category stays off');
 const legacy = buildToolGroups(catalog, [], ['mouaif']);
-assert.ok(legacy.filter((g) => g.id.startsWith('mouaif')).every((g) => g.checked), 'legacy family selection still enables every action');
+assert.ok(legacy.filter((g) => ['chats', 'mouaif-settings'].includes(g.id)).every((g) => !g.checked), 'there is no live legacy-family exception');
 
 // --- 4) A sibling single-child group is unchanged --------------------------
 // `files` and the MCP groups keep their own shapes; only the mouaif rows split.
@@ -112,10 +111,10 @@ same(mcp.find((g) => g.id === 'mcp-srv').tools.map((t) => t.id), ['mcp__srv__a']
 // would drift if a category were renamed on one side only.
 same(
   MOUAIF_TOOL_GROUPS.map((g) => g.id),
-  ['mouaif', 'mouaif-settings'],
+  ['chats', 'mouaif-settings'],
   'category ids match src/tools/mouaif.js GROUPS'
 );
-const actions = new Set(categories.flatMap((g) => g.tools.map((t) => t.title.match(/"([^"]+)"/)[1])));
+const actions = new Set(categories.flatMap((g) => g.tools.map((t) => t.id)));
 assert.equal(actions.size, 12, 'twelve actions, each listed once');
 
 console.log('mouaif tool categories: two categories with their actions as children passed');

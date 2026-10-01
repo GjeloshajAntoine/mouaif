@@ -530,6 +530,11 @@ for (const chat of list) {
 }
 }
 }
+},
+{
+name: '2026-10-01-separate-native-app-tools',
+description: 'Convert legacy mouaif selections and permissions to ordinary native tools',
+run() { require('./migrateAppTools.js').run(); }
 }
 ];
 function runMigrations() {

@@ -39,11 +39,20 @@ async function main() {
   fs.writeFileSync(path.join(projectDir, 'shot.png'), Buffer.from(PNG_BASE64, 'base64'));
   fs.writeFileSync(path.join(projectDir, 'notes.txt'), 'not an image\n');
 
-  // --- 1) Spec shape ------------------------------------------------------
-  const fn = mouaif.SPEC.function;
-  check('SPEC is an OpenAI function', mouaif.SPEC.type === 'function' && fn.name === 'mouaif');
-  check('SPEC requires only `action`', JSON.stringify(fn.parameters.required) === '["action"]');
-  check('action enum matches ACTIONS', fn.parameters.properties.action.enum.join(',') === mouaif.ACTION_NAMES.join(','));
+  for (const [name, spec] of Object.entries(mouaif.SPECS)) {
+    check(name + ' is an ordinary native function', spec.type === 'function' && spec.function.name === name
+      && !spec.function.parameters.properties.action);
+  }
+  check('create schema omits unrelated keys', !mouaif.SPECS.create_chat.function.parameters.properties.scope);
+  const unexpectedAction = await mouaif.runAppTool('list_chats', { action: 'delete' }, { projectDir });
+  check('public app tools reject action arguments', unexpectedAction.result.code === 'EBADINPUT');
+
+  // --- 1) Internal runner shape -------------------------------------------
+  check('multiplexed function is not exported', mouaif.SPEC === undefined && !mouaif.SPECS.mouaif);
+  check('native tool schemas have independent required fields', mouaif.SPECS.update_chat.function.parameters.required.includes('chatId')
+    && !mouaif.SPECS.list_chats.function.parameters.required.length);
+  const unknownTool = await mouaif.runAppTool('toString', {}, { projectDir });
+  check('inherited names cannot dispatch', unknownTool.result.code === 'EUNKNOWN_TOOL');
   check('every action is routed to an area', mouaif.ACTION_NAMES.every((a) => !!mouaif.AREAS[mouaif.ACTIONS[a]]));
   // The tool surfaces as two UI categories behind one authorization family.
   check('GROUPS defines the two UI categories', Array.isArray(mouaif.GROUPS) && mouaif.GROUPS.length === 2);
@@ -68,16 +77,17 @@ async function main() {
 
   // --- 2) Authorization category -----------------------------------------
   const authState = authz.getAuthorization(projectDir);
-  check('authorization view exposes the mouaif tool', !!authState.tools.mouaif);
-  check('mouaif defaults to ask', authState.tools.mouaif.mode === 'ask');
-  authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'allow' } } });
-  check('mouaif mode can be stored', authz.getAuthorization(projectDir).tools.mouaif.mode === 'allow');
-  authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'off' } } });
-  check('mouaif mode can be turned off', authz.getAuthorization(projectDir).tools.mouaif.mode === 'off');
-  const denied = await authz.authorize({ projectDir, chatId: 'aaaa1111', callId: 'c1', tool: 'mouaif' })
+  check('authorization exposes each native app tool', mouaif.TOOL_NAMES.every((name) => authState.tools[name]));
+  check('native app tools default to ask', mouaif.TOOL_NAMES.every((name) => authState.tools[name].mode === 'ask'));
+  authz.setAuthorization(projectDir, { tools: { list_chats: { mode: 'allow' } } });
+  check('list_chats permission can be stored', authz.getAuthorization(projectDir).tools.list_chats.mode === 'allow');
+  authz.setAuthorization(projectDir, { tools: { list_chats: { mode: 'off' } } });
+  check('list_chats permission can be turned off', authz.getAuthorization(projectDir).tools.list_chats.mode === 'off');
+  check('sibling permissions are independent', authz.getAuthorization(projectDir).tools.delete_chat.mode === 'ask');
+  const denied = await authz.authorize({ projectDir, chatId: 'aaaa1111', callId: 'c1', tool: 'list_chats' })
     .then(() => null, (e) => e.code);
   check('off mode rejects the call with ETOOL_DISABLED', denied === 'ETOOL_DISABLED');
-  authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'ask' } } });
+  authz.setAuthorization(projectDir, { tools: { list_chats: { mode: 'ask' } } });
 
   // --- 3) Errors on a bad call -------------------------------------------
   const bad = await mouaif.runMouaif({});
@@ -318,20 +328,20 @@ async function main() {
 
   const info = await mouaif.runMouaif({ action: 'info' }, opts);
   check('info reports the tool surface', info.ok === true
-    && Array.isArray(info.result.actions) && info.result.tool === 'mouaif');
-  check('info lists every action with its area', info.result.actions.length === mouaif.ACTION_NAMES.length
-    && info.result.actions.every((a) => a && a.action && a.area));
+    && Array.isArray(info.result.nativeTools) && info.result.tool === 'get_app_info');
+  check('info lists every native function', info.result.nativeTools.length === mouaif.TOOL_NAMES.length
+    && info.result.nativeTools.every((tool) => tool && tool.name && tool.description));
   check('info includes the feature state (tools)', info.result.tools && !!info.result.tools.shell);
-  chats.updateChat(projectDir, imgChat, { toolAuth: { native: { shell: { mode: 'off' }, mouaif: { mode: 'allow' } } } });
+  chats.updateChat(projectDir, imgChat, { toolAuth: { native: { shell: { mode: 'off' }, get_app_info: { mode: 'allow' } } } });
   const chatInfo = await mouaif.runMouaif({ action: 'info' }, chatOpts);
   check('info reports effective chat-specific permissions', chatInfo.result.tools.shell.mode === 'off'
-    && chatInfo.result.tools.mouaif.mode === 'allow');
+    && chatInfo.result.tools.get_app_info.mode === 'allow');
   const features = await require('../src/agentFeatures.js').dispatchListFeatures({}, chatOpts);
   check('list_features agrees with info about chat-specific permissions', features.result.tools.shell.mode === 'off'
-    && features.result.tools.mouaif.mode === 'allow');
+    && features.result.tools.get_app_info.mode === 'allow');
   const projectInfo = await mouaif.runMouaif({ action: 'info' }, opts);
   check('project info does not inherit another chat\u2019s permissions', projectInfo.result.tools.shell.mode === info.result.tools.shell.mode
-    && projectInfo.result.tools.mouaif.mode === info.result.tools.mouaif.mode);
+    && projectInfo.result.tools.get_app_info.mode === info.result.tools.get_app_info.mode);
 
   console.log('mouaif tool: ' + passed + ' passed, ' + failed + ' failed');
   if (failed) process.exitCode = 1;

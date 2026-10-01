@@ -658,7 +658,7 @@ async function syncToNextSeq(state, refs, serverNextSeq) {
   // Followers/recovery receive settled tools via the incremental tail, not
   // the owner's SSE. Apply the same mutations once per tool-call id.
   for (const row of body.messages || []) {
-    if (!row || row.role !== 'tool' || row.phase !== 'result' || row.name !== 'mouaif' || row.ok !== true) continue;
+    if (!row || row.role !== 'tool' || row.phase !== 'result' || row.ok !== true) continue;
     try {
       applyMouaifToolResult({ id: row.toolCallId, name: row.name, ok: row.ok, result: JSON.parse(row.content) }, state, refs);
     } catch { /* malformed stored result */ }
@@ -1411,7 +1411,7 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       appendToolCallCard(data, refs);
     } else if (ev.eventName === 'tool_result') {
     appendToolResultCard(data, refs);
-    if (data && data.name === 'mouaif') applyMouaifToolResult(data, state, refs);
+    if (data) applyMouaifToolResult(data, state, refs);
     } else if (ev.eventName === 'progress_update') {
       // Real-time progress bar from the model's report_progress tool.
       // Creates or updates a progress card in the transcript with a

@@ -201,8 +201,7 @@ async function runSingleToolCall(c, cx) {
       if (!exec) exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
     } else if (promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME) {
       const requested = args && (args.toolName || args.name || args.tool);
-      let spec = (toolSpecs || []).find(s => s && s.function && s.function.name === requested);
-      if (requested === 'mouaif' && spec) spec = require('./tools/mouaif.js').selectedSpec(opts);
+      const spec = (toolSpecs || []).find(s => s && s.function && s.function.name === requested);
       if (!spec) {
         exec = {
           ok: false,
@@ -498,10 +497,8 @@ async function streamChat(opts) {
 catch { /* task tool module unavailable; skip */ }
 try { toolSpecs.push(require('./tools/restart.js').SPEC); }
 catch { /* restart tool module unavailable; skip */ }
-// Native mouaif tool: one tool for the app's own data model — chats,
-// attachments, app/project settings, and the project list. Gated by the
-// project-level `mouaif` authorization mode.
-try { toolSpecs.push(require('./tools/mouaif.js').SPEC); }
+// Ordinary native tools for chats, attachments, settings and projects.
+try { toolSpecs.push(...Object.values(require('./tools/mouaif.js').SPECS)); }
 catch { /* mouaif tool module unavailable; skip */ }
 try {
 const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir, opts && opts.chat);
@@ -544,7 +541,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     if (opts && opts.projectDir) {
       const authz = require('./tools/authorization.js');
       const authState = authz.getAuthorization(opts.projectDir, opts && opts.chatId);
-      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'mouaif']) {
+      for (const family of authz.NATIVE_TOOLS) {
       const cfg = authState.tools[family];
       if (cfg && cfg.mode === 'off') {
       const hidden = family === 'file' ? authz.FILE_FAMILY_TOOLS : new Set([family]);
@@ -596,15 +593,8 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   if (opts && Array.isArray(opts.enabledTools)) {
     const allow = new Set(opts.enabledTools.map((n) => String(n)));
     visibleToolSpecs = toolSpecs.filter((s) => s && s.function
-    && (allow.has(s.function.name) || (s.function.name === 'mouaif' && [...allow].some((name) => name.startsWith('mouaif:')))
-      || (!opts.nestedSubagent && s.function.name === 'activate_skill')));
+    && (allow.has(s.function.name) || (!opts.nestedSubagent && s.function.name === 'activate_skill')));
   }
-
-  visibleToolSpecs = visibleToolSpecs.flatMap((spec) => {
-    if (spec.function.name !== 'mouaif') return [spec];
-    const selected = require('./tools/mouaif.js').selectedSpec(opts);
-    return selected ? [selected] : [];
-  });
 
   // Shrink the tool declaration according to the active prompt-size
   // profile (decisions §4). For very-small, the list is compact (name +
@@ -1432,17 +1422,15 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       }
     }
 
-    // Native mouaif tool: chats, attachments, settings, projects. It is a
-    // thin router over the same internal modules the REST handlers use, so
-    // the shape returned here is the tool's own `{ ok, content, result }`.
-    if (name === 'mouaif') {
+    // Ordinary native app tools share business runners, like file tools.
+    if (require('./tools/appToolNames.js').TOOL_NAMES.includes(name)) {
       let mod;
       try { mod = require('./tools/mouaif.js'); }
       catch (e) {
         const r = { error: { code: 'EMODULE', message: 'mouaif tool module unavailable: ' + (e.message || e) } };
         return { ok: false, content: JSON.stringify(r), result: r };
       }
-      return await mod.runMouaif(args, callOpts || {});
+      return await mod.runAppTool(name, args, callOpts || {});
     }
 
     // Native task tool. Manages structured tasks with subtasks, progress
@@ -1741,9 +1729,7 @@ return { ok: false, content: JSON.stringify(r), result: r };
       // Inherit the actually advertised surface, including skill activation
       // controlled independently of the parent's ordinary tool selection.
       let nestedEnabled = visibleToolSpecs
-      .flatMap((spec) => spec?.function?.name === 'mouaif'
-      ? spec.function.parameters.properties.action.enum.map((action) => 'mouaif:' + action)
-      : [spec?.function?.name])
+      .map((spec) => spec && spec.function && spec.function.name)
       .filter((toolName) => toolName && toolName !== 'subagent');
       // An agent's tool allowlist restricts the nested call's surface.
       // Agent tool entries can be exact tool names (e.g. "shell") or MCP
@@ -1752,7 +1738,7 @@ return { ok: false, content: JSON.stringify(r), result: r };
       if (agentTools) {
         const allow = new Set(agentTools);
         nestedEnabled = nestedEnabled.filter((toolName) => {
-          if (allow.has(toolName) || (toolName.startsWith('mouaif:') && allow.has('mouaif'))) return true;
+          if (allow.has(toolName)) return true;
           // Prefix match for MCP server slugs: "mcp__fs" allows
           // "mcp__fs__read_file", "mcp__fs__write_file", etc.
           for (const prefix of allow) {

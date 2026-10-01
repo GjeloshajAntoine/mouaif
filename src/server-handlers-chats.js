@@ -489,8 +489,7 @@ chatDisabled: skillState.chatDisabled.has(s.id)
       try { toolSpecs.push(require('./tools/webpreview.js').SPEC); } catch { /* skip */ }
 try { toolSpecs.push(require('./tools/restart.js').SPEC); } catch { /* skip */ }
 try {
-  const spec = require('./tools/mouaif.js').selectedSpec({ projectDir: dir, chatId: id, enabledTools: effectiveChat.tools });
-  if (spec) toolSpecs.push(spec);
+  toolSpecs.push(...Object.values(require('./tools/mouaif.js').SPECS));
 } catch { /* skip */ }
 if (fileToolsEnabled) {
 
@@ -513,7 +512,7 @@ if (fileToolsEnabled) {
       try {
         const authz = require('./tools/authorization.js');
         const authState = authz.getAuthorization(dir, id);
-        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'mouaif']) {
+        for (const family of authz.NATIVE_TOOLS) {
         const cfg = authState.tools[family];
         if (cfg && cfg.mode === 'off') {
         const hidden = family === 'file' ? authz.FILE_FAMILY_TOOLS : new Set([family]);
@@ -544,8 +543,7 @@ if (fileToolsEnabled) {
       // schema-less) entry per tool — a FIXED list, identical on every
       // tool-loop request, so the Anthropic cached prefix stays byte-stable.
       const allow = Array.isArray(effectiveChat.tools) ? new Set(effectiveChat.tools) : null;
-      const selectedSpecs = allow ? toolSpecs.filter((s) => allow.has(s.function.name)
-      || (s.function.name === 'mouaif' && [...allow].some((name) => name.startsWith('mouaif:')))) : toolSpecs;
+      const selectedSpecs = allow ? toolSpecs.filter((s) => allow.has(s.function.name)) : toolSpecs;
       let effective = selectedSpecs;
       try { effective = promptProfiles.reduceToolSpecs(selectedSpecs, profileId); } catch { /* full specs */ }
       const reduced = profileId === 'very-small';

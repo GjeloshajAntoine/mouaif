@@ -39,23 +39,23 @@ const same = (actual, expected, what) => assert.equal(JSON.stringify(actual), JS
 
 const catalog = [
   { name: 'shell', description: 'Run a shell command in the project directory.' },
-  { name: 'mouaif', description: 'Manage mouaif itself: chats, settings, projects.' },
+  ...vm.runInContext('MOUAIF_TOOL_GROUPS', treeContext).flatMap((group) => group.tools.map((name) => ({ name, kind: 'native', source: group.source }))),
   { name: 'read_file', kind: 'native', source: 'files', description: 'Read a file.' }
 ];
 const groups = buildToolGroups(catalog, [], null);
 const byId = (id) => groups.find((g) => g.id === id);
-const chats = byId('mouaif');
+const chats = byId('chats');
 const settings = byId('mouaif-settings');
 const shell = byId('shell');
 const files = byId('files');
 
 // ---- 1. groupToolNames: a category writes its tool, a leaf its id --------
 same(
-  groupToolNames(chats), chats.tools.map((t) => t.selectionName),
+  groupToolNames(chats), chats.tools.map((t) => t.id),
   'a category row selects only its own actions'
 );
 same(
-  groupToolNames(settings), settings.tools.map((t) => t.selectionName),
+  groupToolNames(settings), settings.tools.map((t) => t.id),
   'the second category selects its own actions'
 );
 same(groupToolNames(shell), ['shell'], 'a one-tool group writes its tool name');
@@ -67,14 +67,14 @@ same(groupToolNames(null), [], 'a missing group resolves to nothing');
 same(groupToolNames({ tools: null }), [], 'a group with no tools resolves to nothing');
 // Dedupe: a category whose children somehow carried one tool still writes it once.
 same(
-  groupToolNames({ tools: [{ id: 'a', toolName: 'mouaif' }, { id: 'b', toolName: 'mouaif' }] }),
-  ['mouaif'],
+  groupToolNames({ tools: [{ id: 'a' }, { id: 'a' }] }),
+  ['a'],
   'names are deduped'
 );
 
 // ---- 2. childToolName: a category child resolves to the tool -------------
-assert.equal(childToolName(chats, 'mouaif:list'), 'mouaif:list', 'a category child resolves to its action selection');
-assert.equal(childToolName(settings, 'mouaif-settings:info'), 'mouaif:info', 'settings actions use the canonical selection key');
+assert.equal(childToolName(chats, 'list_chats'), 'list_chats', 'a category child is an ordinary tool');
+assert.equal(childToolName(settings, 'get_app_info'), 'get_app_info', 'settings leaves are ordinary tools too');
 assert.equal(childToolName(shell, 'shell'), 'shell', 'a catalog leaf is its own name');
 assert.equal(childToolName(files, 'read_file'), 'read_file', 'including a file-tool leaf');
 // An unknown row still round-trips instead of becoming `undefined`.
@@ -82,9 +82,9 @@ assert.equal(childToolName(chats, 'mouaif:gone'), 'mouaif:gone', 'an unknown id 
 assert.equal(childToolName(null, 'shell'), 'shell', 'and so does a missing group');
 // The pushed id is never a raw tree key: the exact bug.
 for (const tool of chats.tools) {
-  assert.equal(childToolName(chats, tool.id), tool.selectionName, 'each action has an independent selection');
+  assert.equal(childToolName(chats, tool.id), tool.id, 'each leaf uses its function name');
 }
-assert.ok(chats.tools.every((t) => t.id.includes(':')), 'a category child is keyed by action, not by tool');
+assert.ok(chats.tools.every((t) => !t.id.includes(':')), 'no synthetic action keys');
 
 // ---- 3. The names survive toggleToolGroup (the real write path) ----------
 // Load the real toggleToolGroup. It reaches for DOM + the Preact tree only
@@ -162,19 +162,16 @@ function cardHandlers(filter) {
 
 {
   const { props, state: s } = cardHandlers();
-  const categorySegments = props.groups.filter((g) => g.id.startsWith('mouaif')).map((g) => g.control.props.namePrefix);
-  assert.equal(new Set(categorySegments).size, 2, 'category segments use independent browser radio groups');
-  // Unchecking one Chat action must name the TOOL. The bug pushed `mouaif:list`.
-  props.onToggleTool('mouaif', 'mouaif:list', false);
-  assert.equal(s._seenTool.name, 'mouaif:list', 'the card resolves a category child to its action');
-  // The category checkbox writes the same single tool.
-  props.onToggleGroup('mouaif', false);
-  assert.equal(s._seenGroup.names.length, 8, 'the category checkbox writes its eight actions');
-  assert.equal(s._seenGroup.names[0], 'mouaif:list', 'with canonical action keys');
-  assert.equal(s._seenGroup.next, false, 'with the tapped state');
-  // The second category behaves identically.
+  const leaves = props.groups.filter((g) => ['chats', 'mouaif-settings'].includes(g.id)).flatMap((g) => g.tools);
+  assert.ok(leaves.every((tool) => tool.control.props.tool === tool.id), 'each function has its own permission control');
+  props.onToggleTool('chats', 'list_chats', false);
+  assert.equal(s._seenTool.name, 'list_chats');
+  props.onToggleGroup('chats', false);
+  assert.equal(s._seenGroup.names.length, 8);
+  assert.equal(s._seenGroup.names[0], 'list_chats');
+  assert.equal(s._seenGroup.next, false);
   props.onToggleGroup('mouaif-settings', true);
-  assert.equal(s._seenGroup.names[0], 'mouaif:settings_get', 'the settings category writes only its actions');
+  assert.equal(s._seenGroup.names[0], 'get_settings');
   // A catalog-backed group is untouched: its children ids ARE tool names.
   props.onToggleTool('shell', 'shell', false);
   assert.equal(s._seenTool.name, 'shell', 'a plain tool row keeps its own name');
@@ -186,7 +183,7 @@ function cardHandlers(filter) {
 const liveCatalog = catalog.map((t) => Object.assign({}, t));
 const allNames = knownToolNames({ tools: { catalog: liveCatalog, filter: null } });
 assert.ok(!allNames.includes('mouaif'), 'new selections expand the legacy family key');
-assert.ok(allNames.includes('mouaif:list'), 'the catalog exposes independent action selections');
+assert.ok(allNames.includes('list_chats'), 'the catalog exposes ordinary function names');
 
 const patched = [];
 const updateChat = async (patch) => { patched.push(patch); };
@@ -195,11 +192,11 @@ const refs = { toolsCard: { current: null } };
 
 // Unchecking ONE action of the Chats category writes an explicit filter that
 // omits `mouaif` — and the write is not empty, which is what the id produced.
-await toggleToolGroup([childToolName(chats, 'mouaif:list')], false, state, refs, updateChat);
+await toggleToolGroup([childToolName(chats, 'list_chats')], false, state, refs, updateChat);
 assert.equal(patched.length, 1, 'a category child toggle writes to the chat');
 assert.ok(Array.isArray(patched[0].tools), 'and writes an explicit filter');
-assert.ok(!patched[0].tools.includes('mouaif:list'), 'only list is off');
-assert.ok(patched[0].tools.includes('mouaif:get') && patched[0].tools.includes('mouaif:info'), 'siblings stay selected');
+assert.ok(!patched[0].tools.includes('list_chats'), 'only list_chats is off');
+assert.ok(patched[0].tools.includes('get_chat') && patched[0].tools.includes('get_app_info'), 'siblings stay selected');
 assert.ok(patched[0].tools.includes('shell'), 'leaving the other tools on');
 same(state.tools.filter, patched[0].tools, 'the in-memory filter matches the write');
 
@@ -210,36 +207,34 @@ await toggleToolGroup(['mouaif:missing'], false, { tools: { catalog: liveCatalog
 assert.equal(patched.length, before, 'an unknown name still writes nothing (so the fix must resolve names)');
 
 // Re-checking it collapses back to `null` (all on), the documented filter rule.
-await toggleToolGroup([childToolName(chats, 'mouaif:list')], true, state, refs, updateChat);
+await toggleToolGroup([childToolName(chats, 'list_chats')], true, state, refs, updateChat);
 assert.equal(patched.at(-1).tools, null, 're-enabling every tool collapses back to null');
 assert.equal(state.tools.filter, null, 'and the in-memory filter follows');
 
 // The category checkbox toggles the whole category from either row.
 const state2 = { tools: { catalog: liveCatalog, filter: null }, mcpServers: [] };
 await toggleToolGroup(groupToolNames(settings), false, state2, refs, updateChat);
-assert.ok(!patched.at(-1).tools.includes('mouaif:info'), 'the settings category switches its own actions off');
-assert.ok(patched.at(-1).tools.includes('mouaif:list'), 'Chats stays selected');
+assert.ok(!patched.at(-1).tools.includes('get_app_info'), 'the settings category switches its tools off');
+assert.ok(patched.at(-1).tools.includes('list_chats'), 'Chats stays selected');
 
 // ---- 4. Selection and authorization agree -------------------------------
 const disabledGroups = buildToolGroups(liveCatalog, [], null, new Set(), {
-  native: { shell: { mode: 'off' }, mouaif: { mode: 'off' }, file: { mode: 'off' } }
+  native: { shell: { mode: 'off' }, list_chats: { mode: 'off' }, file: { mode: 'off' } }
 });
-assert.ok(disabledGroups.filter((g) => ['shell', 'mouaif', 'mouaif-settings', 'files'].includes(g.id))
+assert.ok(disabledGroups.filter((g) => ['shell', 'files'].includes(g.id))
   .every((g) => !g.checked && g.tools.every((t) => !t.checked)), 'Off permissions cannot render as selected tools');
+assert.equal(disabledGroups.find((g) => g.id === 'chats').tools.find((t) => t.id === 'list_chats').checked, false);
+assert.equal(disabledGroups.find((g) => g.id === 'chats').tools.find((t) => t.id === 'delete_chat').checked, true);
 
 const authWrites = [];
-const offState = { tools: { catalog: liveCatalog, filter: [] }, mcpServers: [], toolAuth: { mouaif: { mode: 'off', allowlist: ['keep'] } },
+const offState = { tools: { catalog: liveCatalog, filter: [] }, mcpServers: [], toolAuth: { list_chats: { mode: 'off', allowlist: ['keep'] } },
   _saveToolAuth: async (...args) => { authWrites.push(args); return true; } };
-await toggleToolGroup(['mouaif'], true, offState, refs, updateChat);
-same(authWrites, [['mouaif', 'ask', ['keep']]], 'checking an Off tool restores Ask without granting Allow');
-assert.ok(offState.tools.filter.includes('mouaif:list'), 'the enabled actions enter the chat selection');
+await toggleToolGroup(['list_chats'], true, offState, refs, updateChat);
+same(authWrites, [['list_chats', 'ask', ['keep']]], 'checking an Off tool restores its own Ask permission');
+assert.ok(offState.tools.filter.includes('list_chats'));
 authWrites.length = 0;
-const inheritedOff = { tools: { catalog: liveCatalog, filter: null }, mcpServers: [], toolAuth: { mouaif: { mode: 'off' } },
-  _saveToolAuth: async () => true };
-await toggleToolGroup(['mouaif:list'], true, inheritedOff, refs, updateChat);
-same(inheritedOff.tools.filter.filter((name) => name.startsWith('mouaif:')), ['mouaif:list'], 'lifting Off selects only the checked action');
-offState.toolAuth.mouaif.mode = 'allow';
-await toggleToolGroup(['mouaif'], true, offState, refs, updateChat);
+offState.toolAuth.list_chats.mode = 'allow';
+await toggleToolGroup(['list_chats'], true, offState, refs, updateChat);
 assert.equal(authWrites.length, 0, 'an already allowed tool keeps its permission');
 
 const failedState = { tools: { catalog: liveCatalog, filter: [] }, mcpServers: [] };
@@ -265,11 +260,6 @@ const failedPermission = { tools: { catalog: liveCatalog, filter: [] }, mcpServe
   _saveToolAuth: async () => false };
 assert.equal(await toggleToolGroup(['shell'], true, failedPermission, refs, updateChat), false);
 assert.equal(failedPermission.tools.filter.length, 0, 'failed permission saves cannot leave a checked tool');
-
-const legacyState = { tools: { catalog: liveCatalog, filter: ['mouaif'] }, mcpServers: [] };
-await toggleToolGroup(['mouaif:list'], false, legacyState, refs, updateChat);
-assert.ok(!legacyState.tools.filter.includes('mouaif:list'), 'legacy selection can disable one action');
-assert.ok(legacyState.tools.filter.includes('mouaif:get') && legacyState.tools.filter.includes('mouaif:info'), 'legacy siblings remain enabled');
 
 const shellOnly = buildToolGroups([{ name: 'shell' }], [], []);
 assert.equal(shellOnly[0].checked, false, 'selection off remains off even when permission is Ask');
@@ -297,7 +287,7 @@ const chatStore = require('../src/chats.js');
 const authorization = require('../src/tools/authorization.js');
 const originalFetch = global.fetch;
 try {
-  settingsStore.setProject(home, { tools: { mouaif: { mode: 'off' } } });
+  settingsStore.setProject(home, { tools: { list_chats: { mode: 'off' } } });
   const host = chatStore.createChat(home, { tools: [] });
   const liveState = { tools: { catalog: liveCatalog, filter: [] }, mcpServers: [],
     toolAuth: authorization.getAuthorization(home, host.id).tools,
@@ -306,16 +296,17 @@ try {
       liveState.toolAuth = authorization.getAuthorization(home, host.id).tools;
       return true;
     } };
-  await toggleToolGroup(['mouaif:list'], true, liveState, refs, async (patch) => {
+  await toggleToolGroup(['list_chats'], true, liveState, refs, async (patch) => {
     chatStore.updateChat(home, host.id, patch);
     return true;
   });
-  assert.equal(settingsStore.getProject(home).tools.mouaif.mode, 'off', 'checkbox never changes the project gate');
+  assert.equal(settingsStore.getProject(home).tools.list_chats.mode, 'off', 'checkbox never changes project permission');
   global.fetch = async (_url, init) => {
     const request = JSON.parse(init.body);
-    const spec = request.tools.find((tool) => tool.function.name === 'mouaif');
-    assert.ok(spec, 'the checked tool reaches the model');
-    same(spec.function.parameters.properties.action.enum, ['list'], 'only the checked action reaches the model');
+    const spec = request.tools.find((tool) => tool.function.name === 'list_chats');
+    assert.ok(spec, 'the checked function reaches the model');
+    assert.equal(spec.function.parameters.properties.action, undefined);
+    assert.ok(!request.tools.some((tool) => tool.function.name === 'delete_chat'), 'unchecked native functions stay absent');
     assert.ok(!request.tools.some((tool) => tool.function.name === 'shell'), 'unselected tools stay absent');
     return new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Ready' } }] }) + '\n\ndata: [DONE]\n\n');
   };
@@ -332,9 +323,38 @@ try {
     const response = await fetch('http://127.0.0.1:' + server.address().port + '/api/chats/' + host.id + '/tool-preview?projectDir=' + encodeURIComponent(home));
     assert.equal(response.status, 200);
     const preview = await response.json();
-    assert.ok(preview.tools.some((tool) => tool.name === 'mouaif'), 'tool preview includes selected actions');
+    assert.ok(preview.tools.some((tool) => tool.name === 'list_chats'), 'tool preview includes the selected function');
     assert.ok(!preview.tools.some((tool) => tool.name === 'shell'), 'tool preview respects the selection');
   } finally { await new Promise((resolve) => server.close(resolve)); }
+  // Storage conversion runs once, not as an exception in tool dispatch.
+  const migration = require('../src/migrateAppTools.js');
+  const legacy = { tools: { mouaif: { mode: 'off' }, 'mouaif:list': { mode: 'allow' }, delete_chat: { mode: 'ask' } },
+    prompts: [{ preset: { tools: ['mouaif:info'] } }], agents: [{ tools: ['shell', 'mouaif:list'] }],
+    defaultAgent: { tools: ['mouaif'] } };
+  const converted = migration.config(legacy);
+  assert.equal(converted.tools.list_chats.mode, 'off', 'legacy Off is preserved');
+  assert.equal(converted.tools.delete_chat.mode, 'ask', 'existing ordinary permissions are untouched');
+  same(converted.prompts[0].preset.tools, ['get_app_info']);
+  same(converted.agents[0].tools, ['shell', 'list_chats']);
+  assert.equal(converted.defaultAgent.tools.length, 12);
+  assert.deepEqual(migration.config(converted), converted, 'migration is idempotent');
+  settingsStore.setProject(home, legacy);
+  settingsStore.setApp({ tools: { mouaif: { mode: 'allow' }, 'mouaif:delete': { mode: 'off' } } });
+  chatStore.updateChat(home, host.id, { tools: ['mouaif:list', 'mouaif:info'],
+    toolAuth: { native: { mouaif: { mode: 'allow' }, 'mouaif:delete': { mode: 'off' } } },
+    promptSnapshot: { content: 'Pinned', preset: { tools: ['mouaif:get'] } } });
+  migration.run();
+  const migrated = chatStore.getChat(home, host.id);
+  assert.deepEqual(migrated.tools, ['list_chats', 'get_app_info']);
+  assert.equal(migrated.toolAuth.native.list_chats.mode, 'allow');
+  assert.equal(migrated.toolAuth.native.delete_chat.mode, 'off');
+  assert.deepEqual(migrated.promptSnapshot.preset.tools, ['get_chat']);
+  assert.equal(settingsStore.getApp().tools.delete_chat.mode, 'off');
+  assert.equal(settingsStore.getProject(home).tools.list_chats.mode, 'off');
+  assert.equal(settingsStore.getProject(home).tools.mouaif, undefined);
+  const snapshot = JSON.stringify(migrated);
+  migration.run();
+  assert.equal(JSON.stringify(chatStore.getChat(home, host.id)), snapshot);
 } finally {
   global.fetch = originalFetch;
   settingsStore.close();

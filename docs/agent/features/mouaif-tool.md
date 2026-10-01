@@ -4,30 +4,30 @@
 
 ### Shape
 
-One spec, five areas, twelve actions, **two UI categories**. `src/tools/mouaif.js` exports `SPEC`, `ACTIONS` (action → area), `AREAS` (one-line description per area), `GROUPS` (the two UI categories — each lists the areas it covers and the `actions` derived from them), `ACTION_NAMES`, and `runMouaif(args, opts)`.
+Twelve ordinary native specs, five business areas, **two visual categories**. `src/tools/appToolNames.js` defines operation names, schema fields and catalog sources. `src/tools/mouaif.js` exports `SPECS`, `TOOL_NAMES`, and `runAppTool(name, args, opts)`. The area router is internal business-code reuse, not a model-facing function.
 
-`MOUAIF_TOOL_GROUPS` in `frontend/src/components/ToolTree.jsx` is the frontend copy of `GROUPS`: it carries the per-action child labels and is what `buildToolGroups` / `buildSettingsToolGroups` iterate to render one category row with its actions as children. Keep the two in sync when an area moves between categories — `scripts/test-mouaif-tool.js` asserts the server-side table covers every area and every action exactly once, and `scripts/test-mouaif-tool-categories.mjs` asserts the rendered shape (two categories, action children, every child resolving to the one `mouaif` tool).
+`MOUAIF_TOOL_GROUPS` groups real catalog functions by `source` (`chats` or `mouaif`). Child ids are function names; each child has the normal `ToolAuthSeg` control. Categories are presentation only.
 
 ### Child row → tool name
 
-A category's children have tree keys (`mouaif:list`, `mouaif-settings:info`) and canonical `selectionName` keys (`mouaif:list`, `mouaif:info`). `knownToolNames` expands the catalog's one `mouaif` entry into all action selections. Legacy `mouaif` allowlists expand to every action on edit. Checkbox toggles change one action, and category toggles affect only their own actions.
+Every child id equals its native function name. `knownToolNames` reads the catalog directly, with no aliases or action-key expansion. Legacy selections are converted once by `src/migrateAppTools.js` at startup.
 
 The resolution lives in one shared pair, exported from `ToolTree.jsx`:
 
 ```js
-groupToolNames(group)  // Chats -> ['mouaif:list', 'mouaif:get', …]
-childToolName(group, toolId)  // 'mouaif-settings:info' -> 'mouaif:info'
+groupToolNames(group)  // Chats -> ['list_chats', 'get_chat', …]
+childToolName(group, toolId)  // 'get_app_info' -> 'get_app_info'
 ```
 
-`buildToolGroups` also accepts effective native/MCP permissions; `toolPermission` keeps Off tools unchecked even when the chat filter is `null`. `toggleToolGroup` saves the filter and, when enabling a disabled tool, restores its chat-scoped gate to Ask. Both chat surfaces re-render after success or failure. The two category segments have distinct radio-name prefixes, avoiding browser radio-group collisions while sharing the one stored permission.
+`buildToolGroups` also accepts effective native/MCP permissions; `toolPermission` keeps Off tools unchecked even when the chat filter is `null`. `toggleToolGroup` saves the filter and, when enabling a disabled tool, restores its chat-scoped gate to Ask. Both chat surfaces re-render after success or failure. Each function has its own radio name and stored permission, on the leaf rather than a shared category gate.
 
 Both chat surfaces call them (`cards.js` passes the result to `state._toggleTool` / `state._toggleToolGroup`, `ToolPopup.jsx` to its `onToggleTool` / `onToggleToolGroup` props), and `SettingsProject.jsx` carries `toolName` on its own inline rows. Do not re-inline the rule at a call site: the first fix did exactly that, landed in the popup and missed the card, and the card's action checkboxes were dead until `groupToolNames`/`childToolName` gave the two surfaces one home. `scripts/test-mouaif-tool-toggle.mjs` asserts both surfaces import and call the helpers, and fails if either re-inlines the logic.
 
 ```js
-const { runMouaif } = require('mouaif/src/tools/mouaif.js');
+const { runAppTool } = require('mouaif/src/tools/mouaif.js');
 
-const out = await runMouaif(
-  { action: 'create', title: 'Changelog', topic: 'draft the notes' },
+const out = await runAppTool(
+  'create_chat', { title: 'Changelog', topic: 'draft the notes' },
   { projectDir: '/abs/path/to/project', chatId: '3e6fabe3' }
 );
 // -> { ok: true, content: '<JSON string>', result: { ok: true, projectDir, chat, url } }
@@ -38,15 +38,15 @@ const out = await runMouaif(
 | Concern | File | Detail |
 | --- | --- | --- |
 | Spec for the model | `src/ai-stream.js` | Pushed right after `restart_app`; `off` mode prunes it in the same loop as the other native families. |
-| Dispatch | `src/ai-stream.js` `dispatchTool` | `if (name === 'mouaif') return await mod.runMouaif(args, callOpts)`. Placed before the `task` branch. |
-| REST catalog | `src/server-handlers-tools.js` | `pushNativeTool(tools, { load: './tools/mouaif.js', name: 'mouaif', source: 'mouaif', … })` — appears in `GET /api/tools/list`. |
+| Dispatch | `src/ai-stream.js` `dispatchTool` | Dispatches names in `TOOL_NAMES` to `runAppTool`, like the grouped native file tools. |
+| REST catalog | `src/server-handlers-tools.js` | Each spec is its own entry in `GET /api/tools/list`. |
 | Tool preview | `src/server-handlers-chats.js` | Same family list in the `off`-pruning loop. |
 | Authorization family | `src/tools/authorization.js` | Member of `NATIVE_TOOLS`; own row in the `getAuthorization` view. Default mode `ask`. |
 | Prompt presets | `src/prompts.js` | Member of `PRESET_TOOL_NAMES`. |
 | Feature summary | `src/agentFeatures.js` | Own line in `buildFeatureSummary`; in the `list_features` tool list. |
-| Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,useChatState.js}` | One category row per half (`mouaif`, `mouaif-settings`) with an action child row each and a segment on the category; every row maps to the one `mouaif` family. Child toggles resolve through `tool.selectionName`. |
-| Project settings UI | `frontend/src/components/SettingsProject.jsx` | The same two categories, built inline (they carry the per-row validation status); a child checkbox routes to `pickMouaifMode`. |
-| Agent allowlist UI | `frontend/src/components/SettingsAgents.jsx` | `mouaif` choice. |
+| Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,useChatState.js}` | Ordinary child checkboxes and per-leaf permission controls in two visual categories. |
+| Project settings UI | `frontend/src/components/SettingsProject.jsx` | Each checkbox/control writes `tools.<functionName>`. |
+| Agent allowlist UI | `frontend/src/components/SettingsAgents.jsx` | Twelve ordinary function-name choices. |
 | Card rendering | `frontend/src/components/chat/{tools.js,toolRender.js}` + `frontend/src/tool-cards.css` | `mouaifArgSummary` for the collapsed head; `renderMouaifToolResult` renders a chat list, everything else falls through to the JSON preview. |
 
 ### `opts` the runner reads
@@ -70,7 +70,7 @@ const out = await runMouaif(
 
 ### Action filtering
 
-`selectedSpec(opts)` narrows the model-facing `action` enum against `enabledTools` and effective action permissions. `runMouaif` checks the same selection before dispatch. Authorization supports `tools['mouaif:<action>']` and equivalent chat overrides, with the family Off gate taking precedence. The stream, tool preview, discovery response, and nested subagent selection preserve action restrictions rather than widening them back to the family name.
+Specs, tool filters, discovery, subagents and permissions use the same native-name paths as shell/task and other built-ins. `selectedSpec`, action enums and custom permission resolution are removed. A one-time migration converts legacy config in app/project settings, chat filters and toolAuth, agents, prompts and pinned prompt snapshots; explicit new-name settings win.
 
 ### Read results
 

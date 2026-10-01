@@ -28,7 +28,9 @@ function fixture() {
   state._onChatChanged = () => { state.changed = (state.changed || 0) + 1; };
   return { state, refs };
 }
-const event = (result) => ({ id: 'call-' + ++nextId, name: 'mouaif', ok: true, result: { ok: true, ...result } });
+const event = (result) => ({ id: 'call-' + ++nextId,
+  name: result.deleted ? 'delete_chat' : result.attached ? 'attach_chat_image' : result.url ? 'create_chat' : 'update_chat',
+  ok: true, result: { ok: true, ...result } });
 const reply = (chat, index = requests.length - 1) => requests[index].resolve({ status: 200, body: { chat } });
 
 {
@@ -109,7 +111,7 @@ for (const change of [
 }
 
 const stream = fs.readFileSync(new URL('../frontend/src/components/chat/stream.js', import.meta.url), 'utf8');
-assert.ok(stream.includes("if (data && data.name === 'mouaif') applyMouaifToolResult(data, state, refs)"));
+assert.ok(stream.includes('if (data) applyMouaifToolResult(data, state, refs)'));
 assert.ok(stream.includes('applyMouaifToolResult({ id: row.toolCallId'));
 const hook = fs.readFileSync(new URL('../frontend/src/components/chat/useChatState.js', import.meta.url), 'utf8');
 assert.ok(hook.includes('state._setComposerText = setComposerText'));

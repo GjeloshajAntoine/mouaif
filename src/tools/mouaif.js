@@ -1,6 +1,7 @@
 'use strict';
 
-// Native `mouaif` tool — one model-facing tool that manages the app itself.
+// Native app tools: one ordinary function/schema/permission per operation.
+// The internal area router shares the existing app-store business logic.
 //
 // It is the model's handle on mouaif's own data model, so the assistant can
 // do what the user would otherwise tab through the UI for:
@@ -17,10 +18,8 @@
 // Implements docs/features/mouaif-tool.md.
 //
 // Design notes:
-//   - ONE tool, not nine. Every chat / settings tool would otherwise cost a
-//     spec in every request; the enumerations (`chats`, `attachments`, …)
-//     ride in the argument schema of a single spec instead, which the
-//     `very-small` prompt profile compacts away entirely.
+//   - SPECS declares twelve separate native tools with operation-specific
+//     parameters. No action enum or custom selection/permission resolver.
 //   - The dispatcher (`runMouaif`) is a thin router; every area lives in its
 //     own `run*` function and returns the shared `{ ok, content, result }`
 //     envelope. Errors are typed (`EBADINPUT`, `ENOTFOUND`, `ECONFIRM`, …)
@@ -36,9 +35,9 @@
 //     every other native tool uses.
 //
 // Public surface:
-//   SPEC                       : the OpenAI-compatible function spec
-//   ACTIONS                    : the action -> area table (for tests + docs)
-//   runMouaif(args, opts)      -> Promise<{ ok, content, result }>
+//   SPECS                      : separate OpenAI-compatible function specs
+//   TOOL_NAMES                 : ordinary native tool names
+//   runAppTool(name, args, opts)-> Promise<{ ok, content, result }>
 
 const path = require('path');
 
@@ -84,15 +83,8 @@ const AREAS = Object.freeze({
 
 const ACTION_NAMES = Object.freeze(Object.keys(ACTIONS));
 
-// The two categories the tool surfaces under in the UI. One model-facing tool
-// and one authorization family (`mouaif`) cover both, so the two category rows
-// in the tools tree share one Off / Ask / Allow gate — the split is about what
-// the user is looking at, not about two permissions.
-//
-// Each category lists the areas it covers, and `actions` is derived from that
-// through ACTIONS, so the tree's child rows come from the same table the
-// schema enum and the dispatcher use: adding an action puts it under its area's
-// category with no second edit here (scripts/test-mouaif-tool.js asserts it).
+// Internal business-area groups retained for runner tests and diagnostics.
+// Public native tools and visual catalog sources are defined separately.
 const GROUPS = Object.freeze([
   Object.freeze({
     id: 'mouaif',
@@ -114,12 +106,8 @@ const GROUPS = Object.freeze([
   })
 ]);
 
-const SPEC = {
-  type: 'function',
-  function: {
-    name: 'mouaif',
-    description: 'Manage mouaif itself: this project\u2019s chats (list, read, create, rename, set model, delete, search, attach an image), app and project settings (read/update), and the registered project list. Use `action: "info"` to see the mouaif feature state. Destructive chat deletion requires `confirm: true`.',
-    parameters: {
+// Shared field definitions for the business runners; never advertised as a tool.
+const PARAMETERS = {
       type: 'object',
       properties: {
         action: {
@@ -129,12 +117,12 @@ const SPEC = {
         },
         chatId: {
           type: 'string',
-          description: 'Target chat id. Required by update/delete. Defaults to the current chat for get/attach/list_attachments and is ignored by the rest.'
+          description: 'Target chat id.'
         },
-        title: { type: 'string', description: 'create/update: chat title (max 200 chars).' },
+        title: { type: 'string', description: 'Chat title (max 200 chars).' },
         topic: {
           type: 'string',
-          description: 'create only: an opening line for the new chat\u2019s draft text, so the chat is not blank when the user opens it (max 400 chars).'
+          description: 'Opening draft text for the new chat (max 400 chars).'
         },
         limit: {
           type: 'number',
@@ -143,64 +131,66 @@ const SPEC = {
         beforeSeq: {
           type: 'integer',
           minimum: 0,
-          description: 'list_attachments: scan messages before this sequence number. Pass the previous result\u2019s nextBeforeSeq to retrieve older images; omit for the newest page.'
+          description: 'Scan messages before this sequence number. Pass nextBeforeSeq from the previous page; omit for the newest page.'
         },
-        query: { type: 'string', description: 'search: text to match against chat titles, drafts, and messages.' },
-        providerId: { type: 'string', description: 'create/update: provider connection id for the chat\u2019s model (e.g. "openai-compatible").' },
+        query: { type: 'string', description: 'Text to match against chat titles, drafts, and messages.' },
+        providerId: { type: 'string', description: 'Provider connection id for the chat\u2019s model (e.g. "openai-compatible").' },
         modelId: { type: 'string', description: 'create/update: project or live-catalog model id. A project model can infer its provider; a live model needs providerId. update: "" clears the model choice.' },
-        promptId: { type: 'string', description: 'update: id of a custom prompt to attach to the chat ("" clears it).' },
+        promptId: { type: 'string', description: 'Custom prompt id to attach to the chat ("" clears it).' },
         promptSize: {
           type: 'string',
           enum: ['very-small', 'average', 'extensive', 'chat'],
-          description: 'update: prompt-size profile for the chat.'
+          description: 'Prompt-size profile for the chat.'
         },
-        draft: { type: 'string', description: 'update: replace the chat\u2019s composer draft text.' },
+        draft: { type: 'string', description: 'Replace the chat\u2019s composer draft text.' },
         includeMessages: {
           type: 'boolean',
-          description: 'get: also return the most recent messages (default false).'
+          description: 'Also return the most recent messages (default false).'
         },
-        messageLimit: { type: 'number', description: 'get: how many recent messages to return (default 10, max 50).' },
+        messageLimit: { type: 'number', description: 'Number of recent messages to return (default 10, max 50).' },
         path: {
           type: 'string',
-          description: 'attach: project-relative path of the image file to attach (e.g. "docs/features/images/shot.png").'
+          description: 'Project-relative image path (e.g. "docs/features/images/shot.png").'
         },
         target: {
           type: 'string',
           enum: ['draft', 'message'],
-          description: 'attach: "draft" adds the image to the composer draft (default, user presses send), "message" appends a real user message that carries the image.'
+          description: '"draft" adds the image to the composer draft (default), "message" appends an image-bearing user message. Neither starts an AI turn.'
         },
-        content: { type: 'string', description: 'attach with target "message": the text of the user message (optional).' },
+        content: { type: 'string', description: 'Text of the user message when target is "message" (optional).' },
         scope: {
           type: 'string',
           enum: ['app', 'project'],
-          description: 'settings_get/settings_update: which settings store to read or write. Defaults to "project" for settings_update and "app" for settings_get.'
+          description: 'Settings store: "app" or "project". Reads default to app; writes default to project.'
         },
-        keys: { type: 'array', items: { type: 'string' }, description: 'settings_get: only return these keys.' },
-        patch: { type: 'object', description: 'settings_update: the settings keys to merge into the chosen scope.' },
-        unset: { type: 'array', items: { type: 'string' }, description: 'settings_update (project scope): keys to remove from the project settings file.' },
-        confirm: { type: 'boolean', description: 'delete: must be true to actually delete the chat.' }
+        keys: { type: 'array', items: { type: 'string' }, description: 'Only return these setting keys.' },
+        patch: { type: 'object', description: 'Setting keys to merge into the chosen scope.' },
+        unset: { type: 'array', items: { type: 'string' }, description: 'Keys to remove from project settings (project scope only).' },
+        confirm: { type: 'boolean', description: 'Must be true to actually delete the chat.' }
       },
       required: ['action'],
       additionalProperties: false
-    }
-  }
 };
 
-// Keep one model-facing function, but advertise only the selected actions.
-// Legacy `mouaif` selections still mean all actions.
-function selectedActions(opts = {}) {
-  const filter = opts.enabledTools;
-  const authz = require('./authorization.js');
-  return ACTION_NAMES.filter((action) => (!Array.isArray(filter) || filter.includes('mouaif') || filter.includes('mouaif:' + action))
-    && authz.effectiveConfig(opts.projectDir, 'mouaif:' + action, opts.chatId).mode !== 'off');
-}
+const { DEFINITIONS, TOOL_NAMES } = require('./appToolNames.js');
+const SPECS = Object.freeze(Object.fromEntries(TOOL_NAMES.map((name) => {
+  const definition = DEFINITIONS[name];
+  const properties = Object.fromEntries(definition.keys.map((key) => [key, PARAMETERS.properties[key]]));
+  if (properties.limit) properties.limit = { type: 'integer', minimum: 1,
+    maximum: name === 'list_chat_attachments' ? 200 : 100,
+    description: name === 'list_chat_attachments' ? 'Number of messages to scan (default 200, max 200).' : 'Maximum chats to return (default 20, max 100).' };
+  if (properties.chatId) properties.chatId = { type: 'string', description: 'Chat id' + (definition.required?.includes('chatId') ? ' (required).' : ' (defaults to the current chat).') };
+  return [name, { type: 'function', function: { name, description: definition.description,
+    parameters: { type: 'object', properties, required: definition.required || [], additionalProperties: false }
+  } }];
+})));
 
-function selectedSpec(opts) {
-  const actions = selectedActions(opts);
-  if (!actions.length) return null;
-  return { ...SPEC, function: { ...SPEC.function, parameters: { ...SPEC.function.parameters,
-    properties: { ...SPEC.function.parameters.properties, action: { ...SPEC.function.parameters.properties.action, enum: actions } }
-  } } };
+async function runAppTool(name, args, opts) {
+  if (!Object.prototype.hasOwnProperty.call(SPECS, name)) return fail('EUNKNOWN_TOOL', 'Unknown app tool: ' + name);
+  const spec = SPECS[name];
+  try { validateArgs(args, spec.function.parameters); }
+  catch (e) { return fail(e.code || 'EBADINPUT', e.message); }
+  return runMouaif({ ...args, action: DEFINITIONS[name].action }, opts);
 }
 
 // ---- Small helpers -------------------------------------------------------
@@ -630,12 +620,8 @@ async function runInfo(args, opts) {
   const agentFeatures = require('../agentFeatures.js');
   const chat = (opts && opts.chat) || ((opts && opts.chatId) ? chats.getChat(projectDir, opts.chatId) : undefined);
   const state = await agentFeatures.dispatchListFeatures({}, Object.assign({}, opts, { chat, projectDir }));
-  const actions = ACTION_NAMES.map((name) => ({
-    action: name,
-    area: ACTIONS[name],
-    description: AREAS[ACTIONS[name]]
-  }));
-  const result = Object.assign({ ok: true, tool: 'mouaif', actions }, state.result || {});
+  const result = Object.assign({ ok: true, tool: 'get_app_info',
+    nativeTools: TOOL_NAMES.map((name) => ({ name, description: DEFINITIONS[name].description })) }, state.result || {});
   return ok(result);
 }
 
@@ -651,11 +637,14 @@ const HANDLERS = {
 
 // Providers do not all enforce JSON schemas. Validate the published shape
 // here too, before any action can mutate app state.
-function validateArgs(args) {
+function validateArgs(args, parameters = PARAMETERS) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) {
     throw typedError('EBADINPUT', 'arguments must be an object');
   }
-  const properties = SPEC.function.parameters.properties;
+  const properties = parameters.properties;
+  for (const key of parameters.required || []) {
+    if (!Object.prototype.hasOwnProperty.call(args, key)) throw typedError('EBADINPUT', key + ' is required');
+  }
   for (const [key, value] of Object.entries(args)) {
     if (!Object.prototype.hasOwnProperty.call(properties, key)) throw typedError('EBADINPUT', 'unknown argument: ' + key);
     const schema = properties[key];
@@ -665,6 +654,7 @@ function validateArgs(args) {
       : typeof value === schema.type && (schema.type !== 'number' || Number.isFinite(value));
     if (!valid) throw typedError('EBADINPUT', key + ' must be of type ' + schema.type);
     if (schema.minimum !== undefined && value < schema.minimum) throw typedError('EBADINPUT', key + ' must be at least ' + schema.minimum);
+    if (schema.maximum !== undefined && value > schema.maximum) throw typedError('EBADINPUT', key + ' must be at most ' + schema.maximum);
     if (schema.enum && !schema.enum.includes(value)) throw typedError('EBADINPUT', 'unknown ' + key + ': ' + value);
   }
 }
@@ -682,7 +672,6 @@ async function runMouaif(args, opts) {
   if (!handler) return fail('EUNKNOWN_TOOL', 'no handler for area ' + area);
   try {
     resolveProjectDir(opts);
-    if (!selectedActions(opts).includes(action)) return fail('ETOOL_DISABLED', 'mouaif action is not selected or is disabled: ' + action);
     return await handler(args, opts);
   } catch (e) {
     const code = (e && e.code) || 'EMOUAIF';
@@ -693,11 +682,12 @@ async function runMouaif(args, opts) {
 }
 
 module.exports = {
-  SPEC,
   ACTIONS,
   AREAS,
   GROUPS,
   ACTION_NAMES,
-  selectedSpec,
+  SPECS,
+  TOOL_NAMES,
+  runAppTool,
   runMouaif
 };

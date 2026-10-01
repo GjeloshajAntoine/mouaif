@@ -92,11 +92,9 @@ function buildFeatureSummary(opts) {
     }
   }
   // mouaif app tool (chats, attachments, app/project settings, projects)
-  if (authz && authz.tools && authz.tools.mouaif) {
-    const s = authz.tools.mouaif;
-    if (s.mode !== 'off') {
-      feat.push('[mouaif tool](off|ask|allow) → ' + s.mode + ' — manage chats, attachments, settings, and projects from chat');
-    }
+  for (const name of require('./tools/appToolNames.js').TOOL_NAMES) {
+    const cfg = authz && authz.tools && authz.tools[name];
+    if (cfg && cfg.mode !== 'off') feat.push('[' + name + '](off|ask|allow) → ' + cfg.mode);
   }
 
   // app restart
@@ -201,7 +199,7 @@ async function dispatchListFeatures(args, opts) {
     const authState = authz.getAuthorization(projectDir, chatId);
     const tools = (authState && authState.tools) || {};
     state.tools = {};
-    for (const name of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'mouaif']) {
+    for (const name of authz.NATIVE_TOOLS) {
       const cfg = tools[name] || { mode: 'ask' };
       state.tools[name] = {
         mode: cfg.mode || 'ask',
