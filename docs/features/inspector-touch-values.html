@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Inspector touch value editing — mouaif docs</title>
+  <meta name="description" content="Every Styles row opens the same value editor **inside the Styles card**, below the selected element&#39;s identity. No sheet or overlay covers the Inspector: the…" />
+  <meta property="og:site_name" content="mouaif docs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Inspector touch value editing — mouaif docs" />
+  <meta property="og:description" content="Every Styles row opens the same value editor **inside the Styles card**, below the selected element&#39;s identity. No sheet or overlay covers the Inspector: the…" />
+  <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/inspector-touch-values.html" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="inspector-touch-value-editing">Inspector touch value editing</h1>
+<h2 id="overview">Overview</h2>
+<p>Every Styles row opens the same value editor <strong>inside the Styles card</strong>, below the selected element&#39;s identity. No sheet or overlay covers the Inspector: the panel remains the only scroller, with the value field first, readable controls, suggestions and individual numeric-part editing.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Select an element in <strong>Inspector → Styles</strong>, then tap a Declared, Computed, or Matched rules value.</p></li><li><p>Use <strong>Suggested values</strong> for common values and keywords. Grid tracks, ratios, fonts, borders, shadows, images, transforms and transitions have starter presets; numeric families offer numeric presets. <strong>Show all</strong> expands the list and adds search. These are examples, clearly separate from <strong>On this page</strong> suggestions.</p></li><li><p>Tap a <strong>Unit</strong> chip to keep the number and deliberately change its unit. For example, <code>16px</code> becomes <code>16rem</code>, <strong>not</strong> <code>1rem</code>. With <code>auto</code> or an empty length value, choosing a unit starts at zero. Common units have chips; <strong>Other units</strong> expands a selector for physical and viewport units. Units that are invalid for the whole declaration are disabled.</p></li><li><p>Check <strong>Convert value</strong> to preserve the value when its basis is known: <code>16px</code> becomes <code>1rem</code> with a 16px root. Unmeasured percentage, viewport or glyph-based conversions are disabled with a reason; uncheck it if a new value, rather than a conversion, is intended.</p></li><li><p>For a compound value, use <strong>Numeric parts</strong>. Each recognized number has − / +, a numeric input, and its own unit picker. Changing one part preserves everything around it:</p></li></ol>
+<pre><code class="language-css">/* Change only the blur length; the colour is preserved. */
+box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.2);
+box-shadow: 0px 2px 1rem rgba(0, 0, 0, 0.2);</code></pre>
+<ol><li><p>Tap <strong>Apply</strong> in the editor header to commit without closing. <strong>Cancel / Done</strong> returns to the list&#39;s previous scroll position and focus. Pending edits get <strong>Keep editing / Discard</strong> in the same panel, not another modal.</p></li><li><p>Expand <strong>More options: property, type &amp; priority</strong> only when needed; it contains the property-name field, value-type conversion, <code>!important</code> control and scope summary. Common editing does not require another tab or screen.</p></li></ol>
+<h2 id="limitations">Limitations</h2>
+<ul><li><p>CSS has an open-ended value grammar. Arbitrary strings, image URLs, identifiers and unsupported functions still have an exact text field; they do not get invented numeric controls.</p></li><li><p>Strings, URLs, variables (including fallbacks), environment variables and colour functions are opaque to Numeric parts. Hex colours and identifier digits are not treated as dimensions. Colour editing continues to use the colour view.</p></li><li><p>Numeric parts are capped at 16 per value. Complex values remain completely visible/editable in the text field.</p></li><li><p>Unit choices and presets are checked with the UI browser&#39;s <code>CSS.supports</code>; the existing inspected-page write validation remains authoritative. Different browser capabilities can still cause an Apply error.</p></li><li><p>Percentage, viewport and glyph conversions require bases not currently measured. They can be chosen explicitly, but are not presented as lossless conversions.</p></li></ul>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p>Function/list rails only render for true numeric arguments, never for colour functions or identifiers. Mixed-unit fan-out sides keep their own unit unless Link all is explicitly used.</p></li><li><p>Relative-unit Style controls use measured font sizes for sliders and steppers, so nudging a rem value preserves its unit.</p></li><li><p>Controls wrap and use at least 44 × 44px targets. The editor and discard prompt render in the Styles card&#39;s existing scroll flow, with no modal or independent viewport.</p></li><li><p>Editor text/captions meet WCAG AA contrast; neutral control boundaries meet 3:1 contrast. Selected units retain a solid accent background instead of disabled fading.</p></li><li><p>No new server endpoint or dependency is required.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="inspector-styles.html">Inspector Styles</a></p></li><li><p><a href="inspector-touch-controls.html">Inspector touch controls</a></p></li><li><p><a href="inspector-value-types.html">Inspector value types</a></p></li><li><p><a href="inspector-value-suggestions.html">Inspector value suggestions</a></p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

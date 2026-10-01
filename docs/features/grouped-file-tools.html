@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Grouped file reads and edits — mouaif docs</title>
+  <meta name="description" content="`group_read` and `group_edit` let the assistant read several files or apply several block replacements in one call. Both appear under **File tools** in chat…" />
+  <meta property="og:site_name" content="mouaif docs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Grouped file reads and edits — mouaif docs" />
+  <meta property="og:description" content="`group_read` and `group_edit` let the assistant read several files or apply several block replacements in one call. Both appear under **File tools** in chat…" />
+  <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/grouped-file-tools.html" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="grouped-file-reads-and-edits">Grouped file reads and edits</h1>
+<h2 id="overview">Overview</h2>
+<p><code>group_read</code> and <code>group_edit</code> let the assistant read several files or apply several block replacements in one call. Both appear under <strong>File tools</strong> in chat tools, project settings, and agent tool selection, alongside the single-file tools.</p>
+<h2 id="usage">Usage</h2>
+<p>The tools inherit File tools authorization (<strong>Off</strong>, <strong>Ask</strong>, or <strong>Allow</strong>). With an allowlist, every target path must match before a group runs without approval. Each grouped tool can also be disabled individually.</p>
+<h3 id="read-a-group">Read a group</h3>
+<p>Call <code>group_read</code> with a <code>files</code> array. Each entry accepts the same <code>path</code>, <code>startLine</code>, and <code>endLine</code> arguments as <code>read_file</code>; ranges are 1-indexed and inclusive.</p>
+<pre><code class="language-json">{
+  &quot;files&quot;: [
+    { &quot;path&quot;: &quot;src/index.js&quot;, &quot;startLine&quot;: 1, &quot;endLine&quot;: 80 },
+    { &quot;path&quot;: &quot;README.md&quot; }
+  ]
+}</code></pre>
+<p>Images are attached as image parts, not base64 text. Hidden-content rules apply to each text read. A group accepts 1–50 entries and at most 2 MiB of returned text/image bytes; larger entries return a per-file cap error. Existing single-file caps still apply.</p>
+<h3 id="edit-a-group">Edit a group</h3>
+<p>Read the relevant regions first, then call <code>group_edit</code> with an <code>edits</code> array. Each entry takes <code>path</code> (or the compatibility alias <code>file</code>), a non-empty <code>oldText</code>, and <code>newText</code>.</p>
+<pre><code class="language-json">{
+  &quot;edits&quot;: [
+    { &quot;path&quot;: &quot;src/a.js&quot;, &quot;oldText&quot;: &quot;const enabled = false;&quot;, &quot;newText&quot;: &quot;const enabled = true;&quot; },
+    { &quot;path&quot;: &quot;src/b.js&quot;, &quot;oldText&quot;: &quot;const count = 1;&quot;, &quot;newText&quot;: &quot;const count = 2;&quot; }
+  ]
+}</code></pre>
+<p>A group accepts 1–50 replacements. Entries run <strong>in order</strong>, so multiple edits to the same path see earlier successful edits. Matching, line-ending handling, indentation adjustment, and size limits are the same as <code>edit_file</code>.</p>
+<p><strong>Groups are not all-or-nothing transactions.</strong> A failed entry leaves its file unchanged for that entry and does not stop later entries; earlier successful edits remain applied. Retry only the failed entries. Each successful replacement uses the existing atomic per-file write. Cancellation prevents subsequent entries from executing, without undoing edits already applied.</p>
+<h3 id="results">Results</h3>
+<p>Results contain ordered <code>results</code> entries with <code>path</code>, <code>ok</code>, and <code>result</code>, plus <code>succeededCount</code> and <code>failedCount</code>. The call reports failure if any entry failed, while retaining all successful results. Expanded cards stack each file&#39;s content, image, diff, or error; collapsed cards show success/failure counts. These previews also work in nested agent transcripts.</p>
+<p>See also <a href="file-tools.html">Native file tools</a> and <a href="tool-authorization.html">Tool authorization</a>.</p>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

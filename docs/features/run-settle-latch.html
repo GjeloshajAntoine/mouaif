@@ -42,8 +42,12 @@
       <h1 id="run-settle-latch">Run settle latch</h1>
 <h2 id="overview">Overview</h2>
 <p>Prevents status flickering when reopening or returning to a conversation that recently completed in another tab or after a brief network interruption.</p>
+<h2 id="usage">Usage</h2>
+<p>Return to a running or recently completed chat. The status follows the server&#39;s run state without additional controls.</p>
 <h2 id="behavior">Behavior</h2>
-<ul><li><p><strong>Stable status display</strong> — completed runs stay marked as finished and do not oscillate between busy and idle.</p></li><li><p><strong>Accurate activity indicators</strong> — the stop button and active progress states appear only when a turn is genuinely generating output.</p></li></ul>
+<ul><li><p><strong>Stable status display</strong> — completed runs stay marked as finished until the server reports another run.</p></li><li><p><strong>Accurate activity indicators</strong> — the stop button and send guard stay active during generation, slow tools, and pending approvals. An unchanged transcript is not treated as completion.</p></li></ul>
+<h2 id="completion-state">Completion state</h2>
+<p>The completion latch is cleared when a server-running revision or a new live run ID arrives. Foreground refresh also clears it before reconciling. Only a server completion (<code>running: false</code> or <code>run_end</code>) settles the run; the former two-stable-tick heuristic is no longer used.</p>
 <h2 id="related">Related</h2>
 <ul><li><p><a href="chat-ui.html">Chat UI</a></p></li><li><p><a href="chat-streaming-performance.html">Chat streaming performance</a></p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
