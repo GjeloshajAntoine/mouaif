@@ -59,6 +59,12 @@ export function CliModal(props) {
   // row (`null` until the listing answers: a fetch that has not happened
   // invents no chips).
   const [entries, setEntries] = useState(null);
+  // True once the shell reported an `exit` frame (or the session endpoint
+  // refused). The prompt row cannot reach a dead session, so the sheet offers
+  // Restart instead of an input that silently 410s on every send.
+  const [exited, setExited] = useState(false);
+  // Bumped by Restart to re-run the session effect against a fresh child.
+  const [restartKey, setRestartKey] = useState(0);
 
   // Where the field sits in the ↑/↓ walk over the session's own history: -1
   // means "not walking" (the field holds a fresh line). Reset whenever the user
@@ -107,14 +113,17 @@ const pinnedRef = useRef(true);
   const appendOut = useCallback((text, stream) => {
     if (!screenRef.current) screenRef.current = new CliScreen();
     if (stream === 'exit') {
-      // Record the exit status as a trailing scrollback line below the current
-      // frame (a TUI leaves its last frame in the grid, so it stays readable).
-      // The shell is gone, so what is on screen is no longer a live prompt.
-      screenRef.current.write('\r\n\u00A0\u2514\u2500 process exited with code ' + text + '\n');
-      setOutBuffer(screenRef.current.render());
-      setOwnerBoth(null);
-      return;
-      }
+    // Record the exit status as a trailing scrollback line below the current
+    // frame (a TUI leaves its last frame in the grid, so it stays readable).
+    // The shell is gone, so what is on screen is no longer a live prompt.
+    screenRef.current.write('\r\n\u00A0\u2514\u2500 process exited with code ' + text + '\n');
+    setOutBuffer(screenRef.current.render());
+    setOwnerBoth(null);
+    // The session is gone: the header swaps Stop for Restart and the prompt
+    // row is replaced, so a send can never 410 into a dead shell.
+    setExited(true);
+    return;
+    }
       // On a pty, follow the shell's bracketed-paste markers to know who owns
       // stdin. The scan is over this chunk plus a few carried bytes, never the
       // whole buffer, so a long build costs the same per chunk as a short one.
@@ -198,6 +207,9 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   useEffect(() => {
     let cancelled = false;
     let evtSource = null;
+    // A restart re-runs this effect; the previous session's exit line stays on
+    // screen, so the fresh session is announced with a marker of its own.
+    setExited(false);
     async function start() {
       try {
         const r = await fetchJson('/api/tools/cli/session?projectDir=' + encodeURIComponent(projectDir || ''));
@@ -274,7 +286,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
       // open replays what it printed meanwhile; Stop is the explicit kill.
       if (evtSource) evtSource.close();
     };
-  }, [projectDir]);
+  }, [projectDir, restartKey]);
 
   // stop() — the header's Stop action: the only way the UI kills the shell.
   // Closing the sheet merely detaches (see the effect above).
@@ -288,6 +300,24 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
       body: JSON.stringify({ projectDir })
     }).catch(() => {}).then(() => { if (onClose) onClose(); });
   }, [projectDir, onClose]);
+
+  // restart — the header's Restart action, shown only once the shell has
+  // exited. It starts a fresh session with a cleared screen: the old output is
+  // a dead shell's, and keeping it above a live prompt would read as one
+  // continuous session.
+  const restart = useCallback(() => {
+    screenRef.current = new CliScreen();
+    lastSeqRef.current = 0;
+    editorTailRef.current = '';
+    setOutBuffer('');
+    setOwnerBoth(null);
+    setCmdText('');
+    recallIndexRef.current = -1;
+    setExited(false);
+    setLoading(true);
+    setError('');
+    setRestartKey((k) => k + 1);
+  }, [setOwnerBoth]);
 
   // Escape, the Tab cycle and focus restore come from the shared sheet hook
   // (frontend/src/hooks/useModal.js); the backdrop is this component's own.
@@ -433,15 +463,23 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
           h('span', { class: 'cli__title' }, shellLabel ? ('CLI — ' + shellLabel) : 'CLI'),
           h('span', { class: 'cli__dir', title: dirLabel }, dirLabel)
           ),
-          // Stop kills the shell; the close button only hides the sheet and
-          // leaves the session running in the background.
-          !loading && !error ? h('button', {
+          // Stop kills the shell; once it has exited the same slot becomes
+          // Restart, because a dead shell has nothing left to stop and the
+          // only useful action is a new one. The close button only hides the
+          // sheet and leaves a live session running in the background.
+          exited && !loading && !error ? h('button', {
+          class: 'btn btn--primary cli__stop',
+          type: 'button',
+          onClick: restart,
+          'aria-label': 'Restart shell',
+          title: 'Start a new shell in this project'
+          }, 'Restart') : (!loading && !error ? h('button', {
           class: 'btn btn--danger cli__stop',
           type: 'button',
           onClick: stop,
           'aria-label': 'Stop shell',
           title: 'Stop shell (kills running commands)'
-          }, 'Stop') : null,
+          }, 'Stop') : null),
           h('button', {
           class: 'icon-btn icon-btn--close cli__iconbtn',
           type: 'button',
@@ -466,8 +504,9 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                 h('pre', { ref: attachOutRef, class: 'cli__out', 'aria-label': 'Command output', tabindex: '-1' }),
                 // The suggestion row: the session's own commands and the
                 // project's own top-level names. A chip only rewrites the
-                // field (see applySuggestion) — Enter still runs it.
-                suggestions.length
+                // field (see applySuggestion) — Enter still runs it. An exited
+                // shell has nothing to suggest, so the row goes with it.
+                !exited && suggestions.length
                   ? h('div', { class: 'cli__suggest', role: 'group', 'aria-label': 'Command suggestions' },
                       suggestions.map((s) => h('button', {
                         key: s.kind + ':' + s.text,
@@ -479,7 +518,21 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                       }, s.text))
                     )
                   : null,
-                h('div', { class: 'cli__prompt-row' },
+                  // A live session gets the prompt row and the key row. An exited
+                  // one gets a single footer instead: the shell is gone, and an
+                  // input that 410s on every send is worse than no input at all.
+                  // Restart is in the header, and repeated here where the thumb is.
+                  exited
+                  ? h('div', { class: 'cli__dead', role: 'group', 'aria-label': 'Shell ended' },
+                  h('p', { class: 'cli__dead-text' }, 'The shell has ended.'),
+                  h('button', {
+                  class: 'btn btn--primary cli__restart',
+                  type: 'button',
+                  onClick: restart,
+                  'aria-label': 'Restart shell'
+                  }, 'Restart shell')
+                  )
+                  : [ h('div', { class: 'cli__prompt-row' },
                   h('span', { class: 'cli__prompt-mark', 'aria-hidden': 'true' }, '❯'),
                   h('input', {
                     ref: inputRef,
@@ -515,8 +568,27 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                       if (e.ctrlKey || e.metaKey) runRaw();
                       else runCommand();
                     }
-                  })
-                ),
+                    }),
+                    // Run — the line in the prompt, made a visible action. On a
+                    // phone the keyboard's own action key is the only "send", and
+                    // it is labelled by `enterkeyhint` yet not by anything on the
+                    // sheet; on a tablet or desktop it is simply the button the
+                    // composer already has. A live shell needs it every time;
+                    // once the shell has exited the row is gone entirely (the
+                    // header offers Restart).
+                    h('button', {
+                    class: 'cli__run',
+                    type: 'button',
+                    onClick: runCommand,
+                    'aria-label': 'Run command',
+                    title: 'Run the command in the project folder',
+                    onMouseDown: keepEditorFocus
+                    },
+                    h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
+                    h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
+                    )
+                    )
+                    ),
                 // The key row: the keys a phone keyboard does not have (see
                 // cliKeys.js). While a program owns stdin, the three readline
                 // keys (`shellOnly`) are marked; Esc, ^C and ^D stay lit.
@@ -545,11 +617,12 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     // shell has said which one it is in; a piped session has no
                     // line editor, so Tab and the arrows are client-side there too.
                     h('p', { class: 'cli__hint' },
-                  owner === 'program'
-                  ? 'A program owns the prompt — ^C stops it; Esc leaves it.'
-                  : 'Tab completes and ↑/↓ recall in the prompt. ^C stops the running command.'
-                  )
-              )
+                    owner === 'program'
+                    ? 'A program owns the prompt — ^C stops it; Esc leaves it.'
+                    : 'Tab completes and ↑/↓ recall in the prompt. ^C stops the running command.'
+                    )
+                    ]
+                    )
       )
     )
   );

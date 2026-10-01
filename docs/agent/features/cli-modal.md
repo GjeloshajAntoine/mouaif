@@ -108,6 +108,17 @@ chunk 1: "build \x1b"      chunk 2: "[32mok\x1b[0m"
 before:  build [32mok      after:  build ok
 ```
 
+### Mobile controls
+
+Every affordance the sheet needs is on the sheet, at the `--tap` (44 px) floor. The header carries **Stop** (`.cli__stop`) and the close button (`.icon-btn .icon-btn--close .cli__iconbtn`); `.cli__iconbtn` is re-declared in [chat-composer.css](../../../frontend/src/chat-composer.css) because the shared `.icon-btn` is `--tap-sm` (32 px) and a header glyph must clear the same 44 px minimum as everything else. The prompt row ends with **Run** (`.cli__run`), which calls the same `runCommand` as Enter and cancels `mousedown` (`keepEditorFocus`) so a tap cannot close the soft keyboard. `enterkeyhint: 'send'` only labels the keyboard's own action key; Run is the one that is *visible*.
+
+An `exit` frame (`appendOut(…, 'exit')`) sets `exited`, which:
+
+- removes the suggestion row (`!exited && suggestions.length`) and the prompt/key rows, replacing them with `.cli__dead` — a one-line notice and a `.cli__restart` button;
+- swaps the header's Stop for Restart (`exited && !loading && !error`).
+
+`restart()` clears the screen (`screenRef.current = new CliScreen()`, `lastSeqRef.current = 0`, `setOutBuffer('')`), resets the prompt and history walk, and bumps `restartKey`, which is the session effect's second dependency — so the effect re-runs against a *fresh* child (the server's `GET /cli/session` starts a new session because the old one was reaped on exit). A cleared screen is deliberate: the old output belongs to a dead shell, and keeping it above a live prompt would read as one continuous session.
+
 ### Limits
 
 - A PTY has a fixed grid size (100×30). The modal does not yet report its own dimensions, so `resize` is not driven from the browser.

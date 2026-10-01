@@ -10,10 +10,11 @@ The session runs on a **pseudo-terminal** on macOS, Linux, BSD, and supported Wi
 
 Open the composer's File button and choose **Cli**. The header shows the shell label and the project directory.
 
-- Type a command and press **Enter** to run it.
+- Type a command and press **Enter** to run it — or tap **Run** at the end of the prompt row, which sends the same line. On a phone the keyboard's own action key does the same thing.
 - Press **Enter** on an empty line to send it — a prompt that offers a default accepts it.
 - Press **Ctrl+Enter** (**Cmd+Enter** on macOS) to send the line **without a line terminator**, for a program waiting on a single key (a `y/n` confirmation, a pager).
 - Close the sheet with the close button or **Escape**. Closing only hides it: the shell keeps running in the background and reopening replays what it printed. Tap **Stop** in the header to kill it — see [Background terminal](background-terminal.md).
+- When the shell **ends on its own** (`exit`, a crash), the prompt row and the key row are replaced by **Restart shell**, and the header's **Stop** becomes **Restart**. Restart starts a fresh shell with a cleared screen — a dead session never leaves an input behind that would fail on every send.
 
 ### Suggestions
 
@@ -79,13 +80,26 @@ Copy the link into your phone's browser and sign in; npm polls for the approval 
 
 You can also run multiple commands in one session — the shell keeps its state (working directory, environment, variables) between lines.
 
+### Controls on a phone
+
+Every control the sheet needs is on it, at the 44 × 44 px touch floor — nothing depends on a key a soft keyboard does not have:
+
+| Control | Where | Does |
+| --- | --- | --- |
+| **Run** | end of the prompt row | sends the line, exactly like **Enter** |
+| **Stop** | header | kills the shell (and anything running in it) |
+| **Close** | header | hides the sheet; a live shell keeps running |
+| **Restart** | header + terminal footer | starts a fresh shell, shown only after the old one exited |
+
+Tapping **Run**, a key, or a suggestion chip does not dismiss the soft keyboard, so you can keep typing straight afterwards. The prompt stays focused, and a write that fails is reported on the terminal screen rather than by disabling the field.
+
 ## Tests
 
 ```bash
 npm run test:cli
 ```
 
-- `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key row, and Tab/↑/↓ (the key table's sequences, that the readline keys write nothing to the child while ^C/Esc/^D do, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator.
+- `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key row, and Tab/↑/↓ (the key table's sequences, that the readline keys write nothing to the child while ^C/Esc/^D do, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator. It also source-guards the mobile controls: the Run button exists and keeps the keyboard open, the header close button keeps the class that sizes it to the tap floor, and an exited shell swaps the prompt row for Restart.
 - `scripts/test-cli-session-newline.js` — drives the real endpoints and asserts a plain `ls` lists the project files (the terminator rule).
 - `scripts/test-cli-strip-ansi.js` — unit-tests `stripAnsi` / `CliScreen`, including every escape-sequence family split at every pair of positions and fed one code point at a time.
 - `scripts/test-cli-utf8-split.js` — feeds `attachCliStream` UTF-8 split at every byte boundary, on the PTY and piped paths, and asserts no `�` reaches the broadcast.

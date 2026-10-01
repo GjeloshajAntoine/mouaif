@@ -23,6 +23,14 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **CLI terminal controls on mobile** — the sheet's header now sizes its close
+  button to the same 44 px touch floor as everything else (it had drifted to the
+  shared 32 px icon-button size), the prompt row carries a visible **Run**
+  button so sending does not depend on the soft keyboard's action key, and a
+  shell that **exits on its own** no longer leaves a live-looking prompt behind:
+  the prompt and key rows are replaced by **Restart shell** and the header's
+  **Stop** becomes **Restart**. See
+  [CLI modal](docs/features/cli-modal.md).
 - **Denied-operation prompt guidance** — all three non-empty built-in profiles
   now instruct the assistant to stop a denied operation, including attempts
   through another tool, and ask for clarification or continue only with
