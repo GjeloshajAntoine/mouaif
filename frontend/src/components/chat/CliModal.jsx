@@ -20,18 +20,19 @@
 //     the shell, the project's own top-level names from GET /api/files), which
 //     saves re-typing a command on a keyboard that covers most of the screen —
 //     see ./cliSuggest.js. A chip only rewrites the field; Enter still runs it.
-//   * a **key row** under the prompt (Esc, Tab, ↑, ↓, ^C, ^D). Esc, ^C and ^D
-//     are the keys a program needs, each a single raw write so ^C interrupts
-//     without also pressing Enter; Tab and ↑/↓ edit the *field itself*
-//     (completeLocally / stepHistory in ./cliSuggest.js) instead of pushing a
-//     draft onto the shell's line, so the text the user is looking at is never
-//     emptied and nothing reaches the child until Enter — see ./cliKeys.js.
+//   * two **key rows** under the prompt (Esc Tab ^C ^D ^Z ^L / ← ↑ ↓ → PgUp
+//     PgDn). While the shell owns the line, Tab, the arrows, the Page keys and
+//     Esc edit the *field itself* (complete, recall, move the caret, scroll the
+//     output, clear), so nothing reaches the child until Enter; while a program
+//     owns stdin, every key is a raw write of its VT sequence, so `less`, `top`
+//     or `vim` can be driven from a phone — see keyPayload in ./cliKeys.js.
 //
 // Who reads stdin is taken from the shell itself: on a pseudo-terminal bash and
 // zsh switch bracketed paste on at their prompt and off when a command starts
-// (lineEditorState in ./cliKeys.js). That decides whether the key row marks
-// its readline keys, and whether a sent line is remembered — an answer typed to
-// a program (a password, a one-time code) never becomes a suggestion.
+// (lineEditorState in ./cliKeys.js), and a full-screen program enters the
+// alternate screen. That decides which mode the keys are in, and whether a
+// sent line is remembered — an answer typed to a program (a password, a
+// one-time code) never becomes a suggestion.
 //
 // A pty echoes the shell's command line itself, so the modal writes its own
 // `❯ cmd` echo line only for a piped session, which echoes nothing.
@@ -40,7 +41,7 @@ import { h } from 'preact';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
-import { CLI_KEYS, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
+import { CLI_KEYS, cursorKeyMode, keepEditorFocus, keyForEvent, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
 import { rememberCommand, suggestionsFor, completeLocally, stepHistory } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
 
@@ -89,6 +90,8 @@ export function CliModal(props) {
     setOwner(next);
   }, []);
   const interactiveRef = useRef(false);
+  const appCursorRef = useRef(false);
+  const cursorTailRef = useRef('');
 
 const screenRef = useRef(null);
 if (!screenRef.current) screenRef.current = new CliScreen();
@@ -122,6 +125,11 @@ const pinnedRef = useRef(true);
       const next = lineEditorState(editorTailRef.current, text);
       editorTailRef.current = next.tail;
       if (next.state) setOwnerBoth(next.state);
+      // Application cursor mode (DECCKM): a full-screen program may expect
+      // `ESC O A` for the arrows instead of `ESC [ A` (see cursorKeyMode).
+      const ck = cursorKeyMode(cursorTailRef.current, text);
+      cursorTailRef.current = ck.tail;
+      if (ck.app !== null) appCursorRef.current = ck.app;
       }
     // The session is a piped (non-TTY) child, so full-screen programs (htop,
     // top, less) emit escape codes that arrive split across SSE frames. Feed
@@ -332,12 +340,55 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   // nothing to the child (see completeLocally / stepHistory in ./cliSuggest.js),
   // so completion and recall never cost a round-trip and never move the text
   // out of the box the user is looking at.
-  const sendKey = useCallback((key) => {
+  // programMode() — whether a key should go to the child as bytes rather than
+  // edit the field: a command is running (the shell switched bracketed paste
+  // off) or a full-screen program holds the alternate screen.
+  function programMode() {
+    return ownerRef.current === 'program' || !!(screenRef.current && screenRef.current.isFullScreen);
+  }
+
+  // moveCaret(delta) / scrollOut(dir) / clearField() — the local actions of
+  // ←/→, PgUp/PgDn and Esc (see `local` in cliKeys.js).
+  function moveCaret(delta) {
+    const el = inputRef.current;
+    if (!el) return;
+    const at = Math.max(0, Math.min(el.value.length, (el.selectionStart == null ? el.value.length : el.selectionStart) + delta));
+    el.setSelectionRange(at, at);
+  }
+  function scrollOut(dir) {
+    const el = outRef.current;
+    if (!el) return;
+    el.scrollTop += dir * Math.max(40, el.clientHeight - 40);
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  }
+  function clearField() {
+    recallIndexRef.current = -1;
+    setCmdText('');
+    if (inputRef.current) inputRef.current.value = '';
+  }
+
+  // sendKey(key) — one key, from the row or a hardware key press: a local
+  // edit while the shell owns the line, raw bytes while a program does.
+  function sendKey(key) {
     if (!key) return;
-    const payload = keyPayload(key);
-    if (payload.clearDraft) setCmdText('');
+    const payload = keyPayload(key, { program: programMode(), appCursor: appCursorRef.current });
+    switch (payload.local) {
+      case 'complete': complete(); return;
+      case 'history-up': recall('up'); return;
+      case 'history-down': recall('down'); return;
+      case 'caret-left': moveCaret(-1); return;
+      case 'caret-right': moveCaret(1); return;
+      case 'page-up': scrollOut(-1); return;
+      case 'page-down': scrollOut(1); return;
+      case 'clear': clearField(); return;
+      default: break;
+    }
+    if (payload.clearDraft) clearField();
+    // The answer to "the key did nothing": a full-screen program reads the
+    // key, then redraws — follow it to the bottom.
+    pinnedRef.current = true;
     post(payload.seq, true);
-  }, [post]);
+  }
 
   // complete() — what the key row's Tab, a hardware Tab, and a Tab a phone
   // keyboard typed into the field all run. It rewrites the field with the
@@ -426,6 +477,10 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     entries
   }), [cmdText, history, entries]);
 
+  // Read at render: every output frame re-renders (outBuffer), so this follows
+  // a program entering or leaving the alternate screen.
+  const isProgram = owner === 'program' || !!(screenRef.current && screenRef.current.isFullScreen);
+
   return h('div', { class: 'cli__overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Command prompt' },
     h('div', { class: 'cli__sheet', ref: sheetRef },
       h('div', { class: 'cli__head' },
@@ -501,11 +556,15 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     // Never disabled: disabling a focused input blurs it, which
                     // closes a phone's keyboard. Writes are queued instead.
                     onKeyDown: (e) => {
-                    if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    // A hardware Tab does what the key row's Tab does:
-                    // complete the line in the field itself.
+                    // A hardware Tab, arrow or Page key does what the same
+                    // key on the row does (local edit at the shell, bytes to
+                    // a program). ←/→ at the shell keep the browser's own
+                    // caret movement.
+                    const hk = keyForEvent(e);
+                    if (hk) {
+                    if (!programMode() && (hk.id === 'left' || hk.id === 'right')) return;
                     e.preventDefault();
-                    complete();
+                    sendKey(hk);
                     return;
                     }
                     if (e.key !== 'Enter') return;
@@ -517,38 +576,33 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     }
                   })
                 ),
-                // The key row: the keys a phone keyboard does not have (see
-                // cliKeys.js). While a program owns stdin, the three readline
-                // keys (`shellOnly`) are marked; Esc, ^C and ^D stay lit.
-                h('div', {
-                  class: 'cli__keys' + (owner === 'program' ? ' is-prompt' : ''),
-                  role: 'group',
-                  'aria-label': 'Terminal keys'
+                // The key rows: the keys a phone keyboard does not have, in
+                // two rows of six (see cliKeys.js). Every key is live in both
+                // modes — `is-prompt` only recolours the row so it is clear
+                // the keys now go to the program.
+                [1, 2].map((row) => h('div', {
+                key: 'keys' + row,
+                class: 'cli__keys' + (isProgram ? ' is-prompt' : ''),
+                role: 'group',
+                'aria-label': row === 1 ? 'Terminal control keys' : 'Terminal movement keys'
                 },
-                  CLI_KEYS.map((k) => h('button', {
-                    key: k.id,
-                    class: 'cli__key' + (k.shellOnly ? ' cli__key--shell' : ''),
-                    type: 'button',
-                    title: k.title,
-                    'aria-label': k.title,
-                    tabindex: '-1',
-                    onMouseDown: keepEditorFocus,
-                    onClick: () => {
-                    if (k.id === 'tab') complete();
-                    else if (k.id === 'up') recall('up');
-                    else if (k.id === 'down') recall('down');
-                    else sendKey(k);
-                    }
-                    }, k.label))
-                    ),
-                    // One-line hint under the row. It names the mode only when the
-                    // shell has said which one it is in; a piped session has no
-                    // line editor, so Tab and the arrows are client-side there too.
-                    h('p', { class: 'cli__hint' },
-                  owner === 'program'
-                  ? 'A program owns the prompt — ^C stops it; Esc leaves it.'
-                  : 'Tab completes and ↑/↓ recall in the prompt. ^C stops the running command.'
-                  )
+                CLI_KEYS.filter((k) => k.row === row).map((k) => h('button', {
+                key: k.id,
+                class: 'cli__key',
+                type: 'button',
+                title: k.title,
+                'aria-label': k.title,
+                tabindex: '-1',
+                onMouseDown: keepEditorFocus,
+                onClick: () => sendKey(k)
+                }, k.label))
+                )),
+                // One-line hint under the rows, naming the current mode.
+                h('p', { class: 'cli__hint' },
+                isProgram
+                ? 'Keys go to the running program — ^C stops it, Esc leaves it.'
+                : 'Tab completes, ↑/↓ recall, ←/→ move in the prompt. ^C stops a command.'
+                )
               )
       )
     )

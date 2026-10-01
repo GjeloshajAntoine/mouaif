@@ -23,6 +23,12 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **CLI key row works inside programs** — Tab and the arrows used to do
+  nothing while `less`, `top`, `vim` or an interactive picker ran; every key
+  now sends its sequence to a running program (application-mode arrows
+  included) and edits the prompt only at the shell. Esc at the prompt clears
+  the line instead of swallowing the next letter. A second row adds ←, →,
+  PgUp, PgDn, and ^Z / ^L join the first; the close button is 44 px.
 - **Denied-operation prompt guidance** — all three non-empty built-in profiles
   now instruct the assistant to stop a denied operation, including attempts
   through another tool, and ask for clarification or continue only with

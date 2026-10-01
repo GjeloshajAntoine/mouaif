@@ -17,38 +17,71 @@
 // never saw. `\x1b[A` / `\x1b[B` are the VT sequences a real terminal sends for
 // the up/down arrows; on a pty the shell's readline turns them into history.
 //
-// `shellOnly` marks the three keys that only mean what their label says while
-// the *shell* owns stdin. Tab and ↑/↓ edit the *local* prompt buffer (see
-// `completeLocally` / `stepHistory` in ./cliSuggest.js): they complete or recall
-// into the modal's own field and write nothing to the child. While a program
-// owns the prompt, completing a command line is pointless — the line is an
-// answer — so the row dims exactly these three and leaves Esc, ^C and ^D lit;
-// those three are useful in both modes (leave a full-screen program / interrupt
-// / end input), and ^C is the key a waiting program needs.
+// The row works in two modes, chosen per tap from who owns stdin:
+//
+//   * **local** — the shell's line editor is waiting (or the session is piped,
+//     or nothing has said yet). The command line lives in the modal's own field,
+//     so a key with a `local` action edits that field instead of writing to the
+//     child: Tab completes and ↑/↓ recall (`completeLocally` / `stepHistory` in
+//     ./cliSuggest.js), ←/→ move the caret, PgUp/PgDn scroll the output, and
+//     Esc clears the field. Esc is local on purpose: a bare ESC written to
+//     readline waits as a Meta prefix and swallows the first letter of the next
+//     command (`Esc`, then `ls` → `M-l` + `s`).
+//   * **program** — a command is running (the shell switched bracketed paste
+//     off) or a full-screen program owns the alternate screen. Every key then
+//     writes its sequence, so the arrows, Tab, PgUp/PgDn and Esc reach `less`,
+//     `top`, `vim`, an interactive picker — the case a phone has no other way
+//     to drive.
+//
+// Keys without a `local` action (^C, ^D, ^Z, ^L) write their byte in both modes.
+// `app` is the cursor key's application-mode form (DECCKM, `ESC[?1h`), which a
+// full-screen program may switch on and then expect instead of `ESC[`.
+//
+// `row` splits the table into the two rows of six the sheet lays out: control
+// keys first, then movement — six 44 px keys fit a 360 px column.
 export const CLI_KEYS = [
-  { id: 'esc', label: 'Esc', title: 'Escape — leave a full-screen program', seq: '\x1b' },
-  { id: 'tab', label: 'Tab', title: 'Tab — complete a path or command', seq: '\t', shellOnly: true },
-  { id: 'up', label: '↑', title: 'Up — previous command from this session', seq: '\x1b[A', shellOnly: true },
-  { id: 'down', label: '↓', title: 'Down — next command from this session', seq: '\x1b[B', shellOnly: true },
-  { id: 'int', label: '^C', title: 'Ctrl+C — interrupt the running command', seq: '\x03' },
-  { id: 'eof', label: '^D', title: 'Ctrl+D — end input (EOF)', seq: '\x04' }
+  { id: 'esc', row: 1, label: 'Esc', title: 'Escape — leave a full-screen program; clears the prompt at the shell', seq: '\x1b', local: 'clear' },
+  { id: 'tab', row: 1, label: 'Tab', title: 'Tab — complete a path or command', seq: '\t', local: 'complete' },
+  { id: 'int', row: 1, label: '^C', title: 'Ctrl+C — interrupt the running command', seq: '\x03' },
+  { id: 'eof', row: 1, label: '^D', title: 'Ctrl+D — end input (EOF)', seq: '\x04' },
+  { id: 'susp', row: 1, label: '^Z', title: 'Ctrl+Z — suspend the running command', seq: '\x1a' },
+  { id: 'ff', row: 1, label: '^L', title: 'Ctrl+L — clear the screen', seq: '\x0c' },
+  { id: 'left', row: 2, label: '←', title: 'Left — move the cursor left', seq: '\x1b[D', app: '\x1bOD', local: 'caret-left' },
+  { id: 'up', row: 2, label: '↑', title: 'Up — previous command from this session', seq: '\x1b[A', app: '\x1bOA', local: 'history-up' },
+  { id: 'down', row: 2, label: '↓', title: 'Down — next command from this session', seq: '\x1b[B', app: '\x1bOB', local: 'history-down' },
+  { id: 'right', row: 2, label: '→', title: 'Right — move the cursor right', seq: '\x1b[C', app: '\x1bOC', local: 'caret-right' },
+  { id: 'pgup', row: 2, label: 'PgUp', title: 'Page Up — scroll the output up', seq: '\x1b[5~', local: 'page-up' },
+  { id: 'pgdn', row: 2, label: 'PgDn', title: 'Page Down — scroll the output down', seq: '\x1b[6~', local: 'page-down' }
 ];
 
-// keyPayload(key) → { seq, clearDraft } — the bytes a key writes to the child.
+// keyPayload(key, mode) → { seq, clearDraft, local }
 //
-// A key marked `shellOnly` (Tab, ↑, ↓) writes **nothing**: it is handled
-// entirely in the prompt's own buffer by `completeLocally` / `stepHistory`
-// (./cliSuggest.js), so `seq` is empty rather than `draft + key`. An earlier
-// version flushed the draft onto the shell's readline line and cleared the
-// field, which looked like "Tab ate my text" on a phone.
+//   * `mode.program`   — a program owns stdin (see above);
+//   * `mode.appCursor` — the screen is in application cursor mode.
+//
+// In local mode a key with a `local` action returns that action and **no
+// bytes**: the field is edited in place and nothing reaches the child until
+// Enter (an earlier version flushed the draft onto readline and emptied the
+// field — "Tab ate my text"). Otherwise the key's sequence is written raw.
 //
 // ^C discards the local draft and sends ETX without a terminator — a newline
-// after it would also press Enter and answer a prompt you never saw. Esc and ^D
-// carry nothing and leave the field alone.
-export function keyPayload(key) {
-  if (!key || key.shellOnly) return { seq: '', clearDraft: false };
-  if (key.id === 'int') return { seq: key.seq, clearDraft: true };
-  return { seq: key.seq, clearDraft: false };
+// after it would also press Enter and answer a prompt you never saw.
+export function keyPayload(key, mode) {
+  if (!key) return { seq: '', clearDraft: false, local: null };
+  const m = mode || {};
+  if (!m.program && key.local) return { seq: '', clearDraft: false, local: key.local };
+  const seq = m.appCursor && key.app ? key.app : key.seq;
+  return { seq, clearDraft: key.id === 'int', local: null };
+}
+
+// keyForEvent(event) — the CLI_KEYS entry a hardware key press stands for, so
+// a desktop keyboard's Tab and arrows go through the same two modes as the
+// row. Escape is not mapped: the sheet's own Escape closes it (useModal).
+const HARDWARE_KEYS = { Tab: 'tab', ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', PageUp: 'pgup', PageDown: 'pgdn' };
+export function keyForEvent(event) {
+  if (!event || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return null;
+  const id = HARDWARE_KEYS[event.key];
+  return id ? keyById(id) : null;
 }
 
 // splitTypedTab(value) → null | { before, rest }
@@ -93,6 +126,24 @@ export function lineEditorState(tail, chunk) {
   let state = null;
   if (on !== -1 || off !== -1) state = on > off ? 'shell' : 'program';
   return { state, tail: text.slice(-(PASTE_ON.length - 1)) };
+}
+
+// cursorKeyMode(tail, chunk) → { app, tail }
+//
+// Follows DECCKM: `ESC[?1h` switches the cursor keys to application mode
+// (`ESC O A` instead of `ESC [ A`), `ESC[?1l` switches them back. `less`,
+// `vim` and `top` turn it on, and some ignore the normal form while it is on.
+// `app` is true/false for the chunk's last switch, null when there was none;
+// `tail` carries a cut marker into the next chunk, as in lineEditorState.
+const DECCKM_ON = '\x1b[?1h';
+const DECCKM_OFF = '\x1b[?1l';
+export function cursorKeyMode(tail, chunk) {
+  const text = String(tail || '') + String(chunk == null ? '' : chunk);
+  const on = text.lastIndexOf(DECCKM_ON);
+  const off = text.lastIndexOf(DECCKM_OFF);
+  let app = null;
+  if (on !== -1 || off !== -1) app = on > off;
+  return { app, tail: text.slice(-(DECCKM_ON.length - 1)) };
 }
 
 // keyById(id) — one key's definition, or null. Exported so a caller (and the

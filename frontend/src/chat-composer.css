@@ -1335,7 +1335,15 @@ color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Icon buttons use the shared .icon-btn utility (forms.css). */
+/* Icon buttons use the shared .icon-btn utility (forms.css); the close button
+   is the sheet's only exit on a phone, so it keeps the full 44 px tap floor. */
+.cli__iconbtn {
+  flex: 0 0 auto;
+  width: var(--tap);
+  min-width: var(--tap);
+  height: var(--tap);
+  min-height: var(--tap);
+}
 /* Stop: the explicit kill of a background terminal. Closing only detaches. */
 .cli__stop {
   flex: 0 0 auto;
@@ -1476,7 +1484,7 @@ color: var(--muted);
   font-family: var(--font-mono, monospace);
   font-size: 0.78rem;
   line-height: 1;
-  /* Five keys share a phone's width evenly; the cap keeps them from stretching
+  /* Six keys per row share a phone's width evenly; the cap keeps them from stretching
      into bars on the desktop card (the sheet is 860 px there), where `flex: 1`
      alone would give each one 130 px. */
   flex: 1 1 0;
@@ -1501,15 +1509,13 @@ color: var(--muted);
   cursor: not-allowed;
   transform: none;
 }
-/* While a program owns the prompt, only the shell's own readline keys are
-   marked down (`.cli__key--shell`: Tab and ↑/↓). Esc, ^C and ^D are useful in
-   both modes — ^C is *the* key a waiting program needs — so they keep their
-   full contrast and the hint under the row names them. A key dimmed by a busy
-   request is dimmed by `:disabled`; `:not(:disabled)` keeps these two facts
-   from stacking. */
-.cli__keys.is-prompt .cli__key--shell:not(:disabled) {
-  color: #7fa8c9;
-  border-color: #1b2430;
+/* Two rows of six keys: the first sits flush under the prompt, the second
+   under it. While a program owns stdin every key goes to it as bytes, so the
+   rows take the prompt's accent to say so; nothing is dimmed — every key is
+   live in both modes. */
+.cli__keys + .cli__keys { padding-top: 0; }
+.cli__keys.is-prompt .cli__key:not(:disabled) {
+  border-color: #23435a;
 }
 
 .cli__hint {

@@ -71,28 +71,34 @@ Who reads stdin is tracked as `owner` in [CliModal.jsx](../../../frontend/src/co
 
 ### Key row
 
-`frontend/src/components/chat/cliKeys.js` holds the six keys as one table (`CLI_KEYS`), so each byte sequence lives in exactly one place:
+`frontend/src/components/chat/cliKeys.js` holds the twelve keys as one table (`CLI_KEYS`), so each byte sequence lives in exactly one place:
 
-| id | label | sequence |
-| --- | --- | --- |
-| `esc` | `Esc` | `\x1b` |
-| `tab` | `Tab` | `\t` |
-| `up` | `↑` | `\x1b[A` |
-| `down` | `↓` | `\x1b[B` |
-| `int` | `^C` | `\x03` |
-| `eof` | `^D` | `\x04` |
+| id | row | label | sequence | app-cursor form | local action (at the shell) |
+| --- | --- | --- | --- | --- | --- |
+| `esc` | 1 | `Esc` | `\x1b` | | `clear` — empty the field |
+| `tab` | 1 | `Tab` | `\t` | | `complete` |
+| `int` | 1 | `^C` | `\x03` | | — (always sent, clears the draft) |
+| `eof` | 1 | `^D` | `\x04` | | — |
+| `susp` | 1 | `^Z` | `\x1a` | | — |
+| `ff` | 1 | `^L` | `\x0c` | | — |
+| `left` | 2 | `←` | `\x1b[D` | `\x1bOD` | `caret-left` |
+| `up` | 2 | `↑` | `\x1b[A` | `\x1bOA` | `history-up` |
+| `down` | 2 | `↓` | `\x1b[B` | `\x1bOB` | `history-down` |
+| `right` | 2 | `→` | `\x1b[C` | `\x1bOC` | `caret-right` |
+| `pgup` | 2 | `PgUp` | `\x1b[5~` | | `page-up` — scroll the output |
+| `pgdn` | 2 | `PgDn` | `\x1b[6~` | | `page-down` |
 
-`shellOnly: true` marks Tab and the two arrows: they edit the prompt's **own** buffer (completeLocally / stepHistory), so the row dims exactly those three while a program owns the prompt (`owner === 'program'`) and leaves Esc, `^C` and `^D` lit — those three mean the same thing to a program as to a shell, and `^C` is the key a waiting program needs. The class it drives is `.cli__key--shell` under `.cli__keys.is-prompt` in [chat-composer.css](../../../frontend/src/chat-composer.css).
+`keyPayload(key, { program, appCursor })` decides what a tap does. With `program` false (the shell's line editor owns stdin, the session is piped, or nobody has said yet) a key with a `local` action returns `{ seq: '', local }` and `sendKey` in [CliModal.jsx](../../../frontend/src/components/chat/CliModal.jsx) runs it on the field: `completeLocally` / `stepHistory` from [cliSuggest.js](../../../frontend/src/components/chat/cliSuggest.js), caret moves, output scrolling, clearing. Nothing reaches the child until Enter. With `program` true every key returns its sequence (the `app` form when `appCursor`) and is written with **`raw: true`**, so `writeCliCommand` appends no terminator. `^C` returns `clearDraft: true` in both modes.
 
-Esc, `^C` and `^D` go through `POST /api/tools/cli/command` with **`raw: true`**, so `writeCliCommand` appends no terminator (`\n` on POSIX, `\r\n` on Windows). Appending one to `\x03` would send Ctrl+C *and* Enter, answering a prompt the user never saw; that is the invariant the test asserts byte for byte. Tab and ↑/↓ write **nothing** to the child — `keyPayload` returns `{ seq: '' }` for a `shellOnly` key — and are handled entirely in the prompt buffer.
+`program` is `owner === 'program'` (bash/zsh switched bracketed paste off — `lineEditorState`) **or** `CliScreen.isFullScreen` (the alternate screen, `ESC[?1049h`). `appCursor` follows DECCKM (`ESC[?1h` / `ESC[?1l`) through `cursorKeyMode(tail, chunk)`, which carries a cut marker across chunks the same way `lineEditorState` does.
 
-`keyPayload(key)` decides what a tap writes: `shellOnly` keys write nothing, `int` (`^C`) writes ETX and returns `clearDraft: true`, Esc and `^D` carry their byte and leave the field alone. An earlier version had the readline keys flush `draft + seq` onto the shell's line and clear the field (`clearDraft: true`); on a phone the shell's echoed line is easy to miss, so a Tap looked like "Tab ate my text", and on a piped session it lost the text outright. Tab now calls `completeLocally(text, history, entries)` from [cliSuggest.js](../../../frontend/src/components/chat/cliSuggest.js) and ↑/↓ call `stepHistory(history, index, dir)`, both of which rewrite `cmdText` (and the DOM value, caret at the end) in place; nothing is sent until Enter.
+Why the earlier row failed: Tab and ↑/↓ were hard-wired to the local field, so while `less`, `top`, `vim` or an interactive picker ran they did nothing at all — the row only dimmed them. Esc was always sent, and at a bash prompt a bare ESC is readline's Meta prefix, so the next letter typed was eaten (`Esc`, `ls` → `M-l` + `s`). At the shell Esc now clears the field instead.
 
-`completeLocally` has two phases. **The line**: a `history` command that starts with the whole field completes it (`npm ru` → the history's `npm run test:cli`, or their longest common prefix when several match). **The word**: when no command matches, the field's trailing word (`\S*$`) completes from the project's top-level names, prefix preserved (`ls pac` → `ls package.json`, `cd scr` → `cd scripts/`). It returns the new text, or `null` when nothing matches (the field is left untouched). `stepHistory(history, index, dir)` walks the same newest-first list — ↑ goes older (`index + 1`, clamped at the oldest), ↓ back toward the newest (`index - 1`), landing on `index: -1` with an empty line past the newest. The walk index lives in `recallIndexRef`, reset on each keystroke and on send/raw.
+Hardware keys go through the same table: `keyForEvent(e)` maps unmodified Tab, arrows and PgUp/PgDn to their row key, and the prompt's `keydown` calls `sendKey`. ←/→ at the shell are left to the browser's own caret handling. Escape is not mapped — the sheet's `useModal` closes on it.
 
 Every control in both rows cancels `mousedown` (`keepEditorFocus`) so the browser cannot move focus to the button — on iOS and Android that would close the soft keyboard on every tap. The prompt is **never disabled**: disabling a focused input blurs it, and a `focus()` issued later from a fetch callback runs outside the user gesture, which iOS will not honour with a keyboard. Instead every write goes through one promise chain (`queueRef` / `post`), so taps reach the shell in the order they were made and `^C` is never blocked behind the request it is meant to interrupt.
 
-The row dims its readline keys (`.cli__keys.is-prompt`) exactly when `owner === 'program'`. The hint names the mode (`Tab completes and ↑/↓ recall in the prompt. ^C stops the running command.`); completing a command line while a program waits for an answer is the wrong thing to do, so Tab/↑/↓ go quiet there. Tab and ↑/↓ work the same on a piped session: the completion sources are all client-side, so no terminal is needed.
+While a program owns stdin the rows get `.cli__keys.is-prompt` (an accent border, nothing dimmed) and the hint reads `Keys go to the running program — ^C stops it, Esc leaves it.` The header's close button (`.cli__iconbtn`) is pinned to `--tap` (44 px).
 
 ### Screen decoding
 

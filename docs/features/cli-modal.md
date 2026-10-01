@@ -36,25 +36,31 @@ Type **`!!`** and press **Enter** to repeat the previous command — the shell's
 
 ### Keys
 
-A phone keyboard has letters, digits and Enter, and nothing a terminal actually needs. Under the prompt, one row carries the six keys it lacks:
+A phone keyboard has letters, digits and Enter, and nothing a terminal actually needs. Under the prompt, two rows carry the twelve keys it lacks:
 
-| Key | Sends | Does |
+| Key | At the shell prompt | While a program runs |
 | --- | --- | --- |
-| **Esc** | `ESC` | leave a full-screen program (`less`, `vim`, a TUI) |
-| **Tab** | *(nothing)* | complete the command or path **in the prompt** |
-| **↑** / **↓** | *(nothing)* | previous / next command from this session, **in the prompt** |
-| **^C** | `ETX` | interrupt the running command |
-| **^D** | `EOT` | end input (EOF) |
+| **Esc** | clears the prompt | sends `ESC` — leave `less`, `vim`, a TUI |
+| **Tab** | completes the command or path **in the prompt** | sends `Tab` |
+| **^C** | interrupts (and clears the prompt) | interrupts the running command |
+| **^D** | sends EOF | ends input (EOF) |
+| **^Z** | sends `SUB` | suspends the running command |
+| **^L** | clears the screen | redraws / clears the screen |
+| **←** / **→** | moves the cursor in the prompt | sends the arrow |
+| **↑** / **↓** | previous / next command from this session | sends the arrow — scroll `less`, move in a menu |
+| **PgUp** / **PgDn** | scrolls the output | sends Page Up / Page Down |
 
-Esc, **^C** and **^D** are the keys a program needs: each is one raw write with **no line terminator**, so `^C` interrupts without also pressing Enter — which would answer a second prompt you never saw.
+Every key is one raw write with **no line terminator**, so `^C` interrupts without also pressing Enter — which would answer a second prompt you never saw.
+
+The modal picks the column for you. bash and zsh announce it themselves: they switch the terminal's bracketed-paste mode on at their prompt and off when a command starts, and a full-screen program (`less`, `top`, `vim`) switches to the alternate screen. While a program has the input, the rows get a blue edge and the line under them says `Keys go to the running program — ^C stops it, Esc leaves it.` If the program switches the arrows to *application* mode (as `less` and `vim` do), the arrows send that form.
+
+At the prompt, Esc clears the line instead of sending `ESC`. A bare `ESC` at a bash prompt waits for a second key, so the first letter of your next command would be swallowed.
 
 **Tab** completes **in the prompt itself**, and nothing is sent to the shell until you press **Enter**. A command from this session's history that starts with your line is completed whole (`git chec` → `git checkout main`); several matches extend as far as they agree (`npm ru` → `npm run `) and the suggestion row below narrows to the rest. When no history command matches, the word before the cursor completes from the project's own top-level names, prefix preserved (`ls pac` → `ls package.json`, `cd scr` → `cd scripts/`). **↑/↓** walk the same session history into the prompt. Because completion happens in the field, the text you typed is never emptied and never lost — and it works the same on a session without a terminal.
 
 A phone keyboard that has its own Tab key (Samsung Keyboard, Hacker's Keyboard, some Gboard layouts) works too. Those keyboards usually do not report a Tab key press at all — they type a literal tab character into the field — so the prompt watches its text: everything before the tab is completed exactly like a tap on the row's **Tab**, and anything typed after it stays in the field. Further tab characters are dropped; a command line has no use for them.
 
-With a hardware keyboard, pressing **Tab** in the prompt does exactly what the on-screen **Tab** key does — it is not focus navigation there. The prompt is marked `data-own-tab`, which tells the sheet's shared focus trap (`frontend/src/hooks/useModal.js`) to leave plain Tab alone; **Shift+Tab** still moves focus out of the prompt, so the keyboard is never trapped.
-
-Tab and ↑/↓ edit the prompt, so they do nothing while a **program** owns the input — completing a command line there would be completing an answer. The row dims just those three and the line under it says so (`A program owns the prompt — ^C stops it; Esc leaves it.`). The modal knows which is which because bash and zsh announce it: they switch the terminal's bracketed-paste mode on at their prompt and off when a command starts. **Esc**, **^C** and **^D** mean the same thing to a program as to a shell and stay lit; `^C` is the key a waiting program needs.
+With a hardware keyboard, **Tab**, the arrows and **PgUp**/**PgDn** in the prompt do exactly what the on-screen keys do — Tab is not focus navigation there. The prompt is marked `data-own-tab`, which tells the sheet's shared focus trap (`frontend/src/hooks/useModal.js`) to leave plain Tab alone; **Shift+Tab** still moves focus out of the prompt, so the keyboard is never trapped.
 
 Because the session is a real terminal, an interactive program can wait for you. Publishing from the modal is the motivating case. Without a terminal, npm fails and masks its one-time link (its log redactor replaces the UUID in the URL with `***`):
 
@@ -85,7 +91,7 @@ You can also run multiple commands in one session — the shell keeps its state 
 npm run test:cli
 ```
 
-- `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key row, and Tab/↑/↓ (the key table's sequences, that the readline keys write nothing to the child while ^C/Esc/^D do, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator.
+- `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key rows, and Tab/↑/↓ (the key table's sequences, that at the shell Tab/arrows/Page keys/Esc edit the prompt and write nothing while to a program every key writes its sequence — application-mode arrows included — and the hardware-key mapping, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator.
 - `scripts/test-cli-session-newline.js` — drives the real endpoints and asserts a plain `ls` lists the project files (the terminator rule).
 - `scripts/test-cli-strip-ansi.js` — unit-tests `stripAnsi` / `CliScreen`, including every escape-sequence family split at every pair of positions and fed one code point at a time.
 - `scripts/test-cli-utf8-split.js` — feeds `attachCliStream` UTF-8 split at every byte boundary, on the PTY and piped paths, and asserts no `�` reaches the broadcast.

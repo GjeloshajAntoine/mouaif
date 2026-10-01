@@ -9,9 +9,9 @@
 //     terminator on `\x03` sends Ctrl+C *and* Enter, which answers a second
 //     prompt the user never saw; that is the one mistake that must not be
 //     introduced by "tidying" the table.
-//   * `keyPayload` — Tab and the arrows write nothing to the child; they edit
-//     the prompt's own buffer (completeLocally / stepHistory), so a tap never
-//     empties the field and never reaches the shell.
+//   * `keyPayload` — at the shell, Tab / arrows / Page keys / Esc edit the
+//     prompt's own buffer and write nothing; while a program owns stdin every
+//     key writes its sequence (application-mode arrows under DECCKM).
 //   * `lineEditorState` — who owns stdin, read from the shell's own
 //     bracketed-paste markers, including a marker cut across two chunks.
 //   * `rememberCommand` / `suggestionsFor` — the suggestion row is built from
@@ -32,7 +32,7 @@ function t(name, cond, msg) {
 async function run() {
   const keys = await import('../frontend/src/components/chat/cliKeys.js');
   const suggest = await import('../frontend/src/components/chat/cliSuggest.js');
-  const { CLI_KEYS, keyById, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab } = keys;
+  const { CLI_KEYS, cursorKeyMode, keyById, keyForEvent, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab } = keys;
   const { MAX_SUGGESTIONS, MAX_HISTORY, rememberCommand, suggestionsFor, completeLocally, stepHistory } = suggest;
 
   // ---- 1. The key row -------------------------------------------------
@@ -40,10 +40,12 @@ async function run() {
   const byId = {};
   for (const k of CLI_KEYS) byId[k.id] = k;
 
-  t('the row offers the six keys a phone keyboard lacks',
-    CLI_KEYS.length === 6
-    && ['esc', 'tab', 'up', 'down', 'int', 'eof'].every((id) => byId[id]),
+  t('the rows offer the twelve keys a phone keyboard lacks',
+    CLI_KEYS.length === 12
+    && ['esc', 'tab', 'int', 'eof', 'susp', 'ff', 'left', 'up', 'down', 'right', 'pgup', 'pgdn'].every((id) => byId[id]),
     CLI_KEYS.map((k) => k.id));
+  t('two rows of six, so each fits a 360 px column at 44 px a key',
+    CLI_KEYS.filter((k) => k.row === 1).length === 6 && CLI_KEYS.filter((k) => k.row === 2).length === 6);
 
   t('every key has a sequence and a label', CLI_KEYS.every((k) =>
     typeof k.seq === 'string' && k.seq.length > 0 && typeof k.label === 'string' && k.label.length > 0));
@@ -52,18 +54,19 @@ async function run() {
   // assertion is written as the literal bytes rather than as a formula.
   t('Esc is a bare ESC', byId.esc.seq === '\x1b', JSON.stringify(byId.esc.seq));
   t('Tab is HT', byId.tab.seq === '\t', JSON.stringify(byId.tab.seq));
-  t('Up is the VT cursor-up sequence', byId.up.seq === '\x1b[A', JSON.stringify(byId.up.seq));
-  t('Down is the VT cursor-down sequence', byId.down.seq === '\x1b[B', JSON.stringify(byId.down.seq));
+  t('Up is the VT cursor-up sequence', byId.up.seq === '\x1b[A' && byId.up.app === '\x1bOA', JSON.stringify(byId.up));
+  t('Down is the VT cursor-down sequence', byId.down.seq === '\x1b[B' && byId.down.app === '\x1bOB', JSON.stringify(byId.down));
+  t('Right is the VT cursor-right sequence', byId.right.seq === '\x1b[C' && byId.right.app === '\x1bOC');
+  t('Left is the VT cursor-left sequence', byId.left.seq === '\x1b[D' && byId.left.app === '\x1bOD');
+  t('PgUp / PgDn are the VT page sequences', byId.pgup.seq === '\x1b[5~' && byId.pgdn.seq === '\x1b[6~');
   t('Ctrl+C is ETX', byId.int.seq === '\x03', JSON.stringify(byId.int.seq));
   t('Ctrl+D is EOT', byId.eof.seq === '\x04', JSON.stringify(byId.eof.seq));
+  t('Ctrl+Z is SUB', byId.susp.seq === '\x1a', JSON.stringify(byId.susp.seq));
+  t('Ctrl+L is FF', byId.ff.seq === '\x0c', JSON.stringify(byId.ff.seq));
 
   // No terminator anywhere: the client sends every key with `raw: true`, and
   // these bytes are exactly what must land on the child's stdin.
-  t('no key carries a line terminator', CLI_KEYS.every((k) => k.seq.indexOf('\n') === -1 && k.seq.indexOf('\r') === -1));
-
-  // The arrow keys are the one pair that *are* an escape sequence: they must
-  // start with ESC, or a shell's readline reads them as `[` `A`.
-  t('the arrow keys are escape sequences', byId.up.seq[0] === '\x1b' && byId.down.seq[0] === '\x1b');
+  t('no key carries a line terminator', CLI_KEYS.every((k) => !/[\r\n]/.test(k.seq) && !/[\r\n]/.test(k.app || '')));
 
   t('every key is titled well enough to be tapped blind', CLI_KEYS.every((k) =>
     typeof k.title === 'string' && k.title.length > 8));
@@ -71,19 +74,12 @@ async function run() {
   t('keyById finds a key and answers null for an unknown id',
     keyById('tab') === byId.tab && keyById('nope') === null);
 
-  // A single label per key, so the row is a fixed six buttons on a 360 px
-  // screen. Two keys sharing a label would be indistinguishable to a sighted
-  // user even though their sequences differ.
   const labels = CLI_KEYS.map((k) => k.label);
   t('labels are unique', new Set(labels).size === labels.length, labels);
 
-  // `shellOnly` is the row's dimming rule: only Tab and the two arrows are a
-  // *shell's* readline keys. Esc, ^C and ^D mean the same thing to a program,
-  // and ^C is the key a waiting program needs, so they must not be marked.
-  const shellOnly = CLI_KEYS.filter((k) => k.shellOnly).map((k) => k.id);
-  t('exactly Tab, Up and Down are marked shell-only',
-    JSON.stringify(shellOnly) === JSON.stringify(['tab', 'up', 'down']), shellOnly);
-  t('the interrupt and EOF keys are never dimmed', !byId.int.shellOnly && !byId.eof.shellOnly && !byId.esc.shellOnly);
+  // The control keys mean the same to a shell and a program: never local.
+  t('^C, ^D, ^Z and ^L always write their byte',
+    ['int', 'eof', 'susp', 'ff'].every((id) => !byId[id].local));
 
   // keepEditorFocus — the mousedown guard that keeps the soft keyboard open.
   let prevented = 0;
@@ -94,23 +90,53 @@ async function run() {
 
   // ---- 2. What a key tap writes ----------------------------------------
   //
-  // The field is a local line buffer, and Tab / ↑ / ↓ edit it in place
-  // (completeLocally / stepHistory): they write nothing to the child. Only the
-  // keys a program needs (Esc, ^C, ^D) reach stdin.
+  // At the shell, the field is a local line buffer: Tab / arrows / Page keys /
+  // Esc edit it (or scroll the output) and write nothing. While a program owns
+  // stdin, every key writes its bytes — that is what makes `less` or `top`
+  // drivable from a phone.
 
-  const tabDraft = keyPayload(byId.tab);
-  t('Tab writes nothing to the child', tabDraft.seq === '' && tabDraft.clearDraft === false, tabDraft);
-  const upDraft = keyPayload(byId.up);
-  t('Up writes nothing to the child', upDraft.seq === '' && upDraft.clearDraft === false, upDraft);
-  t('Down writes nothing to the child', keyPayload(byId.down).seq === '');
-  const intDraft = keyPayload(byId.int);
-  t('^C sends ETX and discards the draft', intDraft.seq === '\x03' && intDraft.clearDraft === true, intDraft);
-  const escDraft = keyPayload(byId.esc);
-  t('Esc and ^D carry nothing and clear nothing', escDraft.seq === '\x1b' && !escDraft.clearDraft
-    && keyPayload(byId.eof).seq === '\x04' && !keyPayload(byId.eof).clearDraft, escDraft);
+  const shell = { program: false };
+  const prog = { program: true };
+  const local = (id) => keyPayload(byId[id], shell);
+  t('at the shell, Tab completes locally and writes nothing', local('tab').seq === '' && local('tab').local === 'complete');
+  t('at the shell, ↑/↓ recall locally', local('up').local === 'history-up' && local('down').local === 'history-down' && local('up').seq === '');
+  t('at the shell, ←/→ move the caret locally', local('left').local === 'caret-left' && local('right').local === 'caret-right');
+  t('at the shell, PgUp/PgDn scroll the output', local('pgup').local === 'page-up' && local('pgdn').local === 'page-down');
+  t('at the shell, Esc clears the field instead of arming readline\'s Meta prefix',
+    local('esc').local === 'clear' && local('esc').seq === '');
+  const intDraft = keyPayload(byId.int, shell);
+  t('^C sends ETX and discards the draft', intDraft.seq === '\x03' && intDraft.clearDraft === true && !intDraft.local, intDraft);
+  t('^D, ^Z, ^L write their byte at the shell and keep the draft',
+    ['eof', 'susp', 'ff'].every((id) => local(id).seq === byId[id].seq && !local(id).clearDraft && !local(id).local));
+
+  t('to a program, every key writes its sequence',
+    CLI_KEYS.every((k) => keyPayload(k, prog).seq === k.seq && !keyPayload(k, prog).local));
+  t('in application cursor mode the arrows use ESC O',
+    keyPayload(byId.up, { program: true, appCursor: true }).seq === '\x1bOA'
+    && keyPayload(byId.left, { program: true, appCursor: true }).seq === '\x1bOD'
+    && keyPayload(byId.pgup, { program: true, appCursor: true }).seq === '\x1b[5~');
   t('no payload ever carries a line terminator',
-    CLI_KEYS.every((k) => !/[\r\n]/.test(keyPayload(k).seq)));
-  t('a missing key writes nothing', keyPayload(null).seq === '');
+    CLI_KEYS.every((k) => [shell, prog].every((m) => !/[\r\n]/.test(keyPayload(k, m).seq))));
+  t('a missing key writes nothing', keyPayload(null).seq === '' && keyPayload(null).local === null);
+  t('no mode given means the shell', keyPayload(byId.tab).local === 'complete');
+
+  // Hardware keys map onto the same table; modified keys and Escape do not
+  // (Shift+Tab leaves the prompt, Escape closes the sheet).
+  t('hardware Tab and arrows map to their row keys',
+    keyForEvent({ key: 'Tab' }) === byId.tab && keyForEvent({ key: 'ArrowUp' }) === byId.up
+    && keyForEvent({ key: 'PageDown' }) === byId.pgdn);
+  t('Shift+Tab, Ctrl+arrow and Escape are not mapped',
+    keyForEvent({ key: 'Tab', shiftKey: true }) === null && keyForEvent({ key: 'ArrowUp', ctrlKey: true }) === null
+    && keyForEvent({ key: 'Escape' }) === null && keyForEvent(null) === null);
+
+  // DECCKM, split across chunks like the bracketed-paste markers.
+  let ck = cursorKeyMode('', 'less output\x1b[?1h\x1b=');
+  t('ESC[?1h switches the arrows to application mode', ck.app === true, ck);
+  ck = cursorKeyMode(ck.tail, 'more text');
+  t('a chunk without the switch leaves the mode unknown', ck.app === null, ck);
+  const ckA = cursorKeyMode('', 'bye\x1b[?');
+  const ckB = cursorKeyMode(ckA.tail, '1l$ ');
+  t('a DECCKM switch cut across chunks is still seen', ckA.app === null && ckB.app === false, [ckA, ckB]);
 
   // A phone keyboard's Tab key types a literal HT into the field instead of
   // firing a Tab keydown; the prompt splits it off and completes the text
