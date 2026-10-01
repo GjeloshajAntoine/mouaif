@@ -666,7 +666,10 @@ head.appendChild(role);
 head.appendChild(ts);
 const body = document.createElement('div');
 body.className = 'chat-msg__body';
-body.textContent = message;
+// Keep local failures classified exactly like saved failures. Otherwise a
+// rebuild turns this row into a plain system bubble and drops its Retry.
+const errorContent = /^⚠(?:\s|$)/.test(String(message || '')) ? String(message) : '⚠ ' + String(message || 'Request failed');
+body.textContent = errorContent;
 row.appendChild(head);
 row.appendChild(body);
 if (opts && typeof opts.onRetry === 'function') {
@@ -685,7 +688,7 @@ if (state && (!opts || opts.persist !== false)) {
 // A stream error the server saved carries that row's clientId, so the saved
 // copy replaces this card on the next sync. A purely local failure (network,
 // HTTP reject) has none and stays client-only.
-const errRow = { role: 'system', content: message, ts: new Date().toISOString() };
+const errRow = { role: 'system', content: errorContent, ts: new Date((opts && opts.ts) || Date.now()).toISOString() };
 if (opts && typeof opts.clientId === 'string' && opts.clientId) errRow.clientId = opts.clientId;
 state.messages = state.messages.concat([errRow]);
 row._rowKey = transcriptRowKey(errRow);
@@ -1085,6 +1088,19 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
       if (stale.dataset.authCallId === String(toolCall.id)) stale.remove();
     }
   }
+  // Progress is the call's card, not a transient second row below it. Use
+  // the same builder for live calls and persisted calls so the result and
+  // later reconciliation keep this node at the call's conversation slot.
+  if (normalizeToolName(toolCall.name) === 'report_progress' && progressLevelOf(toolCall.name, toolCall.args)) {
+    const card = updateProgressCard(refs, Object.assign({}, toolCall.args, { callId: id }));
+    if (card) {
+      card.classList.add('tool-card--call');
+      card.dataset.toolName = normalizeToolName(toolCall.name);
+      card._toolArgs = toolCall.args;
+      if (!toolCall.id) registerAnonToolCall(refs, id, normalizeToolName(toolCall.name), card);
+    }
+    return card;
+  }
   const card = document.createElement('div');
   card.className = 'tool-card tool-card--call';
   card.dataset.toolId = id;
@@ -1475,6 +1491,18 @@ export function appendToolResultCard(toolResult, refs) {
   const pillClass = toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
   const pillText = toolResult.ok ? 'ok' : 'error';
 const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
+const level = toolResult.ok ? progressLevelOf(toolResult.name, rawR) : null;
+if (level && (normalizeToolName(toolResult.name) === 'report_progress'
+  || (rawR && (rawR.action === 'progress_updated' || rawR.action === 'completed')))) {
+  const src = normalizeToolName(toolResult.name) === 'task' ? rawR.task : rawR;
+  card = updateProgressCard(refs, Object.assign({}, level, { callId: id, title: src.title }));
+  if (card) {
+    card.classList.add('tool-card--result');
+    card.classList.remove('tool-card--call');
+    card.dataset.toolName = normalizeToolName(toolResult.name);
+  }
+  return;
+}
 const summary = (toolResult.ok || isExpectedToolFailure(toolResult && toolResult.name, rawR, toolResult.ok))
   ? formatResultSummary(toolResult && toolResult.name, rawR)
   : null;
@@ -1959,9 +1987,20 @@ function getOrCreateProgressCard(refs, callId, title) {
   const existing = refs.transcript.current.querySelector('[data-progress-id="' + cssEscape(callId || '') + '"]');
   if (existing) return existing;
 
-  const card = document.createElement('div');
-  card.className = 'tool-card tool-card--progress';
-  if (callId) card.dataset.progressId = callId;
+  // A task's progress frame arrives between its call and result. Upgrade
+  // that card in place rather than appending an unkeyed notification that
+  // reconciliation would remove (and a reconnect would append at the end).
+  const card = (callId && findToolCard(refs, callId)) || document.createElement('div');
+  const mounted = card.parentNode === refs.transcript.current;
+  for (const child of Array.from(card.children)) child.remove();
+  card.classList.add('tool-card');
+  card.classList.add('tool-card--progress');
+  card._lazyBody = null;
+  if (callId) {
+    card.dataset.progressId = String(callId);
+    card.dataset.toolId = String(callId);
+    indexToolCard(refs, callId, card);
+  }
 
   const head = document.createElement('div');
   head.className = 'tool-card__head';
@@ -2009,8 +2048,10 @@ function getOrCreateProgressCard(refs, callId, title) {
   body.appendChild(msg);
 
   card.appendChild(body);
-  refs.transcript.current.appendChild(card);
-  afterTranscriptAppend(refs, true);
+  if (!mounted) {
+    transcriptInsert(refs, card);
+    afterTranscriptAppend(refs, true);
+  }
   return card;
 }
 
@@ -2056,10 +2097,12 @@ export function updateProgressCard(refs, data) {
   const card = getOrCreateProgressCard(refs, data.callId, data.title);
   if (!card) return;
 
-  const current = Math.max(0, Math.min(Number(data.current) || 0, Number(data.total) || 100));
-  const total = Math.max(1, Number(data.total) || 100);
-  const fraction = Math.min(1, current / total);
-  const percent = Math.round(fraction * 100);
+  const level = progressLevelOf(null, data);
+  if (!level) return card;
+  const percent = level.percent;
+  card.dataset.status = level.status;
+  const name = card.querySelector('.tool-card__name');
+  if (name) name.textContent = data.title || 'Progress';
 
   const bar = card.querySelector('.tool-card__progress-bar');
   if (bar) bar.style.width = percent + '%';
@@ -2068,7 +2111,7 @@ export function updateProgressCard(refs, data) {
   if (pct) pct.textContent = percent + '%';
 
   const msgEl = card.querySelector('.tool-card__progress-msg');
-  if (msgEl) msgEl.textContent = data.message || '';
+  if (msgEl) msgEl.textContent = level.message;
 
   const pill = card.querySelector('.tool-card__pill');
   if (pill) {
@@ -2088,6 +2131,7 @@ export function updateProgressCard(refs, data) {
   }
 
   afterTranscriptAppend(refs, false);
+  return card;
 }
 
 // renderTranscript(state, refs)

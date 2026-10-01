@@ -93,6 +93,18 @@ A redraw resolved every tool card with `querySelector('[data-tool-id="…"]')` �
 On a chat switch, `renderTranscript` clears the card index along with the rows it indexed (the `refs._transcriptKey !== key` branch).
 
 `scripts/test-chat-card-index.js` counts DOM queries against a stub transcript: repeat lookups must perform no query, a removed card must not be returned, re-keying must move the entry, the args index must rebuild on a new array identity and be reused otherwise, and 2000 lookups over a 400-call transcript must stay fast.
+### Progress and local-error stability
+
+Top-level progress cards use `data-tool-id` and `data-progress-id` with the same call id. `report_progress` calls and successful results share the progress builder, while a task update upgrades its existing call card in place. The reconciler therefore keeps one card in the call's conversation slot instead of culling a detached, unkeyed progress notification. Saved results restore the bar when reopening the chat, including result-first backfill; new cards insert through `transcriptInsert` so the backfill anchor is respected. `progressLevelOf` normalizes percentages for both top-level and nested bars.
+
+`appendErrorCard` normalizes local failure content to the same `⚠` marker used by persisted failures. Without it, rebuilding the local row classified it as a normal system message and lost its Retry action. An unchanged reconcile keeps the mounted error, Retry button, and progress nodes without mutation.
+
+The isolated browser regression checks live/replayed progress, task updates, result-first backfill, local-error Retry restoration, node identity, and conversation order at 360, 390, and 430 px:
+
+```bash
+node scripts/test-chat-element-stability.mjs
+```
+
 ### Off-screen row skipping
 
 `frontend/src/chat-transcript.css` applies `content-visibility: auto` with `contain-intrinsic-size: auto 120px` to the transcript's message rows and tool cards. After every older page has loaded the whole chat stays in the DOM, so a long transcript otherwise lays out and paints hundreds of off-screen rows; this lets the browser skip them, and the intrinsic size keeps the scrollbar geometry stable instead of collapsing skipped rows to zero. This is the cheap first step — the shared `frontend/src/virtual-list.js` is not wired into the chat.
