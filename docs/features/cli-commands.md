@@ -4,6 +4,16 @@
 
 The `mouaif` command starts the app server and has two small helper commands. This page lists every command, option, and environment variable, with ready-to-copy examples. New to mouaif? Start with [Getting started](./getting-started.md).
 
+## Usage
+
+```bash
+npx mouaif serve --auth
+```
+
+Open the printed URL (default `http://localhost:5732`) and sign in. That one command is enough for a single computer; the recipes below cover a phone on the same Wi-Fi, a reverse proxy, and a second instance.
+
+Every example works with `npx` too: replace `mouaif` with `npx mouaif`, for example `npx mouaif serve --auth`.
+
 ## Quick reference
 
 | Command | What it does |
@@ -13,8 +23,6 @@ The `mouaif` command starts the app server and has two small helper commands. Th
 | `mouaif import-chats <projectDir>` | Import legacy JSON chat files. |
 | `mouaif --version` (`-V`) | Print the version number. |
 | `mouaif --help`, `mouaif help <cmd>` | Show help for mouaif or one command. |
-
-Every example works with `npx` too: replace `mouaif` with `npx mouaif`, for example `npx mouaif serve --auth`.
 
 ## Common recipes
 
