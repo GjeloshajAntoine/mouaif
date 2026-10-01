@@ -50,6 +50,7 @@
 @import './chat-cards.css';
 @import './chat-markdown.css';
 @import './chat-composer.css';
+@import './screen-capture.css';
 @import './dictation.css';
 @import './chat-at-mention.css';
 @import './tool-cards.css';

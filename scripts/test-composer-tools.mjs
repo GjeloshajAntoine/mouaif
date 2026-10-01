@@ -61,33 +61,39 @@ check('both optional buttons are shown by default', () => {
 });
 
 check('composerToolsFromApp reads both booleans', () => {
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: false } }), { dictation: false, image: false, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: false } }), { dictation: true, image: false, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: true } }), { dictation: false, image: true, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: true } }), { dictation: true, image: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: false } }), { dictation: false, image: false, capture: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: false } }), { dictation: true, image: false, capture: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: true } }), { dictation: false, image: true, capture: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: true } }), { dictation: true, image: true, capture: true, status: true });
 });
 
 check('a value it cannot read leaves the button shown, never hidden', () => {
-  // Anything shaped differently is "a settings read that failed or never
-  // happened" — not "the user hid a button". Both flags fall back to shown.
+  // Anything shaped differently reads as the defaults.
   for (const snapshot of [{}, null, undefined, { app: null }, { app: [] }, { app: 'nope' }, 0]) {
-    assert.deepEqual(composerToolsFromApp(snapshot), { dictation: true, image: true, status: true },
+    assert.deepEqual(composerToolsFromApp(snapshot), { dictation: true, image: true, capture: true, status: true },
       'snapshot ' + JSON.stringify(snapshot) + ' must read as the defaults');
   }
-  // And per key: an absent, numeric, null or prose value resolves to shown.
   for (const raw of [undefined, null, 1, 0, 'yes', 'on', {}]) {
     const got = composerToolsFromApp({ app: { dictationButton: raw, imageButton: raw } });
-    assert.deepEqual(got, { dictation: true, image: true, status: true }, 'raw ' + JSON.stringify(raw) + ' must read as shown');
+    assert.deepEqual(got, { dictation: true, image: true, capture: true, status: true }, 'raw ' + JSON.stringify(raw) + ' must read as shown');
   }
 });
 
 check('the string forms a TEXT store hands back are honoured', () => {
-  // The app store holds a TEXT blob, so a hand-edited store.sqlite (or a
-  // settings file merged from a project) can legitimately hand us 'false'.
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false', imageButton: 'false' } }), { dictation: false, image: false, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'true', imageButton: 'true' } }), { dictation: true, image: true, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false' } }), { dictation: false, image: true, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { imageButton: 'false' } }), { dictation: true, image: false, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false', imageButton: 'false' } }), { dictation: false, image: false, capture: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'true', imageButton: 'true' } }), { dictation: true, image: true, capture: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false' } }), { dictation: false, image: true, capture: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { imageButton: 'false' } }), { dictation: true, image: false, capture: true, status: true });
+});
+
+check('screen capture defaults on and can be disabled', () => {
+  assert.equal(COMPOSER_TOOLS_DEFAULT.capture, true);
+  assert.equal(composerToolsFromApp({ app: { screenCaptureButton: false } }).capture, false);
+  assert.equal(composerToolsFromApp({ app: { screenCaptureButton: 'false' } }).capture, false);
+  assert.equal(composerToolsFromApp({ app: { screenCaptureButton: 'nope' } }).capture, true);
+  assert.match(read('src/settings.js'), /screenCaptureButton: true,/);
+  assert.match(read('src/server-shared.js'), /'screenCaptureButton'/);
+  assert.match(read('frontend/src/components/SettingsDefaults.jsx'), /'screenCaptureButton', \{ screenCaptureButton: v \}/);
 });
 
 check('the status line switch reads the same way, shown by default', () => {
@@ -150,18 +156,21 @@ check('the running server would round-trip both keys', () => {
     // Fresh module registry so settings.js captures the temp home.
     const settings = require(path.join(ROOT, 'src/settings.js'));
     const { settingsForClient } = require(path.join(ROOT, 'src/server-shared.js'));
-    settings.setApp({ dictationButton: false, imageButton: false });
+    settings.setApp({ dictationButton: false, imageButton: false, screenCaptureButton: false });
     const stored = settings.getApp();
     assert.equal(stored[DICTATION_BUTTON_KEY], false, 'settings.js persists the mic key');
     assert.equal(stored[IMAGE_BUTTON_KEY], false, 'settings.js persists the image key');
+    assert.equal(stored.screenCaptureButton, false, 'settings.js persists the capture key');
     const published = settingsForClient(stored);
     assert.equal(published[DICTATION_BUTTON_KEY], false, 'the client sees the hidden microphone');
     assert.equal(published[IMAGE_BUTTON_KEY], false, 'the client sees the hidden image button');
+    assert.equal(published.screenCaptureButton, false, 'the client sees the hidden capture button');
     // The defaults are published too, and they mean "shown" — which is the
     // state a fresh install and the Settings → reset path both land on.
     const defaults = settingsForClient(settings.DEFAULTS);
     assert.equal(defaults[DICTATION_BUTTON_KEY], true, 'the default is a shown microphone');
     assert.equal(defaults[IMAGE_BUTTON_KEY], true, 'the default is a shown image button');
+    assert.equal(defaults.screenCaptureButton, true, 'capture is shown after reset');
   } finally {
     if (priorHome === undefined) delete process.env.MOUAIF_HOME;
     else process.env.MOUAIF_HOME = priorHome;

@@ -31,6 +31,7 @@
     "start": "node bin/mouaif.js",
     "dev": "node bin/mouaif.js serve --watch",
     "dev:web": "vite --config frontend/vite.config.js",
+    "test:screen-capture": "node scripts/test-screen-capture.mjs && node scripts/test-composer-tools.mjs && node scripts/test-screen-capture-ui.mjs",
     "build:web": "vite build --config frontend/vite.config.js",
     "test:skills": "node scripts/test-agent-skills.js && node scripts/test-agent-skills-stream.js && node scripts/test-agent-skills-ui.mjs",
     "test:chat-view": "node scripts/test-chat-send-preparation.js && node scripts/test-chat-cost-summary.js && node scripts/test-chat-scroll-performance.js && node scripts/test-chat-scroll-nav.mjs && node scripts/test-chat-pagination-scroll.mjs && node scripts/test-chat-draft-performance.js && node scripts/test-message-copy.js && node scripts/test-tool-popup-icon.mjs && node scripts/test-live-subscription.js && node scripts/test-chat-reentry.js && node scripts/test-chat-stream-abort.js",

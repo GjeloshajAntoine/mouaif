@@ -1,6 +1,6 @@
 // mouaif web — which tools the composer shows
 //
-// Two optional composer buttons can be switched off app-wide from
+// Optional composer controls can be switched off app-wide from
 // Settings → App defaults → Chat defaults:
 //
 //   * the dictation microphone (`dictationButton`) — for the people who never
@@ -8,6 +8,8 @@
 //     nothing on every message;
 //   * the image button (`imageButton`) — for the people who dictate but never
 //     attach a picture;
+//   * the screen capture button (`screenCaptureButton`) — a send-style button
+//     outside the textbox that opens local image capture/review;
 //   * the status line under the composer (`statusBar`) — the one-line row that
 //     says "streaming…", the turn cost, "dictation added". Hidden, the row
 //     keeps only the home-indicator inset; an error state is still shown so a
@@ -34,12 +36,13 @@
 // hand us `'false'`.
 export const DICTATION_BUTTON_KEY = 'dictationButton';
 export const IMAGE_BUTTON_KEY = 'imageButton';
+export const SCREEN_CAPTURE_BUTTON_KEY = 'screenCaptureButton';
 export const STATUS_BAR_KEY = 'statusBar';
 
 // On by default: these are the buttons the composer has always drawn, and a
 // feature that silently disappeared after an update is worse than one the user
 // turns off on purpose.
-export const COMPOSER_TOOLS_DEFAULT = Object.freeze({ dictation: true, image: true, status: true });
+export const COMPOSER_TOOLS_DEFAULT = Object.freeze({ dictation: true, image: true, capture: true, status: true });
 
 // readBool(raw, fallback) — the shared coercion. A real boolean wins; the two
 // strings a TEXT store can hand back are read as what they say; anything else
@@ -51,17 +54,18 @@ if (raw === 'false') return false;
 return fallback;
 }
 
-// composerToolsFromApp(snapshot) -> { dictation, image, status }
+// composerToolsFromApp(snapshot) -> { dictation, image, capture, status }
 //
 // `snapshot` is a `loadApp()` result (`{ app: { … } }`). Anything shaped
 // differently reads as the defaults.
 export function composerToolsFromApp(snapshot) {
 const bag = snapshot && snapshot.app;
 const defaults = COMPOSER_TOOLS_DEFAULT;
-if (!bag || typeof bag !== 'object') return { dictation: defaults.dictation, image: defaults.image, status: defaults.status };
+if (!bag || typeof bag !== 'object') return { ...defaults };
 return {
 dictation: readBool(bag[DICTATION_BUTTON_KEY], defaults.dictation),
 image: readBool(bag[IMAGE_BUTTON_KEY], defaults.image),
+capture: readBool(bag[SCREEN_CAPTURE_BUTTON_KEY], defaults.capture),
 status: readBool(bag[STATUS_BAR_KEY], defaults.status)
 };
 }

@@ -18,7 +18,9 @@
 
 ### The preference
 
-Both keys are **app-level display preferences** in the app SQLite store, next to `fileOrbButton`, `enterForNewline` and `autoRetry`. They change how the composer looks, never what the app can do, so a per-chat record would add a column and a migration for a cosmetic toggle — and would give the user a second place to look for one switch.
+`screenCaptureButton` is the fourth optional control, with its own app-default switch and `capture` render flag. It is outside the textbox and lazily opens the [local capture/review sheet](./screen-capture.md). Like the other controls its default is `true`; turning it off hides the trigger. All four keys (`dictationButton`, `imageButton`, `screenCaptureButton`, `statusBar`) are in `Settings.DEFAULTS` and `CLIENT_SETTINGS_KEYS`.
+
+The microphone and image-button keys are **app-level display preferences** in the app SQLite store, next to `fileOrbButton`, `enterForNewline` and `autoRetry`. They change how the composer looks, never what the app can do, so a per-chat record would add a column and a migration for a cosmetic toggle — and would give the user a second place to look for one switch.
 
 Reading is defensive, and a value that cannot be understood means **shown**:
 
@@ -26,15 +28,19 @@ Reading is defensive, and a value that cannot be understood means **shown**:
 // frontend/src/components/chat/composerTools.js
 export const DICTATION_BUTTON_KEY = 'dictationButton';
 export const IMAGE_BUTTON_KEY = 'imageButton';
-export const COMPOSER_TOOLS_DEFAULT = Object.freeze({ dictation: true, image: true });
+export const SCREEN_CAPTURE_BUTTON_KEY = 'screenCaptureButton';
+export const STATUS_BAR_KEY = 'statusBar';
+export const COMPOSER_TOOLS_DEFAULT = Object.freeze({ dictation: true, image: true, capture: true, status: true });
 
 export function composerToolsFromApp(snapshot) {
   const bag = snapshot && snapshot.app;
   const defaults = COMPOSER_TOOLS_DEFAULT;
-  if (!bag || typeof bag !== 'object') return { dictation: defaults.dictation, image: defaults.image };
+  if (!bag || typeof bag !== 'object') return { ...defaults };
   return {
     dictation: readBool(bag[DICTATION_BUTTON_KEY], defaults.dictation),
-    image: readBool(bag[IMAGE_BUTTON_KEY], defaults.image)
+    image: readBool(bag[IMAGE_BUTTON_KEY], defaults.image),
+    capture: readBool(bag[SCREEN_CAPTURE_BUTTON_KEY], defaults.capture),
+    status: readBool(bag[STATUS_BAR_KEY], defaults.status)
   };
 }
 ```
