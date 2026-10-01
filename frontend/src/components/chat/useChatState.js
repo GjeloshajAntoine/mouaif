@@ -543,7 +543,7 @@ setCustomActions(response.body.actions);
     const t = body.tools;
     if (t && typeof t === 'object') {
       const auth = {};
-      for (const name of ['shell', 'file', 'subagent', 'task', 'webpreview', 'restart_app', 'report_progress', 'mouaif']) {
+      for (const name of ['shell', 'file', 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit', 'subagent', 'task', 'webpreview', 'restart_app', 'report_progress', 'mouaif']) {
         if (!t[name]) continue;
         auth[name] = {
           mode: t[name].mode || 'ask',
@@ -750,17 +750,21 @@ await sendTurn(state, refs, {
     }
   }, [projectDir, chatId, updateChatBound]);
 
-  const onToggleTool = useCallback((name, next) => {
-    toggleTool(name, next, state, refs, updateChatBound);
+  const onToggleTool = useCallback(async (name, next) => {
+    const saving = toggleTool(name, next, state, refs, updateChatBound);
     // The composer ToolPopup renders its tree from `state.tools`, which is
     // a mutable bag value — toggling a tool rewrites `state.tools` but does
     // not itself re-render ChatView, so the popup would keep showing a stale
     // tree (stale half-check / expanded groups). Bump the stamp so the popup
     // re-renders and recomputes its groups from the new filter.
     setToolDataStamp((v) => v + 1);
+    await saving;
+    setToolDataStamp((v) => v + 1);
   }, [updateChatBound]);
-  const onToggleToolGroup = useCallback((names, next) => {
-    toggleToolGroup(names, next, state, refs, updateChatBound);
+  const onToggleToolGroup = useCallback(async (names, next) => {
+    const saving = toggleToolGroup(names, next, state, refs, updateChatBound);
+    setToolDataStamp((v) => v + 1);
+    await saving;
     setToolDataStamp((v) => v + 1);
   }, [updateChatBound]);
   const onToggleAgentFiles = useCallback((next) => {
@@ -852,7 +856,8 @@ await sendTurn(state, refs, {
     const entry = mode == null ? null : { mode, allowlist: allowlist || [] };
     const seq = ++state._authSaveSeq;
     const r = await saveChatToolAuthorization(d, chatId, { native: { [tool]: entry } });
-    if (seq !== state._authSaveSeq) return;
+    if (state.props.projectDir !== d || state.props.chatId !== chatId) return false;
+    if (seq !== state._authSaveSeq) return r.status === 200;
     if (r.status === 200 && r.body) {
       // The response is the chat-scoped view of EVERY tool (chat override
       // layered over the project value), so one save cannot leave the other
@@ -861,7 +866,8 @@ await sendTurn(state, refs, {
       if (state._updateToolsCard) state._updateToolsCard();
       // Re-render the composer ToolPopup (it reads the same auth state).
       setAuthStamp((n) => n + 1);
-    }
+    } else if (status.current) status.current.textContent = 'Tool permission was not saved: HTTP ' + r.status;
+    return r.status === 200;
   };
 
   // Save an MCP authorization patch ({ shared?, servers?, tools? }) for
@@ -873,13 +879,15 @@ await sendTurn(state, refs, {
     if (!d || !chatId || !patch || typeof patch !== 'object') return;
     const seq = ++state._authSaveSeq;
     const r = await saveChatMcpAuthorization(d, chatId, patch);
-    if (seq !== state._authSaveSeq) return;
+    if (state.props.projectDir !== d || state.props.chatId !== chatId) return false;
+    if (seq !== state._authSaveSeq) return r.status === 200;
     if (r.status === 200 && r.body) {
       applyChatAuthResponse(r.body);
       if (state._updateToolsCard) state._updateToolsCard();
       // Re-render the composer ToolPopup (it reads the same auth state).
       setAuthStamp((n) => n + 1);
-    }
+    } else if (status.current) status.current.textContent = 'Tool permission was not saved: HTTP ' + r.status;
+    return r.status === 200;
   };
 
   // Start an MCP server on demand from the chat tools tree's reload

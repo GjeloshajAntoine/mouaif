@@ -7,7 +7,7 @@
 import { fetchJson } from '../../api.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { h, render } from 'preact';
-import { ToolTree, buildToolGroups, groupToolNames, childToolName } from '../ToolTree.jsx';
+import { ToolTree, buildToolGroups, groupToolNames, childToolName, toolPermission } from '../ToolTree.jsx';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
 import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
@@ -67,7 +67,7 @@ function buildToolsCard(state) {
   const note = document.createElement('span');
   note.className = 'chat-view__tools-card-note';
   note.textContent = (t.filter == null)
-? 'all on — tap to change'
+? 'all permitted tools — tap to change'
 : 'applies next turn';
 head.appendChild(title); head.appendChild(note);
 // Which rows carry this chat's own Off/Ask/Allow override, so the scope of
@@ -96,7 +96,8 @@ head.appendChild(scoped);
     t.catalog,
     state.mcpServers || [],
     t.filter,
-    state.usedTools || new Set()
+    state.usedTools || new Set(),
+    { native: state.toolAuth || {}, mcp: state.mcpAuth || {} }
   );
 
   // Seed each MCP group's busy flag from the hook's in-flight server id.
@@ -145,7 +146,7 @@ head.appendChild(scoped);
       mode: cur.mode,
       allowlist: cur.allowlist,
       modes: toolName === 'ask_user' ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
-      namePrefix: 'chat-auth',
+      namePrefix: 'chat-auth-' + g.id,
       // A tap writes THIS CHAT's mode in one request. The endpoint
       // replaces the entry, so the stored value always equals the tap;
       // a separate "clear" write is both redundant and harmful — the two
@@ -1080,9 +1081,48 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
     // stored list can carry names of tools that have since gone away.
     nextFilter = allNames.every((n) => set.has(n)) ? null : Array.from(set);
   }
-  state.tools = Object.assign({}, state.tools || cur, { filter: nextFilter });
+  const saveNative = state._saveToolAuth;
+  const saveMcp = state._saveMcpAuth;
+  const optimistic = Object.assign({}, state.tools || cur, { filter: nextFilter });
+  state.tools = optimistic;
   updateToolsCard(refs, state);
-  await updateChat({ tools: nextFilter });
+  try {
+    if (await updateChat({ tools: nextFilter }) === false) throw new Error('Tool selection was not saved');
+    if (state.tools !== optimistic) return true;
+    if (next) {
+      // Selection and permission are separate gates. Checking an Off tool
+      // must restore Ask, not leave a selected tool hidden from the model.
+      const native = new Set();
+      const mcp = { servers: {}, tools: {} };
+      for (const name of wanted) {
+        const cfg = toolPermission(name, state.toolAuth || {}, state.mcpAuth || {});
+        if (cfg.mode !== 'off') continue;
+        if (name.startsWith('mcp__')) {
+          const slug = name.slice(5).split('__')[0];
+          mcp.servers[slug] = { mode: 'ask', allowlist: [] };
+          mcp.tools[name] = { mode: 'ask', allowlist: [] };
+        } else {
+          const entry = (cur.catalog || []).find((t) => t.name === name);
+          native.add(entry && entry.source === 'files' ? 'file' : name);
+        }
+      }
+      for (const tool of native) {
+        const cfg = (state.toolAuth || {})[tool] || {};
+        if (!saveNative || await saveNative(tool, 'ask', cfg.allowlist || []) === false) {
+          throw new Error('Tool permission was not saved');
+        }
+      }
+      if (Object.keys(mcp.tools).length && (!saveMcp || await saveMcp(mcp) === false)) {
+        throw new Error('Tool permission was not saved');
+      }
+    }
+    return true;
+  } catch (error) {
+    if (state.tools === optimistic) state.tools = cur;
+    if (state.tools === cur && refs.status && refs.status.current) refs.status.current.textContent = error.message || 'Could not save tool selection';
+    updateToolsCard(refs, state);
+    return false;
+  }
 }
 
 export { buildSetupCard, buildToolsCard };

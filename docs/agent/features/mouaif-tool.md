@@ -19,6 +19,8 @@ groupToolNames(group)  // a category row  -> ['mouaif']; a catalog group -> its 
 childToolName(group, toolId)  // a category child -> 'mouaif'; a leaf -> its own id
 ```
 
+`buildToolGroups` also accepts effective native/MCP permissions; `toolPermission` keeps Off tools unchecked even when the chat filter is `null`. `toggleToolGroup` saves the filter and, when enabling a disabled tool, restores its chat-scoped gate to Ask. Both chat surfaces re-render after success or failure. The two category segments have distinct radio-name prefixes, avoiding browser radio-group collisions while sharing the one stored permission.
+
 Both chat surfaces call them (`cards.js` passes the result to `state._toggleTool` / `state._toggleToolGroup`, `ToolPopup.jsx` to its `onToggleTool` / `onToggleToolGroup` props), and `SettingsProject.jsx` carries `toolName` on its own inline rows. Do not re-inline the rule at a call site: the first fix did exactly that, landed in the popup and missed the card, and the card's action checkboxes were dead until `groupToolNames`/`childToolName` gave the two surfaces one home. `scripts/test-mouaif-tool-toggle.mjs` asserts both surfaces import and call the helpers, and fails if either re-inlines the logic.
 
 ```js

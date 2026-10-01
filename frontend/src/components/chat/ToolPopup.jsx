@@ -21,7 +21,7 @@ import { useVisualViewport } from '../../hooks/useVisualViewport.js';
 // is the shared ToolAuthSeg (../settings/toolAuth.js) — the same
 // component the chat tools card and project settings render, so every
 // tool row (subagent included) is built by one code path.
-function AuthSegment({ toolName, current, onSave }) {
+function AuthSegment({ toolName, groupId, current, onSave }) {
 if (!current || !current.mode) return null;
 return h(ToolAuthSeg, {
 tool: toolName,
@@ -29,7 +29,7 @@ name: toolName,
 mode: current.mode,
 allowlist: Array.isArray(current.allowlist) ? current.allowlist : [],
 modes: toolName === 'ask_user' ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
-namePrefix: 'popup-auth',
+namePrefix: 'popup-auth-' + groupId,
 // Same contract as the transcript tools card: the popup's pick is a
 // per-chat override, written in ONE request (decisions §17). The old
 // clear-then-write pair raced, so a slow clear could revert the pick.
@@ -89,7 +89,7 @@ export function ToolPopup(props) {
   const filter = tools && tools.filter;
   const used = usedTools || new Set();
   const servers = mcpServers || [];
-  const groups = buildToolGroups(catalog, servers, filter, used);
+  const groups = buildToolGroups(catalog, servers, filter, used, { native: toolAuth || {}, mcp: mcpAuth || {} });
 
   // Inject auth segments on known groups
   const auth = toolAuth || {};
@@ -115,6 +115,7 @@ files: 'file'
       const cur = auth[authName] || { mode: 'ask' };
       g.control = h(AuthSegment, {
         toolName: authName,
+        groupId: g.id,
         current: { mode: segMode(cur.mode), allowlist: Array.isArray(cur.allowlist) ? cur.allowlist : [] },
         onSave: onSaveToolAuth
       });

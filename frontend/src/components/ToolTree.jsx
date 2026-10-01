@@ -411,10 +411,23 @@ export function childToolName(group, toolId) {
   return (child && child.toolName) || toolId;
 }
 
-export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set()) {
+// The chat authorization response already resolves app/project/chat layers.
+// Reuse it for checkbox display and Off-to-Ask toggles on both chat surfaces.
+export function toolPermission(name, native = {}, mcp = {}) {
+  if (name.startsWith('mcp__')) {
+    const slug = name.slice(5).split('__')[0];
+    return (mcp.tools && mcp.tools[name]) || (mcp.servers && mcp.servers[slug]) || mcp;
+  }
+  const file = ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit'].includes(name);
+  if (file && native.file && native.file.mode === 'off') return native.file;
+  return native[name] || (file ? native.file : null) || {};
+}
+
+export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set(), permissions = {}) {
   const groups = [];
   const selected = Array.isArray(filter) ? new Set(filter) : null;
-  const isOn = (name) => selected == null || selected.has(name);
+  const isOn = (name) => (selected == null || selected.has(name))
+    && toolPermission(name, permissions.native, permissions.mcp).mode !== 'off';
   const allToolsOn = (tools) => tools.length > 0 && tools.every((t) => t && isOn(t.name));
   const leaf = (t, extra) => Object.assign({
     id: t.name,

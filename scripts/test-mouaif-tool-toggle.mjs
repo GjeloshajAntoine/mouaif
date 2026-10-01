@@ -27,6 +27,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import os from 'node:os';
+import path from 'node:path';
+import { createRequire } from 'node:module';
 
 // ---- ToolTree: the shape and the shared name resolvers -------------------
 const treeSource = fs.readFileSync('frontend/src/components/ToolTree.jsx', 'utf8')
@@ -38,8 +41,8 @@ const treeContext = vm.createContext({
   h: (tag, props, ...children) => ({ tag, props: props || {}, children: children.flat(9).filter((c) => c != null && c !== false) })
 });
 vm.runInContext(treeSource, treeContext);
-const { buildToolGroups, groupToolNames, childToolName } =
-  vm.runInContext('({ buildToolGroups, groupToolNames, childToolName })', treeContext);
+const { buildToolGroups, groupToolNames, childToolName, toolPermission } =
+  vm.runInContext('({ buildToolGroups, groupToolNames, childToolName, toolPermission })', treeContext);
 
 // Values built inside the VM realm carry that realm's Array prototype, so
 // `deepStrictEqual` would compare prototypes and fail on identical contents.
@@ -142,7 +145,8 @@ const cardsContext = vm.createContext({
   ToolTree: 'tool-tree',
   buildToolGroups,
   groupToolNames,
-  childToolName
+  childToolName,
+  toolPermission
 });
 const rendered = [];
 vm.runInContext(
@@ -171,6 +175,8 @@ function cardHandlers(filter) {
 
 {
   const { props, state: s } = cardHandlers();
+  const categorySegments = props.groups.filter((g) => g.id.startsWith('mouaif')).map((g) => g.control.props.namePrefix);
+  assert.equal(new Set(categorySegments).size, 2, 'category segments use independent browser radio groups');
   // Unchecking one Chat action must name the TOOL. The bug pushed `mouaif:list`.
   props.onToggleTool('mouaif', 'mouaif:list', false);
   assert.equal(s._seenTool.name, 'mouaif', 'the card resolves a category child to mouaif');
@@ -225,7 +231,52 @@ const state2 = { tools: { catalog: liveCatalog, filter: null }, mcpServers: [] }
 await toggleToolGroup(groupToolNames(settings), false, state2, refs, updateChat);
 assert.ok(!patched.at(-1).tools.includes('mouaif'), 'the settings category writes the same tool');
 
-// ---- 4. Both chat surfaces resolve through the shared helper -------------
+// ---- 4. Selection and authorization agree -------------------------------
+const disabledGroups = buildToolGroups(liveCatalog, [], null, new Set(), {
+  native: { shell: { mode: 'off' }, mouaif: { mode: 'off' }, file: { mode: 'off' } }
+});
+assert.ok(disabledGroups.filter((g) => ['shell', 'mouaif', 'mouaif-settings', 'files'].includes(g.id))
+  .every((g) => !g.checked && g.tools.every((t) => !t.checked)), 'Off permissions cannot render as selected tools');
+
+const authWrites = [];
+const offState = { tools: { catalog: liveCatalog, filter: [] }, mcpServers: [], toolAuth: { mouaif: { mode: 'off', allowlist: ['keep'] } },
+  _saveToolAuth: async (...args) => { authWrites.push(args); return true; } };
+await toggleToolGroup(['mouaif'], true, offState, refs, updateChat);
+same(authWrites, [['mouaif', 'ask', ['keep']]], 'checking an Off tool restores Ask without granting Allow');
+assert.ok(offState.tools.filter.includes('mouaif'), 'the enabled tool also enters the chat selection');
+authWrites.length = 0;
+offState.toolAuth.mouaif.mode = 'allow';
+await toggleToolGroup(['mouaif'], true, offState, refs, updateChat);
+assert.equal(authWrites.length, 0, 'an already allowed tool keeps its permission');
+
+const failedState = { tools: { catalog: liveCatalog, filter: [] }, mcpServers: [] };
+const previousTools = failedState.tools;
+await toggleToolGroup(['shell'], true, failedState, refs, async () => false);
+assert.equal(failedState.tools, previousTools, 'a failed selection save restores the prior checkbox state');
+
+const fileState = { tools: { catalog: liveCatalog, filter: [] }, mcpServers: [], toolAuth: { file: { mode: 'off' } },
+  _saveToolAuth: async (...args) => { authWrites.push(args); return true; } };
+authWrites.length = 0;
+await toggleToolGroup(['read_file'], true, fileState, refs, updateChat);
+same(authWrites, [['file', 'ask', []]], 'file checkbox restores the shared file permission');
+
+const mcpWrites = [];
+const mcpName = 'mcp__fixture__read';
+const mcpState = { tools: { catalog: [{ name: mcpName, kind: 'mcp', source: 'fixture' }], filter: [] }, mcpServers: [],
+  mcpAuth: { mode: 'off' }, _saveMcpAuth: async (patch) => { mcpWrites.push(patch); return true; } };
+await toggleToolGroup([mcpName], true, mcpState, refs, updateChat);
+same(mcpWrites, [{ servers: { fixture: { mode: 'ask', allowlist: [] } }, tools: { [mcpName]: { mode: 'ask', allowlist: [] } } }],
+  'MCP checkbox restores the server and tool gate without granting Allow');
+
+const failedPermission = { tools: { catalog: liveCatalog, filter: [] }, mcpServers: [], toolAuth: { shell: { mode: 'off' } },
+  _saveToolAuth: async () => false };
+assert.equal(await toggleToolGroup(['shell'], true, failedPermission, refs, updateChat), false);
+assert.equal(failedPermission.tools.filter.length, 0, 'failed permission saves cannot leave a checked tool');
+
+const shellOnly = buildToolGroups([{ name: 'shell' }], [], []);
+assert.equal(shellOnly[0].checked, false, 'selection off remains off even when permission is Ask');
+
+// ---- 5. Both chat surfaces resolve through the shared helper -------------
 for (const relPath of ['frontend/src/components/chat/cards.js', 'frontend/src/components/chat/ToolPopup.jsx']) {
   const src = fs.readFileSync(relPath, 'utf8');
   assert.match(src, /import \{[^}]*groupToolNames[^}]*childToolName[^}]*\} from '\.\.\/ToolTree\.jsx'/, relPath + ' imports the shared resolvers');
@@ -238,4 +289,46 @@ for (const relPath of ['frontend/src/components/chat/cards.js', 'frontend/src/co
   assert.ok(!/\.some\(\(t(ool)?\) => t(ool)?\.toolName\)/.test(src), relPath + ' carries no inlined copy of the child resolver');
 }
 
-console.log('mouaif tool toggle: category rows resolve to the tool and the write lands passed');
+// A checkbox-driven re-enable reaches the actual model request, using an
+// isolated store and the production chat filter + authorization resolver.
+const home = fs.mkdtempSync(path.join(os.homedir(), '.mouaif-checkbox-test-'));
+process.env.MOUAIF_HOME = path.join(home, 'store');
+const require = createRequire(import.meta.url);
+const settingsStore = require('../src/settings.js');
+const chatStore = require('../src/chats.js');
+const authorization = require('../src/tools/authorization.js');
+const originalFetch = global.fetch;
+try {
+  settingsStore.setProject(home, { tools: { mouaif: { mode: 'off' } } });
+  const host = chatStore.createChat(home, { tools: [] });
+  const liveState = { tools: { catalog: liveCatalog, filter: [] }, mcpServers: [],
+    toolAuth: authorization.getAuthorization(home, host.id).tools,
+    _saveToolAuth: async (tool, mode, allowlist) => {
+      authorization.setChatAuthorization(home, host.id, { native: { [tool]: { mode, allowlist } } });
+      liveState.toolAuth = authorization.getAuthorization(home, host.id).tools;
+      return true;
+    } };
+  await toggleToolGroup(['mouaif'], true, liveState, refs, async (patch) => {
+    chatStore.updateChat(home, host.id, patch);
+    return true;
+  });
+  assert.equal(settingsStore.getProject(home).tools.mouaif.mode, 'off', 'checkbox never changes the project gate');
+  global.fetch = async (_url, init) => {
+    const request = JSON.parse(init.body);
+    assert.ok(request.tools.some((tool) => tool.function.name === 'mouaif'), 'the checked tool reaches the model');
+    assert.ok(!request.tools.some((tool) => tool.function.name === 'shell'), 'unselected tools stay absent');
+    return new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Ready' } }] }) + '\n\ndata: [DONE]\n\n');
+  };
+  const result = await require('../src/ai-stream.js').streamChat({
+    model: { id: 'fixture', provider: 'openai-compatible', baseUrl: 'http://fixture/v1' },
+    projectDir: home, chatId: host.id, enabledTools: chatStore.getChat(home, host.id).tools,
+    promptSize: 'average', messages: [{ role: 'user', content: 'Ready?' }], onEvent() {}
+  });
+  assert.equal(result.ok, true, JSON.stringify(result));
+} finally {
+  global.fetch = originalFetch;
+  settingsStore.close();
+  fs.rmSync(home, { recursive: true, force: true });
+}
+
+console.log('mouaif tool toggle: category names, Off-to-Ask selection, failures, and model advertisement passed');
