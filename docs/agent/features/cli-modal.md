@@ -70,7 +70,9 @@ Who reads stdin is tracked as `owner` in [CliModal.jsx](../../../frontend/src/co
 
 Claims scoping: `namesIn(dirEntries, word)` matches a word only when it lies inside `dirEntries.relDir` (or *is* it — `src` completes to `src/`), and returns the whole word up to the names being appended, prefix included. That last part is load-bearing: without it a name-phase completion drops the command, and `ls src/` becomes `src/`.
 
-`suggestionsFor({ draft, history, entries })` filters by the draft (substring, prefix matches first, source order inside a rank), drops a candidate equal to the draft, de-dupes and caps at `MAX_SUGGESTIONS` (7). It never refuses to run anything: a chip only calls `applySuggestion`, which rewrites `.cli__prompt` — **Enter is still the decision**.
+`suggestionsFor({ draft, history, entries, dirEntries })` filters by the draft (substring, prefix matches first, source order inside a rank), drops a candidate equal to the draft, de-dupes and caps at `MAX_SUGGESTIONS` (7). It never refuses to run anything: a chip only calls `applySuggestion`, which rewrites `.cli__prompt` — **Enter is still the decision**.
+
+A draft whose trailing word *names a listed folder* — `src`, `src/`, or a partial segment inside it (`src/comp`) — short-circuits to that folder's contents instead: `folderToList(dirEntries, word)` returns `{ head, names }`, and each chip is the whole line with a name appended (`ls src/` → `ls src/components/`). This is the phone's `ls`: Tab can only say "no further completion" at `src/`, which is true and useless without a way to see inside.
 
 ### Key row
 

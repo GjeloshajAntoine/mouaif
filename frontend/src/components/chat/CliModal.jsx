@@ -57,7 +57,12 @@ function completionNotice(report) {
   const n = report && typeof report.candidates === 'number' ? report.candidates : 0;
   switch (report && report.reason) {
     case 'empty': return 'Nothing to complete — type part of a command or a path.';
-    case 'ambiguous': return n > 1 ? 'No further completion — ' + n + ' matches.' : 'Nothing more to complete.';
+    // This is not a dead end and must not read like one: the word already names
+    // a directory whole, and the suggestion row now shows what is inside it, so
+    // the next step is a tap on a name rather than another Tab.
+    case 'ambiguous': return n > 1
+      ? 'Complete — ' + n + ' inside this folder; tap one below.'
+      : 'Nothing more to complete — tap a name below.';
     case 'none': return 'No match here — only this folder and the ones already opened are searched.';
     default: return '';
   }
@@ -574,8 +579,9 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   const suggestions = useMemo(() => suggestionsFor({
     draft: cmdText,
     history,
-    entries
-  }), [cmdText, history, entries]);
+    entries,
+    dirEntries
+  }), [cmdText, history, entries, dirEntries]);
 
   // Read at render: every output frame re-renders (outBuffer), so this follows
   // a program entering or leaving the alternate screen.

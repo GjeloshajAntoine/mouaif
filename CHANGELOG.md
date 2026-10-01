@@ -23,6 +23,13 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **A named folder now shows what is inside it** — at `frontend/` (or with a
+  partial segment inside it, `frontend/s`) Tab had nothing left to append, so
+  the sheet could only report "no further completion": true, and useless on a
+  phone with no way to run `ls`. The suggestion row now lists the folder's
+  contents, and a chip rewrites the whole line so the command survives the tap
+  (`ls frontend/` → `ls frontend/index.html`). The notice points at the row
+  instead of reading like a dead end.
 - **CLI Tab completes a folder you name** — typing `frontend/` (or `frontend`)
   and pressing Tab was a dead end: a directory was only ever listed when a
   completion *landed* on it, and a word already ending in `/` was refused

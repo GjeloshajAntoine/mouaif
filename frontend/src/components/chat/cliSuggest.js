@@ -29,6 +29,15 @@
 // becomes a list to read; the field is still right there for anything else.
 export const MAX_SUGGESTIONS = 7;
 
+// trailingWord(text) — the word the caret is on: everything after the last
+// whitespace. A trailing space means there is no word (''), which is the same
+// rule `completeLocally` completes by.
+function trailingWord(text) {
+  const base = String(text == null ? '' : text);
+  const at = base.search(/\S*$/);
+  return at === -1 ? '' : base.slice(at);
+}
+
 // MAX_HISTORY — how many of the session's own commands are kept. Newest wins
 // when the same command is sent twice.
 export const MAX_HISTORY = 40;
@@ -371,6 +380,25 @@ export function stepHistory(history, index, dir) {
 export function suggestionsFor(input) {
   const opts = input || {};
   const draft = String(opts.draft == null ? '' : opts.draft).trim();
+  const word = trailingWord(opts.draft);
+  // A word that names a folder — or is a partial segment inside one — shows the
+  // folder's *contents*. Without this a listed folder was invisible: Tab could
+  // only say "no further completion", which is true and useless on a phone whose
+  // whole point is that you cannot type `ls` to find out.
+  const inside = folderToList(opts.dirEntries, word);
+  if (inside) {
+    // The chip rewrites the whole line, so it keeps the command: `ls frontend/`
+    // offers `ls frontend/index.html`, never a bare `frontend/index.html`.
+    const head = String(opts.draft == null ? '' : opts.draft).slice(0, String(opts.draft == null ? '' : opts.draft).length - word.length) + inside.head;
+    const out = [];
+    for (const name of inside.names) {
+      const text = head + name;
+      if (!text || text === String(opts.draft == null ? '' : opts.draft) || out.some((c) => c.text === text)) continue;
+      out.push({ text, kind: 'file', rank: 0 });
+    }
+    return out.slice(0, MAX_SUGGESTIONS);
+  }
+
   const needle = draft.toLowerCase();
   const candidates = [];
 
@@ -391,4 +419,29 @@ export function suggestionsFor(input) {
   // listing's own dirs-first order) is kept.
   candidates.sort((a, b) => a.rank - b.rank);
   return candidates.slice(0, MAX_SUGGESTIONS);
+}
+
+// folderToList(dirEntries, word) → `{ head, names }` when the trailing word
+// names the listed directory or lies inside it — the states where the useful
+// next step is that folder's own contents rather than a history command.
+//
+// `head` is the part of the word before the names being offered (`frontend/`),
+// and `names` is the whole listing, or just the children matching the partial
+// segment the user has typed (`frontend/s` → `src/`). `null` for a word outside
+// the listing, so every other draft keeps the history/filter row.
+export function folderToList(dirEntries, word) {
+  if (!dirEntries || typeof dirEntries.relDir !== 'string' || !Array.isArray(dirEntries.names)) return null;
+  const relDir = dirEntries.relDir;
+  if (!relDir) return null;
+  const text = String(word == null ? '' : word);
+  // The folder's own name, written with or without its slash (`frontend`,
+  // `frontend/`) — the two states the user reaches first.
+  const trimmed = text.replace(/\/+$/, '');
+  if (trimmed === relDir) return { head: relDir + '/', names: dirEntries.names };
+  if (!text.startsWith(relDir + '/')) return null;
+  const rest = text.slice(relDir.length + 1);
+  if (rest === '' || rest.endsWith('/')) return { head: text, names: dirEntries.names };
+  const needle = rest.toLowerCase();
+  const names = dirEntries.names.filter((name) => name.toLowerCase().startsWith(needle) && name !== rest);
+  return { head: text.slice(0, text.length - rest.length), names };
 }

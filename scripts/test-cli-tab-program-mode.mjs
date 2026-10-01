@@ -117,6 +117,8 @@ try {
   const value = () => evaluate("document.querySelector('.cli__prompt').value");
   const keysClass = () => evaluate("document.querySelector('.cli__keys')?.className");
   const hint = () => evaluate("document.querySelector('.cli__hint')?.textContent");
+  // chips() — the suggestion row's labels, in order, as the user reads them.
+  const chips = () => evaluate("[...document.querySelectorAll('.cli__suggest-chip')].map((c) => c.textContent)");
   // tap(label) — touch the on-screen key the way a finger does, so the test
   // goes through the same pointer/touch/mouse/click sequence a phone sends.
   const tapKey = async (label) => {
@@ -197,12 +199,24 @@ try {
   assert.equal(await value(), 'frontend/vite.config.js', 'and a unique one completes inside the folder');
   assert.equal(posts.length, before, 'no completion ever reaches the child');
 
-  // Typing the slash by hand is the same thing, not a dead end.
+  // 5b. And the folder's contents are TAPPABLE — the notice must not be a dead
+  //     end on a phone whose whole point is that you cannot type `ls`.
   await type('frontend/');
+  await sleep(250);
+  assert.deepEqual(await chips(), ['frontend/build/', 'frontend/dist/', 'frontend/index.html', 'frontend/vite.config.js', 'frontend/vite-build.log'], 'a named folder offers its contents as chips');
   await tapKey('Tab');
   assert.equal(await value(), 'frontend/', 'a folder typed with its own slash is left as the folder');
-  assert.match(await hint(), /No further completion/, 'and it says there is nothing to add, rather than nothing at all');
+  assert.match(await hint(), /tap one below/, 'and the notice points at the chips instead of sounding like a dead end');
   assert.equal(posts.length, before, 'still nothing written to the child');
+
+  // The chip rewrites the whole line, command included.
+  await type('ls frontend');
+  await sleep(250);
+  assert.deepEqual(await chips(), ['ls frontend/build/', 'ls frontend/dist/', 'ls frontend/index.html', 'ls frontend/vite.config.js', 'ls frontend/vite-build.log'], 'chips keep the command in front of the path');
+  await evaluate("document.querySelector('.cli__suggest-chip').click()");
+  await sleep(150);
+  assert.equal(await value(), 'ls frontend/build/', 'tapping a chip fills the whole line, command and path');
+  assert.equal(posts.length, before, 'a chip only rewrites the field — Enter is still the decision');
 
   // 6. Nested paths: Tab keeps going past the project's top level. Naming the
   //    folder is what lists it, so the next Tab completes inside it — the case

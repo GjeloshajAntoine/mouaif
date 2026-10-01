@@ -327,6 +327,35 @@ async function run() {
     completeLocally('npm ru', cHist, cEntries, { relDir: 'npm', names: ['run'] }) === 'npm run ',
     completeLocally('npm ru', cHist, cEntries, { relDir: 'npm', names: ['run'] }));
 
+  // ---- 6d. A named folder offers its contents as chips ------------------
+  //
+  // "No further completion" is true and useless on a phone: you cannot see what
+  // is inside the folder. The suggestion row lists it instead, and a chip
+  // rewrites the whole line so the command survives the tap.
+  const chipsFor = (draft, dir) => suggestionsFor({ draft, history: cHist, entries: cEntries, dirEntries: dir }).map((c) => c.text);
+
+  t('a folder name offers what is inside it',
+    JSON.stringify(chipsFor('src', srcDir)) === JSON.stringify(['src/components/', 'src/styles.css', 'src/index.js']),
+    chipsFor('src', srcDir));
+  t('...and the same with the slash the user typed',
+    JSON.stringify(chipsFor('src/', srcDir)) === JSON.stringify(['src/components/', 'src/styles.css', 'src/index.js']),
+    chipsFor('src/', srcDir));
+  t('a command in front of the folder is kept in every chip',
+    JSON.stringify(chipsFor('ls src/', srcDir)) === JSON.stringify(['ls src/components/', 'ls src/styles.css', 'ls src/index.js']),
+    chipsFor('ls src/', srcDir));
+  t('a partial segment inside the folder filters its contents',
+    JSON.stringify(chipsFor('ls src/comp', srcDir)) === JSON.stringify(['ls src/components/']),
+    chipsFor('ls src/comp', srcDir));
+  t('a word outside the listed folder keeps the ordinary row',
+    chipsFor('pac', srcDir).indexOf('package.json') === 0, chipsFor('pac', srcDir));
+  t('a nested folder that is itself listed offers its own contents',
+    JSON.stringify(chipsFor('src/components/', { relDir: 'src/components', names: ['Chat.jsx'] })) === JSON.stringify(['src/components/Chat.jsx']),
+    chipsFor('src/components/', { relDir: 'src/components', names: ['Chat.jsx'] }));
+  t('a folder that has not been listed offers nothing rather than guessing',
+    chipsFor('src/', null).length === 0, chipsFor('src/', null));
+  t('an ordinary draft is untouched by the folder branch',
+    chipsFor('npm ru', srcDir).indexOf('npm run test:cli') === 0, chipsFor('npm ru', srcDir));
+
   // ---- 6c. Naming a folder, and typing the slash yourself ---------------
   //
   // The case a phone user reaches first: type a folder's name and press Tab to
