@@ -1367,6 +1367,14 @@ const landingScreens = [
     caption: 'Git — stage, review, commit'
   },
   {
+    id: 'editor',
+    title: 'Edit the file, not a diff of it',
+    text: 'A real code editor on the phone: browse the project tree, open a file with syntax highlighting, select lines and see the change before you save it — or push the selection straight into a chat draft.',
+    src: 'features/images/landing/editor.png',
+    alt: 'The file editor at 390 px showing src/store.js: the folder path and file list above, the Draft Craft, Revert and Save actions, highlighted JavaScript with three lines selected, and the byte count in the footer.',
+    caption: 'Editor — read, select, edit, save'
+  },
+  {
     id: 'draft-craft',
     title: 'Draw on the bug instead of describing it',
     text: 'Annotate an image with pen strokes and numbered pins that carry text, then attach the marked-up picture to any chat draft. It waits in the composer for you to send it — nothing is sent for you.',

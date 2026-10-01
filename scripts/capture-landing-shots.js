@@ -369,6 +369,75 @@ const SHOTS = [
       await new Promise((r) => setTimeout(r, 400));
     })()`,
     waitFor: '.draft-craft__marker-input'
+  },
+  {
+    // The code editor: a real file tree, a real CodeMirror buffer and the
+    // selection-to-draft button. Without this capture the hero claims an
+    // editor and shows nothing for it. The recipe walks the real list (tap
+    // `src`, then `store.js`) and selects three lines, which is also what
+    // lights the Draft Craft button the frame is meant to show.
+    file: 'editor.png',
+    hash: () => `#/chat/${state.chatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    recipe: `(async () => {
+      const waitFor = (selector, timeoutMs) => new Promise((resolve) => {
+        const deadline = Date.now() + (timeoutMs || 8000);
+        const tick = () => {
+          if (document.querySelector(selector)) return resolve(true);
+          if (Date.now() > deadline) return resolve(false);
+          setTimeout(tick, 120);
+        };
+        tick();
+      });
+      const pointer = (el, type, x, y, extra) => el.dispatchEvent(new PointerEvent(type,
+        Object.assign({ bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, pointerId: 1, pointerType: 'touch', isPrimary: true, button: 0, buttons: 1 }, extra || {})));
+      const rowNamed = (name) => Array.from(document.querySelectorAll('.fe__row'))
+        .find((r) => (r.querySelector('.fe__row-name') || {}).textContent === name);
+      // Open the file toolbar, then the file editor.
+      const trigger = document.querySelector('.file-toolbar__trigger');
+      if (trigger) trigger.click();
+      await waitFor('.file-toolbar__menu-item', 5000);
+      const label = (b) => {
+        const spans = b.querySelectorAll('span');
+        return (spans[spans.length - 1] ? spans[spans.length - 1].textContent : b.textContent || '').trim();
+      };
+      const files = Array.from(document.querySelectorAll('.file-toolbar__menu-item'))
+        .find((b) => /^files$/i.test(label(b)));
+      if (files) files.click();
+      await waitFor('.fe__editor-host .cm-content', 12000);
+      await new Promise((r) => setTimeout(r, 700));
+      // Walk into src/ and open store.js — the file the demo run edited.
+      const src = rowNamed('src');
+      if (src) src.click();
+      await waitFor('.fe__row-name', 4000);
+      await new Promise((r) => setTimeout(r, 600));
+      const file = rowNamed('store.js');
+      if (file) file.click();
+      await waitFor('.fe__draft-craft', 10000);
+      await new Promise((r) => setTimeout(r, 700));
+      // Select three lines so the selection-to-draft action is live.
+      //
+      // Mouse events, not pointer events: CodeMirror's drag-select is wired to
+      // mousedown / mousemove / mouseup (see the handlers in
+      // @codemirror/view), so pointer events are ignored and the frame would
+      // show an editor with nothing selected.
+      const content = document.querySelector('.fe__editor-host .cm-content');
+      if (content) {
+        content.focus();
+        const lh = parseFloat(getComputedStyle(content).lineHeight) || 20;
+        const box = content.getBoundingClientRect();
+        const x = box.left + 30;
+        const yFor = (n) => box.top + lh * (n - 0.5);
+        const mouse = (el, type, x0, y0, extra) => el.dispatchEvent(new MouseEvent(type,
+          Object.assign({ bubbles: true, cancelable: true, view: window, clientX: x0, clientY: y0, button: 0, buttons: 1, detail: 1 }, extra || {})));
+        mouse(content, 'mousedown', x, yFor(7));
+        mouse(content, 'mousemove', x, yFor(8));
+        mouse(content, 'mousemove', x, yFor(9));
+        mouse(content, 'mouseup', x, yFor(9), { buttons: 0 });
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0, buttons: 0 }));
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    })()`,
+    waitFor: '.fe__draft-craft'
   }
 ];
 

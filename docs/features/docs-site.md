@@ -28,17 +28,18 @@ The generated `features/*.html`, `index.html`, `documentation.html`, `assets/` a
 
 ## Landing page capability sections
 
-The landing page (`index.html`) shows ten phone-width captures of the running app, so a reader sees what the app actually does rather than only reading about it. Under the hero, the `#screens` section is **one section per capability**: each carries its own H2 title, one short paragraph saying what the capability is and why it is different, and that capability's capture.
+The landing page (`index.html`) shows eleven phone-width captures of the running app, so a reader sees what the app actually does rather than only reading about it. Under the hero, the `#screens` section is **one section per capability**: each carries its own H2 title, one short paragraph saying what the capability is and why it is different, and that capability's capture.
 
-The sections are ordered by how much they distinguish the app, not by navigation order — the chat run, the terminal, git, Draft Craft and approvals come first, and the configuration screens (settings, project settings) are deliberately **not** sections at all: a page that lists its own settings is a manual, not a pitch.
+The sections are ordered by how much they distinguish the app, not by navigation order — the chat run, the terminal, git and the editor come first, and the configuration screens (settings, project settings) are deliberately **not** sections at all: a page that lists its own settings is a manual, not a pitch.
 
-The ten sections, in page order:
+The eleven sections, in page order:
 
 | Section | Capture | What it shows |
 |---------|---------|---------------|
 | **One chat, a whole run** | `chat-view.png` | A chat at the end of a run — the **Context**, **Total** and **Balance** chips, per-turn cost lines, and the **Read**, **Searched**, **Wrote** and **Ran** tool cards |
 | **A real terminal on the phone** | `terminal.png` | The **CLI** sheet running `npm test` in the project directory, with the suggestion chips and the two rows of terminal keys (Esc, Tab, ^C, ^D, ^Z, ^L, arrows, PgUp, PgDn) |
 | **Review the diff, then commit** | `git.png` | The **Git** sheet — branch picker with pull / push, a staged file above the commit bar, and unstaged files each with **Stage** |
+| **Edit the file, not a diff of it** | `editor.png` | The file editor with `src/store.js` open — the project tree, the **Draft Craft / Revert / Save** row, highlighted JavaScript with three lines selected, and the byte count |
 | **Draw on the bug instead of describing it** | `draft-craft.png` | The **Draft Craft** annotator over an attached image — a pen stroke, a numbered pin carrying text, the marker list, and **Use annotated image** |
 | **Nothing sensitive runs unnamed** | `subagent-auth.png` | A **subagent** approval card on a paused run — the delegated task, the per-run model picker and thinking select, and the **Allow once / Allow session / Always allow / Deny** buttons |
 | **A DevTools built for a phone** | `inspector.png` | The Inspector attached to a page over CDP — target bar, panel chips, live preview, console input |
@@ -54,6 +55,7 @@ docs/features/images/landing/
   chat-view.png          # Chat transcript, end of run, 390 × 700 @2x
   terminal.png           # CLI sheet, real npm test run, 390 × 700 @2x
   git.png                # Git sheet with one staged and two unstaged changes, 390 × 700 @2x
+  editor.png             # File editor, src/store.js with three lines selected, 390 × 700 @2x
   draft-craft.png        # Draft Craft annotator, stroke + labeled pin, 390 × 700 @2x
   subagent-auth.png      # Subagent approval card, per-run model + thinking, 390 × 700 @2x
   inspector.png          # Inspector attached over CDP, 390 × 700 @2x

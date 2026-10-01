@@ -87,7 +87,18 @@ npx mouaif serve --auth-setup</code></pre>
   <figcaption>Git — stage, review, commit</figcaption>
 </figure>
 </section>
-<section class="screen screen--flip" id="draft-craft">
+<section class="screen screen--flip" id="editor">
+<div class="screen-copy">
+<h2>Edit the file, not a diff of it</h2>
+<p>A real code editor on the phone: browse the project tree, open a file with syntax highlighting, select lines and see the change before you save it — or push the selection straight into a chat draft.</p>
+</div>
+<figure class="shot">
+  <div class="shot-fallback">The file editor at 390 px showing src/store.js: the folder path and file list above, the Draft Craft, Revert and Save actions, highlighted JavaScript with three lines selected, and the byte count in the footer.</div>
+  <img src="features/images/landing/editor.png" alt="The file editor at 390 px showing src/store.js: the folder path and file list above, the Draft Craft, Revert and Save actions, highlighted JavaScript with three lines selected, and the byte count in the footer." width="780" height="1400" loading="lazy" />
+  <figcaption>Editor — read, select, edit, save</figcaption>
+</figure>
+</section>
+<section class="screen" id="draft-craft">
 <div class="screen-copy">
 <h2>Draw on the bug instead of describing it</h2>
 <p>Annotate an image with pen strokes and numbered pins that carry text, then attach the marked-up picture to any chat draft. It waits in the composer for you to send it — nothing is sent for you.</p>
@@ -98,7 +109,7 @@ npx mouaif serve --auth-setup</code></pre>
   <figcaption>Draft Craft — annotate, then add to a chat draft</figcaption>
 </figure>
 </section>
-<section class="screen" id="approvals">
+<section class="screen screen--flip" id="approvals">
 <div class="screen-copy">
 <h2>Nothing sensitive runs unnamed</h2>
 <p>A call that needs you pauses the run and shows what it is about to do — the exact command, file or delegated task — and a subagent lets you pick the model for that one run before you allow or deny it.</p>
@@ -109,7 +120,7 @@ npx mouaif serve --auth-setup</code></pre>
   <figcaption>Approvals — pick the model before you allow a run</figcaption>
 </figure>
 </section>
-<section class="screen screen--flip" id="inspector">
+<section class="screen" id="inspector">
 <div class="screen-copy">
 <h2>A DevTools built for a phone</h2>
 <p>Attach over CDP and you get the live page, styles, console and network in a touch-sized UI — inspect, type into the page, and send a marked-up frame straight to a chat draft.</p>
@@ -120,7 +131,7 @@ npx mouaif serve --auth-setup</code></pre>
   <figcaption>Inspector — attach to a page over CDP</figcaption>
 </figure>
 </section>
-<section class="screen" id="chats">
+<section class="screen screen--flip" id="chats">
 <div class="screen-copy">
 <h2>Chats belong to a project</h2>
 <p>Each project card holds its own scrolling chat list, so a project is a workspace with its own chats, models, agents and instructions rather than a tag on one global list.</p>
@@ -131,7 +142,7 @@ npx mouaif serve --auth-setup</code></pre>
   <figcaption>Chats — projects group their own chats</figcaption>
 </figure>
 </section>
-<section class="screen screen--flip" id="new-chat">
+<section class="screen" id="new-chat">
 <div class="screen-copy">
 <h2>A chat that starts configured</h2>
 <p>The system prompt and the whole tool list are there on the first message, and every tool carries its own Off / Ask / Allow control. The default is Ask, so nothing runs unnamed.</p>
@@ -142,7 +153,7 @@ npx mouaif serve --auth-setup</code></pre>
   <figcaption>A new chat — every tool, Off / Ask / Allow</figcaption>
 </figure>
 </section>
-<section class="screen" id="dictate">
+<section class="screen screen--flip" id="dictate">
 <div class="screen-copy">
 <h2>Talk to it from anywhere</h2>
 <p>Dictate a message and the text lands in the draft to edit and send — or leave the microphone on and the chat transcribes while you speak, so the words are there when you look up.</p>
@@ -153,7 +164,7 @@ npx mouaif serve --auth-setup</code></pre>
   <figcaption>Dictate — record, edit, then use the text</figcaption>
 </figure>
 </section>
-<section class="screen screen--flip" id="providers">
+<section class="screen" id="providers">
 <div class="screen-copy">
 <h2>Your keys, your machine</h2>
 <p>Connect a provider once and every project can use it: any OpenAI-shaped endpoint (keyless local servers included), Anthropic, Gemini, Ollama, OpenRouter or GitHub Copilot sign-in. The credential stays server-side and never reaches the page.</p>
