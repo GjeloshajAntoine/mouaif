@@ -169,6 +169,28 @@ try {
     }
   });
 
+  check('the landing page gives every screen its own titled section', () => {
+    const landing = fs.readFileSync(path.join(pub.out, 'index.html'), 'utf8');
+    assert.ok(landing.includes('<section class="section" id="screens">'), 'no #screens section');
+    const sections = [...landing.matchAll(/<section class="screen(?: screen--flip)?" id="([^"]+)">([\s\S]*?)<\/section>/g)];
+    assert.ok(sections.length >= 8, 'found ' + sections.length + ' screen sections');
+    for (const [tag, id, inner] of sections) {
+      assert.ok(/<h2>[^<]+<\/h2>/.test(inner), id + ' has no H2 title');
+      assert.ok(/<p>[^<]+<\/p>/.test(inner), id + ' has no description paragraph');
+      assert.match(inner, /<img src="features\/images\/landing\/[^"]+\.png"/, id + ' has no capture');
+    }
+    // Both layouts must exist: the flip is what alternates the capture sides.
+    assert.ok(sections.some((s) => s[0].includes('screen--flip')), 'no flipped screen section');
+    assert.ok(sections.some((s) => !s[0].includes('screen--flip')), 'no unflipped screen section');
+    for (const id of ['chats', 'chat', 'inspector', 'dictate', 'settings', 'providers', 'project-settings']) {
+      assert.ok(sections.some((s) => s[1] === id), 'no screen section for ' + id);
+    }
+    // The old bare grid is gone; its rules would leave the sections unstyled.
+    const css = fs.readFileSync(path.join(pub.out, 'assets', 'site.css'), 'utf8');
+    assert.ok(!/\.shot-row\b/.test(css), 'site.css still carries the retired .shot-row rules');
+    assert.match(css, /\.screen--flip \{/, 'site.css has no .screen--flip rule');
+  });
+
   check('guide card summaries do not end on a dangling colon', () => {
     const html = fs.readFileSync(path.join(pub.out, 'documentation.html'), 'utf8');
     const blurbs = [...html.matchAll(/<a class="feature-card"[^>]*>[\s\S]*?<p>([\s\S]*?)<\/p>/g)].map((m) => m[1]);

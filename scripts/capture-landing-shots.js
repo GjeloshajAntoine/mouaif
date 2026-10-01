@@ -174,13 +174,52 @@ const SHOTS = [
   {
     file: 'project-settings.png',
     hash: () => `#/settings/project?projectDir=${encodeURIComponent(state.projectDir)}`,
-    alt: 'Project settings at 390 px: prompt style, then the tool list with an Off / Ask / Allow control on every row.'
+    alt: 'Project settings at 390 px: prompt style, then the tool list with an Off / Ask / Allow control on every row.',
+    // The tools list is fetched asynchronously, so the section renders
+    // "Loading tools…" for a moment. Without this the frame can catch that
+    // placeholder instead of the per-tool Off / Ask / Allow controls the
+    // capture exists to show.
+    waitFor: '.tool-tree__group'
+  },
+  {
+    // The Dictate page (`Settings → App defaults → Dictation`, `#/dictation`).
+    // `before` narrows the app's connections to the fixture's own stub for the
+    // duration of this frame and `after` restores the seven: the catalog read
+    // is live, so with the other six connections in place the page would print
+    // one "No models from …" line per unreachable provider — true on the
+    // capture machine, but noise on the landing page, and this shot is about
+    // the page, not about a machine that cannot reach Google.
+    file: 'dictation.png',
+    hash: '#/dictation',
+    alt: 'The Dictate page at 390 px: the model picker with its request-shape summary, the record button with the timer and level meter, and the transcript with its Copy, Insert and Send actions.',
+    before: () => {
+    // Skipped against an external `--base` instance, which has no fixture
+    // stub: the shot then shows whatever that instance is connected to.
+    if (!state.idleProvider) return;
+    const settings = require('../src/settings.js');
+    state.providersBefore = settings.getApp().providers || [];
+    settings.setApp({ providers: [state.idleProvider] });
+    },
+    after: () => {
+    if (!state.idleProvider) return;
+    const settings = require('../src/settings.js');
+    settings.setApp({ providers: state.providersBefore || [] });
+    },
+    // The record button is the page's primary control and sits below the
+    // model card, so the frame is the recorder rather than the picker alone.
+    recipe: `(() => {
+      const recorder = document.querySelector('.dictation__card--recorder');
+      if (recorder) recorder.scrollIntoView({ block: 'center' });
+    })()`,
+    // The model list is fetched asynchronously; hold the frame until the
+    // picker has rendered its rows so the shot is not an empty shell.
+    waitFor: '.dictation__field--route'
   }
 ];
 
 // ---- main ---------------------------------------------------------------
 
-const state = { chatId: '', emptyChatId: '', projectDir: '', previewUrl: '', subagentAuth: null };
+const state = { chatId: '', emptyChatId: '', projectDir: '', previewUrl: '', subagentAuth: null, providersBefore: null, idleProvider: null };
 
 async function main() {
   const chromeBin = findChrome();
@@ -314,6 +353,17 @@ async function main() {
       servers.push(staticServer);
       state.previewUrl = 'http://127.0.0.1:' + staticServer.address().port + '/';
       logs.push('preview page on ' + state.previewUrl);
+
+      // The one connection the Dictate shot keeps (see its `before` hook): the
+      // fixture's own stub, which answers the local `/v1/models` the page reads
+      // for live rows. Built here from the stub's real URL so the frame shows a
+      // reachable connection instead of six upstream errors.
+      const providersAfterSeed = settings.getApp().providers || [];
+      state.idleProvider = Object.assign(
+      {},
+      providersAfterSeed.find((p) => p && p.id === 'openai-compatible') || { id: 'openai-compatible' },
+      { baseUrl: upstream.baseUrl, apiKey: 'sk-demo-not-a-real-key' }
+      );
     }
 
     // The debug Chrome is both the capture browser and the target the

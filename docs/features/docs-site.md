@@ -26,45 +26,47 @@ The public guide order and the public navigation links come from a single allowl
 
 The generated `features/*.html`, `index.html`, `documentation.html`, `assets/` and `.nojekyll` are committed under `docs/`, because Pages serves the branch as-is. The `.md` sources and `features/images/` sit in the same tree and are what the build reads.
 
-## Landing page screenshots
+## Landing page screens
 
-The landing page (`index.html`) shows eight phone-width captures of the running app, so a reader sees what the app actually does rather than only reading about it. They sit in the `#screenshots` section as a bare capture row directly under the hero — no heading and no lead paragraph.
+The landing page (`index.html`) shows nine phone-width captures of the running app, so a reader sees what the app actually does rather than only reading about it. Under the hero, the `#screens` section is **one section per screen**: each carries its own H2 title, one short paragraph, and that screen's capture.
 
-The eight captures, in page order:
+The nine sections, in page order:
 
-| Capture | What it shows |
-|---------|---------------|
-| `chat-tools.png` | A brand-new chat — the system-prompt card and the **Tools** card, one checkbox and one **Off / Ask / Allow** control per tool |
-| `subagent-auth.png` | A **subagent** approval card on a paused run — the delegated task, the per-run model picker and thinking select, and the **Allow once / Allow session / Always allow / Deny** buttons |
-| `chats-list.png` | The Chats tab — two project cards, each holding its own scrolling chat list and **New chat** |
-| `chat-view.png` | A chat at the end of a run — the **Context**, **Total** and **Balance** chips, per-turn cost lines, and the **Read**, **Searched**, **Wrote** and **Ran** tool cards |
-| `providers.png` | Settings → Providers — seven connected providers, each naming its endpoint and whether a key is stored |
-| `project-settings.png` | Project settings — prompt style, then every tool with its own **Off / Ask / Allow** control |
-| `inspector.png` | The Inspector attached to a page over CDP — target bar, panel chips, live preview, console input |
-| `settings.png` | The Settings tab — providers first, then the app defaults that apply to every project |
+| Section | Capture | What it shows |
+|---------|---------|---------------|
+| **Chats** | `chats-list.png` | The Chats tab — project cards, each holding its own scrolling chat list and **New chat** |
+| **Chat** | `chat-view.png` | A chat at the end of a run — the **Context**, **Total** and **Balance** chips, per-turn cost lines, and the **Read**, **Searched**, **Wrote** and **Ran** tool cards |
+| **A new chat** | `chat-tools.png` | A brand-new chat — the system-prompt card and the **Tools** card, one checkbox and one **Off / Ask / Allow** control per tool |
+| **Approvals** | `subagent-auth.png` | A **subagent** approval card on a paused run — the delegated task, the per-run model picker and thinking select, and the **Allow once / Allow session / Always allow / Deny** buttons |
+| **Inspector** | `inspector.png` | The Inspector attached to a page over CDP — target bar, panel chips, live preview, console input |
+| **Dictate** | `dictation.png` | The Dictate page — the model picker, the record button with its timer and level meter, and the transcript with **Copy / Insert in chat / Send to chat** |
+| **Settings** | `settings.png` | The Settings tab — providers first, then the app defaults that apply to every project |
+| **Providers** | `providers.png` | Settings → Providers — seven connected providers, each naming its endpoint and whether a key is stored |
+| **Project settings** | `project-settings.png` | Project settings — prompt style, then every tool with its own **Off / Ask / Allow** control |
 
 The images live in the same feature image tree as every other screenshot, so the existing recursive copy ships them:
 
 ```text
 docs/features/images/landing/
-  chat-tools.png         # Empty chat, tools card expanded, 390 × 700 @2x
-  subagent-auth.png      # Subagent approval card, per-run model + thinking, 390 × 700 @2x
   chats-list.png         # Chats tab, 390 × 700 @2x
   chat-view.png          # Chat transcript, end of run, 390 × 700 @2x
+  chat-tools.png         # Empty chat, tools card expanded, 390 × 700 @2x
+  subagent-auth.png      # Subagent approval card, per-run model + thinking, 390 × 700 @2x
+  inspector.png          # Inspector attached over CDP, 390 × 700 @2x
+  dictation.png          # Dictate page, 390 × 700 @2x
+  settings.png           # Settings tab, 390 × 700 @2x
   providers.png          # Settings → Providers, 390 × 700 @2x
   project-settings.png   # Project settings, 390 × 700 @2x
-  inspector.png          # Inspector attached over CDP, 390 × 700 @2x
-  settings.png           # Settings tab, 390 × 700 @2x
 ```
 
 Because the section is on the site root, its `src` values are prefixed `features/images/...` rather than the `./images/...` a Markdown feature page uses.
 
 ### Layout
 
-- **Laptop (above 1040 px)** — four per row, in a fixed `repeat(4, minmax(0, 1fr))` grid. Eight captures fill exactly two full rows, so no capture is left alone and stretched on a row of its own.
-- **Tablet (761–1040 px)** — two per row, centred at a 760 px maximum.
-- **Phone (`max-width: 760px`)** — a single stacked column, each capture capped at 340 px and centred. Side-by-side thumbnails on a 360 px screen made the UI in each capture unreadable; the same breakpoint already stacks the `.feature` screenshot rows.
-- `align-items: start` keeps the captures from stretching each other, and each keeps its own aspect ratio (`width: 100%`, `height: auto` on `.shot img`), so a shorter capture is a shorter card instead of a letterboxed one. The image has no corner radius because the `.shot` card and its `overflow: hidden` already clip it.
+- **Laptop (above 1040 px)** — two columns: the title and its paragraph beside the capture, with the capture on the right and, on every other section, on the left. The copy column takes the leftover width, the capture keeps a 340 px cap.
+- **Tablet (761–1040 px)** — one column, the copy first and the capture centred under it, rather than two tracks squeezing each other.
+- **Phone (`max-width: 760px`)** — one column, the copy first and the capture capped at 340 px, so a 360–430 px screen reads title → text → capture and the UI in the capture stays legible.
+- A capture keeps its own corner radius: it is the only element in its grid cell, so there is no card behind it to clip it.
 
 ### Refreshing the captures
 
@@ -74,9 +76,9 @@ Every capture is produced by one command:
 npm run docs:shots
 ```
 
-[scripts/capture-landing-shots.js](../../scripts/capture-landing-shots.js) is self-contained: it creates a throwaway `MOUAIF_HOME` under the OS temp dir, writes a small fixture project (source files, `AGENTS.md`, one git commit) plus a second, empty one and registers both, connects seven app-level providers, seeds two project models and a chat whose transcript is a real agentic run (the chat capture scrolls to the end of the run, then back to the first message the top edge would cut), starts a static page for the Inspector to attach to, launches a headless Chrome with `--remote-debugging-port`, and boots the app server on an ephemeral port. Each screen is then a fresh tab emulated at 390 × 700 CSS px with a device scale factor of 2, so the PNGs are 780 × 1400 and stay sharp on a retina phone.
+[scripts/capture-landing-shots.js](../../scripts/capture-landing-shots.js) is self-contained: it creates a throwaway `MOUAIF_HOME` under the OS temp dir, writes a small fixture project (source files, `AGENTS.md`, one git commit) plus a second, empty one and registers both, connects seven app-level providers, seeds three project models (two chat models and `whisper-1`, which is what makes the Dictate page show a picked model) and a chat whose transcript is a real agentic run (the chat capture scrolls to the end of the run, then back to the first message the top edge would cut), starts a static page for the Inspector to attach to, launches a headless Chrome with `--remote-debugging-port`, and boots the app server on an ephemeral port. Each screen is then a fresh tab emulated at 390 × 700 CSS px with a device scale factor of 2, so the PNGs are 780 × 1400 and stay sharp on a retina phone.
 
-The subagent capture parks a real `subagent` authorization request on the gate and marks the chat as running for the duration of that one shot (`before` / `after` hooks in the shot list), so the approval card — with its per-run model and thinking pickers — is what the transcript's pending-auth poll mounts. The request is answered (denied) once the shot is taken, so the following transcript capture sees an ordinary settled run.
+The subagent capture parks a real `subagent` authorization request on the gate and marks the chat as running for the duration of that one shot (`before` / `after` hooks in the shot list), so the approval card — with its per-run model and thinking pickers — is what the transcript's pending-auth poll mounts. The request is answered (denied) once the shot is taken, so the following transcript capture sees an ordinary settled run. The Dictate capture uses the same hooks to narrow the app's connections to the fixture's own stub for one frame: the dictation catalog is read live, so with the other six connections in place the page would print one upstream-error line per provider that this machine cannot reach.
 
 Because the fixture home is throwaway, the capture never reads or writes the developer's own chats, providers or projects, and re-running it after a UI change is the expected workflow.
 
@@ -103,7 +105,7 @@ npm run docs:shots:draft-craft
 
 ## At a glance
 
-Under the hero, the screenshots, and the existing sections, the landing page ends with an **At a glance** block (`#at-a-glance`): a four-line `<ul>` summary — runs locally on port 5732 with keys and chats on the machine, the provider shapes it speaks, project grouping with per-project models, and tool access being Off by default. It is plain HTML in `buildLandingPage()` in [scripts/build-docs.js](../../scripts/build-docs.js), written last in the page body so it stays below everything else.
+Under the hero, the screens, and the existing sections, the landing page ends with an **At a glance** block (`#at-a-glance`): a four-line `<ul>` summary — runs locally on port 5732 with keys and chats on the machine, the provider shapes it speaks, project grouping with per-project models, and tool access being Off by default. It is plain HTML in `buildLandingPage()` in [scripts/build-docs.js](../../scripts/build-docs.js), written last in the page body so it stays below everything else.
 
 ## Subtitle
 

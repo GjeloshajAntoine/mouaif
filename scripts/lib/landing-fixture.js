@@ -34,7 +34,13 @@ const MODELS = [
   // Context / Total / Balance row the app really renders. The model id has a
   // built-in price in src/usage.js (`gpt-4o`) so Total is a real total.
   { id: 'gpt-4o', provider: 'openai-compatible', label: 'GPT-4o', contextWindow: 128000 },
-  { id: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Claude Sonnet 4.6', contextWindow: 200000 }
+  { id: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Claude Sonnet 4.6', contextWindow: 200000 },
+  // The Dictate page (`#/dictation`) lists the project's *transcription* slice,
+  // which is a different question from the chat slice: a model id that says it
+  // transcribes (`whisper-*`) is what makes the page show a picked model
+  // instead of an empty picker. It is a project record like any other — the
+  // page reads the same list — and the capture never transcribes with it.
+  { id: 'whisper-1', provider: 'openai-compatible', label: 'Whisper 1', contextWindow: 0 }
 ];
 
 // installProviders(settings, overrides)

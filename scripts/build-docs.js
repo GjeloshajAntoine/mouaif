@@ -936,23 +936,26 @@ html { scroll-padding-top: 72px; }
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
-/* Landing-page screenshot row: phone-proportioned captures of the real UI.
-  Four per row on a laptop (eight captures = two full rows, so no row is left
-  with a single orphan card), a centred two-up in the middle width, and one
-  stacked column on a phone (see the media query). A fixed 4-column grid with
-  a cap per card rather than auto-fit: auto-fit sizes the tracks from the
-  container, which left the last card of a row alone on its own line and much
-  wider than the others. */
-.shot-row {
+/* Landing-page per-screen sections: a title, one short paragraph and the
+  phone-width capture of that screen. The capture sits beside the copy on a
+  laptop and above it on a phone — one column at every width, so nothing is
+  squeezed into an unreadable thumbnail. Centring the row keeps a short
+  paragraph against the middle of its capture instead of the top edge. */
+.screen {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
-  margin: 24px 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+  gap: 28px;
+  align-items: center;
+  margin: 48px 0;
 }
-.shot-row .shot img {
-  border-radius: 0;
-}
+.screen--flip { grid-template-columns: minmax(0, 340px) minmax(0, 1fr); }
+.screen--flip .screen-copy { order: 2; }
+.screen--flip .shot { order: 1; }
+.screen-copy h2 { margin-top: 0; padding-top: 0; border-top: 0; font-size: 22px; }
+.screen-copy p { color: var(--muted); max-width: 46ch; }
+/* The capture keeps its own corner radius: it is the only thing in its grid
+   cell, so there is no card behind it to clip it. */
+.screen .shot img { border-radius: 12px; }
 .section {
   margin: 56px 0;
 }
@@ -994,16 +997,22 @@ html { scroll-padding-top: 120px; }
 .feature { grid-template-columns: 1fr; gap: 20px; }
 .feature--flip .shot { order: 0; }
 .feature--flip .feature-copy { order: 0; }
-/* Landing screenshots: one full-width column, so each phone capture is
-   readable at 360–430 px instead of shrinking beside its neighbours. */
-.shot-row { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-.shot-row .shot { max-width: 340px; margin: 0 auto; }
+/* Landing screens: one column, copy above its capture, so each phone capture
+  is readable at 360–430 px instead of shrinking beside the text. */
+.screen, .screen--flip { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.screen--flip .screen-copy { order: 1; }
+.screen--flip .shot { order: 2; }
+.screen .shot { max-width: 340px; margin: 0 auto; }
+.screen-copy p { max-width: none; }
 }
-/* Landing screenshots between the phone and a full three-up: two captures per
-   row, centred, so neither a 2-up stretch nor a cramped three-up is left at
-   tablet widths. Sits outside the 760 px block so it only applies above it. */
+/* Landing screens between the phone and a laptop: the copy keeps the column
+  and the capture moves under it, centred, rather than the two tracks
+  squeezing each other at tablet widths. Flipped sections restore the
+  laptop order, so a tablet shows the copy first everywhere. */
 @media (min-width: 761px) and (max-width: 1040px) {
-.shot-row { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 760px; margin-left: auto; margin-right: auto; }
+.screen, .screen--flip { grid-template-columns: minmax(0, 1fr); gap: 20px; justify-items: center; }
+.screen-copy { width: 100%; max-width: 520px; }
+.screen .shot { max-width: 340px; }
 }
 `;
 
@@ -1299,58 +1308,112 @@ function shotFigure(src, alt, caption) {
 </figure>`;
 }
 
+// One screen of the running app: the page's H2 title, one short paragraph, and
+// the phone-width capture beside (laptop) or above (phone) the copy. Used by
+// buildLandingPage() to give every page its own section instead of one bare
+// screenshot grid.
+function screenSection({ id, title, text, src, alt, caption }, flip) {
+  const klass = 'screen' + (flip ? ' screen--flip' : '');
+  return `<section class="${klass}" id="${escapeAttr(id)}">
+<div class="screen-copy">
+<h2>${escapeHtml(title)}</h2>
+<p>${renderInline(escapeHtml(text))}</p>
+</div>
+${shotFigure(src, alt, caption)}
+</section>`;
+}
+
 function buildLandingPage(outDir) {
-// Phone-width captures of the real UI, side by side on a desktop and
-// stacked on a phone. They live in the feature image tree
-// (`docs/features/images/landing/`) so the existing recursive copy ships
-// them to the site, and they are referenced from the site root — hence the
-// `features/images/...` prefix rather than a `./images/...` one.
-//
-// Every capture is produced by `scripts/capture-landing-shots.js`, which
-// boots a throwaway MOUAIF_HOME, seeds the demo project and shoots each
+// One entry per app screen: the section title, its one-sentence description,
+// then the capture. Titles are the page's H2s; `id` is the anchor a link can
+// point at. Every capture is produced by `scripts/capture-landing-shots.js`,
+// which boots a throwaway MOUAIF_HOME, seeds the demo project and shoots each
 // screen over CDP; run it after a UI change instead of re-taking one by hand.
-const landingShots = [
-  [
-    'features/images/landing/chat-tools.png',
-    'An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the "Start the conversation" state.',
-    'A new chat — every tool, Off / Ask / Allow'
-  ],
-  [
-    'features/images/landing/subagent-auth.png',
-    'A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons.',
-    'Approving a subagent — pick its model first'
-  ],
-  [
-    'features/images/landing/chats-list.png',
-    'The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it.',
-    'Chats — projects group their own chats'
-  ],
-  [
-    'features/images/landing/chat-view.png',
-    'A chat at 390 px: the Context, Total and Balance chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
-    'Chats — a run reads, searches, edits and tests'
-  ],
-  [
-    'features/images/landing/providers.png',
-    'Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored.',
-    'Providers — connect them once, app-wide'
-  ],
-  [
-    'features/images/landing/project-settings.png',
-    'Project settings at 390 px: the prompt style, then the tool list where every tool carries its own Off, Ask or Allow control.',
-    'Project settings — per-tool Off / Ask / Allow'
-  ],
-  [
-    'features/images/landing/inspector.png',
-    'The Inspector tab at 390 px, attached to a page over CDP: the target bar, the panel chips, the live preview of the inspected page, and the console input.',
-    'Inspector — attach to a page over CDP'
-  ],
-  [
-    'features/images/landing/settings.png',
-    'The Settings tab at 390 px: a Providers section, then the app defaults that apply to every project.',
-    'Settings — providers first, then app defaults'
-  ]
-].map(([src, alt, caption]) => shotFigure(src, alt, caption)).join('\n');
+//
+// A new screen means a new entry here plus (when it needs its own frame) a
+// shot in scripts/capture-landing-shots.js — the section, its title and its
+// copy are generated from this list, so the page cannot drift from the shots.
+const landingScreens = [
+  {
+    id: 'chats',
+    title: 'Chats',
+    text: 'Every chat, grouped under its project card, with its own scrolling list and a New chat button so a project never sends you back to a global list.',
+    src: 'features/images/landing/chats-list.png',
+    alt: 'The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it.',
+    caption: 'Chats — projects group their own chats'
+  },
+  {
+    id: 'chat',
+    title: 'Chat',
+    text: 'A run reads, searches, edits and tests: each tool call is a card with its own result, and Cost, Context and balance stay visible while the transcript scrolls.',
+    src: 'features/images/landing/chat-view.png',
+    alt: 'A chat at 390 px: the Context, Total and Balance chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.',
+    caption: 'Chats — a run reads, searches, edits and tests'
+  },
+  {
+    id: 'new-chat',
+    title: 'A new chat',
+    text: 'Open a chat and the system prompt and the full tool list are already there, every tool with its own checkbox and an Off / Ask / Allow control.',
+    src: 'features/images/landing/chat-tools.png',
+    alt: 'An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the "Start the conversation" state.',
+    caption: 'A new chat — every tool, Off / Ask / Allow'
+  },
+  {
+    id: 'approvals',
+    title: 'Approvals',
+    text: 'Anything sensitive waits for you: an approval card names the call, shows the delegated task, and lets you pick the model for that one run before you allow or deny it.',
+    src: 'features/images/landing/subagent-auth.png',
+    alt: 'A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons.',
+    caption: 'Approving a subagent — pick its model first'
+  },
+  {
+    id: 'inspector',
+    title: 'Inspector',
+    text: 'Attach the Inspector to a page over CDP and you get a live preview, styles, console and network on a phone — plus an annotator that sends a marked-up screenshot to a chat draft.',
+    src: 'features/images/landing/inspector.png',
+    alt: 'The Inspector tab at 390 px, attached to a page over CDP: the target bar, the panel chips, the live preview of the inspected page, and the console input.',
+    caption: 'Inspector — attach to a page over CDP'
+  },
+  {
+    id: 'dictate',
+    title: 'Dictate',
+    text: 'Speech-to-text on its own page: record, edit the transcript in place, then copy it, insert it into a chat draft, or send it. The text button in the chat composer dictates as you speak.',
+    src: 'features/images/landing/dictation.png',
+    alt: 'The Dictate page at 390 px: the model picker with its request-shape summary, the record button with the timer and level meter, and the transcript with its Copy, Insert and Send actions.',
+    caption: 'Dictate — record, edit, then use the text'
+  },
+  {
+    id: 'settings',
+    title: 'Settings',
+    text: 'Providers first, then the app defaults that apply to every project — dictation model, notifications, pricing, agents and custom actions.',
+    src: 'features/images/landing/settings.png',
+    alt: 'The Settings tab at 390 px: a Providers section, then the app defaults that apply to every project.',
+    caption: 'Settings — providers first, then app defaults'
+  },
+  {
+    id: 'providers',
+    title: 'Providers',
+    text: 'Connect a provider once, app-wide: each row names its endpoint and whether a key is stored, and every project model points at one of these connections.',
+    src: 'features/images/landing/providers.png',
+    alt: 'Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored.',
+    caption: 'Providers — connect them once, app-wide'
+  },
+  {
+    id: 'project-settings',
+    title: 'Project settings',
+    text: 'The prompt style, the models this project offers, and the tool list where every tool carries its own Off, Ask or Allow control.',
+    src: 'features/images/landing/project-settings.png',
+    alt: 'Project settings at 390 px: the prompt style, then the tool list where every tool carries its own Off, Ask or Allow control.',
+    caption: 'Project settings — per-tool Off / Ask / Allow'
+  }
+];
+
+// The section list, flipped on every other section so the captures alternate
+// sides on a laptop. On a phone the copy always comes first (see the
+// `screen` rule in SITE_CSS), so the reading order is title → text → capture.
+const landingSections = landingScreens
+  .map((screen, i) => screenSection(screen, i % 2 === 1))
+  .join('\n');
 
 const body = `
 <section class="hero">
@@ -1369,10 +1432,10 @@ npx mouaif serve --auth-setup</code></pre>
 <a class="btn" href="features/providers.html">Connect a provider</a>${REPO_URL ? `\n<a class="btn" href="${escapeAttr(REPO_URL)}" target="_blank" rel="noopener noreferrer" aria-label="Repo: ${escapeAttr(REPO_SLUG)}" title="${escapeAttr(REPO_SLUG)}"><svg class="btn__icon" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>Repo</a>` : ''}
 </div>
 </section>
-<section class="section" id="screenshots">
-<div class="shot-row">
-${landingShots}
-</div>
+<section class="section" id="screens">
+<h2>Every page, on a phone</h2>
+<p class="lead">One section per screen of the app, captured at 390 px wide — the real UI, not a mockup.</p>
+${landingSections}
 <p><a href="features/app-abilities.html">See every app ability →</a> · <a href="features/mouaif-features.html">Feature reference for agents →</a></p>
 </section>
 <section class="section" id="start">

@@ -51,49 +51,108 @@ npx mouaif serve --auth-setup</code></pre>
 <a class="btn" href="https://github.com/GjeloshajAntoine/mouaif" target="_blank" rel="noopener noreferrer" aria-label="Repo: GjeloshajAntoine/mouaif" title="GjeloshajAntoine/mouaif"><svg class="btn__icon" viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>Repo</a>
 </div>
 </section>
-<section class="section" id="screenshots">
-<div class="shot-row">
-<figure class="shot">
-  <div class="shot-fallback">An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the &quot;Start the conversation&quot; state.</div>
-  <img src="features/images/landing/chat-tools.png" alt="An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the &quot;Start the conversation&quot; state." loading="lazy" />
-  <figcaption>A new chat — every tool, Off / Ask / Allow</figcaption>
-</figure>
-<figure class="shot">
-  <div class="shot-fallback">A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons.</div>
-  <img src="features/images/landing/subagent-auth.png" alt="A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons." loading="lazy" />
-  <figcaption>Approving a subagent — pick its model first</figcaption>
-</figure>
+<section class="section" id="screens">
+<h2>Every page, on a phone</h2>
+<p class="lead">One section per screen of the app, captured at 390 px wide — the real UI, not a mockup.</p>
+<section class="screen" id="chats">
+<div class="screen-copy">
+<h2>Chats</h2>
+<p>Every chat, grouped under its project card, with its own scrolling list and a New chat button so a project never sends you back to a global list.</p>
+</div>
 <figure class="shot">
   <div class="shot-fallback">The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it.</div>
   <img src="features/images/landing/chats-list.png" alt="The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it." loading="lazy" />
   <figcaption>Chats — projects group their own chats</figcaption>
 </figure>
+</section>
+<section class="screen screen--flip" id="chat">
+<div class="screen-copy">
+<h2>Chat</h2>
+<p>A run reads, searches, edits and tests: each tool call is a card with its own result, and Cost, Context and balance stay visible while the transcript scrolls.</p>
+</div>
 <figure class="shot">
   <div class="shot-fallback">A chat at 390 px: the Context, Total and Balance chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.</div>
   <img src="features/images/landing/chat-view.png" alt="A chat at 390 px: the Context, Total and Balance chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer." loading="lazy" />
   <figcaption>Chats — a run reads, searches, edits and tests</figcaption>
 </figure>
+</section>
+<section class="screen" id="new-chat">
+<div class="screen-copy">
+<h2>A new chat</h2>
+<p>Open a chat and the system prompt and the full tool list are already there, every tool with its own checkbox and an Off / Ask / Allow control.</p>
+</div>
 <figure class="shot">
-  <div class="shot-fallback">Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored.</div>
-  <img src="features/images/landing/providers.png" alt="Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored." loading="lazy" />
-  <figcaption>Providers — connect them once, app-wide</figcaption>
+  <div class="shot-fallback">An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the &quot;Start the conversation&quot; state.</div>
+  <img src="features/images/landing/chat-tools.png" alt="An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the &quot;Start the conversation&quot; state." loading="lazy" />
+  <figcaption>A new chat — every tool, Off / Ask / Allow</figcaption>
 </figure>
+</section>
+<section class="screen screen--flip" id="approvals">
+<div class="screen-copy">
+<h2>Approvals</h2>
+<p>Anything sensitive waits for you: an approval card names the call, shows the delegated task, and lets you pick the model for that one run before you allow or deny it.</p>
+</div>
 <figure class="shot">
-  <div class="shot-fallback">Project settings at 390 px: the prompt style, then the tool list where every tool carries its own Off, Ask or Allow control.</div>
-  <img src="features/images/landing/project-settings.png" alt="Project settings at 390 px: the prompt style, then the tool list where every tool carries its own Off, Ask or Allow control." loading="lazy" />
-  <figcaption>Project settings — per-tool Off / Ask / Allow</figcaption>
+  <div class="shot-fallback">A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons.</div>
+  <img src="features/images/landing/subagent-auth.png" alt="A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons." loading="lazy" />
+  <figcaption>Approving a subagent — pick its model first</figcaption>
 </figure>
+</section>
+<section class="screen" id="inspector">
+<div class="screen-copy">
+<h2>Inspector</h2>
+<p>Attach the Inspector to a page over CDP and you get a live preview, styles, console and network on a phone — plus an annotator that sends a marked-up screenshot to a chat draft.</p>
+</div>
 <figure class="shot">
   <div class="shot-fallback">The Inspector tab at 390 px, attached to a page over CDP: the target bar, the panel chips, the live preview of the inspected page, and the console input.</div>
   <img src="features/images/landing/inspector.png" alt="The Inspector tab at 390 px, attached to a page over CDP: the target bar, the panel chips, the live preview of the inspected page, and the console input." loading="lazy" />
   <figcaption>Inspector — attach to a page over CDP</figcaption>
 </figure>
+</section>
+<section class="screen screen--flip" id="dictate">
+<div class="screen-copy">
+<h2>Dictate</h2>
+<p>Speech-to-text on its own page: record, edit the transcript in place, then copy it, insert it into a chat draft, or send it. The text button in the chat composer dictates as you speak.</p>
+</div>
+<figure class="shot">
+  <div class="shot-fallback">The Dictate page at 390 px: the model picker with its request-shape summary, the record button with the timer and level meter, and the transcript with its Copy, Insert and Send actions.</div>
+  <img src="features/images/landing/dictation.png" alt="The Dictate page at 390 px: the model picker with its request-shape summary, the record button with the timer and level meter, and the transcript with its Copy, Insert and Send actions." loading="lazy" />
+  <figcaption>Dictate — record, edit, then use the text</figcaption>
+</figure>
+</section>
+<section class="screen" id="settings">
+<div class="screen-copy">
+<h2>Settings</h2>
+<p>Providers first, then the app defaults that apply to every project — dictation model, notifications, pricing, agents and custom actions.</p>
+</div>
 <figure class="shot">
   <div class="shot-fallback">The Settings tab at 390 px: a Providers section, then the app defaults that apply to every project.</div>
   <img src="features/images/landing/settings.png" alt="The Settings tab at 390 px: a Providers section, then the app defaults that apply to every project." loading="lazy" />
   <figcaption>Settings — providers first, then app defaults</figcaption>
 </figure>
+</section>
+<section class="screen screen--flip" id="providers">
+<div class="screen-copy">
+<h2>Providers</h2>
+<p>Connect a provider once, app-wide: each row names its endpoint and whether a key is stored, and every project model points at one of these connections.</p>
 </div>
+<figure class="shot">
+  <div class="shot-fallback">Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored.</div>
+  <img src="features/images/landing/providers.png" alt="Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored." loading="lazy" />
+  <figcaption>Providers — connect them once, app-wide</figcaption>
+</figure>
+</section>
+<section class="screen" id="project-settings">
+<div class="screen-copy">
+<h2>Project settings</h2>
+<p>The prompt style, the models this project offers, and the tool list where every tool carries its own Off, Ask or Allow control.</p>
+</div>
+<figure class="shot">
+  <div class="shot-fallback">Project settings at 390 px: the prompt style, then the tool list where every tool carries its own Off, Ask or Allow control.</div>
+  <img src="features/images/landing/project-settings.png" alt="Project settings at 390 px: the prompt style, then the tool list where every tool carries its own Off, Ask or Allow control." loading="lazy" />
+  <figcaption>Project settings — per-tool Off / Ask / Allow</figcaption>
+</figure>
+</section>
 <p><a href="features/app-abilities.html">See every app ability →</a> · <a href="features/mouaif-features.html">Feature reference for agents →</a></p>
 </section>
 <section class="section" id="start">
