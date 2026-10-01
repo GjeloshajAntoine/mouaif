@@ -411,12 +411,13 @@ html { scroll-padding-top: 120px; }
 .screen .shot { max-width: 340px; margin: 0 auto; }
 .screen-copy p { max-width: none; }
 }
-/* Landing screens between the phone and a laptop: the copy keeps the column
-  and the capture moves under it, centred, rather than the two tracks
-  squeezing each other at tablet widths. Flipped sections restore the
-  laptop order, so a tablet shows the copy first everywhere. */
+/* Landing screens between the phone and a laptop: one column with the copy
+  first and the capture centred under it, rather than two tracks squeezing
+  each other at tablet widths. Both orders are reset, flipped sections
+  included, so a flipped section cannot leave its capture above its title
+  once the tracks are gone. */
 @media (min-width: 761px) and (max-width: 1040px) {
 .screen, .screen--flip { grid-template-columns: minmax(0, 1fr); gap: 20px; justify-items: center; }
-.screen-copy { width: 100%; max-width: 520px; }
-.screen .shot { max-width: 340px; }
+.screen .screen-copy, .screen--flip .screen-copy { order: 1; width: 100%; max-width: 520px; }
+.screen .shot, .screen--flip .shot { order: 2; max-width: 340px; }
 }
