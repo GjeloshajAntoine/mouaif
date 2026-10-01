@@ -109,9 +109,9 @@ While a program owns stdin the rows get `.cli__keys.is-prompt` (an accent border
 
 ### Silent no-ops are reported
 
-`candidatesFor` / `completionReport` in [cliSuggest.js](../../../frontend/src/components/chat/cliSuggest.js) return not just what Tab would complete but *why* it cannot: `'completed'`, `'ambiguous'` (several candidates agree on nothing more than the typed text), `'none'`, `'empty'`. `completeLocally` is now a thin wrapper over the same candidate step, so the two cannot disagree about what Tab would have done.
+`candidatesFor` / `completionReport` in [cliSuggest.js](../../../frontend/src/components/chat/cliSuggest.js) return not just what Tab would complete but *why* it cannot: `'completed'`, `'ambiguous'` (several candidates agree on nothing more than the typed text), `'none'`, `'empty'`, plus `list` — the matches as the user would type them, whole paths and commands included. `completeLocally` is a thin wrapper over the same candidate step, so the two cannot disagree about what Tab would have done.
 
-`complete()` in [CliModal.jsx](../../../frontend/src/components/chat/CliModal.jsx) shows the non-`'completed'` reasons in the hint line under the key rows for 4 s (`completionNotice`, `showNotice`, class `.cli__hint--notice`), and typing clears them. The point is diagnostic as much as cosmetic: a Tab that does nothing is indistinguishable from a Tab that is broken on a phone, so a report of "Tab does nothing" could not be separated from the app's own state. The line replaces the mode hint instead of adding a row, so the sheet's height is unchanged and the 44 px targets never move.
+`complete()` in [CliModal.jsx](../../../frontend/src/components/chat/CliModal.jsx) writes `completionLive(report)` into the terminal on **every** Tab: one line, `❯ Tab — N matches: a  b  c`, terminated with `\n` because the screen model is a terminal (see `CliScreen`), with no escape sequence in it so it lands as plain text in the grid. That is the shell's own behaviour and the reason a Tab is worth pressing when the prompt cannot move. `showNotice` remains for the one case with nothing to print — a Tab that found no candidate at all — in the hint line under the key rows (`.cli__hint--notice`, cleared by typing, replacing the mode hint so the sheet's height never changes).
 
 ### Screen decoding
 

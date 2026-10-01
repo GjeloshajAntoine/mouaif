@@ -60,9 +60,17 @@ At the prompt, Esc clears the line instead of sending `ESC`. A bare `ESC` at a b
 
 **Tab keeps going into a folder.** Type a folder's name and press Tab to see what is in it: `frontend` → `frontend/` (which lists it), then `frontend/vi` → `frontend/vite`. Type the slash yourself (`frontend/`) and Tab lists the folder the same way, then `frontend/vite.c` → `frontend/vite.config.js`. Each folder is listed once per sheet — returning to one is instant — and a path nothing matches leaves the line untouched rather than inventing a candidate.
 
+**Every Tab prints what it found.** Like a shell, a Tab writes its matches into the terminal output above the prompt:
+
+```text
+❯ Tab — 5 matches: frontend/build/  frontend/dist/  frontend/index.html  frontend/vite.config.js  frontend/vite-build.log
+```
+
+One line per Tab, so a tap is worth making even when the prompt itself cannot move — that is how you find a name you did not know was there (`frontend/` then Tab). It sits in the scrollback with the rest of the output and is never a substitute for Enter: nothing is sent to the shell until you press it.
+
 **A named folder shows its contents as chips.** At `frontend/`, or with a partial segment inside it (`frontend/s`), the suggestion row above the prompt lists what is in that folder — `frontend/src/`, `frontend/index.html`, … — and a chip rewrites the **whole line**, command included, so tapping `frontend/src/` after `ls ` gives `ls frontend/src/`. That is the phone's substitute for `ls`: a folder you cannot see into is a folder you cannot use.
 
-**Tab never does nothing silently.** When it cannot advance the line, the sentence under the key rows says why for a moment — `Complete — 5 inside this folder; tap one below.`, `No match here — only this folder and the ones already opened are searched.`, `Nothing to complete — type part of a command or a path.` Typing clears it, and it replaces the mode line rather than adding a row, so the sheet's height never changes.
+**Tab never does nothing silently.** When it cannot advance the line *and* found nothing, the sentence under the key rows says why for a moment — `Complete — 5 inside this folder; tap one below.`, `No match here — only this folder and the ones already opened are searched.`, `Nothing to complete — type part of a command or a path.` Typing clears it, and it replaces the mode line rather than adding a row, so the sheet's height never changes.
 
 A phone keyboard that has its own Tab key (Samsung Keyboard, Hacker's Keyboard, some Gboard layouts) works too. Those keyboards usually do not report a Tab key press at all — they type a literal tab character into the field — so the prompt watches its text: everything before the tab is completed exactly like a tap on the row's **Tab**, and anything typed after it stays in the field. Further tab characters are dropped; a command line has no use for them.
 

@@ -119,6 +119,8 @@ try {
   const hint = () => evaluate("document.querySelector('.cli__hint')?.textContent");
   // chips() — the suggestion row's labels, in order, as the user reads them.
   const chips = () => evaluate("[...document.querySelectorAll('.cli__suggest-chip')].map((c) => c.textContent)");
+  // outText() — what the terminal screen shows.
+  const outText = () => evaluate("document.querySelector('.cli__out')?.textContent || ''");
   // tap(label) — touch the on-screen key the way a finger does, so the test
   // goes through the same pointer/touch/mouse/click sequence a phone sends.
   const tapKey = async (label) => {
@@ -208,6 +210,9 @@ try {
   assert.equal(await value(), 'frontend/', 'a folder typed with its own slash is left as the folder');
   assert.match(await hint(), /tap one below/, 'and the notice points at the chips instead of sounding like a dead end');
   assert.equal(posts.length, before, 'still nothing written to the child');
+  // 5c. Every Tab writes its result to the terminal screen, the way a shell
+  //     prints the matches above the prompt.
+  assert.match(await outText(), /\u276F Tab — 5 matches: frontend\/build\/  frontend\/dist\/  frontend\/index\.html  frontend\/vite\.config\.js  frontend\/vite-build\.log/, 'a Tab lists its matches in the output');
 
   // The chip rewrites the whole line, command included.
   await type('ls frontend');

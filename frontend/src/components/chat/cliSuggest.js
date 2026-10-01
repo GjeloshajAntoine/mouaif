@@ -183,6 +183,23 @@ function candidatesFor(base, history, entries, dirEntries) {
   return names.length ? { kind: 'path', items: names, head: prefix, whole: false, entered: word } : none;
 }
 
+// completionLive(report) → the text a Tab writes onto the terminal screen: the
+// match list, every time.
+//
+// This is what a shell does and what the sheet was missing. bash does not just
+// extend the word and stay quiet — press Tab on an ambiguous word and it prints
+// the matches above the prompt, which is how you discover a name you did not
+// know existed. The row of chips is a tap target; this is the record, and it
+// stays in the scrollback where output belongs. Returns '' when there is
+// nothing to show (a Tab with no candidates already says so under the keys).
+export function completionLive(report) {
+  const list = report && Array.isArray(report.list) ? report.list : [];
+  if (!list.length) return '';
+  const label = report.candidates === 1 ? 'match' : 'matches';
+  const columns = list.map((text) => text.replace(/\s+$/, '')).join('  ');
+  return '\u276F Tab \u2014 ' + report.candidates + ' ' + label + ': ' + columns + '\n';
+}
+
 // completionReport(text, history, entries, dirEntries) → `{ next, changed,
 // reason, candidates }`. `next` is what the field should become (`null` for
 // "leave it alone"), `changed` says whether that is a change, and `reason` is
@@ -201,22 +218,23 @@ function candidatesFor(base, history, entries, dirEntries) {
 export function completionReport(text, history, entries, dirEntries) {
   const base = String(text == null ? '' : text);
   const phase = candidatesFor(base, history, entries, dirEntries);
+  const list = phase.kind === 'none' ? [] : phase.items.map((item) => phase.kind === 'history' ? item : phase.head + item);
   if (phase.kind === 'none') {
-    return { next: null, changed: false, reason: base.trim() ? 'none' : 'empty', candidates: 0 };
+    return { next: null, changed: false, reason: base.trim() ? 'none' : 'empty', candidates: 0, list };
   }
   // A whole-directory match completes even when the listing is empty: the point
   // is that Tab always reacts to a directory the user names.
   if (phase.whole) {
     const next = completeLocally(base, history, entries, dirEntries);
     return next == null || next === base
-      ? { next, changed: false, reason: 'ambiguous', candidates: 0 }
-      : { next, changed: true, reason: 'completed', candidates: phase.items.length };
+      ? { next, changed: false, reason: 'ambiguous', candidates: list.length, list }
+      : { next, changed: true, reason: 'completed', candidates: list.length, list };
   }
   const next = completeLocally(base, history, entries, dirEntries);
   if (next == null || next === base) {
-    return { next, changed: false, reason: 'ambiguous', candidates: phase.items.length };
+    return { next, changed: false, reason: 'ambiguous', candidates: list.length, list };
   }
-  return { next, changed: true, reason: 'completed', candidates: phase.items.length };
+  return { next, changed: true, reason: 'completed', candidates: list.length, list };
 }
 
 // namesIn(dirEntries, word) — the directory-listing step of a completion, or
@@ -234,14 +252,11 @@ export function completionReport(text, history, entries, dirEntries) {
 function namesIn(dirEntries, word) {
   if (!dirEntries || typeof dirEntries.relDir !== 'string' || !Array.isArray(dirEntries.names)) return null;
   const relDir = dirEntries.relDir;
-  // The directory's own name: the *whole word* is that directory, so Tab
-  // completes it to its slash (`src` → `src/`) and the word is inside it. This
-  // is the case a phone user reaches first — they type a folder's name and press
-  // Tab to see what is in it, or they type the slash themselves (`src/`) and
-  // press Tab to list it. Both mean the same thing, and both used to fail:
-  // `src/` was refused outright, and `src` only completed its slash.
+  // A word that *is* the listed directory completes to its slash, whether or not
+  // its children are known yet — the next Tab is about them, which is what the
+  // fetched listing is for.
   if (word === relDir) {
-    return { head: relDir + '/', names: [], open: true, whole: true };
+    return { head: relDir + '/', names: dirEntries.names.slice(), open: true, whole: true };
   }
   if (word === relDir + '/') {
     return { head: word, names: dirEntries.names.slice(), open: true, whole: false };

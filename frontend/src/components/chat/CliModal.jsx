@@ -42,7 +42,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks'
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
 import { CLI_KEYS, cursorKeyMode, keepEditorFocus, keyForEvent, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
-import { rememberCommand, suggestionsFor, completeLocally, completionReport, listDirFor, stepHistory } from './cliSuggest.js';
+import { rememberCommand, suggestionsFor, completeLocally, completionLive, completionReport, listDirFor, stepHistory } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
 
 // completionNotice(report) → the one line shown under the prompt when Tab could
@@ -482,9 +482,17 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     const el = inputRef.current;
     const current = el ? el.value : cmdText;
     const report = completionReport(current, history, entries, dirEntries);
-    // A Tab that cannot advance the line says why, for a moment. Silence here is
-    // indistinguishable from a broken key on a phone, and it is the one symptom
-    // a bug report cannot pin down afterwards.
+    // Every Tab puts its result on the terminal screen — the match list, exactly
+    // as a shell prints it. That is the one place the answer is visible even
+    // when the field cannot move, and it is what makes Tab useful for discovery
+    // (`ls src/` then Tab shows what is in there) rather than only for typing
+    // less.
+    const live = completionLive(report);
+    if (live) writeOut(live);
+    // A Tab that can neither advance the line nor name anything says why under
+    // the keys, for a moment. Silence would be indistinguishable from a broken
+    // button on a phone, and it is the one symptom a bug report cannot pin down
+    // afterwards.
     if (!report.changed) {
       showNotice(completionNotice(report));
       // Nothing to complete, but the line may still *name* a directory — the

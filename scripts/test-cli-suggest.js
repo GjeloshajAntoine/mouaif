@@ -33,7 +33,7 @@ async function run() {
   const keys = await import('../frontend/src/components/chat/cliKeys.js');
   const suggest = await import('../frontend/src/components/chat/cliSuggest.js');
   const { CLI_KEYS, cursorKeyMode, keyById, keyForEvent, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab } = keys;
-  const { MAX_SUGGESTIONS, MAX_HISTORY, rememberCommand, suggestionsFor, completeLocally, completionReport, listDirFor, relativeDir, stepHistory } = suggest;
+  const { MAX_SUGGESTIONS, MAX_HISTORY, rememberCommand, suggestionsFor, completeLocally, completionLive, completionReport, listDirFor, relativeDir, stepHistory } = suggest;
 
   // ---- 1. The key row -------------------------------------------------
 
@@ -327,6 +327,33 @@ async function run() {
     completeLocally('npm ru', cHist, cEntries, { relDir: 'npm', names: ['run'] }) === 'npm run ',
     completeLocally('npm ru', cHist, cEntries, { relDir: 'npm', names: ['run'] }));
 
+  // ---- 6e. Every Tab reports its result, like a shell -------------------
+  //
+  // bash prints the matches above the prompt; the sheet now does the same, so a
+  // Tab is worth pressing even when the field cannot move.
+  const live = (draft, dir) => completionLive(completionReport(draft, cHist, cEntries, dir));
+
+  t('a single match completes and is reported by name',
+    live('git chec', srcDir) === '\u276F Tab \u2014 1 match: git checkout main\n', JSON.stringify(live('git chec', srcDir)));
+  t('several matches are listed, full paths and all',
+    live('ls src/', srcDir) === '\u276F Tab \u2014 3 matches: ls src/components/  ls src/styles.css  ls src/index.js\n',
+    JSON.stringify(live('ls src/', srcDir)));
+  t('naming a folder reports its contents',
+    live('src', srcDir).indexOf('\u276F Tab \u2014 3 matches: src/components/  src/styles.css  src/index.js') === 0,
+    JSON.stringify(live('src', srcDir)));
+  t('naming a folder with its slash reports the same contents',
+    live('src/', srcDir) === live('src', srcDir), JSON.stringify(live('src/', srcDir)));
+  t('a history line reports whole commands',
+    live('git ch', srcDir) === '\u276F Tab \u2014 1 match: git checkout main\n', JSON.stringify(live('git ch', srcDir)));
+  t('an empty line reports nothing',
+    live('', srcDir) === '', JSON.stringify(live('', srcDir)));
+  t('a word with no match reports nothing — the notice under the keys covers it',
+    live('zzzz', srcDir) === '', JSON.stringify(live('zzzz', srcDir)));
+  t('the report is one line, so it cannot flood the scrollback',
+    live('ls src/', srcDir).split('\n').length === 2, JSON.stringify(live('ls src/', srcDir)));
+  t('...and it carries no escape sequence into the grid',
+    !/\u001b/.test(live('ls src/', srcDir)), JSON.stringify(live('ls src/', srcDir)));
+
   // ---- 6d. A named folder offers its contents as chips ------------------
   //
   // "No further completion" is true and useless on a phone: you cannot see what
@@ -334,8 +361,7 @@ async function run() {
   // rewrites the whole line so the command survives the tap.
   const chipsFor = (draft, dir) => suggestionsFor({ draft, history: cHist, entries: cEntries, dirEntries: dir }).map((c) => c.text);
 
-  t('a folder name offers what is inside it',
-    JSON.stringify(chipsFor('src', srcDir)) === JSON.stringify(['src/components/', 'src/styles.css', 'src/index.js']),
+  t('a folder name offers what is inside it',    JSON.stringify(chipsFor('src', srcDir)) === JSON.stringify(['src/components/', 'src/styles.css', 'src/index.js']),
     chipsFor('src', srcDir));
   t('...and the same with the slash the user typed',
     JSON.stringify(chipsFor('src/', srcDir)) === JSON.stringify(['src/components/', 'src/styles.css', 'src/index.js']),
