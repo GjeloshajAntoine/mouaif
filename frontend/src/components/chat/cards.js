@@ -188,7 +188,14 @@ head.appendChild(scoped);
   function onToggleGroup(groupId, checked) {
     const group = groups.find((g) => g.id === groupId);
     if (!group) return;
-    if (state._toggleToolGroup) state._toggleToolGroup(group.tools.map((tool) => tool.id), checked);
+    // A category of one tool (the two `mouaif` rows) toggles that tool, not the
+    // per-row child ids: the children are parts of one tool, and the chat
+    // filter stores tool names. Falls back to the children's ids, which is what
+    // every catalog-backed group does.
+    const names = group.tools.some((tool) => tool.toolName)
+      ? Array.from(new Set(group.tools.map((tool) => tool.toolName)))
+      : group.tools.map((tool) => tool.id);
+    if (state._toggleToolGroup) state._toggleToolGroup(names, checked);
   }
 
   function onToggleTool(groupId, toolId, checked) {

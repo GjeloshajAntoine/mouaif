@@ -862,24 +862,38 @@ extra: restartStatusMsg ? h('div', { class: 'settings-project__item-status', 'ar
 });
 }
 // The mouaif tool owns chats, attachments, settings, and the project list
-// — the app's own data model. It renders as TWO rows so the user sees what
-// each half covers, but they share one authorization family: either row's
-// Off / Ask / Allow writes `tools.mouaif`, so the two segments always agree.
+// — the app's own data model. It renders as TWO categories, each listing its
+// own actions as child rows, but they share one authorization family: the
+// category row's Off / Ask / Allow writes `tools.mouaif`, so the two segments
+// always agree. The children are the category's actions; every one of them is
+// the same `mouaif` family, so a child checkbox is the same `Off ↔ Ask`
+// shortcut the category checkbox is (see toggleSettingsGroup).
 const mouaifTool = catalog.find((t) => t.name === 'mouaif');
 if (mouaifTool) {
 for (const row of MOUAIF_TOOL_GROUPS) {
+const on = isOn(mouaifAuth.mode);
 groups.push({
 id: row.id,
 name: row.name,
 description: row.description,
 title: mouaifTool.description || '',
-checked: isOn(mouaifAuth.mode),
+checked: on,
 control: toolModeSegs(row.name, segMode(mouaifAuth.mode), pickMouaifMode, [
 { value: 'off', label: 'Off' },
 { value: 'ask', label: 'Ask' },
 { value: 'allow', label: 'Allow' }
 ]),
-tools: [leaf(mouaifTool, { name: row.name, checked: isOn(mouaifAuth.mode) })],
+// Labels are the action names ("list chats", "read settings", …) with the
+// `mouaif` prefix dropped, the same way an MCP leaf drops its
+// `mcp__<server>__` prefix.
+tools: row.actions.map((action) => ({
+id: row.id + ':' + action,
+name: (row.labels && row.labels[action]) || action,
+description: '',
+title: 'mouaif action "' + action + '"',
+checked: on,
+toolName: mouaifTool.name
+})),
 extra: mouaifStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mouaifStatusMsg) : null
 });
 }
@@ -1021,7 +1035,13 @@ if (askTool) {
     else if (groupId === 'task') pickTaskMode(mode);
     else if (groupId === 'webpreview') pickWebpreviewMode(mode);
 else if (groupId === 'restart_app') pickRestartMode(mode);
-else if (groupId === 'mouaif' || groupId === 'mouaif-settings') pickMouaifMode(mode);
+else if (groupId === 'mouaif' || groupId === 'mouaif-settings') {
+  // A category's leaf rows are its own actions, all backed by the same
+  // `mouaif` family, so a child checkbox is the category's Off ↔ Ask
+  // shortcut rather than a per-tool override (which would be `mouaif`
+  // again, not the row's tree id).
+  pickMouaifMode(mode);
+  }
 else if (groupId === 'report_progress') pickProgressMode(mode);
 
     else if (groupId === 'ask_user') pickAskUserMode(mode);
@@ -1406,9 +1426,13 @@ href: '#/settings/prompts?' + projectBackQS()
                 groups: buildSettingsToolGroups(toolsCatalog),
                 onToggleGroup: toggleSettingsGroup,
                 onToggleTool: (groupId, toolId, checked) => {
-                  if (groupId.startsWith('mcp-')) toggleMcpToolAuth(toolId, checked);
-                  else if (groupId === 'files') pickFileToolMode(toolId, checked ? 'ask' : 'off');
-                  else toggleSettingsGroup(groupId, checked);
+                if (groupId.startsWith('mcp-')) toggleMcpToolAuth(toolId, checked);
+                else if (groupId === 'files') pickFileToolMode(toolId, checked ? 'ask' : 'off');
+                // A `mouaif` category's leaves are its own actions: they all
+                // belong to the one `mouaif` family, so the row is the
+                // category's Off ↔ Ask shortcut rather than a per-tool
+                // override (which would key on `mouaif`, not `mouaif:list`).
+                else toggleSettingsGroup(groupId, checked);
                 },
                 // Groups with more than one nested tool start collapsed,
                 // matching the chat tree. The ToolTree holds its own

@@ -41,20 +41,22 @@ What is my default prompt size, and switch this project to agentFiles off.
 
 ### Where it appears
 
-The tool shows up as **two rows** in the tools tree (Settings → Project → Tools, the chat Tools card, and the composer tools popup):
+The tool shows up as **two categories** in the tools tree (Settings → Project → Tools, the chat Tools card, and the composer tools popup), each listing its own actions as child rows:
 
-| Row | Covers |
+| Category row | Actions (child rows) |
 | --- | --- |
 | **Chats** | `list` `get` `create` `update` `delete` `search` `attach` `list_attachments` |
 | **mouaif** | `settings_get` `settings_update` `project_list` `info` |
 
-The split is about what you are looking at, not about permissions: there is **one** `mouaif` authorization family behind both rows, and either row's Off / Ask / Allow writes that one gate. The two rows always show the same mode.
+The children are the same model-facing `mouaif` tool, not separate tools, so the split is about what you are looking at rather than about permissions: there is **one** `mouaif` authorization family behind both categories, and the Off / Ask / Allow segment on either category row writes that one gate. The two category rows always show the same mode, and a child checkbox is the category's `Off ↔ Ask` shortcut.
+
+The category rows are built from `GROUPS` in [src/tools/mouaif.js](../../src/tools/mouaif.js), whose `actions` list is derived from the `ACTIONS` area table — adding an action puts it under its area's category with no second edit.
 
 ### Authorization
 
 The tool is one native authorization family, `mouaif`, gated the same way as Shell, File tools, and Web preview:
 
-- **Settings → Project → Tools** — Off / Ask / Allow for the project, on either row.
+- **Settings → Project → Tools** — Off / Ask / Allow for the project, on either category row.
 - **Chat → Tools card** and the composer tools popup — the same segments, scoped to that chat.
 - `off` hides the tool spec entirely; the model never pays tokens for it.
 - `ask` shows the usual authorization card before the call runs.

@@ -15,6 +15,7 @@ The tree sits below the system prompt. It shows one group per tool family:
 - **ask_user** — pause and ask the user a structured question
 - **File tools** — read_file, list_files, search_files, write_file, edit_file
 - **One group per MCP server** — configured servers always render, even when stopped; stopped servers fall back to the cached tool list from their last run. The group checkbox flips all the server's tools in the per-chat tool filter at once (there is no server-level on/off); leaf checkboxes flip individual tools.
+- **Two `mouaif` categories** — the single `mouaif` tool renders as **Chats** (`list` … `attach`, `list_attachments`) and **mouaif** (settings, projects, feature info), each listing its own actions as child rows, so a category reads as a category and not as one more tool. Every row is the same model-facing tool and the same `mouaif` authorization family, so one segment gates both categories and a child checkbox is the category's `Off ↔ Ask` shortcut. Children carry `toolName` (`mouaif`); the tree id (`mouaif:list`) is only a key, because the per-chat filter stores tool names.
 
 Each group row has:
 

@@ -53,6 +53,18 @@ async function main() {
     return covered === Object.keys(mouaif.AREAS).sort().join(',');
   })());
   check('the first category is the chats half', mouaif.GROUPS[0].areas.join(',') === 'chats,attachments');
+  // Each category lists its own actions — that is what the tools tree renders
+  // as child rows, so a category reads as a category and not as one more tool.
+  // The lists are derived from ACTIONS, so this asserts the derivation, not a
+  // hand-kept copy: every action appears under its area's category exactly once.
+  check('every action lands in exactly one category', (() => {
+    const listed = mouaif.GROUPS.flatMap((g) => g.actions).sort();
+    return listed.join(',') === mouaif.ACTION_NAMES.slice().sort().join(',');
+  })());
+  check('a category lists only its own areas\u2019 actions', mouaif.GROUPS[0].actions.every((a) => ['chats', 'attachments'].includes(mouaif.ACTIONS[a]))
+    && mouaif.GROUPS[1].actions.every((a) => ['settings', 'projects', 'info'].includes(mouaif.ACTIONS[a])));
+  check('the chats category lists the eight chat + attachment actions', mouaif.GROUPS[0].actions.join(',') === 'list,get,create,update,delete,search,attach,list_attachments');
+  check('the settings category lists the four settings + project actions', mouaif.GROUPS[1].actions.join(',') === 'settings_get,settings_update,project_list,info');
 
   // --- 2) Authorization category -----------------------------------------
   const authState = authz.getAuthorization(projectDir);

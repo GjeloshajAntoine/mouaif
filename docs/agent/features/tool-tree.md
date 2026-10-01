@@ -90,11 +90,24 @@ Authorization keys in the project file:
 | subagent | `tools.subagent` | off / ask / allowlist / allow |
 | ask_user | `tools.ask_user` | off / ask (binary) |
 | File tools | `tools.file` | off / ask / allowlist / allow |
+| Chats / mouaif (two category rows, one family) | `tools.mouaif` | off / ask / allowlist / allow |
 | (each MCP server) | `mcp.authorization.servers.<slug>` (segment + group checkbox) | off / ask / allowlist / allow |
 
 The settings tree renders one group per configured MCP server (group checkbox = that server's override's `Off ↔ Ask`, segment = the full per-server authorization override showing the effective mode). Servers always render, even when stopped: `/api/tools/list` only reports running servers, so the settings page loads the merged server list from `/api/mcp/servers` and falls back to the cached tool list on the server record.
 
 `buildSettingsToolGroups` in `SettingsProject.jsx` maps each group to its auth state and attaches the segment as `control`. The group checkbox maps to `off ↔ ask`; `allow` is only reachable via the segment so a stray tap never escalates privilege.
+
+### Categories: one tool, several rows
+
+A category is a group row whose child rows are **parts of one tool** rather than separate tools. `mouaif` is the only one today: `GROUPS` in `src/tools/mouaif.js` splits its twelve actions into **Chats** (chats + attachments) and **mouaif** (settings, projects, feature info), and each category renders its own actions as children, so it is collapsible and counted like `File tools` instead of reading as one more single-child tool row (a one-child group in `ToolTree` hides its child).
+
+Every child maps to the same authorization family, so:
+
+- each child row carries `toolName` (the model-facing name, `mouaif`) beside its own tree id (`mouaif:list`); the per-chat tool filter stores **tool names**, so a toggle must resolve through `toolName` or the chat would be written with a tool that does not exist;
+- the category checkbox and segment write the one `tools.mouaif` mode, and a child checkbox is the same `Off ↔ Ask` shortcut rather than a per-tool override (which would key on `mouaif`, not on the row's id);
+- the two category rows therefore always agree, whichever surface changed them.
+
+`MOUAIF_TOOL_GROUPS` in `frontend/src/components/ToolTree.jsx` holds the ids and the per-action child labels; the server's `GROUPS.actions` are derived from the `ACTIONS` area table, so a new action lands under its area's category with no second edit. Covered by `scripts/test-mouaif-tool.js` (server table) and `scripts/test-mouaif-tool-categories.mjs` (rendered shape and toggle identity).
 
 ### One authorization control for every tool
 

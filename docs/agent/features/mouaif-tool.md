@@ -4,9 +4,9 @@
 
 ### Shape
 
-One spec, five areas, twelve actions, **two UI categories**. `src/tools/mouaif.js` exports `SPEC`, `ACTIONS` (action → area), `AREAS` (one-line description per area), `GROUPS` (the two UI categories, each listing the areas it covers), `ACTION_NAMES`, and `runMouaif(args, opts)`.
+One spec, five areas, twelve actions, **two UI categories**. `src/tools/mouaif.js` exports `SPEC`, `ACTIONS` (action → area), `AREAS` (one-line description per area), `GROUPS` (the two UI categories — each lists the areas it covers and the `actions` derived from them), `ACTION_NAMES`, and `runMouaif(args, opts)`.
 
-`MOUAIF_TOOL_GROUPS` in `frontend/src/components/ToolTree.jsx` is the frontend copy of `GROUPS`; it is what the two tree surfaces iterate. Keep the two in sync when an area moves between categories — `scripts/test-mouaif-tool.js` asserts the server-side table covers every area exactly once.
+`MOUAIF_TOOL_GROUPS` in `frontend/src/components/ToolTree.jsx` is the frontend copy of `GROUPS`: it carries the per-action child labels and is what `buildToolGroups` / `buildSettingsToolGroups` iterate to render one category row with its actions as children. Keep the two in sync when an area moves between categories — `scripts/test-mouaif-tool.js` asserts the server-side table covers every area and every action exactly once, and `scripts/test-mouaif-tool-categories.mjs` asserts the rendered shape (two categories, action children, every child resolving to the one `mouaif` tool).
 
 ```js
 const { runMouaif } = require('mouaif/src/tools/mouaif.js');
@@ -29,8 +29,8 @@ const out = await runMouaif(
 | Authorization family | `src/tools/authorization.js` | Member of `NATIVE_TOOLS`; own row in the `getAuthorization` view. Default mode `ask`. |
 | Prompt presets | `src/prompts.js` | Member of `PRESET_TOOL_NAMES`. |
 | Feature summary | `src/agentFeatures.js` | Own line in `buildFeatureSummary`; in the `list_features` tool list. |
-| Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,ToolTree.jsx,useChatState.js}` | Two group rows (`mouaif`, `mouaif-settings`) with a segment each; both segments write the one `mouaif` family. |
-| Project settings UI | `frontend/src/components/SettingsProject.jsx` | The same two rows, built from `MOUAIF_TOOL_GROUPS` exported by `ToolTree.jsx`. |
+| Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,useChatState.js}` | One category row per half (`mouaif`, `mouaif-settings`) with an action child row each and a segment on the category; every row maps to the one `mouaif` family. Child toggles resolve through `tool.toolName`. |
+| Project settings UI | `frontend/src/components/SettingsProject.jsx` | The same two categories, built inline (they carry the per-row validation status); a child checkbox routes to `pickMouaifMode`. |
 | Agent allowlist UI | `frontend/src/components/SettingsAgents.jsx` | `mouaif` choice. |
 | Card rendering | `frontend/src/components/chat/{tools.js,toolRender.js}` + `frontend/src/tool-cards.css` | `mouaifArgSummary` for the collapsed head; `renderMouaifToolResult` renders a chat list, everything else falls through to the JSON preview. |
 

@@ -200,7 +200,7 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
                       onChange: (e) => onToggleTool && onToggleTool(group.id, tool.id, e.target.checked),
                       'aria-label': tool.name
                     }),
-                    h('span', { class: 'tool-tree__name' }, tool.name),
+                    h('span', { class: 'tool-tree__name' + (tool.description ? '' : ' tool-tree__name--wide') }, tool.name),
                     tool.description ? h('span', { class: 'tool-tree__desc' }, tool.description) : null,
                     tool.used ? h('span', { class: 'tool-tree__used', title: 'Used in this chat' }, '●') : null,
                     tool.disabled && tool.disabledReason
@@ -324,23 +324,65 @@ export function shortDesc(text, max = 40) {
 // separate "enabled" server switch — and their checkbox flips the
 // per-chat tool filter for the whole server. Used tools get the
 // dot badge.
-// The two rows the single `mouaif` tool renders as. Kept here (not derived
-// from the catalog) because the catalog advertises one tool while the tree
-// shows two: one for the project's chats and their image attachments, one
-// for app & project settings and the project list. Both rows read and write
-// the same `mouaif` authorization family.
+// The two categories the single `mouaif` tool renders as. Kept here (not
+// derived from the catalog) because the catalog advertises one tool while the
+// tree shows two: one for the project's chats and their image attachments, one
+// for app & project settings and the project list.
+//
+// `labels` are the per-action labels of the child rows. Each category shows its
+// own actions as children — a real category, not a second row that reads like
+// one more tool — and every child row maps to the same `mouaif` tool, so the
+// Off / Ask / Allow gate on the category row is the whole category's gate.
+// Keep the ids in step with `GROUPS` in src/tools/mouaif.js (the server's copy,
+// which drives the model-facing action table).
 export const MOUAIF_TOOL_GROUPS = Object.freeze([
   Object.freeze({
     id: 'mouaif',
     name: 'Chats',
-    description: 'list · read · create · rename · delete · search · attach images'
+    description: 'list · read · create · rename · delete · search · attach images',
+    actions: Object.freeze(['list', 'get', 'create', 'update', 'delete', 'search', 'attach', 'list_attachments']),
+    labels: Object.freeze({
+      list: 'list chats',
+      get: 'read a chat',
+      create: 'create a chat',
+      update: 'rename / set model',
+      delete: 'delete a chat',
+      search: 'search chats',
+      attach: 'attach an image',
+      list_attachments: 'list a chat\u2019s images'
+    })
   }),
   Object.freeze({
     id: 'mouaif-settings',
     name: 'mouaif',
-    description: 'app & project settings · projects · feature info'
+    description: 'app & project settings · projects · feature info',
+    actions: Object.freeze(['settings_get', 'settings_update', 'project_list', 'info']),
+    labels: Object.freeze({
+      settings_get: 'read settings',
+      settings_update: 'update settings',
+      project_list: 'list projects',
+      info: 'feature state'
+    })
   })
 ]);
+
+// mouaifCategoryTools(tool, category) -> leaf rows
+//
+// The child rows of one category. Every row is the same model-facing tool and
+// therefore the same `mouaif` authorization family; only the label differs, so
+// unchecking one action reads as that action, and the category checkbox/segment
+// still writes the one gate the server enforces. Ids are unique per row
+// (`<category>:<action>`) so the tree's keys and the group toggle by id stay
+// unambiguous.
+function mouaifCategoryTools(tool, category) {
+  return category.actions.map((action) => ({
+    id: category.id + ':' + action,
+    name: (category.labels && category.labels[action]) || action,
+    description: '',
+    title: 'mouaif action "' + action + '"',
+    toolName: tool.name
+  }));
+}
 
 export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set()) {
   const groups = [];
@@ -369,12 +411,13 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
     });
   }
 
-  // The mouaif tool renders as TWO rows — "Chats" (chats + image
-  // attachments) and "mouaif" (app & project settings, projects, feature
-  // info). Both map to the single model-facing `mouaif` tool and therefore
-  // to the single `mouaif` authorization family; the chat-scoped Off / Ask
-  // / Allow segment on either row writes that one gate, so the two rows
-  // always agree. The ids are distinct so tree keys and collapse state stay
+  // The mouaif tool renders as TWO categories — "Chats" (chats + image
+  // attachments) and "mouaif" (app & project settings, projects, feature info).
+  // Each category lists its own actions as children, so it reads as a category
+  // (chevron, child rows, count) rather than as one more tool row. Every row
+  // maps to the single model-facing `mouaif` tool and therefore to the single
+  // `mouaif` authorization family; the segment on the category row writes that
+  // one gate. The ids are distinct so tree keys and collapse state stay
   // independent. See docs/features/mouaif-tool.md.
   const mouaifTool = catalog.find((x) => x && x.name === 'mouaif');
   if (mouaifTool) {
@@ -385,7 +428,10 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
         description: row.description,
         title: mouaifTool.description || '',
         checked: isOn(mouaifTool.name),
-        tools: [leaf(mouaifTool)]
+        tools: mouaifCategoryTools(mouaifTool, row).map((t) => Object.assign(t, {
+          checked: isOn(mouaifTool.name),
+          used: usedTools.has(mouaifTool.name)
+        }))
       });
     }
   }

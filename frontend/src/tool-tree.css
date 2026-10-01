@@ -173,8 +173,13 @@ appearance: none;
   border-left: 1px solid var(--border);
 }
 
-.tool-tree__item { display: flex; min-height: 0; }
+.tool-tree__item { display: flex; min-height: 0; min-width: 0; }
 .tool-tree__item .tool-tree__row { flex: 1 1 auto; }
+
+/* A child row with no description (a category's action row) has the text
+   column to itself; without this the 46% cap on the name would truncate it
+   even though nothing follows it. */
+.tool-tree__name--wide { max-width: 100%; }
 
 /* Disabled */
 .tool-tree__row:has(.checkbox:disabled) { opacity: 0.55; }

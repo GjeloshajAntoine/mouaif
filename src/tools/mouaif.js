@@ -82,27 +82,37 @@ const AREAS = Object.freeze({
   info: 'Describe the mouaif feature state and this tool\u2019s actions.'
 });
 
+const ACTION_NAMES = Object.freeze(Object.keys(ACTIONS));
+
 // The two categories the tool surfaces under in the UI. One model-facing tool
-// and one authorization family (`mouaif`) cover both, so the two rows in the
-// tools tree share one Off / Ask / Allow gate — the split is about what the
-// user is looking at, not about two permissions. `areas` is what each
-// category covers; the tools tree builds one row per entry.
+// and one authorization family (`mouaif`) cover both, so the two category rows
+// in the tools tree share one Off / Ask / Allow gate — the split is about what
+// the user is looking at, not about two permissions.
+//
+// Each category lists the areas it covers, and `actions` is derived from that
+// through ACTIONS, so the tree's child rows come from the same table the
+// schema enum and the dispatcher use: adding an action puts it under its area's
+// category with no second edit here (scripts/test-mouaif-tool.js asserts it).
 const GROUPS = Object.freeze([
   Object.freeze({
     id: 'mouaif',
     name: 'Chats',
     description: 'list \u00b7 read \u00b7 create \u00b7 rename \u00b7 delete \u00b7 search \u00b7 attach images',
-    areas: Object.freeze(['chats', 'attachments'])
+    areas: Object.freeze(['chats', 'attachments']),
+    actions: Object.freeze(
+      ACTION_NAMES.filter((name) => ['chats', 'attachments'].includes(ACTIONS[name]))
+    )
   }),
   Object.freeze({
     id: 'mouaif-settings',
     name: 'mouaif',
     description: 'app & project settings \u00b7 projects \u00b7 feature info',
-    areas: Object.freeze(['settings', 'projects', 'info'])
+    areas: Object.freeze(['settings', 'projects', 'info']),
+    actions: Object.freeze(
+      ACTION_NAMES.filter((name) => ['settings', 'projects', 'info'].includes(ACTIONS[name]))
+    )
   })
 ]);
-
-const ACTION_NAMES = Object.freeze(Object.keys(ACTIONS));
 
 const SPEC = {
   type: 'function',

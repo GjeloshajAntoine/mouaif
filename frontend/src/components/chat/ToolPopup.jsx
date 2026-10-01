@@ -163,7 +163,14 @@ files: 'file'
   }
   if (onToggleToolGroup) {
       const group = groups.find((g) => g.id === groupId);
-      if (group) onToggleToolGroup(group.tools.map((t) => t.id), checked);
+      // A one-tool category (the two `mouaif` rows) toggles that tool: its
+      // children are parts of one tool, and the filter stores tool names.
+      if (group) {
+        const names = group.tools.some((t) => t.toolName)
+          ? Array.from(new Set(group.tools.map((t) => t.toolName)))
+          : group.tools.map((t) => t.id);
+        onToggleToolGroup(names, checked);
+      }
     }
   }
 
@@ -178,7 +185,12 @@ files: 'file'
       if (onToggleSkill) onToggleSkill(toolId, checked);
       return;
     }
-    if (onToggleTool) onToggleTool(toolId, checked);
+    // A child row of a one-tool category (the two `mouaif` rows) toggles the
+    // tool it belongs to — the chat filter stores tool names, and the row's own
+    // id (`mouaif:list`) is only a tree key.
+    const group = groups.find((g) => g.id === groupId);
+    const child = group && group.tools.find((t) => t.id === toolId);
+    if (onToggleTool) onToggleTool((child && child.toolName) || toolId, checked);
   }
 
   // If agent files are available, add a synthetic group for them
