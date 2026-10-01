@@ -37,7 +37,7 @@
 <section class="hero">
 <p class="eyebrow">Mobile Ouaib first</p>
 <h1>mouaif</h1>
-<p class="tagline">Run an AI coding workspace for your local projects, with a web inspector, a CodeMirror-based code editor, subagents, and custom prompts.</p>
+<p class="tagline">A coding agent you run from your phone: a real terminal and git in your project, a DevTools built for touch, an editor, subagents, and Draft Craft — all on your own machine.</p>
 <div class="hero-install">
 <pre><code class="language-bash">npx mouaif serve
 npx mouaif serve --auth
@@ -52,105 +52,116 @@ npx mouaif serve --auth-setup</code></pre>
 </div>
 </section>
 <section class="section" id="screens">
-<h2>Every page, on a phone</h2>
-<p class="lead">One section per screen of the app, captured at 390 px wide — the real UI, not a mockup.</p>
-<section class="screen" id="chats">
+<h2>What it does that others do not</h2>
+<p class="lead">One section per capability, captured on a 390 px phone — the real UI, not a mockup.</p>
+<section class="screen" id="chat">
 <div class="screen-copy">
-<h2>Chats</h2>
-<p>Every chat, grouped under its project card, with its own scrolling list and a New chat button so a project never sends you back to a global list.</p>
-</div>
-<figure class="shot">
-  <div class="shot-fallback">The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it.</div>
-  <img src="features/images/landing/chats-list.png" alt="The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it." loading="lazy" />
-  <figcaption>Chats — projects group their own chats</figcaption>
-</figure>
-</section>
-<section class="screen screen--flip" id="chat">
-<div class="screen-copy">
-<h2>Chat</h2>
-<p>A run reads, searches, edits and tests: each tool call is a card with its own result, and Cost, Context and balance stay visible while the transcript scrolls.</p>
+<h2>One chat, a whole run</h2>
+<p>Reads files, searches, edits and runs tests — each call is a card with its own result, and Context, cost and provider balance stay on screen while the transcript scrolls.</p>
 </div>
 <figure class="shot">
   <div class="shot-fallback">A chat at 390 px: the Context, Total and Balance chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer.</div>
-  <img src="features/images/landing/chat-view.png" alt="A chat at 390 px: the Context, Total and Balance chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer." loading="lazy" />
+  <img src="features/images/landing/chat-view.png" alt="A chat at 390 px: the Context, Total and Balance chips across the header, an assistant turn with its per-turn cost line, and the Read, Searched, Wrote and Ran tool cards above the composer." width="780" height="1400" loading="lazy" />
   <figcaption>Chats — a run reads, searches, edits and tests</figcaption>
 </figure>
 </section>
-<section class="screen" id="new-chat">
+<section class="screen screen--flip" id="terminal">
 <div class="screen-copy">
-<h2>A new chat</h2>
-<p>Open a chat and the system prompt and the full tool list are already there, every tool with its own checkbox and an Off / Ask / Allow control.</p>
+<h2>A real terminal on the phone</h2>
+<p>Not a log viewer: a persistent shell session in the project directory. Esc, Tab, Ctrl-C, arrows and PgUp/PgDn are buttons here, so a pager, a full-screen program or a password prompt all work from a phone keyboard.</p>
 </div>
 <figure class="shot">
-  <div class="shot-fallback">An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the &quot;Start the conversation&quot; state.</div>
-  <img src="features/images/landing/chat-tools.png" alt="An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the &quot;Start the conversation&quot; state." loading="lazy" />
-  <figcaption>A new chat — every tool, Off / Ask / Allow</figcaption>
+  <div class="shot-fallback">The CLI sheet at 390 px running npm test inside the project directory: the live shell output, suggestion chips for the session command and the project files, the command field, and two rows of terminal keys (Esc, Tab, ^C, ^D, ^Z, ^L, arrows, PgUp, PgDn).</div>
+  <img src="features/images/landing/terminal.png" alt="The CLI sheet at 390 px running npm test inside the project directory: the live shell output, suggestion chips for the session command and the project files, the command field, and two rows of terminal keys (Esc, Tab, ^C, ^D, ^Z, ^L, arrows, PgUp, PgDn)." width="780" height="1400" loading="lazy" />
+  <figcaption>CLI — a shell in your project, driven from a phone</figcaption>
 </figure>
 </section>
-<section class="screen screen--flip" id="approvals">
+<section class="screen" id="git">
 <div class="screen-copy">
-<h2>Approvals</h2>
-<p>Anything sensitive waits for you: an approval card names the call, shows the delegated task, and lets you pick the model for that one run before you allow or deny it.</p>
+<h2>Review the diff, then commit</h2>
+<p>Stage and unstage per file, open the diff, write the message and commit — the working-tree loop a desktop git client normally owns, without leaving the chat.</p>
+</div>
+<figure class="shot">
+  <div class="shot-fallback">The Git sheet at 390 px: the branch picker with pull, push, refresh and close, one staged file above the commit bar, and unstaged files each with a Stage button.</div>
+  <img src="features/images/landing/git.png" alt="The Git sheet at 390 px: the branch picker with pull, push, refresh and close, one staged file above the commit bar, and unstaged files each with a Stage button." width="780" height="1400" loading="lazy" />
+  <figcaption>Git — stage, review, commit</figcaption>
+</figure>
+</section>
+<section class="screen screen--flip" id="draft-craft">
+<div class="screen-copy">
+<h2>Draw on the bug instead of describing it</h2>
+<p>Annotate an image with pen strokes and numbered pins that carry text, then attach the marked-up picture to any chat draft. It waits in the composer for you to send it — nothing is sent for you.</p>
+</div>
+<figure class="shot">
+  <div class="shot-fallback">The Draft Craft annotator over an image attached to a chat draft, with one pen stroke and one numbered pin carrying the text &quot;Header wraps here&quot;, plus the marker list and toolbar beneath the canvas.</div>
+  <img src="features/images/landing/draft-craft.png" alt="The Draft Craft annotator over an image attached to a chat draft, with one pen stroke and one numbered pin carrying the text &quot;Header wraps here&quot;, plus the marker list and toolbar beneath the canvas." width="780" height="1400" loading="lazy" />
+  <figcaption>Draft Craft — annotate, then add to a chat draft</figcaption>
+</figure>
+</section>
+<section class="screen" id="approvals">
+<div class="screen-copy">
+<h2>Nothing sensitive runs unnamed</h2>
+<p>A call that needs you pauses the run and shows what it is about to do — the exact command, file or delegated task — and a subagent lets you pick the model for that one run before you allow or deny it.</p>
 </div>
 <figure class="shot">
   <div class="shot-fallback">A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons.</div>
-  <img src="features/images/landing/subagent-auth.png" alt="A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons." loading="lazy" />
-  <figcaption>Approving a subagent — pick its model first</figcaption>
+  <img src="features/images/landing/subagent-auth.png" alt="A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons." width="780" height="1400" loading="lazy" />
+  <figcaption>Approvals — pick the model before you allow a run</figcaption>
 </figure>
 </section>
-<section class="screen" id="inspector">
+<section class="screen screen--flip" id="inspector">
 <div class="screen-copy">
-<h2>Inspector</h2>
-<p>Attach the Inspector to a page over CDP and you get a live preview, styles, console and network on a phone — plus an annotator that sends a marked-up screenshot to a chat draft.</p>
+<h2>A DevTools built for a phone</h2>
+<p>Attach over CDP and you get the live page, styles, console and network in a touch-sized UI — inspect, type into the page, and send a marked-up frame straight to a chat draft.</p>
 </div>
 <figure class="shot">
   <div class="shot-fallback">The Inspector tab at 390 px, attached to a page over CDP: the target bar, the panel chips, the live preview of the inspected page, and the console input.</div>
-  <img src="features/images/landing/inspector.png" alt="The Inspector tab at 390 px, attached to a page over CDP: the target bar, the panel chips, the live preview of the inspected page, and the console input." loading="lazy" />
+  <img src="features/images/landing/inspector.png" alt="The Inspector tab at 390 px, attached to a page over CDP: the target bar, the panel chips, the live preview of the inspected page, and the console input." width="780" height="1400" loading="lazy" />
   <figcaption>Inspector — attach to a page over CDP</figcaption>
 </figure>
 </section>
-<section class="screen screen--flip" id="dictate">
+<section class="screen" id="chats">
 <div class="screen-copy">
-<h2>Dictate</h2>
-<p>Speech-to-text on its own page: record, edit the transcript in place, then copy it, insert it into a chat draft, or send it. The text button in the chat composer dictates as you speak.</p>
+<h2>Chats belong to a project</h2>
+<p>Each project card holds its own scrolling chat list, so a project is a workspace with its own chats, models, agents and instructions rather than a tag on one global list.</p>
+</div>
+<figure class="shot">
+  <div class="shot-fallback">The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it.</div>
+  <img src="features/images/landing/chats-list.png" alt="The Chats tab at 390 px: two project cards, each holding its own scrolling chat list with a New chat button under it." width="780" height="1400" loading="lazy" />
+  <figcaption>Chats — projects group their own chats</figcaption>
+</figure>
+</section>
+<section class="screen screen--flip" id="new-chat">
+<div class="screen-copy">
+<h2>A chat that starts configured</h2>
+<p>The system prompt and the whole tool list are there on the first message, and every tool carries its own Off / Ask / Allow control. The default is Ask, so nothing runs unnamed.</p>
+</div>
+<figure class="shot">
+  <div class="shot-fallback">An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the &quot;Start the conversation&quot; state.</div>
+  <img src="features/images/landing/chat-tools.png" alt="An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the &quot;Start the conversation&quot; state." width="780" height="1400" loading="lazy" />
+  <figcaption>A new chat — every tool, Off / Ask / Allow</figcaption>
+</figure>
+</section>
+<section class="screen" id="dictate">
+<div class="screen-copy">
+<h2>Talk to it from anywhere</h2>
+<p>Dictate a message and the text lands in the draft to edit and send — or leave the microphone on and the chat transcribes while you speak, so the words are there when you look up.</p>
 </div>
 <figure class="shot">
   <div class="shot-fallback">The Dictate page at 390 px: the model picker with its request-shape summary, the record button with the timer and level meter, and the transcript with its Copy, Insert and Send actions.</div>
-  <img src="features/images/landing/dictation.png" alt="The Dictate page at 390 px: the model picker with its request-shape summary, the record button with the timer and level meter, and the transcript with its Copy, Insert and Send actions." loading="lazy" />
+  <img src="features/images/landing/dictation.png" alt="The Dictate page at 390 px: the model picker with its request-shape summary, the record button with the timer and level meter, and the transcript with its Copy, Insert and Send actions." width="780" height="1400" loading="lazy" />
   <figcaption>Dictate — record, edit, then use the text</figcaption>
-</figure>
-</section>
-<section class="screen" id="settings">
-<div class="screen-copy">
-<h2>Settings</h2>
-<p>Providers first, then the app defaults that apply to every project — dictation model, notifications, pricing, agents and custom actions.</p>
-</div>
-<figure class="shot">
-  <div class="shot-fallback">The Settings tab at 390 px: a Providers section, then the app defaults that apply to every project.</div>
-  <img src="features/images/landing/settings.png" alt="The Settings tab at 390 px: a Providers section, then the app defaults that apply to every project." loading="lazy" />
-  <figcaption>Settings — providers first, then app defaults</figcaption>
 </figure>
 </section>
 <section class="screen screen--flip" id="providers">
 <div class="screen-copy">
-<h2>Providers</h2>
-<p>Connect a provider once, app-wide: each row names its endpoint and whether a key is stored, and every project model points at one of these connections.</p>
+<h2>Your keys, your machine</h2>
+<p>Connect a provider once and every project can use it: any OpenAI-shaped endpoint (keyless local servers included), Anthropic, Gemini, Ollama, OpenRouter or GitHub Copilot sign-in. The credential stays server-side and never reaches the page.</p>
 </div>
 <figure class="shot">
   <div class="shot-fallback">Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored.</div>
-  <img src="features/images/landing/providers.png" alt="Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored." loading="lazy" />
+  <img src="features/images/landing/providers.png" alt="Settings → Providers at 390 px: seven connected providers, each row naming its endpoint and whether a key is stored." width="780" height="1400" loading="lazy" />
   <figcaption>Providers — connect them once, app-wide</figcaption>
-</figure>
-</section>
-<section class="screen" id="project-settings">
-<div class="screen-copy">
-<h2>Project settings</h2>
-<p>The prompt style, the models this project offers, and the tool list where every tool carries its own Off, Ask or Allow control.</p>
-</div>
-<figure class="shot">
-  <div class="shot-fallback">Project settings at 390 px: the prompt style, then the tool list where every tool carries its own Off, Ask or Allow control.</div>
-  <img src="features/images/landing/project-settings.png" alt="Project settings at 390 px: the prompt style, then the tool list where every tool carries its own Off, Ask or Allow control." loading="lazy" />
-  <figcaption>Project settings — per-tool Off / Ask / Allow</figcaption>
 </figure>
 </section>
 <p><a href="features/app-abilities.html">See every app ability →</a> · <a href="features/mouaif-features.html">Feature reference for agents →</a></p>

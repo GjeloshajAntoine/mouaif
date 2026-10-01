@@ -81,6 +81,24 @@ function installProjectModels(projectDir) {
   settings.setProject(projectDir, { models: MODELS });
 }
 
+// makeGitDirty(projectDir) — leave the fixture with one staged and one
+// unstaged change, so a capture of the Git sheet shows the working state a
+// user actually opens it on rather than a clean tree. Applied only by the shot
+// that needs it (`before` hook), so no other frame sees a modified checkout.
+function makeGitDirty(projectDir) {
+  const { execFileSync } = require('child_process');
+  const fs = require('fs');
+  const path = require('path');
+  try {
+    // Staged: a real edit to the README.
+    fs.appendFileSync(path.join(projectDir, 'README.md'), '\nTasks keep their order across a restart.\n');
+    execFileSync('git', ['add', 'README.md'], { cwd: projectDir, stdio: 'ignore' });
+    // Unstaged: a comment explaining the fix the seeded run made.
+    fs.appendFileSync(path.join(projectDir, 'src/store.js'),
+      '\n// ORDER BY position, not id: the ids are strings, so "10" sorts before "9".\n');
+  } catch { /* a missing git binary must not fail the capture */ }
+}
+
 // seedSubagentAuthorization(projectDir, chatId) -> { callId }
 //
 // Park a `subagent` call on the authorization gate and mark the chat as
@@ -355,6 +373,7 @@ module.exports = {
   installProjectModels,
   seedSubagentAuthorization,
   clearSubagentAuthorization,
+  makeGitDirty,
   transcript,
   writePreviewPage
 };

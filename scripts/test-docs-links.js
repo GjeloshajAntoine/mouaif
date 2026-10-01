@@ -182,8 +182,8 @@ try {
     // Both layouts must exist: the flip is what alternates the capture sides.
     assert.ok(sections.some((s) => s[0].includes('screen--flip')), 'no flipped screen section');
     assert.ok(sections.some((s) => !s[0].includes('screen--flip')), 'no unflipped screen section');
-    for (const id of ['chats', 'chat', 'inspector', 'dictate', 'settings', 'providers', 'project-settings']) {
-      assert.ok(sections.some((s) => s[1] === id), 'no screen section for ' + id);
+    for (const id of ['chat', 'terminal', 'git', 'draft-craft', 'approvals', 'inspector', 'chats', 'providers']) {
+    assert.ok(sections.some((s) => s[1] === id), 'no screen section for ' + id);
     }
     // The old bare grid is gone; its rules would leave the sections unstyled.
     const css = fs.readFileSync(path.join(pub.out, 'assets', 'site.css'), 'utf8');

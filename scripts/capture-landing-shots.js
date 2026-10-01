@@ -162,28 +162,12 @@ const SHOTS = [
     waitFor: '.inspector__target-bar, .inspector__preview, .toolbar'
   },
   {
-    file: 'settings.png',
-    hash: '#/settings',
-    alt: 'The Settings tab at 390 px: a Providers section, then the app defaults that apply to every project.'
-  },
-  {
     file: 'providers.png',
     hash: '#/settings/providers',
     alt: 'Settings → Providers at 390 px: the connected providers, each row naming its endpoint and whether a key is stored.'
   },
   {
-    file: 'project-settings.png',
-    hash: () => `#/settings/project?projectDir=${encodeURIComponent(state.projectDir)}`,
-    alt: 'Project settings at 390 px: prompt style, then the tool list with an Off / Ask / Allow control on every row.',
-    // The tools list is fetched asynchronously, so the section renders
-    // "Loading tools…" for a moment. Without this the frame can catch that
-    // placeholder instead of the per-tool Off / Ask / Allow controls the
-    // capture exists to show.
-    waitFor: '.tool-tree__group'
-  },
-  {
     // The Dictate page (`Settings → App defaults → Dictation`, `#/dictation`).
-    // `before` narrows the app's connections to the fixture's own stub for the
     // duration of this frame and `after` restores the seven: the catalog read
     // is live, so with the other six connections in place the page would print
     // one "No models from …" line per unreachable provider — true on the
@@ -214,12 +198,183 @@ const SHOTS = [
     // The model list is fetched asynchronously; hold the frame until the
     // picker has rendered its rows so the shot is not an empty shell.
     waitFor: '.dictation__field--route'
+  },
+  {
+    // The phone terminal: a real persistent shell session in the project
+    // directory, driven from a phone keyboard that has no Escape, Tab, arrow
+    // or Ctrl key — the sheet carries those as two rows of buttons, plus a
+    // suggestion row built from the session's own commands and the project's
+    // top-level names. This is the capability nothing else in the field has on
+    // a phone, so it is worth a section of its own.
+    file: 'terminal.png',
+    hash: () => `#/chat/${state.chatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    // The session is a real child process; the recipe types a command, runs
+    // it, and waits for its output to arrive over SSE.
+    recipe: `(async () => {
+    const waitFor = (selector, timeoutMs) => new Promise((resolve) => {
+      const deadline = Date.now() + (timeoutMs || 8000);
+      const tick = () => {
+      if (document.querySelector(selector)) return resolve(true);
+      if (Date.now() > deadline) return resolve(false);
+      setTimeout(tick, 120);
+      };
+      tick();
+    });
+    const trigger = document.querySelector('.file-toolbar__trigger');
+    if (trigger) trigger.click();
+    await waitFor('.file-toolbar__menu-item', 5000);
+    // A menu row's text includes its icon glyph ("🖥Cli"), so match the
+    // trailing label span instead of the row's whole textContent.
+    const label = (b) => {
+    const spans = b.querySelectorAll('span');
+    return (spans[spans.length - 1] ? spans[spans.length - 1].textContent : b.textContent || '').trim();
+    };
+    const cli = Array.from(document.querySelectorAll('.file-toolbar__menu-item'))
+    .find((b) => /^cli$/i.test(label(b)));
+    if (cli) cli.click();
+    await waitFor('.cli__prompt', 15000);
+    await new Promise((r) => setTimeout(r, 900));
+    const input = document.querySelector('.cli__prompt');
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(input, 'npm test');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 250));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await new Promise((r) => setTimeout(r, 2500));
+    const out = document.querySelector('.cli__out');
+    if (out) out.scrollTop = out.scrollHeight;
+    })()`,
+    waitFor: '.cli__keys',
+    settle: 1200
+  },
+  {
+    // Git on a phone: the branch, the ahead/behind counts against the remote,
+    // Stash / staged / unstaged sections with per-file Stage and Unstage, and
+    // the commit bar — the whole working-tree loop without a desktop git
+    // client. `before` leaves the fixture with one staged and one unstaged
+    // change so the sheet shows the state a user opens it on.
+    file: 'git.png',
+    hash: () => `#/chat/${state.chatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    before: () => {
+      if (!state.projectDir) return;
+      require('./lib/landing-fixture.js').makeGitDirty(state.projectDir);
+    },
+    recipe: `(async () => {
+    const waitFor = (selector, timeoutMs) => new Promise((resolve) => {
+      const deadline = Date.now() + (timeoutMs || 8000);
+      const tick = () => {
+      if (document.querySelector(selector)) return resolve(true);
+      if (Date.now() > deadline) return resolve(false);
+      setTimeout(tick, 120);
+      };
+      tick();
+    });
+    const trigger = document.querySelector('.file-toolbar__trigger');
+      if (trigger) trigger.click();
+      await waitFor('.file-toolbar__menu-item', 5000);
+      const label = (b) => {
+      const spans = b.querySelectorAll('span');
+      return (spans[spans.length - 1] ? spans[spans.length - 1].textContent : b.textContent || '').trim();
+      };
+      const git = Array.from(document.querySelectorAll('.file-toolbar__menu-item'))
+      .find((b) => /^git$/i.test(label(b)));
+      if (git) git.click();
+      await waitFor('.gm__sheet', 10000);
+      // Wait for the real status to land: the staged file arrives with it.
+      await waitFor('.gm__commit-bar', 10000);
+      await new Promise((r) => setTimeout(r, 900));
+      const body = document.querySelector('.gm__body');
+      if (body) body.scrollTop = 0;
+    })()`,
+    waitFor: '.gm__commit-bar',
+    settle: 1500
+  },
+  {
+    // Draft Craft: the annotator over an image attached to a chat draft, with
+    // a pen stroke and a labeled pin. This is the surface that makes the app
+    // different from every chat wrapper: what usually gets described in prose
+    // ("the header wraps on a phone") gets drawn, pinned and attached to the
+    // draft without sending it. `before` seeds the draft attachment the chat
+    // opens with, so the frame needs no file picker.
+    file: 'draft-craft.png',
+    hash: () => `#/chat/${state.emptyChatId}?projectDir=${encodeURIComponent(state.projectDir)}`,
+    before: async () => {
+      if (!state.projectDir) return;
+      // A capture of the fixture's own preview page, taken through the same
+      // debug Chrome, so the annotation sits over real app pixels.
+      state.attachedImage = state.attachedImage || await capturePreviewDataUrl();
+      await fetch(state.base + '/api/chats/' + encodeURIComponent(state.emptyChatId), {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          projectDir: state.projectDir,
+          draftAttachments: [{
+            type: 'image',
+            mimeType: 'image/png',
+            name: 'board.png',
+            dataUrl: state.attachedImage
+          }]
+        })
+      });
+    },
+    waitFor: '.chat-view__image-chipimg',
+    settle: 800,
+    recipe: `(async () => {
+      const waitFor = (selector, timeoutMs) => new Promise((resolve) => {
+        const deadline = Date.now() + (timeoutMs || 8000);
+        const tick = () => {
+          if (document.querySelector(selector)) return resolve(true);
+          if (Date.now() > deadline) return resolve(false);
+          setTimeout(tick, 120);
+        };
+        tick();
+      });
+      const pointer = (el, type, x, y, extra) => el.dispatchEvent(new PointerEvent(type,
+        Object.assign({ bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, pointerId: 1, pointerType: 'touch', isPrimary: true, button: 0, buttons: 1 }, extra || {})));
+      const chip = document.querySelector('.chat-view__image-chipimg');
+      if (chip) chip.click();
+      await waitFor('.draft-craft__canvas-wrap', 10000);
+      await new Promise((r) => setTimeout(r, 600));
+      // One pen stroke.
+      const canvas = document.querySelector('.draft-craft__canvas');
+      const box = canvas.getBoundingClientRect();
+      const pts = [[0.18, 0.42], [0.36, 0.30], [0.56, 0.46], [0.78, 0.32]];
+      const at = (p) => ({ x: box.left + box.width * p[0], y: box.top + box.height * p[1] });
+      const first = at(pts[0]);
+      pointer(canvas, 'pointerdown', first.x, first.y);
+      for (const p of pts.slice(1)) { const q = at(p); pointer(canvas, 'pointermove', q.x, q.y); }
+      const last = at(pts[pts.length - 1]);
+      pointer(canvas, 'pointerup', last.x, last.y, { buttons: 0 });
+      // One labeled pin, dragged from its source onto the canvas.
+      const source = document.querySelector('.draft-craft__marker-source');
+      const stage = document.querySelector('.draft-craft__canvas-stage');
+      if (source && stage) {
+        const sr = source.getBoundingClientRect();
+        const sx = sr.left + sr.width / 2;
+        const sy = sr.top + sr.height / 2;
+        const tr = stage.getBoundingClientRect();
+        const dx = tr.left + tr.width * 0.5;
+        const dy = tr.top + tr.height * 0.62;
+        pointer(source, 'pointerdown', sx, sy);
+        pointer(source, 'pointermove', dx, dy);
+        pointer(source, 'pointerup', dx, dy, { buttons: 0 });
+        await new Promise((r) => setTimeout(r, 350));
+        const input = document.querySelector('.draft-craft__marker-input');
+        if (input) {
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+          setter.call(input, 'Header wraps here');
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+      await new Promise((r) => setTimeout(r, 400));
+    })()`,
+    waitFor: '.draft-craft__marker-input'
   }
 ];
 
 // ---- main ---------------------------------------------------------------
 
-const state = { chatId: '', emptyChatId: '', projectDir: '', previewUrl: '', subagentAuth: null, providersBefore: null, idleProvider: null };
+const state = { chatId: '', emptyChatId: '', projectDir: '', previewUrl: '', base: '', cdpBase: '', attachedImage: '', subagentAuth: null, providersBefore: null, idleProvider: null };
 
 async function main() {
   const chromeBin = findChrome();
@@ -388,6 +543,8 @@ async function main() {
     children.push(chrome);
     await waitForFile(chromeLog);
     const cdpBase = 'http://127.0.0.1:' + chromePort;
+    state.base = base;
+    state.cdpBase = cdpBase;
 
     // Point the Inspector tab at the debug Chrome we just started, so its
     // setup form is filled in for the `inspector` shot.
@@ -400,7 +557,7 @@ async function main() {
     fs.mkdirSync(OUT_DIR, { recursive: true });
     for (const shot of SHOTS) {
     const file = path.join(OUT_DIR, shot.file);
-    if (typeof shot.before === 'function') shot.before();
+    if (typeof shot.before === 'function') await shot.before();
     try {
       await captureShot({ shot, base, cdpBase });
     } finally {
@@ -411,6 +568,28 @@ async function main() {
     console.log(logs.join('\n'));
   } finally {
     shutdown();
+  }
+}
+
+// capturePreviewDataUrl() — open the fixture's preview page and return a PNG
+// data URL of it. Used as the image the Draft Craft shot annotates, so the
+// pins sit over the demo project's real output instead of a mock. Runs in the
+// already-launched debug Chrome.
+async function capturePreviewDataUrl() {
+  const target = await (await fetch(`${state.cdpBase}/json/new?about:blank`, { method: 'PUT' })).json();
+  const cdp = await createCdp(target.webSocketDebuggerUrl);
+  try {
+    await cdp.send('Page.enable');
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 700, deviceScaleFactor: 1, mobile: true });
+    const loaded = cdp.once('Page.loadEventFired');
+    await cdp.send('Page.navigate', { url: state.previewUrl });
+    await loaded;
+    await new Promise((r) => setTimeout(r, 900));
+    const png = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    return 'data:image/png;base64,' + png.data;
+  } finally {
+    cdp.close();
+    await fetch(`${state.cdpBase}/json/close/${target.id}`).catch(() => { /* ignore */ });
   }
 }
 

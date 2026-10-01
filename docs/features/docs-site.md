@@ -26,37 +26,41 @@ The public guide order and the public navigation links come from a single allowl
 
 The generated `features/*.html`, `index.html`, `documentation.html`, `assets/` and `.nojekyll` are committed under `docs/`, because Pages serves the branch as-is. The `.md` sources and `features/images/` sit in the same tree and are what the build reads.
 
-## Landing page screens
+## Landing page capability sections
 
-The landing page (`index.html`) shows nine phone-width captures of the running app, so a reader sees what the app actually does rather than only reading about it. Under the hero, the `#screens` section is **one section per screen**: each carries its own H2 title, one short paragraph, and that screen's capture.
+The landing page (`index.html`) shows ten phone-width captures of the running app, so a reader sees what the app actually does rather than only reading about it. Under the hero, the `#screens` section is **one section per capability**: each carries its own H2 title, one short paragraph saying what the capability is and why it is different, and that capability's capture.
 
-The nine sections, in page order:
+The sections are ordered by how much they distinguish the app, not by navigation order — the chat run, the terminal, git, Draft Craft and approvals come first, and the configuration screens (settings, project settings) are deliberately **not** sections at all: a page that lists its own settings is a manual, not a pitch.
+
+The ten sections, in page order:
 
 | Section | Capture | What it shows |
 |---------|---------|---------------|
-| **Chats** | `chats-list.png` | The Chats tab — project cards, each holding its own scrolling chat list and **New chat** |
-| **Chat** | `chat-view.png` | A chat at the end of a run — the **Context**, **Total** and **Balance** chips, per-turn cost lines, and the **Read**, **Searched**, **Wrote** and **Ran** tool cards |
-| **A new chat** | `chat-tools.png` | A brand-new chat — the system-prompt card and the **Tools** card, one checkbox and one **Off / Ask / Allow** control per tool |
-| **Approvals** | `subagent-auth.png` | A **subagent** approval card on a paused run — the delegated task, the per-run model picker and thinking select, and the **Allow once / Allow session / Always allow / Deny** buttons |
-| **Inspector** | `inspector.png` | The Inspector attached to a page over CDP — target bar, panel chips, live preview, console input |
-| **Dictate** | `dictation.png` | The Dictate page — the model picker, the record button with its timer and level meter, and the transcript with **Copy / Insert in chat / Send to chat** |
-| **Settings** | `settings.png` | The Settings tab — providers first, then the app defaults that apply to every project |
-| **Providers** | `providers.png` | Settings → Providers — seven connected providers, each naming its endpoint and whether a key is stored |
-| **Project settings** | `project-settings.png` | Project settings — prompt style, then every tool with its own **Off / Ask / Allow** control |
+| **One chat, a whole run** | `chat-view.png` | A chat at the end of a run — the **Context**, **Total** and **Balance** chips, per-turn cost lines, and the **Read**, **Searched**, **Wrote** and **Ran** tool cards |
+| **A real terminal on the phone** | `terminal.png` | The **CLI** sheet running `npm test` in the project directory, with the suggestion chips and the two rows of terminal keys (Esc, Tab, ^C, ^D, ^Z, ^L, arrows, PgUp, PgDn) |
+| **Review the diff, then commit** | `git.png` | The **Git** sheet — branch picker with pull / push, a staged file above the commit bar, and unstaged files each with **Stage** |
+| **Draw on the bug instead of describing it** | `draft-craft.png` | The **Draft Craft** annotator over an attached image — a pen stroke, a numbered pin carrying text, the marker list, and **Use annotated image** |
+| **Nothing sensitive runs unnamed** | `subagent-auth.png` | A **subagent** approval card on a paused run — the delegated task, the per-run model picker and thinking select, and the **Allow once / Allow session / Always allow / Deny** buttons |
+| **A DevTools built for a phone** | `inspector.png` | The Inspector attached to a page over CDP — target bar, panel chips, live preview, console input |
+| **Chats belong to a project** | `chats-list.png` | The Chats tab — project cards, each holding its own scrolling chat list and **New chat** |
+| **A chat that starts configured** | `chat-tools.png` | A brand-new chat — the system-prompt card and the **Tools** card, one checkbox and one **Off / Ask / Allow** control per tool |
+| **Talk to it from anywhere** | `dictation.png` | The Dictate page — the model picker, the record button with its timer and level meter, and the transcript with **Copy / Insert in chat / Send to chat** |
+| **Your keys, your machine** | `providers.png` | Settings → Providers — seven connected providers, each naming its endpoint and whether a key is stored |
 
 The images live in the same feature image tree as every other screenshot, so the existing recursive copy ships them:
 
 ```text
 docs/features/images/landing/
-  chats-list.png         # Chats tab, 390 × 700 @2x
   chat-view.png          # Chat transcript, end of run, 390 × 700 @2x
-  chat-tools.png         # Empty chat, tools card expanded, 390 × 700 @2x
+  terminal.png           # CLI sheet, real npm test run, 390 × 700 @2x
+  git.png                # Git sheet with one staged and two unstaged changes, 390 × 700 @2x
+  draft-craft.png        # Draft Craft annotator, stroke + labeled pin, 390 × 700 @2x
   subagent-auth.png      # Subagent approval card, per-run model + thinking, 390 × 700 @2x
   inspector.png          # Inspector attached over CDP, 390 × 700 @2x
+  chats-list.png         # Chats tab, 390 × 700 @2x
+  chat-tools.png         # Empty chat, tools card expanded, 390 × 700 @2x
   dictation.png          # Dictate page, 390 × 700 @2x
-  settings.png           # Settings tab, 390 × 700 @2x
   providers.png          # Settings → Providers, 390 × 700 @2x
-  project-settings.png   # Project settings, 390 × 700 @2x
 ```
 
 Because the section is on the site root, its `src` values are prefixed `features/images/...` rather than the `./images/...` a Markdown feature page uses.
@@ -105,7 +109,7 @@ npm run docs:shots:draft-craft
 
 ## At a glance
 
-Under the hero, the screens, and the existing sections, the landing page ends with an **At a glance** block (`#at-a-glance`): a four-line `<ul>` summary — runs locally on port 5732 with keys and chats on the machine, the provider shapes it speaks, project grouping with per-project models, and tool access being Off by default. It is plain HTML in `buildLandingPage()` in [scripts/build-docs.js](../../scripts/build-docs.js), written last in the page body so it stays below everything else.
+Under the hero, the capability sections, and the existing sections, the landing page ends with an **At a glance** block (`#at-a-glance`): a four-line `<ul>` summary — runs locally on port 5732 with keys and chats on the machine, the provider shapes it speaks, project grouping with per-project models, and tool access being Off by default. It is plain HTML in `buildLandingPage()` in [scripts/build-docs.js](../../scripts/build-docs.js), written last in the page body so it stays below everything else.
 
 ## Subtitle
 
