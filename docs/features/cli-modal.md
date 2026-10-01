@@ -52,7 +52,7 @@ A phone keyboard has letters, digits and Enter, and nothing a terminal actually 
 
 Every key is one raw write with **no line terminator**, so `^C` interrupts without also pressing Enter — which would answer a second prompt you never saw.
 
-The modal picks the column for you. bash and zsh announce it themselves: they switch the terminal's bracketed-paste mode on at their prompt and off when a command starts, and a full-screen program (`less`, `top`, `vim`) switches to the alternate screen. While a program has the input, the rows get a blue edge and the line under them says `Keys go to the running program — ^C stops it, Esc leaves it.` If the program switches the arrows to *application* mode (as `less` and `vim` do), the arrows send that form.
+The modal picks the column for you. bash and zsh announce it themselves: they switch the terminal's bracketed-paste mode on at their prompt and off when a command starts, and a full-screen program (`less`, `top`, `vim`) switches to the alternate screen. While a program has the input, the rows get a blue edge and the line under them says `Keys go to the running program — ^C stops it, Esc leaves it.` If the program switches the arrows to *application* mode (as `less` and `vim` do), the arrows send that form. The shell takes the column back as soon as it prints its next prompt — including after a full-screen program was **killed** with `^C`, which never gets to restore the screen itself.
 
 At the prompt, Esc clears the line instead of sending `ESC`. A bare `ESC` at a bash prompt waits for a second key, so the first letter of your next command would be swallowed.
 
@@ -92,6 +92,7 @@ npm run test:cli
 ```
 
 - `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key rows, and Tab/↑/↓ (the key table's sequences, that at the shell Tab/arrows/Page keys/Esc edit the prompt and write nothing while to a program every key writes its sequence — application-mode arrows included — and the hardware-key mapping, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator.
+- `scripts/test-cli-tab-program-mode.mjs` — browser regression (real built app + fixture API, phone width): a full-screen program takes the alternate screen and is then killed without restoring it, and the test asserts the shell's next prompt marker leaves program mode and **Tab completes in the prompt again** (writing nothing to the child), while a live program still receives Tab as a raw byte.
 - `scripts/test-cli-session-newline.js` — drives the real endpoints and asserts a plain `ls` lists the project files (the terminator rule).
 - `scripts/test-cli-strip-ansi.js` — unit-tests `stripAnsi` / `CliScreen`, including every escape-sequence family split at every pair of positions and fed one code point at a time.
 - `scripts/test-cli-utf8-split.js` — feeds `attachCliStream` UTF-8 split at every byte boundary, on the PTY and piped paths, and asserts no `�` reaches the broadcast.

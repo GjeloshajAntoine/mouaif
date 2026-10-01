@@ -29,6 +29,13 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
   included) and edits the prompt only at the shell. Esc at the prompt clears
   the line instead of swallowing the next letter. A second row adds ←, →,
   PgUp, PgDn, and ^Z / ^L join the first; the close button is 44 px.
+- **CLI Tab completes again after a killed full-screen program** — `less`,
+  `top` or `htop` killed with `^C` never writes the sequence that leaves the
+  alternate screen, so the modal stayed in program mode for the rest of the
+  session and every key kept writing raw bytes at a shell that was back at its
+  prompt: Tab stopped completing anything. The shell's own prompt marker now
+  leaves the alternate screen, so Tab, ↑/↓ and the prompt keys work again
+  without reopening the sheet.
 - **Denied-operation prompt guidance** — all three non-empty built-in profiles
   now instruct the assistant to stop a denied operation, including attempts
   through another tool, and ask for clarification or continue only with

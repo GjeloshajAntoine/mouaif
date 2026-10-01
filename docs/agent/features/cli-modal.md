@@ -92,6 +92,8 @@ Who reads stdin is tracked as `owner` in [CliModal.jsx](../../../frontend/src/co
 
 `program` is `owner === 'program'` (bash/zsh switched bracketed paste off — `lineEditorState`) **or** `CliScreen.isFullScreen` (the alternate screen, `ESC[?1049h`). `appCursor` follows DECCKM (`ESC[?1h` / `ESC[?1l`) through `cursorKeyMode(tail, chunk)`, which carries a cut marker across chunks the same way `lineEditorState` does.
 
+The full-screen half of that latch is cleared by the shell's own `ESC[?2004h`: `appendOut` calls `CliScreen.leaveFullScreen()` whenever `lineEditorState` reports `'shell'`. A program that is **killed** — `^C` in `less`, `top`, `htop` — never writes `ESC[?1049l`, so without this the latch stayed on for the rest of the session and every key kept writing raw bytes at a shell that was back at its prompt: **Tab stopped completing anything**, which reads as "the Tab button does nothing". The bracketed-paste marker is the honest signal that no program owns stdin, so nothing can be on the alternate screen either.
+
 Why the earlier row failed: Tab and ↑/↓ were hard-wired to the local field, so while `less`, `top`, `vim` or an interactive picker ran they did nothing at all — the row only dimmed them. Esc was always sent, and at a bash prompt a bare ESC is readline's Meta prefix, so the next letter typed was eaten (`Esc`, `ls` → `M-l` + `s`). At the shell Esc now clears the field instead.
 
 Hardware keys go through the same table: `keyForEvent(e)` maps unmodified Tab, arrows and PgUp/PgDn to their row key, and the prompt's `keydown` calls `sendKey`. ←/→ at the shell are left to the browser's own caret handling. Escape is not mapped — the sheet's `useModal` closes on it.

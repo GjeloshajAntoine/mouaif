@@ -179,6 +179,22 @@ this.fullScreen = false; // true once a program enters the alternate screen
 }
 // True when the current output belongs to a full-screen TUI (alt screen).
 get isFullScreen() { return this.fullScreen; }
+// leaveFullScreen() — forget the alternate screen without having seen
+// `ESC[?1049l`.
+//
+// A full-screen program normally restores the screen itself on exit, but a
+// program that is *killed* never gets to: `^C` in `less`/`top`/`htop`, or
+// quitting one that left the screen dirty, kills it mid-frame, and the
+// restore sequence is simply never written. The latch would then stay on for
+// the rest of the session, and every key row would keep writing raw bytes at a
+// shell that is back at its prompt — the CLI modal's Tab would stop completing
+// anything, which reads as "the Tab button does nothing".
+//
+// The shell's own bracketed-paste marker is the honest signal that its line
+// editor is back (see `lineEditorState` in ./cliKeys.js): no program is
+// reading stdin, so nothing is on the alternate screen either. The modal calls
+// this on that marker.
+leaveFullScreen() { this.fullScreen = false; }
 // Resize the grid so it has at least `row` rows, return the 1-based row.
 _ensureRow(row) {
 if (row < 1) row = 1;

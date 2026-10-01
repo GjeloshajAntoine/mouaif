@@ -124,6 +124,11 @@ const pinnedRef = useRef(true);
       if (interactiveRef.current && stream !== 'stderr') {
       const next = lineEditorState(editorTailRef.current, text);
       editorTailRef.current = next.tail;
+      // The shell says its line editor is waiting again. A killed full-screen
+      // program never wrote its restore sequence, so the screen is dropped out
+      // of full-screen here too — otherwise every key would keep writing raw
+      // bytes at a shell that is back at its prompt (Tab would never complete).
+      if (next.state === 'shell' && screenRef.current) screenRef.current.leaveFullScreen();
       if (next.state) setOwnerBoth(next.state);
       // Application cursor mode (DECCKM): a full-screen program may expect
       // `ESC O A` for the arrows instead of `ESC [ A` (see cursorKeyMode).
