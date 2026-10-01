@@ -1529,6 +1529,17 @@ color: var(--muted);
   letter-spacing: 0.01em;
   text-align: center;
 }
+/* The same line, when it is reporting why a Tab could not advance the prompt.
+   It borrows the terminal's own accent (`#4fc1ff`, the prompt mark and the key
+   borders) rather than a warning colour: nothing failed — the key simply had
+   nothing to offer — and the sheet already uses its accent for "the keys are
+   talking to something else". A touch bolder so a thumb can tell the line
+   changed without reading it. */
+.cli__hint--notice {
+  color: #8fb8d8;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 
 .cli__empty {
   flex: 1 1 auto;

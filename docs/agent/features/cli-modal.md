@@ -103,6 +103,12 @@ Every control in both rows cancels `mousedown` (`keepEditorFocus`) so the browse
 
 While a program owns stdin the rows get `.cli__keys.is-prompt` (an accent border, nothing dimmed) and the hint reads `Keys go to the running program — ^C stops it, Esc leaves it.` The header's close button (`.cli__iconbtn`) is pinned to `--tap` (44 px).
 
+### Silent no-ops are reported
+
+`candidatesFor` / `completionReport` in [cliSuggest.js](../../../frontend/src/components/chat/cliSuggest.js) return not just what Tab would complete but *why* it cannot: `'completed'`, `'ambiguous'` (several candidates agree on nothing more than the typed text), `'none'`, `'empty'`. `completeLocally` is now a thin wrapper over the same candidate step, so the two cannot disagree about what Tab would have done.
+
+`complete()` in [CliModal.jsx](../../../frontend/src/components/chat/CliModal.jsx) shows the non-`'completed'` reasons in the hint line under the key rows for 4 s (`completionNotice`, `showNotice`, class `.cli__hint--notice`), and typing clears them. The point is diagnostic as much as cosmetic: a Tab that does nothing is indistinguishable from a Tab that is broken on a phone, so a report of "Tab does nothing" could not be separated from the app's own state. The line replaces the mode hint instead of adding a row, so the sheet's height is unchanged and the 44 px targets never move.
+
 ### Screen decoding
 
 `CliScreen` buffers escape sequences that arrive split across SSE chunks, honours cursor positioning and erase, and enters/leaves the alternate screen. A full-screen TUI (htop, top, less) therefore redraws **in place** instead of stacking frames, and ordinary scrollback grows downward. It is a best-effort plain-text view, not a full terminal emulator: colour and cell-width attributes are dropped and column layout is not reconstructed.

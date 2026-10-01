@@ -42,8 +42,26 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks'
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
 import { CLI_KEYS, cursorKeyMode, keepEditorFocus, keyForEvent, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
-import { rememberCommand, suggestionsFor, completeLocally, listDirFor, stepHistory } from './cliSuggest.js';
+import { rememberCommand, suggestionsFor, completeLocally, completionReport, listDirFor, stepHistory } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
+
+// completionNotice(report) → the one line shown under the prompt when Tab could
+// not advance the line, or '' when there is nothing to say.
+//
+// A silent no-op is the worst outcome: on a phone a Tab that does nothing looks
+// exactly like a Tab that is broken, and the user has no way to tell the app
+// which one it is. Saying "no match" also documents the rule the row follows —
+// only an already-listed directory is searched, so a path into one that was
+// never opened is expected to say so rather than look dead.
+function completionNotice(report) {
+  const n = report && typeof report.candidates === 'number' ? report.candidates : 0;
+  switch (report && report.reason) {
+    case 'empty': return 'Nothing to complete — type part of a command or a path.';
+    case 'ambiguous': return n > 1 ? 'No further completion — ' + n + ' matches.' : 'Nothing more to complete.';
+    case 'none': return 'No match here — only this folder and the ones already opened are searched.';
+    default: return '';
+  }
+}
 
 export function CliModal(props) {
   const { projectDir, onClose } = props;
@@ -318,6 +336,18 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
 
   const [cmdText, setCmdText] = useState('');
+  // `notice` — the line under the prompt that explains a Tab which could not
+  // advance the field (see completionNotice). Cleared by the next keystroke and
+  // by a Tab that works, so it never becomes standing chrome.
+  const [notice, setNotice] = useState('');
+  const noticeTimerRef = useRef(null);
+  const showNotice = useCallback((text) => {
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    setNotice(String(text || ''));
+    if (!text) return;
+    noticeTimerRef.current = setTimeout(() => { noticeTimerRef.current = null; setNotice(''); }, 4000);
+  }, []);
+  useEffect(() => () => { if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current); }, []);
 
   // Writes are serialised through one promise chain instead of disabling the
   // prompt while a request is in flight. Disabling the focused <input> blurs
@@ -439,14 +469,22 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   function complete() {
     const el = inputRef.current;
     const current = el ? el.value : cmdText;
-    const next = completeLocally(current, history, entries, dirEntries);
+    const report = completionReport(current, history, entries, dirEntries);
+    // A Tab that cannot advance the line says why, for a moment. Silence here is
+    // indistinguishable from a broken key on a phone, and it is the one symptom
+    // a bug report cannot pin down afterwards.
+    if (!report.changed) {
+      showNotice(completionNotice(report));
+      return;
+    }
+    const next = report.next;
     // A completion that landed on a directory *is* the directory to list, so the
-    // next Tab is about its children. Otherwise the line in the field is what to
-    // look at — it names the directory the next Tab will complete inside.
-    const landedOnDir = next != null && next !== current && next.endsWith('/') ? next : null;
+    // next Tab is about its children; otherwise the line in the field names the
+    // directory the next Tab will complete inside.
+    const landedOnDir = next.endsWith('/') ? next : null;
     const dir = listDirFor(landedOnDir != null ? landedOnDir : current, dirEntries);
     if (dir) fetchDir(dir);
-    if (next == null || next === current) return;
+    showNotice('');
     setCmdText(next);
     if (el) { el.value = next; el.setSelectionRange(next.length, next.length); }
   }
@@ -469,6 +507,9 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   // stays in the field.
   function onPromptInput(e) {
     const el = e.currentTarget;
+    // Typing is the user answering the notice (or moving past it), so it goes
+    // away at the first keystroke — it is feedback on one tap, not a status bar.
+    if (notice) showNotice('');
     const typed = splitTypedTab(el.value);
     if (!typed) { setCmdText(el.value); recallIndexRef.current = -1; return; }
     el.value = typed.before;
@@ -644,9 +685,13 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                 onClick: () => sendKey(k)
                 }, k.label))
                 )),
-                // One-line hint under the rows, naming the current mode.
-                h('p', { class: 'cli__hint' },
-                isProgram
+                // One-line hint under the rows, naming the current mode. A Tab
+                // that could not advance the line replaces it for a moment with
+                // the reason (see completionNotice) — never a silent no-op.
+                h('p', { class: 'cli__hint' + (notice ? ' cli__hint--notice' : ''), role: notice ? 'status' : null },
+                notice
+                ? notice
+                : isProgram
                 ? 'Keys go to the running program — ^C stops it, Esc leaves it.'
                 : 'Tab completes, ↑/↓ recall, ←/→ move in the prompt. ^C stops a command.'
                 )

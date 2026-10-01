@@ -98,7 +98,31 @@ function nameTokens(entries) {
 // draft — takes over. An empty line completes nothing.
 export function completeLocally(text, history, entries, dirEntries) {
   const base = String(text == null ? '' : text);
+  const phase = candidatesFor(base, history, entries, dirEntries);
+  if (phase.kind === 'history') return phase.items.length === 1 ? phase.items[0] : longestCommonPrefix(phase.items);
+  if (phase.kind === 'path') {
+    const add = phase.items.length === 1 ? phase.items[0] : longestCommonPrefix(phase.items);
+    return phase.head + add;
+  }
+  return null;
+}
 
+// candidatesFor(text, history, entries, dirEntries) → what Tab would complete
+// from, as `{ kind, items, head }`:
+//
+//   * `history` — the session commands this line is a prefix of (`items` are
+//                 whole commands, `head` is '');
+//   * `path`    — the names matching the line's trailing word, either from the
+//                 listed directory (`src/comp`) or the project's top level
+//                 (`pac`); `items` are the names to append, `head` is the part
+//                 of the word before them (`src/`);
+//   * `none`    — nothing matched.
+//
+// Split out of `completeLocally` so the modal can say *why* a Tab did nothing
+// instead of silently leaving the line alone — a key that appears to do
+// nothing is indistinguishable from a broken one on a phone.
+function candidatesFor(base, history, entries, dirEntries) {
+  const none = { kind: 'none', items: [], head: '' };
   if (base.trim()) {
     const commands = [];
     for (const cmd of Array.isArray(history) ? history : []) {
@@ -106,29 +130,23 @@ export function completeLocally(text, history, entries, dirEntries) {
       if (!c || c === base) continue;
       if (c.startsWith(base) && !commands.includes(c)) commands.push(c);
     }
-    if (commands.length) {
-      return commands.length === 1 ? commands[0] : longestCommonPrefix(commands);
-    }
+    if (commands.length) return { kind: 'history', items: commands, head: '' };
   }
 
   // The word being completed: everything after the last whitespace. A trailing
   // space means there is no word to act on.
   const at = base.search(/\S*$/);
   const word = at === -1 ? '' : base.slice(at);
-  if (!word) return null;
+  if (!word) return none;
   const prefix = at === -1 ? base : base.slice(0, at);
 
   // A word that names a directory the modal has listed keeps its own source.
-  // `ls src/comp` needs src's children, and `entries` (the project's top level)
-  // has never heard of them — which is the whole of Tab's "it only completes
-  // some things": only a top-level name ever had a candidate.
+  // `ls src/comp` needs src's children, and the project's top level has never
+  // heard of them — which is the whole of Tab's "it only completes some
+  // things": a nested path used to have no candidate at all.
   const local = namesIn(dirEntries, word);
   if (local != null) {
-    if (!local.names.length) return null;
-    // `local.head` is the word's own directory part (`src/`), which the match
-    // sits inside — dropping it would complete `ls src/comp` to `ls components/`.
-    const add = local.names.length === 1 ? local.names[0] : longestCommonPrefix(local.names);
-    return prefix + local.head + add;
+    return local.names.length ? { kind: 'path', items: local.names, head: prefix + local.head } : none;
   }
 
   const needle = word.toLowerCase();
@@ -138,9 +156,35 @@ export function completeLocally(text, history, entries, dirEntries) {
     if (name.toLowerCase().indexOf(needle) !== 0) continue;
     if (!names.includes(name)) names.push(name);
   }
-  if (!names.length) return null;
+  return names.length ? { kind: 'path', items: names, head: prefix } : none;
+}
 
-  return names.length === 1 ? prefix + names[0] : prefix + longestCommonPrefix(names);
+// completionReport(text, history, entries, dirEntries) → `{ next, changed,
+// reason, candidates }`. `next` is what the field should become (`null` for
+// "leave it alone"), `changed` says whether that is a change, and `reason` is
+// one of:
+//
+//   * `'completed'`  — the field advances;
+//   * `'ambiguous'`  — several candidates agree on nothing more than what is
+//                      already typed, so the line cannot advance;
+//   * `'none'`       — nothing matched;
+//   * `'empty'`      — a blank line completes nothing.
+//
+// The modal shows the non-`'completed'` reasons for a moment. A Tab that does
+// nothing used to be silent, which on a phone is indistinguishable from a
+// broken button — and it is the one symptom that cannot be told apart from the
+// app's own logs when the user reports it.
+export function completionReport(text, history, entries, dirEntries) {
+  const base = String(text == null ? '' : text);
+  const phase = candidatesFor(base, history, entries, dirEntries);
+  if (phase.kind === 'none') {
+    return { next: null, changed: false, reason: base.trim() ? 'none' : 'empty', candidates: 0 };
+  }
+  const next = completeLocally(base, history, entries, dirEntries);
+  if (next == null || next === base) {
+    return { next, changed: false, reason: 'ambiguous', candidates: phase.items.length };
+  }
+  return { next, changed: true, reason: 'completed', candidates: phase.items.length };
 }
 
 // namesIn(dirEntries, word) — the directory-listing step of a completion, or

@@ -195,10 +195,21 @@ try {
   assert.equal(posts.length, before, 'nested completion writes nothing to the child either');
 
   // A path into a directory that was never listed changes nothing rather than
-  // inventing a candidate from the wrong listing.
+  // inventing a candidate from the wrong listing — and says so, instead of
+  // leaving the user with a key that looks dead.
   await type('src/nothing');
   await tapKey('Tab');
   assert.equal(await value(), 'src/nothing', 'a path nothing matches is left alone');
+  assert.match(await hint(), /No match here/, 'and the sheet explains why the Tab did nothing');
+
+  // Typing is the answer to that notice, so the next keystroke clears it.
+  await type('src/nothing else');
+  assert.doesNotMatch(await hint(), /No match here/, 'typing clears the notice');
+
+  // A blank line has nothing to complete, which is also worth saying.
+  await type('');
+  await tapKey('Tab');
+  assert.match(await hint(), /Nothing to complete/, 'an empty line reports that there is nothing to complete');
 
   assert.deepEqual(await evaluate('window.__fixtureErrors'), [], 'no browser runtime errors');
 
@@ -206,7 +217,7 @@ try {
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 844, deviceScaleFactor: 1, mobile: true });
   await sleep(150);
   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true, 'no page overflow at 360 px');
-  console.log('PASS CLI modal leaves program mode when the shell prompt returns, and Tab completes in the prompt — including inside a listed directory');
+  console.log('PASS CLI modal leaves program mode when the shell prompt returns, and Tab completes in the prompt, inside folders, and explains a Tab that cannot advance');
 } finally {
   if (cdp) cdp.close();
   if (chrome && chrome.exitCode === null) {

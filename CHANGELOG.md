@@ -23,6 +23,12 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **CLI Tab explains itself instead of doing nothing** — a Tab that cannot
+  advance the line now says why for a moment under the key rows (`No match here
+  — only this folder and the ones already opened are searched.`, `No further
+  completion — 3 matches.`, `Nothing to complete — type part of a command or a
+  path.`). Typing clears it. A silent no-op is indistinguishable from a broken
+  key on a phone, which is exactly why the symptom was so hard to pin down.
 - **CLI Tab completes inside a folder** — Tab's only name source was a one-shot
   listing of the project's top level, so a path into a folder (`ls src/comp`,
   `git add src/…`) had no candidates at all and Tab changed nothing. The tap
