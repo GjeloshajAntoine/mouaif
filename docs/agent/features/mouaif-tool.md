@@ -10,13 +10,13 @@ One spec, five areas, twelve actions, **two UI categories**. `src/tools/mouaif.j
 
 ### Child row → tool name
 
-A category's children are keyed by action (`mouaif:list`, `mouaif-settings:info`) but every one of them is the single `mouaif` tool. The per-chat filter stores tool NAMES, and `toggleToolGroup` (`frontend/src/components/chat/cards.js`) resolves them through `knownToolNames(state)`, which **drops any name the catalog does not advertise**. A call site that pushed a row's own id therefore named a tool that does not exist: the wanted-set came out empty, `toggleToolGroup` re-rendered and returned, and the tap was a silent no-op — the checkbox snapped back on the next rebuild and the chat was never PATCHed.
+A category's children have tree keys (`mouaif:list`, `mouaif-settings:info`) and canonical `selectionName` keys (`mouaif:list`, `mouaif:info`). `knownToolNames` expands the catalog's one `mouaif` entry into all action selections. Legacy `mouaif` allowlists expand to every action on edit. Checkbox toggles change one action, and category toggles affect only their own actions.
 
 The resolution lives in one shared pair, exported from `ToolTree.jsx`:
 
 ```js
-groupToolNames(group)  // a category row  -> ['mouaif']; a catalog group -> its ids
-childToolName(group, toolId)  // a category child -> 'mouaif'; a leaf -> its own id
+groupToolNames(group)  // Chats -> ['mouaif:list', 'mouaif:get', …]
+childToolName(group, toolId)  // 'mouaif-settings:info' -> 'mouaif:info'
 ```
 
 `buildToolGroups` also accepts effective native/MCP permissions; `toolPermission` keeps Off tools unchecked even when the chat filter is `null`. `toggleToolGroup` saves the filter and, when enabling a disabled tool, restores its chat-scoped gate to Ask. Both chat surfaces re-render after success or failure. The two category segments have distinct radio-name prefixes, avoiding browser radio-group collisions while sharing the one stored permission.
@@ -44,7 +44,7 @@ const out = await runMouaif(
 | Authorization family | `src/tools/authorization.js` | Member of `NATIVE_TOOLS`; own row in the `getAuthorization` view. Default mode `ask`. |
 | Prompt presets | `src/prompts.js` | Member of `PRESET_TOOL_NAMES`. |
 | Feature summary | `src/agentFeatures.js` | Own line in `buildFeatureSummary`; in the `list_features` tool list. |
-| Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,useChatState.js}` | One category row per half (`mouaif`, `mouaif-settings`) with an action child row each and a segment on the category; every row maps to the one `mouaif` family. Child toggles resolve through `tool.toolName`. |
+| Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,useChatState.js}` | One category row per half (`mouaif`, `mouaif-settings`) with an action child row each and a segment on the category; every row maps to the one `mouaif` family. Child toggles resolve through `tool.selectionName`. |
 | Project settings UI | `frontend/src/components/SettingsProject.jsx` | The same two categories, built inline (they carry the per-row validation status); a child checkbox routes to `pickMouaifMode`. |
 | Agent allowlist UI | `frontend/src/components/SettingsAgents.jsx` | `mouaif` choice. |
 | Card rendering | `frontend/src/components/chat/{tools.js,toolRender.js}` + `frontend/src/tool-cards.css` | `mouaifArgSummary` for the collapsed head; `renderMouaifToolResult` renders a chat list, everything else falls through to the JSON preview. |
@@ -67,6 +67,10 @@ const out = await runMouaif(
 | `settings` | `settings_get`, `settings_update` | `settings.getApp/getProject/setApp/setProject/unsetProjectKeys`, `server-shared.settingsForClient/projectForClient/sanitizeClientEntries` |
 | `projects` | `project_list` | `projects.listProjects` |
 | `info` | `info` | `agentFeatures.dispatchListFeatures` |
+
+### Action filtering
+
+`selectedSpec(opts)` narrows the model-facing `action` enum against `enabledTools` and effective action permissions. `runMouaif` checks the same selection before dispatch. Authorization supports `tools['mouaif:<action>']` and equivalent chat overrides, with the family Off gate taking precedence. The stream, tool preview, discovery response, and nested subagent selection preserve action restrictions rather than widening them back to the family name.
 
 ### Read results
 

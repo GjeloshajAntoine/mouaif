@@ -54,9 +54,11 @@ The tool shows up as **two categories** in the tools tree (Settings → Project 
 | **Chats** | `list` `get` `create` `update` `delete` `search` `attach` `list_attachments` |
 | **mouaif** | `settings_get` `settings_update` `project_list` `info` |
 
-The children are the same model-facing `mouaif` tool, not separate tools, so the split is about what you are looking at rather than about permissions: there is **one** `mouaif` authorization family behind both categories, and the Off / Ask / Allow segment on either category row writes that one gate. The two category rows always show the same mode. In project settings, a child checkbox is the category's `Off ↔ Ask` shortcut. In a chat, any category/action checkbox selects the one `mouaif` tool; checking it also restores **Ask** if its effective permission was **Off**. The categories share a permission but use independent radio-group names so both rows show the active mode correctly.
+**Each action checkbox is independent.** Checking `list chats` does not select `delete a chat`, settings actions, or any sibling. A category checkbox selects only that category's actions; a partially selected category shows a mixed checkmark.
 
-Because the per-chat tool filter stores tool **names** and a child row is keyed by its action (`mouaif:list`), each child row carries the name of the tool it belongs to. Toggling any row — the category checkbox or one action — therefore writes `mouaif` to the chat, never the tree key. `groupToolNames` and `childToolName` in [frontend/src/components/ToolTree.jsx](../../frontend/src/components/ToolTree.jsx) are the single home for that resolution; the chat Tools card and the composer tools popup both call them, so the two surfaces cannot drift.
+The model still receives one `mouaif` function, whose `action` enum contains only selected, permitted actions. Calls to unchecked actions are rejected with `ETOOL_DISABLED`, including stale or forged calls. Existing chats with a `mouaif` selection continue to select every action until edited.
+
+In project settings, action checkboxes write separate `mouaif:<action>` permission entries. In a chat, they write separate selection keys and restore **Ask** when needed. The Off / Ask / Allow segments remain the shared `mouaif` family gate; **Off** hides all actions. The two category segments use independent radio-group names while displaying the same family mode.
 
 The category rows are built from `GROUPS` in [src/tools/mouaif.js](../../src/tools/mouaif.js), whose `actions` list is derived from the `ACTIONS` area table — adding an action puts it under its area's category with no second edit.
 

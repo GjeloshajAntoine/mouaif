@@ -18,7 +18,7 @@ const { streamChat } = require('../src/ai-stream.js');
 const originalFetch = global.fetch;
 let nextId = 0;
 
-async function call(chat, args, { mode = 'allow', decision, advertised = mode !== 'off' } = {}) {
+async function call(chat, args, { mode = 'allow', decision, advertised = mode !== 'off', actions } = {}) {
   authz.setAuthorization(projectDir, { tools: { mouaif: { mode } } });
   const id = 'mouaif-call-' + ++nextId;
   const events = [];
@@ -28,7 +28,8 @@ async function call(chat, args, { mode = 'allow', decision, advertised = mode !=
     const body = JSON.parse(init.body);
     const spec = body.tools.find((tool) => tool.function.name === 'mouaif');
     assert.equal(!!spec, advertised, 'the advertised spec follows the effective authorization mode');
-    if (spec) assert.ok(spec.function.parameters.properties.action.enum.includes(args.action));
+    if (spec && actions) assert.deepEqual(spec.function.parameters.properties.action.enum, actions);
+    else if (spec) assert.ok(spec.function.parameters.properties.action.enum.includes(args.action));
     let delta;
     if (rounds++ === 0) {
       delta = { tool_calls: [{ index: 0, id, type: 'function', function: { name: 'mouaif', arguments: JSON.stringify(args) } }] };
@@ -43,7 +44,7 @@ async function call(chat, args, { mode = 'allow', decision, advertised = mode !=
   };
   const streamed = await streamChat({
     model: { id: 'fixture-model', provider: 'openai-compatible', baseUrl: 'http://fixture/v1' },
-    projectDir, chatId: chat.id, chat, promptSize: 'average',
+    projectDir, chatId: chat.id, chat, promptSize: 'average', enabledTools: chat.tools,
     messages: [{ role: 'user', content: 'Run the requested mouaif action.' }],
     onEvent(type, payload) {
       events.push({ type, payload });
@@ -135,7 +136,23 @@ async function main() {
   out = await call(host, { action: 'delete', chatId: createdId, confirm: true });
   assert.equal(out.ok, true);
   assert.equal(chats.getChat(projectDir, createdId), null);
-  console.log('mouaif tool stream: dispatch, result cards, authorization, errors, redaction, attachments, and deletion passed');
+  chats.updateChat(projectDir, host.id, { tools: ['mouaif:list'] });
+  out = await call(chats.getChat(projectDir, host.id), { action: 'list' }, { actions: ['list'] });
+  assert.equal(out.ok, true);
+  const before = chats.countChats(projectDir);
+  out = await call(chats.getChat(projectDir, host.id), { action: 'create', title: 'Not selected' }, { actions: ['list'] });
+  assert.equal(out.ok, false);
+  assert.equal(out.returned.code, 'ETOOL_DISABLED', 'forged calls cannot execute an unchecked action');
+  assert.equal(chats.countChats(projectDir), before);
+  chats.updateChat(projectDir, host.id, { tools: null });
+  authz.setAuthorization(projectDir, { tools: { 'mouaif:create': { mode: 'off' } } });
+  out = await call(chats.getChat(projectDir, host.id), { action: 'create', title: 'Disabled project action' }, {
+    actions: require('../src/tools/mouaif.js').ACTION_NAMES.filter((name) => name !== 'create')
+  });
+  assert.equal(out.ok, false);
+  assert.equal(chats.countChats(projectDir), before);
+  assert.equal(out.events.some((event) => event.type === 'authorization_required'), false, 'disabled actions fail before approval');
+  console.log('mouaif tool stream: dispatch, result cards, authorization, independent action selection, errors, redaction, attachments, and deletion passed');
 }
 
 main().catch((error) => {

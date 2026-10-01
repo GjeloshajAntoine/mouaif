@@ -201,7 +201,8 @@ async function runSingleToolCall(c, cx) {
       if (!exec) exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
     } else if (promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME) {
       const requested = args && (args.toolName || args.name || args.tool);
-      const spec = (toolSpecs || []).find(s => s && s.function && s.function.name === requested);
+      let spec = (toolSpecs || []).find(s => s && s.function && s.function.name === requested);
+      if (requested === 'mouaif' && spec) spec = require('./tools/mouaif.js').selectedSpec(opts);
       if (!spec) {
         exec = {
           ok: false,
@@ -595,8 +596,15 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   if (opts && Array.isArray(opts.enabledTools)) {
     const allow = new Set(opts.enabledTools.map((n) => String(n)));
     visibleToolSpecs = toolSpecs.filter((s) => s && s.function
-    && (allow.has(s.function.name) || (!opts.nestedSubagent && s.function.name === 'activate_skill')));
+    && (allow.has(s.function.name) || (s.function.name === 'mouaif' && [...allow].some((name) => name.startsWith('mouaif:')))
+      || (!opts.nestedSubagent && s.function.name === 'activate_skill')));
   }
+
+  visibleToolSpecs = visibleToolSpecs.flatMap((spec) => {
+    if (spec.function.name !== 'mouaif') return [spec];
+    const selected = require('./tools/mouaif.js').selectedSpec(opts);
+    return selected ? [selected] : [];
+  });
 
   // Shrink the tool declaration according to the active prompt-size
   // profile (decisions §4). For very-small, the list is compact (name +
@@ -1733,7 +1741,9 @@ return { ok: false, content: JSON.stringify(r), result: r };
       // Inherit the actually advertised surface, including skill activation
       // controlled independently of the parent's ordinary tool selection.
       let nestedEnabled = visibleToolSpecs
-      .map((spec) => spec && spec.function && spec.function.name)
+      .flatMap((spec) => spec?.function?.name === 'mouaif'
+      ? spec.function.parameters.properties.action.enum.map((action) => 'mouaif:' + action)
+      : [spec?.function?.name])
       .filter((toolName) => toolName && toolName !== 'subagent');
       // An agent's tool allowlist restricts the nested call's surface.
       // Agent tool entries can be exact tool names (e.g. "shell") or MCP
@@ -1742,7 +1752,7 @@ return { ok: false, content: JSON.stringify(r), result: r };
       if (agentTools) {
         const allow = new Set(agentTools);
         nestedEnabled = nestedEnabled.filter((toolName) => {
-          if (allow.has(toolName)) return true;
+          if (allow.has(toolName) || (toolName.startsWith('mouaif:') && allow.has('mouaif'))) return true;
           // Prefix match for MCP server slugs: "mcp__fs" allows
           // "mcp__fs__read_file", "mcp__fs__write_file", etc.
           for (const prefix of allow) {

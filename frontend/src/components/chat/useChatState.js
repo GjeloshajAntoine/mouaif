@@ -543,7 +543,7 @@ setCustomActions(response.body.actions);
     const t = body.tools;
     if (t && typeof t === 'object') {
       const auth = {};
-      for (const name of ['shell', 'file', 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit', 'subagent', 'task', 'webpreview', 'restart_app', 'report_progress', 'mouaif']) {
+      for (const name of Object.keys(t)) {
         if (!t[name]) continue;
         auth[name] = {
           mode: t[name].mode || 'ask',

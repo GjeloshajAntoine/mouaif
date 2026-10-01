@@ -186,6 +186,23 @@ const SPEC = {
   }
 };
 
+// Keep one model-facing function, but advertise only the selected actions.
+// Legacy `mouaif` selections still mean all actions.
+function selectedActions(opts = {}) {
+  const filter = opts.enabledTools;
+  const authz = require('./authorization.js');
+  return ACTION_NAMES.filter((action) => (!Array.isArray(filter) || filter.includes('mouaif') || filter.includes('mouaif:' + action))
+    && authz.effectiveConfig(opts.projectDir, 'mouaif:' + action, opts.chatId).mode !== 'off');
+}
+
+function selectedSpec(opts) {
+  const actions = selectedActions(opts);
+  if (!actions.length) return null;
+  return { ...SPEC, function: { ...SPEC.function, parameters: { ...SPEC.function.parameters,
+    properties: { ...SPEC.function.parameters.properties, action: { ...SPEC.function.parameters.properties.action, enum: actions } }
+  } } };
+}
+
 // ---- Small helpers -------------------------------------------------------
 
 function typedError(code, message) {
@@ -664,6 +681,8 @@ async function runMouaif(args, opts) {
   const handler = HANDLERS[area];
   if (!handler) return fail('EUNKNOWN_TOOL', 'no handler for area ' + area);
   try {
+    resolveProjectDir(opts);
+    if (!selectedActions(opts).includes(action)) return fail('ETOOL_DISABLED', 'mouaif action is not selected or is disabled: ' + action);
     return await handler(args, opts);
   } catch (e) {
     const code = (e && e.code) || 'EMOUAIF';
@@ -679,5 +698,6 @@ module.exports = {
   AREAS,
   GROUPS,
   ACTION_NAMES,
+  selectedSpec,
   runMouaif
 };

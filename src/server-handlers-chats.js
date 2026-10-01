@@ -465,6 +465,8 @@ chatDisabled: skillState.chatDisabled.has(s.id)
     try {
       const chat = chats.getChat(dir, id);
       if (!chat) return sendJSON(res, 404, { error: 'chat not found' });
+      const resolvedPrompt = prompts.resolveChatPrompt(dir, chat);
+      const effectiveChat = resolvedPrompt?.preset ? Object.assign({}, chat, prompts.effectivePresetConfig(chat, resolvedPrompt.preset)) : chat;
       // Resolve the profile id (chat -> project -> app -> 'average').
       let profileId = promptProfiles.DEFAULT_PROFILE;
       try {
@@ -486,6 +488,10 @@ chatDisabled: skillState.chatDisabled.has(s.id)
       try { toolSpecs.push(require('./agentFeatures.js').LIST_FEATURES_SPEC); } catch { /* skip */ }
       try { toolSpecs.push(require('./tools/webpreview.js').SPEC); } catch { /* skip */ }
 try { toolSpecs.push(require('./tools/restart.js').SPEC); } catch { /* skip */ }
+try {
+  const spec = require('./tools/mouaif.js').selectedSpec({ projectDir: dir, chatId: id, enabledTools: effectiveChat.tools });
+  if (spec) toolSpecs.push(spec);
+} catch { /* skip */ }
 if (fileToolsEnabled) {
 
         try {
@@ -537,8 +543,11 @@ if (fileToolsEnabled) {
       // very-small this is discover_tool plus one compact (name + description,
       // schema-less) entry per tool — a FIXED list, identical on every
       // tool-loop request, so the Anthropic cached prefix stays byte-stable.
-      let effective = toolSpecs;
-      try { effective = promptProfiles.reduceToolSpecs(toolSpecs, profileId); } catch { /* full specs */ }
+      const allow = Array.isArray(effectiveChat.tools) ? new Set(effectiveChat.tools) : null;
+      const selectedSpecs = allow ? toolSpecs.filter((s) => allow.has(s.function.name)
+      || (s.function.name === 'mouaif' && [...allow].some((name) => name.startsWith('mouaif:')))) : toolSpecs;
+      let effective = selectedSpecs;
+      try { effective = promptProfiles.reduceToolSpecs(selectedSpecs, profileId); } catch { /* full specs */ }
       const reduced = profileId === 'very-small';
       const tools = (effective || []).map((s) => {
         const fn = (s && s.function) || {};

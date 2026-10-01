@@ -368,47 +368,37 @@ export const MOUAIF_TOOL_GROUPS = Object.freeze([
 
 // mouaifCategoryTools(tool, category) -> leaf rows
 //
-// The child rows of one category. Every row is the same model-facing tool and
-// therefore the same `mouaif` authorization family; only the label differs, so
-// unchecking one action reads as that action, and the category checkbox/segment
-// still writes the one gate the server enforces. Ids are unique per row
-// (`<category>:<action>`) so the tree's keys and the group toggle by id stay
-// unambiguous.
+// Action rows share a model-facing tool and family permission, but have
+// independent selection keys. Category ids keep collapse state separate.
 function mouaifCategoryTools(tool, category) {
   return category.actions.map((action) => ({
     id: category.id + ':' + action,
     name: (category.labels && category.labels[action]) || action,
     description: '',
     title: 'mouaif action "' + action + '"',
-    toolName: tool.name
+    toolName: tool.name,
+    selectionName: tool.name + ':' + action
   }));
 }
 
 // groupToolNames(group) -> string[]
 //
-// The tool NAMES a group row's checkbox writes to the per-chat filter. For
-// every catalog-backed group a row's `id` IS its tool name, so the ids are the
-// answer. A category (the two `mouaif` rows) is the exception: its children are
-// parts of ONE model-facing tool, so each child carries `toolName` and the
-// tree id (`mouaif:list`) is only a key. Writing the ids there would name a
-// tool the server does not have, and `toggleToolGroup` drops unknown names —
-// the tap would look dead.
+// Selection keys a group checkbox writes: tool names for catalog leaves,
+// or independent `mouaif:<action>` keys for category children. Tree ids are
+// presentation-only; settings children have a different category prefix.
 export function groupToolNames(group) {
   const tools = (group && group.tools) || [];
-  const named = tools.some((t) => t && t.toolName);
-  const names = tools.map((t) => (named ? t.toolName : t.id)).filter(Boolean);
+  const names = tools.map((t) => t.selectionName || t.toolName || t.id).filter(Boolean);
   return Array.from(new Set(names));
 }
 
 // childToolName(group, toolId) -> string
 //
-// The tool name a CHILD row's checkbox writes. A category child resolves to
-// its `toolName`; every catalog-backed leaf is its own id. Falls back to the
-// incoming id so an unknown row still round-trips instead of becoming
-// `undefined`.
+// A child checkbox writes its canonical selectionName when present,
+// otherwise its toolName or catalog id.
 export function childToolName(group, toolId) {
   const child = ((group && group.tools) || []).find((t) => t && t.id === toolId);
-  return (child && child.toolName) || toolId;
+  return (child && (child.selectionName || child.toolName)) || toolId;
 }
 
 // The chat authorization response already resolves app/project/chat layers.
@@ -418,6 +408,7 @@ export function toolPermission(name, native = {}, mcp = {}) {
     const slug = name.slice(5).split('__')[0];
     return (mcp.tools && mcp.tools[name]) || (mcp.servers && mcp.servers[slug]) || mcp;
   }
+  if (name.startsWith('mouaif:')) return native[name] || native.mouaif || {};
   const file = ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit'].includes(name);
   if (file && native.file && native.file.mode === 'off') return native.file;
   return native[name] || (file ? native.file : null) || {};
@@ -426,8 +417,9 @@ export function toolPermission(name, native = {}, mcp = {}) {
 export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set(), permissions = {}) {
   const groups = [];
   const selected = Array.isArray(filter) ? new Set(filter) : null;
-  const isOn = (name) => (selected == null || selected.has(name))
-    && toolPermission(name, permissions.native, permissions.mcp).mode !== 'off';
+  const isOn = (name) => (selected == null || selected.has(name) || (name.startsWith('mouaif:') && selected.has('mouaif')))
+    && toolPermission(name, permissions.native, permissions.mcp).mode !== 'off'
+    && (!name.startsWith('mouaif:') || permissions.native?.mouaif?.mode !== 'off');
   const allToolsOn = (tools) => tools.length > 0 && tools.every((t) => t && isOn(t.name));
   const leaf = (t, extra) => Object.assign({
     id: t.name,
@@ -467,9 +459,9 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
         name: row.name,
         description: row.description,
         title: mouaifTool.description || '',
-        checked: isOn(mouaifTool.name),
+        checked: row.actions.every((action) => isOn('mouaif:' + action)),
         tools: mouaifCategoryTools(mouaifTool, row).map((t) => Object.assign(t, {
-          checked: isOn(mouaifTool.name),
+          checked: isOn(t.selectionName),
           used: usedTools.has(mouaifTool.name)
         }))
       });

@@ -9,7 +9,7 @@ const projectDir = '/fixture/project & name';
 const from = 'settings/projects';
 const chatId = 'chat-1';
 
-function createView(project) {
+function createView(project, catalog = []) {
   const states = [];
   let cursor = 0, first = true, nodes = [], effects = [];
   const requests = [];
@@ -32,6 +32,10 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
     useEffect: (effect) => { effects.push(effect); },
     h: (tag, attrs, ...children) => { const node = { tag, attrs: attrs || {}, children }; nodes.push(node); return node; },
     fetchJson: async (url, init) => {
+      if (init?.method === 'PUT') {
+      requests.push(JSON.parse(init.body));
+      return { status: 200, body: {} };
+      }
       assert.equal(init?.method, undefined, 'render/load must not write settings');
       requests.push(url);
       const endpoint = new URL(url, 'http://fixture').pathname;
@@ -39,7 +43,7 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
         '/api/settings/project': { project, path: projectDir + '/.mouaif.json' },
         '/api/settings/resolved': { resolved: {} },
         '/api/tools/authorization': { tools: {}, mcp: {} },
-        '/api/tools/list': { tools: [] },
+        '/api/tools/list': { tools: catalog },
         '/api/mcp/servers': { servers: [] },
         '/api/prompts': { prompts: [] },
         '/api/agents': { agents: [{ name: 'Search', modelId: '' }] }
@@ -52,6 +56,7 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
   vm.runInContext(PROJECT_NAV, context);
   const AGENT_NAV = source('settings/agentNavigation.js');
   vm.runInContext(AGENT_NAV, context);
+  vm.runInContext(source('ToolTree.jsx'), context);
   vm.runInContext(source('settingsProjectUi.js'), context);
   vm.runInContext(source('SettingsProject.jsx'), context);
   function render(page = 'main') {
@@ -122,4 +127,16 @@ for (const [project, summary] of [
   // the query it re-emits (the path itself is the answer to "where to").
   assert.equal(view.agentBackPath(agentScope), 'settings/project?' + view.agentQuery(Object.assign({}, agentScope, { returnTo: '' })), 'the agent editor returns to project settings');
 }
-console.log('PASS project settings initial/loaded renders, hidden-file counts, scoped links, sibling pages, agent links and Back targets');
+const actionView = createView({}, [{ name: 'mouaif' }]);
+actionView.render();
+await actionView.load();
+let tree = actionView.render().find((node) => typeof node.attrs.onToggleTool === 'function');
+tree.attrs.onToggleTool('mouaif', 'mouaif:list', false);
+tree = actionView.render().find((node) => typeof node.attrs.onToggleTool === 'function');
+const actionRows = tree.attrs.groups.filter((g) => g.id.startsWith('mouaif'));
+assert.equal(actionRows.flatMap((g) => g.tools).filter((t) => t.checked).length, 11, 'project checkbox only disables its action');
+assert.equal(actionRows[0].tools[0].checked, false);
+assert.equal(actionRows[1].checked, true, 'other category remains selected');
+assert.ok(actionView.requests.some((request) => request.tools?.['mouaif:list']?.mode === 'off'), 'action mode is saved independently');
+
+console.log('PASS project settings initial/loaded renders, independent action checkboxes, hidden-file counts, scoped links, sibling pages, agent links and Back targets');

@@ -81,6 +81,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
 const [webpreviewAuth, setWebpreviewAuth] = useState({ mode: 'ask', allowlist: [] });
 const [restartAuth, setRestartAuth] = useState({ mode: 'ask', allowlist: [] });
 const [mouaifAuth, setMouaifAuth] = useState({ mode: 'ask', allowlist: [] });
+const [mouaifActionAuth, setMouaifActionAuth] = useState({});
 const [askUserMode, setAskUserMode] = useState('ask');
 
   const [shellStatusMsg, setShellStatusMsg] = useState('');
@@ -265,6 +266,7 @@ setMouaifAuth({
 mode: (mouaifTool && mouaifTool.mode) || 'ask',
 allowlist: mouaifTool && Array.isArray(mouaifTool.allowlist) ? mouaifTool.allowlist : []
 });
+setMouaifActionAuth(Object.fromEntries(Object.entries(authz.body?.tools || {}).filter(([name]) => name.startsWith('mouaif:'))));
 const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
 
       setAskUserMode((askUser && askUser.mode === 'off') ? 'off' : 'ask');
@@ -486,6 +488,26 @@ setSkillsOn(cp.skills !== false);
 function pickWebpreviewMode(newMode) { pickToolMode('webpreview', webpreviewAuth, setWebpreviewAuth, setWebpreviewStatusMsg, newMode); }
 function pickRestartMode(newMode) { pickToolMode('restart_app', restartAuth, setRestartAuth, setRestartStatusMsg, newMode); }
 function pickMouaifMode(newMode) { pickToolMode('mouaif', mouaifAuth, setMouaifAuth, setMouaifStatusMsg, newMode); }
+async function pickMouaifActions(actions, checked) {
+  const mode = checked ? 'ask' : 'off';
+  const tools = Object.fromEntries(actions.map((action) => ['mouaif:' + action, { mode }]));
+  if (checked && mouaifAuth.mode === 'off') {
+    // Preserve every other action as Off when lifting a disabled family.
+    for (const row of MOUAIF_TOOL_GROUPS) for (const action of row.actions) {
+      const key = 'mouaif:' + action;
+      if (!tools[key]) tools[key] = { mode: 'off' };
+    }
+    tools.mouaif = { mode: 'ask' };
+    setMouaifAuth({ mode: 'ask', allowlist: [] });
+  }
+  setMouaifActionAuth((prev) => Object.assign({}, prev, tools));
+  setMouaifStatusMsg('saving…');
+  const r = await fetchJson('/api/tools/authorization', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectDir: dir(), tools })
+  });
+  setMouaifStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
+}
 
 // ---- Web preview page handlers ----------------------------------------
 // The webpreview capture endpoint is scoped to a chat (authorization and
@@ -865,19 +887,18 @@ extra: restartStatusMsg ? h('div', { class: 'settings-project__item-status', 'ar
 // — the app's own data model. It renders as TWO categories, each listing its
 // own actions as child rows, but they share one authorization family: the
 // category row's Off / Ask / Allow writes `tools.mouaif`, so the two segments
-// always agree. The children are the category's actions; every one of them is
-// the same `mouaif` family, so a child checkbox is the same `Off ↔ Ask`
-// shortcut the category checkbox is (see toggleSettingsGroup).
+// always agree. Action checkboxes write independent `mouaif:<action>` modes;
+// the category checkbox changes only its own actions.
 const mouaifTool = catalog.find((t) => t.name === 'mouaif');
 if (mouaifTool) {
 for (const row of MOUAIF_TOOL_GROUPS) {
-const on = isOn(mouaifAuth.mode);
+const on = (action) => isOn(mouaifAuth.mode) && isOn(mouaifActionAuth['mouaif:' + action]?.mode || mouaifAuth.mode);
 groups.push({
 id: row.id,
 name: row.name,
 description: row.description,
 title: mouaifTool.description || '',
-checked: on,
+checked: row.actions.every(on),
 control: toolModeSegs(row.name, segMode(mouaifAuth.mode), pickMouaifMode, [
 { value: 'off', label: 'Off' },
 { value: 'ask', label: 'Ask' },
@@ -891,7 +912,7 @@ id: row.id + ':' + action,
 name: (row.labels && row.labels[action]) || action,
 description: '',
 title: 'mouaif action "' + action + '"',
-checked: on,
+checked: on(action),
 toolName: mouaifTool.name
 })),
 extra: mouaifStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mouaifStatusMsg) : null
@@ -1036,11 +1057,9 @@ if (askTool) {
     else if (groupId === 'webpreview') pickWebpreviewMode(mode);
 else if (groupId === 'restart_app') pickRestartMode(mode);
 else if (groupId === 'mouaif' || groupId === 'mouaif-settings') {
-  // A category's leaf rows are its own actions, all backed by the same
-  // `mouaif` family, so a child checkbox is the category's Off ↔ Ask
-  // shortcut rather than a per-tool override (which would be `mouaif`
-  // again, not the row's tree id).
-  pickMouaifMode(mode);
+  // Category selection never changes the other category's actions.
+  const row = MOUAIF_TOOL_GROUPS.find((group) => group.id === groupId);
+  pickMouaifActions(row.actions, checked);
   }
 else if (groupId === 'report_progress') pickProgressMode(mode);
 
@@ -1428,10 +1447,8 @@ href: '#/settings/prompts?' + projectBackQS()
                 onToggleTool: (groupId, toolId, checked) => {
                 if (groupId.startsWith('mcp-')) toggleMcpToolAuth(toolId, checked);
                 else if (groupId === 'files') pickFileToolMode(toolId, checked ? 'ask' : 'off');
-                // A `mouaif` category's leaves are its own actions: they all
-                // belong to the one `mouaif` family, so the row is the
-                // category's Off ↔ Ask shortcut rather than a per-tool
-                // override (which would key on `mouaif`, not `mouaif:list`).
+                else if (groupId === 'mouaif' || groupId === 'mouaif-settings') pickMouaifActions([toolId.split(':')[1]], checked);
+                // Other native groups still use their family checkbox.
                 else toggleSettingsGroup(groupId, checked);
                 },
                 // Groups with more than one nested tool start collapsed,

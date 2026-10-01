@@ -606,7 +606,12 @@ export async function toggleTool(name, next, state, refs, updateChat) {
 function knownToolNames(state) {
   const t = state.tools || { catalog: [], filter: null };
   const names = new Set();
-  for (const tool of (t.catalog || [])) if (tool && tool.name) names.add(tool.name);
+  for (const tool of (t.catalog || [])) {
+    if (!tool || !tool.name) continue;
+    if (tool.name === 'mouaif') {
+      for (const group of buildToolGroups([tool], [], null)) for (const name of groupToolNames(group)) names.add(name);
+    } else names.add(tool.name);
+  }
   for (const server of (state.mcpServers || [])) {
     if (!server || !server.id || !Array.isArray(server.tools)) continue;
     const slug = server.slug || server.id;
@@ -1061,7 +1066,8 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
   const cur = state.tools || { catalog: [], filter: null };
   const allNames = knownToolNames(state);
   const known = new Set(allNames);
-  const wanted = new Set((names || []).filter((n) => known.has(n)));
+  const requested = (names || []).flatMap((n) => n === 'mouaif' ? allNames.filter((key) => key.startsWith('mouaif:')) : [n]);
+  const wanted = new Set(requested.filter((n) => known.has(n)));
   if (!wanted.size) {
     // Nothing to change (e.g. the row belongs to a tool that is no
     // longer known). Re-render anyway so a checkbox the browser already
@@ -1073,13 +1079,20 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
   if (cur.filter == null) {
     nextFilter = next ? null : allNames.filter((n) => !wanted.has(n));
   } else {
-    const set = new Set(cur.filter);
+    const set = new Set(cur.filter.flatMap((n) => n === 'mouaif' ? allNames.filter((key) => key.startsWith('mouaif:')) : [n]));
     if (next) for (const n of wanted) set.add(n);
     else for (const n of wanted) set.delete(n);
     // Prefer `null` once every known tool is on, so the chat is not
     // pinned to a stale snapshot. Compare by membership, not size: the
     // stored list can carry names of tools that have since gone away.
     nextFilter = allNames.every((n) => set.has(n)) ? null : Array.from(set);
+  }
+  if (next && state.toolAuth?.mouaif?.mode === 'off' && [...wanted].some((name) => name.startsWith('mouaif:'))) {
+    // A disabled family has no selected actions on screen. Lifting it for
+    // one checkbox must not reveal every sibling from null/legacy filters.
+    const selected = new Set((nextFilter || allNames).filter((name) => !name.startsWith('mouaif:')));
+    for (const name of wanted) selected.add(name);
+    nextFilter = allNames.every((name) => selected.has(name)) ? null : Array.from(selected);
   }
   const saveNative = state._saveToolAuth;
   const saveMcp = state._saveMcpAuth;
@@ -1103,7 +1116,10 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
           mcp.tools[name] = { mode: 'ask', allowlist: [] };
         } else {
           const entry = (cur.catalog || []).find((t) => t.name === name);
-          native.add(entry && entry.source === 'files' ? 'file' : name);
+          if (name.startsWith('mouaif:')) {
+            if (state.toolAuth?.mouaif?.mode === 'off') native.add('mouaif');
+            if (state.toolAuth?.[name]?.mode === 'off') native.add(name);
+          } else native.add(entry && entry.source === 'files' ? 'file' : name);
         }
       }
       for (const tool of native) {

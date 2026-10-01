@@ -82,6 +82,14 @@ for (const g of off.filter((x) => x.id.startsWith('mouaif'))) {
   assert.ok(g.tools.every((t) => t.checked === false), g.id + ' children unchecked when off');
 }
 
+const onlyList = buildToolGroups(catalog, [], ['mouaif:list']);
+const independent = onlyList.filter((g) => g.id.startsWith('mouaif'));
+assert.equal(independent.flatMap((g) => g.tools).filter((t) => t.checked).length, 1, 'checking one action never selects siblings');
+assert.equal(independent[0].tools[0].checked, true);
+assert.equal(independent[1].tools.some((t) => t.checked), false, 'the other category stays off');
+const legacy = buildToolGroups(catalog, [], ['mouaif']);
+assert.ok(legacy.filter((g) => g.id.startsWith('mouaif')).every((g) => g.checked), 'legacy family selection still enables every action');
+
 // --- 4) A sibling single-child group is unchanged --------------------------
 // `files` and the MCP groups keep their own shapes; only the mouaif rows split.
 const withFiles = buildToolGroups(catalog.concat([

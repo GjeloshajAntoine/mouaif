@@ -168,6 +168,7 @@ const MAX_BATCH_ENTRIES = require('./files.js').MAX_BATCH_ENTRIES;
 // resolver, the chat-override reader/writer, and the GET /api/tools/
 // authorization view — including grouped reads and edits.
 const FILE_FAMILY_TOOLS = new Set([...FILE_TOOL_NAMES]);
+const MOUAIF_ACTION_TOOLS = require('./mouaif.js').ACTION_NAMES.map((action) => 'mouaif:' + action);
 const MCP_FILE = '.mcp.json';
 
 // ---- Per-chat authorization overrides (decisions §17) --------------------
@@ -209,7 +210,7 @@ function readChatAuthOverrides(projectDir, chatId) {
   const nativeSource = (raw.native && typeof raw.native === 'object' && !Array.isArray(raw.native))
     ? raw.native
     : raw;
-  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS]) {
+  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS, ...MOUAIF_ACTION_TOOLS]) {
     const entry = nativeSource[name];
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     if (typeof entry.mode !== 'string' || !MODES.has(entry.mode)) continue;
@@ -415,6 +416,16 @@ function mcpServersBySlug(projectDir, servers) {
 }
 
 function effectiveConfig(projectDir, tool, chatId) {
+  if (MOUAIF_ACTION_TOOLS.includes(tool)) {
+    const family = effectiveConfig(projectDir, 'mouaif', chatId);
+    if (family.mode === 'off') return family;
+    const chatOverride = chatNativeOverride(projectDir, chatId, tool);
+    if (chatOverride) return normalizeConfig(chatOverride, 'chat', true, tool);
+    const project = settings.getProject(projectDir);
+    const app = settings.getApp();
+    const value = project.tools?.[tool] || app.tools?.[tool];
+    return value ? normalizeConfig(value, project.tools?.[tool] ? 'project-tool' : 'app-tool', true, tool) : family;
+  }
   const requestedTool = tool;
   tool = configToolName(tool);
   // Chat override wins over everything below it — the user made that
@@ -499,7 +510,8 @@ function getAuthorization(projectDir, chatId) {
 task: effectiveConfig(projectDir, 'task', chatId),
 webpreview: effectiveConfig(projectDir, 'webpreview', chatId),
 restart_app: effectiveConfig(projectDir, 'restart_app', chatId),
-mouaif: effectiveConfig(projectDir, 'mouaif', chatId)
+mouaif: effectiveConfig(projectDir, 'mouaif', chatId),
+...Object.fromEntries(MOUAIF_ACTION_TOOLS.map((name) => [name, effectiveConfig(projectDir, name, chatId)]))
   },
     mcp
   };
@@ -586,7 +598,7 @@ function setChatAuthorization(projectDir, chatId, patch) {
   for (const [name, entry] of Object.entries(nativePatch)) {
     if (name === 'mcp' || name === 'native') continue;
     const family = configToolName(name);
-    if (!NATIVE_TOOLS.has(family)) continue;
+    if (!NATIVE_TOOLS.has(family) && !MOUAIF_ACTION_TOOLS.includes(family)) continue;
     if (entry === null) { delete next.native[family]; continue; }
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     const mode = MODES.has(entry.mode) ? entry.mode : 'ask';
@@ -635,7 +647,7 @@ function setAuthorization(projectDir, patch) {
   // defaultTimeoutMs, maxTimeoutMs }. The caller's `enabled` flag is
   // owned by the project tools toggle (a different setting) and is
   // not duplicated here.
-  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS]) {
+  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS, ...MOUAIF_ACTION_TOOLS]) {
     if (patch.tools && patch.tools[name]) {
       const cfg = normalizeConfig(patch.tools[name], 'project', true);
       // Preserve entries already applied from this patch. A request can
@@ -783,7 +795,9 @@ async function authorize(input) {
   if (!projectDir || !chatId || !tool || !callId) {
     throw typedError('EBADINPUT', 'projectDir, chatId, tool, and callId are required');
   }
-  const config = effectiveConfig(projectDir, tool, chatId);
+  const configName = tool === 'mouaif' && MOUAIF_ACTION_TOOLS.includes('mouaif:' + input.args?.action)
+    ? 'mouaif:' + input.args.action : tool;
+  const config = effectiveConfig(projectDir, configName, chatId);
   if (!config.enabled || config.mode === 'off') throw typedError('ETOOL_DISABLED', tool + ' is disabled');
 
   const session = getSession(projectDir, chatId);
