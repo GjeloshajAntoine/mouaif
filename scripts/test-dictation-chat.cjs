@@ -1,7 +1,7 @@
 // Dictation from the chat composer: real App -> ChatView -> MicButton.
 //
 // Run: node scripts/test-dictation-chat.cjs
-// Requires debug Chrome at CDP_URL (default http://127.0.0.1:9222).
+// Starts an isolated headless Chrome unless CDP_URL names a debug browser.
 //
 // The dictation helpers have two surfaces, and the page's own tests cover only
 // one of them. This is the other: the microphone button inside the *real* chat
@@ -65,11 +65,14 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
+const { spawn } = require('node:child_process');
+const { findChrome } = require('./lib/capture-fixture.js');
 const { build } = require('esbuild');
 const { WebSocket } = require('ws');
 
 const root = path.resolve(__dirname, '..');
-const endpoint = (process.env.CDP_URL || 'http://127.0.0.1:9222').replace(/\/$/, '');
+let endpoint = (process.env.CDP_URL || '').replace(/\/$/, '');
 const PROJECT_DIR = '/fixture/dictation-chat';
 const CHAT_ID = 'dictation-regression';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -255,6 +258,8 @@ function installFixture(data) {
         '/api/agents': { agents: [] },
         '/api/actions': { actions: [] },
         '/api/tools/list': { tools: [] },
+        // FileToolbar checks for an existing terminal on chat entry.
+        '/api/tools/cli/sessions': { sessions: [] },
         '/api/tools/authorization': { tools: {}, mcp: {} },
         '/api/projects/registered': { projects: [] }
       };
@@ -756,4 +761,36 @@ async function main() {
   console.log('\nDictation composer regressions passed (' + checks + ' checks). No production files or live app data touched.');
 }
 
-main().catch((err) => { console.error(err); process.exitCode = 1; });
+async function run() {
+  if (endpoint) return main();
+
+  const chromePath = findChrome();
+  assert.ok(chromePath, 'Chrome is required for the dictation composer browser test');
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-dictation-chrome-'));
+  const chrome = spawn(chromePath, [
+    '--headless=new', '--no-sandbox', '--disable-dev-shm-usage',
+    '--disable-background-networking', '--no-first-run',
+    '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'
+  ], { stdio: 'ignore' });
+  let launchError;
+  chrome.once('error', (err) => { launchError = err; });
+  const exited = new Promise((resolve) => chrome.once('close', resolve));
+  try {
+    const portFile = path.join(profile, 'DevToolsActivePort');
+    for (let i = 0; !fs.existsSync(portFile) && i < 100; i++) {
+      if (launchError) throw launchError;
+      assert.equal(chrome.exitCode, null, 'Chrome must remain running while its endpoint starts');
+      await sleep(100);
+    }
+    assert.ok(fs.existsSync(portFile), 'Chrome must expose its isolated debugging endpoint');
+    const port = fs.readFileSync(portFile, 'utf8').split('\n')[0];
+    endpoint = 'http://127.0.0.1:' + port;
+    await main();
+  } finally {
+    chrome.kill();
+    await exited;
+    fs.rmSync(profile, { recursive: true, force: true });
+  }
+}
+
+run().catch((err) => { console.error(err); process.exitCode = 1; });

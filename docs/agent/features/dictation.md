@@ -142,11 +142,13 @@
 
 ### Tests
 
-`npm run test:dictation` runs everything below except the two fixtures, which
-print a URL and stay up instead of exiting (`test-dictation-ui.mjs` is only
-syntax-checked there; `test-dictation-chat.cjs` needs a debug Chrome of its own
-and runs by hand). `test-dictation-chat.cjs` runs as part of `test:dictation`:
-it starts its own browser target and exits on its own.
+`npm run test:dictation` runs the automated checks below and syntax-checks
+`test-dictation-ui.mjs`, which is a manual fixture that prints a URL and stays
+up. `test-dictation-chat.cjs` runs as part of the suite: by default it launches
+an isolated headless Chrome with a temporary profile and an ephemeral debugging
+port, closes that browser after the checks, and removes the profile. Set
+`CDP_URL` to use an existing debug browser instead; only the test's blank
+browser targets are created and closed in that mode.
 
 ```bash
 node scripts/test-dictation.js        # request/response shapes, helper rules,
@@ -155,8 +157,9 @@ node scripts/test-dictation.js        # request/response shapes, helper rules,
   # the loading wording and the busy phase, and the app-store allowlists the
   # choice needs
 node scripts/test-dictation-http.mjs  # the real serve handlers, mock upstream —
-  # including the inline-audio chat route, the `audioTranscription` shape, and
-  # the attribution of a chat-attributed run to the chat and project totals
+  # including project-only catalogs (`live=0`), default live discovery for a
+  # project without models, the inline-audio chat route, the `audioTranscription`
+  # shape, and attribution of a run to the chat and project totals
 node scripts/test-dictation-page.mjs  # the page rendered against a fake API
 node scripts/test-dictation-catalog-live.mjs  # the candidate filter and the
   # route decision against the two real OpenRouter catalogs, replayed from
@@ -177,7 +180,7 @@ node scripts/test-dictation-ui.mjs    # a browser fixture: prints a URL, or
   # picker's "Sends as" line can be seen saying `OpenAI chat` for one and
   # `OpenAI-shaped` for another.
 node scripts/test-dictation-chat.cjs  # the composer mic inside the real
-# ChatView (needs debug Chrome; see CDP_URL below): the model comes from the
+# ChatView (starts isolated Chrome; CDP_URL optionally reuses one): the model comes from the
 # app store, the draft is persisted, the cost is attributed, a live take is
 # recorded by *rotating* (several segments, stitched in speaking order, cost
 # settled as their sum), no take ever asks the recorder for a timeslice, and
@@ -211,8 +214,11 @@ the same tap says nothing at all. It also pins the live take's *settle* as one
 of those requests: with the transcription held, stopping a rotating take leaves
 the spinner, `Working…` and `aria-busy` on the button and `Transcribing…` in the
 chat's line until the last segment answers, and both are gone once it settles.
-It needs a debug Chrome (`CDP_URL`, default `http://127.0.0.1:9222`), like the
-model-picker browser tests.
+Chrome must be installed (`CHROME_PATH` or `CHROME_BIN` can select it).
+Without `CDP_URL`, the test launches and cleans up its own browser; it never
+requires an Inspector or a debug browser already listening on port 9222.
+The fixture explicitly answers the toolbar's terminal-session read with an
+empty session list and still rejects every unknown request.
 
 The live path is covered on both sides: `test-dictation.js` decides the join,
 the seam, the slot ordering and the rotation itself (with a fake recorder and

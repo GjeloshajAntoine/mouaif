@@ -65,7 +65,7 @@ A connected provider's catalog is a chat catalog: hundreds of rows, rendered pro
 ## Behavior
 
 - **Recording is capped at 2:00** and stops itself rather than dropping the tail.
-- **The model list is the union of two sources**: the project's `models` and the connected providers' live catalogs, filtered to the rows that can plausibly transcribe. A project record for an id wins over the live row for it. A fresh install therefore works with no setup — connecting a Gemini key offers `gemini-2.5-flash`.
+- **The model list is the union of two sources**: the project's `models` and the connected providers' live catalogs, filtered to the rows that can plausibly transcribe. A project record for an id wins over the live row for it. A project with no configured models can still receive live models from connected providers. The project-only first-paint request (`live=0`) skips discovery; the default request includes it. A fresh install therefore works with no setup — connecting a Gemini key offers `gemini-2.5-flash`.
 - **A provider that cannot transcribe a row is not offered it.** The catalog trusts what the provider reports about a model's output over what its name suggests, and routes a model that *can* hear to the endpoint that accepts it rather than dropping it.
 - **Nothing is preselected when the choice is real.** A lone candidate, or a lone row whose name says it transcribes, is adopted; with two of either the picker asks.
 - **The choice is remembered app-wide**, and written back on every change — including clearing it. That is what makes the composer microphone and a later visit agree with the page.

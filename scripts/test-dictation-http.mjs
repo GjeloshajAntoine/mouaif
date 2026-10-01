@@ -111,8 +111,15 @@ try {
   assert.deepEqual(catalog.body.kinds.map((k) => k.id), ['openai-compatible', 'openai-audio', 'gemini']);
   assert.equal(catalog.body.total, 3, 'the filter is reported against the full model list');
 
-  const noProject = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root));
-  assert.deepEqual(noProject.body.models, [], 'a project with no models offers none');
+  const noProject = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root) + '&live=0');
+  assert.equal(noProject.status, 200);
+  assert.deepEqual(noProject.body.models, [], 'a project with no models offers none when live discovery is disabled');
+
+  const discovered = await request('/api/ai/transcribe/models?projectDir=' + encodeURIComponent(root));
+  assert.equal(discovered.status, 200);
+  assert.deepEqual(discovered.body.models.map((m) => m.id), ['whisper-1'],
+    'live discovery offers the connected provider\'s transcription models without project models');
+  assert.equal(discovered.body.models[0].source, 'live');
 
   // ---- The catalog merges the providers' live lists ---------------------
   //
@@ -120,12 +127,9 @@ try {
   // provider. Without the live merge the Dictate tab is unusable until the
   // user hand-edits .mouaif.json, because the app has no model editor.
   //
-  // `ai.listModels` is stubbed for this section rather than answered by the
-  // mock server: the shipped adapters fetch a *hard-coded* base URL for the
-  // OpenAI-shaped providers (see the note in the summary), so the mock
-  // upstream's connection address is not what they would talk to. The merge
-  // logic under test is the handler's, and it is reached the same way either
-  // way.
+  // The mock server above exercises live discovery through the configured
+  // base URL. Stub `ai.listModels` here to vary labels and capabilities and
+  // exercise the merge logic independently of the provider adapter.
   const ai = require('../src/ai.js');
   const realListModels = ai.listModels;
   ai.listModels = async (provider) => {
