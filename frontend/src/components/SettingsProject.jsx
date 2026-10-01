@@ -13,7 +13,7 @@ import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectS
 import { nav, back } from '../router.js';
 import { ToolTree, shortDesc, MOUAIF_TOOL_GROUPS, APP_TOOL_NAMES } from './ToolTree.jsx';
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
-import { McpAuthSeg, segMode } from './settings/toolAuth.js';
+import { McpAuthSeg, ToolAuthSeg, segMode } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 
 import { agentEditorPath } from './settings/agentNavigation.js';
