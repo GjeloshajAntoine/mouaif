@@ -11,7 +11,7 @@ import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage, requestWebpreview } from '../api.js';
 import { nav, back } from '../router.js';
-import { ToolTree, shortDesc } from './ToolTree.jsx';
+import { ToolTree, shortDesc, MOUAIF_TOOL_GROUPS } from './ToolTree.jsx';
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg, segMode } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
@@ -862,24 +862,27 @@ extra: restartStatusMsg ? h('div', { class: 'settings-project__item-status', 'ar
 });
 }
 // The mouaif tool owns chats, attachments, settings, and the project list
-// — the app's own data model, which is why it ships its own row rather
-// than folding into another family.
+// — the app's own data model. It renders as TWO rows so the user sees what
+// each half covers, but they share one authorization family: either row's
+// Off / Ask / Allow writes `tools.mouaif`, so the two segments always agree.
 const mouaifTool = catalog.find((t) => t.name === 'mouaif');
 if (mouaifTool) {
+for (const row of MOUAIF_TOOL_GROUPS) {
 groups.push({
-id: 'mouaif',
-name: 'mouaif app',
-description: shortDesc(mouaifTool.description),
+id: row.id,
+name: row.name,
+description: row.description,
 title: mouaifTool.description || '',
 checked: isOn(mouaifAuth.mode),
-control: toolModeSegs('mouaif app', segMode(mouaifAuth.mode), pickMouaifMode, [
+control: toolModeSegs(row.name, segMode(mouaifAuth.mode), pickMouaifMode, [
 { value: 'off', label: 'Off' },
 { value: 'ask', label: 'Ask' },
 { value: 'allow', label: 'Allow' }
 ]),
-tools: [leaf(mouaifTool, { checked: isOn(mouaifAuth.mode) })],
+tools: [leaf(mouaifTool, { name: row.name, checked: isOn(mouaifAuth.mode) })],
 extra: mouaifStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mouaifStatusMsg) : null
 });
+}
 }
 const askTool = catalog.find((t) => t.name === 'ask_user');
 if (askTool) {
@@ -1018,7 +1021,7 @@ if (askTool) {
     else if (groupId === 'task') pickTaskMode(mode);
     else if (groupId === 'webpreview') pickWebpreviewMode(mode);
 else if (groupId === 'restart_app') pickRestartMode(mode);
-else if (groupId === 'mouaif') pickMouaifMode(mode);
+else if (groupId === 'mouaif' || groupId === 'mouaif-settings') pickMouaifMode(mode);
 else if (groupId === 'report_progress') pickProgressMode(mode);
 
     else if (groupId === 'ask_user') pickAskUserMode(mode);

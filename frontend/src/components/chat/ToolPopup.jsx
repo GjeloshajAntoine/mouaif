@@ -102,7 +102,10 @@ export function ToolPopup(props) {
     task: 'task',
 webpreview: 'webpreview',
 restart_app: 'restart_app',
+// Both mouaif rows ("Chats" and "mouaif") share the one `mouaif` family, so
+// each segment writes the same chat-scoped gate.
 mouaif: 'mouaif',
+'mouaif-settings': 'mouaif',
 files: 'file'
 
   };

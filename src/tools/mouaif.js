@@ -82,6 +82,26 @@ const AREAS = Object.freeze({
   info: 'Describe the mouaif feature state and this tool\u2019s actions.'
 });
 
+// The two categories the tool surfaces under in the UI. One model-facing tool
+// and one authorization family (`mouaif`) cover both, so the two rows in the
+// tools tree share one Off / Ask / Allow gate — the split is about what the
+// user is looking at, not about two permissions. `areas` is what each
+// category covers; the tools tree builds one row per entry.
+const GROUPS = Object.freeze([
+  Object.freeze({
+    id: 'mouaif',
+    name: 'Chats',
+    description: 'list \u00b7 read \u00b7 create \u00b7 rename \u00b7 delete \u00b7 search \u00b7 attach images',
+    areas: Object.freeze(['chats', 'attachments'])
+  }),
+  Object.freeze({
+    id: 'mouaif-settings',
+    name: 'mouaif',
+    description: 'app & project settings \u00b7 projects \u00b7 feature info',
+    areas: Object.freeze(['settings', 'projects', 'info'])
+  })
+]);
+
 const ACTION_NAMES = Object.freeze(Object.keys(ACTIONS));
 
 const SPEC = {
@@ -603,6 +623,7 @@ module.exports = {
   SPEC,
   ACTIONS,
   AREAS,
+  GROUPS,
   ACTION_NAMES,
   runMouaif
 };

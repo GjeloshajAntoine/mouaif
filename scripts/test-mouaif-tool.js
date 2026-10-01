@@ -45,6 +45,14 @@ async function main() {
   check('SPEC requires only `action`', JSON.stringify(fn.parameters.required) === '["action"]');
   check('action enum matches ACTIONS', fn.parameters.properties.action.enum.join(',') === mouaif.ACTION_NAMES.join(','));
   check('every action is routed to an area', mouaif.ACTION_NAMES.every((a) => !!mouaif.AREAS[mouaif.ACTIONS[a]]));
+  // The tool surfaces as two UI categories behind one authorization family.
+  check('GROUPS defines the two UI categories', Array.isArray(mouaif.GROUPS) && mouaif.GROUPS.length === 2);
+  check('the category ids are distinct', mouaif.GROUPS[0].id !== mouaif.GROUPS[1].id);
+  check('the categories cover every area exactly once', (() => {
+    const covered = mouaif.GROUPS.flatMap((g) => g.areas).sort().join(',');
+    return covered === Object.keys(mouaif.AREAS).sort().join(',');
+  })());
+  check('the first category is the chats half', mouaif.GROUPS[0].areas.join(',') === 'chats,attachments');
 
   // --- 2) Authorization category -----------------------------------------
   const authState = authz.getAuthorization(projectDir);

@@ -39,11 +39,22 @@ What is my default prompt size, and switch this project to agentFiles off.
 
 `attach` accepts only images (`png`, `jpeg`, `webp`, `gif`), because that is the only attachment the chat store understands. It reads the file with the file editor's boundary (the user home, or anywhere with `MOUAIF_ALLOW_ANY_ROOT=1`), so a path outside it fails with `EOUTSIDE_HOME` exactly like `read_file`.
 
+### Where it appears
+
+The tool shows up as **two rows** in the tools tree (Settings → Project → Tools, the chat Tools card, and the composer tools popup):
+
+| Row | Covers |
+| --- | --- |
+| **Chats** | `list` `get` `create` `update` `delete` `search` `attach` `list_attachments` |
+| **mouaif** | `settings_get` `settings_update` `project_list` `info` |
+
+The split is about what you are looking at, not about permissions: there is **one** `mouaif` authorization family behind both rows, and either row's Off / Ask / Allow writes that one gate. The two rows always show the same mode.
+
 ### Authorization
 
 The tool is one native authorization family, `mouaif`, gated the same way as Shell, File tools, and Web preview:
 
-- **Settings → Project → Tools → mouaif app** — Off / Ask / Allow for the project.
+- **Settings → Project → Tools** — Off / Ask / Allow for the project, on either row.
 - **Chat → Tools card** and the composer tools popup — the same segments, scoped to that chat.
 - `off` hides the tool spec entirely; the model never pays tokens for it.
 - `ask` shows the usual authorization card before the call runs.

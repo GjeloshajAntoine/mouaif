@@ -324,6 +324,24 @@ export function shortDesc(text, max = 40) {
 // separate "enabled" server switch — and their checkbox flips the
 // per-chat tool filter for the whole server. Used tools get the
 // dot badge.
+// The two rows the single `mouaif` tool renders as. Kept here (not derived
+// from the catalog) because the catalog advertises one tool while the tree
+// shows two: one for the project's chats and their image attachments, one
+// for app & project settings and the project list. Both rows read and write
+// the same `mouaif` authorization family.
+export const MOUAIF_TOOL_GROUPS = Object.freeze([
+  Object.freeze({
+    id: 'mouaif',
+    name: 'Chats',
+    description: 'list · read · create · rename · delete · search · attach images'
+  }),
+  Object.freeze({
+    id: 'mouaif-settings',
+    name: 'mouaif',
+    description: 'app & project settings · projects · feature info'
+  })
+]);
+
 export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set()) {
   const groups = [];
   const selected = Array.isArray(filter) ? new Set(filter) : null;
@@ -338,7 +356,7 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
     used: usedTools.has(t.name)
   }, extra || {});
 
-  for (const name of ['shell', 'subagent', 'ask_user', 'task', 'webpreview', 'restart_app', 'mouaif', 'list_features']) {
+  for (const name of ['shell', 'subagent', 'ask_user', 'task', 'webpreview', 'restart_app', 'list_features']) {
     const t = catalog.find((x) => x && x.name === name);
     if (!t) continue;
     groups.push({
@@ -349,6 +367,27 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
       checked: isOn(name),
       tools: [leaf(t)]
     });
+  }
+
+  // The mouaif tool renders as TWO rows — "Chats" (chats + image
+  // attachments) and "mouaif" (app & project settings, projects, feature
+  // info). Both map to the single model-facing `mouaif` tool and therefore
+  // to the single `mouaif` authorization family; the chat-scoped Off / Ask
+  // / Allow segment on either row writes that one gate, so the two rows
+  // always agree. The ids are distinct so tree keys and collapse state stay
+  // independent. See docs/features/mouaif-tool.md.
+  const mouaifTool = catalog.find((x) => x && x.name === 'mouaif');
+  if (mouaifTool) {
+    for (const row of MOUAIF_TOOL_GROUPS) {
+      groups.push({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        title: mouaifTool.description || '',
+        checked: isOn(mouaifTool.name),
+        tools: [leaf(mouaifTool)]
+      });
+    }
   }
 
   const progressTool = catalog.find((x) => x && x.name === 'report_progress');

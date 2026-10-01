@@ -128,7 +128,11 @@ head.appendChild(scoped);
     report_progress: 'report_progress',
     webpreview: 'webpreview',
     restart_app: 'restart_app',
+    // The single `mouaif` family backs both of the tool's rows ("Chats" and
+    // "mouaif"). Each row gets its own segment, but either one writes the
+    // same chat-scoped gate, so the two always render the same mode.
     mouaif: 'mouaif',
+    'mouaif-settings': 'mouaif',
     files: 'file'
   };
   for (const g of groups) {

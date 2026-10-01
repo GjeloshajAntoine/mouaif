@@ -4,7 +4,9 @@
 
 ### Shape
 
-One spec, five areas, twelve actions. `src/tools/mouaif.js` exports `SPEC`, `ACTIONS` (action → area), `AREAS` (one-line description per area), `ACTION_NAMES`, and `runMouaif(args, opts)`.
+One spec, five areas, twelve actions, **two UI categories**. `src/tools/mouaif.js` exports `SPEC`, `ACTIONS` (action → area), `AREAS` (one-line description per area), `GROUPS` (the two UI categories, each listing the areas it covers), `ACTION_NAMES`, and `runMouaif(args, opts)`.
+
+`MOUAIF_TOOL_GROUPS` in `frontend/src/components/ToolTree.jsx` is the frontend copy of `GROUPS`; it is what the two tree surfaces iterate. Keep the two in sync when an area moves between categories — `scripts/test-mouaif-tool.js` asserts the server-side table covers every area exactly once.
 
 ```js
 const { runMouaif } = require('mouaif/src/tools/mouaif.js');
@@ -27,8 +29,8 @@ const out = await runMouaif(
 | Authorization family | `src/tools/authorization.js` | Member of `NATIVE_TOOLS`; own row in the `getAuthorization` view. Default mode `ask`. |
 | Prompt presets | `src/prompts.js` | Member of `PRESET_TOOL_NAMES`. |
 | Feature summary | `src/agentFeatures.js` | Own line in `buildFeatureSummary`; in the `list_features` tool list. |
-| Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,ToolTree.jsx,useChatState.js}` | Group + auth segment for the `mouaif` family. |
-| Project settings UI | `frontend/src/components/SettingsProject.jsx` | `mouaif app` group with Off / Ask / Allow. |
+| Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,ToolTree.jsx,useChatState.js}` | Two group rows (`mouaif`, `mouaif-settings`) with a segment each; both segments write the one `mouaif` family. |
+| Project settings UI | `frontend/src/components/SettingsProject.jsx` | The same two rows, built from `MOUAIF_TOOL_GROUPS` exported by `ToolTree.jsx`. |
 | Agent allowlist UI | `frontend/src/components/SettingsAgents.jsx` | `mouaif` choice. |
 | Card rendering | `frontend/src/components/chat/{tools.js,toolRender.js}` + `frontend/src/tool-cards.css` | `mouaifArgSummary` for the collapsed head; `renderMouaifToolResult` renders a chat list, everything else falls through to the JSON preview. |
 
