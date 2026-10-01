@@ -42,7 +42,7 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
         '/api/tools/list': { tools: [] },
         '/api/mcp/servers': { servers: [] },
         '/api/prompts': { prompts: [] },
-        '/api/agents': { agents: [] }
+        '/api/agents': { agents: [{ name: 'Search', modelId: '' }] }
       };
       assert.ok(endpoint in bodies, 'unexpected settings dependency: ' + endpoint);
       return { status: 200, body: bodies[endpoint] };
@@ -50,6 +50,8 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
   });
   const PROJECT_NAV = source('settings/projectNavigation.js');
   vm.runInContext(PROJECT_NAV, context);
+  const AGENT_NAV = source('settings/agentNavigation.js');
+  vm.runInContext(AGENT_NAV, context);
   vm.runInContext(source('settingsProjectUi.js'), context);
   vm.runInContext(source('SettingsProject.jsx'), context);
   function render(page = 'main') {
@@ -66,7 +68,7 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
     }
     throw new Error('Project settings failed to load');
   }
-  return { render, load, requests };
+  return { render, load, requests, agentEditorPath: context.agentEditorPath, agentBackPath: context.agentBackPath, agentQuery: context.agentQuery };
 }
 
 for (const [project, summary] of [
@@ -104,5 +106,20 @@ for (const [project, summary] of [
   const mainBack = view.render().find(node => node.attrs.class === 'view-back');
   assert.equal(mainBack.attrs['aria-label'], 'Back to chat');
   assert.equal(mainBack.attrs.href, '#/chat/' + chatId + '?projectDir=' + encodeURIComponent(projectDir));
+
+  // The Agents card links into the agent editor. Those hrefs go through the
+  // shared `agentEditorPath`, which the render above evaluates — asserting the
+  // value is what stops the helper from being swapped for a hand-built string
+  // (the links carry `returnTo=project`, so the editor's Back comes here).
+  const agents = after;
+  const agentScope = { projectDir, chatId, from, returnTo: 'project' };
+  const defaultLink = agents.find(node => node.attrs.href === '#/' + view.agentEditorPath('_default', agentScope));
+  assert.ok(defaultLink, 'the default-subagent link uses the shared path helper');
+  const namedLink = agents.find(node => node.attrs.href === '#/' + view.agentEditorPath('Search', agentScope));
+  assert.ok(namedLink, 'a named agent link uses the shared path helper');
+  // The editor must be told how to come back, or its Back degrades to the
+  // Settings root instead of this page. `agentBackPath` drops `returnTo` from
+  // the query it re-emits (the path itself is the answer to "where to").
+  assert.equal(view.agentBackPath(agentScope), 'settings/project?' + view.agentQuery(Object.assign({}, agentScope, { returnTo: '' })), 'the agent editor returns to project settings');
 }
-console.log('PASS project settings initial/loaded renders, hidden-file counts, scoped links, sibling pages and Back targets');
+console.log('PASS project settings initial/loaded renders, hidden-file counts, scoped links, sibling pages, agent links and Back targets');
