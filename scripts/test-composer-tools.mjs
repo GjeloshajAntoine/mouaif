@@ -61,39 +61,42 @@ check('both optional buttons are shown by default', () => {
 });
 
 check('composerToolsFromApp reads both booleans', () => {
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: false } }), { dictation: false, image: false, capture: true, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: false } }), { dictation: true, image: false, capture: true, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: true } }), { dictation: false, image: true, capture: true, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: true } }), { dictation: true, image: true, capture: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: false } }), { dictation: false, image: false, capture: false, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: false } }), { dictation: true, image: false, capture: false, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: false, imageButton: true } }), { dictation: false, image: true, capture: false, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: true, imageButton: true } }), { dictation: true, image: true, capture: false, status: true });
 });
 
-check('a value it cannot read leaves the button shown, never hidden', () => {
-  // Anything shaped differently reads as the defaults.
+check('unreadable values use each control’s default', () => {
   for (const snapshot of [{}, null, undefined, { app: null }, { app: [] }, { app: 'nope' }, 0]) {
-    assert.deepEqual(composerToolsFromApp(snapshot), { dictation: true, image: true, capture: true, status: true },
+    assert.deepEqual(composerToolsFromApp(snapshot), { dictation: true, image: true, capture: false, status: true },
       'snapshot ' + JSON.stringify(snapshot) + ' must read as the defaults');
   }
   for (const raw of [undefined, null, 1, 0, 'yes', 'on', {}]) {
-    const got = composerToolsFromApp({ app: { dictationButton: raw, imageButton: raw } });
-    assert.deepEqual(got, { dictation: true, image: true, capture: true, status: true }, 'raw ' + JSON.stringify(raw) + ' must read as shown');
+    const got = composerToolsFromApp({ app: { dictationButton: raw, imageButton: raw, screenCaptureButton: raw } });
+    assert.deepEqual(got, { dictation: true, image: true, capture: false, status: true }, 'raw ' + JSON.stringify(raw) + ' must read as the defaults');
   }
 });
 
 check('the string forms a TEXT store hands back are honoured', () => {
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false', imageButton: 'false' } }), { dictation: false, image: false, capture: true, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'true', imageButton: 'true' } }), { dictation: true, image: true, capture: true, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false' } }), { dictation: false, image: true, capture: true, status: true });
-  assert.deepEqual(composerToolsFromApp({ app: { imageButton: 'false' } }), { dictation: true, image: false, capture: true, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false', imageButton: 'false' } }), { dictation: false, image: false, capture: false, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'true', imageButton: 'true' } }), { dictation: true, image: true, capture: false, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { dictationButton: 'false' } }), { dictation: false, image: true, capture: false, status: true });
+  assert.deepEqual(composerToolsFromApp({ app: { imageButton: 'false' } }), { dictation: true, image: false, capture: false, status: true });
 });
 
-check('screen capture defaults on and can be disabled', () => {
-  assert.equal(COMPOSER_TOOLS_DEFAULT.capture, true);
+check('screen capture defaults hidden and preserves explicit opt-in', () => {
+  assert.equal(COMPOSER_TOOLS_DEFAULT.capture, false);
   assert.equal(composerToolsFromApp({ app: { screenCaptureButton: false } }).capture, false);
   assert.equal(composerToolsFromApp({ app: { screenCaptureButton: 'false' } }).capture, false);
-  assert.equal(composerToolsFromApp({ app: { screenCaptureButton: 'nope' } }).capture, true);
-  assert.match(read('src/settings.js'), /screenCaptureButton: true,/);
+  assert.equal(composerToolsFromApp({ app: { screenCaptureButton: true } }).capture, true);
+  assert.equal(composerToolsFromApp({ app: { screenCaptureButton: 'true' } }).capture, true);
+  assert.equal(composerToolsFromApp({ app: { screenCaptureButton: 'nope' } }).capture, false);
+  assert.match(read('src/settings.js'), /screenCaptureButton: false,/);
   assert.match(read('src/server-shared.js'), /'screenCaptureButton'/);
-  assert.match(read('frontend/src/components/SettingsDefaults.jsx'), /'screenCaptureButton', \{ screenCaptureButton: v \}/);
+  const ui = read('frontend/src/components/SettingsDefaults.jsx');
+  assert.match(ui, /\[screenCaptureButton, setScreenCaptureButton\] = useState\(false\)/);
+  assert.match(ui, /'screenCaptureButton', \{ screenCaptureButton: v \}/);
 });
 
 check('the status line switch reads the same way, shown by default', () => {
@@ -170,7 +173,7 @@ check('the running server would round-trip both keys', () => {
     const defaults = settingsForClient(settings.DEFAULTS);
     assert.equal(defaults[DICTATION_BUTTON_KEY], true, 'the default is a shown microphone');
     assert.equal(defaults[IMAGE_BUTTON_KEY], true, 'the default is a shown image button');
-    assert.equal(defaults.screenCaptureButton, true, 'capture is shown after reset');
+    assert.equal(defaults.screenCaptureButton, false, 'capture is hidden after reset');
   } finally {
     if (priorHome === undefined) delete process.env.MOUAIF_HOME;
     else process.env.MOUAIF_HOME = priorHome;

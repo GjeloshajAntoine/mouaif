@@ -52,7 +52,7 @@ export function SettingsDefaultsView() {
 const [fileOrb, setFileOrb] = useState(false);
   const [dictationButton, setDictationButton] = useState(true);
   const [imageButton, setImageButton] = useState(true);
-  const [screenCaptureButton, setScreenCaptureButton] = useState(true);
+  const [screenCaptureButton, setScreenCaptureButton] = useState(false);
   const [statusBar, setStatusBar] = useState(true);
 
   // Per-row status messages, mirroring SettingsProject's
@@ -350,7 +350,7 @@ v ? 'the status line under the composer is shown again' : 'the status line under
               h('div', { class: 'settings-project__item-row' },
               h('div', { class: 'settings-project__item-main' },
               h('label', { class: 'settings-project__item-title', for: 'sd-screen-capture-button' }, 'Screen capture button in chat'),
-              h('div', { class: 'settings-project__item-note' }, 'Shows a send-style capture button outside the textbox. Review full or changed-area images and mask ignored zones before attaching. Turn off to hide the button. On by default.'),
+              h('div', { class: 'settings-project__item-note' }, 'Shows a send-style capture button outside the textbox. Review full or changed-area images and mask ignored zones before attaching. Turn on to show the button. Hidden by default.'),
               h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, screenCaptureButtonMsg)
               ),
               h('label', { class: 'switch' },

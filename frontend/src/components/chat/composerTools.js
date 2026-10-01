@@ -29,8 +29,8 @@
 //
 // Reading is defensive, the same way `fileOrbFromApp` reads the orb: a missing
 // key, a failed `/api/settings` fetch, or a value the server could not store as
-// a JSON boolean all resolve to `true` (the button is shown), so a composer
-// only ever loses a control the user explicitly turned off. The string forms
+// a JSON boolean resolve to each control's default: capture is opt-in, while
+// the existing microphone, image button and status line remain shown. The string forms
 // are accepted because the app store holds a TEXT blob — a hand-edited
 // `store.sqlite`, or a settings file merged from a project, can legitimately
 // hand us `'false'`.
@@ -39,10 +39,8 @@ export const IMAGE_BUTTON_KEY = 'imageButton';
 export const SCREEN_CAPTURE_BUTTON_KEY = 'screenCaptureButton';
 export const STATUS_BAR_KEY = 'statusBar';
 
-// On by default: these are the buttons the composer has always drawn, and a
-// feature that silently disappeared after an update is worse than one the user
-// turns off on purpose.
-export const COMPOSER_TOOLS_DEFAULT = Object.freeze({ dictation: true, image: true, capture: true, status: true });
+// Keep existing controls shown; screen capture is hidden until enabled.
+export const COMPOSER_TOOLS_DEFAULT = Object.freeze({ dictation: true, image: true, capture: false, status: true });
 
 // readBool(raw, fallback) — the shared coercion. A real boolean wins; the two
 // strings a TEXT store can hand back are read as what they say; anything else

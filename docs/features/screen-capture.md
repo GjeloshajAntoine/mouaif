@@ -6,7 +6,7 @@ Capture a screen as selected PNG images instead of uploading a video. A send-sty
 
 ## Usage
 
-1. Tap **Capture screen images** beside the chat textbox.
+1. Enable **Screen capture button in chat** under **Settings → App defaults → Chat defaults** (hidden by default), then tap **Capture screen images** beside the chat textbox.
 2. Choose **Share screen**, then pick a tab, window or screen in the browser's permission dialog. Alternatively, **Import screenshots** in chronological order or **Import video** from your saved screen recordings; both work without screen sharing.
 3. Choose **Changed area only** (the default) or **Full image**, then tap **Capture now**. Optionally enable **Capture automatically** at a 2, 3, 5 or 10 second interval. No video or audio is recorded.
 4. The first image is a full baseline. Later changed-area captures contain the smallest rectangular area covering meaningful changes from the previous captured image. Unchanged captures are skipped. A source-size change produces a new full image.
@@ -28,7 +28,7 @@ Only confirmed PNG images are attached. The original video and its audio are **n
 
 ### Disable the button
 
-Open **Settings → App defaults → Chat defaults** and turn off **Screen capture button in chat**. This app-wide preference hides the button; it does not change ordinary image attachments or pasted screenshots. The capture button is disabled when the draft already contains eight images.
+The button is hidden by default. Open **Settings → App defaults → Chat defaults** and turn on **Screen capture button in chat** to show it, or turn it off to hide it again. Explicit saved choices are preserved. This app-wide preference hides the button; it does not change ordinary image attachments or pasted screenshots. The capture button is disabled when the draft already contains eight images.
 
 ### Browser support and privacy
 

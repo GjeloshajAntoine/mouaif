@@ -2,7 +2,7 @@
 
 ## Overview
 
-Settings → App defaults → Chat defaults has four switches that decide which optional parts the chat composer draws: **Dictation microphone in the composer**, **Image button in the composer**, **Screen capture button in chat** and **Status line under the composer**. The [screen capture button](./screen-capture.md) lives outside the textbox and opens a local capture/review sheet with selected full or changed-area images and ignored zones. All are on by default. Turning one off removes that button from the composer row — for a user who never dictates, or never attaches a picture, and who does not want to reach past a control that does nothing for them every time they send a message.
+Settings → App defaults → Chat defaults has four switches that decide which optional parts the chat composer draws: **Dictation microphone in the composer**, **Image button in the composer**, **Screen capture button in chat** and **Status line under the composer**. The [screen capture button](./screen-capture.md) lives outside the textbox and opens a local capture/review sheet with selected full or changed-area images and ignored zones. Screen capture is hidden by default; the other controls are on by default. Turning one off removes that button from the composer row — for a user who never dictates, or never attaches a picture, and who does not want to reach past a control that does nothing for them every time they send a message.
 
 Hiding is **not** disabling. The routes behind the buttons stay exactly as they were, so a hidden control removes a way to *reach* a capability, never the capability:
 
