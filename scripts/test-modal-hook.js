@@ -184,11 +184,12 @@ const SHEETS = [
     assert.equal(ownsTab({ closest: () => null }), false);
   });
 
-  check('the CLI prompt owns Tab and sends it to the shell', () => {
+  check('the CLI prompt owns Tab and dispatches hardware keys through the key row handler', () => {
     const src = fs.readFileSync(path.join(__dirname, '../frontend/src/components/chat/CliModal.jsx'), 'utf8');
     assert.ok(/'data-own-tab': ''/.test(src), 'the prompt input must carry data-own-tab');
-    assert.ok(/e\.key === 'Tab'[\s\S]{0,400}preventDefault\(\)[\s\S]{0,200}sendKey\(keyById\('tab'\)\)/.test(src),
-      'a hardware Tab in the prompt must be sent like the key row\u2019s Tab');
+    assert.ok(/const hk = keyForEvent\(e\);[\s\S]{0,200}e\.preventDefault\(\);\s*sendKey\(hk\);/.test(src),
+      'a hardware key in the prompt must use the same sendKey handler as the key row');
+    assert.ok(/onClick: \(\) => sendKey\(k\)/.test(src), 'the key row must use sendKey too');
   });
 
   check('the nested Git confirm sheet is declared after the modal it sits on', () => {

@@ -4,6 +4,12 @@
 
 ## Implementation notes
 
+Hardware keys are mapped by `keyForEvent` and passed to the same `sendKey`
+handler as the on-screen key rows. The prompt's `data-own-tab` marker bypasses
+modal focus cycling for plain Tab; Shift+Tab remains focus navigation.
+`scripts/test-modal-hook.js` guards this wiring, and
+`scripts/test-cli-suggest.js` checks the Tab mapping and local completion rules.
+
 ### Session lifecycle
 
 - `GET /api/tools/cli/session?projectDir=<abs>` starts or reuses the per-project session and returns `{ id, projectDir, shell, interactive, startedAt, defaultDir }`. `interactive` is `true` when a pseudo-terminal backend loaded. It is diagnostic only; the modal shows no badge for it.
