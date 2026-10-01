@@ -69,19 +69,30 @@ Who reads stdin is tracked as `owner` in [CliModal.jsx](../../../frontend/src/co
 
 `suggestionsFor({ draft, history, entries })` filters by the draft (substring, prefix matches first, source order inside a rank), drops a candidate equal to the draft, de-dupes and caps at `MAX_SUGGESTIONS` (7). It never refuses to run anything: a chip only calls `applySuggestion`, which rewrites `.cli__prompt` — **Enter is still the decision**.
 
-### Keyboard input
+### Key row
 
-The keyboard toggle, extra-key panel, and hint have been removed. The footer contains only the prompt and Run; the modal no longer imports the legacy `CLI_KEYS`, `keyPayload`, or `stepHistory` helpers. `cliKeys.js` still supplies `keepEditorFocus`, `lineEditorState`, and `splitTypedTab`.
+`frontend/src/components/chat/cliKeys.js` holds the six keys as one table (`CLI_KEYS`), so each byte sequence lives in exactly one place:
 
-Hardware Tab and literal Tab input from phone keyboards use `completeLocally(text, history, entries)` to complete the local field without sending anything until Enter. Completion first matches command history, then the trailing word against the project's top-level names. No match leaves the field untouched.
+| id | label | sequence |
+| --- | --- | --- |
+| `esc` | `Esc` | `\x1b` |
+| `tab` | `Tab` | `\t` |
+| `up` | `↑` | `\x1b[A` |
+| `down` | `↓` | `\x1b[B` |
+| `int` | `^C` | `\x03` |
+| `eof` | `^D` | `\x04` |
 
-Run and suggestion chips cancel `mousedown` (`keepEditorFocus`) to keep the soft keyboard open. The prompt is never disabled, and writes remain serialized by `queueRef` / `post`. Ctrl+Enter sends the field through the existing raw-write path without a line terminator.
+`shellOnly: true` marks Tab and the two arrows: they edit the prompt's **own** buffer (completeLocally / stepHistory), so the row dims exactly those three while a program owns the prompt (`owner === 'program'`) and leaves Esc, `^C` and `^D` lit — those three mean the same thing to a program as to a shell, and `^C` is the key a waiting program needs. The class it drives is `.cli__key--shell` under `.cli__keys.is-prompt` in [chat-composer.css](../../../frontend/src/chat-composer.css).
 
-### Output catch-up
+Esc, `^C` and `^D` go through `POST /api/tools/cli/command` with **`raw: true`**, so `writeCliCommand` appends no terminator (`\n` on POSIX, `\r\n` on Windows). Appending one to `\x03` would send Ctrl+C *and* Enter, answering a prompt the user never saw; that is the invariant the test asserts byte for byte. Tab and ↑/↓ write **nothing** to the child — `keyPayload` returns `{ seq: '' }` for a `shellOnly` key — and are handled entirely in the prompt buffer.
 
-`subscribeCliOutput` in [cliOutput.js](../../../frontend/src/components/chat/cliOutput.js) owns the EventSource and retained-output replay. It catches up with `GET /api/tools/cli/output?id=…&since=…` on initialization, SSE open/error, after command writes, and every 1.5 seconds while mounted. This also covers a proxy buffering an apparently connected SSE response. Only one replay request runs at a time; live frames received during replay are queued, ordered and deduplicated against the replay's sequence watermark. Session end stops polling, and cleanup closes the EventSource and clears the timer without killing the shell. No REST surface changes are needed.
+`keyPayload(key)` decides what a tap writes: `shellOnly` keys write nothing, `int` (`^C`) writes ETX and returns `clearDraft: true`, Esc and `^D` carry their byte and leave the field alone. An earlier version had the readline keys flush `draft + seq` onto the shell's line and clear the field (`clearDraft: true`); on a phone the shell's echoed line is easy to miss, so a Tap looked like "Tab ate my text", and on a piped session it lost the text outright. Tab now calls `completeLocally(text, history, entries)` from [cliSuggest.js](../../../frontend/src/components/chat/cliSuggest.js) and ↑/↓ call `stepHistory(history, index, dir)`, both of which rewrite `cmdText` (and the DOM value, caret at the end) in place; nothing is sent until Enter.
 
-`scripts/test-cli-output.mjs` exercises catch-up independently. `scripts/cli-modal-live-fixture.mjs` mounts the real component against an isolated `createServer` and a disposable project; `?buffered=1` simulates a stream with no delivered frames while preserving real shell execution and replay requests.
+`completeLocally` has two phases. **The line**: a `history` command that starts with the whole field completes it (`npm ru` → the history's `npm run test:cli`, or their longest common prefix when several match). **The word**: when no command matches, the field's trailing word (`\S*$`) completes from the project's top-level names, prefix preserved (`ls pac` → `ls package.json`, `cd scr` → `cd scripts/`). It returns the new text, or `null` when nothing matches (the field is left untouched). `stepHistory(history, index, dir)` walks the same newest-first list — ↑ goes older (`index + 1`, clamped at the oldest), ↓ back toward the newest (`index - 1`), landing on `index: -1` with an empty line past the newest. The walk index lives in `recallIndexRef`, reset on each keystroke and on send/raw.
+
+Every control in both rows cancels `mousedown` (`keepEditorFocus`) so the browser cannot move focus to the button — on iOS and Android that would close the soft keyboard on every tap. The prompt is **never disabled**: disabling a focused input blurs it, and a `focus()` issued later from a fetch callback runs outside the user gesture, which iOS will not honour with a keyboard. Instead every write goes through one promise chain (`queueRef` / `post`), so taps reach the shell in the order they were made and `^C` is never blocked behind the request it is meant to interrupt.
+
+The row dims its readline keys (`.cli__keys.is-prompt`) exactly when `owner === 'program'`. The hint names the mode (`Tab completes and ↑/↓ recall in the prompt. ^C stops the running command.`); completing a command line while a program waits for an answer is the wrong thing to do, so Tab/↑/↓ go quiet there. Tab and ↑/↓ work the same on a piped session: the completion sources are all client-side, so no terminal is needed.
 
 ### Screen decoding
 
@@ -97,24 +108,9 @@ chunk 1: "build \x1b"      chunk 2: "[32mok\x1b[0m"
 before:  build [32mok      after:  build ok
 ```
 
-### Mobile controls
-
-Every affordance the sheet needs is on the sheet, at the `--tap` (44 px) floor. The header carries **Stop** (`.cli__stop`) and the close button (`.icon-btn .icon-btn--close .cli__iconbtn`); `.cli__iconbtn` is re-declared in [chat-composer.css](../../../frontend/src/chat-composer.css) because the shared `.icon-btn` is `--tap-sm` (32 px) and a header glyph must clear the same 44 px minimum as everything else. The prompt row ends with **Run** (`.cli__run`), which calls the same `runCommand` as Enter and cancels `mousedown` (`keepEditorFocus`) so a tap cannot close the soft keyboard. `enterkeyhint: 'send'` only labels the keyboard's own action key; Run is the one that is *visible*.
-
-Run is an icon-only action with an accessible label. Its visible background is inset inside a 44 px touch target. There is no keyboard toggle, extra-key panel, or hint. Suggestions mount only for a non-empty draft, and use a horizontally scrollable row without bulky filled chips. The prompt is 2 rem tall (overriding the shared input minimum) with a 1 rem font to avoid iOS focus zoom. `useVisualViewport` updates `--cli-viewport-top` and `--cli-viewport-height` on the overlay so the layout fits above the soft keyboard even when the visual viewport pans. The output painting effect depends on `loading` and `error` as well as `outBuffer`: output received before the `<pre>` mounts must be painted when startup completes, even without another output chunk.
-
-An `exit` frame (`appendOut(…, 'exit')`), a replay reporting `running: false` / HTTP 404, or a command returning HTTP 404 / 410 sets `exited`, which:
-
-- removes the suggestion row (`!exited && cmdText && suggestions.length`) and the prompt row, replacing them with `.cli__dead` — a one-line notice and a `.cli__restart` button;
-- swaps the header's Stop for Restart (`exited && !loading && !error`).
-
-`restart()` clears the screen (`screenRef.current = new CliScreen()`, `setOutBuffer('')`), resets the prompt, and bumps `restartKey`, which is the session effect's second dependency — so the effect re-runs against a *fresh* child (the server's `GET /cli/session` starts a new session because the old one was reaped on exit). A cleared screen is deliberate: the old output belongs to a dead shell, and keeping it above a live prompt would read as one continuous session.
-
-Startup failures offer **Retry**, which clears the error and re-runs session initialization through the same restart path. `scripts/test-cli-modal.mjs` covers the component's startup, command writes, viewport properties and recovery paths; it runs with `npm run test:cli`.
-
 ### Limits
 
 - A PTY has a fixed grid size (100×30). The modal does not yet report its own dimensions, so `resize` is not driven from the browser.
 - Some single-key prompts (a `y/n` confirmation that reads raw mode) expect the key byte alone — use **Ctrl+Enter** so no trailing newline is sent.
-- **Ctrl+Enter** (the raw single-key send) needs a hardware keyboard. There are no on-screen terminal keys; Stop ends the whole shell, not just its foreground command.
-- The default footer is one prompt row. Suggestions appear only while typing; there are no extra-key controls. On a short viewport the output shrinks before the active controls, whose touch targets remain 44 px.
+- **Ctrl+Enter** (the raw single-key send) is a desktop chord: a soft keyboard cannot produce it, which is why the key row exists — `^C` and `^D` reach the two bytes that matter most, and the suggestion row removes the need to retype a command at all.
+- The suggestion and key rows are fixed the sheet's height, so on a short viewport (a phone with the keyboard up) the terminal output is what shrinks; both rows keep their 44 px targets and never scroll out of reach.

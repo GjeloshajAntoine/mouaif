@@ -10,15 +10,14 @@ The session runs on a **pseudo-terminal** on macOS, Linux, BSD, and supported Wi
 
 Open the composer's File button and choose **Cli**. The header shows the shell label and the project directory.
 
-- Type a command and press **Enter** to run it — or tap **Run** at the end of the prompt row, which sends the same line. On a phone the keyboard's own action key does the same thing.
+- Type a command and press **Enter** to run it.
 - Press **Enter** on an empty line to send it — a prompt that offers a default accepts it.
 - Press **Ctrl+Enter** (**Cmd+Enter** on macOS) to send the line **without a line terminator**, for a program waiting on a single key (a `y/n` confirmation, a pager).
 - Close the sheet with the close button or **Escape**. Closing only hides it: the shell keeps running in the background and reopening replays what it printed. Tap **Stop** in the header to kill it — see [Background terminal](background-terminal.md).
-- When the shell **ends on its own** (`exit`, a crash), the prompt row is replaced by **Restart shell**, and the header's **Stop** becomes **Restart**. Restart starts a fresh shell with a cleared screen — a dead session never leaves an input behind that would fail on every send.
 
 ### Suggestions
 
-While you type, a horizontally scrollable row of compact suggestions above the prompt offers what you are most likely to type next: the commands this session has already sent to the shell, newest first, and the project's own top-level files and folders. The row stays one line tall so it leaves room for the output when the keyboard is open. Tap a chip to put it in the prompt — **Enter still runs it**, so a suggestion is exactly as reversible as something you typed yourself.
+Above the prompt, a row of chips offers what you are most likely to type next: the commands this session has already sent to the shell, newest first, and the project's own top-level files and folders. Tap a chip to put it in the prompt — **Enter still runs it**, so a suggestion is exactly as reversible as something you typed yourself.
 
 - The row filters as you type: `npm r` offers `npm run …`, `src` offers `src/`, and a chip equal to what you have already typed is dropped rather than offered as a no-op.
 - Folder chips carry a trailing slash (`src/`), file chips do not (`package.json`).
@@ -37,13 +36,25 @@ Type **`!!`** and press **Enter** to repeat the previous command — the shell's
 
 ### Keys
 
-There is no keyboard toggle or extra-key panel. The footer contains only the command field and **Run**. Use suggestions to reuse commands, **Stop** to end the shell, and **Ctrl+Enter** on a hardware keyboard for a raw single-key answer.
+A phone keyboard has letters, digits and Enter, and nothing a terminal actually needs. Under the prompt, one row carries the six keys it lacks:
 
-**Tab** completes **in the prompt itself**, and nothing is sent to the shell until you press **Enter**. A command from this session's history that starts with your line is completed whole (`git chec` → `git checkout main`); several matches extend as far as they agree (`npm ru` → `npm run `) and the suggestion row below narrows to the rest. When no history command matches, the word before the cursor completes from the project's own top-level names, prefix preserved (`ls pac` → `ls package.json`, `cd scr` → `cd scripts/`). Because completion happens in the field, the text you typed is never emptied and never lost — and it works the same on a session without a terminal.
+| Key | Sends | Does |
+| --- | --- | --- |
+| **Esc** | `ESC` | leave a full-screen program (`less`, `vim`, a TUI) |
+| **Tab** | *(nothing)* | complete the command or path **in the prompt** |
+| **↑** / **↓** | *(nothing)* | previous / next command from this session, **in the prompt** |
+| **^C** | `ETX` | interrupt the running command |
+| **^D** | `EOT` | end input (EOF) |
 
-A phone keyboard that has its own Tab key (Samsung Keyboard, Hacker's Keyboard, some Gboard layouts) works too. Those keyboards usually do not report a Tab key press at all — they type a literal tab character into the field — so the prompt watches its text: everything before the tab is completed exactly like hardware **Tab**, and anything typed after it stays in the field. Further tab characters are dropped; a command line has no use for them.
+Esc, **^C** and **^D** are the keys a program needs: each is one raw write with **no line terminator**, so `^C` interrupts without also pressing Enter — which would answer a second prompt you never saw.
 
-With a hardware keyboard, pressing **Tab** completes the local command field — it is not focus navigation there. The prompt is marked `data-own-tab`, which tells the sheet's shared focus trap (`frontend/src/hooks/useModal.js`) to leave plain Tab alone; **Shift+Tab** still moves focus out of the prompt, so the keyboard is never trapped.
+**Tab** completes **in the prompt itself**, and nothing is sent to the shell until you press **Enter**. A command from this session's history that starts with your line is completed whole (`git chec` → `git checkout main`); several matches extend as far as they agree (`npm ru` → `npm run `) and the suggestion row below narrows to the rest. When no history command matches, the word before the cursor completes from the project's own top-level names, prefix preserved (`ls pac` → `ls package.json`, `cd scr` → `cd scripts/`). **↑/↓** walk the same session history into the prompt. Because completion happens in the field, the text you typed is never emptied and never lost — and it works the same on a session without a terminal.
+
+A phone keyboard that has its own Tab key (Samsung Keyboard, Hacker's Keyboard, some Gboard layouts) works too. Those keyboards usually do not report a Tab key press at all — they type a literal tab character into the field — so the prompt watches its text: everything before the tab is completed exactly like a tap on the row's **Tab**, and anything typed after it stays in the field. Further tab characters are dropped; a command line has no use for them.
+
+With a hardware keyboard, pressing **Tab** in the prompt does exactly what the on-screen **Tab** key does — it is not focus navigation there. The prompt is marked `data-own-tab`, which tells the sheet's shared focus trap (`frontend/src/hooks/useModal.js`) to leave plain Tab alone; **Shift+Tab** still moves focus out of the prompt, so the keyboard is never trapped.
+
+Tab and ↑/↓ edit the prompt, so they do nothing while a **program** owns the input — completing a command line there would be completing an answer. The row dims just those three and the line under it says so (`A program owns the prompt — ^C stops it; Esc leaves it.`). The modal knows which is which because bash and zsh announce it: they switch the terminal's bracketed-paste mode on at their prompt and off when a command starts. **Esc**, **^C** and **^D** mean the same thing to a program as to a shell and stay lit; `^C` is the key a waiting program needs.
 
 Because the session is a real terminal, an interactive program can wait for you. Publishing from the modal is the motivating case. Without a terminal, npm fails and masks its one-time link (its log redactor replaces the UUID in the URL with `***`):
 
@@ -68,36 +79,13 @@ Copy the link into your phone's browser and sign in; npm polls for the approval 
 
 You can also run multiple commands in one session — the shell keeps its state (working directory, environment, variables) between lines.
 
-### Controls on a phone
-
-The default footer is one compact prompt row. Icon buttons have small visible faces inside 44 × 44 px touch targets; their visible backgrounds do not need to fill the whole target:
-
-| Control | Where | Does |
-| --- | --- | --- |
-| **Run** (send icon) | end of the prompt row | sends the line, exactly like **Enter** |
-| **Stop** | header | kills the shell (and anything running in it) |
-| **Close** | header | hides the sheet; a live shell keeps running |
-| **Restart** | header + terminal footer | starts a fresh shell after the old one exits or is no longer reachable |
-| **Retry** | startup error | tries opening the shell again without closing the modal |
-
-**Run** is an icon-only action with an accessible label. There is no extra-key panel, and suggestions are hidden when the command field is empty. The modal follows the phone's visible viewport when the soft keyboard opens or pans, keeping the prompt and buttons above it. The compact command field keeps a 16 px font to prevent iOS focus zoom.
-
-Tapping **Run** or a suggestion chip does not dismiss the soft keyboard, so you can keep typing straight afterwards. The prompt stays focused, and a write that fails is reported on the terminal screen rather than by disabling the field. If the session disappeared (for example, after a server restart), the modal offers **Restart** even if it missed the shell's exit event.
-
-### Output recovery
-
-Output streams live, but the modal also reads the server's retained output after a command, when the stream connects or reconnects, and every 1.5 seconds while open. A dropped connection or a proxy buffering the stream therefore does not leave a successful command looking frozen. Replayed and live chunks are deduplicated by sequence number; closing the modal stops catch-up requests without killing the shell.
-
 ## Tests
 
 ```bash
 npm run test:cli
 ```
 
-- `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key row, and Tab/↑/↓ (the key table's sequences, that the readline keys write nothing to the child while ^C/Esc/^D do, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator. It also source-guards the mobile controls: the Run button exists and keeps the keyboard open, the header close button keeps the class that sizes it to the tap floor, and an exited shell swaps the prompt row for Restart.
-- `scripts/test-cli-modal.mjs` — drives the real component through output received during startup, compact Run and the absence of the keyboard toggle/panel, Enter writes, keyboard viewport changes, missing/dead sessions, early exits, Restart, and startup Retry.
-- `scripts/test-cli-output.mjs` — tests buffered or disconnected streams, catch-up ordering, sequence deduplication, network retry, ended sessions, and cleanup.
-- `scripts/cli-modal-live-fixture.mjs` — opens the real modal against real serve handlers and a disposable project; its `?buffered=1` variant delivers no SSE frames, so delayed command output must reach the screen through catch-up.
+- `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key row, and Tab/↑/↓ (the key table's sequences, that the readline keys write nothing to the child while ^C/Esc/^D do, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator.
 - `scripts/test-cli-session-newline.js` — drives the real endpoints and asserts a plain `ls` lists the project files (the terminator rule).
 - `scripts/test-cli-strip-ansi.js` — unit-tests `stripAnsi` / `CliScreen`, including every escape-sequence family split at every pair of positions and fed one code point at a time.
 - `scripts/test-cli-utf8-split.js` — feeds `attachCliStream` UTF-8 split at every byte boundary, on the PTY and piped paths, and asserts no `�` reaches the broadcast.

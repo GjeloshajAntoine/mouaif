@@ -287,47 +287,6 @@ async function run() {
   t('↓ with a fresh line does nothing (only ↑ starts a recall)',
     stepHistory(cHist, -1, 'down').text === null);
 
-  // ---- 8. The terminal's mobile controls ---------------------------------
-  //
-  // A source guard, like the one scripts/test-modal-hook.js keeps for the
-  // sheets: the modal is a .jsx component, so these invariants are asserted
-  // against its text — the parts a Node test cannot render, but which a
-  // "tidy-up" could silently drop:
-  //
-  //   * Run — the visible send button, so a phone is not relying on the soft
-  //     keyboard's action key being labelled by `enterkeyhint` alone;
-  //   * the header close button carries `.cli__iconbtn`, whose CSS rule is
-  //     what grows it to the 44 px tap floor (the shared `.icon-btn` is 32 px);
-  //   * an exited shell cannot leave a live prompt behind: the row is replaced
-  //     by a Restart action, and the header's Stop becomes Restart.
-  const fs = require('node:fs');
-  const path = require('node:path');
-  const modal = fs.readFileSync(path.join(__dirname, '..', 'frontend/src/components/chat/CliModal.jsx'), 'utf8');
-  const composerCss = fs.readFileSync(path.join(__dirname, '..', 'frontend/src/chat-composer.css'), 'utf8');
-
-  t('the prompt row carries a Run button', modal.includes("class: 'cli__run'") && modal.includes("'aria-label': 'Run command'"));
-  t('Run sends the line through the same path Enter does', /onClick: runCommand/.test(modal));
-  t('Run keeps the soft keyboard open, like every other terminal control',
-    /class: 'cli__run'[\s\S]{0,240}onMouseDown: keepEditorFocus/.test(modal));
-
-  t('the header close button keeps the class that sizes it to the tap floor',
-    modal.includes("'icon-btn icon-btn--close cli__iconbtn'"));
-  t('.cli__iconbtn is pinned to --tap, not the 32px .icon-btn default',
-    /\.cli__iconbtn \{[\s\S]*?height: var\(--tap\)/.test(composerCss));
-  t('Run and the dead-shell Restart keep their 44 px targets',
-    /\.cli__run \{[\s\S]*?height: var\(--tap\)/.test(composerCss)
-    && /\.cli__restart \{[\s\S]*?min-height: var\(--tap\)/.test(composerCss));
-
-  t('an exit frame marks the shell as exited', /stream === 'exit'[\s\S]*?setExited\(true\)/.test(modal) && !/stream === 'stderr'[\s\S]{0,200}setExited\(true\)/.test(modal));
-  t('an exited shell is offered Restart instead of a prompt',
-    modal.includes("class: 'cli__dead'") && modal.includes("class: 'btn btn--primary cli__restart'"));
-  t('the header swaps Stop for Restart once the shell has exited',
-    /exited && !loading && !error \? h\('button', \{[\s\S]{0,220}\}, 'Restart'\)/.test(modal));
-  t('the prompt row and the suggestions are gone when exited',
-    /!exited && cmdText && suggestions\.length/.test(modal) && /exited\n\s+\? h\('div', \{ class: 'cli__dead'/.test(modal));
-  t('Restart starts a fresh session rather than reusing the dead one',
-    /setRestartKey\(\(k\) => k \+ 1\)/.test(modal) && /\}, \[projectDir, restartKey\]\)/.test(modal));
-
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   if (fail) process.exit(1);
 }
