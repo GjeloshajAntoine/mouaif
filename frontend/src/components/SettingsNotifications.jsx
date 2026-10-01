@@ -207,7 +207,7 @@ eventRow('login', 'Sign-in alerts', 'A password or passkey sign-in to this serve
 )
 ),
       h('p', { class: 'hint hint--compact' },
-        'When the target chat is already focused, the service worker suppresses its OS notification. Longer questions and multi-select answers open the full chat. On iPhone and iPad, install mouaif to the Home Screen before enabling notifications.')
+        'Status notifications are suppressed while the target chat is visible. Questions and tool approvals still notify you, and status updates never dismiss them. Longer questions and multi-select answers open the full chat. On iPhone and iPad, install mouaif to the Home Screen before enabling notifications.')
     )
   );
 }

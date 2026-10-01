@@ -145,9 +145,21 @@ assert.ok(bridgeSource.includes("type: 'VISIBILITY_STATE_RESPONSE'"), 'page brid
 assert.ok(!swSource.includes('VISIBILITY_PORT'), 'service worker does not retain a redundant visibility channel');
 const swHandlers = {};
 const shownNotifications = [];
+let queuedNotifications = [];
+const closedNotifications = [];
+function queueNotification(kind, chatId = 'chat-1', tag) {
+const notification = {
+data: { kind, chatId },
+tag: tag || `chat-${chatId}-${kind === 'ask_user' || kind === 'tool_authorization' ? 'attention' : 'status'}`,
+close() { closedNotifications.push(this); }
+};
+queuedNotifications.push(notification);
+return notification;
+}
 let pageVisible = true;
 let pageResponds = true;
 let pageUsesPlainReply = false;
+let visibilityQueries = 0;
 class TestMessageChannel {
 constructor() {
 const port1 = { onmessage: null, start() {}, close() {} };
@@ -164,6 +176,7 @@ url: 'https://mouaif.test/#/chat/chat-1?projectDir=%2Ftmp',
 focused: true,
 visibilityState: 'visible',
 postMessage(message, ports) {
+visibilityQueries++;
 assert.equal(message.type, 'GET_VISIBILITY_STATE', 'push asks the live page for current visibility');
 if (!pageResponds) return;
 const state = {
@@ -189,7 +202,7 @@ claim: async () => {},
 openWindow: async () => null
 };
 const swRegistration = {
-getNotifications: async () => [],
+getNotifications: async () => queuedNotifications,
 showNotification: async (title, options) => { shownNotifications.push({ title, options }); }
 };
 const swContext = {
@@ -224,7 +237,7 @@ assert.ok(swSource.includes("authorizationKinds = new Set(['ask_user', 'tool_aut
 
 function dispatchPush(kind = 'completion') {
 let pending = Promise.resolve();
-const authorization = kind === 'tool_authorization';
+const authorization = kind === 'tool_authorization' || kind === 'ask_user';
 swHandlers.push({
 data: { json: () => ({
 title: authorization ? 'Authorization needed' : 'Chat one',
@@ -242,15 +255,44 @@ await dispatchPush();
 assert.equal(shownNotifications.length, 0, 'a fresh visible-chat response suppresses the push after worker restart');
 pageUsesPlainReply = true;
 await dispatchPush('tool_authorization');
-assert.equal(shownNotifications.length, 0, 'a visible iOS chat suppresses auth push through the plain-message fallback');
+assert.equal(shownNotifications.length, 1, 'tool approval shows even when the target chat is visible on iOS');
+await dispatchPush('ask_user');
+assert.equal(shownNotifications.length, 2, 'questions also show when the target chat is visible');
+assert.equal(visibilityQueries, 1, 'attention alerts bypass visibility queries entirely');
+const pendingApproval = queueNotification('tool_authorization');
+const oldStatus = queueNotification('progress');
+const otherChatStatus = queueNotification('completion', 'chat-2');
+for (const kind of ['progress', 'completion', 'error']) await dispatchPush(kind);
+assert.equal(shownNotifications.length, 2, 'visible-chat statuses remain suppressed through the plain-message fallback');
+assert.ok(closedNotifications.includes(oldStatus), 'visible-chat suppression clears stale statuses');
+assert.ok(!closedNotifications.includes(pendingApproval), 'visible-chat status updates never clear a pending approval');
+assert.ok(!closedNotifications.includes(otherChatStatus), 'visible-chat suppression leaves other chats alone');
+closedNotifications.length = 0;
+await dispatchPush('ask_user');
+assert.ok(closedNotifications.includes(pendingApproval), 'a new question replaces the same chat attention slot');
+assert.ok(!closedNotifications.includes(oldStatus), 'an attention alert never closes the status slot');
+assert.ok(!closedNotifications.includes(otherChatStatus), 'attention replacement leaves other chats alone');
+queuedNotifications = [];
 pageUsesPlainReply = false;
 pageVisible = false;
 await dispatchPush();
-assert.equal(shownNotifications.length, 1, 'a fresh hidden-chat response still shows the push');
+assert.equal(shownNotifications.length, 4, 'a fresh hidden-chat response still shows the push');
+const pendingQuestion = queueNotification('ask_user');
+const legacyStatus = queueNotification('progress', 'chat-1', 'chat-chat-1-progress');
+closedNotifications.length = 0;
+await dispatchPush('progress');
+assert.ok(closedNotifications.includes(legacyStatus), 'a background status prunes the legacy status slot');
+assert.ok(!closedNotifications.includes(pendingQuestion), 'a background status never clears the attention slot');
+queuedNotifications = [];
 pageVisible = true;
 pageResponds = false;
 await dispatchPush('tool_authorization');
-assert.equal(shownNotifications.length, 2, 'a suspended PWA with stale visible client state does not suppress an authorization push');
+assert.equal(shownNotifications.length, 6, 'a suspended PWA with stale visible client state still receives an authorization push');
+await dispatchPush();
+assert.equal(shownNotifications.length, 7, 'a suspended PWA with stale visible client state also receives status pushes');
+pageResponds = true;
+await dispatchPush();
+assert.equal(shownNotifications.length, 7, 'a visible-chat status remains suppressed with a transferred MessagePort');
 
 // ---- Page-side cold-launch recovery -----------------------------------
 //

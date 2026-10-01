@@ -35,7 +35,7 @@
 
 /* eslint-disable no-restricted-globals */
 
-const CACHE_VERSION = 'ac959571';
+const CACHE_VERSION = '5eeee605';
 const CACHE_NAME = 'mouaif-v' + CACHE_VERSION;
 const SHELL_CACHE = 'mouaif-shell-v' + CACHE_VERSION;
 
@@ -167,9 +167,10 @@ self.addEventListener('fetch', (event) => {
 // ---- Fresh page visibility (notification suppression) -----------------
 //
 // WindowClient.focused / visibilityState are stale on Safari and iOS PWA.
-// Query every live page when a push arrives and suppress only when the page
-// answers with the target chat currently visible. No cached view state is
-// trusted: a suspended page cannot answer and must still receive the alert.
+// Query live pages for ordinary status pushes and suppress only when the
+// target chat is currently visible. Authorization alerts bypass suppression:
+// a visible route does not mean its pending approval is on screen or noticed.
+// No cached view state is trusted for status pushes.
 
 function chatIdFromHash(hash) {
   const match = /^#\/chat\/([^/?#]+)/.exec(typeof hash === 'string' ? hash : '');
@@ -260,26 +261,29 @@ self.addEventListener('push', (event) => {
   if (!title && !body) return;
 
   event.waitUntil((async () => {
-    const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const statusKinds = new Set(['progress', 'completion', 'error']);
+    const authorizationKinds = new Set(['ask_user', 'tool_authorization']);
+    const incomingIsStatus = payload && statusKinds.has(payload.kind);
+    const incomingIsAuthorization = payload && authorizationKinds.has(payload.kind);
     const targetUrl = payload && payload.url ? new URL(payload.url, self.location.origin) : null;
+    // Questions and approvals always reach the attention slot, even if a
+    // window reports this chat visible. Do not wait for a visibility query.
+    const windows = targetUrl && !incomingIsAuthorization
+    ? await clients.matchAll({ type: 'window', includeUncontrolled: true }) : [];
     const freshViews = targetUrl ? await Promise.all(windows.map(queryClientView)) : [];
-    // Suppress only when a page answers this push-time query and confirms
-    // that the target chat is visible. A suspended or recently closed PWA
-    // can remain in clients.matchAll() with stale `focused: true` and a
-    // stale cached visibility report while its JavaScript cannot answer.
-    // Treating that stale state as visible intermittently discarded the
-    // authorization push exactly when the app was no longer usable. If no
-    // fresh answer arrives, showing the alert is the safe outcome.
+    // Ordinary status updates are suppressed only by a fresh visible-chat
+    // response. A suspended PWA may have stale WindowClient state but cannot
+    // answer this query; no response means the status still gets shown.
     const chatVisible = !!targetUrl && freshViews.some((view) =>
       reportedViewMatchesChat(view, targetUrl));
 const queued = await self.registration.getNotifications();
 if (chatVisible) {
-// Entering or staying in the target chat makes its queued alerts stale.
-// Clear them as well as suppressing the incoming push so the tray does
-// not keep showing notifications for content already on screen.
+// Clear only stale statuses already visible in the chat. A status update
+// must never dismiss an unanswered question or pending tool approval.
 if (payload && payload.chatId) {
 queued.forEach((notification) => {
-if (notification.data && notification.data.chatId === payload.chatId) notification.close();
+if (notification.data && notification.data.chatId === payload.chatId
+&& statusKinds.has(notification.data.kind)) notification.close();
 });
 }
 return;
@@ -288,10 +292,6 @@ const notifTag = tag || 'default';
 // iOS can retain replaced notifications. Prune both the exact tag and
 // every legacy status-slot tag for this chat before showing a progress,
 // completion, or error update.
-const statusKinds = new Set(['progress', 'completion', 'error']);
-const authorizationKinds = new Set(['ask_user', 'tool_authorization']);
-const incomingIsStatus = payload && statusKinds.has(payload.kind);
-const incomingIsAuthorization = payload && authorizationKinds.has(payload.kind);
 queued.forEach((notification) => {
 const sameTag = notifTag !== 'default' && notification.tag === notifTag;
 const sameChat = notification.data && payload
