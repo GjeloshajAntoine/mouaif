@@ -1485,14 +1485,15 @@ mouaif serve --auth</code></pre>
 <p><a href="features/authentication.html">Read the full authentication guide →</a></p>
 </section>
 <section class="section" id="abilities">
-<h2>What you can do</h2>
+<h2>And it also does</h2>
+<p>Capabilities the sections above do not have room for:</p>
 <ul>
-<li>Organize chats by local project and choose models per chat.</li>
-<li>Let the assistant read and edit files, run approved commands, track tasks, and delegate to agents.</li>
-<li>Connect extra tools through MCP.</li>
-<li>Preview and inspect browser pages from the mobile-friendly Inspector.</li>
-<li>Use <strong>Draft Craft</strong> to add selected code or an annotated Inspector image to any chat draft.</li>
-<li>Control every tool with Off, Ask, or Allow permissions.</li>
+<li>Connect extra tools through <strong>MCP</strong> — stdio, HTTP or SSE, with OAuth sign-in, from the built-in store or by hand. <a href="features/mcp.html">MCP</a></li>
+<li>Delegate work to named <strong>agents</strong>, each with its own instructions, tool allowlist, model and thinking level. <a href="features/agents.html">Agents</a></li>
+<li>Reusable <strong>custom prompts</strong> and <strong>Agent Skills</strong> that matching chats pull in on their own.</li>
+<li>Redact secrets with <strong>hide file content</strong> rules for the agent file tools. <a href="features/hide-file-content.html">Hide file content</a></li>
+<li>Write every event of a chat to an <strong>NDJSON trace</strong> you can commit next to the project.</li>
+<li>Reach the app through <strong>push notifications</strong> and an installable PWA when a long run finishes while you are away.</li>
 <li>Hand the full feature list to your own AI agent — <a href="features/mouaif-features.html">mouaif feature reference</a>.</li>
 </ul>
 <p><a href="features/app-abilities.html">See all app abilities and safety tips →</a></p>
@@ -1500,10 +1501,11 @@ mouaif serve --auth</code></pre>
 <section class="section" id="at-a-glance">
 <h2>At a glance</h2>
 <ul>
-<li>Runs locally on port 5732; your keys and chats stay on your machine.</li>
-<li>Any OpenAI-shaped endpoint, Anthropic, Gemini, Ollama, OpenRouter, or GitHub Copilot.</li>
-<li>Chats are grouped by project; models are picked per project.</li>
-<li>File and shell access is off until you turn it on — Off, Ask, or Allow, per tool.</li>
+<li><strong>Runs on your machine.</strong> One Node process on port 5732; chats, keys and project files never leave it.</li>
+<li><strong>No account, no cloud.</strong> Bring a provider key, sign in to one you already pay for, or point it at a local model server.</li>
+<li><strong>Built for a phone first.</strong> Every screen above is a 390 px capture; desktop is the same UI with more room.</li>
+<li><strong>Nothing runs unnamed.</strong> File and shell access is off until you turn it on, per tool, per project.</li>
+<li><strong>Your repo stays yours.</strong> Changes land in your working tree for you to review and commit, not in a hosted sandbox.</li>
 </ul>
 </section>
 `;

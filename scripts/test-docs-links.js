@@ -160,12 +160,13 @@ try {
     const glance = landing.indexOf('<section class="section" id="at-a-glance">');
     assert.ok(glance > landing.indexOf('id="abilities"'), 'at-a-glance is not after the abilities section');
     for (const line of [
-      'Runs locally on port 5732',
-      'OpenAI-shaped endpoint',
-      'grouped by project',
-      'Off, Ask, or Allow'
+    'Runs on your machine',
+    'No account, no cloud',
+    'Built for a phone first',
+    'Nothing runs unnamed',
+    'Your repo stays yours'
     ]) {
-      assert.ok(landing.slice(glance).includes(line), 'at-a-glance is missing: ' + line);
+    assert.ok(landing.slice(glance).includes(line), 'at-a-glance is missing: ' + line);
     }
   });
 

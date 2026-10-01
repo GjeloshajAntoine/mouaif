@@ -65,6 +65,13 @@ docs/features/images/landing/
   providers.png          # Settings → Providers, 390 × 700 @2x
 ```
 
+### What comes after the sections
+
+A reader who has scrolled past the captures meets two short lists, and they answer different questions:
+
+- **And it also does** (`#abilities`) — the capabilities with no capture of their own, one line each and a link: MCP (stdio / HTTP / SSE with OAuth sign-in and a built-in store), named agents, custom prompts and Agent Skills, hide file content, NDJSON chat traces, and push notifications / installable PWA. It opens with "Capabilities the sections above do not have room for", because an earlier version of this list repeated the sections and read as filler.
+- **At a glance** (`#at-a-glance`) — the properties rather than the features: runs on your machine, no account or cloud, built for a phone first, nothing runs unnamed, your repo stays yours.
+
 Because the section is on the site root, its `src` values are prefixed `features/images/...` rather than the `./images/...` a Markdown feature page uses.
 
 ### Layout
@@ -111,7 +118,9 @@ npm run docs:shots:draft-craft
 
 ## At a glance
 
-Under the hero, the capability sections, and the existing sections, the landing page ends with an **At a glance** block (`#at-a-glance`): a four-line `<ul>` summary — runs locally on port 5732 with keys and chats on the machine, the provider shapes it speaks, project grouping with per-project models, and tool access being Off by default. It is plain HTML in `buildLandingPage()` in [scripts/build-docs.js](../../scripts/build-docs.js), written last in the page body so it stays below everything else.
+Under the hero, the capability sections and the **And it also does** list, the landing page ends with an **At a glance** block (`#at-a-glance`): five `<li>` entries that state the *properties* of the app rather than repeating its features — runs on your machine (one Node process on port 5732), no account or cloud, built for a phone first, nothing runs unnamed (per-tool, per-project permission), and your repo stays yours (changes land in your working tree, not a hosted sandbox). It is plain HTML in `buildLandingPage()` in [scripts/build-docs.js](../../scripts/build-docs.js), written last in the page body so it stays below everything else.
+
+The two lists at the end of the page are deliberately different from each other and from the sections: the sections each prove one capability with a capture, **And it also does** covers what has no capture (MCP, agents, custom prompts and skills, hide file content, traces, push notifications), and **At a glance** answers "what is this, in five lines" for a reader who has not read any of it.
 
 ## Subtitle
 
