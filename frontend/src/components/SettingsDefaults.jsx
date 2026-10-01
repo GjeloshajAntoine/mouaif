@@ -1,6 +1,6 @@
 // mouaif web — SettingsDefaultsView
 //
-// Renders Settings → App defaults → Chat defaults. Eight settings:
+// Renders Settings → App defaults → Chat defaults. Seven settings:
 //
 //   - Default prompt style       (very-small / average / extensive / chat)
 //   - Enter inserts a newline    (boolean switch)
@@ -8,14 +8,13 @@
 //   - Glass orb file button      (boolean switch)
 //   - Dictation microphone       (boolean switch — hides the composer mic)
 //   - Image button               (boolean switch — hides the attach button)
-//   - Screen capture button      (boolean switch — hides local capture/review)
 //   - Status line                (boolean switch — hides the composer status row text)
 //
 // The last two only decide whether the composer *draws* a control: the routes
 // behind them stay open and a pasted image still attaches (see
 // ./chat/composerTools.js and docs/features/composer-tool-buttons.md).
 //
-// All eight auto-save on change via the shared `saveApp` helper, matching
+// All seven auto-save on change via the shared `saveApp` helper, matching
 // the rest of the app (Settings → Project toggles, Settings → Agents, etc.).
 // No Save button: the previous version required a manual commit, which was
 // inconsistent and an extra tap for the user.
@@ -52,7 +51,6 @@ export function SettingsDefaultsView() {
 const [fileOrb, setFileOrb] = useState(false);
   const [dictationButton, setDictationButton] = useState(true);
   const [imageButton, setImageButton] = useState(true);
-  const [screenCaptureButton, setScreenCaptureButton] = useState(false);
   const [statusBar, setStatusBar] = useState(true);
 
   // Per-row status messages, mirroring SettingsProject's
@@ -64,7 +62,6 @@ const [fileOrb, setFileOrb] = useState(false);
 const [fileOrbMsg, setFileOrbMsg] = useState('');
   const [dictationButtonMsg, setDictationButtonMsg] = useState('');
   const [imageButtonMsg, setImageButtonMsg] = useState('');
-  const [screenCaptureButtonMsg, setScreenCaptureButtonMsg] = useState('');
   const [statusBarMsg, setStatusBarMsg] = useState('');
 
   // Bail flag for late save() responses if the component unmounts mid-save
@@ -75,7 +72,7 @@ const [fileOrbMsg, setFileOrbMsg] = useState('');
   // Track in-flight saves per field so a fast toggle flip doesn't race
   // an earlier in-flight request. Latest write wins; older writes' status
   // messages are dropped so the user only sees the most recent outcome.
-  const inflight = useRef({ promptSize: 0, enterForNewline: 0, autoRetry: 0, fileOrbButton: 0, dictationButton: 0, imageButton: 0, screenCaptureButton: 0, statusBar: 0 });
+  const inflight = useRef({ promptSize: 0, enterForNewline: 0, autoRetry: 0, fileOrbButton: 0, dictationButton: 0, imageButton: 0, statusBar: 0 });
 
   useEffect(() => {
     (async () => {
@@ -91,7 +88,6 @@ const [fileOrbMsg, setFileOrbMsg] = useState('');
         const tools = composerToolsFromApp(app);
         setDictationButton(tools.dictation);
         setImageButton(tools.image);
-        setScreenCaptureButton(tools.capture);
         setStatusBar(tools.status);
       } catch (e) {
         if (aliveRef.current) setPromptSizeMsg('load failed: ' + e.message);
@@ -154,12 +150,6 @@ const v = e.currentTarget.checked;
 setImageButton(v);
 saveField('imageButton', { imageButton: v }, setImageButtonMsg,
 v ? 'the composer image button is shown again' : 'the composer image button is hidden (open a chat to see it)');
-}
-function onScreenCaptureButtonChange(e) {
-const v = e.currentTarget.checked;
-setScreenCaptureButton(v);
-saveField('screenCaptureButton', { screenCaptureButton: v }, setScreenCaptureButtonMsg,
-v ? 'the screen capture button is enabled' : 'the screen capture button is hidden');
 }
 function onStatusBarChange(e) {
 const v = e.currentTarget.checked;
@@ -345,20 +335,6 @@ v ? 'the status line under the composer is shown again' : 'the status line under
                   )
                 )
                 ),
-              // ---- Screen capture outside the textbox -------------------
-              h('li', { class: 'settings-project__item settings-project__item--col' },
-              h('div', { class: 'settings-project__item-row' },
-              h('div', { class: 'settings-project__item-main' },
-              h('label', { class: 'settings-project__item-title', for: 'sd-screen-capture-button' }, 'Screen capture button in chat'),
-              h('div', { class: 'settings-project__item-note' }, 'Shows a send-style capture button outside the textbox. Review full or changed-area images and mask ignored zones before attaching. Turn on to show the button. Hidden by default.'),
-              h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, screenCaptureButtonMsg)
-              ),
-              h('label', { class: 'switch' },
-              h('input', { id: 'sd-screen-capture-button', type: 'checkbox', role: 'switch', 'aria-checked': String(screenCaptureButton), checked: screenCaptureButton, onChange: onScreenCaptureButtonChange }),
-              h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
-              )
-              )
-              ),
               // ---- Composer status line: switch-in-a-card ----------------
               h('li', { class: 'settings-project__item settings-project__item--col' },
                 h('div', { class: 'settings-project__item-row' },

@@ -616,20 +616,12 @@ projectDir,
 orb: fileOrb,
 onOpenFileEditor: () => setFileEditorOpen(true),
 onOpenPreview: () => setPreviewPromptOpen(true),
+onOpenScreenCapture: () => setScreenCaptureOpen(true),
 customActions,
 onRunCustomAction: runCustomAction,
 onRefreshCustomActions: refreshCustomActions
 })
 ),
-composerTools.capture
-? h('button', {
-class: 'btn btn--primary chat-view__send chat-view__capture', type: 'button',
-onClick: () => setScreenCaptureOpen(true), disabled: imageAttachments.length >= 8,
-'title': 'Capture screen images', 'aria-label': 'Capture screen images',
-'aria-haspopup': 'dialog', 'aria-expanded': String(screenCaptureOpen)
-}, h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-h('path', { d: 'M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3M7 9h10v6H7z', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
-)) : null,
       h('div', { class: 'chat-view__composer' },
         h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),
         h('div', { ref: atArgBarRef, class: 'at-mention__arg-bar', hidden: true }),
@@ -682,7 +674,7 @@ h('span', null, '×')
 h('div', { class: 'chat-view__status-row' + (composerTools.status ? '' : ' chat-view__status-row--hidden') },
       h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
     ),
-screenCaptureOpen && composerTools.capture && ScreenCapturePanel
+screenCaptureOpen && ScreenCapturePanel
 ? h(ScreenCapturePanel, { onClose: () => setScreenCaptureOpen(false), onAttach: onCapturedImages, availableSlots: Math.max(0, 8 - imageAttachments.length) })
 : null,
 fileEditorOpen && FileEditor

@@ -8,8 +8,6 @@
 //     nothing on every message;
 //   * the image button (`imageButton`) — for the people who dictate but never
 //     attach a picture;
-//   * the screen capture button (`screenCaptureButton`) — a send-style button
-//     outside the textbox that opens local image capture/review;
 //   * the status line under the composer (`statusBar`) — the one-line row that
 //     says "streaming…", the turn cost, "dictation added". Hidden, the row
 //     keeps only the home-indicator inset; an error state is still shown so a
@@ -29,18 +27,18 @@
 //
 // Reading is defensive, the same way `fileOrbFromApp` reads the orb: a missing
 // key, a failed `/api/settings` fetch, or a value the server could not store as
-// a JSON boolean resolve to each control's default: capture is opt-in, while
-// the existing microphone, image button and status line remain shown. The string forms
+// a JSON boolean resolve to the defaults: the microphone, image button and
+// status line remain shown. Screen capture is always available in File tools,
+// independent of these display preferences. The string forms
 // are accepted because the app store holds a TEXT blob — a hand-edited
 // `store.sqlite`, or a settings file merged from a project, can legitimately
 // hand us `'false'`.
 export const DICTATION_BUTTON_KEY = 'dictationButton';
 export const IMAGE_BUTTON_KEY = 'imageButton';
-export const SCREEN_CAPTURE_BUTTON_KEY = 'screenCaptureButton';
 export const STATUS_BAR_KEY = 'statusBar';
 
-// Keep existing controls shown; screen capture is hidden until enabled.
-export const COMPOSER_TOOLS_DEFAULT = Object.freeze({ dictation: true, image: true, capture: false, status: true });
+// Keep existing optional composer controls shown by default.
+export const COMPOSER_TOOLS_DEFAULT = Object.freeze({ dictation: true, image: true, status: true });
 
 // readBool(raw, fallback) — the shared coercion. A real boolean wins; the two
 // strings a TEXT store can hand back are read as what they say; anything else
@@ -52,7 +50,7 @@ if (raw === 'false') return false;
 return fallback;
 }
 
-// composerToolsFromApp(snapshot) -> { dictation, image, capture, status }
+// composerToolsFromApp(snapshot) -> { dictation, image, status }
 //
 // `snapshot` is a `loadApp()` result (`{ app: { … } }`). Anything shaped
 // differently reads as the defaults.
@@ -63,7 +61,6 @@ if (!bag || typeof bag !== 'object') return { ...defaults };
 return {
 dictation: readBool(bag[DICTATION_BUTTON_KEY], defaults.dictation),
 image: readBool(bag[IMAGE_BUTTON_KEY], defaults.image),
-capture: readBool(bag[SCREEN_CAPTURE_BUTTON_KEY], defaults.capture),
 status: readBool(bag[STATUS_BAR_KEY], defaults.status)
 };
 }

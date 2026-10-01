@@ -1,8 +1,8 @@
 // mouaif web — File/git toolbar button (inline inside composer pill)
 //
 // Sits as the first element inside .chat-view__composer: a round button
-// with a stacked ▲▼ icon. Opens a dropdown menu with three actions:
-// the file editor, the git changes modal, and the CLI command prompt.
+// with a stacked ▲▼ icon. Opens a dropdown menu for Files, Preview,
+// Screen capture, Git and CLI, plus project custom actions.
 // The menu is positioned above the composer; the git and CLI modals are
 // full-screen overlays.
 //
@@ -88,7 +88,7 @@ async function fetchGitStats(projectDir) {
 }
 
 export function FileToolbar(props) {
-const { projectDir, onOpenFileEditor, onOpenPreview, customActions, onRunCustomAction, onRefreshCustomActions, orb } = props;
+const { projectDir, onOpenFileEditor, onOpenPreview, onOpenScreenCapture, customActions, onRunCustomAction, onRefreshCustomActions, orb } = props;
 const [menuOpen, setMenuOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const [cliOpen, setCliOpen] = useState(false);
@@ -195,6 +195,10 @@ if (nextOpen && onRefreshCustomActions) onRefreshCustomActions();
   function handlePreview() {
 setMenuOpen(false);
 if (onOpenPreview) onOpenPreview();
+}
+function handleScreenCapture() {
+setMenuOpen(false);
+if (onOpenScreenCapture) onOpenScreenCapture();
 }
 function handleCustomAction(action) {
 setMenuOpen(false);
@@ -417,6 +421,14 @@ h('span', null, 'Files')
       h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handlePreview },
         h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F4F1}'),
         h('span', null, 'Preview')
+      ),
+      h('button', { class: 'file-toolbar__menu-item file-toolbar__menu-item--capture', role: 'menuitem', type: 'button', onClick: handleScreenCapture, 'aria-haspopup': 'dialog' },
+      h('span', { class: 'file-toolbar__menu-icon', 'aria-hidden': 'true' },
+      h('svg', { viewBox: '0 0 24 24', width: 20, height: 20 },
+        h('path', { d: 'M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3M7 9h10v6H7z', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' })
+      )
+      ),
+      h('span', null, 'Screen capture')
       ),
       h('button', { class: 'file-toolbar__menu-item', role: 'menuitem', type: 'button', onClick: handleGit },
         h('span', { class: 'file-toolbar__menu-icon' }, '\u{1F4C1}'),

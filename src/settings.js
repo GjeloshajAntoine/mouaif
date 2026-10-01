@@ -94,8 +94,6 @@ fileOrbButton: false,
   // docs/features/composer-tool-buttons.md.
   dictationButton: true,
   imageButton: true,
-  // Opt-in local screen capture/review button outside the composer textbox.
-  screenCaptureButton: false,
   // The one-line status row under the composer. `false` hides its text (the
   // row keeps the safe-area inset, and an error state still shows).
   statusBar: true,

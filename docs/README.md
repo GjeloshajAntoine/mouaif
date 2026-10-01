@@ -74,10 +74,10 @@ One page per feature: what it does and how to use it.
 - [Chat error surfacing](features/chat-error-surfacing.md) — how a failed request shows up in the chat.
 - [Trace to file](features/trace.md) — save a chat's events to a file in the project.
 - [Dictation](features/dictation.md) — speech-to-text from a Settings page and from the composer microphone.
-- [Composer tool buttons](features/composer-tool-buttons.md) — show or hide the microphone, image button, screen capture button and composer status line.
+- [Composer tool buttons](features/composer-tool-buttons.md) — show or hide the microphone, image button and composer status line.
 - [Chat screen capture](features/screen-capture.md) — review full or changed-area PNGs from screens, screenshots or imported videos, with ignored and masked zones.
 - [File button: glass orb](features/file-button-orb.md) — an optional animated look for the composer's file button.
-- [File toolbar](features/file-toolbar.md) — the composer menu for Files, Git, and the CLI.
+- [File toolbar](features/file-toolbar.md) — the composer menu for Files, Preview, Screen capture, Git and CLI.
 - [Files modal](features/files-modal-text-and-images.md) — edit any text file and preview images.
 - [CLI modal](features/cli-modal.md) — a terminal inside the chat that can answer interactive prompts.
 - [Background terminal](features/background-terminal.md) — the CLI shell keeps running after you close the sheet; reopen to replay its output.

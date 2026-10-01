@@ -2,7 +2,7 @@
 
 ## Overview
 
-Settings → App defaults → Chat defaults has four switches that decide which optional parts the chat composer draws: **Dictation microphone in the composer**, **Image button in the composer**, **Screen capture button in chat** and **Status line under the composer**. The [screen capture button](./screen-capture.md) lives outside the textbox and opens a local capture/review sheet with selected full or changed-area images and ignored zones. Screen capture is hidden by default; the other controls are on by default. Turning one off removes that button from the composer row — for a user who never dictates, or never attaches a picture, and who does not want to reach past a control that does nothing for them every time they send a message.
+Settings → App defaults → Chat defaults has three switches that decide which optional parts the chat composer draws: **Dictation microphone in the composer**, **Image button in the composer** and **Status line under the composer**. All are on by default. [Screen capture](./screen-capture.md) is always available in the File tools menu, not a separate composer button or visibility switch. Turning one off removes that button from the composer row — for a user who never dictates, or never attaches a picture, and who does not want to reach past a control that does nothing for them every time they send a message.
 
 Hiding is **not** disabling. The routes behind the buttons stay exactly as they were, so a hidden control removes a way to *reach* a capability, never the capability:
 
@@ -18,7 +18,6 @@ Hiding is **not** disabling. The routes behind the buttons stay exactly as they 
 2. Find the row you want and flip its switch:
    - **Dictation microphone in the composer** — off removes the microphone from the composer row.
    - **Image button in the composer** — off removes the picture-attachment button.
-   - **Screen capture button in chat** — off removes the capture button outside the textbox; ordinary images and pasted screenshots still work.
    - **Status line under the composer** — off hides the one-line status text below the message box ("streaming…", the turn cost, "dictation added"). Error messages still show.
 3. Each row saves immediately (there is no Save button) and the choice applies app-wide, so every project's composer obeys it. The status line under the row confirms what happened.
 

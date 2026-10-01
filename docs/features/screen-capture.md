@@ -2,11 +2,11 @@
 
 ## Overview
 
-Capture a screen as selected PNG images instead of uploading a video. A send-style capture button lives **outside the chat textbox** and opens a mobile-first capture and review sheet. Nothing is attached or sent until you confirm your selection.
+Capture a screen as selected PNG images instead of uploading a video. The always-available **Screen capture** item in the chat's **File tools** menu opens a mobile-first capture and review sheet, without adding a button beside the textbox. Nothing is attached or sent until you confirm your selection.
 
 ## Usage
 
-1. Enable **Screen capture button in chat** under **Settings → App defaults → Chat defaults** (hidden by default), then tap **Capture screen images** beside the chat textbox.
+1. Tap the folder/arrow **File tools** button beside the chat textbox, then choose **Screen capture** from the menu list.
 2. Choose **Share screen**, then pick a tab, window or screen in the browser's permission dialog. Alternatively, **Import screenshots** in chronological order or **Import video** from your saved screen recordings; both work without screen sharing.
 3. Choose **Changed area only** (the default) or **Full image**, then tap **Capture now**. Optionally enable **Capture automatically** at a 2, 3, 5 or 10 second interval. No video or audio is recorded.
 4. The first image is a full baseline. Later changed-area captures contain the smallest rectangular area covering meaningful changes from the previous captured image. Unchanged captures are skipped. A source-size change produces a new full image.
@@ -26,9 +26,9 @@ Capture a screen as selected PNG images instead of uploading a video. A send-sty
 
 Only confirmed PNG images are attached. The original video and its audio are **never uploaded or sent to the AI**. Sharing and video import are mutually exclusive sources: remove the imported video to enable Share screen again. If a video cannot be decoded, an error explains how to retry with another format.
 
-### Disable the button
+### Always available in the menu
 
-The button is hidden by default. Open **Settings → App defaults → Chat defaults** and turn on **Screen capture button in chat** to show it, or turn it off to hide it again. Explicit saved choices are preserved. This app-wide preference hides the button; it does not change ordinary image attachments or pasted screenshots. The capture button is disabled when the draft already contains eight images.
+**Screen capture** is always enabled in the File tools menu; no settings switch is needed. The former standalone button and its visibility setting have been removed, and old saved visibility choices no longer affect access. You can open the sheet even with a full chat draft, but attaching images still respects the eight-attachment limit.
 
 ### Browser support and privacy
 
@@ -38,7 +38,7 @@ Raw frames stay in browser memory only while the sheet is open. Ignored zones bo
 
 ## Design
 
-- **Composer:** a circular primary-colour screen glyph matches Send, with an independent 44 × 44 touch target outside the textbox. The textbox, Send and Stop behaviour remain unchanged.
+- **Menu:** a labelled Screen capture row with a screen glyph sits alongside Files, Preview, Git and Cli. Tapping it closes the menu and opens the sheet. No separate composer button; the textbox, Send and Stop behaviour remain unchanged.
 - **Sheet:** a rounded bottom sheet at phone widths, a centred sheet with more room on desktop. A fixed header/close control and safe-area-aware attachment footer surround one scrolling column.
 - **Flow:** four numbered cards: source, capture mode, ignored zones, review. Unsupported sharing, cancelled permission, empty gallery, no-change capture, full tray and save failures have explicit messages.
 - **Review:** selected cards have an accent border, checkbox, timestamp, output selector and crop coordinates. Full-frame previews are used for zone drawing even when an output is cropped.

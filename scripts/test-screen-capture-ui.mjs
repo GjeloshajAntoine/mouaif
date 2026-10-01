@@ -14,12 +14,14 @@ const html = `<!doctype html><html><head><meta name="viewport" content="width=de
 import { h, render } from 'preact';
 import { useState } from 'preact/hooks';
 import { ScreenCapturePanel } from '/frontend/src/components/chat/ScreenCapturePanel.jsx';
+import { FileToolbar } from '/frontend/src/components/chat/FileToolbar.jsx';
 import '/frontend/src/style.css';
 window.attachments = []; window.attempts = 0; window.failSave = false;
 function Fixture() {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   return h('main', null,
     h('button', { id: 'open', onClick: () => setOpen(true) }, 'Open capture'),
+    h(FileToolbar, { projectDir: '', onOpenScreenCapture: () => setOpen(true) }),
     open ? h(ScreenCapturePanel, { availableSlots: 8, onClose: () => setOpen(false), onAttach: async (images) => {
       window.attempts++; if (window.failSave) throw Error('fixture offline'); window.attachments = images;
     } }) : null);
@@ -72,7 +74,15 @@ if (process.argv.includes('--serve')) {
     await cdp.send('Page.enable');
     const navigation = await cdp.send('Page.navigate', { url });
     assert.equal(navigation.errorText, undefined, 'fixture navigation succeeds');
-    await wait('window.ready && document.querySelector(".capture__sheet")');
+    await wait('window.ready && document.querySelector(".file-toolbar__trigger")');
+    await evaluate(`document.querySelector('.file-toolbar__trigger').click()`);
+    await wait('document.querySelector(".file-toolbar__menu")');
+    assert.equal(await evaluate(`(() => {
+    const item = Array.from(document.querySelectorAll('[role="menuitem"]')).find(b => b.textContent === 'Screen capture');
+    return !!item && !item.disabled && item.getBoundingClientRect().height >= 44;
+    })()`), true, 'capture is an enabled, tap-sized menu item');
+    await evaluate(`Array.from(document.querySelectorAll('[role="menuitem"]')).find(b => b.textContent === 'Screen capture').click()`);
+    await wait('document.querySelector(".capture__sheet") && !document.querySelector(".file-toolbar__menu")');
     for (const width of [360, 390, 430]) {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: true });
       assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth && document.querySelector(".capture__sheet").scrollWidth <= innerWidth'), true, `no horizontal overflow at ${width}px`);

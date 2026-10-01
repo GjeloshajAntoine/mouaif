@@ -4,6 +4,7 @@
 
 A single trigger button (folder icon with an up-chevron above and a down-chevron below) next to the textarea opens a dropdown menu. Its visible circle is reduced to match the composer bar. The added-line count sits in the upper-left of the folder glyph and the deleted-line count in its lower-right, in green and red, and both are sized and colored to stay legible at that scale: the folder glyph is 28×22, the counts render at `0.46rem` (≈7.4px) at weight 800 with a hair of tracking, and the pair clears 6:1 (`#006600` / `#b30000`). Keeping those colors vivid depends on the **folder glyph's fill being pinned** to `--fg` rather than following the chevrons' `currentColor` — that holds the backing at its lightest in every trigger state, including the accent one. At most one count per row is drawn, and a count that would reach four digits is abbreviated (`+1.2k`), so nothing is ever clipped. The pinned tone is also the most legible the folder has been — 13.2:1 against the default button circle and 11.0:1 against the hover/open one.
 - **Files** — opens the CodeMirror-based project file editor popup.
+- **Screen capture** — always opens the local capture/review sheet for full or changed-area PNGs, ignored zones, screenshot import and video frame extraction. Only selected images are attached; see [Chat screen capture](screen-capture.md).
 - **Preview** — prompts for a web URL and captures a screenshot in the Inspector debug Chrome, publishing it to the web-preview dock and full-screen viewer (the same `webpreview` tool the model uses, run directly by the user without a model round-trip).
 - **Git** — opens a modal with a header and a body. The header holds a **branch dropdown**, **Pull** (shows behind count badge), **Push** (shows ahead count badge), refresh, and close. The body shows four collapsible sections: **Stash** (with a **Stash up** button plus Apply / Pop / Drop per stash entry), **Staged changes**, **Unstaged changes**, and **Recent commits** (paginated — load more via `GET /api/git/commits`). Every file row and commit is collapsible; each changed file expands into its diff.
 - **Cli** — opens a full-screen terminal that runs commands in the project directory (the default working path). Output streams live over SSE.
@@ -18,6 +19,7 @@ Tap the arrow button next to the text box to expand the menu. Its `+N` / `−N` 
 |------|--------|
 | Files | Opens the existing in-app CodeMirror editor for the project |
 | Preview | Asks for a URL, captures it with the Inspector Chrome, and shows the web-preview viewer |
+| Screen capture | Opens local screen/screenshot/video capture and image review; always enabled |
 | Git | Opens the git modal |
 | Cli | Opens the interactive command prompt session |
 | Actions | Runs the project's custom CLI/MCP actions (label + `@id` + kind per row) |

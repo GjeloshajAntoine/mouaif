@@ -51,8 +51,12 @@ assert.equal(MAX_CAPTURE_FRAMES, 8);
 
 const read = (path) => fs.readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 const chat = read('frontend/src/components/chat/Chat.jsx');
-assert.ok(chat.indexOf("class: 'btn btn--primary chat-view__send chat-view__capture'") < chat.indexOf("class: 'chat-view__composer'"), 'trigger is outside textbox pill');
-assert.match(chat, /composerTools\.capture\s*\? h\('button'/);
+assert.match(chat, /onOpenScreenCapture: \(\) => setScreenCaptureOpen\(true\)/);
+assert.match(chat, /screenCaptureOpen && ScreenCapturePanel/);
+assert.doesNotMatch(chat, /chat-view__capture|composerTools\.capture/, 'no standalone or gated capture button');
+const toolbar = read('frontend/src/components/chat/FileToolbar.jsx');
+assert.match(toolbar, /onClick: handleScreenCapture, 'aria-haspopup': 'dialog'/);
+assert.match(toolbar, /function handleScreenCapture\(\) \{\s*setMenuOpen\(false\);\s*if \(onOpenScreenCapture\) onOpenScreenCapture\(\);/);
 assert.match(chat, /await updateChat\([\s\S]*?!== true\) throw new Error/, 'failed save does not claim success');
 const panel = read('frontend/src/components/chat/ScreenCapturePanel.jsx');
 assert.match(panel, /getDisplayMedia\(\{ video: \{ frameRate: 1 \}, audio: false \}\)/);

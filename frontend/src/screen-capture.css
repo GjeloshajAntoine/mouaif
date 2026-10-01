@@ -1,13 +1,5 @@
-/* Send-style trigger sits outside the textbox, with a full 44px tap target. */
-.chat-view__capture {
-  width: 2.75rem;
-  height: 2.75rem;
-  min-height: 2.75rem;
-  padding: 0;
-  flex: 0 0 2.75rem;
-  align-self: center;
-}
-.chat-view__capture svg { margin: 0; }
+/* Screen capture is opened from the File tools menu. */
+.file-toolbar__menu-item--capture { min-height: 2.75rem; }
 .capture__overlay {
   position: fixed;
   inset: 0;
