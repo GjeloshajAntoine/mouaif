@@ -5,6 +5,42 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source = (file) => fs.readFileSync(new URL('../frontend/src/components/' + file, import.meta.url), 'utf8')
   .replace(/^import .*;$/gm, '').replace(/^export /gm, '');
+// A component referenced as `h(Name)` must be imported or declared in the same
+// file. The render below strips the imports and injects the names it needs, so
+// it cannot catch the opposite mistake: a name that renders on this page but is
+// never imported at all (only reachable in a browser, where the module fails to
+// evaluate and the section stays on its placeholder). That was the
+// `ToolAuthSeg` bug in SettingsProject.jsx, so it gets a static check of its own.
+function checkComponentReferences(file, src) {
+  const imported = new Set();
+  for (const m of src.matchAll(/^import\s+\{([^}]*)\}\s+from/gm)) {
+    for (const part of m[1].split(',')) {
+      const name = part.trim().split(/\s+as\s+/).pop().trim();
+      if (name) imported.add(name);
+    }
+  }
+  const declared = new Set();
+  for (const m of src.matchAll(/\b(?:function|class|const|let|var)\s+([A-Z][A-Za-z0-9_]*)/g)) declared.add(m[1]);
+  // A destructuring binding can rename a capitalised local too:
+  // `const [View = ProjectsView] = ROUTES[name]` binds `View`.
+  for (const m of src.matchAll(/\b(?:const|let|var)\s*[[{]([^\]}]*)[\]}]\s*=/g)) {
+    for (const part of m[1].split(',')) {
+      const name = part.trim().split(/[=:]/)[0].trim();
+      if (/^[A-Z]/.test(name)) declared.add(name);
+    }
+  }
+  const used = new Set();
+  for (const m of src.matchAll(/h\(\s*([A-Z][A-Za-z0-9_]*)\s*[,)]/g)) used.add(m[1]);
+  const missing = [...used].filter((name) => !imported.has(name) && !declared.has(name));
+  assert.deepEqual(missing, [], file + ' uses ' + missing.join(', ') + ' without importing it');
+}
+
+const componentsDir = new URL('../frontend/src/components/', import.meta.url);
+for (const name of fs.readdirSync(componentsDir, { recursive: true })) {
+  if (!/\.(jsx|js)$/.test(name)) continue;
+  checkComponentReferences('frontend/src/components/' + name, fs.readFileSync(new URL(name, componentsDir), 'utf8'));
+}
+
 const projectDir = '/fixture/project & name';
 const from = 'settings/projects';
 const chatId = 'chat-1';
