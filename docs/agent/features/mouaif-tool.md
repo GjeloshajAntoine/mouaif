@@ -66,6 +66,12 @@ const out = await runMouaif(
 | `projects` | `project_list` | `projects.listProjects` |
 | `info` | `info` | `agentFeatures.dispatchListFeatures` |
 
+### Read results
+
+`chatSummary` preserves `draftSnippet` from the lightweight chat-list projection, plus search `matchField` and `snippet`, without loading full draft bodies. Both `info` and `list_features` resolve native permissions with `getAuthorization(projectDir, chatId)` so their report agrees with the execution gate.
+
+`list_attachments` scans at most 200 messages per page (`limit`, default 200), using `messages.listMessagesWindow` with one lookahead row. `nextBeforeSeq` is the oldest scanned sequence when older rows exist; otherwise it is `null`. Feed it back as the non-negative integer `beforeSeq`. Pages without images still carry the cursor; draft image metadata is repeated on each page. Results never contain image bytes.
+
 ### Attachment rules
 
 `attach` reads the file with `files.readMedia` (default cap 1 MiB, this tool asks for 6 MiB) and builds the only attachment shape the chat store accepts:
@@ -94,7 +100,7 @@ Settings use the REST projections in both scopes, hiding credentials and `__dbBa
 npm run test:mouaif-tool
 ```
 
-`node scripts/test-mouaif-tool.js` (also wired into `npm test`, and `node -c`'d by `npm run lint`). 108 assertions over the spec shape, the authorization family, every action, validation before writes, model/prompt selection, attachment rules, redacted settings round-trips, and DB-backed projection. The temp project dir must live under the real user home because of `projects.ensureSafeRoot` — same convention as `scripts/test-file-editor.js`.
+`node scripts/test-mouaif-tool.js` (also wired into `npm test`, and `node -c`'d by `npm run lint`). Assertions cover the spec shape, the authorization family, every action, validation before writes, model/prompt selection, draft/search previews, paginated attachment inventories, chat-scoped feature state, redacted settings round-trips, and DB-backed projection. The temp project dir must live under the real user home because of `projects.ensureSafeRoot` — same convention as `scripts/test-file-editor.js`.
 
 `test-mouaif-tool-stream.js` exercises the actual multi-turn dispatcher, tool-result cards, Allow/Ask/Off and per-chat authorization, denial, typed errors, credential redaction, draft attachment, and confirmed deletion. `test-mouaif-tool-sync.mjs` executes the production refresh helper with deferred responses to cover drafts/images, title/model/prompt synchronization, duplicate results, chat/session navigation, overlapping requests, and concurrent user edits.
 

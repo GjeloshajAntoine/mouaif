@@ -20,22 +20,24 @@ What is my default prompt size, and switch this project to agentFiles off.
 
 | Action | What it does |
 | --- | --- |
-| `list` | List this project's chats, newest first (`limit`, default 20, max 100). |
+| `list` | List this project's chats, newest first, with bounded draft previews (`limit`, default 20, max 100). |
 | `get` | Read one chat (`chatId`). `includeMessages: true` adds the last `messageLimit` messages (default 10, max 50). |
 | `create` | Create a chat. `title` names it, `topic` seeds its composer draft, `providerId` + `modelId` pick its model. Returns the chat plus a `#/chat/<id>` link. |
 | `update` | Change `title`, `draft`, `promptId`, `promptSize`, `providerId`, or `modelId` on an existing chat. |
 | `delete` | Delete a chat and its transcript. Requires `confirm: true`. |
-| `search` | Search titles, drafts, and message text (`query`). |
+| `search` | Search titles, drafts, and message text (`query`). Results retain `matchField` and a bounded matching `snippet`. |
 | `attach` | Put an image from the project into a chat: `path` is project-relative, `target` is `draft` (default — the composer holds it until the user presses send) or `message` (appends a real user message carrying the image, with optional `content`). |
-| `list_attachments` | Show the images a chat holds, split into draft and message attachments. |
+| `list_attachments` | Show draft and message image names/types, not pixels. Scans the newest 200 messages by default; follow `nextBeforeSeq` with `beforeSeq` to retrieve older images. |
 | `settings_get` | Read settings. `scope` is `app` (default) or `project`; `keys` narrows the result. |
 | `settings_update` | Merge `patch` into the chosen scope; `unset` removes keys (project scope). Defaults to the project scope. |
 | `project_list` | List the registered projects (id, name, path, cost). |
-| `info` | Report the mouaif feature state — the same report the shipped `list_features` tool returns — plus this tool's own action table. |
+| `info` | Report the mouaif feature state, including the running chat's effective tool permissions — the same report the shipped `list_features` tool returns — plus this tool's own action table. |
 
 ### Where the model's data comes from
 
 `get`, `attach`, and `list_attachments` default `chatId` to the chat the model is running in, so "attach this screenshot" needs no id. `update` and `delete` require an explicit `chatId`; other actions do not target an individual chat.
+
+`list_attachments` scans a bounded message page, not the entire transcript. Set `limit` to 1–200 messages per page. When `nextBeforeSeq` is a number, pass it as `beforeSeq` on the next call; keep paging even if a page contains no images. `nextBeforeSeq: null` means no older messages remain. Draft images are included on every page, and image bytes are never returned.
 
 Successful changes to the mounted chat refresh its title, model picker, prompt, and composer draft/images without reopening it. The same refresh applies when following a turn from another tab or recovering a dropped stream. A late refresh cannot overwrite a different chat or text/images the user edited while the request was pending.
 

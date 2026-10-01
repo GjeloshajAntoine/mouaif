@@ -69,6 +69,16 @@ async function main() {
   assert.equal(chats.getChat(projectDir, createdId).draft, 'Opening draft');
   assert.equal(out.returned.chat.id, createdId);
 
+  out = await call(host, { action: 'list' });
+  assert.equal(out.returned.chats.find((chat) => chat.id === createdId).draftSnippet, 'Opening draft');
+  out = await call(host, { action: 'search', query: 'Opening' });
+  assert.equal(out.returned.chats[0].matchField, 'draft');
+  assert.equal(out.returned.chats[0].snippet, 'Opening draft');
+  chats.updateChat(projectDir, host.id, { toolAuth: { native: { shell: { mode: 'off' } } } });
+  out = await call(chats.getChat(projectDir, host.id), { action: 'info' });
+  assert.equal(out.returned.tools.shell.mode, 'off');
+  chats.updateChat(projectDir, host.id, { toolAuth: null });
+
   out = await call(host, { action: 'update', chatId: createdId, title: 'Renamed by tool' }, { mode: 'ask', decision: 'allow-once' });
   assert.equal(out.ok, true);
   assert.ok(out.events.some((event) => event.type === 'authorization_required'));
@@ -106,6 +116,17 @@ async function main() {
   assert.equal(chats.getChat(projectDir, host.id).draftAttachments.length, 1);
   assert.equal(messages.getMessageCount(projectDir, host.id), 0, 'draft attachment does not start a turn');
   assert.ok(!JSON.stringify(out).includes('data:image'), 'image bytes never enter the textual tool result');
+
+  out = await call(host, { action: 'attach', path: 'shot.png', target: 'message' });
+  assert.equal(out.ok, true);
+  messages.appendMessage(projectDir, host.id, { role: 'user', content: 'after the image' });
+  out = await call(host, { action: 'list_attachments', limit: 1 });
+  assert.equal(out.returned.messages.length, 0);
+  assert.equal(out.returned.nextBeforeSeq, 1);
+  out = await call(host, { action: 'list_attachments', limit: 1, beforeSeq: out.returned.nextBeforeSeq });
+  assert.equal(out.returned.messages[0].name, 'shot.png');
+  assert.equal(out.returned.nextBeforeSeq, null);
+  assert.ok(!JSON.stringify(out.returned).includes('data:image'));
 
   out = await call(host, { action: 'delete', chatId: createdId });
   assert.equal(out.ok, false);

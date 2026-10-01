@@ -198,7 +198,7 @@ async function dispatchListFeatures(args, opts) {
   // Built-in tool authorization
   try {
     const authz = require('./tools/authorization.js');
-    const authState = authz.getAuthorization(projectDir);
+    const authState = authz.getAuthorization(projectDir, chatId);
     const tools = (authState && authState.tools) || {};
     state.tools = {};
     for (const name of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'mouaif']) {

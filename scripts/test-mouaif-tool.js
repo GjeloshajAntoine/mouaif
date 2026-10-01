@@ -122,6 +122,7 @@ async function main() {
   const list = await mouaif.runMouaif({ action: 'list' }, opts);
   check('list returns both chats', list.ok === true && list.result.chats.length === 2 && list.result.total === 2);
   check('list rows carry no full draft body', list.result.chats.every((c) => c.draft === undefined));
+  check('list preserves the stored draft preview', list.result.chats.find((c) => c.id === chatId).draftSnippet === 'Draft the changelog');
 
   const limited = await mouaif.runMouaif({ action: 'list', limit: 1 }, opts);
   check('list honours the limit', limited.result.chats.length === 1 && limited.result.total === 2);
@@ -170,6 +171,14 @@ async function main() {
 
   const found = await mouaif.runMouaif({ action: 'search', query: 'Changelog' }, opts);
   check('search finds the renamed chat', found.ok === true && found.result.chats.some((c) => c.id === chatId));
+  check('search preserves title match evidence', found.result.chats.find((c) => c.id === chatId).matchField === 'title'
+    && found.result.chats.find((c) => c.id === chatId).snippet.toLowerCase().includes('changelog'));
+  const draftHit = await mouaif.runMouaif({ action: 'search', query: 'Draft the' }, opts);
+  check('search preserves draft match evidence', draftHit.result.chats[0].matchField === 'draft'
+    && draftHit.result.chats[0].snippet.includes('Draft the changelog') && draftHit.result.chats[0].draftSnippet === 'Draft the changelog');
+  const messageHit = await mouaif.runMouaif({ action: 'search', query: 'message 2' }, opts);
+  check('search preserves message match evidence', messageHit.result.chats[0].matchField === 'message'
+    && messageHit.result.chats[0].snippet.includes('message 2'));
   const noQuery = await mouaif.runMouaif({ action: 'search' }, opts);
   check('search without a query is EBADINPUT', noQuery.ok === false && noQuery.result.code === 'EBADINPUT');
 
@@ -207,6 +216,22 @@ async function main() {
   check('list_attachments sees the draft images', listed.ok === true
     && listed.result.drafts.length === 2 && listed.result.messages.length === 1);
   check('list_attachments names the image', listed.result.drafts[0].name === 'shot.png');
+  for (let i = 0; i < 200; i++) messages.appendMessage(projectDir, imgChat, { role: 'user', content: 'after image ' + i });
+  const attachmentPage = await mouaif.runMouaif({ action: 'list_attachments' }, chatOpts);
+  check('list_attachments reports a cursor instead of silently hiding older images', attachmentPage.ok === true
+    && attachmentPage.result.messages.length === 0 && attachmentPage.result.nextBeforeSeq === 1);
+  const olderAttachments = await mouaif.runMouaif({ action: 'list_attachments', beforeSeq: 1, limit: 1 }, chatOpts);
+  check('list_attachments can retrieve an image older than the latest 200 messages', olderAttachments.ok === true
+    && olderAttachments.result.messages.length === 1 && olderAttachments.result.messages[0].name === 'shot.png'
+    && olderAttachments.result.nextBeforeSeq === null && !olderAttachments.content.includes('data:image'));
+  const emptyAttachments = await mouaif.runMouaif({ action: 'list_attachments', beforeSeq: 0 }, chatOpts);
+  check('list_attachments handles an exhausted cursor without losing drafts', emptyAttachments.ok === true
+    && emptyAttachments.result.messages.length === 0 && emptyAttachments.result.nextBeforeSeq === null
+    && emptyAttachments.result.drafts.length === 2);
+  for (const beforeSeq of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    const invalid = await mouaif.runMouaif({ action: 'list_attachments', beforeSeq }, chatOpts);
+    check('list_attachments rejects invalid cursor ' + beforeSeq, invalid.ok === false && invalid.result.code === 'EBADINPUT');
+  }
 
   const notImage = await mouaif.runMouaif({ action: 'attach', path: 'notes.txt' }, chatOpts);
   check('attaching a non-image fails', notImage.ok === false && (notImage.result.code === 'ENOTIMAGE' || notImage.result.code === 'EBINARY'));
@@ -297,6 +322,16 @@ async function main() {
   check('info lists every action with its area', info.result.actions.length === mouaif.ACTION_NAMES.length
     && info.result.actions.every((a) => a && a.action && a.area));
   check('info includes the feature state (tools)', info.result.tools && !!info.result.tools.shell);
+  chats.updateChat(projectDir, imgChat, { toolAuth: { native: { shell: { mode: 'off' }, mouaif: { mode: 'allow' } } } });
+  const chatInfo = await mouaif.runMouaif({ action: 'info' }, chatOpts);
+  check('info reports effective chat-specific permissions', chatInfo.result.tools.shell.mode === 'off'
+    && chatInfo.result.tools.mouaif.mode === 'allow');
+  const features = await require('../src/agentFeatures.js').dispatchListFeatures({}, chatOpts);
+  check('list_features agrees with info about chat-specific permissions', features.result.tools.shell.mode === 'off'
+    && features.result.tools.mouaif.mode === 'allow');
+  const projectInfo = await mouaif.runMouaif({ action: 'info' }, opts);
+  check('project info does not inherit another chat\u2019s permissions', projectInfo.result.tools.shell.mode === info.result.tools.shell.mode
+    && projectInfo.result.tools.mouaif.mode === info.result.tools.mouaif.mode);
 
   console.log('mouaif tool: ' + passed + ' passed, ' + failed + ' failed');
   if (failed) process.exitCode = 1;

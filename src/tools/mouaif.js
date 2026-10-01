@@ -138,7 +138,12 @@ const SPEC = {
         },
         limit: {
           type: 'number',
-          description: 'list/search: maximum chats to return (default 20, max 100).'
+          description: 'list/search: maximum chats to return (default 20, max 100). list_attachments: number of recent messages to scan (default 200, max 200).'
+        },
+        beforeSeq: {
+          type: 'integer',
+          minimum: 0,
+          description: 'list_attachments: scan messages before this sequence number. Pass the previous result\u2019s nextBeforeSeq to retrieve older images; omit for the newest page.'
         },
         query: { type: 'string', description: 'search: text to match against chat titles, drafts, and messages.' },
         providerId: { type: 'string', description: 'create/update: provider connection id for the chat\u2019s model (e.g. "openai-compatible").' },
@@ -239,7 +244,10 @@ function chatSummary(chat) {
     promptId: chat.promptId || null,
     trace: chat.trace === true
   };
-  if (chat.draft) out.draftSnippet = String(chat.draft).replace(/\s+/g, ' ').slice(0, 200);
+  const draft = chat.draft || chat.draftSnippet;
+  if (draft) out.draftSnippet = String(draft).replace(/\s+/g, ' ').slice(0, 200);
+  if (chat.matchField) out.matchField = chat.matchField;
+  if (chat.snippet) out.snippet = String(chat.snippet).slice(0, 240);
   // List rows are summaries: they carry `draftSnippet` / `hasDraftImage`
   // instead of the full draft and its attachment array.
   if (chat.hasDraftImage === true) out.draftAttachments = 1;
@@ -441,9 +449,14 @@ async function runAttachments(args, opts) {
   const action = args.action;
 
   if (action === 'list_attachments') {
-    const rows = messages.listMessagesWindow(projectDir, chatId, { limit: 200 }) || [];
+    const limit = clampLimit(args.limit, 200, 200);
+    // Read one extra row to distinguish a complete inventory from a page
+    // with older messages. The seq cursor remains stable across appends.
+    const rows = messages.listMessagesWindow(projectDir, chatId, { limit: limit + 1, beforeSeq: args.beforeSeq }) || [];
+    const page = rows.length > limit ? rows.slice(1) : rows;
+    const nextBeforeSeq = rows.length > limit ? page[0].seq : null;
     const attached = [];
-    for (const m of rows) {
+    for (const m of page) {
       if (!m || !Array.isArray(m.attachments) || !m.attachments.length) continue;
       for (const a of m.attachments) {
         attached.push({ messageTs: m.ts, name: a && a.name, mimeType: a && a.mimeType });
@@ -454,7 +467,8 @@ async function runAttachments(args, opts) {
       chatId,
       drafts: (Array.isArray(chat.draftAttachments) ? chat.draftAttachments : [])
         .map((a) => ({ name: a && a.name, mimeType: a && a.mimeType })),
-      messages: attached
+      messages: attached,
+      nextBeforeSeq
     });
   }
 
@@ -630,8 +644,10 @@ function validateArgs(args) {
     const schema = properties[key];
     const valid = schema.type === 'array' ? Array.isArray(value) && value.every((item) => typeof item === schema.items.type)
       : schema.type === 'object' ? value !== null && typeof value === 'object' && !Array.isArray(value)
+      : schema.type === 'integer' ? Number.isSafeInteger(value)
       : typeof value === schema.type && (schema.type !== 'number' || Number.isFinite(value));
     if (!valid) throw typedError('EBADINPUT', key + ' must be of type ' + schema.type);
+    if (schema.minimum !== undefined && value < schema.minimum) throw typedError('EBADINPUT', key + ' must be at least ' + schema.minimum);
     if (schema.enum && !schema.enum.includes(value)) throw typedError('EBADINPUT', 'unknown ' + key + ': ' + value);
   }
 }
