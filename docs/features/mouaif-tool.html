@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>mouaif tool — mouaif docs</title>
+  <meta name="description" content="The `mouaif` tool is one native tool that lets the assistant manage mouaif itself: this project&#39;s chats, image attachments, app and project settings, and the…" />
+  <meta property="og:site_name" content="mouaif docs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="mouaif tool — mouaif docs" />
+  <meta property="og:description" content="The `mouaif` tool is one native tool that lets the assistant manage mouaif itself: this project&#39;s chats, image attachments, app and project settings, and the…" />
+  <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/mouaif-tool.html" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="mouaif-tool">mouaif tool</h1>
+<h2 id="overview">Overview</h2>
+<p>The <code>mouaif</code> tool is one native tool that lets the assistant manage mouaif itself: this project&#39;s chats, image attachments, app and project settings, and the registered project list. It is a single tool with an <code>action</code> argument instead of one tool per operation, so the whole surface costs one spec in the request and the <code>very-small</code> prompt profile can compact it away.</p>
+<h2 id="usage">Usage</h2>
+<p>Ask for it in a normal sentence — the model picks the action:</p>
+<pre><code class="language-text">Create a chat called &quot;Changelog v2&quot; and put &quot;draft the release notes&quot; in its draft.
+List my last few chats and tell me which model each one uses.
+Attach docs/features/images/editor.png to this chat&#39;s draft.
+Search my chats for &quot;webpreview&quot; and summarize what changed.
+What is my default prompt size, and switch this project to agentFiles off.</code></pre>
+<h3 id="actions">Actions</h3>
+<div class="table-wrap"><table><thead><tr><th>Action</th><th>What it does</th></tr></thead><tbody><tr><td><code>list</code></td><td>List this project&#39;s chats, newest first (<code>limit</code>, default 20, max 100).</td></tr><tr><td><code>get</code></td><td>Read one chat (<code>chatId</code>). <code>includeMessages: true</code> adds the last <code>messageLimit</code> messages (default 10, max 50).</td></tr><tr><td><code>create</code></td><td>Create a chat. <code>title</code> names it, <code>topic</code> seeds its composer draft, <code>providerId</code> + <code>modelId</code> pick its model. Returns the chat plus a <code>#/chat/&lt;id&gt;</code> link.</td></tr><tr><td><code>update</code></td><td>Change <code>title</code>, <code>draft</code>, <code>promptId</code>, <code>promptSize</code>, <code>providerId</code>, or <code>modelId</code> on an existing chat.</td></tr><tr><td><code>delete</code></td><td>Delete a chat and its transcript. Requires <code>confirm: true</code>.</td></tr><tr><td><code>search</code></td><td>Search titles, drafts, and message text (<code>query</code>).</td></tr><tr><td><code>attach</code></td><td>Put an image from the project into a chat: <code>path</code> is project-relative, <code>target</code> is <code>draft</code> (default — the composer holds it until the user presses send) or <code>message</code> (appends a real user message carrying the image, with optional <code>content</code>).</td></tr><tr><td><code>list_attachments</code></td><td>Show the images a chat holds, split into draft and message attachments.</td></tr><tr><td><code>settings_get</code></td><td>Read settings. <code>scope</code> is <code>app</code> (default) or <code>project</code>; <code>keys</code> narrows the result.</td></tr><tr><td><code>settings_update</code></td><td>Merge <code>patch</code> into the chosen scope; <code>unset</code> removes keys (project scope). Defaults to the project scope.</td></tr><tr><td><code>project_list</code></td><td>List the registered projects (id, name, path, cost).</td></tr><tr><td><code>info</code></td><td>Report the mouaif feature state — the same report the shipped <code>list_features</code> tool returns — plus this tool&#39;s own action table.</td></tr></tbody></table></div>
+<h3 id="where-the-model-s-data-comes-from">Where the model&#39;s data comes from</h3>
+<p><code>attach</code>, <code>get</code>, and <code>info</code> default <code>chatId</code> to the chat the model is running in, so &quot;attach this screenshot&quot; needs no id. Every other action needs an explicit <code>chatId</code> — the tool never guesses between chats.</p>
+<p><code>attach</code> accepts only images (<code>png</code>, <code>jpeg</code>, <code>webp</code>, <code>gif</code>), because that is the only attachment the chat store understands. It reads the file with the file editor&#39;s boundary (the user home, or anywhere with <code>MOUAIF_ALLOW_ANY_ROOT=1</code>), so a path outside it fails with <code>EOUTSIDE_HOME</code> exactly like <code>read_file</code>.</p>
+<h3 id="where-it-appears">Where it appears</h3>
+<p>The tool shows up as <strong>two categories</strong> in the tools tree (Settings → Project → Tools, the chat Tools card, and the composer tools popup), each listing its own actions as child rows:</p>
+<div class="table-wrap"><table><thead><tr><th>Category row</th><th>Actions (child rows)</th></tr></thead><tbody><tr><td><strong>Chats</strong></td><td><code>list</code> <code>get</code> <code>create</code> <code>update</code> <code>delete</code> <code>search</code> <code>attach</code> <code>list_attachments</code></td></tr><tr><td><strong>mouaif</strong></td><td><code>settings_get</code> <code>settings_update</code> <code>project_list</code> <code>info</code></td></tr></tbody></table></div>
+<p>The children are the same model-facing <code>mouaif</code> tool, not separate tools, so the split is about what you are looking at rather than about permissions: there is <strong>one</strong> <code>mouaif</code> authorization family behind both categories, and the Off / Ask / Allow segment on either category row writes that one gate. The two category rows always show the same mode, and a child checkbox is the category&#39;s <code>Off ↔ Ask</code> shortcut.</p>
+<p>The category rows are built from <code>GROUPS</code> in <a href="https://github.com/GjeloshajAntoine/mouaif/blob/master/src/tools/mouaif.js" target="_blank" rel="noopener noreferrer">src/tools/mouaif.js</a>, whose <code>actions</code> list is derived from the <code>ACTIONS</code> area table — adding an action puts it under its area&#39;s category with no second edit.</p>
+<h3 id="authorization">Authorization</h3>
+<p>The tool is one native authorization family, <code>mouaif</code>, gated the same way as Shell, File tools, and Web preview:</p>
+<ul><li><p><strong>Settings → Project → Tools</strong> — Off / Ask / Allow for the project, on either category row.</p></li><li><p><strong>Chat → Tools card</strong> and the composer tools popup — the same segments, scoped to that chat.</p></li><li><p><code>off</code> hides the tool spec entirely; the model never pays tokens for it.</p></li><li><p><code>ask</code> shows the usual authorization card before the call runs.</p></li><li><p>Per-chat overrides beat project settings, which beat app settings.</p></li></ul>
+<h3 id="errors">Errors</h3>
+<p>Failures come back as a typed envelope the model can act on:</p>
+<pre><code class="language-json">{ &quot;ok&quot;: false, &quot;code&quot;: &quot;ENOTFOUND&quot;, &quot;message&quot;: &quot;chat not found: 3e6fabe3&quot; }</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Code</th><th>Meaning</th></tr></thead><tbody><tr><td><code>EBADINPUT</code></td><td>A missing or invalid argument (unknown action, unknown model, unknown profile, no chat, <code>apiKey</code> in a patch).</td></tr><tr><td><code>ENOTFOUND</code></td><td>The chat does not exist.</td></tr><tr><td><code>ECONFIRM</code></td><td><code>delete</code> was called without <code>confirm: true</code>. The result also reports the title and message count that would be lost.</td></tr><tr><td><code>ENOTIMAGE</code> / <code>EBINARY</code></td><td><code>attach</code> was pointed at something that is not a readable image.</td></tr><tr><td><code>ETOOLARGE</code></td><td>The image is too large, or the draft already holds 8 images.</td></tr><tr><td><code>EOUTSIDE_HOME</code></td><td>The path escaped the file boundary.</td></tr><tr><td><code>ETOOL_DISABLED</code></td><td>The <code>mouaif</code> family is <code>off</code>.</td></tr></tbody></table></div>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>

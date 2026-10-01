@@ -14,3 +14,11 @@ Project `skills: false` is a master gate; chat `skills: false` disables skills f
 - The chat record carries `disabledSkills` (a string array of skill ids, stored as JSON in `chat_store.disabled_skills`, `NULL` when empty). `PATCH /api/chats/:id` accepts it; an empty array or `null` clears it.
 - `GET /api/chats/:id/system-prompt` reports each skill as `{ id, name, description, enabled, disabled, chatDisabled }` plus `skillsEnabled`, so the chat view can tell a project lock (row disabled, with a reason) from this chat's own opt-out (a plain checkbox), and can show what the stream will actually inject.
 - Enabling a single skill in a chat that had skills off writes both `skills: true` and the remaining skill ids into `disabledSkills`, and switching the last skill off writes `skills: false` together with every selectable id. A prompt preset may force the family flag back on for a turn, and the per-skill list is what keeps that from resurrecting a catalog the user switched off row by row.
+
+**Activation path.** The streaming handler passes the preset-resolved chat into the AI loop and into delegated runs. The Skills UI shares response normalization and an ordered save queue in `frontend/src/components/chat/skillState.js`.
+
+Run the focused parser, streaming and UI regression coverage with:
+
+```bash
+npm run test:skills
+```

@@ -60,13 +60,3 @@ An individual skill can also be switched off for the whole project from `.mouaif
   "disabledSkills": ["pdf-processing"]
 }
 ```
-
-## Implementation notes
-
-`src/agentSkills.js` owns discovery and activation. The streaming handler passes the preset-resolved chat into the AI loop and delegated runs. The Skills UI shares response normalization and an ordered save queue in `frontend/src/components/chat/skillState.js`.
-
-Run focused parser, streaming, and UI regression coverage with:
-
-```bash
-npm run test:skills
-```

@@ -50,10 +50,18 @@ description: Run and diagnose project tests. Use when changing code or investiga
 ---
 Run the narrowest relevant tests first, then the full suite.</code></pre>
 <p>Save it as <code>.agents/skills/testing/SKILL.md</code>. Optional <code>scripts/</code>, <code>references/</code>, and <code>assets/</code> directories may sit beside it.</p>
+<p>Descriptions may use YAML block scalars and comments:</p>
+<pre><code class="language-yaml">name: testing # matches the directory name
+description: &gt;-
+  Run and diagnose project tests.
+  Use when changing code or investigating failures.</code></pre>
+<p>The dependency-free reader supports plain and quoted strings, inline comments, literal (<code>|</code>) and folded (<code>&gt;</code>) blocks (including chomping/indentation indicators), and a shallow string-valued <code>metadata</code> map. Unsupported constructs (such as flow collections, aliases, tags, or multiline plain/quoted strings), malformed quoting, duplicate keys, and invalid indentation cause the skill to be skipped rather than advertised with corrupted metadata.</p>
 <p>Open <strong>Settings → Project → Tools</strong> to toggle skills on or off. Off locks skills out of every chat; on lets each chat opt out.</p>
 <p>In a chat, the transcript shows a <strong>Skills</strong> card below tools and agent files. Every discovered skill has its own checkbox:</p>
-<ul><li><p>Unchecking one skill switches <strong>only that skill</strong> off for this chat. The other skills stay on, the project setting is untouched, and the choice is stored on the chat record, so it survives a reload.</p></li><li><p>Checking a skill switches it back on for this chat, again without touching its siblings.</p></li><li><p>A chat whose skills are off shows every row unchecked. Checking any row turns the chat&#39;s skills back on with that one skill selected.</p>
-<p>The <strong>Tools</strong> popup (globe icon in the chat top bar) shows the same always-expanded <strong>Skills</strong> group. There the group checkbox is the explicit all-on / all-off shortcut for the chat, while each row is that one skill&#39;s switch.</p>
+<ul><li><p>Unchecking one skill switches <strong>only that skill</strong> off for this chat. The other skills stay on, the project setting is untouched, and the choice is stored on the chat record, so it survives a reload.</p></li><li><p>Checking a skill switches it back on for this chat, again without touching its siblings.</p></li><li><p>Changes appear immediately in both the transcript card and the popup. Quick successive taps save in order; a failed save restores the last saved selection. After saving, both surfaces reconcile with the server&#39;s effective state, including prompt presets.</p></li><li><p>A chat whose skills are off shows every row unchecked. Checking any row turns the chat&#39;s skills back on with that one skill selected.</p>
+<p>The <strong>Tools</strong> popup (wrench icon in the chat top bar) shows the same always-expanded <strong>Skills</strong> group. There the group checkbox is the explicit all-on / all-off shortcut for the chat, while each row is that one skill&#39;s switch.</p>
+<p>Custom prompt presets use the same effective skill setting for the metadata catalog, activation tool, and activation result. Delegated subagents inherit that setting and this chat&#39;s individual skill opt-outs; they cannot reactivate a skill unchecked in the parent chat. The project-level off switch always wins.</p>
+<p>Skill activation is controlled by the <strong>Skills</strong> switches independently of the ordinary tool selection: unchecking Shell or File tools (even unchecking every ordinary tool) does not disable checked skills. An agent&#39;s explicit tool allowlist still restricts its delegated run; include <code>activate_skill</code> there if that agent should load skills.</p>
 <p>Project settings use this shape:</p></li></ul>
 <pre><code class="language-json">{
   &quot;skills&quot;: true
