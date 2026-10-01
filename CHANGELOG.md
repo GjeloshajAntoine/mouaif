@@ -9,8 +9,21 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ## [Unreleased]
 
+## [0.8.5] — 2026-10-01
+
+### Added
+
+- **Reviewed chat screen capture** — capture the full screen or changed areas,
+  ignore or mask zones, import video frames, and attach only selected PNGs from
+  the always-enabled Screen capture item in the chat File tools menu.
+- **Grouped file tools** — read or edit up to 50 files in one call, with an
+  individual result for each entry.
+
 ### Changed
 
+- **Ordinary native app tools** — chat and app actions are separate functions
+  with individual selection and Off / Ask / Allow permissions. Legacy `mouaif`
+  selections and permissions migrate automatically.
 - **Rewritten built-in prompts** — the `very-small`, `average`, and `extensive`
   system prompts now lead with a short role statement and group their rules
   under four headings (`Answering`, `Acting`, `Editing`, `Reporting`). Every
@@ -23,6 +36,20 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **Subagent transcript parity** — nested runs retain their prompt, chat
+  details, progress, and cost, with mobile-friendly expanded cards.
+- **Project tool settings** — permission changes confirm only successful saves,
+  report MCP save failures, preserve timeout bounds, and restore the tool output
+  size control. Removing keys in the raw project editor persists correctly.
+- **Authorization notifications** — permission requests remain visible and
+  direct tool calls send authorization pushes.
+- **Test-store isolation** — test children and symlink aliases cannot
+  accidentally open the real app store; dictation HTTP coverage now separates
+  project-only catalogs from live model discovery. Composer browser coverage
+  launches its own isolated Chrome, and CLI key guards match the shared hardware
+  and on-screen key handler.
+- **Release assets** — package and lockfile versions agree, and generated
+  documentation pages match their Markdown sources.
 - **A `mouaif` action row now toggles the tool** — the tool's two categories
   (`Chats`, `mouaif`) list their actions as child rows, but a child row is keyed
   by its action (`mouaif:list`) while the per-chat tool filter stores tool
@@ -250,6 +277,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
   subagents) with per-project **Off / Ask / Allow** gating.
 - Access authentication with a setup link and QR code.
 
+[0.8.5]: https://www.npmjs.com/package/mouaif/v/0.8.5
 [0.8.0]: https://www.npmjs.com/package/mouaif
 [0.5.7]: https://www.npmjs.com/package/mouaif/v/0.5.7
 [0.5.0]: https://www.npmjs.com/package/mouaif/v/0.5.0
