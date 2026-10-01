@@ -7,7 +7,7 @@
 import { fetchJson } from '../../api.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { h, render } from 'preact';
-import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
+import { ToolTree, buildToolGroups, groupToolNames, childToolName } from '../ToolTree.jsx';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
 import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
@@ -188,18 +188,17 @@ head.appendChild(scoped);
   function onToggleGroup(groupId, checked) {
     const group = groups.find((g) => g.id === groupId);
     if (!group) return;
-    // A category of one tool (the two `mouaif` rows) toggles that tool, not the
-    // per-row child ids: the children are parts of one tool, and the chat
-    // filter stores tool names. Falls back to the children's ids, which is what
-    // every catalog-backed group does.
-    const names = group.tools.some((tool) => tool.toolName)
-      ? Array.from(new Set(group.tools.map((tool) => tool.toolName)))
-      : group.tools.map((tool) => tool.id);
-    if (state._toggleToolGroup) state._toggleToolGroup(names, checked);
+    // The filter stores tool NAMES; a category's children share one tool and
+    // key their rows by action (see groupToolNames).
+    if (state._toggleToolGroup) state._toggleToolGroup(groupToolNames(group), checked);
   }
 
   function onToggleTool(groupId, toolId, checked) {
-    if (state._toggleTool) state._toggleTool(toolId, checked);
+    // A category child row writes the tool it belongs to, not its tree id
+    // (`mouaif:list`) — toggleToolGroup drops names it does not know, so the
+    // id made the tap a silent no-op (see childToolName).
+    const group = groups.find((g) => g.id === groupId);
+    if (state._toggleTool) state._toggleTool(childToolName(group, toolId), checked);
   }
 
   // Persist the live collapse state on `state` so the next in-place

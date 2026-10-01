@@ -10,7 +10,7 @@
 
 import { h } from 'preact';
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
-import { ToolTree, buildToolGroups } from '../ToolTree.jsx';
+import { ToolTree, buildToolGroups, groupToolNames, childToolName } from '../ToolTree.jsx';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { useVisualViewport } from '../../hooks/useVisualViewport.js';
@@ -163,14 +163,9 @@ files: 'file'
   }
   if (onToggleToolGroup) {
       const group = groups.find((g) => g.id === groupId);
-      // A one-tool category (the two `mouaif` rows) toggles that tool: its
-      // children are parts of one tool, and the filter stores tool names.
-      if (group) {
-        const names = group.tools.some((t) => t.toolName)
-          ? Array.from(new Set(group.tools.map((t) => t.toolName)))
-          : group.tools.map((t) => t.id);
-        onToggleToolGroup(names, checked);
-      }
+      // The filter stores tool NAMES: a category's children share one tool and
+      // key their rows by action (see groupToolNames).
+      if (group) onToggleToolGroup(groupToolNames(group), checked);
     }
   }
 
@@ -187,10 +182,9 @@ files: 'file'
     }
     // A child row of a one-tool category (the two `mouaif` rows) toggles the
     // tool it belongs to — the chat filter stores tool names, and the row's own
-    // id (`mouaif:list`) is only a tree key.
+    // id (`mouaif:list`) is only a tree key (see childToolName).
     const group = groups.find((g) => g.id === groupId);
-    const child = group && group.tools.find((t) => t.id === toolId);
-    if (onToggleTool) onToggleTool((child && child.toolName) || toolId, checked);
+    if (onToggleTool) onToggleTool(childToolName(group, toolId), checked);
   }
 
   // If agent files are available, add a synthetic group for them

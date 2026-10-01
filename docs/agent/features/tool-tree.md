@@ -103,11 +103,11 @@ A category is a group row whose child rows are **parts of one tool** rather than
 
 Every child maps to the same authorization family, so:
 
-- each child row carries `toolName` (the model-facing name, `mouaif`) beside its own tree id (`mouaif:list`); the per-chat tool filter stores **tool names**, so a toggle must resolve through `toolName` or the chat would be written with a tool that does not exist;
+- each child row carries `toolName` (the model-facing name, `mouaif`) beside its own tree id (`mouaif:list`); the per-chat tool filter stores **tool names**, so a toggle must resolve through `toolName` or the chat would be written with a tool that does not exist. That resolution lives in `groupToolNames(group)` / `childToolName(group, toolId)`, exported from `ToolTree.jsx` and called by BOTH chat surfaces (`cards.js` and `ToolPopup.jsx`). It is one shared pair on purpose: the first fix inlined the rule at each call site, landed in the popup and missed the card, so the card's action checkboxes pushed `mouaif:list`, `knownToolNames` in `toggleToolGroup` dropped the unknown name, and every tap on an action row was a silent no-op;
 - the category checkbox and segment write the one `tools.mouaif` mode, and a child checkbox is the same `Off ↔ Ask` shortcut rather than a per-tool override (which would key on `mouaif`, not on the row's id);
 - the two category rows therefore always agree, whichever surface changed them.
 
-`MOUAIF_TOOL_GROUPS` in `frontend/src/components/ToolTree.jsx` holds the ids and the per-action child labels; the server's `GROUPS.actions` are derived from the `ACTIONS` area table, so a new action lands under its area's category with no second edit. Covered by `scripts/test-mouaif-tool.js` (server table) and `scripts/test-mouaif-tool-categories.mjs` (rendered shape and toggle identity).
+`MOUAIF_TOOL_GROUPS` in `frontend/src/components/ToolTree.jsx` holds the ids and the per-action child labels; the server's `GROUPS.actions` are derived from the `ACTIONS` area table, so a new action lands under its area's category with no second edit. Covered by `scripts/test-mouaif-tool.js` (server table), `scripts/test-mouaif-tool-categories.mjs` (rendered shape and child identity), and `scripts/test-mouaif-tool-toggle.mjs` (the resolvers, the real `toggleToolGroup` write, and both call sites resolving through the shared pair).
 
 ### One authorization control for every tool
 

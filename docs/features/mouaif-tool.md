@@ -50,6 +50,8 @@ The tool shows up as **two categories** in the tools tree (Settings → Project 
 
 The children are the same model-facing `mouaif` tool, not separate tools, so the split is about what you are looking at rather than about permissions: there is **one** `mouaif` authorization family behind both categories, and the Off / Ask / Allow segment on either category row writes that one gate. The two category rows always show the same mode, and a child checkbox is the category's `Off ↔ Ask` shortcut.
 
+Because the per-chat tool filter stores tool **names** and a child row is keyed by its action (`mouaif:list`), each child row carries the name of the tool it belongs to. Toggling any row — the category checkbox or one action — therefore writes `mouaif` to the chat, never the tree key. `groupToolNames` and `childToolName` in [frontend/src/components/ToolTree.jsx](../../frontend/src/components/ToolTree.jsx) are the single home for that resolution; the chat Tools card and the composer tools popup both call them, so the two surfaces cannot drift.
+
 The category rows are built from `GROUPS` in [src/tools/mouaif.js](../../src/tools/mouaif.js), whose `actions` list is derived from the `ACTIONS` area table — adding an action puts it under its area's category with no second edit.
 
 ### Authorization

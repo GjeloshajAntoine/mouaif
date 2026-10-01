@@ -8,6 +8,19 @@ One spec, five areas, twelve actions, **two UI categories**. `src/tools/mouaif.j
 
 `MOUAIF_TOOL_GROUPS` in `frontend/src/components/ToolTree.jsx` is the frontend copy of `GROUPS`: it carries the per-action child labels and is what `buildToolGroups` / `buildSettingsToolGroups` iterate to render one category row with its actions as children. Keep the two in sync when an area moves between categories — `scripts/test-mouaif-tool.js` asserts the server-side table covers every area and every action exactly once, and `scripts/test-mouaif-tool-categories.mjs` asserts the rendered shape (two categories, action children, every child resolving to the one `mouaif` tool).
 
+### Child row → tool name
+
+A category's children are keyed by action (`mouaif:list`, `mouaif-settings:info`) but every one of them is the single `mouaif` tool. The per-chat filter stores tool NAMES, and `toggleToolGroup` (`frontend/src/components/chat/cards.js`) resolves them through `knownToolNames(state)`, which **drops any name the catalog does not advertise**. A call site that pushed a row's own id therefore named a tool that does not exist: the wanted-set came out empty, `toggleToolGroup` re-rendered and returned, and the tap was a silent no-op — the checkbox snapped back on the next rebuild and the chat was never PATCHed.
+
+The resolution lives in one shared pair, exported from `ToolTree.jsx`:
+
+```js
+groupToolNames(group)  // a category row  -> ['mouaif']; a catalog group -> its ids
+childToolName(group, toolId)  // a category child -> 'mouaif'; a leaf -> its own id
+```
+
+Both chat surfaces call them (`cards.js` passes the result to `state._toggleTool` / `state._toggleToolGroup`, `ToolPopup.jsx` to its `onToggleTool` / `onToggleToolGroup` props), and `SettingsProject.jsx` carries `toolName` on its own inline rows. Do not re-inline the rule at a call site: the first fix did exactly that, landed in the popup and missed the card, and the card's action checkboxes were dead until `groupToolNames`/`childToolName` gave the two surfaces one home. `scripts/test-mouaif-tool-toggle.mjs` asserts both surfaces import and call the helpers, and fails if either re-inlines the logic.
+
 ```js
 const { runMouaif } = require('mouaif/src/tools/mouaif.js');
 
@@ -69,4 +82,6 @@ const out = await runMouaif(
 
 ### Tests
 
-`node scripts/test-mouaif-tool.js` (also wired into `npm test`, and `node -c`'d by `npm run lint`). 62 assertions over the spec shape, the authorization family, every action, the error codes, the attachment rules, and the settings projections. The temp project dir must live under the real user home because of `projects.ensureSafeRoot` — same convention as `scripts/test-file-editor.js`.
+`node scripts/test-mouaif-tool.js` (also wired into `npm test`, and `node -c`'d by `npm run lint`). 70 assertions over the spec shape, the authorization family, every action, the error codes, the attachment rules, and the settings projections. The temp project dir must live under the real user home because of `projects.ensureSafeRoot` — same convention as `scripts/test-file-editor.js`.
+
+`node scripts/test-mouaif-tool-toggle.mjs` covers the tree half: the two category rows, their action children, and the child row → tool name resolution (`groupToolNames` / `childToolName`) driven through the real `toggleToolGroup` write path, plus a source assertion that both chat surfaces import and call the shared helpers instead of re-inlining them. `node scripts/test-mouaif-tool-categories.mjs` covers the rendered shape.

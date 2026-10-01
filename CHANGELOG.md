@@ -23,6 +23,17 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **A `mouaif` action row now toggles the tool** — the tool's two categories
+  (`Chats`, `mouaif`) list their actions as child rows, but a child row is keyed
+  by its action (`mouaif:list`) while the per-chat tool filter stores tool
+  **names**. A tap on an action row therefore named a tool that does not exist,
+  the unknown name was dropped, and nothing was written: the checkbox snapped
+  back on the next rebuild and the chat was never saved — only the category
+  checkbox worked. Every row now resolves to the tool it belongs to, so checking
+  or unchecking any action writes `mouaif`. The resolution lives in one shared
+  pair (`groupToolNames` / `childToolName` in `ToolTree.jsx`) that the chat Tools
+  card and the composer tools popup both call; they previously each carried their
+  own copy, and only the popup got it.
 - **Tab walks the matches in the prompt, not the terminal** — a Tab puts its
   result where you are typing: the first tap completes, each further tap on the
   same line swaps in the next match and wraps (`frontend/` → `frontend/build/` →

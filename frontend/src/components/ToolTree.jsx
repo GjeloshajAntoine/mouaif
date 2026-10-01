@@ -384,6 +384,33 @@ function mouaifCategoryTools(tool, category) {
   }));
 }
 
+// groupToolNames(group) -> string[]
+//
+// The tool NAMES a group row's checkbox writes to the per-chat filter. For
+// every catalog-backed group a row's `id` IS its tool name, so the ids are the
+// answer. A category (the two `mouaif` rows) is the exception: its children are
+// parts of ONE model-facing tool, so each child carries `toolName` and the
+// tree id (`mouaif:list`) is only a key. Writing the ids there would name a
+// tool the server does not have, and `toggleToolGroup` drops unknown names —
+// the tap would look dead.
+export function groupToolNames(group) {
+  const tools = (group && group.tools) || [];
+  const named = tools.some((t) => t && t.toolName);
+  const names = tools.map((t) => (named ? t.toolName : t.id)).filter(Boolean);
+  return Array.from(new Set(names));
+}
+
+// childToolName(group, toolId) -> string
+//
+// The tool name a CHILD row's checkbox writes. A category child resolves to
+// its `toolName`; every catalog-backed leaf is its own id. Falls back to the
+// incoming id so an unknown row still round-trips instead of becoming
+// `undefined`.
+export function childToolName(group, toolId) {
+  const child = ((group && group.tools) || []).find((t) => t && t.id === toolId);
+  return (child && child.toolName) || toolId;
+}
+
 export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set()) {
   const groups = [];
   const selected = Array.isArray(filter) ? new Set(filter) : null;
