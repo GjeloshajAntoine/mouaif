@@ -78,17 +78,16 @@ export function CliModal(props) {
   // row (`null` until the listing answers: a fetch that has not happened
   // invents no chips).
   const [entries, setEntries] = useState(null);
-  // `dirEntries` — the names of the directory the user has completed *into*
-  // (`{ relDir, names }`), so Tab can keep going past the project's top level:
-  // `ls src/` fixes src as that directory and `ls src/comp` then completes from
-  // its children. One directory is enough state — completion walks forward, one
-  // step per Tab — and keeping just one bounds the fetching. `null` until a
-  // path segment has been completed into that directory.
+  // `dirEntries` — the names of the directory the current line is completing
+  // *inside* (`{ relDir, names }`), so Tab can keep going past the project's top
+  // level: `src/comp` completes from src's children.
+  //
+  // `dirsRef` caches every listing the sheet has fetched (dir → names), so
+  // returning to a directory the user visited earlier is synchronous and free.
+  // It is bounded by the folders actually opened, not by the project's size.
   const [dirEntries, setDirEntries] = useState(null);
-  // The directories already asked for, so a Tab that finds no deeper listing
-  // does not re-request the same one on every tap.
-  const fetchedDirsRef = useRef(null);
-  if (!fetchedDirsRef.current) fetchedDirsRef.current = new Set();
+  const dirsRef = useRef(null);
+  if (!dirsRef.current) dirsRef.current = new Map();
 
   // Where the field sits in the ↑/↓ walk over the session's own history: -1
   // means "not walking" (the field holds a fresh line). Reset whenever the user
@@ -436,20 +435,28 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     post(payload.seq, true);
   }
 
-  // fetchDir(relDir) — list one directory and make it the completion source.
+  // fetchDir(relDir) — make one directory the completion source, listing it if
+  // this sheet has not listed it yet.
   //
-  // Called when a completion reveals a directory (`src/`), and when the user
-  // types into one that was never listed. Each directory is fetched once per
-  // sheet; a failure simply leaves the source where it was, because a Tab with
-  // no candidates changes nothing — the same promise the suggestion row makes.
+  // Synchronous from the cache, so returning to a directory already visited
+  // works on the same tap; only the first visit costs a round-trip, and that tap
+  // is the one whose completion *reveals* the directory and so cannot use its
+  // children anyway. A failure leaves the source where it was: a Tab with no
+  // candidates changes nothing.
   const fetchDir = useCallback((relDir) => {
     const target = String(relDir == null ? '' : relDir).replace(/\/+$/, '');
-    if (!target || fetchedDirsRef.current.has(target)) return;
-    fetchedDirsRef.current.add(target);
+    if (!target) return;
+    const cached = dirsRef.current.get(target);
+    if (cached) {
+      setDirEntries((prev) => (prev && prev.relDir === target ? prev : { relDir: target, names: cached }));
+      return;
+    }
     fetchJson('/api/files?projectDir=' + encodeURIComponent(projectDir || '') + '&dir=' + encodeURIComponent(target))
       .then((r) => {
         if (r.status !== 200 || !r.body || !Array.isArray(r.body.entries)) return;
-        setDirEntries({ relDir: target, names: r.body.entries.map((e) => (e.type === 'dir' ? e.name + '/' : e.name)) });
+        const names = r.body.entries.map((e) => (e.type === 'dir' ? e.name + '/' : e.name));
+        dirsRef.current.set(target, names);
+        setDirEntries((prev) => (prev && prev.relDir === target ? prev : { relDir: target, names }));
       })
       .catch(() => {});
   }, [projectDir]);
@@ -475,6 +482,11 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     // a bug report cannot pin down afterwards.
     if (!report.changed) {
       showNotice(completionNotice(report));
+      // Nothing to complete, but the line may still *name* a directory — the
+      // user typed `frontend/` and pressed Tab. List it, so the next Tab can
+      // complete inside it and this tap is never a dead end.
+      const pending = listDirFor(current, dirEntries);
+      if (pending) fetchDir(pending);
       return;
     }
     const next = report.next;

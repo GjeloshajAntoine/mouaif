@@ -61,9 +61,10 @@ const server = http.createServer((req, res) => {
     // `type: 'dir'`.
     const dir = url.searchParams.get('dir') || '';
     if (dir === 'src') return json(res, { relDir: 'src', entries: [{ name: 'components', type: 'dir' }, { name: 'index.js', type: 'file' }] });
+    if (dir === 'frontend') return json(res, { relDir: 'frontend', entries: [{ name: 'build', type: 'dir' }, { name: 'dist', type: 'dir' }, { name: 'index.html', type: 'file' }, { name: 'vite.config.js', type: 'file' }, { name: 'vite-build.log', type: 'file' }] });
     if (dir === 'src/components') return json(res, { relDir: 'src/components', entries: [{ name: 'Chat.jsx', type: 'file' }, { name: 'cards.js', type: 'file' }] });
     if (dir) return json(res, { relDir: dir, entries: [] });
-    return json(res, { relDir: '.', entries: [{ name: 'package.json', type: 'file' }, { name: 'src', type: 'dir' }] });
+    return json(res, { relDir: '.', entries: [{ name: 'frontend', type: 'dir' }, { name: 'package.json', type: 'file' }, { name: 'src', type: 'dir' }] });
   }
   if (p.endsWith('/revision')) return json(res, { running: false, nextSeq: 1 });
   if (p.endsWith('/messages')) return json(res, { messages: [{ role: 'user', content: 'hi', seq: 0 }], nextSeq: 1, total: 1, hasMore: false, beforeSeq: 0 });
@@ -181,9 +182,34 @@ try {
   assert.equal(await value(), 'src/', 'a folder still completes with its slash');
   assert.equal(posts.length, before, 'no completion ever reaches the child');
 
-  // 5. Nested paths: Tab keeps going past the project's top level. The tap that
-  //    lands on `src/` lists src, so the next one completes inside it — the
-  //    case the one-shot top-level listing could never answer.
+  // 5. The exact case a phone user hits first: type a folder's name and press
+  //    Tab to see what is in it. `frontend/` fetched nothing before, and a word
+  //    ending in `/` was refused, so Tab was a dead end.
+  await type('frontend');
+  await tapKey('Tab');
+  assert.equal(await value(), 'frontend/', 'Tab completes a folder name to the folder');
+  await sleep(400); // the tap that lands on it lists it
+  await type('frontend/vi');
+  await tapKey('Tab');
+  assert.equal(await value(), 'frontend/vite', 'several matches extend as far as they agree');
+  await type('frontend/vite.c');
+  await tapKey('Tab');
+  assert.equal(await value(), 'frontend/vite.config.js', 'and a unique one completes inside the folder');
+  assert.equal(posts.length, before, 'no completion ever reaches the child');
+
+  // Typing the slash by hand is the same thing, not a dead end.
+  await type('frontend/');
+  await tapKey('Tab');
+  assert.equal(await value(), 'frontend/', 'a folder typed with its own slash is left as the folder');
+  assert.match(await hint(), /No further completion/, 'and it says there is nothing to add, rather than nothing at all');
+  assert.equal(posts.length, before, 'still nothing written to the child');
+
+  // 6. Nested paths: Tab keeps going past the project's top level. Naming the
+  //    folder is what lists it, so the next Tab completes inside it — the case
+  //    the one-shot top-level listing could never answer.
+  await type('src');
+  await tapKey('Tab');
+  assert.equal(await value(), 'src/', 'Tab completes the folder name to the folder');
   await sleep(400); // let src's listing land
   await type('src/comp');
   await tapKey('Tab');

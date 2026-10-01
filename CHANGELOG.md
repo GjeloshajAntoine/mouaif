@@ -23,6 +23,15 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **CLI Tab completes a folder you name** — typing `frontend/` (or `frontend`)
+  and pressing Tab was a dead end: a directory was only ever listed when a
+  completion *landed* on it, and a word already ending in `/` was refused
+  outright. Tab now lists the folder the line names on every tap (`frontend` →
+  `frontend/`, then `frontend/vite.c` → `frontend/vite.config.js`), from a
+  per-sheet cache of listings so returning to a folder is instant. Two related
+  fixes came out of the same change: a name-phase completion no longer drops the
+  command (`ls src/` used to become `src/`), and a directory fetched earlier can
+  be the source again instead of being skipped by a dedupe set.
 - **CLI Tab explains itself instead of doing nothing** — a Tab that cannot
   advance the line now says why for a moment under the key rows (`No match here
   — only this folder and the ones already opened are searched.`, `No further

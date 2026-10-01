@@ -101,6 +101,10 @@ export function completeLocally(text, history, entries, dirEntries) {
   const phase = candidatesFor(base, history, entries, dirEntries);
   if (phase.kind === 'history') return phase.items.length === 1 ? phase.items[0] : longestCommonPrefix(phase.items);
   if (phase.kind === 'path') {
+    // A whole-directory match (`src` → `src/`) rewrites the word to the
+    // directory itself; its children are what the *next* Tab completes from.
+    if (phase.whole) return base.slice(0, base.length - phase.entered.length) + phase.head;
+    if (!phase.items.length) return null;
     const add = phase.items.length === 1 ? phase.items[0] : longestCommonPrefix(phase.items);
     return phase.head + add;
   }
@@ -108,15 +112,20 @@ export function completeLocally(text, history, entries, dirEntries) {
 }
 
 // candidatesFor(text, history, entries, dirEntries) → what Tab would complete
-// from, as `{ kind, items, head }`:
+// from, as `{ kind, items, head, whole, entered }`:
 //
 //   * `history` — the session commands this line is a prefix of (`items` are
 //                 whole commands, `head` is '');
 //   * `path`    — the names matching the line's trailing word, either from the
 //                 listed directory (`src/comp`) or the project's top level
 //                 (`pac`); `items` are the names to append, `head` is the part
-//                 of the word before them (`src/`);
+//                 of the word before them (`src/`), and `whole` means the word
+//                 named a directory outright (`src` → `src/`, or `src/` already
+//                 with its listing in `items`), which completes even with no
+//                 children to match;
 //   * `none`    — nothing matched.
+//
+// `entered` is the word as typed, for a `whole` completion to rewrite.
 //
 // Split out of `completeLocally` so the modal can say *why* a Tab did nothing
 // instead of silently leaving the line alone — a key that appears to do
@@ -146,7 +155,13 @@ function candidatesFor(base, history, entries, dirEntries) {
   // things": a nested path used to have no candidate at all.
   const local = namesIn(dirEntries, word);
   if (local != null) {
-    return local.names.length ? { kind: 'path', items: local.names, head: prefix + local.head } : none;
+    // A whole-directory match needs no children to be a completion: `src/` lists
+    // the folder even before (or without) its listing, so Tab always reacts.
+    // `head` is always the *whole* word up to the names being appended, prefix
+    // included — dropping it would complete `ls src/` to `src/`.
+    if (local.whole) return { kind: 'path', items: local.names, head: local.head, whole: true, entered: word };
+    if (local.open) return { kind: 'path', items: local.names, head: prefix + word, whole: false, entered: word };
+    return local.names.length ? { kind: 'path', items: local.names, head: prefix + local.head, whole: false, entered: word } : none;
   }
 
   const needle = word.toLowerCase();
@@ -156,7 +171,7 @@ function candidatesFor(base, history, entries, dirEntries) {
     if (name.toLowerCase().indexOf(needle) !== 0) continue;
     if (!names.includes(name)) names.push(name);
   }
-  return names.length ? { kind: 'path', items: names, head: prefix } : none;
+  return names.length ? { kind: 'path', items: names, head: prefix, whole: false, entered: word } : none;
 }
 
 // completionReport(text, history, entries, dirEntries) → `{ next, changed,
@@ -180,6 +195,14 @@ export function completionReport(text, history, entries, dirEntries) {
   if (phase.kind === 'none') {
     return { next: null, changed: false, reason: base.trim() ? 'none' : 'empty', candidates: 0 };
   }
+  // A whole-directory match completes even when the listing is empty: the point
+  // is that Tab always reacts to a directory the user names.
+  if (phase.whole) {
+    const next = completeLocally(base, history, entries, dirEntries);
+    return next == null || next === base
+      ? { next, changed: false, reason: 'ambiguous', candidates: 0 }
+      : { next, changed: true, reason: 'completed', candidates: phase.items.length };
+  }
   const next = completeLocally(base, history, entries, dirEntries);
   if (next == null || next === base) {
     return { next, changed: false, reason: 'ambiguous', candidates: phase.items.length };
@@ -202,11 +225,25 @@ export function completionReport(text, history, entries, dirEntries) {
 function namesIn(dirEntries, word) {
   if (!dirEntries || typeof dirEntries.relDir !== 'string' || !Array.isArray(dirEntries.names)) return null;
   const relDir = dirEntries.relDir;
-  // A directory's own name completes with its listing; the next Tab is then
-  // about the child, which is what the fetched listing is for.
-  if (word === relDir || word === relDir + '/') return null;
+  // The directory's own name: the *whole word* is that directory, so Tab
+  // completes it to its slash (`src` → `src/`) and the word is inside it. This
+  // is the case a phone user reaches first — they type a folder's name and press
+  // Tab to see what is in it, or they type the slash themselves (`src/`) and
+  // press Tab to list it. Both mean the same thing, and both used to fail:
+  // `src/` was refused outright, and `src` only completed its slash.
+  if (word === relDir) {
+    return { head: relDir + '/', names: [], open: true, whole: true };
+  }
+  if (word === relDir + '/') {
+    return { head: word, names: dirEntries.names.slice(), open: true, whole: false };
+  }
   if (!word.startsWith(relDir + '/')) return null;
   const rest = word.slice(relDir.length + 1);
+  // A trailing slash means the word *is* that directory: Tab lists it rather
+  // than completing it, so `src/` and `src/comp` behave the way a shell does.
+  if (rest.endsWith('/')) {
+    return { head: word, names: dirEntries.names.slice(), open: false, whole: false };
+  }
   const at = rest.lastIndexOf('/');
   const typed = at === -1 ? rest : rest.slice(at + 1);
   if (!typed) return null;
@@ -218,7 +255,7 @@ function namesIn(dirEntries, word) {
     if (name.toLowerCase().indexOf(needle) !== 0) continue;
     if (!names.includes(name)) names.push(name);
   }
-  return { head, names };
+  return { head, names, open: false, whole: false };
 }
 
 // listDirFor(line, current) → the directory whose listing would complete the
@@ -243,12 +280,29 @@ export function listDirFor(line, current) {
   const text = String(line == null ? '' : line);
   const wordAt = text.search(/\S*$/);
   const word = wordAt === -1 ? '' : text.slice(wordAt);
-  const at = word.lastIndexOf('/');
+  const trimmed = word.replace(/\/+$/, '');
+  // A word that *is* a directory (`frontend/`, or `a/b/`) has no segment after
+  // its last slash to split on: the directory to list is the word itself.
+  if (trimmed && trimmed !== word) {
+    const whole = cleanPath(trimmed);
+    if (!whole) return null;
+    if (current && current.relDir === whole) return null;
+    return whole;
+  }
+  const at = trimmed.lastIndexOf('/');
   if (at <= 0) return null;
-  const dir = word.slice(0, at).replace(/\/+$/, '').replace(/^\.\//, '');
+  const dir = cleanPath(trimmed.slice(0, at));
   if (!dir) return null;
   if (current && current.relDir === dir) return null;
   return dir;
+}
+
+// cleanPath(dir) — a directory as the listing endpoint wants it: a `./` prefix
+// dropped (so a path matches a project-relative listing) and any trailing
+// separator removed. `null` when nothing is left.
+function cleanPath(dir) {
+  const clean = String(dir == null ? '' : dir).replace(/\/+$/, '').replace(/^\.\/+/, '');
+  return clean || null;
 }
 
 // relativeDir(ref, name) — the two halves of a listing request's path. Kept
