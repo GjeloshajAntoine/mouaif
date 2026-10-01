@@ -18,7 +18,7 @@ Open the composer's File button and choose **Cli**. The header shows the shell l
 
 ### Suggestions
 
-Above the prompt, a row of chips offers what you are most likely to type next: the commands this session has already sent to the shell, newest first, and the project's own top-level files and folders. Tap a chip to put it in the prompt — **Enter still runs it**, so a suggestion is exactly as reversible as something you typed yourself.
+Above the prompt, a horizontally scrollable row of chips offers what you are most likely to type next: the commands this session has already sent to the shell, newest first, and the project's own top-level files and folders. The row stays one line tall so it leaves room for the output when the keyboard is open. Tap a chip to put it in the prompt — **Enter still runs it**, so a suggestion is exactly as reversible as something you typed yourself.
 
 - The row filters as you type: `npm r` offers `npm run …`, `src` offers `src/`, and a chip equal to what you have already typed is dropped rather than offered as a no-op.
 - Folder chips carry a trailing slash (`src/`), file chips do not (`package.json`).
@@ -89,9 +89,12 @@ Every control the sheet needs is on it, at the 44 × 44 px touch floor — nothi
 | **Run** | end of the prompt row | sends the line, exactly like **Enter** |
 | **Stop** | header | kills the shell (and anything running in it) |
 | **Close** | header | hides the sheet; a live shell keeps running |
-| **Restart** | header + terminal footer | starts a fresh shell, shown only after the old one exited |
+| **Restart** | header + terminal footer | starts a fresh shell after the old one exits or is no longer reachable |
+| **Retry** | startup error | tries opening the shell again without closing the modal |
 
-Tapping **Run**, a key, or a suggestion chip does not dismiss the soft keyboard, so you can keep typing straight afterwards. The prompt stays focused, and a write that fails is reported on the terminal screen rather than by disabling the field.
+**Run** has a visible text label beside its icon. The modal follows the phone's visible viewport when the soft keyboard opens or pans, keeping the prompt and buttons above it. The command field uses a 16 px font to prevent iOS focus zoom.
+
+Tapping **Run**, a key, or a suggestion chip does not dismiss the soft keyboard, so you can keep typing straight afterwards. The prompt stays focused, and a write that fails is reported on the terminal screen rather than by disabling the field. If the session disappeared (for example, after a server restart), the modal offers **Restart** even if it missed the shell's exit event.
 
 ## Tests
 
@@ -100,6 +103,7 @@ npm run test:cli
 ```
 
 - `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key row, and Tab/↑/↓ (the key table's sequences, that the readline keys write nothing to the child while ^C/Esc/^D do, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator. It also source-guards the mobile controls: the Run button exists and keeps the keyboard open, the header close button keeps the class that sizes it to the tap floor, and an exited shell swaps the prompt row for Restart.
+- `scripts/test-cli-modal.mjs` — drives the real component through output received during startup, visible Run and Enter writes, keyboard viewport changes, missing/dead sessions, early exits, Restart, and startup Retry.
 - `scripts/test-cli-session-newline.js` — drives the real endpoints and asserts a plain `ls` lists the project files (the terminator rule).
 - `scripts/test-cli-strip-ansi.js` — unit-tests `stripAnsi` / `CliScreen`, including every escape-sequence family split at every pair of positions and fed one code point at a time.
 - `scripts/test-cli-utf8-split.js` — feeds `attachCliStream` UTF-8 split at every byte boundary, on the PTY and piped paths, and asserts no `�` reaches the broadcast.

@@ -1303,6 +1303,14 @@ color: var(--muted);
 }
 
 
+/* Keep the prompt and Run above the soft keyboard, including viewport pan. */
+.cli__overlay {
+  top: var(--cli-viewport-top, 0px);
+  bottom: auto;
+  height: var(--cli-viewport-height, 100%);
+}
+.cli__sheet { min-width: 0; }
+
 .cli__head {
   flex: 0 0 auto;
   display: flex;
@@ -1357,11 +1365,12 @@ color: var(--muted);
    to send. Sits at the prompt row's end, at the tap floor. */
 .cli__run {
   flex: 0 0 auto;
-  width: var(--tap);
+  gap: 0.25rem;
   min-width: var(--tap);
   height: var(--tap);
   min-height: var(--tap);
-  padding: 0;
+  padding: 0 0.625rem;
+  font: inherit;
   color: #0b0e14;
   background: #4fc1ff;
   border: 1px solid #4fc1ff;
@@ -1461,10 +1470,11 @@ color: var(--muted);
 .cli__prompt {
   flex: 1 1 auto;
   min-width: 0;
-  height: 34px;
+  height: var(--tap);
   padding: 4px 10px;
   font: inherit;
-  font-size: 0.82rem;
+  /* 16px prevents iOS focus zoom from moving the action off screen. */
+  font-size: 1rem;
   color: #d7e0ee;
   background: #11151d;
   border: 1px solid #222a38;
@@ -1479,8 +1489,8 @@ color: var(--muted);
    Both rows sit between the output and the prompt (suggestions) and under
    the prompt (keys), because that is where a thumb already is: the sheet is
    full-bleed on a phone and the output above is read-only. Neither row
-   scrolls the page — the chips wrap, and the keys are six 44 px targets
-   that fit a 360 px column.
+  scrolls the page — the chips scroll sideways, and the keys are six 44 px
+  targets that fit a 360 px column.
 
    Colours are literals, like the rest of the terminal surface (`#0b0e14`,
    `#d7e0ee`, `#4fc1ff` above): this block paints inside the terminal, whose
@@ -1489,18 +1499,20 @@ color: var(--muted);
 .cli__suggest {
   flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
+  overflow-x: auto;
   gap: 6px;
   padding: 7px 12px 0;
   background: #0b0e14;
 }
 .cli__suggest-chip {
+  flex: 0 0 auto;
   font: inherit;
   font-family: var(--font-mono, monospace);
   font-size: 0.72rem;
   line-height: 1.2;
   max-width: 100%;
-  min-height: 32px;               /* --tap-sm: a chip, not a primary action */
+  min-height: var(--tap);
+  min-width: var(--tap);
   padding: 4px 10px;
   color: #d7e0ee;
   background: #11151d;
@@ -1601,7 +1613,7 @@ color: var(--muted);
   text-align: center;
 }
 .cli__error p { margin: 0; }
-.cli__error .btn { min-height: 36px; font-size: 0.78rem; }
+.cli__error .btn { min-height: var(--tap); min-width: var(--tap); font-size: 0.78rem; }
 
 /* ---- Git modal ----------------------------------------------------- */
 

@@ -8,8 +8,8 @@
 // persistent child process (cmd.exe on Windows, the user's $SHELL on
 // POSIX).
 //
-// The session starts on mount, closes when the modal unmounts or the
-// user taps the close button. The screen shows a live terminal readout
+// The session starts on mount; closing the modal only detaches, leaving
+// the shell running in the background. The screen shows a live terminal readout
 // with the shell label + project dir in the header.
 //
 // On a phone this modal is the app's one *terminal*, and a phone keyboard has
@@ -43,9 +43,19 @@ import { useModal } from '../../hooks/useModal.js';
 import { CLI_KEYS, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
 import { rememberCommand, suggestionsFor, completeLocally, stepHistory } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
+import { useVisualViewport } from '../../hooks/useVisualViewport.js';
 
 export function CliModal(props) {
   const { projectDir, onClose } = props;
+  const overlayRef = useRef(null);
+  const syncViewport = useCallback((viewport) => {
+    const el = overlayRef.current;
+    if (!el) return;
+    // Fixed overlays otherwise extend behind the phone's soft keyboard.
+    el.style.setProperty('--cli-viewport-top', viewport.offsetTop + 'px');
+    el.style.setProperty('--cli-viewport-height', viewport.height + 'px');
+  }, []);
+  useVisualViewport(syncViewport);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -176,7 +186,7 @@ const prevTop = el.scrollTop;
 el.textContent = outBuffer;
 el.scrollTop = prevTop;
 }
-}, [outBuffer]);
+}, [outBuffer, loading, error]);
 // Track whether the user has scrolled away from the bottom. Wire this via a
 // callback ref so it attaches as soon as the <pre> mounts (the modal renders
 // the terminal only after the session loads, so a mount-time effect sees a
@@ -251,14 +261,22 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
         deliver(data);
         });
         // Replay the retained backlog (empty for a fresh session).
+        let rr;
         try {
-        const rr = await fetchJson('/api/tools/cli/output?id=' + encodeURIComponent(r.body.id) + '&since=0');
+        rr = await fetchJson('/api/tools/cli/output?id=' + encodeURIComponent(r.body.id) + '&since=0');
         if (cancelled) return;
         if (rr.status === 200 && rr.body && Array.isArray(rr.body.chunks)) {
         if (rr.body.dropped) writeOut('\u2026 earlier output dropped \u2026\r\n');
         for (const c of rr.body.chunks) deliver({ data: c.data, stream: c.stream, seq: c.seq });
         }
         } catch { /* replay is best-effort; live frames still flow */ }
+        if (cancelled) return;
+        // A shell can end between session creation and replay, or its exit
+        // frame can be missed while the connection is down.
+        if (rr && (rr.status === 404 || (rr.status === 200 && rr.body && rr.body.running === false))) {
+        setOwnerBoth(null);
+        setExited(true);
+        }
         replayed = true;
         for (const d of pending.splice(0)) deliver(d);
         setLoading(false);
@@ -345,15 +363,19 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectDir, cmd: text, raw: !!raw })
     }).then((r) => {
-      if (r.status !== 200) {
-        writeOut('\n' + ((r.body && r.body.error) || ('HTTP ' + r.status)) + '\n');
+    if (r.status !== 200) {
+      writeOut('\n' + ((r.body && r.body.error) || ('HTTP ' + r.status)) + '\n');
+      if (r.status === 404 || r.status === 410) {
+      setOwnerBoth(null);
+      setExited(true);
       }
+    }
     }).catch((err) => {
-      writeOut('\nerror: ' + String(err) + '\n');
+    writeOut('\nerror: ' + String(err) + '\n');
     });
     queueRef.current = queueRef.current.then(run, run);
     return queueRef.current;
-  }, [projectDir, writeOut]);
+  }, [projectDir, writeOut, setOwnerBoth]);
 
   // sendKey(key) — one on-screen key from the row below the prompt (see
   // keyPayload in cliKeys.js). Every key is a raw write: a terminator after
@@ -456,7 +478,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     entries
   }), [cmdText, history, entries]);
 
-  return h('div', { class: 'cli__overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Command prompt' },
+  return h('div', { class: 'cli__overlay', ref: overlayRef, role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Command prompt' },
     h('div', { class: 'cli__sheet', ref: sheetRef },
       h('div', { class: 'cli__head' },
         h('div', { class: 'cli__title-stack' },
@@ -497,7 +519,8 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
           ? h('div', { class: 'cli__empty' }, 'Starting command prompt\u2026')
           : error
             ? h('div', { class: 'cli__error' },
-                h('p', null, error),
+                h('p', { role: 'alert' }, error),
+                h('button', { class: 'btn btn--primary cli__restart', type: 'button', onClick: restart }, 'Retry'),
                 h('button', { class: 'btn', type: 'button', onClick: onClose }, 'Close')
               )
             : h('div', { class: 'cli__terminal' },
@@ -586,7 +609,8 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     },
                     h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
                     h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
-                    )
+                    ),
+                    'Run'
                     )
                     ),
                 // The key row: the keys a phone keyboard does not have (see
