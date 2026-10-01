@@ -562,6 +562,52 @@ function renderGenericToolResult(body, r, args) {
   renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
 }
 
+// renderMouaifToolResult(body, r)
+//
+// `mouaif` results are heterogeneous (a chat list, a settings object, an
+// attachment ack). One shape is worth its own rendering: a chat list is
+// what the user asks for most, and the raw JSON of 20 chats is unreadable
+// on a phone. Everything else falls through to the generic JSON preview.
+function renderMouaifToolResult(body, r) {
+  if (typeof r === 'string') r = coerceToolResult(r, 'mouaif');
+  if (r && Array.isArray(r.chats)) {
+    body.classList.add('tool-preview', 'tool-preview--mouaif');
+    if (!r.chats.length) {
+      const empty = document.createElement('div');
+      empty.className = 'tool-preview__note';
+      empty.textContent = 'No matching chats.';
+      body.appendChild(empty);
+      return;
+    }
+    const list = document.createElement('ul');
+    list.className = 'tool-preview__chats';
+    for (const c of r.chats) {
+      if (!c || typeof c !== 'object') continue;
+      const row = document.createElement('li');
+      row.className = 'tool-preview__chat';
+      const title = document.createElement('span');
+      title.className = 'tool-preview__chat-title';
+      title.textContent = String(c.title || c.id || 'chat');
+      const meta = document.createElement('span');
+      meta.className = 'tool-preview__chat-meta';
+      meta.textContent = [c.modelId || 'no model', c.draftSnippet || null]
+        .filter(Boolean).join(' \u00b7 ');
+      row.appendChild(title);
+      row.appendChild(meta);
+      list.appendChild(row);
+    }
+    body.appendChild(list);
+    const total = Number.isFinite(r.total) ? r.total : null;
+    const note = document.createElement('div');
+    note.className = 'tool-preview__note';
+    note.textContent = (r.returned != null ? r.returned + ' shown' : '')
+      + (total != null ? ' of ' + total + ' chats' : '');
+    body.appendChild(note);
+    return;
+  }
+  renderGenericToolResult(body, r);
+}
+
 // renderTaskToolResult(body, r)
 //
 // Renders a task card with title, description, and progress bar.
@@ -704,6 +750,7 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   if (name === 'write_file') return renderWriteFileToolResult(body, r, args);
   if (name === 'task') return renderTaskToolResult(body, r);
   if (name === 'webpreview') return renderWebpreviewToolResult(body, r, args);
+  if (name === 'mouaif') return renderMouaifToolResult(body, r);
   if (isSubagentFn(toolResult && toolResult.name)) {
     // The full chat is rendered by renderSubagentChat in
     // transcript.js, which is called by the caller right after

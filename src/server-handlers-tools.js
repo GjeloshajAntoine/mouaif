@@ -399,6 +399,7 @@ pushNativeTool(tools, { load: './tools/ask.js', name: 'ask_user', source: 'ask_u
 pushNativeTool(tools, { load: './tools/task.js', name: 'task', source: 'task', fallback: 'Create, update, track progress on, and list structured tasks with subtasks.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', source: 'webpreview', fallback: 'Open a web URL in the debug Chrome and return a small screenshot of the page.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/restart.js', name: 'restart_app', source: 'restart', fallback: 'Gracefully restart mouaif from the current chat.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/mouaif.js', name: 'mouaif', source: 'mouaif', fallback: 'Manage mouaif chats, attachments, settings, and projects.', spec: (m) => m.SPEC && m.SPEC.function });
 try {
 
       const ft = require('./tools/files.js');

@@ -33,6 +33,7 @@ const NATIVE_TOOL_CHOICES = [
   { value: 'task', label: 'task' },
 { value: 'webpreview', label: 'webpreview' },
 { value: 'restart_app', label: 'restart_app' },
+  { value: 'mouaif', label: 'mouaif' },
 { value: 'report_progress', label: 'report_progress' },
 
   { value: 'ask_user', label: 'ask_user' },

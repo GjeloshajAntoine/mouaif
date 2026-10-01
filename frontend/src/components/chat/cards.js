@@ -128,6 +128,7 @@ head.appendChild(scoped);
     report_progress: 'report_progress',
     webpreview: 'webpreview',
     restart_app: 'restart_app',
+    mouaif: 'mouaif',
     files: 'file'
   };
   for (const g of groups) {

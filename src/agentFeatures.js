@@ -91,6 +91,13 @@ function buildFeatureSummary(opts) {
       feat.push('[file tools](off|ask|allow) → ' + s.mode + (s.mode === 'allowlist' ? ' (' + (Array.isArray(s.allowlist) ? s.allowlist.length : 0) + ' patterns)' : ''));
     }
   }
+  // mouaif app tool (chats, attachments, app/project settings, projects)
+  if (authz && authz.tools && authz.tools.mouaif) {
+    const s = authz.tools.mouaif;
+    if (s.mode !== 'off') {
+      feat.push('[mouaif tool](off|ask|allow) → ' + s.mode + ' — manage chats, attachments, settings, and projects from chat');
+    }
+  }
 
   // app restart
 if (authz && authz.tools && authz.tools.restart_app) {
@@ -194,7 +201,7 @@ async function dispatchListFeatures(args, opts) {
     const authState = authz.getAuthorization(projectDir);
     const tools = (authState && authState.tools) || {};
     state.tools = {};
-    for (const name of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
+    for (const name of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'mouaif']) {
       const cfg = tools[name] || { mode: 'ask' };
       state.tools[name] = {
         mode: cfg.mode || 'ask',

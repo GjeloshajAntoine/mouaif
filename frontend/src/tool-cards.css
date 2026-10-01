@@ -1038,3 +1038,44 @@ padding-right: 10px;
   cursor: pointer;
 }
 .image-lightbox__close:active { background: var(--surface-3); }
+
+/* ---- mouaif tool preview ------------------------------------------ */
+/* A chat list from the `mouaif` tool. Each row is one line so 20 chats
+   stay scannable on a 360 px phone — the title clipped, the meta muted. */
+.tool-preview__chats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tool-preview__chat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+.tool-preview__chat-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.tool-preview__chat-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-2);
+  text-align: right;
+}

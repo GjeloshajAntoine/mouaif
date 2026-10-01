@@ -497,6 +497,11 @@ async function streamChat(opts) {
 catch { /* task tool module unavailable; skip */ }
 try { toolSpecs.push(require('./tools/restart.js').SPEC); }
 catch { /* restart tool module unavailable; skip */ }
+// Native mouaif tool: one tool for the app's own data model — chats,
+// attachments, app/project settings, and the project list. Gated by the
+// project-level `mouaif` authorization mode.
+try { toolSpecs.push(require('./tools/mouaif.js').SPEC); }
+catch { /* mouaif tool module unavailable; skip */ }
 try {
 const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir, opts && opts.chat);
 
@@ -538,7 +543,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     if (opts && opts.projectDir) {
       const authz = require('./tools/authorization.js');
       const authState = authz.getAuthorization(opts.projectDir, opts && opts.chatId);
-      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
+      for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'mouaif']) {
       const cfg = authState.tools[family];
       if (cfg && cfg.mode === 'off') {
       const hidden = family === 'file' ? authz.FILE_FAMILY_TOOLS : new Set([family]);
@@ -1417,6 +1422,19 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       } catch (e) {
         return { ok: false, content: JSON.stringify({ error: e.message, code: e.code || 'ENO_SKILL' }), result: { error: e.message, code: e.code || 'ENO_SKILL' } };
       }
+    }
+
+    // Native mouaif tool: chats, attachments, settings, projects. It is a
+    // thin router over the same internal modules the REST handlers use, so
+    // the shape returned here is the tool's own `{ ok, content, result }`.
+    if (name === 'mouaif') {
+      let mod;
+      try { mod = require('./tools/mouaif.js'); }
+      catch (e) {
+        const r = { error: { code: 'EMODULE', message: 'mouaif tool module unavailable: ' + (e.message || e) } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      return await mod.runMouaif(args, callOpts || {});
     }
 
     // Native task tool. Manages structured tasks with subtasks, progress

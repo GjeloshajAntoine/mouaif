@@ -507,7 +507,7 @@ if (fileToolsEnabled) {
       try {
         const authz = require('./tools/authorization.js');
         const authState = authz.getAuthorization(dir, id);
-        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app']) {
+        for (const family of ['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', 'mouaif']) {
         const cfg = authState.tools[family];
         if (cfg && cfg.mode === 'off') {
         const hidden = family === 'file' ? authz.FILE_FAMILY_TOOLS : new Set([family]);

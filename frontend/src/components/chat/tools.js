@@ -174,6 +174,25 @@ export function isSubagentTool(name) {
 // One-line human summary of the args, shown in the tool card header.
 // Strings pass through. Objects go through per-tool formatters and
 // fall back to JSON.stringify for unknown shapes.
+// mouaifArgSummary(args) -> string
+//
+// One-line summary for a `mouaif` tool call. The action is always the
+// interesting part; the chat id (a bare hex id) is noise on the collapsed
+// row, so only the action plus the human-meaningful target is shown.
+export function mouaifArgSummary(args) {
+  const a = args || {};
+  const action = String(a.action || '');
+  if (!action) return '';
+  if (action === 'search') return action + ': ' + String(a.query || '');
+  if (action === 'create') return action + (a.title ? ': ' + a.title : '');
+  if (action === 'update') return action + (a.chatId ? ': ' + a.chatId : '');
+  if (action === 'attach') return action + ': ' + String(a.path || '') + (a.target === 'message' ? ' (message)' : ' (draft)');
+  if (action === 'settings_get' || action === 'settings_update') {
+    return action + ': ' + String(a.scope || (action === 'settings_get' ? 'app' : 'project'));
+  }
+  return action + (a.chatId ? ': ' + a.chatId : '');
+}
+
 export function formatToolArgs(args, toolName) {
   if (args == null) return '';
   if (typeof args === 'string') return args;
@@ -198,6 +217,7 @@ export function formatToolArgs(args, toolName) {
   if (name === 'report_progress') return args.title || '';
 if (name === 'webpreview') return args.url || '';
 if (name === 'restart_app') return args.reason || '';
+if (name === 'mouaif') return mouaifArgSummary(args);
 try { return JSON.stringify(args, null, 2); }
 
   catch { return String(args); }
@@ -231,6 +251,7 @@ export function formatToolArgsFull(args, toolName) {
   if (name === 'task') return String(args.action || '') + (args.title ? ': ' + args.title : '');
   if (name === 'webpreview') return String(args.url || '');
   if (name === 'restart_app') return String(args.reason || '');
+  if (name === 'mouaif') return mouaifArgSummary(args);
   try { return JSON.stringify(args, null, 2); } catch { return String(args); }
 }
 

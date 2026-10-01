@@ -80,6 +80,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [taskAuth, setTaskAuth] = useState({ mode: 'ask', allowlist: [] });
 const [webpreviewAuth, setWebpreviewAuth] = useState({ mode: 'ask', allowlist: [] });
 const [restartAuth, setRestartAuth] = useState({ mode: 'ask', allowlist: [] });
+const [mouaifAuth, setMouaifAuth] = useState({ mode: 'ask', allowlist: [] });
 const [askUserMode, setAskUserMode] = useState('ask');
 
   const [shellStatusMsg, setShellStatusMsg] = useState('');
@@ -89,6 +90,7 @@ const [askUserMode, setAskUserMode] = useState('ask');
   const [taskStatusMsg, setTaskStatusMsg] = useState('');
 const [webpreviewStatusMsg, setWebpreviewStatusMsg] = useState('');
 const [restartStatusMsg, setRestartStatusMsg] = useState('');
+const [mouaifStatusMsg, setMouaifStatusMsg] = useState('');
 const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
 const [toolsCatalog, setToolsCatalog] = useState([]);
 // Web preview page state — the dedicated "Web preview" sub-page captures
@@ -257,6 +259,11 @@ const restart = authz.status === 200 && authz.body.tools && authz.body.tools.res
 setRestartAuth({
 mode: (restart && restart.mode) || 'ask',
 allowlist: restart && Array.isArray(restart.allowlist) ? restart.allowlist : []
+});
+const mouaifTool = authz.status === 200 && authz.body.tools && authz.body.tools.mouaif;
+setMouaifAuth({
+mode: (mouaifTool && mouaifTool.mode) || 'ask',
+allowlist: mouaifTool && Array.isArray(mouaifTool.allowlist) ? mouaifTool.allowlist : []
 });
 const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
 
@@ -478,6 +485,7 @@ setSkillsOn(cp.skills !== false);
   function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskAuth, setTaskStatusMsg, newMode); }
 function pickWebpreviewMode(newMode) { pickToolMode('webpreview', webpreviewAuth, setWebpreviewAuth, setWebpreviewStatusMsg, newMode); }
 function pickRestartMode(newMode) { pickToolMode('restart_app', restartAuth, setRestartAuth, setRestartStatusMsg, newMode); }
+function pickMouaifMode(newMode) { pickToolMode('mouaif', mouaifAuth, setMouaifAuth, setMouaifStatusMsg, newMode); }
 
 // ---- Web preview page handlers ----------------------------------------
 // The webpreview capture endpoint is scoped to a chat (authorization and
@@ -853,6 +861,26 @@ tools: [leaf(restartTool, { checked: isOn(restartAuth.mode) })],
 extra: restartStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, restartStatusMsg) : null
 });
 }
+// The mouaif tool owns chats, attachments, settings, and the project list
+// — the app's own data model, which is why it ships its own row rather
+// than folding into another family.
+const mouaifTool = catalog.find((t) => t.name === 'mouaif');
+if (mouaifTool) {
+groups.push({
+id: 'mouaif',
+name: 'mouaif app',
+description: shortDesc(mouaifTool.description),
+title: mouaifTool.description || '',
+checked: isOn(mouaifAuth.mode),
+control: toolModeSegs('mouaif app', segMode(mouaifAuth.mode), pickMouaifMode, [
+{ value: 'off', label: 'Off' },
+{ value: 'ask', label: 'Ask' },
+{ value: 'allow', label: 'Allow' }
+]),
+tools: [leaf(mouaifTool, { checked: isOn(mouaifAuth.mode) })],
+extra: mouaifStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mouaifStatusMsg) : null
+});
+}
 const askTool = catalog.find((t) => t.name === 'ask_user');
 if (askTool) {
 
@@ -990,6 +1018,7 @@ if (askTool) {
     else if (groupId === 'task') pickTaskMode(mode);
     else if (groupId === 'webpreview') pickWebpreviewMode(mode);
 else if (groupId === 'restart_app') pickRestartMode(mode);
+else if (groupId === 'mouaif') pickMouaifMode(mode);
 else if (groupId === 'report_progress') pickProgressMode(mode);
 
     else if (groupId === 'ask_user') pickAskUserMode(mode);
