@@ -4,6 +4,11 @@
 
 ## Implementation notes
 
+- Regression tests isolate `MOUAIF_HOME` before loading any settings module.
+  `scripts/test-search-engine.js` exercises redaction on both search backends;
+  `scripts/test-hide-file-content.js` runs the real HTTP handlers on an
+  ephemeral port and the file tools against the same isolated store. Neither
+  needs to restart the host-managed server or open the user's app store.
 - New module: [src/hideFileContent.js](../../../src/hideFileContent.js) — loads, normalizes, and queries the rules. Every read is best-effort: a missing project, malformed rule, or unreadable settings store makes the tools behave as if no redaction were configured.
 - [src/tools/files.js](../../../src/tools/files.js) — `runReadFile` redacts the body via `redactText` (which honors both `ranges` and `chars`); `runSearchFiles` skips a match whose column range overlaps a hidden character span, via `matchIsHidden`.
 - REST surface: `GET /api/settings/hide-file-content?projectDir=<abs>` returns the normalized rules; `PUT /api/settings/hide-file-content` with `{ projectDir, rules }` stores them. Both live in [src/server-handlers-settings.js](../../../src/server-handlers-settings.js). The persisted shape accepts both `ranges` and `chars` per entry.

@@ -10,6 +10,7 @@
 //
 // In-process only: no server, no user settings, every project lives in a
 // fresh tmpdir.
+require('./lib/test-home.js').isolate('mouaif-search-home-');
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

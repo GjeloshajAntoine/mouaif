@@ -2,7 +2,7 @@
 
 // End-to-end smoke test for the "Hide file content" (redaction) feature.
 //
-// Spawns the mouaif server on a free port, then:
+// Runs the real serve handlers on an ephemeral port with an isolated store:
 //   1. PUT /api/settings/hide-file-content stores a rule for a project file.
 //   2. GET /api/settings/hide-file-content returns the normalized rule.
 //   3. The agent file tools redact the hidden lines (read_file) and skip
@@ -14,9 +14,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const http = require('http');
-const { spawn } = require('child_process');
 
-const mouaifHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-hide-home-'));
+const mouaifHome = require('./lib/test-home.js').isolate('mouaif-hide-home-');
+process.env.MOUAIF_ALLOW_ANY_ROOT = '1';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-hide-proj-'));
 fs.mkdirSync(path.join(root, 'src'), { recursive: true });
 fs.writeFileSync(path.join(root, 'src', 'secrets.js'),
@@ -50,38 +50,10 @@ function request(method, p, body) {
   });
 }
 
-async function waitForServer() {
-  for (let i = 0; i < 60; i++) {
-    try {
-      const r = await request('GET', '/');
-      if (r.status === 200 || r.status === 302) return true;
-    } catch {}
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  return false;
-}
-
-function pickFreePort() {
-  return new Promise((resolve) => {
-    const srv = http.createServer();
-    srv.listen(0, '127.0.0.1', () => {
-      const p = srv.address().port;
-      srv.close(() => resolve(p));
-    });
-  });
-}
-
 async function run() {
-  port = await pickFreePort();
-  const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'mouaif.js'), 'serve', '--port', String(port), '--host', '127.0.0.1'], {
-    env: Object.assign({}, process.env, {
-      MOUAIF_HOME: mouaifHome,
-      MOUAIF_ALLOW_ANY_ROOT: '1'
-    }),
-    stdio: ['ignore', 'ignore', 'ignore']
-  });
-  const up = await waitForServer();
-  if (!up) { console.error('server failed to start'); child.kill(); process.exit(1); }
+  const server = require('../src/index.js').createServer(0);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  port = server.address().port;
 
   try {
     // 1. GET with no rules -> empty list
@@ -118,7 +90,6 @@ async function run() {
     // In-process runner reads from the same settings store the server wrote.
     // The server and this test share MOUAIF_HOME, so the project settings
     // row/file is visible to both.
-    const settings = require('../src/settings.js');
     const files = require('../src/tools/files.js');
     const r = await files.runFileTool('read_file', { projectDir: root, args: { path: 'src/secrets.js' } });
     t('read_file redacted ', r.result.redacted === true, JSON.stringify(r.result));
@@ -131,7 +102,10 @@ async function run() {
     console.log('---');
     console.log('hide file content: ' + pass + ' passed, ' + fail + ' failed');
   } finally {
-    child.kill();
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(path.dirname(mouaifHome), { recursive: true, force: true });
   }
   if (fail) process.exit(1);
 }
