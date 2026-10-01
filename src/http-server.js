@@ -334,14 +334,14 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   // /shell composer command). Model-initiated calls run inside the
   // AI client's tool loop and do not hit this endpoint.
   if (urlPath === '/api/tools/shell' || urlPath.startsWith('/api/tools/')) {
-    return handleTools(req, res, parsed);
+    return handleTools(req, res, parsed, sessionToken);
   }
 
   // MCP (Model Context Protocol) — per-project server registry +
   // lifecycle + tool dispatch. Routes are mounted in handleMcp below.
   if (urlPath === '/api/mcp' || urlPath.startsWith('/api/mcp/')) {
     if (/^\/api\/mcp\/servers\/[^/]+\/oauth(?:\/start)?$/.test(urlPath)) return handleMcpOAuth(req, res, parsed, serverConfig);
-    return handleMcp(req, res, parsed);
+    return handleMcp(req, res, parsed, sessionToken);
   }
 
   // Server lifecycle — graceful restart. Stops MCP children, closes the

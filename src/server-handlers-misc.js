@@ -21,6 +21,8 @@ inspectorProfiles,
 safeDecode
 } = require('./server-shared.js');
 const { requestRestart } = require('./restart.js');
+const push = require('./push.js');
+const { notifyAttention } = require('./attention-push.js');
 
 
 // ---- MCP API ------------------------------------------------------------
@@ -64,7 +66,7 @@ function readMcpProjectDir(q, body) {
   return fromQuery || fromBody || '';
 }
 
-async function handleMcp(req, res, parsed) {
+async function handleMcp(req, res, parsed, sessionToken = '') {
   const urlPath = parsed.pathname;
   const method = req.method;
   const q = parsed.query || {};
@@ -285,10 +287,12 @@ async function handleMcp(req, res, parsed) {
         flow: 'retry'
       });
       if (authorization.decision === 'prompt') {
-        return sendJSON(res, 409, {
-          ok: false,
-          code: 'EAUTH_REQUIRED',
-          projectDir: dir,
+      notifyAttention({ sessionId: push.sessionIdFromToken(sessionToken), projectDir: dir, chatId: body.chatId,
+      name: 'authorization_required', data: { callId: body.callId, tool } });
+      return sendJSON(res, 409, {
+      ok: false,
+      code: 'EAUTH_REQUIRED',
+      projectDir: dir,
           chatId: body.chatId,
           callId: body.callId,
           tool,

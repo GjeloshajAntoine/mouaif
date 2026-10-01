@@ -16,8 +16,10 @@ const {
   mcp,
   shellTool,
   ai,
+  push,
   broadcast
 } = require('./server-shared.js');
+const { notifyAttention } = require('./attention-push.js');
 
 // ---- Interactive CLI session ------------------------------------------------
 //
@@ -360,7 +362,7 @@ function pushNativeTool(tools, opts) {
   } catch { /* module unavailable; omit */ }
 }
 
-async function handleTools(req, res, parsed) {
+async function handleTools(req, res, parsed, sessionToken = '') {
   const urlPath = parsed.pathname;
   const method = req.method;
   const q = parsed.query || {};
@@ -468,12 +470,14 @@ try {
       return sendJSON(res, status, { ok: false, error: e.message, code: e.code || 'EAUTH' });
     }
     if (authorization.decision === 'prompt') {
-      return sendJSON(res, 409, {
-        ok: false,
-        code: 'EAUTH_REQUIRED',
-        chatId,
-        callId,
-        tool: 'shell',
+    notifyAttention({ sessionId: push.sessionIdFromToken(sessionToken), projectDir, chatId,
+      name: 'authorization_required', data: { callId, tool: 'shell' } });
+    return sendJSON(res, 409, {
+      ok: false,
+      code: 'EAUTH_REQUIRED',
+      chatId,
+      callId,
+      tool: 'shell',
         cmd,
         timeoutMs: authorization.timeoutMs,
         projectDir
@@ -655,12 +659,14 @@ try {
       return sendJSON(res, status, { ok: false, error: e.message, code: e.code || 'EAUTH' });
     }
     if (authorization.decision === 'prompt') {
-      return sendJSON(res, 409, {
-        ok: false,
-        code: 'EAUTH_REQUIRED',
-        chatId,
-        callId,
-        tool: 'webpreview',
+    notifyAttention({ sessionId: push.sessionIdFromToken(sessionToken), projectDir, chatId,
+      name: 'authorization_required', data: { callId, tool: 'webpreview' } });
+    return sendJSON(res, 409, {
+      ok: false,
+      code: 'EAUTH_REQUIRED',
+      chatId,
+      callId,
+      tool: 'webpreview',
         url,
         projectDir
       });
@@ -746,6 +752,7 @@ try {
             model
           },
           onEvent: (name, data) => {
+          notifyAttention({ sessionId: push.sessionIdFromToken(sessionToken), projectDir, chatId, name, data });
           events.push({ name, data });
           if (streaming) {
           try { res.write(JSON.stringify({ type: 'event', name, data }) + '\n'); }

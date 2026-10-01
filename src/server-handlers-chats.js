@@ -33,6 +33,7 @@ liveChat,
 safeDecode
 } = require('./server-shared.js');
 const { resolveNotificationPrefs } = require('./notifications.js');
+const { notifyAttention } = require('./attention-push.js');
 
 
 // resolveNotificationPrefs(saved) now lives in src/notifications.js so the
@@ -1170,23 +1171,6 @@ function accumulateRoundUsage(roundUsage) {
     });
   }
 
-  function attentionActions(kind, data) {
-    const actions = [];
-    if (notificationPrefs.quickActions !== false) {
-      if (kind === 'tool_authorization') {
-        actions.push({ action: 'allow-once', title: 'Allow once' });
-        actions.push({ action: 'deny', title: 'Deny' });
-      } else if (kind === 'ask_user' && data && data.multiSelect !== true && Array.isArray(data.options) && data.options.length === 2) {
-        for (let i = 0; i < data.options.length; i++) {
-          const option = data.options[i] || {};
-          if (option.label && option.value) actions.push({ action: 'answer-' + i, title: String(option.label).slice(0, 40) });
-        }
-      }
-    }
-    if (!actions.length) actions.push({ action: 'open', title: 'Open chat' });
-    return actions;
-  }
-
 // formatStreamError(err) — one-line, user-facing summary of a
   // failed turn. Persisted as a system message and shown as the
   // chat's error bubble, so keep it short: code + message + the
@@ -1366,36 +1350,8 @@ promptSize: resolvedProfileId,
             ok: !!data.ok, content: JSON.stringify(data.result || {})
           });
         } catch { /* non-fatal */ }
-      } else if (name === 'authorization_required') {
-        const notificationData = {
-          callId: data && data.callId,
-          tool: data && data.tool
-        };
-        sendChatPush('tool_authorization', {
-          title: 'Authorization needed',
-          body: (data && data.tool ? data.tool : 'A tool') + ' is waiting for approval.',
-          tag: 'chat-' + chatId + '-attention',
-          data: notificationData,
-          actions: attentionActions('tool_authorization', data),
-          requireInteraction: true
-        });
-      } else if (name === 'ask_user_required') {
-        const quickOptions = data && data.multiSelect !== true && Array.isArray(data.options) && data.options.length === 2
-          ? data.options.slice(0, 2).map((option) => ({ label: String(option.label || '').slice(0, 40), value: String(option.value || '').slice(0, 120) }))
-          : [];
-        const notificationData = {
-          callId: data && data.callId,
-          tool: 'ask_user',
-          options: quickOptions
-        };
-        sendChatPush('ask_user', {
-          title: 'The chat needs your answer',
-          body: data && data.question ? String(data.question).slice(0, 240) : 'Open the chat to answer.',
-          tag: 'chat-' + chatId + '-attention',
-          data: notificationData,
-          actions: attentionActions('ask_user', data),
-          requireInteraction: true
-        });
+      } else if (name === 'authorization_required' || name === 'ask_user_required') {
+      notifyAttention({ sessionId: _pushSessionId, projectDir, chatId, name, data, preferences: notificationPrefs });
       } else if (name === 'progress_update') {
       // Updatable per-chat push notification for real-time progress.
       // Uses a stable tag so each new progress_update replaces the
