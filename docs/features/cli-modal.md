@@ -18,7 +18,7 @@ Open the composer's File button and choose **Cli**. The header shows the shell l
 
 ### Suggestions
 
-Above the prompt, a horizontally scrollable row of chips offers what you are most likely to type next: the commands this session has already sent to the shell, newest first, and the project's own top-level files and folders. The row stays one line tall so it leaves room for the output when the keyboard is open. Tap a chip to put it in the prompt — **Enter still runs it**, so a suggestion is exactly as reversible as something you typed yourself.
+While you type, a horizontally scrollable row of compact suggestions above the prompt offers what you are most likely to type next: the commands this session has already sent to the shell, newest first, and the project's own top-level files and folders. The row stays one line tall so it leaves room for the output when the keyboard is open. Tap a chip to put it in the prompt — **Enter still runs it**, so a suggestion is exactly as reversible as something you typed yourself.
 
 - The row filters as you type: `npm r` offers `npm run …`, `src` offers `src/`, and a chip equal to what you have already typed is dropped rather than offered as a no-op.
 - Folder chips carry a trailing slash (`src/`), file chips do not (`package.json`).
@@ -37,7 +37,7 @@ Type **`!!`** and press **Enter** to repeat the previous command — the shell's
 
 ### Keys
 
-A phone keyboard has letters, digits and Enter, and nothing a terminal actually needs. Under the prompt, one row carries the six keys it lacks:
+A phone keyboard has letters, digits and Enter, and nothing a terminal actually needs. Tap the **keyboard icon** beside the prompt to show or hide the six extra keys. The row is collapsed by default, leaving the terminal output room to breathe:
 
 | Key | Sends | Does |
 | --- | --- | --- |
@@ -82,19 +82,24 @@ You can also run multiple commands in one session — the shell keeps its state 
 
 ### Controls on a phone
 
-Every control the sheet needs is on it, at the 44 × 44 px touch floor — nothing depends on a key a soft keyboard does not have:
+The default footer is one compact prompt row. Icon buttons and optional keys have small visible faces inside 44 × 44 px touch targets; their visible backgrounds do not need to fill the whole target:
 
 | Control | Where | Does |
 | --- | --- | --- |
-| **Run** | end of the prompt row | sends the line, exactly like **Enter** |
+| **Run** (send icon) | end of the prompt row | sends the line, exactly like **Enter** |
+| **Terminal keys** (keyboard icon) | beside Run | shows or hides Esc, Tab, arrows, ^C and ^D |
 | **Stop** | header | kills the shell (and anything running in it) |
 | **Close** | header | hides the sheet; a live shell keeps running |
 | **Restart** | header + terminal footer | starts a fresh shell after the old one exits or is no longer reachable |
 | **Retry** | startup error | tries opening the shell again without closing the modal |
 
-**Run** has a visible text label beside its icon. The modal follows the phone's visible viewport when the soft keyboard opens or pans, keeping the prompt and buttons above it. The command field uses a 16 px font to prevent iOS focus zoom.
+**Run** is an icon-only action with an accessible label. Extra keys and their hint are hidden until requested, and suggestions are hidden when the command field is empty. The modal follows the phone's visible viewport when the soft keyboard opens or pans, keeping the prompt and buttons above it. The compact command field keeps a 16 px font to prevent iOS focus zoom.
 
 Tapping **Run**, a key, or a suggestion chip does not dismiss the soft keyboard, so you can keep typing straight afterwards. The prompt stays focused, and a write that fails is reported on the terminal screen rather than by disabling the field. If the session disappeared (for example, after a server restart), the modal offers **Restart** even if it missed the shell's exit event.
+
+### Output recovery
+
+Output streams live, but the modal also reads the server's retained output after a command, when the stream connects or reconnects, and every 1.5 seconds while open. A dropped connection or a proxy buffering the stream therefore does not leave a successful command looking frozen. Replayed and live chunks are deduplicated by sequence number; closing the modal stops catch-up requests without killing the shell.
 
 ## Tests
 
@@ -103,7 +108,9 @@ npm run test:cli
 ```
 
 - `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key row, and Tab/↑/↓ (the key table's sequences, that the readline keys write nothing to the child while ^C/Esc/^D do, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator. It also source-guards the mobile controls: the Run button exists and keeps the keyboard open, the header close button keeps the class that sizes it to the tap floor, and an exited shell swaps the prompt row for Restart.
-- `scripts/test-cli-modal.mjs` — drives the real component through output received during startup, visible Run and Enter writes, keyboard viewport changes, missing/dead sessions, early exits, Restart, and startup Retry.
+- `scripts/test-cli-modal.mjs` — drives the real component through output received during startup, compact Run and optional keys, Enter writes, keyboard viewport changes, missing/dead sessions, early exits, Restart, and startup Retry.
+- `scripts/test-cli-output.mjs` — tests buffered or disconnected streams, catch-up ordering, sequence deduplication, network retry, ended sessions, and cleanup.
+- `scripts/cli-modal-live-fixture.mjs` — opens the real modal against real serve handlers and a disposable project; its `?buffered=1` variant delivers no SSE frames, so delayed command output must reach the screen through catch-up.
 - `scripts/test-cli-session-newline.js` — drives the real endpoints and asserts a plain `ls` lists the project files (the terminator rule).
 - `scripts/test-cli-strip-ansi.js` — unit-tests `stripAnsi` / `CliScreen`, including every escape-sequence family split at every pair of positions and fed one code point at a time.
 - `scripts/test-cli-utf8-split.js` — feeds `attachCliStream` UTF-8 split at every byte boundary, on the PTY and piped paths, and asserts no `�` reaches the broadcast.

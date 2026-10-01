@@ -315,7 +315,7 @@ async function run() {
   t('.cli__iconbtn is pinned to --tap, not the 32px .icon-btn default',
     /\.cli__iconbtn \{[\s\S]*?height: var\(--tap\)/.test(composerCss));
   t('Run and the dead-shell Restart keep their 44 px targets',
-    /\.cli__run \{[\s\S]*?height: var\(--tap\)/.test(composerCss)
+    /\.cli__key-toggle \{[\s\S]*?height: var\(--tap\)/.test(composerCss)
     && /\.cli__restart \{[\s\S]*?min-height: var\(--tap\)/.test(composerCss));
 
   t('an exit frame marks the shell as exited', /stream === 'exit'[\s\S]*?setExited\(true\)/.test(modal) && !/stream === 'stderr'[\s\S]{0,200}setExited\(true\)/.test(modal));
@@ -324,7 +324,7 @@ async function run() {
   t('the header swaps Stop for Restart once the shell has exited',
     /exited && !loading && !error \? h\('button', \{[\s\S]{0,220}\}, 'Restart'\)/.test(modal));
   t('the prompt row, the key row and the suggestions are all gone when exited',
-    /!exited && suggestions\.length/.test(modal) && /exited\n\s+\? h\('div', \{ class: 'cli__dead'/.test(modal));
+    /!exited && cmdText && suggestions\.length/.test(modal) && /exited\n\s+\? h\('div', \{ class: 'cli__dead'/.test(modal));
   t('Restart starts a fresh session rather than reusing the dead one',
     /setRestartKey\(\(k\) => k \+ 1\)/.test(modal) && /\}, \[projectDir, restartKey\]\)/.test(modal));
 

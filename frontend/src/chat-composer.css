@@ -1357,32 +1357,60 @@ color: var(--muted);
   flex: 0 0 auto;
   min-height: var(--tap);
   min-width: var(--tap);
-  padding: 0 12px;
-  font-size: 0.8rem;
+  padding: 0 0.625rem;
+  font-size: 0.72rem;
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.cli__stop::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0.5rem 0.125rem;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1px solid currentColor;
 }
 /* Run: the visible action for the line in the prompt — a phone's soft
    keyboard has an action key, but nothing on screen says the line is ready
    to send. Sits at the prompt row's end, at the tap floor. */
-.cli__run {
+.cli__run,
+.cli__key-toggle {
+  position: relative;
+  isolation: isolate;
   flex: 0 0 auto;
-  gap: 0.25rem;
-  min-width: var(--tap);
+  width: var(--tap);
   height: var(--tap);
   min-height: var(--tap);
-  padding: 0 0.625rem;
+  padding: 0;
   font: inherit;
-  color: #0b0e14;
-  background: #4fc1ff;
-  border: 1px solid #4fc1ff;
-  border-radius: var(--r-sm);
+  border: 0;
+  background: transparent;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 80ms ease, border-color 80ms ease;
 }
-.cli__run:active { background: #7fd2ff; border-color: #7fd2ff; }
+/* Small visible controls inside a full-size, invisible touch target. */
+.cli__run::before,
+.cli__key-toggle::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0.5rem;
+  border-radius: var(--r-sm);
+  background: #11151d;
+  border: 1px solid #222a38;
+}
+.cli__run { color: #0b0e14; }
+.cli__run::before { background: #4fc1ff; border-color: #4fc1ff; }
+.cli__run:active::before { background: #7fd2ff; }
 .cli__run svg { display: block; }
+.cli__key-toggle { color: #d7e0ee; }
+.cli__key-toggle[aria-expanded='true']::before { border-color: #4fc1ff; }
 
 /* Exited shell: the prompt row and the key row are replaced by one footer.
    The shell is gone, so there is nothing to type into and nothing for the
@@ -1390,10 +1418,10 @@ color: var(--muted);
 .cli__dead {
   flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  padding: 10px 12px 12px;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.375rem;
   background: #0b0e14;
   border-top: 1px solid #1e2633;
 }
@@ -1406,6 +1434,8 @@ color: var(--muted);
 }
 .cli__restart {
   min-height: var(--tap);
+  font-size: 0.72rem;
+  padding: 0 0.625rem;
 }
 
 /* File → Cli row: a dot while the project has a live background shell. */
@@ -1455,8 +1485,8 @@ color: var(--muted);
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 0;
+  padding: 0 0.375rem;
   border-top: 1px solid #1e2633;
   background: #0b0e14;
 }
@@ -1470,8 +1500,10 @@ color: var(--muted);
 .cli__prompt {
   flex: 1 1 auto;
   min-width: 0;
-  height: var(--tap);
-  padding: 4px 10px;
+  min-height: 0;
+  height: 2rem;
+  margin-left: 0.375rem;
+  padding: 0.125rem 0.375rem;
   font: inherit;
   /* 16px prevents iOS focus zoom from moving the action off screen. */
   font-size: 1rem;
@@ -1489,8 +1521,8 @@ color: var(--muted);
    Both rows sit between the output and the prompt (suggestions) and under
    the prompt (keys), because that is where a thumb already is: the sheet is
    full-bleed on a phone and the output above is read-only. Neither row
-  scrolls the page — the chips scroll sideways, and the keys are six 44 px
-  targets that fit a 360 px column.
+   scrolls the page — the chips scroll sideways, and the optional key row
+   uses compact faces inside 44 px touch targets.
 
    Colours are literals, like the rest of the terminal surface (`#0b0e14`,
    `#d7e0ee`, `#4fc1ff` above): this block paints inside the terminal, whose
@@ -1500,8 +1532,8 @@ color: var(--muted);
   flex: 0 0 auto;
   display: flex;
   overflow-x: auto;
-  gap: 6px;
-  padding: 7px 12px 0;
+  gap: 0.125rem;
+  padding: 0 0.375rem;
   background: #0b0e14;
 }
 .cli__suggest-chip {
@@ -1513,10 +1545,10 @@ color: var(--muted);
   max-width: 100%;
   min-height: var(--tap);
   min-width: var(--tap);
-  padding: 4px 10px;
+  padding: 0 0.625rem;
   color: #d7e0ee;
-  background: #11151d;
-  border: 1px solid #222a38;
+  background: transparent;
+  border: 0;
   border-radius: var(--r-pill);
   cursor: pointer;
   white-space: nowrap;
@@ -1533,8 +1565,8 @@ color: var(--muted);
   flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 0 12px 8px;
+  gap: 0;
+  padding: 0 0.375rem;
   background: #0b0e14;
 }
 .cli__key {
@@ -1549,19 +1581,24 @@ color: var(--muted);
   min-width: 44px;
   max-width: 72px;
   min-height: 44px;               /* --tap: the project's tap floor */
-  padding: 0 4px;
+  padding: 0 0.25rem;
   color: #d7e0ee;
-  background: #11151d;
-  border: 1px solid #222a38;
+  background: transparent;
+  border: 0;
   border-radius: var(--r-sm);
   cursor: pointer;
   transition: background 80ms ease, border-color 80ms ease, transform 80ms ease;
 }
-.cli__key:active {
-  background: #1b2230;
-  border-color: #4fc1ff;
-  transform: scale(0.97);
+.cli__key span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.5rem;
+  background: #11151d;
+  border: 1px solid #222a38;
+  border-radius: var(--r-sm);
 }
+.cli__key:active span { background: #1b2230; border-color: #4fc1ff; }
 .cli__key:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1573,7 +1610,7 @@ color: var(--muted);
    full contrast and the hint under the row names them. A key dimmed by a busy
    request is dimmed by `:disabled`; `:not(:disabled)` keeps these two facts
    from stacking. */
-.cli__keys.is-prompt .cli__key--shell:not(:disabled) {
+.cli__keys.is-prompt .cli__key--shell:not(:disabled) span {
   color: #7fa8c9;
   border-color: #1b2430;
 }
@@ -1581,7 +1618,7 @@ color: var(--muted);
 .cli__hint {
   flex: 0 0 auto;
   margin: 0;
-  padding: 0 12px 8px;
+  padding: 0 0.375rem 0.125rem;
   background: #0b0e14;
   color: #5c6a82;
   font-size: 0.62rem;

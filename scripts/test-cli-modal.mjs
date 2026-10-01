@@ -5,6 +5,8 @@ import vm from 'node:vm';
 import { CliScreen } from '../frontend/src/components/chat/utils.js';
 import * as keys from '../frontend/src/components/chat/cliKeys.js';
 import * as suggest from '../frontend/src/components/chat/cliSuggest.js';
+const outputSource = fs.readFileSync(new URL('../frontend/src/components/chat/cliOutput.js', import.meta.url), 'utf8')
+  .replace(/^import .*;\s*$/gm, '').replace('export function subscribeCliOutput', 'function subscribeCliOutput');
 
 const source = fs.readFileSync(new URL('../frontend/src/components/chat/CliModal.jsx', import.meta.url), 'utf8')
   .replace(/^import .*;\s*$/gm, '').replace('export function CliModal', 'function CliModal');
@@ -12,6 +14,7 @@ const flush = () => new Promise(setImmediate);
 
 function mount({ sessionStatus = 200, outputStatus = 200, running = true, commandStatus = 200 } = {}) {
   const hooks = [], requests = [], effects = [];
+  const timers = new Set();
   const styles = {};
   let cursor = 0, nodes = [], eventSource, viewportCallback, resolveOutput;
   let nextSessionStatus = sessionStatus;
@@ -26,6 +29,8 @@ function mount({ sessionStatus = 200, outputStatus = 200, running = true, comman
   }
   const context = vm.createContext({
     ...keys, ...suggest, CliScreen,
+    setTimeout: (fn) => { timers.add(fn); return fn; },
+    clearTimeout: (fn) => timers.delete(fn),
     useRef,
     useState(initial) {
       const i = cursor++;
@@ -69,7 +74,7 @@ function mount({ sessionStatus = 200, outputStatus = 200, running = true, comman
       return node;
     }
   });
-  vm.runInContext(source + '\nthis.CliModal = CliModal;', context);
+  vm.runInContext(outputSource + '\n' + source + '\nthis.CliModal = CliModal;', context);
   function render() {
     cursor = 0;
     nodes = [];
@@ -86,7 +91,10 @@ function mount({ sessionStatus = 200, outputStatus = 200, running = true, comman
     emit: (data) => eventSource.listeners.cli_output({ data: JSON.stringify({ id: 'cli_test', ...data }) }),
     replay: () => resolveOutput({ status: outputStatus, body: { running, chunks: [] } }),
     retry: () => { nextSessionStatus = 200; },
-    cleanup: () => { for (const hook of hooks) hook?.cleanup?.(); }
+    cleanup: () => {
+    for (const hook of hooks) hook?.cleanup?.();
+    assert.equal(timers.size, 0, 'unmount clears output catch-up timers');
+    }
   };
 }
 
@@ -101,17 +109,24 @@ ui.replay();
 await flush();
 ui.render();
 assert.equal(ui.outputNode.textContent, 'ready>', 'startup output paints when the terminal mounts');
-assert.ok(ui.button('Run'), 'Run has a visible text label, not just an icon');
+assert.ok(ui.node('Run command'), 'the compact send icon has an accessible Run label');
+assert.equal(ui.button('Run'), undefined, 'Run does not widen the prompt with extra text');
+assert.equal(ui.node('Terminal keys').attrs['aria-expanded'], false);
+assert.equal(ui.node('Terminal keys').tag, 'button', 'keys are behind a compact toggle by default');
+ui.node('Terminal keys').attrs.onClick();
+ui.render();
+assert.equal(ui.node('Terminal keys').attrs['aria-expanded'], true);
+assert.ok(ui.node('Ctrl+C — interrupt the running command'));
 ui.node('Command line').attrs.onInput({ currentTarget: { value: 'echo hello' } });
 ui.render();
 ui.node('Run command').attrs.onClick();
 await flush();
-assert.equal(ui.requests.at(-1).body.cmd, 'echo hello');
-assert.equal(ui.requests.at(-1).body.raw, false);
+assert.equal(ui.requests.filter((r) => r.body).at(-1).body.cmd, 'echo hello');
+assert.equal(ui.requests.filter((r) => r.body).at(-1).body.raw, false);
 ui.render();
 ui.node('Command line').attrs.onKeyDown({ key: 'Enter', preventDefault() {} });
 await flush();
-assert.equal(ui.requests.at(-1).body.cmd, '', 'empty Enter accepts a program default');
+assert.equal(ui.requests.filter((r) => r.body).at(-1).body.cmd, '', 'empty Enter accepts a program default');
 ui.viewport(320, 28);
 assert.equal(ui.styles['--cli-viewport-height'], '320px');
 assert.equal(ui.styles['--cli-viewport-top'], '28px');
@@ -120,7 +135,7 @@ ui.render();
 assert.ok(ui.node('Shell ended'));
 assert.equal(ui.node('Command line'), undefined);
 ui.cleanup();
-console.log('PASS startup output, visible Run, command writes, viewport pan and exit controls');
+console.log('PASS startup output, compact Run, optional keys, writes, viewport pan and exit controls');
 
 for (const commandStatus of [404, 410]) {
   ui = mount({ commandStatus });
@@ -168,5 +183,6 @@ const css = fs.readFileSync(new URL('../frontend/src/chat-composer.css', import.
 assert.match(css, /\.cli__overlay \{[^}]*top: var\(--cli-viewport-top[^}]*height: var\(--cli-viewport-height/);
 assert.match(css, /\.cli__suggest \{[^}]*overflow-x: auto/);
 assert.match(css, /\.cli__suggest-chip \{[^}]*min-height: var\(--tap\)/);
-assert.match(css, /\.cli__prompt \{[^}]*height: var\(--tap\)[^}]*font-size: 1rem/);
-console.log('PASS keyboard-safe overlay, compact suggestions and touch-sized prompt');
+assert.match(css, /\.cli__prompt \{[^}]*height: 2rem[^}]*font-size: 1rem/);
+assert.match(css, /\.cli__run::before,[\s\S]*?inset: 0\.5rem/);
+console.log('PASS keyboard-safe overlay and compact control faces');

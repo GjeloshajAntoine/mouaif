@@ -16,11 +16,12 @@
 // no Escape, Tab, arrow or Ctrl key — so the sheet carries the rows a hardware
 // keyboard would have provided:
 //
-//   * a **suggestion row** above the prompt (the commands this session sent to
+//   * a **suggestion row** while typing, above the prompt (commands sent to
 //     the shell, the project's own top-level names from GET /api/files), which
 //     saves re-typing a command on a keyboard that covers most of the screen —
 //     see ./cliSuggest.js. A chip only rewrites the field; Enter still runs it.
-//   * a **key row** under the prompt (Esc, Tab, ↑, ↓, ^C, ^D). Esc, ^C and ^D
+//   * an optional **key row**, opened via the keyboard icon (Esc, Tab, ↑, ↓,
+//     ^C, ^D). Esc, ^C and ^D
 //     are the keys a program needs, each a single raw write so ^C interrupts
 //     without also pressing Enter; Tab and ↑/↓ edit the *field itself*
 //     (completeLocally / stepHistory in ./cliSuggest.js) instead of pushing a
@@ -44,6 +45,7 @@ import { CLI_KEYS, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab }
 import { rememberCommand, suggestionsFor, completeLocally, stepHistory } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
 import { useVisualViewport } from '../../hooks/useVisualViewport.js';
+import { subscribeCliOutput } from './cliOutput.js';
 
 export function CliModal(props) {
   const { projectDir, onClose } = props;
@@ -69,6 +71,7 @@ export function CliModal(props) {
   // row (`null` until the listing answers: a fetch that has not happened
   // invents no chips).
   const [entries, setEntries] = useState(null);
+  const [keysOpen, setKeysOpen] = useState(false);
   // True once the shell reported an `exit` frame (or the session endpoint
   // refused). The prompt row cannot reach a dead session, so the sheet offers
   // Restart instead of an input that silently 410s on every send.
@@ -83,10 +86,7 @@ export function CliModal(props) {
 
   const outRef = useRef(null);       // <pre> terminal output
   const inputRef = useRef(null);
-  const sessionIdRef = useRef(null);
-  const evtSourceRef = useRef(null);
-  // Highest output seq already written to the screen (replay + live).
-  const lastSeqRef = useRef(0);
+  const outputSubscriptionRef = useRef(null);
   const [outBuffer, setOutBuffer] = useState('');   // accumulated output
   // Who is reading the session's stdin: 'shell' (its line editor is waiting),
   // 'program' (a command is running and may be asking a question), 'piped' (no
@@ -216,7 +216,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   // ---- session start ------------------------------------------------
   useEffect(() => {
     let cancelled = false;
-    let evtSource = null;
+    let outputSubscription = null;
     // A restart re-runs this effect; the previous session's exit line stays on
     // screen, so the fresh session is announced with a marker of its own.
     setExited(false);
@@ -229,56 +229,21 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
           setLoading(false);
           return;
         }
-        sessionIdRef.current = r.body.id;
         interactiveRef.current = !!r.body.interactive;
         // A piped child has no line editor and cannot prompt: every line is a
         // command. A pty starts unknown until the shell's first marker.
         setOwnerBoth(r.body.interactive ? null : 'piped');
         setShellLabel(r.body.shell || '');
         if (r.body.projectDir) setDirLabel(r.body.projectDir);
-        // The session id is ready — open the SSE channel and listen
-        // for this session's cli_output frames. The session may be a
-        // background terminal that kept running while the modal was closed
-        // (docs/features/background-terminal.md), so live frames that arrive
-        // before the backlog replay finishes are held, then everything at or
-        // below the replayed seq is dropped: no gap, no duplicate.
-        const pending = [];
-        let replayed = false;
-        const deliver = (data) => {
-        if (typeof data.seq === 'number') {
-        if (data.seq <= lastSeqRef.current) return;
-        lastSeqRef.current = data.seq;
-        }
-        appendOut(data.data, data.stream);
-        };
-        evtSource = new EventSource('/events');
-        evtSourceRef.current = evtSource;
-        evtSource.addEventListener('cli_output', (e) => {
-        let data;
-        try { data = JSON.parse(e.data); } catch { return; }
-        if (!data || data.id !== sessionIdRef.current) return;
-        if (!replayed) { pending.push(data); return; }
-        deliver(data);
+        outputSubscription = subscribeCliOutput({
+        id: r.body.id,
+        onOutput: appendOut,
+        onDropped: () => writeOut('\u2026 earlier output dropped \u2026\r\n'),
+        onEnded: () => { setOwnerBoth(null); setExited(true); }
         });
-        // Replay the retained backlog (empty for a fresh session).
-        let rr;
-        try {
-        rr = await fetchJson('/api/tools/cli/output?id=' + encodeURIComponent(r.body.id) + '&since=0');
+        outputSubscriptionRef.current = outputSubscription;
+        await outputSubscription.ready;
         if (cancelled) return;
-        if (rr.status === 200 && rr.body && Array.isArray(rr.body.chunks)) {
-        if (rr.body.dropped) writeOut('\u2026 earlier output dropped \u2026\r\n');
-        for (const c of rr.body.chunks) deliver({ data: c.data, stream: c.stream, seq: c.seq });
-        }
-        } catch { /* replay is best-effort; live frames still flow */ }
-        if (cancelled) return;
-        // A shell can end between session creation and replay, or its exit
-        // frame can be missed while the connection is down.
-        if (rr && (rr.status === 404 || (rr.status === 200 && rr.body && rr.body.running === false))) {
-        setOwnerBoth(null);
-        setExited(true);
-        }
-        replayed = true;
-        for (const d of pending.splice(0)) deliver(d);
         setLoading(false);
         // Focus the prompt once the screen is up.
         if (inputRef.current) inputRef.current.focus();
@@ -302,7 +267,8 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
       cancelled = true;
       // Detach only. The shell keeps running in the background and the next
       // open replays what it printed meanwhile; Stop is the explicit kill.
-      if (evtSource) evtSource.close();
+      if (outputSubscription) outputSubscription.close();
+      if (outputSubscriptionRef.current === outputSubscription) outputSubscriptionRef.current = null;
     };
   }, [projectDir, restartKey]);
 
@@ -325,7 +291,6 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   // continuous session.
   const restart = useCallback(() => {
     screenRef.current = new CliScreen();
-    lastSeqRef.current = 0;
     editorTailRef.current = '';
     setOutBuffer('');
     setOwnerBoth(null);
@@ -370,6 +335,9 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
       setExited(true);
       }
     }
+    // Writes must not wait for the read: ^C remains responsive. Output
+    // catch-up continues even when an intermediary buffers the SSE stream.
+    if (outputSubscriptionRef.current) outputSubscriptionRef.current.refresh();
     }).catch((err) => {
     writeOut('\nerror: ' + String(err) + '\n');
     });
@@ -529,7 +497,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                 // project's own top-level names. A chip only rewrites the
                 // field (see applySuggestion) — Enter still runs it. An exited
                 // shell has nothing to suggest, so the row goes with it.
-                !exited && suggestions.length
+                !exited && cmdText && suggestions.length
                   ? h('div', { class: 'cli__suggest', role: 'group', 'aria-label': 'Command suggestions' },
                       suggestions.map((s) => h('button', {
                         key: s.kind + ':' + s.text,
@@ -592,6 +560,16 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                       else runCommand();
                     }
                     }),
+                    h('button', {
+                      class: 'cli__key-toggle',
+                      type: 'button',
+                      onClick: () => setKeysOpen((open) => !open),
+                      onMouseDown: keepEditorFocus,
+                      'aria-label': 'Terminal keys',
+                      'aria-expanded': keysOpen,
+                      'aria-controls': 'cli-terminal-keys',
+                      title: 'Show terminal keys'
+                    }, h('span', null, '⌨')),
                     // Run — the line in the prompt, made a visible action. On a
                     // phone the keyboard's own action key is the only "send", and
                     // it is labelled by `enterkeyhint` yet not by anything on the
@@ -609,15 +587,15 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     },
                     h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
                     h('path', { d: 'M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z', fill: 'currentColor' })
-                    ),
-                    'Run'
+                    )
                     )
                     ),
                 // The key row: the keys a phone keyboard does not have (see
                 // cliKeys.js). While a program owns stdin, the three readline
                 // keys (`shellOnly`) are marked; Esc, ^C and ^D stay lit.
-                h('div', {
-                  class: 'cli__keys' + (owner === 'program' ? ' is-prompt' : ''),
+                keysOpen ? h('div', {
+                id: 'cli-terminal-keys',
+                class: 'cli__keys' + (owner === 'program' ? ' is-prompt' : ''),
                   role: 'group',
                   'aria-label': 'Terminal keys'
                 },
@@ -635,16 +613,16 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     else if (k.id === 'down') recall('down');
                     else sendKey(k);
                     }
-                    }, k.label))
-                    ),
+                    }, h('span', null, k.label)))
+                    ) : null,
                     // One-line hint under the row. It names the mode only when the
                     // shell has said which one it is in; a piped session has no
                     // line editor, so Tab and the arrows are client-side there too.
-                    h('p', { class: 'cli__hint' },
+                    keysOpen ? h('p', { class: 'cli__hint' },
                     owner === 'program'
                     ? 'A program owns the prompt — ^C stops it; Esc leaves it.'
                     : 'Tab completes and ↑/↓ recall in the prompt. ^C stops the running command.'
-                    )
+                    ) : null
                     ]
                     )
       )

@@ -94,6 +94,12 @@ Every control in both rows cancels `mousedown` (`keepEditorFocus`) so the browse
 
 The row dims its readline keys (`.cli__keys.is-prompt`) exactly when `owner === 'program'`. The hint names the mode (`Tab completes and ↑/↓ recall in the prompt. ^C stops the running command.`); completing a command line while a program waits for an answer is the wrong thing to do, so Tab/↑/↓ go quiet there. Tab and ↑/↓ work the same on a piped session: the completion sources are all client-side, so no terminal is needed.
 
+### Output catch-up
+
+`subscribeCliOutput` in [cliOutput.js](../../../frontend/src/components/chat/cliOutput.js) owns the EventSource and retained-output replay. It catches up with `GET /api/tools/cli/output?id=…&since=…` on initialization, SSE open/error, after command writes, and every 1.5 seconds while mounted. This also covers a proxy buffering an apparently connected SSE response. Only one replay request runs at a time; live frames received during replay are queued, ordered and deduplicated against the replay's sequence watermark. Session end stops polling, and cleanup closes the EventSource and clears the timer without killing the shell. No REST surface changes are needed.
+
+`scripts/test-cli-output.mjs` exercises catch-up independently. `scripts/cli-modal-live-fixture.mjs` mounts the real component against an isolated `createServer` and a disposable project; `?buffered=1` simulates a stream with no delivered frames while preserving real shell execution and replay requests.
+
 ### Screen decoding
 
 `CliScreen` buffers escape sequences that arrive split across SSE chunks, honours cursor positioning and erase, and enters/leaves the alternate screen. A full-screen TUI (htop, top, less) therefore redraws **in place** instead of stacking frames, and ordinary scrollback grows downward. It is a best-effort plain-text view, not a full terminal emulator: colour and cell-width attributes are dropped and column layout is not reconstructed.
@@ -112,14 +118,14 @@ before:  build [32mok      after:  build ok
 
 Every affordance the sheet needs is on the sheet, at the `--tap` (44 px) floor. The header carries **Stop** (`.cli__stop`) and the close button (`.icon-btn .icon-btn--close .cli__iconbtn`); `.cli__iconbtn` is re-declared in [chat-composer.css](../../../frontend/src/chat-composer.css) because the shared `.icon-btn` is `--tap-sm` (32 px) and a header glyph must clear the same 44 px minimum as everything else. The prompt row ends with **Run** (`.cli__run`), which calls the same `runCommand` as Enter and cancels `mousedown` (`keepEditorFocus`) so a tap cannot close the soft keyboard. `enterkeyhint: 'send'` only labels the keyboard's own action key; Run is the one that is *visible*.
 
-The Run button includes a text label, not just a send icon. Suggestions use a single horizontally scrollable row with 44 px touch targets so they do not consume multiple lines when the keyboard is open. `useVisualViewport` updates `--cli-viewport-top` and `--cli-viewport-height` on the overlay so the layout fits above the soft keyboard even when the visual viewport pans. The prompt uses a 1 rem font and the touch-target height to avoid iOS focus zoom. The output painting effect depends on `loading` and `error` as well as `outBuffer`: output received before the `<pre>` mounts must be painted when startup completes, even without another output chunk.
+Run is an icon-only action with an accessible label. Its visible background is inset inside a 44 px touch target, as are the keyboard toggle and optional key faces. `keysOpen` defaults to false; only a tap on the keyboard icon mounts `.cli__keys` and `.cli__hint`. Suggestions mount only for a non-empty draft, and use a horizontally scrollable row without bulky filled chips. The prompt is 2 rem tall (overriding the shared input minimum) with a 1 rem font to avoid iOS focus zoom. `useVisualViewport` updates `--cli-viewport-top` and `--cli-viewport-height` on the overlay so the layout fits above the soft keyboard even when the visual viewport pans. The output painting effect depends on `loading` and `error` as well as `outBuffer`: output received before the `<pre>` mounts must be painted when startup completes, even without another output chunk.
 
 An `exit` frame (`appendOut(…, 'exit')`), a replay reporting `running: false` / HTTP 404, or a command returning HTTP 404 / 410 sets `exited`, which:
 
-- removes the suggestion row (`!exited && suggestions.length`) and the prompt/key rows, replacing them with `.cli__dead` — a one-line notice and a `.cli__restart` button;
+- removes the suggestion row (`!exited && cmdText && suggestions.length`) and the prompt/key rows, replacing them with `.cli__dead` — a one-line notice and a `.cli__restart` button;
 - swaps the header's Stop for Restart (`exited && !loading && !error`).
 
-`restart()` clears the screen (`screenRef.current = new CliScreen()`, `lastSeqRef.current = 0`, `setOutBuffer('')`), resets the prompt and history walk, and bumps `restartKey`, which is the session effect's second dependency — so the effect re-runs against a *fresh* child (the server's `GET /cli/session` starts a new session because the old one was reaped on exit). A cleared screen is deliberate: the old output belongs to a dead shell, and keeping it above a live prompt would read as one continuous session.
+`restart()` clears the screen (`screenRef.current = new CliScreen()`, `setOutBuffer('')`), resets the prompt and history walk, and bumps `restartKey`, which is the session effect's second dependency — so the effect re-runs against a *fresh* child (the server's `GET /cli/session` starts a new session because the old one was reaped on exit). A cleared screen is deliberate: the old output belongs to a dead shell, and keeping it above a live prompt would read as one continuous session.
 
 Startup failures offer **Retry**, which clears the error and re-runs session initialization through the same restart path. `scripts/test-cli-modal.mjs` covers the component's startup, command writes, viewport properties and recovery paths; it runs with `npm run test:cli`.
 
@@ -128,4 +134,4 @@ Startup failures offer **Retry**, which clears the error and re-runs session ini
 - A PTY has a fixed grid size (100×30). The modal does not yet report its own dimensions, so `resize` is not driven from the browser.
 - Some single-key prompts (a `y/n` confirmation that reads raw mode) expect the key byte alone — use **Ctrl+Enter** so no trailing newline is sent.
 - **Ctrl+Enter** (the raw single-key send) is a desktop chord: a soft keyboard cannot produce it, which is why the key row exists — `^C` and `^D` reach the two bytes that matter most, and the suggestion row removes the need to retype a command at all.
-- The suggestion and key rows are fixed the sheet's height, so on a short viewport (a phone with the keyboard up) the terminal output is what shrinks; both rows keep their 44 px targets and never scroll out of reach.
+- The default footer is one prompt row. Suggestions appear only while typing, and extra keys are opt-in. On a short viewport the output shrinks before the active controls, whose touch targets remain 44 px.
