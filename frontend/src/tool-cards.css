@@ -95,40 +95,20 @@
   text-overflow: ellipsis;
 }
 .tool-card.is-expanded .tool-card__args { white-space: nowrap; }
-/* Give delegated runs their own mobile header layout. A non-shrinking
-  agent chip in a single flex line could push the cost/status outside the
-  head's clipped box. Keep the cost on top, with agent and task below. */
+/* Match the mockup's compact inline header. Agent/task previews give up
+   space on phones; the full names/task remain in the nested conversation,
+   while cost and status always stay visible. */
 .tool-card--subagent > .tool-card__head {
-display: grid;
-grid-template-columns: auto minmax(0, 1fr) auto auto;
-min-height: 2.75rem;
-overflow: visible;
+  min-height: 2.75rem;
 }
-.tool-card--subagent > .tool-card__head > .tool-card__chev { grid-column: 1; grid-row: 1; }
-.tool-card--subagent > .tool-card__head > .tool-card__name { grid-column: 2; grid-row: 1; max-width: 100%; }
-.tool-card--subagent > .tool-card__head > .tool-card__cost { grid-column: 3; grid-row: 1; }
-.tool-card--subagent > .tool-card__head > .tool-card__pill { grid-column: 4; grid-row: 1; }
 .tool-card--subagent > .tool-card__head > .tool-card__agent {
-grid-column: 1 / -1;
-grid-row: 2;
-justify-self: start;
-white-space: normal;
-overflow-wrap: anywhere;
+  flex: 0 0 auto;
+  max-width: 30%;
 }
 .tool-card--subagent > .tool-card__head > .tool-card__args {
-grid-column: 1 / -1;
-grid-row: 3;
-min-width: 0;
-white-space: pre-wrap;
-overflow-wrap: anywhere;
-overflow: visible;
-text-overflow: clip;
+  min-width: 0;
 }
-.tool-card--subagent .tool-card__head .tool-card__agent {
-  flex: 0 0 auto;
-  max-width: 100%;
-}
-.tool-card--subagent .tool-card__head .tool-card__cost {
+.tool-card--subagent > .tool-card__head > .tool-card__cost {
   flex: 0 0 auto;
   overflow: visible;
   text-overflow: clip;
@@ -453,8 +433,10 @@ color: var(--fg-soft);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 4px 6px;
-  max-height: min(40dvh, 20rem);
-  overflow-y: auto;
+  /* The main transcript owns scrolling, just like the mockup. A short
+     bottom-pinned inner scroller hid the prompt and intermediate turns. */
+  max-height: none;
+  overflow: visible;
   white-space: normal;
   font-size: 0.72rem;
   line-height: 1.4;
@@ -562,14 +544,23 @@ color: var(--fg-soft);
      kept the live pin — which scrolls the body — from following output. */
 }
 .tool-card__shell-live-pre:empty { display: none; }
-/* Nested subagent turns are ordinary chat rows: they keep `.chat-msg`'s own
-   width cap, bubble geometry and colours so the expanded subagent transcript
-   reads exactly like the main transcript. Only the entry animation is
-   dropped — the card is rebuilt when the run settles, and re-animating every
-   nested row on each rebuild would flicker. */
+/* Give nested turns the same full-width row as the main transcript. A
+   shrink-to-content row, combined with the narrow-screen bubble cap, made
+   even short replies wrap into tiny columns. Keep bubble colours/geometry
+   and skip entry animations when the settled conversation is rebuilt. */
 .tool-card__subagent-msg {
+  width: 100%;
+  max-width: 100%;
+  align-self: stretch;
   animation: none;
 }
+.tool-card__subagent-msg.chat-msg--assistant { align-items: flex-start; }
+.tool-card__subagent-msg.chat-msg--user { align-items: flex-end; }
+.tool-card__subagent-msg .chat-msg__role {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.tool-card__subagent-msg.chat-msg .chat-msg__body { max-width: 100%; }
 
 /* The card body sets tool-output type (0.72 rem, muted); the nested chat opts
    back into the transcript's own scale and foreground colour, which its

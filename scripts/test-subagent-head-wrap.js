@@ -1,7 +1,7 @@
-// Regression test: a subagent head reserves its top line for cost/status
-// and wraps the full agent name and task below it. A non-shrinking agent
-// chip in the old single flex row could push the cost outside the clipped
-// header on phones. Ordinary tool heads keep their single-line layout.
+// Regression test: match the subagent mockup's inline head and full-height
+// conversation panel. Agent/task previews are capped so cost/status
+// remain visible, and nested messages keep a full-width row. Ordinary tool
+// cards keep their existing compact header and bounded output body.
 //
 // A DOM stub cannot evaluate CSS, so — like
 // scripts/test-subagent-expand-state.js — the cascade is resolved from the
@@ -53,7 +53,12 @@ function parseCompound(text) {
     }
     if (ch === ':') {
       const nameMatch = /^:([a-z-]+)/i.exec(text.slice(i));
-      const name = nameMatch ? nameMatch[1] : '';
+      if (!nameMatch) {
+      tokens.push({ kind: 'pseudo', name: 'unsupported' });
+      i++;
+      continue;
+      }
+      const name = nameMatch[1];
       const after = i + nameMatch[0].length;
       if ((name === 'not' || name === 'where') && text[after] === '(') {
         const { inner, end } = readInner(after);
@@ -209,31 +214,35 @@ function check(name, condition, detail) {
 function main() {
   const css = fs.readFileSync(CSS_PATH, 'utf8');
 
-  // ---- 1. The task stays on the head's single line -------------------
+  // ---- 1. Match the mockup's single-line header ----------------------
   for (const expanded of [false, true]) {
     const state = expanded ? 'expanded' : 'collapsed';
     const args = headArgs({ subagent: true, expanded });
-    check('[' + state + '] the subagent task wraps without hiding details',
-    valueOf(css, args, 'white-space') === 'pre-wrap', valueOf(css, args, 'white-space'));
-    check('[' + state + '] the task has its own full-width grid row',
-    valueOf(css, args, 'grid-column') === '1 / -1', valueOf(css, args, 'grid-column'));
-    check('[' + state + '] the task still shares the head row',
-      /^1\s+1\s+auto$/.test(valueOf(css, args, 'flex')), valueOf(css, args, 'flex'));
+    check('[' + state + '] the task preview stays on one line',
+      valueOf(css, args, 'white-space') === 'nowrap', valueOf(css, args, 'white-space'));
+    check('[' + state + '] the task preview ellipsizes',
+      valueOf(css, args, 'text-overflow') === 'ellipsis', valueOf(css, args, 'text-overflow'));
+    check('[' + state + '] the task can shrink within the head',
+      valueOf(css, args, 'min-width') === '0', valueOf(css, args, 'min-width'));
   }
   {
     const card = modelNode('div', ['tool-card', 'tool-card--subagent']);
     const head = modelNode('span', ['tool-card__head'], card);
-    check('the subagent head uses grid to reserve space for the cost',
-    valueOf(css, head, 'display') === 'grid', valueOf(css, head, 'display'));
+    check('the subagent head uses one flex row',
+      valueOf(css, head, 'display') === 'flex', valueOf(css, head, 'display'));
+    check('the subagent head has a 44px tap target',
+      valueOf(css, head, 'min-height') === '2.75rem', valueOf(css, head, 'min-height'));
   }
 
-  // ---- 2. The agent chip and the cost never truncate -----------------
+  // ---- 2. Capped previews leave room for cost/status -----------------
   {
     const chip = agentChip();
-    check('the agent chip may use the full head width',
-      valueOf(css, chip, 'max-width') === '100%', valueOf(css, chip, 'max-width'));
-    check('the agent chip never shrinks away',
-      valueOf(css, chip, 'flex') === '0 0 auto', valueOf(css, chip, 'flex'));
+    check('the agent chip leaves room for cost and status',
+      valueOf(css, chip, 'max-width') === '30%', valueOf(css, chip, 'max-width'));
+    check('the capped agent chip is not squeezed away by a long task',
+    valueOf(css, chip, 'flex') === '0 0 auto', valueOf(css, chip, 'flex'));
+    check('the agent chip preview ellipsizes',
+      valueOf(css, chip, 'text-overflow') === 'ellipsis', valueOf(css, chip, 'text-overflow'));
   }
   {
     const cost = costLabel();
@@ -259,6 +268,26 @@ function main() {
     const head = modelNode('span', ['tool-card__head'], card);
     check('a generic head does not wrap its lines',
       valueOf(css, head, 'flex-wrap') === '(unset)', valueOf(css, head, 'flex-wrap'));
+  }
+
+  // ---- 4. Full conversation, without a second scroll box -------------
+  const expandedCard = modelNode('div', ['tool-card', 'tool-card--subagent', 'is-expanded']);
+  const body = modelNode('div', ['tool-card__body'], expandedCard);
+  check('the delegated conversation is not height-clipped',
+    valueOf(css, body, 'max-height') === 'none', valueOf(css, body, 'max-height'));
+  check('the delegated panel does not own scrolling',
+    valueOf(css, body, 'overflow') === 'visible', valueOf(css, body, 'overflow'));
+  const genericCard = modelNode('div', ['tool-card', 'is-expanded']);
+  const genericBody = modelNode('div', ['tool-card__body'], genericCard);
+  check('other tool outputs retain their height cap',
+    valueOf(css, genericBody, 'max-height') === '40dvh', valueOf(css, genericBody, 'max-height'));
+
+  const nestedChat = modelNode('div', ['tool-card__subagent-chat'], body);
+  for (const role of ['user', 'assistant', 'system']) {
+    const row = modelNode('div', ['chat-msg', 'chat-msg--' + role, 'tool-card__subagent-msg'], nestedChat);
+    check(role + ' has a full-width nested row', valueOf(css, row, 'width') === '100%', valueOf(css, row, 'width'));
+    check(role + ' stretches rather than shrinking to content',
+      valueOf(css, row, 'align-self') === 'stretch', valueOf(css, row, 'align-self'));
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

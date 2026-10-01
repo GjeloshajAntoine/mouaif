@@ -37,6 +37,47 @@ const bundle = await build({
         ]
       } }, refs);
       window.__task = task;
+      // Assert browser geometry with the production stylesheet, not mockup
+      // overrides. The visible result makes the fixture usable without CDP
+      // script evaluation (and catches live-to-settled layout regressions).
+      window.__checkLayout = (phase) => {
+        const failures = [];
+        const check = (ok, label) => { if (!ok) failures.push(label); };
+        const card = root.querySelector('.tool-card--subagent');
+        const head = card.querySelector(':scope > .tool-card__head');
+        const body = card.querySelector(':scope > .tool-card__body');
+        const rect = head.getBoundingClientRect();
+        check(getComputedStyle(head).display === 'flex' && rect.height >= 44, 'inline touch-safe header');
+        for (const selector of ['.tool-card__cost', '.tool-card__pill']) {
+        const child = head.querySelector(selector).getBoundingClientRect();
+        check(child.left >= rect.left && child.right <= rect.right + 1, 'visible ' + selector);
+        }
+        check(getComputedStyle(body).maxHeight === 'none', 'unclipped panel');
+        check(getComputedStyle(body).overflowY === 'visible', 'no inner scroll box');
+        check(body.scrollHeight <= body.clientHeight + 1, 'all conversation turns fit the panel');
+        check(root.scrollWidth <= root.clientWidth + 1, 'no horizontal overflow');
+        for (const row of card.querySelectorAll('.tool-card__subagent-msg')) {
+        const parent = row.parentElement.getBoundingClientRect();
+        check(Math.abs(row.getBoundingClientRect().width - parent.width) <= 1, 'full-width message row');
+        }
+        const final = [...card.querySelectorAll('.chat-msg__answer')].find((e) => e.textContent === 'Final answer.');
+        check(!!final && final.getBoundingClientRect().height < 30, 'short answer stays on one line');
+        check(card.querySelector('.chat-msg__system-body')?.textContent === prompt, 'complete prompt');
+        check(card.querySelector('.chat-msg--user .chat-msg__body')?.textContent === task, 'complete task');
+        head.click();
+        check(getComputedStyle(body).display === 'none', 'collapse hides panel');
+        head.click();
+        check(getComputedStyle(body).display !== 'none', 'expand restores panel');
+        const output = document.getElementById('layout-check');
+        output.textContent = failures.length ? 'FAIL ' + phase + ': ' + failures.join(', ') : 'PASS ' + phase + ' layout at ' + window.innerWidth + 'px';
+        output.dataset.status = failures.length ? 'failed' : 'passed';
+        if (failures.length) console.error(output.textContent);
+      };
+      const settle = window.__settle;
+      const cardIsSettled = () => root.querySelector('.tool-card--result') != null;
+      window.__settle = () => { settle(); requestAnimationFrame(() => window.__checkLayout('settled')); };
+      window.addEventListener('resize', () => requestAnimationFrame(() => window.__checkLayout(cardIsSettled() ? 'settled' : 'live')));
+      requestAnimationFrame(() => window.__checkLayout('live'));
     `,
     resolveDir: process.cwd(), sourcefile: 'subagent-transcript-fixture.js', loader: 'js'
   },
@@ -44,7 +85,7 @@ const bundle = await build({
   loader: { '.woff': 'dataurl', '.woff2': 'dataurl' }
 });
 const files = Object.fromEntries(bundle.outputFiles.map((f) => [f.path.endsWith('.css') ? '/app.css' : '/app.js', f.text]));
-const page = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"></head><body><div class="chat-view__transcript" style="padding:1rem;width:100%;box-sizing:border-box"></div><button onclick="window.__settle()" style="min-height:2.75rem">Settle fixture</button><script type="module" src="/app.js"></script></body></html>`;
+const page = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"></head><body><main class="chat-view" style="height:100dvh"><output id="layout-check" aria-live="polite"></output><div class="chat-view__transcript" style="padding:1rem;width:100%;box-sizing:border-box"></div><button onclick="window.__settle()" style="min-height:2.75rem;flex-shrink:0">Settle fixture</button></main><script type="module" src="/app.js"></script></body></html>`;
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': files[req.url] ? (req.url.endsWith('.css') ? 'text/css' : 'text/javascript') : 'text/html' });
   res.end(files[req.url] || page);

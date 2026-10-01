@@ -8,7 +8,7 @@ A `subagent` tool card keeps the delegated conversation in its expanded body. Th
 
 | Nested turn | Rendered as |
 | --- | --- |
-| `system` | The collapsed **System prompt · N lines** card the main transcript uses for the active system prompt. Its role label names the agent the run dispatched (`Search`), or `agent` for a generic delegation. Expanding it wraps the prompt inside the card at the transcript's own width — see [Wrapping](#wrapping). |
+| `system` | The **System prompt · N lines** card the main transcript uses for the active system prompt, initially expanded inside a delegation. Its role label names the agent the run dispatched (`Search`), or `agent` for a generic delegation. Expanding it wraps the prompt inside the card at the transcript's own width — see [Wrapping](#wrapping). |
 | `user` | A user chat bubble, right-aligned, with the `user` role label. |
 | `assistant` | An assistant chat bubble with markdown, labelled with the model that ran the delegated call. |
 | `tool` | A compact nested tool row (verb label, one-line arguments, per-tool result summary, status dot, per-tool preview) — not a chat bubble, so the assistant→tool→assistant loop stays readable. |
@@ -135,17 +135,23 @@ at 360–430 px wide; **Settle fixture** exercises the live-to-final transition.
 3. Read the delegated conversation top to bottom: the subagent's prompt (already expanded — see below), the delegated task, its tool calls, and its final answer.
 4. To see which agent ran, read the chip in the head or the nested system row's role label.
 
-## The head shows the task and the agent in full
+## Mockup layout
 
-The mobile header reserves its top line for the chevron, `Subagent`, cost
-and status dot. The agent chip and full task each get their own wrapping line
-below it. Long agent names cannot push the cost outside a clipped row, and
-the task no longer depends on a hover tooltip to expose its hidden tail.
+The header matches the subagent mockup: chevron, `Subagent`, agent chip,
+compact task preview, cost and status share one line. Long agent/task previews
+ellipsize to keep the cost and status visible on phones. The full agent name
+and task are readable in the nested system/user rows, without a hover tooltip.
+The header tap target remains at least 44 px tall.
 
-Implementation notes: only the outer subagent header uses a four-column CSS
-grid; nested tool rows and other tool cards retain their compact layout.
-The header tap target is at least 44 px tall. Regression test:
-`scripts/test-subagent-head-wrap.js`.
+The expanded conversation panel grows with its content rather than clipping
+the run into a short, bottom-pinned inner scroller. Scroll the main chat to
+read the prompt, intermediate turns and final answer. Nested message rows use
+the panel's full width, with user bubbles on the right and assistant bubbles
+on the left; short replies no longer collapse into narrow text columns.
+Tool previews keep their independent fold controls.
+
+Regression checks: `scripts/test-subagent-head-wrap.js` and
+`scripts/test-subagent-transcript-ui.mjs`.
 
 ## Expand and collapse
 
