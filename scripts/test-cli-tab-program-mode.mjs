@@ -206,18 +206,22 @@ try {
   await type('frontend/');
   await sleep(250);
   assert.deepEqual(await chips(), ['frontend/build/', 'frontend/dist/', 'frontend/index.html', 'frontend/vite.config.js', 'frontend/vite-build.log'], 'a named folder offers its contents as chips');
+  // 5c. Every Tab puts its result in the PROMPT: the first tap at `frontend/`
+  //     starts its contents, and each further tap moves to the next match.
+  //     Nothing reaches the terminal's output and nothing is sent to the child.
   await tapKey('Tab');
-  assert.equal(await value(), 'frontend/', 'a folder typed with its own slash is left as the folder');
-  assert.match(await hint(), /tap one below/, 'and the notice points at the chips instead of sounding like a dead end');
-  assert.equal(posts.length, before, 'still nothing written to the child');
-  // 5c. Every Tab writes its result to the terminal screen, the way a shell
-  //     prints the matches above the prompt.
-  assert.match(await outText(), /\u276F Tab — 5 matches: frontend\/build\/  frontend\/dist\/  frontend\/index\.html  frontend\/vite\.config\.js  frontend\/vite-build\.log/, 'a Tab lists its matches in the output');
+  assert.equal(await value(), 'frontend/build/', 'a Tab puts the first match in the box');
+  await tapKey('Tab');
+  assert.equal(await value(), 'frontend/dist/', 'a second Tab moves to the next match');
+  await tapKey('Tab');
+  assert.equal(await value(), 'frontend/index.html', 'and the next one after that');
+  assert.doesNotMatch(await outText(), /Tab —/, 'the match list is not written into the terminal output');
+  assert.equal(posts.length, before, 'and nothing reaches the child');
 
   // The chip rewrites the whole line, command included.
   await type('ls frontend');
   await sleep(250);
-  assert.deepEqual(await chips(), ['ls frontend/build/', 'ls frontend/dist/', 'ls frontend/index.html', 'ls frontend/vite.config.js', 'ls frontend/vite-build.log'], 'chips keep the command in front of the path');
+  assert.deepEqual(await chips(), ['ls frontend/build/', 'ls frontend/dist/', 'ls frontend/index.html', 'ls frontend/vite.config.js', 'ls frontend/vite-build.log'], 'chips show the folder contents with the command kept');
   await evaluate("document.querySelector('.cli__suggest-chip').click()");
   await sleep(150);
   assert.equal(await value(), 'ls frontend/build/', 'tapping a chip fills the whole line, command and path');

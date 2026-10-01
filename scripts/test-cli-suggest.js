@@ -33,7 +33,7 @@ async function run() {
   const keys = await import('../frontend/src/components/chat/cliKeys.js');
   const suggest = await import('../frontend/src/components/chat/cliSuggest.js');
   const { CLI_KEYS, cursorKeyMode, keyById, keyForEvent, keepEditorFocus, keyPayload, lineEditorState, splitTypedTab } = keys;
-  const { MAX_SUGGESTIONS, MAX_HISTORY, rememberCommand, suggestionsFor, completeLocally, completionLive, completionReport, listDirFor, relativeDir, stepHistory } = suggest;
+  const { MAX_SUGGESTIONS, MAX_HISTORY, rememberCommand, suggestionsFor, completeLocally, cycleStep, completionReport, listDirFor, relativeDir, stepHistory } = suggest;
 
   // ---- 1. The key row -------------------------------------------------
 
@@ -327,32 +327,56 @@ async function run() {
     completeLocally('npm ru', cHist, cEntries, { relDir: 'npm', names: ['run'] }) === 'npm run ',
     completeLocally('npm ru', cHist, cEntries, { relDir: 'npm', names: ['run'] }));
 
-  // ---- 6e. Every Tab reports its result, like a shell -------------------
+  // ---- 6e. Every Tab puts its result in the prompt ----------------------
   //
-  // bash prints the matches above the prompt; the sheet now does the same, so a
-  // Tab is worth pressing even when the field cannot move.
-  const live = (draft, dir) => completionLive(completionReport(draft, cHist, cEntries, dir));
+  // A Tab is the phone's way to see the candidates: the first tap completes, and
+  // each further tap on the same line puts the *next* match in the box, wrapping.
+  // The list is frozen when the run starts — recomputing it against the text the
+  // last tap wrote would append to itself.
+  const box = (start, dir, taps) => {
+    let text = start;
+    let session = null;
+    const seen = [];
+    for (let i = 0; i < taps; i++) {
+      const step = cycleStep(session, text, cHist, cEntries, dir);
+      if (step.next == null) { seen.push(null); break; }
+      text = step.next;
+      session = { list: step.list, index: step.index };
+      seen.push(text);
+    }
+    return seen;
+  };
 
-  t('a single match completes and is reported by name',
-    live('git chec', srcDir) === '\u276F Tab \u2014 1 match: git checkout main\n', JSON.stringify(live('git chec', srcDir)));
-  t('several matches are listed, full paths and all',
-    live('ls src/', srcDir) === '\u276F Tab \u2014 3 matches: ls src/components/  ls src/styles.css  ls src/index.js\n',
-    JSON.stringify(live('ls src/', srcDir)));
-  t('naming a folder reports its contents',
-    live('src', srcDir).indexOf('\u276F Tab \u2014 3 matches: src/components/  src/styles.css  src/index.js') === 0,
-    JSON.stringify(live('src', srcDir)));
-  t('naming a folder with its slash reports the same contents',
-    live('src/', srcDir) === live('src', srcDir), JSON.stringify(live('src/', srcDir)));
-  t('a history line reports whole commands',
-    live('git ch', srcDir) === '\u276F Tab \u2014 1 match: git checkout main\n', JSON.stringify(live('git ch', srcDir)));
-  t('an empty line reports nothing',
-    live('', srcDir) === '', JSON.stringify(live('', srcDir)));
-  t('a word with no match reports nothing — the notice under the keys covers it',
-    live('zzzz', srcDir) === '', JSON.stringify(live('zzzz', srcDir)));
-  t('the report is one line, so it cannot flood the scrollback',
-    live('ls src/', srcDir).split('\n').length === 2, JSON.stringify(live('ls src/', srcDir)));
-  t('...and it carries no escape sequence into the grid',
-    !/\u001b/.test(live('ls src/', srcDir)), JSON.stringify(live('ls src/', srcDir)));
+  t('the first Tab is the ordinary completion',
+    box('pac', srcDir, 1)[0] === 'package', JSON.stringify(box('pac', srcDir, 1)));
+  t('a folder name first completes to the folder, then walks its contents',
+    JSON.stringify(box('src', srcDir, 4)) === JSON.stringify(['src/', 'src/components/', 'src/styles.css', 'src/index.js']),
+    box('src', srcDir, 4));
+  t('...and wraps back to the top of the list',
+    box('src', srcDir, 5)[4] === 'src/', box('src', srcDir, 5));
+  t('a folder typed with its slash walks its contents too',
+    JSON.stringify(box('src/', srcDir, 3)) === JSON.stringify(['src/components/', 'src/styles.css', 'src/index.js']),
+    box('src/', srcDir, 3));
+  t('the command in front of the path is kept on every step',
+    JSON.stringify(box('ls src/', srcDir, 2)) === JSON.stringify(['ls src/components/', 'ls src/styles.css']),
+    box('ls src/', srcDir, 2));
+  t('a history line cycles its whole commands',
+    JSON.stringify(box('npm ru', srcDir, 3)) === JSON.stringify(['npm run ', 'npm run test:cli', 'npm run build']),
+    box('npm ru', srcDir, 3));
+  t('a path with one match cannot cycle past it',
+    JSON.stringify(box('src/comp', srcDir, 3)) === JSON.stringify(['src/components/', null]),
+    box('src/comp', srcDir, 3));
+  t('a word with nothing to offer stops',
+    box('zzzz', srcDir, 2)[0] === null, box('zzzz', srcDir, 2));
+  t('a run whose list has one name stops rather than repeating the same line',
+    JSON.stringify(box('git chec', srcDir, 3)) === JSON.stringify(['git checkout main', null]),
+    box('git chec', srcDir, 3));
+  t('a deeper folder is not completed by its parent listing',
+    box('src/components/C', srcDir, 1)[0] === null, box('src/components/C', srcDir, 1));
+  t('...but is once that folder is the one listed',
+    JSON.stringify(box('src/components/C', { relDir: 'src/components', names: ['Chat.jsx', 'cards.js'] }, 3))
+      === JSON.stringify(['src/components/', 'src/components/Chat.jsx', 'src/components/cards.js']),
+    box('src/components/C', { relDir: 'src/components', names: ['Chat.jsx', 'cards.js'] }, 3));
 
   // ---- 6d. A named folder offers its contents as chips ------------------
   //

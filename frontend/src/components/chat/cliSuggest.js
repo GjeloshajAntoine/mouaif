@@ -29,10 +29,33 @@
 // becomes a list to read; the field is still right there for anything else.
 export const MAX_SUGGESTIONS = 7;
 
+// listingFor(line, cache) → the listing that should answer this line, as
+// `{ relDir, names }`, or `null` when the cache has not listed the folder the
+// line is about.
+//
+// This is what makes the folder *follow the line* rather than a single state
+// variable: `frontend/dist/` uses dist's own listing, and stepping back to
+// `ls frontend` uses frontend's again — both straight from the cache, with no
+// refetch and no "the parent's list was replaced" hole.
+//
+// The word the line is on is looked up first, since it may *be* a folder
+// (`frontend`, `frontend/`), then the folder it lives in (`src/comp` → `src`).
+// `cache` is a `Map` of dir → names (see `fetchDir` in the modal).
+export function listingFor(line, cache) {
+  if (!cache || typeof cache.get !== 'function') return null;
+  const word = trailingWord(line);
+  const whole = word.replace(/\/+$/, '');
+  if (whole && cache.has(whole)) return { relDir: whole, names: cache.get(whole) || [] };
+  const parent = folderOf(word);
+  if (parent && cache.has(parent)) return { relDir: parent, names: cache.get(parent) || [] };
+  return null;
+}
+
 // trailingWord(text) — the word the caret is on: everything after the last
 // whitespace. A trailing space means there is no word (''), which is the same
-// rule `completeLocally` completes by.
-function trailingWord(text) {
+// rule `completeLocally` completes by. Exported because the modal derives the
+// listing to answer with from the same word (see `listingFor`).
+export function trailingWord(text) {
   const base = String(text == null ? '' : text);
   const at = base.search(/\S*$/);
   return at === -1 ? '' : base.slice(at);
@@ -183,21 +206,44 @@ function candidatesFor(base, history, entries, dirEntries) {
   return names.length ? { kind: 'path', items: names, head: prefix, whole: false, entered: word } : none;
 }
 
-// completionLive(report) → the text a Tab writes onto the terminal screen: the
-// match list, every time.
+// cycleStep(session, current, history, entries, dirEntries) → `{ next, index,
+// list }`. One Tab's worth of work, where the result goes into the **prompt**.
 //
-// This is what a shell does and what the sheet was missing. bash does not just
-// extend the word and stay quiet — press Tab on an ambiguous word and it prints
-// the matches above the prompt, which is how you discover a name you did not
-// know existed. The row of chips is a tap target; this is the record, and it
-// stays in the scrollback where output belongs. Returns '' when there is
-// nothing to show (a Tab with no candidates already says so under the keys).
-export function completionLive(report) {
-  const list = report && Array.isArray(report.list) ? report.list : [];
-  if (!list.length) return '';
-  const label = report.candidates === 1 ? 'match' : 'matches';
-  const columns = list.map((text) => text.replace(/\s+$/, '')).join('  ');
-  return '\u276F Tab \u2014 ' + report.candidates + ' ' + label + ': ' + columns + '\n';
+// The first tap of a run is the ordinary completion, so nothing about a single
+// Tab changes. Each further tap on the same unchanged line puts the *next*
+// match in the box, wrapping around — a phone's substitute for pressing Tab
+// twice in bash to see the list, in the one place the user is already looking.
+//
+// `session` is the run so far (`{ list, index }`, or `null`): the candidate list
+// is frozen when the run starts, because a candidate list recomputed against the
+// text a previous tap just wrote would append to itself (`frontend/` →
+// `frontend/public/` → `frontend/public/public/`). A run whose list is a single
+// name is abandoned rather than repeated, so a listing that arrives after the
+// first tap is picked up by the next one.
+export function cycleStep(session, current, history, entries, dirEntries) {
+  const base = String(current == null ? '' : current);
+  const frozen = session && Array.isArray(session.list) && session.list.length > 1
+    && session.list[session.index] === base;
+  if (frozen) {
+    const index = (session.index + 1) % session.list.length;
+    return { next: session.list[index], index, list: session.list };
+  }
+  const report = completionReport(base, history, entries, dirEntries);
+  const list = cycleList(report);
+  return list.length ? { next: list[0], index: 0, list } : { next: null, index: 0, list: [] };
+}
+
+// cycleList(report) — the names one run walks through, in order: the completion
+// itself first, then each match it was drawn from. The completion is what a
+// single Tab has always put in the prompt, so the first tap never changes
+// meaning; the rest is what the taps after it offer.
+function cycleList(report) {
+  const out = [];
+  if (report.changed && report.next) out.push(report.next);
+  for (const item of Array.isArray(report.list) ? report.list : []) {
+    if (item && !out.includes(item)) out.push(item);
+  }
+  return out;
 }
 
 // completionReport(text, history, entries, dirEntries) → `{ next, changed,
@@ -229,8 +275,7 @@ export function completionReport(text, history, entries, dirEntries) {
     return next == null || next === base
       ? { next, changed: false, reason: 'ambiguous', candidates: list.length, list }
       : { next, changed: true, reason: 'completed', candidates: list.length, list };
-  }
-  const next = completeLocally(base, history, entries, dirEntries);
+  }  const next = completeLocally(base, history, entries, dirEntries);
   if (next == null || next === base) {
     return { next, changed: false, reason: 'ambiguous', candidates: list.length, list };
   }
@@ -252,22 +297,22 @@ export function completionReport(text, history, entries, dirEntries) {
 function namesIn(dirEntries, word) {
   if (!dirEntries || typeof dirEntries.relDir !== 'string' || !Array.isArray(dirEntries.names)) return null;
   const relDir = dirEntries.relDir;
-  // A word that *is* the listed directory completes to its slash, whether or not
-  // its children are known yet — the next Tab is about them, which is what the
-  // fetched listing is for.
-  if (word === relDir) {
-    return { head: relDir + '/', names: dirEntries.names.slice(), open: true, whole: true };
-  }
-  if (word === relDir + '/') {
-    return { head: word, names: dirEntries.names.slice(), open: true, whole: false };
+  // A word that *is* the listed directory (`src` or `src/`) completes to its
+  // slash and carries the listing, so the next Tab is about its children.
+  if (word === relDir || word === relDir + '/') {
+    return { head: relDir + '/', names: dirEntries.names.slice(), open: true, whole: word === relDir };
   }
   if (!word.startsWith(relDir + '/')) return null;
+  // The word can only be completed by the directory it actually lives in, so
+  // that directory has to *be* the one listed: `src/comp` (folder `src`) asks
+  // this listing, while `src/components/C` (folder `src/components`) does not —
+  // it needs that folder's own listing, which the modal fetches and a later Tab
+  // uses. Answering it here would offer `src`'s children under
+  // `src/components/`, which is how a completion invents paths that do not
+  // exist. A word ending in a slash names its own folder, so
+  // `src/components/` is the deeper folder too, not this one.
+  if (word.endsWith('/') || folderOf(word) !== relDir) return null;
   const rest = word.slice(relDir.length + 1);
-  // A trailing slash means the word *is* that directory: Tab lists it rather
-  // than completing it, so `src/` and `src/comp` behave the way a shell does.
-  if (rest.endsWith('/')) {
-    return { head: word, names: dirEntries.names.slice(), open: false, whole: false };
-  }
   const at = rest.lastIndexOf('/');
   const typed = at === -1 ? rest : rest.slice(at + 1);
   if (!typed) return null;
@@ -280,6 +325,18 @@ function namesIn(dirEntries, word) {
     if (!names.includes(name)) names.push(name);
   }
   return { head, names, open: false, whole: false };
+}
+
+// folderOf(word) — the directory a path word lives in: everything before its
+// last slash (`src/comp` → `src`, `src/components/C` → `src/components`). A word
+// that *is* a directory (`src/components/`) answers with that directory, which
+// is what keeps a nested folder from being completed by its parent's listing.
+// `null` for a bare name, which lives in the project root.
+function folderOf(word) {
+  const text = String(word == null ? '' : word);
+  if (text.endsWith('/')) return text.replace(/\/+$/, '') || null;
+  const at = text.lastIndexOf('/');
+  return at <= 0 ? null : text.slice(0, at);
 }
 
 // listDirFor(line, current) → the directory whose listing would complete the

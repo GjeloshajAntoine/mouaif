@@ -23,13 +23,11 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
-- **Every Tab reports its result** — a Tab writes its matches onto the terminal
-  screen, the way bash prints them above the prompt: `❯ Tab — 5 matches:
-  frontend/build/  frontend/dist/  frontend/index.html  …`. One line per tap, so
-  pressing Tab is worth doing even when the prompt cannot move, and a folder you
-  have not opened yet can be inspected without running `ls`. The sentence under
-  the key rows now appears only for a Tab that found nothing, where there is no
-  list to print.
+- **Tab walks the matches in the prompt, not the terminal** — a Tab puts its
+  result where you are typing: the first tap completes, each further tap on the
+  same line swaps in the next match and wraps (`frontend/` → `frontend/build/` →
+  `frontend/dist/` → …). The candidate list is frozen for the run, so it can
+  never append to itself, and typing, a chip or ↑/↓ ends the run.
 - **A named folder now shows what is inside it** — at `frontend/` (or with a
   partial segment inside it, `frontend/s`) Tab had nothing left to append, so
   the sheet could only report "no further completion": true, and useless on a

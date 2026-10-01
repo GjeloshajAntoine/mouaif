@@ -42,7 +42,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks'
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
 import { CLI_KEYS, cursorKeyMode, keepEditorFocus, keyForEvent, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
-import { rememberCommand, suggestionsFor, completeLocally, completionLive, completionReport, listDirFor, stepHistory } from './cliSuggest.js';
+import { rememberCommand, suggestionsFor, completeLocally, cycleStep, completionReport, listDirFor, listingFor, stepHistory } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
 
 // completionNotice(report) → the one line shown under the prompt when Tab could
@@ -83,16 +83,15 @@ export function CliModal(props) {
   // row (`null` until the listing answers: a fetch that has not happened
   // invents no chips).
   const [entries, setEntries] = useState(null);
-  // `dirEntries` — the names of the directory the current line is completing
-  // *inside* (`{ relDir, names }`), so Tab can keep going past the project's top
-  // level: `src/comp` completes from src's children.
-  //
   // `dirsRef` caches every listing the sheet has fetched (dir → names), so
-  // returning to a directory the user visited earlier is synchronous and free.
-  // It is bounded by the folders actually opened, not by the project's size.
-  const [dirEntries, setDirEntries] = useState(null);
+  // returning to a folder the user visited earlier is synchronous and free — and
+  // so the *parent* folder is still there after a completion walks into a
+  // subfolder. It is bounded by the folders actually opened, not by the project's
+  // size. `[dirsVersion]` bumps when the cache changes, which is what re-derives
+  // `dirEntries` below.
   const dirsRef = useRef(null);
   if (!dirsRef.current) dirsRef.current = new Map();
+  const [dirsVersion, setDirsVersion] = useState(0);
 
   // Where the field sits in the ↑/↓ walk over the session's own history: -1
   // means "not walking" (the field holds a fresh line). Reset whenever the user
@@ -340,6 +339,18 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
 
   const [cmdText, setCmdText] = useState('');
+  // cycleSessionRef — the run of Tabs on one unchanged line: the candidate list
+  // frozen when the run started, and which entry it is showing. Each further tap
+  // puts the next match in the box (see cycleStep in cliSuggest.js). Typing,
+  // recalling a command or sending clears it, so the next Tab starts a fresh run
+  // from whatever is in the box then.
+  const cycleSessionRef = useRef(null);
+  const endCycle = useCallback(() => { cycleSessionRef.current = null; }, []);
+  // The listing that answers the current line — derived from the line itself and
+  // the cache (see `dirsRef` and `listingFor` in cliSuggest.js), never a second
+  // piece of state a completion can overwrite. Deriving it per line is what keeps
+  // the *parent* folder's listing alive after a completion walks into a subfolder.
+  const dirEntries = useMemo(() => listingFor(cmdText, dirsRef.current), [cmdText, dirsVersion]);
   // `notice` — the line under the prompt that explains a Tab which could not
   // advance the field (see completionNotice). Cleared by the next keystroke and
   // by a Tab that works, so it never becomes standing chrome.
@@ -450,20 +461,17 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   // candidates changes nothing.
   const fetchDir = useCallback((relDir) => {
     const target = String(relDir == null ? '' : relDir).replace(/\/+$/, '');
-    if (!target) return;
-    const cached = dirsRef.current.get(target);
-    if (cached) {
-      setDirEntries((prev) => (prev && prev.relDir === target ? prev : { relDir: target, names: cached }));
-      return;
-    }
+    if (!target || dirsRef.current.has(target)) return;
+    // Reserve the entry first, so a Tab that fires again before the answer
+    // arrives does not send a second request for the same folder.
+    dirsRef.current.set(target, null);
     fetchJson('/api/files?projectDir=' + encodeURIComponent(projectDir || '') + '&dir=' + encodeURIComponent(target))
       .then((r) => {
-        if (r.status !== 200 || !r.body || !Array.isArray(r.body.entries)) return;
-        const names = r.body.entries.map((e) => (e.type === 'dir' ? e.name + '/' : e.name));
-        dirsRef.current.set(target, names);
-        setDirEntries((prev) => (prev && prev.relDir === target ? prev : { relDir: target, names }));
+        if (r.status !== 200 || !r.body || !Array.isArray(r.body.entries)) { dirsRef.current.delete(target); return; }
+        dirsRef.current.set(target, r.body.entries.map((e) => (e.type === 'dir' ? e.name + '/' : e.name)));
+        setDirsVersion((v) => v + 1);
       })
-      .catch(() => {});
+      .catch(() => { dirsRef.current.delete(target); });
   }, [projectDir]);
 
   // complete() — what the key row's Tab, a hardware Tab, and a Tab a phone
@@ -481,37 +489,31 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   function complete() {
     const el = inputRef.current;
     const current = el ? el.value : cmdText;
-    const report = completionReport(current, history, entries, dirEntries);
-    // Every Tab puts its result on the terminal screen — the match list, exactly
-    // as a shell prints it. That is the one place the answer is visible even
-    // when the field cannot move, and it is what makes Tab useful for discovery
-    // (`ls src/` then Tab shows what is in there) rather than only for typing
-    // less.
-    const live = completionLive(report);
-    if (live) writeOut(live);
-    // A Tab that can neither advance the line nor name anything says why under
-    // the keys, for a moment. Silence would be indistinguishable from a broken
-    // button on a phone, and it is the one symptom a bug report cannot pin down
-    // afterwards.
-    if (!report.changed) {
-      showNotice(completionNotice(report));
-      // Nothing to complete, but the line may still *name* a directory — the
-      // user typed `frontend/` and pressed Tab. List it, so the next Tab can
-      // complete inside it and this tap is never a dead end.
+    // One Tab's worth of work: the first tap completes as it always did, and
+    // each further tap on the same line puts the *next* match in the box (see
+    // cycleStep). The candidates are frozen for the run, so the box never
+    // appends to itself.
+    const step = cycleStep(cycleSessionRef.current, current, history, entries, dirEntries);
+    if (step.next == null) {
+      // Nothing to put in the box. Say why under the keys for a moment — silence
+      // would be indistinguishable from a broken button on a phone — and list the
+      // folder the line names, so the next Tab can complete inside it.
+      showNotice(completionNotice(completionReport(current, history, entries, dirEntries)));
       const pending = listDirFor(current, dirEntries);
       if (pending) fetchDir(pending);
       return;
     }
-    const next = report.next;
-    // A completion that landed on a directory *is* the directory to list, so the
-    // next Tab is about its children; otherwise the line in the field names the
-    // directory the next Tab will complete inside.
-    const landedOnDir = next.endsWith('/') ? next : null;
-    const dir = listDirFor(landedOnDir != null ? landedOnDir : current, dirEntries);
+    cycleSessionRef.current = { list: step.list, index: step.index };
+    // Make sure the folder the *result* needs is listed: a result that lands on a
+    // directory lists it, and a result inside one (`ls src/comp`) lists the folder
+    // it lives in. Walking back to an earlier candidate is covered too — it names
+    // a folder that was listed on the way in, and `fetchDir` is a no-op then.
+    const landedOnDir = step.next.endsWith('/') ? step.next : null;
+    const dir = listDirFor(landedOnDir != null ? landedOnDir : step.next, dirEntries);
     if (dir) fetchDir(dir);
     showNotice('');
-    setCmdText(next);
-    if (el) { el.value = next; el.setSelectionRange(next.length, next.length); }
+    setCmdText(step.next);
+    if (el) { el.value = step.next; el.setSelectionRange(step.next.length, step.next.length); }
   }
 
   // recall(dir) — the key row's ↑/↓, walking the session's own history (newest
@@ -521,6 +523,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     const stepped = stepHistory(history, recallIndexRef.current, dir);
     if (stepped.text == null) { recallIndexRef.current = -1; return; }
     recallIndexRef.current = stepped.index;
+    endCycle();
     setCmdText(stepped.text);
     if (el) { el.value = stepped.text; el.setSelectionRange(stepped.text.length, stepped.text.length); }
   }
@@ -536,7 +539,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     // away at the first keystroke — it is feedback on one tap, not a status bar.
     if (notice) showNotice('');
     const typed = splitTypedTab(el.value);
-    if (!typed) { setCmdText(el.value); recallIndexRef.current = -1; return; }
+    if (!typed) { endCycle(); setCmdText(el.value); recallIndexRef.current = -1; return; }
     el.value = typed.before;
     complete();
     const done = el.value;
@@ -549,6 +552,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     // An empty line is meaningful to a prompt (accept the default) and is a
     // harmless fresh prompt otherwise — always forward the Enter.
     const cmd = cmdText;
+    endCycle();
     setCmdText('');
     recallIndexRef.current = -1;
     // Remember the line as history only when it is known to be a command for
@@ -568,6 +572,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   // a single key. Never echoed and never remembered — it is an answer.
   function runRaw() {
     const raw = cmdText;
+    endCycle();
     setCmdText('');
     recallIndexRef.current = -1;
     post(raw, true);
@@ -577,9 +582,11 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   // so a suggestion is exactly as reversible as anything typed — the rule the
   // inspector's value suggestions follow for a property.
   const applySuggestion = useCallback((text) => {
+    // A chip replaces the line outright, so any Tab run in progress is over.
+    endCycle();
     setCmdText(String(text == null ? '' : text));
     if (inputRef.current) inputRef.current.focus();
-  }, []);
+  }, [endCycle]);
 
   // The suggestion row. Both sources are short capped lists (see
   // cliSuggest.js), so the row costs the same on a long build as on `ls`:
