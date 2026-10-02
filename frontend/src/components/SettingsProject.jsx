@@ -374,13 +374,20 @@ setSkillsOn(cp.skills !== false);
   async function saveToolOutput(size, structure) {
     const nextSize = normalizeOutputSize(size);
     const nextStructure = normalizeOutputStructure(structure);
-    setOutputSize(nextSize);
-    setOutputStructure(nextStructure);
-    setOutputStatusMsg('saving…');
-    await patchProject({ toolOutput: { size: nextSize, structure: nextStructure } }, setOutputStatusMsg, 'saved');
+    try {
+      if (await patchProject({ toolOutput: { size: nextSize, structure: nextStructure } }, setOutputStatusMsg, 'saved')) {
+        setOutputSize(nextSize);
+        setOutputStructure(nextStructure);
+      }
+    } catch (err) {
+      setOutputStatusMsg('save failed: ' + (err.message || String(err)));
+    }
+  }
+  function onOutputSize(e) {
+    return saveToolOutput(e && e.target ? e.target.value : outputSize, outputStructure);
   }
   function onOutputStructure(e) {
-    saveToolOutput(outputSize, e && e.target ? e.target.value : outputStructure);
+    return saveToolOutput(outputSize, e && e.target ? e.target.value : outputStructure);
   }
 
   async function onChatTraceChange(e) {
@@ -1111,11 +1118,20 @@ h('h2', { class: 'view-title' }, 'File tool options')
 h('ul', { class: 'group__list' },
 h('li', { class: 'settings-project__item' },
 h('div', { class: 'settings-project__item-main' },
+h('label', { class: 'settings-project__item-title', for: 'sp-output-size' }, 'Output size'),
+h('div', { class: 'settings-project__item-note' }, 'How much native and MCP tool output reaches the model before truncation.')
+),
+h('select', { class: 'input settings-project__select', id: 'sp-output-size', value: normalizeOutputSize(outputSize), onChange: onOutputSize, disabled: outputStatusMsg === 'saving…' },
+  Object.entries(OUTPUT_SIZES).map(([value, meta]) => h('option', { value }, meta.label))
+)
+),
+h('li', { class: 'settings-project__item' },
+h('div', { class: 'settings-project__item-main' },
 h('label', { class: 'settings-project__item-title', for: 'sp-output-structure' }, 'Layout'),
 h('div', { class: 'settings-project__item-note' }, 'How file-listing results (list_files, search_files) are shaped for the model.'),
 h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, outputStatusMsg)
 ),
-          h('select', { class: 'input settings-project__select', id: 'sp-output-structure', value: normalizeOutputStructure(outputStructure), onChange: onOutputStructure },
+          h('select', { class: 'input settings-project__select', id: 'sp-output-structure', value: normalizeOutputStructure(outputStructure), onChange: onOutputStructure, disabled: outputStatusMsg === 'saving…' },
             Object.entries(OUTPUT_STRUCTURES).map(([value, meta]) => h('option', { value }, meta.label))
           )
         )

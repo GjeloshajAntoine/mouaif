@@ -64,7 +64,7 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
       const endpoint = new URL(url, 'http://fixture').pathname;
       const bodies = {
         '/api/settings/project': { project, path: projectDir + '/.mouaif.json' },
-        '/api/settings/resolved': { resolved: {} },
+        '/api/settings/resolved': { resolved: { toolOutput: project.toolOutput } },
         '/api/tools/authorization': authorization,
         '/api/tools/list': { tools: catalog },
         '/api/mcp/servers': { servers },
@@ -182,6 +182,27 @@ for (const failure of [{ saveStatus: 503 }, { saveError: 'network unavailable' }
   await view.render('technical').find((n) => n.tag === 'button' && n.children.includes('Save file')).attrs.onClick();
   assert.equal(view.render('technical').find((n) => n.tag === 'button' && n.children.includes('Save file')).attrs.disabled, false, 'failed raw saves can be retried');
   assert.equal(view.render('technical').find((n) => n.attrs.id === 'sp-project-editor').attrs.value, '{}', 'failure keeps editor contents');
+}
+
+const outputView = createView({ toolOutput: { size: 'full', structure: 'json' } });
+outputView.render(); await outputView.load();
+const outputControl = (view, id) => view.render('output').find((n) => n.attrs.id === id);
+assert.equal(outputControl(outputView, 'sp-output-size').attrs.value, 'full', 'stored sizes remain selected');
+assert.equal(outputControl(outputView, 'sp-output-size').children[0].length, 4, 'all backend sizes are available');
+for (const size of ['very-small', 'average', 'full', 'extensive']) {
+  await outputControl(outputView, 'sp-output-size').attrs.onChange({ target: { value: size } });
+  assert.deepEqual(outputView.requests.filter((r) => r.toolOutput).at(-1).toolOutput, { size, structure: 'json' }, 'size edits preserve layout');
+  assert.equal(outputControl(outputView, 'sp-output-size').attrs.value, size);
+}
+await outputControl(outputView, 'sp-output-structure').attrs.onChange({ target: { value: 'tree' } });
+assert.deepEqual(outputView.requests.filter((r) => r.toolOutput).at(-1).toolOutput, { size: 'extensive', structure: 'tree' }, 'layout edits preserve size');
+for (const failure of [{ saveStatus: 503 }, { saveError: 'network unavailable' }]) {
+  const view = createView({ toolOutput: { size: 'full', structure: 'json' } }, [], failure);
+  view.render(); await view.load();
+  await outputControl(view, 'sp-output-size').attrs.onChange({ target: { value: 'average' } });
+  assert.equal(outputControl(view, 'sp-output-size').attrs.value, 'full', 'failed output saves preserve size');
+  assert.equal(outputControl(view, 'sp-output-structure').attrs.value, 'json');
+  assert.equal(outputControl(view, 'sp-output-size').attrs.disabled, false, 'output saves remain retryable');
 }
 
 const permissionCatalog = [
