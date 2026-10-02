@@ -30,6 +30,8 @@ The generated `features/*.html`, `index.html`, `documentation.html`, `assets/` a
 
 The landing page (`index.html`) shows eleven phone-width captures of the running app, so a reader sees what the app actually does rather than only reading about it. Under the hero, the `#screens` section is **one section per capability**: each carries its own H2 title, one short paragraph saying what the capability is and why it is different, and that capability's capture.
 
+The `#screens` wrapper itself carries **no heading and no lead paragraph**. An earlier revision put "What it does that others do not" and a line about 390 px captures above the first section, which stacked a third heading on top of the first section's own H2 and pushed the first real capture further down the phone screen for no information a reader could use. The hero's tagline already says what the app is, and the sections say the rest.
+
 The sections are ordered by how much they distinguish the app, not by navigation order — the chat run, the terminal, git and the editor come first, and the configuration screens (settings, project settings) are deliberately **not** sections at all: a page that lists its own settings is a manual, not a pitch.
 
 The eleven sections, in page order:

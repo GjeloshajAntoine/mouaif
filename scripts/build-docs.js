@@ -1457,8 +1457,6 @@ npx mouaif serve --auth-setup</code></pre>
 </div>
 </section>
 <section class="section" id="screens">
-<h2>What it does that others do not</h2>
-<p class="lead">One section per capability, captured on a 390 px phone — the real UI, not a mockup.</p>
 ${landingSections}
 <p><a href="features/app-abilities.html">See every app ability →</a> · <a href="features/mouaif-features.html">Feature reference for agents →</a></p>
 </section>
