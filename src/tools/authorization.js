@@ -813,16 +813,20 @@ async function authorize(input) {
   // the gate. A stale deny or grant would otherwise short-circuit here and
   // the dispatcher would fall back to a `cancelled: true` result even
   // though the user was never asked (or already answered a re-issued call).
+  // `forcePrompt` marks one call that must reach the user even when the
+  // tool is `allow`, allowlisted, or session-granted (e.g. update_settings
+  // writing permission keys). Only a decision on this very call resolves it.
+  const forcePrompt = input.forcePrompt === true;
   if (!BINARY_MODE_TOOLS.has(tool)) {
     if (session.deniedCallIds.has(callId)) throw typedError('EDENIED', 'user denied');
-    if (session.grants.has(tool)) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
+    if (!forcePrompt && session.grants.has(tool)) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
     if (session.allowedCallIds.get(callId) === tool) {
       session.allowedCallIds.delete(callId);
       return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
     }
   }
-  if (config.mode === 'allow') return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
-  if (config.mode === 'allowlist') {
+  if (!forcePrompt && config.mode === 'allow') return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
+  if (!forcePrompt && config.mode === 'allowlist') {
     // A batch is approved only when EVERY target matches. Matching just
     // the first path (or a combined summary) could approve unlisted files.
     const batchKey = tool === 'group_read' ? 'files' : tool === 'group_edit' ? 'edits' : null;

@@ -54,6 +54,10 @@ const MAX_ATTACHMENTS = 8;
 // (12 MB of characters). 6 MB of pixels stays under both once encoded.
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 const MESSAGE_PREVIEW_CHARS = 400;
+// Settings keys that grant or reshape tool permissions / auth state. A
+// write to any of them always needs a user decision (see ai-stream.js),
+// so a model holding `update_settings: allow` cannot widen its own reach.
+const PERMISSION_KEYS = Object.freeze(['tools', 'mcp', 'authAccounts', 'authPending']);
 
 // ---- Area table ----------------------------------------------------------
 // The action -> area map is data, not control flow: the schema enum below is
@@ -419,7 +423,14 @@ async function runChats(args, opts) {
         'deleting a chat destroys its transcript and cannot be undone — call again with confirm: true to delete "' + chat.title + '"',
         { chatId, title: chat.title, messageCount: messages.getMessageCount(projectDir, chatId) });
     }
+    // The running turn keeps appending tool rows to its own chat; deleting
+    // it mid-turn leaves orphan messages behind a chat that no longer exists.
+    if (opts && typeof opts.chatId === 'string' && opts.chatId.trim() === chatId) {
+      throw typedError('EBADINPUT', 'cannot delete the chat this turn is running in — delete it from the chat list');
+    }
     chats.deleteChat(projectDir, chatId);
+    // Same cleanup as DELETE /api/chats/:id.
+    try { require('./task.js').clearChat(chatId); } catch { /* non-fatal */ }
     return ok({ ok: true, deleted: chatId, title: chat.title });
   }
 
@@ -542,6 +553,37 @@ function selectKeys(value, keys) {
   return out;
 }
 
+// sanitizeClientEntries re-attaches the stored apiKey to a round-tripped
+// entry. If the entry now points at a different baseUrl, that would send
+// the stored credential to a host the user never entered it for — so the
+// key is dropped and must be re-entered in Settings → Providers.
+function dropKeyOnRedirect(entries, existing) {
+  if (!Array.isArray(entries)) return;
+  const prior = Array.isArray(existing) ? existing : [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object' || typeof entry.apiKey !== 'string') continue;
+    const prev = prior.find((x) => x && x.id === entry.id);
+    if (!prev || prev.apiKey !== entry.apiKey) continue;
+    const before = typeof prev.baseUrl === 'string' ? prev.baseUrl.trim() : '';
+    const after = typeof entry.baseUrl === 'string' ? entry.baseUrl.trim() : '';
+    if (before !== after) delete entry.apiKey;
+  }
+}
+
+// permissionKeysTouched(args) -> string[]  PERMISSION_KEYS that an
+// update_settings call would write or remove.
+function permissionKeysTouched(args) {
+  if (!args || typeof args !== 'object') return [];
+  const keys = new Set();
+  if (args.patch && typeof args.patch === 'object' && !Array.isArray(args.patch)) {
+    for (const key of Object.keys(args.patch)) keys.add(key);
+  }
+  if (Array.isArray(args.unset)) {
+    for (const key of args.unset) if (typeof key === 'string') keys.add(key.trim());
+  }
+  return PERMISSION_KEYS.filter((key) => keys.has(key));
+}
+
 function runSettings(args, opts) {
   const projectDir = resolveProjectDir(opts);
   const action = args.action;
@@ -573,14 +615,26 @@ function runSettings(args, opts) {
       && patch[key].some((entry) => entry && Object.prototype.hasOwnProperty.call(entry, 'apiKey'))))) {
     throw typedError('EBADINPUT', 'apiKey is not writable through this tool — connect the provider in Settings \u2192 Providers');
   }
-  if (patch) {
-    const current = scope === 'app' ? settings.getApp() : settings.getProject(projectDir);
-    const shared = require('../server-shared.js');
-    for (const key of ['providers', 'models']) shared.sanitizeClientEntries(patch, key, current[key]);
-  }
+  const shared = require('../server-shared.js');
   if (scope === 'app') {
     if (unset.length) throw typedError('EBADINPUT', 'unset is only supported for project scope');
     if (!patch) throw typedError('EBADINPUT', 'app scope needs a patch object');
+    // Only keys the client can read back are writable: anything else would
+    // be stored where neither the UI nor get_settings can show or undo it.
+    const hidden = Object.keys(patch).filter((key) => !shared.CLIENT_SETTINGS_KEYS.includes(key));
+    if (hidden.length) {
+      throw typedError('EBADINPUT', 'not a writable app setting: ' + hidden.join(', ') +
+        ' — writable keys: ' + shared.CLIENT_SETTINGS_KEYS.join(', '));
+    }
+  }
+  if (patch) {
+    const current = scope === 'app' ? settings.getApp() : settings.getProject(projectDir);
+    for (const key of ['providers', 'models']) {
+      shared.sanitizeClientEntries(patch, key, current[key]);
+      dropKeyOnRedirect(patch[key], current[key]);
+    }
+  }
+  if (scope === 'app') {
     const merged = settings.setApp(patch);
     return ok({ ok: true, scope: 'app', updated: Object.keys(patch), settings: forClient(merged) });
   }
@@ -688,6 +742,8 @@ module.exports = {
   ACTION_NAMES,
   SPECS,
   TOOL_NAMES,
+  PERMISSION_KEYS,
+  permissionKeysTouched,
   runAppTool,
   runMouaif
 };

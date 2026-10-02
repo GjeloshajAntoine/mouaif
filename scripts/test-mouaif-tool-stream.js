@@ -148,6 +148,24 @@ async function main() {
   assert.equal(out.ok, false);
   assert.equal(chats.countChats(projectDir), before);
   assert.equal(out.events.some((event) => event.type === 'authorization_required'), false, 'Off tools fail before approval');
+
+  // Permission keys always reach the user, even with update_settings: allow.
+  out = await call(host, { action: 'settings_update', scope: 'project', patch: { tools: { shell: { mode: 'allow' } } } }, { decision: 'deny' });
+  assert.ok(out.events.some((event) => event.type === 'authorization_required'), 'permission writes prompt under allow');
+  assert.equal(out.ok, false);
+  assert.notEqual((settings.getProject(projectDir).tools.shell || {}).mode, 'allow', 'a denied permission write is not applied');
+  out = await call(host, { action: 'settings_update', scope: 'project', unset: ['mcp'] }, { decision: 'allow-once' });
+  assert.ok(out.events.some((event) => event.type === 'authorization_required'), 'permission unsets prompt too');
+  assert.equal(out.ok, true);
+  out = await call(host, { action: 'settings_update', scope: 'project', patch: { name: 'Plain' } });
+  assert.equal(out.events.some((event) => event.type === 'authorization_required'), false, 'ordinary writes keep allow');
+  assert.equal(out.ok, true);
+
+  // The running chat cannot delete itself.
+  out = await call(host, { action: 'delete', chatId: host.id, confirm: true });
+  assert.equal(out.ok, false);
+  assert.equal(out.returned.code, 'EBADINPUT');
+  assert.ok(chats.getChat(projectDir, host.id), 'the running chat survives');
   console.log('mouaif tool stream: dispatch, result cards, authorization, independent action selection, errors, redaction, attachments, and deletion passed');
 }
 

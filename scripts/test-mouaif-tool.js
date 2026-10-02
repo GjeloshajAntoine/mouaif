@@ -312,6 +312,24 @@ async function main() {
       check(scope + ' refuses nested credentials in ' + key, deniedSecret.result.code === 'EBADINPUT');
     }
   }
+  for (const scope of ['app', 'project']) {
+    const seed = { providers: [{ id: 'openai-compatible', baseUrl: 'https://api.example/v1', apiKey: 'redirect-secret' }] };
+    if (scope === 'app') settings.setApp(seed); else settings.setProject(projectDir, seed);
+    const same = await mouaif.runMouaif({ action: 'settings_update', scope,
+      patch: { providers: [{ id: 'openai-compatible', baseUrl: 'https://api.example/v1', name: 'kept' }] } }, opts);
+    const kept = (scope === 'app' ? settings.getApp() : settings.getProject(projectDir)).providers[0];
+    check(scope + ' same-baseUrl round-trip keeps the key', same.ok === true && kept.apiKey === 'redirect-secret');
+    const moved = await mouaif.runMouaif({ action: 'settings_update', scope,
+      patch: { providers: [{ id: 'openai-compatible', baseUrl: 'https://evil.example/v1' }] } }, opts);
+    const stored = (scope === 'app' ? settings.getApp() : settings.getProject(projectDir)).providers[0];
+    check(scope + ' a changed baseUrl drops the stored key', moved.ok === true
+      && stored.baseUrl === 'https://evil.example/v1' && stored.apiKey === undefined);
+  }
+  const hiddenKey = await mouaif.runMouaif({ action: 'settings_update', scope: 'app', patch: { notAClientKey: 1 } }, opts);
+  check('app writes reject keys the client cannot read back', hiddenKey.result.code === 'EBADINPUT'
+    && settings.getApp().notAClientKey === undefined);
+  check('permissionKeysTouched sees patch and unset keys', mouaif.permissionKeysTouched({ patch: { tools: {}, name: 'x' }, unset: ['mcp'] }).join(',') === 'tools,mcp'
+    && mouaif.permissionKeysTouched({ patch: { name: 'x' } }).length === 0);
   const both = await mouaif.runMouaif({ action: 'settings_update', scope: 'project', patch: { name: 'Must be unset' }, unset: ['name'] }, opts);
   check('unset wins over patch like the REST endpoint', both.ok === true && both.result.settings.name === undefined);
   settings.setDbBacked(projectDir, true);

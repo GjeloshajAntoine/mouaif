@@ -263,7 +263,15 @@ async function runSingleToolCall(c, cx) {
       } else {
         summary = firstStringArgument(args);
       }
+      // update_settings writes to permission keys (tools, mcp, auth state)
+      // always reach the user, even when the tool itself is `allow`.
+      let forcePrompt = false;
+      if (c.name === 'update_settings') {
+        const keys = require('./tools/mouaif.js').permissionKeysTouched(args);
+        if (keys.length) { forcePrompt = true; summary = 'permission keys: ' + keys.join(', '); }
+      }
       const authResult = await authGate.authorize({
+        forcePrompt,
         projectDir: opts && opts.projectDir,
         chatId: opts && opts.chatId,
         tool: c.name,

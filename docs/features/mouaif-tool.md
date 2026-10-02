@@ -24,7 +24,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `get_chat` | Read one chat (`chatId`). `includeMessages: true` adds the last `messageLimit` messages (default 10, max 50). |
 | `create_chat` | Create a chat. `title` names it, `topic` seeds its composer draft, `providerId` + `modelId` pick its model. Returns the chat plus a `#/chat/<id>` link. |
 | `update_chat` | Change `title`, `draft`, `promptId`, `promptSize`, `providerId`, or `modelId` on an existing chat. |
-| `delete_chat` | Delete a chat and its transcript. Requires `confirm: true`. |
+| `delete_chat` | Delete a chat and its transcript. Requires `confirm: true`. Refuses the chat the turn is running in. |
 | `search_chats` | Search titles, drafts, and message text (`query`). Results retain `matchField` and a bounded matching `snippet`. |
 | `attach_chat_image` | Put an image from the project into a chat: `path` is project-relative, `target` is `draft` (default — the composer holds it until the user presses send) or `message` (appends a real user message carrying the image, with optional `content`). |
 | `list_chat_attachments` | Show draft and message image names/types, not pixels. Scans the newest 200 messages by default; follow `nextBeforeSeq` with `beforeSeq` to retrieve older images. |
@@ -98,7 +98,7 @@ Failures come back as a typed envelope the model can act on:
 
 | Code | Meaning |
 | --- | --- |
-| `EBADINPUT` | A missing or invalid argument (wrong type, unknown argument/action/model/prompt/profile, no chat, invalid attachment target, empty patch, `apiKey` in a patch). |
+| `EBADINPUT` | A missing or invalid argument (wrong type, unknown argument/action/model/prompt/profile, no chat, invalid attachment target, empty patch, `apiKey` in a patch, an app key outside the client allowlist, deleting the running chat). |
 | `ENOTFOUND` | The chat does not exist. |
 | `ECONFIRM` | `delete_chat` was called without `confirm: true`. The result also reports the title and message count that would be lost. |
 | `ENOTIMAGE` / `EBINARY` | `attach_chat_image` was pointed at something that is not a readable image. |
@@ -108,5 +108,9 @@ Failures come back as a typed envelope the model can act on:
 
 ### Settings safety
 
-Both settings scopes redact provider/model credentials. Credential writes, including keys inside `providers` or `models`, must go through Settings → Providers instead. Round-tripping redacted settings preserves existing credentials. Project `unset` runs after `patch`, so a key present in both is removed.
+Both settings scopes redact provider/model credentials. Credential writes, including keys inside `providers` or `models`, must go through Settings → Providers instead. Round-tripping redacted settings preserves existing credentials, unless the entry's `baseUrl` changed: then the stored key is dropped, so a credential is never sent to a host it was not entered for. Project `unset` runs after `patch`, so a key present in both is removed.
+
+App-scope writes accept only the keys `get_settings` can read back (the client settings allowlist); anything else is rejected rather than stored out of sight.
+
+A write or `unset` that touches a permission key (`tools`, `mcp`, `authAccounts`, `authPending`) always shows the authorization card, even when `update_settings` is `allow` or granted for the session. The card summary lists the keys. This stops a model from raising its own tool permissions.
 
