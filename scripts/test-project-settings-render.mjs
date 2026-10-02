@@ -222,6 +222,7 @@ for (const failure of [{ saveStatus: 503 }, { saveError: 'network unavailable' }
     await new Promise(resolve => setImmediate(resolve));
     const group = treeFor(view).attrs.groups.find((g) => g.id === groupId);
     assert.equal(group.tools.find((t) => t.id === toolId).checked, true, 'failed leaf save preserves ' + toolId);
+    assert.ok(group.extra?.children[0].includes(failure.saveError || 'HTTP 503'), 'failed save is visible for ' + toolId);
   }
   for (const groupId of ['shell', 'files', 'chats', 'ask_user', 'mcp-fixture']) {
     treeFor(view).attrs.onToggleGroup(groupId, false);

@@ -949,8 +949,8 @@ if (askTool) {
             const prefix = 'mcp__' + slug + '__';
             const displayName = tool.name.startsWith(prefix) ? tool.name.slice(prefix.length) : tool.name;
             return leaf(tool, { name: displayName, checked: mode !== 'off' });
-          }),
-          extra: null
+            }),
+            extra: mcpAuthStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg) : null
         });
       }
     }
