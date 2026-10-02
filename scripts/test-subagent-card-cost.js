@@ -101,7 +101,8 @@ function createElement(tag) {
       return child;
     },
     insertBefore(child, ref) {
-      child.parentNode = node;
+    if (child.parentNode) child.parentNode.removeChild(child);
+    child.parentNode = node;
       const at = node.children.indexOf(ref);
       if (at === -1) node.children.push(child);
       else node.children.splice(at, 0, child);
@@ -366,12 +367,15 @@ function main() {
     const card = refs.transcript.current.querySelector('.tool-card--subagent');
     check('replayed absolute costs do not double count', card._subagentCost === 0.0123);
     check('the returning tab sees the cost on the head', card.querySelector('.tool-card__cost').textContent === '$0.0123');
+    const start = { parentCallId: 'replay', chat: [{ role: 'system', content: 'LIVE_PROMPT' }] };
+    mod.handleSubagentStreamEvent({ eventName: 'start' }, start, refs);
     const snapshot = mod.snapshotExpandedState(refs.transcript.current);
     const rebuilt = makeRefs();
     mod.appendToolCallCard({ id: 'replay', name: 'subagent', args: { task: 'Review' } }, rebuilt);
     mod.restoreExpandedState(snapshot, rebuilt.transcript.current);
     const restored = rebuilt.transcript.current.querySelector('.tool-card--subagent');
     check('a transcript rebuild retains in-flight delegated cost', restored._subagentCost === 0.0123);
+    check('a transcript rebuild retains the live prompt', restored.querySelector('.chat-msg__system-body').textContent === 'LIVE_PROMPT');
     mod.setSubagentCardCost(restored, 0.025);
     mod.restoreExpandedState(snapshot, rebuilt.transcript.current);
     check('a fresh settled cost wins over the old live snapshot', restored._subagentCost === 0.025);

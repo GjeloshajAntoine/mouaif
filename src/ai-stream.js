@@ -107,6 +107,16 @@ async function* readNDJSON(stream) {
 // }
 async function runSingleToolCall(c, cx) {
   const { opts, onEvent, convo, toolSpecs, promptProfilesMod, discoveredToolNames, modelContentForTool } = cx;
+  // Direct REST calls need the same dispatcher closure and advertised tool
+  // surface as model calls; the single-call path makes no parent request.
+  if (typeof cx.dispatchTool !== 'function') {
+    const out = await streamChat(Object.assign({}, opts, {
+    messages: [{ role: 'user', content: '' }], onEvent, singleToolCall: c
+    }));
+    if (out && out.exec) return out;
+    const result = { error: out && out.error || { code: 'ESUBAGENT', message: 'Tool dispatch failed' } };
+    return { exec: { ok: false, result, content: JSON.stringify(result) } };
+  }
   const dispatchTool = cx.dispatchTool;
   const firstStringArgument = cx.firstStringArgument;
   const toolResultImageParts = cx.toolResultImageParts;
@@ -641,6 +651,19 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       result: exec && exec.result,
       maxBytes: opts && opts.appSettings && opts.appSettings.toolFeedbackMaxBytes,
       toolOutput: opts && opts.toolOutput
+    });
+  }
+
+  if (opts && opts.singleToolCall) {
+    return runSingleToolCall(opts.singleToolCall, {
+      opts, onEvent, convo: null, toolSpecs, visibleToolSpecs,
+      promptProfilesMod, discoveredToolNames, modelContentForTool,
+      dispatchTool, firstStringArgument, toolResultImageParts,
+      getLastToolCallKey: () => lastToolCallKey,
+      setLastToolCallKey: (key) => { lastToolCallKey = key; },
+      getRepeatedToolCallCount: () => repeatedToolCallCount,
+      setRepeatedToolCallCount: (count) => { repeatedToolCallCount = count; },
+      REPEATED_TOOL_CALL_LIMIT
     });
   }
 
@@ -1756,9 +1779,19 @@ return { ok: false, content: JSON.stringify(r), result: r };
           return false;
         });
       }
+      // The resolved instructions are already known before the first
+      // upstream request. Send them through the buffered nested channel,
+      // not a top-level message (which would pollute the parent transcript).
+      if (typeof onEvent === 'function') {
+      onEvent('subagent_event', {
+      parentCallId: (callOpts && callOpts.callId) || null,
+      kind: 'start',
+      data: { chat: nestedMessages, agent: agentName || undefined, model: nestedModelRef }
+      });
+      }
       const nested = await streamChat({
-        model: nestedModel,
-        messages: nestedMessages,
+      model: nestedModel,
+      messages: nestedMessages,
         signal,
         projectDir: callOpts && callOpts.projectDir,
         chatId: callOpts && callOpts.chatId,

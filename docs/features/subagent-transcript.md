@@ -13,7 +13,33 @@ A `subagent` tool card keeps the delegated conversation in its expanded body. Th
 | `assistant` | An assistant chat bubble with markdown, labelled with the model that ran the delegated call. |
 | `tool` | A compact nested tool row (verb label, one-line arguments, per-tool result summary, status dot, per-tool preview) — not a chat bubble, so the assistant→tool→assistant loop stays readable. |
 
+**The prompt is available as soon as the authorized run starts**, before its first model request finishes. The expanded card shows the resolved system instructions (unfolded by default) and delegated task/context above the live activity. Returning tabs receive the same initial prompt through replay, and a transcript rebuild keeps it; there is no need to wait for the final answer.
+
 While the run is in flight, answers and provider-exposed reasoning stream into assistant bubbles, with a new bubble after each tool round. The final transcript keeps those replies and Thinking sections in their original order, instead of merging all answers after the tools. Thinking sections fold like the main chat; reasoning-only turns remain visible.
+
+## Live prompt delivery
+
+Model-driven runs emit an initial `subagent_event` with `kind: "start"`,
+`parentCallId` and `data: { chat, agent?, model }` after resolving the agent and
+model overrides, before contacting the nested provider. The existing live
+buffer replays it to returning tabs and prunes it when the parent tool result
+is persisted. It does not create top-level system/user messages or extra
+charges. The settled conversation replaces the initial section without
+adding a second prompt.
+
+Direct `@agent` calls use `POST /api/tools/subagent` with
+`Accept: application/x-ndjson`. Each live line is
+`{ type: "event", name, data }`; the final line is
+`{ type: "result", result: <existing JSON response> }`. Callers without this
+Accept header retain the existing JSON response. Pre-run validation failures
+remain JSON. The UI accepts either response shape, so older servers still
+work. Authorization is unchanged; disabled/denied calls do not dispatch the
+prompt or contact the provider.
+
+Run `npm run test:subagent-prompt` for the prompt regressions.
+Regression checks: `scripts/test-default-subagent-stream.js`,
+`scripts/test-subagent-start-http.js`, `scripts/test-agent-command-card.js`
+and `scripts/test-subagent-transcript-parity.js`.
 
 ## Wrapping
 

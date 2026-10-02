@@ -13,6 +13,11 @@ const bundle = await build({
       const task = 'Read the complete delegated conversation and keep all intermediate replies, reasoning and tool results visible. '.repeat(4);
       const args = { task, agent: 'Very-long-reviewer-name-that-must-wrap-instead-of-hiding-the-cost' };
       appendToolCallCard({ id: 'mobile', name: 'subagent', args }, refs);
+      const prompt = 'You are the reviewer. Read the source carefully and report evidence. '.repeat(6);
+      handleSubagentStreamEvent({ eventName: 'start' }, { parentCallId: 'mobile', agent: args.agent, model: { id: 'mock' }, chat: [
+        { role: 'system', content: [{ type: 'text', text: prompt }] },
+        { role: 'user', content: task }
+      ] }, refs);
       handleSubagentStreamEvent({ eventName: 'usage_update' }, { parentCallId: 'mobile', totalCost: 0.0123 }, refs);
       handleSubagentStreamEvent({ eventName: 'reasoning' }, { parentCallId: 'mobile', delta: 'Inspecting the source.' }, refs);
       handleSubagentStreamEvent({ eventName: 'message' }, { parentCallId: 'mobile', delta: 'Starting the review.' }, refs);
@@ -23,7 +28,8 @@ const bundle = await build({
       window.__settle = () => appendToolResultCard({ id: 'mobile', name: 'subagent', ok: true, result: {
         totalCost: 0.0123, model: { id: 'mock' }, agent: args.agent,
         chat: [
-          { role: 'user', content: task },
+        { role: 'system', content: [{ type: 'text', text: prompt }] },
+        { role: 'user', content: task },
           { role: 'assistant', content: 'Starting the review.', reasoning: 'Inspecting the source.', tool_calls: [{ id: 'read', function: { name: 'read_file', arguments: JSON.stringify({ path: 'src/index.js' }) } }] },
           { role: 'tool', name: 'read_file', tool_call_id: 'read', content: JSON.stringify({ relPath: 'src/index.js', body: 'Evidence', startLine: 1, endLine: 1, totalLines: 1 }) },
           { role: 'assistant', content: null, reasoning: 'Reasoning-only turn.' },

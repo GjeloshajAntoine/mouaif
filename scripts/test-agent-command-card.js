@@ -45,7 +45,12 @@ function makeContext(net, effectsOut) {
     console, JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, Promise, Error,
     isFinite, parseFloat, parseInt, encodeURIComponent, decodeURIComponent,
     setTimeout, clearTimeout,
-    fetchJson: net.fetchJson,
+    TextDecoder,
+    fetch: net.fetch || (async (...args) => {
+    const r = await net.fetchJson(...args);
+    return { status: r.status, headers: { get: () => 'application/json' }, json: async () => r.body };
+    }),
+    handleSubagentStreamEvent: (ev, data) => { effects.live = { ev, data, id: effects.card.dataset.toolId }; },
     // The card the call opens. runAgentCommand re-keys it to the server's id.
     appendToolCallCard: (call) => { effects.call = call; effects.card = makeCard(call.id); effects.annotations++; return effects.card; },
     // Re-keying now goes through transcript.js's rekeyToolCard (which updates
@@ -128,6 +133,37 @@ function makeRefs() {
       effects.card.removed === true);
     check('the error is still reported as a result card', effects.appended.length === 1 && effects.appended[0].ok === false);
     check('the status row says agent error', effects.status.includes('error'));
+  }
+
+  // Hold the HTTP reader open after the start frame: the prompt must be
+  // dispatched before the final result resolves, including split chunks.
+  {
+    const effects = { appended: [], status: [] };
+    const encoder = new TextEncoder();
+    const frames = [
+      JSON.stringify({ type: 'event', name: 'tool_call', data: { id: 'direct_live', name: 'subagent' } }) + '\n',
+      JSON.stringify({ type: 'event', name: 'subagent_event', data: { parentCallId: 'direct_live', kind: 'start', data: { chat: [{ role: 'system', content: 'LIVE_PROMPT' }] } } }) + '\n'
+    ].join('');
+    let finishRead;
+    let reads = 0;
+    let released = false;
+    const context = makeContext({ fetch: async () => ({ status: 200,
+      headers: { get: () => 'application/x-ndjson' }, body: { getReader: () => ({
+        read: async () => {
+          if (++reads === 1) return { value: encoder.encode(frames.slice(0, 21)), done: false };
+          if (reads === 2) return { value: encoder.encode(frames.slice(21)), done: false };
+          if (reads === 3) return new Promise((resolve) => { finishRead = resolve; });
+          return { done: true };
+        }, releaseLock() { released = true; }
+      }) }
+    }) }, effects);
+    const running = context.runAgentCommand('search', 'Review', makeState(), makeRefs());
+    await new Promise((resolve) => setImmediate(resolve));
+    check('direct agent prompt is dispatched while HTTP result is pending',
+      effects.live?.ev.eventName === 'start' && effects.live.id === 'direct_live' && effects.appended.length === 0);
+    finishRead({ value: encoder.encode(JSON.stringify({ type: 'result', result: { ok: true, id: 'direct_live', result: { text: 'Done' } } })), done: false });
+    await running;
+    check('direct streamed result settles the same card and releases reader', effects.appended[0].id === 'direct_live' && released);
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

@@ -225,14 +225,59 @@ export async function runAgentCommand(agentName, task, state, refs) {
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(true);
   let r;
   try {
-    r = await fetchJson('/api/tools/subagent', {
+    const response = await fetch('/api/tools/subagent', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
       // The answer row is drawn here before the next sync; its id lets the
       // saved copy replace it instead of the merge guessing by content.
       body: JSON.stringify({ projectDir, chatId, task, agent: agentName, clientId: answerClientId })
     });
+    if (!(response.headers.get('content-type') || '').includes('ndjson')) {
+      r = { status: response.status, body: await response.json() };
+    } else {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let result = null;
+      const consume = (line) => {
+        if (!line.trim()) return;
+        const frame = JSON.parse(line);
+        if (frame.type === 'result') { result = frame.result; return; }
+        if (!pendingCard || !pendingCard.isConnected) return;
+        if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) return;
+        const data = frame.data || {};
+        if (frame.name === 'tool_call' && data.name === 'subagent') {
+          rekeyToolCard(refs, data.id, pendingCard);
+        } else if (frame.name === 'subagent_event') {
+          handleSubagentStreamEvent({ eventName: data.kind }, Object.assign({ parentCallId: data.parentCallId }, data.data || {}), refs);
+        } else if (frame.name === 'authorization_required') {
+          mountOverlayCard(refs, data.callId, () => authorizationCard(data, projectDir, chatId, refs, null, state));
+        } else if (frame.name === 'ask_user_required') {
+          mountOverlayCard(refs, data.callId, () => askUserCard(data, projectDir, chatId, refs));
+        } else if (frame.name === 'progress_update') {
+          updateProgressCard(refs, data);
+        }
+      };
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) { buffer += decoder.decode(); break; }
+          buffer += decoder.decode(value, { stream: true });
+          let index;
+          while ((index = buffer.indexOf('\n')) !== -1) {
+            consume(buffer.slice(0, index));
+            buffer = buffer.slice(index + 1);
+          }
+        }
+        consume(buffer);
+      } finally {
+        try { reader.releaseLock(); } catch { /* already released */ }
+      }
+      if (!result) throw new Error('Agent stream ended without a result');
+      r = { status: response.status, body: result };
+    }
   } catch (err) {
+    if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) return;
     // Nothing will ever fold into the placeholder card: retire it so the
     // transcript is not left with a spinner that can never resolve.
     if (pendingCard && pendingCard.isConnected) pendingCard.remove();
@@ -242,6 +287,7 @@ export async function runAgentCommand(agentName, task, state, refs) {
     if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
     return;
   }
+  if (state.props.projectDir !== projectDir || state.props.chatId !== chatId) return;
   const body = r.body || {};
   // Re-key the placeholder to the id the server actually used, BEFORE the
   // result is appended: both sides then agree on `data-tool-id` and the

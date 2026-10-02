@@ -30,7 +30,7 @@ function response() {
     writeHead(code) { this.statusCode = code; },
     write(chunk) { this.body += chunk; },
     end(chunk) { this.body += chunk || ''; },
-    setHeader() {}, getHeader() {}
+    setHeader() {}, getHeader() {}, on() {}, off() {}
   };
 }
 function skillNames(req) {
@@ -43,11 +43,25 @@ function activationFeedback(req) {
 async function main() {
   let seen = [];
   let steps = [];
+  let currentResponse;
+  let initialFrame;
+  let replayFrame;
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (chunk) => { raw += chunk; });
     req.on('end', () => {
       seen.push(JSON.parse(raw));
+      if (seen.length === 2) {
+      // Observe the prompt while the first nested request is still open,
+      // not after the delegated run returns.
+      initialFrame = currentResponse.body.split('\n\n').map((frame) => {
+      const data = /^data: (.*)$/m.exec(frame);
+      return data ? JSON.parse(data[1]) : null;
+      }).find((data) => data && data.kind === 'start');
+      const replay = response();
+      require('../src/live-chat.js').addSubscriber(currentResponse.runKey, null, replay);
+      replayFrame = replay.body.includes('"kind":"start"');
+      }
       const step = steps.shift();
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
       const write = (obj) => res.write('data: ' + JSON.stringify(obj) + '\n\n');
@@ -77,9 +91,16 @@ async function main() {
       const chat = chats.createChat(projectDir, {});
       seen = []; steps = [delegate, null, null];
       const out = response();
+      currentResponse = out;
+      out.runKey = require('../src/server-shared.js').runningKey(projectDir, chat.id);
       await handleChatStream(request({ projectDir, modelId: 'mock', content: 'Go' }), out, chat.id, null);
       assert.equal(out.statusCode, 200);
       assert.equal(steps.length, 0);
+      assert.ok(initialFrame, 'prompt must arrive before the first nested upstream request completes');
+      assert.equal(system({ messages: initialFrame.data.chat }), system(seen[1]), 'live prompt matches dispatched instructions');
+      assert.equal(initialFrame.data.chat[1].content, 'Review');
+      assert.equal(initialFrame.data.model.id, 'mock');
+      assert.equal(replayFrame, true, 'a returning tab receives the initial prompt');
       return seen.slice();
     }
 

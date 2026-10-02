@@ -684,7 +684,8 @@ try {
 // Direct subagent dispatch from the composer (@agent <task>). Runs the
 // native subagent tool through the same authorization gate and the
   // same dispatcher the model-driven loop uses — one tool_call +
-  // tool_result pair, returned in the JSON body (no SSE stream).
+  // tool_result pair. JSON by default; Accept: application/x-ndjson opts
+  // into live event frames followed by the same final result payload.
   if (urlPath === '/api/tools/subagent' && method === 'POST') {
     const body = await readJsonOr400(req, res);
     if (!body) return;
@@ -719,8 +720,21 @@ try {
 
     const callId = 'direct_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     const events = [];
+    // Opt-in streaming keeps existing JSON callers compatible. The prompt
+    // and activity arrive before the final result on direct @agent runs.
+    const streaming = String(req.headers.accept || '').includes('application/x-ndjson');
+    if (streaming) res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'X-Content-Type-Options': 'nosniff'
+    });
+    const finish = (status, payload) => {
+    if (!streaming) return sendJSON(res, status, payload);
+    try { res.end(JSON.stringify({ type: 'result', result: payload }) + '\n'); }
+    catch { /* disconnected client; dispatch already completed */ }
+    };
     try {
-      const out = await ai.runSingleToolCall(
+    const out = await ai.runSingleToolCall(
         { id: callId, name: 'subagent', arguments: JSON.stringify(args) },
         {
           opts: {
@@ -731,7 +745,13 @@ try {
             enabledTools: Array.isArray(chat.tools) ? chat.tools : null,
             model
           },
-          onEvent: (name, data) => events.push({ name, data }),
+          onEvent: (name, data) => {
+          events.push({ name, data });
+          if (streaming) {
+          try { res.write(JSON.stringify({ type: 'event', name, data }) + '\n'); }
+          catch { /* client disconnected; keep the authorized run going */ }
+          }
+          },
           convo: null,
           toolSpecs: [],
           promptProfilesMod: null,
@@ -778,10 +798,10 @@ try {
         result,
         toolCall: toolCall ? { id: toolCall.data && toolCall.data.id, name: toolCall.data && toolCall.data.name, args: toolCall.data && toolCall.data.args } : { id: callId, name: 'subagent', args }
       };
-      return sendJSON(res, 200, payload);
-    } catch (e) {
+      return finish(200, payload);
+      } catch (e) {
       const status = e && (e.code === 'ETOOL_DISABLED' || e.code === 'EDENIED') ? 403 : 500;
-      return sendJSON(res, status, { ok: false, error: (e && e.message) || String(e), code: (e && e.code) || 'ESUBAGENT' });
+      return finish(status, { ok: false, error: (e && e.message) || String(e), code: (e && e.code) || 'ESUBAGENT' });
     }
   }
 

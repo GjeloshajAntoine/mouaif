@@ -1346,6 +1346,20 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     setSubagentCardCost(card, subagentCostFromResult(data));
     return true;
   }
+  if (ev.eventName === 'start') {
+    if (card.classList.contains('tool-card--result')) return true;
+    if (card._subagentStart && card.querySelector('.tool-card__subagent-chat')) return true;
+    // Replayed start frames only replace the initial prompt/task, never
+    // streamed activity. The settled render replaces this whole section.
+    card._subagentStart = data;
+    renderSubagentChat(card, { name: 'subagent', result: data });
+    const body = card.querySelector('.tool-card__body');
+    const initial = card.querySelector('.tool-card__subagent-chat');
+    const live = ensureSubagentLive(card);
+    if (body && initial && live) body.insertBefore(initial, live);
+    afterTranscriptAppend(refs, false);
+    return true;
+  }
   const live = ensureSubagentLive(card);
   if (!live) return false;
   if (ev.eventName === 'assistant_turn_end') {
@@ -2098,10 +2112,13 @@ export function updateProgressCard(refs, data) {
 // every card the user expanded whenever a new element is added to
 // the transcript (e.g. the reconcile pass after a tool completes).
 function snapshotExpandedState(root) {
-  const state = { toolIds: new Set(), collapsedToolIds: new Set(), builtToolIds: new Set(), progressIds: new Set(), details: [], subagentCosts: new Map() };
+  const state = { toolIds: new Set(), collapsedToolIds: new Set(), builtToolIds: new Set(), progressIds: new Set(), details: [], subagentCosts: new Map(), subagentStarts: new Map() };
   if (!root) return state;
   for (const card of root.querySelectorAll('.tool-card')) {
     if (!(card.dataset && card.dataset.toolId)) continue;
+    if (card._subagentStart && !card.classList.contains('tool-card--result')) {
+    state.subagentStarts.set(card.dataset.toolId, card._subagentStart);
+    }
     if (card.classList.contains('tool-card--subagent') && Number.isFinite(card._subagentCost)) {
     state.subagentCosts.set(card.dataset.toolId, card._subagentCost);
     }
@@ -2599,6 +2616,9 @@ function restoreExpandedState(exp, root) {
   if (!root) return;
   for (const card of root.querySelectorAll('.tool-card')) {
     if (!(card.dataset && card.dataset.toolId)) continue;
+    if (exp.subagentStarts && exp.subagentStarts.has(card.dataset.toolId) && !card.classList.contains('tool-card--result')) {
+    handleSubagentStreamEvent({ eventName: 'start' }, exp.subagentStarts.get(card.dataset.toolId), { transcript: { current: root }, _suspendScrollPin: true });
+    }
     if (exp.subagentCosts && exp.subagentCosts.has(card.dataset.toolId) && !Number.isFinite(card._subagentCost)) {
     setSubagentCardCost(card, exp.subagentCosts.get(card.dataset.toolId));
     }

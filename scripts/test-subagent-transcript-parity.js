@@ -117,7 +117,8 @@ function createElement(tag) {
     return child;
     },
     insertBefore(child, ref) {
-      child.parentNode = node;
+    if (child.parentNode) child.parentNode.removeChild(child);
+    child.parentNode = node;
       const at = node.children.indexOf(ref);
       if (at === -1) node.children.push(child);
       else node.children.splice(at, 0, child);
@@ -630,6 +631,43 @@ function main() {
     mod.restoreNestedRowState(rebuilt, snap);
     check('a rebuilt row adopts the user\'s open choice', rebuiltRow.classList.contains('is-open')
       && rebuiltRow._userOpen === true);
+  }
+
+  // The prompt is readable before any answer and replay does not duplicate it.
+  {
+    const card = makeCard();
+    card.classList.remove('tool-card--result');
+    const refs = { transcript: { current: createElement('div') } };
+    refs.transcript.current.appendChild(card);
+    const start = { parentCallId: 'call_1', agent: 'Search', model: { id: 'mock' }, chat: [
+      { role: 'system', content: [{ type: 'text', text: 'Inspect the complete source.' }] },
+      { role: 'user', content: 'Task with context' }
+    ] };
+    mod.handleSubagentStreamEvent({ eventName: 'start' }, start, refs);
+    const prompt = card.querySelector('.chat-msg__system-body');
+    check('the live prompt is visible before any answer', prompt && prompt.textContent === 'Inspect the complete source.');
+    check('the live system disclosure starts open', card.querySelector('details').open === true);
+    check('the resolved agent labels the live prompt', card.querySelector('.chat-msg__role').textContent === 'Search');
+    mod.handleSubagentStreamEvent({ eventName: 'message' }, { parentCallId: 'call_1', delta: 'Working' }, refs);
+    const answer = card.querySelector('.tool-card__subagent-live-msg');
+    card.querySelector('details').open = false;
+    mod.handleSubagentStreamEvent({ eventName: 'start' }, start, refs);
+    check('a repeated start preserves the user prompt fold', card.querySelector('details').open === false);
+    check('a replayed start keeps one prompt and existing live answer', card.querySelectorAll('.chat-msg__system-body').length === 1
+      && card.querySelector('.tool-card__subagent-live-msg') === answer);
+    const other = makeCard();
+    other.classList.remove('tool-card--result');
+    other.dataset.toolId = 'call_2';
+    refs.transcript.current.appendChild(other);
+    mod.handleSubagentStreamEvent({ eventName: 'start' }, { parentCallId: 'call_2', chat: [{ role: 'system', content: 'Other run' }] }, refs);
+    check('parallel starts are routed to their own delegated card', card.querySelector('.chat-msg__system-body').textContent === 'Inspect the complete source.'
+    && other.querySelector('.chat-msg__system-body').textContent === 'Other run');
+    mod.renderSubagentChat(card, { name: 'subagent', result: start });
+    check('settlement replaces the initial prompt instead of duplicating it', card.querySelectorAll('.chat-msg__system-body').length === 1);
+    card.classList.add('tool-card--result');
+    const settledPrompt = card.querySelector('.chat-msg__system-body');
+    mod.handleSubagentStreamEvent({ eventName: 'start' }, start, refs);
+    check('a late replay cannot replace a settled conversation', card.querySelector('.chat-msg__system-body') === settledPrompt);
   }
 
   // Reasoning-only turns must not disappear, live or after settlement.
