@@ -28,7 +28,7 @@ Each group row has:
 
 Checkbox changes save immediately and stick even when you tap quickly, while MCP servers are still starting, or before the tool list has finished loading — a later catalog load never puts back an older selection.
 
-Leaf rows are individual tools. Only the checkbox is clickable — the row text is inert, so tapping a name never toggles anything accidentally. Tools that have been called in the current chat show a blue dot (`●`) and are automatically checked ("started when used").
+Leaf rows are individual tools. Their checkboxes and names align with the parent row’s columns, while a branch line shows the hierarchy. The alignment is shared by the popup, transcript card, and settings tree, including when text is enlarged. Only the checkbox is clickable — the row text is inert, so tapping a name never toggles anything accidentally. Tools that have been called in the current chat show a blue dot (`●`) and are automatically checked ("started when used").
 
 ### Project settings
 

@@ -3,6 +3,9 @@
    Only the checkbox / chevron / control are clickable. */
 
 .tool-tree {
+  --tool-tree-chevron-size: 1.125rem;
+  --tool-tree-row-gap: 0.375rem;
+  --tool-tree-branch-offset: 0.5625rem;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -23,7 +26,7 @@
 .tool-tree__row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--tool-tree-row-gap);
   min-height: 26px;
   padding: 1px 2px;
   min-width: 0;
@@ -43,8 +46,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: var(--tool-tree-chevron-size);
+  height: var(--tool-tree-chevron-size);
   padding: 0;
   font: inherit;
   color: var(--muted);
@@ -63,7 +66,7 @@
 .tool-tree__chev.is-collapsed svg { transform: rotate(-90deg); }
 
 /* Spacer for single-tool groups (no chevron). */
-.tool-tree__chew { flex: 0 0 auto; width: 18px; height: 18px; }
+.tool-tree__chew { flex: 0 0 auto; width: var(--tool-tree-chevron-size); height: var(--tool-tree-chevron-size); }
 
 /* Text runs: name then desc on the SAME line, space separated. */
 .tool-tree__name {
@@ -162,11 +165,13 @@ appearance: none;
 }
 .tool-tree__reload:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* Child list */
+/* Child rows omit the chevron. Replace its width + gap with indentation,
+   accounting for the branch margin and border, so checkbox/name columns
+   stay aligned with the parent even when the root font size changes. */
 .tool-tree__children {
   list-style: none;
-  margin: 0 0 1px 9px;
-  padding: 0 0 1px 11px;
+  margin: 0 0 1px var(--tool-tree-branch-offset);
+  padding: 0 0 1px calc(var(--tool-tree-chevron-size) + var(--tool-tree-row-gap) - var(--tool-tree-branch-offset) - 1px);
   display: flex;
   flex-direction: column;
   gap: 0;
