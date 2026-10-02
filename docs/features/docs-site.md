@@ -44,7 +44,7 @@ The eleven sections, in page order:
 | **Nothing sensitive runs unnamed** | `subagent-auth.png` | A **subagent** approval card on a paused run — the delegated task, the per-run model picker and thinking select, and the **Allow once / Allow session / Always allow / Deny** buttons |
 | **A DevTools built for a phone** | `inspector.png` | The Inspector attached to a page over CDP — target bar, panel chips, live preview, console input |
 | **Chats belong to a project** | `chats-list.png` | The Chats tab — project cards, each holding its own scrolling chat list and **New chat** |
-| **A chat that starts configured** | `chat-tools.png` | A brand-new chat — the system-prompt card and the **Tools** card, one checkbox and one **Off / Ask / Allow** control per tool |
+| **A chat that starts configured** | `chat-tools.png` | A brand-new chat — the model picker, then the tools list (Progress updates, File tools with its leaves, Agent files, Skills), one checkbox and one **Off / Ask / Allow** control per row |
 | **Talk to it from anywhere** | `dictation.png` | The Dictate page — the model picker, the record button with its timer and level meter, and the transcript with **Copy / Insert in chat / Send to chat** |
 | **Your keys, your machine** | `providers.png` | Settings → Providers — seven connected providers, each naming its endpoint and whether a key is stored |
 
@@ -60,7 +60,7 @@ docs/features/images/landing/
   subagent-auth.png      # Subagent approval card, per-run model + thinking, 390 × 700 @2x
   inspector.png          # Inspector attached over CDP, 390 × 700 @2x
   chats-list.png         # Chats tab, 390 × 700 @2x
-  chat-tools.png         # Empty chat, tools card expanded, 390 × 700 @2x
+  chat-tools.png         # Empty chat, tools list expanded, 390 × 700 @2x
   dictation.png          # Dictate page, 390 × 700 @2x
   providers.png          # Settings → Providers, 390 × 700 @2x
 ```

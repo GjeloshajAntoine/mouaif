@@ -1409,9 +1409,9 @@ const landingScreens = [
   {
     id: 'new-chat',
     title: 'A chat that starts configured',
-    text: 'The system prompt and the whole tool list are there on the first message, and every tool carries its own Off / Ask / Allow control. The default is Ask, so nothing runs unnamed.',
+    text: 'Every tool is listed with its own checkbox and an Off / Ask / Allow control, the project instructions are already loaded, and the model you want is picked — so the first message lands with the context it needs.',
     src: 'features/images/landing/chat-tools.png',
-    alt: 'An empty chat at 390 px: the system-prompt card and the Tools card, listing every tool with a checkbox and an Off / Ask / Allow control, above the "Start the conversation" state.',
+    alt: 'An empty chat at 390 px: the model picker, then the tools list — Progress updates, File tools with its seven leaf tools, Agent files and Skills — each row carrying an Off / Ask / Allow control, above the "Start the conversation" state.',
     caption: 'A new chat — every tool, Off / Ask / Allow'
   },
   {
