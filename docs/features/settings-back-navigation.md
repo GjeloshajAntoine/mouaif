@@ -16,6 +16,8 @@ The Back arrow points at whichever page you actually came from, most specific fi
 | The Chats tab's project card | the Chats tab |
 | Settings → App defaults (MCP servers, Custom prompts, Custom actions) | the Settings root |
 
+The navigation regression test renders the real tool catalog alongside the agent editor, so native-tool additions do not break the test's imported names.
+
 Two examples, both from a phone:
 
 1. **Chat → project settings → File tool options → back → back** returns to the chat. The header gear on a chat opens `#/settings/project?projectDir=…&chatId=…`; that `chatId` rides through every sub-page, so the second Back knows which chat to reopen.

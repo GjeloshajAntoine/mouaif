@@ -238,6 +238,7 @@ function harness(globals) {
   h.evalFile('components/settings/projectNavigation.js');
   h.evalFile('components/settings/agentNavigation.js');
   h.evalFile('components/settings/agentAutosave.js');
+  h.evalFile('components/ToolTree.jsx');
   h.evalFile('components/SettingsAgents.jsx');
   const list = h.renderView('SettingsAgentsView', { projectDir: PROJECT, chatId: CHAT, from: FROM }, { fresh: true });
   assert.equal(list.nodes.find((n) => n.attrs.class === 'view-back').attrs.href,
