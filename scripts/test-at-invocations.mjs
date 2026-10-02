@@ -51,6 +51,17 @@ parseAtInvocation('check @test'));
 const restart = parseDirectRestartInvocation('@restart_app apply the latest fix');
 test('explicit restart command parses without a model round-trip',
 restart && restart.reason === 'apply the latest fix', restart);
+const picked = parseDirectRestartInvocation('@restart_app:reason=`apply the latest fix` ');
+test('the @-picker restart form dispatches directly',
+picked && picked.reason === 'apply the latest fix', picked);
+const pair = parseDirectRestartInvocation('@restart_app reason="reload"');
+test('a bare reason= pair dispatches directly', pair && pair.reason === 'reload', pair);
+test('an unknown restart argument is not direct-dispatched',
+parseDirectRestartInvocation('@restart_app:delay=`5`') === null,
+parseDirectRestartInvocation('@restart_app:delay=`5`'));
+test('a longer tool name is not the restart command',
+parseDirectRestartInvocation('@restart_appx now') === null,
+parseDirectRestartInvocation('@restart_appx now'));
 test('restart mention in normal prose is not direct-dispatched',
 parseDirectRestartInvocation('please use @restart_app') === null,
 parseDirectRestartInvocation('please use @restart_app'));

@@ -94,10 +94,21 @@ return true;
 export function buildDirectMcpCall({ projectDir, chatId, callId, serverId, toolName, args }) {
 return { projectDir, chatId, callId, serverId, toolName, args: args || {} };
 }
+// Accepts the free-text form (`@restart_app apply the fix`) and the form the
+// @-picker inserts (`@restart_app:reason=`apply the fix``, or a bare
+// `reason=...` pair). Without the picker form, choosing restart_app from the
+// popup fell through to a paid model turn instead of restarting directly.
 export function parseDirectRestartInvocation(text) {
-const match = String(text || '').trim().match(/^@restart_app(?:\s+([\s\S]*))?$/i);
-if (!match) return null;
-return { reason: String(match[1] || '').trim() };
+const s = String(text || '').trim();
+if (!/^@restart_app(?=$|[\s:])/i.test(s)) return null;
+const rest = s.slice('@restart_app'.length);
+if (rest.startsWith(':') || /^\s+reason=/i.test(rest)) {
+const args = parseToolArgs(rest.replace(/^:/, ''));
+const keys = args && typeof args === 'object' ? Object.keys(args) : null;
+if (!keys || keys.some((k) => k !== 'reason')) return null;
+return { reason: String(args.reason == null ? '' : args.reason).trim() };
+}
+return { reason: rest.trim() };
 }
 export function parseToolArgs(text) {
 const s = (text || '').trim();
