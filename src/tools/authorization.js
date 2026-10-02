@@ -638,7 +638,9 @@ function setAuthorization(projectDir, patch) {
   // not duplicated here.
   for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS]) {
     if (patch.tools && patch.tools[name]) {
-      const cfg = normalizeConfig(patch.tools[name], 'project', true);
+      // A permission-only edit must not reset the current timeout bounds,
+      // including bounds inherited from the app or the file-tool family.
+      const cfg = normalizeConfig(Object.assign({}, effectiveConfig(projectDir, name), patch.tools[name]), 'project', true);
       // Preserve entries already applied from this patch. A request can
       // update the file family and every nested file tool atomically.
       next.tools = Object.assign({}, project.tools, next.tools);

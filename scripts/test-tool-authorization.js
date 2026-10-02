@@ -22,6 +22,29 @@ const divergingServerId = added.id;
 assert.equal(added.slug, 'srv_display', 'test setup: slug is derived from the name');
 
 async function main() {
+  for (const dbBacked of [false, true]) {
+    settings.setDbBacked(projectDir, dbBacked);
+    settings.setProject(projectDir, {
+      tools: { shell: { mode: 'ask', defaultTimeoutMs: 120000, maxTimeoutMs: 180000 } }
+    });
+    for (const mode of ['off', 'ask', 'allow']) {
+      const config = authz.setAuthorization(projectDir, { tools: { shell: { mode, allowlist: [] } } }).tools.shell;
+      assert.equal(config.mode, mode);
+      assert.equal(config.defaultTimeoutMs, 120000, 'mode edits preserve the default timeout');
+      assert.equal(config.maxTimeoutMs, 180000, 'mode edits preserve the timeout ceiling');
+    }
+    const capped = authz.setAuthorization(projectDir, { tools: { shell: { maxTimeoutMs: 60000 } } }).tools.shell;
+    assert.equal(capped.defaultTimeoutMs, 60000, 'explicit ceiling edits still clamp the default');
+    assert.equal(capped.maxTimeoutMs, 60000);
+  }
+  settings.deleteDbProject(projectDir);
+  settings.setApp({ tools: { shell: { defaultTimeoutMs: 45000, maxTimeoutMs: 90000 } } });
+  settings.setProject(projectDir, { tools: {} });
+  const inherited = authz.setAuthorization(projectDir, { tools: { shell: { mode: 'allow' } } }).tools.shell;
+  assert.equal(inherited.defaultTimeoutMs, 45000, 'mode edits preserve inherited bounds');
+  assert.equal(inherited.maxTimeoutMs, 90000);
+  settings.setApp({ tools: {} });
+
   settings.setProject(projectDir, {
     chats: [{ id: 'a1b2c3d4', title: 'Auth test', trace: false }],
     tools: { shell: { enabled: true, mode: 'ask', allowlist: [] } }
