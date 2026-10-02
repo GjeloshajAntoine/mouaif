@@ -1717,12 +1717,21 @@ return { ok: false, content: JSON.stringify(r), result: r };
         forwarded.completionTokens += completionDelta;
         if (costSoFar != null && costSoFar > forwarded.cost) forwarded.cost = costSoFar;
         reportDelegatedUsage({
-          promptTokens: promptDelta,
-          completionTokens: completionDelta,
-          cost: costDelta,
-          modelId: nestedModelRef ? nestedModelRef.id : undefined,
-          callId: (callOpts && callOpts.callId) || undefined
+        promptTokens: promptDelta,
+        completionTokens: completionDelta,
+        cost: costDelta,
+        modelId: nestedModelRef ? nestedModelRef.id : undefined,
+        callId: (callOpts && callOpts.callId) || undefined
         });
+        // Absolute, replay-safe card cost for returning tabs. The ordinary
+        // usage_update above remains the chat-total billing delta.
+        if (costSoFar != null && typeof onEvent === 'function') {
+        onEvent('subagent_event', {
+        parentCallId: (callOpts && callOpts.callId) || null,
+        kind: 'usage_update',
+        data: { totalCost: forwarded.cost }
+        });
+        }
       }
 
       const nestedEvents = [];
@@ -1797,7 +1806,8 @@ promptSize: callOpts && callOpts.promptSize,
           // parent's SSE layer persists every `tool_call` / `tool_result`
           // / `message` it sees, so reusing those names would corrupt
           // the transcript with the subagent's internal turns.
-          if (eventName === 'tool_call' || eventName === 'tool_result' || eventName === 'message') {
+          if (eventName === 'tool_call' || eventName === 'tool_result' || eventName === 'message'
+          || eventName === 'reasoning' || eventName === 'assistant_turn_end') {
             onEvent('subagent_event', {
               parentCallId: (callOpts && callOpts.callId) || null,
               kind: eventName,
@@ -1812,11 +1822,9 @@ promptSize: callOpts && callOpts.promptSize,
         if (ev.name === 'message' && ev.data && typeof ev.data.delta === 'string') text += ev.data.delta;
         else if (ev.name === 'tool_call' || ev.name === 'tool_result' || ev.name === 'authorization_required') nestedToolEvents.push(ev);
       }
-      // Rebuild a faithful nested transcript for the UI. The plain
-      // `chat` (system+user+final assistant) hides every tool turn,
-      // which made the subagent preview look like no tools ran. We fold
-      // streamed tool_call / tool_result events back into OpenAI-shaped
-      // messages so the chat card can render them.
+      // Rebuild the nested transcript in event order. Keep each reply and
+      // reasoning segment alongside its calls instead of merging every
+      // answer into one final bubble after all the tool results.
       const chat = nestedMessages.slice();
       // Image blocks produced by the subagent's own tool calls (a read_file
       // image, an MCP image result). Accumulated here so the delegated
@@ -1826,26 +1834,36 @@ promptSize: callOpts && callOpts.promptSize,
       const nestedImageParts = [];
       {
       let pendingCalls = [];
-      const flushCalls = () => {
-      if (!pendingCalls.length) return;
-      chat.push({
-        role: 'assistant',
-        content: null,
-        tool_calls: pendingCalls.map((c) => ({
+      let segmentText = '';
+      let segmentReasoning = '';
+      const flushSegment = () => {
+      if (!pendingCalls.length && !segmentText && !segmentReasoning) return;
+      const turn = {
+      role: 'assistant',
+      content: segmentText || null
+      };
+      if (segmentReasoning) turn.reasoning = segmentReasoning;
+      if (pendingCalls.length) turn.tool_calls = pendingCalls.map((c) => ({
         id: c.id || undefined,
         type: 'function',
         function: { name: c.name, arguments: typeof c.args === 'string' ? c.args : JSON.stringify(c.args || {}) }
-        }))
-      });
-      pendingCalls = [];
-      };
-      for (const ev of nestedToolEvents) {
-      const d = ev.data || {};
-      if (ev.name === 'tool_call') {
+        }));
+        chat.push(turn);
+        pendingCalls = [];
+        segmentText = '';
+        segmentReasoning = '';
+        };
+        for (const ev of nestedEvents) {
+        const d = ev.data || {};
+        if (ev.name === 'message' && typeof d.delta === 'string') {
+        segmentText += d.delta;
+        } else if (ev.name === 'reasoning' && typeof d.delta === 'string') {
+        segmentReasoning += d.delta;
+        } else if (ev.name === 'tool_call') {
         pendingCalls.push({ id: d.id, name: d.name, args: d.args });
       } else if (ev.name === 'tool_result') {
-        flushCalls();
-        chat.push({
+      flushSegment();
+      chat.push({
         role: 'tool',
         tool_call_id: d.id || undefined,
         name: d.name,
@@ -1858,12 +1876,16 @@ promptSize: callOpts && callOpts.promptSize,
         }
       }
       }
-      flushCalls();
+      flushSegment();
       }
-      chat.push({ role: 'assistant', content: text });
-      const r = nested && nested.ok
-      ? { ok: true, text, chat, toolEvents: nestedToolEvents, usage: nested.usage || null, providerCost: nested.providerCost ?? null, totalCost: nested.totalCost ?? null, model: nestedModelRef }
-      : { ok: false, text, chat, toolEvents: nestedToolEvents, error: nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' } };
+      const r = {
+      ok: !!(nested && nested.ok), text, chat, toolEvents: nestedToolEvents,
+      usage: nested && nested.usage || null,
+      providerCost: nested && nested.providerCost != null ? nested.providerCost : mirror.providerCost,
+      totalCost: nested && nested.totalCost != null ? nested.totalCost : (runCostKnown ? forwarded.cost : null),
+      model: nestedModelRef
+      };
+      if (!r.ok) r.error = nested && nested.error ? nested.error : { code: 'ESUBAGENT', message: 'subagent failed' };
       // Record WHICH agent ran, when one was named. The name is not derivable
       // from the nested transcript (an agent's system message is its
       // instructions, not its name), and only the delegated call knows it, so

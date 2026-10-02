@@ -198,7 +198,9 @@ function loadTranscript(globals) {
     + ' this.renderSubagentChat = renderSubagentChat;'
     + ' this.setSubagentCardCost = setSubagentCardCost;'
     + ' this.rememberSubagentCardCost = rememberSubagentCardCost;'
-    + ' this.handleSubagentStreamEvent = handleSubagentStreamEvent;', context);
+    + ' this.handleSubagentStreamEvent = handleSubagentStreamEvent;'
+    + ' this.snapshotExpandedState = snapshotExpandedState;'
+    + ' this.restoreExpandedState = restoreExpandedState;', context);
   return context;
 }
 
@@ -353,6 +355,26 @@ function main() {
     check('the chat routes a call-id-tagged frame to that card',
       /data\.callId[\s\S]{0,260}setSubagentCardCost/.test(stream),
       'stream.js never attributes the update to a card');
+  }
+
+  {
+    const refs = makeRefs();
+    mod.appendToolCallCard({ id: 'replay', name: 'subagent', args: { task: 'Review' } }, refs);
+    const frame = { parentCallId: 'replay', totalCost: 0.0123 };
+    mod.handleSubagentStreamEvent({ eventName: 'usage_update' }, frame, refs);
+    mod.handleSubagentStreamEvent({ eventName: 'usage_update' }, frame, refs);
+    const card = refs.transcript.current.querySelector('.tool-card--subagent');
+    check('replayed absolute costs do not double count', card._subagentCost === 0.0123);
+    check('the returning tab sees the cost on the head', card.querySelector('.tool-card__cost').textContent === '$0.0123');
+    const snapshot = mod.snapshotExpandedState(refs.transcript.current);
+    const rebuilt = makeRefs();
+    mod.appendToolCallCard({ id: 'replay', name: 'subagent', args: { task: 'Review' } }, rebuilt);
+    mod.restoreExpandedState(snapshot, rebuilt.transcript.current);
+    const restored = rebuilt.transcript.current.querySelector('.tool-card--subagent');
+    check('a transcript rebuild retains in-flight delegated cost', restored._subagentCost === 0.0123);
+    mod.setSubagentCardCost(restored, 0.025);
+    mod.restoreExpandedState(snapshot, rebuilt.transcript.current);
+    check('a fresh settled cost wins over the old live snapshot', restored._subagentCost === 0.025);
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

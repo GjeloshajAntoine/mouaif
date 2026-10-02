@@ -46,13 +46,18 @@ function check(name, condition, detail) {
 //
 // `costed` controls whether each round reports a provider cost. Without it the
 // cost has to be estimated from the app pricing table.
-function serve(seen, costed) {
+function serve(seen, costed, failedRun = false) {
   let count = 0;
   const server = http.createServer((req, res) => {
     req.resume();
     req.on('end', () => {
       const n = count++;
       seen.requests++;
+      if (failedRun && n === 2) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'Nested provider failed' } }));
+      return;
+      }
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
       const write = (o) => res.write('data: ' + JSON.stringify(o) + '\n\n');
       const usage = (prompt, completion, cost) => {
@@ -65,6 +70,8 @@ function serve(seen, costed) {
         write({ choices: [{ finish_reason: 'tool_calls', index: 0 }] });
         write(usage(100, 10, 0.001));
       } else if (n === 1) {
+        write({ choices: [{ delta: { reasoning_content: 'Check the evidence first.' }, index: 0 }] });
+        write({ choices: [{ delta: { content: 'Starting the review.' }, index: 0 }] });
         write({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_prog', function: { name: 'report_progress', arguments: '{"title":"Work","current":1,"total":3}' } }] }, index: 0 }] });
         write({ choices: [{ finish_reason: 'tool_calls', index: 0 }] });
         write(usage(300, 20, 0.002));
@@ -73,6 +80,7 @@ function serve(seen, costed) {
         // billed, so the parent stream must carry exactly one subagent
         // usage_update right now — while the delegated run is still going.
         seen.bodyAtSecondNestedRound = seen.body();
+        write({ choices: [{ delta: { reasoning_content: 'Evidence checked.' }, index: 0 }] });
         write({ choices: [{ delta: { content: 'Nested answer' }, index: 0 }] });
         write({ choices: [{ finish_reason: 'stop', index: 0 }] });
         write(usage(400, 5, 0.003));
@@ -131,7 +139,7 @@ async function runScenario(opts) {
   fs.mkdirSync(projectDir, { recursive: true });
   const res = mockRes();
   const seen = { requests: 0, body: () => res.body, bodyAtSecondNestedRound: '' };
-  const { server, port } = await serve(seen, opts.costed);
+  const { server, port } = await serve(seen, opts.costed, opts.failedRun);
   settings.setProject(projectDir, {
     models: [{ id: 'mock', provider: 'openai-compatible', label: 'Mock' }],
     tools: { subagent: { enabled: true, mode: 'allow' } }
@@ -155,6 +163,17 @@ async function runScenario(opts) {
   const doneIndex = events.findIndex((e) => e.name === 'done');
   const near = (a, b) => Math.abs(Number(a) - Number(b)) < 1e-9;
 
+  if (opts.failedRun) {
+    const result = events.find((e) => e.name === 'tool_result' && e.data.name === 'subagent')?.data.result;
+    check('failed run: failure and partial transcript are returned', result && !result.ok && result.chat.length === 4);
+    check('failed run: reasoning and intermediate answer survive',
+      result?.chat[2].reasoning === 'Check the evidence first.' && result?.chat[2].content === 'Starting the review.');
+    check('failed run: completed-round cost and model survive reload', result?.model.id === 'mock'
+      && near(result.totalCost, 0.002) && near(result.providerCost, 0.002));
+    check('failed run: usage survives alongside the error', result?.usage.completionTokens === 20 && !!result.error);
+    return;
+  }
+
   check(opts.label + ': four upstream rounds ran', seen.requests === 4, 'got ' + seen.requests);
   check(opts.label + ': stream completed', res.statusCode === 200, 'status=' + res.statusCode);
   check(opts.label + ': one usage_update per nested round', updates.length === 2, 'got ' + updates.length);
@@ -166,6 +185,23 @@ async function runScenario(opts) {
   const midRun = parseEvents(seen.bodyAtSecondNestedRound).filter((e) => e.name === 'usage_update' && e.data && e.data.source === 'subagent');
   check(opts.label + ': round 1 is billed while the subagent is still running', midRun.length === 1, midRun.length + ' updates by the start of nested round 2');
   check(opts.label + ': the mid-run update carries round 1\'s cost', !!midRun[0] && near(midRun[0].data.cost.total, opts.midRunCost), midRun[0] && JSON.stringify(midRun[0].data.cost));
+
+  const nestedFrames = events.filter((e) => e.name === 'subagent_event');
+  const costs = nestedFrames.filter((e) => e.data.kind === 'usage_update');
+  check(opts.label + ': replay-safe card cost is absolute, not a delta', costs.length === 2
+    && near(costs[0].data.data.totalCost, opts.midRunCost)
+    && near(costs[1].data.data.totalCost, opts.delegatedCost));
+  check(opts.label + ': nested reasoning and segment boundaries reach the UI',
+    nestedFrames.some((e) => e.data.kind === 'reasoning')
+    && nestedFrames.some((e) => e.data.kind === 'assistant_turn_end'));
+  const delegated = events.find((e) => e.name === 'tool_result' && e.data.name === 'subagent');
+  const turns = delegated && delegated.data.result.chat || [];
+  check(opts.label + ': intermediate reply stays before its tool call/result',
+    turns[2] && turns[2].content === 'Starting the review.' && turns[2].tool_calls.length === 1
+    && turns[3].role === 'tool' && turns[4].content === 'Nested answer');
+  check(opts.label + ': both reasoning segments persist without duplicating the answer',
+    turns.length === 5 && turns[2].reasoning === 'Check the evidence first.'
+    && turns[4].reasoning === 'Evidence checked.');
 
   const assistant = messages.listMessages(projectDir, chat.id).filter((m) => m && m.role === 'assistant');
   check(opts.label + ': one final parent message persisted', assistant.length === 1, 'got ' + assistant.length);
@@ -209,6 +245,8 @@ async function runScenario(opts) {
     delegatedCost: 1.35,
     persistedTotal: 2.37
   });
+
+  await runScenario({ label: 'failed run', costed: true, failedRun: true });
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   fs.rmSync(tmp, { recursive: true, force: true });

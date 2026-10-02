@@ -989,12 +989,9 @@ function finishToolCardHead(head, toolName, args, pillClass, pillText, resultSum
   if (argText) {
     const argsEl = document.createElement('pre');
     argsEl.className = 'tool-card__args';
-    argsEl.textContent = shortToolText(argText, TOOL_ARGS_PREVIEW_CHARS);
-    // Keep the full text on the element whenever it may not be fully
-    // visible: the character budget above, or — on a subagent head, which
-    // carries an agent chip and a cost beside the task — the row width,
-    // which the budget cannot predict. A clipped task then still reads in
-    // full on hover / long-press.
+    argsEl.textContent = isSubagentTool(toolName) ? argText : shortToolText(argText, TOOL_ARGS_PREVIEW_CHARS);
+    // Generic tool heads keep a tooltip for their clipped arguments.
+    // Subagent tasks wrap in full; retain the tooltip for compatibility.
     if (argsEl.textContent !== argText || isSubagentTool(toolName)) argsEl.title = argText;
     head.appendChild(argsEl);
   }
@@ -1303,8 +1300,7 @@ export function handleShellOutputEvent(data, refs) {
 function findSubagentCard(refs, parentCallId) {
   if (!refs.transcript.current) return null;
   if (parentCallId) {
-    const byId = findToolCard(refs, parentCallId);
-    if (byId) return byId;
+    return findToolCard(refs, parentCallId);
   }
   const cards = refs.transcript.current.querySelectorAll('.tool-card--subagent');
   return cards.length ? cards[cards.length - 1] : null;
@@ -1346,10 +1342,21 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     const settled = subagentCostFromResult(data.result);
     if (settled != null) setSubagentCardCost(card, settled);
   }
+  if (ev.eventName === 'usage_update') {
+    setSubagentCardCost(card, subagentCostFromResult(data));
+    return true;
+  }
   const live = ensureSubagentLive(card);
   if (!live) return false;
-  if (ev.eventName === 'message' && typeof data.delta === 'string') {
-    live._text = (live._text || '') + data.delta;
+  if (ev.eventName === 'assistant_turn_end') {
+    const row = live.querySelector('.tool-card__subagent-live-msg');
+    if (row) {
+      renderAssistantBody(row.querySelector('.chat-msg__body'), row._content || '', row._reasoning || '', true);
+      row.classList.remove('tool-card__subagent-live-msg');
+    }
+    return true;
+  }
+  if ((ev.eventName === 'message' || ev.eventName === 'reasoning') && typeof data.delta === 'string') {
     // Stream the nested answer into a real assistant chat bubble, the same
     // row the top-level transcript streams into. The card head already says
     // the run is a subagent and no model id is known until the result lands,
@@ -1360,6 +1367,9 @@ export function handleSubagentStreamEvent(ev, data, refs) {
       row.className = 'chat-msg chat-msg--assistant tool-card__subagent-msg tool-card__subagent-live-msg';
       const rowBody = document.createElement('div');
       rowBody.className = 'chat-msg__body';
+      rowBody._owner = row;
+      row._content = '';
+      row._reasoning = '';
       row.appendChild(rowBody);
       live.appendChild(row);
       // First delta of this nested segment: give the body its answer element
@@ -1376,7 +1386,13 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     // `innerHTML = ''` plus a full re-set — which is O(n²) over a long nested
     // answer and tore down/recreated the bubble on every token. This is the
     // same incremental shape appendDeltaToLive uses for the top-level reply.
+    if (ev.eventName === 'reasoning') {
+    row._reasoning += data.delta;
+    appendTextToReasoning(row.querySelector('.chat-msg__body'), data.delta);
+    } else {
+    row._content += data.delta;
     appendTextToAnswer(row.querySelector('.chat-msg__body'), data.delta);
+    }
     scrollToolBodyToBottomSoon(live);
     afterTranscriptAppend(refs, false);
     return true;
@@ -1877,11 +1893,11 @@ export function renderSubagentChat(card, toolResult) {
     // empty assistant turn the top-level transcript skips. Rendering it
     // produced an empty bubble wrapped around the tool rows, a shape the
     // live view never shows.
-    if (role === 'assistant' && !text && toolCalls.length) {
+    if (role === 'assistant' && !text && !m.reasoning && toolCalls.length) {
       appendCallRows(wrap, toolCalls);
       continue;
     }
-    if (role === 'assistant' && !text) continue;
+    if (role === 'assistant' && !text && !m.reasoning) continue;
     const row = document.createElement('div');
     row.className = 'chat-msg chat-msg--' + role + ' tool-card__subagent-msg';
     // Same head as appendMessageToTranscript — role label left, timestamp
@@ -1902,7 +1918,7 @@ export function renderSubagentChat(card, toolResult) {
     const body = document.createElement('div');
     body.className = 'chat-msg__body';
     if (role === 'assistant') {
-      renderAssistantBody(body, text || '', '', true);
+      renderAssistantBody(body, text || '', m.reasoning || '', true);
     } else {
       body.textContent = text || '';
     }
@@ -2082,10 +2098,13 @@ export function updateProgressCard(refs, data) {
 // every card the user expanded whenever a new element is added to
 // the transcript (e.g. the reconcile pass after a tool completes).
 function snapshotExpandedState(root) {
-  const state = { toolIds: new Set(), collapsedToolIds: new Set(), builtToolIds: new Set(), progressIds: new Set(), details: [] };
+  const state = { toolIds: new Set(), collapsedToolIds: new Set(), builtToolIds: new Set(), progressIds: new Set(), details: [], subagentCosts: new Map() };
   if (!root) return state;
   for (const card of root.querySelectorAll('.tool-card')) {
     if (!(card.dataset && card.dataset.toolId)) continue;
+    if (card.classList.contains('tool-card--subagent') && Number.isFinite(card._subagentCost)) {
+    state.subagentCosts.set(card.dataset.toolId, card._subagentCost);
+    }
     if (card.classList.contains('is-expanded')) state.toolIds.add(card.dataset.toolId);
     // Cards the user explicitly collapsed carry _userCollapsed; preserve
     // that intent across the rebuild so a finished shell card the user
@@ -2580,6 +2599,9 @@ function restoreExpandedState(exp, root) {
   if (!root) return;
   for (const card of root.querySelectorAll('.tool-card')) {
     if (!(card.dataset && card.dataset.toolId)) continue;
+    if (exp.subagentCosts && exp.subagentCosts.has(card.dataset.toolId) && !Number.isFinite(card._subagentCost)) {
+    setSubagentCardCost(card, exp.subagentCosts.get(card.dataset.toolId));
+    }
     if (exp.toolIds.has(card.dataset.toolId)) {
       card.classList.add('is-expanded');
       // Result bodies render lazily on first expand (see

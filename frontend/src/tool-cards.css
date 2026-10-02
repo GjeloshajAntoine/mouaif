@@ -95,14 +95,35 @@
   text-overflow: ellipsis;
 }
 .tool-card.is-expanded .tool-card__args { white-space: nowrap; }
-/* On a subagent card the head carries two extra pieces beside the task: the
-   agent chip (the ONLY place the dispatched agent's name appears) and the
-   running cost. Both must read in full, so they never shrink and never
-   ellipsize — the task is the one part that gives up room.
-
-   The task itself stays on the head's single line: it is clipped by the row
-   width like every other tool card, and its full text is kept in the
-   element's `title`. */
+/* Give delegated runs their own mobile header layout. A non-shrinking
+  agent chip in a single flex line could push the cost/status outside the
+  head's clipped box. Keep the cost on top, with agent and task below. */
+.tool-card--subagent > .tool-card__head {
+display: grid;
+grid-template-columns: auto minmax(0, 1fr) auto auto;
+min-height: 2.75rem;
+overflow: visible;
+}
+.tool-card--subagent > .tool-card__head > .tool-card__chev { grid-column: 1; grid-row: 1; }
+.tool-card--subagent > .tool-card__head > .tool-card__name { grid-column: 2; grid-row: 1; max-width: 100%; }
+.tool-card--subagent > .tool-card__head > .tool-card__cost { grid-column: 3; grid-row: 1; }
+.tool-card--subagent > .tool-card__head > .tool-card__pill { grid-column: 4; grid-row: 1; }
+.tool-card--subagent > .tool-card__head > .tool-card__agent {
+grid-column: 1 / -1;
+grid-row: 2;
+justify-self: start;
+white-space: normal;
+overflow-wrap: anywhere;
+}
+.tool-card--subagent > .tool-card__head > .tool-card__args {
+grid-column: 1 / -1;
+grid-row: 3;
+min-width: 0;
+white-space: pre-wrap;
+overflow-wrap: anywhere;
+overflow: visible;
+text-overflow: clip;
+}
 .tool-card--subagent .tool-card__head .tool-card__agent {
   flex: 0 0 auto;
   max-width: 100%;

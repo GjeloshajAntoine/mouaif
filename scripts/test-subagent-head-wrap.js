@@ -1,17 +1,7 @@
-// Regression test: a subagent card's head keeps its task on one line and
-// its two extra chips fully readable.
-//
-// The head is one flex row: chevron · `Subagent` · agent chip · task ·
-// cost · status dot. At 375 px a normal delegation leaves the task with
-// almost nothing (chip 54 px + cost 42 px), so the task is the part that
-// gives up room: it stays a single clipped line, exactly like every other
-// tool card, with the full text kept on `title`.
-//
-// The other two text parts must NOT be clipped — they are the reason the
-// card exists in a transcript full of tool rows:
-//   - the agent chip is the ONLY place the dispatched agent's name appears,
-//     so a `revie…` chip makes an `@reviewer` dispatch unreadable;
-//   - the cost is the running figure the user is watching.
+// Regression test: a subagent head reserves its top line for cost/status
+// and wraps the full agent name and task below it. A non-shrinking agent
+// chip in the old single flex row could push the cost outside the clipped
+// header on phones. Ordinary tool heads keep their single-line layout.
 //
 // A DOM stub cannot evaluate CSS, so — like
 // scripts/test-subagent-expand-state.js — the cascade is resolved from the
@@ -86,7 +76,8 @@ function parseCompound(text) {
 }
 
 function parseSelector(selector) {
-  return selector.split(/\s+/).filter(Boolean).map(parseCompound);
+  // The fixture tree uses the direct hierarchy from these selectors.
+  return selector.split(/\s+/).filter((part) => part && part !== '>').map(parseCompound);
 }
 
 function splitTopLevel(text, sep) {
@@ -222,16 +213,18 @@ function main() {
   for (const expanded of [false, true]) {
     const state = expanded ? 'expanded' : 'collapsed';
     const args = headArgs({ subagent: true, expanded });
-    check('[' + state + '] the subagent task stays on one line',
-      valueOf(css, args, 'white-space') === 'nowrap', valueOf(css, args, 'white-space'));
+    check('[' + state + '] the subagent task wraps without hiding details',
+    valueOf(css, args, 'white-space') === 'pre-wrap', valueOf(css, args, 'white-space'));
+    check('[' + state + '] the task has its own full-width grid row',
+    valueOf(css, args, 'grid-column') === '1 / -1', valueOf(css, args, 'grid-column'));
     check('[' + state + '] the task still shares the head row',
       /^1\s+1\s+auto$/.test(valueOf(css, args, 'flex')), valueOf(css, args, 'flex'));
   }
   {
     const card = modelNode('div', ['tool-card', 'tool-card--subagent']);
     const head = modelNode('span', ['tool-card__head'], card);
-    check('the subagent head does not wrap its lines',
-      valueOf(css, head, 'flex-wrap') === '(unset)', valueOf(css, head, 'flex-wrap'));
+    check('the subagent head uses grid to reserve space for the cost',
+    valueOf(css, head, 'display') === 'grid', valueOf(css, head, 'display'));
   }
 
   // ---- 2. The agent chip and the cost never truncate -----------------

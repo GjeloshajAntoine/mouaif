@@ -13,7 +13,7 @@ A `subagent` tool card keeps the delegated conversation in its expanded body. Th
 | `assistant` | An assistant chat bubble with markdown, labelled with the model that ran the delegated call. |
 | `tool` | A compact nested tool row (verb label, one-line arguments, per-tool result summary, status dot, per-tool preview) — not a chat bubble, so the assistant→tool→assistant loop stays readable. |
 
-While the run is in flight, streamed answer deltas land in a single assistant bubble under the **Subagent is working…** line; the card is re-rendered into the final transcript above once the run settles.
+While the run is in flight, answers and provider-exposed reasoning stream into assistant bubbles, with a new bubble after each tool round. The final transcript keeps those replies and Thinking sections in their original order, instead of merging all answers after the tools. Thinking sections fold like the main chat; reasoning-only turns remain visible.
 
 ## Wrapping
 
@@ -81,11 +81,14 @@ Subagent   research the pricing table   $0.0042   ●
   run works through its rounds.
 - **Settled.** When the run returns, the result's own resolved price
   (`result.totalCost`, falling back to `result.providerCost`) replaces the
-  running figure, and `renderSubagentChat` re-draws it on the new head.
+  running figure, and `renderSubagentChat` re-draws it on the new head. Failed
+  runs also keep their model, usage and the known cost of completed rounds.
 - **Across renders.** The figure is held on the card element
   (`card._subagentCost`) and re-applied whenever the head is rebuilt, so it
   survives the live→settled re-render and a full transcript rebuild instead of
-  vanishing exactly when the run ends.
+  vanishing exactly when the run ends. Returning tabs receive an absolute
+  cost snapshot through buffered `subagent_event` frames; replaying it is
+  idempotent and does not add to the chat bill.
 - **Unknown stays unknown.** A run whose price could not be resolved draws no
   label at all, rather than a confident `$0.00` — the same rule the per-turn
   meta line follows. A price that really is zero (`$0.00`) is shown.
@@ -94,7 +97,10 @@ The chat-wide **Total** is unchanged: the card label is a second view of the
 same numbers, never an extra charge. See
 [Usage metrics](usage-metrics.md#subagents-are-included-and-billed-as-they-run).
 
-Regression test: `scripts/test-subagent-card-cost.js`.
+Regression tests: `scripts/test-subagent-card-cost.js` and
+`scripts/test-subagent-live-cost.js`. For a real-browser check, run
+`node scripts/test-subagent-transcript-ui.mjs` and open the printed local URL
+at 360–430 px wide; **Settle fixture** exercises the live-to-final transition.
 
 ## Usage
 
@@ -105,25 +111,15 @@ Regression test: `scripts/test-subagent-card-cost.js`.
 
 ## The head shows the task and the agent in full
 
-The subagent head is one row: chevron · `Subagent` · agent chip · task · cost
-· status dot. The task is the part that gives up room, and the two pieces that
-identify the run never truncate:
+The mobile header reserves its top line for the chevron, `Subagent`, cost
+and status dot. The agent chip and full task each get their own wrapping line
+below it. Long agent names cannot push the cost outside a clipped row, and
+the task no longer depends on a hover tooltip to expose its hidden tail.
 
-- **The task stays on one line**, clipped by the row width like every other
-  tool card, with the full text kept on the element's `title` (hover /
-  long-press), instead of reading `Read src/index.js and report the…` with no
-  way to recover the rest.
-- **The agent chip is never truncated** — it is the only place the dispatched
-  agent's name appears, so a clipped `revie…` chip makes an `@reviewer`
-  dispatch unreadable. It may use the full head width and never shrinks away.
-- **The cost is never truncated** either — it is the running figure the user
-  is watching, and it never shrinks or ellipsizes.
-
-Implementation notes: `.tool-card--subagent .tool-card__head .tool-card__agent`
-and `… .tool-card__cost` take `flex: 0 0 auto`, and the cost also clears the
-shared `overflow: hidden` / `text-overflow: ellipsis`. The task keeps the
-generic single-line rules, so no expand-state override is needed. Regression
-test: `scripts/test-subagent-head-wrap.js`.
+Implementation notes: only the outer subagent header uses a four-column CSS
+grid; nested tool rows and other tool cards retain their compact layout.
+The header tap target is at least 44 px tall. Regression test:
+`scripts/test-subagent-head-wrap.js`.
 
 ## Expand and collapse
 

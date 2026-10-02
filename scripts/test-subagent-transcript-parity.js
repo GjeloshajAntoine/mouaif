@@ -632,6 +632,33 @@ function main() {
       && rebuiltRow._userOpen === true);
   }
 
+  // Reasoning-only turns must not disappear, live or after settlement.
+  {
+    const card = makeCard();
+    const refs = { transcript: { current: createElement('div') } };
+    refs.transcript.current.appendChild(card);
+    mod.handleSubagentStreamEvent({ eventName: 'reasoning' }, { parentCallId: 'call_1', delta: 'Inspect first.' }, refs);
+    const first = card.querySelector('.tool-card__subagent-live-msg');
+    check('live reasoning renders even before answer text arrives',
+      first.querySelector('.chat-msg__reasoning-body').textContent === 'Inspect first.');
+    mod.handleSubagentStreamEvent({ eventName: 'message' }, { parentCallId: 'call_1', delta: 'Checking.' }, refs);
+    mod.handleSubagentStreamEvent({ eventName: 'assistant_turn_end' }, { parentCallId: 'call_1' }, refs);
+    mod.handleSubagentStreamEvent({ eventName: 'message' }, { parentCallId: 'call_1', delta: 'Done.' }, refs);
+    check('a nested tool-round boundary starts a separate answer bubble',
+      card.querySelectorAll('.chat-msg--assistant').length === 2
+      && first.querySelector('.chat-msg__answer').innerHTML === 'Checking.');
+    mod.renderSubagentChat(card, { name: 'subagent', result: { chat: [
+      { role: 'assistant', content: null, reasoning: 'Reasoning only.' },
+      { role: 'assistant', content: 'Done.', reasoning: 'Final check.' }
+    ] } });
+    const rows = chatRows(card.querySelector('.tool-card__subagent-chat'));
+    check('settled reasoning-only and answer turns both survive', rows.length === 2
+      && rows[0].querySelector('.chat-msg__reasoning-body').innerHTML === 'Reasoning only.'
+      && rows[1].querySelector('.chat-msg__reasoning-body').innerHTML === 'Final check.');
+    check('events with an explicit missing parent never mutate another run',
+      mod.handleSubagentStreamEvent({ eventName: 'message' }, { parentCallId: 'missing', delta: 'Wrong run' }, refs) === false);
+  }
+
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   if (failed) process.exitCode = 1;
 }
