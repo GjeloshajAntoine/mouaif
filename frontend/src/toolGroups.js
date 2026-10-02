@@ -11,11 +11,10 @@
 //   source      the catalog `source` the tools advertise (documentation +
 //               the server's own grouping; membership below is authoritative)
 //   tools       the model-facing function names in this group
-//   kind        'category' for a group of independent functions, omitted
-//               for a family that shares one authorization gate
-//   authKey     the authorization key an un-gated member writes, and the one
-//               the group row's segment edits. A family sets it; a category
-//               has no key of its own, so its segment writes every child.
+//   authKey     the authorization gate the group row's segment edits. A
+//               single-tool family uses the tool name; a multi-tool family
+//               (File tools, Chats, mouaif) has its own gate key that covers
+//               every leaf, and each leaf may carry its own override.
 //   description fallback row description when the catalog has none
 //   gated       false for a tool with no project authorization gate at all
 //               (see list_features) — it still lists, but cannot be turned
@@ -29,8 +28,8 @@
 
 export const TOOL_GROUPS = Object.freeze([
   // Row order is the tree order every surface renders: the single-tool
-  // families first, the two chat/app categories after the feature report,
-  // then progress updates and the file family.
+  // families first, the Chats / mouaif families after the feature report,
+  // then progress updates and the File tools family.
   { id: 'shell', name: 'Shell', source: 'shell', authKey: 'shell', tools: ['shell'] },
   { id: 'subagent', name: 'Subagent', source: 'subagent', authKey: 'subagent', tools: ['subagent'] },
   { id: 'ask_user', name: 'Ask user', source: 'ask_user', authKey: 'ask_user', tools: ['ask_user'], binary: true },
@@ -43,19 +42,21 @@ export const TOOL_GROUPS = Object.freeze([
   // showing a control that would not do anything).
   { id: 'list_features', name: 'Feature report', source: 'features', tools: ['list_features'], gated: false },
 
-  // ---- Chat and app tools, grouped so they read as categories ----------
+  // ---- Chat and app tools: two multi-tool families ---------------------
+  // Same shape as File tools: one gate (`tools.chats` / `tools.mouaif`)
+  // covers every function, and each function can override it.
   {
     id: 'chats',
     name: 'Chats',
-    kind: 'category',
     source: 'chats',
+    authKey: 'chats',
     tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments']
   },
   {
     id: 'mouaif-settings',
     name: 'mouaif',
-    kind: 'category',
     source: 'mouaif',
+    authKey: 'mouaif',
     tools: ['get_settings', 'update_settings', 'list_projects', 'get_app_info']
   },
 
@@ -77,37 +78,25 @@ export const GROUP_BY_ID = Object.freeze(
   Object.fromEntries(TOOL_GROUPS.map((group) => [group.id, group]))
 );
 
-// The category rows (a group of independent functions, no shared gate).
-export const CATEGORY_GROUPS = Object.freeze(
-  TOOL_GROUPS.filter((group) => group.kind === 'category')
-);
+// FAMILY_OF — leaf name -> gate key, for every multi-tool family (File
+// tools, Chats, mouaif). A leaf resolves through that gate plus its own
+// optional override, the same rule the server applies.
+export const FAMILY_OF = Object.freeze(Object.fromEntries(
+  TOOL_GROUPS.filter((group) => group.authKey && group.tools.length > 1)
+    .flatMap((group) => group.tools.map((name) => [name, group.authKey]))
+));
 
-export const CATEGORY_GROUP_IDS = Object.freeze(CATEGORY_GROUPS.map((group) => group.id));
-
-// APP_TOOL_NAMES — every function listed under a category row. The names
-// are ordinary per-tool authorization keys (there is no category-level
-// permission), which is why the surfaces resolve a category child by name.
-export const CATEGORY_TOOL_NAMES = Object.freeze(CATEGORY_GROUPS.flatMap((group) => group.tools));
-
-// The single-tool families, in tree order.
-export const FAMILY_GROUPS = Object.freeze(
-  TOOL_GROUPS.filter((group) => group.kind !== 'category' && !group.authKey)
-);
+// Every leaf of a multi-tool family.
+export const FAMILY_LEAF_NAMES = Object.freeze(Object.keys(FAMILY_OF));
 
 // Every name the model renders. Used to keep the agent allowlist choices
 // and the catalog → group join from drifting apart.
 export const GROUPED_TOOL_NAMES = Object.freeze(TOOL_GROUPS.flatMap((group) => group.tools));
 
-// isCategoryGroup(groupId) -> boolean
-export function isCategoryGroup(groupId) {
-  return CATEGORY_GROUP_IDS.includes(groupId);
-}
-
 // groupAuthKey(groupId) -> string | null
 //
-// The authorization key a group row's segment edits: the family's own key
-// (`shell`, `file`, the file family's key for the file group, …), or null
-// for a category, whose pick writes every child instead.
+// The authorization gate a group row's segment edits (`shell`, `file`,
+// `chats`, `mouaif`, …), or null for a row with no gate (list_features).
 export function groupAuthKey(groupId) {
   const group = GROUP_BY_ID[groupId];
   return (group && group.authKey) || null;
@@ -143,29 +132,24 @@ export function isGatedTool(name) {
   return !group || group.gated !== false;
 }
 
-// FILE_TOOL_NAMES — the leaves of the File tools family. Their authorization
-// resolves through the `file` gate plus a per-leaf override, so a status line
-// for a leaf edit belongs on the `file` row.
-export const FILE_TOOL_NAMES = Object.freeze(
-  (GROUP_BY_ID.files && GROUP_BY_ID.files.tools) || []
-);
-
-// isFileLeaf(name) -> boolean
-export function isFileLeaf(name) {
-  return FILE_TOOL_NAMES.includes(name);
+// isFamilyLeaf(name) -> boolean — the tool is one leaf of a multi-tool
+// family, so it can carry an override of its own next to the family gate.
+export function isFamilyLeaf(name) {
+  return Object.prototype.hasOwnProperty.call(FAMILY_OF, name);
 }
 
-// categoryMode(modes) -> 'off' | 'ask' | 'allow'
+// toolPermission(name, native, mcp) -> { mode, allowlist }
 //
-// What a category row's segment shows: the one mode every child agrees on,
-// else 'ask'. A category is not a fourth permission level — its segment is
-// a shortcut that writes every child, the way the group checkbox is a
-// shortcut for the chat filter. A child with no stored mode is `ask`, the
-// native default, not a fourth unknown value; an empty list reads `ask` too.
-export function categoryMode(modes) {
-  const list = (modes || []).map((mode) => (mode === 'off' || mode === 'allow' || mode === 'allowlist' ? mode : 'ask'));
-  if (!list.length) return 'ask';
-  if (list.every((mode) => mode === 'off')) return 'off';
-  if (list.every((mode) => mode === 'allow')) return 'allow';
-  return 'ask';
+// The effective mode a tree row shows for one tool, from the chat or
+// project authorization view. A family `off` hides every leaf; otherwise a
+// leaf's own entry wins, then its family gate. MCP tools resolve per tool,
+// then per server, then the shared gate.
+export function toolPermission(name, native = {}, mcp = {}) {
+  if (name.startsWith('mcp__')) {
+    const slug = name.slice(5).split('__')[0];
+    return (mcp.tools && mcp.tools[name]) || (mcp.servers && mcp.servers[slug]) || mcp;
+  }
+  const gate = FAMILY_OF[name];
+  if (gate && native[gate] && native[gate].mode === 'off') return native[gate];
+  return native[name] || (gate ? native[gate] : null) || {};
 }

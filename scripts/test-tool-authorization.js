@@ -151,6 +151,30 @@ async function main() {
     tools: Object.fromEntries(['file', ...authz.FILE_TOOL_NAMES].map((name) => [name, { mode: 'allow' }]))
   });
 
+  // Chats and mouaif are families exactly like `file`: one gate per family,
+  // per-leaf overrides on top, the same Allow / Off precedence.
+  assert.deepEqual([...authz.familyTools('chats')].sort(), authz.TOOL_FAMILIES.chats.slice().sort());
+  assert.equal(authz.configToolName('delete_chat'), 'chats');
+  assert.equal(authz.configToolName('get_app_info'), 'mouaif');
+  authz.setAuthorization(projectDir, { tools: { chats: { mode: 'off' } } });
+  for (const name of authz.TOOL_FAMILIES.chats) {
+    assert.equal(authz.effectiveConfig(projectDir, name).mode, 'off', name + ' follows the chats gate Off');
+  }
+  assert.equal(authz.effectiveConfig(projectDir, 'get_settings').mode, 'ask', 'the mouaif family is independent');
+  await assert.rejects(
+    authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_chats_off', tool: 'list_chats', summary: '' }),
+    { code: 'ETOOL_DISABLED' },
+    'a chats gate Off disables every chat function'
+  );
+  authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'allow' }, update_settings: { mode: 'off' } } });
+  assert.equal(authz.effectiveConfig(projectDir, 'get_settings').mode, 'allow', 'family Allow covers its leaves');
+  assert.equal(authz.effectiveConfig(projectDir, 'update_settings').mode, 'off', 'a leaf Off still tightens family Allow');
+  const familyView = authz.getAuthorization(projectDir).tools;
+  assert.equal(familyView.chats.mode, 'off', 'the view reports the chats gate');
+  assert.equal(familyView.mouaif.mode, 'allow', 'the view reports the mouaif gate');
+  assert.equal(familyView.list_chats.mode, 'off', 'and every leaf');
+  authz.setAuthorization(projectDir, { tools: { chats: { mode: 'ask' }, mouaif: { mode: 'ask' }, update_settings: { mode: 'ask' } } });
+
   settings.setProject(projectDir, { tools: { shell: { enabled: false, mode: 'ask', allowlist: ['^echo safe$'] } } });
   const legacyDisabled = await authz.authorize({
     projectDir, chatId: 'a1b2c3d4', callId: 'call_legacy_disabled', tool: 'shell', cmd: 'echo available'
@@ -304,7 +328,7 @@ async function main() {
   authz.setAuthorization(projectDir, { mcp: { servers: { [divergingServerId]: null } } });
   const idKeyedCleared = JSON.parse(fs.readFileSync(path.join(projectDir, '.mcp.json'), 'utf8'));
   assert.ok(!('srv_display' in (idKeyedCleared.authorization.servers || {})), 'clear by id removes the slug entry');
-  console.log('tool authorization: ' + (37 + 4 + 5) + ' assertions passed');
+  console.log('tool authorization: ' + (37 + 4 + 5 + 13) + ' assertions passed');
 }
 
 main().finally(() => {

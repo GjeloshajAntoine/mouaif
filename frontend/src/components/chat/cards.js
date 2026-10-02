@@ -8,7 +8,7 @@ import { fetchJson } from '../../api.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { h, render } from 'preact';
 import { ToolTree, buildToolGroups, groupToolNames, childToolName, toolPermission } from '../ToolTree.jsx';
-import { isCategoryGroup, categoryMode, groupAuthKey, isBinaryTool } from '../../toolGroups.js';
+import { groupAuthKey, isBinaryTool, FAMILY_OF } from '../../toolGroups.js';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
 import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
@@ -123,25 +123,6 @@ head.appendChild(scoped);
   // ../settings/toolAuth.js, so no row can drift from the others.
   const auth = state.toolAuth || {};
   for (const g of groups) {
-    // A category row (Chats, mouaif) carries a segment like every other
-    // group row, but its children are ordinary functions with no family key
-    // of their own — so its pick writes each of them instead of one gate.
-    // It shows `off` / `allow` only when every child agrees, else `ask`; a
-    // mixed category is not a mode, it is a partial permission.
-    if (isCategoryGroup(g.id)) {
-      const names = groupToolNames(g);
-      g.control = h(ToolAuthSeg, {
-        tool: g.id,
-        name: g.name,
-        mode: categoryMode(names.map((n) => (auth[n] || {}).mode)),
-        namePrefix: 'chat-auth-' + g.id,
-        onPick: (mode, allowlist) => {
-        if (!state._saveToolAuth) return;
-        for (const name of names) state._saveToolAuth(name, mode, allowlist);
-        }
-      });
-      continue;
-    }
     // The authorization key and the mode list come from the app-wide group
     // model, so a family row never carries a hand-written copy of the map.
     const toolName = groupAuthKey(g.id);
@@ -163,15 +144,6 @@ head.appendChild(scoped);
       if (state._saveToolAuth) state._saveToolAuth(toolName, mode, allowlist);
       }
       });
-  }
-
-  for (const g of groups) {
-    if (!isCategoryGroup(g.id)) continue;
-    for (const tool of g.tools || []) {
-      const cfg = auth[tool.id] || { mode: 'ask' };
-      tool.control = h(ToolAuthSeg, { tool: tool.id, mode: cfg.mode, allowlist: cfg.allowlist,
-        namePrefix: 'chat-auth', onPick: (mode, allowlist) => state._saveToolAuth && state._saveToolAuth(tool.id, mode, allowlist) });
-    }
   }
 
   // MCP authorization — one Off/Ask/Allow segment per MCP server group
@@ -1116,8 +1088,9 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
           mcp.servers[slug] = { mode: 'ask', allowlist: [] };
           mcp.tools[name] = { mode: 'ask', allowlist: [] };
         } else {
-          const entry = (cur.catalog || []).find((t) => t.name === name);
-          native.add(entry && entry.source === 'files' ? 'file' : name);
+          // A family leaf (file operation, chat or app function) is
+          // re-enabled through its family gate, like the segment writes it.
+          native.add(FAMILY_OF[name] || name);
         }
       }
       for (const tool of native) {

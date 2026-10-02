@@ -4,9 +4,9 @@
 
 ### Shape
 
-Twelve ordinary native specs, five business areas, **two visual categories**. `src/tools/appToolNames.js` defines operation names, schema fields and catalog sources. `src/tools/mouaif.js` exports `SPECS`, `TOOL_NAMES`, and `runAppTool(name, args, opts)`. The area router is internal business-code reuse, not a model-facing function.
+Twelve ordinary native specs, five business areas, **two authorization families** (`chats`, `mouaif`). `src/tools/appToolNames.js` defines operation names, schema fields and catalog sources. `src/tools/mouaif.js` exports `SPECS`, `TOOL_NAMES`, and `runAppTool(name, args, opts)`. The area router is internal business-code reuse, not a model-facing function.
 
-`TOOL_GROUPS` in `frontend/src/toolGroups.js` holds the two categories (**Chats**, **mouaif**) as `kind: 'category'` entries, alongside one entry per native tool family — see [Tool groups](../../features/tool-groups.md). Child ids are function names; each child has the normal `ToolAuthSeg` control. The category row has one too — `isCategoryGroup` / `categoryMode` decide its displayed mode (`off` / `allow` only when every child agrees, else `ask`) and the surfaces write every child on a pick. Categories remain presentation only: no category-level permission key exists.
+`TOOL_GROUPS` in `frontend/src/toolGroups.js` holds **Chats** (`authKey: 'chats'`) and **mouaif** (`authKey: 'mouaif'`) like any other multi-tool family — see [Tool groups](../../features/tool-groups.md). Child ids are function names. The row's segment edits the family gate; in project settings each child has its own `ToolAuthSeg` for a per-function override. On the server `TOOL_FAMILIES` in `src/tools/authorization.js` groups the functions by their `source` in `appToolNames.js`, and they resolve exactly like the file leaves.
 
 ### Child row → tool name
 
@@ -19,7 +19,7 @@ groupToolNames(group)  // Chats -> ['list_chats', 'get_chat', …]
 childToolName(group, toolId)  // 'get_app_info' -> 'get_app_info'
 ```
 
-`buildToolGroups` also accepts effective native/MCP permissions; `toolPermission` keeps Off tools unchecked even when the chat filter is `null`. `toggleToolGroup` saves the filter and, when enabling a disabled tool, restores its chat-scoped gate to Ask. Both chat surfaces re-render after success or failure. Each function has its own radio name and stored permission, on the leaf rather than a shared category gate.
+`buildToolGroups` also accepts effective native/MCP permissions; `toolPermission` keeps Off tools unchecked even when the chat filter is `null`. `toggleToolGroup` saves the filter and, when enabling a disabled tool, restores its chat-scoped family gate (`chats` / `mouaif`) to Ask. Both chat surfaces re-render after success or failure. A function resolves through its family gate plus an optional per-function override, like a file leaf.
 
 Both chat surfaces call them (`cards.js` passes the result to `state._toggleTool` / `state._toggleToolGroup`, `ToolPopup.jsx` to its `onToggleTool` / `onToggleToolGroup` props), and `SettingsProject.jsx` carries `toolName` on its own inline rows. Do not re-inline the rule at a call site: the first fix did exactly that, landed in the popup and missed the card, and the card's action checkboxes were dead until `groupToolNames`/`childToolName` gave the two surfaces one home. `scripts/test-mouaif-tool-toggle.mjs` asserts both surfaces import and call the helpers, and fails if either re-inlines the logic.
 
@@ -43,7 +43,7 @@ const out = await runAppTool(
 | Tool preview | `src/server-handlers-chats.js` | Same family list in the `off`-pruning loop. |
 | Authorization family | `src/tools/authorization.js` | Member of `NATIVE_TOOLS`; own row in the `getAuthorization` view. Default mode `ask`. || Prompt presets | `src/prompts.js` | Member of `PRESET_TOOL_NAMES`. |
 | Feature summary | `src/agentFeatures.js` | Own line in `buildFeatureSummary`; in the `list_features` tool list. |
-| Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,useChatState.js}` | Ordinary child checkboxes and per-leaf permission controls in two visual categories. |
+| Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,useChatState.js}` | Ordinary child checkboxes; one family-gate segment per row (Chats, mouaif). |
 | Project settings UI | `frontend/src/components/SettingsProject.jsx` | Each checkbox/control writes `tools.<functionName>`. |
 | Agent allowlist UI | `frontend/src/components/SettingsAgents.jsx` | Twelve ordinary function-name choices. |
 | Card rendering | `frontend/src/components/chat/{tools.js,toolRender.js}` + `frontend/src/tool-cards.css` | `mouaifArgSummary` for the collapsed head; `renderMouaifToolResult` renders a chat list, everything else falls through to the JSON preview. |
@@ -109,4 +109,4 @@ npm run test:mouaif-tool
 
 `test-mouaif-tool-stream.js` exercises the actual multi-turn dispatcher, tool-result cards, Allow/Ask/Off and per-chat authorization, denial, typed errors, credential redaction, draft attachment, and confirmed deletion. `test-mouaif-tool-sync.mjs` executes the production refresh helper with deferred responses to cover drafts/images, title/model/prompt synchronization, duplicate results, chat/session navigation, overlapping requests, and concurrent user edits.
 
-`node scripts/test-mouaif-tool-toggle.mjs` covers the tree half: the two category rows, their action children, and the child row → tool name resolution (`groupToolNames` / `childToolName`) driven through the real `toggleToolGroup` write path, plus a source assertion that both chat surfaces import and call the shared helpers instead of re-inlining them. `node scripts/test-mouaif-tool-categories.mjs` covers the rendered shape.
+`node scripts/test-mouaif-tool-toggle.mjs` covers the tree half: the two family rows, their function children, the family-gate segment, and the child row → tool name resolution (`groupToolNames` / `childToolName`) driven through the real `toggleToolGroup` write path, plus a source assertion that both chat surfaces import and call the shared helpers instead of re-inlining them. `node scripts/test-mouaif-tool-categories.mjs` covers the rendered shape.

@@ -34,8 +34,8 @@ const treeContext = vm.createContext({
 });
 vm.runInContext(stripImports(fs.readFileSync('frontend/src/toolGroups.js', 'utf8'))
   + '\n' + stripImports(fs.readFileSync('frontend/src/components/ToolTree.jsx', 'utf8')), treeContext);
-const { buildToolGroups, groupToolNames, childToolName, toolPermission, isCategoryGroup, categoryMode, groupAuthKey } =
-  vm.runInContext('({ buildToolGroups, groupToolNames, childToolName, toolPermission, isCategoryGroup, categoryMode, groupAuthKey })', treeContext);
+const { buildToolGroups, groupToolNames, childToolName, toolPermission, groupAuthKey, FAMILY_OF } =
+  vm.runInContext('({ buildToolGroups, groupToolNames, childToolName, toolPermission, groupAuthKey, FAMILY_OF })', treeContext);
 
 // Values built inside the VM realm carry that realm's Array prototype, so
 // `deepStrictEqual` would compare prototypes and fail on identical contents.
@@ -45,7 +45,7 @@ const same = (actual, expected, what) => assert.equal(JSON.stringify(actual), JS
 
 const catalog = [
   { name: 'shell', description: 'Run a shell command in the project directory.' },
-  ...vm.runInContext('CATEGORY_GROUPS', treeContext).flatMap((group) => group.tools.map((name) => ({ name, kind: 'native', source: group.source }))),
+  ...vm.runInContext("TOOL_GROUPS.filter((group) => ['chats', 'mouaif'].includes(group.authKey))", treeContext).flatMap((group) => group.tools.map((name) => ({ name, kind: 'native', source: group.source }))),
   { name: 'read_file', kind: 'native', source: 'files', description: 'Read a file.' }
 ];
 const groups = buildToolGroups(catalog, [], null);
@@ -140,9 +140,8 @@ const cardsContext = vm.createContext({
   groupToolNames,
   childToolName,
   toolPermission,
-  isCategoryGroup,
-  categoryMode,
   groupAuthKey,
+  FAMILY_OF,
   isBinaryTool: () => false
 });
 const rendered = [];
@@ -173,7 +172,8 @@ function cardHandlers(filter, toolAuth) {
 {
   const { props, state: s } = cardHandlers();
   const leaves = props.groups.filter((g) => ['chats', 'mouaif-settings'].includes(g.id)).flatMap((g) => g.tools);
-  assert.ok(leaves.every((tool) => tool.control.props.tool === tool.id), 'each function has its own permission control');
+  // Like the File tools leaves: the chat card edits the family gate only.
+  assert.ok(leaves.every((tool) => !tool.control), 'a family leaf has no chat-scoped segment of its own');
   props.onToggleTool('chats', 'list_chats', false);
   assert.equal(s._seenTool.name, 'list_chats');
   props.onToggleGroup('chats', false);
@@ -189,40 +189,36 @@ function cardHandlers(filter, toolAuth) {
   assert.equal(s._seenGroup.names[0], 'read_file', 'a catalog group keeps its children ids');
 }
 
-// A category row (Chats, mouaif) carries its own Off / Ask / Allow segment,
-// like every other group row — its pick writes every child function, because
-// a category has no family key to write. It reads `off` / `allow` only when
-// every child agrees, else `ask`; the control is injected by the surface (the
-// card here, ToolPopup.jsx and SettingsProject.jsx in their own trees).
-assert.ok(isCategoryGroup(chats.id) && isCategoryGroup(settings.id), 'both category ids are recognized');
-assert.ok(!isCategoryGroup('files') && !isCategoryGroup('shell'), 'ordinary groups are not categories');
-same([categoryMode(['off', 'off']), categoryMode(['allow', 'allow']), categoryMode(['allow', 'off']),
-  categoryMode(['ask', 'ask']), categoryMode([]), categoryMode([undefined, null])],
-  ['off', 'allow', 'ask', 'ask', 'ask', 'ask'], 'a category shows a mode only when every child agrees');
+// Chats and mouaif are families, exactly like File tools: the group row's
+// segment edits ONE gate (`chats` / `mouaif`) that covers every function.
+assert.equal(groupAuthKey(chats.id), 'chats', 'Chats has its own gate');
+assert.equal(groupAuthKey(settings.id), 'mouaif', 'mouaif has its own gate');
+assert.equal(groupAuthKey(files.id), 'file', 'File tools keeps its gate');
+assert.equal(FAMILY_OF.list_chats, 'chats');
+assert.equal(FAMILY_OF.get_app_info, 'mouaif');
+assert.equal(FAMILY_OF.read_file, 'file');
+assert.equal(FAMILY_OF.shell, undefined, 'a single tool is its own gate');
 {
   const { props } = cardHandlers();
-  for (const id of ['chats', 'mouaif-settings']) {
+  for (const [id, gate] of [['chats', 'chats'], ['mouaif-settings', 'mouaif'], ['files', 'file']]) {
     const group = props.groups.find((g) => g.id === id);
     assert.ok(group.control, id + ' renders the group segment every other group row has');
-    assert.equal(group.control.props.tool, id, id + ' segments by its own id');
+    assert.equal(group.control.props.tool, gate, id + ' segments its family gate');
   }
   assert.ok(props.groups.filter((g) => g.control).every((g) => !!g.control.props.onPick || !!g.control.props.onSave),
     'every group segment can write');
-  // A pick on the category segment writes every child in ONE call per child,
-  // and a partially-off category reads `ask` rather than `off`.
+  // A pick writes the gate once — no per-child loop.
   const picked = [];
-  const seeded = cardHandlers(null, { list_chats: { mode: 'off' }, get_chat: { mode: 'off' } });
+  const seeded = cardHandlers(null, { chats: { mode: 'off' } });
   seeded.state._saveToolAuth = (tool, mode, allowlist) => { picked.push([tool, mode, allowlist]); };
   const chatSeg = seeded.props.groups.find((g) => g.id === 'chats').control;
-  assert.equal(chatSeg.props.mode, 'ask', 'a partially off category reads ask, not off');
-  const chatNames = groupToolNames(seeded.props.groups.find((g) => g.id === 'chats'));
+  assert.equal(chatSeg.props.mode, 'off', 'the segment shows the gate mode');
   chatSeg.props.onPick('allow', []);
-  same(picked, chatNames.map((name) => [name, 'allow', []]),
-    'the category segment writes every child function');
-  const offAll = cardHandlers(null,
-    Object.fromEntries(groupToolNames(settings).map((name) => [name, { mode: 'off' }])));
-  assert.equal(offAll.props.groups.find((g) => g.id === 'mouaif-settings').control.props.mode, 'off',
-    'a fully off category reads off');
+  same(picked, [['chats', 'allow', []]], 'the family segment writes its gate in one call');
+  // A family gate Off unchecks every leaf, like `file`.
+  const offGroups = buildToolGroups(catalog, [], null, new Set(), { native: { mouaif: { mode: 'off' } } });
+  assert.ok(offGroups.find((g) => g.id === 'mouaif-settings').tools.every((t) => !t.checked), 'gate Off unchecks every leaf');
+  assert.ok(offGroups.find((g) => g.id === 'chats').tools.every((t) => t.checked), 'the other family is untouched');
 }
 
 // ---- 3b. Those names survive the real write ------------------------------
@@ -273,13 +269,13 @@ assert.equal(disabledGroups.find((g) => g.id === 'chats').tools.find((t) => t.id
 assert.equal(disabledGroups.find((g) => g.id === 'chats').tools.find((t) => t.id === 'delete_chat').checked, true);
 
 const authWrites = [];
-const offState = { tools: { catalog: liveCatalog, filter: [] }, mcpServers: [], toolAuth: { list_chats: { mode: 'off', allowlist: ['keep'] } },
+const offState = { tools: { catalog: liveCatalog, filter: [] }, mcpServers: [], toolAuth: { chats: { mode: 'off', allowlist: ['keep'] } },
   _saveToolAuth: async (...args) => { authWrites.push(args); return true; } };
 await toggleToolGroup(['list_chats'], true, offState, refs, updateChat);
-same(authWrites, [['list_chats', 'ask', ['keep']]], 'checking an Off tool restores its own Ask permission');
+same(authWrites, [['chats', 'ask', ['keep']]], 'checking an Off function restores its family gate to Ask (like file)');
 assert.ok(offState.tools.filter.includes('list_chats'));
 authWrites.length = 0;
-offState.toolAuth.list_chats.mode = 'allow';
+offState.toolAuth.chats.mode = 'allow';
 await toggleToolGroup(['list_chats'], true, offState, refs, updateChat);
 assert.equal(authWrites.length, 0, 'an already allowed tool keeps its permission');
 

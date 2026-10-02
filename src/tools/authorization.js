@@ -140,8 +140,8 @@ function normalizeConfig(raw, source, enabled, tool) {
 // has its own block under project.mcp.authorization). The same shape
 // works for any future native tool: { mode, allowlist, defaultTimeoutMs,
 // maxTimeoutMs } under project.tools.<name>.
+const APP_TOOL_DEFINITIONS = require('./appToolNames.js').DEFINITIONS;
 const APP_TOOL_NAMES = require('./appToolNames.js').TOOL_NAMES;
-const NATIVE_TOOLS = new Set(['shell', 'subagent', 'file', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', ...APP_TOOL_NAMES]);
 // Tools that only support a binary `off` / `ask` mode. `ask_user` is
 // the first of its kind: the model can't predict the user's answer,
 // so allowlist / allow make no sense. The authorization module still
@@ -169,6 +169,32 @@ const MAX_BATCH_ENTRIES = require('./files.js').MAX_BATCH_ENTRIES;
 // resolver, the chat-override reader/writer, and the GET /api/tools/
 // authorization view — including grouped reads and edits.
 const FILE_FAMILY_TOOLS = new Set([...FILE_TOOL_NAMES]);
+// Multi-tool families: one gate key (`project.tools.<family>`) that covers
+// every leaf, plus an optional per-leaf override (`project.tools.<leaf>`).
+// The file operations share `file`; the chat and app functions share the
+// gate named after their catalog `source` (`chats`, `mouaif`). Every family
+// resolves through the same code path, so a new one is a new entry here.
+const TOOL_FAMILIES = Object.freeze(Object.assign(
+  { file: Object.freeze([...FILE_TOOL_NAMES]) },
+  APP_TOOL_NAMES.reduce((families, name) => {
+    const source = APP_TOOL_DEFINITIONS[name].source;
+    (families[source] = families[source] || []).push(name);
+    return families;
+  }, {})
+));
+// leaf name -> family key
+const FAMILY_OF = Object.freeze(Object.fromEntries(
+  Object.entries(TOOL_FAMILIES).flatMap(([family, leaves]) => leaves.map((leaf) => [leaf, family]))
+));
+// Every leaf of every family (the names that may carry a per-leaf override).
+const FAMILY_TOOLS = new Set(Object.keys(FAMILY_OF));
+// The native authorization gates: single tools plus one key per family.
+const NATIVE_TOOLS = new Set(['shell', 'subagent', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', ...Object.keys(TOOL_FAMILIES)]);
+
+// familyTools(gate) -> Set — the tool names an `off` on this gate hides.
+function familyTools(gate) {
+  return new Set(TOOL_FAMILIES[gate] || [gate]);
+}
 const MCP_FILE = '.mcp.json';
 
 // ---- Per-chat authorization overrides (decisions §17) --------------------
@@ -210,7 +236,7 @@ function readChatAuthOverrides(projectDir, chatId) {
   const nativeSource = (raw.native && typeof raw.native === 'object' && !Array.isArray(raw.native))
     ? raw.native
     : raw;
-  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS]) {
+  for (const name of [...NATIVE_TOOLS, ...FAMILY_TOOLS]) {
     const entry = nativeSource[name];
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     if (typeof entry.mode !== 'string' || !MODES.has(entry.mode)) continue;
@@ -316,11 +342,12 @@ function writeMcpConfig(projectDir, config) {
   fs.writeFileSync(file, JSON.stringify(config || {}, null, 2) + '\n', 'utf8');
 }
 
-// Model-facing file operations share the single project.tools.file gate.
-// Keep the original operation name for session grants and audit events, but
-// resolve enablement and authorization mode through the canonical family.
+// A family leaf (a file operation, a chat or app function) shares its
+// family gate (project.tools.file / .chats / .mouaif). Keep the original
+// name for session grants and audit events, but resolve enablement and
+// authorization mode through the canonical family.
 function configToolName(tool) {
-  return FILE_FAMILY_TOOLS.has(tool) ? 'file' : tool;
+  return FAMILY_OF[tool] || tool;
 }
 
 // Split `mcp__<serverSlug>__<toolName>` into its parts. Returns null for
@@ -427,20 +454,19 @@ function effectiveConfig(projectDir, tool, chatId) {
   const project = settings.getProject(projectDir);
   const app = settings.getApp();
   if (NATIVE_TOOLS.has(tool)) {
-    const projectToolValue = FILE_FAMILY_TOOLS.has(requestedTool) && project && project.tools && project.tools[requestedTool];
-    const appToolValue = FILE_FAMILY_TOOLS.has(requestedTool) && app && app.tools && app.tools[requestedTool];
+    const projectToolValue = FAMILY_TOOLS.has(requestedTool) && project && project.tools && project.tools[requestedTool];
+    const appToolValue = FAMILY_TOOLS.has(requestedTool) && app && app.tools && app.tools[requestedTool];
     const projectFamilyValue = project && project.tools && project.tools[tool];
     const appFamilyValue = app && app.tools && app.tools[tool];
     let value;
     let source;
-    if (FILE_FAMILY_TOOLS.has(requestedTool)) {
-      // File-tool checkboxes (the five operations) can persist per-leaf
-      // overrides, but a
-      // family-level Allow must mean Allow for every non-disabled leaf. A
-      // stale per-leaf `ask` / `allowlist` entry must not mask
-      // `tools.file.mode = allow`, or the prompt says File tools are allowed
-      // while read_file still asks. Only an explicit per-leaf `off` tightens
-      // family Allow.
+    if (FAMILY_TOOLS.has(requestedTool)) {
+      // Family leaves (file operations, chat and app functions) can persist
+      // per-leaf overrides, but a family-level Allow must mean Allow for
+      // every non-disabled leaf. A stale per-leaf `ask` / `allowlist` entry
+      // must not mask `tools.file.mode = allow`, or the prompt says File
+      // tools are allowed while read_file still asks. Only an explicit
+      // per-leaf `off` tightens family Allow.
       if (projectToolValue && projectToolValue.mode === 'off') { value = projectToolValue; source = 'project-tool'; }
       else if (projectFamilyValue && projectFamilyValue.mode === 'allow') { value = projectFamilyValue; source = 'project'; }
       else if (projectToolValue) { value = projectToolValue; source = 'project-tool'; }
@@ -491,17 +517,9 @@ function getAuthorization(projectDir, chatId) {
   const chatOverrides = chatId ? readChatAuthOverrides(projectDir, chatId) : null;
   const view = {
     tools: {
-      shell: effectiveConfig(projectDir, 'shell', chatId),
-      subagent: effectiveConfig(projectDir, 'subagent', chatId),
-      file: effectiveConfig(projectDir, 'file', chatId),
-      ...Object.fromEntries(Array.from(FILE_TOOL_NAMES, (name) => [name, effectiveConfig(projectDir, name, chatId)])),
-      ask_user: effectiveConfig(projectDir, 'ask_user', chatId),
-      report_progress: effectiveConfig(projectDir, 'report_progress', chatId),
-task: effectiveConfig(projectDir, 'task', chatId),
-webpreview: effectiveConfig(projectDir, 'webpreview', chatId),
-restart_app: effectiveConfig(projectDir, 'restart_app', chatId),
-...Object.fromEntries(APP_TOOL_NAMES.map((name) => [name, effectiveConfig(projectDir, name, chatId)]))
-  },
+      // Every gate (single tools and family keys), then every family leaf.
+      ...Object.fromEntries([...NATIVE_TOOLS, ...FAMILY_TOOLS].map((name) => [name, effectiveConfig(projectDir, name, chatId)]))
+    },
     mcp
   };
   // Chat-scoped reads advertise what this chat has pinned; a project-scoped
@@ -636,7 +654,7 @@ function setAuthorization(projectDir, patch) {
   // defaultTimeoutMs, maxTimeoutMs }. The caller's `enabled` flag is
   // owned by the project tools toggle (a different setting) and is
   // not duplicated here.
-  for (const name of [...NATIVE_TOOLS, ...FILE_FAMILY_TOOLS]) {
+  for (const name of [...NATIVE_TOOLS, ...FAMILY_TOOLS]) {
     if (patch.tools && patch.tools[name]) {
       // A permission-only edit must not reset the current timeout bounds,
       // including bounds inherited from the app or the file-tool family.
@@ -929,6 +947,11 @@ FILE_TOOL_NAMES,
 // Every tool that resolves through the File tools family (`file` gate plus
 // its per-leaf overrides), including grouped reads and edits.
 FILE_FAMILY_TOOLS,
+// Generic family model: gate -> leaves, leaf -> gate, every leaf.
+TOOL_FAMILIES,
+FAMILY_OF,
+FAMILY_TOOLS,
+familyTools,
 readChatAuthOverrides,
 setChatAuthorization,
 getAuthorization,

@@ -66,8 +66,8 @@
   {
     "id": "chats",
     "name": "Chats",
-    "kind": "category",
     "source": "chats",
+    "authKey": "chats",
     "tools": [
       "list_chats",
       "get_chat",
@@ -82,8 +82,8 @@
   {
     "id": "mouaif-settings",
     "name": "mouaif",
-    "kind": "category",
     "source": "mouaif",
+    "authKey": "mouaif",
     "tools": [
       "get_settings",
       "update_settings",

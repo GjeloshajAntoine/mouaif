@@ -47,20 +47,20 @@ A project model can infer its provider when creating a chat. A live-catalog mode
 
 ### Where it appears
 
-The tools appear in two visual categories in Settings → Project → Tools, the chat Tools card, and the composer tools popup:
+The tools appear in two families in Settings → Project → Tools, the chat Tools card, and the composer tools popup:
 
-| Category | Native functions |
+| Family (gate) | Native functions |
 | --- | --- |
-| **Chats** | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments` |
-| **mouaif** | `get_settings`, `update_settings`, `list_projects`, `get_app_info` |
+| **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments` |
+| **mouaif** (`tools.mouaif`) | `get_settings`, `update_settings`, `list_projects`, `get_app_info` |
 
-Every child checkbox selects its own function; a partial selection shows a mixed checkmark. Every child has its own permission control, and the category row carries a segment too — the same `Off / Ask / Allow` control every other group row has, instead of the one row shape in the tree without one.
+Every child checkbox selects its own function; a partial selection shows a mixed checkmark. The two families work exactly like **File tools**:
 
-A category is not a fourth permission level. Its segment is a shortcut that writes all its children in one tap, the way its checkbox is a shortcut for the chat filter:
+- the row's `Off / Ask / Allow` segment edits one gate — `tools.chats` or `tools.mouaif` — that covers every function in the family;
+- in Settings → Project each function also has its own segment, which stores a per-function override (`tools.delete_chat`, …). A function `off` always wins; a family `allow` beats any other per-function value;
+- a family `off` hides all of its functions from the model; it never touches the other family.
 
-- it shows **Off** only when every child is `off`, **Allow** only when every child is `allow`, and **Ask** otherwise (a mixed category, and a child with no stored mode, both read Ask);
-- picking a mode writes each of the category's functions, so the children and the category always agree afterwards;
-- it never touches the other category.
+Per-function permissions saved before the families existed keep working: they are the per-function overrides.
 
 For example, this chat selects just two ordinary functions:
 

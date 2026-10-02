@@ -138,6 +138,14 @@ async function main() {
   check('the other file leaves follow the family gate',
     authz.effectiveConfig(projectDir, 'write_file', chatA.id).mode === 'off');
 
+  // 5b. Chat and app functions share their family key the same way.
+  authz.setChatAuthorization(projectDir, chatA.id, { native: { list_chats: { mode: 'off' } } });
+  check('a chat function write lands on the chats family',
+    authz.effectiveConfig(projectDir, 'delete_chat', chatA.id).mode === 'off');
+  check('the mouaif family is untouched',
+    authz.effectiveConfig(projectDir, 'get_app_info', chatA.id).mode !== 'off');
+  authz.setChatAuthorization(projectDir, chatA.id, { native: { chats: null } });
+
   // 6. MCP overrides: per-server and the chat's shared gate, chat-scoped.
   authz.setChatAuthorization(projectDir, chatA.id, {
     mcp: { servers: { myserver: { mode: 'allow' } } }

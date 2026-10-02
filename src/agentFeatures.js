@@ -91,16 +91,17 @@ function buildFeatureSummary(opts) {
       feat.push('[file tools](off|ask|allow) → ' + s.mode + (s.mode === 'allowlist' ? ' (' + (Array.isArray(s.allowlist) ? s.allowlist.length : 0) + ' patterns)' : ''));
     }
   }
-  // Native chat / app tools, one line per app-wide group (the groups are
-  // defined in frontend/src/toolGroups.js and mirrored to
+  // Multi-tool families (Chats, mouaif), one line per family gate (the
+  // groups are defined in frontend/src/toolGroups.js and mirrored to
   // frontend/build/toolGroups.json, so the summary names match the tree rows
   // a user sees). The catalog is the same one GET /api/tools/list serves.
+  // The file family keeps its own line above.
   let nativeCatalog = [];
   try {
     const { listNativeTools } = require('./server-handlers-tools.js');
     nativeCatalog = listNativeTools();
   } catch { /* catalog unavailable; the group lines are skipped */ }
-  for (const line of require('./toolGroups.js').summaryLines(nativeCatalog)) feat.push(line);
+  for (const line of require('./toolGroups.js').summaryLines(nativeCatalog, authz && authz.tools, new Set(['file']))) feat.push(line);
 
   // app restart
 if (authz && authz.tools && authz.tools.restart_app) {
@@ -204,7 +205,9 @@ async function dispatchListFeatures(args, opts) {
     const authState = authz.getAuthorization(projectDir, chatId);
     const tools = (authState && authState.tools) || {};
     state.tools = {};
-    for (const name of authz.NATIVE_TOOLS) {
+    // Every gate plus every family leaf (file operations, chat and app
+    // functions), so a per-leaf override is visible next to its gate.
+    for (const name of [...authz.NATIVE_TOOLS, ...authz.FAMILY_TOOLS]) {
       const cfg = tools[name] || { mode: 'ask' };
       state.tools[name] = {
         mode: cfg.mode || 'ask',

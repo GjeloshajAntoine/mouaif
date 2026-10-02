@@ -516,7 +516,7 @@ if (fileToolsEnabled) {
         for (const family of authz.NATIVE_TOOLS) {
         const cfg = authState.tools[family];
         if (cfg && cfg.mode === 'off') {
-        const hidden = family === 'file' ? authz.FILE_FAMILY_TOOLS : new Set([family]);
+        const hidden = authz.familyTools(family);
         for (let i = toolSpecs.length - 1; i >= 0; i--) {
         const spec = toolSpecs[i];
         if (spec && spec.function && hidden.has(spec.function.name)) toolSpecs.splice(i, 1);
@@ -528,7 +528,7 @@ if (fileToolsEnabled) {
         // matching what streamChat advertises to the model.
         for (let i = toolSpecs.length - 1; i >= 0; i--) {
         const spec = toolSpecs[i];
-        if (!spec || !spec.function || !authz.FILE_FAMILY_TOOLS.has(spec.function.name)) continue;
+        if (!spec || !spec.function || !authz.FAMILY_TOOLS.has(spec.function.name)) continue;
         const cfg = authz.effectiveConfig(dir, spec.function.name, id);
         if (cfg && cfg.mode === 'off') toolSpecs.splice(i, 1);
         }

@@ -12,7 +12,7 @@
 //     tool set are both derived from it, so a rename on one side fails here
 //     instead of at runtime;
 //   * the helpers the surfaces share (`groupAuthKey`, `isBinaryTool`,
-//     `categoryMode`, `toolGroupId`) keep their contracts.
+//     `toolPermission`, `toolGroupId`) keep their contracts.
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -46,13 +46,13 @@ check('every group has a name and at least one tool', () => {
     assert.ok(group.tools.length > 0, group.id + ' lists no tools');
   }
 });
-check('a category has no gate, a family has one', () => {
+check('every gated group has a family gate', () => {
   for (const group of model.TOOL_GROUPS) {
     // The un-gated tool is the deliberate exception: it renders as a row, but
     // there is no mode for it to write.
     if (group.gated === false) continue;
-    if (group.kind === 'category') assert.ok(!group.authKey, group.id + ' is a category and must not carry a gate');
-    else assert.ok(group.authKey, group.id + ' is a family and needs its authorization key');
+    assert.ok(group.authKey, group.id + ' needs its authorization key');
+    assert.equal(group.kind, undefined, group.id + ': there is no second group kind');
   }
 });
 check('the feature report is the only un-gated tool', () => {
@@ -72,11 +72,14 @@ check('the native authorization keys still cover every gated tool', () => {
   const authz = require('../src/tools/authorization.js');
   for (const group of model.TOOL_GROUPS) {
     if (group.gated === false) continue;
-    const keys = group.kind === 'category' ? group.tools : [group.authKey];
-    for (const key of keys) {
-      assert.ok(authz.NATIVE_TOOLS.has(key) || authz.FILE_FAMILY_TOOLS.has(key), key + ' has no authorization gate');
-    }
+    assert.ok(authz.NATIVE_TOOLS.has(group.authKey), group.authKey + ' has no authorization gate');
+    // A multi-tool family on screen is a multi-tool family on the server:
+    // same gate key, same leaves.
+    if (group.tools.length > 1) same(authz.TOOL_FAMILIES[group.authKey], group.tools, group.id + ' leaves match the server family');
   }
+  same(Object.keys(authz.TOOL_FAMILIES).sort(),
+    model.TOOL_GROUPS.filter((group) => group.tools.length > 1).map((group) => group.authKey).sort(),
+    'the server has no family the UI does not render');
 });
 
 // ---- 3. The generated mirror is current ----------------------------------
@@ -87,18 +90,25 @@ check('the server mirror matches the model', () => {
   same(mirror.map((group) => group.id), model.TOOL_GROUPS.map((group) => group.id), 'run: node scripts/build-tool-groups.js');
   same(mirror, JSON.parse(JSON.stringify(model.TOOL_GROUPS)), 'the mirror must be a byte-for-byte copy of the model');
 });
-check('the feature summary prints one line per category', () => {
+check('the feature summary prints one line per family gate', () => {
   const { listNativeTools } = require('../src/server-handlers-tools.js');
-  const lines = require('../src/toolGroups.js').summaryLines(listNativeTools());
-  same(lines.map((line) => line.split(']')[0] + ']'), ['[Chats]', '[mouaif]'], 'categorized tools report under their row name');
-  assert.ok(lines[0].includes('list_chats') && lines[1].includes('get_app_info'));
+  const groups = require('../src/toolGroups.js');
+  const lines = groups.summaryLines(listNativeTools(), { chats: { mode: 'ask' }, mouaif: { mode: 'allow' } }, new Set(['file']));
+  same(lines.map((line) => line.split(']')[0] + ']'), ['[Chats]', '[mouaif]'], 'families report under their row name');
+  assert.ok(lines[0].includes('→ ask') && lines[0].includes('list_chats'));
+  assert.ok(lines[1].includes('→ allow') && lines[1].includes('get_app_info'));
+  const off = groups.summaryLines(listNativeTools(), { chats: { mode: 'off' }, get_app_info: { mode: 'off' } }, new Set(['file']));
+  same(off.map((line) => line.split(']')[0] + ']'), ['[mouaif]'], 'a family gate Off drops its line');
+  assert.ok(!off[0].includes('get_app_info'), 'a leaf Off drops out of its family line');
 });
 
 // ---- 4. The shared helpers ------------------------------------------------
 check('groupAuthKey resolves a family and refuses a category', () => {
   assert.equal(model.groupAuthKey('shell'), 'shell');
   assert.equal(model.groupAuthKey('files'), 'file');
-  assert.equal(model.groupAuthKey('chats'), null);
+  assert.equal(model.groupAuthKey('chats'), 'chats');
+  assert.equal(model.groupAuthKey('mouaif-settings'), 'mouaif');
+  assert.equal(model.groupAuthKey('list_features'), null, 'the un-gated row has no key');
   assert.equal(model.groupAuthKey('nope'), null);
   // A family with more than one leaf must not list its own gate as one of
   // them: the gate is a family key (`file`), not a tool name, and a row that
@@ -114,10 +124,19 @@ check('isBinaryTool narrows ask_user only', () => {
   assert.equal(model.isBinaryTool('shell'), false);
   assert.equal(model.isBinaryTool('chats'), false);
 });
-check('isFileLeaf recognizes the file family leaves', () => {
-  same(model.FILE_TOOL_NAMES, ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit']);
-  for (const name of model.FILE_TOOL_NAMES) assert.equal(model.isFileLeaf(name), true, name);
-  assert.equal(model.isFileLeaf('shell'), false);
+check('isFamilyLeaf recognizes every multi-tool family leaf', () => {
+  for (const name of ['read_file', 'group_edit', 'list_chats', 'get_app_info']) assert.equal(model.isFamilyLeaf(name), true, name);
+  assert.equal(model.isFamilyLeaf('shell'), false);
+  assert.equal(model.FAMILY_OF.delete_chat, 'chats');
+  assert.equal(model.FAMILY_OF.list_projects, 'mouaif');
+  assert.equal(model.FAMILY_OF.edit_file, 'file');
+});
+check('toolPermission resolves leaves through their family gate', () => {
+  for (const [leaf, gate] of [['read_file', 'file'], ['list_chats', 'chats'], ['get_settings', 'mouaif']]) {
+    assert.equal(model.toolPermission(leaf, { [gate]: { mode: 'off' }, [leaf]: { mode: 'allow' } }).mode, 'off', leaf + ': gate Off wins');
+    assert.equal(model.toolPermission(leaf, { [gate]: { mode: 'allow' }, [leaf]: { mode: 'off' } }).mode, 'off', leaf + ': leaf Off tightens');
+    assert.equal(model.toolPermission(leaf, { [gate]: { mode: 'allow' } }).mode, 'allow', leaf + ': inherits the gate');
+  }
 });
 check('toolGroupId maps a tool back to its row', () => {
   assert.equal(model.toolGroupId('list_chats'), 'chats');
@@ -126,12 +145,4 @@ check('toolGroupId maps a tool back to its row', () => {
   assert.equal(model.toolGroupId('restart_app'), 'restart_app');
   assert.equal(model.toolGroupId('mcp__x__y'), null, 'MCP rows live outside the native model');
 });
-check('categoryMode shows a mode only when every child agrees', () => {
-  same([
-    model.categoryMode(['off', 'off']), model.categoryMode(['allow', 'allow']),
-    model.categoryMode(['allow', 'off']), model.categoryMode(['ask', 'ask']),
-    model.categoryMode([]), model.categoryMode([undefined, null])
-  ], ['off', 'allow', 'ask', 'ask', 'ask', 'ask']);
-});
-
 console.log('tool groups: ' + passed + ' checks passed');

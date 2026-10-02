@@ -5,7 +5,7 @@
 // `frontend/src/toolGroups.js` is the one list that decides which tool
 // belongs to which group; scripts/build-tool-groups.js mirrors it to
 // frontend/build/toolGroups.json so this module can read the same names the
-// UI renders (the feature summary prints `[chats] list_chats …`, which has to
+// UI renders (the feature summary prints `[Chats](off|ask|allow) → …`, which has to
 // match the tree row a user sees). Editing groups means editing that one file
 // and re-running the generator; scripts/test-tool-groups.js fails if the two
 // ever drift.
@@ -16,13 +16,13 @@
 
 const path = require('node:path');
 
-// Fallback used only when the generated mirror is missing or unreadable.
-// Kept to ids and names: membership for the summary comes from the catalog's
-// own `source` (which the server builds), so the ids are what matter here.
+// Fallback used only when the generated mirror is missing or unreadable:
+// the two chat / app families, built from the server's own tool table.
+const { DEFINITIONS, TOOL_NAMES } = require('./tools/appToolNames.js');
 const FALLBACK = Object.freeze([
-  { id: 'chats', name: 'Chats', source: 'chats' },
-  { id: 'mouaif-settings', name: 'mouaif', source: 'mouaif' }
-]);
+  { id: 'chats', name: 'Chats', source: 'chats', authKey: 'chats' },
+  { id: 'mouaif-settings', name: 'mouaif', source: 'mouaif', authKey: 'mouaif' }
+].map((group) => Object.assign(group, { tools: TOOL_NAMES.filter((name) => DEFINITIONS[name].source === group.source) })));
 
 let cached = null;
 
@@ -40,27 +40,36 @@ function groups() {
   return cached;
 }
 
-// One group row for the feature summary, or null when the group's tools are
-// not in the catalog this process advertises.
-function summaryLine(id, catalog) {
+const modeLabel = (cfg) => cfg.mode + (cfg.mode === 'allowlist'
+  ? ' (' + (Array.isArray(cfg.allowlist) ? cfg.allowlist.length : 0) + ' patterns)'
+  : '');
+
+// One family line for the feature summary, or null when the family is off
+// or none of its tools is in the catalog this process advertises. A leaf
+// whose own mode is `off` is left out of the list, like it is left out of
+// the advertised tools.
+function summaryLine(id, catalog, authTools) {
   const group = groups().find((entry) => entry.id === id);
-  if (!group) return null;
+  if (!group || !group.authKey) return null;
+  const tools = authTools || {};
+  const gate = tools[group.authKey] || { mode: 'ask' };
+  if (gate.mode === 'off') return null;
   const known = new Set((catalog || []).map((tool) => tool && tool.name));
-  const tools = group.tools.filter((name) => known.has(name));
-  if (!tools.length) return null;
-  return '[' + group.name + '] ' + tools.join(', ');
+  const names = group.tools.filter((name) => known.has(name) && !(tools[name] && tools[name].mode === 'off'));
+  if (!names.length) return null;
+  return '[' + group.name + '](off|ask|allow) → ' + modeLabel(gate) + ' — ' + names.join(', ');
 }
 
-// summaryLines(catalog) -> string[]
+// summaryLines(catalog, authTools, skip) -> string[]
 //
-// The feature-summary lines for every category group, in group order. A
-// group with no member in the catalog is skipped, so a build without a
-// tool module never claims a group it cannot serve.
-function summaryLines(catalog) {
+// One feature-summary line per multi-tool family (one gate, several
+// leaves), in group order. `skip` holds gate keys the caller already
+// reports on its own line (the file family keeps its legacy wording).
+function summaryLines(catalog, authTools, skip = new Set()) {
   const lines = [];
   for (const group of groups()) {
-    if (group.kind !== 'category') continue;
-    const line = summaryLine(group.id, catalog);
+    if (!group.authKey || group.tools.length < 2 || skip.has(group.authKey)) continue;
+    const line = summaryLine(group.id, catalog, authTools);
     if (line) lines.push(line);
   }
   return lines;

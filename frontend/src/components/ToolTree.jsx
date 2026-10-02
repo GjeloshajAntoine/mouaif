@@ -39,12 +39,12 @@
 
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { TOOL_GROUPS, isCategoryGroup, categoryMode, groupAuthKey } from '../toolGroups.js';
+import { TOOL_GROUPS, groupAuthKey, toolPermission } from '../toolGroups.js';
 
 // The app-wide group model lives in ../toolGroups.js (shared with the server
 // through frontend/build/toolGroups.json). Re-exported here so every tree
 // caller keeps importing what it needs from the tree module.
-export { TOOL_GROUPS, isCategoryGroup, categoryMode, groupAuthKey };
+export { TOOL_GROUPS, groupAuthKey, toolPermission };
 
 export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedByDefault = false, initialCollapsed, onCollapseChange, alwaysExpanded = false, class: className = '', onReloadServer = null }) {
   const [collapsed, setCollapsed] = useState(() => {
@@ -264,7 +264,6 @@ for (const group of TOOL_GROUPS) {
   groups.push({
     id: group.id,
     name: group.name,
-    category: group.kind === 'category',
     description: shortDesc((entry && entry.description) || group.description),
     title: (entry && entry.description) || group.description || '',
     checked: members.every((c) => isOn(c.value)),
@@ -326,10 +325,10 @@ export function shortDesc(text, max = 40) {
 // separate "enabled" server switch — and their checkbox flips the
 // per-chat tool filter for the whole server. Used tools get the
 // dot badge.
-// The group model itself (ids, names, membership), `isCategoryGroup`, and
-// `categoryMode` live in ../toolGroups.js and are re-exported at the top of
-// this file — there is exactly one list, so a tool cannot sit in one group
-// on the chat card and another in project settings.
+// The group model itself (ids, names, membership, gates) lives in
+// ../toolGroups.js and is re-exported at the top of this file — there is
+// exactly one list, so a tool cannot sit in one group on the chat card and
+// another in project settings.
 
 // groupToolNames(group) -> string[]
 //
@@ -347,17 +346,9 @@ export function childToolName(group, toolId) {
   return toolId;
 }
 
-// The chat authorization response already resolves app/project/chat layers.
-// Reuse it for checkbox display and Off-to-Ask toggles on both chat surfaces.
-export function toolPermission(name, native = {}, mcp = {}) {
-  if (name.startsWith('mcp__')) {
-    const slug = name.slice(5).split('__')[0];
-    return (mcp.tools && mcp.tools[name]) || (mcp.servers && mcp.servers[slug]) || mcp;
-  }
-  const file = ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit'].includes(name);
-  if (file && native.file && native.file.mode === 'off') return native.file;
-  return native[name] || (file ? native.file : null) || {};
-}
+// toolPermission (one tool's effective mode from the chat or project
+// authorization view, family gates included) lives in ../toolGroups.js and is
+// re-exported at the top of this file.
 
 export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set(), permissions = {}) {
   const groups = [];
@@ -380,14 +371,13 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
   for (const group of TOOL_GROUPS) {
     const members = catalog.filter((t) => t && group.tools.includes(t.name));
     if (!members.length) continue;
-    const category = group.kind === 'category';
-    // A family row shows its one tool's description; a category names what
-    // it covers instead, because its eight children have no single summary.
+    // A single-tool row shows its tool's description; a multi-tool family
+    // names what it covers instead, because its children have no single
+    // summary.
     const only = members.length === 1 ? members[0] : null;
     groups.push({
       id: group.id,
       name: group.name,
-      category,
       description: shortDesc(only ? only.description : (group.description || '')),
       title: (only && only.description) || group.description || '',
       checked: allToolsOn(members),

@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage, requestWebpreview } from '../api.js';
 import { nav, back } from '../router.js';
 import { ToolTree, shortDesc } from './ToolTree.jsx';
-import { TOOL_GROUPS, GROUP_BY_ID, CATEGORY_TOOL_NAMES, isCategoryGroup, categoryMode, isFileLeaf, toolGroupId } from '../toolGroups.js';
+import { TOOL_GROUPS, GROUP_BY_ID, isFamilyLeaf, toolGroupId } from '../toolGroups.js';
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg, ToolAuthSeg, segMode, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
@@ -73,7 +73,7 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [exportTraceStatusMsg, setExportTraceStatusMsg] = useState('');
 
   // Tool permissions live in one map keyed by authorization key (`shell`,
-  // `file`, `read_file`, `list_chats`, …) so the segmented Off/Ask/Allow
+  // `file`, `chats`, `read_file`, `list_chats`, …) so the segmented Off/Ask/Allow
   // control re-renders when the user taps a segment. The keys and the groups
   // they belong to come from the app-wide model (../toolGroups.js) — this
   // page no longer keeps one state pair per tool, so moving a tool between
@@ -223,10 +223,6 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
           if (name === group.authKey) continue;
           next[name] = tools[name] || null;
         }
-      }
-      for (const name of CATEGORY_TOOL_NAMES) {
-        const cfg = tools[name] || {};
-        next[name] = { mode: cfg.mode || 'ask', allowlist: Array.isArray(cfg.allowlist) ? cfg.allowlist : [] };
       }
       setToolAuth(next);
 
@@ -413,9 +409,6 @@ setSkillsOn(cp.skills !== false);
           if (name !== group.authKey && tools[name]) patch[name] = tools[name];
         }
       }
-      for (const name of CATEGORY_TOOL_NAMES) {
-        if (tools[name]) patch[name] = tools[name];
-      }
       if (Object.keys(patch).length) setToolAuth((prev) => Object.assign({}, prev, patch));
     }
     if (mcp) setMcpAuth(mcp);
@@ -446,8 +439,8 @@ setSkillsOn(cp.skills !== false);
   }
 
   // One write path for every native control on this page. `key` is the
-  // authorization key the control edits (`shell`, `file`, `read_file`,
-  // `list_chats`, …) and also the status line the result lands on, so a
+  // authorization key the control edits (`shell`, `file`, `chats`,
+  // `read_file`, `list_chats`, …) and also the status line the result lands on, so a
   // control never reports on a neighbour.
   function saveToolAuthorization(key, mode, allowlist, msgKey = key) {
     return saveAuthorization({ tools: { [key]: { mode, allowlist } } }, (text) => setToolMsg(msgKey, text));
@@ -466,25 +459,13 @@ setSkillsOn(cp.skills !== false);
     return saveAuthorization({ tools }, (text) => setToolMsg(msgKey, text));
   }
 
-  // A category row shows one mode and writes every child with it; it never
-  // touches the other category (the children are independent tools).
-  function pickCategoryMode(groupId, newMode) {
-    const group = GROUP_BY_ID[groupId];
-    if (!group) return Promise.resolve(false);
-    return pickAppToolModes(group.tools, newMode);
-  }
-
-  // The ordinary per-function keys: the twelve chat/app functions plus the
-  // file leaves, which can carry a more specific override than `tools.file`.
-  function pickAppToolModes(names, mode, allowlist) {
-    const tools = Object.fromEntries(names.map((name) => [name, {
-      mode, allowlist: mode === 'allow' ? [] : (allowlist || (toolAuth[name] || {}).allowlist || [])
-    }]));
-    // The status line belongs on the row that lists the tool (the file leaf
-    // reports on the File tools row, a category child on its category row), so
-    // a failure is visible next to the control the user just touched.
-    const rowKey = toolGroupId(names[0] || '') || names[0] || 'file';
-    return saveAuthorization({ tools }, (text) => setToolMsg(rowKey, text));
+  // One leaf of a multi-tool family (a file operation, a chat or app
+  // function) carries its own override next to the family gate. The status
+  // line belongs on the row that lists the leaf, so a failure is visible
+  // next to the control the user just touched.
+  function pickLeafMode(name, mode, allowlist) {
+    const list = mode === 'allow' ? [] : (allowlist || (toolAuth[name] || {}).allowlist || []);
+    return saveToolAuthorization(name, mode, list, toolGroupId(name) || name);
   }
 
 // ---- Web preview page handlers ----------------------------------------
@@ -717,31 +698,6 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
     for (const group of TOOL_GROUPS) {
       const members = (catalog || []).filter((t) => t && group.tools.includes(t.name));
       if (!members.length) continue;
-      // The category rows (Chats, mouaif) list their own functions; each
-      // child is an ordinary per-tool permission, and the row's segment is a
-      // shortcut that writes every child (see toolModeSegs / categoryMode).
-      if (group.kind === 'category') {
-        groups.push({
-          id: group.id,
-          name: group.name,
-          category: true,
-          checked: members.every((tool) => isOn((toolAuth[tool.name] || {}).mode || 'ask')),
-          control: toolModeSegs(group.name, categoryMode(members.map((tool) => (toolAuth[tool.name] || {}).mode)),
-            (mode) => pickCategoryMode(group.id, mode)),
-          tools: members.map((tool) => {
-            const cfg = toolAuth[tool.name] || { mode: 'ask', allowlist: [] };
-            return leaf(tool, {
-              checked: isOn(cfg.mode),
-              control: h(ToolAuthSeg, {
-                tool: tool.name, mode: cfg.mode, allowlist: cfg.allowlist, namePrefix: 'sp',
-                onPick: (mode, allowlist) => pickAppToolModes([tool.name], mode, allowlist)
-              })
-            });
-          }),
-          extra: toolStatus[group.id] ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, toolStatus[group.id]) : null
-        });
-        continue;
-      }
       // A tool with no project authorization gate (the feature report) still
       // lists, but offers no mode control it would not honor.
       if (group.gated === false) {
@@ -764,8 +720,10 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
       groups.push({
         id: group.id,
         name: group.name,
-        description: shortDesc(members[0].description),
-        title: members[0].description || '',
+        // A single tool shows its own description; a multi-tool family
+        // names what it covers (same rule as the chat tree).
+        description: shortDesc(members.length === 1 ? members[0].description : (group.description || '')),
+        title: (members.length === 1 ? members[0].description : group.description) || '',
         checked: isOn(family.mode),
         control: toolModeSegs(label, segMode(family.mode), (mode) => pickFamilyGroupMode(group.id, mode), [
           { value: 'off', label: 'Off' },
@@ -783,7 +741,9 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
             control: h(ToolAuthSeg, {
               tool: tool.name, mode, allowlist: (leafAuth && leafAuth.allowlist) || family.allowlist,
               namePrefix: 'sp', modes: binary ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
-              onPick: (next, list) => saveToolAuthorization(tool.name, next, list)
+              onPick: (next, list) => (group.tools.length > 1
+                ? pickLeafMode(tool.name, next, list)
+                : saveToolAuthorization(tool.name, next, list, group.id))
             })
           });
         }),
@@ -878,10 +838,8 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
       setSkillsOn(checked);
       patchProject({ skills: checked }, setSkillsStatusMsg, 'saved');
     }
-    // Every native group row is a shortcut for Off <-> Ask on its own gate.
-    // A category row writes each of its children (it has no gate of its
-    // own), which is the same rule the chat card and popup use.
-    else if (isCategoryGroup(groupId)) pickCategoryMode(groupId, mode);
+    // Every native group row is a shortcut for Off <-> Ask on its own gate
+    // (single tools and multi-tool families alike).
     else if (GROUP_BY_ID[groupId] && GROUP_BY_ID[groupId].gated === false) { /* no gate to flip */ }
     else if (GROUP_BY_ID[groupId]) pickFamilyGroupMode(groupId, mode);
     else if (groupId.startsWith('mcp-')) toggleMcpServerAuth(groupId.slice(4), checked);
@@ -1269,7 +1227,7 @@ href: '#/settings/prompts?' + projectBackQS()
                 onToggleGroup: toggleSettingsGroup,
                 onToggleTool: (groupId, toolId, checked) => {
                 if (groupId.startsWith('mcp-')) toggleMcpToolAuth(toolId, checked);
-                else if (isCategoryGroup(groupId) || isFileLeaf(toolId)) pickAppToolModes([toolId], checked ? 'ask' : 'off');
+                else if (isFamilyLeaf(toolId)) pickLeafMode(toolId, checked ? 'ask' : 'off');
                 // Every other native group is a family: its one leaf and the
                 // group row share a gate, so the checkbox flips the family.
                 else toggleSettingsGroup(groupId, checked);

@@ -153,10 +153,12 @@ async function main() {
 
   // Load real frontend helpers without an additional test dependency.
   const context = vm.createContext({ Set, console });
-  const load = (file) => fs.readFileSync(path.join(__dirname, '../frontend/src/components/', file), 'utf8')
-    .replace(/^import\s[\s\S]*?;\s*$/gm, '').replace(/^export /gm, '');
-  vm.runInContext(load('chat/tools.js'), context);
-  vm.runInContext(load('ToolTree.jsx'), context);
+  const load = (file) => fs.readFileSync(path.join(__dirname, '../frontend/src/', file), 'utf8')
+    .replace(/^import\s[\s\S]*?;\s*$/gm, '').replace(/^export \{.*?\};$/gms, '').replace(/^export /gm, '');
+  vm.runInContext(load('components/chat/tools.js'), context);
+  // The tree imports the shared group model; evaluate it first, as the
+  // bundler would resolve the import.
+  vm.runInContext(load('toolGroups.js') + '\n' + load('components/ToolTree.jsx'), context);
   context.catalog = files.FILE_TOOL_NAMES.map(name => ({ name, kind: 'native', source: 'files' }));
   const groups = vm.runInContext('buildToolGroups(catalog, [], null)', context);
   assert.ok(groups.find(g => g.id === 'files').tools.some(t => t.id === 'group_read'));
@@ -172,7 +174,7 @@ async function main() {
       appendChild(child) { this.children.push(child); }, closest() { return null; }, querySelector() { return null; } };
   }
   context.document = { createElement: node };
-  vm.runInContext(load('chat/toolRender.js'), context);
+  vm.runInContext(load('components/chat/toolRender.js'), context);
   const preview = node('div');
   context.preview = preview;
   context.result = { succeededCount: 1, failedCount: 1, results: [

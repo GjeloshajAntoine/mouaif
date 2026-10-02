@@ -40,7 +40,7 @@ vm.runInContext(strip(fs.readFileSync('frontend/src/toolGroups.js', 'utf8'))
 const { buildToolGroups } = context;
 // `const` at the top level of a vm script does not become a property of the
 // context object, so read the model the way the tree does — by evaluating it.
-const MOUAIF_TOOL_GROUPS = vm.runInContext('CATEGORY_GROUPS', context);
+const MOUAIF_TOOL_GROUPS = vm.runInContext("TOOL_GROUPS.filter((group) => ['chats', 'mouaif'].includes(group.authKey))", context);
 // Values built inside the VM realm have that realm's Array prototype, so
 // `deepStrictEqual` would compare prototypes and fail on identical contents.
 // Compare the serialized form instead — the shape is what this file asserts.
