@@ -8,7 +8,7 @@
 // collapsed "Advanced" section for power users who want to hand-edit the
 // file (decisions §1 — the project file is meant to be editable by hand).
 import { h, Fragment } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage, requestWebpreview } from '../api.js';
 import { nav, back } from '../router.js';
 import { ToolTree, shortDesc, MOUAIF_TOOL_GROUPS, APP_TOOL_NAMES } from './ToolTree.jsx';
@@ -26,6 +26,7 @@ import { PreviewUrlPrompt } from './chat/PreviewUrlPrompt.jsx';
 
 export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, from = '', page = 'main' } = {}) {
   const [globalStatus, setGlobalStatus] = useState({ text: '', state: '' });
+  const authorizationWrites = useRef(Promise.resolve());
   const [projectPath, setProjectPath] = useState('…');
 
   // Structured controls
@@ -427,71 +428,82 @@ setSkillsOn(cp.skills !== false);
     }
   }
 
-  async function saveToolAuthorization(tool, mode, allowlist, setStatusMsg) {
-    setStatusMsg('saving…');
-    const r = await fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), tools: { [tool]: { mode, allowlist } } })
-    });
-    setStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
+  function applyAuthorization({ tools, mcp } = {}) {
+    if (tools) {
+      for (const [name, setAuth] of [
+        ['shell', setShellAuth], ['file', setFileAuth], ['subagent', setSubagentAuth],
+        ['report_progress', setProgressAuth], ['task', setTaskAuth],
+        ['webpreview', setWebpreviewAuth], ['restart_app', setRestartAuth]
+      ]) {
+        if (tools[name]) setAuth(tools[name]);
+      }
+      setFileToolAuth((prev) => Object.assign({}, prev, Object.fromEntries(
+        ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit']
+          .filter((name) => tools[name]).map((name) => [name, tools[name]])
+      )));
+      setAppToolAuth((prev) => Object.assign({}, prev, Object.fromEntries(
+        APP_TOOL_NAMES.filter((name) => tools[name]).map((name) => [name, tools[name]])
+      )));
+      if (tools.ask_user) setAskUserMode(tools.ask_user.mode === 'off' ? 'off' : 'ask');
+    }
+    if (mcp) setMcpAuth(mcp);
   }
 
-  function pickToolMode(tool, auth, setAuth, setStatusMsg, newMode) {
-    const allowlist = newMode === 'allow' ? [] : auth.allowlist;
-    setAuth({ mode: newMode, allowlist });
-    saveToolAuthorization(tool, newMode, allowlist, setStatusMsg);
+  function saveAuthorization(patch, setStatusMsg) {
+    const d = dir();
+    setStatusMsg('saving…');
+    // Confirm writes in tap order. Failed requests leave the last saved
+    // controls intact; late responses cannot undo a newer successful tap.
+    const write = authorizationWrites.current.then(async () => {
+      try {
+        const r = await fetchJson('/api/tools/authorization', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectDir: d, ...patch })
+        });
+        if (r.status !== 200) { setStatusMsg('HTTP ' + r.status); return false; }
+        applyAuthorization(r.body);
+        setStatusMsg('saved');
+        return true;
+      } catch (err) {
+        setStatusMsg('save failed: ' + (err.message || String(err)));
+        return false;
+      }
+    });
+    authorizationWrites.current = write;
+    return write;
   }
-  function pickShellMode(newMode) { pickToolMode('shell', shellAuth, setShellAuth, setShellStatusMsg, newMode); }
+
+  function saveToolAuthorization(tool, mode, allowlist, setStatusMsg) {
+    return saveAuthorization({ tools: { [tool]: { mode, allowlist } } }, setStatusMsg);
+  }
+
+  function pickToolMode(tool, auth, setStatusMsg, newMode) {
+    const allowlist = newMode === 'allow' ? [] : auth.allowlist;
+    return saveToolAuthorization(tool, newMode, allowlist, setStatusMsg);
+  }
+  function pickShellMode(newMode) { pickToolMode('shell', shellAuth, setShellStatusMsg, newMode); }
   function pickFileMode(newMode) {
-    const allowlist = newMode === 'allow' ? [] : fileAuth.allowlist;
-    const next = { mode: newMode, allowlist };
-    setFileAuth(next);
-    // Effective leaf entries that inherit the family gate must move with it.
-    // Keep only explicit project leaf overrides pinned to their own mode.
-    setFileToolAuth((prev) => Object.fromEntries(Object.entries(prev).map(([name, auth]) => [
-      name,
-      auth && auth.source === 'project-tool' ? auth : Object.assign({}, next, { source: 'project' })
-    ])));
-    saveToolAuthorization('file', newMode, allowlist, setFileStatusMsg);
+    return saveToolAuthorization('file', newMode, newMode === 'allow' ? [] : fileAuth.allowlist, setFileStatusMsg);
   }
   function pickFileToolMode(toolName, newMode) {
     const current = fileToolAuth[toolName] || fileAuth;
-    const next = { mode: newMode, allowlist: newMode === 'allow' ? [] : (current.allowlist || []), source: 'project-tool' };
-    setFileToolAuth((prev) => Object.assign({}, prev, { [toolName]: next }));
-    saveToolAuthorization(toolName, next.mode, next.allowlist, setFileStatusMsg);
+    return saveToolAuthorization(toolName, newMode, newMode === 'allow' ? [] : (current.allowlist || []), setFileStatusMsg);
   }
-  async function pickFileGroupMode(toolNames, newMode) {
+  function pickFileGroupMode(toolNames, newMode) {
     const allowlist = newMode === 'allow' ? [] : fileAuth.allowlist;
-    const next = { mode: newMode, allowlist, source: 'project-tool' };
-    setFileAuth((prev) => Object.assign({}, prev, { mode: newMode, allowlist }));
-    setFileToolAuth((prev) => Object.assign({}, prev,
-      Object.fromEntries(toolNames.map((name) => [name, next]))));
-    setFileStatusMsg('saving…');
     const tools = Object.fromEntries(['file', ...toolNames].map((name) => [name, { mode: newMode, allowlist }]));
-    const r = await fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), tools })
-    });
-    setFileStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
+    return saveAuthorization({ tools }, setFileStatusMsg);
   }
-  function pickSubagentMode(newMode) { pickToolMode('subagent', subagentAuth, setSubagentAuth, setSubagentStatusMsg, newMode); }
-  function pickProgressMode(newMode) { pickToolMode('report_progress', progressAuth, setProgressAuth, setProgressStatusMsg, newMode); }
-  function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskAuth, setTaskStatusMsg, newMode); }
-function pickWebpreviewMode(newMode) { pickToolMode('webpreview', webpreviewAuth, setWebpreviewAuth, setWebpreviewStatusMsg, newMode); }
-function pickRestartMode(newMode) { pickToolMode('restart_app', restartAuth, setRestartAuth, setRestartStatusMsg, newMode); }
+  function pickSubagentMode(newMode) { pickToolMode('subagent', subagentAuth, setSubagentStatusMsg, newMode); }
+  function pickProgressMode(newMode) { pickToolMode('report_progress', progressAuth, setProgressStatusMsg, newMode); }
+  function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskStatusMsg, newMode); }
+function pickWebpreviewMode(newMode) { pickToolMode('webpreview', webpreviewAuth, setWebpreviewStatusMsg, newMode); }
+function pickRestartMode(newMode) { pickToolMode('restart_app', restartAuth, setRestartStatusMsg, newMode); }
 async function pickAppToolModes(names, mode, allowlist) {
   const tools = Object.fromEntries(names.map((name) => [name, {
     mode, allowlist: mode === 'allow' ? [] : (allowlist || appToolAuth[name]?.allowlist || [])
   }]));
-  setAppToolAuth((prev) => Object.assign({}, prev, tools));
-  setMouaifStatusMsg('saving…');
-  const r = await fetchJson('/api/tools/authorization', {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectDir: dir(), tools })
-  });
-  setMouaifStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status));
+  return saveAuthorization({ tools }, setMouaifStatusMsg);
 }
 
 // ---- Web preview page handlers ----------------------------------------
@@ -559,81 +571,31 @@ function openPreviewPrompt() {
 setPreviewPromptOpen(true);
 }
 function pickAskUserMode(newMode) {
-
-    setAskUserMode(newMode);
-    setAskUserStatusMsg('saving…');
-    fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), tools: { ask_user: { mode: newMode, allowlist: [] } } })
-    }).then((r) => setAskUserStatusMsg(r.status === 200 ? 'saved' : ('HTTP ' + r.status)));
+    return saveToolAuthorization('ask_user', newMode, [], setAskUserStatusMsg);
   }
 
-  async function saveMcpAuthorization(patch) {
-    setMcpAuthStatusMsg('saving…');
-    const r = await fetchJson('/api/tools/authorization', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectDir: dir(), mcp: patch })
-    });
-    if (r.status === 200) {
-      setMcpAuthStatusMsg('saved');
-      const m = r.body && r.body.mcp;
-      if (m) {
-        setMcpAuth((prev) => ({
-          mode: (m && m.mode) || prev.mode,
-          allowlist: m && Array.isArray(m.allowlist) ? m.allowlist : prev.allowlist,
-          servers: (m && m.servers && typeof m.servers === 'object') ? m.servers : prev.servers,
-          tools: (m && m.tools && typeof m.tools === 'object') ? m.tools : prev.tools
-        }));
-      }
-    } else {
-      setMcpAuthStatusMsg('HTTP ' + r.status);
-    }
+  function saveMcpAuthorization(patch) {
+    return saveAuthorization({ mcp: patch }, setMcpAuthStatusMsg);
   }
 
   function pickServerAuthMode(slug, newMode) {
-    setMcpAuth((prev) => {
-      const entry = prev.servers && prev.servers[slug];
-      const next = {
-        mode: newMode,
-        allowlist: newMode === 'allow' ? [] : (entry && Array.isArray(entry.allowlist) ? entry.allowlist : [])
-      };
-      const servers = Object.assign({}, prev.servers, { [slug]: next });
-      saveMcpAuthorization({ servers: { [slug]: next } });
-      return Object.assign({}, prev, { servers });
-    });
+    const entry = mcpAuth.servers && mcpAuth.servers[slug];
+    return saveMcpAuthorization({ servers: { [slug]: {
+      mode: newMode,
+      allowlist: newMode === 'allow' ? [] : (entry && Array.isArray(entry.allowlist) ? entry.allowlist : [])
+    } } });
   }
 
   function clearServerAuthMode(slug) {
-    setMcpAuth((prev) => {
-      const servers = Object.assign({}, prev.servers);
-      delete servers[slug];
-      return Object.assign({}, prev, { servers });
-    });
-    saveMcpAuthorization({ servers: { [slug]: null } });
+    return saveMcpAuthorization({ servers: { [slug]: null } });
   }
 
   function toggleMcpServerAuth(slug, checked) {
-    if (checked) {
-      clearServerAuthMode(slug);
-      setMcpAuthStatusMsg('server override cleared (defaults to ' + segMode(mcpAuth.mode || 'ask') + ')');
-    } else {
-      pickServerAuthMode(slug, 'off');
-      setMcpAuthStatusMsg('server override off');
-    }
+    return checked ? clearServerAuthMode(slug) : pickServerAuthMode(slug, 'off');
   }
 
   function toggleMcpToolAuth(toolName, checked) {
-    const entry = checked ? null : { mode: 'off', allowlist: [] };
-    setMcpAuth((prev) => {
-      const tools = Object.assign({}, prev.tools);
-      if (checked) delete tools[toolName];
-      else tools[toolName] = entry;
-      return Object.assign({}, prev, { tools });
-    });
-    saveMcpAuthorization({ tools: { [toolName]: entry } });
-    setMcpAuthStatusMsg(checked ? 'tool override cleared' : 'tool override off');
+    return saveMcpAuthorization({ tools: { [toolName]: checked ? null : { mode: 'off', allowlist: [] } } });
   }
 
   async function saveAgentFiles(enabled, namesRaw) {
@@ -963,12 +925,7 @@ if (askTool) {
               const key = Object.keys(patch.servers)[0];
               const val = patch.servers[key];
               if (val == null) clearServerAuthMode(key);
-              else {
-                setMcpAuth((prev) => Object.assign({}, prev, {
-                  servers: Object.assign({}, prev.servers, { [key]: val })
-                }));
-                saveMcpAuthorization({ servers: { [key]: val } });
-              }
+              else saveMcpAuthorization({ servers: { [key]: val } });
             }
           }),
           tools: serverTools.map((tool) => {

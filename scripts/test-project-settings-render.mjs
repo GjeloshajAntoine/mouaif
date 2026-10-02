@@ -9,7 +9,7 @@ const projectDir = '/fixture/project & name';
 const from = 'settings/projects';
 const chatId = 'chat-1';
 
-function createView(project, catalog = []) {
+function createView(project, catalog = [], { saveStatus = 200, saveError = '', authorization = { tools: {}, mcp: {} }, servers = [] } = {}) {
   const states = [];
   let cursor = 0, first = true, nodes = [], effects = [];
   const requests = [];
@@ -29,11 +29,30 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
       if (first) states[i] = typeof initial === 'function' ? initial() : initial;
       return [states[i], value => { states[i] = typeof value === 'function' ? value(states[i]) : value; }];
     },
+    useRef: (initial) => {
+    const i = cursor++;
+    if (first) states[i] = { current: initial };
+    return states[i];
+    },
     useEffect: (effect) => { effects.push(effect); },
     h: (tag, attrs, ...children) => { const node = { tag, attrs: attrs || {}, children }; nodes.push(node); return node; },
     fetchJson: async (url, init) => {
       if (init?.method === 'PUT') {
-      requests.push(JSON.parse(init.body));
+      const patch = JSON.parse(init.body);
+      requests.push(patch);
+      if (saveError) throw new Error(saveError);
+      if (saveStatus !== 200) return { status: saveStatus, body: {} };
+      if (url === '/api/tools/authorization') {
+      Object.assign(authorization.tools, patch.tools);
+      for (const key of ['servers', 'tools']) {
+      for (const [name, entry] of Object.entries(patch.mcp?.[key] || {})) {
+        authorization.mcp[key] ||= {};
+        if (entry == null) delete authorization.mcp[key][name];
+        else authorization.mcp[key][name] = entry;
+      }
+      }
+      return { status: 200, body: authorization };
+      }
       return { status: 200, body: {} };
       }
       assert.equal(init?.method, undefined, 'render/load must not write settings');
@@ -42,9 +61,9 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
       const bodies = {
         '/api/settings/project': { project, path: projectDir + '/.mouaif.json' },
         '/api/settings/resolved': { resolved: {} },
-        '/api/tools/authorization': { tools: {}, mcp: {} },
+        '/api/tools/authorization': authorization,
         '/api/tools/list': { tools: catalog },
-        '/api/mcp/servers': { servers: [] },
+        '/api/mcp/servers': { servers },
         '/api/prompts': { prompts: [] },
         '/api/agents': { agents: [{ name: 'Search', modelId: '' }] }
       };
@@ -136,6 +155,7 @@ actionView.render();
 await actionView.load();
 let tree = actionView.render().find((node) => typeof node.attrs.onToggleTool === 'function');
 tree.attrs.onToggleTool('chats', 'list_chats', false);
+await new Promise(resolve => setImmediate(resolve));
 tree = actionView.render().find((node) => typeof node.attrs.onToggleTool === 'function');
 const actionRows = tree.attrs.groups.filter((g) => ['chats', 'mouaif-settings'].includes(g.id));
 assert.equal(actionRows.flatMap((g) => g.tools).filter((t) => t.checked).length, 2, 'project checkbox only disables its tool');
@@ -143,4 +163,37 @@ assert.equal(actionRows[0].tools[0].checked, false);
 assert.equal(actionRows[1].checked, true, 'other category remains selected');
 assert.ok(actionView.requests.some((request) => request.tools?.list_chats?.mode === 'off'), 'action mode is saved independently');
 
-console.log('PASS project settings initial/loaded renders, independent action checkboxes, hidden-file counts, scoped links, sibling pages, agent links and Back targets');
+const permissionCatalog = [
+  { name: 'shell', kind: 'native', source: 'shell' },
+  { name: 'read_file', kind: 'native', source: 'files' },
+  { name: 'write_file', kind: 'native', source: 'files' },
+  { name: 'ask_user', kind: 'native' },
+  { name: 'list_chats', kind: 'native', source: 'chats' },
+  { name: 'mcp__fixture__read', kind: 'mcp', source: 'fixture' }
+];
+const treeFor = (view) => view.render().find((node) => typeof node.attrs.onToggleTool === 'function');
+for (const failure of [{ saveStatus: 503 }, { saveError: 'network unavailable' }]) {
+  const view = createView({}, permissionCatalog, { ...failure, servers: [{ id: 'fixture', slug: 'fixture' }] });
+  view.render(); await view.load();
+  for (const [groupId, toolId] of [['shell', 'shell'], ['files', 'read_file'], ['chats', 'list_chats'], ['ask_user', 'ask_user'], ['mcp-fixture', 'mcp__fixture__read']]) {
+    treeFor(view).attrs.onToggleTool(groupId, toolId, false);
+    await new Promise(resolve => setImmediate(resolve));
+    const group = treeFor(view).attrs.groups.find((g) => g.id === groupId);
+    assert.equal(group.tools.find((t) => t.id === toolId).checked, true, 'failed leaf save preserves ' + toolId);
+  }
+  for (const groupId of ['shell', 'files', 'chats', 'ask_user', 'mcp-fixture']) {
+    treeFor(view).attrs.onToggleGroup(groupId, false);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(treeFor(view).attrs.groups.find((g) => g.id === groupId).checked, true, 'failed group save preserves ' + groupId);
+  }
+}
+const queued = createView({}, permissionCatalog);
+queued.render(); await queued.load();
+let queuedTree = treeFor(queued);
+queuedTree.attrs.onToggleGroup('shell', false);
+queuedTree.attrs.onToggleGroup('shell', true);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(treeFor(queued).attrs.groups.find((g) => g.id === 'shell').checked, true, 'rapid saves finish in tap order');
+assert.deepEqual(queued.requests.filter((r) => r.tools?.shell).map((r) => r.tools.shell.mode), ['off', 'ask']);
+
+console.log('PASS project settings renders, confirmed permission saves, failure recovery, scoped links and Back targets');
