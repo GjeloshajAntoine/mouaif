@@ -11,7 +11,7 @@ import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage, requestWebpreview } from '../api.js';
 import { nav, back } from '../router.js';
-import { ToolTree, shortDesc, MOUAIF_TOOL_GROUPS, APP_TOOL_NAMES } from './ToolTree.jsx';
+import { ToolTree, shortDesc, MOUAIF_TOOL_GROUPS, APP_TOOL_NAMES, isCategoryGroup, categoryMode } from './ToolTree.jsx';
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg, ToolAuthSeg, segMode } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
@@ -850,6 +850,12 @@ for (const row of MOUAIF_TOOL_GROUPS) {
   if (!tools.length) continue;
   groups.push({ id: row.id, name: row.name,
     checked: tools.every((tool) => isOn(appToolAuth[tool.name]?.mode || 'ask')),
+    // The category row carries a segment like every other group row. It has
+    // no family key of its own — its children are ordinary functions — so
+    // one pick writes every child. It shows off / allow only when they all
+    // agree, else ask (see ToolTree.jsx categoryMode).
+    control: toolModeSegs(row.name, categoryMode(tools.map((tool) => appToolAuth[tool.name]?.mode)),
+      (mode) => pickAppToolModes(tools.map((tool) => tool.name), mode)),
     tools: tools.map((tool) => {
       const cfg = appToolAuth[tool.name] || { mode: 'ask', allowlist: [] };
       return leaf(tool, { checked: isOn(cfg.mode), control: h(ToolAuthSeg, {
@@ -992,7 +998,7 @@ if (askTool) {
     else if (groupId === 'task') pickTaskMode(mode);
     else if (groupId === 'webpreview') pickWebpreviewMode(mode);
 else if (groupId === 'restart_app') pickRestartMode(mode);
-else if (groupId === 'chats' || groupId === 'mouaif-settings') {
+else if (isCategoryGroup(groupId)) {
   // Category selection never changes the other category's actions.
   const row = MOUAIF_TOOL_GROUPS.find((group) => group.id === groupId);
   pickAppToolModes(row.tools, mode);

@@ -15,7 +15,7 @@ The tree sits below the system prompt. It shows one group per tool family:
 - **ask_user** — pause and ask the user a structured question
 - **File tools** — read_file, list_files, search_files, write_file, edit_file
 - **One group per MCP server** — configured servers always render, even when stopped; stopped servers fall back to the cached tool list from their last run. The group checkbox flips all the server's tools in the per-chat tool filter at once (there is no server-level on/off); leaf checkboxes flip individual tools.
-- **Two `mouaif` categories** — the single `mouaif` tool renders as **Chats** (`list` … `attach`, `list_attachments`) and **mouaif** (settings, projects, feature info), each listing its own actions as child rows, so a category reads as a category and not as one more tool. Every row is the same model-facing tool and the same `mouaif` authorization family, so one segment gates both categories and a child checkbox is the category's `Off ↔ Ask` shortcut. Because the filter stores tool **names** and a child row is keyed by its action (`mouaif:list`), every row resolves to the tool it belongs to — checking or unchecking any of them writes `mouaif` to the chat, never the tree key. `groupToolNames` / `childToolName` in [ToolTree.jsx](../../frontend/src/components/ToolTree.jsx) own that resolution for the chat tree and the popup alike.
+- **Two `mouaif` categories** — the twelve native chat and app tools render as **Chats** (`list_chats` … `list_chat_attachments`) and **mouaif** (`get_settings` … `get_app_info`), each listing its own functions as child rows, so a category reads as a category and not as one more tool. Every row is separately checked and separately authorized; the category row carries the same `Off / Ask / Allow` segment every other group row carries, and a pick on it writes each of its children (it shows `Off` / `Allow` only when they all agree, else `Ask`). The group checkbox is the filter shortcut it is everywhere else. `groupToolNames` / `childToolName` in [ToolTree.jsx](../../frontend/src/components/ToolTree.jsx) own the row-to-function resolution for the chat tree and the popup alike, and `isCategoryGroup` / `categoryMode` in the same file own the segment rule for all three surfaces.
 
 Each group row has:
 
@@ -24,7 +24,7 @@ Each group row has:
 - a short one-line description (truncated, with a tooltip for the full text)
 - a **collapse chevron** (only when there is more than one child)
 - a **count badge** (`3/5`) when partially checked
-- an **authorization segment** (`Off / Ask / Allow`) — every group carries one, MCP included: each MCP server row edits that server's override (`mcp.servers.<slug>`) while showing the *effective* mode. The compact tree does not show a separate override-reset button.
+- an **authorization segment** (`Off / Ask / Allow`) — every group row carries one, MCP and the two `mouaif` categories included: each MCP server row edits that server's override (`mcp.servers.<slug>`) while showing the *effective* mode, and a category row shows the mode its children agree on and writes all of them. The compact tree does not show a separate override-reset button.
 
 Checkbox changes save immediately and stick even when you tap quickly, while MCP servers are still starting, or before the tool list has finished loading — a later catalog load never puts back an older selection.
 

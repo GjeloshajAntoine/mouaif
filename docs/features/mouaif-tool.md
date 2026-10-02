@@ -54,7 +54,13 @@ The tools appear in two visual categories in Settings → Project → Tools, the
 | **Chats** | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments` |
 | **mouaif** | `get_settings`, `update_settings`, `list_projects`, `get_app_info` |
 
-Every child checkbox selects its own function. A category checkbox toggles only its children; a partial selection shows a mixed checkmark. Every child has its own permission control. Categories do not share or override permissions.
+Every child checkbox selects its own function; a partial selection shows a mixed checkmark. Every child has its own permission control, and the category row carries a segment too — the same `Off / Ask / Allow` control every other group row has, instead of the one row shape in the tree without one.
+
+A category is not a fourth permission level. Its segment is a shortcut that writes all its children in one tap, the way its checkbox is a shortcut for the chat filter:
+
+- it shows **Off** only when every child is `off`, **Allow** only when every child is `allow`, and **Ask** otherwise (a mixed category, and a child with no stored mode, both read Ask);
+- picking a mode writes each of the category's functions, so the children and the category always agree afterwards;
+- it never touches the other category.
 
 For example, this chat selects just two ordinary functions:
 

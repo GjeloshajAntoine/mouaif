@@ -97,17 +97,18 @@ The settings tree renders one group per configured MCP server (group checkbox = 
 
 `buildSettingsToolGroups` in `SettingsProject.jsx` maps each group to its auth state and attaches the segment as `control`. The group checkbox maps to `off ↔ ask`; `allow` is only reachable via the segment so a stray tap never escalates privilege.
 
-### Categories: one tool, several rows
+### Categories: several ordinary tools, one row
 
-A category is a group row whose child rows are **parts of one tool** rather than separate tools. `mouaif` is the only one today: `GROUPS` in `src/tools/mouaif.js` splits its twelve actions into **Chats** (chats + attachments) and **mouaif** (settings, projects, feature info), and each category renders its own actions as children, so it is collapsible and counted like `File tools` instead of reading as one more single-child tool row (a one-child group in `ToolTree` hides its child).
+A category is a group row whose children are ordinary native functions, grouped so the tree reads as a category (chevron, children, count) instead of twelve flat rows. `MOUAIF_TOOL_GROUPS` in `frontend/src/components/ToolTree.jsx` holds the two ids (**Chats**, **mouaif**) and the function names under each; `src/tools/appToolNames.js` owns the operation names and schema fields, and each function maps to its own catalog `source` (`chats` or `mouaif`).
 
-Every child maps to the same authorization family, so:
+Every row is a real function, so nothing needs an alias:
 
-- each child row carries `toolName` (the model-facing name, `mouaif`) beside its own tree id (`mouaif:list`); the per-chat tool filter stores **tool names**, so a toggle must resolve through `toolName` or the chat would be written with a tool that does not exist. That resolution lives in `groupToolNames(group)` / `childToolName(group, toolId)`, exported from `ToolTree.jsx` and called by BOTH chat surfaces (`cards.js` and `ToolPopup.jsx`). It is one shared pair on purpose: the first fix inlined the rule at each call site, landed in the popup and missed the card, so the card's action checkboxes pushed `mouaif:list`, `knownToolNames` in `toggleToolGroup` dropped the unknown name, and every tap on an action row was a silent no-op;
-- the category checkbox and segment write the one `tools.mouaif` mode, and a child checkbox is the same `Off ↔ Ask` shortcut rather than a per-tool override (which would key on `mouaif`, not on the row's id);
-- the two category rows therefore always agree, whichever surface changed them.
+- child ids **are** function names, so `groupToolNames(group)` returns them directly and `childToolName(group, toolId)` is the identity. The per-chat filter stores function names, so both chat surfaces (`cards.js`, `ToolPopup.jsx`) go through those shared helpers rather than mapping ids themselves; `scripts/test-mouaif-tool-toggle.mjs` asserts both import and call them and fails if either re-inlines the rule;
+- the category row carries the same `Off / Ask / Allow` segment as every other group row. `isCategoryGroup(groupId)` recognizes the category ids and `categoryMode(modes)` decides what the row shows — `off` only when every child is `off`, `allow` only when every child is `allow`, else `ask` — because a category is not a permission level. A pick writes every function the row lists, one save per function, so the children and the category agree afterwards;
+- the group checkbox stays the filter shortcut it is everywhere else, and it never touches the other category;
+- there is no category-level permission key: `src/tools/authorization.js` knows the twelve function names, not the category ids.
 
-`MOUAIF_TOOL_GROUPS` in `frontend/src/components/ToolTree.jsx` holds the ids and the per-action child labels; the server's `GROUPS.actions` are derived from the `ACTIONS` area table, so a new action lands under its area's category with no second edit. Covered by `scripts/test-mouaif-tool.js` (server table), `scripts/test-mouaif-tool-categories.mjs` (rendered shape and child identity), and `scripts/test-mouaif-tool-toggle.mjs` (the resolvers, the real `toggleToolGroup` write, and both call sites resolving through the shared pair).
+Do not re-inline the row-to-function rule at a call site: the first fix did exactly that, landed in the popup and missed the card, and the card's checkboxes wrote a tool the server does not have. `scripts/test-mouaif-tool-categories.mjs` covers the rendered shape, `scripts/test-mouaif-tool-toggle.mjs` the resolvers and the segment rule, and `scripts/test-mouaif-tool.js` the server table.
 
 ### One authorization control for every tool
 
@@ -121,6 +122,8 @@ Every child maps to the same authorization family, so:
 | Generic settings card | `frontend/src/components/settings/ToolSettingCard.jsx` | `sp-<id>` |
 
 Component contract: `tool` (authorization key), `name` (label / `aria-label`), `mode`, `allowlist`, `modes` (`TOOL_MODE_CHOICES` or `ASK_USER_MODE_CHOICES` for binary tools), `namePrefix` (so two cards on one page never share a radio group), and `onPick(mode, allowlist)`. `allowlist` mode displays as **Ask** and the patterns survive every mode change except `allow`, which clears them — the behavior each surface previously re-implemented by hand.
+
+One row shape is the exception, and deliberately so: a **category** row has no single authorization key to write. Its `onPick` loops the function names the row lists and saves each in its own chat-scoped or project-scoped write, while `categoryMode` decides the displayed mode (`off` / `allow` only when every child agrees, else `ask`). The category ids come from `isCategoryGroup`, so a surface never carries the literal `'chats'` / `'mouaif-settings'`.
 
 MCP segments are shared with the chat view through `McpAuthSeg` in the same module (which also computes the layered effective mode via `mcpEffective`); per-server writes go through `PUT /api/tools/authorization` with `{ mcp: { servers: { <slug>: ... } } }` and a `null` clears the override.
 

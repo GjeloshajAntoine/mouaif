@@ -7,7 +7,7 @@
 import { fetchJson } from '../../api.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { h, render } from 'preact';
-import { ToolTree, buildToolGroups, groupToolNames, childToolName, toolPermission } from '../ToolTree.jsx';
+import { ToolTree, buildToolGroups, groupToolNames, childToolName, toolPermission, isCategoryGroup, categoryMode } from '../ToolTree.jsx';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
 import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
@@ -132,6 +132,25 @@ head.appendChild(scoped);
     files: 'file'
   };
   for (const g of groups) {
+    // A category row (Chats, mouaif) carries a segment like every other
+    // group row, but its children are ordinary functions with no family key
+    // of their own — so its pick writes each of them instead of one gate.
+    // It shows `off` / `allow` only when every child agrees, else `ask`; a
+    // mixed category is not a mode, it is a partial permission.
+    if (isCategoryGroup(g.id)) {
+      const names = groupToolNames(g);
+      g.control = h(ToolAuthSeg, {
+        tool: g.id,
+        name: g.name,
+        mode: categoryMode(names.map((n) => (auth[n] || {}).mode)),
+        namePrefix: 'chat-auth-' + g.id,
+        onPick: (mode, allowlist) => {
+        if (!state._saveToolAuth) return;
+        for (const name of names) state._saveToolAuth(name, mode, allowlist);
+        }
+      });
+      continue;
+    }
     const toolName = toolByGroup[g.id];
     if (!toolName) continue;
     const cur = auth[toolName] || { mode: 'ask' };
@@ -153,8 +172,8 @@ head.appendChild(scoped);
   }
 
   for (const g of groups) {
+    if (!isCategoryGroup(g.id)) continue;
     for (const tool of g.tools || []) {
-      if (!['chats', 'mouaif-settings'].includes(g.id)) continue;
       const cfg = auth[tool.id] || { mode: 'ask' };
       tool.control = h(ToolAuthSeg, { tool: tool.id, mode: cfg.mode, allowlist: cfg.allowlist,
         namePrefix: 'chat-auth', onPick: (mode, allowlist) => state._saveToolAuth && state._saveToolAuth(tool.id, mode, allowlist) });

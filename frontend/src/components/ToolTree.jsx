@@ -339,6 +339,37 @@ export const MOUAIF_TOOL_GROUPS = Object.freeze([
 
 export const APP_TOOL_NAMES = MOUAIF_TOOL_GROUPS.flatMap((group) => group.tools);
 
+// CATEGORY_GROUP_IDS — the group ids of the visual categories above.
+//
+// A category is the only group whose children are ordinary per-function
+// permissions with no family key of their own (`shell` is its own family,
+// the file leaves inherit `tools.file`, an MCP leaf inherits its server).
+// That single difference is why the three tree surfaces cared about these
+// ids at all — the group row needs its own Off / Ask / Allow segment, and
+// each child row needs its own. Kept here as one list so the surfaces read
+// the same rule instead of repeating the literal.
+export const CATEGORY_GROUP_IDS = Object.freeze(MOUAIF_TOOL_GROUPS.map((group) => group.id));
+
+// isCategoryGroup(groupId) -> boolean
+export function isCategoryGroup(groupId) {
+  return CATEGORY_GROUP_IDS.includes(groupId);
+}
+
+// categoryMode(modes) -> 'off' | 'ask' | 'allow'
+//
+// What a category row's segment shows: the one mode every child agrees on,
+// else 'ask'. A category is not a fourth permission level — its segment is a
+// shortcut that writes every child, the way the group checkbox is a shortcut
+// for the chat filter. A child with no stored mode is `ask`, the native
+// default, not a fourth unknown value; an empty list reads `ask` too.
+export function categoryMode(modes) {
+  const list = (modes || []).map((mode) => (mode === 'off' || mode === 'allow' || mode === 'allowlist' ? mode : 'ask'));
+  if (!list.length) return 'ask';
+  if (list.every((mode) => mode === 'off')) return 'off';
+  if (list.every((mode) => mode === 'allow')) return 'allow';
+  return 'ask';
+}
+
 // groupToolNames(group) -> string[]
 //
 // Every checkbox stores the catalog function name, including group children.

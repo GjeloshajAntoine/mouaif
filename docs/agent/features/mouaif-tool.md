@@ -6,7 +6,7 @@
 
 Twelve ordinary native specs, five business areas, **two visual categories**. `src/tools/appToolNames.js` defines operation names, schema fields and catalog sources. `src/tools/mouaif.js` exports `SPECS`, `TOOL_NAMES`, and `runAppTool(name, args, opts)`. The area router is internal business-code reuse, not a model-facing function.
 
-`MOUAIF_TOOL_GROUPS` groups real catalog functions by `source` (`chats` or `mouaif`). Child ids are function names; each child has the normal `ToolAuthSeg` control. Categories are presentation only.
+`MOUAIF_TOOL_GROUPS` groups real catalog functions by `source` (`chats` or `mouaif`). Child ids are function names; each child has the normal `ToolAuthSeg` control. The category row has one too — `isCategoryGroup` / `categoryMode` in `ToolTree.jsx` decide its displayed mode (`off` / `allow` only when every child agrees, else `ask`) and the surfaces write every child on a pick. Categories remain presentation only: no category-level permission key exists.
 
 ### Child row → tool name
 
@@ -41,8 +41,7 @@ const out = await runAppTool(
 | Dispatch | `src/ai-stream.js` `dispatchTool` | Dispatches names in `TOOL_NAMES` to `runAppTool`, like the grouped native file tools. |
 | REST catalog | `src/server-handlers-tools.js` | Each spec is its own entry in `GET /api/tools/list`. |
 | Tool preview | `src/server-handlers-chats.js` | Same family list in the `off`-pruning loop. |
-| Authorization family | `src/tools/authorization.js` | Member of `NATIVE_TOOLS`; own row in the `getAuthorization` view. Default mode `ask`. |
-| Prompt presets | `src/prompts.js` | Member of `PRESET_TOOL_NAMES`. |
+| Authorization family | `src/tools/authorization.js` | Member of `NATIVE_TOOLS`; own row in the `getAuthorization` view. Default mode `ask`. || Prompt presets | `src/prompts.js` | Member of `PRESET_TOOL_NAMES`. |
 | Feature summary | `src/agentFeatures.js` | Own line in `buildFeatureSummary`; in the `list_features` tool list. |
 | Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,useChatState.js}` | Ordinary child checkboxes and per-leaf permission controls in two visual categories. |
 | Project settings UI | `frontend/src/components/SettingsProject.jsx` | Each checkbox/control writes `tools.<functionName>`. |

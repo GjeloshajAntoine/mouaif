@@ -28,8 +28,8 @@ const treeContext = vm.createContext({
   h: (tag, props, ...children) => ({ tag, props: props || {}, children: children.flat(9).filter((c) => c != null && c !== false) })
 });
 vm.runInContext(treeSource, treeContext);
-const { buildToolGroups, groupToolNames, childToolName, toolPermission } =
-  vm.runInContext('({ buildToolGroups, groupToolNames, childToolName, toolPermission })', treeContext);
+const { buildToolGroups, groupToolNames, childToolName, toolPermission, isCategoryGroup, categoryMode } =
+  vm.runInContext('({ buildToolGroups, groupToolNames, childToolName, toolPermission, isCategoryGroup, categoryMode })', treeContext);
 
 // Values built inside the VM realm carry that realm's Array prototype, so
 // `deepStrictEqual` would compare prototypes and fail on identical contents.
@@ -133,7 +133,9 @@ const cardsContext = vm.createContext({
   buildToolGroups,
   groupToolNames,
   childToolName,
-  toolPermission
+  toolPermission,
+  isCategoryGroup,
+  categoryMode
 });
 const rendered = [];
 vm.runInContext(
@@ -149,9 +151,9 @@ const { toggleToolGroup, knownToolNames, buildToolsCard } = cardsContext;
 // ---- 3a. The card's own handlers resolve (the surface that was broken) ---
 // `buildToolsCard` renders the real ToolTree vnode through `render`, so this
 // reads the closures the card actually hands the tree — the ones a tap calls.
-function cardHandlers(filter) {
+function cardHandlers(filter, toolAuth) {
   rendered.length = 0;
-  const treeState = { tools: { catalog: catalog.map((t) => Object.assign({}, t)), filter: filter === undefined ? null : filter }, mcpServers: [], toolAuth: {} };
+  const treeState = { tools: { catalog: catalog.map((t) => Object.assign({}, t)), filter: filter === undefined ? null : filter }, mcpServers: [], toolAuth: toolAuth || {} };
   treeState._toggleTool = (name, next) => { treeState._seenTool = { name, next }; };
   treeState._toggleToolGroup = (names, next) => { treeState._seenGroup = { names, next }; };
   buildToolsCard(treeState);
@@ -177,6 +179,42 @@ function cardHandlers(filter) {
   assert.equal(s._seenTool.name, 'shell', 'a plain tool row keeps its own name');
   props.onToggleGroup('files', false);
   assert.equal(s._seenGroup.names[0], 'read_file', 'a catalog group keeps its children ids');
+}
+
+// A category row (Chats, mouaif) carries its own Off / Ask / Allow segment,
+// like every other group row — its pick writes every child function, because
+// a category has no family key to write. It reads `off` / `allow` only when
+// every child agrees, else `ask`; the control is injected by the surface (the
+// card here, ToolPopup.jsx and SettingsProject.jsx in their own trees).
+assert.ok(isCategoryGroup(chats.id) && isCategoryGroup(settings.id), 'both category ids are recognized');
+assert.ok(!isCategoryGroup('files') && !isCategoryGroup('shell'), 'ordinary groups are not categories');
+same([categoryMode(['off', 'off']), categoryMode(['allow', 'allow']), categoryMode(['allow', 'off']),
+  categoryMode(['ask', 'ask']), categoryMode([]), categoryMode([undefined, null])],
+  ['off', 'allow', 'ask', 'ask', 'ask', 'ask'], 'a category shows a mode only when every child agrees');
+{
+  const { props } = cardHandlers();
+  for (const id of ['chats', 'mouaif-settings']) {
+    const group = props.groups.find((g) => g.id === id);
+    assert.ok(group.control, id + ' renders the group segment every other group row has');
+    assert.equal(group.control.props.tool, id, id + ' segments by its own id');
+  }
+  assert.ok(props.groups.filter((g) => g.control).every((g) => !!g.control.props.onPick || !!g.control.props.onSave),
+    'every group segment can write');
+  // A pick on the category segment writes every child in ONE call per child,
+  // and a partially-off category reads `ask` rather than `off`.
+  const picked = [];
+  const seeded = cardHandlers(null, { list_chats: { mode: 'off' }, get_chat: { mode: 'off' } });
+  seeded.state._saveToolAuth = (tool, mode, allowlist) => { picked.push([tool, mode, allowlist]); };
+  const chatSeg = seeded.props.groups.find((g) => g.id === 'chats').control;
+  assert.equal(chatSeg.props.mode, 'ask', 'a partially off category reads ask, not off');
+  const chatNames = groupToolNames(seeded.props.groups.find((g) => g.id === 'chats'));
+  chatSeg.props.onPick('allow', []);
+  same(picked, chatNames.map((name) => [name, 'allow', []]),
+    'the category segment writes every child function');
+  const offAll = cardHandlers(null,
+    Object.fromEntries(groupToolNames(settings).map((name) => [name, { mode: 'off' }])));
+  assert.equal(offAll.props.groups.find((g) => g.id === 'mouaif-settings').control.props.mode, 'off',
+    'a fully off category reads off');
 }
 
 // ---- 3b. Those names survive the real write ------------------------------

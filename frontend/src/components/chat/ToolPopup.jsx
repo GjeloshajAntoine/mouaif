@@ -10,7 +10,7 @@
 
 import { h } from 'preact';
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
-import { ToolTree, buildToolGroups, groupToolNames, childToolName } from '../ToolTree.jsx';
+import { ToolTree, buildToolGroups, groupToolNames, childToolName, isCategoryGroup, categoryMode } from '../ToolTree.jsx';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { useVisualViewport } from '../../hooks/useVisualViewport.js';
@@ -106,6 +106,22 @@ files: 'file'
 
   };
   for (const g of groups) {
+    // A category row (Chats, mouaif) shows a segment like every other group
+    // row. It has no family key of its own: its children are ordinary
+    // functions, so the pick writes each of them (see ../ToolTree.jsx).
+    if (isCategoryGroup(g.id)) {
+      const names = groupToolNames(g);
+      g.control = h(AuthSegment, {
+        toolName: g.id,
+        groupId: g.id,
+        current: { mode: categoryMode(names.map((n) => (auth[n] || {}).mode)), allowlist: [] },
+        onSave: (mode, allowlist) => {
+        if (!onSaveToolAuth) return;
+        for (const name of names) onSaveToolAuth(name, mode, allowlist);
+        }
+      });
+      continue;
+    }
     const authName = segNames[g.id];
     if (authName) {
       const cur = auth[authName] || { mode: 'ask' };
@@ -119,7 +135,7 @@ files: 'file'
   }
 
   for (const g of groups) {
-    if (!['chats', 'mouaif-settings'].includes(g.id)) continue;
+    if (!isCategoryGroup(g.id)) continue;
     for (const tool of g.tools || []) {
       tool.control = h(AuthSegment, { toolName: tool.id, groupId: g.id,
         current: auth[tool.id] || { mode: 'ask', allowlist: [] }, onSave: onSaveToolAuth });
