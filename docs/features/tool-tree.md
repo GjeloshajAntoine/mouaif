@@ -8,9 +8,10 @@ The tool tree is a compact, hierarchical list that shows every tool the model ca
 
 ### Chat view
 
-The tree sits below the system prompt. It shows one group per tool family:
+The tree sits below the system prompt. One list, [Tool groups](tool-groups.md) (`frontend/src/toolGroups.js`), decides which tool belongs to which group, so the chat tree, the composer popup, project settings, the preset tree, and the agent editor always agree. It shows one group per tool family:
 
-- **shell** — run terminal commands
+- **shell / subagent / task / ask_user / webpreview / restart_app / Progress updates** — one row per native tool family, each with its own Off / Ask / Allow segment (the Ask user row is Off / Ask only)
+- **Feature report** — `list_features`, listed without a segment: the server answers it without an authorization prompt, so there is no mode to set
 - **subagent** — delegate a task to a nested AI call
 - **ask_user** — pause and ask the user a structured question
 - **File tools** — read_file, list_files, search_files, write_file, edit_file

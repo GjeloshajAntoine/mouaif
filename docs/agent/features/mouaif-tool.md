@@ -6,7 +6,7 @@
 
 Twelve ordinary native specs, five business areas, **two visual categories**. `src/tools/appToolNames.js` defines operation names, schema fields and catalog sources. `src/tools/mouaif.js` exports `SPECS`, `TOOL_NAMES`, and `runAppTool(name, args, opts)`. The area router is internal business-code reuse, not a model-facing function.
 
-`MOUAIF_TOOL_GROUPS` groups real catalog functions by `source` (`chats` or `mouaif`). Child ids are function names; each child has the normal `ToolAuthSeg` control. The category row has one too — `isCategoryGroup` / `categoryMode` in `ToolTree.jsx` decide its displayed mode (`off` / `allow` only when every child agrees, else `ask`) and the surfaces write every child on a pick. Categories remain presentation only: no category-level permission key exists.
+`TOOL_GROUPS` in `frontend/src/toolGroups.js` holds the two categories (**Chats**, **mouaif**) as `kind: 'category'` entries, alongside one entry per native tool family — see [Tool groups](../../features/tool-groups.md). Child ids are function names; each child has the normal `ToolAuthSeg` control. The category row has one too — `isCategoryGroup` / `categoryMode` decide its displayed mode (`off` / `allow` only when every child agrees, else `ask`) and the surfaces write every child on a pick. Categories remain presentation only: no category-level permission key exists.
 
 ### Child row → tool name
 

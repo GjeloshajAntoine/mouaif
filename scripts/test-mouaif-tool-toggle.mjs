@@ -19,17 +19,23 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 // ---- ToolTree: the shape and the shared name resolvers -------------------
-const treeSource = fs.readFileSync('frontend/src/components/ToolTree.jsx', 'utf8')
-  .replace(/^import .*;$/gm, '').replace(/^export /gm, '');
+// The group model lives in its own module (frontend/src/toolGroups.js); it is
+// evaluated into the same context so the tree's stripped import of it
+// resolves to the real thing.
+const stripImports = (source) => source
+  .replace(/^import .*;$/gm, '')
+  .replace(/^export \{.*?\};$/gms, '')
+  .replace(/^export /gm, '');
 const treeContext = vm.createContext({
   useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
   useEffect: () => {},
   useRef: () => ({ current: new Set() }),
   h: (tag, props, ...children) => ({ tag, props: props || {}, children: children.flat(9).filter((c) => c != null && c !== false) })
 });
-vm.runInContext(treeSource, treeContext);
-const { buildToolGroups, groupToolNames, childToolName, toolPermission, isCategoryGroup, categoryMode } =
-  vm.runInContext('({ buildToolGroups, groupToolNames, childToolName, toolPermission, isCategoryGroup, categoryMode })', treeContext);
+vm.runInContext(stripImports(fs.readFileSync('frontend/src/toolGroups.js', 'utf8'))
+  + '\n' + stripImports(fs.readFileSync('frontend/src/components/ToolTree.jsx', 'utf8')), treeContext);
+const { buildToolGroups, groupToolNames, childToolName, toolPermission, isCategoryGroup, categoryMode, groupAuthKey } =
+  vm.runInContext('({ buildToolGroups, groupToolNames, childToolName, toolPermission, isCategoryGroup, categoryMode, groupAuthKey })', treeContext);
 
 // Values built inside the VM realm carry that realm's Array prototype, so
 // `deepStrictEqual` would compare prototypes and fail on identical contents.
@@ -39,7 +45,7 @@ const same = (actual, expected, what) => assert.equal(JSON.stringify(actual), JS
 
 const catalog = [
   { name: 'shell', description: 'Run a shell command in the project directory.' },
-  ...vm.runInContext('MOUAIF_TOOL_GROUPS', treeContext).flatMap((group) => group.tools.map((name) => ({ name, kind: 'native', source: group.source }))),
+  ...vm.runInContext('CATEGORY_GROUPS', treeContext).flatMap((group) => group.tools.map((name) => ({ name, kind: 'native', source: group.source }))),
   { name: 'read_file', kind: 'native', source: 'files', description: 'Read a file.' }
 ];
 const groups = buildToolGroups(catalog, [], null);
@@ -135,13 +141,15 @@ const cardsContext = vm.createContext({
   childToolName,
   toolPermission,
   isCategoryGroup,
-  categoryMode
+  categoryMode,
+  groupAuthKey,
+  isBinaryTool: () => false
 });
 const rendered = [];
 vm.runInContext(
   cardsSource
     .replace(/^import .*;$/gm, '')
-    .replace(/^export \{.*$/gm, '')
+    .replace(/^export \{.*?\};$/gms, '')
     .replace(/^export /gm, '')
   + '\nglobalThis.toggleToolGroup = toggleToolGroup; globalThis.knownToolNames = knownToolNames; globalThis.buildToolsCard = buildToolsCard;',
   cardsContext

@@ -362,6 +362,43 @@ function pushNativeTool(tools, opts) {
   } catch { /* module unavailable; omit */ }
 }
 
+// listNativeTools() -> Array<{ name, kind, source, description, parameters }>
+//
+// The native half of the tool catalog (shell, tasks, progress, file tools,
+// the chat/app functions, and the feature report) with no project context —
+// the same entries GET /api/tools/list serves before MCP tools are appended.
+// Grouping consumers (the agent feature summary) need the names, and reusing
+// this builder keeps them from enumerating the tools a second time.
+function listNativeTools() {
+  const tools = [];
+pushNativeTool(tools, { load: './tools/shell.js', name: 'shell', source: 'shell', fallback: 'Run a shell command in the project directory.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/progress.js', name: 'report_progress', source: 'progress', fallback: 'Report real-time progress on a long-running operation.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/subagent.js', name: 'subagent', source: 'subagent', fallback: 'Delegate a focused task to a nested AI call.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './agentFeatures.js', name: 'list_features', source: 'features', fallback: 'Describe mouaif feature state.', spec: (m) => m.LIST_FEATURES_SPEC && m.LIST_FEATURES_SPEC.function });
+pushNativeTool(tools, { load: './tools/ask.js', name: 'ask_user', source: 'ask_user', fallback: 'Ask the user a structured question with options.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/task.js', name: 'task', source: 'task', fallback: 'Create, update, track progress on, and list structured tasks with subtasks.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', source: 'webpreview', fallback: 'Open a web URL in the debug Chrome and return a small screenshot of the page.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/restart.js', name: 'restart_app', source: 'restart', fallback: 'Gracefully restart mouaif from the current chat.', spec: (m) => m.SPEC && m.SPEC.function });
+for (const [name, definition] of Object.entries(require('./tools/appToolNames.js').DEFINITIONS)) {
+  pushNativeTool(tools, { load: './tools/mouaif.js', name, source: definition.source,
+    fallback: definition.description, spec: (m) => m.SPECS[name].function });
+}
+try {
+  const ft = require('./tools/files.js');
+  for (const name of ft.FILE_TOOL_NAMES) {
+    const spec = ft.SPECS && ft.SPECS[name];
+    tools.push({
+      name,
+      kind: 'native',
+      source: 'files',
+      description: (spec && spec.function && spec.function.description) || '',
+      parameters: (spec && spec.function && spec.function.parameters) || null
+    });
+  }
+} catch { /* files module unavailable; omit */ }
+  return tools;
+}
+
 async function handleTools(req, res, parsed, sessionToken = '') {
   const urlPath = parsed.pathname;
   const method = req.method;
@@ -393,33 +430,7 @@ async function handleTools(req, res, parsed, sessionToken = '') {
     // broken MCP process does not fail the native-tool catalog.
     // Both MCP calls are project-scoped — skipped when no project is given.
     if (projectDir) await mcp.ensureServersRunning(projectDir).catch(() => []);
-    const tools = [];
-pushNativeTool(tools, { load: './tools/shell.js', name: 'shell', source: 'shell', fallback: 'Run a shell command in the project directory.', spec: (m) => m.SPEC && m.SPEC.function });
-pushNativeTool(tools, { load: './tools/progress.js', name: 'report_progress', source: 'progress', fallback: 'Report real-time progress on a long-running operation.', spec: (m) => m.SPEC && m.SPEC.function });
-pushNativeTool(tools, { load: './tools/subagent.js', name: 'subagent', source: 'subagent', fallback: 'Delegate a focused task to a nested AI call.', spec: (m) => m.SPEC && m.SPEC.function });
-pushNativeTool(tools, { load: './agentFeatures.js', name: 'list_features', source: 'features', fallback: 'Describe mouaif feature state.', spec: (m) => m.LIST_FEATURES_SPEC && m.LIST_FEATURES_SPEC.function });
-pushNativeTool(tools, { load: './tools/ask.js', name: 'ask_user', source: 'ask_user', fallback: 'Ask the user a structured question with options.', spec: (m) => m.SPEC && m.SPEC.function });
-pushNativeTool(tools, { load: './tools/task.js', name: 'task', source: 'task', fallback: 'Create, update, track progress on, and list structured tasks with subtasks.', spec: (m) => m.SPEC && m.SPEC.function });
-pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', source: 'webpreview', fallback: 'Open a web URL in the debug Chrome and return a small screenshot of the page.', spec: (m) => m.SPEC && m.SPEC.function });
-pushNativeTool(tools, { load: './tools/restart.js', name: 'restart_app', source: 'restart', fallback: 'Gracefully restart mouaif from the current chat.', spec: (m) => m.SPEC && m.SPEC.function });
-for (const [name, definition] of Object.entries(require('./tools/appToolNames.js').DEFINITIONS)) {
-  pushNativeTool(tools, { load: './tools/mouaif.js', name, source: definition.source,
-    fallback: definition.description, spec: (m) => m.SPECS[name].function });
-}
-try {
-
-      const ft = require('./tools/files.js');
-      for (const name of ft.FILE_TOOL_NAMES) {
-        const spec = ft.SPECS && ft.SPECS[name];
-        tools.push({
-          name,
-          kind: 'native',
-          source: 'files',
-          description: (spec && spec.function && spec.function.description) || '',
-          parameters: (spec && spec.function && spec.function.parameters) || null
-        });
-      }
-    } catch { /* files module unavailable; omit */ }
+    const tools = listNativeTools();
     try {
     const mcpMod = require('./mcp.js');
     // No projectDir -> no MCP tools to advertise (they are per-project).
@@ -818,5 +829,7 @@ try {
 module.exports = {
   handleTools, ensureCliSession, closeCliSession, writeCliCommand, cliShellMeta, attachCliStream, cliSessionKey,
   // background terminal (docs/features/background-terminal.md)
-  bufferCliChunk, readCliBuffer, CLI_BUFFER_BYTES
+  bufferCliChunk, readCliBuffer, CLI_BUFFER_BYTES,
+  // native tool catalog (shared with the agent feature summary)
+  listNativeTools
 };

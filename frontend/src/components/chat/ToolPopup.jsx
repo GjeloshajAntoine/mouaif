@@ -10,7 +10,8 @@
 
 import { h } from 'preact';
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
-import { ToolTree, buildToolGroups, groupToolNames, childToolName, isCategoryGroup, categoryMode } from '../ToolTree.jsx';
+import { ToolTree, buildToolGroups, groupToolNames, childToolName } from '../ToolTree.jsx';
+import { isCategoryGroup, categoryMode, groupAuthKey } from '../../toolGroups.js';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { useVisualViewport } from '../../hooks/useVisualViewport.js';
@@ -94,17 +95,6 @@ export function ToolPopup(props) {
   // Inject auth segments on known groups
   const auth = toolAuth || {};
   function segMode(m) { return m === 'allowlist' ? 'ask' : m; }
-  const segNames = {
-    shell: 'shell',
-    subagent: 'subagent',
-    ask_user: 'ask_user',
-    report_progress: 'report_progress',
-    task: 'task',
-webpreview: 'webpreview',
-restart_app: 'restart_app',
-files: 'file'
-
-  };
   for (const g of groups) {
     // A category row (Chats, mouaif) shows a segment like every other group
     // row. It has no family key of its own: its children are ordinary
@@ -122,7 +112,10 @@ files: 'file'
       });
       continue;
     }
-    const authName = segNames[g.id];
+    // Same app-wide group model as the transcript card and project settings:
+    // the row resolves its own authorization key, so no surface keeps a
+    // parallel map of "which group means which tool".
+    const authName = groupAuthKey(g.id);
     if (authName) {
       const cur = auth[authName] || { mode: 'ask' };
       g.control = h(AuthSegment, {

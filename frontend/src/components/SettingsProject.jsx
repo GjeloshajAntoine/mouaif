@@ -11,9 +11,10 @@ import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage, requestWebpreview } from '../api.js';
 import { nav, back } from '../router.js';
-import { ToolTree, shortDesc, MOUAIF_TOOL_GROUPS, APP_TOOL_NAMES, isCategoryGroup, categoryMode } from './ToolTree.jsx';
+import { ToolTree, shortDesc } from './ToolTree.jsx';
+import { TOOL_GROUPS, GROUP_BY_ID, CATEGORY_TOOL_NAMES, isCategoryGroup, categoryMode, isFileLeaf, toolGroupId } from '../toolGroups.js';
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
-import { McpAuthSeg, ToolAuthSeg, segMode } from './settings/toolAuth.js';
+import { McpAuthSeg, ToolAuthSeg, segMode, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 
 import { agentEditorPath } from './settings/agentNavigation.js';
@@ -71,28 +72,19 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [canExportTrace, setCanExportTrace] = useState(false);
   const [exportTraceStatusMsg, setExportTraceStatusMsg] = useState('');
 
-  // Tool permissions live in state so the segmented
-  // Off/Ask/Allow control re-renders when the user taps a segment.
-  const [shellAuth, setShellAuth] = useState({ mode: 'ask', allowlist: [] });
-  const [fileAuth, setFileAuth] = useState({ mode: 'ask', allowlist: [] });
-  const [fileToolAuth, setFileToolAuth] = useState({});
-  const [subagentAuth, setSubagentAuth] = useState({ mode: 'ask', allowlist: [] });
-  const [progressAuth, setProgressAuth] = useState({ mode: 'ask', allowlist: [] });
-  const [taskAuth, setTaskAuth] = useState({ mode: 'ask', allowlist: [] });
-const [webpreviewAuth, setWebpreviewAuth] = useState({ mode: 'ask', allowlist: [] });
-const [restartAuth, setRestartAuth] = useState({ mode: 'ask', allowlist: [] });
-const [appToolAuth, setAppToolAuth] = useState({});
-const [askUserMode, setAskUserMode] = useState('ask');
-
-  const [shellStatusMsg, setShellStatusMsg] = useState('');
-  const [fileStatusMsg, setFileStatusMsg] = useState('');
-  const [subagentStatusMsg, setSubagentStatusMsg] = useState('');
-  const [progressStatusMsg, setProgressStatusMsg] = useState('');
-  const [taskStatusMsg, setTaskStatusMsg] = useState('');
-const [webpreviewStatusMsg, setWebpreviewStatusMsg] = useState('');
-const [restartStatusMsg, setRestartStatusMsg] = useState('');
-const [mouaifStatusMsg, setMouaifStatusMsg] = useState('');
-const [askUserStatusMsg, setAskUserStatusMsg] = useState('');
+  // Tool permissions live in one map keyed by authorization key (`shell`,
+  // `file`, `read_file`, `list_chats`, …) so the segmented Off/Ask/Allow
+  // control re-renders when the user taps a segment. The keys and the groups
+  // they belong to come from the app-wide model (../toolGroups.js) — this
+  // page no longer keeps one state pair per tool, so moving a tool between
+  // groups cannot leave a stale, per-tool duplicate behind.
+  const [toolAuth, setToolAuth] = useState({});
+  // One status line per control, keyed the same way (`file` covers the file
+  // family and every leaf under it). '' means "no message".
+  const [toolStatus, setToolStatus] = useState({});
+  function setToolMsg(key, text) {
+    setToolStatus((current) => Object.assign({}, current, { [key]: text }));
+  }
 const [toolsCatalog, setToolsCatalog] = useState([]);
 // Web preview page state — the dedicated "Web preview" sub-page captures
 // a URL and shows the result in the same full-screen viewer the chat uses.
@@ -214,57 +206,30 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
       setChatTraceStatusMsg('Open from a chat to edit trace.');
     }
 
-    setShellStatusMsg('');
-    setFileStatusMsg('');
-    setSubagentStatusMsg('');
-    setProgressStatusMsg('');
-    setTaskStatusMsg('');
-    setAskUserStatusMsg('');
+    setToolStatus({});
 
     try {
       const authz = await fetchJson('/api/tools/authorization?projectDir=' + encodeURIComponent(d));
-      const shell = authz.status === 200 && authz.body.tools && authz.body.tools.shell;
-      setShellAuth({
-        mode: (shell && shell.mode) || 'ask',
-        allowlist: shell && Array.isArray(shell.allowlist) ? shell.allowlist : []
-      });
-      const file = authz.status === 200 && authz.body.tools && authz.body.tools.file;
-      setFileAuth({
-        mode: (file && file.mode) || 'ask',
-        allowlist: file && Array.isArray(file.allowlist) ? file.allowlist : []
-      });
-      setFileToolAuth(Object.fromEntries(
-      ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit'].map((name) => [name, authz.status === 200 && authz.body.tools && authz.body.tools[name]])
-      ));
-      const sub = authz.status === 200 && authz.body.tools && authz.body.tools.subagent;
-      setSubagentAuth({
-        mode: (sub && sub.mode) || 'ask',
-        allowlist: sub && Array.isArray(sub.allowlist) ? sub.allowlist : []
-      });
-      const progress = authz.status === 200 && authz.body.tools && authz.body.tools.report_progress;
-      setProgressAuth({
-        mode: (progress && progress.mode) || 'ask',
-        allowlist: progress && Array.isArray(progress.allowlist) ? progress.allowlist : []
-      });
-      const task = authz.status === 200 && authz.body.tools && authz.body.tools.task;
-      setTaskAuth({
-        mode: (task && task.mode) || 'ask',
-        allowlist: task && Array.isArray(task.allowlist) ? task.allowlist : []
-      });
-      const webpreview = authz.status === 200 && authz.body.tools && authz.body.tools.webpreview;
-setWebpreviewAuth({
-mode: (webpreview && webpreview.mode) || 'ask',
-allowlist: webpreview && Array.isArray(webpreview.allowlist) ? webpreview.allowlist : []
-});
-const restart = authz.status === 200 && authz.body.tools && authz.body.tools.restart_app;
-setRestartAuth({
-mode: (restart && restart.mode) || 'ask',
-allowlist: restart && Array.isArray(restart.allowlist) ? restart.allowlist : []
-});
-setAppToolAuth(Object.fromEntries(APP_TOOL_NAMES.map((name) => [name, authz.body?.tools?.[name] || { mode: 'ask' }])));
-const askUser = authz.status === 200 && authz.body.tools && authz.body.tools.ask_user;
+      // Every tool this page can render, keyed the way the tree asks for it:
+      // `file` is the family gate and each file operation is its own leaf, so
+      // a leaf `off` override stays visible next to the family mode.
+      const tools = (authz.status === 200 && authz.body && authz.body.tools) || {};
+      const next = {};
+      for (const group of TOOL_GROUPS) {
+        if (!group.authKey) continue;
+        const cfg = tools[group.authKey] || {};
+        next[group.authKey] = { mode: cfg.mode || 'ask', allowlist: Array.isArray(cfg.allowlist) ? cfg.allowlist : [] };
+        for (const name of group.tools) {
+          if (name === group.authKey) continue;
+          next[name] = tools[name] || null;
+        }
+      }
+      for (const name of CATEGORY_TOOL_NAMES) {
+        const cfg = tools[name] || {};
+        next[name] = { mode: cfg.mode || 'ask', allowlist: Array.isArray(cfg.allowlist) ? cfg.allowlist : [] };
+      }
+      setToolAuth(next);
 
-      setAskUserMode((askUser && askUser.mode === 'off') ? 'off' : 'ask');
       const mcp = authz.status === 200 && authz.body && authz.body.mcp;
       setMcpAuth({
         mode: (mcp && mcp.mode) || 'ask',
@@ -435,23 +400,23 @@ setSkillsOn(cp.skills !== false);
     }
   }
 
+  // Merge the authorization the server echoed after a write into the state
+  // map. Only the keys the response actually carried are touched, so a save
+  // of one control never resets its neighbours.
   function applyAuthorization({ tools, mcp } = {}) {
     if (tools) {
-      for (const [name, setAuth] of [
-        ['shell', setShellAuth], ['file', setFileAuth], ['subagent', setSubagentAuth],
-        ['report_progress', setProgressAuth], ['task', setTaskAuth],
-        ['webpreview', setWebpreviewAuth], ['restart_app', setRestartAuth]
-      ]) {
-        if (tools[name]) setAuth(tools[name]);
+      const patch = {};
+      for (const group of TOOL_GROUPS) {
+        if (!group.authKey) continue;
+        if (tools[group.authKey]) patch[group.authKey] = tools[group.authKey];
+        for (const name of group.tools) {
+          if (name !== group.authKey && tools[name]) patch[name] = tools[name];
+        }
       }
-      setFileToolAuth((prev) => Object.assign({}, prev, Object.fromEntries(
-        ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit']
-          .filter((name) => tools[name]).map((name) => [name, tools[name]])
-      )));
-      setAppToolAuth((prev) => Object.assign({}, prev, Object.fromEntries(
-        APP_TOOL_NAMES.filter((name) => tools[name]).map((name) => [name, tools[name]])
-      )));
-      if (tools.ask_user) setAskUserMode(tools.ask_user.mode === 'off' ? 'off' : 'ask');
+      for (const name of CATEGORY_TOOL_NAMES) {
+        if (tools[name]) patch[name] = tools[name];
+      }
+      if (Object.keys(patch).length) setToolAuth((prev) => Object.assign({}, prev, patch));
     }
     if (mcp) setMcpAuth(mcp);
   }
@@ -480,38 +445,47 @@ setSkillsOn(cp.skills !== false);
     return write;
   }
 
-  function saveToolAuthorization(tool, mode, allowlist, setStatusMsg) {
-    return saveAuthorization({ tools: { [tool]: { mode, allowlist } } }, setStatusMsg);
+  // One write path for every native control on this page. `key` is the
+  // authorization key the control edits (`shell`, `file`, `read_file`,
+  // `list_chats`, …) and also the status line the result lands on, so a
+  // control never reports on a neighbour.
+  function saveToolAuthorization(key, mode, allowlist, msgKey = key) {
+    return saveAuthorization({ tools: { [key]: { mode, allowlist } } }, (text) => setToolMsg(msgKey, text));
   }
 
-  function pickToolMode(tool, auth, setStatusMsg, newMode) {
-    const allowlist = newMode === 'allow' ? [] : auth.allowlist;
-    return saveToolAuthorization(tool, newMode, allowlist, setStatusMsg);
+  // A family row's segment (and its group checkbox) edits the family gate and
+  // every leaf that has no explicit override of its own, so the row settles on
+  // the chosen mode instead of leaving a stale leaf behind.
+  function pickFamilyGroupMode(groupId, newMode, msgKey = groupId) {
+    const group = GROUP_BY_ID[groupId];
+    if (!group || !group.authKey) return Promise.resolve(false);
+    const family = toolAuth[group.authKey] || {};
+    const allowlist = newMode === 'allow' ? [] : (family.allowlist || []);
+    const names = [group.authKey].concat(group.tools.filter((name) => name !== group.authKey));
+    const tools = Object.fromEntries(names.map((name) => [name, { mode: newMode, allowlist }]));
+    return saveAuthorization({ tools }, (text) => setToolMsg(msgKey, text));
   }
-  function pickShellMode(newMode) { pickToolMode('shell', shellAuth, setShellStatusMsg, newMode); }
-  function pickFileMode(newMode) {
-    return saveToolAuthorization('file', newMode, newMode === 'allow' ? [] : fileAuth.allowlist, setFileStatusMsg);
+
+  // A category row shows one mode and writes every child with it; it never
+  // touches the other category (the children are independent tools).
+  function pickCategoryMode(groupId, newMode) {
+    const group = GROUP_BY_ID[groupId];
+    if (!group) return Promise.resolve(false);
+    return pickAppToolModes(group.tools, newMode);
   }
-  function pickFileToolMode(toolName, newMode) {
-    const current = fileToolAuth[toolName] || fileAuth;
-    return saveToolAuthorization(toolName, newMode, newMode === 'allow' ? [] : (current.allowlist || []), setFileStatusMsg);
+
+  // The ordinary per-function keys: the twelve chat/app functions plus the
+  // file leaves, which can carry a more specific override than `tools.file`.
+  function pickAppToolModes(names, mode, allowlist) {
+    const tools = Object.fromEntries(names.map((name) => [name, {
+      mode, allowlist: mode === 'allow' ? [] : (allowlist || (toolAuth[name] || {}).allowlist || [])
+    }]));
+    // The status line belongs on the row that lists the tool (the file leaf
+    // reports on the File tools row, a category child on its category row), so
+    // a failure is visible next to the control the user just touched.
+    const rowKey = toolGroupId(names[0] || '') || names[0] || 'file';
+    return saveAuthorization({ tools }, (text) => setToolMsg(rowKey, text));
   }
-  function pickFileGroupMode(toolNames, newMode) {
-    const allowlist = newMode === 'allow' ? [] : fileAuth.allowlist;
-    const tools = Object.fromEntries(['file', ...toolNames].map((name) => [name, { mode: newMode, allowlist }]));
-    return saveAuthorization({ tools }, setFileStatusMsg);
-  }
-  function pickSubagentMode(newMode) { pickToolMode('subagent', subagentAuth, setSubagentStatusMsg, newMode); }
-  function pickProgressMode(newMode) { pickToolMode('report_progress', progressAuth, setProgressStatusMsg, newMode); }
-  function pickTaskMode(newMode) { pickToolMode('task', taskAuth, setTaskStatusMsg, newMode); }
-function pickWebpreviewMode(newMode) { pickToolMode('webpreview', webpreviewAuth, setWebpreviewStatusMsg, newMode); }
-function pickRestartMode(newMode) { pickToolMode('restart_app', restartAuth, setRestartStatusMsg, newMode); }
-async function pickAppToolModes(names, mode, allowlist) {
-  const tools = Object.fromEntries(names.map((name) => [name, {
-    mode, allowlist: mode === 'allow' ? [] : (allowlist || appToolAuth[name]?.allowlist || [])
-  }]));
-  return saveAuthorization({ tools }, setMouaifStatusMsg);
-}
 
 // ---- Web preview page handlers ----------------------------------------
 // The webpreview capture endpoint is scoped to a chat (authorization and
@@ -577,10 +551,6 @@ return capturePreview(url, viewport);
 function openPreviewPrompt() {
 setPreviewPromptOpen(true);
 }
-function pickAskUserMode(newMode) {
-    return saveToolAuthorization('ask_user', newMode, [], setAskUserStatusMsg);
-  }
-
   function saveMcpAuthorization(patch) {
     return saveAuthorization({ mcp: patch }, setMcpAuthStatusMsg);
   }
@@ -724,6 +694,7 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
       description: shortDesc(t.description),
       title: t.description || ''
     }, extra || {});
+
     groups.push({
       id: 'skills',
       name: 'Skills',
@@ -738,171 +709,85 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
       }],
       extra: skillsStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, skillsStatusMsg) : null
     });
-    const shellTool = catalog.find((t) => t.name === 'shell');
-    if (shellTool) {
+
+    // One row per group in the app-wide model (../toolGroups.js). The row and
+    // its children are driven entirely by that model, so this page never
+    // enumerates the tools itself: a tool that moves between groups shows up
+    // here (and in the chat tree) with no change to this file.
+    for (const group of TOOL_GROUPS) {
+      const members = (catalog || []).filter((t) => t && group.tools.includes(t.name));
+      if (!members.length) continue;
+      // The category rows (Chats, mouaif) list their own functions; each
+      // child is an ordinary per-tool permission, and the row's segment is a
+      // shortcut that writes every child (see toolModeSegs / categoryMode).
+      if (group.kind === 'category') {
+        groups.push({
+          id: group.id,
+          name: group.name,
+          category: true,
+          checked: members.every((tool) => isOn((toolAuth[tool.name] || {}).mode || 'ask')),
+          control: toolModeSegs(group.name, categoryMode(members.map((tool) => (toolAuth[tool.name] || {}).mode)),
+            (mode) => pickCategoryMode(group.id, mode)),
+          tools: members.map((tool) => {
+            const cfg = toolAuth[tool.name] || { mode: 'ask', allowlist: [] };
+            return leaf(tool, {
+              checked: isOn(cfg.mode),
+              control: h(ToolAuthSeg, {
+                tool: tool.name, mode: cfg.mode, allowlist: cfg.allowlist, namePrefix: 'sp',
+                onPick: (mode, allowlist) => pickAppToolModes([tool.name], mode, allowlist)
+              })
+            });
+          }),
+          extra: toolStatus[group.id] ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, toolStatus[group.id]) : null
+        });
+        continue;
+      }
+      // A tool with no project authorization gate (the feature report) still
+      // lists, but offers no mode control it would not honor.
+      if (group.gated === false) {
+        const tool = members[0];
+        groups.push({
+          id: group.id,
+          name: group.name,
+          description: shortDesc(tool.description),
+          title: (tool.description || '') + ' Always available; the server answers it without an authorization prompt.',
+          hideCheckbox: true,
+          checked: true,
+          tools: [leaf(tool, { checked: true })]
+        });
+        continue;
+      }
+      const key = group.authKey;
+      const family = toolAuth[key] || { mode: 'ask', allowlist: [] };
+      const label = group.name;
+      const binary = group.binary === true;
       groups.push({
-        id: 'shell',
-        name: 'Shell',
-        description: shortDesc(shellTool.description),
-        title: shellTool.description || '',
-        checked: isOn(shellAuth.mode),
-        control: toolModeSegs('Shell commands', segMode(shellAuth.mode), pickShellMode, [
+        id: group.id,
+        name: group.name,
+        description: shortDesc(members[0].description),
+        title: members[0].description || '',
+        checked: isOn(family.mode),
+        control: toolModeSegs(label, segMode(family.mode), (mode) => pickFamilyGroupMode(group.id, mode), [
           { value: 'off', label: 'Off' },
           { value: 'ask', label: 'Ask' },
-          { value: 'allow', label: 'Allow' }
+          ...(binary ? [] : [{ value: 'allow', label: 'Allow' }])
         ]),
-        tools: [leaf(shellTool, { checked: isOn(shellAuth.mode) })],
-        extra: shellStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, shellStatusMsg) : null
-      });
-    }
-
-    const subTool = catalog.find((t) => t.name === 'subagent');
-    if (subTool) {
-      groups.push({
-        id: 'subagent',
-        name: 'Subagent',
-        description: shortDesc(subTool.description),
-        title: subTool.description || '',
-        checked: isOn(subagentAuth.mode),
-        control: toolModeSegs('Subagent', segMode(subagentAuth.mode), pickSubagentMode, [
-          { value: 'off', label: 'Off' },
-          { value: 'ask', label: 'Ask' },
-          { value: 'allow', label: 'Allow' }
-        ]),
-        tools: [leaf(subTool, { checked: isOn(subagentAuth.mode) })],
-        extra: subagentStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, subagentStatusMsg) : null
-      });
-    }
-
-    const progressTool = catalog.find((t) => t.name === 'report_progress');
-    if (progressTool) {
-      groups.push({
-        id: 'report_progress',
-        name: 'Progress updates',
-        description: shortDesc(progressTool.description),
-        title: progressTool.description || '',
-        checked: isOn(progressAuth.mode),
-        control: toolModeSegs('Progress updates', segMode(progressAuth.mode), pickProgressMode, [
-          { value: 'off', label: 'Off' },
-          { value: 'ask', label: 'Ask' },
-          { value: 'allow', label: 'Allow' }
-        ]),
-        tools: [leaf(progressTool, { checked: isOn(progressAuth.mode) })],
-        extra: progressStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, progressStatusMsg) : null
-      });
-    }
-
-    const taskTool = catalog.find((t) => t.name === 'task');
-    if (taskTool) {
-      groups.push({
-        id: 'task',
-        name: 'Task',
-        description: shortDesc(taskTool.description),
-        title: taskTool.description || '',
-        checked: isOn(taskAuth.mode),
-        control: toolModeSegs('Task', segMode(taskAuth.mode), pickTaskMode, [
-          { value: 'off', label: 'Off' },
-          { value: 'ask', label: 'Ask' },
-          { value: 'allow', label: 'Allow' }
-        ]),
-        tools: [leaf(taskTool, { checked: isOn(taskAuth.mode) })],
-        extra: taskStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, taskStatusMsg) : null
-      });
-    }
-
-    const webpreviewTool = catalog.find((t) => t.name === 'webpreview');
-    if (webpreviewTool) {
-      groups.push({
-        id: 'webpreview',
-        name: 'Web preview',
-        description: shortDesc(webpreviewTool.description),
-        title: webpreviewTool.description || '',
-        checked: isOn(webpreviewAuth.mode),
-        control: toolModeSegs('Web preview', segMode(webpreviewAuth.mode), pickWebpreviewMode, [
-          { value: 'off', label: 'Off' },
-          { value: 'ask', label: 'Ask' },
-          { value: 'allow', label: 'Allow' }
-        ]),
-        tools: [leaf(webpreviewTool, { checked: isOn(webpreviewAuth.mode) })],
-        extra: webpreviewStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, webpreviewStatusMsg) : null
-      });
-    }
-
-    const restartTool = catalog.find((t) => t.name === 'restart_app');
-if (restartTool) {
-groups.push({
-id: 'restart_app',
-name: 'Restart app',
-description: shortDesc(restartTool.description),
-title: restartTool.description || '',
-checked: isOn(restartAuth.mode),
-control: toolModeSegs('Restart app', segMode(restartAuth.mode), pickRestartMode, [
-{ value: 'off', label: 'Off' },
-{ value: 'ask', label: 'Ask' },
-{ value: 'allow', label: 'Allow' }
-]),
-tools: [leaf(restartTool, { checked: isOn(restartAuth.mode) })],
-extra: restartStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, restartStatusMsg) : null
-});
-}
-for (const row of MOUAIF_TOOL_GROUPS) {
-  const tools = catalog.filter((tool) => row.tools.includes(tool.name));
-  if (!tools.length) continue;
-  groups.push({ id: row.id, name: row.name,
-    checked: tools.every((tool) => isOn(appToolAuth[tool.name]?.mode || 'ask')),
-    // The category row carries a segment like every other group row. It has
-    // no family key of its own — its children are ordinary functions — so
-    // one pick writes every child. It shows off / allow only when they all
-    // agree, else ask (see ToolTree.jsx categoryMode).
-    control: toolModeSegs(row.name, categoryMode(tools.map((tool) => appToolAuth[tool.name]?.mode)),
-      (mode) => pickAppToolModes(tools.map((tool) => tool.name), mode)),
-    tools: tools.map((tool) => {
-      const cfg = appToolAuth[tool.name] || { mode: 'ask', allowlist: [] };
-      return leaf(tool, { checked: isOn(cfg.mode), control: h(ToolAuthSeg, {
-        tool: tool.name, mode: cfg.mode, allowlist: cfg.allowlist, namePrefix: 'sp',
-        onPick: (mode, allowlist) => pickAppToolModes([tool.name], mode, allowlist)
-      }) });
-    }),
-    extra: mouaifStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mouaifStatusMsg) : null
-  });
-}
-const askTool = catalog.find((t) => t.name === 'ask_user');
-if (askTool) {
-
-      groups.push({
-        id: 'ask_user',
-        name: 'Ask user',
-        description: shortDesc(askTool.description),
-        title: askTool.description || '',
-        checked: isOn(askUserMode),
-        control: toolModeSegs('Ask the user', askUserMode, pickAskUserMode, [
-          { value: 'off', label: 'Off' },
-          { value: 'ask', label: 'Ask' }
-        ]),
-        tools: [leaf(askTool, { checked: isOn(askUserMode) })],
-        extra: askUserStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, askUserStatusMsg) : null
-      });
-    }
-
-    const fileTools = catalog.filter((t) => t.kind === 'native' && t.source === 'files');
-    if (fileTools.length) {
-      groups.push({
-        id: 'files',
-        name: 'File tools',
-        description: 'read, list, search, write, edit · batches',
-        checked: isOn(fileAuth.mode),
-        control: toolModeSegs('File tools', segMode(fileAuth.mode), pickFileMode, [
-          { value: 'off', label: 'Off' },
-          { value: 'ask', label: 'Ask' },
-          { value: 'allow', label: 'Allow' }
-        ]),
-        // Leaves inherit tools.file until a leaf checkbox creates an
-        // explicit per-tool override. The source marker keeps inherited
-        // leaves synchronized when the family mode changes.
-        tools: fileTools.map((t) => leaf(t, {
-          checked: isOn((fileToolAuth[t.name] && fileToolAuth[t.name].mode) || fileAuth.mode)
-        })),
-        extra: fileStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, fileStatusMsg) : null
+        tools: members.map((tool) => {
+          // A leaf carries its own override until the family mode moves it;
+          // a leaf without one reads the family mode, so the row and its
+          // children always agree on screen.
+          const leafAuth = toolAuth[tool.name];
+          const mode = (leafAuth && leafAuth.mode) || family.mode;
+          return leaf(tool, {
+            checked: isOn(mode),
+            control: h(ToolAuthSeg, {
+              tool: tool.name, mode, allowlist: (leafAuth && leafAuth.allowlist) || family.allowlist,
+              namePrefix: 'sp', modes: binary ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
+              onPick: (next, list) => saveToolAuthorization(tool.name, next, list)
+            })
+          });
+        }),
+        extra: toolStatus[group.id] ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, toolStatus[group.id]) : null
       });
     }
 
@@ -993,25 +878,12 @@ if (askTool) {
       setSkillsOn(checked);
       patchProject({ skills: checked }, setSkillsStatusMsg, 'saved');
     }
-    else if (groupId === 'shell') pickShellMode(mode);
-    else if (groupId === 'subagent') pickSubagentMode(mode);
-    else if (groupId === 'task') pickTaskMode(mode);
-    else if (groupId === 'webpreview') pickWebpreviewMode(mode);
-else if (groupId === 'restart_app') pickRestartMode(mode);
-else if (isCategoryGroup(groupId)) {
-  // Category selection never changes the other category's actions.
-  const row = MOUAIF_TOOL_GROUPS.find((group) => group.id === groupId);
-  pickAppToolModes(row.tools, mode);
-  }
-else if (groupId === 'report_progress') pickProgressMode(mode);
-
-    else if (groupId === 'ask_user') pickAskUserMode(mode);
-    else if (groupId === 'files') {
-      const names = toolsCatalog
-        .filter((tool) => tool && tool.kind === 'native' && tool.source === 'files')
-        .map((tool) => tool.name);
-      pickFileGroupMode(names, mode);
-    }
+    // Every native group row is a shortcut for Off <-> Ask on its own gate.
+    // A category row writes each of its children (it has no gate of its
+    // own), which is the same rule the chat card and popup use.
+    else if (isCategoryGroup(groupId)) pickCategoryMode(groupId, mode);
+    else if (GROUP_BY_ID[groupId] && GROUP_BY_ID[groupId].gated === false) { /* no gate to flip */ }
+    else if (GROUP_BY_ID[groupId]) pickFamilyGroupMode(groupId, mode);
     else if (groupId.startsWith('mcp-')) toggleMcpServerAuth(groupId.slice(4), checked);
   }
 
@@ -1397,9 +1269,9 @@ href: '#/settings/prompts?' + projectBackQS()
                 onToggleGroup: toggleSettingsGroup,
                 onToggleTool: (groupId, toolId, checked) => {
                 if (groupId.startsWith('mcp-')) toggleMcpToolAuth(toolId, checked);
-                else if (groupId === 'files') pickFileToolMode(toolId, checked ? 'ask' : 'off');
-                else if (APP_TOOL_NAMES.includes(toolId)) pickAppToolModes([toolId], checked ? 'ask' : 'off');
-                // Other native groups still use their family checkbox.
+                else if (isCategoryGroup(groupId) || isFileLeaf(toolId)) pickAppToolModes([toolId], checked ? 'ask' : 'off');
+                // Every other native group is a family: its one leaf and the
+                // group row share a gate, so the checkbox flips the family.
                 else toggleSettingsGroup(groupId, checked);
                 },
                 // Groups with more than one nested tool start collapsed,

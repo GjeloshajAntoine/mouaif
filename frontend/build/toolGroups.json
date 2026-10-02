@@ -1,0 +1,119 @@
+[
+  {
+    "id": "chats",
+    "name": "Chats",
+    "kind": "category",
+    "source": "chats",
+    "tools": [
+      "list_chats",
+      "get_chat",
+      "create_chat",
+      "update_chat",
+      "delete_chat",
+      "search_chats",
+      "attach_chat_image",
+      "list_chat_attachments"
+    ]
+  },
+  {
+    "id": "mouaif-settings",
+    "name": "mouaif",
+    "kind": "category",
+    "source": "mouaif",
+    "tools": [
+      "get_settings",
+      "update_settings",
+      "list_projects",
+      "get_app_info"
+    ]
+  },
+  {
+    "id": "shell",
+    "name": "Shell",
+    "source": "shell",
+    "authKey": "shell",
+    "tools": [
+      "shell"
+    ]
+  },
+  {
+    "id": "subagent",
+    "name": "Subagent",
+    "source": "subagent",
+    "authKey": "subagent",
+    "tools": [
+      "subagent"
+    ]
+  },
+  {
+    "id": "task",
+    "name": "Task",
+    "source": "task",
+    "authKey": "task",
+    "tools": [
+      "task"
+    ]
+  },
+  {
+    "id": "ask_user",
+    "name": "Ask user",
+    "source": "ask_user",
+    "authKey": "ask_user",
+    "tools": [
+      "ask_user"
+    ],
+    "binary": true
+  },
+  {
+    "id": "webpreview",
+    "name": "Web preview",
+    "source": "webpreview",
+    "authKey": "webpreview",
+    "tools": [
+      "webpreview"
+    ]
+  },
+  {
+    "id": "restart_app",
+    "name": "Restart app",
+    "source": "restart",
+    "authKey": "restart_app",
+    "tools": [
+      "restart_app"
+    ]
+  },
+  {
+    "id": "report_progress",
+    "name": "Progress updates",
+    "source": "progress",
+    "authKey": "report_progress",
+    "tools": [
+      "report_progress"
+    ]
+  },
+  {
+    "id": "files",
+    "name": "File tools",
+    "source": "files",
+    "authKey": "file",
+    "description": "read, list, search, write, edit · batches",
+    "tools": [
+      "read_file",
+      "list_files",
+      "search_files",
+      "write_file",
+      "edit_file",
+      "group_read",
+      "group_edit"
+    ]
+  },
+  {
+    "id": "list_features",
+    "name": "Feature report",
+    "source": "features",
+    "tools": [
+      "list_features"
+    ],
+    "gated": false
+  }
+]

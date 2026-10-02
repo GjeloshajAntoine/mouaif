@@ -39,6 +39,12 @@
 
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { TOOL_GROUPS, isCategoryGroup, categoryMode, groupAuthKey } from '../toolGroups.js';
+
+// The app-wide group model lives in ../toolGroups.js (shared with the server
+// through frontend/build/toolGroups.json). Re-exported here so every tree
+// caller keeps importing what it needs from the tree module.
+export { TOOL_GROUPS, isCategoryGroup, categoryMode, groupAuthKey };
 
 export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedByDefault = false, initialCollapsed, onCollapseChange, alwaysExpanded = false, class: className = '', onReloadServer = null }) {
   const [collapsed, setCollapsed] = useState(() => {
@@ -248,34 +254,23 @@ export function buildAgentToolGroups({ choices, restricted, selected, mcpServers
 const isOn = (value) => !restricted || selected(value);
 const groups = [];
 const natives = choices.filter((c) => !c.value.startsWith('mcp__'));
-  const files = natives.filter((c) => ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit'].includes(c.value));
-for (const c of natives) {
-if (files.includes(c) || APP_TOOL_NAMES.includes(c.value)) continue;
-const entry = catalog.find((t) => t && t.name === c.value);
-groups.push({
-id: c.value,
-name: c.label,
-description: shortDesc(entry && entry.description),
-title: (entry && entry.description) || '',
-checked: isOn(c.value),
-tools: [{ id: c.value, name: c.label, checked: isOn(c.value) }]
-});
+// Same groups, same order, same row descriptions as every other tree: the
+// app-wide model decides which tool sits in which group, so an agent
+// allowlist can never drift from the chat card or project settings.
+for (const group of TOOL_GROUPS) {
+  const members = natives.filter((c) => group.tools.includes(c.value));
+  if (!members.length) continue;
+  const entry = members.length === 1 ? catalog.find((t) => t && t.name === members[0].value) : null;
+  groups.push({
+    id: group.id,
+    name: group.name,
+    category: group.kind === 'category',
+    description: shortDesc((entry && entry.description) || group.description),
+    title: (entry && entry.description) || group.description || '',
+    checked: members.every((c) => isOn(c.value)),
+    tools: members.map((c) => ({ id: c.value, name: c.label, checked: isOn(c.value) }))
+  });
 }
-  for (const row of MOUAIF_TOOL_GROUPS) {
-    const tools = natives.filter((c) => row.tools.includes(c.value));
-    if (tools.length) groups.push({ id: row.id, name: row.name,
-      checked: tools.every((c) => isOn(c.value)),
-      tools: tools.map((c) => ({ id: c.value, name: c.label, checked: isOn(c.value) })) });
-  }
-  if (files.length) {
-    groups.push({
-      id: 'files',
-      name: 'File tools',
-      description: 'read, list, search, write, edit',
-      checked: files.every((c) => isOn(c.value)),
-      tools: files.map((c) => ({ id: c.value, name: c.label, checked: isOn(c.value) }))
-    });
-  }
   for (const c of choices) {
     if (!c.value.startsWith('mcp__')) continue;
     const slug = c.value.slice('mcp__'.length);
@@ -331,44 +326,10 @@ export function shortDesc(text, max = 40) {
 // separate "enabled" server switch — and their checkbox flips the
 // per-chat tool filter for the whole server. Used tools get the
 // dot badge.
-// Categories are visual groups of ordinary catalog tools, not permissions.
-export const MOUAIF_TOOL_GROUPS = Object.freeze([
-  { id: 'chats', name: 'Chats', source: 'chats', tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments'] },
-  { id: 'mouaif-settings', name: 'mouaif', source: 'mouaif', tools: ['get_settings', 'update_settings', 'list_projects', 'get_app_info'] }
-]);
-
-export const APP_TOOL_NAMES = MOUAIF_TOOL_GROUPS.flatMap((group) => group.tools);
-
-// CATEGORY_GROUP_IDS — the group ids of the visual categories above.
-//
-// A category is the only group whose children are ordinary per-function
-// permissions with no family key of their own (`shell` is its own family,
-// the file leaves inherit `tools.file`, an MCP leaf inherits its server).
-// That single difference is why the three tree surfaces cared about these
-// ids at all — the group row needs its own Off / Ask / Allow segment, and
-// each child row needs its own. Kept here as one list so the surfaces read
-// the same rule instead of repeating the literal.
-export const CATEGORY_GROUP_IDS = Object.freeze(MOUAIF_TOOL_GROUPS.map((group) => group.id));
-
-// isCategoryGroup(groupId) -> boolean
-export function isCategoryGroup(groupId) {
-  return CATEGORY_GROUP_IDS.includes(groupId);
-}
-
-// categoryMode(modes) -> 'off' | 'ask' | 'allow'
-//
-// What a category row's segment shows: the one mode every child agrees on,
-// else 'ask'. A category is not a fourth permission level — its segment is a
-// shortcut that writes every child, the way the group checkbox is a shortcut
-// for the chat filter. A child with no stored mode is `ask`, the native
-// default, not a fourth unknown value; an empty list reads `ask` too.
-export function categoryMode(modes) {
-  const list = (modes || []).map((mode) => (mode === 'off' || mode === 'allow' || mode === 'allowlist' ? mode : 'ask'));
-  if (!list.length) return 'ask';
-  if (list.every((mode) => mode === 'off')) return 'off';
-  if (list.every((mode) => mode === 'allow')) return 'allow';
-  return 'ask';
-}
+// The group model itself (ids, names, membership), `isCategoryGroup`, and
+// `categoryMode` live in ../toolGroups.js and are re-exported at the top of
+// this file — there is exactly one list, so a tool cannot sit in one group
+// on the chat card and another in project settings.
 
 // groupToolNames(group) -> string[]
 //
@@ -413,45 +374,24 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
     used: usedTools.has(t.name)
   }, extra || {});
 
-  for (const name of ['shell', 'subagent', 'ask_user', 'task', 'webpreview', 'restart_app', 'list_features']) {
-    const t = catalog.find((x) => x && x.name === name);
-    if (!t) continue;
+  // One row per group in the app-wide model (../toolGroups.js). A group is
+  // only rendered when the catalog advertises its members, so a group whose
+  // tools are disabled or absent never leaves a dead row behind.
+  for (const group of TOOL_GROUPS) {
+    const members = catalog.filter((t) => t && group.tools.includes(t.name));
+    if (!members.length) continue;
+    const category = group.kind === 'category';
+    // A family row shows its one tool's description; a category names what
+    // it covers instead, because its eight children have no single summary.
+    const only = members.length === 1 ? members[0] : null;
     groups.push({
-      id: name,
-      name,
-      description: shortDesc(t.description),
-      title: t.description || '',
-      checked: isOn(name),
-      tools: [leaf(t)]
-    });
-  }
-
-  for (const row of MOUAIF_TOOL_GROUPS) {
-    const tools = catalog.filter((t) => t && t.kind === 'native' && t.source === row.source);
-    if (tools.length) groups.push({ id: row.id, name: row.name,
-      checked: allToolsOn(tools), tools: tools.map((t) => leaf(t)) });
-  }
-
-  const progressTool = catalog.find((x) => x && x.name === 'report_progress');
-  if (progressTool) {
-    groups.push({
-      id: 'report_progress',
-      name: 'Progress updates',
-      description: shortDesc(progressTool.description),
-      title: progressTool.description || '',
-      checked: isOn('report_progress'),
-      tools: [leaf(progressTool)]
-    });
-  }
-
-  const fileTools = catalog.filter((t) => t && t.kind === 'native' && t.source === 'files');
-  if (fileTools.length) {
-    groups.push({
-      id: 'files',
-      name: 'File tools',
-      description: 'read, list, search, write, edit',
-      checked: allToolsOn(fileTools),
-      tools: fileTools.map((t) => leaf(t))
+      id: group.id,
+      name: group.name,
+      category,
+      description: shortDesc(only ? only.description : (group.description || '')),
+      title: (only && only.description) || group.description || '',
+      checked: allToolsOn(members),
+      tools: members.map((t) => leaf(t))
     });
   }
 

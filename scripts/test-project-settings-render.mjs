@@ -3,8 +3,19 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-const source = (file) => fs.readFileSync(new URL('../frontend/src/components/' + file, import.meta.url), 'utf8')
-  .replace(/^import .*;$/gm, '').replace(/^export /gm, '');
+// Strips imports and re-exports so a component file can be evaluated as a
+// plain script in a vm context. `^export { a, b };` becomes an object literal
+// statement referencing names the context may not define, so it is dropped
+// whole (the same rule scripts/test-mouaif-tool-*.mjs use).
+const stripModule = (text) => text
+  .replace(/^import .*;$/gm, '')
+  .replace(/^export \{.*?\};$/gms, '')
+  .replace(/^export /gm, '');
+const source = (file) => stripModule(fs.readFileSync(new URL('../frontend/src/components/' + file, import.meta.url), 'utf8'));
+// The group model lives outside components/ (frontend/src/toolGroups.js), so
+// it needs its own reader — and it has to be evaluated into the context before
+// the tree, exactly as the bundler would resolve the import.
+const modelSource = () => stripModule(fs.readFileSync(new URL('../frontend/src/toolGroups.js', import.meta.url), 'utf8'));
 // A component referenced as `h(Name)` must be imported or declared in the same
 // file. The render below strips the imports and injects the names it needs, so
 // it cannot catch the opposite mistake: a name that renders on this page but is
@@ -115,6 +126,7 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
   vm.runInContext(PROJECT_NAV, context);
   const AGENT_NAV = source('settings/agentNavigation.js');
   vm.runInContext(AGENT_NAV, context);
+  vm.runInContext(modelSource(), context);
   vm.runInContext(source('ToolTree.jsx'), context);
   vm.runInContext(source('settingsProjectUi.js'), context);
   vm.runInContext(source('SettingsProject.jsx'), context);

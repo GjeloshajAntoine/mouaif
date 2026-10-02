@@ -30,6 +30,8 @@ Project settings renders the tree with `collapsedByDefault: true`, so nested gro
 
 `ToolTree` is only the renderer; the `groups` array is produced by three builders in the same module. All three emit the **same row content** for a native tool — `name`, a `shortDesc`-clamped `description`, and the full text as `title` — so a tool reads identically wherever it is listed:
 
+All three builders iterate the same `TOOL_GROUPS` array, so a tool that moves between groups moves on every surface at once (`groupAuthKey(id)` resolves a row's gate; a category has none).
+
 | Builder | Caller | Checked state comes from | Authorization control |
 |---|---|---|---|
 | `buildToolGroups(catalog, mcpServers, filter, usedTools)` | chat tools card (`chat/cards.js`), composer popup (`chat/ToolPopup.jsx`), prompt preset (`SettingsPrompts.jsx`) | the per-chat `tools` filter (`null` = all on) | yes — `ToolAuthSeg`, injected by the caller as `control` |
@@ -99,7 +101,7 @@ The settings tree renders one group per configured MCP server (group checkbox = 
 
 ### Categories: several ordinary tools, one row
 
-A category is a group row whose children are ordinary native functions, grouped so the tree reads as a category (chevron, children, count) instead of twelve flat rows. `MOUAIF_TOOL_GROUPS` in `frontend/src/components/ToolTree.jsx` holds the two ids (**Chats**, **mouaif**) and the function names under each; `src/tools/appToolNames.js` owns the operation names and schema fields, and each function maps to its own catalog `source` (`chats` or `mouaif`).
+A category is a group row whose children are ordinary native functions, grouped so the tree reads as a category (chevron, children, count) instead of twelve flat rows. `TOOL_GROUPS` in `frontend/src/toolGroups.js` holds every group — the two categories (**Chats**, **mouaif**) plus one entry per native tool family — and the function names under each; `src/tools/appToolNames.js` owns the operation names and schema fields. See [Tool groups](../../features/tool-groups.md) for the model and the generated server mirror.
 
 Every row is a real function, so nothing needs an alias:
 

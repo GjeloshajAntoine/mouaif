@@ -7,7 +7,8 @@
 import { fetchJson } from '../../api.js';
 import { afterTranscriptAppend } from './scroll.js';
 import { h, render } from 'preact';
-import { ToolTree, buildToolGroups, groupToolNames, childToolName, toolPermission, isCategoryGroup, categoryMode } from '../ToolTree.jsx';
+import { ToolTree, buildToolGroups, groupToolNames, childToolName, toolPermission } from '../ToolTree.jsx';
+import { isCategoryGroup, categoryMode, groupAuthKey, isBinaryTool } from '../../toolGroups.js';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
 import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
@@ -121,16 +122,6 @@ head.appendChild(scoped);
   // — subagent included — renders the same ToolAuthSeg component from
   // ../settings/toolAuth.js, so no row can drift from the others.
   const auth = state.toolAuth || {};
-  const toolByGroup = {
-    shell: 'shell',
-    subagent: 'subagent',
-    task: 'task',
-    ask_user: 'ask_user',
-    report_progress: 'report_progress',
-    webpreview: 'webpreview',
-    restart_app: 'restart_app',
-    files: 'file'
-  };
   for (const g of groups) {
     // A category row (Chats, mouaif) carries a segment like every other
     // group row, but its children are ordinary functions with no family key
@@ -151,15 +142,18 @@ head.appendChild(scoped);
       });
       continue;
     }
-    const toolName = toolByGroup[g.id];
+    // The authorization key and the mode list come from the app-wide group
+    // model, so a family row never carries a hand-written copy of the map.
+    const toolName = groupAuthKey(g.id);
     if (!toolName) continue;
+    const meta = isBinaryTool(g.id) ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES;
     const cur = auth[toolName] || { mode: 'ask' };
     g.control = h(ToolAuthSeg, {
       tool: toolName,
-      name: toolName,
+      name: g.name,
       mode: cur.mode,
       allowlist: cur.allowlist,
-      modes: toolName === 'ask_user' ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
+      modes: meta,
       namePrefix: 'chat-auth-' + g.id,
       // A tap writes THIS CHAT's mode in one request. The endpoint
       // replaces the entry, so the stored value always equals the tap;

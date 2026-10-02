@@ -15,7 +15,8 @@ import { agentQuery, agentEditorPath } from './settings/agentNavigation.js';
 import { backHref, backTarget } from './settings/projectNavigation.js';
 import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
 import { back as goBack, replace, replaceUrl } from '../router.js';
-import { ToolTree, buildAgentToolGroups, APP_TOOL_NAMES } from './ToolTree.jsx';
+import { ToolTree, buildAgentToolGroups } from './ToolTree.jsx';
+import { TOOL_GROUPS } from '../toolGroups.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { ThinkingSelectField } from './ThinkingSelectField.jsx';
 import './settings/agents.css';
@@ -25,27 +26,11 @@ function resolveProjectDir(view) {
   return (activeProject.value && activeProject.value.dir) || '';
 }
 
-// The tool allowlist choices shown on an agent's editor. Native tools
-// plus one entry per configured MCP server (appended at runtime).
-const NATIVE_TOOL_CHOICES = [
-  { value: 'shell', label: 'shell' },
-  { value: 'subagent', label: 'subagent' },
-  { value: 'task', label: 'task' },
-{ value: 'webpreview', label: 'webpreview' },
-{ value: 'restart_app', label: 'restart_app' },
-  ...APP_TOOL_NAMES.map((name) => ({ value: name, label: name })),
-{ value: 'report_progress', label: 'report_progress' },
-
-  { value: 'ask_user', label: 'ask_user' },
-  { value: 'list_features', label: 'list_features' },
-  { value: 'read_file', label: 'read_file' },
-  { value: 'list_files', label: 'list_files' },
-  { value: 'search_files', label: 'search_files' },
-  { value: 'write_file', label: 'write_file' },
-  { value: 'edit_file', label: 'edit_file' },
-  { value: 'group_read', label: 'group_read' },
-  { value: 'group_edit', label: 'group_edit' }
-];
+// The tool allowlist choices shown on an agent's editor. Native tools come
+// from the app-wide group model (../toolGroups.js), so a tool that moves
+// between groups is still offered here and the rows read in tree order.
+const NATIVE_TOOL_CHOICES = TOOL_GROUPS.flatMap((group) => group.tools)
+  .map((name) => ({ value: name, label: name }));
 
 function toolChoicesWithMcp(servers) {
   return NATIVE_TOOL_CHOICES.concat(

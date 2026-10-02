@@ -87,6 +87,7 @@ One page per feature: what it does and how to use it.
 - [Tool authorization](features/tool-authorization.md) — Off, Ask, and Allow for every tool, and the approval card.
 - [Tool popup](features/tool-popup.md) — change tool visibility and approval mode from the chat header.
 - [Tool tree](features/tool-tree.md) — the list of tools with their checkboxes and approval modes.
+- [Tool groups](features/tool-groups.md) — which tool belongs to which group, defined once for every tool list.
 - [Tool card expanded view](features/tool-card-expanded-view.md) — what an expanded tool card shows, for every tool type.
 - [Live tool preview](features/live-tool-preview.md) — live tool output when you return to a running chat.
 - [Shell tool](features/shell-tool.md) — the model runs commands in the project and reads the output.

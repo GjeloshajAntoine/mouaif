@@ -21,19 +21,26 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const source = fs.readFileSync('frontend/src/components/ToolTree.jsx', 'utf8')
-  .replace(/^import .*;$/gm, '').replace(/^export /gm, '');
+// The group model lives in its own module now (frontend/src/toolGroups.js),
+// so the tree's own `import` of it is stripped like every other import and
+// the module is evaluated first, in the same context. That is what lets
+// `ToolTree.jsx` keep working unmodified in the vm.
+const strip = (source) => source
+  .replace(/^import .*;$/gm, '')
+  .replace(/^export \{.*?\};$/gms, '')
+  .replace(/^export /gm, '');
 const context = vm.createContext({
   useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
   useEffect: () => {},
   useRef: () => ({ current: new Set() }),
   h: (tag, props, ...children) => ({ tag, props: props || {}, children: children.flat(9).filter((c) => c != null && c !== false) })
 });
-vm.runInContext(source, context);
+vm.runInContext(strip(fs.readFileSync('frontend/src/toolGroups.js', 'utf8'))
+  + '\n' + strip(fs.readFileSync('frontend/src/components/ToolTree.jsx', 'utf8')), context);
 const { buildToolGroups } = context;
 // `const` at the top level of a vm script does not become a property of the
-// context object, so read the export the way the tree does — by evaluating it.
-const MOUAIF_TOOL_GROUPS = vm.runInContext('MOUAIF_TOOL_GROUPS', context);
+// context object, so read the model the way the tree does — by evaluating it.
+const MOUAIF_TOOL_GROUPS = vm.runInContext('CATEGORY_GROUPS', context);
 // Values built inside the VM realm have that realm's Array prototype, so
 // `deepStrictEqual` would compare prototypes and fail on identical contents.
 // Compare the serialized form instead — the shape is what this file asserts.

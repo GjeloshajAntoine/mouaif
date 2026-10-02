@@ -91,11 +91,16 @@ function buildFeatureSummary(opts) {
       feat.push('[file tools](off|ask|allow) → ' + s.mode + (s.mode === 'allowlist' ? ' (' + (Array.isArray(s.allowlist) ? s.allowlist.length : 0) + ' patterns)' : ''));
     }
   }
-  // mouaif app tool (chats, attachments, app/project settings, projects)
-  for (const name of require('./tools/appToolNames.js').TOOL_NAMES) {
-    const cfg = authz && authz.tools && authz.tools[name];
-    if (cfg && cfg.mode !== 'off') feat.push('[' + name + '](off|ask|allow) → ' + cfg.mode);
-  }
+  // Native chat / app tools, one line per app-wide group (the groups are
+  // defined in frontend/src/toolGroups.js and mirrored to
+  // frontend/build/toolGroups.json, so the summary names match the tree rows
+  // a user sees). The catalog is the same one GET /api/tools/list serves.
+  let nativeCatalog = [];
+  try {
+    const { listNativeTools } = require('./server-handlers-tools.js');
+    nativeCatalog = listNativeTools();
+  } catch { /* catalog unavailable; the group lines are skipped */ }
+  for (const line of require('./toolGroups.js').summaryLines(nativeCatalog)) feat.push(line);
 
   // app restart
 if (authz && authz.tools && authz.tools.restart_app) {

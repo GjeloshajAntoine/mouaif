@@ -60,6 +60,20 @@ function newestSourceMtime() {
   return newest;
 }
 
+// The server reads the tool-group model from a generated JSON mirror
+// (frontend/build/toolGroups.json) — the UI holds the single source of truth
+// in frontend/src/toolGroups.js. Regenerating on every install is cheap and
+// keeps a source checkout (and the `mouaif serve` it runs) in step, even
+// before the Vite build runs.
+function ensureToolGroups() {
+  const generator = path.join(ROOT, 'scripts', 'build-tool-groups.js');
+  if (!fs.existsSync(generator)) return;
+  const result = spawnSync(process.execPath, [generator], { cwd: ROOT, stdio: 'ignore' });
+  if (result.error || result.status !== 0) {
+    log('Tool-group mirror could not be regenerated; the committed file is used.');
+  }
+}
+
 // The Vite build copies frontend/public/ verbatim, so the generated icons
 // must exist before it runs. The generator is deterministic and overwrites
 // its outputs, so regenerating on every install is cheap and keeps a fresh
@@ -74,6 +88,7 @@ function ensureIcons() {
 }
 
 function main() {
+  ensureToolGroups();
   ensureIcons();
 
   if (!fs.existsSync(VITE_BIN)) {
