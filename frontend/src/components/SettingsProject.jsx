@@ -659,16 +659,24 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
       setEditorStatusMsg('must be a JSON object');
       return;
     }
+    const unset = Object.keys(currentProject).filter((key) => !Object.prototype.hasOwnProperty.call(parsed, key));
     setSaveDisabled(true);
+    try {
     const r = await fetchJson('/api/settings/project', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ projectDir: d }, parsed))
+      // The endpoint merges patches; removed editor keys need its explicit
+      // unset list. Request scope must never come from the edited JSON.
+      body: JSON.stringify({ ...parsed, projectDir: d, unset })
     });
-    setSaveDisabled(false);
     if (r.status !== 200) { setEditorStatusMsg('HTTP ' + r.status); return; }
-    setEditorStatusMsg('saved');
     await load(d);
+    setEditorStatusMsg('saved');
+    } catch (err) {
+    setEditorStatusMsg('save failed: ' + (err.message || String(err)));
+    } finally {
+    setSaveDisabled(false);
+    }
   }
 
   function revertRaw() {

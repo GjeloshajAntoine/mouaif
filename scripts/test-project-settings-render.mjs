@@ -53,7 +53,11 @@ segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
       }
       return { status: 200, body: authorization };
       }
-      return { status: 200, body: {} };
+      const { projectDir: scope, unset = [], ...values } = patch;
+      assert.equal(scope, projectDir);
+      project = { ...project, ...values };
+      for (const key of unset) delete project[key];
+      return { status: 200, body: { project } };
       }
       assert.equal(init?.method, undefined, 'render/load must not write settings');
       requests.push(url);
@@ -162,6 +166,23 @@ assert.equal(actionRows.flatMap((g) => g.tools).filter((t) => t.checked).length,
 assert.equal(actionRows[0].tools[0].checked, false);
 assert.equal(actionRows[1].checked, true, 'other category remains selected');
 assert.ok(actionView.requests.some((request) => request.tools?.list_chats?.mode === 'off'), 'action mode is saved independently');
+
+const rawView = createView({ promptSize: 'extensive', name: 'keep me', tools: { shell: { mode: 'ask' } } });
+rawView.render(); await rawView.load();
+for (const edited of [{ name: 'keep me' }, {}]) {
+  rawView.render('technical').find((n) => n.attrs.id === 'sp-project-editor').attrs.onInput({ target: { value: JSON.stringify(edited) } });
+  await rawView.render('technical').find((n) => n.tag === 'button' && n.children.includes('Save file')).attrs.onClick();
+  assert.deepEqual(JSON.parse(rawView.render('technical').find((n) => n.attrs.id === 'sp-project-editor').attrs.value), edited, 'removed raw keys stay removed after reload');
+}
+assert.deepEqual(rawView.requests.filter((r) => r.unset).map((r) => r.unset), [['promptSize', 'tools'], ['name']]);
+for (const failure of [{ saveStatus: 503 }, { saveError: 'network unavailable' }]) {
+  const view = createView({ name: 'original' }, [], failure);
+  view.render(); await view.load();
+  view.render('technical').find((n) => n.attrs.id === 'sp-project-editor').attrs.onInput({ target: { value: '{}' } });
+  await view.render('technical').find((n) => n.tag === 'button' && n.children.includes('Save file')).attrs.onClick();
+  assert.equal(view.render('technical').find((n) => n.tag === 'button' && n.children.includes('Save file')).attrs.disabled, false, 'failed raw saves can be retried');
+  assert.equal(view.render('technical').find((n) => n.attrs.id === 'sp-project-editor').attrs.value, '{}', 'failure keeps editor contents');
+}
 
 const permissionCatalog = [
   { name: 'shell', kind: 'native', source: 'shell' },

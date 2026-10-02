@@ -6,7 +6,7 @@ Two surfaces in this commit. The REST surface is the endpoints the mobile UI cal
 
 The endpoints build on [App and project settings](./app-and-project-settings.md). The current UI manages app-level provider connections and project settings.
 
-Project settings use a simple mobile-first list. Technical details (the raw `.mouaif.json` editor and resolved values) are on a dedicated page linked at the very bottom. Every agent row also opens a dedicated configuration page for its instructions, model, tools, and deletion action.
+Project settings use a simple mobile-first list. Technical details (the raw `.mouaif.json` editor and resolved values) are on a dedicated page linked at the very bottom. **Save file** applies the edited object, including removal of top-level keys: removed keys are sent through the existing `unset` field so they fall back to app defaults. Failed saves keep the draft and re-enable Save for retry. Every agent row also opens a dedicated configuration page for its instructions, model, tools, and deletion action.
 
 ## Usage
 
