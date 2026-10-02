@@ -1,5 +1,69 @@
 [
   {
+    "id": "shell",
+    "name": "Shell",
+    "source": "shell",
+    "authKey": "shell",
+    "tools": [
+      "shell"
+    ]
+  },
+  {
+    "id": "subagent",
+    "name": "Subagent",
+    "source": "subagent",
+    "authKey": "subagent",
+    "tools": [
+      "subagent"
+    ]
+  },
+  {
+    "id": "ask_user",
+    "name": "Ask user",
+    "source": "ask_user",
+    "authKey": "ask_user",
+    "tools": [
+      "ask_user"
+    ],
+    "binary": true
+  },
+  {
+    "id": "task",
+    "name": "Task",
+    "source": "task",
+    "authKey": "task",
+    "tools": [
+      "task"
+    ]
+  },
+  {
+    "id": "webpreview",
+    "name": "Web preview",
+    "source": "webpreview",
+    "authKey": "webpreview",
+    "tools": [
+      "webpreview"
+    ]
+  },
+  {
+    "id": "restart_app",
+    "name": "Restart app",
+    "source": "restart",
+    "authKey": "restart_app",
+    "tools": [
+      "restart_app"
+    ]
+  },
+  {
+    "id": "list_features",
+    "name": "Feature report",
+    "source": "features",
+    "tools": [
+      "list_features"
+    ],
+    "gated": false
+  },
+  {
     "id": "chats",
     "name": "Chats",
     "kind": "category",
@@ -28,61 +92,6 @@
     ]
   },
   {
-    "id": "shell",
-    "name": "Shell",
-    "source": "shell",
-    "authKey": "shell",
-    "tools": [
-      "shell"
-    ]
-  },
-  {
-    "id": "subagent",
-    "name": "Subagent",
-    "source": "subagent",
-    "authKey": "subagent",
-    "tools": [
-      "subagent"
-    ]
-  },
-  {
-    "id": "task",
-    "name": "Task",
-    "source": "task",
-    "authKey": "task",
-    "tools": [
-      "task"
-    ]
-  },
-  {
-    "id": "ask_user",
-    "name": "Ask user",
-    "source": "ask_user",
-    "authKey": "ask_user",
-    "tools": [
-      "ask_user"
-    ],
-    "binary": true
-  },
-  {
-    "id": "webpreview",
-    "name": "Web preview",
-    "source": "webpreview",
-    "authKey": "webpreview",
-    "tools": [
-      "webpreview"
-    ]
-  },
-  {
-    "id": "restart_app",
-    "name": "Restart app",
-    "source": "restart",
-    "authKey": "restart_app",
-    "tools": [
-      "restart_app"
-    ]
-  },
-  {
     "id": "report_progress",
     "name": "Progress updates",
     "source": "progress",
@@ -106,14 +115,5 @@
       "group_read",
       "group_edit"
     ]
-  },
-  {
-    "id": "list_features",
-    "name": "Feature report",
-    "source": "features",
-    "tools": [
-      "list_features"
-    ],
-    "gated": false
   }
 ]

@@ -28,6 +28,21 @@
 // complete inventory of the native tools the UI knows about.
 
 export const TOOL_GROUPS = Object.freeze([
+  // Row order is the tree order every surface renders: the single-tool
+  // families first, the two chat/app categories after the feature report,
+  // then progress updates and the file family.
+  { id: 'shell', name: 'Shell', source: 'shell', authKey: 'shell', tools: ['shell'] },
+  { id: 'subagent', name: 'Subagent', source: 'subagent', authKey: 'subagent', tools: ['subagent'] },
+  { id: 'ask_user', name: 'Ask user', source: 'ask_user', authKey: 'ask_user', tools: ['ask_user'], binary: true },
+  { id: 'task', name: 'Task', source: 'task', authKey: 'task', tools: ['task'] },
+  { id: 'webpreview', name: 'Web preview', source: 'webpreview', authKey: 'webpreview', tools: ['webpreview'] },
+  { id: 'restart_app', name: 'Restart app', source: 'restart', authKey: 'restart_app', tools: ['restart_app'] },
+  // The feature report is a read-only metadata tool: the server serves it
+  // without passing through the authorization gate, so it has no Off /
+  // Ask / Allow in project settings (the row explains that instead of
+  // showing a control that would not do anything).
+  { id: 'list_features', name: 'Feature report', source: 'features', tools: ['list_features'], gated: false },
+
   // ---- Chat and app tools, grouped so they read as categories ----------
   {
     id: 'chats',
@@ -44,15 +59,6 @@ export const TOOL_GROUPS = Object.freeze([
     tools: ['get_settings', 'update_settings', 'list_projects', 'get_app_info']
   },
 
-  // ---- One row per tool family ----------------------------------------
-  // A family is one tool with one authorization gate, so the group row and
-  // its only child carry the same mode.
-  { id: 'shell', name: 'Shell', source: 'shell', authKey: 'shell', tools: ['shell'] },
-  { id: 'subagent', name: 'Subagent', source: 'subagent', authKey: 'subagent', tools: ['subagent'] },
-  { id: 'task', name: 'Task', source: 'task', authKey: 'task', tools: ['task'] },
-  { id: 'ask_user', name: 'Ask user', source: 'ask_user', authKey: 'ask_user', tools: ['ask_user'], binary: true },
-  { id: 'webpreview', name: 'Web preview', source: 'webpreview', authKey: 'webpreview', tools: ['webpreview'] },
-  { id: 'restart_app', name: 'Restart app', source: 'restart', authKey: 'restart_app', tools: ['restart_app'] },
   { id: 'report_progress', name: 'Progress updates', source: 'progress', authKey: 'report_progress', tools: ['report_progress'] },
   {
     id: 'files',
@@ -61,12 +67,7 @@ export const TOOL_GROUPS = Object.freeze([
     authKey: 'file',
     description: 'read, list, search, write, edit · batches',
     tools: ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit']
-  },
-  // The feature report is a read-only metadata tool: the server serves it
-  // without passing through the authorization gate, so it has no Off /
-  // Ask / Allow in project settings (the row explains that instead of
-  // showing a control that would not do anything).
-  { id: 'list_features', name: 'Feature report', source: 'features', tools: ['list_features'], gated: false }
+  }
 ]);
 
 // GROUP_BY_ID — id -> entry, so a surface holding only a group id (a tap
