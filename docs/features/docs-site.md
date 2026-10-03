@@ -28,13 +28,13 @@ The generated `features/*.html`, `index.html`, `documentation.html`, `assets/` a
 
 ## Landing page capability sections
 
-The landing page (`index.html`) shows eleven phone-width captures of the running app, so a reader sees what the app actually does rather than only reading about it. Under the hero, the `#screens` section is **one section per capability**: each carries its own H2 title, one short paragraph saying what the capability is and why it is different, and that capability's capture.
+The landing page (`index.html`) shows twelve phone-width captures of the app UI, so a reader sees what the app actually does rather than only reading about it. Under the hero, the `#screens` section is **one section per capability**: each carries its own H2 title, one short paragraph saying what the capability is and why it is different, and that capability's capture.
 
 The `#screens` wrapper itself carries **no heading and no lead paragraph**. An earlier revision put "What it does that others do not" and a line about 390 px captures above the first section, which stacked a third heading on top of the first section's own H2 and pushed the first real capture further down the phone screen for no information a reader could use. The hero's tagline already says what the app is, and the sections say the rest.
 
 The sections are ordered by how much they distinguish the app, not by navigation order — the chat run, the terminal, git and the editor come first, and the configuration screens (settings, project settings) are deliberately **not** sections at all: a page that lists its own settings is a manual, not a pitch.
 
-The eleven sections, in page order:
+The twelve sections, in page order:
 
 | Section | Capture | What it shows |
 |---------|---------|---------------|
@@ -44,6 +44,7 @@ The eleven sections, in page order:
 | **Edit the file, not a diff of it** | `editor.png` | The file editor with `src/store.js` open — the project tree, the **Draft Craft / Revert / Save** row, highlighted JavaScript with three lines selected, and the byte count |
 | **Draw on the bug instead of describing it** | `draft-craft.png` | The **Draft Craft** annotator over an attached image — a pen stroke, a numbered pin carrying text, the marker list, and **Use annotated image** |
 | **Nothing sensitive runs unnamed** | `subagent-auth.png` | A **subagent** approval card on a paused run — the delegated task, the per-run model picker and thinking select, and the **Allow once / Allow session / Always allow / Deny** buttons |
+| **Share one image, not the whole chat** | `subagent-images.png` | An illustrative fixture using the real transcript renderer: explicitly selected input, delegated image task, and returned artwork beside the answer |
 | **A DevTools built for a phone** | `inspector.png` | The Inspector attached to a page over CDP — target bar, panel chips, live preview, console input |
 | **Chats belong to a project** | `chats-list.png` | The Chats tab — project cards, each holding its own scrolling chat list and **New chat** |
 | **A chat that starts configured** | `chat-tools.png` | A brand-new chat — the model picker, then the tools list (Progress updates, File tools with its leaves, Agent files, Skills), one checkbox and one **Off / Ask / Allow** control per row |
@@ -60,6 +61,7 @@ docs/features/images/landing/
   editor.png             # File editor, src/store.js with three lines selected, 390 × 700 @2x
   draft-craft.png        # Draft Craft annotator, stroke + labeled pin, 390 × 700 @2x
   subagent-auth.png      # Subagent approval card, per-run model + thinking, 390 × 700 @2x
+  subagent-images.png    # Explicit image-sharing fixture, input + artwork, 390 × 700 @2x
   inspector.png          # Inspector attached over CDP, 390 × 700 @2x
   chats-list.png         # Chats tab, 390 × 700 @2x
   chat-tools.png         # Empty chat, tools list expanded, 390 × 700 @2x
@@ -85,11 +87,14 @@ Because the section is on the site root, its `src` values are prefixed `features
 
 ### Refreshing the captures
 
-Every capture is produced by one command:
+Refresh the app-screen captures and the explicit image-sharing example:
 
 ```bash
 npm run docs:shots
+npm run docs:shots:subagent-images
 ```
+
+The image-sharing capture uses [scripts/capture-subagent-image-shot.mjs](../../scripts/capture-subagent-image-shot.mjs): an isolated page mounts the production transcript renderer and stylesheet, with local illustrative input/output artwork. It never contacts an AI provider or reads app storage. The script captures 390 × 700 at 2× and checks input/output visibility, overflow, and the input lightbox at 360, 390, and 430 px. The presentation caption identifies it as an illustrative fixture.
 
 [scripts/capture-landing-shots.js](../../scripts/capture-landing-shots.js) is self-contained: it creates a throwaway `MOUAIF_HOME` under the OS temp dir, writes a small fixture project (source files, `AGENTS.md`, one git commit) plus a second, empty one and registers both, connects seven app-level providers, seeds three project models (two chat models and `whisper-1`, which is what makes the Dictate page show a picked model) and a chat whose transcript is a real agentic run (the chat capture scrolls to the end of the run, then back to the first message the top edge would cut), starts a static page for the Inspector to attach to, launches a headless Chrome with `--remote-debugging-port`, and boots the app server on an ephemeral port. Each screen is then a fresh tab emulated at 390 × 700 CSS px with a device scale factor of 2, so the PNGs are 780 × 1400 and stay sharp on a retina phone.
 

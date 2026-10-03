@@ -56,6 +56,18 @@ When the model needs a product choice or approval, it can present a structured q
 
 Configure these under the project settings. Delegated runs appear as expandable cards in the parent chat.
 
+### Share only the selected image
+
+The main model can give a subagent specific chat images for visual review or image editing. **Attachments are never forwarded automatically**: it lists the available images, selects their references, and passes only those in the delegated call. Other attachments stay out of that call.
+
+A vision-capable agent sees the chosen picture alongside its task. An image-generation agent can return artwork, which previews with its answer in the parent chat and remains available after reload.
+
+![Mobile subagent card showing one explicitly selected blue-bird input and returned artwork, rendered from illustrative fixture content.](./images/landing/subagent-images.png)
+
+*Illustrative local image-editing fixture, captured with the real chat renderer at 390 px. No paid provider call was used to create this example.*
+
+See [Subagent image generation](./subagent-image-generation.md) for selection options, supported providers, and limits.
+
 ## MCP integrations
 
 MCP connects additional tools, such as browser automation or external services.

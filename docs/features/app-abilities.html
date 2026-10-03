@@ -10,6 +10,13 @@
   <meta property="og:title" content="App abilities — mouaif docs" />
   <meta property="og:description" content="mouaif organizes AI-assisted work by project. Each project can have its own models, instructions, tools, agents, and chats while provider connections remain…" />
   <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/app-abilities.html" />
+  <meta property="og:image" content="https://gjeloshajantoine.github.io/mouaif/features/images/landing/subagent-images.png" />
+  <meta property="og:image:alt" content="mouaif organizes AI-assisted work by project. Each project can have its own models, instructions, tools, agents, and chats while provider connections remain…" />
+  <meta property="og:image:width" content="780" />
+  <meta property="og:image:height" content="1400" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://gjeloshajantoine.github.io/mouaif/features/images/landing/subagent-images.png" />
+  <meta name="twitter:image:alt" content="mouaif organizes AI-assisted work by project. Each project can have its own models, instructions, tools, agents, and chats while provider connections remain…" />
   <link rel="stylesheet" href="../assets/site.css" />
 </head>
 <body>
@@ -63,6 +70,12 @@
 <h2 id="agents-and-skills">Agents and skills</h2>
 <ul><li><p><strong>Agents</strong> are named project personas that can handle delegated work with their own model and instructions.</p></li><li><p><strong>Skills</strong> are reusable instruction sets discovered from the project and enabled for a chat.</p></li><li><p><strong>Agent instruction files</strong> such as <code>AGENTS.md</code>, <code>CLAUDE.md</code>, and configured alternatives can provide project guidance automatically.</p>
 <p>Configure these under the project settings. Delegated runs appear as expandable cards in the parent chat.</p></li></ul>
+<h3 id="share-only-the-selected-image">Share only the selected image</h3>
+<p>The main model can give a subagent specific chat images for visual review or image editing. <strong>Attachments are never forwarded automatically</strong>: it lists the available images, selects their references, and passes only those in the delegated call. Other attachments stay out of that call.</p>
+<p>A vision-capable agent sees the chosen picture alongside its task. An image-generation agent can return artwork, which previews with its answer in the parent chat and remains available after reload.</p>
+<p><img src="images/landing/subagent-images.png" alt="Mobile subagent card showing one explicitly selected blue-bird input and returned artwork, rendered from illustrative fixture content." loading="lazy" /></p>
+<p><em>Illustrative local image-editing fixture, captured with the real chat renderer at 390 px. No paid provider call was used to create this example.</em></p>
+<p>See <a href="subagent-image-generation.html">Subagent image generation</a> for selection options, supported providers, and limits.</p>
 <h2 id="mcp-integrations">MCP integrations</h2>
 <p>MCP connects additional tools, such as browser automation or external services.</p>
 <ol><li><p>Open <strong>Settings → MCP servers</strong>.</p></li><li><p>Add a server manually or browse the registry.</p></li><li><p>Enable it globally or for a project.</p></li><li><p>Set its authorization mode before using it in chat.</p>

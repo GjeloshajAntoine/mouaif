@@ -183,13 +183,29 @@ try {
     // Both layouts must exist: the flip is what alternates the capture sides.
     assert.ok(sections.some((s) => s[0].includes('screen--flip')), 'no flipped screen section');
     assert.ok(sections.some((s) => !s[0].includes('screen--flip')), 'no unflipped screen section');
-    for (const id of ['chat', 'terminal', 'git', 'editor', 'draft-craft', 'approvals', 'inspector', 'chats', 'providers']) {
+    for (const id of ['chat', 'terminal', 'git', 'editor', 'draft-craft', 'approvals', 'subagent-images', 'inspector', 'chats', 'providers']) {
     assert.ok(sections.some((s) => s[1] === id), 'no screen section for ' + id);
     }
     // The old bare grid is gone; its rules would leave the sections unstyled.
     const css = fs.readFileSync(path.join(pub.out, 'assets', 'site.css'), 'utf8');
     assert.ok(!/\.shot-row\b/.test(css), 'site.css still carries the retired .shot-row rules');
     assert.match(css, /\.screen--flip \{/, 'site.css has no .screen--flip rule');
+  });
+
+  check('presentation documents explicit subagent images with a capture', () => {
+    const landing = fs.readFileSync(path.join(pub.out, 'index.html'), 'utf8');
+    const section = /id="subagent-images">([\s\S]*?)<\/section>/.exec(landing);
+    assert.ok(section, 'missing image-sharing presentation section');
+    assert.ok(section[1].includes('No images transfer automatically'));
+    assert.ok(section[1].includes('features/images/landing/subagent-images.png'));
+    for (const slug of ['app-abilities', 'subagent-image-generation']) {
+      const guide = fs.readFileSync(path.join(pub.out, 'features', slug + '.html'), 'utf8');
+      assert.ok(guide.includes('images/landing/subagent-images.png'), slug + ' needs the capture');
+      assert.ok(/never (forwarded|transfer)|never forwarded|No images transfer/i.test(guide), slug + ' must explain opt-in sharing');
+    }
+    const png = fs.readFileSync(path.join(pub.out, 'features/images/landing/subagent-images.png'));
+    assert.equal(png.readUInt32BE(16), 780, 'retina phone capture width');
+    assert.equal(png.readUInt32BE(20), 1400, 'retina phone capture height');
   });
 
   check('guide card summaries do not end on a dangling colon', () => {

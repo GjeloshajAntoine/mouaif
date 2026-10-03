@@ -45,6 +45,7 @@
     "docs:publish": "node scripts/publish-docs.js",
     "docs:shots": "node scripts/capture-landing-shots.js",
     "docs:shots:draft-craft": "node scripts/capture-draft-craft-shots.js",
+    "docs:shots:subagent-images": "node scripts/capture-subagent-image-shot.mjs",
     "test:dictation": "node scripts/test-dictation.js && node scripts/test-dictation-http.mjs && node scripts/test-dictation-page.mjs && node scripts/test-dictation-catalog-live.mjs && node scripts/test-dictation-chat.cjs && node --check scripts/test-dictation-ui.mjs",
     "test:ask-user": "node scripts/test-ask-user.js && node scripts/test-ask-card-dedupe.js && node scripts/test-ask-card-summary.mjs && node scripts/test-ask-card-submit.mjs",
     "test:flush-scroll": "node scripts/test-flush-scroll.mjs",

@@ -1334,9 +1334,10 @@ ${shotFigure(src, alt, caption)}
 function buildLandingPage(outDir) {
 // One entry per app screen: the section title, its one-sentence description,
 // then the capture. Titles are the page's H2s; `id` is the anchor a link can
-// point at. Every capture is produced by `scripts/capture-landing-shots.js`,
-// which boots a throwaway MOUAIF_HOME, seeds the demo project and shoots each
-// screen over CDP; run it after a UI change instead of re-taking one by hand.
+// point at. General captures use `scripts/capture-landing-shots.js`, which
+// boots a throwaway app home and demo project. The selected-image fixture
+// uses `scripts/capture-subagent-image-shot.mjs` with the production renderer.
+// Both shoot over CDP; rerun after UI changes instead of capturing by hand.
 //
 // A new screen means a new entry here plus (when it needs its own frame) a
 // shot in scripts/capture-landing-shots.js — the section, its title and its
@@ -1389,6 +1390,14 @@ const landingScreens = [
     src: 'features/images/landing/subagent-auth.png',
     alt: 'A subagent authorization card at 390 px: the delegated task, the per-run model picker and thinking select, and the Allow once / Allow session / Always allow / Deny buttons.',
     caption: 'Approvals — pick the model before you allow a run'
+  },
+  {
+    id: 'subagent-images',
+    title: 'Share one image, not the whole chat',
+    text: 'The main model chooses which attachments a subagent receives. No images transfer automatically: only selected references enter the delegated task. A vision or image model can inspect or refine that picture, and returned artwork stays visible beside its answer in the parent chat.',
+    src: 'features/images/landing/subagent-images.png',
+    alt: 'Illustrative fixture using the real chat renderer at 390 px: the main model shares only blue-bird.png with Artist, the nested user bubble previews that input, and the image-model reply contains refined artwork and accompanying text.',
+    caption: 'Subagents — selected image in, artwork back (illustrative fixture)'
   },
   {
     id: 'inspector',
