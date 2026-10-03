@@ -996,6 +996,7 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}) {
   // providers reject that orphan on the next send with HTTP 400. The helper
   // also canonicalizes provider-specific call ids for cross-model resumes.
   const supportsOpenAIToolHistory = model.provider === 'openai-compatible'
+    || model.provider === 'codex' // converted to Responses function_call/function_call_output
     || model.provider === 'openrouter'
     || model.provider === 'github-copilot'
     || model.provider === 'anthropic'; // converted to tool_use/tool_result by buildAnthropicRequest

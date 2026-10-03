@@ -237,33 +237,55 @@ export function SettingsProviderEditView(props) {
     setSignInStatusType('error');
   }
 
-  // GitHub Copilot device sign-in: the server asks GitHub for a short code,
-  // the user enters it at github.com/login/device (on any device), and the
-  // server polls until GitHub issues the token. No callback URL is involved,
-  // so it works from a phone, a LAN address, or behind a proxy.
+  // Device sign-in works on a phone without a loopback callback.
   const [deviceFlow, setDeviceFlow] = useState(null);
+  const [deviceStarting, setDeviceStarting] = useState(false);
   const deviceIdRef = useRef(null);
-  useEffect(() => () => {
-    if (deviceIdRef.current) fetchJson('/api/auth/device/github-copilot?id=' + encodeURIComponent(deviceIdRef.current), { method: 'DELETE' }).catch(() => {});
-  }, []);
+  const deviceEndpoint = '/api/auth/device/' + encodeURIComponent(currentId);
+  const deviceService = currentId === 'codex' ? 'ChatGPT' : 'GitHub';
+  useEffect(() => {
+    setDeviceFlow(null);
+    setDeviceStarting(false);
+    return () => {
+      const flow = deviceIdRef.current;
+      deviceIdRef.current = null;
+      if (flow?.id) fetchJson(flow.endpoint + '?id=' + encodeURIComponent(flow.id), { method: 'DELETE' }).catch(() => {});
+    };
+  }, [currentId]);
 
   async function startDeviceSignIn() {
-    setSignInStatusMsg('asking GitHub for a code…');
+    if (deviceIdRef.current) return;
+    const request = { id: null, endpoint: deviceEndpoint };
+    deviceIdRef.current = request;
+    setDeviceStarting(true);
+    setSignInStatusMsg('asking ' + deviceService + ' for a code…');
     setSignInStatusType('busy');
     let r;
-    try { r = await fetchJson('/api/auth/device/github-copilot', { method: 'POST' }); }
-    catch (err) { setSignInStatusMsg('network error'); setSignInStatusType('error'); return; }
-    if (r.status !== 200) { setSignInStatusMsg((r.body && r.body.error) || ('HTTP ' + r.status)); setSignInStatusType('error'); return; }
+    try { r = await fetchJson(deviceEndpoint, { method: 'POST' }); }
+    catch (err) {
+      if (deviceIdRef.current !== request) return;
+      deviceIdRef.current = null;
+      setSignInStatusMsg('network error'); setSignInStatusType('error'); return;
+    } finally { if (deviceIdRef.current === request || deviceIdRef.current === null) setDeviceStarting(false); }
+    if (deviceIdRef.current !== request) {
+      if (r.status === 200 && r.body?.id) fetchJson(deviceEndpoint + '?id=' + encodeURIComponent(r.body.id), { method: 'DELETE' }).catch(() => {});
+      return;
+    }
+    if (r.status !== 200) {
+      deviceIdRef.current = null;
+      setSignInStatusMsg((r.body && r.body.error) || ('HTTP ' + r.status)); setSignInStatusType('error'); return;
+    }
     const flow = r.body;
-    deviceIdRef.current = flow.id;
+    deviceIdRef.current = { id: flow.id, endpoint: deviceEndpoint };
     setDeviceFlow(flow);
-    setSignInStatusMsg('enter the code on GitHub, then come back here');
+    setSignInStatusMsg('enter the code on ' + deviceService + ', then come back here');
     setSignInStatusType('busy');
-    while (deviceIdRef.current === flow.id && Date.now() < flow.expiresAt + 5000) {
+    while (deviceIdRef.current?.id === flow.id && Date.now() < flow.expiresAt + 5000) {
       await new Promise((res) => setTimeout(res, 2000));
-      if (deviceIdRef.current !== flow.id) return;
+      if (deviceIdRef.current?.id !== flow.id) return;
       let st;
-      try { st = await fetchJson('/api/auth/device/github-copilot?id=' + encodeURIComponent(flow.id)); } catch { continue; }
+      try { st = await fetchJson(deviceEndpoint + '?id=' + encodeURIComponent(flow.id)); } catch { continue; }
+      if (deviceIdRef.current?.id !== flow.id) return;
       if (st.status !== 200 || !st.body) continue;
       if (st.body.status === 'pending') continue;
       deviceIdRef.current = null;
@@ -272,7 +294,7 @@ export function SettingsProviderEditView(props) {
         try {
           const next = await loadAccounts({ force: true });
           setAccountsMap(next);
-          syncOauthAccountOptions('github-copilot', next, current);
+          syncOauthAccountOptions(currentId, next, current);
         } catch { /* the list refreshes on the next load */ }
         setSignInStatusMsg('signed in as ' + st.body.account + ' — tap Save');
         setSignInStatusType('success');
@@ -282,20 +304,25 @@ export function SettingsProviderEditView(props) {
       }
       return;
     }
+    if (deviceIdRef.current?.id === flow.id) {
+      cancelDeviceSignIn();
+      setSignInStatusMsg('The code expired. Start sign-in again.');
+      setSignInStatusType('error');
+    }
   }
 
   function cancelDeviceSignIn() {
-    const id = deviceIdRef.current;
+    const flow = deviceIdRef.current;
     deviceIdRef.current = null;
     setDeviceFlow(null);
     setSignInStatusMsg('');
     setSignInStatusType('');
-    if (id) fetchJson('/api/auth/device/github-copilot?id=' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {});
+    if (flow?.id) fetchJson(flow.endpoint + '?id=' + encodeURIComponent(flow.id), { method: 'DELETE' }).catch(() => {});
   }
 
   async function copyDeviceCode() {
     if (!deviceFlow) return;
-    try { await navigator.clipboard.writeText(deviceFlow.userCode); setSignInStatusMsg('code copied — paste it on GitHub'); }
+    try { await navigator.clipboard.writeText(deviceFlow.userCode); setSignInStatusMsg('code copied — paste it on ' + deviceService); }
     catch { /* clipboard blocked; the code is on screen */ }
   }
 
@@ -394,6 +421,7 @@ export function SettingsProviderEditView(props) {
 
   function onProviderChange(e) {
     const pid = e.target.value;
+    cancelDeviceSignIn();
     setCurrentId(pid);
     setAuthMode(resolveAuthMode(pid, current));
     setBaseUrlVal((cur) => nextBaseUrl(pid, current, cur));
@@ -451,18 +479,20 @@ export function SettingsProviderEditView(props) {
           oauthAccountOptions.map((opt, i) => h('option', { key: i, value: opt.value, disabled: opt.disabled }, opt.text))
         )
       ),
-      currentId === 'github-copilot' ? h('div', { class: 'row row--oauth row--copilot-device' },
-        h('p', { class: 'hint hint--compact' }, 'Sign in with a one-time code: works from this phone, a LAN address, or behind a proxy. Needs an active Copilot plan on the GitHub account.'),
+      def && def.deviceAuth ? h('div', { class: 'row row--oauth row--copilot-device' },
+      h('p', { class: 'hint hint--compact' }, currentId === 'codex'
+      ? 'Enable device code authorization in ChatGPT Settings → Security, then enter the code below. Only approve codes you requested here.'
+      : 'Sign in with a one-time code: works from this phone, a LAN address, or behind a proxy. Needs an active Copilot plan on the GitHub account.'),
         deviceFlow
           ? h('div', { class: 'copilot-device' },
               h('button', { class: 'copilot-device__code', type: 'button', onClick: copyDeviceCode, 'aria-label': 'Copy code ' + deviceFlow.userCode, title: 'Copy code' }, deviceFlow.userCode),
               h('div', { class: 'row row--actions' },
-                h('a', { class: 'btn btn--primary', href: deviceFlow.verificationUri, target: '_blank', rel: 'noopener noreferrer' }, 'Open github.com/login/device'),
+                h('a', { class: 'btn btn--primary', href: deviceFlow.verificationUri, target: '_blank', rel: 'noopener noreferrer' }, currentId === 'codex' ? 'Open ChatGPT sign-in' : 'Open github.com/login/device'),
                 h('button', { class: 'btn btn--ghost', type: 'button', onClick: cancelDeviceSignIn }, 'Cancel')
               )
             )
           : h('div', { class: 'row row--actions' },
-              h('button', { class: 'btn btn--primary', type: 'button', onClick: startDeviceSignIn }, 'Sign in with GitHub code')
+              h('button', { class: 'btn btn--primary', type: 'button', onClick: startDeviceSignIn, disabled: deviceStarting }, 'Sign in with ' + deviceService + ' code')
             ),
         h('span', { class: 'status' + (signInStatusType ? ' status--' + signInStatusType : ''), 'aria-live': 'polite' }, signInStatusMsg)
       ) : null,
@@ -480,7 +510,7 @@ export function SettingsProviderEditView(props) {
           h('button', { class: 'btn', type: 'button', onClick: startSignIn }, 'Sign in with browser redirect')
         )
       ),
-      h('div', { class: hide(effAuth !== 'oauth' || currentId === 'github-copilot') + ' row--oauth' },
+      h('div', { class: hide(effAuth !== 'oauth' || (def && def.deviceAuth)) + ' row--oauth' },
         h('div', { class: 'auth__help-inline' },
           h('p', { class: 'hint hint--compact' }, 'Sign in to this provider below; the OAuth-account list refreshes automatically.'),
           h('div', { class: 'row row--actions' },

@@ -19,6 +19,7 @@ const {
   oauthOpenRouter,
   safeDecode
 } = require('./server-shared.js');
+const oauthCodex = require('./oauth-codex.js');
 
 // The URL the OAuth provider must redirect the user's browser back to.
 // The old hard-coded loopback (`http://127.0.0.1:<port>/oauth/callback`)
@@ -170,13 +171,14 @@ async function handleAuth(req, res, parsed, serverConfig) {
   // POST /api/auth/device/github-copilot            -> { id, userCode, verificationUri, expiresAt, status }
   // GET  /api/auth/device/github-copilot?id=<id>    -> same shape; status pending|ok|expired|denied|error|cancelled
   // DELETE /api/auth/device/github-copilot?id=<id>  -> { ok }
-  // GitHub device flow: no callback URL, so it works from a phone, a LAN
-  // address, or behind a proxy, with the shipped public client_id. The
-  // server polls GitHub itself and stores the token on success.
-  if (urlPath === '/api/auth/device/github-copilot') {
+  // GitHub Copilot and Codex device flows share this public contract.
+  // No callback URL, so both work from a phone, LAN, or reverse proxy.
+  // Each provider polls upstream and stores its token server-side.
+  if (urlPath === '/api/auth/device/github-copilot' || urlPath === '/api/auth/device/codex') {
+    const deviceProvider = urlPath.endsWith('/codex') ? oauthCodex : oauthCopilot;
     if (method === 'POST') {
       try {
-        return sendJSON(res, 200, await oauthCopilot.startDeviceFlow());
+        return sendJSON(res, 200, await deviceProvider.startDeviceFlow());
       } catch (e) {
         return sendJSON(res, e.code === 'EDEVICE_DISABLED' ? 400 : 502, { error: e.message, code: e.code || 'EUPSTREAM' });
       }
@@ -184,10 +186,10 @@ async function handleAuth(req, res, parsed, serverConfig) {
     const id = qs(q, 'id');
     if (!id) return sendJSON(res, 400, { error: 'id is required' });
     if (method === 'GET') {
-      const flow = oauthCopilot.getDeviceFlow(id);
+      const flow = deviceProvider.getDeviceFlow(id);
       return flow ? sendJSON(res, 200, flow) : sendJSON(res, 404, { error: 'device sign-in not found', code: 'ENOPENDING' });
     }
-    if (method === 'DELETE') return sendJSON(res, 200, { ok: oauthCopilot.cancelDeviceFlow(id) });
+    if (method === 'DELETE') return sendJSON(res, 200, { ok: deviceProvider.cancelDeviceFlow(id) });
     return sendJSON(res, 405, { error: 'Method not allowed' });
   }
 

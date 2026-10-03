@@ -20,6 +20,7 @@ The built-in providers are:
 - **OpenAI compatible** — any OpenAI-shaped endpoint (OpenAI, Together, LM Studio, llama.cpp `llama-server`). The key may be left blank for a local server that needs none, see [Local OpenAI-compatible servers](./local-openai-servers.md).
 - **Anthropic** — API key or browser sign-in, see [Anthropic sign-in](./oauth-anthropic.md).
 - **Google Gemini** — API key.
+- **OpenAI Codex** — use your ChatGPT plan with device-code sign-in, see [OpenAI Codex](./codex.md).
 - **Ollama** — local server, no API key required.
 - **OpenRouter** — one key for many upstream models, or browser sign-in, see [OpenRouter](./openrouter.md).
 - **GitHub Copilot** — sign in with a GitHub one-time code, see [GitHub Copilot](./github-copilot.md).

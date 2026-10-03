@@ -37,6 +37,7 @@ One page per feature: what it does and how to use it.
 - [OpenRouter](features/openrouter.md) — one key for many upstream models, with browser sign-in.
 - [Anthropic sign-in](features/oauth-anthropic.md) — sign in with an Anthropic account instead of an API key.
 - [GitHub Copilot](features/github-copilot.md) — chat with your Copilot plan's models after a one-time-code GitHub sign-in.
+- [OpenAI Codex](features/codex.md) — use your ChatGPT plan with device sign-in, Responses streaming, and tool calls.
 - [Model picker](features/model-picker.md) — search, filter by provider, and switch the chat's model.
 - [Model bookmarks](features/model-bookmarks.md) — pinned and recently used models at the top of the picker.
 - [Thinking level](features/thinking-level.md) — choose how much the model reasons, when the provider supports it.

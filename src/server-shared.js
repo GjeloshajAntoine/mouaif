@@ -31,6 +31,7 @@ const qr = require('./qr.js');
 const oauthAnthropic = require('./oauth-anthropic.js');
 const oauthCopilot = require('./oauth-github-copilot.js');
 const oauthOpenRouter = require('./oauth-openrouter.js');
+const oauthCodex = require('./oauth-codex.js');
 
 // Register each per-provider exchange function with the auth skeleton.
 // Idempotent; safe to call from require-time side effects because
@@ -43,6 +44,7 @@ const oauthOpenRouter = require('./oauth-openrouter.js');
 oauthAnthropic.register();
 oauthCopilot.register();
 oauthOpenRouter.register();
+oauthCodex.register();
 const chats = require('./chats.js');
 const messages = require('./messages.js');
 const trace = require('./trace.js');

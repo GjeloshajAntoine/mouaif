@@ -46,7 +46,7 @@ const settings = require('./settings.js');
 // will show entries with the full name; we do not strip the prefix.
 const SERVICE_PREFIX = 'mouaif';
 
-const SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'google', 'github-copilot', 'openrouter'];
+const SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'google', 'github-copilot', 'openrouter', 'codex'];
 
 function serviceName(provider) {
   if (!SUPPORTED_PROVIDERS.includes(provider)) {
@@ -191,6 +191,7 @@ const AI_TO_AUTH_PROVIDER = Object.freeze({
   'gemini':            'google',
   'ollama':            'ollama', // no keychain; rejected upstream as a non-OAuth model
   'github-copilot':    'github-copilot',
+  'codex':             'codex',
   // Azure, Mistral, Groq, DeepSeek and the other OpenAI-shaped
   // providers take API keys only; they map to their own keyring
   // namespaces so a key stored under one provider is never treated

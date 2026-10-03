@@ -16,6 +16,7 @@
 // differs) an entry in src/auth.js.
 
 const { joinUrl, firstStringField } = require('./util.js');
+const codex = require('./ai-codex.js');
 
 // openAIShapedListModels(def, cred, signal) — shared fetch + error
 // mapping for the OpenAI-shaped /models adapters (openai-compatible,
@@ -45,6 +46,7 @@ async function openAIShapedListModels(def, cred, signal) {
 // ---- Provider endpoints ------------------------------------------------
 
 const ENDPOINTS = {
+  'codex': codex.endpoint,
   'openai-compatible': {
     baseUrl: 'https://api.openai.com/v1',
     chatPath: '/chat/completions',
@@ -844,6 +846,9 @@ function endpointFor(model) {
 // expiring access token (and persist the new blob) before the chat
 // hits the wire. The API-key path is sync-fast and does not await.
 async function requireApiKey(model, def) {
+  if (def && def.oauthOnly && model.auth !== 'oauth') {
+    throw Object.assign(new Error('Codex requires ChatGPT sign-in. Use OpenAI compatible for API keys.'), { code: 'ENOAUTH' });
+  }
   if (model.auth === 'oauth') {
     // OAuth path: the access token comes from the OS keychain via
     // src/auth.js. The keychain is keyed by auth provider (openai,
@@ -938,6 +943,12 @@ async function requireApiKey(model, def) {
       }
     }
     model.__accessToken = parsed.accessToken;
+    if (model.provider === 'codex') {
+      model.__chatgptAccountId = parsed.chatgptAccountId || require('./oauth-codex.js').accountIdFor(parsed.accessToken);
+      if (!model.__chatgptAccountId) {
+        throw Object.assign(new Error('ChatGPT account ID is missing. Sign in to Codex again.'), { code: 'ENOAUTH' });
+      }
+    }
     // Per-request Copilot token exchange. The keychain holds a
     // long-lived GitHub OAuth token; api.githubcopilot.com expects
     // a short-lived Copilot API token in the Authorization header.
@@ -1681,6 +1692,7 @@ function buildOllamaRequest(model, messages, stream) {
 }
 
 const BUILDERS = {
+  'codex': codex.buildRequest,
   'openai-compatible': buildOpenAIRequest,
   'anthropic': buildAnthropicRequest,
   'gemini': buildGeminiRequest,
@@ -1704,6 +1716,7 @@ const BUILDERS = {
 // the UI can render it for debugging.
 
 const PARSERS = {
+  'codex': codex.parseEvent,
   'openai-compatible': parseOpenAISSE,
   'github-copilot':   parseOpenAISSE,
   'openrouter':       parseOpenAISSE,     // OpenAI-shaped SSE; [DONE] sentinel suppressed
