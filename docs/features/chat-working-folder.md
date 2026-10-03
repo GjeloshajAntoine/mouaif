@@ -2,11 +2,11 @@
 
 ## Overview
 
-The `change_working_folder` chat tool gives a conversation its own working directory for isolated or partial development. By default it creates a workspace under the original project's `.mouaif/`; in a Git repository this is a separate Git worktree and branch, without changing the original checkout.
+The `change_working_folder` chat tool gives a conversation its own working directory for isolated or partial development. It can switch to an existing directory, or create a default workspace under the original project's `.mouaif/` (in a Git repository a separate Git worktree and branch, without changing the original checkout). Creating that default workspace is **opt-in**, off by default.
 
 ## Usage
 
-For implementation requests, the built-in coding prompts tell the assistant to create a workspace before editing or launching coding subagents, **even if you did not ask for a folder**. They suggest `.mouaif/workspaces/<chatId>` and tell it to keep any selected or explicitly requested folder. Questions and reviews do not need a new workspace.
+For implementation requests the built-in coding prompts tell the assistant to call `change_working_folder` once before editing or launching coding subagents. It creates a workspace **only when the project enables _Allow automatic workspaces_**, which is off by default: with the option off the tool returns `EOFF` and the assistant keeps working in the project folder. Questions and reviews never need a workspace, and a folder you selected or requested is always kept. Turning the option off is therefore the difference between "the model may isolate itself" and "the model only changes folders when you ask".
 
 You can also choose the folder explicitly:
 
@@ -16,17 +16,17 @@ Switch this chat's working folder to ./packages/my-feature.
 Return this chat to the original project folder.
 ```
 
-The tool appears under **Chats** in the chat Tools card, composer tools popup, and Settings → Project → Tools. It inherits the Chats authorization family and supports its own Off / Ask / Allow override. Unconfigured permissions default to Ask: proactive use still needs normal tool approval, not a separate product question. Off or unselected tools cannot be used. This is prompt guidance, not automatic folder creation when a chat opens; chats use the original project until the tool succeeds. The plain Chat profile has no coding system guidance, but the tool description still recommends proactive use for implementation work.
+The tool appears under **Chats** in the chat Tools card, composer tools popup, and Settings → Project → Tools. It inherits the Chats authorization family and supports its own Off / Ask / Allow override. Unconfigured permissions default to Ask: the model's call still needs normal tool approval, not a separate product question. Off or unselected tools cannot be used. This is prompt guidance, not automatic folder creation when a chat opens; chats use the original project until the tool succeeds. The Chat profile has no coding system guidance, but the tool description still explains the opt-in and the `EOFF` result.
 
 ### Arguments
 
 | Argument | Meaning |
 | --- | --- |
 | `chatId` | Target chat; omitted means the current chat. |
-| `directory` omitted | Create or reuse `<project>/.mouaif/workspaces/<chatId>`. |
 | `directory: "packages/my-feature"` | Use an existing directory relative to the original project, not the previous working folder. |
 | `directory: "/absolute/path"` | Use an existing absolute directory within the normal filesystem boundary. |
 | `directory: ""` or `"."` | Return to the original project folder. |
+| `directory` omitted or `directory: false` | Create or reuse `<project>/.mouaif/workspaces/<chatId>`. Requires _Allow automatic workspaces_; otherwise the call fails with `EOFF` and nothing is created. |
 
 Example tool arguments:
 
@@ -40,9 +40,20 @@ Example tool arguments:
 
 The result reports `workingDir`, `branch`, `created`, and the updated chat. The current folder also appears below the chat title and in `get_chat`. Shell and file operations use the new folder immediately, including subsequent calls in the same turn, later turns, and delegated subagent tools. Composer `@shell` uses the same folder. `attach_chat_image` reads relative image paths from the calling chat's working folder while saving attachments to the target chat in the original project.
 
+### Automatic workspaces
+
+Creating the default workspace is controlled by the project-scoped **Allow automatic workspaces** switch in Settings → Project → General (`autoWorkspace` in `.mouaif.json`). It is `false` everywhere by default — app default and project — and the resolved value is defaults → app → project, so either level can turn it on.
+
+| `autoWorkspace` | `change_working_folder` with no `directory` |
+| --- | --- |
+| off (default) | Fails with `EOFF`, referring the user to the switch. Nothing is created, and the chat's folder is unchanged. |
+| on | Creates or reuses `<project>/.mouaif/workspaces/<chatId>` as described below. |
+
+Explicit `directory` strings are unaffected: selecting an existing folder or resetting to the project root always works, on or off, and never creates anything. An unreadable or corrupt project file counts as off — a configuration error is never a reason to write to the user's checkout.
+
 ### Git workspaces
 
-For a Git project, the default creates a worktree from committed `HEAD` on branch `mouaif/chat-<chatId>`:
+With _Allow automatic workspaces_ on, a Git project gets a worktree from committed `HEAD` on branch `mouaif/chat-<chatId>`:
 
 ```text
 <project>/.mouaif/workspaces/<chatId>

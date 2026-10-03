@@ -49,6 +49,7 @@ export function SettingsDefaultsView() {
   const [enterForNewline, setEnterForNewline] = useState(true);
   const [autoRetry, setAutoRetry] = useState(true);
 const [fileOrb, setFileOrb] = useState(false);
+const [autoWorkspace, setAutoWorkspace] = useState(false);
   const [dictationButton, setDictationButton] = useState(true);
   const [imageButton, setImageButton] = useState(true);
   const [statusBar, setStatusBar] = useState(true);
@@ -60,6 +61,7 @@ const [fileOrb, setFileOrb] = useState(false);
   const [enterMsg, setEnterMsg] = useState('');
   const [retryMsg, setRetryMsg] = useState('');
 const [fileOrbMsg, setFileOrbMsg] = useState('');
+  const [autoWorkspaceMsg, setAutoWorkspaceMsg] = useState('');
   const [dictationButtonMsg, setDictationButtonMsg] = useState('');
   const [imageButtonMsg, setImageButtonMsg] = useState('');
   const [statusBarMsg, setStatusBarMsg] = useState('');
@@ -72,7 +74,7 @@ const [fileOrbMsg, setFileOrbMsg] = useState('');
   // Track in-flight saves per field so a fast toggle flip doesn't race
   // an earlier in-flight request. Latest write wins; older writes' status
   // messages are dropped so the user only sees the most recent outcome.
-  const inflight = useRef({ promptSize: 0, enterForNewline: 0, autoRetry: 0, fileOrbButton: 0, dictationButton: 0, imageButton: 0, statusBar: 0 });
+  const inflight = useRef({ promptSize: 0, enterForNewline: 0, autoRetry: 0, fileOrbButton: 0, dictationButton: 0, imageButton: 0, statusBar: 0, autoWorkspace: 0 });
 
   useEffect(() => {
     (async () => {
@@ -83,6 +85,7 @@ const [fileOrbMsg, setFileOrbMsg] = useState('');
         setEnterForNewline(app.app && typeof app.app.enterForNewline === 'boolean' ? app.app.enterForNewline : true);
         setAutoRetry(app.app && typeof app.app.autoRetry === 'boolean' ? app.app.autoRetry : true);
         setFileOrb(fileOrbFromApp(app));
+        setAutoWorkspace(app.app && typeof app.app.autoWorkspace === 'boolean' ? app.app.autoWorkspace : false);
         // Both optional composer tools read from the same snapshot, so the switch and
         // the chat that obeys it cannot disagree about what the store says.
         const tools = composerToolsFromApp(app);
@@ -134,6 +137,16 @@ const v = e.currentTarget.checked;
 setFileOrb(v);
 saveField('fileOrbButton', { fileOrbButton: v }, setFileOrbMsg,
 v ? 'the file button is now a glass orb (open a chat to see it)' : 'the file button is back to the flat circle');
+}
+
+// Default for the per-chat workspace folder. App-level like the other
+// defaults: projects inherit it unless they set their own value, and it
+// only ever *allows* creation — the Chats authorization gate still asks.
+function onAutoWorkspaceChange(e) {
+const v = e.currentTarget.checked;
+setAutoWorkspace(v);
+saveField('autoWorkspace', { autoWorkspace: v }, setAutoWorkspaceMsg,
+v ? 'new projects may create per-chat workspaces' : 'projects create workspaces only when asked');
 }
 
 // The two optional composer tools. Off *hides* the button; nothing behind it
@@ -249,6 +262,36 @@ v ? 'the status line under the composer is shown again' : 'the status line under
                 h('span', { class: 'switch__thumb' })
                 )
                 )
+              )
+              ),
+              // ---- Automatic per-chat workspaces: switch-in-a-card -------
+              h('li', { class: 'settings-project__item settings-project__item--col' },
+              h('div', { class: 'settings-project__item-row' },
+              h('div', { class: 'settings-project__item-main' },
+              h('label', { class: 'settings-project__item-title', for: 'sd-auto-workspace' },
+              'Allow automatic workspaces'),
+              h('div', { class: 'settings-project__item-note' },
+              'Lets the assistant create a per-chat folder under ',
+              h('code', null, '.mouaif/workspaces/<chatId>'), ' — a Git worktree and branch when a ' +
+              'project is a repository. Off (the default) keeps every project in its own folder: ' +
+              'chats still switch folders whenever you ask for one, and selecting an existing ' +
+              'folder always works. A project can override this in its own settings. ' +
+              'Permission to call the tool is separate — use the Chats tool authorization.'),
+              h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, autoWorkspaceMsg)
+              ),
+              h('label', { class: 'switch' },
+              h('input', {
+              id: 'sd-auto-workspace',
+              type: 'checkbox',
+              role: 'switch',
+              'aria-checked': String(autoWorkspace),
+              checked: autoWorkspace,
+              onChange: onAutoWorkspaceChange
+              }),
+              h('span', { class: 'switch__track', 'aria-hidden': 'true' },
+              h('span', { class: 'switch__thumb' })
+              )
+              )
               )
               ),
               // ---- Glass orb file button: switch-in-a-card ---------------

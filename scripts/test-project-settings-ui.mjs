@@ -104,6 +104,23 @@ try {
 
   await evaluate('showPage("main")');
   await wait('document.body.textContent.includes("loaded") && !!document.querySelector(".tool-tree")');
+  // The automatic-workspace switch: off by default, saves through the same
+  // project PUT, restores on failure, and fits the narrow widths.
+  assert.equal(await evaluate('document.querySelector("#sp-auto-workspace").checked'), false, 'workspaces are opt-in by default');
+  assert.equal(await evaluate('document.querySelector("#sp-auto-workspace").getAttribute("aria-checked")'), 'false');
+  for (const width of [360, 390, 430]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+    assert.equal(await evaluate('(() => { const el = document.querySelector("#sp-auto-workspace"); const r = el.closest("label.switch").getBoundingClientRect(); return r.width >= 44 && r.height >= 44 && r.right <= innerWidth; })()'), true, `workspace switch meets touch minimum at ${width}px`);
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, `page still fits ${width}px with the workspace switch`);
+  }
+  await evaluate('document.querySelector("#sp-auto-workspace").click()');
+  await wait('fixture.project.autoWorkspace === true');
+  assert.equal(await evaluate('document.querySelector("#sp-auto-workspace").checked'), true);
+  await evaluate('fixture.fail = true; document.querySelector("#sp-auto-workspace").click()');
+  await wait('document.body.textContent.includes("HTTP 503")');
+  assert.equal(await evaluate('document.querySelector("#sp-auto-workspace").checked'), true, 'failed save restores the native checkbox');
+  await evaluate('fixture.fail = false');
   await evaluate('fixture.fail = true; document.querySelector("input[aria-label=Shell]").click()');
   await wait('document.body.textContent.includes("HTTP 503")');
   assert.equal(await evaluate('document.querySelector("input[aria-label=Shell]").checked'), true, 'failed permission save restores native checkbox');
@@ -117,7 +134,7 @@ try {
   await evaluate('Array.from(document.querySelectorAll("button")).find(el => el.textContent === "Save file").click()');
   await wait('!fixture.project.promptSize && document.querySelector("#sp-project-editor")?.value === JSON.stringify({name:"Mobile fixture"}, null, 2)');
   assert.deepEqual(await evaluate('fixture.project'), { name: 'Mobile fixture' });
-  console.log('PASS project settings at 360/390/430px: touch controls, output-size save/retry, permission failure/retry, raw-key removal');
+  console.log('PASS project settings at 360/390/430px: touch controls, automatic-workspace opt-in save/retry, output-size save/retry, permission failure/retry, raw-key removal');
 } finally {
   cdp?.close();
   if (chrome) { const exited = new Promise(resolve => chrome.once('exit', resolve)); chrome.kill(); await exited; }

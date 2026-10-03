@@ -161,7 +161,7 @@ const PARAMETERS = {
           type: 'string',
           description: 'Image path relative to the calling chat’s working folder (the project by default; e.g. "docs/features/images/shot.png").'
         },
-        directory: { type: 'string', description: 'Existing directory, relative to the original project or absolute. Omit to create/reuse a workspace under .mouaif; "" resets to the project root.' },
+        directory: { type: ['string', 'boolean', 'null'], description: 'Existing directory, relative to the original project or absolute, or "" to reset to the project root. Omit (or pass false) only to create/reuse the default .mouaif/workspaces/<chatId> workspace, which the project must allow via "Allow automatic workspaces".' },
         target: {
         type: 'string',
           enum: ['draft', 'message'],
@@ -780,11 +780,16 @@ function validateArgs(args, parameters = PARAMETERS) {
   for (const [key, value] of Object.entries(args)) {
     if (!Object.prototype.hasOwnProperty.call(properties, key)) throw typedError('EBADINPUT', 'unknown argument: ' + key);
     const schema = properties[key];
-    const valid = schema.type === 'array' ? Array.isArray(value) && value.every((item) => typeof item === schema.items.type)
-      : schema.type === 'object' ? value !== null && typeof value === 'object' && !Array.isArray(value)
-      : schema.type === 'integer' ? Number.isSafeInteger(value)
-      : typeof value === schema.type && (schema.type !== 'number' || Number.isFinite(value));
-    if (!valid) throw typedError('EBADINPUT', key + ' must be of type ' + schema.type);
+    // A `type` may be a list (e.g. ['string','boolean','null']), the JSON
+    // Schema union the `directory` argument uses.
+    const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+    const matches = (type) => type === 'array' ? Array.isArray(value) && value.every((item) => typeof item === schema.items.type)
+    : type === 'object' ? value !== null && typeof value === 'object' && !Array.isArray(value)
+    : type === 'integer' ? Number.isSafeInteger(value)
+    : type === 'null' ? value === null
+    : typeof value === type && (type !== 'number' || Number.isFinite(value));
+    const valid = types.some(matches);
+    if (!valid) throw typedError('EBADINPUT', key + ' must be of type ' + types.join(' or '));
     if (schema.minimum !== undefined && value < schema.minimum) throw typedError('EBADINPUT', key + ' must be at least ' + schema.minimum);
     if (schema.maximum !== undefined && value > schema.maximum) throw typedError('EBADINPUT', key + ' must be at most ' + schema.maximum);
     if (schema.enum && !schema.enum.includes(value)) throw typedError('EBADINPUT', 'unknown ' + key + ': ' + value);

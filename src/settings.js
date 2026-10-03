@@ -154,6 +154,13 @@ fileOrbButton: false,
   // Lives in the same default floor so projects without a key resolve to a
   // sane value.
   toolOutput: { size: 'average', structure: 'tree' },
+  // Allow `change_working_folder` to create the default workspace
+  // (`<project>/.mouaif/workspaces/<chatId>`, a Git worktree when possible).
+  // Off by default: creating a folder is a material change to the user's
+  // checkout, so it happens only once a project (or the app) opts in.
+  // Explicit `directory` arguments always work — they never create anything.
+  // See docs/features/chat-working-folder.md.
+  autoWorkspace: false,
   // Maximum UTF-8 bytes of one tool result copied into model context.
   // The complete result remains available to the UI and transcript.
   toolFeedbackMaxBytes: 64 * 1024,

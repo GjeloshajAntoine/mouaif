@@ -282,13 +282,34 @@ select.input {
 
 /* ---- Toggle switches ---------------------------------------------- */
 
+/* Touch target: the visible track stays 42x26, but the row's label wraps the
+   control and grows to the 44px mobile minimum, so the tap area meets
+   .github/copilot-instructions.md §2 without changing how the switch looks.
+   The track is re-centred inside the taller label so the row stays aligned
+   with its text. */
 .switch {
   position: relative;
   display: inline-flex;
   flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.switch__track {
+  position: absolute;
+  inset: auto;
+  left: 50%;
+  top: 50%;
   width: 42px;
   height: 26px;
-  cursor: pointer;
+  transform: translate(-50%, -50%);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-pill);
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  pointer-events: none;
 }
 .switch input[type="checkbox"] {
   position: absolute;

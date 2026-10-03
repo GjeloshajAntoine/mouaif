@@ -48,7 +48,7 @@ async function modelCalls(chat, calls, decision) {
 }
 
 async function main() {
-  assert.equal(SPECS.change_working_folder.function.parameters.properties.directory.type, 'string');
+  assert.deepEqual(SPECS.change_working_folder.function.parameters.properties.directory.type, ['string', 'boolean', 'null']);
   assert.equal(authz.effectiveConfig(projectDir, 'change_working_folder').mode, 'ask');
   git('init', '-q');
   git('config', 'user.email', 'fixture@example.test');
@@ -71,6 +71,31 @@ async function main() {
   assert.equal((await call({}, 'missing')).result.code, 'ENOTFOUND');
   assert.equal((await call({ directory: 'missing' })).result.code, 'ENOENT');
   assert.equal((await call({ directory: 'notes.txt' })).result.code, 'ENOTDIR');
+  // Creating the default workspace is opt-in: off by default it fails with
+  // EOFF and writes nothing, including the parents.
+  assert.equal(authz.effectiveConfig(projectDir, 'change_working_folder').mode, 'ask');
+  const offByDefault = await call({});
+  assert.equal(offByDefault.ok, false);
+  assert.equal(offByDefault.result.code, 'EOFF');
+  assert.equal(fs.existsSync(path.join(projectDir, '.mouaif')), false, 'EOFF creates nothing');
+  assert.equal((await call({}, chat.id)).result.code, 'EOFF', 'the default chat target is still gated');
+  assert.equal((await call({ directory: null })).result.code, 'EOFF');
+  assert.equal((await call({ directory: true })).result.code, 'EBADINPUT', 'a boolean is only meaningful as false');
+  assert.equal(chats.getChat(projectDir, chat.id).workingDir, null);
+  // The app-level default can enable creation for every project that does
+  // not set its own value; a project value overrides it either way.
+  settings.setApp({ autoWorkspace: true });
+  assert.equal((await call({ directory: 'notes.txt' })).result.code, 'ENOTDIR', 'explicit directories still never create');
+  const otherRoot = path.join(home, 'app-default');
+  fs.mkdirSync(otherRoot);
+  const appDefaultChat = chats.createChat(otherRoot, {});
+  const appDefault = await runAppTool('change_working_folder', {}, { projectDir: otherRoot, chatId: appDefaultChat.id });
+  assert.equal(appDefault.ok, true, 'app default on enables workspaces for projects without their own value');
+  assert.equal(appDefault.result.created, true);
+  settings.setProject(otherRoot, { autoWorkspace: false });
+  const projectOff = await runAppTool('change_working_folder', {}, { projectDir: otherRoot, chatId: appDefaultChat.id });
+  assert.equal(projectOff.result.code, 'EOFF', 'a project value overrides the app default');
+  settings.setApp({ autoWorkspace: false });
   if (process.env.MOUAIF_ALLOW_ANY_ROOT !== '1') {
     assert.equal((await call({ directory: os.tmpdir() })).result.code, 'EOUTSIDE_HOME');
     fs.symlinkSync(os.tmpdir(), path.join(projectDir, 'outside-link'));
@@ -87,7 +112,7 @@ async function main() {
   assert.equal(off.results[0].ok, false);
   assert.equal(off.events.some((e) => e.name === 'authorization_required'), false);
 
-  settings.setProject(projectDir, { hideFileContent: [{ path: 'notes.txt', ranges: [{ start: 2, end: 2 }] }] });
+  settings.setProject(projectDir, { hideFileContent: [{ path: 'notes.txt', ranges: [{ start: 2, end: 2 }] }], autoWorkspace: true });
   authz.setAuthorization(projectDir, { tools: {
     change_working_folder: { mode: 'allow' }, shell: { mode: 'allow' }, file: { mode: 'allow' }
   } });
@@ -176,6 +201,7 @@ async function main() {
     'a failed Git workspace leaves no target folder');
   const plain = path.join(home, 'plain');
   fs.mkdirSync(plain);
+  settings.setProject(plain, { autoWorkspace: true });
   const plainChat = chats.createChat(plain, {});
   const empty = await runAppTool('change_working_folder', {}, { projectDir: plain, chatId: plainChat.id });
   assert.equal(empty.ok, true);
@@ -183,6 +209,7 @@ async function main() {
   assert.equal(fs.readdirSync(empty.result.workingDir).length, 0);
   const cancelledRoot = path.join(home, 'cancelled');
   fs.mkdirSync(cancelledRoot);
+  settings.setProject(cancelledRoot, { autoWorkspace: true });
   const cancelledTarget = chats.createChat(cancelledRoot, {});
   const cancelSignal = new AbortController();
   cancelSignal.abort();
@@ -190,6 +217,7 @@ async function main() {
   assert.equal(fs.existsSync(path.join(cancelledRoot, '.mouaif')), false, 'a cancelled change leaves no workspace folders behind');
   const unborn = path.join(home, 'unborn');
   fs.mkdirSync(unborn);
+  settings.setProject(unborn, { autoWorkspace: true });
   execFileSync('git', ['init', '-q'], { cwd: unborn });
   const unbornChat = chats.createChat(unborn, {});
   assert.equal((await runAppTool('change_working_folder', {}, { projectDir: unborn, chatId: unbornChat.id })).result.code, 'EGIT');
@@ -197,6 +225,7 @@ async function main() {
   assert.equal(fs.existsSync(path.join(unborn, '.mouaif')), false, 'a failed change leaves no workspace folders behind');
   const redirected = path.join(home, 'redirected');
   fs.mkdirSync(redirected);
+  settings.setProject(redirected, { autoWorkspace: true });
   fs.symlinkSync(plain, path.join(redirected, '.mouaif'));
   const redirectChat = chats.createChat(redirected, {});
   assert.equal((await runAppTool('change_working_folder', {}, { projectDir: redirected, chatId: redirectChat.id })).result.code, 'EOUTSIDE_PROJECT');

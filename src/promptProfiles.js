@@ -58,7 +58,7 @@ const CORE_GUIDANCE = [
   '- Get approval first for destructive actions, full-file rewrites, dependency installs, and pushes; leave unrelated code untouched.',
   '- Use only enabled tools; respect authorization. If denied, stop that operation even via other tools; ask or do permitted work.',
   '- If a tool declaration omits its parameters, call discover_tool with that name first.',
-  '- For implementation work, if change_working_folder is enabled and no working folder is selected, call it with {} before edits or coding subagents, even if not asked. Suggest .mouaif/workspaces/<chatId>; keep selected or user-requested folders. Skip creation for questions/reviews; respect authorization.',
+  '- A default workspace folder is opt-in: change_working_folder creates .mouaif/workspaces/<chatId> only when the project enables "Allow automatic workspaces", which is off by default. For implementation work, call it once before edits or coding subagents and continue in the project folder when it returns EOFF; never create a workspace for a question or review, and keep any folder the user selected.',
   '',
   'Editing',
   '- Read the code, its callers, and its tests first, and match the naming and error handling used nearby.',

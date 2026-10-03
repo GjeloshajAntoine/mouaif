@@ -24,7 +24,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `get_chat` | Read one chat (`chatId`). `includeMessages: true` adds the last `messageLimit` messages (default 10, max 50). |
 | `create_chat` | Create a chat. `title` names it, `topic` seeds its composer draft, `providerId` + `modelId` pick its model. Returns the chat plus a `#/chat/<id>` link. |
 | `update_chat` | Change `title`, `draft`, `promptId`, `promptSize`, `providerId`, or `modelId` on an existing chat. Model changes apply to the next turn. |
-| `change_working_folder` | Change a chat's shell/file working folder. Omit `directory` to create/reuse a workspace under `.mouaif/`, with a Git worktree/branch when available; `directory: ""` resets. See [Chat working folders](./chat-working-folder.md). |
+| `change_working_folder` | Change a chat's shell/file working folder. A `directory` string selects an existing folder (or `""` to reset); omitting it (or `false`) creates/reuses a workspace under `.mouaif/` — a Git worktree/branch when available — but only when the project or app enables **Allow automatic workspaces**, otherwise it fails with `EOFF`. See [Chat working folders](./chat-working-folder.md). |
 | `search_models` | Search saved project models and configured providers’ live chat catalogs; returns bounded `providerId` / `modelId` choices with pagination and per-provider failures. |
 | `start_chat` | Send `content` to an existing `chatId` using its selected model and start a background response. Returns a chat URL without waiting for completion. |
 | `delete_chat` | Delete a chat and its transcript. Requires `confirm: true`. Refuses the chat the turn is running in. |
