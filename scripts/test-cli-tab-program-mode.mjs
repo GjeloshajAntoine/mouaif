@@ -143,7 +143,9 @@ try {
     if (await evaluate("!!document.querySelector('.cli__prompt')")) break;
     await sleep(50);
   }
-  assert.equal(await evaluate("[...document.querySelectorAll('.cli__key')].length"), 12, 'the twelve-key row is rendered');
+  assert.equal(await evaluate("[...document.querySelectorAll('.cli__key')].length"), 14, 'the two key rows carry the twelve keys and the two modifiers');
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.cli__key--mod')].map((b) => b.textContent)"), ['Ctrl', 'Fn'], 'Ctrl and Fn are the toggles in the rows');
+  assert.equal(await evaluate("[...document.querySelectorAll('.cli__key')].every((b) => b.getBoundingClientRect().height <= 34)"), true, 'the keys are small buttons, not 44 px primary targets');
 
   // 1. Seed the session history with a command, sent to a shell-owned prompt.
   await type('npm run build');
@@ -169,7 +171,7 @@ try {
   emit('\x1b[?2004h$ ');
   await sleep(200);
   assert.equal(await keysClass(), 'cli__keys', 'the shell prompt leaves program mode');
-  assert.equal(await hint(), 'Tab completes, ↑/↓ recall, ←/→ move in the prompt. ^C stops a command.');
+  assert.equal(await hint(), 'Tab completes, ↑/↓ recall. Ctrl + a letter is a control key, Fn + a digit is F1–F9.');
 
   // 4. The fix: Tab completes in the prompt again, and writes nothing.
   const before = posts.length;
@@ -259,6 +261,28 @@ try {
   await type('');
   await tapKey('Tab');
   assert.match(await hint(), /Nothing to complete/, 'an empty line reports that there is nothing to complete');
+
+  // Ctrl and Fn: two toggles that turn the next letter or digit into the control
+  // character or function key a phone keyboard cannot produce. The character
+  // never reaches the command line — it is sent and consumed.
+  await type('');
+  const beforeMod = posts.length;
+  await tapKey('Ctrl');
+  assert.equal(await evaluate("[...document.querySelectorAll('.cli__key')].find((b) => b.textContent === 'Ctrl').getAttribute('aria-pressed')"), 'true', 'tapping Ctrl arms it');
+  assert.match(await hint(), /Ctrl armed/, 'and the sheet says what it is about to do');
+  await type('c');
+  await sleep(250);
+  assert.equal(posts.length, beforeMod + 1, 'Ctrl + c writes one byte to the child');
+  assert.equal(posts[posts.length - 1].cmd, '\x03', 'it is ETX');
+  assert.equal(posts[posts.length - 1].raw, true, 'written raw, with no line terminator');
+  assert.equal(await value(), '', 'and the letter is consumed, never left on the command line');
+  assert.equal(await evaluate("[...document.querySelectorAll('.cli__key')].find((b) => b.textContent === 'Ctrl').getAttribute('aria-pressed')"), 'false', 'a spent modifier disarms itself');
+
+  await tapKey('Fn');
+  await type('2');
+  await sleep(250);
+  assert.equal(posts[posts.length - 1].cmd, '\x1bOQ', "Fn + 2 is F2's VT sequence");
+  assert.equal(await value(), '', 'and the digit is consumed too');
 
   assert.deepEqual(await evaluate('window.__fixtureErrors'), [], 'no browser runtime errors');
 

@@ -38,7 +38,14 @@
 // full-screen program may switch on and then expect instead of `ESC[`.
 //
 // `row` splits the table into the two rows of six the sheet lays out: control
-// keys first, then movement — six 44 px keys fit a 360 px column.
+// keys first, then movement — six keys fit a 360 px column even as small
+// buttons (see `.cli__key` in frontend/src/chat-composer.css).
+//
+// The table holds twelve keys plus the two modifiers (`role: 'modifier'` —
+// Ctrl and Fn): a phone keyboard has no Escape, Tab, arrows, Page keys or
+// function keys, and two small rows are what the sheet shows instead plus the
+// two keys that turn the next letter or digit into a control character or a
+// function key.
 export const CLI_KEYS = [
   { id: 'esc', row: 1, label: 'Esc', title: 'Escape — leave a full-screen program; clears the prompt at the shell', seq: '\x1b', local: 'clear' },
   { id: 'tab', row: 1, label: 'Tab', title: 'Tab — complete a path or command', seq: '\t', local: 'complete' },
@@ -46,13 +53,91 @@ export const CLI_KEYS = [
   { id: 'eof', row: 1, label: '^D', title: 'Ctrl+D — end input (EOF)', seq: '\x04' },
   { id: 'susp', row: 1, label: '^Z', title: 'Ctrl+Z — suspend the running command', seq: '\x1a' },
   { id: 'ff', row: 1, label: '^L', title: 'Ctrl+L — clear the screen', seq: '\x0c' },
-  { id: 'left', row: 2, label: '←', title: 'Left — move the cursor left', seq: '\x1b[D', app: '\x1bOD', local: 'caret-left' },
-  { id: 'up', row: 2, label: '↑', title: 'Up — previous command from this session', seq: '\x1b[A', app: '\x1bOA', local: 'history-up' },
-  { id: 'down', row: 2, label: '↓', title: 'Down — next command from this session', seq: '\x1b[B', app: '\x1bOB', local: 'history-down' },
-  { id: 'right', row: 2, label: '→', title: 'Right — move the cursor right', seq: '\x1b[C', app: '\x1bOC', local: 'caret-right' },
+  // The two modifier keys. They carry no sequence of their own: they *arm* the
+  // next thing written, so the rest of the control characters (`^A`, `^E`,
+  // `^K`, `^U`, `^W`, `^R`, `^]`…) cost no buttons — see `modifiedSequence` and
+  // `applyModifiers` below. They sit at the *end* of each row and render as
+  // toggles rather than senders (`role: 'modifier'`), so the row keeps reading
+  // left to right as the keys a phone keyboard lacks, plus one that turns the
+  // next letter into a control character.
+  // The movement keys share the first row, and the two Page keys take the
+  // second — the shape the small key row uses at 360 px (see `.cli__key` in
+  // frontend/src/chat-composer.css). Ctrl sits between the control keys and the
+  // arrows, Fn between the arrows and the pages.
+  { id: 'ctrl', row: 1, role: 'modifier', label: 'Ctrl', title: 'Ctrl — tap, then a letter: Ctrl+C is ^C', seq: '' },
+  { id: 'left', row: 1, label: '←', title: 'Left — move the cursor left', seq: '\x1b[D', app: '\x1bOD', local: 'caret-left' },
+  { id: 'up', row: 1, label: '↑', title: 'Up — previous command from this session', seq: '\x1b[A', app: '\x1bOA', local: 'history-up' },
+  { id: 'down', row: 1, label: '↓', title: 'Down — next command from this session', seq: '\x1b[B', app: '\x1bOB', local: 'history-down' },
+  { id: 'right', row: 1, label: '→', title: 'Right — move the cursor right', seq: '\x1b[C', app: '\x1bOC', local: 'caret-right' },
+  { id: 'fn', row: 1, role: 'modifier', label: 'Fn', title: 'Fn — tap, then a digit: sends F1–F9', seq: '' },
   { id: 'pgup', row: 2, label: 'PgUp', title: 'Page Up — scroll the output up', seq: '\x1b[5~', local: 'page-up' },
   { id: 'pgdn', row: 2, label: 'PgDn', title: 'Page Down — scroll the output down', seq: '\x1b[6~', local: 'page-down' }
 ];
+
+// The modifier keys by id, and the set the sheet toggles. Exported so the modal
+// (and the test) names them rather than searching the table by label.
+export const CLI_MODIFIERS = { ctrl: 'ctrl', fn: 'fn' };
+
+// modifiedSequence(key, text) → the bytes a modifier turns `text` into, or null
+// when the modifier has nothing to say about it.
+//
+//   * **Ctrl** — `text` is one character, and the byte is the character with the
+//     top three bits cleared (`& 0x1f`): `c` → `\x03` (ETX), `a` → `\x01`,
+//     `d` → `\x04`, `[` → `\x1b`. That is the whole rule — the same one a
+//     terminal applies — so *every* control character is reachable, not just the
+//     four that used to have a button. A multi-character answer (a chip, a whole
+//     typed word) is not a control character and answers null.
+//   * **Fn** — a single digit `1`–`9` is that function key's VT sequence
+//     (`ESC O P` … `ESC [ 9 ~`), because a phone has no F-row and no other way to
+//     press one.
+export function modifiedSequence(key, text) {
+  const s = String(text == null ? '' : text);
+  const id = key && typeof key === 'object' ? key.id : key;
+  if (id === 'ctrl') {
+    if (s.length !== 1) return null;
+    const code = s.charCodeAt(0);
+    if (code > 0xff) return null;
+    return String.fromCharCode(code & 0x1f);
+  }
+  if (id === 'fn') {
+    const m = /^([1-9])$/.exec(s);
+    return m ? fnSequence(Number(m[1])) : null;
+  }
+  return null;
+}
+
+// fnSequence(n) — the VT sequence for function key `n` (1–9). The first four are
+// `ESC O`, the rest `ESC [ <n> ~`, which is what xterm and every terminal
+// database on the platform describe.
+export function fnSequence(n) {
+  const SS3 = { 1: 'P', 2: 'Q', 3: 'R', 4: 'S' };
+  if (SS3[n]) return '\x1bO' + SS3[n];
+  return '\x1b[' + n + '~';
+}
+
+// applyModifiers(armed, text) → { seq, consumed }
+//
+//   * `armed` — the modifier ids currently on (`ctrl`, `fn`).
+//   * `text` — what the user was about to write: a key from the row, a chip, or
+//     the line they typed in the prompt.
+//   * `seq` — the bytes to write instead, or null when nothing applies and the
+//     caller should send `text` exactly as it always did.
+//   * `consumed` — whether the modifiers were *used*. A modifier that changed
+//     something is spent — a Ctrl+C must never turn the next command into
+//     `M-x` — and a modifier that matched nothing stays armed, so a mistyped
+//     letter costs a correction, not a second tap.
+//
+// With both armed the outer one wins: Ctrl is the byte a chord is named for, and
+// `Fn` and Ctrl are never combined in practice.
+export function applyModifiers(armed, text) {
+  const set = armed && typeof armed === 'object' ? armed : {};
+  for (const id of ['ctrl', 'fn']) {
+    if (!set[id]) continue;
+    const seq = modifiedSequence(id, text);
+    if (seq != null) return { seq, consumed: true, modifier: id };
+  }
+  return { seq: null, consumed: false, modifier: null };
+}
 
 // keyPayload(key, mode) → { seq, clearDraft, local }
 //

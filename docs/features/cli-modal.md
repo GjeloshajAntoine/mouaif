@@ -36,7 +36,7 @@ Type **`!!`** and press **Enter** to repeat the previous command — the shell's
 
 ### Keys
 
-A phone keyboard has letters, digits and Enter, and nothing a terminal actually needs. Under the prompt, two rows carry the twelve keys it lacks:
+A phone keyboard has letters, digits and Enter, and nothing a terminal actually needs. Under the prompt, two rows of **small** keys carry the ones it lacks — small because the prompt above keeps the finger-sized target and the keys are a secondary control:
 
 | Key | At the shell prompt | While a program runs |
 | --- | --- | --- |
@@ -51,6 +51,23 @@ A phone keyboard has letters, digits and Enter, and nothing a terminal actually 
 | **PgUp** / **PgDn** | scrolls the output | sends Page Up / Page Down |
 
 Every key is one raw write with **no line terminator**, so `^C` interrupts without also pressing Enter — which would answer a second prompt you never saw.
+
+#### Ctrl and Fn
+
+Two of the keys are **modifiers**, not senders, and they are what makes a small row enough: a phone keyboard has no Ctrl and no F-row at all. Tap **Ctrl** and the next character is that control key; tap **Fn** and the next digit is that function key. The character is sent as its bytes and **never reaches the command line**, so `Ctrl` + `c` is exactly `^C` and leaves the prompt as it was.
+
+| Armed | Then | Sends |
+| --- | --- | --- |
+| **Ctrl** | `c` | `\x03` — `^C`, interrupt |
+| **Ctrl** | `d` | `\x04` — `^D`, EOF |
+| **Ctrl** | `a`, `e`, `k`, `u`, `w`, `r`, `]`, … | the matching control key (`\x01`, `\x05`, …) |
+| **Ctrl** | `[` | `ESC` |
+| **Fn** | `1`–`4` | `F1`–`F4` (`ESC O P` … `ESC O S`) |
+| **Fn** | `5`–`9` | `F5`–`F9` (`ESC [ 5 ~` …) |
+
+The Ctrl rule is the terminal's own — the character with its top three bits cleared — so **every** control character is reachable, not just the four with a button. `Fn` is the only way to press a function key on a phone (`F1` help in a pager, `F3` search in `less`, `F10` quit in `mc`).
+
+An armed modifier is spent by the next thing you do, so a `Ctrl` that was tapped by mistake can never swallow the letter after the one you meant. It also stays armed when the character it got has no meaning for it (`Fn` + `z`), and the line under the keys says what is armed: `Ctrl armed — a letter is that control key: c is ^C, u is ^U, [ is Esc.` And a letter meant as a modifier never lands in the line: it is written to the child instead.
 
 The modal picks the column for you. bash and zsh announce it themselves: they switch the terminal's bracketed-paste mode on at their prompt and off when a command starts, and a full-screen program (`less`, `top`, `vim`) switches to the alternate screen. While a program has the input, the rows get a blue edge and the line under them says `Keys go to the running program — ^C stops it, Esc leaves it.` If the program switches the arrows to *application* mode (as `less` and `vim` do), the arrows send that form. The shell takes the column back as soon as it prints its next prompt — including after a full-screen program was **killed** with `^C`, which never gets to restore the screen itself.
 
@@ -99,8 +116,8 @@ You can also run multiple commands in one session — the shell keeps its state 
 npm run test:cli
 ```
 
-- `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key rows, and Tab/↑/↓ (the key table's sequences, that at the shell Tab/arrows/Page keys/Esc edit the prompt and write nothing while to a program every key writes its sequence — application-mode arrows included — and the hardware-key mapping, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator.
-- `scripts/test-cli-tab-program-mode.mjs` — browser regression (real built app + fixture API, phone width): a full-screen program takes the alternate screen and is then killed without restoring it, and the test asserts the shell's next prompt marker leaves program mode and **Tab completes in the prompt again** (writing nothing to the child), while a live program still receives Tab as a raw byte.
+- `scripts/test-cli-suggest.js` — unit-tests the suggestion row, the key rows, and Tab/↑/↓ (the key table's sequences, that at the shell Tab/arrows/Page keys/Esc edit the prompt and write nothing while to a program every key writes its sequence — application-mode arrows included — and the hardware-key mapping, how a tab a phone keyboard typed into the field is split off, that Tab completes the line in the field — history command first, then the project's top-level names — and that no completion ever empties the field, the ↑/↓ walk over the session history, who owns stdin from bracketed-paste markers split across chunks, which lines the history keeps, the ranking and the cap). Every key is asserted byte for byte, including that none of them carries a line terminator, and the modifiers are asserted the same way: Ctrl is the character with its top three bits cleared (`c` → `\x03`, and it re-derives the four ^-keys the table still carries), `Fn` + a digit is that function key's VT sequence, an armed modifier consumes its character and a modifier that matched nothing does not.
+- `scripts/test-cli-tab-program-mode.mjs` — browser regression (real built app + fixture API, phone width): a full-screen program takes the alternate screen and is then killed without restoring it, and the test asserts the shell's next prompt marker leaves program mode and **Tab completes in the prompt again** (writing nothing to the child), while a live program still receives Tab as a raw byte. It also asserts the two rows render the small keys (nothing above 34 px, so the row is a secondary control rather than the finger-sized target the prompt is) plus the two modifiers, and that a touch on **Ctrl** then a typed `c` writes `\x03` raw and leaves the prompt empty — the character a phone keyboard cannot type.
 - `scripts/test-cli-session-newline.js` — drives the real endpoints and asserts a plain `ls` lists the project files (the terminator rule).
 - `scripts/test-cli-strip-ansi.js` — unit-tests `stripAnsi` / `CliScreen`, including every escape-sequence family split at every pair of positions and fed one code point at a time.
 - `scripts/test-cli-utf8-split.js` — feeds `attachCliStream` UTF-8 split at every byte boundary, on the PTY and piped paths, and asserts no `�` reaches the broadcast.

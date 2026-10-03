@@ -1477,23 +1477,29 @@ color: var(--muted);
   flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 0 12px 8px;
+  gap: 3px;
+  padding: 0 12px 6px;
   background: #0b0e14;
 }
+/* The keys are small on purpose. Six 44 px keys filled a 360 px column (the
+   row *was* the whole bottom of the sheet), which left no room for the two
+   modifier keys (`Ctrl`, `Fn`) under it. At 30 px they are a secondary control:
+   the prompt above keeps the finger-sized target, and the keys a phone
+   keyboard lacks are still one tap away — the tap target stays readable and
+   the hit area is widened by the gap, the way a keyboard's own rows are. */
 .cli__key {
   font: inherit;
   font-family: var(--font-mono, monospace);
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   line-height: 1;
-  /* Six keys per row share a phone's width evenly; the cap keeps them from stretching
-     into bars on the desktop card (the sheet is 860 px there), where `flex: 1`
-     alone would give each one 130 px. */
+  /* The row's keys share a phone's width evenly; the cap keeps them from
+     stretching into bars on the desktop card (the sheet is 860 px there),
+     where `flex: 1` alone would give each one 130 px. */
   flex: 1 1 0;
-  min-width: 44px;
-  max-width: 72px;
-  min-height: 44px;               /* --tap: the project's tap floor */
-  padding: 0 4px;
+  min-width: 0;
+  max-width: 56px;
+  min-height: 30px;
+  padding: 0 5px;
   color: #d7e0ee;
   background: #11151d;
   border: 1px solid #222a38;
@@ -1511,10 +1517,27 @@ color: var(--muted);
   cursor: not-allowed;
   transform: none;
 }
-/* Two rows of six keys: the first sits flush under the prompt, the second
-   under it. While a program owns stdin every key goes to it as bytes, so the
-   rows take the prompt's accent to say so; nothing is dimmed — every key is
-   live in both modes. */
+/* The two modifier keys (`Ctrl`, `Fn`) are narrower and sit at a fixed size
+   instead of sharing the row: they are toggles, not keys, so they do not need
+   to line up with the keys they modify. */
+.cli__key--mod {
+  flex: 0 0 auto;
+  padding: 0 9px;
+  font-size: 0.64rem;
+  letter-spacing: 0.02em;
+}
+/* Armed: the next letter or digit becomes a control character or a function
+   key (see `armed` in CliModal.jsx). The accent is the terminal's own — the
+   prompt mark and the program-mode key borders use it too. */
+.cli__key[aria-pressed='true'] {
+  color: #cfe6ff;
+  background: #1b2f3f;
+  border-color: #4fc1ff;
+}
+/* Two key rows: the first sits flush under the prompt, the second under it.
+   While a program owns stdin every key goes to it as bytes, so the rows take
+   the prompt's accent to say so; nothing is dimmed — every key is live in both
+   modes. */
 .cli__keys + .cli__keys { padding-top: 0; }
 .cli__keys.is-prompt .cli__key:not(:disabled) {
   border-color: #23435a;

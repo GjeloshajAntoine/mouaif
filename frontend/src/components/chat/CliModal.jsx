@@ -41,7 +41,7 @@ import { h } from 'preact';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
-import { CLI_KEYS, cursorKeyMode, keepEditorFocus, keyForEvent, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
+import { CLI_KEYS, applyModifiers, cursorKeyMode, keepEditorFocus, keyForEvent, keyPayload, lineEditorState, splitTypedTab } from './cliKeys.js';
 import { rememberCommand, suggestionsFor, completeLocally, cycleStep, completionReport, listDirFor, listingFor, stepHistory } from './cliSuggest.js';
 import { CliScreen } from './utils.js';
 
@@ -394,6 +394,35 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     return queueRef.current;
   }, [projectDir, writeOut]);
 
+  // ---- armed modifiers ----------------------------------------------
+  // Ctrl and Fn (see CLI_KEYS in cliKeys.js) are *modifiers*: a tap arms one,
+  // and the next letter or digit typed becomes a control character (`c` → ETX)
+  // or a function key (`2` → F2). That is how a small key row reaches every
+  // control character — a phone keyboard has no Ctrl at all — without a button
+  // per letter.
+  //
+  // `armed` is UI state *and* the thing the handlers read, so the arming tap and
+  // the read are never a render apart: arming only fires an `onClick` (the input
+  // is not a control, so every tap rebuilds no field), and the `input` handler
+  // that reads it fires later still.
+  const [armed, setArmed] = useState({});
+  const armedRef = useRef(armed);
+  armedRef.current = armed;
+  const toggleArm = useCallback((id) => {
+    if (!id) return;
+    setArmed((a) => (a[id] ? {} : { [id]: true }));
+  }, []);
+  // A modifier describes the *next* key, so anything else the user does spends
+  // it (see spendArmed).
+  const spendArmed = useCallback(() => {
+    if (armedRef.current.ctrl || armedRef.current.fn) { armedRef.current = {}; setArmed({}); }
+  }, []);
+  // Both modifiers are told apart in one place; the label under the rows says
+  // what the armed one is about to do.
+  const armedLabel = armed.ctrl ? 'Ctrl armed — a letter is that control key: c is ^C, u is ^U, [ is Esc.'
+    : armed.fn ? 'Fn armed — a digit is a function key: 1 is F1, 2 is F2.'
+      : '';
+
   // sendKey(key) — one on-screen key from the row below the prompt (see
   // keyPayload in cliKeys.js). Every key is a raw write: a terminator after
   // Ctrl+C would also press Enter, answering a prompt the user has not seen.
@@ -429,9 +458,11 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   }
 
   // sendKey(key) — one key, from the row or a hardware key press: a local
-  // edit while the shell owns the line, raw bytes while a program does.
+  // edit while the shell owns the line, raw bytes while a program does. A
+  // modifier key (`role: 'modifier'`) arms or disarms instead of sending.
   function sendKey(key) {
     if (!key) return;
+    if (key.role === 'modifier') { toggleArm(key.id); return; }
     const payload = keyPayload(key, { program: programMode(), appCursor: appCursorRef.current });
     switch (payload.local) {
       case 'complete': complete(); return;
@@ -448,7 +479,10 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     // The answer to "the key did nothing": a full-screen program reads the
     // key, then redraws — follow it to the bottom.
     pinnedRef.current = true;
+    // A modifier that turned this key into a different byte (Ctrl + a letter,
+    // Fn + a digit) is spent; one that matched nothing stays armed.
     post(payload.seq, true);
+    spendArmed();
   }
 
   // fetchDir(relDir) — make one directory the completion source, listing it if
@@ -528,18 +562,48 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     if (el) { el.value = stepped.text; el.setSelectionRange(stepped.text.length, stepped.text.length); }
   }
 
-  // onPromptInput — the field's `input` handler. A phone keyboard's Tab key
-  // usually arrives here as a literal HT in the text rather than as a Tab
-  // `keydown` (see splitTypedTab in cliKeys.js), so the text before the tab is
-  // completed exactly like a tap on the key row's Tab, and anything after it
-  // stays in the field.
+  // onPromptInput — the field's `input` handler, which is where the modifiers
+  // land. Everything a phone keyboard has arrives here as text — a letter, a
+  // digit, a tab it typed instead of a Tab key press — so the modifiers are read
+  // off the same text: `Ctrl` + `c` is a tap on the modifier and then a `c` in
+  // the field, `Fn` + `2` a tap and then a `2`.
+  //
+  // The field's whole value is offered to the armed modifier, and a single
+  // character is what applies (see applyModifiers in cliKeys.js). When it lands,
+  // the character is *consumed*: it is sent as its bytes and the prompt is left
+  // as it was, so `c` under Ctrl never appears on the command line.
+  //
+  // A modifier is for the next key, so it is spent here whether or not it changed
+  // anything — a Ctrl armed by mistake cannot silently hold back the letter you
+  // typed and turn the one after it into a control character.
   function onPromptInput(e) {
     const el = e.currentTarget;
     // Typing is the user answering the notice (or moving past it), so it goes
     // away at the first keystroke — it is feedback on one tap, not a status bar.
     if (notice) showNotice('');
-    const typed = splitTypedTab(el.value);
-    if (!typed) { endCycle(); setCmdText(el.value); recallIndexRef.current = -1; return; }
+    const text = el.value;
+    // Read through the ref: a tap arms a modifier and the keystroke that follows
+    // can arrive before the rows have re-rendered.
+    const armedNow = armedRef.current;
+    if (armedNow.ctrl || armedNow.fn) {
+      const hit = applyModifiers(armedNow, text);
+      spendArmed();
+      if (hit.seq != null) {
+        el.value = '';
+        setCmdText('');
+        recallIndexRef.current = -1;
+        endCycle();
+        pinnedRef.current = true;
+        post(hit.seq, true);
+        return;
+      }
+    }
+    // A phone keyboard's Tab key usually arrives as a literal HT in the text
+    // rather than as a Tab `keydown` (see splitTypedTab in cliKeys.js), so the
+    // text before the tab is completed exactly like a tap on the key row's Tab,
+    // and anything after it stays in the field.
+    const typed = splitTypedTab(text);
+    if (!typed) { endCycle(); setCmdText(text); recallIndexRef.current = -1; return; }
     el.value = typed.before;
     complete();
     const done = el.value;
@@ -698,9 +762,13 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                   })
                 ),
                 // The key rows: the keys a phone keyboard does not have, in
-                // two rows of six (see cliKeys.js). Every key is live in both
-                // modes — `is-prompt` only recolours the row so it is clear
-                // the keys now go to the program.
+                // two rows (see cliKeys.js). Every key keeps the same tested
+                // byte sequence; what changed is the size — six small keys fit
+                // a 360 px column where six 44 px keys filled it — and that
+                // Ctrl and Fn are now *toggles* in the rows (see `armed`),
+                // turning the next letter or digit into a control character or
+                // a function key. `is-prompt` only recolours the rows so it is
+                // clear the keys now go to the program.
                 [1, 2].map((row) => h('div', {
                 key: 'keys' + row,
                 class: 'cli__keys' + (isProgram ? ' is-prompt' : ''),
@@ -709,24 +777,30 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                 },
                 CLI_KEYS.filter((k) => k.row === row).map((k) => h('button', {
                 key: k.id,
-                class: 'cli__key',
+                class: 'cli__key' + (k.role === 'modifier' ? ' cli__key--mod' : ''),
                 type: 'button',
                 title: k.title,
                 'aria-label': k.title,
+                // A modifier is a toggle a screen reader must be able to read
+                // back: tap Ctrl and the button says it is on.
+                'aria-pressed': k.role === 'modifier' ? (armed[k.id] ? 'true' : 'false') : null,
                 tabindex: '-1',
                 onMouseDown: keepEditorFocus,
                 onClick: () => sendKey(k)
                 }, k.label))
                 )),
-                // One-line hint under the rows, naming the current mode. A Tab
-                // that could not advance the line replaces it for a moment with
-                // the reason (see completionNotice) — never a silent no-op.
+                // One-line hint under the rows, naming the current mode — and,
+                // while a modifier is armed, what it is about to do. A Tab that
+                // could not advance the line replaces it for a moment with the
+                // reason (see completionNotice) — never a silent no-op.
                 h('p', { class: 'cli__hint' + (notice ? ' cli__hint--notice' : ''), role: notice ? 'status' : null },
                 notice
                 ? notice
+                : armedLabel
+                ? armedLabel
                 : isProgram
                 ? 'Keys go to the running program — ^C stops it, Esc leaves it.'
-                : 'Tab completes, ↑/↓ recall, ←/→ move in the prompt. ^C stops a command.'
+                : 'Tab completes, ↑/↓ recall. Ctrl + a letter is a control key, Fn + a digit is F1–F9.'
                 )
               )
       )
