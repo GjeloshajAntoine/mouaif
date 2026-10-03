@@ -762,18 +762,56 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
           // children always agree on screen.
           const leafAuth = toolAuth[tool.name];
           const mode = (leafAuth && leafAuth.mode) || family.mode;
+          // `change_working_folder` can create a workspace folder in the
+          // user's project, which is a separate decision from whether the
+          // model may call the tool at all. The switch rides this row (the
+          // tool it belongs to) beside the Off/Ask/Allow segment, so the
+          // option is found where the tool is, not in General. `sp-workspace`
+          // matches the switch ids in Settings → App defaults. This row is
+          // the `Chats` family's leaf (`group.tools.length === 1`) only for
+          // the Chats family, so the id stays unique in the tree.
+          const workspaceControl = tool.name === 'change_working_folder'
+          ? h('span', { class: 'settings-project__tool-switch' },
+          h('label', { class: 'switch', title: 'Allow automatic workspaces' },
+          h('input', {
+            id: 'sp-workspace',
+            type: 'checkbox',
+            role: 'switch',
+            checked: autoWorkspaceOn,
+            'aria-checked': autoWorkspaceOn ? 'true' : 'false',
+            'aria-label': 'Allow automatic workspaces',
+            onChange: onAutoWorkspaceToggle
+          }),
+          h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
+          )
+          )
+          : null;
           return leaf(tool, {
-            checked: isOn(mode),
-            control: h(ToolAuthSeg, {
-              tool: tool.name, mode, allowlist: (leafAuth && leafAuth.allowlist) || family.allowlist,
-              namePrefix: 'sp', modes: binary ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
-              onPick: (next, list) => (group.tools.length > 1
-                ? pickLeafMode(tool.name, next, list)
-                : saveToolAuthorization(tool.name, next, list, group.id))
-            })
+          checked: isOn(mode),
+          control: h(Fragment, null,
+          workspaceControl,
+          h(ToolAuthSeg, {
+          tool: tool.name, mode, allowlist: (leafAuth && leafAuth.allowlist) || family.allowlist,
+          namePrefix: 'sp', modes: binary ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
+          onPick: (next, list) => (group.tools.length > 1
+          ? pickLeafMode(tool.name, next, list)
+          : saveToolAuthorization(tool.name, next, list, group.id))
+          })
+          )
           });
         }),
-        extra: toolStatus[group.id] ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, toolStatus[group.id]) : null
+        // `extra` keeps its original single-status-div shape (regression
+        // tests read `extra.children[0]` as the status string). The workspace
+        // explanation reuses the same slot when there is no status to show,
+        // so the row never grows two stacked lines.
+        extra: toolStatus[group.id]
+        ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, toolStatus[group.id])
+        : (group.id === 'chats'
+        ? h('div', { class: 'settings-project__item-note' },
+          'The switch beside ', h('code', null, 'change_working_folder'), ' allows that tool to create a per-chat folder under ',
+          h('code', null, '.mouaif/workspaces/<chatId>'), ' — a Git worktree and branch in a repository. Off, it only changes folders you ask for. ',
+          autoWorkspaceStatusMsg)
+        : null)
       });
     }
 
@@ -1212,32 +1250,10 @@ class: 'view-back',
               h('option', { value: 'chat' }, 'Chat — empty prompt')
             )
           ),
-          h('li', { class: 'settings-project__item settings-project__item--col' },
-          h('div', { class: 'settings-project__item-row' },
-          h('div', { class: 'settings-project__item-main' },
-          h('label', { class: 'settings-project__item-title', for: 'sp-auto-workspace' }, 'Allow automatic workspaces'),
-          h('div', { class: 'settings-project__item-note' },
-          'Let the assistant create a per-chat workspace under ', h('code', null, '.mouaif/workspaces/<chatId>'),
-          ' (a Git worktree and branch when this is a repository). Off means folders change only when you ask for one; explicit folders and resetting always work.'),
-          h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, autoWorkspaceStatusMsg)
-          ),
-          h('label', { class: 'switch' },
-          h('input', {
-          id: 'sp-auto-workspace',
-          type: 'checkbox',
-          role: 'switch',
-          checked: autoWorkspaceOn,
-          'aria-checked': autoWorkspaceOn ? 'true' : 'false',
-          onChange: onAutoWorkspaceToggle
-          }),
-          h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
-          )
-          )
-          ),
           h('li', null,
           h('a', {
-        class: 'group__row settings-project__link-row',
-        'aria-label': 'Custom prompts',
+          class: 'group__row settings-project__link-row',
+          'aria-label': 'Custom prompts',
         href: '#/settings/prompts?' + projectBackQS()
         },
               h('span', { class: 'group__row-body' },

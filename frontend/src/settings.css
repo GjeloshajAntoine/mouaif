@@ -492,6 +492,11 @@ transform: rotate(45deg); }
   gap: 8px;
 }
 .settings-project__item-main { flex: 1; }
+/* The tool-tree control cluster on the change_working_folder leaf already
+      gets its gap from .tool-tree__control (tool-tree.css). */
+.settings-project__tool-note {
+    padding-top: 2px;
+}
 .settings-project__item-title {
   color: var(--fg);
   font-size: 0.85rem;

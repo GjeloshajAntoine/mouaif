@@ -158,7 +158,7 @@ async function change(projectDir, chatId, directory, signal) {
       // set `autoWorkspace`. Off means the tool reports why instead of
       // quietly putting a worktree in the user's checkout.
       if (!autoWorkspaceEnabled(projectDir)) {
-        throw err('EOFF', 'Creating a workspace is disabled for this project. Ask the user to enable "Allow automatic workspaces" in Settings → Project, or pass an existing directory.');
+        throw err('EOFF', 'Creating a workspace is disabled for this project. Ask the user to turn on "Allow automatic workspaces" (the switch beside change_working_folder in Settings → Project → Tools → Chats), or pass an existing directory.');
       }
       workspace = await createDefaultWorkspace(root, chatId, signal);
     }

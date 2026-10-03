@@ -108,6 +108,16 @@
   color: var(--accent);
 }
 
+/* A leaf row can carry two right-aligned controls (the automatic-workspace
+   switch + the Off/Ask/Allow segment). At that point the cluster is as wide
+   as the description is allowed to be, so the row wraps: the name line keeps
+   its ellipsis, and the controls drop to their own right-aligned line instead
+   of running past the card edge at 360px. */
+.tool-tree__row:has(.tool-tree__control) {
+  flex-wrap: wrap;
+}
+.tool-tree__row > .tool-tree__control { align-self: center; }
+
 /* Right-aligned inline control (auth segment, switch, …). It is
    its own click target; pointer events are scoped to the control
    itself so row taps never reach it accidentally. */
@@ -116,6 +126,10 @@
   margin-left: auto;
   display: inline-flex;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 4px;
 }
 
 /* The Off/Ask/Allow segment shrinks to fit the tree row. */
