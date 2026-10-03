@@ -1,18 +1,18 @@
 // The `mouaif` tool renders as TWO categories in every tools tree, each with its
-// own actions as child rows.
+// own tools as child rows.
 //
-// The tool is one model-facing spec and one authorization family, so the tree
-// used to draw it as one row per half — and a one-child group in `ToolTree`
-// hides its child, so those two rows were indistinguishable from `shell` or
-// `Task`. A category has to look like a category: a chevron, child rows, and a
-// count. This asserts the shape and the four things that shape could silently
-// break:
+// Two model-facing areas of the app (chats, and mouaif itself) each render as
+// one collapsible category. A category has to look like a category: a chevron,
+// child rows, and a count. `restart_app` and `list_features` are children of
+// the mouaif row — they are tools OF the app, so they belong with the app's
+// other tools rather than in rows of their own. This asserts the shape and the
+// things that shape could silently break:
 //
-//   * the children are the category's own actions (and every action appears);
-//   * a child row still resolves to the single `mouaif` tool, so the chat filter
-//     — which stores tool names — is written with `mouaif` and not `mouaif:list`;
+//   * the children are the category's own tools (and every one appears);
+//   * a child row stores its model-facing function name, so the chat filter
+//     — which stores tool names — is written with `list_chats`;
 //   * `off` unchecks the whole category and every child;
-//   * a catalog without the tool renders neither row (no dead rows).
+//   * a catalog without the tools renders neither row (no dead rows).
 //
 // Runs the real `buildToolGroups` from frontend/src/components/ToolTree.jsx,
 // stripped of imports and evaluated like scripts/test-tool-popup-icon.mjs does.
@@ -60,10 +60,10 @@ same(categories.map((g) => g.name), ['Chats', 'mouaif'], 'two categories, named 
 same(categories[0].tools.map((t) => t.id), [
   'list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat',
   'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments'
-], 'the chats category lists its eight actions');
+], 'the chats category lists its eleven tools');
 same(categories[1].tools.map((t) => t.id), [
-  'get_settings', 'update_settings', 'list_projects', 'get_app_info'
-], 'the settings category lists its four actions');
+  'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features'
+], 'the settings category lists its six tools');
 // More than one child is what gives the row its chevron and count in ToolTree.
 assert.ok(categories.every((g) => g.tools.length > 1), 'a category is collapsible');
 // The row no longer reads as a bare tool: no child is named `mouaif`.
@@ -73,10 +73,9 @@ assert.ok(categories.flatMap((g) => g.tools).every((t) => t.name && t.name.trim(
 const without = buildToolGroups([{ name: 'shell', description: 'x' }], [], null);
 assert.equal(without.filter((g) => g.id.startsWith('mouaif')).length, 0, 'no catalog entry, no rows');
 
-// --- 2) Every row still belongs to the single `mouaif` tool ----------------
-// The chat filter stores tool NAMES; `mouaif:list` is only a tree key. Without
-// `toolName` the card would write `mouaif:list` into the chat and the server
-// would see a tool that does not exist.
+// --- 2) Every row stores the model-facing function name -------------------
+// The chat filter stores tool NAMES; a synthetic key would make the server see
+// a tool that does not exist. No leaf carries an alias.
 assert.ok(categories.flatMap((g) => g.tools).every((t) => !t.toolName && !t.selectionName), 'ordinary leaves have no aliases');
 const used = buildToolGroups(catalog, [], null, new Set(['list_chats']));
 assert.equal(used.flatMap((g) => g.tools).filter((t) => t.used).length, 1, 'used badges belong to individual tools');
@@ -97,7 +96,7 @@ const legacy = buildToolGroups(catalog, [], ['mouaif']);
 assert.ok(legacy.filter((g) => ['chats', 'mouaif-settings'].includes(g.id)).every((g) => !g.checked), 'there is no live legacy-family exception');
 
 // --- 4) A sibling single-child group is unchanged --------------------------
-// `files` and the MCP groups keep their own shapes; only the mouaif rows split.
+// `files` and the MCP groups keep their own shapes; only the mouaif row moved.
 const withFiles = buildToolGroups(catalog.concat([
   { name: 'read_file', kind: 'native', source: 'files', description: 'Read a file.' },
   { name: 'list_files', kind: 'native', source: 'files', description: 'List files.' }
@@ -122,6 +121,16 @@ same(
   'category ids match src/tools/mouaif.js GROUPS'
 );
 const actions = new Set(categories.flatMap((g) => g.tools.map((t) => t.id)));
-assert.equal(actions.size, 15, 'fifteen actions, each listed once');
+assert.equal(actions.size, 17, 'seventeen tools, each listed once');
+
+// The two app tools sit in the mouaif row now, not as rows of their own:
+// one tree row per tool family, and `restart_app` / `list_features` are
+// tools of the app, exactly like `get_settings`.
+const topLevel = groups.map((g) => g.id);
+assert.ok(!topLevel.includes('restart_app'), 'Restart app is no longer a top-level row');
+assert.ok(!topLevel.includes('list_features'), 'neither is Feature report');
+const appRow = categories.find((g) => g.id === 'mouaif-settings');
+assert.ok(appRow.tools.some((t) => t.id === 'restart_app'), 'the mouaif row lists the app restart');
+assert.ok(appRow.tools.some((t) => t.id === 'list_features'), 'and the feature report');
 
 console.log('mouaif tool categories: two categories with their actions as children passed');

@@ -37,16 +37,18 @@ const out = await runAppTool(
 
 | Concern | File | Detail |
 | --- | --- | --- |
-| Spec for the model | `src/ai-stream.js` | Pushed right after `restart_app`; `off` mode prunes it in the same loop as the other native families. |
+| Spec for the model | `src/ai-stream.js` | Pushed with the other app specs; `off` mode prunes it in the same loop as the other native families. |
 | Dispatch | `src/ai-stream.js` `dispatchTool` | Dispatches names in `TOOL_NAMES` to `runAppTool`, like the grouped native file tools. |
-| REST catalog | `src/server-handlers-tools.js` | Each spec is its own entry in `GET /api/tools/list`. |
+| REST catalog | `src/server-handlers-tools.js` | Each spec is its own entry in `GET /api/tools/list`. `restart_app` and `list_features` advertise `source: 'mouaif'` because frontend/src/toolGroups.js puts them in that family. |
 | Tool preview | `src/server-handlers-chats.js` | Same family list in the `off`-pruning loop. |
-| Authorization family | `src/tools/authorization.js` | Member of `NATIVE_TOOLS`; own row in the `getAuthorization` view. Default mode `ask`. || Prompt presets | `src/prompts.js` | Member of `PRESET_TOOL_NAMES`. |
-| Feature summary | `src/agentFeatures.js` | Own line in `buildFeatureSummary`; in the `list_features` tool list. |
+| Authorization family | `src/tools/authorization.js` | Member of `NATIVE_TOOLS`; `FAMILY_EXTRAS.mouaif` adds `restart_app` / `list_features` to the `mouaif` family so a stored single-tool entry keeps working as that leaf's override. |
+| Prompt presets | `src/prompts.js` | Member of `PRESET_TOOL_NAMES` (`restart_app` / `list_features` are named explicitly — they are not app-store functions). |
+| Feature summary | `src/agentFeatures.js` | The mouaif family line names its leaves; `restart_app` no longer prints a line of its own. |
 | Chat UI | `frontend/src/components/chat/{cards.js,ToolPopup.jsx,useChatState.js}` | Ordinary child checkboxes; one family-gate segment per row (Chats, mouaif). |
-| Project settings UI | `frontend/src/components/SettingsProject.jsx` | Each checkbox/control writes `tools.<functionName>`. |
-| Agent allowlist UI | `frontend/src/components/SettingsAgents.jsx` | Twelve ordinary function-name choices. |
+| Project settings UI | `frontend/src/components/SettingsProject.jsx` | Each checkbox/control writes `tools.<name>`. |
+| Agent allowlist UI | `frontend/src/components/SettingsAgents.jsx` | Seventeen ordinary function-name choices, in tree order. |
 | Card rendering | `frontend/src/components/chat/{tools.js,toolRender.js}` + `frontend/src/tool-cards.css` | `mouaifArgSummary` for the collapsed head; `renderMouaifToolResult` renders a chat list, everything else falls through to the JSON preview. |
+| No-approval tools | `src/ai-stream.js` `NO_PROMPT_TOOLS` | `list_features` rides the gate-free dispatch path (visibility gate only). `scripts/test-tool-groups.mjs` pins the set. |
 
 ### `opts` the runner reads
 

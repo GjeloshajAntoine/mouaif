@@ -169,6 +169,35 @@ async function main() {
   authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'allow' }, update_settings: { mode: 'off' } } });
   assert.equal(authz.effectiveConfig(projectDir, 'get_settings').mode, 'allow', 'family Allow covers its leaves');
   assert.equal(authz.effectiveConfig(projectDir, 'update_settings').mode, 'off', 'a leaf Off still tightens family Allow');
+  // `restart_app` (relaunch the worker) and `list_features` (read-only
+  // feature metadata) are mouaif leaves, not gates of their own. A stored
+  // single-tool entry from before they moved keeps working as the leaf
+  // override, and the family Allow covers them like any other leaf — which
+  // is what makes "Always allow" on a mouaif call cover a later restart.
+  assert.equal(authz.effectiveConfig(projectDir, 'restart_app').mode, 'allow', 'the family Allow covers the app restart');
+  assert.equal(authz.effectiveConfig(projectDir, 'list_features').mode, 'allow', 'and the feature report');
+  assert.equal(authz.configToolName('restart_app'), 'mouaif', 'restart_app resolves through the mouaif gate');
+  assert.equal(authz.configToolName('list_features'), 'mouaif', 'so does list_features');
+  assert.ok(authz.TOOL_FAMILIES.mouaif.includes('restart_app') && authz.TOOL_FAMILIES.mouaif.includes('list_features'),
+    'the server family lists both as leaves');
+  const restartAllowed = await authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_restart', tool: 'restart_app', summary: 'apply the fix' });
+  assert.equal(restartAllowed.decision, 'allow', 'a family Allow restarts without prompting');
+  authz.setAuthorization(projectDir, { tools: { list_features: { mode: 'off' } } });
+  assert.equal(authz.effectiveConfig(projectDir, 'list_features').mode, 'off', 'a leaf Off still tightens the family');
+  assert.equal(authz.effectiveConfig(projectDir, 'restart_app').mode, 'allow', 'and leaves the other app tools alone');
+  await assert.rejects(
+    authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_features_off', tool: 'list_features', summary: '' }),
+    { code: 'ETOOL_DISABLED' },
+    'a mouaif Off hides the feature report from the model'
+  );
+  authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'allow' }, restart_app: { mode: 'off' } } });
+  assert.equal(authz.effectiveConfig(projectDir, 'restart_app').mode, 'off', 'turning the restart off needs no separate gate');
+  await assert.rejects(
+    authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_restart_off', tool: 'restart_app', summary: '' }),
+    { code: 'ETOOL_DISABLED' },
+    'the family gate rejects a disabled restart_app call'
+  );
+  authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'allow' }, update_settings: { mode: 'off' } } });
   const familyView = authz.getAuthorization(projectDir).tools;
   assert.equal(familyView.chats.mode, 'off', 'the view reports the chats gate');
   assert.equal(familyView.mouaif.mode, 'allow', 'the view reports the mouaif gate');

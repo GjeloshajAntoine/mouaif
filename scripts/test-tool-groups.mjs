@@ -48,16 +48,32 @@ check('every group has a name and at least one tool', () => {
 });
 check('every gated group has a family gate', () => {
   for (const group of model.TOOL_GROUPS) {
-    // The un-gated tool is the deliberate exception: it renders as a row, but
-    // there is no mode for it to write.
+    // A group may declare `gated: false` to say "no mode control here".
+    // No group does today (list_features became a mouaif leaf), but the
+    // escape hatch stays: such a row lists without a control.
     if (group.gated === false) continue;
     assert.ok(group.authKey, group.id + ' needs its authorization key');
     assert.equal(group.kind, undefined, group.id + ': there is no second group kind');
   }
 });
-check('the feature report is the only un-gated tool', () => {
+check('no un-gated group is left behind', () => {
   const unGated = model.TOOL_GROUPS.filter((group) => group.gated === false).map((group) => group.id);
-  same(unGated, ['list_features'], 'the server answers list_features without a prompt');
+  same(unGated, [], 'every native row offers the mode it honors');
+});
+check('the no-prompt tools are still listed and still gated', () => {
+  // `report_progress` and `list_features` are answered without an approval
+  // card, but they are not ungated: an `off` hides them, and they resolve
+  // through the ordinary authorization machinery (a family leaf in
+  // list_features' case). A name that is not advertised anywhere would be
+  // the real bug.
+  const noPrompt = [...require('../src/ai-stream.js').NO_PROMPT_TOOLS].sort();
+  same(noPrompt, ['list_features', 'report_progress'], 'the read-only tools are the only ones');
+  const authz = require('../src/tools/authorization.js');
+  for (const name of noPrompt) {
+    assert.ok(listed.includes(name), name + ' must be listed in a group');
+    assert.ok(authz.NATIVE_TOOLS.has(name) || authz.FAMILY_TOOLS.has(name), name + ' must resolve through a gate');
+  }
+  assert.equal(model.FAMILY_OF.list_features, 'mouaif', 'the feature report is a mouaif leaf, not its own gate');
 });
 
 // ---- 2. The model matches what the server serves -------------------------
@@ -97,9 +113,15 @@ check('the feature summary prints one line per family gate', () => {
   same(lines.map((line) => line.split(']')[0] + ']'), ['[Chats]', '[mouaif]'], 'families report under their row name');
   assert.ok(lines[0].includes('→ ask') && lines[0].includes('list_chats'));
   assert.ok(lines[1].includes('→ allow') && lines[1].includes('get_app_info'));
+  // restart_app was a line of its own before it joined the family; it must
+  // appear (under the mouaif label) rather than only inside the tool list.
+  assert.ok(lines[1].includes('restart_app'), 'the app restart is named by its family line');
+  assert.ok(lines[1].includes('list_features'), 'and so is the feature report');
   const off = groups.summaryLines(listNativeTools(), { chats: { mode: 'off' }, get_app_info: { mode: 'off' } }, new Set(['file']));
   same(off.map((line) => line.split(']')[0] + ']'), ['[mouaif]'], 'a family gate Off drops its line');
   assert.ok(!off[0].includes('get_app_info'), 'a leaf Off drops out of its family line');
+  const familyOff = groups.summaryLines(listNativeTools(), { chats: { mode: 'ask' }, mouaif: { mode: 'off' } }, new Set(['file']));
+  same(familyOff.map((line) => line.split(']')[0] + ']'), ['[Chats]'], 'a mouaif Off drops the whole family line');
 });
 
 // ---- 4. The shared helpers ------------------------------------------------
@@ -108,7 +130,7 @@ check('groupAuthKey resolves a family and refuses a category', () => {
   assert.equal(model.groupAuthKey('files'), 'file');
   assert.equal(model.groupAuthKey('chats'), 'chats');
   assert.equal(model.groupAuthKey('mouaif-settings'), 'mouaif');
-  assert.equal(model.groupAuthKey('list_features'), null, 'the un-gated row has no key');
+  assert.equal(model.groupAuthKey('list_features'), null, 'a tool is not a group row');
   assert.equal(model.groupAuthKey('nope'), null);
   // A family with more than one leaf must not list its own gate as one of
   // them: the gate is a family key (`file`), not a tool name, and a row that
@@ -125,10 +147,12 @@ check('isBinaryTool narrows ask_user only', () => {
   assert.equal(model.isBinaryTool('chats'), false);
 });
 check('isFamilyLeaf recognizes every multi-tool family leaf', () => {
-  for (const name of ['read_file', 'group_edit', 'list_chats', 'get_app_info']) assert.equal(model.isFamilyLeaf(name), true, name);
+  for (const name of ['read_file', 'group_edit', 'list_chats', 'get_app_info', 'restart_app', 'list_features']) assert.equal(model.isFamilyLeaf(name), true, name);
   assert.equal(model.isFamilyLeaf('shell'), false);
   assert.equal(model.FAMILY_OF.delete_chat, 'chats');
   assert.equal(model.FAMILY_OF.list_projects, 'mouaif');
+  assert.equal(model.FAMILY_OF.restart_app, 'mouaif');
+  assert.equal(model.FAMILY_OF.list_features, 'mouaif');
   assert.equal(model.FAMILY_OF.edit_file, 'file');
 });
 check('toolPermission resolves leaves through their family gate', () => {
@@ -142,7 +166,8 @@ check('toolGroupId maps a tool back to its row', () => {
   assert.equal(model.toolGroupId('list_chats'), 'chats');
   assert.equal(model.toolGroupId('get_app_info'), 'mouaif-settings');
   assert.equal(model.toolGroupId('group_edit'), 'files');
-  assert.equal(model.toolGroupId('restart_app'), 'restart_app');
+  assert.equal(model.toolGroupId('restart_app'), 'mouaif-settings', 'the app restart sits in the mouaif row');
+  assert.equal(model.toolGroupId('list_features'), 'mouaif-settings', 'and so does the feature report');
   assert.equal(model.toolGroupId('mcp__x__y'), null, 'MCP rows live outside the native model');
 });
 console.log('tool groups: ' + passed + ' checks passed');

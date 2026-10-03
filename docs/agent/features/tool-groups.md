@@ -23,7 +23,7 @@
 
 ### Server families
 
-`src/tools/authorization.js` builds `TOOL_FAMILIES` (`file` from `files.js`, `chats` / `mouaif` from each app tool's `source` in `appToolNames.js`), `FAMILY_OF` (leaf → gate), `FAMILY_TOOLS` (every leaf) and `familyTools(gate)`. `configToolName`, `effectiveConfig`, `readChatAuthOverrides`, `setAuthorization` and `getAuthorization` all go through those, so the leaf-override precedence that used to be `file`-only applies to every family. The advertisement filters in `src/ai-stream.js` and `src/server-handlers-chats.js` hide `familyTools(gate)` on a gate `off`, then resolve each family leaf. `scripts/test-tool-groups.mjs` asserts the server families and the UI's multi-tool groups have the same keys and leaves.
+`src/tools/authorization.js` builds `TOOL_FAMILIES` (`file` from `files.js`, `chats` / `mouaif` from each app tool's `source` in `appToolNames.js`, plus `FAMILY_EXTRAS.mouaif` for `restart_app` / `list_features`), `FAMILY_OF` (leaf → gate), `FAMILY_TOOLS` (every leaf) and `familyTools(gate)`. `NATIVE_TOOLS` no longer lists `restart_app` separately — it is a family leaf now, and `configToolName('restart_app')` resolves to `mouaif`. `configToolName`, `effectiveConfig`, `readChatAuthOverrides`, `setAuthorization` and `getAuthorization` all go through those, so the leaf-override precedence that used to be `file`-only applies to every family. The advertisement filters in `src/ai-stream.js` and `src/server-handlers-chats.js` hide `familyTools(gate)` on a gate `off`, then resolve each family leaf. `scripts/test-tool-groups.mjs` asserts the server families and the UI's multi-tool groups have the same keys and leaves.
 
 ### Server mirror + generated file
 

@@ -47,9 +47,9 @@
 <pre><code class="language-text">Restart the app.</code></pre>
 <p>For an immediate explicit restart, enter the direct composer command:</p>
 <pre><code class="language-text">@restart_app apply the latest fix</code></pre>
-<p>The exact <code>@restart_app</code> command is treated as the user&#39;s approval and runs without a second confirmation. Autonomous assistant calls still use the project tool authorization mode:</p>
+<p>Picking <code>restart_app</code> from the <code>@</code> popup inserts <code>@restart_app:reason=</code>…`<code>; that form runs directly too. The exact </code>@restart_app` command is treated as the user&#39;s approval and runs without a second confirmation. Autonomous assistant calls still use the project tool authorization mode:</p>
 <ul><li><p><strong>Ask</strong> shows an approval card before restarting.</p></li><li><p><strong>Allow</strong> lets the assistant restart immediately.</p></li><li><p><strong>Off</strong> hides the tool from the assistant.</p>
-<p>The setting is available under <strong>Settings → Project → Tools → Restart app</strong>. A restart briefly disconnects the chat while the new worker starts; reload or reopen the app if the browser does not reconnect automatically.</p></li></ul>
+<p>The setting is available under <strong>Settings → Project → Tools → mouaif</strong>, where <strong>Restart app</strong> is a child of the mouaif family: the family&#39;s Off / Ask / Allow segment governs it, and its own segment stores a <code>tools.restart_app</code> override. Choosing <strong>Always allow</strong> on any mouaif call therefore also lets the assistant restart the app without asking; turn the restart off on its own if you want the family open and this one gated. A restart briefly disconnects the chat while the new worker starts; reload or reopen the app if the browser does not reconnect automatically.</p></li></ul>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>

@@ -19,4 +19,4 @@ Picking `restart_app` from the `@` popup inserts `@restart_app:reason=`…``; th
 - **Allow** lets the assistant restart immediately.
 - **Off** hides the tool from the assistant.
 
-The setting is available under **Settings → Project → Tools → Restart app**. A restart briefly disconnects the chat while the new worker starts; reload or reopen the app if the browser does not reconnect automatically.
+The setting is available under **Settings → Project → Tools → mouaif**, where **Restart app** is a child of the mouaif family: the family's Off / Ask / Allow segment governs it, and its own segment stores a `tools.restart_app` override. Choosing **Always allow** on any mouaif call therefore also lets the assistant restart the app without asking; turn the restart off on its own if you want the family open and this one gated. A restart briefly disconnects the chat while the new worker starts; reload or reopen the app if the browser does not reconnect automatically.

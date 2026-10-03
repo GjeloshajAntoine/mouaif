@@ -2,7 +2,7 @@
 
 ## Overview
 
-Fifteen ordinary native tools let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, and the registered project list. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument.
+Fifteen ordinary native tools let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report). Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument.
 
 ## Usage
 
@@ -35,6 +35,8 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `update_settings` | Merge `patch` into the chosen scope; `unset` removes keys (project scope). Defaults to the project scope. |
 | `list_projects` | List the registered projects (id, name, path, cost). |
 | `get_app_info` | Report the mouaif feature state, including the running chat's effective tool permissions — the same report the shipped `list_features` tool returns — plus the list of native chat/app functions. |
+| `restart_app` | Gracefully relaunch the app worker from this chat, with an optional `reason`. The supervisor keeps running, so the port and terminal stay the same. See [Restart from chat](./chat-app-restart.md). |
+| `list_features` | Describe every mouaif feature available in this project and its current on/off/ask state. Read-only metadata; it takes no arguments. |
 
 ### Where the model's data comes from
 
@@ -59,7 +61,9 @@ The tools appear in two families in Settings → Project → Tools, the chat Too
 | Family (gate) | Native functions |
 | --- | --- |
 | **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments` |
-| **mouaif** (`tools.mouaif`) | `get_settings`, `update_settings`, `list_projects`, `get_app_info` |
+| **mouaif** (`tools.mouaif`) | `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features` |
+
+The mouaif family also carries the two tools that act on the app itself rather than on one project: **Restart app** (`restart_app`) and **Feature report** (`list_features`). They used to be rows of their own; they are leaves of this family now, so a family `Allow` — including one earned by choosing **Always allow** on any mouaif call — also covers an app restart. Store `tools.restart_app` (or `tools.list_features`) to override one leaf on its own. `list_features` is read-only, so it is never shown an approval card; an `off` on the family or the leaf hides it from the model.
 
 Every child checkbox selects its own function; a partial selection shows a mixed checkmark. The two families work exactly like **File tools**:
 

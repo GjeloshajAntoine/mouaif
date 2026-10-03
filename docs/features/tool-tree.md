@@ -10,13 +10,12 @@ The tool tree is a compact, hierarchical list that shows every tool the model ca
 
 The tree sits below the system prompt. One list, [Tool groups](tool-groups.md) (`frontend/src/toolGroups.js`), decides which tool belongs to which group, so the chat tree, the composer popup, project settings, the preset tree, and the agent editor always agree. It shows one group per tool family:
 
-- **shell / subagent / task / ask_user / webpreview / restart_app / Progress updates** — one row per native tool family, each with its own Off / Ask / Allow segment (the Ask user row is Off / Ask only)
-- **Feature report** — `list_features`, listed without a segment: the server answers it without an authorization prompt, so there is no mode to set
+- **shell / subagent / task / ask_user / webpreview / Progress updates** — one row per native tool family, each with its own Off / Ask / Allow segment (the Ask user row is Off / Ask only)
 - **subagent** — delegate a task to a nested AI call
 - **ask_user** — pause and ask the user a structured question
 - **File tools** — read_file, list_files, search_files, write_file, edit_file
 - **One group per MCP server** — configured servers always render, even when stopped; stopped servers fall back to the cached tool list from their last run. The group checkbox flips all the server's tools in the per-chat tool filter at once (there is no server-level on/off); leaf checkboxes flip individual tools.
-- **Chats and mouaif families** — the twelve native chat and app tools render as **Chats** (`list_chats` … `list_chat_attachments`) and **mouaif** (`get_settings` … `get_app_info`), each listing its own functions as child rows. They are families exactly like **File tools**: the row's `Off / Ask / Allow` segment edits one gate (`tools.chats` / `tools.mouaif`), and in project settings each function can carry its own override. The group checkbox is the filter shortcut it is everywhere else. `groupToolNames` / `childToolName` in [ToolTree.jsx](../../frontend/src/components/ToolTree.jsx) own the row-to-function resolution, and `groupAuthKey` / `toolPermission` in [toolGroups.js](../../frontend/src/toolGroups.js) own the gate rule for every surface.
+- **Chats and mouaif families** — the seventeen native chat and app tools render as **Chats** (`list_chats` … `list_chat_attachments`) and **mouaif** (`get_settings` … `get_app_info`, plus `restart_app` and `list_features`), each listing its own tools as child rows. They are families exactly like **File tools**: the row's `Off / Ask / Allow` segment edits one gate (`tools.chats` / `tools.mouaif`), and in project settings each tool can carry its own override. The group checkbox is the filter shortcut it is everywhere else. `restart_app` and `list_features` are children of the mouaif row — they act on the app itself, like `get_settings`, so the family gate governs them too. `groupToolNames` / `childToolName` in [ToolTree.jsx](../../frontend/src/components/ToolTree.jsx) own the row-to-function resolution, and `groupAuthKey` / `toolPermission` in [toolGroups.js](../../frontend/src/toolGroups.js) own the gate rule for every surface.
 
 Each group row has:
 
