@@ -61,7 +61,7 @@ To show the page itself, interactive, instead of a screenshot, set `"mode": "liv
 - **The dock always shows the newest capture.** A capture goes to the dock once, when its tool result arrives, not when you open its card in the transcript, so opening an old `webpreview` card no longer swaps the dock back to that stale screenshot. The dock compares `capturedAt`: an older capture never replaces a newer one, and a capture with no timestamp never replaces one that has a timestamp. Transcript backfill renders old rows after newer ones, so this ordering matters (`scripts/test-webpreview-dock-order.mjs`).
 
 ### Authorization
-`webpreview` uses the project's tool authorization mode (`Ask`, `Allow`, or `Off`) and optional URL allowlist patterns. In `Ask` mode, changing the resolution closes the viewer and shows the standard authorization card in the chat; approving it retries the capture at the selected size.
+`webpreview` uses the project's tool authorization mode (`Ask`, `Allow`, or `Off`) and optional URL allowlist patterns. It is a leaf of the **Chats** family (see [Tool groups](./tool-groups.md)): the Chats row's `Off / Ask / Allow` segment edits `tools.chats`, and a `tools.webpreview` leaf override can tighten or open this one tool. In `Ask` mode, changing the resolution closes the viewer and shows the standard authorization card in the chat; approving it retries the capture at the selected size.
 
 ## Related
 

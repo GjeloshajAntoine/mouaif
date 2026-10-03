@@ -90,6 +90,7 @@ Authorization keys in the project file:
 |---|---|---|
 | shell | `tools.shell` | off / ask / allowlist / allow |
 | subagent | `tools.subagent` | off / ask / allowlist / allow |
+| webpreview | `tools.chats` (+ `tools.webpreview` leaf override) | off / ask / allow |
 | report_progress | `tools.chats` (+ `tools.report_progress` leaf override) | off / ask / allow (no prompt card) |
 | ask_user | `tools.chats` (+ `tools.ask_user` leaf override) | off / ask (binary) |
 | File tools | `tools.file` | off / ask / allowlist / allow |

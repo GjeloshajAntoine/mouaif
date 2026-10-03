@@ -374,14 +374,14 @@ function listNativeTools() {
 pushNativeTool(tools, { load: './tools/shell.js', name: 'shell', source: 'shell', fallback: 'Run a shell command in the project directory.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/subagent.js', name: 'subagent', source: 'subagent', fallback: 'Delegate a focused task to a nested AI call.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './agentFeatures.js', name: 'list_features', source: 'mouaif', fallback: 'Describe mouaif feature state.', spec: (m) => m.LIST_FEATURES_SPEC && m.LIST_FEATURES_SPEC.function });
-// ask_user, task and report_progress advertise the `chats` source: they are
-// leaves of that family in frontend/src/toolGroups.js (which is
-// authoritative for grouping), so the catalog must not name a group the
-// trees do not render.
+// ask_user, task, report_progress and webpreview advertise the `chats`
+// source: they are leaves of that family in frontend/src/toolGroups.js
+// (which is authoritative for grouping), so the catalog must not name a
+// group the trees do not render.
 pushNativeTool(tools, { load: './tools/ask.js', name: 'ask_user', source: 'chats', fallback: 'Ask the user a structured question with options.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/task.js', name: 'task', source: 'chats', fallback: 'Create, update, track progress on, and list structured tasks with subtasks.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/progress.js', name: 'report_progress', source: 'chats', fallback: 'Report real-time progress on a long-running operation.', spec: (m) => m.SPEC && m.SPEC.function });
-pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', source: 'webpreview', fallback: 'Open a web URL in the debug Chrome and return a small screenshot of the page.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', source: 'chats', fallback: 'Open a web URL in the debug Chrome and return a small screenshot of the page.', spec: (m) => m.SPEC && m.SPEC.function });
 // restart_app and list_features advertise the `mouaif` source: they are
 // leaves of that family in frontend/src/toolGroups.js (which is
 // authoritative for grouping), so the catalog must not name a group the

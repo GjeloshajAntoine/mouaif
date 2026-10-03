@@ -63,11 +63,11 @@ function buildFeatureSummary(opts) {
       feat.push('[subagent](off|ask|allow) → ' + s.mode);
     }
   }
-  // report_progress, ask_user and the task tool no longer have lines of
-  // their own: all three are Chats leaves now (frontend/src/toolGroups.js),
-  // so the family line below already names them — with the same row labels
-  // the user sees. `report_progress` is still answered without an approval
-  // card; only its row moved.
+  // report_progress, ask_user, the task tool and web preview no longer have
+  // lines of their own: all four are Chats leaves now
+  // (frontend/src/toolGroups.js), so the family line below already names them
+  // — with the same row labels the user sees. `report_progress` is still
+  // answered without an approval card; only its row moved.
   // file tools
   if (authz && authz.tools && authz.tools.file) {
     const s = authz.tools.file;

@@ -75,8 +75,11 @@ check('the no-prompt tools are still listed and still gated', () => {
   }
   assert.equal(model.FAMILY_OF.list_features, 'mouaif', 'the feature report is a mouaif leaf, not its own gate');
   assert.equal(model.FAMILY_OF.report_progress, 'chats', 'the progress report is a chats leaf');
-  assert.ok(model.TOOL_GROUPS.every((group) => group.id !== 'report_progress'),
-    'no Progress updates row is left behind');
+  // The four tools the model uses inside a chat sit in the Chats row now.
+  for (const leaf of ['ask_user', 'task', 'report_progress', 'webpreview']) {
+    assert.equal(model.FAMILY_OF[leaf], 'chats', leaf + ' is a chats leaf');
+    assert.ok(model.TOOL_GROUPS.every((group) => group.id !== leaf), leaf + ' has no row of its own');
+  }
 });
 
 // ---- 2. The model matches what the server serves -------------------------

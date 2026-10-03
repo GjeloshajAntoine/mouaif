@@ -59,7 +59,7 @@ Older `settings/prompts/:id` URLs still resolve to the same screen with the pick
 
 When creating or editing a prompt, the **Chat preset** tree is always visible under the prompt content — there is no separate on/off switch. It uses the same controls as the rest of the settings:
 
-- the **tool tree** — the same `ToolTree` shown by the chat Tools card and Settings → Project. Native tools (`shell`, `subagent`, `webpreview`, the Chats family with its `ask_user` / `task` / `report_progress` leaves, the mouaif family, and File tools) and MCP server tools (`mcp__<slug>__<tool>`) are both listed; the project's tool catalog drives which rows are shown. On the **app-defaults** screen there is no project to scope MCP tools to, so `GET /api/tools/list` is called without `projectDir` and returns the native catalog only — `projectDir` is optional on that route.
+- the **tool tree** — the same `ToolTree` shown by the chat Tools card and Settings → Project. Native tools (`shell`, `subagent`, the Chats family with its `ask_user` / `task` / `report_progress` / `webpreview` leaves, the mouaif family, and File tools) and MCP server tools (`mcp__<slug>__<tool>`) are both listed; the project's tool catalog drives which rows are shown. On the **app-defaults** screen there is no project to scope MCP tools to, so `GET /api/tools/list` is called without `projectDir` and returns the native catalog only — `projectDir` is optional on that route.
 - a synthetic **Agent files** group at the bottom of the tree. Toggle it to inject `AGENTS.md` / `CLAUDE.md` / `.github/copilot-instructions.md` (the project's `agentFileNames` setting) into every chat that uses this prompt.
 - a synthetic **Skills** group. Toggle it to inject `.agents/skills/*/SKILL.md` (the project's skill catalog) into every chat that uses this prompt.
 
@@ -106,7 +106,7 @@ The `role` field is preserved on disk for forward-compat and hand-edits, but the
 
 `preset` is optional. It is normalized to `{ tools?, agentFiles?, skills? }`:
 
-- `tools` is a de-duped array of model-facing tool names — the native family gate names (`shell`, `file`, `subagent`, `webpreview`, `chats`, `mouaif`) and MCP tool ids (`mcp__<slug>__<tool>`). Unknown entries are dropped.
+- `tools` is a de-duped array of model-facing tool names — the native family gate names (`shell`, `subagent`, `chats`, `mouaif`, `file`) and MCP tool ids (`mcp__<slug>__<tool>`). Unknown entries are dropped.
 - `agentFiles` is a boolean: when `true`, the chat referencing this prompt turns agent-file injection on.
 - `skills` is a boolean: when `true`, the chat referencing this prompt turns skill injection on.
 

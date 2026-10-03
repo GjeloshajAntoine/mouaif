@@ -65,8 +65,8 @@ assert.equal(categories.length, 2, 'one row per category');
 same(categories.map((g) => g.name), ['Chats', 'mouaif'], 'two categories, named for what they cover');
 same(categories[0].tools.map((t) => t.id), [
   'list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat',
-  'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task', 'report_progress'
-], 'the chats category lists its fourteen tools');
+  'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task', 'report_progress', 'webpreview'
+], 'the chats category lists its fifteen tools');
 same(categories[1].tools.map((t) => t.id), [
   'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features'
 ], 'the settings category lists its six tools');
@@ -74,10 +74,10 @@ same(categories[1].tools.map((t) => t.id), [
 assert.ok(categories.every((g) => g.tools.length > 1), 'a category is collapsible');
 // The row no longer reads as a bare tool: no child is named `mouaif`.
 assert.ok(categories.flatMap((g) => g.tools).every((t) => t.name !== 'mouaif'), 'children are labelled actions');
-// Ask user / Task / Progress updates moved into the chats row instead of
-// rows of their own.
-assert.ok(groups.every((g) => !['ask_user', 'task', 'report_progress'].includes(g.id)),
-  'Ask user, Task and Progress updates are leaves now, not rows');
+// Ask user / Task / Progress updates / Web preview moved into the chats row
+// instead of rows of their own.
+assert.ok(groups.every((g) => !['ask_user', 'task', 'report_progress', 'webpreview'].includes(g.id)),
+  'Ask user, Task, Progress updates and Web preview are leaves now, not rows');
 assert.ok(categories.flatMap((g) => g.tools).every((t) => t.name && t.name.trim()), 'every child has a label');
 // A category never renders before the catalog advertises the tool.
 const without = buildToolGroups([{ name: 'shell', description: 'x' }], [], null);
@@ -134,7 +134,7 @@ same(
   'category ids match src/tools/mouaif.js GROUPS'
 );
 const actions = new Set(categories.flatMap((g) => g.tools.map((t) => t.id)));
-assert.equal(actions.size, 20, 'twenty tools, each listed once');
+assert.equal(actions.size, 21, 'twenty-one tools, each listed once');
 
 // The two app tools sit in the mouaif row now, not as rows of their own:
 // one tree row per tool family, and `restart_app` / `list_features` are
@@ -153,7 +153,9 @@ const chatRow = categories.find((g) => g.id === 'chats');
 assert.ok(chatRow.tools.some((t) => t.id === 'ask_user'), 'the chats row lists the question tool');
 assert.ok(chatRow.tools.some((t) => t.id === 'task'), 'and the task tracker');
 assert.ok(chatRow.tools.some((t) => t.id === 'report_progress'), 'and the progress reporter');
+assert.ok(chatRow.tools.some((t) => t.id === 'webpreview'), 'and the web preview');
 // The row left behind by the move must not survive as a dead tree row.
 assert.ok(groups.every((g) => g.id !== 'report_progress'), 'no Progress updates row is left behind');
+assert.ok(groups.every((g) => g.id !== 'webpreview'), 'no Web preview row is left behind');
 
 console.log('mouaif tool categories: two categories with their actions as children passed');

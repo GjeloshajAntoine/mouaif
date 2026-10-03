@@ -32,18 +32,17 @@ export const TOOL_GROUPS = Object.freeze([
   // family.
   { id: 'shell', name: 'Shell', source: 'shell', authKey: 'shell', tools: ['shell'] },
   { id: 'subagent', name: 'Subagent', source: 'subagent', authKey: 'subagent', tools: ['subagent'] },
-  { id: 'webpreview', name: 'Web preview', source: 'webpreview', authKey: 'webpreview', tools: ['webpreview'] },
 
   // ---- Chat and app tools: two multi-tool families ---------------------
   // Same shape as File tools: one gate (`tools.chats` / `tools.mouaif`)
   // covers every function, and each function can override it.
   // The Chats family covers every function that acts on a chat — including
-  // the three the model uses *inside* one: `ask_user` (pause and ask),
-  // `task` (track the work) and `report_progress` (report on it). They used
-  // to be top-level rows of their own; they are leaves here like
-  // `list_chats`, so the row that "is the chat" lists everything the model
-  // can do with one, and a stored `tools.ask_user` / `tools.task` /
-  // `tools.report_progress` keeps working as that leaf's override.
+  // the four the model uses *inside* one: `ask_user` (pause and ask),
+  // `task` (track the work), `report_progress` (report on it) and
+  // `webpreview` (show it a page). They used to be top-level rows of their
+  // own; they are leaves here like `list_chats`, so the row that "is the
+  // chat" lists everything the model can do with one, and a stored
+  // `tools.<leaf>` keeps working as that leaf's override.
   //
   // `ask_user` stays binary (Off / Ask): the answer cannot be predicted, so
   // Allow means nothing. It is listed in `binaryTools` so its leaf row
@@ -57,7 +56,7 @@ export const TOOL_GROUPS = Object.freeze([
     source: 'chats',
     authKey: 'chats',
     binaryTools: ['ask_user'],
-    tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task', 'report_progress']
+    tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task', 'report_progress', 'webpreview']
   },
   // The mouaif family covers the app's own data model AND the two tools
   // that act on the app itself: `restart_app` (relaunch the worker) and

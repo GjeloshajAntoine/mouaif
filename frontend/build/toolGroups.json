@@ -18,15 +18,6 @@
     ]
   },
   {
-    "id": "webpreview",
-    "name": "Web preview",
-    "source": "webpreview",
-    "authKey": "webpreview",
-    "tools": [
-      "webpreview"
-    ]
-  },
-  {
     "id": "chats",
     "name": "Chats",
     "source": "chats",
@@ -48,7 +39,8 @@
       "list_chat_attachments",
       "ask_user",
       "task",
-      "report_progress"
+      "report_progress",
+      "webpreview"
     ]
   },
   {

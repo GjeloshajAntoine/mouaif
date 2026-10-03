@@ -28,7 +28,7 @@ The model has a `list_features` tool available in every chat. It takes no argume
 
 | Key | Type | Description |
 |---|---|---|
-| `tools` | `object` | Each built-in tool (`shell`, `subagent`, `file`, `ask_user`, `report_progress`, `task`, `webpreview`, `restart_app`, `list_features`, and the fifteen independent chat/app functions — all twenty of the chats / mouaif leaves included) with `mode`, `allowlist`, `defaultTimeoutMs`, `maxTimeoutMs`. Modes include the current chat's overrides; a project-only read reports project/app defaults. |
+| `tools` | `object` | Each built-in tool (`shell`, `subagent`, `file`, the Chats family's fifteen leaves — `ask_user`, `report_progress`, `task` and `webpreview` included — the mouaif family, and the app functions) with `mode`, `allowlist`, `defaultTimeoutMs`, `maxTimeoutMs`. Modes include the current chat's overrides; a project-only read reports project/app defaults. |
 | `mcp` | `array` | Each MCP server with `name`, `slug`, `status`, `tools`, `authorization`. |
 | `agentFiles` | `object` | `enabled` (boolean), `fileNames` (the names looked for), `discovered` (files actually found with size). |
 | `agents` | `object` | `discovered` (named subagent personas found, by name). |
