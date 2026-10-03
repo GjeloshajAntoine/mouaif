@@ -23,7 +23,7 @@ The default model-facing limit is 64 KiB per tool result. A server operator can 
 - Truncation is based on UTF-8 bytes, not JavaScript character count.
 - The complete structured result still reaches the SSE client, SQLite transcript, trace file, and tool card.
 - Subagent feedback sent to the parent contains only `ok`, final `text`, and an error when present. Its complete nested chat and tool events remain available to the UI.
-- Base64 image data is omitted from textual tool feedback because image blocks are attached separately as vision content.
+- Base64 image data is omitted from textual tool feedback because image blocks are attached separately as vision content. This covers direct image blocks, nested `image_url.url` data URLs, and MCP binary image resources (`blob`, `data`, or `base64`); non-image resources remain intact. The original payload is not mutated.
 - Existing stored chats are compacted when their tool history is reconstructed. No database migration or transcript rewrite is required.
 
 ## Related

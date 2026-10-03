@@ -51,6 +51,24 @@ const imageOut = feedback.compactToolFeedback({ name: 'mcp__browser__screenshot'
 check('image payload omitted from model text', !imageOut.includes('A'.repeat(100)), imageOut.slice(0, 200));
 check('image omission marker is present', imageOut.includes('image payload omitted'), imageOut);
 check('image rich result is not mutated', imageResult.content[0].data === imageData);
+for (const block of [
+  { type: 'resource', resource: { mimeType: 'image/png', blob: imageData, uri: 'image://fixture' } },
+  { type: 'resource', resource: { media_type: 'image/png', base64: imageData } },
+  { type: 'image_url', image_url: { url: imageData } }
+]) {
+  const result = { content: [block] };
+  const before = JSON.stringify(result);
+  const out = feedback.compactToolFeedback({ name: 'mcp__browser__screenshot', result, content: before });
+  check(block.type + ' nested image payload omitted', !out.includes('A'.repeat(100)) && out.includes('image payload omitted'));
+  check(block.type + ' original preserved', JSON.stringify(result) === before);
+  const past = messages.reconstructUpstreamHistory([
+    { role: 'tool', phase: 'call', toolCallId: 'nested_img', name: 'mcp__browser__screenshot', args: {}, content: '{}' },
+    { role: 'tool', phase: 'result', toolCallId: 'nested_img', name: 'mcp__browser__screenshot', ok: true, content: before }
+  ]);
+  check(block.type + ' historical nested image omitted', !past[1].content.includes('A'.repeat(100)));
+}
+const textResource = { content: [{ type: 'resource', resource: { mimeType: 'text/plain', blob: 'keep-this', text: 'also keep' } }] };
+check('non-image resources preserved', feedback.compactToolFeedback({ name: 'mcp__fixture__read', result: textResource, content: JSON.stringify(textResource) }).includes('keep-this'));
 
 const history = messages.reconstructUpstreamHistory([
   { role: 'tool', phase: 'call', toolCallId: 'call_1', name: 'subagent', args: { task: 'x' }, content: '{}' },

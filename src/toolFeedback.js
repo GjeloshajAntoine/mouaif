@@ -136,11 +136,12 @@ function omitImagePayloads(value, seen) {
   if (Array.isArray(value)) return value.map((item) => omitImagePayloads(item, visited));
 
   const out = {};
-  const isImage = value.type === 'image' || value.type === 'image_url';
+  const mime = value.mimeType || value.mime_type || value.mediaType || value.media_type || '';
+  const isImage = value.type === 'image' || value.type === 'image_url' || /^image\//i.test(mime);
   for (const [key, item] of Object.entries(value)) {
-    if (isImage && (key === 'data' || key === 'base64' || key === 'dataUrl')) {
+    if (isImage && (key === 'data' || key === 'base64' || key === 'dataUrl' || key === 'blob')) {
       out[key] = '[image payload omitted; attached separately]';
-    } else if (isImage && key === 'url' && typeof item === 'string' && item.startsWith('data:image/')) {
+    } else if (key === 'url' && typeof item === 'string' && item.startsWith('data:image/')) {
       out[key] = '[image payload omitted; attached separately]';
     } else if (key === 'thumbnail' && typeof item === 'string' && item.startsWith('data:image/')) {
       // webpreview keeps its screenshot on `result.thumbnail` for the UI rather
