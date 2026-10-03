@@ -74,10 +74,6 @@ export const CLI_KEYS = [
   { id: 'pgdn', row: 2, label: 'PgDn', title: 'Page Down — scroll the output down', seq: '\x1b[6~', local: 'page-down' }
 ];
 
-// The modifier keys by id, and the set the sheet toggles. Exported so the modal
-// (and the test) names them rather than searching the table by label.
-export const CLI_MODIFIERS = { ctrl: 'ctrl', fn: 'fn' };
-
 // modifiedSequence(key, text) → the bytes a modifier turns `text` into, or null
 // when the modifier has nothing to say about it.
 //
