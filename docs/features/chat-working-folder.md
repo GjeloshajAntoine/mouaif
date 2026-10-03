@@ -42,7 +42,7 @@ The result reports `workingDir`, `branch`, `created`, and the updated chat. The 
 
 ### Automatic workspaces
 
-Creating the default workspace is controlled by the **Allow automatic workspaces** switch that sits on the `change_working_folder` row itself, in Settings → Project → Tools → Chats, inside that row's control cluster next to its Off / Ask / Allow segment. The option is stored as `autoWorkspace` (in `.mouaif.json`, or the app store when the project is DB-backed); the app-level default is in Settings → App defaults → Chat defaults. It is `false` everywhere by default, and the resolved value is defaults → app → project, so either level can turn it on.
+Creating the default workspace is controlled by the **Allow automatic workspaces** switch in Settings → Project → **General**, with an app-level default in Settings → App defaults → Chat defaults. The option is stored as `autoWorkspace` (in `.mouaif.json`, or the app store when the project is DB-backed). It is `false` everywhere by default, and the resolved value is defaults → app → project, so either level can turn it on.
 
 | `autoWorkspace` | `change_working_folder` with no `directory` |
 | --- | --- |

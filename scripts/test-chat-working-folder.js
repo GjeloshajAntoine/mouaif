@@ -77,6 +77,8 @@ async function main() {
   const offByDefault = await call({});
   assert.equal(offByDefault.ok, false);
   assert.equal(offByDefault.result.code, 'EOFF');
+  assert.equal(offByDefault.result.message.includes('Settings → Project → General'), true,
+    'EOFF points at the switch’s real location (the tool row is not where it lives)');
   assert.equal(fs.existsSync(path.join(projectDir, '.mouaif')), false, 'EOFF creates nothing');
   assert.equal((await call({}, chat.id)).result.code, 'EOFF', 'the default chat target is still gated');
   assert.equal((await call({ directory: null })).result.code, 'EOFF');
