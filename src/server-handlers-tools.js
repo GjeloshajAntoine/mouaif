@@ -785,8 +785,9 @@ async function handleTools(req, res, parsed, sessionToken = '') {
       const exec = out && out.exec;
       const result = exec && exec.result;
       const toolCall = events.find((e) => e.name === 'tool_call');
-      if (exec && exec.ok && result && typeof result.text === 'string' && result.text) {
-        let total = Number(result.totalCost);
+      const hasImages = result && Array.isArray(result.content) && result.content.some((block) => block.type === 'image');
+      if (exec && exec.ok && result && ((typeof result.text === 'string' && result.text) || hasImages)) {
+      let total = result.totalCost == null ? NaN : Number(result.totalCost);
         if (!(isFinite(total) && total >= 0) && result.model && result.usage) {
           try {
             const estimated = usage.computeCost({ model: result.model, usage: result.usage, app: appSettings });
@@ -796,17 +797,23 @@ async function handleTools(req, res, parsed, sessionToken = '') {
         const cost = isFinite(total) && total >= 0
           ? { known: true, input: 0, output: 0, total, currency: 'USD' }
           : { known: false, input: 0, output: 0, total: 0, currency: 'USD' };
+        // Store generated artwork on an ordinary subagent result card so
+        // direct @agent images survive reload. The assistant row owns billing.
+        result.cost = cost;
         try {
-          messages.appendMessage(projectDir, chatId, {
-            role: 'assistant',
-            content: result.text,
+        if (hasImages) messages.appendMessage(projectDir, chatId, {
+        role: 'tool', phase: 'result', name: 'subagent', toolCallId: callId,
+        ok: true, content: JSON.stringify(result)
+        });
+        messages.appendMessage(projectDir, chatId, {
+        role: 'assistant',
+        content: result.text || 'Generated image.',
             usage: result.usage || undefined,
             cost,
             modelId: result.model && result.model.id ? result.model.id : model.id,
             clientId: messages.normalizeClientId(body.clientId) || messages.newClientId('g')
           });
         } catch { /* direct dispatch still returns its result if persistence fails */ }
-        result.cost = cost;
       }
       const payload = {
         ok: !!(exec && exec.ok),

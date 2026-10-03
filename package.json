@@ -33,7 +33,7 @@
     "dev:web": "vite --config frontend/vite.config.js",
     "test:screen-capture": "node scripts/test-screen-capture.mjs && node scripts/test-video-capture.mjs && node scripts/test-composer-tools.mjs && node scripts/test-screen-capture-ui.mjs",
     "build:web": "vite build --config frontend/vite.config.js",
-    "test:subagent-prompt": "node scripts/test-default-subagent-stream.js && node scripts/test-subagent-start-http.js && node scripts/test-agent-command-card.js && node scripts/test-subagent-transcript-parity.js && node scripts/test-subagent-card-cost.js",
+    "test:subagent-prompt": "node scripts/test-subagent-images.js && node scripts/test-default-subagent-stream.js && node scripts/test-subagent-start-http.js && node scripts/test-agent-command-card.js && node scripts/test-subagent-transcript-parity.js && node scripts/test-subagent-card-cost.js",
     "test:skills": "node scripts/test-agent-skills.js && node scripts/test-agent-skills-stream.js && node scripts/test-agent-skills-ui.mjs",
     "test:mouaif-tool": "node scripts/test-mouaif-tool.js && node scripts/test-chat-model-tools.js && node scripts/test-mouaif-tool-stream.js && node scripts/test-mouaif-tool-sync.mjs && node scripts/test-mouaif-tool-categories.mjs && node scripts/test-mouaif-tool-toggle.mjs",
     "test:chat-model-tools-ui": "node scripts/test-chat-model-tools-ui.mjs",

@@ -1378,6 +1378,19 @@ export function handleSubagentStreamEvent(ev, data, refs) {
   }
   const live = ensureSubagentLive(card);
   if (!live) return false;
+  if (ev.eventName === 'image') {
+    const row = document.createElement('div');
+    row.className = 'chat-msg chat-msg--assistant tool-card__subagent-msg';
+    const body = document.createElement('div');
+    body.className = 'chat-msg__body';
+    renderToolResultBody(body, { name: 'generated_image', result: { content: [data] } }, () => false);
+    row.appendChild(body);
+    live.appendChild(row);
+    const hint = live.querySelector('.tool-card__subagent-live-hint');
+    if (hint) hint.remove();
+    afterTranscriptAppend(refs, false);
+    return true;
+  }
   if (ev.eventName === 'assistant_turn_end') {
     const row = live.querySelector('.tool-card__subagent-live-msg');
     if (row) {
@@ -1939,7 +1952,7 @@ export function renderSubagentChat(card, toolResult) {
       appendCallRows(wrap, toolCalls);
       continue;
     }
-    if (role === 'assistant' && !text && !m.reasoning) continue;
+    if (role === 'assistant' && !text && !m.reasoning && !(Array.isArray(m.images) && m.images.length)) continue;
     const row = document.createElement('div');
     row.className = 'chat-msg chat-msg--' + role + ' tool-card__subagent-msg';
     // Same head as appendMessageToTranscript — role label left, timestamp
@@ -1961,6 +1974,9 @@ export function renderSubagentChat(card, toolResult) {
     body.className = 'chat-msg__body';
     if (role === 'assistant') {
       renderAssistantBody(body, text || '', m.reasoning || '', true);
+      if (Array.isArray(m.images) && m.images.length) {
+        renderToolResultBody(body, { name: 'generated_image', result: { content: m.images } }, () => false);
+      }
     } else {
       body.textContent = text || '';
     }

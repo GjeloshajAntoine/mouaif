@@ -18,6 +18,8 @@ const bundle = await build({
         { role: 'system', content: [{ type: 'text', text: prompt }] },
         { role: 'user', content: task }
       ] }, refs);
+      const image = { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAFElEQVR4nGP8z8Dwn4EIwESMokGvCAAxBgMBAJ2DqQAAAAAASUVORK5CYII=' };
+      handleSubagentStreamEvent({ eventName: 'image' }, { ...image, parentCallId: 'mobile' }, refs);
       handleSubagentStreamEvent({ eventName: 'usage_update' }, { parentCallId: 'mobile', totalCost: 0.0123 }, refs);
       handleSubagentStreamEvent({ eventName: 'reasoning' }, { parentCallId: 'mobile', delta: 'Inspecting the source.' }, refs);
       handleSubagentStreamEvent({ eventName: 'message' }, { parentCallId: 'mobile', delta: 'Starting the review.' }, refs);
@@ -33,7 +35,7 @@ const bundle = await build({
           { role: 'assistant', content: 'Starting the review.', reasoning: 'Inspecting the source.', tool_calls: [{ id: 'read', function: { name: 'read_file', arguments: JSON.stringify({ path: 'src/index.js' }) } }] },
           { role: 'tool', name: 'read_file', tool_call_id: 'read', content: JSON.stringify({ relPath: 'src/index.js', body: 'Evidence', startLine: 1, endLine: 1, totalLines: 1 }) },
           { role: 'assistant', content: null, reasoning: 'Reasoning-only turn.' },
-          { role: 'assistant', content: 'Final answer.' }
+          { role: 'assistant', content: 'Final answer.', images: [image] }
         ]
       } }, refs);
       window.__task = task;
@@ -56,6 +58,7 @@ const bundle = await build({
         check(getComputedStyle(body).overflowY === 'visible', 'no inner scroll box');
         check(body.scrollHeight <= body.clientHeight + 1, 'all conversation turns fit the panel');
         check(root.scrollWidth <= root.clientWidth + 1, 'no horizontal overflow');
+        check(!!card.querySelector('.tool-card__image-button img'), 'generated image is zoomable');
         for (const row of card.querySelectorAll('.tool-card__subagent-msg')) {
         const parent = row.parentElement.getBoundingClientRect();
         check(Math.abs(row.getBoundingClientRect().width - parent.width) <= 1, 'full-width message row');

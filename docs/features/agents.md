@@ -65,6 +65,10 @@ The native `subagent` tool accepts an optional `agent` argument matched against 
 
 The `agent` parameter's description is built per request and enumerates the current agent names, so the model sees exactly what it can call.
 
+### Image-generation agents
+
+Pin an agent to an image model, then delegate a drawing task or send `@<agent> <description>`. Native OpenRouter and Gemini artwork appears in the nested transcript and is returned as image blocks to the parent model. Dedicated OpenRouter image models use `/images`; Imagen uses `:predict`; image-capable chat models request image output and parse inline pixels. See [Subagent image generation](./subagent-image-generation.md) for limits and failure behavior.
+
 ### Invoke an agent yourself with `@`
 
 You don't have to wait for the model to delegate. In the chat composer, type `@` and pick the agent from the **Agents** section (or type `@<name>`), write the task, and send:

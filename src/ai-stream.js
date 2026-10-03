@@ -633,6 +633,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // task is complete; tool use is not cut off after an arbitrary count.
   const convo = messages.slice();
   const usage = { promptTokens: 0, completionTokens: 0 };
+  const generatedImages = [];
   // Anthropic prompt-cache totals across all tool rounds in this turn.
   // Filled by commitRoundUsage() from the per-round trackers; folded into
   // the final `done` usage block so the server and chat UI can price the
@@ -692,7 +693,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // an incomplete exchange rather than a successful empty answer. A
       // short system reminder reliably gets the model to summarize the tool
       // output, while the retry cap prevents a silent model from looping.
-      if (completedToolRound && !String(result.assistantText || '').trim() && emptyPostToolRetries < FINAL_ANSWER_RETRIES) {
+      if (completedToolRound && !String(result.assistantText || '').trim() && !result.images.length && emptyPostToolRetries < FINAL_ANSWER_RETRIES) {
         emptyPostToolRetries++;
         // Anthropic merges every system-role message into the cached
         // system block, so a mid-conversation system reminder would
@@ -706,7 +707,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         });
         continue;
       }
-      if (completedToolRound && !String(result.assistantText || '').trim()) {
+      if (completedToolRound && !String(result.assistantText || '').trim() && !result.images.length) {
         onEvent('message', {
           delta: 'Tool execution finished, but the model did not provide a final response. Review the tool results above before retrying.'
         });
@@ -721,7 +722,8 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       const finalDelegatedCost = delegatedCostTotal();
       const finalTotalCost = totalRunCost();
       onEvent('done', { usage: finalUsage, providerCost: finalProviderCost, delegatedCost: finalDelegatedCost });
-      return { ok: true, usage: finalUsage, providerCost: finalProviderCost, delegatedCost: finalDelegatedCost, totalCost: finalTotalCost };
+      return { ok: true, usage: finalUsage, providerCost: finalProviderCost, delegatedCost: finalDelegatedCost, totalCost: finalTotalCost,
+      ...(generatedImages.length ? { content: generatedImages } : {}) };
     }
 
     for (const c of calls) {
@@ -817,11 +819,13 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // or { ok: false, error }. `done` is NOT emitted here — the caller
   // decides when the whole exchange is finished.
   async function runUpstreamTurn(convoMessages, specs) {
-  const req = build(model, convoMessages, true, specs, { promptCacheKey: promptCacheKeyFor(opts) });
+  let req;
+  try { req = build(model, convoMessages, true, specs, { promptCacheKey: promptCacheKeyFor(opts) }); }
+  catch (e) { return { ok: false, error: { code: e.code || 'EBADINPUT', message: e.message } }; }
   const supportsOpenAITools = model.provider === 'openai-compatible'
     || model.provider === 'openrouter'
     || model.provider === 'github-copilot';
-  if (supportsOpenAITools && specs && specs.length) {
+  if (supportsOpenAITools && specs && specs.length && !req.expectsImage) {
     const builderBody = req.body;
     if (builderBody && typeof builderBody === 'object') {
       builderBody.tools = specs;
@@ -906,6 +910,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   let sawError = null;
   let assistantText = '';
   let reasoningText = '';
+  const images = [];
   // OpenAI tool-call accumulator. Deltas arrive split across frames;
   // we assemble by `index`. The accumulator lives only for the
   // duration of one turn.
@@ -934,8 +939,12 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   const stream = upstream.body;
   const isNDJSON = def.streamFormat === 'ndjson';
   try {
-    if (isNDJSON) {
-      for await (const obj of readNDJSON(stream)) {
+    if (req.responseFormat === 'json') {
+    // Dedicated image APIs are one-shot JSON, not SSE. Keep the same
+    // cancellation, error normalization, and round billing as chat calls.
+    for (const ev of parseTurn('', JSON.stringify(await upstream.json()))) apply(ev);
+    } else if (isNDJSON) {
+    for await (const obj of readNDJSON(stream)) {
         resetIdle(); // any upstream byte proves the provider is alive
         for (const ev of parseTurn('', JSON.stringify(obj))) {
           apply(ev);
@@ -975,6 +984,9 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   commitRoundUsage();
 
   if (sawError) return { ok: false, error: sawError };
+  if (req.expectsImage && !images.length) {
+    return { ok: false, error: { code: 'ENO_IMAGE', message: 'The image provider returned no image (possibly filtered). No artwork was generated.' } };
+  }
 
   // Collapse the accumulator into an ordered list of tool calls.
   const toolCalls = [];
@@ -998,10 +1010,17 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     // delta the client already rendered.
     if (assistantText) onEvent('message', { delta: assistantText });
   }
-  return { ok: true, assistantText, toolCalls };
+  return { ok: true, assistantText, toolCalls, images };
 
   function apply(ev) {
-    if (ev.name === 'message') {
+    if (ev.name === 'image') {
+      if (images.some((image) => image.data === ev.data.data && image.mimeType === ev.data.mimeType)) return;
+      if (generatedImages.length >= 8) { sawError = { code: 'ETOOLARGE', message: 'Provider returned more than eight generated images.' }; return; }
+      images.push(ev.data);
+      generatedImages.push(ev.data);
+      onEvent('image', ev.data);
+    }
+    else if (ev.name === 'message') {
       if (ev.data && typeof ev.data.delta === 'string') assistantText += ev.data.delta;
       // OpenRouter is buffered until the turn completes because MiniMax may
       // serialize a tool call across several ordinary content deltas.
@@ -1659,9 +1678,29 @@ return { ok: false, content: JSON.stringify(r), result: r };
           return { ok: false, content: JSON.stringify(r), result: r };
         }
       }
+      // Live agent pins store identity only. Resolve their image API and
+      // modalities from the same cached catalog the picker used. Do not let
+      // catalog metadata replace the app connection's credential or URL.
+      if ((agentName || defaultAgent || chosenModel) && nestedModel.provider === 'openrouter'
+      && !nestedModel.imageEndpoint) {
+      try {
+      const catalog = await require('./modelList.js').liveModelsFor('openrouter', { purpose: 'image' });
+      let entry = catalog.models.find((m) => m.id === nestedModel.id);
+      if (!entry && !Array.isArray(nestedModel.outputModalities)) {
+        const chatCatalog = await require('./modelList.js').liveModelsFor('openrouter');
+        entry = chatCatalog.models.find((m) => m.id === nestedModel.id);
+      }
+      if (entry) nestedModel = { ...nestedModel, ...projectModelRecord(entry), provider: nestedModel.provider };
+      } catch (e) {
+      if (Array.isArray(nestedModel.outputModalities) && nestedModel.outputModalities.includes('image')) {
+        const r = { error: { code: e.code || 'EUPSTREAM', message: 'Cannot resolve image model API: ' + e.message } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      }
+      }
       nestedMessages.push({
-        role: 'user',
-        content: context ? ('Task:\n' + task + '\n\nContext:\n' + context) : task
+      role: 'user',
+      content: context ? ('Task:\n' + task + '\n\nContext:\n' + context) : task
       });
       // Per-run thinking level from the authorization card wins over an
       // agent's pin. An empty string clears both so the nested call uses
@@ -1847,7 +1886,7 @@ promptSize: callOpts && callOpts.promptSize,
           // parent's SSE layer persists every `tool_call` / `tool_result`
           // / `message` it sees, so reusing those names would corrupt
           // the transcript with the subagent's internal turns.
-          if (eventName === 'tool_call' || eventName === 'tool_result' || eventName === 'message'
+          if (eventName === 'tool_call' || eventName === 'tool_result' || eventName === 'message' || eventName === 'image'
           || eventName === 'reasoning' || eventName === 'assistant_turn_end') {
             onEvent('subagent_event', {
               parentCallId: (callOpts && callOpts.callId) || null,
@@ -1877,13 +1916,15 @@ promptSize: callOpts && callOpts.promptSize,
       let pendingCalls = [];
       let segmentText = '';
       let segmentReasoning = '';
+      let segmentImages = [];
       const flushSegment = () => {
-      if (!pendingCalls.length && !segmentText && !segmentReasoning) return;
+      if (!pendingCalls.length && !segmentText && !segmentReasoning && !segmentImages.length) return;
       const turn = {
       role: 'assistant',
       content: segmentText || null
       };
       if (segmentReasoning) turn.reasoning = segmentReasoning;
+      if (segmentImages.length) turn.images = segmentImages;
       if (pendingCalls.length) turn.tool_calls = pendingCalls.map((c) => ({
         id: c.id || undefined,
         type: 'function',
@@ -1893,10 +1934,14 @@ promptSize: callOpts && callOpts.promptSize,
         pendingCalls = [];
         segmentText = '';
         segmentReasoning = '';
+        segmentImages = [];
         };
         for (const ev of nestedEvents) {
         const d = ev.data || {};
-        if (ev.name === 'message' && typeof d.delta === 'string') {
+        if (ev.name === 'image') {
+        segmentImages.push(d);
+        nestedImageParts.push(d);
+        } else if (ev.name === 'message' && typeof d.delta === 'string') {
         segmentText += d.delta;
         } else if (ev.name === 'reasoning' && typeof d.delta === 'string') {
         segmentReasoning += d.delta;

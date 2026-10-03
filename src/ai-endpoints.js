@@ -712,6 +712,7 @@ function parseGeminiModels(body, opts) {
     label: m.displayName || id,
     contextWindow: typeof m.inputTokenLimit === 'number' ? m.inputTokenLimit : undefined
     };
+    if (methods.length) rec.generationMethods = methods;
     // Carry Gemini's own report of what a model produces so an image picker
     // can tell an Imagen row (produces an image) from a text model without
     // guessing on the id alone. A row that answers only `predict` (Imagen) or
@@ -817,7 +818,10 @@ return normalizeModelList(await def.listTranscriptionModels(cred, signal, baseUr
 async function listImageModels(provider, cred, signal, baseUrl) {
 const def = ENDPOINTS[provider];
 if (!def || typeof def.listImageModels !== 'function') return null;
-return normalizeModelList(await def.listImageModels(cred, signal, baseUrl));
+const models = normalizeModelList(await def.listImageModels(cred, signal, baseUrl));
+// These rows belong to the dedicated Image API, not chat completions.
+if (provider === 'openrouter') return models.map((m) => ({ ...m, imageEndpoint: 'images' }));
+return models;
 }
 
 function endpointFor(model) {
@@ -1132,6 +1136,25 @@ function credential(model) {
 // (see docs/features/prompt-caching.md).
 const PROMPT_CACHE_KEY_PROVIDERS = new Set(['openai-compatible', 'azure', 'openrouter']);
 
+// Image APIs accept a prompt, not a chat/tool transcript. Keep the agent's
+// instructions and task/context in order, without serializing image bytes.
+function imagePrompt(messages) {
+  return messages.map((m) => systemContentText(m.content)).filter(Boolean).join('\n\n');
+}
+
+function generatedImageEvent(data, mimeType = 'image/png') {
+  if (typeof data !== 'string' || !data) return null;
+  const match = /^data:(image\/(?:png|jpe?g|webp|gif));base64,([A-Za-z0-9+/=\s]+)$/i.exec(data);
+  if (match) { mimeType = match[1]; data = match[2]; }
+  if (!/^image\/(png|jpe?g|webp|gif)$/i.test(mimeType) || !/^[A-Za-z0-9+/=\s]+$/.test(data)) {
+    return { name: 'error', data: { code: 'EIMAGE_FORMAT', message: 'Provider returned an unsupported image payload; expected inline PNG, JPEG, WebP, or GIF.' } };
+  }
+  if (data.length > 12 * 1024 * 1024) {
+    return { name: 'error', data: { code: 'ETOOLARGE', message: 'Generated image exceeds the 12 MiB encoded-image limit.' } };
+  }
+  return { name: 'image', data: { type: 'image', data, mimeType } };
+}
+
 function buildOpenAIRequest(model, messages, stream, specs, requestOpts) {
   const def = ENDPOINTS[model.provider] || ENDPOINTS['openai-compatible'];
   // Fall back to the per-provider defaultBaseUrl when the saved
@@ -1188,6 +1211,9 @@ function buildOpenAIRequest(model, messages, stream, specs, requestOpts) {
     messages: effectiveMessages,
     stream: !!stream
   };
+  if (model.provider === 'openrouter' && Array.isArray(model.outputModalities) && model.outputModalities.includes('image')) {
+    body.modalities = model.outputModalities.includes('text') ? ['text', 'image'] : ['image'];
+  }
   if (stream && (model.provider === 'openai-compatible' || model.provider === 'openrouter'
     || model.provider === 'azure' || model.provider === 'mistral' || model.provider === 'groq' || model.provider === 'deepseek')) {
     // OpenAI-shaped streaming APIs do not include final token usage by
@@ -1247,10 +1273,19 @@ function buildOpenAIRequest(model, messages, stream, specs, requestOpts) {
   if (maxOut && /^\d+$/.test(maxOut) && parseInt(maxOut, 10) > 0) {
     body.max_completion_tokens = parseInt(maxOut, 10);
   }
+  if (model.provider === 'openrouter' && model.imageEndpoint === 'images') {
+    const refs = model.supportedParameters && model.supportedParameters.input_references;
+    if (refs && Number(refs.min) > 0) {
+      throw Object.assign(new Error('This image model requires reference images; choose a text-to-image model.'), { code: 'EBADINPUT' });
+    }
+    return { url: joinUrl(baseUrl, '/images'), headers,
+      body: { model: model.id, prompt: imagePrompt(messages), n: 1, stream: false }, responseFormat: 'json', expectsImage: true };
+  }
   return {
     url: effectiveUrl,
     headers,
-    body
+    body,
+    expectsImage: !!(body.modalities && body.modalities.includes('image'))
   };
 }
 
@@ -1555,6 +1590,16 @@ function buildAnthropicRequest(model, messages, stream, specs) {
 }
 
 function buildGeminiRequest(model, messages, stream) {
+  const methods = Array.isArray(model.generationMethods) ? model.generationMethods : [];
+  const imagen = /^imagen/i.test(model.id) || (methods.includes('predict') && !methods.includes('generateContent'));
+  if (imagen) {
+    return {
+      url: joinUrl(ENDPOINTS.gemini.baseUrl, '/v1beta/models/' + encodeURIComponent(model.id) + ':predict'),
+      headers: { 'Content-Type': 'application/json', ...ENDPOINTS.gemini.authHeader(credential(model)) },
+      body: { instances: [{ prompt: imagePrompt(messages) }], parameters: { sampleCount: 1 } },
+      responseFormat: 'json', expectsImage: true
+    };
+  }
   // Gemini uses ?alt=sse for streaming responses.
   const url = joinUrl(ENDPOINTS.gemini.baseUrl, '/v1beta/models/' + encodeURIComponent(model.id) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent'));
   const systemMsgs = messages.filter(m => m.role === 'system');
@@ -1567,6 +1612,8 @@ function buildGeminiRequest(model, messages, stream) {
     .filter(m => m.role !== 'system')
     .map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: openAIContentToGeminiParts(m.content) }));
   const body = { contents };
+  const image = (Array.isArray(model.outputModalities) && model.outputModalities.includes('image')) || /(^|-)image($|-)/i.test(model.id);
+  if (image) body.generationConfig = { responseModalities: ['TEXT', 'IMAGE'] };
   if (systemContent) body.systemInstruction = { role: 'system', parts: [{ text: systemContent }] };
   // Inject thinking budget for Gemini 2.5+ models. The thinking level
   // maps to generationConfig.thinkingConfig.thinkingBudget. Known
@@ -1592,7 +1639,8 @@ function buildGeminiRequest(model, messages, stream) {
   return {
     url,
     headers: { 'Content-Type': 'application/json', ...ENDPOINTS.gemini.authHeader(credential(model)) },
-    body
+    body,
+    expectsImage: image
   };
 }
 
@@ -1682,6 +1730,16 @@ function* parseOpenAISSE(eventName, data) {
   }
   const choice = obj.choices && obj.choices[0];
   const delta = choice && choice.delta;
+  for (const item of Array.isArray(obj.data) ? obj.data : []) {
+    const image = generatedImageEvent(item.b64_json || item.url, item.media_type || item.mime_type || 'image/png');
+    if (image) yield image;
+  }
+  const message = delta || (choice && choice.message);
+  for (const item of message && Array.isArray(message.images) ? message.images : []) {
+    const image = generatedImageEvent(item.image_url && item.image_url.url || item.b64_json, item.mimeType || 'image/png');
+    if (image) yield image;
+  }
+  if (!delta && message && typeof message.content === 'string') yield { name: 'message', data: { delta: message.content } };
   const reasoning = firstStringField(delta, [
     'reasoning',
     'reasoning_content',
@@ -1910,9 +1968,18 @@ function* parseGeminiSSE(eventName, data) {
   if (!data) return;
   let obj;
   try { obj = JSON.parse(data); } catch { yield { name: 'passthrough', data: { raw: data } }; return; }
+  for (const item of Array.isArray(obj.predictions) ? obj.predictions : []) {
+    const image = generatedImageEvent(item.bytesBase64Encoded, item.mimeType || 'image/png');
+    if (image) yield image;
+  }
   const cand = obj.candidates && obj.candidates[0];
   if (cand && cand.content && cand.content.parts) {
     for (const part of cand.content.parts) {
+      const inline = part.inlineData || part.inline_data;
+      if (inline && part.thought !== true) {
+        const image = generatedImageEvent(inline.data, inline.mimeType || inline.mime_type);
+        if (image) yield image;
+      }
       if (typeof part.thought === 'string') yield { name: 'reasoning', data: { delta: part.thought } };
       else if (part.thought === true && typeof part.text === 'string') yield { name: 'reasoning', data: { delta: part.text } };
       else if (typeof part.text === 'string') yield { name: 'message', data: { delta: part.text } };

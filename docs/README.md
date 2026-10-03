@@ -29,6 +29,8 @@ One page per feature: what it does and how to use it.
 
 ### Providers and models
 
+- [Subagent image generation](features/subagent-image-generation.md) — delegate native OpenRouter and Gemini artwork, with image previews and parent vision feedback.
+
 - [AI providers](features/providers.md) — connect the providers mouaif calls, and where their credentials are kept.
 - [Cloud model providers](features/cloud-providers.md) — Azure OpenAI, Mistral, Groq, and DeepSeek.
 - [Local OpenAI-compatible servers](features/local-openai-servers.md) — connect llama.cpp's `llama-server` or LM Studio with no API key.

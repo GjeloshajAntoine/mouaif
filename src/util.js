@@ -143,6 +143,7 @@ function safeDecode(value) {
 // listed here, instead of silently flowing through.
 const PROJECT_MODEL_FIELDS = [
   'id', 'provider', 'label', 'contextWindow', 'pricing',
+  'inputModalities', 'outputModalities', 'supportedParameters', 'imageEndpoint', 'generationMethods',
   'thinking', 'thinkingLevel', 'maxOutputTokens', 'maxTokens',
   // Dictation. A transcription model carries its own descriptor — the request
   // family, an optional non-conventional endpoint path, a language hint, a

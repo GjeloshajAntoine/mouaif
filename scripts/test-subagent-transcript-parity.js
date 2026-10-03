@@ -697,6 +697,32 @@ function main() {
       mod.handleSubagentStreamEvent({ eventName: 'message' }, { parentCallId: 'missing', delta: 'Wrong run' }, refs) === false);
   }
 
+  // Native image-only replies must remain visible live and after settle.
+  {
+    const image = { type: 'image', mimeType: 'image/png', data: 'AA==' };
+    const images = loadTranscript(Object.assign(installDom(), {
+      renderToolResultBody: (body, result) => {
+        for (const block of result.result.content) {
+          const img = createElement('img');
+          img.src = 'data:' + block.mimeType + ';base64,' + block.data;
+          body.appendChild(img);
+        }
+      }
+    }));
+    const card = makeCard();
+    const root = createElement('div');
+    root.appendChild(card);
+    const refs = { transcript: { current: root } };
+    images.handleSubagentStreamEvent({ eventName: 'image' }, { ...image, parentCallId: 'call_1' }, refs);
+    check('native image event renders a live picture', card.querySelector('img')?.src === 'data:image/png;base64,AA==');
+    images.renderSubagentChat(card, { name: 'subagent', result: { chat: [
+      { role: 'assistant', content: null, images: [image] }
+    ] } });
+    const wrap = card.querySelector('.tool-card__subagent-chat');
+    check('image-only assistant turn survives settle', wrap.querySelector('img')?.src === 'data:image/png;base64,AA=='
+      && wrap.querySelectorAll('.chat-msg--assistant').length === 1);
+  }
+
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   if (failed) process.exitCode = 1;
 }
