@@ -100,6 +100,14 @@ export async function refreshChatTitle(state, refs) {
 // directly to the store, so the mounted composer/picker must learn about it
 // without the user having to close and reopen the chat.
 export async function applyMouaifToolResult(data, state, refs) {
+  // Settled delegates arrive via direct JSON responses and follower/recovery
+  // tails too. Earlier successful mutations survive a later agent failure.
+  if (data && data.name === 'subagent' && data.result && Array.isArray(data.result.toolEvents)) {
+    await Promise.all(data.result.toolEvents
+      .filter((event) => event && event.name === 'tool_result')
+      .map((event) => applyMouaifToolResult(event.data, state, refs)));
+    return;
+  }
   if (!data || !['create_chat', 'update_chat', 'start_chat', 'delete_chat', 'attach_chat_image', 'mouaif'].includes(data.name)
     || data.ok !== true || !data.result || data.result.ok !== true) return;
   const result = data.result;

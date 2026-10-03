@@ -43,7 +43,7 @@ See [Chat model tools](./chat-model-tools.md) for model search options and the s
 
 `list_chat_attachments` scans a bounded message page, not the entire transcript. Set `limit` to 1–200 messages per page. When `nextBeforeSeq` is a number, pass it as `beforeSeq` on the next call; keep paging even if a page contains no images. `nextBeforeSeq: null` means no older messages remain. Draft images are included on every page, and image bytes are never returned.
 
-Successful changes to the mounted chat refresh its title, model picker, prompt, and composer draft/images without reopening it. The same refresh applies when following a turn from another tab or recovering a dropped stream. A late refresh cannot overwrite a different chat or text/images the user edited while the request was pending.
+Successful changes to the mounted chat refresh its title, model picker, prompt, and composer draft/images without reopening it. This includes tools called inside subagents: nested live results refresh immediately, and settled direct-dispatch or recovered results replay successful mutations even if the agent later failed. Nested call IDs deduplicate the live and settled copies. The same refresh applies when following a turn from another tab or recovering a dropped stream. A late refresh cannot overwrite a different chat or text/images the user edited while the request was pending.
 
 A project model can infer its provider when creating a chat. A live-catalog model needs `providerId`; selections use the same resolver as sending a chat turn. Validation happens before creation, so a rejected model never leaves a blank chat. On update, `modelId: ""` clears the model/provider choice, `promptId: ""` detaches the prompt, and an unknown prompt is rejected.
 

@@ -249,7 +249,8 @@ export async function runAgentCommand(agentName, task, state, refs) {
         if (frame.name === 'tool_call' && data.name === 'subagent') {
           rekeyToolCard(refs, data.id, pendingCard);
         } else if (frame.name === 'subagent_event') {
-          handleSubagentStreamEvent({ eventName: data.kind }, Object.assign({ parentCallId: data.parentCallId }, data.data || {}), refs);
+        handleSubagentStreamEvent({ eventName: data.kind }, Object.assign({ parentCallId: data.parentCallId }, data.data || {}), refs);
+        if (data.kind === 'tool_result') applyMouaifToolResult(data.data, state, refs);
         } else if (frame.name === 'authorization_required') {
           mountOverlayCard(refs, data.callId, () => authorizationCard(data, projectDir, chatId, refs, null, state));
         } else if (frame.name === 'ask_user_required') {
@@ -299,6 +300,7 @@ export async function runAgentCommand(agentName, task, state, refs) {
     else if (!body.ok) pendingCard.remove(); // failed with no id: don't strand it
   }
   appendToolResultCard({ id: body.id || null, name: 'subagent', ok: !!body.ok, result: body.result || body }, refs);
+  applyMouaifToolResult({ name: 'subagent', result: body.result || body }, state, refs);
   // Fold the persisted agent result into the live transcript immediately.
   // Its usage/cost is included so the header Total updates before reload.
   const text = body.result && typeof body.result.text === 'string' ? body.result.text : '';
@@ -1237,6 +1239,7 @@ state.messages = state.messages.filter((m) => m !== userMsg);
     // card instead of the live bubble / standalone tool cards.
     if (ev.eventName === 'subagent_event' && data) {
       handleSubagentStreamEvent({ eventName: data.kind }, Object.assign({ parentCallId: data.parentCallId }, data.data || {}), refs);
+      if (data.kind === 'tool_result') applyMouaifToolResult(data.data, state, refs);
       return;
     }
     if (ev.eventName === 'shell_output' && data) {

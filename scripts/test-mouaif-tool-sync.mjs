@@ -120,7 +120,42 @@ for (const change of [
   assert.equal(requests.length, before, 'starting another chat does not overwrite the mounted chat');
 }
 
+// A failed delegate may already have attached an image successfully. Its
+// settled tool events must refresh the mounted draft and dedupe live replay.
+{
+  const { state, refs } = fixture();
+  const attach = event({ target: 'draft', chatId: 'host', attached: { name: 'shot.png' } });
+  const delegate = { name: 'subagent', ok: false, result: { ok: false, toolEvents: [
+    { name: 'tool_call', data: attach }, { name: 'tool_result', data: attach }
+  ] } };
+  const pending = context.apply(delegate, state, refs);
+  reply({ id: 'host', draftAttachments: [image] });
+  await pending;
+  assert.equal(state.imageAttachments[0].name, 'shot.png');
+  const before = requests.length;
+  await context.apply(delegate, state, refs);
+  assert.equal(requests.length, before, 'settled delegates dedupe their nested results');
+}
+
 const stream = fs.readFileSync(new URL('../frontend/src/components/chat/stream.js', import.meta.url), 'utf8');
+// Exercise the real SSE handler, not only the metadata helper.
+{
+  const { state, refs } = fixture();
+  let rendered = 0;
+  const ctx = vm.createContext({ state, refs,
+    handleSubagentStreamEvent: () => rendered++, applyMouaifToolResult: context.apply });
+  const start = stream.indexOf('  function handleStreamEvent(ev, data) {');
+  const end = stream.indexOf('\n  try {\n    for (;;) {', start);
+  vm.runInContext(stream.slice(start, end) + '; this.handle = handleStreamEvent;', ctx);
+  ctx.handle({ eventName: 'subagent_event' }, { kind: 'tool_result', parentCallId: 'delegate',
+    data: event({ target: 'draft', chatId: 'host', attached: { name: 'shot.png' } }) });
+  reply({ id: 'host', draftAttachments: [image] });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(rendered, 1);
+  assert.equal(state.imageAttachments[0].name, 'shot.png', 'nested SSE refreshes the composer immediately');
+}
+assert.ok(stream.includes("if (data.kind === 'tool_result') applyMouaifToolResult(data.data, state, refs)"));
+assert.ok(stream.includes("applyMouaifToolResult({ name: 'subagent', result: body.result || body }, state, refs)"));
 assert.ok(stream.includes('if (data) applyMouaifToolResult(data, state, refs)'));
 assert.ok(stream.includes('applyMouaifToolResult({ id: row.toolCallId'));
 const hook = fs.readFileSync(new URL('../frontend/src/components/chat/useChatState.js', import.meta.url), 'utf8');
