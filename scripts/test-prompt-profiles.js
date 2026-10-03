@@ -82,7 +82,7 @@ async function main() {
   const core = pp.profileSystemMessage('very-small');
   const average = pp.profileSystemMessage('average');
   const extensive = pp.profileSystemMessage('extensive');
-  check('very-small stays compact', core.length < 1800, 'chars=' + core.length);
+  check('very-small stays compact', core.length < 2200, 'chars=' + core.length);
   check('average extends the complete compact core', average.startsWith(core + '\n\n'));
   check('extensive extends the complete average workflow', extensive.startsWith(average + '\n\n'));
   const sharedRules = [
@@ -97,6 +97,10 @@ async function main() {
     ['denied operations cannot use another tool', /If denied, stop that operation even via other tools/],
     ['denial allows only clarification or permitted work', /If denied.*ask or do permitted work/],
     ['schema discovery', /omits its parameters.*discover_tool with that name/],
+    ['proactive coding workspace', /For implementation work.*change_working_folder is enabled.*no working folder is selected.*call it with \{\} before edits or coding subagents, even if not asked/],
+    ['workspace folder suggestion', /Suggest \.mouaif\/workspaces\/<chatId>/],
+    ['preserves chosen working folders', /keep selected or user-requested folders/],
+    ['questions and reviews do not create folders', /Skip creation for questions\/reviews; respect authorization/],
     ['inspect before editing', /Read the code, its callers, and its tests first/],
     ['root cause and minimal change', /Fix the cause, not the symptom.*smallest change that works/],
     ['exact edit blocks', /edit_file using an exact, unique oldText\/newText block/],
@@ -244,6 +248,13 @@ async function main() {
     JSON.stringify(tiny) === JSON.stringify(tinyDiscovered),
     'got before: ' + JSON.stringify(tiny.map(s => s.function.name)) +
     ' after: ' + JSON.stringify(tinyDiscovered.map(s => s.function.name)));
+  const workspaceSpec = require('../src/tools/mouaif.js').SPECS.change_working_folder;
+  for (const profile of ['very-small', 'average', 'extensive', 'chat']) {
+    const specs = pp.reduceToolSpecs([workspaceSpec], profile);
+    const description = specs.find((spec) => spec.function.name === 'change_working_folder').function.description;
+    check(profile + ' tool description encourages unsolicited workspace creation', /proactively create a working folder.*even if not asked/.test(description));
+    check(profile + ' tool description respects folder choice and authorization', /keep selected\/user-requested folders and respect authorization/.test(description));
+  }
   check('reduceToolSpecs invalid profile falls through to full',
     pp.reduceToolSpecs(sampleSpecs, 'huge')[0].function.parameters.properties.cmd,
     'unknown profile did not keep full specs');
@@ -289,6 +300,10 @@ async function main() {
     'tools=' + JSON.stringify(c1.tools));
     const c2 = chats.updateChat(projectDir, c1.id, { promptSize: 'average' });
     check('switching chat -> average keeps all tools', c2 && c2.promptSize === 'average' && c2.tools == null);
+    const preview = await get(port, '/api/chats/' + c2.id + '/system-prompt?projectDir=' + encodeURIComponent(projectDir));
+    check('chat prompt preview includes proactive workspace creation', preview.status === 200
+    && preview.body.profile.systemMessage.includes('even if not asked')
+    && preview.body.profile.systemMessage.includes('Suggest .mouaif/workspaces/<chatId>'));
     const c3 = chats.updateChat(projectDir, c2.id, { promptSize: 'chat' });
     check('switching to chat keeps all tools', c3 && c3.promptSize === 'chat' && c3.tools == null,
     'tools=' + JSON.stringify(c3 && c3.tools));
