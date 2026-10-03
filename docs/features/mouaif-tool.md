@@ -47,6 +47,8 @@ Successful changes to the mounted chat refresh its title, model picker, prompt, 
 
 A project model can infer its provider when creating a chat. A live-catalog model needs `providerId`; selections use the same resolver as sending a chat turn. Validation happens before creation, so a rejected model never leaves a blank chat. On update, `modelId: ""` clears the model/provider choice, `promptId: ""` detaches the prompt, and an unknown prompt is rejected.
 
+Concurrent `attach_chat_image` calls merge into the latest saved draft after loading the image, so parallel subagents do not overwrite one another. The eight-image limit is checked at that merge; if only one slot remains, only one call succeeds. A chat deleted during image loading returns `ENOTFOUND` instead of reporting a phantom attachment.
+
 `attach_chat_image` accepts only images (`png`, `jpeg`, `webp`, `gif`), because that is the only attachment the chat store understands. It reads the file with the file editor's boundary (the user home, or anywhere with `MOUAIF_ALLOW_ANY_ROOT=1`), so a path outside it fails with `EOUTSIDE_HOME` exactly like `read_file`.
 
 ### Where it appears

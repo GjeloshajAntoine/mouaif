@@ -550,6 +550,9 @@ async function runAttachments(args, opts) {
   const relPath = trimString(args.path, 4096);
   if (!relPath) throw typedError('EBADINPUT', 'path is required for action "attach"');
   const loaded = await loadImageAttachment(projectDir, relPath);
+  // Loading bytes yields to concurrent calls and composer saves. Re-read
+  // after that await; keep validation, merge, and write synchronous.
+  const latest = requireChat(projectDir, chatId);
 
   if (args.target === 'message') {
     const content = typeof args.content === 'string' ? args.content.slice(0, MAX_DRAFT_CHARS) : '';
@@ -568,7 +571,7 @@ async function runAttachments(args, opts) {
     });
   }
 
-  const existing = Array.isArray(chat.draftAttachments) ? chat.draftAttachments : [];
+  const existing = Array.isArray(latest.draftAttachments) ? latest.draftAttachments : [];
   if (existing.length >= MAX_ATTACHMENTS) {
     throw typedError('ETOOLARGE', 'the chat draft already holds ' + MAX_ATTACHMENTS + ' images');
   }

@@ -258,6 +258,40 @@ async function main() {
   const noChat = await mouaif.runMouaif({ action: 'attach', path: 'shot.png' }, { projectDir, chatId: null });
   check('attach without a chat is EBADINPUT', noChat.ok === false && noChat.result.code === 'EBADINPUT');
 
+  // Concurrent reads must merge into the latest draft, not the snapshot
+  // taken before loading bytes. The eighth-slot check happens at commit too.
+  const concurrentChat = chats.createChat(projectDir, { title: 'Concurrent images' });
+  const concurrentOpts = { projectDir, chatId: concurrentChat.id };
+  fs.writeFileSync(path.join(projectDir, 'second.png'), Buffer.from(PNG_BASE64, 'base64'));
+  const concurrent = await Promise.all(['shot.png', 'second.png'].map((imagePath) =>
+    mouaif.runAppTool('attach_chat_image', { path: imagePath }, concurrentOpts)));
+  check('concurrent attaches both succeed and survive', concurrent.every((r) => r.ok)
+    && chats.getChat(projectDir, concurrentChat.id).draftAttachments.map((a) => a.name).sort().join(',') === 'second.png,shot.png');
+  const oneImage = chats.getChat(projectDir, concurrentChat.id).draftAttachments[0];
+  chats.updateChat(projectDir, concurrentChat.id, { draftAttachments: Array(7).fill(oneImage) });
+  const lastSlot = await Promise.all(['shot.png', 'second.png'].map((imagePath) =>
+    mouaif.runAppTool('attach_chat_image', { path: imagePath }, concurrentOpts)));
+  check('concurrent eighth-slot attaches report only one success', lastSlot.filter((r) => r.ok).length === 1
+    && lastSlot.some((r) => r.result.code === 'ETOOLARGE')
+    && chats.getChat(projectDir, concurrentChat.id).draftAttachments.length === 8);
+
+  // A chat may be deleted by another request while its image is loading.
+  const files = require('../src/files.js');
+  const readMedia = files.readMedia;
+  const media = await readMedia(projectDir, 'shot.png');
+  for (const target of ['draft', 'message']) {
+    const deletedChat = chats.createChat(projectDir, {});
+    let release;
+    files.readMedia = () => new Promise((resolve) => { release = resolve; });
+    try {
+      const pending = mouaif.runAppTool('attach_chat_image', { path: 'shot.png', target }, { projectDir, chatId: deletedChat.id });
+      chats.deleteChat(projectDir, deletedChat.id);
+      release(media);
+      const result = await pending;
+      check('deleted chat is rechecked after image load for ' + target, !result.ok && result.result.code === 'ENOTFOUND');
+    } finally { files.readMedia = readMedia; }
+  }
+
   // --- 6) settings -------------------------------------------------------
   const appGet = await mouaif.runMouaif({ action: 'settings_get' }, opts);
   check('settings_get defaults to the app scope', appGet.ok === true && appGet.result.scope === 'app');
