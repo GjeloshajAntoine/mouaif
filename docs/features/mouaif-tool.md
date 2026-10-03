@@ -29,7 +29,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `delete_chat` | Delete a chat and its transcript. Requires `confirm: true`. Refuses the chat the turn is running in. |
 | `search_chats` | Search titles, drafts, and message text (`query`). Results retain `matchField` and a bounded matching `snippet`. |
 | `attach_chat_image` | Put an image from the project into a chat: `path` is project-relative, `target` is `draft` (default — the composer holds it until the user presses send) or `message` (appends a real user message carrying the image, with optional `content`). |
-| `list_chat_attachments` | Show draft and message image names/types, not pixels. Scans the newest 200 messages by default; follow `nextBeforeSeq` with `beforeSeq` to retrieve older images. |
+| `list_chat_attachments` | Show draft and message image names/types and `imageRef` values, not pixels. Scans the newest 200 messages by default; follow `nextBeforeSeq` with `beforeSeq` to retrieve older images. |
 | `get_settings` | Read settings. `scope` is `app` (default) or `project`; `keys` narrows the result. |
 | `update_settings` | Merge `patch` into the chosen scope; `unset` removes keys (project scope). Defaults to the project scope. |
 | `list_projects` | List the registered projects (id, name, path, cost). |
@@ -41,7 +41,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 
 See [Chat model tools](./chat-model-tools.md) for model search options and the search → create/update → start workflow. A background start uses the target chat's normal permissions, cancellation, live replay, and transcript persistence; a busy chat rejects the start without appending a message.
 
-`list_chat_attachments` scans a bounded message page, not the entire transcript. Set `limit` to 1–200 messages per page. When `nextBeforeSeq` is a number, pass it as `beforeSeq` on the next call; keep paging even if a page contains no images. `nextBeforeSeq: null` means no older messages remain. Draft images are included on every page, and image bytes are never returned.
+`list_chat_attachments` scans a bounded message page, not the entire transcript. Set `limit` to 1–200 messages per page. When `nextBeforeSeq` is a number, pass it as `beforeSeq` on the next call; keep paging even if a page contains no images. `nextBeforeSeq: null` means no older messages remain. Draft images are included on every page, and image bytes are never returned. Each entry has an `imageRef` for explicit selection in `subagent.images`. Message entries also carry `messageSeq`; draft references identify the image contents so reordering does not select a different image. References resolve only within the current chat, and removed/replaced images fail rather than falling back to another attachment.
 
 Successful changes to the mounted chat refresh its title, model picker, prompt, and composer draft/images without reopening it. This includes tools called inside subagents: nested live results refresh immediately, and settled direct-dispatch or recovered results replay successful mutations even if the agent later failed. Nested call IDs deduplicate the live and settled copies. The same refresh applies when following a turn from another tab or recovering a dropped stream. A late refresh cannot overwrite a different chat or text/images the user edited while the request was pending.
 

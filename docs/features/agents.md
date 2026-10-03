@@ -63,7 +63,7 @@ The native `subagent` tool accepts an optional `agent` argument matched against 
 { "task": "Review the staged changes for regressions.", "agent": "reviewer" }
 ```
 
-The `agent` parameter's description is built per request and enumerates the current agent names, so the model sees exactly what it can call.
+The `agent` parameter's description is built per request and enumerates the current agent names, so the model sees exactly what it can call. Images are never inherited: the main model can explicitly pass an `images` array of current-chat `imageRef` values returned by `list_chat_attachments`. Omit it to send only task/context; see [Subagent image generation](./subagent-image-generation.md#send-only-selected-attachments).
 
 ### Image-generation agents
 

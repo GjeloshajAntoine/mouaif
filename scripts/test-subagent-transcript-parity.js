@@ -702,7 +702,8 @@ function main() {
     const image = { type: 'image', mimeType: 'image/png', data: 'AA==' };
     const images = loadTranscript(Object.assign(installDom(), {
       renderToolResultBody: (body, result) => {
-        for (const block of result.result.content) {
+      body.textContent = ''; // Production tool renderer clears its host.
+      for (const block of result.result.content) {
           const img = createElement('img');
           img.src = 'data:' + block.mimeType + ';base64,' + block.data;
           body.appendChild(img);
@@ -716,11 +717,33 @@ function main() {
     images.handleSubagentStreamEvent({ eventName: 'image' }, { ...image, parentCallId: 'call_1' }, refs);
     check('native image event renders a live picture', card.querySelector('img')?.src === 'data:image/png;base64,AA==');
     images.renderSubagentChat(card, { name: 'subagent', result: { chat: [
-      { role: 'assistant', content: null, images: [image] }
+    { role: 'assistant', content: 'Here is the drawing.', images: [image] }
     ] } });
     const wrap = card.querySelector('.tool-card__subagent-chat');
     check('image-only assistant turn survives settle', wrap.querySelector('img')?.src === 'data:image/png;base64,AA=='
       && wrap.querySelectorAll('.chat-msg--assistant').length === 1);
+    check('generated artwork preserves accompanying answer text', wrap.querySelector('.chat-msg__answer').innerHTML === 'Here is the drawing.');
+  }
+
+  // The nested user prompt previews only its explicitly selected pixels.
+  {
+    const input = loadTranscript(Object.assign(installDom(), {
+      zoomableImage: (img) => { const button = createElement('button'); button.appendChild(img); return button; }
+    }));
+    const card = makeCard();
+    const root = createElement('div');
+    root.appendChild(card);
+    const chat = [{ role: 'user', content: [
+      { type: 'text', text: 'Describe this one' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,AQ==' } }
+    ] }];
+    card.classList.remove('tool-card--result');
+    input.handleSubagentStreamEvent({ eventName: 'start' }, { parentCallId: 'call_1', chat }, { transcript: { current: root } });
+    check('live selected input renders as an image', card.querySelector('img')?.src === 'data:image/png;base64,AQ==');
+    input.renderSubagentChat(card, { name: 'subagent', result: { chat } });
+    const user = card.querySelector('.tool-card__subagent-chat').querySelector('.chat-msg--user');
+    check('settled selected input remains zoomable', user.querySelector('button img')?.src === 'data:image/png;base64,AQ==');
+    check('selected image bytes never become prompt text', !user.textContent.includes('AQ=='));
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

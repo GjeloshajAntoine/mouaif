@@ -524,6 +524,7 @@ async function runAttachments(args, opts) {
   const action = args.action;
 
   if (action === 'list_attachments') {
+    const { imageMetadata, draftImageRef } = require('../chatImages.js');
     const limit = clampLimit(args.limit, 200, 200);
     // Read one extra row to distinguish a complete inventory from a page
     // with older messages. The seq cursor remains stable across appends.
@@ -533,15 +534,16 @@ async function runAttachments(args, opts) {
     const attached = [];
     for (const m of page) {
       if (!m || !Array.isArray(m.attachments) || !m.attachments.length) continue;
-      for (const a of m.attachments) {
-        attached.push({ messageTs: m.ts, name: a && a.name, mimeType: a && a.mimeType });
+      for (const [index, a] of m.attachments.entries()) {
+      attached.push({ messageTs: m.ts, messageSeq: m.seq,
+      ...imageMetadata(a, 'message:' + m.seq + ':' + index) });
       }
     }
     return ok({
       ok: true,
       chatId,
       drafts: (Array.isArray(chat.draftAttachments) ? chat.draftAttachments : [])
-        .map((a) => ({ name: a && a.name, mimeType: a && a.mimeType })),
+        .map((a) => imageMetadata(a, draftImageRef(a))),
       messages: attached,
       nextBeforeSeq
     });

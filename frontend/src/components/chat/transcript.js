@@ -193,6 +193,15 @@ function renderImageAttachments(host, attachments) {
   host.appendChild(wrap);
 }
 
+// Tool preview rendering clears its host. Give generated pictures their
+// own container so adding artwork never erases the assistant's answer.
+function renderSubagentImages(host, images) {
+  const wrap = document.createElement('div');
+  renderToolResultBody(wrap, { name: 'generated_image', result: { content: images } }, () => false);
+  wrap.className = 'chat-msg__attachments';
+  host.appendChild(wrap);
+}
+
 // textOfContent(content)
 //
 // Flatten a message body into displayable text. Top-level transcript
@@ -1383,7 +1392,7 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     row.className = 'chat-msg chat-msg--assistant tool-card__subagent-msg';
     const body = document.createElement('div');
     body.className = 'chat-msg__body';
-    renderToolResultBody(body, { name: 'generated_image', result: { content: [data] } }, () => false);
+    renderSubagentImages(body, [data]);
     row.appendChild(body);
     live.appendChild(row);
     const hint = live.querySelector('.tool-card__subagent-live-hint');
@@ -1975,10 +1984,15 @@ export function renderSubagentChat(card, toolResult) {
     if (role === 'assistant') {
       renderAssistantBody(body, text || '', m.reasoning || '', true);
       if (Array.isArray(m.images) && m.images.length) {
-        renderToolResultBody(body, { name: 'generated_image', result: { content: m.images } }, () => false);
+        renderSubagentImages(body, m.images);
       }
     } else {
-      body.textContent = text || '';
+    body.textContent = text || '';
+    if (role === 'user' && Array.isArray(m.content)) {
+      const attachments = m.content.filter((part) => part && part.type === 'image_url' && part.image_url)
+      .map((part) => ({ dataUrl: part.image_url.url, name: 'Selected image input' }));
+      if (attachments.length) renderImageAttachments(body, attachments);
+    }
     }
     row.appendChild(head); row.appendChild(body);
     wrap.appendChild(row);

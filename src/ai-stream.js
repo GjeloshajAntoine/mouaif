@@ -1550,6 +1550,13 @@ return { ok: false, content: JSON.stringify(r), result: r };
         const r = { error: { code: 'EBADINPUT', message: 'task is required' } };
         return { ok: false, content: JSON.stringify(r), result: r };
       }
+      let inputImages;
+      try {
+      inputImages = require('./chatImages.js').resolveChatImages(callOpts && callOpts.projectDir, callOpts && callOpts.chatId, args && args.images);
+      } catch (e) {
+      const r = { error: { code: e.code || 'EBADINPUT', message: e.message } };
+      return { ok: false, content: JSON.stringify(r), result: r };
+      }
       // Resolve the requested agent persona (if any). Agents are
       // named subagent personas from .mouaif.json — an unknown name is
       // a hard, typed error so the model can retry with a valid one
@@ -1700,7 +1707,10 @@ return { ok: false, content: JSON.stringify(r), result: r };
       }
       nestedMessages.push({
       role: 'user',
-      content: context ? ('Task:\n' + task + '\n\nContext:\n' + context) : task
+      content: inputImages.length ? [
+      { type: 'text', text: context ? ('Task:\n' + task + '\n\nContext:\n' + context) : task },
+      ...inputImages.map((image) => ({ type: 'image_url', image_url: { url: image.dataUrl } }))
+      ] : (context ? ('Task:\n' + task + '\n\nContext:\n' + context) : task)
       });
       // Per-run thinking level from the authorization card wins over an
       // agent's pin. An empty string clears both so the nested call uses

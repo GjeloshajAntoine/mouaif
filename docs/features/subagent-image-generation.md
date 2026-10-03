@@ -14,7 +14,25 @@ An agent pinned to an image model can generate artwork natively through OpenRout
 @Artist Draw a simple blue bird icon on a white background.
 ```
 
-Tap the resulting image to enlarge it. Direct `@agent` image results persist as a subagent tool card and an assistant billing row, so the artwork remains after reload. Generating an image does not attach it to the composer draft or start another chat turn. Normal subagent authorization still applies.
+Tap the resulting image to enlarge it. When a reply includes text and artwork, both remain visible in the nested bubble. Direct `@agent` image results persist as a subagent tool card and an assistant billing row, so the artwork remains after reload. Generating an image does not attach it to the composer draft or start another chat turn. Normal subagent authorization still applies.
+
+### Send only selected attachments
+
+Chat images are **never forwarded automatically**. The main model first calls `list_chat_attachments`, chooses the desired `imageRef` values, and passes them in `subagent.images`:
+
+```json
+{
+  "task": "Describe this screenshot and suggest a simpler layout.",
+  "agent": "Reviewer",
+  "images": ["message:12:0"]
+}
+```
+
+Omitting `images`, or passing `[]`, sends no images even when the parent chat has attachments. References are scoped to the current chat: message references contain its stable sequence and image index; draft references identify the exact image contents and remain valid across reordering, but not replacement/removal. Relist attachments after an `ENOTFOUND` response. At most eight images and 24 MiB of encoded input can be selected.
+
+The selected pixels are resolved server-side after delegation authorization and included in the nested user message, live prompt preview, and settled transcript. They are not copied to project files, removed from the draft, or returned as newly generated artwork. Use a vision-capable model. Selecting an image for a Gemini image-chat or supported OpenRouter image model also enables reference-image editing; Imagen `predict` rejects image inputs rather than silently dropping them.
+
+`POST /api/tools/subagent` accepts the same optional `images` reference array. The composer does not automatically add draft images to an `@agent` command.
 
 ## Behavior
 
@@ -24,12 +42,13 @@ Tap the resulting image to enlarge it. Direct `@agent` image results persist as 
 - Dedicated image calls do not advertise tools. They retain the chat loop's abort signal, idle timeout, error handling, and per-round usage accounting.
 - The normalized `image` event carries `{ type, data, mimeType }`. A delegated assistant turn stores its image blocks in `images`; the subagent result also carries them in `content` for parent vision feedback. Base64 is omitted from the textual tool feedback.
 - Each generated image must be inline PNG, JPEG, WebP, or GIF and at most 12 MiB of encoded data; at most eight images are accepted per run. Remote output URLs are rejected rather than fetched with provider credentials. Image-only calls returning no pixels fail with `ENO_IMAGE` instead of claiming success.
-- This first native path is text-to-image. Models requiring image references are rejected with `EBADINPUT`; reference-image editing and asynchronous/long-running prediction APIs are not implemented.
+- OpenRouter `/images` receives explicitly selected images as `input_references`, validated against the model's reported minimum and maximum reference count before sending. Gemini image chat uses inline image parts. Imagen input-image editing and asynchronous/long-running prediction APIs are not implemented.
 
 ## Verification
 
 ```bash
 node scripts/test-subagent-images.js
+node scripts/test-subagent-image-inputs.js
 npm run test:subagent-prompt
 node scripts/test-read-image-preview.js
 ```

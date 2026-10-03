@@ -13,11 +13,13 @@ const bundle = await build({
       const task = 'Read the complete delegated conversation and keep all intermediate replies, reasoning and tool results visible. '.repeat(4);
       const args = { task, agent: 'Very-long-reviewer-name-that-must-wrap-instead-of-hiding-the-cost' };
       appendToolCallCard({ id: 'mobile', name: 'subagent', args }, refs);
+      const inputUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAFElEQVR4nGP8z8Dwn4EIwESMokGvCAAxBgMBAJ2DqQAAAAAASUVORK5CYII=';
+      const userContent = [{ type: 'text', text: task }, { type: 'image_url', image_url: { url: inputUrl } }];
       const prompt = 'You are the reviewer. Read the source carefully and report evidence. '.repeat(6);
       handleSubagentStreamEvent({ eventName: 'start' }, { parentCallId: 'mobile', agent: args.agent, model: { id: 'mock' }, chat: [
         { role: 'system', content: [{ type: 'text', text: prompt }] },
-        { role: 'user', content: task }
-      ] }, refs);
+        { role: 'user', content: userContent }
+        ] }, refs);
       const image = { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAFElEQVR4nGP8z8Dwn4EIwESMokGvCAAxBgMBAJ2DqQAAAAAASUVORK5CYII=' };
       handleSubagentStreamEvent({ eventName: 'image' }, { ...image, parentCallId: 'mobile' }, refs);
       handleSubagentStreamEvent({ eventName: 'usage_update' }, { parentCallId: 'mobile', totalCost: 0.0123 }, refs);
@@ -31,7 +33,7 @@ const bundle = await build({
         totalCost: 0.0123, model: { id: 'mock' }, agent: args.agent,
         chat: [
         { role: 'system', content: [{ type: 'text', text: prompt }] },
-        { role: 'user', content: task },
+        { role: 'user', content: userContent },
           { role: 'assistant', content: 'Starting the review.', reasoning: 'Inspecting the source.', tool_calls: [{ id: 'read', function: { name: 'read_file', arguments: JSON.stringify({ path: 'src/index.js' }) } }] },
           { role: 'tool', name: 'read_file', tool_call_id: 'read', content: JSON.stringify({ relPath: 'src/index.js', body: 'Evidence', startLine: 1, endLine: 1, totalLines: 1 }) },
           { role: 'assistant', content: null, reasoning: 'Reasoning-only turn.' },
@@ -59,6 +61,7 @@ const bundle = await build({
         check(body.scrollHeight <= body.clientHeight + 1, 'all conversation turns fit the panel');
         check(root.scrollWidth <= root.clientWidth + 1, 'no horizontal overflow');
         check(!!card.querySelector('.tool-card__image-button img'), 'generated image is zoomable');
+        check(!!card.querySelector('.chat-msg--user .chat-msg__attachment-button img'), 'selected input is zoomable');
         for (const row of card.querySelectorAll('.tool-card__subagent-msg')) {
         const parent = row.parentElement.getBoundingClientRect();
         check(Math.abs(row.getBoundingClientRect().width - parent.width) <= 1, 'full-width message row');

@@ -226,6 +226,10 @@ async function main() {
   check('list_attachments sees the draft images', listed.ok === true
     && listed.result.drafts.length === 2 && listed.result.messages.length === 1);
   check('list_attachments names the image', listed.result.drafts[0].name === 'shot.png');
+  check('list_attachments exposes explicit selection refs without pixels',
+    /^draft:[a-f0-9]{64}$/.test(listed.result.drafts[0].imageRef)
+    && listed.result.messages[0].imageRef === 'message:0:0'
+    && listed.result.messages[0].messageSeq === 0 && !listed.content.includes(PNG_BASE64));
   for (let i = 0; i < 200; i++) messages.appendMessage(projectDir, imgChat, { role: 'user', content: 'after image ' + i });
   const attachmentPage = await mouaif.runMouaif({ action: 'list_attachments' }, chatOpts);
   check('list_attachments reports a cursor instead of silently hiding older images', attachmentPage.ok === true

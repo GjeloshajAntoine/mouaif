@@ -1275,11 +1275,18 @@ function buildOpenAIRequest(model, messages, stream, specs, requestOpts) {
   }
   if (model.provider === 'openrouter' && model.imageEndpoint === 'images') {
     const refs = model.supportedParameters && model.supportedParameters.input_references;
-    if (refs && Number(refs.min) > 0) {
-      throw Object.assign(new Error('This image model requires reference images; choose a text-to-image model.'), { code: 'EBADINPUT' });
+    const inputReferences = messages.flatMap((message) => Array.isArray(message.content)
+    ? message.content.filter((part) => part && part.type === 'image_url') : []);
+    if (refs && ((Number(refs.min) > inputReferences.length)
+    || (Number.isFinite(Number(refs.max)) && inputReferences.length > Number(refs.max)))) {
+    throw Object.assign(new Error('Selected image count does not fit this model\'s input_references limits.'), { code: 'EBADINPUT' });
+    }
+    if (inputReferences.length && model.supportedParameters && !refs) {
+    throw Object.assign(new Error('This image model does not support reference images.'), { code: 'EBADINPUT' });
     }
     return { url: joinUrl(baseUrl, '/images'), headers,
-      body: { model: model.id, prompt: imagePrompt(messages), n: 1, stream: false }, responseFormat: 'json', expectsImage: true };
+    body: { model: model.id, prompt: imagePrompt(messages), n: 1, stream: false,
+      ...(inputReferences.length ? { input_references: inputReferences } : {}) }, responseFormat: 'json', expectsImage: true };
   }
   return {
     url: effectiveUrl,
@@ -1593,6 +1600,9 @@ function buildGeminiRequest(model, messages, stream) {
   const methods = Array.isArray(model.generationMethods) ? model.generationMethods : [];
   const imagen = /^imagen/i.test(model.id) || (methods.includes('predict') && !methods.includes('generateContent'));
   if (imagen) {
+    if (messages.some((message) => Array.isArray(message.content) && message.content.some((part) => part && part.type === 'image_url'))) {
+      throw Object.assign(new Error('Imagen predict does not support image inputs here; choose a Gemini image-chat model.'), { code: 'EBADINPUT' });
+    }
     return {
       url: joinUrl(ENDPOINTS.gemini.baseUrl, '/v1beta/models/' + encodeURIComponent(model.id) + ':predict'),
       headers: { 'Content-Type': 'application/json', ...ENDPOINTS.gemini.authHeader(credential(model)) },
@@ -1651,7 +1661,11 @@ function buildOllamaRequest(model, messages, stream) {
   // and Gemini builders do.
   const normalized = messages.map((m) => (
     m && Array.isArray(m.content)
-      ? Object.assign({}, m, { content: systemContentText(m.content) })
+      ? Object.assign({}, m, { content: systemContentText(m.content),
+        ...(m.content.some((part) => part && part.type === 'image_url') ? {
+          images: m.content.filter((part) => part && part.type === 'image_url')
+            .map((part) => part.image_url.url.replace(/^data:[^;]+;base64,/, ''))
+        } : {}) })
       : m
   ));
   const body = { model: model.id, messages: normalized, stream: !!stream };

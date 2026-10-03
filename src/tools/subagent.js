@@ -8,7 +8,7 @@
 // several subagent calls in one turn, the tool loop runs them concurrently
 // (see the parallel branch in src/ai.js).
 
-const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call. The subagent can use the project tools and MCP tools, with normal authorization prompts. You may call subagent multiple times in a single turn; same-turn subagent calls run in parallel.';
+const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call. The subagent can use the project tools and MCP tools, with normal authorization prompts. You may call subagent multiple times in a single turn; same-turn subagent calls run in parallel. Images are never inherited automatically; use images with selected imageRef values from list_chat_attachments.';
 
 const AGENT_DESCRIPTION = 'Optional project agent name (from Settings → Project → Agents) to use for this delegation. Omit it to use the project\'s default subagent.';
 
@@ -22,7 +22,11 @@ const SPEC = {
       properties: {
         task: { type: 'string', description: 'The focused task or question for the subagent.' },
         context: { type: 'string', description: 'Optional relevant context to include with the task.' },
-        agent: { type: 'string', description: AGENT_DESCRIPTION }
+        agent: { type: 'string', description: AGENT_DESCRIPTION },
+        images: {
+        type: 'array', maxItems: 8, items: { type: 'string' },
+        description: 'Only these current-chat imageRef values from list_chat_attachments are passed to the subagent. Omit or [] sends no images. No base64 or file paths; max 8 images, 24 MiB encoded total.'
+        }
       },
       required: ['task'],
       additionalProperties: false

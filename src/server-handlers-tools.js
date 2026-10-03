@@ -697,7 +697,7 @@ async function handleTools(req, res, parsed, sessionToken = '') {
       return sendJSON(res, 500, { ok: false, error: e.message || String(e), code: e.code || 'EWEBPREVIEW' });
     }
   }
-// POST /api/tools/subagent  body: { projectDir, chatId, task, agent?, context?, modelId?, providerId? }
+// POST /api/tools/subagent  body: { projectDir, chatId, task, agent?, context?, images?, modelId?, providerId? }
 // Direct subagent dispatch from the composer (@agent <task>). Runs the
 // native subagent tool through the same authorization gate and the
   // same dispatcher the model-driven loop uses — one tool_call +
@@ -734,6 +734,7 @@ async function handleTools(req, res, parsed, sessionToken = '') {
     const args = { task };
     if (agentName) args.agent = agentName;
     if (context) args.context = context;
+    if (Object.prototype.hasOwnProperty.call(body, 'images')) args.images = body.images;
 
     const callId = 'direct_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     const events = [];
