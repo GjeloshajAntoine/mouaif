@@ -48,49 +48,83 @@ async function change(projectDir, chatId, directory, signal) {
       // previous working folder. Empty string resets to the project root.
       workingDir = safeDirectory(path.resolve(root, directory || '.'));
     } else {
-      // Reject redirected state/workspace directories before creating
-      // anything below them, even when the symlink stays inside home.
-      let parent = root;
-      for (const segment of ['.mouaif', 'workspaces']) {
+    // Preflight the workspace parents without creating them. Creating
+    // `.mouaif` / `.mouaif/workspaces` up front used to leave empty
+    // directories behind whenever the Git step or the chat update
+    // failed, so the folders now appear only once success is likely.
+    // Existing segments are still validated here, which keeps rejecting
+    // a redirected parent even when its symlink stays inside home.
+    const missingParents = [];
+    let parent = root;
+    for (const segment of ['.mouaif', 'workspaces']) {
       parent = path.join(parent, segment);
       if (!fs.existsSync(parent)) {
-      try { fs.mkdirSync(parent); }
-      catch (e) { if (e.code !== 'EEXIST') throw e; }
+      missingParents.push(parent);
+      continue;
       }
       if (fs.lstatSync(parent).isSymbolicLink()) throw err('EOUTSIDE_PROJECT', 'Workspace parent must not be a symlink');
       safeDirectory(parent);
+    }
+    const target = path.join(parent, chatId);
+    const targetExisted = fs.existsSync(target);
+    // Undo only what this call created: the target when it did not exist
+    // before, then the parents, innermost first, and only while they are
+    // empty. A pre-existing folder and a workspace holding work survive.
+    const prune = () => {
+      if (!targetExisted) {
+      try { fs.rmdirSync(target); } catch { /* kept: not empty or already gone */ }
       }
-      const safeParent = parent;
-      const target = path.join(safeParent, chatId);
-      let repository = false;
+      for (const dir of missingParents.slice().reverse()) {
+      try { fs.rmdirSync(dir); } catch { /* kept: not empty or already gone */ }
+      }
+    };
+    const createParents = () => {
+      for (const dir of missingParents) {
+      try { fs.mkdirSync(dir); }
+      catch (e) { if (e.code !== 'EEXIST') throw e; }
+      }
+    };
+    let repository = false;
+    try {
+      repository = (await git(root, ['rev-parse', '--is-inside-work-tree'], signal)).stdout.trim() === 'true';
+    } catch (e) {
+      if (!String(e.stderr || '').includes('not a git repository')) { prune(); throw e; }
+    }
+    if (repository) {
+      branch = 'mouaif/chat-' + chatId;
+      if (targetExisted) {
+      // Retry only reuses this exact worktree, not an arbitrary folder
+      // or a symlink to another checkout. Never reset or force a branch.
+      const real = safeDirectory(target);
+      const top = (await git(real, ['rev-parse', '--show-toplevel'], signal)).stdout.trim();
+      const currentBranch = (await git(real, ['symbolic-ref', '--short', 'HEAD'], signal)).stdout.trim();
+      const common = async (dir) => (await git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir'], signal)).stdout.trim();
+      if (real !== target || top !== real || currentBranch !== branch || await common(root) !== await common(real)) {
+        throw err('EEXIST', 'Default workspace exists but is not this chat’s Git worktree');
+      }
+      } else {
       try {
-        repository = (await git(root, ['rev-parse', '--is-inside-work-tree'], signal)).stdout.trim() === 'true';
+        createParents();
+        await git(root, ['worktree', 'add', '-b', branch, target, 'HEAD'], signal);
       } catch (e) {
-        if (!String(e.stderr || '').includes('not a git repository')) throw e;
+        prune();
+        throw e;
       }
-      if (repository) {
-        branch = 'mouaif/chat-' + chatId;
-        if (fs.existsSync(target)) {
-          // Retry only reuses this exact worktree, not an arbitrary folder
-          // or a symlink to another checkout. Never reset or force a branch.
-          const real = safeDirectory(target);
-          const top = (await git(real, ['rev-parse', '--show-toplevel'], signal)).stdout.trim();
-          const currentBranch = (await git(real, ['symbolic-ref', '--short', 'HEAD'], signal)).stdout.trim();
-          const common = async (dir) => (await git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir'], signal)).stdout.trim();
-          if (real !== target || top !== real || currentBranch !== branch || await common(root) !== await common(real)) {
-            throw err('EEXIST', 'Default workspace exists but is not this chat’s Git worktree');
-          }
-        } else {
-          await git(root, ['worktree', 'add', '-b', branch, target, 'HEAD'], signal);
-          created = true;
-        }
-      } else if (!fs.existsSync(target)) {
-        fs.mkdirSync(target);
-        created = true;
-      } else if (fs.lstatSync(target).isSymbolicLink()) {
-        throw err('EEXIST', 'Default workspace must not be a symlink');
+      created = true;
       }
-      workingDir = safeDirectory(target);
+    } else if (targetExisted) {
+      if (fs.lstatSync(target).isSymbolicLink()) throw err('EEXIST', 'Default workspace must not be a symlink');
+    } else {
+      try {
+      createParents();
+      fs.mkdirSync(target);
+      } catch (e) {
+      prune();
+      throw e;
+      }
+      created = true;
+    }
+    workingDir = safeDirectory(target);
     }
     // Do not resurrect a chat deleted while Git was running. Preserve all
     // unrelated metadata by merging into the latest stored record.

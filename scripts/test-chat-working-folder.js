@@ -172,6 +172,8 @@ async function main() {
   git('branch', 'mouaif/chat-' + collision.id);
   assert.equal((await call({}, collision.id)).result.code, 'EGIT', 'branch collisions never force/reset an existing branch');
   assert.equal(chats.getChat(projectDir, collision.id).workingDir, null);
+  assert.equal(fs.readdirSync(path.join(projectDir, '.mouaif', 'workspaces')).includes(collision.id), false,
+    'a failed Git workspace leaves no target folder');
   const plain = path.join(home, 'plain');
   fs.mkdirSync(plain);
   const plainChat = chats.createChat(plain, {});
@@ -179,12 +181,20 @@ async function main() {
   assert.equal(empty.ok, true);
   assert.equal(empty.result.branch, null);
   assert.equal(fs.readdirSync(empty.result.workingDir).length, 0);
+  const cancelledRoot = path.join(home, 'cancelled');
+  fs.mkdirSync(cancelledRoot);
+  const cancelledTarget = chats.createChat(cancelledRoot, {});
+  const cancelSignal = new AbortController();
+  cancelSignal.abort();
+  assert.equal((await runAppTool('change_working_folder', {}, { projectDir: cancelledRoot, chatId: cancelledTarget.id, signal: cancelSignal.signal })).result.code, 'EABORTED');
+  assert.equal(fs.existsSync(path.join(cancelledRoot, '.mouaif')), false, 'a cancelled change leaves no workspace folders behind');
   const unborn = path.join(home, 'unborn');
   fs.mkdirSync(unborn);
   execFileSync('git', ['init', '-q'], { cwd: unborn });
   const unbornChat = chats.createChat(unborn, {});
   assert.equal((await runAppTool('change_working_folder', {}, { projectDir: unborn, chatId: unbornChat.id })).result.code, 'EGIT');
   assert.equal(chats.getChat(unborn, unbornChat.id).workingDir, null, 'Git errors do not change cwd');
+  assert.equal(fs.existsSync(path.join(unborn, '.mouaif')), false, 'a failed change leaves no workspace folders behind');
   const redirected = path.join(home, 'redirected');
   fs.mkdirSync(redirected);
   fs.symlinkSync(plain, path.join(redirected, '.mouaif'));

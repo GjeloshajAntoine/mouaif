@@ -50,7 +50,7 @@ For a Git project, the default creates a worktree from committed `HEAD` on branc
 
 - The original checkout, branch, and uncommitted changes are untouched.
 - Uncommitted and untracked files, ignored dependencies, and build output are **not copied**. Install dependencies in the workspace if needed.
-- Git must be installed and the repository must have a commit. Git failures leave the chat's previous working folder unchanged.
+- Git must be installed and the repository must have a commit. Git failures leave the chat's previous working folder unchanged **and create nothing on disk**: `.mouaif/workspaces/<chatId>` and its parents appear only once the worktree is in place, so a failed or cancelled change never leaves empty folders behind.
 - Repeating the default call reuses the matching worktree without resetting edits. An unrelated existing folder or branch collision is rejected, never overwritten.
 - Add `.mouaif/` to the project's `.gitignore` so the original checkout does not offer the workspace directory for staging.
 - Without a Git repository, the default creates an empty directory, not a copy of the project.
