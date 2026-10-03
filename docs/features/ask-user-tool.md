@@ -17,7 +17,7 @@ In **Settings → Project settings → Tools** (reachable from a project card's 
 | `ask` | The model can ask; the user is always shown the question card and must answer. (Default.) |
 | `off` | The model cannot ask. Calls return `ETOOL_DISABLED` and the runner never runs. |
 
-The value persists on the project file as `tools.ask_user.mode`. A project with no value falls back to the app default, then to `ask`. The shell enable switch is **not** duplicated for `ask_user` — the mode *is* the gate.
+The value persists on the project file as a `tools.ask_user` leaf override, which resolves through the `chats` family gate (`tools.chats`, see [Tool groups](tool-groups.md)). A project with no value falls back to the family, then the app default, then to `ask`. The shell enable switch is **not** duplicated for `ask_user` — the mode *is* the gate. A family `Allow` therefore cannot auto-answer a question: `ask_user` is a binary tool, so it still reaches the user on every call; only an `off` (on the family or on the leaf) hides it.
 
 ### In a chat
 

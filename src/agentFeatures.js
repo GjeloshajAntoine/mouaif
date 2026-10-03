@@ -70,20 +70,10 @@ function buildFeatureSummary(opts) {
       feat.push('[report_progress](off|ask|allow) → ' + s.mode);
     }
   }
-  // ask_user
-  if (authz && authz.tools && authz.tools.ask_user) {
-    const s = authz.tools.ask_user;
-    if (s.mode !== 'off') {
-      feat.push('[ask_user](off|ask) → ' + s.mode);
-    }
-  }
-  // task tool
-  if (authz && authz.tools && authz.tools.task) {
-    const s = authz.tools.task;
-    if (s.mode !== 'off') {
-      feat.push('[task](off|ask|allow) → ' + s.mode);
-    }
-  }
+  // ask_user and the task tool no longer have lines of their own: both are
+  // Chats leaves now (frontend/src/toolGroups.js), so the family line below
+  // already names them — with the same row labels the user sees. `ask_user`
+  // keeps its binary Off / Ask gate; only its row moved.
   // file tools
   if (authz && authz.tools && authz.tools.file) {
     const s = authz.tools.file;

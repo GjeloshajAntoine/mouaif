@@ -180,7 +180,16 @@ const FILE_FAMILY_TOOLS = new Set([...FILE_TOOL_NAMES]);
 // be single-tool gates of their own (see frontend/src/toolGroups.js); they
 // are leaves now, so a stored `tools.restart_app` keeps working as that
 // leaf's override.
-const FAMILY_EXTRAS = Object.freeze({ mouaif: Object.freeze(['restart_app', 'list_features']) });
+//
+// The `chats` family carries the two tools the model uses *inside* a chat:
+// `ask_user` (pause and ask a structured question) and `task` (track the
+// work). They were single-tool gates too, and a stored `tools.ask_user` /
+// `tools.task` still works as that leaf's override — which is also what
+// keeps a migrated project's binary ask_user clamp in place.
+const FAMILY_EXTRAS = Object.freeze({
+  mouaif: Object.freeze(['restart_app', 'list_features']),
+  chats: Object.freeze(['ask_user', 'task'])
+});
 const TOOL_FAMILIES = Object.freeze(Object.assign(
   { file: Object.freeze([...FILE_TOOL_NAMES]) },
   APP_TOOL_NAMES.reduce((families, name) => {
@@ -200,8 +209,9 @@ const FAMILY_OF = Object.freeze(Object.fromEntries(
 // Every leaf of every family (the names that may carry a per-leaf override).
 const FAMILY_TOOLS = new Set(Object.keys(FAMILY_OF));
 // The native authorization gates: single tools plus one key per family
-// (`restart_app` and `list_features` resolve through the `mouaif` family).
-const NATIVE_TOOLS = new Set(['shell', 'subagent', 'ask_user', 'report_progress', 'task', 'webpreview', ...Object.keys(TOOL_FAMILIES)]);
+// (`restart_app`, `list_features`, `ask_user` and `task` resolve through
+// their family instead of a gate of their own).
+const NATIVE_TOOLS = new Set(['shell', 'subagent', 'report_progress', 'webpreview', ...Object.keys(TOOL_FAMILIES)]);
 
 // familyTools(gate) -> Set — the tool names an `off` on this gate hides.
 function familyTools(gate) {
@@ -286,7 +296,9 @@ function readChatAuthOverrides(projectDir, chatId) {
 
 // One native tool's per-chat override, or null. Config-tool names
 // (`read_file` → `file`) resolve to the same family key the project
-// gate uses, so the file operations stay behind one control.
+// gate uses, so the file operations stay behind one control — and so does
+// every family leaf: the chat layer stores ONE entry per family gate, so a
+// leaf write (a checkbox restoring an Off tool) lands on the family.
 function chatNativeOverride(projectDir, chatId, tool) {
   const overrides = readChatAuthOverrides(projectDir, chatId);
   if (!overrides) return null;
@@ -461,7 +473,16 @@ function effectiveConfig(projectDir, tool, chatId) {
   // choice in this chat's own Tools card, and this is the gate that
   // decides whether the tool is offered to the model at all.
   const chatOverride = chatNativeOverride(projectDir, chatId, requestedTool);
-  if (chatOverride) return normalizeConfig(chatOverride, 'chat', true, tool);
+  if (chatOverride) {
+    const cfg = normalizeConfig(chatOverride, 'chat', true, tool);
+    // A binary tool stays binary however the chat wrote its mode: the Chats
+    // row's segment stores `native.chats = allow`, which is a family key, so
+    // the clamp in normalizeConfig (keyed on the family) would miss it and
+    // the gate would auto-answer the user's question. `ask` is the strongest
+    // thing `ask_user` can honor short of `off`.
+    if (BINARY_MODE_TOOLS.has(requestedTool) && cfg.mode !== 'off') cfg.mode = 'ask';
+    return cfg;
+  }
   const resolved = settings.getResolved(projectDir);
   const project = settings.getProject(projectDir);
   const app = settings.getApp();

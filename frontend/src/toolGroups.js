@@ -16,8 +16,11 @@
 //               (File tools, Chats, mouaif) has its own gate key that covers
 //               every leaf, and each leaf may carry its own override.
 //   description fallback row description when the catalog has none
-//   binary      true for a tool whose only modes are Off / Ask (the answer to
-//               `ask_user` cannot be predicted, so Allow makes no sense).
+//   binary      true for a group whose only tool, or whose whole set of
+//               tools, has just two modes: Off / Ask (see `binaryTools`).
+//   binaryTools leaf names inside the group that only support Off / Ask, so a
+//               family can carry one binary leaf (ask_user) next to leaves
+//               that take the ordinary Off / Ask / Allow segment.
 //
 // A member name not listed here is not rendered by any tree (the MCP rows
 // are built from the server registry instead), so this file is also the
@@ -29,19 +32,28 @@ export const TOOL_GROUPS = Object.freeze([
   // and the File tools family.
   { id: 'shell', name: 'Shell', source: 'shell', authKey: 'shell', tools: ['shell'] },
   { id: 'subagent', name: 'Subagent', source: 'subagent', authKey: 'subagent', tools: ['subagent'] },
-  { id: 'ask_user', name: 'Ask user', source: 'ask_user', authKey: 'ask_user', tools: ['ask_user'], binary: true },
-  { id: 'task', name: 'Task', source: 'task', authKey: 'task', tools: ['task'] },
   { id: 'webpreview', name: 'Web preview', source: 'webpreview', authKey: 'webpreview', tools: ['webpreview'] },
 
   // ---- Chat and app tools: two multi-tool families ---------------------
   // Same shape as File tools: one gate (`tools.chats` / `tools.mouaif`)
   // covers every function, and each function can override it.
+  // The Chats family covers every function that acts on a chat — including
+  // the two the model uses *inside* one: `ask_user` (pause and ask) and
+  // `task` (track the work). They used to be top-level rows of their own;
+  // they are leaves here like `list_chats`, so the row that "is the chat"
+  // lists everything the model can do with one, and a stored
+  // `tools.ask_user` / `tools.task` keeps working as that leaf's override.
+  //
+  // `ask_user` stays binary (Off / Ask): the answer cannot be predicted, so
+  // Allow means nothing. It is listed in `binaryTools` so its leaf row
+  // renders the two-way segment while its siblings keep Off / Ask / Allow.
   {
     id: 'chats',
     name: 'Chats',
     source: 'chats',
     authKey: 'chats',
-    tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments']
+    binaryTools: ['ask_user'],
+    tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task']
   },
   // The mouaif family covers the app's own data model AND the two tools
   // that act on the app itself: `restart_app` (relaunch the worker) and
@@ -117,11 +129,18 @@ export function toolGroupId(name) {
   return null;
 }
 
-// isBinaryTool(groupId) -> boolean — the group's tool only supports Off / Ask
-// (`ask_user`: the model cannot predict the answer, so Allow means nothing).
-export function isBinaryTool(groupId) {
-  const group = GROUP_BY_ID[groupId];
-  return !!(group && group.binary);
+// isBinaryTool(idOrName) -> boolean — the row (or the tool named) only
+// supports Off / Ask. `ask_user` is the one such tool: the model cannot
+// predict the answer, so Allow means nothing.
+//
+// The argument is a group id or a model-facing tool name, because a binary
+// tool can be a family leaf: the chats group row itself takes Off / Ask /
+// Allow while its `ask_user` leaf renders the two-way segment.
+export function isBinaryTool(idOrName) {
+  const group = GROUP_BY_ID[idOrName];
+  if (group) return group.binary === true;
+  const owner = GROUP_BY_ID[toolGroupId(idOrName)];
+  return !!(owner && (owner.binaryTools || []).includes(idOrName));
 }
 
 // isGatedTool(name) -> boolean — every tool has an authorization gate.

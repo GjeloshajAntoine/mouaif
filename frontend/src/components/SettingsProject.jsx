@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, setActiveProject, activeProject, projectsReload, getProjectStorage, setProjectStorage, requestWebpreview } from '../api.js';
 import { nav, back } from '../router.js';
 import { ToolTree, shortDesc } from './ToolTree.jsx';
-import { TOOL_GROUPS, GROUP_BY_ID, isFamilyLeaf, toolGroupId } from '../toolGroups.js';
+import { TOOL_GROUPS, GROUP_BY_ID, isBinaryTool, isFamilyLeaf, toolGroupId } from '../toolGroups.js';
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg, ToolAuthSeg, segMode, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
@@ -465,7 +465,13 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
     const family = toolAuth[group.authKey] || {};
     const allowlist = newMode === 'allow' ? [] : (family.allowlist || []);
     const names = [group.authKey].concat(group.tools.filter((name) => name !== group.authKey));
-    const tools = Object.fromEntries(names.map((name) => [name, { mode: newMode, allowlist }]));
+    // A binary leaf (ask_user) only knows Off / Ask: a family `allow` writes it
+    // `ask`, which is the strongest thing it can honor. The server clamps the
+    // same way, so an unclamped write would just leave a dead `allow` behind.
+    const tools = Object.fromEntries(names.map((name) => [
+      name,
+      { mode: (newMode === 'allow' && isBinaryTool(name)) ? 'ask' : newMode, allowlist }
+    ]));
     return saveAuthorization({ tools }, (text) => setToolMsg(msgKey, text));
   }
 
@@ -727,7 +733,7 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
     const key = group.authKey;
     const family = toolAuth[key] || { mode: 'ask', allowlist: [] };
     const label = group.name;
-    const binary = group.binary === true;
+    const binary = isBinaryTool(group.id);
     groups.push({
         id: group.id,
         name: group.name,
@@ -746,12 +752,17 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
           // a leaf without one reads the family mode, so the row and its
           // children always agree on screen.
           const leafAuth = toolAuth[tool.name];
-          const mode = (leafAuth && leafAuth.mode) || family.mode;
+          // A binary leaf (`ask_user`) narrows to Off / Ask on its own row
+          // even when its family row carries the full three-way segment:
+          // a family `allow` shows as Ask, the strongest mode it honors.
+          const leafBinary = isBinaryTool(tool.name);
+          const inherited = family.mode;
+          const mode = (leafAuth && leafAuth.mode) || (leafBinary && inherited === 'allow' ? 'ask' : inherited);
           return leaf(tool, {
           checked: isOn(mode),
           control: h(ToolAuthSeg, {
           tool: tool.name, mode, allowlist: (leafAuth && leafAuth.allowlist) || family.allowlist,
-          namePrefix: 'sp', modes: binary ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
+          namePrefix: 'sp', modes: leafBinary ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
           onPick: (next, list) => (group.tools.length > 1
           ? pickLeafMode(tool.name, next, list)
           : saveToolAuthorization(tool.name, next, list, group.id))

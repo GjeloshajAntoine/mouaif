@@ -80,7 +80,7 @@ The tool returns:
 
 ## Authorization
 
-The `task` tool uses the same authorization module as every other built-in tool. It is a native tool listed under `project.tools.task` with four modes:
+The `task` tool uses the same authorization module as every other built-in tool. It is a leaf of the `chats` family (see [Tool groups](tool-groups.md)): the family row's segment edits `tools.chats`, and the tool's own row can store a more specific `tools.task` override. The resolved mode is one of four values:
 
 | Mode | Behaviour |
 |------|-----------|

@@ -82,7 +82,7 @@
   &quot;action&quot;: &quot;list&quot;
 }</code></pre>
 <h2 id="authorization">Authorization</h2>
-<p>The <code>task</code> tool uses the same authorization module as every other built-in tool. It is a native tool listed under <code>project.tools.task</code> with four modes:</p>
+<p>The <code>task</code> tool uses the same authorization module as every other built-in tool. It is a leaf of the <code>chats</code> family (see <a href="tool-groups.html">Tool groups</a>): the family row&#39;s segment edits <code>tools.chats</code>, and the tool&#39;s own row can store a more specific <code>tools.task</code> override. The resolved mode is one of four values:</p>
 <div class="table-wrap"><table><thead><tr><th>Mode</th><th>Behaviour</th></tr></thead><tbody><tr><td><code>off</code></td><td>The tool spec is hidden from the model and calls are rejected with <code>ETOOL_DISABLED</code></td></tr><tr><td><code>ask</code></td><td>The user is prompted on the first call per session</td></tr><tr><td><code>allowlist</code></td><td>Matches the call summary (first string argument) against a regex allowlist</td></tr><tr><td><code>allow</code></td><td>Runs without prompting</td></tr></tbody></table></div>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>

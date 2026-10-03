@@ -18,25 +18,6 @@
     ]
   },
   {
-    "id": "ask_user",
-    "name": "Ask user",
-    "source": "ask_user",
-    "authKey": "ask_user",
-    "tools": [
-      "ask_user"
-    ],
-    "binary": true
-  },
-  {
-    "id": "task",
-    "name": "Task",
-    "source": "task",
-    "authKey": "task",
-    "tools": [
-      "task"
-    ]
-  },
-  {
     "id": "webpreview",
     "name": "Web preview",
     "source": "webpreview",
@@ -50,6 +31,9 @@
     "name": "Chats",
     "source": "chats",
     "authKey": "chats",
+    "binaryTools": [
+      "ask_user"
+    ],
     "tools": [
       "list_chats",
       "get_chat",
@@ -61,7 +45,9 @@
       "delete_chat",
       "search_chats",
       "attach_chat_image",
-      "list_chat_attachments"
+      "list_chat_attachments",
+      "ask_user",
+      "task"
     ]
   },
   {
