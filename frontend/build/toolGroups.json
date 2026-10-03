@@ -46,24 +46,6 @@
     ]
   },
   {
-    "id": "restart_app",
-    "name": "Restart app",
-    "source": "restart",
-    "authKey": "restart_app",
-    "tools": [
-      "restart_app"
-    ]
-  },
-  {
-    "id": "list_features",
-    "name": "Feature report",
-    "source": "features",
-    "tools": [
-      "list_features"
-    ],
-    "gated": false
-  },
-  {
     "id": "chats",
     "name": "Chats",
     "source": "chats",
@@ -91,7 +73,9 @@
       "get_settings",
       "update_settings",
       "list_projects",
-      "get_app_info"
+      "get_app_info",
+      "restart_app",
+      "list_features"
     ]
   },
   {

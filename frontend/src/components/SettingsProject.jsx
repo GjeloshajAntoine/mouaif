@@ -722,28 +722,13 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
     // enumerates the tools itself: a tool that moves between groups shows up
     // here (and in the chat tree) with no change to this file.
     for (const group of TOOL_GROUPS) {
-      const members = (catalog || []).filter((t) => t && group.tools.includes(t.name));
-      if (!members.length) continue;
-      // A tool with no project authorization gate (the feature report) still
-      // lists, but offers no mode control it would not honor.
-      if (group.gated === false) {
-        const tool = members[0];
-        groups.push({
-          id: group.id,
-          name: group.name,
-          description: shortDesc(tool.description),
-          title: (tool.description || '') + ' Always available; the server answers it without an authorization prompt.',
-          hideCheckbox: true,
-          checked: true,
-          tools: [leaf(tool, { checked: true })]
-        });
-        continue;
-      }
-      const key = group.authKey;
-      const family = toolAuth[key] || { mode: 'ask', allowlist: [] };
-      const label = group.name;
-      const binary = group.binary === true;
-      groups.push({
+    const members = (catalog || []).filter((t) => t && group.tools.includes(t.name));
+    if (!members.length) continue;
+    const key = group.authKey;
+    const family = toolAuth[key] || { mode: 'ask', allowlist: [] };
+    const label = group.name;
+    const binary = group.binary === true;
+    groups.push({
         id: group.id,
         name: group.name,
         // A single tool shows its own description; a multi-tool family

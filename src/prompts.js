@@ -62,7 +62,7 @@ const PROMPT_ICONS = new Set(['sparkles', 'code', 'search', 'pencil', 'bug', 'bo
 function normalizeIcon(icon) {
 return typeof icon === 'string' && PROMPT_ICONS.has(icon) ? icon : DEFAULT_ICON;
 }
-// The native tool *family* names a prompt preset may list. In addition
+// The native tool names a prompt preset may list. In addition
 // to these, MCP model-facing tool ids (e.g. `mcp__<slug>__<tool>`) are
 // accepted as-is — the same strings the chat's per-chat tool allowlist
 // stores and that the tool catalog advertises. The preset union-merges
@@ -72,7 +72,11 @@ return typeof icon === 'string' && PROMPT_ICONS.has(icon) ? icon : DEFAULT_ICON;
 // authorization gate (off/ask/allow for `file`, `shell`, …) stays
 // authoritative, so listing a tool here can never turn on something
 // the project turned off.
-const PRESET_TOOL_NAMES = new Set(['shell', 'file', 'subagent', 'report_progress', 'task', 'ask_user', 'webpreview', 'restart_app', ...require('./tools/appToolNames.js').TOOL_NAMES]);
+//
+// `list_features` and `restart_app` are mouaif-family leaves (see
+// frontend/src/toolGroups.js) but are not app-store functions, so they are
+// listed by name here.
+const PRESET_TOOL_NAMES = new Set(['shell', 'file', 'subagent', 'report_progress', 'task', 'ask_user', 'webpreview', 'restart_app', 'list_features', ...require('./tools/appToolNames.js').TOOL_NAMES]);
 
 // MCP tool ids in the catalog look like `mcp__<slug>__<tool>`. Anything
 // starting with this prefix is accepted as a tool name in the preset,

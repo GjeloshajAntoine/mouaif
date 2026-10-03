@@ -174,13 +174,24 @@ const FILE_FAMILY_TOOLS = new Set([...FILE_TOOL_NAMES]);
 // The file operations share `file`; the chat and app functions share the
 // gate named after their catalog `source` (`chats`, `mouaif`). Every family
 // resolves through the same code path, so a new one is a new entry here.
+//
+// The `mouaif` family also carries the two tools that act on the app itself
+// rather than on a project: `restart_app` and `list_features`. They used to
+// be single-tool gates of their own (see frontend/src/toolGroups.js); they
+// are leaves now, so a stored `tools.restart_app` keeps working as that
+// leaf's override.
+const FAMILY_EXTRAS = Object.freeze({ mouaif: Object.freeze(['restart_app', 'list_features']) });
 const TOOL_FAMILIES = Object.freeze(Object.assign(
   { file: Object.freeze([...FILE_TOOL_NAMES]) },
   APP_TOOL_NAMES.reduce((families, name) => {
     const source = APP_TOOL_DEFINITIONS[name].source;
     (families[source] = families[source] || []).push(name);
     return families;
-  }, {})
+  }, {}),
+  // Append, never replace: the extras belong to a family the app tools
+  // already built (a typo'd family name would otherwise silently vanish).
+  Object.fromEntries(Object.entries(FAMILY_EXTRAS).map(([family, names]) =>
+    [family, [...(APP_TOOL_NAMES.filter((n) => APP_TOOL_DEFINITIONS[n].source === family)), ...names]]))
 ));
 // leaf name -> family key
 const FAMILY_OF = Object.freeze(Object.fromEntries(
@@ -188,8 +199,9 @@ const FAMILY_OF = Object.freeze(Object.fromEntries(
 ));
 // Every leaf of every family (the names that may carry a per-leaf override).
 const FAMILY_TOOLS = new Set(Object.keys(FAMILY_OF));
-// The native authorization gates: single tools plus one key per family.
-const NATIVE_TOOLS = new Set(['shell', 'subagent', 'ask_user', 'report_progress', 'task', 'webpreview', 'restart_app', ...Object.keys(TOOL_FAMILIES)]);
+// The native authorization gates: single tools plus one key per family
+// (`restart_app` and `list_features` resolve through the `mouaif` family).
+const NATIVE_TOOLS = new Set(['shell', 'subagent', 'ask_user', 'report_progress', 'task', 'webpreview', ...Object.keys(TOOL_FAMILIES)]);
 
 // familyTools(gate) -> Set — the tool names an `off` on this gate hides.
 function familyTools(gate) {

@@ -105,6 +105,14 @@ async function* readNDJSON(stream) {
 //   getLastToolCallKey/setLastToolCallKey,
 //   getRepeatedToolCallCount/setRepeatedToolCallCount, REPEATED_TOOL_CALL_LIMIT
 // }
+// The tools the server answers WITHOUT an approval card, because there is
+// nothing for the user to approve: `report_progress` is a UI update and
+// `list_features` is read-only metadata. A tool that is dispatched here
+// wrongly never gets its `off` gate or its approval card, so
+// scripts/test-tool-groups.mjs pins the set exactly: nothing else may be
+// dispatched here. Both are read-only, and both still honor `off`.
+const NO_PROMPT_TOOLS = new Set(['report_progress', 'list_features']);
+
 async function runSingleToolCall(c, cx) {
   const { opts, onEvent, convo, toolSpecs, promptProfilesMod, discoveredToolNames, modelContentForTool } = cx;
   // Direct REST calls need the same dispatcher closure and advertised tool
@@ -173,30 +181,11 @@ async function runSingleToolCall(c, cx) {
     return exec;
   }
   try {
-    // list_features is a read-only metadata tool that bypasses
-    // the authorization gate — it only returns feature state.
-    if (c.name === 'list_features') {
-      let af;
-      try { af = require('./agentFeatures.js'); }
-      catch (e) {
-        exec = { ok: false, content: JSON.stringify({ error: { code: 'EMODULE', message: 'agentFeatures module unavailable: ' + (e.message || e) } }), result: { error: { code: 'EMODULE' } } };
-      }
-      if (!exec) {
-        exec = await af.dispatchListFeatures(args, Object.assign({}, opts, { callId: c.id || null }));
-      }
-      onEvent('tool_call', { id: c.id || null, name: c.name, args });
-      callEmitted = true;
-    } else if (c.name === 'activate_skill') {
-      // Activation is a read-only lookup constrained to the enum of enabled,
-      // project-contained skills, so it does not require a separate approval.
-      onEvent('tool_call', { id: c.id || null, name: c.name, args });
-      callEmitted = true;
-      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
-    } else if (c.name === 'report_progress') {
-      // report_progress is a read-only UI/update tool. It honors
-      // the project `off` visibility gate, but does not show an
-      // interactive authorization prompt because progress updates
-      // do not read or modify project resources.
+    // The tools the server answers WITHOUT an approval card: a UI progress
+    // update and read-only feature metadata. Their `off` visibility gate
+    // still applies — `list_features` is a leaf of the `mouaif` family, so
+    // its `off` resolves through the family gate or its own override.
+    if (NO_PROMPT_TOOLS.has(c.name)) {
       try {
         const authGate = require('./tools/authorization.js');
         const cfg = authGate.effectiveConfig(opts && opts.projectDir, c.name, opts && opts.chatId);
@@ -204,11 +193,17 @@ async function runSingleToolCall(c, cx) {
           exec = { ok: false, content: JSON.stringify({ ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' }), result: { ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled' } };
         }
       } catch { /* unreadable authorization state: keep compatibility path */ }
-      // Emit the running card before dispatch so the subsequent
-      // progress_update can attach to the same call id.
+      // Emit the running card before dispatch so the tool's own live event
+      // (a progress_update) can attach to the same call id.
       onEvent('tool_call', { id: c.id || null, name: c.name, args });
       callEmitted = true;
       if (!exec) exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
+    } else if (c.name === 'activate_skill') {
+      // Activation is a read-only lookup constrained to the enum of enabled,
+      // project-contained skills, so it does not require a separate approval.
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+      callEmitted = true;
+      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
     } else if (promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME) {
       const requested = args && (args.toolName || args.name || args.tool);
       const spec = (toolSpecs || []).find(s => s && s.function && s.function.name === requested);
@@ -2088,20 +2083,22 @@ promptSize: callOpts && callOpts.promptSize,
     }
 
     // Native list_features tool — returns the full structured feature
-    // state for the current project and chat. Not gated by authorization:
-    // it is read-only metadata, does not execute commands or modify files.
+    // state for the current project and chat. Read-only metadata: it never
+    // shows an approval card, but the `mouaif` family's `off` (or its own
+    // leaf override) hides it and is enforced here too, so a hand-crafted
+    // REST call cannot read state a disabled tool must not answer.
     if (name === 'list_features') {
-      let af;
-      try { af = require('./agentFeatures.js'); }
-      catch (e) {
-        const r = { error: { code: 'EMODULE', message: 'agentFeatures module unavailable: ' + (e.message || e) } };
-        return { ok: false, content: JSON.stringify(r), result: r };
-      }
-      return await af.dispatchListFeatures(args, {
-        projectDir: callOpts && callOpts.projectDir,
-        chatId: callOpts && callOpts.chatId,
-        chat: callOpts && callOpts.chat
-      });
+    let af;
+    try { af = require('./agentFeatures.js'); }
+    catch (e) {
+      const r = { error: { code: 'EMODULE', message: 'agentFeatures module unavailable: ' + (e.message || e) } };
+      return { ok: false, content: JSON.stringify(r), result: r };
+    }
+    return await af.dispatchListFeatures(args, {
+      projectDir: callOpts && callOpts.projectDir,
+      chatId: callOpts && callOpts.chatId,
+      chat: callOpts && callOpts.chat
+    });
     }
 
     // Native report_progress tool — validates args, emits a
@@ -2243,6 +2240,9 @@ return { ok: !!out.ok, content: JSON.stringify(result), result };
 module.exports = {
   streamChat,
   runSingleToolCall,
+  // The read-only tools the loop answers without an approval card, so
+  // scripts/test-tool-groups.mjs can assert no other tool skips the gate.
+  NO_PROMPT_TOOLS,
   // byte-stream helpers, re-exported for tests through src/ai.js
   parseSSEFrame,
   readSSE,

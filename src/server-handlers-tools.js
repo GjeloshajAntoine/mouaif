@@ -374,11 +374,15 @@ function listNativeTools() {
 pushNativeTool(tools, { load: './tools/shell.js', name: 'shell', source: 'shell', fallback: 'Run a shell command in the project directory.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/progress.js', name: 'report_progress', source: 'progress', fallback: 'Report real-time progress on a long-running operation.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/subagent.js', name: 'subagent', source: 'subagent', fallback: 'Delegate a focused task to a nested AI call.', spec: (m) => m.SPEC && m.SPEC.function });
-pushNativeTool(tools, { load: './agentFeatures.js', name: 'list_features', source: 'features', fallback: 'Describe mouaif feature state.', spec: (m) => m.LIST_FEATURES_SPEC && m.LIST_FEATURES_SPEC.function });
+pushNativeTool(tools, { load: './agentFeatures.js', name: 'list_features', source: 'mouaif', fallback: 'Describe mouaif feature state.', spec: (m) => m.LIST_FEATURES_SPEC && m.LIST_FEATURES_SPEC.function });
 pushNativeTool(tools, { load: './tools/ask.js', name: 'ask_user', source: 'ask_user', fallback: 'Ask the user a structured question with options.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/task.js', name: 'task', source: 'task', fallback: 'Create, update, track progress on, and list structured tasks with subtasks.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', source: 'webpreview', fallback: 'Open a web URL in the debug Chrome and return a small screenshot of the page.', spec: (m) => m.SPEC && m.SPEC.function });
-pushNativeTool(tools, { load: './tools/restart.js', name: 'restart_app', source: 'restart', fallback: 'Gracefully restart mouaif from the current chat.', spec: (m) => m.SPEC && m.SPEC.function });
+// restart_app and list_features advertise the `mouaif` source: they are
+// leaves of that family in frontend/src/toolGroups.js (which is
+// authoritative for grouping), so the catalog must not name a group the
+// trees do not render.
+pushNativeTool(tools, { load: './tools/restart.js', name: 'restart_app', source: 'mouaif', fallback: 'Gracefully restart mouaif from the current chat.', spec: (m) => m.SPEC && m.SPEC.function });
 for (const [name, definition] of Object.entries(require('./tools/appToolNames.js').DEFINITIONS)) {
   pushNativeTool(tools, { load: './tools/mouaif.js', name, source: definition.source,
     fallback: definition.description, spec: (m) => m.SPECS[name].function });

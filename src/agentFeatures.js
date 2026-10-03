@@ -103,11 +103,10 @@ function buildFeatureSummary(opts) {
   } catch { /* catalog unavailable; the group lines are skipped */ }
   for (const line of require('./toolGroups.js').summaryLines(nativeCatalog, authz && authz.tools, new Set(['file']))) feat.push(line);
 
-  // app restart
-if (authz && authz.tools && authz.tools.restart_app) {
-const s = authz.tools.restart_app;
-if (s.mode !== 'off') feat.push('[restart app](off|ask|allow) → ' + s.mode + ' — graceful supervisor relaunch from chat');
-}
+  // `restart_app` no longer has a line of its own: it is a leaf of the
+  // `mouaif` family (frontend/src/toolGroups.js), so the family line above
+  // already names it — with the same row label the user sees.
+
 // --- MCP servers ---
 if (Array.isArray(mcpServers) && mcpServers.length) {
 
