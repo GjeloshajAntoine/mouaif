@@ -50,7 +50,7 @@ export const TOOL_GROUPS = Object.freeze([
     name: 'Chats',
     source: 'chats',
     authKey: 'chats',
-    tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments']
+    tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'search_models', 'start_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments']
   },
   {
     id: 'mouaif-settings',

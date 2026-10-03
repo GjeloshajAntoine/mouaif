@@ -73,6 +73,19 @@ async function main() {
   assert.equal(chats.getChat(projectDir, createdId).draft, 'Opening draft');
   assert.equal(out.returned.chat.id, createdId);
 
+  out = await call(host, { action: 'model_search', includeLive: false });
+  assert.equal(out.ok, true);
+  assert.ok(Array.isArray(out.returned.models));
+  out = await call(host, { action: 'model_search', includeLive: false }, { mode: 'ask', decision: 'deny' });
+  assert.equal(out.ok, false);
+  out = await call(host, { action: 'model_search', includeLive: false }, { mode: 'off' });
+  assert.equal(out.result.code, 'ETOOL_DISABLED');
+  out = await call(host, { action: 'start', chatId: createdId, content: 'Do not send' }, { mode: 'ask', decision: 'deny' });
+  assert.equal(out.ok, false);
+  assert.equal(messages.listMessages(projectDir, createdId).length, 0);
+  out = await call(host, { action: 'start', chatId: createdId, content: 'Do not send' }, { mode: 'off' });
+  assert.equal(out.result.code, 'ETOOL_DISABLED');
+
   out = await call(host, { action: 'list' });
   assert.equal(out.returned.chats.find((chat) => chat.id === createdId).draftSnippet, 'Opening draft');
   out = await call(host, { action: 'search', query: 'Opening' });

@@ -100,7 +100,8 @@ One page per feature: what it does and how to use it.
 - [Progress tool](features/progress-tool.md) — a live progress bar for long operations.
 - [Legacy progress tool](features/legacy-progress-tool.md) — compatibility for older `report_progress` calls.
 - [Web preview tool](features/webpreview.md) — a phone-sized screenshot of a page above the composer.
-- [Native chat and app tools](features/mouaif-tool.md) — twelve independent tools for chats, attachments, settings, and projects.
+- [Native chat and app tools](features/mouaif-tool.md) — fourteen independent tools for chats, models, attachments, settings, and projects.
+- [Chat model tools](features/chat-model-tools.md) — search models, select one for a chat, and start a background response.
 - [Web preview page](features/webpreview-project-page.md) — capture and view a URL from project settings.
 - [Subagent transcript](features/subagent-transcript.md) — the delegated conversation inside a subagent card, and what that run cost.
 - [Model choice on subagent approval](features/auth-model-picker.md) — pick the model when approving a subagent run.

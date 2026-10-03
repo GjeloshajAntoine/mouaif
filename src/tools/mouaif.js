@@ -18,7 +18,7 @@
 // Implements docs/features/mouaif-tool.md.
 //
 // Design notes:
-//   - SPECS declares twelve separate native tools with operation-specific
+//   - SPECS declares separate native tools with operation-specific
 //     parameters. No action enum or custom selection/permission resolver.
 //   - The dispatcher (`runMouaif`) is a thin router; every area lives in its
 //     own `run*` function and returns the shared `{ ok, content, result }`
@@ -69,6 +69,8 @@ const ACTIONS = Object.freeze({
   update: 'chats',
   delete: 'chats',
   search: 'chats',
+  model_search: 'chats',
+  start: 'chats',
   attach: 'attachments',
   list_attachments: 'attachments',
   settings_get: 'settings',
@@ -138,6 +140,8 @@ const PARAMETERS = {
           description: 'Scan messages before this sequence number. Pass nextBeforeSeq from the previous page; omit for the newest page.'
         },
         query: { type: 'string', description: 'Text to match against chat titles, drafts, and messages.' },
+        offset: { type: 'integer', minimum: 0, description: 'Model search: skip this many matches (default 0); use nextOffset for the next page.' },
+        includeLive: { type: 'boolean', description: 'Model search: include configured providers’ live catalogs (default true). False searches only saved project models.' },
         providerId: { type: 'string', description: 'Provider connection id for the chat\u2019s model (e.g. "openai-compatible").' },
         modelId: { type: 'string', description: 'create/update: project or live-catalog model id. A project model can infer its provider; a live model needs providerId. update: "" clears the model choice.' },
         promptId: { type: 'string', description: 'Custom prompt id to attach to the chat ("" clears it).' },
@@ -184,6 +188,12 @@ const SPECS = Object.freeze(Object.fromEntries(TOOL_NAMES.map((name) => {
     maximum: name === 'list_chat_attachments' ? 200 : 100,
     description: name === 'list_chat_attachments' ? 'Number of messages to scan (default 200, max 200).' : 'Maximum chats to return (default 20, max 100).' };
   if (properties.chatId) properties.chatId = { type: 'string', description: 'Chat id' + (definition.required?.includes('chatId') ? ' (required).' : ' (defaults to the current chat).') };
+  if (name === 'search_models') {
+    properties.query = { type: 'string', description: 'Case-insensitive text to match model ids and labels. Omit to list models.' };
+    properties.limit = { ...properties.limit, description: 'Maximum models to return (default 20, max 100).' };
+    properties.providerId = { type: 'string', description: 'Restrict results to this provider connection id; omit to search all configured providers.' };
+  }
+  if (name === 'start_chat') properties.content = { type: 'string', description: 'Prompt to send to the selected chat (required, max 200000 chars). Starts an AI turn, not a draft.' };
   return [name, { type: 'function', function: { name, description: definition.description,
     parameters: { type: 'object', properties, required: definition.required || [], additionalProperties: false }
   } }];
@@ -314,6 +324,52 @@ async function runChats(args, opts) {
     });
   }
 
+  if (action === 'model_search') {
+    const query = trimString(args.query, 500).toLowerCase();
+    const providerId = trimString(args.providerId, 128);
+    const { ai } = require('../server-shared.js');
+    if (providerId && !ai.ENDPOINTS[providerId]) throw typedError('EBADINPUT', 'unknown provider: ' + providerId);
+    const saved = settings.getResolved(projectDir).models || [];
+    const connections = settings.getApp().providers || [];
+    const providers = connections.filter((p) => p && ai.ENDPOINTS[p.id] && (!providerId || p.id === providerId)).map((p) => p.id);
+    const live = args.includeLive === false ? { list: [], failures: [] }
+      : await require('../modelList.js').liveModelsForMany([...new Set(providers)]);
+    const rows = new Map();
+    // Project choices win duplicate identities; only public identity fields
+    // are returned, never hydrated provider connections or credentials.
+    for (const [source, models] of [['project', saved], ['live', live.list]]) {
+      for (const m of models) {
+        if (!m || !m.id || !m.provider || (providerId && m.provider !== providerId)) continue;
+        const key = JSON.stringify([m.provider, m.id]);
+        if (rows.has(key)) continue;
+        rows.set(key, { providerId: m.provider, modelId: m.id, label: m.label || m.name || m.id, source });
+      }
+    }
+    const matches = [...rows.values()].filter((m) => !query || [m.modelId, m.label].some((text) => String(text).toLowerCase().includes(query)))
+      .sort((a, b) => a.providerId.localeCompare(b.providerId) || a.modelId.localeCompare(b.modelId));
+    const offset = args.offset || 0;
+    const limit = clampLimit(args.limit, 20, 100);
+    const models = matches.slice(offset, offset + limit);
+    return ok({ ok: true, query, total: matches.length, returned: models.length, models,
+      nextOffset: offset + models.length < matches.length ? offset + models.length : null,
+      failures: live.failures });
+  }
+
+  if (action === 'start') {
+    const chatId = trimString(args.chatId, 128);
+    if (!chatId) throw typedError('EBADINPUT', 'chatId is required for action "start"');
+    const chat = requireChat(projectDir, chatId);
+    if (!args.content || !args.content.trim() || args.content.length > MAX_DRAFT_CHARS) {
+      throw typedError('EBADINPUT', 'content must be non-empty and at most ' + MAX_DRAFT_CHARS + ' chars');
+    }
+    if (!chat.modelId) throw typedError('EBADINPUT', 'select a model with update_chat before starting this chat');
+    const started = await require('../server-handlers-chats.js').startChatTurn({ projectDir, chatId,
+      modelId: chat.modelId, providerId: chat.providerId || '', content: args.content }, opts && opts.lifecycle);
+    if (!started.ok) return fail(started.code || 'EMOUAIF', started.error || 'Could not start chat');
+    return ok({ ok: true, started: true, projectDir, chat: chatSummary(chats.getChat(projectDir, chatId)),
+      url: '#/chat/' + encodeURIComponent(chatId) });
+  }
+
   if (action === 'search') {
     const query = trimString(args.query, 500);
     if (!query) throw typedError('EBADINPUT', 'query is required for action "search"');
@@ -397,7 +453,8 @@ async function runChats(args, opts) {
     }
     if (typeof args.modelId === 'string' || typeof args.providerId === 'string') {
     const modelId = typeof args.modelId === 'string' ? trimString(args.modelId, 256) : current.modelId;
-    const providerId = typeof args.providerId === 'string' ? trimString(args.providerId, 128) : (modelId ? current.providerId || '' : '');
+    const providerId = typeof args.providerId === 'string' ? trimString(args.providerId, 128)
+    : (modelId && modelId === current.modelId ? current.providerId || '' : '');
     if (!modelId) {
       if (providerId) throw typedError('EBADINPUT', 'providerId needs a modelId');
       patch.modelId = null;

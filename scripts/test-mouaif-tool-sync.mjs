@@ -110,6 +110,16 @@ for (const change of [
   assert.equal(navigation, 1);
 }
 
+{
+  const { state, refs } = fixture();
+  const before = requests.length;
+  const reloadBefore = reload.value;
+  await context.apply({ name: 'start_chat', id: 'started', ok: true,
+    result: { ok: true, started: true, chat: { id: 'other' }, url: '#/chat/other' } }, state, refs);
+  assert.equal(reload.value, reloadBefore + 1, 'background starts refresh the project chat list');
+  assert.equal(requests.length, before, 'starting another chat does not overwrite the mounted chat');
+}
+
 const stream = fs.readFileSync(new URL('../frontend/src/components/chat/stream.js', import.meta.url), 'utf8');
 assert.ok(stream.includes('if (data) applyMouaifToolResult(data, state, refs)'));
 assert.ok(stream.includes('applyMouaifToolResult({ id: row.toolCallId'));

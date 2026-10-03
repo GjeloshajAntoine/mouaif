@@ -685,9 +685,39 @@ return sendJSON(res, 404, { error: 'Not found', scope: 'chats' });
 // Handles POST /api/chats/:id/messages/stream. Splits out for clarity;
 // the route table above stays compact.
 async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) {
-  const _pushSessionId = push.sessionIdFromToken(sessionToken);
   const body = await readJsonOr400(req, res);
   if (!body) return;
+  return runChatStream(body, res, chatId, sessionToken, lifecycle);
+}
+
+// Start a normal persisted turn without an HTTP client. The same runner
+// owns validation, busy/cancel state, authorization, live replay and errors.
+// Resolve only after setup succeeds; later errors remain in the transcript.
+function startChatTurn(body, lifecycle = {}) {
+  return new Promise((resolve) => {
+    let status = 0;
+    const sink = {
+      writeHead(code) {
+        status = code;
+        if (code === 200) resolve({ ok: true });
+      },
+      write() {},
+      end(data) {
+        if (status !== 200) {
+          let error;
+          try { error = JSON.parse(data); } catch { error = { error: 'Could not start chat' }; }
+          resolve({ ...error, ok: false });
+        }
+      }
+    };
+    runChatStream(body, sink, body.chatId, null, lifecycle).catch((e) => {
+      resolve({ ok: false, code: e.code || 'EINTERNAL', error: e.message || String(e) });
+    });
+  });
+}
+
+async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}) {
+  const _pushSessionId = push.sessionIdFromToken(sessionToken);
   const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
   const modelId = body && typeof body.modelId === 'string' ? body.modelId : '';
   const providerId = body && typeof body.providerId === 'string' ? body.providerId : '';
@@ -1556,4 +1586,4 @@ promptSize: resolvedProfileId,
   res.end();
 }
 
-module.exports = { handleChats, handleChatStream };
+module.exports = { handleChats, handleChatStream, startChatTurn };
