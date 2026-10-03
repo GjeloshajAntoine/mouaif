@@ -177,8 +177,10 @@ function cardHandlers(filter, toolAuth) {
   props.onToggleTool('chats', 'list_chats', false);
   assert.equal(s._seenTool.name, 'list_chats');
   props.onToggleGroup('chats', false);
-  assert.equal(s._seenGroup.names.length, 11);
+  assert.equal(s._seenGroup.names.length, 13);
   assert.equal(s._seenGroup.names[0], 'list_chats');
+  // ask_user / task are the last two leaves of the chats family now.
+  assert.equal(s._seenGroup.names.at(-1), 'task');
   assert.equal(s._seenGroup.next, false);
   props.onToggleGroup('mouaif-settings', true);
   assert.equal(s._seenGroup.names[0], 'get_settings');

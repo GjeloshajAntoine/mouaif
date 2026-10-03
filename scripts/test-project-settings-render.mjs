@@ -67,8 +67,11 @@ function createView(project, catalog = [], { saveStatus = 200, saveError = '', a
 // The shared per-tool authorization control and its helpers. The
 // component files are evaluated with their imports stripped, so the
 // names they reference have to exist on the context.
-ToolAuthSeg: 'auth-seg', TOOL_MODE_CHOICES: [{ value: 'off', label: 'Off' }],
-ASK_USER_MODE_CHOICES: [{ value: 'off', label: 'Off' }],
+ToolAuthSeg: 'auth-seg',
+// The real choice lists (the settings tree asserts which one a row gets:
+// the three-way segment, or the two-way one for the binary ask_user leaf).
+TOOL_MODE_CHOICES: [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }, { value: 'allow', label: 'Allow' }],
+ASK_USER_MODE_CHOICES: [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }],
 segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
     AgentFilePicker: 'file-picker', WebpreviewModal: 'preview-modal', PreviewUrlPrompt: 'preview-prompt',
     useState: (initial) => {
@@ -257,7 +260,8 @@ const permissionCatalog = [
   { name: 'shell', kind: 'native', source: 'shell' },
   { name: 'read_file', kind: 'native', source: 'files' },
   { name: 'write_file', kind: 'native', source: 'files' },
-  { name: 'ask_user', kind: 'native' },
+  { name: 'ask_user', kind: 'native', source: 'chats' },
+  { name: 'task', kind: 'native', source: 'chats' },
   { name: 'list_chats', kind: 'native', source: 'chats' },
   { name: 'mcp__fixture__read', kind: 'mcp', source: 'fixture' }
 ];
@@ -265,19 +269,31 @@ const treeFor = (view) => view.render().find((node) => typeof node.attrs.onToggl
 for (const failure of [{ saveStatus: 503 }, { saveError: 'network unavailable' }]) {
   const view = createView({}, permissionCatalog, { ...failure, servers: [{ id: 'fixture', slug: 'fixture' }] });
   view.render(); await view.load();
-  for (const [groupId, toolId] of [['shell', 'shell'], ['files', 'read_file'], ['chats', 'list_chats'], ['ask_user', 'ask_user'], ['mcp-fixture', 'mcp__fixture__read']]) {
+  for (const [groupId, toolId] of [['shell', 'shell'], ['files', 'read_file'], ['chats', 'list_chats'], ['chats', 'ask_user'], ['mcp-fixture', 'mcp__fixture__read']]) {
     treeFor(view).attrs.onToggleTool(groupId, toolId, false);
     await new Promise(resolve => setImmediate(resolve));
     const group = treeFor(view).attrs.groups.find((g) => g.id === groupId);
     assert.equal(group.tools.find((t) => t.id === toolId).checked, true, 'failed leaf save preserves ' + toolId);
     assert.ok(group.extra?.children[0].includes(failure.saveError || 'HTTP 503'), 'failed save is visible for ' + toolId);
   }
-  for (const groupId of ['shell', 'files', 'chats', 'ask_user', 'mcp-fixture']) {
+  for (const groupId of ['shell', 'files', 'chats', 'mcp-fixture']) {
     treeFor(view).attrs.onToggleGroup(groupId, false);
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(treeFor(view).attrs.groups.find((g) => g.id === groupId).checked, true, 'failed group save preserves ' + groupId);
   }
 }
+// Ask user / Task are chats leaves now: one row (Chats) covers both, and the
+// binary leaf narrows to Off / Ask on its own row while its family row keeps
+// the three-way segment.
+const binaryView = createView({}, permissionCatalog);
+binaryView.render(); await binaryView.load();
+const chatsRow = treeFor(binaryView).attrs.groups.find((g) => g.id === 'chats');
+assert.ok(chatsRow, 'the chats family renders its own row');
+assert.equal(chatsRow.control.attrs.modes.length, 3, 'the family row keeps Off / Ask / Allow');
+const askLeaf = chatsRow.tools.find((t) => t.id === 'ask_user');
+assert.equal(askLeaf.control.attrs.modes.length, 2, 'the ask_user leaf narrows to Off / Ask');
+assert.equal(chatsRow.tools.find((t) => t.id === 'task').control.attrs.modes.length, 3, 'a sibling leaf keeps all three');
+assert.equal(binaryView.render().find((n) => typeof n.attrs.onToggleTool === 'function').attrs.groups.find((g) => g.id === 'ask_user'), undefined, 'Ask user is no longer a row of its own');
 const queued = createView({}, permissionCatalog);
 queued.render(); await queued.load();
 let queuedTree = treeFor(queued);

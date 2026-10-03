@@ -1,16 +1,21 @@
-// The `mouaif` tool renders as TWO categories in every tools tree, each with its
+// The native families render as categories in every tools tree, each with its
 // own tools as child rows.
 //
 // Two model-facing areas of the app (chats, and mouaif itself) each render as
 // one collapsible category. A category has to look like a category: a chevron,
 // child rows, and a count. `restart_app` and `list_features` are children of
 // the mouaif row — they are tools OF the app, so they belong with the app's
-// other tools rather than in rows of their own. This asserts the shape and the
-// things that shape could silently break:
+// other tools rather than in rows of their own. `ask_user` and `task` are
+// children of the chats row for the same reason: they are tools OF a chat —
+// the model pauses and asks inside one, and it tracks that chat's work — so a
+// row of their own said less than the family row does. This asserts the shape
+// and the things that shape could silently break:
 //
 //   * the children are the category's own tools (and every one appears);
 //   * a child row stores its model-facing function name, so the chat filter
 //     — which stores tool names — is written with `list_chats`;
+//   * a binary leaf (`ask_user`) narrows its own row to Off / Ask while the
+//     family row keeps the three-way segment;
 //   * `off` unchecks the whole category and every child;
 //   * a catalog without the tools renders neither row (no dead rows).
 //
@@ -59,8 +64,8 @@ assert.equal(categories.length, 2, 'one row per category');
 same(categories.map((g) => g.name), ['Chats', 'mouaif'], 'two categories, named for what they cover');
 same(categories[0].tools.map((t) => t.id), [
   'list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat',
-  'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments'
-], 'the chats category lists its eleven tools');
+  'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task'
+], 'the chats category lists its thirteen tools');
 same(categories[1].tools.map((t) => t.id), [
   'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features'
 ], 'the settings category lists its six tools');
@@ -68,6 +73,8 @@ same(categories[1].tools.map((t) => t.id), [
 assert.ok(categories.every((g) => g.tools.length > 1), 'a category is collapsible');
 // The row no longer reads as a bare tool: no child is named `mouaif`.
 assert.ok(categories.flatMap((g) => g.tools).every((t) => t.name !== 'mouaif'), 'children are labelled actions');
+// Ask user / Task moved into the chats row instead of rows of their own.
+assert.ok(groups.every((g) => !['ask_user', 'task'].includes(g.id)), 'Ask user and Task are leaves now, not rows');
 assert.ok(categories.flatMap((g) => g.tools).every((t) => t.name && t.name.trim()), 'every child has a label');
 // A category never renders before the catalog advertises the tool.
 const without = buildToolGroups([{ name: 'shell', description: 'x' }], [], null);
@@ -121,7 +128,7 @@ same(
   'category ids match src/tools/mouaif.js GROUPS'
 );
 const actions = new Set(categories.flatMap((g) => g.tools.map((t) => t.id)));
-assert.equal(actions.size, 17, 'seventeen tools, each listed once');
+assert.equal(actions.size, 19, 'nineteen tools, each listed once');
 
 // The two app tools sit in the mouaif row now, not as rows of their own:
 // one tree row per tool family, and `restart_app` / `list_features` are
@@ -132,5 +139,12 @@ assert.ok(!topLevel.includes('list_features'), 'neither is Feature report');
 const appRow = categories.find((g) => g.id === 'mouaif-settings');
 assert.ok(appRow.tools.some((t) => t.id === 'restart_app'), 'the mouaif row lists the app restart');
 assert.ok(appRow.tools.some((t) => t.id === 'list_features'), 'and the feature report');
+
+// `ask_user` / `task` are chats leaves now, like `list_chats`: they are
+// tools OF a chat, and a stored `tools.ask_user` / `tools.task` still works
+// as that leaf's override (asserted on the server side too).
+const chatRow = categories.find((g) => g.id === 'chats');
+assert.ok(chatRow.tools.some((t) => t.id === 'ask_user'), 'the chats row lists the question tool');
+assert.ok(chatRow.tools.some((t) => t.id === 'task'), 'and the task tracker');
 
 console.log('mouaif tool categories: two categories with their actions as children passed');

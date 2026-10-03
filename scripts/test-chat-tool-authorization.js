@@ -146,6 +146,27 @@ async function main() {
     authz.effectiveConfig(projectDir, 'get_app_info', chatA.id).mode !== 'off');
   authz.setChatAuthorization(projectDir, chatA.id, { native: { chats: null } });
 
+  // 5c. ask_user / task are chats leaves: a chat-scoped family Allow covers
+  //     `task` but can never auto-answer a question. The chat writes the
+  //     family key (`chats`), which is not the binary tool's own name, so the
+  //     clamp in normalizeConfig would miss it without the explicit guard in
+  //     effectiveConfig.
+  // A per-chat entry is stored under the family gate (the chat layer maps
+  // every leaf write — the checkbox that restores an Off tool included —
+  // onto its family), so a leaf key the project layer would honor is simply
+  // the same entry here. `off` is the only thing that hides either tool.
+  authz.setChatAuthorization(projectDir, chatA.id, { native: { chats: { mode: 'allow' } } });
+  check('a chat family Allow lets the task tool run',
+    authz.effectiveConfig(projectDir, 'task', chatA.id).mode === 'allow',
+    JSON.stringify(authz.effectiveConfig(projectDir, 'task', chatA.id)));
+  check('a chat family Allow cannot auto-answer a question',
+    authz.effectiveConfig(projectDir, 'ask_user', chatA.id).mode === 'ask',
+    JSON.stringify(authz.effectiveConfig(projectDir, 'ask_user', chatA.id)));
+  authz.setChatAuthorization(projectDir, chatA.id, { native: { chats: { mode: 'off' } } });
+  check('a chat family Off still hides the question tool',
+    authz.effectiveConfig(projectDir, 'ask_user', chatA.id).mode === 'off');
+  authz.setChatAuthorization(projectDir, chatA.id, { native: { chats: null } });
+
   // 6. MCP overrides: per-server and the chat's shared gate, chat-scoped.
   authz.setChatAuthorization(projectDir, chatA.id, {
     mcp: { servers: { myserver: { mode: 'allow' } } }

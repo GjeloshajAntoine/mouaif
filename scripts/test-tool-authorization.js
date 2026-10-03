@@ -204,6 +204,41 @@ async function main() {
   assert.equal(familyView.list_chats.mode, 'off', 'and every leaf');
   authz.setAuthorization(projectDir, { tools: { chats: { mode: 'ask' }, mouaif: { mode: 'ask' }, update_settings: { mode: 'ask' } } });
 
+  // `ask_user` and `task` joined the chats family: both are tools OF a chat
+  // (the model pauses and asks inside one, and it tracks that chat's work),
+  // so one gate covers them and a stored `tools.ask_user` / `tools.task`
+  // works as that leaf's override — exactly like `restart_app` above.
+  assert.ok(authz.TOOL_FAMILIES.chats.includes('ask_user') && authz.TOOL_FAMILIES.chats.includes('task'),
+    'the server family lists both as leaves');
+  assert.equal(authz.configToolName('ask_user'), 'chats', 'ask_user resolves through the chats gate');
+  assert.equal(authz.configToolName('task'), 'chats', 'so does task');
+  authz.setAuthorization(projectDir, { tools: { chats: { mode: 'allow' } } });
+  assert.equal(authz.effectiveConfig(projectDir, 'ask_user').mode, 'ask', 'ask_user stays binary under a family Allow');
+  assert.equal(authz.effectiveConfig(projectDir, 'task').mode, 'allow', 'the task tracker takes the family Allow');
+  const gatedTask = await authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_task', tool: 'task', summary: 'create' });
+  assert.equal(gatedTask.decision, 'allow', 'a family Allow lets the task tool run unprompted');
+  // A binary tool must still reach the user: the family Allow may not
+  // short-circuit it, or the model would answer its own question.
+  const gatedAsk = await authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_ask', tool: 'ask_user' });
+  assert.equal(gatedAsk.decision, 'prompt', 'ask_user prompts even under a family Allow');
+  // The deny settles the parked wait with EDENIED; swallow it here (the
+  // tool loop is the real owner of that promise).
+  gatedAsk.wait.catch(() => {});
+  authz.recordDecision(projectDir, 'a1b2c3d4', 'call_ask', 'deny');
+  // A per-leaf `off` still tightens the family, and a chats Off hides both.
+  authz.setAuthorization(projectDir, { tools: { task: { mode: 'off' } } });
+  assert.equal(authz.effectiveConfig(projectDir, 'task').mode, 'off', 'a leaf Off still tightens the family');
+  assert.equal(authz.effectiveConfig(projectDir, 'ask_user').mode, 'ask', 'and leaves the question tool alone');
+  authz.setAuthorization(projectDir, { tools: { chats: { mode: 'off' } } });
+  assert.equal(authz.effectiveConfig(projectDir, 'task').mode, 'off', 'a chats Off reaches the task tool');
+  assert.equal(authz.effectiveConfig(projectDir, 'ask_user').mode, 'off', 'and the question tool');
+  await assert.rejects(
+    authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_ask_off', tool: 'ask_user', summary: '' }),
+    { code: 'ETOOL_DISABLED' },
+    'a chats Off hides the question tool from the model'
+  );
+  authz.setAuthorization(projectDir, { tools: { chats: { mode: 'ask' }, mouaif: { mode: 'ask' }, update_settings: { mode: 'ask' } } });
+
   settings.setProject(projectDir, { tools: { shell: { enabled: false, mode: 'ask', allowlist: ['^echo safe$'] } } });
   const legacyDisabled = await authz.authorize({
     projectDir, chatId: 'a1b2c3d4', callId: 'call_legacy_disabled', tool: 'shell', cmd: 'echo available'
@@ -357,7 +392,7 @@ async function main() {
   authz.setAuthorization(projectDir, { mcp: { servers: { [divergingServerId]: null } } });
   const idKeyedCleared = JSON.parse(fs.readFileSync(path.join(projectDir, '.mcp.json'), 'utf8'));
   assert.ok(!('srv_display' in (idKeyedCleared.authorization.servers || {})), 'clear by id removes the slug entry');
-  console.log('tool authorization: ' + (37 + 4 + 5 + 13) + ' assertions passed');
+  console.log('tool authorization: ' + (37 + 4 + 5 + 23) + ' assertions passed');
 }
 
 main().finally(() => {
