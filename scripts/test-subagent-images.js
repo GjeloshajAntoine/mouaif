@@ -58,7 +58,9 @@ async function main() {
   assert.deepEqual(dedicated.exec.result.content, [image]);
   assert.deepEqual(dedicated.imageParts[0].image_url.url, 'data:image/png;base64,' + png);
   assert.equal(dedicated.exec.result.text, '');
-  assert.equal(dedicated.exec.result.chat.at(-1).images[0].data, png);
+  // Pixels are stored once (result.content); the nested turn keeps a pointer.
+  assert.deepEqual(dedicated.exec.result.chat.at(-1).images, [{ type: 'image', mimeType: 'image/png', contentIndex: 0 }]);
+  assert.equal(JSON.stringify(dedicated.exec.result).split(png).length - 1, 1, 'generated base64 stored exactly once');
   assert.equal(dedicated.exec.result.providerCost, 0.04);
   assert.ok(dedicated.events.some((ev) => ev.name === 'subagent_event' && ev.data.kind === 'image'));
   assert.match(requests.at(-1).url, /\/images$/);
@@ -182,6 +184,52 @@ async function main() {
   assert.equal(JSON.parse(stored.at(-2).content).content[0].data, png);
   assert.equal(stored.at(-1).content, 'Generated image.');
   assert.equal(stored.at(-1).cost.total, 0.04);
+
+  // Generated artwork is listable and selectable for a follow-up edit.
+  const { runAppTool } = require('../src/tools/mouaif.js');
+  const { resolveChatImages, describeChatImages } = require('../src/chatImages.js');
+  const resultRow = stored.at(-2);
+  const inventory = (await runAppTool('list_chat_attachments', {}, { projectDir, chatId: host.id })).result;
+  const generatedRef = 'generated:' + resultRow.seq + ':0';
+  assert.deepEqual(inventory.generated.map((g) => g.imageRef), [generatedRef]);
+  assert.equal(inventory.generated[0].mimeType, 'image/png');
+  assert.ok(!JSON.stringify(inventory).includes(png), 'inventory carries no pixels');
+  assert.equal(resolveChatImages(projectDir, host.id, [generatedRef])[0].dataUrl, 'data:image/png;base64,' + png);
+  assert.throws(() => resolveChatImages(projectDir, host.id, ['generated:' + resultRow.seq + ':1']), { code: 'ENOTFOUND' });
+  assert.throws(() => resolveChatImages(projectDir, host.id, ['generated:' + stored.at(-1).seq + ':0']), { code: 'ENOTFOUND' }, 'only subagent result rows');
+  const otherChat = chats.createChat(projectDir, {});
+  assert.throws(() => resolveChatImages(projectDir, otherChat.id, [generatedRef]), { code: 'ENOTFOUND' }, 'scoped to current chat');
+  assert.deepEqual(describeChatImages(projectDir, host.id, [generatedRef, 'generated:999:0']),
+    [{ imageRef: generatedRef, name: 'generated-' + resultRow.seq + '-0.png', mimeType: 'image/png' }, { imageRef: 'generated:999:0', missing: true }]);
+
+  // Replayed history names the refs (not the pixels) so a later turn can edit.
+  const callRow = { role: 'tool', phase: 'call', toolCallId: 'replay', name: 'subagent', args: { task: 'Draw' } };
+  const replay = messages.reconstructUpstreamHistory([callRow, { ...resultRow, toolCallId: 'replay' }]);
+  const replayed = JSON.parse(replay.at(-1).content);
+  assert.deepEqual(replayed.generatedImageRefs, [generatedRef]);
+  assert.ok(!replay.at(-1).content.includes(png));
+
+  // Edit loop: the generated ref goes back as an input reference.
+  const editModel = { ...or, supportedParameters: { input_references: { min: 0, max: 4 } } };
+  const edit = await delegate(editModel, { images: [generatedRef] });
+  assert.equal(edit.exec.ok, true);
+  assert.deepEqual(requests.at(-1).body.input_references, [{ type: 'image_url', image_url: { url: 'data:image/png;base64,' + png } }]);
+
+  // The approval card learns which images a delegation would share.
+  settings.setProject(projectDir, { tools: { subagent: { mode: 'ask' } } });
+  const auth = require('../src/tools/authorization.js');
+  const authEvents = [];
+  const asking = ai.runSingleToolCall({ id: 'ask_images', name: 'subagent', arguments: JSON.stringify({ task: 'Edit', images: [generatedRef] }) }, {
+    opts: { model: or, projectDir, chatId: host.id, enabledTools: ['subagent'] },
+    onEvent: (name, data) => authEvents.push({ name, data })
+  });
+  for (let i = 0; i < 50 && !authEvents.some((ev) => ev.name === 'authorization_required'); i++) await new Promise((r) => setTimeout(r, 10));
+  const prompt = authEvents.find((ev) => ev.name === 'authorization_required');
+  assert.deepEqual(prompt.data.images.map((img) => img.imageRef), [generatedRef]);
+  assert.ok(!JSON.stringify(prompt.data).includes(png), 'approval card gets metadata only');
+  assert.deepEqual(auth.listPending(projectDir, host.id)[0].images, prompt.data.images, 'reconnecting tabs see the same list');
+  auth.recordDecision(projectDir, host.id, 'ask_images', 'deny');
+  assert.equal((await asking).exec.ok, false);
   console.log('subagent images: dedicated/chat OpenRouter, Gemini/Imagen, vision forwarding, errors, tool compatibility, and HTTP persistence passed');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => {

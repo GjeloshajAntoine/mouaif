@@ -723,6 +723,13 @@ function main() {
     check('image-only assistant turn survives settle', wrap.querySelector('img')?.src === 'data:image/png;base64,AA=='
       && wrap.querySelectorAll('.chat-msg--assistant').length === 1);
     check('generated artwork preserves accompanying answer text', wrap.querySelector('.chat-msg__answer').innerHTML === 'Here is the drawing.');
+    // Current rows store pixels once on result.content; turns point by index.
+    images.renderSubagentChat(card, { name: 'subagent', result: {
+      content: [{ ...image, data: 'Ag==' }],
+      chat: [{ role: 'assistant', content: 'Pointer.', images: [{ type: 'image', mimeType: 'image/png', contentIndex: 0 }] }]
+    } });
+    const pointed = card.querySelector('.tool-card__subagent-chat');
+    check('image pointer resolves against result content', pointed.querySelector('img')?.src === 'data:image/png;base64,Ag==');
   }
 
   // The nested user prompt previews only its explicitly selected pixels.

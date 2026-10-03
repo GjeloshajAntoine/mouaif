@@ -155,7 +155,7 @@ function omitImagePayloads(value, seen) {
   return out;
 }
 
-function subagentModelResult(result, content) {
+function subagentModelResult(result, content, imageRefs) {
   let source = result;
   if (!source || typeof source !== 'object') {
     try { source = JSON.parse(typeof content === 'string' ? content : ''); }
@@ -170,6 +170,9 @@ function subagentModelResult(result, content) {
       message: source.error.message || String(source.error)
     };
   }
+  // Replayed history drops the pixels, so name them instead: the model can
+  // pass these refs back through subagent.images to edit earlier artwork.
+  if (Array.isArray(imageRefs) && imageRefs.length) out.generatedImageRefs = imageRefs.slice(0, 8);
   return out;
 }
 
@@ -187,7 +190,7 @@ function compactToolFeedback(options) {
     // { ok, text, error } — dropping `content` entirely — and
     // omitImagePayloads is applied defensively for any shape that slips
     // through with an image block still attached.
-    const compact = subagentModelResult(opts.result, content);
+    const compact = subagentModelResult(opts.result, content, opts.imageRefs);
     if (compact) {
       content = safeJson(compact, content);
     } else if (opts.result && typeof opts.result === 'object' && Array.isArray(opts.result.content)) {

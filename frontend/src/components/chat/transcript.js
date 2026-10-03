@@ -1901,6 +1901,12 @@ export function renderSubagentChat(card, toolResult) {
   // carries it. Nested assistant turns are labelled with it, the same way
   // the top-level transcript labels an assistant turn with its model id.
   const nestedModelId = r && r.model && r.model.id ? r.model.id : '';
+  // Generated pixels are stored once, on the result `content`; nested turns
+  // point at them by index. Older rows still carry inline data.
+  const resultImages = r && Array.isArray(r.content) ? r.content : [];
+  const resolveTurnImages = (images) => images
+    .map((img) => (img && Number.isInteger(img.contentIndex) ? resultImages[img.contentIndex] : img))
+    .filter((img) => img && typeof img.data === 'string' && img.data);
   // Nested tool results reference their call by id while the arguments
   // live on the assistant turn's `tool_calls`. Index them so a nested
   // write_file preview can render the written content, the same as the
@@ -1983,9 +1989,8 @@ export function renderSubagentChat(card, toolResult) {
     body.className = 'chat-msg__body';
     if (role === 'assistant') {
       renderAssistantBody(body, text || '', m.reasoning || '', true);
-      if (Array.isArray(m.images) && m.images.length) {
-        renderSubagentImages(body, m.images);
-      }
+      const turnImages = Array.isArray(m.images) ? resolveTurnImages(m.images) : [];
+      if (turnImages.length) renderSubagentImages(body, turnImages);
     } else {
     body.textContent = text || '';
     if (role === 'user' && Array.isArray(m.content)) {

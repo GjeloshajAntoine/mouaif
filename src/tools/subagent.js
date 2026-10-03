@@ -8,7 +8,7 @@
 // several subagent calls in one turn, the tool loop runs them concurrently
 // (see the parallel branch in src/ai.js).
 
-const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call. The subagent can use the project tools and MCP tools, with normal authorization prompts. You may call subagent multiple times in a single turn; same-turn subagent calls run in parallel. Images are never inherited automatically; use images with selected imageRef values from list_chat_attachments.';
+const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call. The subagent can use the project tools and MCP tools, with normal authorization prompts. You may call subagent multiple times in a single turn; same-turn subagent calls run in parallel. Images are never inherited automatically; use images with selected imageRef values from list_chat_attachments (including generated:<seq>:<i> refs for earlier subagent artwork you want edited).';
 
 const AGENT_DESCRIPTION = 'Optional project agent name (from Settings → Project → Agents) to use for this delegation. Omit it to use the project\'s default subagent.';
 

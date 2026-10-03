@@ -712,7 +712,15 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     const detail = document.createElement('pre');
     detail.className = 'tool-card__body';
     detail.textContent = [request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
-      .filter(Boolean).join('\n');
+    .filter(Boolean).join('\n');
+    // A delegation that shares chat images lists them (names only, no
+    // pixels), so the user knows what goes to the delegated model.
+    const sharedImages = request.tool === 'subagent' && Array.isArray(request.images) ? request.images : [];
+    if (sharedImages.length) {
+    detail.textContent += (detail.textContent ? '\n' : '') + 'shares ' + sharedImages.length
+      + (sharedImages.length === 1 ? ' image:' : ' images:') + sharedImages.map((img) => '\n  • '
+      + (img && img.missing ? (img.imageRef + ' (missing — the call will fail)') : ((img && (img.name || img.imageRef)) || 'image'))).join('');
+    }
     // Per-run model picker for subagent calls. When the user picks a
     // model here, the decision payload carries it so the delegated run
     // executes on that model (this call only; see buildAuthModelPicker).

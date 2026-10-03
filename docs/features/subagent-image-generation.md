@@ -32,11 +32,37 @@ Chat images are **never forwarded automatically**. The main model first calls `l
 }
 ```
 
-Omitting `images`, or passing `[]`, sends no images even when the parent chat has attachments. References are scoped to the current chat: message references contain its stable sequence and image index; draft references identify the exact image contents and remain valid across reordering, but not replacement/removal. Relist attachments after an `ENOTFOUND` response. At most eight images and 24 MiB of encoded input can be selected.
+Omitting `images`, or passing `[]`, sends no images even when the parent chat has attachments. References are scoped to the current chat. At most eight images and 24 MiB of encoded input can be selected; relist attachments after an `ENOTFOUND` response.
+
+| Reference | Points at | Stays valid |
+| --- | --- | --- |
+| `message:<seq>:<i>` | attachment `i` of a persisted user message | until the message is deleted |
+| `draft:<sha256>` | a composer draft image, by its contents | across reordering, not replacement/removal |
+| `generated:<seq>:<i>` | image `i` a subagent returned on its persisted `subagent` result row | until the row is deleted |
+
+`list_chat_attachments` returns `drafts`, `messages`, and `generated` arrays with metadata and `imageRef` only — never pixels.
 
 The selected pixels are resolved server-side after delegation authorization and included in the nested user message, live prompt preview, and settled transcript. They are not copied to project files, removed from the draft, or returned as newly generated artwork. Use a vision-capable model. Selecting an image for a Gemini image-chat or supported OpenRouter image model also enables reference-image editing; Imagen `predict` rejects image inputs rather than silently dropping them.
 
 `POST /api/tools/subagent` accepts the same optional `images` reference array. The composer does not automatically add draft images to an `@agent` command.
+
+### Edit earlier artwork
+
+Generated images can be sent back in. To ask for a change ("make the bird red"), the main model lists attachments, picks the `generated:<seq>:<i>` reference, and passes it to an image agent that accepts reference images:
+
+```json
+{
+  "task": "Make the bird red; keep the composition.",
+  "agent": "Artist",
+  "images": ["generated:41:0"]
+}
+```
+
+When a chat is reloaded, the pixels are not resent to the model in replayed history. Instead the replayed `subagent` tool feedback carries `generatedImageRefs`, so the model still knows which references to use.
+
+### Approval card
+
+When a delegation shares images, the subagent approval card lists them by name before you approve. A stale reference is flagged as missing, and that call fails with `ENOTFOUND`. The card receives names only, never pixels.
 
 ## Behavior
 
@@ -44,7 +70,7 @@ The selected pixels are resolved server-side after delegation authorization and 
 - OpenRouter image-capable chat models use `/chat/completions` with `modalities`, and parse inline `images[].image_url.url` from streamed deltas or message objects.
 - Gemini Imagen uses `:predict` with one instance and `sampleCount: 1`. Gemini image chat models use `streamGenerateContent` with `responseModalities: ["TEXT", "IMAGE"]`, and parse `inlineData` (or `inline_data`). Thinking-image parts are not exposed as artwork.
 - Dedicated image calls do not advertise tools. They retain the chat loop's abort signal, idle timeout, error handling, and per-round usage accounting.
-- The normalized `image` event carries `{ type, data, mimeType }`. A delegated assistant turn stores its image blocks in `images`; the subagent result also carries them in `content` for parent vision feedback. Base64 is omitted from the textual tool feedback.
+- The normalized `image` event carries `{ type, data, mimeType }`. The subagent result stores each generated image's pixels **once**, in `content`, which is also what the parent receives as vision feedback. The nested assistant turn's `images` holds pointers (`{ type, mimeType, contentIndex }`) into `content`. Older rows with inline `images[].data` still render. Base64 is omitted from the textual tool feedback.
 - Each generated image must be inline PNG, JPEG, WebP, or GIF and at most 12 MiB of encoded data; at most eight images are accepted per run. Remote output URLs are rejected rather than fetched with provider credentials. Image-only calls returning no pixels fail with `ENO_IMAGE` instead of claiming success.
 - OpenRouter `/images` receives explicitly selected images as `input_references`, validated against the model's reported minimum and maximum reference count before sending. Gemini image chat uses inline image parts. Imagen input-image editing and asynchronous/long-running prediction APIs are not implemented.
 

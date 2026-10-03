@@ -873,6 +873,7 @@ async function authorize(input) {
       path: input.path,
       query: input.query,
       summary: input.summary,
+      images: Array.isArray(input.images) && input.images.length ? input.images : undefined,
       timeoutMs: input.timeoutMs,
       projectDir,
       args: input.args && typeof input.args === 'object' ? input.args : undefined

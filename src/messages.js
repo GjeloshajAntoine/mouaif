@@ -225,7 +225,9 @@ tool_calls: [{ id: wireId, type: 'function', function: { name, arguments: args }
 out.push({
 role: 'tool', tool_call_id: wireId, name,
 content: toolFeedback.compactToolFeedback({
-name, content: storedContent, result: storedResult, maxBytes: toolFeedbackMaxBytes, toolOutput
+name, content: storedContent, result: storedResult, maxBytes: toolFeedbackMaxBytes, toolOutput,
+imageRefs: name === 'subagent' && Number.isSafeInteger(result.seq)
+? require('./chatImages.js').generatedImageRefs(result.seq, storedResult) : undefined
 })
 });
 i++;

@@ -270,8 +270,16 @@ async function runSingleToolCall(c, cx) {
         const keys = require('./tools/mouaif.js').permissionKeysTouched(args);
         if (keys.length) { forcePrompt = true; summary = 'permission keys: ' + keys.join(', '); }
       }
+      // A delegation that shares chat images names them on the approval
+      // card (metadata only), so the user sees what leaves the chat.
+      let authImages;
+      if (c.name === 'subagent' && args && Array.isArray(args.images) && args.images.length) {
+      try { authImages = require('./chatImages.js').describeChatImages(opts && opts.projectDir, opts && opts.chatId, args.images); }
+      catch { authImages = undefined; }
+      }
       const authResult = await authGate.authorize({
-        forcePrompt,
+      forcePrompt,
+      images: authImages,
         projectDir: opts && opts.projectDir,
         chatId: opts && opts.chatId,
         tool: c.name,
@@ -342,9 +350,10 @@ async function runSingleToolCall(c, cx) {
             path: args && args.path,
             query: args && args.query,
             summary,
+            images: authImages,
             timeoutMs: clampedTimeoutMs,
             projectDir: opts && opts.projectDir
-          });
+            });
         }
         // Capture the resolved value (allow, payload, ...) so the
         // `ask_user` runner can read the user's structured answer.
@@ -1949,7 +1958,10 @@ promptSize: callOpts && callOpts.promptSize,
         for (const ev of nestedEvents) {
         const d = ev.data || {};
         if (ev.name === 'image') {
-        segmentImages.push(d);
+        // Store the pixels once, on r.content. The nested turn keeps a
+        // pointer so the settled card renders it in place without a second
+        // base64 copy in the persisted row.
+        segmentImages.push({ type: 'image', mimeType: d.mimeType, contentIndex: nestedImageParts.length });
         nestedImageParts.push(d);
         } else if (ev.name === 'message' && typeof d.delta === 'string') {
         segmentText += d.delta;

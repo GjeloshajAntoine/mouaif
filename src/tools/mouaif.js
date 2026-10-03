@@ -524,7 +524,7 @@ async function runAttachments(args, opts) {
   const action = args.action;
 
   if (action === 'list_attachments') {
-    const { imageMetadata, draftImageRef } = require('../chatImages.js');
+    const { imageMetadata, draftImageRef, listGeneratedImages } = require('../chatImages.js');
     const limit = clampLimit(args.limit, 200, 200);
     // Read one extra row to distinguish a complete inventory from a page
     // with older messages. The seq cursor remains stable across appends.
@@ -532,8 +532,12 @@ async function runAttachments(args, opts) {
     const page = rows.length > limit ? rows.slice(1) : rows;
     const nextBeforeSeq = rows.length > limit ? page[0].seq : null;
     const attached = [];
+    const generated = [];
     for (const m of page) {
-      if (!m || !Array.isArray(m.attachments) || !m.attachments.length) continue;
+    // Images a subagent returned live on its tool-result row. Listing
+    // them lets the parent pass earlier artwork back for an edit.
+    for (const g of listGeneratedImages(m)) generated.push({ messageTs: m.ts, messageSeq: m.seq, ...g });
+    if (!m || !Array.isArray(m.attachments) || !m.attachments.length) continue;
       for (const [index, a] of m.attachments.entries()) {
       attached.push({ messageTs: m.ts, messageSeq: m.seq,
       ...imageMetadata(a, 'message:' + m.seq + ':' + index) });
@@ -545,6 +549,7 @@ async function runAttachments(args, opts) {
       drafts: (Array.isArray(chat.draftAttachments) ? chat.draftAttachments : [])
         .map((a) => imageMetadata(a, draftImageRef(a))),
       messages: attached,
+      generated,
       nextBeforeSeq
     });
   }
