@@ -39,7 +39,7 @@ The twelve sections, in page order:
 | Section | Capture | What it shows |
 |---------|---------|---------------|
 | **One chat, a whole run** | `chat-view.png` | A chat at the end of a run — the **Context**, **Total** and **Balance** chips, per-turn cost lines, and the **Read**, **Searched**, **Wrote** and **Ran** tool cards |
-| **A real terminal on the phone** | `terminal.png` | The **CLI** sheet running `npm test` in the project directory, with the suggestion chips and the two rows of terminal keys (Esc, Tab, ^C, ^D, ^Z, ^L, arrows, PgUp, PgDn) |
+| **A real terminal on the phone** | `terminal.png` | The **CLI** sheet running `npm test` in the project directory, with the suggestion chips and two rows of small terminal keys (Esc, Tab, ^C, ^D, ^Z, ^L, Ctrl, arrows, Fn, PgUp, PgDn) |
 | **Review the diff, then commit** | `git.png` | The **Git** sheet — branch picker with pull / push, a staged file above the commit bar, and unstaged files each with **Stage** |
 | **Edit the file, not a diff of it** | `editor.png` | The file editor with `src/store.js` open — the project tree, the **Draft Craft / Revert / Save** row, highlighted JavaScript with three lines selected, and the byte count |
 | **Draw on the bug instead of describing it** | `draft-craft.png` | The **Draft Craft** annotator over an attached image — a pen stroke, a numbered pin carrying text, the marker list, and **Use annotated image** |

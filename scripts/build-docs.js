@@ -1354,9 +1354,9 @@ const landingScreens = [
   {
     id: 'terminal',
     title: 'A real terminal on the phone',
-    text: 'Not a log viewer: a persistent shell session in the project directory. Esc, Tab, Ctrl-C, arrows and PgUp/PgDn are buttons here, so a pager, a full-screen program or a password prompt all work from a phone keyboard.',
+    text: 'Not a log viewer: a persistent shell session in the project directory. Esc, Tab, Ctrl-C, arrows and PgUp/PgDn are small buttons here, and Ctrl and Fn turn the next letter or digit into any control character or function key — so a pager, a full-screen program or a password prompt all work from a phone keyboard.',
     src: 'features/images/landing/terminal.png',
-    alt: 'The CLI sheet at 390 px running npm test inside the project directory: the live shell output, suggestion chips for the session command and the project files, the command field, and two rows of terminal keys (Esc, Tab, ^C, ^D, ^Z, ^L, arrows, PgUp, PgDn).',
+    alt: 'The CLI sheet at 390 px running npm test inside the project directory: the live shell output, suggestion chips for the session command and the project files, the command field, and two rows of small terminal keys (Esc, Tab, ^C, ^D, ^Z, ^L, Ctrl, arrows, Fn, PgUp, PgDn) above the line naming what the modifiers do.',
     caption: 'CLI — a shell in your project, driven from a phone'
   },
   {
