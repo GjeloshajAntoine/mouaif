@@ -63,8 +63,8 @@ check('no un-gated group is left behind', () => {
 check('the no-prompt tools are still listed and still gated', () => {
   // `report_progress` and `list_features` are answered without an approval
   // card, but they are not ungated: an `off` hides them, and they resolve
-  // through the ordinary authorization machinery (a family leaf in
-  // list_features' case). A name that is not advertised anywhere would be
+  // through the ordinary authorization machinery as family leaves (chats and
+  // mouaif respectively). A name that is not advertised anywhere would be
   // the real bug.
   const noPrompt = [...require('../src/ai-stream.js').NO_PROMPT_TOOLS].sort();
   same(noPrompt, ['list_features', 'report_progress'], 'the read-only tools are the only ones');
@@ -74,6 +74,9 @@ check('the no-prompt tools are still listed and still gated', () => {
     assert.ok(authz.NATIVE_TOOLS.has(name) || authz.FAMILY_TOOLS.has(name), name + ' must resolve through a gate');
   }
   assert.equal(model.FAMILY_OF.list_features, 'mouaif', 'the feature report is a mouaif leaf, not its own gate');
+  assert.equal(model.FAMILY_OF.report_progress, 'chats', 'the progress report is a chats leaf');
+  assert.ok(model.TOOL_GROUPS.every((group) => group.id !== 'report_progress'),
+    'no Progress updates row is left behind');
 });
 
 // ---- 2. The model matches what the server serves -------------------------

@@ -262,6 +262,7 @@ const permissionCatalog = [
   { name: 'write_file', kind: 'native', source: 'files' },
   { name: 'ask_user', kind: 'native', source: 'chats' },
   { name: 'task', kind: 'native', source: 'chats' },
+  { name: 'report_progress', kind: 'native', source: 'chats' },
   { name: 'list_chats', kind: 'native', source: 'chats' },
   { name: 'mcp__fixture__read', kind: 'mcp', source: 'fixture' }
 ];

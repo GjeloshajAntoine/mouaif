@@ -47,7 +47,8 @@
       "attach_chat_image",
       "list_chat_attachments",
       "ask_user",
-      "task"
+      "task",
+      "report_progress"
     ]
   },
   {
@@ -62,15 +63,6 @@
       "get_app_info",
       "restart_app",
       "list_features"
-    ]
-  },
-  {
-    "id": "report_progress",
-    "name": "Progress updates",
-    "source": "progress",
-    "authKey": "report_progress",
-    "tools": [
-      "report_progress"
     ]
   },
   {

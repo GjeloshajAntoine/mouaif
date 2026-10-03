@@ -204,14 +204,17 @@ async function main() {
   assert.equal(familyView.list_chats.mode, 'off', 'and every leaf');
   authz.setAuthorization(projectDir, { tools: { chats: { mode: 'ask' }, mouaif: { mode: 'ask' }, update_settings: { mode: 'ask' } } });
 
-  // `ask_user` and `task` joined the chats family: both are tools OF a chat
-  // (the model pauses and asks inside one, and it tracks that chat's work),
-  // so one gate covers them and a stored `tools.ask_user` / `tools.task`
-  // works as that leaf's override — exactly like `restart_app` above.
-  assert.ok(authz.TOOL_FAMILIES.chats.includes('ask_user') && authz.TOOL_FAMILIES.chats.includes('task'),
-    'the server family lists both as leaves');
+  // `ask_user`, `task` and `report_progress` joined the chats family: all
+  // three are tools OF a chat (the model pauses and asks inside one, tracks
+  // that chat's work, and reports on it), so one gate covers them and a
+  // stored `tools.<leaf>` works as that leaf's override — exactly like
+  // `restart_app` above.
+  assert.ok(authz.TOOL_FAMILIES.chats.includes('ask_user') && authz.TOOL_FAMILIES.chats.includes('task')
+    && authz.TOOL_FAMILIES.chats.includes('report_progress'),
+    'the server family lists all three as leaves');
   assert.equal(authz.configToolName('ask_user'), 'chats', 'ask_user resolves through the chats gate');
   assert.equal(authz.configToolName('task'), 'chats', 'so does task');
+  assert.equal(authz.configToolName('report_progress'), 'chats', 'and the progress report');
   authz.setAuthorization(projectDir, { tools: { chats: { mode: 'allow' } } });
   assert.equal(authz.effectiveConfig(projectDir, 'ask_user').mode, 'ask', 'ask_user stays binary under a family Allow');
   assert.equal(authz.effectiveConfig(projectDir, 'task').mode, 'allow', 'the task tracker takes the family Allow');
@@ -229,9 +232,11 @@ async function main() {
   authz.setAuthorization(projectDir, { tools: { task: { mode: 'off' } } });
   assert.equal(authz.effectiveConfig(projectDir, 'task').mode, 'off', 'a leaf Off still tightens the family');
   assert.equal(authz.effectiveConfig(projectDir, 'ask_user').mode, 'ask', 'and leaves the question tool alone');
+  assert.equal(authz.effectiveConfig(projectDir, 'report_progress').mode, 'allow', 'and the progress report');
   authz.setAuthorization(projectDir, { tools: { chats: { mode: 'off' } } });
   assert.equal(authz.effectiveConfig(projectDir, 'task').mode, 'off', 'a chats Off reaches the task tool');
   assert.equal(authz.effectiveConfig(projectDir, 'ask_user').mode, 'off', 'and the question tool');
+  assert.equal(authz.effectiveConfig(projectDir, 'report_progress').mode, 'off', 'and the progress report');
   await assert.rejects(
     authz.authorize({ projectDir, chatId: 'a1b2c3d4', callId: 'call_ask_off', tool: 'ask_user', summary: '' }),
     { code: 'ETOOL_DISABLED' },
@@ -392,7 +397,7 @@ async function main() {
   authz.setAuthorization(projectDir, { mcp: { servers: { [divergingServerId]: null } } });
   const idKeyedCleared = JSON.parse(fs.readFileSync(path.join(projectDir, '.mcp.json'), 'utf8'));
   assert.ok(!('srv_display' in (idKeyedCleared.authorization.servers || {})), 'clear by id removes the slug entry');
-  console.log('tool authorization: ' + (37 + 4 + 5 + 23) + ' assertions passed');
+  console.log('tool authorization: ' + (37 + 4 + 5 + 27) + ' assertions passed');
 }
 
 main().finally(() => {

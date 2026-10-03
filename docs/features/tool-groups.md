@@ -15,9 +15,8 @@ Nothing to configure: the grouping is a property of the app, not a per-project s
 | **Shell** | `shell` | One tool, one gate. |
 | **Subagent** | `subagent` | |
 | **Web preview** | `webpreview` | |
-| **Chats** | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task` | A family, like File tools: the row edits `tools.chats`; a leaf can persist its own more-specific override. It lists everything the model can do with a chat — reading and writing them, and the two tools it uses *inside* one: `ask_user` (pause and ask) and `task` (track the work). `ask_user` stays binary (Off / Ask) and is declared in the family's `binaryTools`, so its leaf row shows the two-way segment while the family row keeps all three. |
+| **Chats** | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress` | A family, like File tools: the row edits `tools.chats`; a leaf can persist its own more-specific override. It lists everything the model can do with a chat — reading and writing them, and the three tools it uses *inside* one: `ask_user` (pause and ask), `task` (track the work) and `report_progress` (report on it). `ask_user` stays binary (Off / Ask) and is declared in the family's `binaryTools`, so its leaf row shows the two-way segment while the family row keeps all three. |
 | **mouaif** | `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features` | A family: the row edits `tools.mouaif`, same rules. It lists every tool that acts on mouaif itself, the app restart and the feature report included. |
-| **Progress updates** | `report_progress` | |
 | **File tools** | `read_file`, `list_files`, `search_files`, `write_file`, `edit_file`, `group_read`, `group_edit` | The row edits `tools.file`; a leaf checkbox can persist its own more-specific override. |
 
 MCP servers are not in this list — their rows come from the server registry, one row per configured server.
@@ -45,7 +44,7 @@ Group rows carry a checkbox that flips every child at once (showing a half-check
 
 Because `restart_app` and `list_features` are `mouaif` leaves, a family `allow` — including one earned by choosing **Always allow** on any mouaif call — also lets the assistant restart the app without asking. Turn the restart off on its own with a `tools.restart_app` leaf override if you want the family open and the restart gated. `list_features` is read-only metadata: it is never shown an approval card, but an `off` on the family or on the leaf hides it from the model.
 
-The Chats family behaves the same way, with one deliberate exception: `ask_user` is a binary tool. A `tools.chats` `allow` covers every chat function including `task`, but it can never auto-answer a question — an `ask_user` call always reaches the user, whatever the family or the leaf says. Only `off` (`tools.chats.mode`, or a `tools.ask_user` leaf override) hides it.
+The Chats family behaves the same way, with one deliberate exception: `ask_user` is a binary tool. A `tools.chats` `allow` covers every chat function including `task` and `report_progress`, but it can never auto-answer a question — an `ask_user` call always reaches the user, whatever the family or the leaf says. Only `off` (`tools.chats.mode`, or a `tools.ask_user` leaf override) hides it. `report_progress` is read-only UI metadata: it is answered without an approval card too, but an `off` on the family or the leaf still hides it from the model.
 
 ## Testing
 

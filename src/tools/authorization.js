@@ -181,14 +181,15 @@ const FILE_FAMILY_TOOLS = new Set([...FILE_TOOL_NAMES]);
 // are leaves now, so a stored `tools.restart_app` keeps working as that
 // leaf's override.
 //
-// The `chats` family carries the two tools the model uses *inside* a chat:
-// `ask_user` (pause and ask a structured question) and `task` (track the
-// work). They were single-tool gates too, and a stored `tools.ask_user` /
-// `tools.task` still works as that leaf's override — which is also what
-// keeps a migrated project's binary ask_user clamp in place.
+// The `chats` family carries the tools the model uses *inside* a chat:
+// `ask_user` (pause and ask a structured question), `task` (track the work)
+// and `report_progress` (report on it). They were single-tool gates too, and
+// a stored `tools.ask_user` / `tools.task` / `tools.report_progress` still
+// works as that leaf's override — which is also what keeps a migrated
+// project's binary ask_user clamp in place.
 const FAMILY_EXTRAS = Object.freeze({
   mouaif: Object.freeze(['restart_app', 'list_features']),
-  chats: Object.freeze(['ask_user', 'task'])
+  chats: Object.freeze(['ask_user', 'task', 'report_progress'])
 });
 const TOOL_FAMILIES = Object.freeze(Object.assign(
   { file: Object.freeze([...FILE_TOOL_NAMES]) },
@@ -209,9 +210,9 @@ const FAMILY_OF = Object.freeze(Object.fromEntries(
 // Every leaf of every family (the names that may carry a per-leaf override).
 const FAMILY_TOOLS = new Set(Object.keys(FAMILY_OF));
 // The native authorization gates: single tools plus one key per family
-// (`restart_app`, `list_features`, `ask_user` and `task` resolve through
-// their family instead of a gate of their own).
-const NATIVE_TOOLS = new Set(['shell', 'subagent', 'report_progress', 'webpreview', ...Object.keys(TOOL_FAMILIES)]);
+// (`restart_app`, `list_features`, `ask_user`, `task` and `report_progress`
+// resolve through their family instead of a gate of their own).
+const NATIVE_TOOLS = new Set(['shell', 'subagent', 'webpreview', ...Object.keys(TOOL_FAMILIES)]);
 
 // familyTools(gate) -> Set — the tool names an `off` on this gate hides.
 function familyTools(gate) {

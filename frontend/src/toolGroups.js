@@ -28,8 +28,8 @@
 
 export const TOOL_GROUPS = Object.freeze([
   // Row order is the tree order every surface renders: the single-tool
-  // families first, the Chats / mouaif families next, then progress updates
-  // and the File tools family.
+  // families first, the Chats / mouaif families next, then the File tools
+  // family.
   { id: 'shell', name: 'Shell', source: 'shell', authKey: 'shell', tools: ['shell'] },
   { id: 'subagent', name: 'Subagent', source: 'subagent', authKey: 'subagent', tools: ['subagent'] },
   { id: 'webpreview', name: 'Web preview', source: 'webpreview', authKey: 'webpreview', tools: ['webpreview'] },
@@ -38,22 +38,26 @@ export const TOOL_GROUPS = Object.freeze([
   // Same shape as File tools: one gate (`tools.chats` / `tools.mouaif`)
   // covers every function, and each function can override it.
   // The Chats family covers every function that acts on a chat — including
-  // the two the model uses *inside* one: `ask_user` (pause and ask) and
-  // `task` (track the work). They used to be top-level rows of their own;
-  // they are leaves here like `list_chats`, so the row that "is the chat"
-  // lists everything the model can do with one, and a stored
-  // `tools.ask_user` / `tools.task` keeps working as that leaf's override.
+  // the three the model uses *inside* one: `ask_user` (pause and ask),
+  // `task` (track the work) and `report_progress` (report on it). They used
+  // to be top-level rows of their own; they are leaves here like
+  // `list_chats`, so the row that "is the chat" lists everything the model
+  // can do with one, and a stored `tools.ask_user` / `tools.task` /
+  // `tools.report_progress` keeps working as that leaf's override.
   //
   // `ask_user` stays binary (Off / Ask): the answer cannot be predicted, so
   // Allow means nothing. It is listed in `binaryTools` so its leaf row
   // renders the two-way segment while its siblings keep Off / Ask / Allow.
+  // `report_progress` is answered without an approval card (read-only UI
+  // metadata, see NO_PROMPT_TOOLS in src/ai-stream.js), but it still honors
+  // `off` through the family or its own leaf.
   {
     id: 'chats',
     name: 'Chats',
     source: 'chats',
     authKey: 'chats',
     binaryTools: ['ask_user'],
-    tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task']
+    tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task', 'report_progress']
   },
   // The mouaif family covers the app's own data model AND the two tools
   // that act on the app itself: `restart_app` (relaunch the worker) and
@@ -63,8 +67,8 @@ export const TOOL_GROUPS = Object.freeze([
   //
   // `list_features` is read-only metadata: it honors `off` (the family's
   // or its own) but the server answers it without an approval card, like
-  // `report_progress`. `restart_app` uses the ordinary gate, so a family
-  // or leaf `allow` lets the assistant relaunch without asking.
+  // `report_progress` (a Chats leaf). `restart_app` uses the ordinary gate,
+  // so a family or leaf `allow` lets the assistant relaunch without asking.
   {
     id: 'mouaif-settings',
     name: 'mouaif',
@@ -73,7 +77,6 @@ export const TOOL_GROUPS = Object.freeze([
     tools: ['get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features']
   },
 
-  { id: 'report_progress', name: 'Progress updates', source: 'progress', authKey: 'report_progress', tools: ['report_progress'] },
   {
     id: 'files',
     name: 'File tools',
