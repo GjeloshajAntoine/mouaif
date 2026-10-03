@@ -212,7 +212,7 @@ async function runReadFile(opts) {
     if (totalLines > cap) {
       throw err('ETOOL_CAP', 'file has ' + totalLines + ' lines, exceeds cap ' + cap + ' (use startLine/endLine)', { lines: totalLines, cap });
     }
-    const out = hideFileContent.redactText(projectDir, rel, raw);
+    const out = hideFileContent.redactText(opts.settingsProjectDir || projectDir, rel, raw);
     return {
       relPath: rel,
       startLine: 1,
@@ -231,7 +231,7 @@ async function runReadFile(opts) {
   const a = Math.max(1, startLine);
   const b = Math.min(totalLines, endLine);
   const slice = lines.slice(a - 1, b).join('\n');
-  const sliceOut = hideFileContent.redactText(projectDir, rel, slice, a);
+  const sliceOut = hideFileContent.redactText(opts.settingsProjectDir || projectDir, rel, slice, a);
   return {
     relPath: rel,
     startLine: a,
@@ -466,7 +466,7 @@ function escapeGlob(pattern) {
 // return the same result shape the formatter and the tests expect.
 async function runSearchFiles(opts) {
   const { projectDir, args, settings } = opts;
-  return await searchEngine.runSearch({ projectDir, args, settings });
+  return await searchEngine.runSearch({ projectDir, args, settings, settingsProjectDir: opts.settingsProjectDir });
 }
 
 function formatSearchFilesResult(r, structure) {

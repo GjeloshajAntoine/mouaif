@@ -10,7 +10,7 @@ import { build } from 'esbuild';
 const require = createRequire(import.meta.url);
 const { findChrome, createCdp, freePort } = require('./lib/capture-fixture.js');
 const { SPECS } = require('../src/tools/mouaif.js');
-const catalog = ['search_models', 'create_chat', 'update_chat', 'start_chat'].map(name => ({
+const catalog = ['search_models', 'create_chat', 'update_chat', 'change_working_folder', 'start_chat'].map(name => ({
   name, kind: 'native', source: 'chats', description: SPECS[name].function.description
 }));
 const contents = `
@@ -31,6 +31,8 @@ function Fixture() {
   }
   return h('main', null,
     h('header', { class: 'chat-view__head' },
+      h('div', { class: 'chat-view__title-stack' },
+        h('div', { class: 'chat-view__meta' }, 'folder: /home/user/a-very-long-project-name/.mouaif/workspaces/1234abcd')),
       h(ToolPopup, { tools: { catalog, filter }, toolAuth: { chats: { mode: 'ask' } },
         onToggleTool: (name, checked) => toggle([name], checked), onToggleToolGroup: toggle })),
     h(ToolTree, { groups: buildToolGroups(catalog, [], filter),
@@ -98,13 +100,14 @@ try {
     }))`);
     assert.equal(trees.length, 2);
     for (const tree of trees) {
-      assert.equal(tree.labels.length, 4);
+      assert.equal(tree.labels.length, 5);
+      assert.ok(tree.labels.some(label => label.includes('change_working_folder')));
       assert.ok(tree.labels.some(label => label.includes('search_models')));
       assert.ok(tree.labels.some(label => label.includes('start_chat')));
       assert.ok(tree.targets.every(Boolean), 'tool rows are visible and fit the viewport');
     }
   }
-  console.log('PASS model tools mobile UI: shared Tools card/composer trees at 360/390/430px');
+  console.log('PASS model/working-folder mobile UI: shared Tools card/composer trees and long folder metadata at 360/390/430px');
 } finally {
   if (cdp) cdp.close();
   if (chrome && chrome.exitCode === null) {

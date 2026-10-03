@@ -267,7 +267,7 @@ padding: 0.5rem;
 @media (hover: hover) {
   .chat-view__name:hover { color: var(--accent); }
 }
-.chat-view__meta { color: var(--muted); font-size: 0.62rem; }
+.chat-view__meta { color: var(--muted); font-size: 0.62rem; overflow-wrap: anywhere; }
 
 /* Chat switcher trigger: the entire title area is clickable */
 .chat-view__chat-switcher-trigger {

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Fourteen ordinary native tools let the assistant manage this project's chats, model discovery and background turns, image attachments, app and project settings, and the registered project list. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument.
+Fifteen ordinary native tools let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, and the registered project list. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument.
 
 ## Usage
 
@@ -24,11 +24,12 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `get_chat` | Read one chat (`chatId`). `includeMessages: true` adds the last `messageLimit` messages (default 10, max 50). |
 | `create_chat` | Create a chat. `title` names it, `topic` seeds its composer draft, `providerId` + `modelId` pick its model. Returns the chat plus a `#/chat/<id>` link. |
 | `update_chat` | Change `title`, `draft`, `promptId`, `promptSize`, `providerId`, or `modelId` on an existing chat. Model changes apply to the next turn. |
+| `change_working_folder` | Change a chat's shell/file working folder. Omit `directory` to create/reuse a workspace under `.mouaif/`, with a Git worktree/branch when available; `directory: ""` resets. See [Chat working folders](./chat-working-folder.md). |
 | `search_models` | Search saved project models and configured providers’ live chat catalogs; returns bounded `providerId` / `modelId` choices with pagination and per-provider failures. |
 | `start_chat` | Send `content` to an existing `chatId` using its selected model and start a background response. Returns a chat URL without waiting for completion. |
 | `delete_chat` | Delete a chat and its transcript. Requires `confirm: true`. Refuses the chat the turn is running in. |
 | `search_chats` | Search titles, drafts, and message text (`query`). Results retain `matchField` and a bounded matching `snippet`. |
-| `attach_chat_image` | Put an image from the project into a chat: `path` is project-relative, `target` is `draft` (default — the composer holds it until the user presses send) or `message` (appends a real user message carrying the image, with optional `content`). |
+| `attach_chat_image` | Put an image from the project into a chat: `path` is relative to the calling chat's working folder (the project by default), `target` is `draft` (default — the composer holds it until the user presses send) or `message` (appends a real user message carrying the image, with optional `content`). |
 | `list_chat_attachments` | Show draft and message image names/types and `imageRef` values, not pixels. Scans the newest 200 messages by default; follow `nextBeforeSeq` with `beforeSeq` to retrieve older images. |
 | `get_settings` | Read settings. `scope` is `app` (default) or `project`; `keys` narrows the result. |
 | `update_settings` | Merge `patch` into the chosen scope; `unset` removes keys (project scope). Defaults to the project scope. |
@@ -37,7 +38,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 
 ### Where the model's data comes from
 
-`get_chat`, `attach_chat_image`, and `list_chat_attachments` default `chatId` to the current chat. `update_chat`, `start_chat`, and `delete_chat` require an explicit `chatId`; the other tools do not target one chat.
+`get_chat`, `change_working_folder`, `attach_chat_image`, and `list_chat_attachments` default `chatId` to the current chat. `update_chat`, `start_chat`, and `delete_chat` require an explicit `chatId`; the other tools do not target one chat.
 
 See [Chat model tools](./chat-model-tools.md) for model search options and the search → create/update → start workflow. A background start uses the target chat's normal permissions, cancellation, live replay, and transcript persistence; a busy chat rejects the start without appending a message.
 
@@ -57,7 +58,7 @@ The tools appear in two families in Settings → Project → Tools, the chat Too
 
 | Family (gate) | Native functions |
 | --- | --- |
-| **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments` |
+| **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments` |
 | **mouaif** (`tools.mouaif`) | `get_settings`, `update_settings`, `list_projects`, `get_app_info` |
 
 Every child checkbox selects its own function; a partial selection shows a mixed checkmark. The two families work exactly like **File tools**:

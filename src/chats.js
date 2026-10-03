@@ -13,7 +13,7 @@
 // Schema (per chat):
 //   { id, title, createdAt, lastOpenedAt, trace, promptSize, promptId,
 //     promptSnapshot, providerId, modelId, draft, tools, agentFiles,
-//     skills, toolAuth }
+//     skills, toolAuth, workingDir }
 //
 // `promptSnapshot` pins the custom prompt a chat was attached to at attach
 // time, so editing that prompt later never rewrites an existing chat. See
@@ -133,6 +133,10 @@ const t = String(patch.title).trim();
 if (t) dbPatch.title = t;
 }
 if (patch && typeof patch.trace === 'boolean') dbPatch.trace = patch.trace;
+// Validated by chatWorkingFolder; not part of the generic REST patch.
+if (patch && Object.prototype.hasOwnProperty.call(patch, 'workingDir')) {
+dbPatch.workingDir = typeof patch.workingDir === 'string' && patch.workingDir ? patch.workingDir : null;
+}
 if (patch && promptProfiles.isValidProfile(patch.promptSize)) {
 dbPatch.promptSize = patch.promptSize;
 }

@@ -177,7 +177,7 @@ function cardHandlers(filter, toolAuth) {
   props.onToggleTool('chats', 'list_chats', false);
   assert.equal(s._seenTool.name, 'list_chats');
   props.onToggleGroup('chats', false);
-  assert.equal(s._seenGroup.names.length, 10);
+  assert.equal(s._seenGroup.names.length, 11);
   assert.equal(s._seenGroup.names[0], 'list_chats');
   assert.equal(s._seenGroup.next, false);
   props.onToggleGroup('mouaif-settings', true);
@@ -378,7 +378,7 @@ try {
   assert.equal(converted.tools.delete_chat.mode, 'ask', 'existing ordinary permissions are untouched');
   same(converted.prompts[0].preset.tools, ['get_app_info']);
   same(converted.agents[0].tools, ['shell', 'list_chats']);
-  assert.equal(converted.defaultAgent.tools.length, 14);
+  assert.equal(converted.defaultAgent.tools.length, 15);
   assert.deepEqual(migration.config(converted), converted, 'migration is idempotent');
   settingsStore.setProject(home, legacy);
   settingsStore.setApp({ tools: { mouaif: { mode: 'allow' }, 'mouaif:delete': { mode: 'off' } } });

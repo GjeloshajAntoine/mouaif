@@ -58,7 +58,7 @@ const categories = groups.filter((g) => ['chats', 'mouaif-settings'].includes(g.
 assert.equal(categories.length, 2, 'one row per category');
 same(categories.map((g) => g.name), ['Chats', 'mouaif'], 'two categories, named for what they cover');
 same(categories[0].tools.map((t) => t.id), [
-  'list_chats', 'get_chat', 'create_chat', 'update_chat', 'search_models', 'start_chat',
+  'list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat',
   'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments'
 ], 'the chats category lists its eight actions');
 same(categories[1].tools.map((t) => t.id), [
@@ -122,6 +122,6 @@ same(
   'category ids match src/tools/mouaif.js GROUPS'
 );
 const actions = new Set(categories.flatMap((g) => g.tools.map((t) => t.id)));
-assert.equal(actions.size, 14, 'fourteen actions, each listed once');
+assert.equal(actions.size, 15, 'fifteen actions, each listed once');
 
 console.log('mouaif tool categories: two categories with their actions as children passed');

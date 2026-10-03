@@ -24,7 +24,7 @@ export function updateMetaLine(refs, state) {
   if (!refs.chatMeta.current) return;
   const c = state.chat;
   if (!c) return;
-  refs.chatMeta.current.textContent = c.trace ? 'trace on' : '';
+  refs.chatMeta.current.textContent = [c.trace ? 'trace on' : '', c.workingDir ? 'folder: ' + c.workingDir : ''].filter(Boolean).join(' · ');
 }
 
 // activeProfileId(state) -> string
@@ -108,7 +108,7 @@ export async function applyMouaifToolResult(data, state, refs) {
       .map((event) => applyMouaifToolResult(event.data, state, refs)));
     return;
   }
-  if (!data || !['create_chat', 'update_chat', 'start_chat', 'delete_chat', 'attach_chat_image', 'mouaif'].includes(data.name)
+  if (!data || !['create_chat', 'update_chat', 'change_working_folder', 'start_chat', 'delete_chat', 'attach_chat_image', 'mouaif'].includes(data.name)
     || data.ok !== true || !data.result || data.result.ok !== true) return;
   const result = data.result;
   const { projectDir, chatId } = state.props;
@@ -152,6 +152,7 @@ export async function applyMouaifToolResult(data, state, refs) {
     const patch = {};
     for (const key of fields) patch[key] = fresh[key];
     state.chat = Object.assign({}, state.chat, patch);
+    if (fields.includes('workingDir')) updateMetaLine(refs, state);
     if (fields.includes('title') && refs.chatName.current) refs.chatName.current.textContent = fresh.title || chatId;
     if (fields.includes('draft') && input && input.value === draftBefore && typeof state._setComposerText === 'function') {
     if (refs.draftSaveTimer && refs.draftSaveTimer.current) {

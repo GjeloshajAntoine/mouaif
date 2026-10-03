@@ -16,7 +16,8 @@ const context = vm.createContext({
   refreshSystemPrompt: () => promptRefresh++,
   clearTimeout, encodeURIComponent
 });
-vm.runInContext(source.slice(start, end).replace('export async function', 'async function') + '; this.apply = applyMouaifToolResult;', context);
+vm.runInContext(source.slice(source.indexOf('export function updateMetaLine('), source.indexOf('// activeProfileId(state)')).replace('export function', 'function')
+  + source.slice(start, end).replace('export async function', 'async function') + '; this.apply = applyMouaifToolResult;', context);
 const image = { name: 'shot.png', dataUrl: 'data:image/png;base64,fixture' };
 let nextId = 0;
 function fixture() {
@@ -32,6 +33,17 @@ const event = (result) => ({ id: 'call-' + ++nextId,
   name: result.deleted ? 'delete_chat' : result.attached ? 'attach_chat_image' : result.url ? 'create_chat' : 'update_chat',
   ok: true, result: { ok: true, ...result } });
 const reply = (chat, index = requests.length - 1) => requests[index].resolve({ status: 200, body: { chat } });
+
+{
+  const { state, refs } = fixture();
+  refs.chatMeta = { current: { textContent: '' } };
+  const pending = context.apply({ ...event({ chat: { id: 'host' }, updated: ['workingDir'] }), name: 'change_working_folder' }, state, refs);
+  reply({ id: 'host', workingDir: '/project/.mouaif/workspaces/host' });
+  await pending;
+  assert.equal(state.chat.workingDir, '/project/.mouaif/workspaces/host');
+  assert.equal(refs.chatMeta.current.textContent, 'folder: /project/.mouaif/workspaces/host');
+  assert.equal(state.props.projectDir, '/project', 'folder synchronization does not move chat identity');
+}
 
 {
   const { state, refs } = fixture();

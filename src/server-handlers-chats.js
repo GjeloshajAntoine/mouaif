@@ -191,6 +191,8 @@ const chat = chats.createChat(dir, safeCreate);
   // is only ever written directly by the internal delete cascade
   // (chats.clearPromptId).
   delete safeBody.promptSnapshot;
+  // Working folders are validated/created only by change_working_folder.
+  delete safeBody.workingDir;
 try {
 if (safeBody.promptId != null && safeBody.promptId !== '') {
 if (typeof safeBody.promptId !== 'string' || !prompts.getPrompt(dir, safeBody.promptId)) {

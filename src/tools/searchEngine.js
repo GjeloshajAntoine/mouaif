@@ -561,7 +561,7 @@ async function runRipgrep(ctx) {
 
   // Redaction rules are read once for the whole search. This is the fix for
   // the per-line settings re-read that made the old engine slow.
-  const ruleIndex = hideFileContent.buildRuleIndex(ctx.projectDir);
+  const ruleIndex = hideFileContent.buildRuleIndex(ctx.settingsProjectDir || ctx.projectDir);
 
   const child = spawn(rg, args, { cwd: scope.dir, windowsHide: true });
   child.stdout.setEncoding('utf8');
@@ -734,7 +734,7 @@ async function runWalk(ctx) {
   try { re = new RegExp(ctx.pattern, ctx.ignoreCase ? 'i' : ''); }
   catch (e) { throw err('EBADINPUT', 'invalid regex: ' + e.message); }
 
-  const ruleIndex = hideFileContent.buildRuleIndex(ctx.projectDir);
+  const ruleIndex = hideFileContent.buildRuleIndex(ctx.settingsProjectDir || ctx.projectDir);
   const ignored = loadGitignore(scope.root);
   const matches = [];
   // One entry per file that produced at least one match — the same definition

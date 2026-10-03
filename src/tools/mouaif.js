@@ -73,6 +73,7 @@ const ACTIONS = Object.freeze({
   start: 'chats',
   attach: 'attachments',
   list_attachments: 'attachments',
+  working_folder: 'chats',
   settings_get: 'settings',
   settings_update: 'settings',
   project_list: 'projects',
@@ -158,10 +159,11 @@ const PARAMETERS = {
         messageLimit: { type: 'number', description: 'Number of recent messages to return (default 10, max 50).' },
         path: {
           type: 'string',
-          description: 'Project-relative image path (e.g. "docs/features/images/shot.png").'
+          description: 'Image path relative to the calling chat’s working folder (the project by default; e.g. "docs/features/images/shot.png").'
         },
+        directory: { type: 'string', description: 'Existing directory, relative to the original project or absolute. Omit to create/reuse a workspace under .mouaif; "" resets to the project root.' },
         target: {
-          type: 'string',
+        type: 'string',
           enum: ['draft', 'message'],
           description: '"draft" adds the image to the composer draft (default), "message" appends an image-bearing user message. Neither starts an AI turn.'
         },
@@ -261,6 +263,7 @@ function chatSummary(chat) {
     lastOpenedAt: chat.lastOpenedAt || null,
     providerId: chat.providerId || null,
     modelId: chat.modelId || null,
+    workingDir: chat.workingDir || null,
     promptSize: chat.promptSize || null,
     promptId: chat.promptId || null,
     trace: chat.trace === true
@@ -412,6 +415,13 @@ async function runChats(args, opts) {
     return out;
   }
 
+  if (action === 'working_folder') {
+    const chatId = resolveChatId(args, opts);
+    requireChat(projectDir, chatId);
+    const { chat, ...workspace } = await require('../chatWorkingFolder.js').change(projectDir, chatId, args.directory, opts && opts.signal);
+    return ok({ ok: true, projectDir, ...workspace, updated: ['workingDir'], chat: chatSummary(chat) });
+  }
+
   if (action === 'create') {
     const title = trimString(args.title, MAX_TITLE_CHARS);
     const topic = trimString(args.topic, MAX_TOPIC_CHARS);
@@ -556,7 +566,8 @@ async function runAttachments(args, opts) {
 
   const relPath = trimString(args.path, 4096);
   if (!relPath) throw typedError('EBADINPUT', 'path is required for action "attach"');
-  const loaded = await loadImageAttachment(projectDir, relPath);
+  const workingDir = require('../chatWorkingFolder.js').resolve(projectDir, (opts && opts.chatId) || chatId);
+  const loaded = await loadImageAttachment(workingDir, relPath);
   // Loading bytes yields to concurrent calls and composer saves. Re-read
   // after that await; keep validation, merge, and write synchronous.
   const latest = requireChat(projectDir, chatId);

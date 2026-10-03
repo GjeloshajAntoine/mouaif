@@ -495,6 +495,10 @@ async function handleTools(req, res, parsed, sessionToken = '') {
       });
     }
 
+    let workingDir;
+    try { workingDir = require('./chatWorkingFolder.js').resolve(projectDir, chatId); }
+    catch (e) { return sendJSON(res, 400, { ok: false, error: e.message, code: e.code || 'EBADPATH' }); }
+
     // Streamed NDJSON response (Content-Type: application/x-ndjson):
     // one line per live output chunk while the command is still running,
     // then a final `result` line with the complete tool result. The chat
@@ -511,7 +515,7 @@ async function handleTools(req, res, parsed, sessionToken = '') {
       'X-Content-Type-Options': 'nosniff'
     });
     const out = await shellTool.runShell({
-      projectDir, cmd,
+    projectDir: workingDir, cmd,
       shell: shellOverride || undefined,
       timeoutMs: authorization.timeoutMs,
       // Live output deltas for the composer card, mirroring the

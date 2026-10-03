@@ -641,6 +641,13 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // each iteration the model asks for tools. The model decides when its
   // task is complete; tool use is not cut off after an arbitrary count.
   const convo = messages.slice();
+  if (opts.projectDir && opts.chatId) {
+    const current = require('./chats.js').getChat(opts.projectDir, opts.chatId);
+    if (current && current.workingDir) {
+      convo.unshift({ role: 'system', content: 'Chat working folder: ' + current.workingDir
+        + '\nShell and file paths are relative to this folder. Chat storage, settings and permissions remain in the original project: ' + opts.projectDir });
+    }
+  }
   const usage = { promptTokens: 0, completionTokens: 0 };
   const generatedImages = [];
   // Anthropic prompt-cache totals across all tool rounds in this turn.
@@ -1427,6 +1434,17 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   //   to the model as the `tool` message, and `result` is the richer
   //   object surfaced to the chat UI in the tool_result SSE event.
   async function dispatchTool(name, args, callOpts) {
+    // Resolve on every call: a folder change takes effect within this turn,
+    // including delegated tools. Never replace projectDir for permissions,
+    // settings, MCP connections, attachments inventory or chat persistence.
+    let workingDir;
+    if (name === 'shell' || require('./tools/files.js').isFileToolName(name)) {
+      try { workingDir = require('./chatWorkingFolder.js').resolve(callOpts.projectDir, callOpts.chatId); }
+      catch (e) {
+        const result = { ok: false, code: e.code || 'EBADPATH', error: e.message };
+        return { ok: false, content: JSON.stringify(result), result };
+      }
+    }
     // Native shell tool.
     if (name === 'shell') {
       let out;
@@ -1435,7 +1453,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         const parentOnEvent = callOpts && callOpts.onEvent;
         const callId = callOpts && callOpts.callId;
         out = await shell.runShell({
-          projectDir: callOpts.projectDir,
+          projectDir: workingDir,
           cmd: args && args.cmd,
           shell: args && args.shell,
           // Clamped by the authorization gate against the project's
@@ -2126,7 +2144,8 @@ promptSize: callOpts && callOpts.promptSize,
         return { ok: false, content: JSON.stringify(r), result: r };
       }
       return await ft.runFileTool(name, {
-      projectDir: callOpts && callOpts.projectDir,
+      projectDir: workingDir,
+      settingsProjectDir: callOpts && callOpts.projectDir,
       args,
       signal: callOpts && callOpts.signal,
       settings: callOpts && callOpts.appSettings,

@@ -29,6 +29,7 @@ const CREATE_CHAT_TABLE = `
     prompt_snapshot TEXT,
     provider_id   TEXT,
     model_id      TEXT,
+    working_dir   TEXT,
     thinking_level TEXT DEFAULT '',
     max_output_tokens TEXT DEFAULT '',
     draft         TEXT NOT NULL DEFAULT '',
@@ -88,6 +89,9 @@ function ensureTables() {
   d.exec(CREATE_CHAT_TABLE);
 d.exec(CREATE_MESSAGE_TABLE);
 const chatColumns = d.prepare("PRAGMA table_info('chat_store')").all();
+if (!chatColumns.some((column) => column.name === 'working_dir')) {
+d.exec('ALTER TABLE chat_store ADD COLUMN working_dir TEXT');
+}
 if (!chatColumns.some((column) => column.name === 'total_cost')) {
 d.exec('ALTER TABLE chat_store ADD COLUMN total_cost REAL NOT NULL DEFAULT 0');
 }
@@ -172,6 +176,7 @@ function rowToChat(row) {
     promptSnapshot: normalizePromptSnapshot(row.prompt_snapshot),
     providerId: row.provider_id || null,
     modelId: row.model_id || null,
+    workingDir: row.working_dir || null,
     thinkingLevel: row.thinking_level || '',
     maxOutputTokens: row.max_output_tokens || '',
     draft: row.draft || '',
@@ -248,7 +253,7 @@ const DRAFT_SNIPPET_CHARS = 400;
 
 const LIST_COLUMNS = `
   project_dir, id, title, created_at, last_opened_at, trace, prompt_size,
-  prompt_id, provider_id, model_id, thinking_level, max_output_tokens,
+  prompt_id, provider_id, model_id, working_dir, thinking_level, max_output_tokens,
   substr(draft, 1, ${DRAFT_SNIPPET_CHARS}) AS draft_snippet,
   (draft_attachments IS NOT NULL) AS has_draft_image,
   tools, agent_id, agent_files, skills, auto_retry,
@@ -283,6 +288,7 @@ function chatToRow(projectDir, chat) {
     prompt_snapshot: chat.promptSnapshot ? JSON.stringify(chat.promptSnapshot) : null,
     provider_id: chat.providerId || null,
     model_id: chat.modelId || null,
+    working_dir: chat.workingDir || null,
     thinking_level: chat.thinkingLevel || '',
     max_output_tokens: chat.maxOutputTokens || '',
     draft: chat.draft || '',
@@ -549,10 +555,10 @@ function createChat(projectDir, chat) {
   const row = chatToRow(projectDir, chat);
   d.prepare(`
 INSERT INTO chat_store (project_dir, id, title, created_at, last_opened_at,
-trace, prompt_size, prompt_id, prompt_snapshot, provider_id, model_id, thinking_level, max_output_tokens, draft, draft_attachments, tools,
+trace, prompt_size, prompt_id, prompt_snapshot, provider_id, model_id, working_dir, thinking_level, max_output_tokens, draft, draft_attachments, tools,
 agent_id, agent_files, skills, disabled_skills, tool_auth, auto_retry, total_cost, cost_known_count)
 VALUES (@project_dir, @id, @title, @created_at, @last_opened_at,
-@trace, @prompt_size, @prompt_id, @prompt_snapshot, @provider_id, @model_id, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
+@trace, @prompt_size, @prompt_id, @prompt_snapshot, @provider_id, @model_id, @working_dir, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
 @agent_id, @agent_files, @skills, @disabled_skills, @tool_auth, @auto_retry, @total_cost, @cost_known_count)
 `).run(row);
   return rowToChat(d.prepare(
@@ -576,7 +582,7 @@ title = @title, last_opened_at = @last_opened_at,
 trace = @trace, prompt_size = @prompt_size,
 prompt_id = @prompt_id, prompt_snapshot = @prompt_snapshot,
 provider_id = @provider_id,
-model_id = @model_id, thinking_level = @thinking_level,
+model_id = @model_id, working_dir = @working_dir, thinking_level = @thinking_level,
 max_output_tokens = @max_output_tokens,
 draft = @draft, draft_attachments = @draft_attachments, tools = @tools,
 agent_id = @agent_id, agent_files = @agent_files,
