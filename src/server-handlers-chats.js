@@ -34,6 +34,7 @@ safeDecode
 } = require('./server-shared.js');
 const { resolveNotificationPrefs } = require('./notifications.js');
 const { notifyAttention } = require('./attention-push.js');
+const { supportsOpenAIToolLoop } = require('./providerShapes.js');
 
 
 // resolveNotificationPrefs(saved) now lives in src/notifications.js so the
@@ -997,11 +998,14 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}) {
   // run can leave a persisted call with no result; strict OpenAI-compatible
   // providers reject that orphan on the next send with HTTP 400. The helper
   // also canonicalizes provider-specific call ids for cross-model resumes.
-  const supportsOpenAIToolHistory = model.provider === 'openai-compatible'
-    || model.provider === 'codex' // converted to Responses function_call/function_call_output
-    || model.provider === 'openrouter'
-    || model.provider === 'github-copilot'
-    || model.provider === 'anthropic'; // converted to tool_use/tool_result by buildAnthropicRequest
+  // The OpenAI `/chat/completions` answer is shared with the advertisement
+  // gate in src/ai-stream.js so the two cannot list different providers;
+  // `codex` and `anthropic` are named here because they serialize the pairs
+  // in their own shape (Responses function_call/function_call_output,
+  // Messages tool_use/tool_result).
+  const supportsOpenAIToolHistory = supportsOpenAIToolLoop(model.provider)
+    || model.provider === 'codex'
+    || model.provider === 'anthropic';
   let toolFeedbackMaxBytes;
   try { toolFeedbackMaxBytes = settings.getApp().toolFeedbackMaxBytes; } catch { /* default applies */ }
   upstreamMessages.push(...messages.reconstructUpstreamHistory(history, upstreamContentForMessage, {

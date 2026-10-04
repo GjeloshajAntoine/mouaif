@@ -9,6 +9,22 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Native tools now work on Azure, Mistral, Groq, and DeepSeek** — the
+  streaming loop's advertisement gate named only `openai-compatible`,
+  `openrouter`, and `github-copilot`, so a chat on any of the four cloud
+  providers attached no `tools` field at all: the model never saw `shell`,
+  `read_file`, `ask_user`, the chat/app tools, or an MCP tool, and nothing in
+  the UI said why. The four are OpenAI's `/chat/completions` verbatim and
+  always shared its builder and parser. The membership now lives in one place,
+  `src/providerShapes.js` → `supportsOpenAIToolLoop()`, read by both the gate
+  and the history-reconstruction mirror so the two cannot drift again. Ollama
+  stays deliberately excluded: its native `/api/chat` returns function results
+  as `{ role: 'tool', tool_name, content }`, not the loop's
+  `tool_call_id` shape. See
+  [docs/features/cloud-providers.md](docs/features/cloud-providers.md).
+
 ### Performance
 
 - **Chat search answers instantly on large projects** — the search query was

@@ -40,8 +40,16 @@ async function waitFor(predicate) {
     assert.equal(oauth.accountIdFor(jwt(null)), null);
     const handler = fs.readFileSync(path.join(__dirname, '../src/server-handlers-chats.js'), 'utf8');
     const historyCheck = handler.match(/const supportsOpenAIToolHistory = ([\s\S]*?);/)[1];
-    assert.equal(Function('model', 'return ' + historyCheck)({ provider: 'codex' }), true,
+    // The expression calls the shared supportsOpenAIToolLoop() helper, so the
+    // eval scope supplies the real one from src/providerShapes.js rather than
+    // stubbing the answer — this pins that the mirror resolves through it.
+    const { supportsOpenAIToolLoop } = require('../src/providerShapes.js');
+    assert.equal(Function('model', 'supportsOpenAIToolLoop', 'return ' + historyCheck)({ provider: 'codex' }, supportsOpenAIToolLoop), true,
     'Codex chat resumes must include historical tool calls/results');
+    assert.equal(Function('model', 'supportsOpenAIToolLoop', 'return ' + historyCheck)({ provider: 'mistral' }, supportsOpenAIToolLoop), true,
+    'a cloud provider chat resumes with its historical tool calls/results');
+    assert.equal(Function('model', 'supportsOpenAIToolLoop', 'return ' + historyCheck)({ provider: 'ollama' }, supportsOpenAIToolLoop), false,
+    'Ollama history stays free of tool records the native /api/chat misreads');
     const replay = require('../src/messages.js').reconstructUpstreamHistory([
     { role: 'user', content: 'Inspect' },
     { role: 'tool', phase: 'call', toolCallId: 'history-1', name: 'list_features', args: {} },

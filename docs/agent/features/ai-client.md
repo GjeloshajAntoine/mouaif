@@ -112,4 +112,4 @@ When more than one provider is configured, the chat shows an explicit provider p
 
 ## Decisions
 
-- [docs/decisions.md](../../decisions.md): §10 (AI client), §11 (auth), §20 (live model catalog).
+- [docs/decisions.md](../../decisions.md): §10 (AI client), §11 (auth), §20 (live model catalog), §33 (which connections take part in the native tool loop, and why that answer lives in `src/providerShapes.js`).

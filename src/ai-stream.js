@@ -9,6 +9,7 @@
 // src/ai-endpoints.js; the public facade is src/ai.js.
 
 const { endpointFor, requireApiKey, BUILDERS, PARSERS, parseMiniMaxTextToolCalls } = require('./ai-endpoints.js');
+const { supportsOpenAIToolLoop } = require('./providerShapes.js');
 const { projectModelRecord } = require('./util.js');
 const toolFeedback = require('./toolFeedback.js');
 const usageMetrics = require('./usage.js');
@@ -833,9 +834,13 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   let req;
   try { req = build(model, convoMessages, true, specs, { promptCacheKey: promptCacheKeyFor(opts) }); }
   catch (e) { return { ok: false, error: { code: e.code || 'EBADINPUT', message: e.message } }; }
-  const supportsOpenAITools = model.provider === 'openai-compatible'
-    || model.provider === 'openrouter'
-    || model.provider === 'github-copilot';
+  // Which connections carry the OpenAI `/chat/completions` tool contract. The
+  // answer lives in src/providerShapes.js so this gate and the
+  // history-reconstruction mirror in src/server-handlers-chats.js cannot
+  // drift. Codex (Responses) and Anthropic (Messages) are excluded because
+  // their own builders convert the specs; Codex receives them as an argument
+  // to buildRequest, Anthropic's accumulator is set up below.
+  const supportsOpenAITools = supportsOpenAIToolLoop(model.provider);
   if (supportsOpenAITools && specs && specs.length && !req.expectsImage) {
     const builderBody = req.body;
     if (builderBody && typeof builderBody === 'object') {
