@@ -542,7 +542,15 @@ if (!item || !textarea || !range) return;
 
   // Tools with parameters get the colon + first required arg inserted
   // and an arg bar shown below the textarea for remaining params.
-  if ((item.category === CATEGORY.TOOLS || item.category === CATEGORY.MCP) && item.params && Object.keys(item.params.properties).length > 0) {
+  //
+  // `restart_app` is the exception: its only parameter is a free-text reason,
+  // and the picker prefills it with the schema's own description text. A
+  // prefilled value is a command with trailing text, which no longer
+  // dispatches directly — and an empty `reason=` template would hit the same
+  // fall-through. So it inserts the bare `@restart_app` command that the
+  // direct-dispatch path does accept.
+  const takesParams = item.insert !== 'restart_app';
+  if (takesParams && (item.category === CATEGORY.TOOLS || item.category === CATEGORY.MCP) && item.params && Object.keys(item.params.properties).length > 0) {
     const props = item.params.properties;
     const required = item.params.required;
     // Pick the first required param, or the first param if none required
@@ -723,7 +731,7 @@ function onKeydown(e) {
     if (restartInvocation && uiState && typeof uiState._runRestartCommand === 'function') {
       e.preventDefault();
       hide();
-      uiState._runRestartCommand(restartInvocation.reason);
+      uiState._runRestartCommand();
       return;
     }
     const exactAction = findExactCustomAction(

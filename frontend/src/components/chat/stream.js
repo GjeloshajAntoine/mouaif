@@ -375,16 +375,19 @@ export async function runMcpCommand(serverId, toolName, label, state, refs, args
 // Execute a project-defined CLI or MCP shortcut without a model round-trip.
 // The server resolves the saved definition and applies the underlying tool's
 // authorization gate, so the browser never gets to substitute a command.
-export async function runRestartCommand(reason, state, refs, options = {}) {
+//
+// The direct composer command supplies no reason: `@restart_app` plainly means
+// "restart the app", and the old free text leaked into the restart log.
+const RESTART_REASON = 'User requested restart from chat';
+export async function runRestartCommand(state, refs, options = {}) {
 const { projectDir, chatId } = state.props;
 if (!projectDir || !chatId) return;
 const callId = 'restart_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-const restartReason = String(reason || '').trim() || 'User requested restart from chat';
 if (refs.promptInput.current) refs.promptInput.current.value = '';
 if (typeof options.clearComposerDraft === 'function') await options.clearComposerDraft();
 if (typeof options.setImageAttachments === 'function') options.setImageAttachments([]);
 refs._autoresize();
-appendToolCallCard({ id: callId, name: 'restart_app', args: { reason: restartReason } }, refs);
+appendToolCallCard({ id: callId, name: 'restart_app', args: { reason: RESTART_REASON } }, refs);
 setChatStatus(refs, 'restarting app…', 'busy');
 if (refs.sendBtn.current) refs.sendBtn.current.disabled = true;
 let response;
@@ -392,7 +395,7 @@ try {
 response = await fetchJson('/api/restart', {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({ reason: restartReason, delayMs: 1000 })
+body: JSON.stringify({ reason: RESTART_REASON, delayMs: 1000 })
 });
 } catch (error) {
 response = { status: 500, body: { ok: false, error: String(error) } };
@@ -916,7 +919,7 @@ if (cmd) return runShellCommand(cmd, state, refs);
 // ask the user to approve the restart they just requested. Model-initiated
 // restart_app calls still pass through the shared authorization gate.
 const restartInvocation = parseDirectRestartInvocation(text);
-if (restartInvocation) return runRestartCommand(restartInvocation.reason, state, refs, {
+if (restartInvocation) return runRestartCommand(state, refs, {
 clearComposerDraft,
 setImageAttachments
 });

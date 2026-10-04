@@ -116,7 +116,7 @@ import { saveChatToolAuthorization, saveChatMcpAuthorization } from '../settings
   * @property {() => void} _drainOlderMessages
   * @property {(payload: {content: string, attachments: Array<Object>}) => any} _retryFailedTurn
   * @property {(action: Object) => any} _runCustomAction
-  * @property {(reason: string) => any} _runRestartCommand
+  * @property {() => any} _runRestartCommand
   * @property {(actions: Array<Object>) => void} _setCustomActions
   *
   * Transcript / view
@@ -732,7 +732,7 @@ recent: loadRecent(state)
   };
 
   state._runCustomAction = (action) => runCustomAction(action, state, refs);
-state._runRestartCommand = (reason) => runRestartCommand(reason, state, refs, {
+state._runRestartCommand = () => runRestartCommand(state, refs, {
 clearComposerDraft: () => clearComposerDraft(projectDir, chatId, refs, updateChatBound),
 setImageAttachments
 });

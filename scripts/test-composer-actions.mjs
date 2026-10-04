@@ -38,8 +38,12 @@ e = event('@test ', { shiftKey: true });
 onComposerKey(e, () => { sends++; }, { enterForNewline: true, customActions: actions });
 test('Shift+Enter keeps newline behavior for an action', sends === 1 && !e.prevented, { sends, prevented: e.prevented });
 
+e = event('@restart_app');
+onComposerKey(e, () => { sends++; }, { enterForNewline: true, customActions: actions });
+test('Enter sends the bare restart command in newline mode', sends === 2 && e.prevented, { sends, prevented: e.prevented });
+
 e = event('@restart_app apply fix');
 onComposerKey(e, () => { sends++; }, { enterForNewline: true, customActions: actions });
-test('Enter sends an explicit restart command in newline mode', sends === 2 && e.prevented, { sends, prevented: e.prevented });
+test('Enter keeps newline behavior when the restart command has trailing text', sends === 2 && !e.prevented, { sends, prevented: e.prevented });
 
 console.log(process.exitCode ? '\ncomposer action tests failed' : '\n4 passed, 0 failed');

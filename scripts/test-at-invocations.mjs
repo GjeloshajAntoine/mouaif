@@ -48,14 +48,18 @@ parseToolArgs('{"path":"/tmp","recursive":true}'));
 
 test('non-invocation text is rejected', parseAtInvocation('check @test') === null,
 parseAtInvocation('check @test'));
-const restart = parseDirectRestartInvocation('@restart_app apply the latest fix');
-test('explicit restart command parses without a model round-trip',
-restart && restart.reason === 'apply the latest fix', restart);
-const picked = parseDirectRestartInvocation('@restart_app:reason=`apply the latest fix` ');
-test('the @-picker restart form dispatches directly',
-picked && picked.reason === 'apply the latest fix', picked);
-const pair = parseDirectRestartInvocation('@restart_app reason="reload"');
-test('a bare reason= pair dispatches directly', pair && pair.reason === 'reload', pair);
+const restart = parseDirectRestartInvocation('@restart_app');
+test('the bare restart command dispatches without a model round-trip',
+restart !== null && Object.keys(restart).length === 0, restart);
+test('trailing text after the restart command is not direct-dispatched',
+parseDirectRestartInvocation('@restart_app apply the latest fix') === null,
+parseDirectRestartInvocation('@restart_app apply the latest fix'));
+test('the old @-picker reason form is not direct-dispatched',
+parseDirectRestartInvocation('@restart_app:reason=`apply the latest fix` ') === null,
+parseDirectRestartInvocation('@restart_app:reason=`apply the latest fix` '));
+test('a bare reason= pair is not direct-dispatched',
+parseDirectRestartInvocation('@restart_app reason="reload"') === null,
+parseDirectRestartInvocation('@restart_app reason="reload"'));
 test('an unknown restart argument is not direct-dispatched',
 parseDirectRestartInvocation('@restart_app:delay=`5`') === null,
 parseDirectRestartInvocation('@restart_app:delay=`5`'));

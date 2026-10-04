@@ -12,9 +12,9 @@ Restart the app.
 ```
 For an immediate explicit restart, enter the direct composer command:
 ```text
-@restart_app apply the latest fix
+@restart_app
 ```
-Picking `restart_app` from the `@` popup inserts `@restart_app:reason=`…``; that form runs directly too. The exact `@restart_app` command is treated as the user's approval and runs without a second confirmation. Autonomous assistant calls still use the project tool authorization mode:
+The command takes no arguments: `@restart_app` on its own is the user's approval and runs without a second confirmation. Anything typed after it is extra text, so the turn goes to the model instead of restarting the app. Autonomous assistant calls still use the project tool authorization mode:
 - **Ask** shows an approval card before restarting.
 - **Allow** lets the assistant restart immediately.
 - **Off** hides the tool from the assistant.
