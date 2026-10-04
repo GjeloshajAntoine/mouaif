@@ -155,6 +155,11 @@ scrollbar-width: thin;
   transition: background 80ms ease;
   min-height: var(--tap);
   border-top: 1px solid var(--border);
+  /* The list is a height-capped flex column. Without this the rows are
+     allowed to shrink into that cap, so a two-line search hit is squeezed to
+     its 44 px minimum and its snippet spills over the next row. Rows keep
+     their content height; the list scrolls instead. */
+  flex-shrink: 0;
 }
 .project-card__chats li:first-child { border-top: 0; }
 @media (hover: hover) {
