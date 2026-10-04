@@ -74,6 +74,8 @@ try {
     await new Promise(resolve => setTimeout(resolve, 50));
   }
   assert.equal(await evaluate('document.querySelectorAll(".project-card__chat").length'), 4, 'real component rendered fixture chats');
+  // Measure the settled layout, not the project card's entrance scale.
+  await evaluate(`document.querySelector('.project-card').getAnimations().forEach(animation => animation.finish())`);
   const normalHeights = new Map();
   for (const search of [false, true]) {
     if (search) {
@@ -107,6 +109,7 @@ try {
         const key = `${width}/${fontSize}`;
         const heights = layout.rows.map(row => row.height);
         assert.ok(heights.every(height => Math.abs(height - heights[0]) < 0.1), `equal row heights (${search ? 'search' : 'normal'}, ${key}): ${heights}`);
+        assert.equal(heights[0], Math.max(44, 2.75 * fontSize), `compact row without added vertical padding (${key})`);
         if (!search) normalHeights.set(key, heights[0]);
         else assert.equal(heights[0], normalHeights.get(key), `search preserves normal row height (${key})`);
         assert.ok(layout.rows.every(row => row.width === layout.rows[0].width), 'equal row widths');

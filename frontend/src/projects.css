@@ -159,11 +159,15 @@ scrollbar-width: thin;
   flex-shrink: 0;
 }
 .project-card__chats li:first-child { border-top-color: transparent; }
-.project-card__chat {
-  /* One size for normal, draft, running and search rows. Reserve the delete
-     target, padding and divider; scale up with enlarged text. */
-  height: max(calc(var(--tap) + 0.75rem + 1px), 3.5625rem);
+.project-card__chats .project-card__chat {
+  /* The delete target fills the row: no extra vertical padding or border
+     height. An inset divider keeps every row compact and equally sized. */
+  height: max(var(--tap), 2.75rem);
+  padding-block: 0;
+  border-top: 0;
+  box-shadow: inset 0 1px var(--border);
 }
+.project-card__chats .project-card__chat:first-child { box-shadow: none; }
 @media (hover: hover) {
   .project-card__chats li:hover  { background: var(--surface-2); }
 }
