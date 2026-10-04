@@ -23,6 +23,14 @@ No settings and no toggles: the layout responds to the window.
 - The chat transcript fills the full height between the chat head and the composer at every width, so the composer stays pinned to the bottom of the screen on a tablet or desktop. The transcript has no viewport-height cap; its flex sizing (`flex: 1 1 auto; min-height: 0`) is what bounds it.
 - Wide tool surfaces do not join the 896 px column: the file editor and the other modal sheets keep their own card widths (520–1120 px) from `sheets.css` and `file-editor.css`.
 
+## Toggle switches
+
+The shared toggle (`.switch` in `forms.css`) paints a 42 × 26 px track and a 20 × 20 px thumb inside a 44 × 44 px hit box, so the painted control stays compact while the tap target meets the 44 px mobile minimum. The track is centred on the box with `left: 50% / top: 50%` plus a `translate(-50%, -50%)`, and the thumb is positioned against the track rather than the box.
+
+This is deliberately *not* `inset: 0` on the track. A duplicated `.switch__track` rule once stretched the track to the box and re-anchored it to the box's content origin; because the box establishes the containing block for the absolutely positioned thumb, the track and thumb then escaped the control to the left (`left: -11px`) and painted half off-screen on a 390 px phone — visible on Settings → Custom prompts, where the "Add to project card" switch rendered as a clipped sliver at the row's left edge. Any future consolidation of this rule must keep the track centred and the thumb inside the track.
+
+The responsive regression asserts the geometry directly: for `settingsPrompts` it checks that the control is ≥ 44 px, that both the track and the thumb sit inside the control's box, and that neither paints outside the viewport.
+
 ## Desktop behaviour
 
 - Dictation keeps a narrower, centred column than general lists, so its controls and transcript remain easy to read on a large screen.
@@ -37,7 +45,7 @@ Run the browser regression with an installed Chrome/Chromium (or set `CHROME_PAT
 node scripts/test-responsive-layout.mjs
 ```
 
-It mounts the real app shell with local API fixtures and checks Chats, Settings, Chat defaults, Dictation, and Chat at 360–1920 px, including shorter windows and larger root text. It verifies horizontal fit, centred measures, a visible composer, preview/navigation placement, and flush-settings scrolling without starting or restarting `mouaif serve`.
+It mounts the real app shell with local API fixtures and checks Chats, Settings, Chat defaults, Dictation, Custom prompts, and Chat at 360–1920 px, including shorter windows and larger root text. It verifies horizontal fit, centred measures, a visible composer, preview/navigation placement, flush-settings scrolling, and (on Custom prompts) that the toggle switch paints inside its own control. It does not start or restart `mouaif serve`.
 
 ## Related
 

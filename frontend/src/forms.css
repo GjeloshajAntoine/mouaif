@@ -286,7 +286,15 @@ select.input {
    control and grows to the 44px mobile minimum, so the tap area meets
    .github/copilot-instructions.md §2 without changing how the switch looks.
    The track is re-centred inside the taller label so the row stays aligned
-   with its text. */
+   with its text.
+
+   Keep the centring: the track is NOT `inset: 0`. The box establishes the
+   containing block for the absolutely positioned thumb, so stretching the
+   track to the box re-anchors both to the box's content origin and on a
+   centred row they escape the control (track at `left: -11px`, painting
+   half off-screen at 390px). Only ONE `.switch__track` rule may exist here;
+   a second one silently overrode this block. The `settingsPrompts` case in
+   scripts/test-responsive-layout.mjs asserts the geometry. */
 .switch {
   position: relative;
   display: inline-flex;
@@ -317,15 +325,6 @@ select.input {
   margin: 0;
   opacity: 0;
   cursor: pointer;
-}
-.switch__track {
-  position: absolute;
-  inset: 0;
-  background: var(--surface-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-pill);
-  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-  pointer-events: none;
 }
 .switch__thumb {
   position: absolute;

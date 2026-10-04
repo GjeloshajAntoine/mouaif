@@ -78,7 +78,7 @@ try {
   await cdp.send('Page.navigate', { url: `http://127.0.0.1:${server.address().port}/` });
   for (let i = 0; i < 100 && !await evaluate('!!window.ready'); i++) await new Promise(resolve => setTimeout(resolve, 50));
   assert.equal(await evaluate('!!window.ready'), true, 'app rendered');
-  for (const name of ['chats', 'settings', 'settingsDefaults', 'settingsDictation', 'chat']) {
+  for (const name of ['chats', 'settings', 'settingsDefaults', 'settingsDictation', 'settingsPrompts', 'chat']) {
     await evaluate(`window.mountRoute('${name}')`);
     for (let i = 0; i < 100 && !await evaluate('!!document.querySelector(".app__main > section")'); i++) await new Promise(resolve => setTimeout(resolve, 50));
     if (name === 'chat') await evaluate('window.showPreview()');
@@ -118,6 +118,33 @@ try {
       if (name === 'settingsDictation' && width >= 720) {
       assert.ok(layout.content.width <= 42.5 * fontSize, 'dictation keeps its own readable desktop measure');
       assert.ok(Math.abs(layout.content.left - (width - layout.content.width) / 2) < 1, 'dictation is centred');
+      }
+      if (name === 'settingsPrompts') {
+      // The toggle switch paints a 42x26 track and a 20x20 thumb inside a
+      // 44x44 hit box. A duplicated `.switch__track` rule once stretched
+      // the track with `inset: 0` and re-anchored it to the box's content
+      // origin, so it escaped the control to the left (`left: -11px`) and
+      // painted half off-screen at 390px. Assert the geometry, not just
+      // "the page renders".
+      const sw = await evaluate(`(() => {
+      const control = document.querySelector('.prompts__quick-launch .switch');
+      if (!control) return null;
+      const box = control.getBoundingClientRect();
+      const inside = (r) => r.left >= box.left - 0.5 && r.right <= box.right + 0.5
+        && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
+      const track = control.querySelector('.switch__track');
+      const thumb = control.querySelector('.switch__thumb');
+      const t = track.getBoundingClientRect();
+      const h = thumb.getBoundingClientRect();
+      return { box: { w: box.width, h: box.height },
+        trackInside: inside(t), thumbInside: inside(h),
+        trackLeft: t.left, trackRight: t.right, viewport: window.innerWidth };
+      })()`);
+      assert.ok(sw, 'the prompt editor renders the project-card switch');
+      assert.ok(sw.box.w >= 44 && sw.box.h >= 44, 'the switch keeps its 44px tap target');
+      assert.ok(sw.trackInside, 'the switch track stays inside its control');
+      assert.ok(sw.thumbInside, 'the switch thumb stays inside its control');
+      assert.ok(sw.trackLeft >= 0 && sw.trackRight <= sw.viewport, 'the switch paints inside the viewport');
       }
       assert.ok(layout.overflow <= 1, `${name} fits horizontally at ${width}px / ${fontSize}px font`);
       assert.ok(Math.abs(layout.shell.width - Math.min(width, 72 * fontSize)) < 1, 'shell grows with the viewport up to its ceiling');
