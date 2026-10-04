@@ -38,7 +38,7 @@ Example tool arguments:
 { "directory": "packages/my-feature" }
 ```
 
-The approval card identifies the operation (switch, reset, or create/reuse), target chat ID and title, full destination, and original project. The same details survive reloading a pending approval; previewing the request does not create anything.
+The **Change working folder** approval tells you which chat will work in the shown folder and that files read or edited and commands run for it will use that location. It says **Use a different folder**, **Return to the project folder**, or **Use a separate folder**. For a separate folder, it explains that a newly created folder starts empty and project files are not copied. Chat titles appear before IDs; the folder and project paths remain visible. The same details survive reloading a pending approval; previewing the request does not create anything.
 
 The result reports `workingDir`, `created`, and the updated chat. The legacy `branch` field remains `null` for compatibility; the tool does not inspect Git state. The current folder also appears below the chat title and in `get_chat`. Shell and file operations use the new folder immediately, including subsequent calls in the same turn, later turns, and delegated subagent tools. Composer `@shell` uses the same folder. `attach_chat_image` reads relative image paths from the calling chat's working folder while saving attachments to the target chat in the original project.
 

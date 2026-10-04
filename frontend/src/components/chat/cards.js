@@ -704,15 +704,15 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     icon.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3Zm-1 5h2v6h-2V7Zm0 8h2v2h-2v-2Z"/></svg>';
     const name = document.createElement('div');
     name.className = 'tool-card__name';
-    name.textContent = request.tool || 'tool';
+    name.textContent = request.tool === 'change_working_folder' ? 'Change working folder' : request.tool || 'tool';
     const title = document.createElement('div');
     title.className = 'tool-card__role';
-    title.textContent = 'authorization required';
+    title.textContent = request.tool === 'change_working_folder' ? 'permission needed' : 'authorization required';
     head.appendChild(icon); head.appendChild(name); head.appendChild(title);
     const detail = document.createElement('pre');
     detail.className = 'tool-card__body';
     detail.textContent = request.tool === 'change_working_folder'
-    ? [request.summary || 'Working folder change', 'Original project: ' + request.projectDir].join('\n')
+    ? [request.summary || 'Change where this chat works', 'Project: ' + request.projectDir].join('\n')
     : [request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
       .filter(Boolean).join('\n');
     // A delegation that shares chat images lists them (names only, no

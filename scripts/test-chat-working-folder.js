@@ -112,20 +112,23 @@ async function main() {
   // Approval summaries name the operation, actual target and resolved path.
   // Recovering a pending approval must show the same details as its SSE event.
   const approvalCases = [
-    [{}, 'Create or reuse workspace folder (no Git)', chat.id, path.join(projectDir, '.mouaif', 'workspaces', chat.id)],
-    [{ directory: false }, 'Create or reuse workspace folder (no Git)', chat.id, path.join(projectDir, '.mouaif', 'workspaces', chat.id)],
-    [{ directory: null }, 'Create or reuse workspace folder (no Git)', chat.id, path.join(projectDir, '.mouaif', 'workspaces', chat.id)],
-    [{ directory: '' }, 'Reset to original project folder', chat.id, projectDir],
-    [{ directory: '.' }, 'Reset to original project folder', chat.id, projectDir],
-    [{ directory: home }, 'Switch to existing folder', chat.id, home],
-    [{ chatId: other.id, directory: 'subfolder' }, 'Switch to existing folder', other.id, path.join(projectDir, 'subfolder')]
+    [{}, 'Use a separate folder', chat.id, path.join(projectDir, '.mouaif', 'workspaces', chat.id)],
+    [{ directory: false }, 'Use a separate folder', chat.id, path.join(projectDir, '.mouaif', 'workspaces', chat.id)],
+    [{ directory: null }, 'Use a separate folder', chat.id, path.join(projectDir, '.mouaif', 'workspaces', chat.id)],
+    [{ directory: '' }, 'Return to the project folder', chat.id, projectDir],
+    [{ directory: '.' }, 'Return to the project folder', chat.id, projectDir],
+    [{ directory: home }, 'Use a different folder', chat.id, home],
+    [{ chatId: other.id, directory: 'subfolder' }, 'Use a different folder', other.id, path.join(projectDir, 'subfolder')]
   ];
   for (const [args, action, targetId, destination] of approvalCases) {
     const approval = await modelCalls(chat, [{ name: 'change_working_folder', args }], 'deny');
     const request = approval.events.find(e => e.name === 'authorization_required').data;
     assert.equal(request.summary.split('\n')[0], action);
-    assert.ok(request.summary.includes('Target chat: ' + targetId));
-    assert.ok(request.summary.includes('Destination: ' + destination));
+    assert.ok(request.summary.includes('Chat: ' + chats.getChat(projectDir, targetId).title + ' (' + targetId + ')'));
+    assert.ok(request.summary.includes('Folder: ' + destination));
+    assert.ok(request.summary.includes('Files read or edited and commands run for this chat will use this folder.'));
+    assert.ok(request.summary.includes(action === 'Use a separate folder' ? 'starts empty; project files are not copied' : 'does not move or copy files'));
+    assert.equal(request.summary.includes('Git'), false, 'approval explains user impact, not implementation details');
     assert.equal(approval.results[0].ok, false);
   }
   assert.equal(fs.existsSync(path.join(projectDir, '.mouaif')), false, 'approval previews have no filesystem side effects');

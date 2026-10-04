@@ -104,10 +104,13 @@ function describeChange(projectDir, currentChatId, args = {}) {
   const wantsDefault = directory === undefined || directory === false || directory === null;
   const destination = wantsDefault ? path.join(root, '.mouaif', 'workspaces', chatId)
     : typeof directory === 'string' ? path.resolve(root, directory || '.') : '(invalid directory)';
-  const action = wantsDefault ? 'Create or reuse workspace folder (no Git)'
-    : destination === root ? 'Reset to original project folder' : 'Switch to existing folder';
+  const action = wantsDefault ? 'Use a separate folder'
+    : destination === root ? 'Return to the project folder' : 'Use a different folder';
   const title = chat && chat.title ? String(chat.title).replace(/\s+/g, ' ').trim() : '';
-  return [action, 'Target chat: ' + chatId + (title ? ' — ' + title : ''), 'Destination: ' + destination].join('\n');
+  const effect = wantsDefault
+    ? 'Files read or edited and commands run for this chat will use this folder. If created, it starts empty; project files are not copied.'
+    : 'Files read or edited and commands run for this chat will use this folder. This change does not move or copy files.';
+  return [action, 'Chat: ' + (title ? title + ' (' + chatId + ')' : chatId), 'Folder: ' + destination, '', effect].join('\n');
 }
 
 async function change(projectDir, chatId, directory, signal) {

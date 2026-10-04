@@ -120,8 +120,11 @@ try {
   }
   await evaluate('document.querySelector(".tool-popup__trigger").click()');
   const destination = '/home/user/a-very-long-project-name/packages/another-long-package-name';
-  for (const action of ['Switch to existing folder', 'Reset to original project folder', 'Create or reuse workspace folder (no Git)']) {
-    const summary = action + '\nTarget chat: other-chat — Another conversation\nDestination: ' + destination;
+  for (const action of ['Use a different folder', 'Return to the project folder', 'Use a separate folder']) {
+    const effect = action === 'Use a separate folder'
+      ? 'Files read or edited and commands run for this chat will use this folder. If created, it starts empty; project files are not copied.'
+      : 'Files read or edited and commands run for this chat will use this folder. This change does not move or copy files.';
+    const summary = action + '\nChat: Another conversation (other-chat)\nFolder: ' + destination + '\n\n' + effect;
     await evaluate('window.showApproval(' + JSON.stringify(summary) + ')');
     for (const width of [360, 390, 430]) {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -129,13 +132,16 @@ try {
       const card = await evaluate(`(() => {
         const el = document.querySelector('.tool-card--authorization');
         return { text: el.querySelector('.tool-card__body').textContent,
-          fits: document.documentElement.scrollWidth <= innerWidth,
+        heading: el.querySelector('.tool-card__name').textContent,
+        fits: document.documentElement.scrollWidth <= innerWidth,
           buttons: [...el.querySelectorAll('button')].map(button => {
             const r = button.getBoundingClientRect(); return r.width >= 44 && r.height >= 44;
           }) };
       })()`);
       assert.ok(card.text.includes(summary), 'approval shows action, target chat and full destination');
-      assert.ok(card.text.includes('Original project: /home/user/original-project'));
+      assert.equal(card.heading, 'Change working folder', 'heading uses a user-facing action, not a tool identifier');
+      assert.ok(card.text.includes('Project: /home/user/original-project'));
+      assert.equal(card.text.includes('Git'), false, 'approval copy stays focused on what changes for the user');
       assert.equal(card.text.includes('timeout:'), false, 'folder approval does not show an irrelevant shell timeout');
       assert.ok(card.fits && card.buttons.every(Boolean), `approval fits and remains tappable at ${width}px`);
     }
