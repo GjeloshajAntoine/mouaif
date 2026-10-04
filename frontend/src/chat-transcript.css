@@ -496,18 +496,14 @@
 }
 .chat-view__empty-text { margin: 0; max-width: 36ch; line-height: 1.35; font-size: 0.72rem; }
 
-/* ---- Scroll-nav rail: previous / next message, bottom -------------
-   A vertical stack of round arrows floating over the transcript's
-   bottom-right corner. While pinned to the bottom only "previous"
-   shows; reading history adds "next" and "bottom" (with the count of
-   rows that arrived meanwhile). The visible circles are small (26px)
-   so they cover little text; an invisible ::before grows each one's
-   tap area to 44 x 44px. The 18px gap is exactly what lets those tap
-   areas meet without overlapping. Tap-only — no hover
-   affordance. */
+/* ---- Transcript navigation ---------------------------------------
+  A compact row below the transcript, not an overlay on its text or tool
+  controls. Only "previous" shows while pinned; reading history adds
+  "next" and "bottom" without changing the row's height. The actual
+  buttons are full touch targets, so focus rings and hit areas agree. */
 
-/* Positioned box around the transcript: takes the transcript's old flex
-   slot so the rail below can anchor to the transcript's own edges. */
+/* The transcript and navigation share the remaining flex slot above the
+  composer. Keep the transcript bounded so it owns scrolling. */
 .chat-view__transcript-box {
   position: relative;
   display: flex;
@@ -517,33 +513,31 @@
 }
 
 .chat-view__scroll-nav {
-  position: absolute;
-  /* Follow the reading column on wide windows, not the shell's far edge. */
-  right: max(calc(10px + env(safe-area-inset-right, 0px)), calc((100% - var(--read-max, 44rem)) / 2 + 10px));
-  /* Anchored to the transcript box, so it always clears whatever sits
-     below it (composer, web-preview dock, a multi-line draft). 18px
-     keeps the 44px tap area of the bottom arrow inside the transcript. */
-  bottom: 18px;
-  z-index: 6;
+  flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 18px;
-  pointer-events: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  width: 100%;
+  max-width: var(--read-max, 44rem);
+  min-width: 0;
+  margin-inline: auto;
+  padding: 0.25rem max(0.625rem, env(safe-area-inset-right, 0px)) 0.25rem max(0.625rem, env(safe-area-inset-left, 0px));
+  border-top: 1px solid var(--border);
+  background: var(--bg);
 }
 .chat-view__scroll-nav[hidden] { display: none; }
 .chat-view__scroll-nav[data-mode="pinned"] .chat-view__nav-btn--next { display: none; }
 
 .chat-view__nav-btn {
-  position: relative;
-  pointer-events: auto;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  min-width: 26px;
-  height: 26px;
-  padding: 0 5px;
+  gap: 0.25rem;
+  min-width: var(--tap, 44px);
+  min-height: var(--tap, 44px);
+  padding: 0 0.625rem;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);
   background: var(--surface-3);
@@ -553,16 +547,9 @@
   font: inherit;
   font-size: 0.68rem;
   font-weight: 600;
-  opacity: 0.8;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   transition: transform var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
-}
-/* 44 x 44px tap area around the 26px circle (9px on every side). */
-.chat-view__nav-btn::before {
-  content: "";
-  position: absolute;
-  inset: -9px;
 }
 .chat-view__nav-btn[hidden] { display: none; }
 .chat-view__nav-btn:active { transform: scale(0.92); opacity: 1; }

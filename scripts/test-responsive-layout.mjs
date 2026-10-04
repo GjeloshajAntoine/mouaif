@@ -97,6 +97,10 @@ try {
           content: rect('.app__main > section'), head: rect('.chat-view__head'),
           composer: rect('.chat-view__composer-row'), transcript: rect('.chat-view__transcript'),
           row: rect('.chat-view__transcript > .chat-msg'), nav: rect('.chat-view__scroll-nav'),
+          navButtons: [...document.querySelectorAll('.chat-view__nav-btn')].filter(button => button.getClientRects().length).map(button => {
+          const r = button.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+          }),
           preview: rect('.webpreview-dock'),
           overflow: main.scrollWidth - main.clientWidth };
       })()`);
@@ -113,6 +117,41 @@ try {
         assert.ok(layout.transcript.height > 200, 'transcript fills available height');
         assert.ok(layout.composer.bottom <= height, 'composer remains visible');
         assert.ok(Math.abs(layout.head.left - layout.composer.left) < 1, 'chat controls share a column');
+        assert.ok(layout.nav.top >= layout.transcript.bottom - 1, 'navigation never covers transcript text');
+        assert.ok(layout.nav.bottom <= layout.composer.top + 1, 'navigation stays above the composer');
+        assert.equal(layout.navButtons.length, 1, 'pinned history shows only Previous');
+        for (const button of layout.navButtons) {
+        assert.ok(button.width >= 44 && button.height >= 44, 'navigation has real 44px touch targets');
+        assert.ok(button.left >= 0 && button.right <= width, 'navigation targets stay inside the viewport');
+        }
+        await evaluate(`document.querySelector('.chat-view__nav-btn--prev').click()`);
+        await settle();
+        const historyNav = await evaluate(`(() => {
+        const nav = document.querySelector('.chat-view__scroll-nav');
+        document.querySelector('.chat-view__jump-count').textContent = '99+';
+        const buttons = [...nav.querySelectorAll('button')].filter(button => button.getClientRects().length);
+        const transcript = document.querySelector('.chat-view__transcript');
+        return { mode: nav.dataset.mode, height: nav.getBoundingClientRect().height,
+        clear: nav.getBoundingClientRect().top >= transcript.getBoundingClientRect().bottom - 1,
+        buttons: buttons.map(button => {
+        const r = button.getBoundingClientRect();
+        return { left: r.left, right: r.right, width: r.width, height: r.height,
+          hit: button.contains(document.elementFromPoint(r.left + 2, r.top + r.height / 2)) };
+        }) };
+        })()`);
+        assert.equal(historyNav.mode, 'free', 'Previous unpins the transcript');
+        assert.equal(historyNav.buttons.length, 3, 'history shows Previous, Next and Bottom');
+        assert.equal(historyNav.height, layout.nav.height, 'navigation does not jump when controls appear');
+        assert.ok(historyNav.clear, 'expanded navigation never covers messages');
+        for (let i = 0; i < historyNav.buttons.length; i++) {
+        const button = historyNav.buttons[i];
+        assert.ok(button.width >= 44 && button.height >= 44 && button.hit, 'the full navigation target is clickable');
+        assert.ok(button.left >= 0 && button.right <= width, 'unread count fits inside the viewport');
+        if (i) assert.ok(button.left >= historyNav.buttons[i - 1].right, 'navigation targets never overlap');
+        }
+        await evaluate(`document.querySelector('.chat-view__jump').click()`);
+        await settle();
+        assert.equal(await evaluate(`document.querySelector('.chat-view__scroll-nav').dataset.mode`), 'pinned', 'Bottom resumes following replies');
         if (width >= 48 * fontSize) {
           assert.ok(Math.abs(layout.row.left - layout.head.left) < 1, 'transcript stays centred even with a scrollbar');
           assert.ok(layout.nav.right <= layout.head.right, 'navigation stays beside the conversation, not at the frame edge');
@@ -120,7 +159,7 @@ try {
           assert.ok(layout.preview.right <= layout.composer.right, 'preview stays above the composer, not at the frame edge');
         }
         if (width <= 430) {
-          assert.ok(Math.abs(layout.nav.right - (width - 10)) < 1, 'phone navigation keeps its existing inset');
+          assert.ok(layout.navButtons.every(button => button.right <= width - 0.625 * fontSize), 'phone navigation keeps a safe edge gap');
           assert.ok(Math.abs(layout.preview.right - (width - 0.75 * fontSize)) < 1, 'phone preview keeps its existing inset');
         }
       }

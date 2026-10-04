@@ -628,12 +628,6 @@ color: var(--fg-soft);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* A top-level progress card is a full-width row whose percentage sits on
-   the far right — exactly under the floating scroll-nav rail (26px circle
-   10px in from the transcript box edge) when it is the latest row. Reserve
-   that strip so the rail never covers the label. */
-.chat-view__transcript > .tool-card--progress { padding-right: 34px; }
-
 .tool-card__progress-row {
   display: flex;
   align-items: center;

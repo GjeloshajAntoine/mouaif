@@ -556,10 +556,9 @@ onToggleTool: s.state._toggleTool,
           })
         )
     ),
-// The transcript and its scroll-nav rail share a positioned box, so the
-// rail is anchored to the transcript's own bottom edge — not to a guessed
-// offset above the composer, which a multi-line draft or the web-preview
-// dock grows past.
+// The transcript and its navigation row share the remaining flex space.
+// Navigation stays below messages and above the composer even when a
+// multi-line draft or the web-preview dock grows.
 h('div', { class: 'chat-view__transcript-box' },
 h('div', { ref: refs.transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
 // Scroll-nav rail: previous message / next message / bottom. While

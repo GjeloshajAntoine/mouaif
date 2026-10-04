@@ -27,7 +27,7 @@ No settings and no toggles: the layout responds to the window.
 
 - Dictation keeps a narrower, centred column than general lists, so its controls and transcript remain easy to read on a large screen.
 - Chat messages stay aligned with the header and composer even when a desktop scrollbar occupies space.
-- Transcript navigation and the web preview dock follow the conversation instead of drifting into the frame's empty right gutter. Their phone insets stay unchanged.
+- Transcript navigation and the web preview dock follow the conversation instead of drifting into the frame's empty right gutter. Navigation occupies its own compact row below the transcript, with real 44 px touch targets and safe edge gaps, so neither messages nor composer controls are covered.
 
 ### Verification
 
