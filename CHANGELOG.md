@@ -9,6 +9,18 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ## [Unreleased]
 
+### Performance
+
+- **Chat search answers instantly on large projects** — the search query was
+  folding every matching message before ranking, so a common term read a
+  project's whole transcript: on a project with 286 000 stored messages and
+  about 850 MB of text, `the` took about three seconds. The recency index now
+  drives the query and the page limit stops the walk, and a chat whose title or
+  draft matched is no longer scanned at all: the same search answers in 4–15 ms.
+  A term that is genuinely rare still reads the transcript, which is the price
+  of substring matching without an index. See
+  [docs/features/project-card-search.md](docs/features/project-card-search.md).
+
 ## [0.8.7] — 2026-10-04
 
 ### Added

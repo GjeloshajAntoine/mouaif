@@ -395,31 +395,52 @@ function countChats(projectDir) {
 // ---- Chat search ----------------------------------------------------------
 //
 // A project card's magnifier maps its field to GET /api/chats/search, which
-// asks this function. Two things are searchable and they live in two tables,
-// so the query is a UNION of two bounded sub-queries rather than a join:
+// asks this function. Both the chat's own title and the text of a persisted
+// message are searchable, and they live in two tables:
 //
-//   1. the chat's own title (one row per chat, so the chat row is the match);
+//   1. the chat's own title or draft (one row per chat, so the chat row is
+//      the match);
 //   2. the text of a persisted message (many rows per chat, so the match is a
-//      message and the result is folded per chat with the best — lowest —
-//      `seq`, which is the first place the term appears in the transcript).
+//      message and the result carries the best — lowest — `seq`, which is the
+//      first place the term appears in the transcript).
 //
-// The fold is done in SQLite (GROUP BY chat_id) so a chat with 40 matching
-// messages still contributes exactly one row to the LIMIT page. Both halves
-// are bounded by `LIMIT ?` — a term like "e" matches nearly every message in
-// the store, and an unbounded `GROUP BY` over message_store would materialize
-// every matching row to find the top 20 chats.
+// The cost of this feature is the *number of message rows the query reads*,
+// because a substring predicate cannot use an index: every candidate row's
+// `content` has to be materialized before LIKE can decide. The query shape
+// below exists to keep that number as small as the answer allows.
 //
-// LIKE, not FTS5: a user query is a substring, not a token list, and FTS5 is
-// not compiled into every better-sqlite3 prebuild. `%` and `_` in the query
-// are escaped so a user typing `%` searches for a percent sign instead of
-// matching everything (see escapeLike). LIKE is case-insensitive for ASCII by
-// default; `COLLATE NOCASE` is not applied because the default already is.
+//   * The recency index leads. `ORDER BY COALESCE(last_opened_at, created_at)
+//     DESC, id DESC` is the same order `listChats` uses, `idx_chat_store_recent`
+//     serves it, and `LIMIT` stops the scan once the page is full. The older
+//     shape folded every matching message (`GROUP BY chat_id` over
+//     message_store) *before* ranking, so a term like "e" read a project's
+//     entire transcript — 850 MB, ~3 s on this store — to return the newest
+//     twenty chats. A correlated `MIN(seq)` subquery puts the fold after the
+//     sort instead, where the LIMIT can cut it off.
+//
+//   * A candidate whose title or draft already answered is not scanned at all.
+//     `match_seq` is only needed when the label will become "message" or the
+//     snippet needs a body, and that is exactly when the scan runs. On a real
+//     store the title/draft pass answers most terms on its own.
+//
+// LIKE, not FTS5: a user query is a substring, not a token list. FTS5 *is*
+// compiled into the better-sqlite3 prebuilds, and a trigram mirror of
+// message_store is attractive here, but it stores roughly 3.4× the text it
+// indexes (~2.9 GB for this project's transcript) and takes about a minute to
+// build per 150 MB, on a store whose whole value is that the user can commit
+// the project and keep their history. See docs/decisions.md §31; the query
+// shape above is the upgrade in its place.
+//
+// `%` and `_` in the query are escaped so a user typing `%` searches for a
+// percent sign instead of matching everything (see escapeLike). LIKE is
+// case-insensitive for ASCII by default; `COLLATE NOCASE` is not applied
+// because the default already is.
 //
 // The projection is the same summary the chat list uses (rowToChatSummary +
 // a bulk message count), so the card renders a search hit exactly like a
-// normal row. `snippet` is a bounded window of the matching message text
-// (head + tail around the hit) and `matchField` says whether the hit was the
-// title or a message, because the card marks them differently.
+// normal row. `snippet` is a bounded window of the matching text and
+// `matchField` says whether the hit was the title, the draft, or a message,
+// because the card labels and marks them differently.
 const SEARCH_SNIPPET_BEFORE = 30;
 const SEARCH_SNIPPET_AFTER = 90;
 const SEARCH_MAX_LIMIT = 100;
@@ -450,54 +471,72 @@ function snippetAround(content, query) {
   return (start > 0 ? '…' : '') + flat.slice(start, end).trim() + (end < flat.length ? '…' : '');
 }
 
-// SEARCH_MATCHES_SQL — one row per matching chat, and nothing else.
+// SEARCH_CANDIDATES_SQL — one row per candidate chat, in recency order.
 //
-// The projection matters as much as the predicate. A chat has exactly one
-// `title` and one `draft`, so a title match is naturally one row; a message
-// match is many rows and is folded with `MIN(seq)`, the first place the term
-// appears in the transcript. Carrying `MIN(content)` here instead — the
-// obvious way to get a snippet — would read *every* matching message body
-// through the aggregate, which for a one-letter query is the whole store.
-// That is why the snippet is a second, primary-key lookup per result row.
+// The predicate is "title, draft, or some message matched", and the recency
+// index drives it, so the LIMIT below can stop the walk as soon as the page is
+// full. The message half is an EXISTS, not a GROUP BY: it stops at the first
+// matching row of a chat instead of collecting every one of them, and it is a
+// separate step from the label/snippet lookup so a title or draft hit never
+// pays for it.
 //
-// `title_hit` / `draft_hit` / `match_seq` are what the label and the snippet
-// are built from: a title match reads as "title", a message match as
-// "message", and a draft-only match as "draft". `draft` is searched because
-// the project card already treats a pending draft as content worth surfacing.
-// The draft body itself is never carried here — see the snippet lookup below.
-const SEARCH_MATCHES_SQL = `
-  SELECT chat_id, MAX(title_hit) AS title_hit, MAX(draft_hit) AS draft_hit,
-         MIN(match_seq) AS match_seq FROM (
-    SELECT id AS chat_id, 1 AS title_hit, 0 AS draft_hit, NULL AS match_seq FROM chat_store
-      WHERE project_dir = @dir AND title LIKE @like ESCAPE '\\'
-    UNION ALL
-    SELECT id AS chat_id, 0 AS title_hit, 1 AS draft_hit, NULL AS match_seq FROM chat_store
-      WHERE project_dir = @dir AND draft LIKE @like ESCAPE '\\'
-    UNION ALL
-    SELECT chat_id, 0 AS title_hit, 0 AS draft_hit, MIN(seq) AS match_seq FROM message_store
-      WHERE project_dir = @dir AND content LIKE @like ESCAPE '\\'
-      GROUP BY chat_id
-  ) GROUP BY chat_id
+// One candidate row per chat is guaranteed by the join — the EXISTS cannot
+// multiply a chat row, which is what the old UNION ALL + GROUP BY was for.
+const SEARCH_CANDIDATES_SQL = `
+  SELECT ${LIST_COLUMNS},
+         (c.title LIKE @like ESCAPE '\\') AS title_hit,
+         (c.draft LIKE @like ESCAPE '\\') AS draft_hit
+  FROM chat_store c
+  WHERE c.project_dir = @dir
+    AND (c.title LIKE @like ESCAPE '\\'
+         OR c.draft LIKE @like ESCAPE '\\'
+         OR EXISTS (
+              SELECT 1 FROM message_store msg
+              WHERE msg.project_dir = c.project_dir AND msg.chat_id = c.id
+                AND msg.content LIKE @like ESCAPE '\\'
+            ))
+  ORDER BY COALESCE(c.last_opened_at, c.created_at) DESC, c.id DESC
+  LIMIT @limit
+`;
+
+// SEARCH_MATCH_SEQ_SQL — the first matching message of one chat.
+//
+// `MIN(seq)` over just this chat's rows: the primary key is
+// (project_dir, chat_id, seq), so the walk is already in seq order and the
+// aggregate is an early exit rather than a fold of the whole transcript.
+// Run only for a row that is neither a title nor a draft hit, and only when
+// its `matchField` is decided — see searchChats.
+const SEARCH_MATCH_SEQ_SQL = `
+  SELECT MIN(seq) AS match_seq FROM message_store
+  WHERE project_dir = @dir AND chat_id = @chat AND content LIKE @like ESCAPE '\\'
 `;
 
 // The head of a draft is enough to build a snippet, and reading the whole
 // column for a row that matched only on its draft would ship megabytes when
-// the draft holds an image (see the LIST_COLUMNS note).
+// the draft holds an image (see the LIST_COLUMNS note). The bound matches the
+// 240-char snippet cap plus the window the snippet slides over.
 const DRAFT_SNIPPET_SQL = 'SELECT substr(draft, 1, ?) AS head FROM chat_store WHERE project_dir = ? AND id = ?';
 
 // searchChats(projectDir, query, options) -> [{ ...chatSummary, matchField, snippet }]
 //
 // Ordered by recency, exactly like listChats, so a search result sits where the
 // user expects the chat to be. A title hit and a message hit on the same chat
-// are one row: `matchField` says "title" when the title matched, "message"
-// otherwise, and `snippet` carries the matching message text — the head of it
-// when the match is the title only.
+// are one row: `matchField` says "title" when the title matched, then "draft",
+// then "message" — title wins because it is what the row already shows.
 //
-// Two statements: the fold above is bounded by `LIMIT ?`, and the snippet for
-// its (at most 20) rows is fetched by primary key. The alternative — one
-// statement carrying `MIN(content)` and a snippet expression through the
-// GROUP BY — would read every matching message body to keep one, which is
-// exactly what a term like "a" would make expensive.
+// Three statements, in cost order:
+//
+//   1. the candidate page (SEARCH_CANDIDATES_SQL), bounded by `limit`, in
+//      recency order — its projection carries the chat-list columns, so a
+//      result row renders exactly like a normal card row;
+//   2. the first matching message seq, for the rows whose label is not yet
+//      decided (a title or draft hit never runs this);
+//   3. the matching body, by primary key, for the rows that need a snippet.
+//
+// The alternative — one statement carrying `MIN(content)` and a snippet
+// expression through a GROUP BY over message_store — reads every matching
+// message body to keep one, which is exactly what a term like "a" makes
+// expensive. See the block comment above for the timing this replaces.
 function searchChats(projectDir, query, options = {}) {
   ensureTables();
   const term = String(query || '').trim();
@@ -505,37 +544,50 @@ function searchChats(projectDir, query, options = {}) {
   const d = require('./settings.js').getDb();
   const limitRaw = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 20;
   const limit = Math.min(limitRaw, SEARCH_MAX_LIMIT);
-  // The LIMIT is applied to the *chats*, ranked by recency — the same order
-  // listChats uses — so a term matching hundreds of chats returns the twenty
-  // most recent ones rather than twenty arbitrary ids. The projection is the
-  // chat-list summary, so a result row renders like any other card row.
-  const rows = d.prepare(`
-    SELECT ${LIST_COLUMNS}, m.title_hit AS match_title, m.draft_hit AS match_draft, m.match_seq AS match_seq
-    FROM (${SEARCH_MATCHES_SQL}) m
-    JOIN chat_store c ON c.project_dir = @dir AND c.id = m.chat_id
-    ORDER BY COALESCE(c.last_opened_at, c.created_at) DESC, c.id DESC
-    LIMIT @limit
-  `).all({ dir: projectDir, like: '%' + escapeLike(term) + '%', limit });
+  const like = '%' + escapeLike(term) + '%';
+  // Ordered by recency, so the LIMIT caps *chats* in the order the card's own
+  // list uses: a term matching hundreds of chats returns the newest page of
+  // them, exactly where the user expects to find them.
+  const rows = d.prepare(SEARCH_CANDIDATES_SQL).all({ dir: projectDir, like, limit });
   if (!rows.length) return [];
-  // The matching message body (or draft head), fetched by primary key: one
-  // indexed lookup per *result* row rather than reading every matching
-  // `content` through the fold.
+  const seqStmt = d.prepare(SEARCH_MATCH_SEQ_SQL);
+  // The matching body (or draft head), fetched by primary key: one indexed
+  // lookup per *result* row rather than reading every matching `content`.
   const snippetStmt = d.prepare(
     'SELECT content FROM message_store WHERE project_dir = ? AND chat_id = ? AND seq = ?'
   );
   const draftStmt = d.prepare(DRAFT_SNIPPET_SQL);
+  const draftHead = 240 + SEARCH_SNIPPET_BEFORE + SEARCH_SNIPPET_AFTER;
   return rows.map((row) => {
     const chat = rowToChatSummary(row);
-    chat.matchField = row.match_title === 1 ? 'title' : row.match_draft === 1 ? 'draft' : 'message';
-    let body = chat.title || '';
-    if (row.match_seq !== null && row.match_seq !== undefined) {
-      const hit = snippetStmt.get(projectDir, row.id, row.match_seq);
-      if (hit) body = hit.content || body;
-    } else if (row.match_draft === 1) {
-      const hit = draftStmt.get(240 + SEARCH_SNIPPET_BEFORE + SEARCH_SNIPPET_AFTER, projectDir, row.id);
-      if (hit) body = hit.head || body;
+    // Label, then snippet. A title hit needs no lookup at all: the summary
+    // already carries the title, which is the text the row shows.
+    let matchSeq = null;
+    if (row.title_hit === 1) {
+      chat.matchField = 'title';
+      chat.snippet = snippetAround(chat.title, term).slice(0, 240);
+      return chat;
     }
-    chat.snippet = snippetAround(body, term).slice(0, 240);
+    if (row.draft_hit !== 1) {
+      const hit = seqStmt.get({ dir: projectDir, chat: row.id, like });
+      matchSeq = hit ? hit.match_seq : null;
+    }
+    if (matchSeq !== null && matchSeq !== undefined) {
+      chat.matchField = 'message';
+      const hit = snippetStmt.get(projectDir, row.id, matchSeq);
+      chat.snippet = snippetAround(hit ? hit.content : '', term).slice(0, 240);
+      return chat;
+    }
+    if (row.draft_hit === 1) {
+      chat.matchField = 'draft';
+      const hit = draftStmt.get(draftHead, projectDir, row.id);
+      chat.snippet = snippetAround(hit ? hit.head : '', term).slice(0, 240);
+      return chat;
+    }
+    // Unreachable: the candidate predicate requires one of the three. Keep a
+    // title-shaped row rather than dropping a chat the card already matched.
+    chat.matchField = 'title';
+    chat.snippet = snippetAround(chat.title, term).slice(0, 240);
     return chat;
   });
 }

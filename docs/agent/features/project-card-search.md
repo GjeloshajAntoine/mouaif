@@ -23,32 +23,71 @@ The handler in [src/server-handlers-chats.js](../../../src/server-handlers-chats
 
 ## The query
 
-Two `LIKE` predicates over two tables, folded to one row per chat:
+Three statements, in increasing cost order:
 
 ```sql
-SELECT chat_id, MAX(title_hit) AS title_hit, MAX(draft_hit) AS draft_hit,
-       MIN(match_seq) AS match_seq FROM (
-  SELECT id AS chat_id, 1 AS title_hit, 0 AS draft_hit, NULL AS match_seq FROM chat_store
-    WHERE project_dir = @dir AND title LIKE @like ESCAPE '\'
-  UNION ALL
-  SELECT id AS chat_id, 0 AS title_hit, 1 AS draft_hit, NULL AS match_seq FROM chat_store
-    WHERE project_dir = @dir AND draft LIKE @like ESCAPE '\'
-  UNION ALL
-  SELECT chat_id, 0 AS title_hit, 0 AS draft_hit, MIN(seq) AS match_seq FROM message_store
-    WHERE project_dir = @dir AND content LIKE @like ESCAPE '\'
-    GROUP BY chat_id
+-- 1. the candidate page: one row per matching chat, in recency order
+SELECT <LIST_COLUMNS>,
+       (c.title LIKE @like ESCAPE '\') AS title_hit,
+       (c.draft LIKE @like ESCAPE '\') AS draft_hit
+FROM chat_store c
+WHERE c.project_dir = @dir
+  AND (c.title LIKE @like ESCAPE '\'
+       OR c.draft LIKE @like ESCAPE '\'
+       OR EXISTS (SELECT 1 FROM message_store msg
+                   WHERE msg.project_dir = c.project_dir AND msg.chat_id = c.id
+                     AND msg.content LIKE @like ESCAPE '\'))
+ORDER BY COALESCE(c.last_opened_at, c.created_at) DESC, c.id DESC
+LIMIT @limit
+```
+
+```sql
+-- 2. the first matching message: only for a candidate whose label is not yet
+--    decided (a title or draft hit never runs this)
+SELECT MIN(seq) AS match_seq FROM message_store
+WHERE project_dir = @dir AND chat_id = @chat AND content LIKE @like ESCAPE '\'
+```
+
+```sql
+-- 3. the matching body, by primary key, for a row that needs a snippet
+SELECT content FROM message_store WHERE project_dir = ? AND chat_id = ? AND seq = ?
+```
+
+`EXISTS` is a semi-join, so it cannot multiply a chat row: "one row per chat"
+is structural here rather than a `GROUP BY` fold. Statements 2 and 3 ride
+`idx_message_store_lookup (project_dir, chat_id, seq)`.
+
+### Why this shape, and not the fold-first one
+
+The previous shape computed `MIN(seq) GROUP BY chat_id` over *all* matching
+messages in a subquery and joined it before ranking:
+
+```sql
+-- retired: 14x slower on a 32 MB store, ~3 s on the author's 850 MB one
+SELECT chat_id, MAX(title_hit), MAX(draft_hit), MIN(match_seq) FROM (
+  SELECT id, 1, 0, NULL FROM chat_store WHERE title LIKE @like
+  UNION ALL SELECT id, 0, 1, NULL FROM chat_store WHERE draft LIKE @like
+  UNION ALL SELECT chat_id, 0, 0, MIN(seq) FROM message_store
+    WHERE content LIKE @like GROUP BY chat_id
 ) GROUP BY chat_id
 ```
 
-Then joined back to `chat_store` for the summary columns, ordered `COALESCE(last_opened_at, created_at) DESC, id DESC` — the exact ordering `listChats` uses — and capped by `LIMIT`.
+The `GROUP BY` has to complete before the `ORDER BY` and `LIMIT` can apply, so
+a term like `e` read the entire transcript to return the newest twenty chats.
+Ranking in the driving query lets the `LIMIT` stop the walk instead, which is
+what `idx_chat_store_recent` serves; the plan shows the recency index leading
+and no temp B-tree.
 
-- **The fold is what keeps it bounded.** A chat with 40 matching messages contributes one row, so `LIMIT 20` means twenty chats, not twenty messages. `MIN(seq)` is the earliest matching message, i.e. the first place in the transcript the term appears.
-- **`MIN(content)` is deliberately not in the projection.** The obvious way to get a snippet in one statement is to carry `MIN(content)` (or a `substr` expression) through the aggregate — which makes SQLite read *every* matching message body to keep one. Searching `a` in a real store matches nearly every row. Instead the fold returns `match_seq` and the snippet is one primary-key lookup per result row (`SELECT content FROM message_store WHERE project_dir = ? AND chat_id = ? AND seq = ?`), riding `idx_message_store_lookup (project_dir, chat_id, seq)`.
+- **`match_seq` is lazy.** The label order is title → draft → message, and the
+  first two need no message read at all: a title snippet is the title, a draft
+  snippet is the draft head. Only a row that will be labelled `message` runs
+  statement 2, so most terms never scan messages at all.
+- **`MIN(content)` is deliberately not in the projection.** The obvious way to get a snippet in one statement is to carry `MIN(content)` (or a `substr` expression) through a message aggregate — which makes SQLite read *every* matching message body to keep one. Instead the seq is looked up and the body is read once per result row by primary key.
 - **The draft snippet reads a head.** A draft-only match does `SELECT substr(draft, 1, N)`. The column can hold a pending image draft of megabytes; `LIST_COLUMNS` already avoids it for the same reason.
-- **Third draft sub-select rather than `title LIKE … OR draft LIKE …` in one** — because `title_hit` and `draft_hit` must stay distinguishable for `matchField`.
-- **LIKE, not FTS5.** A user query is a substring, not a token list, and `fts5` is not guaranteed to be compiled into every better-sqlite3 prebuild. LIKE's default case-insensitivity for ASCII is what the user expects from a search box.
+- **LIKE, not FTS5.** A user query is a substring, not a token list. LIKE's default case-insensitivity for ASCII is what the user expects from a search box. FTS5 *is* compiled into the better-sqlite3 prebuilds (`SQLITE_ENABLE_FTS5` in `deps/defines.gypi`), and a trigram mirror of `message_store` is the obvious index for this predicate — but a measured build of one over 154 MB of the author's text produced a 516 MB index (3.35× the text) in 58 s, on a store whose whole value is that the user can commit the project and keep their history. A 2.9 GB index and a minute of indexing is a worse trade than the query shape above, so the shape is the optimization.
 - **`%` and `_` are escaped** (`escapeLike`, `ESCAPE '\'`), so typing `100%` finds "100%" instead of matching everything. Backslashes are doubled first: escaping `%`/`_` before `\` would re-escape the escape characters this adds.
-- **Iteration cost.** No new index. The predicates are `LIKE '%term%'`, which cannot use an index, so the query is O(rows in the project) — the same order as `countChats` and `projectMessageCounts` already cost on every Chats-tab load, and the response is bounded by `LIMIT`. An FTS5 table with triggers on `message_store` is the upgrade path if a project ever grows large enough to feel it.
+- **Bounds.** `limit` defaults to 20 and is capped at `SEARCH_MAX_LIMIT` (100) in `src/chatdb.js`. The candidate page is bounded, and each result row costs at most one seq lookup and one body read, so the work after the page is proportional to the answer.
+- **The remaining cost is honest.** A term that is genuinely rare has to read the whole transcript before it can answer, because no index can serve a substring. That is unchanged and unavoidable without an index; what changed is that the common, saturated case — which is what a user feels while typing — answers from the recent tail.
 
 ## Client: [frontend/src/components/Projects.jsx](../../../frontend/src/components/Projects.jsx)
 
@@ -76,7 +115,8 @@ const searchMode = searchOpen && term.trim().length > 0;
 
 ## Tests
 
-- [scripts/test-chat-search.js](../../../scripts/test-chat-search.js) — `searchChats` and the HTTP route: the fold (26 matching messages in one chat ⇒ one row), the match label, the snippet windowing, the recency cap, blank query, case-insensitivity, literal `%`/`_`, and the same response enrichment `GET /api/chats` applies.
+- [scripts/test-chat-search.js](../../../scripts/test-chat-search.js) — `searchChats` and the HTTP route: one row per chat however many messages match, the match label, the snippet windowing, the recency cap, blank query, case-insensitivity, literal `%`/`_`, and the same response enrichment `GET /api/chats` applies.
+- [scripts/test-chat-search-performance.js](../../../scripts/test-chat-search-performance.js) — the cost shape: runs the retired fold-first query beside `searchChats` on one synthetic store whose bulk sits behind the recency window, asserts the saturated search is at least 10× cheaper, and pins the `EXPLAIN QUERY PLAN` (recency index leads, no temp B-tree). The developer's real 850 MB transcript is deliberately not read.
 - [scripts/test-project-card-search-ui.mjs](../../../scripts/test-project-card-search-ui.mjs) — the real `ProjectsView` under a minimal hook harness (per-component state slots, dependency-aware effects, cleanups): the field only exists after the magnifier is tapped and is focused; one request per settled term; the searching state hides the previous term's hits; a slow older answer never lands; a failure is reported as a failure and a miss as a miss; closing clears everything.
 
 ## Docs
