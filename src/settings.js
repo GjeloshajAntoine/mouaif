@@ -155,7 +155,7 @@ fileOrbButton: false,
   // sane value.
   toolOutput: { size: 'average', structure: 'tree' },
   // Allow `change_working_folder` to create the default workspace
-  // (`<project>/.mouaif/workspaces/<chatId>`, a Git worktree when possible).
+  // (`<project>/.mouaif/workspaces/<chatId>`, an empty folder; no Git setup).
   // Off by default: creating a folder is a material change to the user's
   // checkout, so it happens only once a project (or the app) opts in.
   // Explicit `directory` arguments always work — they never create anything.

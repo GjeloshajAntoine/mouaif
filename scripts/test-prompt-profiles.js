@@ -84,6 +84,11 @@ async function main() {
   const extensive = pp.profileSystemMessage('extensive');
   check('very-small stays compact', core.length < 2200, 'chars=' + core.length);
   check('average extends the complete compact core', average.startsWith(core + '\n\n'));
+  for (const [id, text] of [['average', average], ['extensive', extensive]]) {
+    check(id + ' keeps Git setup in authorized shell workflow', /Git isolation is a workflow.*authorized shell calls.*committed HEAD.*unique branch/.test(text));
+    check(id + ' inspects existing workspaces and preserves work', /inspect the original repository and existing workspace first/.test(text)
+      && /never force\/reset a branch or run Git after a denied operation/.test(text));
+  }
   check('extensive extends the complete average workflow', extensive.startsWith(average + '\n\n'));
   const sharedRules = [
     ['mobile-friendly answers', /read on a narrow screen.*Lead with the result/],
@@ -101,6 +106,7 @@ async function main() {
     ['EOFF keeps work in the project', /call it once before edits or coding subagents and continue in the project folder when it returns EOFF/],
     ['questions and reviews do not create folders', /never create a workspace for a question or review/],
     ['preserves chosen working folders', /keep any folder the user selected/],
+    ['directory tool never runs Git', /change_working_folder creates empty.*never Git/],
     ['inspect before editing', /Read the code, its callers, and its tests first/],
     ['root cause and minimal change', /Fix the cause, not the symptom.*smallest change that works/],
     ['exact edit blocks', /edit_file using an exact, unique oldText\/newText block/],

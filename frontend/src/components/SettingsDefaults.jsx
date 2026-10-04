@@ -272,8 +272,8 @@ v ? 'the status line under the composer is shown again' : 'the status line under
               'Allow automatic workspaces'),
               h('div', { class: 'settings-project__item-note' },
               'Lets the assistant create a per-chat folder under ',
-              h('code', null, '.mouaif/workspaces/<chatId>'), ' — a Git worktree and branch when a ' +
-              'project is a repository. Off (the default) keeps every project in its own folder: ' +
+              h('code', null, '.mouaif/workspaces/<chatId>'), ' — an empty folder, with Git setup handled ' +
+              'separately by the assistant. Off (the default) keeps every project in its own folder: ' +
               'chats still switch folders whenever you ask for one, and selecting an existing ' +
               'folder always works. A project can override this in its own settings. ' +
               'Permission to call the tool is separate — use the Chats tool authorization.'),

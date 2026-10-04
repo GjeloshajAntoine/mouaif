@@ -9,6 +9,11 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Working-folder changes no longer manage Git** — default workspaces are empty directories, even inside a repository. Git isolation is coding-prompt guidance carried out through separately authorized shell calls. Existing folders and externally prepared worktrees are reused unchanged; the legacy `branch` result stays `null`.
+- **Explicit directory approvals** — approval cards identify switch/reset/create-or-reuse, the target chat, destination and original project, including recovered pending approvals.
+
 ### Fixed
 
 - **Native tools now work on Azure, Mistral, Groq, and DeepSeek** — the

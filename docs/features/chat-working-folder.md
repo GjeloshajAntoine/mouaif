@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `change_working_folder` chat tool gives a conversation its own working directory for isolated or partial development. It can switch to an existing directory, or create a default workspace under the original project's `.mouaif/` (in a Git repository a separate Git worktree and branch, without changing the original checkout). Creating that default workspace is **opt-in**, off by default.
+The `change_working_folder` chat tool gives a conversation its own working directory for isolated or partial development. It switches to an existing directory, or creates an empty default workspace under the original project's `.mouaif/`. Creating that folder is **opt-in**, off by default; the tool never runs Git or manages branches.
 
 ## Usage
 
@@ -38,7 +38,9 @@ Example tool arguments:
 { "directory": "packages/my-feature" }
 ```
 
-The result reports `workingDir`, `branch`, `created`, and the updated chat. The current folder also appears below the chat title and in `get_chat`. Shell and file operations use the new folder immediately, including subsequent calls in the same turn, later turns, and delegated subagent tools. Composer `@shell` uses the same folder. `attach_chat_image` reads relative image paths from the calling chat's working folder while saving attachments to the target chat in the original project.
+The approval card identifies the operation (switch, reset, or create/reuse), target chat ID and title, full destination, and original project. The same details survive reloading a pending approval; previewing the request does not create anything.
+
+The result reports `workingDir`, `created`, and the updated chat. The legacy `branch` field remains `null` for compatibility; the tool does not inspect Git state. The current folder also appears below the chat title and in `get_chat`. Shell and file operations use the new folder immediately, including subsequent calls in the same turn, later turns, and delegated subagent tools. Composer `@shell` uses the same folder. `attach_chat_image` reads relative image paths from the calling chat's working folder while saving attachments to the target chat in the original project.
 
 ### Automatic workspaces
 
@@ -47,26 +49,28 @@ Creating the default workspace is controlled by the **Allow automatic workspaces
 | `autoWorkspace` | `change_working_folder` with no `directory` |
 | --- | --- |
 | off (default) | Fails with `EOFF`, referring the user to the switch. Nothing is created, and the chat's folder is unchanged. |
-| on | Creates or reuses `<project>/.mouaif/workspaces/<chatId>` as described below. |
+| on | Creates an empty `<project>/.mouaif/workspaces/<chatId>` or reuses the existing directory without changing its contents. |
 
 Explicit `directory` strings are unaffected: selecting an existing folder or resetting to the project root always works, on or off, and never creates anything. An unreadable or corrupt project file counts as off — a configuration error is never a reason to write to the user's checkout.
 
-### Git workspaces
+### Directory creation
 
-With _Allow automatic workspaces_ on, a Git project gets a worktree from committed `HEAD` on branch `mouaif/chat-<chatId>`:
+All projects, including Git repositories with or without commits, receive an empty folder:
 
 ```text
 <project>/.mouaif/workspaces/<chatId>
 ```
 
-- The original checkout, branch, and uncommitted changes are untouched.
-- Uncommitted and untracked files, ignored dependencies, and build output are **not copied**. Install dependencies in the workspace if needed.
-- Git must be installed and the repository must have a commit. Git failures leave the chat's previous working folder unchanged **and create nothing on disk**: `.mouaif/workspaces/<chatId>` and its parents appear only once the worktree is in place, so a failed or cancelled change never leaves empty folders behind.
-- Repeating the default call reuses the matching worktree without resetting edits. An unrelated existing folder or branch collision is rejected, never overwritten.
-- Add `.mouaif/` to the project's `.gitignore` so the original checkout does not offer the workspace directory for staging.
-- Without a Git repository, the default creates an empty directory, not a copy of the project.
+- Git does not need to be installed. No repository inspection, branch creation, checkout, copying, merging, or cleanup command runs inside this tool.
+- Repeating the default call reuses an existing directory without resetting its contents. An existing worktree prepared outside the tool continues to work. Files and symlink targets are rejected rather than replaced.
+- Existing workspace parents must not be symlinks. Failed directory creation removes only newly created empty folders; pre-existing work survives. A request cancelled before execution creates nothing.
+- Add `.mouaif/` to the project's `.gitignore` if you do not want workspace contents offered for staging.
 
-Commit the workspace's changes and merge its branch when ready; merging is not automatic. Switching folders, resetting to the project, or deleting a chat never removes a workspace or branch. Clean them up manually only after preserving your work.
+### Git setup is a prompt workflow
+
+The Average and Extensive coding prompts tell the assistant to inspect the original repository and existing workspace before using separately authorized shell calls to create or reuse a worktree from committed `HEAD` on a unique branch. It then selects that existing folder with `change_working_folder`. A newly created default folder is empty, **not a checkout**, so the assistant must prepare it before implementation needs source files. The Very small prompt states that the directory tool never runs Git; the Chat profile remains empty.
+
+Git setup respects shell authorization and denied operations. Uncommitted and untracked files, ignored dependencies, and build output are not copied by a worktree operation; preserve unrelated work and get approval for dependency installation. Switching folders, resetting to the project, or deleting a chat never removes a workspace. Merging and cleanup remain separate operations, never directory-tool side effects.
 
 ## Scope and safety
 

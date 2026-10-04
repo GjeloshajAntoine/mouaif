@@ -235,6 +235,9 @@ async function runSingleToolCall(c, cx) {
       let summary;
       if (c.name === 'shell') summary = (args && args.cmd) || '';
       else if (c.name === 'subagent') summary = (args && args.task) || '';
+      else if (c.name === 'change_working_folder') {
+      summary = require('./chatWorkingFolder.js').describeChange(opts.projectDir, opts.chatId, args);
+      }
       else if (c.name === 'webpreview') {
         // Show the URL the model wants to open so the user can tell
         // at a glance which site it'll preview — beats the generic

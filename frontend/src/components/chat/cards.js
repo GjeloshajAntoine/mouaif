@@ -711,8 +711,10 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     head.appendChild(icon); head.appendChild(name); head.appendChild(title);
     const detail = document.createElement('pre');
     detail.className = 'tool-card__body';
-    detail.textContent = [request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
-    .filter(Boolean).join('\n');
+    detail.textContent = request.tool === 'change_working_folder'
+    ? [request.summary || 'Working folder change', 'Original project: ' + request.projectDir].join('\n')
+    : [request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
+      .filter(Boolean).join('\n');
     // A delegation that shares chat images lists them (names only, no
     // pixels), so the user knows what goes to the delegated model.
     const sharedImages = request.tool === 'subagent' && Array.isArray(request.images) ? request.images : [];

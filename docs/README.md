@@ -47,7 +47,7 @@ One page per feature: what it does and how to use it.
 
 ### Projects and settings
 
-- [Chat working folders](features/chat-working-folder.md) — switch a chat's coding directory or create an isolated Git worktree under `.mouaif/`.
+- [Chat working folders](features/chat-working-folder.md) — switch a chat's coding directory or create an empty folder under `.mouaif/`; Git setup stays in the assistant workflow.
 
 - [Project card](features/project-card.md) — each project's chats, New chat, and options menu on the Chats tab.
 - [Project card search](features/project-card-search.md) — the magnifier on a project card: search that project's chats, drafts, and messages.

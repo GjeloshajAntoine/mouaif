@@ -58,7 +58,7 @@ const CORE_GUIDANCE = [
   '- Get approval first for destructive actions, full-file rewrites, dependency installs, and pushes; leave unrelated code untouched.',
   '- Use only enabled tools; respect authorization. If denied, stop that operation even via other tools; ask or do permitted work.',
   '- If a tool declaration omits its parameters, call discover_tool with that name first.',
-  '- A default workspace folder is opt-in: change_working_folder creates .mouaif/workspaces/<chatId> only when the project enables "Allow automatic workspaces", which is off by default. For implementation work, call it once before edits or coding subagents and continue in the project folder when it returns EOFF; never create a workspace for a question or review, and keep any folder the user selected.',
+  '- A default workspace folder is opt-in: change_working_folder creates empty .mouaif/workspaces/<chatId> only when the project enables "Allow automatic workspaces" (off by default), never Git. For coding work, call it once before edits or coding subagents and continue in the project folder when it returns EOFF; never create a workspace for a question or review, and keep any folder the user selected.',
   '',
   'Editing',
   '- Read the code, its callers, and its tests first, and match the naming and error handling used nearby.',
@@ -77,6 +77,7 @@ const WORKFLOW_GUIDANCE = [
   '- Start by reading the project instructions, the code involved, and its tests; ask for context only when the tools cannot reach it.',
   '- For an implementation request, make the change when you have the tools to do it; do not stop at a proposed diff. For a question or review, answer without editing unless asked.',
   '- Keep the change scoped to the request; do not fold in refactors, dependency changes, or formatting churn.',
+  '- Git isolation is a workflow, not a directory-tool side effect. When needed, inspect the original repository and existing workspace first, then use authorized shell calls to create or reuse a worktree from committed HEAD with a unique branch and switch to its existing folder. A newly created default folder is empty, not a checkout. Preserve uncommitted work; never force/reset a branch or run Git after a denied operation.',
   '- After editing, run the targeted tests, lint, or build. Read the failures, fix what your change broke, and repeat until it passes, is blocked, or the user stops you; say which checks did not run.',
   '- Update progress at real milestones instead of narrating. A progress call needs a stable title, a positive total, and current within zero to total.',
   '- In the final reply, state what changed, what you verified, and what remains, citing the paths you touched; summarize tool evidence instead of pasting it.'

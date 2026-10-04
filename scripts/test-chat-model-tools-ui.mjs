@@ -18,6 +18,7 @@ import { h, render } from 'preact';
 import { useState } from 'preact/hooks';
 import { ToolTree, buildToolGroups } from './frontend/src/components/ToolTree.jsx';
 import { ToolPopup } from './frontend/src/components/chat/ToolPopup.jsx';
+import { authorizationCard } from './frontend/src/components/chat/cards.js';
 import './frontend/src/style.css';
 const catalog = ${JSON.stringify(catalog)};
 function Fixture() {
@@ -40,6 +41,16 @@ function Fixture() {
       onToggleGroup: (group, checked) => toggle(catalog.map(t => t.name), checked) }));
 }
 render(h(Fixture), document.getElementById('fixture'));
+const approvals = document.createElement('div');
+document.getElementById('fixture').appendChild(approvals);
+window.showApproval = (summary) => {
+  approvals.replaceChildren();
+  const request = { tool: 'change_working_folder', callId: 'folder-approval', summary,
+    projectDir: '/home/user/original-project', timeoutMs: 30000 };
+  authorizationCard(request, request.projectDir, 'calling-chat', {
+    transcript: { current: approvals }, status: { current: null }
+  });
+};
 window.ready = true;
 `;
 const bundle = await build({ stdin: { contents, resolveDir: process.cwd(), loader: 'jsx' },
@@ -107,7 +118,29 @@ try {
       assert.ok(tree.targets.every(Boolean), 'tool rows are visible and fit the viewport');
     }
   }
-  console.log('PASS model/working-folder mobile UI: shared Tools card/composer trees and long folder metadata at 360/390/430px');
+  await evaluate('document.querySelector(".tool-popup__trigger").click()');
+  const destination = '/home/user/a-very-long-project-name/packages/another-long-package-name';
+  for (const action of ['Switch to existing folder', 'Reset to original project folder', 'Create or reuse workspace folder (no Git)']) {
+    const summary = action + '\nTarget chat: other-chat — Another conversation\nDestination: ' + destination;
+    await evaluate('window.showApproval(' + JSON.stringify(summary) + ')');
+    for (const width of [360, 390, 430]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: true });
+      await settle();
+      const card = await evaluate(`(() => {
+        const el = document.querySelector('.tool-card--authorization');
+        return { text: el.querySelector('.tool-card__body').textContent,
+          fits: document.documentElement.scrollWidth <= innerWidth,
+          buttons: [...el.querySelectorAll('button')].map(button => {
+            const r = button.getBoundingClientRect(); return r.width >= 44 && r.height >= 44;
+          }) };
+      })()`);
+      assert.ok(card.text.includes(summary), 'approval shows action, target chat and full destination');
+      assert.ok(card.text.includes('Original project: /home/user/original-project'));
+      assert.equal(card.text.includes('timeout:'), false, 'folder approval does not show an irrelevant shell timeout');
+      assert.ok(card.fits && card.buttons.every(Boolean), `approval fits and remains tappable at ${width}px`);
+    }
+  }
+  console.log('PASS model/working-folder mobile UI: tool trees, folder metadata and explicit approvals at 360/390/430px');
 } finally {
   if (cdp) cdp.close();
   if (chrome && chrome.exitCode === null) {

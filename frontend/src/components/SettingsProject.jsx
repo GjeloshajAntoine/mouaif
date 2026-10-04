@@ -1214,7 +1214,7 @@ class: 'view-back',
           h('label', { class: 'settings-project__item-title', for: 'sp-auto-workspace' }, 'Allow automatic workspaces'),
           h('div', { class: 'settings-project__item-note' },
           'Let the assistant create a per-chat workspace under ', h('code', null, '.mouaif/workspaces/<chatId>'),
-          ' (a Git worktree and branch when this is a repository). Off means folders change only when you ask for one; explicit folders and resetting always work.'),
+          ' (an empty folder; Git setup is a separate assistant workflow). Off means folders change only when you ask for one; explicit folders and resetting always work.'),
           h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, autoWorkspaceStatusMsg)
           ),
           h('label', { class: 'switch' },

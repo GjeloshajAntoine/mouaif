@@ -4,13 +4,10 @@
 // project. Only local shell/file operations use this directory.
 const fs = require('node:fs');
 const path = require('node:path');
-const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
 const chats = require('./chats.js');
 const projects = require('./projects.js');
 const settings = require('./settings.js');
 const { err } = require('./util.js');
-const exec = promisify(execFile);
 const changing = new Set();
 
 function safeDirectory(directory) {
@@ -26,10 +23,6 @@ function resolve(projectDir, chatId) {
   // can also be used by temp-directory fixtures). Only switched folders
   // need the project picker's additional home-boundary validation.
   return chat && chat.workingDir ? safeDirectory(chat.workingDir) : require('./tools/files.js').resolveSandbox(projectDir);
-}
-
-async function git(projectDir, args, signal) {
-  return exec('git', args, { cwd: projectDir, signal, timeout: 60000, maxBuffer: 1024 * 1024, windowsHide: true, env: { ...process.env, LC_ALL: 'C' } });
 }
 
 // Does this project allow creating the default workspace folder? The
@@ -48,13 +41,11 @@ function autoWorkspaceEnabled(projectDir) {
 
 // Create or reuse the default workspace for a chat. Only reached when the
 // project allows it (see autoWorkspaceEnabled).
-async function createDefaultWorkspace(root, chatId, signal) {
-  // Preflight the workspace parents without creating them. Creating
-  // `.mouaif` / `.mouaif/workspaces` up front used to leave empty
-  // directories behind whenever the Git step or the chat update failed, so
-  // the folders now appear only once success is likely. Existing segments
-  // are still validated here, which keeps rejecting a redirected parent
-  // even when its symlink stays inside home.
+async function createDefaultWorkspace(root, chatId) {
+  // This tool only creates a directory. Repository setup belongs to the
+  // assistant's coding workflow through separately authorized shell calls.
+  // Validate existing parents before creating anything; redirected state
+  // and workspace parents are rejected even when they stay inside home.
   const missingParents = [];
   let parent = root;
   for (const segment of ['.mouaif', 'workspaces']) {
@@ -85,37 +76,8 @@ async function createDefaultWorkspace(root, chatId, signal) {
       catch (e) { if (e.code !== 'EEXIST') throw e; }
     }
   };
-  let branch = null;
   let created = false;
-  let repository = false;
-  try {
-    repository = (await git(root, ['rev-parse', '--is-inside-work-tree'], signal)).stdout.trim() === 'true';
-  } catch (e) {
-    if (!String(e.stderr || '').includes('not a git repository')) { prune(); throw e; }
-  }
-  if (repository) {
-    branch = 'mouaif/chat-' + chatId;
-    if (targetExisted) {
-      // Retry only reuses this exact worktree, not an arbitrary folder
-      // or a symlink to another checkout. Never reset or force a branch.
-      const real = safeDirectory(target);
-      const top = (await git(real, ['rev-parse', '--show-toplevel'], signal)).stdout.trim();
-      const currentBranch = (await git(real, ['symbolic-ref', '--short', 'HEAD'], signal)).stdout.trim();
-      const common = async (dir) => (await git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir'], signal)).stdout.trim();
-      if (real !== target || top !== real || currentBranch !== branch || await common(root) !== await common(real)) {
-        throw err('EEXIST', 'Default workspace exists but is not this chat’s Git worktree');
-      }
-    } else {
-      try {
-        createParents();
-        await git(root, ['worktree', 'add', '-b', branch, target, 'HEAD'], signal);
-      } catch (e) {
-        prune();
-        throw e;
-      }
-      created = true;
-    }
-  } else if (targetExisted) {
+  if (targetExisted) {
     if (fs.lstatSync(target).isSymbolicLink()) throw err('EEXIST', 'Default workspace must not be a symlink');
   } else {
     try {
@@ -127,7 +89,25 @@ async function createDefaultWorkspace(root, chatId, signal) {
     }
     created = true;
   }
-  return { workingDir: safeDirectory(target), branch, created };
+  // Keep the result shape compatible; this tool never inspects branches.
+  return { workingDir: safeDirectory(target), branch: null, created };
+}
+
+// Approval text is computed without creating folders or changing the chat.
+// Stored as the authorization summary so live and recovered cards agree.
+function describeChange(projectDir, currentChatId, args = {}) {
+  const chatId = typeof args.chatId === 'string' && args.chatId.trim()
+    ? args.chatId.trim().slice(0, 128) : currentChatId;
+  const chat = chats.getChat(projectDir, chatId);
+  const root = safeDirectory(projectDir);
+  const directory = args.directory;
+  const wantsDefault = directory === undefined || directory === false || directory === null;
+  const destination = wantsDefault ? path.join(root, '.mouaif', 'workspaces', chatId)
+    : typeof directory === 'string' ? path.resolve(root, directory || '.') : '(invalid directory)';
+  const action = wantsDefault ? 'Create or reuse workspace folder (no Git)'
+    : destination === root ? 'Reset to original project folder' : 'Switch to existing folder';
+  const title = chat && chat.title ? String(chat.title).replace(/\s+/g, ' ').trim() : '';
+  return [action, 'Target chat: ' + chatId + (title ? ' — ' + title : ''), 'Destination: ' + destination].join('\n');
 }
 
 async function change(projectDir, chatId, directory, signal) {
@@ -156,24 +136,21 @@ async function change(projectDir, chatId, directory, signal) {
     } else {
       // Creating a folder is opt-in: the project (or the app default) must
       // set `autoWorkspace`. Off means the tool reports why instead of
-      // quietly putting a worktree in the user's checkout.
+      // quietly putting a folder in the user's checkout.
       if (!autoWorkspaceEnabled(projectDir)) {
-      throw err('EOFF', 'Creating a workspace is disabled for this project. Ask the user to turn on "Allow automatic workspaces" in Settings → Project → General (or the app default in Settings → App defaults), or pass an existing directory.');
+        throw err('EOFF', 'Creating a workspace is disabled for this project. Ask the user to turn on "Allow automatic workspaces" in Settings → Project → General (or the app default in Settings → App defaults), or pass an existing directory.');
       }
-      workspace = await createDefaultWorkspace(root, chatId, signal);
+      workspace = await createDefaultWorkspace(root, chatId);
     }
     const { workingDir, branch, created } = workspace;
-    // Do not resurrect a chat deleted while Git was running. Preserve all
+    // Do not resurrect a chat deleted during the change. Preserve all
     // unrelated metadata by merging into the latest stored record.
     const updated = chats.updateChat(projectDir, chatId, { workingDir: workingDir === root ? null : workingDir });
     if (!updated) throw err('ENOTFOUND', 'Chat was deleted while creating the workspace; the folder has been kept');
     return { chat: updated, workingDir, branch, created };
-  } catch (e) {
-    if (e.stderr) throw err('EGIT', String(e.stderr).trim());
-    throw e;
   } finally {
     changing.delete(key);
   }
 }
 
-module.exports = { resolve, change };
+module.exports = { resolve, change, describeChange };
