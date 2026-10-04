@@ -155,13 +155,15 @@ scrollbar-width: thin;
   transition: background 80ms ease;
   min-height: var(--tap);
   border-top: 1px solid var(--border);
-  /* The list is a height-capped flex column. Without this the rows are
-     allowed to shrink into that cap, so a two-line search hit is squeezed to
-     its 44 px minimum and its snippet spills over the next row. Rows keep
-     their content height; the list scrolls instead. */
+  /* The capped list scrolls instead of shrinking its rows. */
   flex-shrink: 0;
 }
-.project-card__chats li:first-child { border-top: 0; }
+.project-card__chats li:first-child { border-top-color: transparent; }
+.project-card__chat {
+  /* One size for normal, draft, running and search rows. Reserve the delete
+     target, padding and divider; scale up with enlarged text. */
+  height: max(calc(var(--tap) + 0.75rem + 1px), 3.5625rem);
+}
 @media (hover: hover) {
   .project-card__chats li:hover  { background: var(--surface-2); }
 }
@@ -172,7 +174,7 @@ scrollbar-width: thin;
 .project-card__chat-main { flex: 1; min-width: 0; overflow: hidden; }
 .project-card__chat-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .project-card__chat-prompt { display: grid; place-items: center; flex: none; color: var(--accent); }
-.project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; }
+.project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; line-height: 1.3; }
 /* Why a row is in the search results, when the title does not say it: the
    match came from a message body ("text") or the composer draft ("draft").
    A title hit carries no badge — the emphasised title is its own label. */
@@ -213,23 +215,18 @@ scrollbar-width: thin;
   background: var(--accent);
   opacity: 0.75;
 }
-/* The matching message text, under the title. Two lines at most: the card
-   holds three rows and a snippet is a reminder, not a transcript. It sits one
-   step brighter than the row metadata (--fg-soft, not --muted) because it is
-   the reason the user is looking at this row at all. */
+/* The matching message text, under the title. One ellipsized line keeps
+  search hits the same height as normal rows. It sits one step brighter than
+  the row metadata because it is the reason the row matched. */
 .project-card__chat-snippet {
   color: var(--fg-soft);
   font-size: 0.72rem;
   line-height: 1.3;
   margin-top: 1px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   overflow: hidden;
 }
-.project-card__chat--match { align-items: flex-start; }
-.project-card__chat--match .project-card__chat-meta,
-.project-card__chat--match .project-card__chat-delete { margin-top: 2px; }
 /* Draft-only chat: the row shows the start of the composer draft instead of
 the title, tinted yellow (--warning) to signal "unfinished, not yet sent".
 The title becomes a single line; multi-line drafts collapse to a snippet. */
@@ -237,7 +234,16 @@ The title becomes a single line; multi-line drafts collapse to a snippet. */
 color: var(--warning);
 font-style: italic;
 }
-.project-card__chat-meta { color: var(--muted); font-size: 0.72rem; flex-shrink: 0; }
+.project-card__chat-meta {
+  color: var(--muted);
+  font-size: 0.72rem;
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 45%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .project-card__chat-meta[data-trace="1"] { color: var(--warning); }
 .project-card__chat-meta[data-running="1"] { color: var(--accent); }
 .project-card__chat-meta[data-draft="1"] { color: var(--warning); }
@@ -266,6 +272,7 @@ flex-shrink: 0;
   .project-card__chat-running { animation: none; }
 }
 .project-card__chat-delete {
+  flex-shrink: 0;
   font: inherit;
   color: var(--muted);
   background: transparent;
