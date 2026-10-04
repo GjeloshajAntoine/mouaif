@@ -1996,7 +1996,15 @@ rerender();
     settlePick(stylesPickRef.current(x, y), () => setStylesActive(false));
     return;
   }
-  if (handlers) handlers.clickAt(x, y).catch(() => {});
+  // A tap that never reaches the page must not read as "the preview did
+  // nothing". clickAt talks to Chrome over CDP and can fail (a target that
+  // navigated away, a timeout, a dropped socket); swallowing that left the
+  // surface with no feedback at all, which is indistinguishable from a tap the
+  // guard dropped. The pill above the panels is where this view reports an
+  // outcome, so the failure goes there.
+  if (handlers) handlers.clickAt(x, y).catch((e) => {
+  setStatus('preview tap failed: ' + ((e && e.message) || String(e)));
+  });
   },
   // Pick-mode feedback: the banner over the screenshot (and in the
   // full-screen overlay) is the only signal the user has that a tap

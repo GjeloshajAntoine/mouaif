@@ -126,11 +126,25 @@ frameNodeOut.attrs.onPointerMove({ clientX: clientX + 40, clientY: clientY + 40 
 frameNodeOut.attrs.onClick({ clientX: clientX + 40, clientY: clientY + 40 });
 assert.equal(clicked, null, 'a drag that scrolled the frame must not click the page');
 // A frame that scrolls without a pointermove (momentum, a trackpad, a
-// scrollbar drag) must be dropped too.
-frameNodeOut.attrs.onPointerDown({ button: 0, clientX, clientY });
-frameNodeOut.attrs.onScroll();
+// scrollbar drag) must be dropped too. Such a gesture *moves* the frame, and a
+// real move is what the guard keys on — a `scroll` event that leaves the offset
+// where the finger found it is not a pan (the panel's own capture loop fires
+// those, see test-inspector-preview-scroll-guard.js).
+frameNodeOut.attrs.onPointerDown({ button: 0, clientX, clientY, currentTarget: frameNode });
+frameNode.scrollTop = scrollTop + 60;
+frameNodeOut.attrs.onScroll({ currentTarget: frameNode });
 frameNodeOut.attrs.onClick({ clientX, clientY });
-assert.equal(clicked, null, 'a scroll cancels the pending tap even with no pointermove');
+assert.equal(clicked, null, 'a scroll that moved the frame cancels the pending tap with no pointermove');
+frameNode.scrollTop = scrollTop;
+// A scroll that does NOT move the frame must keep the tap: the capture loop
+// restores the user's offset as it swaps frames, and that restore fires a real
+// `scroll` event the user did not cause. Dropping the tap there is what made a
+// preview tap silently do nothing.
+frameNodeOut.attrs.onPointerDown({ button: 0, clientX, clientY, currentTarget: frameNode });
+frameNodeOut.attrs.onScroll({ currentTarget: frameNode });
+frameNodeOut.attrs.onClick({ clientX, clientY });
+assert.ok(clicked, 'a scroll that leaves the frame where the finger found it keeps the tap');
+clicked = null;
 // And pointercancel — the browser taking the gesture over for a scroll —
 // must drop it as well.
 frameNodeOut.attrs.onPointerDown({ button: 0, clientX, clientY });

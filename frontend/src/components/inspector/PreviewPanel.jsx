@@ -241,18 +241,39 @@ if (value) setLiveTitle(value);
 const lastDims = useRef({ w: 0, h: 0 });
 // isTapRef — whether the pointer gesture that is about to produce a `click`
 // was a tap rather than a pan of the scroll container. Set on pointer-down,
-// cleared once the finger moves past TAP_SLOP_PX or the frame scrolls. See
-// onPreviewClick for why the distinction matters on a phone.
+// cleared once the finger moves past TAP_SLOP_PX or the frame actually scrolls.
+// See onPreviewClick for why the distinction matters on a phone.
 const isTapRef = useRef(false);
 const tapOriginRef = useRef({ x: 0, y: 0 });
+// tapScrollRef — the frame's scroll offset when the finger went down.
+//
+// onPreviewScroll used to cancel the pending tap on *any* scroll event. A
+// `scroll` event does not mean the user panned: the frame has more than one
+// writer, and it legitimately fires while the finger is down. The capture loop
+// swaps the <img> src on every tick and writes the offsets it read back after
+// the swap; the frame also fires `scroll` when a new capture is a different
+// height and the browser clamps the offset mid-gesture. Either one lands
+// between the pointerdown and the `click` that follows it, so the tap was
+// dropped even though the finger had not moved. In pick mode that is worst:
+// the mode is only disarmed by a *successful* pick, so the dropped tap left the
+// banner armed, the Styles panel empty, and nothing said about why.
+//
+// Comparing the offset tells the two apart: a write or a clamp that ends where
+// it started is not a pan, while a real drag leaves the offset moved — which is
+// the signal the guard is actually after.
+const tapScrollRef = useRef({ top: 0, left: 0 });
 // A thumb is sloppy and a scroll container starts moving a frame or two after
 // the finger does, so anything past this many CSS pixels counts as a pan.
 const TAP_SLOP_PX = 10;
+// gestureNode — the surface the gesture started on, so the full-screen overlay
+// and the in-panel frame each measure their own scroll offset.
 function onPreviewPointerDown(ev) {
 // Only a primary press can become a tap; a second finger is a pinch/pan.
 if (ev.button != null && ev.button !== 0) { isTapRef.current = false; return; }
 isTapRef.current = true;
 tapOriginRef.current = { x: ev.clientX, y: ev.clientY };
+const node = (ev && ev.currentTarget) || frameRef.current;
+tapScrollRef.current = { top: node ? node.scrollTop : 0, left: node ? node.scrollLeft : 0 };
 }
 function onPreviewPointerMove(ev) {
 if (!isTapRef.current) return;
@@ -261,8 +282,18 @@ const dy = ev.clientY - tapOriginRef.current.y;
 if (Math.abs(dx) > TAP_SLOP_PX || Math.abs(dy) > TAP_SLOP_PX) isTapRef.current = false;
 }
 // A scroll can begin without a pointermove landing on the frame (momentum, a
-// trackpad, a scrollbar drag), so the scroll itself also cancels the tap.
-function onPreviewScroll() { isTapRef.current = false; }
+// trackpad, a scrollbar drag), so an actual move of the frame also cancels the
+// tap — but only an actual move: a `scroll` event the frame fires for its own
+// reasons (a restore, a clamp after a frame swap) leaves the offset where the
+// finger found it and must not drop the tap. See tapScrollRef.
+function onPreviewScroll(ev) {
+if (!isTapRef.current) return;
+const node = (ev && ev.currentTarget) || frameRef.current;
+if (!node) { isTapRef.current = false; return; }
+if (node.scrollTop !== tapScrollRef.current.top || node.scrollLeft !== tapScrollRef.current.left) {
+isTapRef.current = false;
+}
+}
 // pointercancel fires when the browser takes the gesture over for a scroll —
 // exactly the case that must not become a click.
 function onPreviewPointerCancel() { isTapRef.current = false; }
