@@ -9,6 +9,54 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ## [Unreleased]
 
+## [0.8.7] — 2026-10-04
+
+### Added
+
+- **Per-chat working folders** — `change_working_folder` switches a chat's
+  shell and file directory, or creates `.mouaif/workspaces/<chatId>` as a Git
+  worktree on a new branch. Automatic workspace creation is opt-in: it is a
+  switch in Settings → Project → General with an app-level default in Settings
+  → App defaults, both off by default, and the folder is created lazily so a
+  failed change leaves nothing behind.
+- **OpenAI Codex provider** — ChatGPT-plan device sign-in, keychain-backed
+  refresh, live Codex models, and Responses streaming with native tool calls.
+- **Reviewed subagent images** — generated artwork can be edited in a follow-up
+  run, its pixels are stored once, and `subagent.images` selects current-chat
+  `imageRef` values explicitly; nothing transfers automatically.
+- **Chat-navigation tools** — `search_models` and `start_chat` join the Chats
+  family, and the `mouaif` family gains a restart and a feature-report tool.
+
+### Changed
+
+- **Per-family tool gates** — `Chats` and `mouaif` each get a single Off / Ask /
+  Allow gate with optional per-function overrides, the same shape File tools
+  already had. Progress updates, Ask user, Task, app restart, Web preview, and
+  the remaining app functions moved under those two families, so the tool tree
+  stopped growing one top-level row per function.
+- **Landing page** — leads with what the app does that others do not, gives
+  every app page its own section, shows the code editor, and no longer repeats
+  its own capability sections.
+
+### Fixed
+
+- **Chat scroll navigation is an overlay again, and no longer eats Space** —
+  the arrow controls float over the transcript's corner instead of occupying a
+  reserved row between the messages and the composer, so the transcript keeps
+  the full height above the composer. They are also held out of the tab order:
+  a focused arrow button swallowed <kbd>Space</kbd>, so scrolling the
+  transcript with the most natural key jumped to the previous message instead.
+  Every control keeps a 44 px hit area around its 26 px painted glyph.
+- **Subagent image payloads** — nested image data is omitted from tool
+  feedback, concurrent chat attachments are preserved, and chat drafts refresh
+  after delegated attachment tools.
+- **App tools** — `update_settings` and `delete_chat` are hardened against bad
+  input, and the `@`-picker restart form runs directly instead of spending a
+  model turn.
+- **CLI terminal** — the key row is smaller and gains Ctrl / Fn modifier keys.
+- **Authorization** — permission changes confirm only successful saves and
+  report MCP save failures.
+
 ## [0.8.5] — 2026-10-01
 
 ### Added
