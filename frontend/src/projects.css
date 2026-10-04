@@ -169,23 +169,51 @@ scrollbar-width: thin;
 .project-card__chat-prompt { display: grid; place-items: center; flex: none; color: var(--accent); }
 .project-card__chat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.88rem; }
 /* Why a row is in the search results, when the title does not say it: the
-   match came from a message body ("text") or the composer draft ("draft"). */
+   match came from a message body ("text") or the composer draft ("draft").
+   A title hit carries no badge — the emphasised title is its own label. */
 .project-card__chat-badge {
   flex: none;
-  font-size: 0.62rem;
+  font-size: 0.6rem;
+  line-height: 1.2;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   font-weight: 700;
-  padding: 1px 5px;
+  padding: 2px 5px;
   border-radius: var(--r-sm);
   background: var(--accent-soft);
   color: var(--accent);
+  border: 1px solid transparent;
 }
 .project-card__chat-badge[data-match="draft"] { background: var(--warning-soft); color: var(--warning); }
-/* The matching message text, one line, under the title. Two lines at most:
-   the card holds three rows and a snippet is a reminder, not a transcript. */
+/* The matched text itself, in the title or the snippet. `<mark>` has a
+   browser default (yellow) that would fight the theme, so the emphasis is
+   the accent tint: the highlight marks the hit without changing the row's
+   height or width. */
+.project-card__chat-hit {
+  background: var(--accent-soft);
+  color: var(--accent-hi);
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 600;
+}
+/* Search result rows carry a thin accent rail at the leading edge: a list of
+   hits reads as hits at a glance, without adding a wrapper or any height. */
+.project-card__chat[data-match] { position: relative; }
+.project-card__chat[data-match]::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 6px; bottom: 6px;
+  width: 2px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  opacity: 0.75;
+}
+/* The matching message text, under the title. Two lines at most: the card
+   holds three rows and a snippet is a reminder, not a transcript. It sits one
+   step brighter than the row metadata (--fg-soft, not --muted) because it is
+   the reason the user is looking at this row at all. */
 .project-card__chat-snippet {
-  color: var(--muted);
+  color: var(--fg-soft);
   font-size: 0.72rem;
   line-height: 1.3;
   margin-top: 1px;
@@ -303,49 +331,88 @@ border-left: 1px solid var(--border);
 
 /* The field sits between the card header and the chat list, so the list it
    filters is directly under it. It is not sticky and does not overlay: the
-   card's chat list stays the scroll owner. */
+   card's chat list stays the scroll owner.
+   Only the *input* carries the inset field chrome: the magnifier, the clear
+   ×, the count and the close × stand on the bar itself, so the bar reads as
+   one row instead of five stacked chips. */
 .project-card__search {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 12px;
+  display: flex; align-items: center; gap: 2px;
+  padding: 4px 6px 4px 8px;
   border-top: 1px solid var(--border);
   background: var(--surface-2);
 }
-.project-card__search-icon { display: grid; place-items: center; flex: none; color: var(--muted); }
-/* The answered hit count, between the input and the close button. Muted and
+.project-card__search-icon { display: grid; place-items: center; flex: none; color: var(--muted); padding-right: 4px; }
+/* The answered hit count, between the field and the close button. Muted and
    non-scrolling: it states whether the visible rows are the whole answer.
    The word drops out on a very narrow card so the field and the × keep
    their space; the number alone still answers "is this all of it?". */
 .project-card__search-count {
   flex: none;
-  display: inline-grid;
-  grid-template-columns: auto auto;
-  align-items: baseline;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   color: var(--muted);
   font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  padding: 0 2px;
+  padding: 0 4px;
 }
 .project-card__search-count[hidden] { display: none; }
+/* The number is the answer; it gets the foreground colour while the unit
+   stays muted, so the count reads as a figure rather than a sentence. */
+.project-card__search-count-n { color: var(--fg-soft); font-weight: 600; }
 @media (max-width: 360px) {
   .project-card__search-count-word { display: none; }
+}
+/* The field and its clear × are one pill: the input is transparent inside
+   the wrapper, and the × sits on its trailing edge, so clearing the term
+   reads as part of the field rather than as a second button in the bar. */
+.project-card__search-field {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding-right: 2px;
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+.project-card__search-field:focus-within {
+  background: var(--surface-3);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 .project-card__search-input {
   flex: 1; min-width: 0;
   font: inherit; font-size: 0.86rem;
   color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  padding: 7px 2px 7px 12px;
   min-height: var(--tap-sm);
   /* iOS gives a search input its own chrome (inner shadow, rounded ends);
      the card's own field should look like the rest of the app. */
   -webkit-appearance: none;
   appearance: none;
 }
+.project-card__search-input:focus { outline: none; }
+.project-card__search-input::placeholder { color: var(--muted-2); }
 .project-card__search-input::-webkit-search-cancel-button { display: none; }
-.project-card__search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+/* The clear × inside the field's trailing edge — a tap wipes the term and
+   keeps the field open, so a second search is one tap away. Its hit area is
+   the 32 px compact control (--tap-sm); the glyph stays small. */
+.project-card__search-clear {
+  font: inherit; color: var(--muted); background: transparent; border: 0;
+  width: var(--tap-sm); height: var(--tap-sm);
+  min-width: var(--tap-sm); min-height: var(--tap-sm);
+  font-size: 1rem; line-height: 1; cursor: pointer; border-radius: var(--r-pill);
+  display: grid; place-items: center; flex: none;
+  transition: background 120ms ease, color 120ms ease;
+}
+.project-card__search-clear[hidden] { display: none; }
+@media (hover: hover) {
+  .project-card__search-clear:hover { color: var(--fg); background: var(--surface-2); }
+}
+.project-card__search-clear:active { background: var(--surface-2); }
 .project-card__search-close {
   font: inherit; color: var(--muted); background: transparent; border: 0;
   min-height: var(--tap); min-width: var(--tap);

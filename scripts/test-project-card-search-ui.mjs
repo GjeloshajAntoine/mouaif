@@ -110,6 +110,7 @@ function createCard() {
   }
 
   const requests = [];
+  const navigated = [];        // paths `nav()` was asked to open
   const pending = new Map();   // query -> resolve, so a test can answer out of order
   let mode = 'ok';             // ok | error | manual
 
@@ -118,7 +119,7 @@ function createCard() {
     URLSearchParams, setTimeout, clearTimeout, Object,
     requestAnimationFrame: (fn) => { fn(); return 1; },
     projectsReload: { value: 0 },
-    nav() {},
+    nav: (path) => { navigated.push(path); },
     Fragment: 'fragment',
     PromptIcon: 'prompt-icon',
     pinnedProfiles: () => [],
@@ -159,6 +160,7 @@ function createCard() {
   const field = () => select((node) => node.attrs.class === 'project-card__search-input')[0] || null;
   const magnifier = () => select((node) => node.attrs.class === 'project-card__search-open')[0] || null;
   const closeBtn = () => select((node) => node.attrs.class === 'project-card__search-close')[0] || null;
+  const clearBtn = () => select((node) => node.attrs.class === 'project-card__search-clear')[0] || null;
   const empty = () => select((node) => node.attrs.class === 'project-card__chats-empty')[0] || null;
   // A chat row is `project-card__chat` or `project-card__chat project-card__chat--match`.
   // The prefix alone would also catch `project-card__chats-empty` and
@@ -168,10 +170,22 @@ function createCard() {
   const chatRows = () => select(isChatRow);
   const rowTitles = () => chatRows().map((node) => node.attrs.key);
   const rowMatches = () => chatRows().map((node) => node.attrs['data-match'] || null);
+  // The snippet text with any `<mark>` emphasis flattened back to plain text:
+  // the highlight is a rendering detail, the sentence is the assertion.
+  const flatten = (children) => (children || []).map((c) => {
+    if (typeof c === 'string') return c;
+    if (Array.isArray(c)) return flatten(c);
+    if (c && Array.isArray(c.children)) return flatten(c.children);
+    return '';
+  }).join('');
   const snippetText = () => select((node) => node.attrs.class === 'project-card__chat-snippet')
-    .map((node) => node.children.filter((c) => typeof c === 'string').join(''));
+    .map((node) => flatten(node.children));
   const badgeText = () => select((node) => node.attrs.class === 'project-card__chat-badge')
     .map((node) => node.children.filter((c) => typeof c === 'string').join(''));
+  // Every `<mark>` the rows rendered, flattened to its text: the emphasised
+  // hits, in row order.
+  const hitText = () => select((node) => node.attrs.class === 'project-card__chat-hit')
+    .map((node) => flatten(node.children));
   // The answered match count beside the field: its two spans flattened, and
   // `hidden` reported so a test can tell "no count" from "count of zero".
   const countNode = () => select((node) => node.attrs.class === 'project-card__search-count')[0] || null;
@@ -182,8 +196,8 @@ function createCard() {
   const settle = async () => { await new Promise((r) => setTimeout(r, 260)); await new Promise((r) => setImmediate(r)); };
 
   return {
-    requests, render, field, magnifier, closeBtn, empty, rowTitles, rowMatches, snippetText, badgeText,
-    countNode, countText,
+    requests, navigated, render, field, magnifier, closeBtn, clearBtn, empty, rowTitles, rowMatches, snippetText, badgeText,
+    countNode, countText, hitText,
     project: PROJECT,
     setMode: (next) => { mode = next; },
     answer: (q, body) => { const resolve = pending.get(q); pending.delete(q); resolve(body); },
@@ -225,7 +239,8 @@ assert.ok(card.magnifier().attrs['aria-label'].includes('Search chats'), 'the ma
 card.click(card.magnifier());
 assert.ok(card.field(), 'tapping the magnifier renders the field');
 assert.equal(card.field().attrs.type, 'search', 'the field is a search input');
-assert.equal(card.field().attrs['aria-label'], 'Search chats in ' + PROJECT.name, 'the field names its project');
+assert.ok(card.field().attrs['aria-label'].startsWith('Search chats in ' + PROJECT.name), 'the field names its project');
+assert.ok(/title, draft, or message text/.test(card.field().attrs['aria-label']), 'the label names what is searched');
 assert.equal(card.field().attrs.enterkeyhint, 'search', 'the phone keyboard offers Search');
 assert.equal(card.magnifier().attrs['aria-expanded'], 'true', 'the toggle reports the field as open');
 assert.equal(card.requests.length, 0, 'opening the field sends no request');
@@ -239,9 +254,13 @@ assert.deepEqual(card.rowTitles(), ['bbbb2222', 'eeee5555', 'ffff6666'], 'the li
 assert.deepEqual(card.rowMatches(), ['title', 'message', 'draft'], 'each row reports why it matched');
 assert.deepEqual(card.snippetText(), ['the kumquat handler moved', 'kumquats not sent yet'],
   'a message or draft hit shows its snippet; a title hit does not repeat the title');
-assert.deepEqual(card.badgeText(), ['text', 'draft'], 'the badge distinguishes a message hit from a draft hit');
+assert.deepEqual(card.badgeText(), ['text', 'draft'],
+  'a title hit needs no badge — its emphasised title already says it matched');
 assert.equal(card.countText(), '3 matches', 'the answered hit count is stated beside the field');
 assert.equal(card.countNode().attrs.hidden, false, 'a non-empty answer shows the count');
+// The hit itself is emphasised in the row: `<mark>` around the term in the
+// title and in the snippet, and nothing but plain text where the term is not.
+assert.deepEqual(card.hitText(), ['kumquat', 'kumquat', 'kumquat'], 'the matched text is highlighted in each row');
 
 // ---- 3. an unanswered term shows no stale rows ---------------------------
 card.typeImmediate('kumquat no');
@@ -305,8 +324,33 @@ assert.equal(failing.field(), null, 'the magnifier closes the field it opened');
 const escaping = createCard();
 await escaping.mount();
 escaping.click(escaping.magnifier());
+assert.equal(escaping.clearBtn().attrs.hidden, true, 'an empty term offers nothing to clear');
 await escaping.type('kumquat');
 assert.deepEqual(escaping.rowTitles(), ['bbbb2222', 'eeee5555', 'ffff6666'], 'the field is open with results');
+assert.equal(escaping.clearBtn().attrs.hidden, false, 'a typed term offers the clear ×');
+
+// ---- 8. the in-field × wipes the term and keeps the field open ----------
+escaping.click(escaping.clearBtn());
+assert.equal(escaping.field().attrs.value, '', 'the clear × empties the field');
+assert.ok(escaping.field(), 'the clear × keeps the field open');
+assert.deepEqual(escaping.rowTitles(), ['aaaa1111', 'bbbb2222'], 'an empty term falls back to the normal chat list');
+assert.equal(escaping.empty(), null, 'an empty term is not "no match"');
+assert.equal(escaping.clearBtn().attrs.hidden, true, 'the clear × hides itself once the term is gone');
+
+// ---- 9. Enter opens the newest hit, and only when there is one ----------
+escaping.field().attrs.onKeyDown({ key: 'Enter', preventDefault() {} });
+assert.deepEqual(escaping.navigated, [], 'Enter on an empty term opens nothing');
+await escaping.type('kumquat');
+assert.deepEqual(escaping.rowTitles(), ['bbbb2222', 'eeee5555', 'ffff6666'], 'the hits are back');
+escaping.field().attrs.onKeyDown({ key: 'Enter', preventDefault() {} });
+assert.deepEqual(escaping.navigated, ['chat/bbbb2222?projectDir=' + encodeURIComponent(PROJECT.path)],
+  'Enter opens the newest hit — the first row');
+await escaping.type('nope');
+escaping.field().attrs.onKeyDown({ key: 'Enter', preventDefault() {} });
+assert.equal(escaping.navigated.length, 1, 'Enter with no hits opens nothing');
+
+// ---- 10. Escape closes the field ----------------------------------------
+await escaping.type('kumquat');
 escaping.field().attrs.onKeyDown({ key: 'Escape', preventDefault() {} });
 escaping.render();
 assert.equal(escaping.field(), null, 'Escape closes the field');

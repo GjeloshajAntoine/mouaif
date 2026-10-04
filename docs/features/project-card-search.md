@@ -9,15 +9,19 @@ Every project card on the Chats tab has a magnifier button. Tapping it opens a s
 1. On the **Chats** tab, find the project card you want to search.
 2. Tap the magnifier at the right end of the card's action row, next to **+ New chat**.
 3. Type a word or phrase. Results appear under the field as you stop typing.
-4. Tap a result to open that chat. Tap **×** inside the field, tap the magnifier again, or press `Escape` to leave search and get the normal chat list back.
+4. Tap a result to open that chat. Press `Enter` (the keyboard's **search** key) to open the newest hit without touching the list.
+5. Tap **×** at the right end of the field to wipe the term and keep searching, or tap the **×** at the end of the row — or the magnifier, or press `Escape` — to leave search and get the normal chat list back.
 
 Only the card you searched changes; every other project card keeps its own list.
 
 ## Behavior
 
 - **What is searched** — the chat title, every stored message of the chat, and the composer draft. A chat appears once even when all three match.
-- **Match label** — a title match is labelled `title`. A message match shows a `TEXT` badge and a one-line preview of the matching message; a draft match shows a `DRAFT` badge and the start of the draft. When one chat matches in more than one place the order is title, then draft, then message, so the label describes what the row already shows when it can.
+- **Highlighted hits** — the term is emphasised inside the title and inside the snippet, so the reason a row matched is visible without reading the whole line. Every matching occurrence is marked, not just the first.
+- **Match label** — a message match shows a `TEXT` badge and a preview of the matching message; a draft match shows a `DRAFT` badge and the start of the draft. A title match carries no badge: the emphasised title says it matched on its own.
+- **Result rows stay the card's rows** — same height, tap target, running dot, draft marker, cost and delete button as a normal row, with a thin accent rail at the leading edge so a list of hits reads as hits at a glance.
 - **Match count** — the number of chats the settled term answered with is shown beside the field, so three visible rows are not mistaken for the whole answer. On a card narrower than 360 px the unit is dropped and only the number remains.
+- **Clear the term without leaving** — the `×` on the field's trailing edge empties the term, keeps the field focused, and restores the card's normal chat list. It is hidden while the term is already empty.
 - **Results are the project's most recent matches**, in the same order as the card's normal chat list.
 - **Only a settled term is sent.** Typing is not a request per keystroke, and the previous term's results are never shown against a new term.
 - **No match is not an error** — the card says the term matched nothing. A request that actually failed says so instead.

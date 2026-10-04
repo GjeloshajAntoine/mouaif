@@ -57,6 +57,32 @@ function ProjectMenu({ project, onRename, onUnregister }) {
   );
 }
 
+// highlightMatch(text, query) -> the text with every occurrence of the query
+// wrapped in a <mark>. The search row is a reminder of *why* a chat matched,
+// and the eye finds the reason faster when the hit itself stands out instead
+// of being somewhere in a muted grey line. Case-insensitive, no regex (a user
+// types punctuation — `(` must not throw), and the plain string is returned
+// when nothing matches so callers need no special case.
+function highlightMatch(text, query) {
+  const str = String(text || '');
+  const needle = String(query || '').trim().toLowerCase();
+  if (!needle) return str;
+  const lower = str.toLowerCase();
+  if (lower.indexOf(needle) < 0) return str;
+  const out = [];
+  let from = 0;
+  let at = lower.indexOf(needle);
+  let key = 0;
+  while (at >= 0) {
+    if (at > from) out.push(str.slice(from, at));
+    out.push(h('mark', { class: 'project-card__chat-hit', key: 'hit' + key++ }, str.slice(at, at + needle.length)));
+    from = at + needle.length;
+    at = lower.indexOf(needle, from);
+  }
+  if (from < str.length) out.push(str.slice(from));
+  return out;
+}
+
 function ProjectSearchIcon({ size = 18 }) {
   return h('svg', {
     viewBox: '0 0 24 24', width: size, height: size, fill: 'none',
@@ -261,11 +287,18 @@ const draftSnippet = draftOnly
 ? (draftText.replace(/\s+/g, ' ').trim().slice(0, 120) || 'Image draft')
 : '';
 const chatPrompt = c.promptId ? prompts.find((prompt) => prompt.id === c.promptId) : null;
-const isMatch = match === 'message' || match === 'draft';
+const isMatch = typeof match === 'string' && match.length > 0;
+// Why the row is in the results, when the row does not already say it. A
+// `title` hit needs no badge: the title is right there with the term in
+// emphasis. So only a message hit (`text`) and a draft hit (`draft`) are
+// labelled — the same two badges as before, one per row.
+const isTitleHit = match === 'title';
 // The snippet is only worth a line when it says something the title does not.
-// A title hit whose snippet is the title would print the same words twice.
+// A title hit's snippet is the title, and printing it twice would waste the
+// row's single extra line.
 const showSnippet = isMatch && typeof c.snippet === 'string' && c.snippet.trim() !== ''
   && c.snippet.trim() !== titleStr;
+const showBadge = isMatch && !isTitleHit;
 return h('li', {
 key: c.id,
 'data-match': match || undefined,
@@ -284,13 +317,15 @@ h('div', { class: 'project-card__chat-main' },
     }, h(PromptIcon, { name: chatPrompt.icon, size: 17 })) : null,
     draftOnly
       ? h('span', { class: 'project-card__chat-title project-card__chat-title--draft' }, draftSnippet)
-      : h('span', { class: 'project-card__chat-title' }, titleStr),
-    showSnippet ? h('span', {
+      : h('span', { class: 'project-card__chat-title' },
+          isTitleHit ? highlightMatch(titleStr, term) : titleStr),
+    showBadge ? h('span', {
       class: 'project-card__chat-badge',
-      'data-match': match
+      'data-match': match,
+      title: match === 'draft' ? 'Matched composer draft' : 'Matched message text'
     }, match === 'draft' ? 'draft' : 'text') : null
   ),
-  showSnippet ? h('div', { class: 'project-card__chat-snippet' }, c.snippet) : null
+  showSnippet ? h('div', { class: 'project-card__chat-snippet' }, highlightMatch(c.snippet, term)) : null
 ),
 draftOnly
 ? h('span', { class: 'project-card__chat-draft', 'aria-hidden': 'true' })
@@ -330,20 +365,59 @@ onClick: (e) => { e.stopPropagation(); deleteChat(c); }
   return h(Fragment, null,
     searchOpen ? h('div', { class: 'project-card__search' },
       h('span', { class: 'project-card__search-icon', 'aria-hidden': 'true' }, h(ProjectSearchIcon, { size: 16 })),
-      h('input', {
-        ref: searchInputRef,
-        class: 'project-card__search-input',
-        type: 'search',
-        value: term,
-        placeholder: 'Search titles, drafts, messages…',
-        'aria-label': 'Search chats in ' + (project.name || project.path),
-        autocomplete: 'off',
-        autocapitalize: 'none',
-        spellcheck: 'false',
-        enterkeyhint: 'search',
-        onInput: (e) => setTerm(e.currentTarget.value),
-        onKeyDown: (e) => { if (e.key === 'Escape') { e.preventDefault(); closeSearch(); } }
-      }),
+      // The field and its clear × share one wrapper: the × is positioned on
+      // the field's trailing edge, so wiping the term reads as part of the
+      // field ("start over") rather than as a second action beside it — the
+      // close × at the end of the bar stays the only way out.
+      h('div', { class: 'project-card__search-field' },
+        h('input', {
+          ref: searchInputRef,
+          class: 'project-card__search-input',
+          type: 'search',
+          value: term,
+          // The placeholder names the fields after a colon, the way the app's
+          // other fields do, and stays short enough not to be clipped in a
+          // 360 px card. The full sentence lives in `aria-label` below.
+          // (The input keeps `type="search"` for the phone keyboard's Search
+          // key; its native clear button is hidden in CSS, since the card draws
+          // its own × inside the field.)
+          placeholder: 'Search chats: title, draft, text',
+          'aria-label': 'Search chats in ' + (project.name || project.path) + ' by title, draft, or message text',
+          autocomplete: 'off',
+          autocapitalize: 'none',
+          autocorrect: 'off',
+          spellcheck: 'false',
+          enterkeyhint: 'search',
+          onInput: (e) => setTerm(e.currentTarget.value),
+          onKeyDown: (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); closeSearch(); return; }
+            // Enter opens the newest hit — it is the row a tap would have
+            // opened. Without this the keyboard's search key does nothing.
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              if (answered && !answered.error && answered.chats.length) {
+                nav('chat/' + answered.chats[0].id + '?projectDir=' + encodeURIComponent(project.path));
+              }
+            }
+          }
+        }),
+        // In-field clear: wipes the term and keeps the field open, so a second
+        // search is one tap away. Hidden (and out of the tab order) while the
+        // term is already empty.
+        h('button', {
+          class: 'project-card__search-clear',
+          type: 'button',
+          hidden: term.length === 0,
+          tabIndex: term.length === 0 ? -1 : 0,
+          'aria-label': 'Clear search term',
+          title: 'Clear',
+          onClick: () => {
+            setTerm('');
+            const el = searchInputRef.current;
+            if (el && el.focus) el.focus();
+          }
+        }, '×')
+      ),
       h('span', {
         class: 'project-card__search-count',
         hidden: hitCount === 0,
