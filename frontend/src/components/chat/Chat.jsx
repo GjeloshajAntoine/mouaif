@@ -556,46 +556,56 @@ onToggleTool: s.state._toggleTool,
           })
         )
     ),
-// The transcript and its navigation row share the remaining flex space.
-// Navigation stays below messages and above the composer even when a
-// multi-line draft or the web-preview dock grows.
+// The transcript fills the slot above the composer on its own: the scroll
+// navigation floats over its corner instead of taking a row of its own, so
+// no bar is reserved out of the reading area.
 h('div', { class: 'chat-view__transcript-box' },
 h('div', { ref: refs.transcript, class: 'chat-view__transcript', 'aria-live': 'polite' }),
 // Scroll-nav rail: previous message / next message / bottom. While
 // pinned only the "previous" arrow shows; scroll.js updateJumpButton()
 // toggles the rest imperatively so scrolling never re-renders Preact.
+//
+// The buttons stay out of the tab order on purpose. A focused button
+// swallows Space — the browser activates it instead of scrolling the
+// transcript — so tabbing to the rail turned the most natural "scroll
+// down" key into "jump to the previous message". The rail is a
+// tap-only affordance; every one of its actions is reachable by tap,
+// and the transcript itself keeps Space and the arrow keys.
 h('nav', { ref: refs.scrollNav, class: 'chat-view__scroll-nav', 'data-mode': 'pinned', hidden: true, 'aria-label': 'Transcript navigation' },
 h('button', {
-      class: 'chat-view__nav-btn chat-view__nav-btn--prev',
-      type: 'button',
-      onClick: onJumpToPrevMessage,
-      'aria-label': 'Previous message',
-      title: 'Previous message'
-    },
+  class: 'chat-view__nav-btn chat-view__nav-btn--prev',
+  type: 'button',
+  tabIndex: -1,
+  onClick: onJumpToPrevMessage,
+  'aria-label': 'Previous message',
+  title: 'Previous message'
+  },
       h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
         h('path', { d: 'M12 7.5 19.5 15l-1.4 1.4-6.1-6.1-6.1 6.1L4.5 15 12 7.5Z', fill: 'currentColor' })
       )
     ),
 h('button', {
-      class: 'chat-view__nav-btn chat-view__nav-btn--next',
-      type: 'button',
-      onClick: onJumpToNextMessage,
-      'aria-label': 'Next message',
-      title: 'Next message'
-    },
+  class: 'chat-view__nav-btn chat-view__nav-btn--next',
+  type: 'button',
+  tabIndex: -1,
+  onClick: onJumpToNextMessage,
+  'aria-label': 'Next message',
+  title: 'Next message'
+  },
       h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
         h('path', { d: 'M12 16.5 4.5 9l1.4-1.4 6.1 6.1 6.1-6.1L19.5 9 12 16.5Z', fill: 'currentColor' })
       )
     ),
 h('button', {
 ref: refs.jumpBtn,
-      class: 'chat-view__nav-btn chat-view__jump',
-      type: 'button',
-      hidden: true,
-      onClick: onJumpToBottom,
-      'aria-label': 'Jump to latest messages',
-      title: 'Bottom'
-    },
+  class: 'chat-view__nav-btn chat-view__jump',
+  type: 'button',
+  tabIndex: -1,
+  hidden: true,
+  onClick: onJumpToBottom,
+  'aria-label': 'Jump to latest messages',
+  title: 'Bottom'
+  },
       h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
         h('path', { d: 'M12 13.5 4.5 6l1.4-1.4 6.1 6.1 6.1-6.1L19.5 6 12 13.5ZM4.5 17.5h15v2h-15z', fill: 'currentColor' })
       ),

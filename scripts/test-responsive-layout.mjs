@@ -91,18 +91,28 @@ try {
     await evaluate(`document.documentElement.style.fontSize = '${fontSize}px'`);
     await settle();
       const layout = await evaluate(`(() => {
-        const rect = selector => { const r = document.querySelector(selector)?.getBoundingClientRect(); return r && { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
-        const main = document.querySelector('.app__main');
-        return { shell: rect('.app__shell'), main: rect('.app__main'),
-          content: rect('.app__main > section'), head: rect('.chat-view__head'),
-          composer: rect('.chat-view__composer-row'), transcript: rect('.chat-view__transcript'),
-          row: rect('.chat-view__transcript > .chat-msg'), nav: rect('.chat-view__scroll-nav'),
-          navButtons: [...document.querySelectorAll('.chat-view__nav-btn')].filter(button => button.getClientRects().length).map(button => {
-          const r = button.getBoundingClientRect();
-          return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
-          }),
-          preview: rect('.webpreview-dock'),
-          overflow: main.scrollWidth - main.clientWidth };
+      const rect = selector => { const r = document.querySelector(selector)?.getBoundingClientRect(); return r && { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
+      const main = document.querySelector('.app__main');
+      const navEl = document.querySelector('.chat-view__scroll-nav');
+      return { shell: rect('.app__shell'), main: rect('.app__main'),
+      content: rect('.app__main > section'), head: rect('.chat-view__head'),
+      composer: rect('.chat-view__composer-row'), transcript: rect('.chat-view__transcript'),
+      row: rect('.chat-view__transcript > .chat-msg'), nav: rect('.chat-view__scroll-nav'),
+      // '' when the rail is a normal flex row (a real bar), 'absolute'
+      // when it floats over the transcript. The overlay is the point.
+      navFloat: navEl ? getComputedStyle(navEl).position : null,
+      navButtons: [...document.querySelectorAll('.chat-view__nav-btn')].filter(button => button.getClientRects().length).map(button => {
+      const r = button.getBoundingClientRect();
+      // The ::before grows the hit area past the painted control.
+      const before = getComputedStyle(button, '::before');
+      const insetX = parseFloat(before.left) + parseFloat(before.right);
+      const insetY = parseFloat(before.top) + parseFloat(before.bottom);
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height,
+        tabIndex: button.tabIndex,
+        hit: { width: r.width - insetX, height: r.height - insetY } };
+      }),
+      preview: rect('.webpreview-dock'),
+      overflow: main.scrollWidth - main.clientWidth };
       })()`);
       assert.ok(layout.content, `${name} renders its actual view`);
       if (name === 'settingsDictation' && width >= 720) {
@@ -117,13 +127,53 @@ try {
         assert.ok(layout.transcript.height > 200, 'transcript fills available height');
         assert.ok(layout.composer.bottom <= height, 'composer remains visible');
         assert.ok(Math.abs(layout.head.left - layout.composer.left) < 1, 'chat controls share a column');
-        assert.ok(layout.nav.top >= layout.transcript.bottom - 1, 'navigation never covers transcript text');
+        // The rail is an overlay, not a row: it must not take reading
+        // height from the transcript or sit in its own barred strip.
+        assert.equal(layout.navFloat, 'absolute', 'the rail floats over the transcript instead of taking its own bar');
+        assert.ok(layout.transcript.bottom >= layout.nav.top - 1, 'the rail floats over the transcript, taking no row of its own');
+        assert.ok(layout.transcript.bottom >= layout.nav.bottom - 1, 'the rail hangs inside the transcript, not below it');
+        // The real proof that the rail is no longer a bar: the transcript
+        // still reaches whatever sits below it (the preview dock when one
+        // is open, else the composer). A reserved nav row left a gap here.
+        // The real proof that the rail is no longer a bar: the transcript
+        // still reaches the surface below it, and any gap is the surface's
+        // own top margin — never a reserved navigation row. The preview dock
+        // carries a 0.4rem top margin of its own; the composer a 6px pad.
+        const belowTranscript = layout.preview && layout.preview.top < layout.composer.top ? layout.preview.top : layout.composer.top;
+        const ownGap = layout.preview && layout.preview.top < layout.composer.top ? 0.4 * fontSize : 6;
+        assert.ok(Math.abs(layout.transcript.bottom - (belowTranscript - ownGap)) < 1, 'the transcript reaches the surface below it: the rail reserves no row');
         assert.ok(layout.nav.bottom <= layout.composer.top + 1, 'navigation stays above the composer');
         assert.equal(layout.navButtons.length, 1, 'pinned history shows only Previous');
         for (const button of layout.navButtons) {
-        assert.ok(button.width >= 44 && button.height >= 44, 'navigation has real 44px touch targets');
+        // The painted glyph is compact; the hit area is the 44px minimum.
+        assert.ok(button.hit.width >= 44 && button.hit.height >= 44, 'navigation has a 44px hit area');
+        assert.ok(button.width < 44, 'the painted control stays compact so it covers little text');
+        assert.equal(button.tabIndex, -1, 'the rail stays out of the tab order');
         assert.ok(button.left >= 0 && button.right <= width, 'navigation targets stay inside the viewport');
         }
+        // Space must scroll the transcript, never activate a nav control.
+        // tabIndex -1 keeps the rail out of the sequential order, so Tab
+        // can never park focus on it (where Space activates it instead of
+        // scrolling); programmatic focus still works, so also assert the
+        // rail paints no focus ring when focused.
+        await evaluate(`(() => { document.activeElement.blur(); return true; })()`);
+        const reached = [];
+        for (let i = 0; i < 25; i++) {
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
+        const at = await evaluate(`(() => { const a = document.activeElement; return a ? (a.className || a.tagName) : null; })()`);
+        if (at) reached.push(at);
+        }
+        assert.equal(reached.some(name => String(name).includes('chat-view__nav-btn')), false,
+        'Tab never reaches a rail control, so Space can never jump a message');
+        // Positive control: with the rail out of the way, Space scrolls.
+        await evaluate(`(() => { if (document.activeElement) document.activeElement.blur(); const t = document.querySelector('.chat-view__transcript'); t.scrollTop = 0; return true; })()`);
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+        await settle();
+        assert.equal(await evaluate(`document.querySelector('.chat-view__scroll-nav').dataset.mode`), 'pinned',
+        'Space scrolls instead of jumping a message');
+        assert.equal(layout.navButtons[0].tabIndex, -1, 'rail controls stay out of the tab order');
         await evaluate(`document.querySelector('.chat-view__nav-btn--prev').click()`);
         await settle();
         const historyNav = await evaluate(`(() => {
@@ -131,23 +181,31 @@ try {
         document.querySelector('.chat-view__jump-count').textContent = '99+';
         const buttons = [...nav.querySelectorAll('button')].filter(button => button.getClientRects().length);
         const transcript = document.querySelector('.chat-view__transcript');
-        return { mode: nav.dataset.mode, height: nav.getBoundingClientRect().height,
-        clear: nav.getBoundingClientRect().top >= transcript.getBoundingClientRect().bottom - 1,
+        const nr = nav.getBoundingClientRect();
+        return { mode: nav.dataset.mode, bottom: nr.bottom, top: nr.top,
+        inside: nr.top >= transcript.getBoundingClientRect().top - 1 && nr.bottom <= transcript.getBoundingClientRect().bottom + 1,
         buttons: buttons.map(button => {
         const r = button.getBoundingClientRect();
-        return { left: r.left, right: r.right, width: r.width, height: r.height,
-          hit: button.contains(document.elementFromPoint(r.left + 2, r.top + r.height / 2)) };
+        const before = getComputedStyle(button, '::before');
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height,
+        hitW: r.width - parseFloat(before.left) - parseFloat(before.right),
+        hitH: r.height - parseFloat(before.top) - parseFloat(before.bottom),
+        hit: button.contains(document.elementFromPoint(r.left + 2, r.top + r.height / 2)) };
         }) };
         })()`);
         assert.equal(historyNav.mode, 'free', 'Previous unpins the transcript');
         assert.equal(historyNav.buttons.length, 3, 'history shows Previous, Next and Bottom');
-        assert.equal(historyNav.height, layout.nav.height, 'navigation does not jump when controls appear');
-        assert.ok(historyNav.clear, 'expanded navigation never covers messages');
+        // A stacked rail grows upward from a fixed bottom anchor, so adding
+        // controls never moves the cluster the user is aiming at.
+        assert.ok(Math.abs(historyNav.bottom - layout.nav.bottom) < 1, 'the rail keeps its bottom anchor when controls appear');
+        assert.ok(historyNav.top < layout.nav.top, 'the rail grows upward, away from the composer');
+        assert.ok(historyNav.inside, 'the rail stays inside the transcript box');
         for (let i = 0; i < historyNav.buttons.length; i++) {
         const button = historyNav.buttons[i];
-        assert.ok(button.width >= 44 && button.height >= 44 && button.hit, 'the full navigation target is clickable');
+        assert.ok(button.hitW >= 44 && button.hitH >= 44, 'every navigation control keeps a 44px hit area');
+        assert.ok(button.hit, 'the painted control is itself clickable');
         assert.ok(button.left >= 0 && button.right <= width, 'unread count fits inside the viewport');
-        if (i) assert.ok(button.left >= historyNav.buttons[i - 1].right, 'navigation targets never overlap');
+        if (i) assert.ok(button.top >= historyNav.buttons[i - 1].bottom, 'stacked navigation targets never overlap');
         }
         await evaluate(`document.querySelector('.chat-view__jump').click()`);
         await settle();
@@ -159,8 +217,13 @@ try {
           assert.ok(layout.preview.right <= layout.composer.right, 'preview stays above the composer, not at the frame edge');
         }
         if (width <= 430) {
-          assert.ok(layout.navButtons.every(button => button.right <= width - 0.625 * fontSize), 'phone navigation keeps a safe edge gap');
-          assert.ok(Math.abs(layout.preview.right - (width - 0.75 * fontSize)) < 1, 'phone preview keeps its existing inset');
+        // The floating rail sits a flat 10px (or the safe-area inset, if
+        // larger) inside the transcript's right edge — a fixed gap, not a
+        // rem-scaled one, because the rail is anchored to the box, not
+        // laid out inside a padded row.
+        assert.ok(layout.navButtons.every(button => button.left >= 0
+        && button.right <= layout.transcript.right - 9.5), 'phone navigation keeps a safe edge gap');
+        assert.ok(Math.abs(layout.preview.right - (width - 0.75 * fontSize)) < 1, 'phone preview keeps its existing inset');
         }
       }
       if (name === 'settingsDefaults') {
