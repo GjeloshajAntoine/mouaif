@@ -2,7 +2,7 @@
 
 ## Overview
 
-A nullable `workingDir` on a chat redirects local coding tools without changing the project's identity, settings, permissions, or transcript keys. `change_working_folder` is a native Chats-family function with normal selection and authorization.
+A nullable `workingDir` on a chat redirects local coding tools without changing the project's identity, settings, permissions, or transcript keys. `change_working_folder` is a native Chats-family function with normal selection and authorization. The chat is ambient server context: the tool advertises no `chatId` and a spurious one is refused with `EBADINPUT` (see [implementation notes](#the-tool-owns-its-chat-id)).
 
 ## Usage
 
@@ -19,6 +19,24 @@ npm run build:web
 
 ## Implementation notes
 
+### The tool owns its chat id
+
+`change_working_folder` is context-bound: it resolves its chat from the ambient call context, never from `args.chatId`. The advertised schema therefore carries only `directory`. A call that still passes `chatId` is refused with `EBADINPUT` instead of being honoured — a wrong id would silently retarget another conversation. A call with no current chat fails rather than guessing.
+
+### Delegated runs
+
+A delegated run keeps the real parent `opts.chatId` for permissions, approval sessions, images, tasks and app tools. Each run separately registers folder state under a synthetic id `subagent:run-<n>` and passes it as `opts.workspaceChatId`. Replacing `opts.chatId` with a synthetic id would bypass chat-specific Ask settings, strand approvals outside the parent session and break tools that default to the current chat.
+
+- `registerRun(root, workspace, parentChatId)` in [src/chatWorkingFolder.js](../../../src/chatWorkingFolder.js) keys the store by run id alone (ids are unique process-wide), so the nested launch — which holds the parent's folder — and tool dispatch — which holds the original project dir — need not agree on a root. `clearRun(runId)` drops the entry in the nested run's `finally`.
+- `resolveForCall(projectDir, chatId, workspaceChatId)` resolves the registered run folder when a separate run id is present, validates that directory on every local call, and fails with `ENOTFOUND` for an unknown run rather than falling back. Ordinary chats still go through `resolve`.
+- `runAppTool` receives the unchanged call context. `requireCurrentChatId` reads only the real `opts.chatId`; the working-folder action separately consumes `opts.workspaceChatId`. Attachment reads use the same run-folder resolver while attachment storage keeps the real target chat.
+- Delegation resolves its starting folder before launching the nested stream and propagates failures. It must never catch a missing selected folder and replace it with the original project. Nested authorization events, pending recovery and Stop remain keyed by the real parent chat.
+- `changeRun` resolves a relative `directory` against the run's **start** folder — captured at registration, so the anchor never moves — never the project root and never the run's current folder. `created` is always `false`: a run selects an existing folder and creates nothing. Omitted (`undefined`), `false`, `null` and `""` all mean "back to the folder the run started in"; there is no default-workspace branch for a run to fall into.
+- `registerRun(root, workspace, parentChatId)` also records the parent chat id for the approval label. `describeChange` receives the real chat id and separate run id, so the card names both the run and the correct parent.
+- The working-folder action detects `opts.workspaceChatId` and returns `updated: []` / `chat: null`, so switching a run never writes chat metadata or triggers a UI metadata refresh.
+
+The retired `chatId` schema remains as `LEGACY_DEFINITIONS` in [src/tools/appToolNames.js](../../../src/tools/appToolNames.js), deliberately outside `TOOL_NAMES`. It is never advertised, never appears in tool families, chat selection or the action→name map, and it keeps the one-time migration in [src/migrateAppTools.js](../../../src/migrateAppTools.js) rewriting an old `mouaif:working_folder` permission row onto the live definition.
+
 - `src/chatWorkingFolder.js` validates explicit real directory paths against the project picker's home boundary and creates empty folders without Git dependencies or child-process calls. Unchanged chats retain the existing file-tool sandbox, including support for temporary projects outside home. Missing selected folders fail rather than falling back.
 - Default folders are `.mouaif/workspaces/<chatId>`, and creating one is opt-in: `change()` refuses with `EOFF` unless the resolved settings set `autoWorkspace` (`false` in `src/settings.js` DEFAULTS). The project switch is a row in Settings → Project → General (`sp-auto-workspace`); the app-level default is a row in Settings → App defaults → Chat defaults (`sd-auto-workspace`); the server allowlists `autoWorkspace` in `CLIENT_SETTINGS_KEYS`. The project value rides the project payload, which is sent whole. The switch is deliberately NOT on the tool-tree row: a 44px control cannot fit a 26px dense tree row without changing shared tree layout (an earlier attempt did exactly that and was reverted in `d166fe4c`). An unreadable settings store counts as off. Explicit `directory` strings never create anything and never consult the switch. The parent chain is preflighted (redirected state/workspace symlink parents are rejected before creating children), then missing parents and the empty target are created. `prune()` removes newly created directories after a creation error, innermost first and only while empty, so pre-existing work survives. A pre-aborted call creates nothing.
 - All projects receive an empty folder regardless of Git availability or repository state. Existing directories, including externally prepared worktrees, are reused unchanged; symlink targets and files are rejected. The legacy `branch` result stays `null`. Per-chat locks reject overlapping folder changes; shared-parent creation tolerates concurrent chats.
@@ -29,4 +47,4 @@ npm run build:web
 - File reads, grouped reads and both search backends receive `settingsProjectDir` for redaction. Search/containment still uses the working root. The existing composer shell route resolves the same folder after authorization and before opening NDJSON output.
 - `describeChange()` produces a side-effect-free, user-facing summary before authorization: the action, chat title then ID, folder, and effect on that chat's file/shell tools. Separate-folder approvals explain empty-folder creation and that project files are not copied; implementation details such as Git do not appear. `src/ai-stream.js` passes it through the existing authorization summary field so live and recovered pending approvals agree. `frontend/src/components/chat/cards.js` shows a **Change working folder** heading, that summary and the project path instead of a raw tool identifier and irrelevant shell timeout.
 - `frontend/src/toolGroups.js` places the tool in the shared Chats tree. `frontend/src/components/chat/meta.js` synchronizes successful changes (including nested/follower results) and displays the folder below the title; long paths wrap on mobile.
-- Workspace cleanup is intentionally manual; deleting a chat or resetting the folder never discards work. MCP, editor, project CLI, Git UI, tags, agent instructions and skill configuration retain original project scope. Concurrent subagents share a folder and should not change it during parallel edits.
+- Workspace cleanup is intentionally manual; deleting a chat or resetting the folder never discards work. MCP, editor, project CLI, Git UI, tags, agent instructions and skill configuration retain original project scope. Concurrent subagents share their starting folder unless they select different directories; a run's folder change never redirects its parent or siblings.

@@ -18,11 +18,26 @@ Return this chat to the original project folder.
 
 The tool appears under **Chats** in the chat Tools card, composer tools popup, and Settings → Project → Tools. It inherits the Chats authorization family and supports its own Off / Ask / Allow override. Unconfigured permissions default to Ask: the model's call still needs normal tool approval, not a separate product question. Off or unselected tools cannot be used. This is prompt guidance, not automatic folder creation when a chat opens; chats use the original project until the tool succeeds. The Chat profile has no coding system guidance, but the tool description still explains the opt-in and the `EOFF` result.
 
+### The tool owns its chat
+
+The tool takes no `chatId` argument. Which chat it acts on is ambient server context (the running chat), never model input, so the model cannot retarget another conversation by guessing an id. A call that still passes one is refused with `EBADINPUT` rather than silently redirecting, and a call outside any chat fails with a clear error instead of picking a chat.
+
+### Subagents use their own folder
+
+A delegated run gets independent working-folder state rather than changing the parent chat's. The run starts in whatever folder the parent chat is using, and a `change_working_folder` call from inside the run switches the run alone. Siblings share the same starting directory unless they explicitly select different existing folders; separate state does not automatically create isolated checkouts.
+
+Inside a run the `directory` argument means the same thing it does for a chat — an existing folder — but it resolves against the folder the run **started** in, not the project root and not the run's current folder. A fixed anchor is what keeps one argument meaning one folder; resolving against the current folder would make `sub-checkout` mean `sub-checkout` on the first call and `sub-checkout/sub-checkout` on the next. Omitting `directory` (or passing `""`, `false`, or `null`) returns the run to the folder it started in.
+
+A run never creates a folder: `created` is always `false` for it, and preparing a checkout stays a separately authorized shell call. There is no default-workspace branch inside a run, because a run already has a folder to work in and `.mouaif/workspaces/<chatId>` names a chat, not a run.
+
+A run's folder is live process state, not chat metadata: it belongs to the run, is dropped when the run settles, and never appears in chat storage. The tool's approval card names the run and the parent chat it was delegated from, and describes the effect as applying to the run, because the parent conversation's folder is untouched.
+
+Permissions, approval decisions, pending-request recovery, cancellation, tasks and tools such as `get_chat` and `list_chat_attachments` keep using the real parent chat. `attach_chat_image` reads from the run's current folder and saves into the target chat. If the selected parent folder is missing, delegation fails before launching the nested model instead of silently running in the original project. A folder that disappears during a run also fails on the next local-tool call.
+
 ### Arguments
 
 | Argument | Meaning |
 | --- | --- |
-| `chatId` | Target chat; omitted means the current chat. |
 | `directory: "packages/my-feature"` | Use an existing directory relative to the original project, not the previous working folder. |
 | `directory: "/absolute/path"` | Use an existing absolute directory within the normal filesystem boundary. |
 | `directory: ""` or `"."` | Return to the original project folder. |
@@ -76,6 +91,6 @@ Git setup respects shell authorization and denied operations. Uncommitted and un
 
 - Chat storage, models, settings, permissions, agent instructions, skills, tags, traces, and MCP connections remain in the original project. Project redaction rules continue to apply to workspace-relative reads and searches. This is not a security sandbox.
 - Missing or removed working folders fail instead of silently sending tools back to the original project.
-- Subagents share the chat's working folder: change it before starting parallel delegates. Already-running operations keep their existing directory.
+- Subagents get independent folder state. A delegated run starts in the parent chat's folder, and `change_working_folder` called by a subagent moves **that run only** — the parent and siblings keep their folders. Parallel delegates still share one tree until they select different directories. Run folders live for the run: when it finishes, its folder is forgotten, and a stale run id fails instead of falling back to the project. Already-running operations keep their existing directory.
 - Persistent project CLI sessions, editor browsing, and the Git UI remain project-scoped.
 - The existing chat APIs expose `workingDir`. Composer shell requests continue taking the original `projectDir` and `chatId`; no new REST endpoint is needed.

@@ -1,8 +1,14 @@
 'use strict';
 
 // One-time storage migration only. The live tool paths use ordinary names.
-const { DEFINITIONS, TOOL_NAMES } = require('./tools/appToolNames.js');
-const ACTION_TO_NAME = Object.fromEntries(TOOL_NAMES.map((name) => [DEFINITIONS[name].action, name]));
+const { DEFINITIONS, LEGACY_DEFINITIONS } = require('./tools/appToolNames.js');
+// Live tools plus the retired shapes, so an old `mouaif:working_folder`
+// permission row still maps onto `change_working_folder` — see
+// LEGACY_DEFINITIONS in appToolNames.js.
+const MIGRATABLE = { ...LEGACY_DEFINITIONS, ...DEFINITIONS };
+const MIGRATABLE_NAMES = Object.keys(MIGRATABLE);
+const TOOL_NAMES = Object.keys(DEFINITIONS);
+const ACTION_TO_NAME = Object.fromEntries(MIGRATABLE_NAMES.map((name) => [MIGRATABLE[name].action, name]));
 
 function selection(value) {
   if (!Array.isArray(value)) return value;
@@ -17,8 +23,8 @@ function permissions(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const next = { ...value };
   const family = value.mouaif;
-  for (const name of TOOL_NAMES) {
-    const key = 'mouaif:' + DEFINITIONS[name].action;
+  for (const name of MIGRATABLE_NAMES) {
+    const key = 'mouaif:' + MIGRATABLE[name].action;
     const legacy = family?.mode === 'off' ? family : (value[key] || family);
     if (legacy && !Object.prototype.hasOwnProperty.call(next, name)) next[name] = { ...legacy };
     delete next[key];

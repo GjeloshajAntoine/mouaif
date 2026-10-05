@@ -13,9 +13,12 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 - **Working-folder changes no longer manage Git** — default workspaces are empty directories, even inside a repository. Git isolation is coding-prompt guidance carried out through separately authorized shell calls. Existing folders and externally prepared worktrees are reused unchanged; the legacy `branch` result stays `null`.
 - **Explicit directory approvals** — **Change working folder** cards explain where files read or edited and commands run for the named chat will work, including recovered pending approvals. Creating a separate folder is described as starting empty, without copying project files; implementation details stay out of the approval.
+- **Working-folder tool owns its chat** — `change_working_folder` no longer takes a `chatId` argument. The chat is ambient server context, so the model cannot retarget another conversation by passing one; a spurious `chatId` is refused with `EBADINPUT`. The retired schema is kept only for the one-time migration of existing permission rows.
+- **Subagents get their own working-folder state** — a delegated run starts in the parent chat's folder and can switch it without affecting the parent conversation or its same-turn siblings. Siblings still share a checkout until they explicitly select different directories. `directory` resolves against the folder the run started in, so the same argument always names the same folder, and a run never creates one (`created` stays `false`). Run folders are live process state for that run, never chat metadata, and are dropped when the run settles.
 
 ### Fixed
 
+- **Delegated folder identity** — subagents retain the real parent chat for permissions, approval decisions, pending recovery, cancellation, tasks and chat tools. Only local folder operations use the separate run id; attachment reads follow the run's folder. Missing selected folders fail instead of silently launching a delegate in the original project.
 - **Native tools now work on Azure, Mistral, Groq, and DeepSeek** — the
   streaming loop's advertisement gate named only `openai-compatible`,
   `openrouter`, and `github-copilot`, so a chat on any of the four cloud

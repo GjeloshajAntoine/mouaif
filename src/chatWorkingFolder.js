@@ -25,6 +25,20 @@ function resolve(projectDir, chatId) {
   return chat && chat.workingDir ? safeDirectory(chat.workingDir) : require('./tools/files.js').resolveSandbox(projectDir);
 }
 
+// Resolve the folder for a tool call. A delegated run resolves its own
+// registered folder (see registerRun); a chat resolves its stored folder.
+// This is the single entry point tool dispatch uses, so a subagent can never
+// fall back to the parent chat's directory or to the project root by accident
+// — an unknown run id fails like a missing folder does.
+function resolveForCall(projectDir, chatId, workspaceChatId) {
+  if (workspaceChatId) {
+    const store = runStoreFor(workspaceChatId);
+    if (!store) throw err('ENOTFOUND', 'This subagent run is no longer active');
+    return require('./tools/files.js').resolveSandbox(store.current);
+  }
+  return resolve(projectDir, chatId);
+}
+
 // Does this project allow creating the default workspace folder? The
 // resolved settings are defaults -> app -> project, so a project (or the app
 // default) that never sets `autoWorkspace` resolves to the `false` floor in
@@ -93,11 +107,124 @@ async function createDefaultWorkspace(root, chatId) {
   return { workingDir: safeDirectory(target), branch: null, created };
 }
 
+// ---- Per-subagent-run working folders ---------------------------------
+// A delegated run carries the PARENT chat's id (approvals, images, tasks and
+// the transcript all key off it), so without this it would resolve the
+// parent's folder and could retarget the parent conversation with a folder
+// change. A run instead registers its own folder under a synthetic id of the
+// form `subagent:<runId>`, gives the nested stream that id separately as
+// `opts.workspaceChatId`, and the resolver below returns the run's folder.
+// `opts.chatId` stays the real parent chat for all chat-scoped subsystems.
+//
+// The store is deliberately module-global rather than keyed by that
+// transcript-free id: it is process state for a live run only, cleared in the
+// nested run's cleanup. Nothing here touches the chat database, so the
+// synthetic id can never become a chat record or leak into chat storage.
+//
+// Each run captures the parent's current folder when it starts, then reads
+// its own current folder live on every local tool dispatch. Checkouts stay
+// plain directories: this module never runs Git and never prepares, copies,
+// merges or deletes a worktree. Siblings share a starting directory unless
+// they explicitly select different existing folders.
+const runStores = new Map();
+let runSeq = 0;
+
+// Register a folder for one delegated run. Run ids are unique process-wide,
+// so the store is keyed by id alone: the caller that resolves a folder (tool
+// dispatch, holding the original project dir) and the caller that registered
+// it (the nested launch, holding the parent's folder) need not agree on a
+// root. `root` is the folder the run starts in — the parent chat's resolved
+// folder — and it is also the fixed anchor a `directory` argument resolves
+// against, so the same argument always means the same folder.
+function registerRun(root, workspace, parentChatId) {
+  const runId = 'run-' + (++runSeq);
+  runStores.set(runId, {
+    root: workspace.root,
+    current: workspace.current,
+    // The chat the run was delegated from. Not used for resolution — every
+    // `chatId`-scoped subsystem already keeps using the parent id — but the
+    // approval card has nothing else to name, since dispatch only knows the
+    // run id. Without it the card would say the run was delegated from itself.
+    parentChatId: typeof parentChatId === 'string' && parentChatId.trim() ? parentChatId.trim() : null
+  });
+  return { runId, chatId: 'subagent:' + runId };
+}
+
+// Forget a finished run. Called from the nested run's cleanup, so a long
+// session does not accumulate one entry per delegation.
+function clearRun(runId) {
+  runStores.delete(String(runId));
+}
+
+function isRunChatId(chatId) {
+  return typeof chatId === 'string' && chatId.startsWith('subagent:run-');
+}
+
+function runStoreFor(chatId) {
+  if (!isRunChatId(chatId)) return null;
+  return runStores.get(String(chatId).slice('subagent:'.length)) || null;
+}
+
+// Switch a run's folder. A run never creates a folder: `created` is always
+// false, because preparing a checkout is a separately authorized shell call
+// and a run already has a folder to work in.
+//
+// `directory` resolves against the run's START folder — captured when the run
+// was registered — not against its current folder and not against the project
+// root. A fixed anchor is what keeps one argument meaning one folder: with the
+// current folder as the anchor, "pkg" would mean `pkg` on the first call and
+// `pkg/pkg` on the next. It also keeps a relative path inside the tree the run
+// was given. An absolute directory is accepted on the same home-boundary terms
+// the chat tool uses.
+//
+// Omitting `directory` (or passing false/null/"") returns the run to its start
+// folder. There is deliberately no default-workspace branch here: a run has no
+// `.mouaif/workspaces/<chatId>` counterfactual, and this tool is not the way a
+// subagent acquires a checkout.
+function changeRun(root, chatId, directory, signal) {
+  const store = runStoreFor(chatId);
+  if (!store) throw err('ENOTFOUND', 'This subagent run is no longer active');
+  if (signal && signal.aborted) throw err('EABORTED', 'Working folder change cancelled');
+  if (directory === undefined || directory === false || directory === null || directory === '') {
+    store.current = require('./tools/files.js').resolveSandbox(store.root);
+    return { workingDir: store.current, created: false };
+  }
+  if (typeof directory !== 'string') {
+    throw err('EBADINPUT', 'directory must be a string in a subagent run');
+  }
+  store.current = safeDirectory(path.resolve(store.root, directory));
+  return { workingDir: store.current, created: false };
+}
+
 // Approval text is computed without creating folders or changing the chat.
 // Stored as the authorization summary so live and recovered cards agree.
-function describeChange(projectDir, currentChatId, args = {}) {
-  const chatId = typeof args.chatId === 'string' && args.chatId.trim()
-    ? args.chatId.trim().slice(0, 128) : currentChatId;
+function describeChange(projectDir, currentChatId, args = {}, workspaceChatId) {
+  const chatId = workspaceChatId || currentChatId;
+  // A delegated run approves the same tool, but it has no chat record of its
+  // own: its folder is live process state. The card must say so instead of
+  // naming the parent chat as the target, which would claim the parent
+  // conversation is about to be redirected.
+  if (isRunChatId(chatId)) {
+    const store = runStoreFor(chatId);
+    const directory = args.directory;
+    // The run's start folder is the anchor, matching changeRun exactly: this
+    // preview must name the same destination the call would use.
+    const anchor = store ? store.root : null;
+    const wantsDefault = directory === undefined || directory === false || directory === null || directory === '';
+    const destination = wantsDefault ? (anchor || '(unavailable)')
+      : typeof directory === 'string' ? path.resolve(anchor || safeDirectory(projectDir), directory) : '(invalid directory)';
+    const action = wantsDefault ? 'Return the subagent to the folder it started in' : 'Use a different folder';
+    // The run id is separate from the real chat id used for approvals.
+    const parentId = store && store.parentChatId ? store.parentChatId : currentChatId;
+    const parent = parentId ? chats.getChat(projectDir, parentId) : null;
+    const parentLabel = parent && parent.title ? parent.title + ' (' + parentId + ')' : String(parentId || 'unknown chat');
+    // No "starts empty; project files are not copied" wording: a run only ever
+    // selects an existing folder, so the card must not imply one is created.
+    const effect = 'Files read or edited and commands run by this subagent run will use this folder. '
+      + 'The parent chat keeps its own folder; this selects an existing folder and does not create, move or copy files.';
+    return [action, 'Subagent run: ' + chatId, 'Delegated from: ' + parentLabel,
+      'Folder: ' + destination, '', effect].join('\n');
+  }
   const chat = chats.getChat(projectDir, chatId);
   const root = safeDirectory(projectDir);
   const directory = args.directory;
@@ -156,4 +283,4 @@ async function change(projectDir, chatId, directory, signal) {
   }
 }
 
-module.exports = { resolve, change, describeChange };
+module.exports = { resolve, resolveForCall, change, changeRun, describeChange, registerRun, clearRun, isRunChatId };

@@ -53,6 +53,8 @@ async function modelCalls(chat, calls, decision) {
 
 async function main() {
   assert.deepEqual(SPECS.change_working_folder.function.parameters.properties.directory.type, ['string', 'boolean', 'null']);
+  // The advertised schema carries no chatId: the model cannot name a chat.
+  assert.deepEqual(Object.keys(SPECS.change_working_folder.function.parameters.properties), ['directory']);
   assert.equal(authz.effectiveConfig(projectDir, 'change_working_folder').mode, 'ask');
   git('init', '-q');
   git('config', 'user.email', 'fixture@example.test');
@@ -70,7 +72,13 @@ async function main() {
   assert.equal(chats.getChat(projectDir, chat.id).workingDir, null, 'existing databases receive the additive migration');
   assert.equal(chats.getChat(projectDir, other.id).id, other.id, 'migration preserves existing chats');
   assert.equal(workspace.resolve(projectDir, chat.id), projectDir);
+  // The tool owns its chat: the chat id is ambient server context, so the
+  // target comes from `opts`, never from an argument.
   const call = (args, chatId = chat.id) => runAppTool('change_working_folder', args, { projectDir, chatId });
+  // A chat id is ambient context owned by the server. A spurious argument is
+  // refused (never silently retargeting), and no current chat is a clear error.
+  assert.equal((await runAppTool('change_working_folder', { chatId: other.id, directory: 'subfolder' }, { projectDir, chatId: chat.id })).result.code, 'EBADINPUT');
+  assert.equal((await runAppTool('change_working_folder', {}, { projectDir })).result.code, 'EBADINPUT');
   assert.equal((await call({ directory: 1 })).result.code, 'EBADINPUT');
   assert.equal((await call({}, 'missing')).result.code, 'ENOTFOUND');
   assert.equal((await call({ directory: 'missing' })).result.code, 'ENOENT');
@@ -117,8 +125,7 @@ async function main() {
     [{ directory: null }, 'Use a separate folder', chat.id, path.join(projectDir, '.mouaif', 'workspaces', chat.id)],
     [{ directory: '' }, 'Return to the project folder', chat.id, projectDir],
     [{ directory: '.' }, 'Return to the project folder', chat.id, projectDir],
-    [{ directory: home }, 'Use a different folder', chat.id, home],
-    [{ chatId: other.id, directory: 'subfolder' }, 'Use a different folder', other.id, path.join(projectDir, 'subfolder')]
+    [{ directory: home }, 'Use a different folder', chat.id, home]
   ];
   for (const [args, action, targetId, destination] of approvalCases) {
     const approval = await modelCalls(chat, [{ name: 'change_working_folder', args }], 'deny');
@@ -200,6 +207,161 @@ async function main() {
   assert.equal(delegated.results[0].ok, true);
   const nestedRead = delegated.results[0].result.toolEvents.find((e) => e.name === 'tool_result' && e.data.name === 'read_file');
   assert.ok(nestedRead.data.result.body.startsWith('workspace edit'), 'delegated tools inherit the live folder');
+  // A delegated run gets its OWN folder, not the parent chat's: it starts in
+  // the parent's folder, and can switch within it without retargeting the
+  // parent conversation, whose stored folder must stay untouched.
+  authz.setAuthorization(projectDir, { tools: {
+    subagent: { mode: 'allow' }, change_working_folder: { mode: 'allow' }, shell: { mode: 'allow' }, file: { mode: 'allow' }
+  } });
+  fs.mkdirSync(path.join(target, 'sub-checkout'));
+  const runEventsAll = [];
+  const runNested = (calls, onAuthorization) => {
+    runEventsAll.length = 0;
+    let nestedRound = 0;
+    let parentRound = 0;
+    global.fetch = async (_url, init) => {
+      const body = JSON.parse(init.body);
+      // The nested run's system message may be a string or a content-block
+      // array (agent personas), so match on the serialized transcript.
+      const isNested = JSON.stringify(body.messages).includes('focused subagent');
+      let delta;
+      if (isNested) {
+        const next = calls[nestedRound++];
+        delta = next ? { tool_calls: [{ index: 0, id: 'nested-' + ++id, type: 'function',
+          function: { name: next.name, arguments: JSON.stringify(next.args) } }] } : { content: 'nested done' };
+      } else {
+        delta = parentRound++ === 0
+          ? { tool_calls: [{ index: 0, id: 'parent-' + ++id, type: 'function',
+            function: { name: 'subagent', arguments: JSON.stringify({ task: 'Change the run folder' }) } }] }
+          : { content: 'parent done' };
+      }
+      return new Response('data: ' + JSON.stringify({ choices: [{ delta }] }) + '\n\ndata: [DONE]\n\n',
+        { headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    return streamChat({
+      model: { id: 'fixture', provider: 'openai-compatible', baseUrl: 'http://fixture/v1' },
+      projectDir, chatId: chat.id, chat, promptSize: 'average',
+      enabledTools: [...new Set(['subagent', 'change_working_folder', 'shell', ...calls.map((c) => c.name)])],
+      messages: [{ role: 'user', content: 'Delegate a folder change' }],
+      onEvent(name, data) {
+        runEventsAll.push({ name, data });
+        if (name === 'authorization_required') {
+        assert.equal(data.chatId, chat.id, 'nested approvals belong to the real parent chat');
+        const pending = authz.listPending(projectDir, chat.id).find((request) => request.callId === data.callId);
+        assert.ok(pending, 'nested approvals are recoverable from the parent chat');
+        assert.equal(pending.summary, data.summary);
+        if (onAuthorization) onAuthorization(data);
+        else authz.recordDecision(projectDir, chat.id, data.callId, 'allow-once');
+        }
+      }
+    });
+  };
+  const runOut = await runNested([
+    { name: 'change_working_folder', args: { directory: 'sub-checkout' } },
+    { name: 'shell', args: { cmd: 'pwd' } },
+    { name: 'change_working_folder', args: {} },
+    { name: 'shell', args: { cmd: 'pwd' } }
+  ]);
+  assert.equal(runOut.ok, true, JSON.stringify(runOut.error));
+  const runEvents = runEventsAll.find((e) => e.name === 'tool_result' && e.data.name === 'subagent')
+    .data.result.toolEvents.filter((e) => e.name === 'tool_result');
+  const runFolder = runEvents.find((e) => e.data.name === 'change_working_folder').data.result;
+  const runPwds = runEvents.filter((e) => e.data.name === 'shell').map((e) => e.data.result.stdout.trim());
+  assert.equal(runFolder.ok, true, JSON.stringify(runFolder));
+  assert.equal(runFolder.workingDir, path.join(target, 'sub-checkout'), 'the run resolves its own folder');
+  assert.deepEqual(runFolder.updated, [], 'a run never writes chat metadata');
+  // A run never creates a folder, so `created` must stay false even though the
+  // run moved: it selects an existing directory and prepares nothing.
+  assert.equal(runFolder.created, false, 'a run never reports creating a folder');
+  assert.deepEqual(runPwds, [path.join(target, 'sub-checkout'), target], 'a run resets to its start folder, not a new workspace');
+  // The anchor is the run's START folder and never moves, so the same relative
+  // argument always names the same directory (with the current folder as the
+  // anchor, "sub-checkout" would mean sub-checkout/sub-checkout on a second
+  // call). Checked on a live registration, since a settled run is forgotten.
+  const anchorRun = workspace.registerRun(target, { root: target, current: target }, chat.id);
+  const firstCall = (await runAppTool('change_working_folder', { directory: 'sub-checkout' }, { projectDir, chatId: chat.id, workspaceChatId: anchorRun.chatId })).result;
+  const secondCall = (await runAppTool('change_working_folder', { directory: 'sub-checkout' }, { projectDir, chatId: chat.id, workspaceChatId: anchorRun.chatId })).result;
+  assert.equal(firstCall.workingDir, path.join(target, 'sub-checkout'));
+  assert.equal(secondCall.workingDir, path.join(target, 'sub-checkout'), 'the anchor is fixed, not the current folder');
+  assert.equal(firstCall.created, false);
+  assert.equal(secondCall.created, false, 'a run never reports creating a folder');
+  // A card shown for this call names the same folder the call would use, and
+  // the parent chat the run came from — not the run itself.
+  const card = workspace.describeChange(projectDir, chat.id, { directory: 'sub-checkout' }, anchorRun.chatId);
+  assert.ok(card.includes('Folder: ' + path.join(target, 'sub-checkout')), 'the preview matches the call');
+  assert.ok(card.includes('Delegated from: '), card);
+  assert.equal(card.includes('Delegated from: ' + anchorRun.chatId), false, 'the card does not name the run as its own parent');
+  assert.equal(/starts empty|created/i.test(card), false, 'a run card never promises folder creation');
+  workspace.clearRun(anchorRun.runId);
+  assert.equal(chats.getChat(projectDir, chat.id).workingDir, target, 'the parent chat keeps its folder');
+  assert.equal(fs.existsSync(path.join(projectDir, '.mouaif', 'workspaces')), true);
+  // A completed run is forgotten: its synthetic id no longer resolves, so a
+  // stale or hand-crafted id fails instead of falling back to the project.
+  assert.equal(workspace.isRunChatId(runFolder.workingDir), false);
+  assert.equal((await runAppTool('change_working_folder', {}, { projectDir, chatId: chat.id, workspaceChatId: 'subagent:run-nope' })).result.code, 'ENOTFOUND');
+  assert.throws(() => workspace.resolveForCall(projectDir, chat.id, anchorRun.chatId), { code: 'ENOTFOUND' }, 'settled runs never fall back to the parent');
+
+  // Chat permissions and approval sessions must never use the synthetic id.
+  // Project Allow + chat Ask is the regression that otherwise executes a
+  // nested shell without asking the user.
+  authz.setChatAuthorization(projectDir, chat.id, { native: { shell: { mode: 'ask' }, chats: { mode: 'ask' } } });
+  assert.equal((await runNested([
+    { name: 'change_working_folder', args: { directory: 'sub-checkout' } },
+    { name: 'shell', args: { cmd: 'pwd' } }
+  ])).ok, true);
+  const asked = runEventsAll.filter((e) => e.name === 'authorization_required');
+  assert.deepEqual(asked.map((e) => e.data.tool), ['change_working_folder', 'shell']);
+  assert.ok(asked[0].data.summary.includes('Subagent run: subagent:run-'));
+  assert.ok(asked[0].data.summary.includes('Folder: ' + path.join(target, 'sub-checkout')));
+  assert.ok(asked[0].data.summary.includes('Delegated from: Keep folder (' + chat.id + ')'));
+  const nestedResults = () => runEventsAll.find((e) => e.name === 'tool_result' && e.data.name === 'subagent')
+    .data.result.toolEvents.filter((e) => e.name === 'tool_result').map((e) => e.data);
+  assert.equal(nestedResults()[1].result.stdout.trim(), path.join(target, 'sub-checkout'));
+  await runNested([{ name: 'shell', args: { cmd: 'pwd' } }], (data) => {
+    authz.recordDecision(projectDir, chat.id, data.callId, 'deny');
+  });
+  assert.equal(nestedResults()[0].ok, false, 'denying from the parent prevents the nested shell');
+  await runNested([{ name: 'shell', args: { cmd: 'pwd' } }], () => {
+    assert.equal(authz.cancelSession(projectDir, chat.id), 1, 'Stop settles the nested authorization wait');
+  });
+  assert.equal(nestedResults()[0].ok, false);
+  assert.deepEqual(authz.listPending(projectDir, chat.id), []);
+  authz.setChatAuthorization(projectDir, chat.id, { native: { shell: { mode: 'off' } } });
+  await runNested([{ name: 'shell', args: { cmd: 'pwd' } }]);
+  assert.equal(nestedResults()[0].ok, false, 'chat Off remains enforced in delegates');
+  assert.equal(runEventsAll.some((e) => e.name === 'authorization_required'), false);
+  authz.setChatAuthorization(projectDir, chat.id, { native: { shell: null, chats: null } });
+
+  // App tools keep the real ambient chat, but attachment paths use the run's
+  // current folder even when an explicit target chat is supplied.
+  fs.writeFileSync(path.join(target, 'sub-checkout', 'run-shot.png'), image);
+  await runNested([
+    { name: 'change_working_folder', args: { directory: 'sub-checkout' } },
+    { name: 'get_chat', args: {} },
+    { name: 'list_chat_attachments', args: {} },
+    { name: 'attach_chat_image', args: { path: 'run-shot.png', chatId: chat.id } },
+    { name: 'task', args: { action: 'create', title: 'Delegated task' } }
+  ]);
+  const ambient = nestedResults();
+  assert.ok(ambient.every((e) => e.ok), JSON.stringify(ambient));
+  assert.equal(ambient[1].result.chat.id, chat.id);
+  assert.equal(ambient[2].result.chatId, chat.id);
+  assert.equal(ambient[3].result.chatId, chat.id);
+  assert.equal(require('../src/tools/task.js').dispatchTask(chat.id, { action: 'list' }).result.tasks[0].title, 'Delegated task');
+  require('../src/tools/task.js').clearChat(chat.id);
+  chats.updateChat(projectDir, chat.id, { draftAttachments: [] });
+  assert.equal(chats.getChat(projectDir, chat.id).workingDir, target);
+
+  // A live run also fails if its folder disappears, including a reset to its
+  // now-missing starting folder. Validation must not silently change roots.
+  const disappearing = path.join(home, 'disappearing-run');
+  fs.mkdirSync(disappearing);
+  const disappearingRun = workspace.registerRun(disappearing, { root: disappearing, current: disappearing }, chat.id);
+  fs.rmdirSync(disappearing);
+  assert.throws(() => workspace.resolveForCall(projectDir, chat.id, disappearingRun.chatId), { code: 'ENOENT' });
+  const disappearedReset = await runAppTool('change_working_folder', {}, { projectDir, chatId: chat.id, workspaceChatId: disappearingRun.chatId });
+  assert.equal(disappearedReset.result.code, 'ENOENT');
+  workspace.clearRun(disappearingRun.runId);
   fs.writeFileSync(path.join(target, 'new-shot.png'), image);
   assert.equal((await runAppTool('attach_chat_image', { path: 'new-shot.png' }, { projectDir, chatId: chat.id })).ok, true);
   assert.equal(chats.getChat(projectDir, chat.id).draftAttachments.length, 1, 'images are read in workspace but saved to original chat');
@@ -221,7 +383,9 @@ async function main() {
   assert.equal((await call({ directory: home })).result.workingDir, home);
   assert.equal((await call({ directory: '' })).result.workingDir, projectDir);
   assert.equal(chats.getChat(projectDir, chat.id).workingDir, null);
-  assert.equal((await call({ chatId: other.id })).ok, true, 'explicit target creates its own workspace');
+  // `other` gets its own default workspace by acting as the calling chat,
+  // which is the only way the tool now selects a chat.
+  assert.equal((await call({}, other.id)).ok, true, 'each chat creates its own workspace');
   chats.deleteChat(projectDir, other.id);
   assert.equal(fs.existsSync(path.join(projectDir, '.mouaif', 'workspaces', other.id)), true, 'deleting chats never deletes work');
 
@@ -229,6 +393,12 @@ async function main() {
   chats.updateChat(projectDir, deletedFolder.id, { workingDir: path.join(home, 'no-longer-present') });
   const missingFolder = await modelCalls(deletedFolder, [{ name: 'shell', args: { cmd: 'pwd' } }]);
   assert.equal(missingFolder.results[0].ok, false, 'missing folder fails rather than writing to the original project');
+  const missingDelegate = await modelCalls(deletedFolder, [
+    { name: 'subagent', args: { task: 'Run pwd in the selected folder' } }
+  ]);
+  assert.equal(missingDelegate.results[0].ok, false, 'delegation fails when the parent folder is missing');
+  assert.equal(missingDelegate.results[0].result.error.code, 'ENOENT');
+  assert.equal(missingDelegate.bodies.length, 2, 'no nested provider request or tool execution occurs');
   const conflict = chats.createChat(projectDir, {});
   fs.mkdirSync(path.join(projectDir, '.mouaif', 'workspaces', conflict.id));
   fs.writeFileSync(path.join(projectDir, '.mouaif', 'workspaces', conflict.id, 'keep.txt'), 'keep');

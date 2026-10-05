@@ -291,6 +291,21 @@ function resolveChatId(args, opts) {
   throw typedError('EBADINPUT', 'chatId is required (no current chat to default to)');
 }
 
+// Resolve the chat a context-bound tool acts on. The chat id is ambient
+// state owned by the server, never a model-supplied argument: a model that
+// passes the wrong id would silently retarget another chat, and a nested
+// subagent run carries the PARENT chat's id, so an argument could redirect
+// the parent conversation. There is no `args.chatId` fallback here, and the
+// refusal names no chat id.
+function requireCurrentChatId(args, opts) {
+  if (trimString(args && args.chatId, 128)) {
+    throw typedError('EBADINPUT', 'change_working_folder operates on the calling chat; it takes no chatId argument');
+  }
+  const current = opts && typeof opts.chatId === 'string' ? opts.chatId.trim() : '';
+  if (current) return current;
+  throw typedError('EBADINPUT', 'No current chat: change_working_folder must run inside a chat');
+}
+
 function requireChat(projectDir, chatId) {
   const chat = chats.getChat(projectDir, chatId);
   if (!chat) throw typedError('ENOTFOUND', 'chat not found: ' + chatId);
@@ -416,7 +431,13 @@ async function runChats(args, opts) {
   }
 
   if (action === 'working_folder') {
-    const chatId = resolveChatId(args, opts);
+    const chatId = requireCurrentChatId(args, opts);
+    // A delegated run is not a chat record: its folder is process state for
+    // the live run, so it switches there instead of writing chat metadata.
+    if (opts && opts.workspaceChatId) {
+    const run = require('../chatWorkingFolder.js').changeRun(projectDir, opts.workspaceChatId, args.directory, opts.signal);
+      return ok({ ok: true, projectDir, ...run, updated: [], chat: null });
+    }
     requireChat(projectDir, chatId);
     const { chat, ...workspace } = await require('../chatWorkingFolder.js').change(projectDir, chatId, args.directory, opts && opts.signal);
     return ok({ ok: true, projectDir, ...workspace, updated: ['workingDir'], chat: chatSummary(chat) });
@@ -566,7 +587,7 @@ async function runAttachments(args, opts) {
 
   const relPath = trimString(args.path, 4096);
   if (!relPath) throw typedError('EBADINPUT', 'path is required for action "attach"');
-  const workingDir = require('../chatWorkingFolder.js').resolve(projectDir, (opts && opts.chatId) || chatId);
+  const workingDir = require('../chatWorkingFolder.js').resolveForCall(projectDir, (opts && opts.chatId) || chatId, opts && opts.workspaceChatId);
   const loaded = await loadImageAttachment(workingDir, relPath);
   // Loading bytes yields to concurrent calls and composer saves. Re-read
   // after that await; keep validation, merge, and write synchronous.

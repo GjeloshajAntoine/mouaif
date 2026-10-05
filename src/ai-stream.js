@@ -236,7 +236,7 @@ async function runSingleToolCall(c, cx) {
       if (c.name === 'shell') summary = (args && args.cmd) || '';
       else if (c.name === 'subagent') summary = (args && args.task) || '';
       else if (c.name === 'change_working_folder') {
-      summary = require('./chatWorkingFolder.js').describeChange(opts.projectDir, opts.chatId, args);
+      summary = require('./chatWorkingFolder.js').describeChange(opts.projectDir, opts.chatId, args, opts.workspaceChatId);
       }
       else if (c.name === 'webpreview') {
         // Show the URL the model wants to open so the user can tell
@@ -642,8 +642,11 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   const convo = messages.slice();
   if (opts.projectDir && opts.chatId) {
     const current = require('./chats.js').getChat(opts.projectDir, opts.chatId);
-    if (current && current.workingDir) {
-      convo.unshift({ role: 'system', content: 'Chat working folder: ' + current.workingDir
+    const currentFolder = current && current.workingDir && (opts.workspaceChatId
+    ? require('./chatWorkingFolder.js').resolveForCall(opts.projectDir, opts.chatId, opts.workspaceChatId)
+    : current.workingDir);
+    if (currentFolder) {
+    convo.unshift({ role: 'system', content: 'Chat working folder: ' + currentFolder
         + '\nShell and file paths are relative to this folder. Chat storage, settings and permissions remain in the original project: ' + opts.projectDir });
     }
   }
@@ -1442,7 +1445,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     // settings, MCP connections, attachments inventory or chat persistence.
     let workingDir;
     if (name === 'shell' || require('./tools/files.js').isFileToolName(name)) {
-      try { workingDir = require('./chatWorkingFolder.js').resolve(callOpts.projectDir, callOpts.chatId); }
+      try { workingDir = require('./chatWorkingFolder.js').resolveForCall(callOpts.projectDir, callOpts.chatId, callOpts.workspaceChatId); }
       catch (e) {
         const result = { ok: false, code: e.code || 'EBADPATH', error: e.message };
         return { ok: false, content: JSON.stringify(result), result };
@@ -1510,7 +1513,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         const r = { error: { code: 'EMODULE', message: 'mouaif tool module unavailable: ' + (e.message || e) } };
         return { ok: false, content: JSON.stringify(r), result: r };
       }
-      return await mod.runAppTool(name, args, callOpts || {});
+    return await mod.runAppTool(name, args, callOpts || {});
     }
 
     // Native task tool. Manages structured tasks with subtasks, progress
@@ -1876,14 +1879,32 @@ return { ok: false, content: JSON.stringify(r), result: r };
       data: { chat: nestedMessages, agent: agentName || undefined, model: nestedModelRef }
       });
       }
-      const nested = await streamChat({
+      // Local tools use a per-run folder; every chat-scoped subsystem keeps
+      // the real parent chat id. Never fall back to the project when the
+      // selected folder is missing: delegation must fail before tools run.
+      let parentRoot;
+      try {
+      parentRoot = require('./chatWorkingFolder.js').resolveForCall(callOpts.projectDir, callOpts.chatId, callOpts.workspaceChatId);
+      } catch (e) {
+      const r = { error: { code: e.code || 'EBADPATH', message: e.message } };
+      return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      const runWorkspace = require('./chatWorkingFolder.js').registerRun(parentRoot, {
+      root: parentRoot, current: parentRoot
+      }, callOpts && callOpts.chatId);
+      let nested;
+      try {
+        nested = await streamChat({
       model: nestedModel,
       messages: nestedMessages,
-        signal,
-        projectDir: callOpts && callOpts.projectDir,
-        chatId: callOpts && callOpts.chatId,
-        // Inherit the parent's effective skill gates and per-skill opt-outs.
-        chat: callOpts && callOpts.chat,
+      signal,
+      projectDir: callOpts && callOpts.projectDir,
+      // Chat identity stays real for permissions, approvals and app tools.
+      // Only folder resolution/change consumes the separate run identity.
+      chatId: callOpts && callOpts.chatId,
+      workspaceChatId: runWorkspace.chatId,
+      // Inherit the parent's effective skill gates and per-skill opt-outs.
+      chat: callOpts && callOpts.chat,
       appSettings: callOpts && callOpts.appSettings,
 lifecycle: callOpts && callOpts.lifecycle,
 promptSize: callOpts && callOpts.promptSize,
@@ -1935,7 +1956,13 @@ promptSize: callOpts && callOpts.promptSize,
             });
           }
         }
-      });
+        });
+      } finally {
+        // Drop the run's folder registration as soon as it settles, so a long
+        // session does not accumulate one entry per delegation. The run's id
+        // is used nowhere else, so this is the only cleanup it needs.
+        require('./chatWorkingFolder.js').clearRun(runWorkspace.runId);
+      }
       let text = '';
       const nestedToolEvents = [];
       for (const ev of nestedEvents) {

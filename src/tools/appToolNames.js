@@ -7,7 +7,7 @@ const DEFINITIONS = Object.freeze({
   get_chat: { action: 'get', source: 'chats', description: 'Read a chat and optionally its recent messages. Defaults to the current chat.', keys: ['chatId', 'includeMessages', 'messageLimit'] },
   create_chat: { action: 'create', source: 'chats', description: 'Create a chat with an optional title, opening draft, and model selection.', keys: ['title', 'topic', 'providerId', 'modelId'] },
   update_chat: { action: 'update', source: 'chats', description: 'Update a chat’s title, draft, model, custom prompt, or prompt-size profile. Use search_models to find providerId/modelId; a model change applies to the next turn.', keys: ['chatId', 'title', 'draft', 'providerId', 'modelId', 'promptId', 'promptSize'], required: ['chatId'] },
-  change_working_folder: { action: 'working_folder', source: 'chats', description: 'Change a chat’s shell/file working folder. Pass an existing project-relative or absolute directory, or "" to reset to the original project. Omit directory (or pass false) only to create/reuse the default .mouaif/workspaces/<chatId> workspace (an empty folder, with no Git operations); that requires the project to have enabled "Allow automatic workspaces", is off by default, and returns EOFF when disabled. Never create a workspace for a question or review. Chat storage and permissions stay in the original project; uncommitted files are not copied.', keys: ['chatId', 'directory'] },
+  change_working_folder: { action: 'working_folder', source: 'chats', description: 'Change a chat’s shell/file working folder. Pass an existing project-relative or absolute directory, or "" to reset to the original project. Omit directory (or pass false) only to create/reuse the default .mouaif/workspaces/<chatId> workspace (an empty folder, with no Git operations); that requires the project to have enabled "Allow automatic workspaces", is off by default, and returns EOFF when disabled. Never create a workspace for a question or review. Chat storage and permissions stay in the original project; uncommitted files are not copied. The tool operates on its own chat: the chat id comes from the calling context, never from an argument. Inside a delegated subagent run the folder is that run’s own, directory strings resolve against it, and omitting directory returns the run to the folder it started in instead of creating a workspace.', keys: ['directory'] },
   search_models: { action: 'model_search', source: 'chats', description: 'Search project models and configured providers’ live chat catalogs. Returns providerId/modelId pairs for create_chat or update_chat, with bounded pagination and per-provider failures.', keys: ['query', 'providerId', 'limit', 'offset', 'includeLive'] },
   start_chat: { action: 'start', source: 'chats', description: 'Send content to an existing chat and start an AI response in the background using its selected model. Use create_chat first for a new chat. Returns a chat URL; follow it or use get_chat to read the response.', keys: ['chatId', 'content'], required: ['chatId', 'content'] },
   delete_chat: { action: 'delete', source: 'chats', description: 'Delete a chat and its transcript. Requires confirm: true.', keys: ['chatId', 'confirm'], required: ['chatId'] },
@@ -20,4 +20,14 @@ const DEFINITIONS = Object.freeze({
   get_app_info: { action: 'info', source: 'mouaif', description: 'Describe mouaif’s feature state and the native app tools.', keys: [] }
 });
 const TOOL_NAMES = Object.freeze(Object.keys(DEFINITIONS));
-module.exports = { DEFINITIONS, TOOL_NAMES };
+// Schemas that exist only so a retired shape still validates and migrates.
+// They are never advertised, never listed in TOOL_NAMES (so selection,
+// families and the action->name migration map stay legacy-free) and never
+// reachable through runAppTool. `change_working_folder` used to take a
+// `chatId` argument; the tool now owns its chat, and this row keeps
+// `migrateAppTools` rewriting the old `mouaif:working_folder` permission row
+// onto the live definition.
+const LEGACY_DEFINITIONS = Object.freeze({
+  change_working_folder: { action: 'working_folder', source: 'chats', description: 'Legacy schema for change_working_folder.', keys: ['chatId', 'directory'] }
+});
+module.exports = { DEFINITIONS, TOOL_NAMES, LEGACY_DEFINITIONS };
