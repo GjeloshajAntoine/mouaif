@@ -435,11 +435,11 @@ async function runChats(args, opts) {
     // A delegated run is not a chat record: its folder is process state for
     // the live run, so it switches there instead of writing chat metadata.
     if (opts && opts.workspaceChatId) {
-    const run = require('../chatWorkingFolder.js').changeRun(projectDir, opts.workspaceChatId, args.directory, opts.signal);
+    const run = require('../chatWorkingFolder.js').changeRun(projectDir, opts.workspaceChatId, args.directory, opts.signal, opts.workingFolderDestination);
       return ok({ ok: true, projectDir, ...run, updated: [], chat: null });
     }
     requireChat(projectDir, chatId);
-    const { chat, ...workspace } = await require('../chatWorkingFolder.js').change(projectDir, chatId, args.directory, opts && opts.signal);
+    const { chat, ...workspace } = await require('../chatWorkingFolder.js').change(projectDir, chatId, args.directory, opts && opts.signal, opts && opts.workingFolderDestination);
     return ok({ ok: true, projectDir, ...workspace, updated: ['workingDir'], chat: chatSummary(chat) });
   }
 

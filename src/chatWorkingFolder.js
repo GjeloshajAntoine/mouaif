@@ -34,7 +34,7 @@ function resolveForCall(projectDir, chatId, workspaceChatId) {
   if (workspaceChatId) {
     const store = runStoreFor(workspaceChatId);
     if (!store) throw err('ENOTFOUND', 'This subagent run is no longer active');
-    return require('./tools/files.js').resolveSandbox(store.current);
+    return runDirectory(store);
   }
   return resolve(projectDir, chatId);
 }
@@ -137,10 +137,21 @@ let runSeq = 0;
 // folder — and it is also the fixed anchor a `directory` argument resolves
 // against, so the same argument always means the same folder.
 function registerRun(root, workspace, parentChatId) {
+  // Only an inherited project outside home retains the legacy sandbox.
+  // A selected folder under home must keep the same guard as its chat,
+  // including after a directory is replaced by a symlink during the run.
+  let rootUsesSandbox = false;
+  try { projects.ensureSafeRoot(workspace.root); }
+  catch (e) {
+    if (e.code !== 'EOUTSIDE_HOME') throw e;
+    rootUsesSandbox = true;
+  }
   const runId = 'run-' + (++runSeq);
   runStores.set(runId, {
     root: workspace.root,
     current: workspace.current,
+    rootUsesSandbox,
+    currentUsesSandbox: rootUsesSandbox,
     // The chat the run was delegated from. Not used for resolution — every
     // `chatId`-scoped subsystem already keeps using the parent id — but the
     // approval card has nothing else to name, since dispatch only knows the
@@ -165,6 +176,18 @@ function runStoreFor(chatId) {
   return runStores.get(String(chatId).slice('subagent:'.length)) || null;
 }
 
+function runDirectory(store, start = false) {
+  const directory = start ? store.root : store.current;
+  const usesSandbox = start ? store.rootUsesSandbox : store.currentUsesSandbox;
+  return usesSandbox ? require('./tools/files.js').resolveSandbox(directory) : safeDirectory(directory);
+}
+
+function checkApprovedDirectory(directory, approvedDirectory) {
+  if (approvedDirectory !== undefined && directory !== approvedDirectory) {
+    throw err('ESTALE_PATH', 'Working folder destination changed since authorization; request approval again');
+  }
+}
+
 // Switch a run's folder. A run never creates a folder: `created` is always
 // false, because preparing a checkout is a separately authorized shell call
 // and a run already has a folder to work in.
@@ -181,24 +204,25 @@ function runStoreFor(chatId) {
 // folder. There is deliberately no default-workspace branch here: a run has no
 // `.mouaif/workspaces/<chatId>` counterfactual, and this tool is not the way a
 // subagent acquires a checkout.
-function changeRun(root, chatId, directory, signal) {
+function changeRun(root, chatId, directory, signal, approvedDirectory) {
   const store = runStoreFor(chatId);
   if (!store) throw err('ENOTFOUND', 'This subagent run is no longer active');
   if (signal && signal.aborted) throw err('EABORTED', 'Working folder change cancelled');
-  if (directory === undefined || directory === false || directory === null || directory === '') {
-    store.current = require('./tools/files.js').resolveSandbox(store.root);
-    return { workingDir: store.current, created: false };
-  }
-  if (typeof directory !== 'string') {
+  const wantsStart = directory === undefined || directory === false || directory === null || directory === '';
+  if (!wantsStart && typeof directory !== 'string') {
     throw err('EBADINPUT', 'directory must be a string in a subagent run');
   }
-  store.current = safeDirectory(path.resolve(store.root, directory));
+  const destination = wantsStart ? runDirectory(store, true) : safeDirectory(path.resolve(store.root, directory));
+  checkApprovedDirectory(destination, approvedDirectory);
+  store.current = destination;
+  store.currentUsesSandbox = wantsStart ? store.rootUsesSandbox : false;
   return { workingDir: store.current, created: false };
 }
 
-// Approval text is computed without creating folders or changing the chat.
-// Stored as the authorization summary so live and recovered cards agree.
-function describeChange(projectDir, currentChatId, args = {}, workspaceChatId) {
+// Resolve the destination and summary together, without creating folders or
+// changing state. The dispatcher keeps the canonical destination as server
+// context while authorization waits; runners recheck it before any mutation.
+function prepareChange(projectDir, currentChatId, args = {}, workspaceChatId) {
   const chatId = workspaceChatId || currentChatId;
   // A delegated run approves the same tool, but it has no chat record of its
   // own: its folder is live process state. The card must say so instead of
@@ -206,13 +230,11 @@ function describeChange(projectDir, currentChatId, args = {}, workspaceChatId) {
   // conversation is about to be redirected.
   if (isRunChatId(chatId)) {
     const store = runStoreFor(chatId);
+    if (!store) throw err('ENOTFOUND', 'This subagent run is no longer active');
     const directory = args.directory;
-    // The run's start folder is the anchor, matching changeRun exactly: this
-    // preview must name the same destination the call would use.
-    const anchor = store ? store.root : null;
     const wantsDefault = directory === undefined || directory === false || directory === null || directory === '';
-    const destination = wantsDefault ? (anchor || '(unavailable)')
-      : typeof directory === 'string' ? path.resolve(anchor || safeDirectory(projectDir), directory) : '(invalid directory)';
+    if (!wantsDefault && typeof directory !== 'string') throw err('EBADINPUT', 'directory must be a string in a subagent run');
+    const destination = wantsDefault ? runDirectory(store, true) : safeDirectory(path.resolve(store.root, directory));
     const action = wantsDefault ? 'Return the subagent to the folder it started in' : 'Use a different folder';
     // The run id is separate from the real chat id used for approvals.
     const parentId = store && store.parentChatId ? store.parentChatId : currentChatId;
@@ -222,25 +244,32 @@ function describeChange(projectDir, currentChatId, args = {}, workspaceChatId) {
     // selects an existing folder, so the card must not imply one is created.
     const effect = 'Files read or edited and commands run by this subagent run will use this folder. '
       + 'The parent chat keeps its own folder; this selects an existing folder and does not create, move or copy files.';
-    return [action, 'Subagent run: ' + chatId, 'Delegated from: ' + parentLabel,
-      'Folder: ' + destination, '', effect].join('\n');
+    return { destination, summary: [action, 'Subagent run: ' + chatId, 'Delegated from: ' + parentLabel,
+    'Folder: ' + destination, '', effect].join('\n') };
   }
   const chat = chats.getChat(projectDir, chatId);
   const root = safeDirectory(projectDir);
   const directory = args.directory;
   const wantsDefault = directory === undefined || directory === false || directory === null;
+  if (!wantsDefault && typeof directory !== 'string') throw err('EBADINPUT', 'directory must be a string, or false/null for the default workspace');
   const destination = wantsDefault ? path.join(root, '.mouaif', 'workspaces', chatId)
-    : typeof directory === 'string' ? path.resolve(root, directory || '.') : '(invalid directory)';
+    : safeDirectory(path.resolve(root, directory || '.'));
   const action = wantsDefault ? 'Use a separate folder'
     : destination === root ? 'Return to the project folder' : 'Use a different folder';
   const title = chat && chat.title ? String(chat.title).replace(/\s+/g, ' ').trim() : '';
   const effect = wantsDefault
     ? 'Files read or edited and commands run for this chat will use this folder. If created, it starts empty; project files are not copied.'
     : 'Files read or edited and commands run for this chat will use this folder. This change does not move or copy files.';
-  return [action, 'Chat: ' + (title ? title + ' (' + chatId + ')' : chatId), 'Folder: ' + destination, '', effect].join('\n');
+  return { destination, summary: [action, 'Chat: ' + (title ? title + ' (' + chatId + ')' : chatId),
+    'Folder: ' + destination, '', effect].join('\n') };
 }
 
-async function change(projectDir, chatId, directory, signal) {
+// Stored as the authorization summary so live and recovered cards agree.
+function describeChange(projectDir, currentChatId, args = {}, workspaceChatId) {
+  return prepareChange(projectDir, currentChatId, args, workspaceChatId).summary;
+}
+
+async function change(projectDir, chatId, directory, signal, approvedDirectory) {
   const key = projectDir + '\0' + chatId;
   if (changing.has(key)) throw err('EBUSY', 'This chat is already changing its working folder');
   const chat = chats.getChat(projectDir, chatId);
@@ -262,7 +291,9 @@ async function change(projectDir, chatId, directory, signal) {
       }
       // Relative paths always refer to the original project, never the
       // previous working folder. Empty string resets to the project root.
-      workspace = { workingDir: safeDirectory(path.resolve(root, directory || '.')), branch: null, created: false };
+      const destination = safeDirectory(path.resolve(root, directory || '.'));
+      checkApprovedDirectory(destination, approvedDirectory);
+      workspace = { workingDir: destination, branch: null, created: false };
     } else {
       // Creating a folder is opt-in: the project (or the app default) must
       // set `autoWorkspace`. Off means the tool reports why instead of
@@ -270,6 +301,7 @@ async function change(projectDir, chatId, directory, signal) {
       if (!autoWorkspaceEnabled(projectDir)) {
         throw err('EOFF', 'Creating a workspace is disabled for this project. Ask the user to turn on "Allow automatic workspaces" in Settings → Project → General (or the app default in Settings → App defaults), or pass an existing directory.');
       }
+      checkApprovedDirectory(path.join(root, '.mouaif', 'workspaces', chatId), approvedDirectory);
       workspace = await createDefaultWorkspace(root, chatId);
     }
     const { workingDir, branch, created } = workspace;
@@ -283,4 +315,4 @@ async function change(projectDir, chatId, directory, signal) {
   }
 }
 
-module.exports = { resolve, resolveForCall, change, changeRun, describeChange, registerRun, clearRun, isRunChatId };
+module.exports = { resolve, resolveForCall, change, changeRun, prepareChange, describeChange, registerRun, clearRun, isRunChatId };

@@ -233,10 +233,13 @@ async function runSingleToolCall(c, cx) {
       // the file tools it's the path (with the optional query /
       // content as a hint, when relevant).
       let summary;
+      let workingFolderDestination;
       if (c.name === 'shell') summary = (args && args.cmd) || '';
       else if (c.name === 'subagent') summary = (args && args.task) || '';
       else if (c.name === 'change_working_folder') {
-      summary = require('./chatWorkingFolder.js').describeChange(opts.projectDir, opts.chatId, args, opts.workspaceChatId);
+      const prepared = require('./chatWorkingFolder.js').prepareChange(opts.projectDir, opts.chatId, args, opts.workspaceChatId);
+      summary = prepared.summary;
+      workingFolderDestination = prepared.destination;
       }
       else if (c.name === 'webpreview') {
         // Show the URL the model wants to open so the user can tell
@@ -384,7 +387,7 @@ async function runSingleToolCall(c, cx) {
       // appeared permanently stuck on a tool call with no messages.
       onEvent('tool_call', { id: c.id || null, name: c.name, args });
       callEmitted = true;
-      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, toolTimeoutMs: clampedTimeoutMs, answerPayload: callOptsAnswerPayload, modelOverride: callOptsModelOverride, thinkingLevel: callOptsThinkingLevel }));
+      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, toolTimeoutMs: clampedTimeoutMs, answerPayload: callOptsAnswerPayload, modelOverride: callOptsModelOverride, thinkingLevel: callOptsThinkingLevel, workingFolderDestination }));
     }
   } catch (e) {
     // Denied/disabled/error calls still need a call card immediately

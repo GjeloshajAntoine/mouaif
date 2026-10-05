@@ -43,7 +43,8 @@ async function modelCalls(chat, calls, decision) {
       if (name === 'authorization_required') {
       const pending = authz.listPending(projectDir, chat.id).find(request => request.callId === data.callId);
       assert.equal(pending.summary, data.summary, 'live and recovered approval details agree');
-      authz.recordDecision(projectDir, chat.id, data.callId, decision || 'allow-once');
+      if (typeof decision === 'function') decision(data);
+      else authz.recordDecision(projectDir, chat.id, data.callId, decision || 'allow-once');
       }
     }
   });
@@ -351,6 +352,91 @@ async function main() {
   require('../src/tools/task.js').clearChat(chat.id);
   chats.updateChat(projectDir, chat.id, { draftAttachments: [] });
   assert.equal(chats.getChat(projectDir, chat.id).workingDir, target);
+
+  // Approvals and allowlists use the real destination, not a symlink alias.
+  // Retargeting the link while approval waits must fail without changing the
+  // chat or run folder. A later, fresh request can approve the new target.
+  const approvedA = path.join(home, 'approved-a');
+  const approvedB = path.join(home, 'approved-b');
+  fs.mkdirSync(approvedA);
+  fs.mkdirSync(approvedB);
+  const alias = path.join(projectDir, 'folder-alias');
+  fs.symlinkSync(approvedA, alias);
+  authz.setAuthorization(projectDir, { tools: { change_working_folder: { mode: 'ask' } } });
+  const canonical = await modelCalls(chat, [{ name: 'change_working_folder', args: { directory: 'folder-alias' } }]);
+  assert.equal(canonical.results[0].result.workingDir, approvedA);
+  assert.ok(canonical.events.find((e) => e.name === 'authorization_required').data.summary.includes('Folder: ' + approvedA));
+  await call({ directory: target });
+  const stale = await modelCalls(chat, [{ name: 'change_working_folder', args: { directory: 'folder-alias' } }], (data) => {
+    assert.ok(data.summary.includes('Folder: ' + approvedA));
+    fs.unlinkSync(alias);
+    fs.symlinkSync(approvedB, alias);
+    authz.recordDecision(projectDir, chat.id, data.callId, 'allow-once');
+  });
+  assert.equal(stale.results[0].result.code, 'ESTALE_PATH');
+  assert.equal(chats.getChat(projectDir, chat.id).workingDir, target);
+  const fresh = await modelCalls(chat, [{ name: 'change_working_folder', args: { directory: 'folder-alias' } }]);
+  assert.equal(fresh.results[0].result.workingDir, approvedB);
+  await call({ directory: target });
+  fs.unlinkSync(alias);
+  fs.symlinkSync(approvedA, alias);
+  await runNested([
+    { name: 'change_working_folder', args: { directory: alias } },
+    { name: 'shell', args: { cmd: 'pwd' } }
+  ], (data) => {
+    assert.ok(data.summary.includes('Folder: ' + approvedA));
+    fs.unlinkSync(alias);
+    fs.symlinkSync(approvedB, alias);
+    authz.recordDecision(projectDir, chat.id, data.callId, 'allow-once');
+  });
+  assert.equal(nestedResults()[0].result.code, 'ESTALE_PATH', 'run changes also recheck the approved canonical path');
+  assert.equal(nestedResults()[1].result.stdout.trim(), target, 'a stale approval leaves the run in its original folder');
+  assert.equal(chats.getChat(projectDir, chat.id).workingDir, target);
+  fs.unlinkSync(alias);
+  fs.symlinkSync(approvedA, alias);
+  authz.setAuthorization(projectDir, { tools: { change_working_folder: { mode: 'allowlist', allowlist: ['[\\s\\S]*Folder: ' + alias + '[\\s\\S]*'] } } });
+  const aliasAllowlist = await modelCalls(chat, [{ name: 'change_working_folder', args: { directory: alias } }], 'deny');
+  assert.equal(aliasAllowlist.results[0].ok, false, 'an alias-only allowlist cannot approve the real target');
+  assert.equal(aliasAllowlist.events.filter((e) => e.name === 'authorization_required').length, 1);
+  authz.setAuthorization(projectDir, { tools: { change_working_folder: { mode: 'allow' } } });
+
+  // Runs enforce the same home boundary as a selected chat, even when the
+  // selected directory is later replaced with an outside-home symlink.
+  // Genuine inherited temp projects retain their existing local sandbox.
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-run-boundary-'));
+  try {
+    const guarded = path.join(home, 'guarded-run');
+    fs.mkdirSync(guarded);
+    const guardedRun = workspace.registerRun(guarded, { root: guarded, current: guarded }, chat.id);
+    fs.rmdirSync(guarded);
+    fs.symlinkSync(outside, guarded);
+    try {
+      if (process.env.MOUAIF_ALLOW_ANY_ROOT !== '1') {
+        assert.throws(() => workspace.resolveForCall(projectDir, chat.id, guardedRun.chatId), { code: 'EOUTSIDE_HOME' });
+        const reset = await runAppTool('change_working_folder', {}, { projectDir, chatId: chat.id, workspaceChatId: guardedRun.chatId });
+        assert.equal(reset.result.code, 'EOUTSIDE_HOME');
+      }
+    } finally { workspace.clearRun(guardedRun.runId); }
+    const inheritedRun = workspace.registerRun(outside, { root: outside, current: outside }, chat.id);
+    try {
+      assert.equal(workspace.resolveForCall(outside, chat.id, inheritedRun.chatId), fs.realpathSync(outside));
+      const reset = workspace.changeRun(outside, inheritedRun.chatId, '', null);
+      assert.equal(reset.workingDir, fs.realpathSync(outside));
+      workspace.changeRun(outside, inheritedRun.chatId, approvedA, null);
+      const moved = path.join(home, 'approved-a-kept');
+      fs.renameSync(approvedA, moved);
+      fs.symlinkSync(outside, approvedA);
+      try {
+        if (process.env.MOUAIF_ALLOW_ANY_ROOT !== '1') {
+          assert.throws(() => workspace.resolveForCall(outside, chat.id, inheritedRun.chatId), { code: 'EOUTSIDE_HOME' }, 'an explicit selection enables the home guard even in an inherited temp run');
+        }
+        assert.equal(workspace.changeRun(outside, inheritedRun.chatId, null, null).workingDir, fs.realpathSync(outside), 'reset restores the inherited sandbox policy');
+      } finally {
+        fs.unlinkSync(approvedA);
+        fs.renameSync(moved, approvedA);
+      }
+    } finally { workspace.clearRun(inheritedRun.runId); }
+  } finally { fs.rmSync(outside, { recursive: true, force: true }); }
 
   // A live run also fails if its folder disappears, including a reset to its
   // now-missing starting folder. Validation must not silently change roots.

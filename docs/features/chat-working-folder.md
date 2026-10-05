@@ -55,6 +55,8 @@ Example tool arguments:
 
 The **Change working folder** approval tells you which chat will work in the shown folder and that files read or edited and commands run for it will use that location. It says **Use a different folder**, **Return to the project folder**, or **Use a separate folder**. For a separate folder, it explains that a newly created folder starts empty and project files are not copied. Chat titles appear before IDs; the folder and project paths remain visible. The same details survive reloading a pending approval; previewing the request does not create anything.
 
+For existing directories, the approval and any allowlist match use the **real destination**, resolving symbolic links rather than showing only an alias. The tool resolves it again before changing the folder. If the destination changed while approval was pending, the call fails with `ESTALE_PATH` and keeps the current folder; request a fresh approval. Missing or invalid destinations fail validation instead of producing a misleading approval.
+
 The result reports `workingDir`, `created`, and the updated chat. The legacy `branch` field remains `null` for compatibility; the tool does not inspect Git state. The current folder also appears below the chat title and in `get_chat`. Shell and file operations use the new folder immediately, including subsequent calls in the same turn, later turns, and delegated subagent tools. Composer `@shell` uses the same folder. `attach_chat_image` reads relative image paths from the calling chat's working folder while saving attachments to the target chat in the original project.
 
 ### Automatic workspaces
@@ -91,6 +93,7 @@ Git setup respects shell authorization and denied operations. Uncommitted and un
 
 - Chat storage, models, settings, permissions, agent instructions, skills, tags, traces, and MCP connections remain in the original project. Project redaction rules continue to apply to workspace-relative reads and searches. This is not a security sandbox.
 - Missing or removed working folders fail instead of silently sending tools back to the original project.
+- Selected run folders and resets enforce the same home-directory boundary as a chat, including when a directory is replaced by a symbolic link during the run. Existing temporary projects inherited outside home retain their local-tool sandbox; selecting another directory explicitly uses the normal home guard. `MOUAIF_ALLOW_ANY_ROOT=1` remains the explicit opt-out.
 - Subagents get independent folder state. A delegated run starts in the parent chat's folder, and `change_working_folder` called by a subagent moves **that run only** — the parent and siblings keep their folders. Parallel delegates still share one tree until they select different directories. Run folders live for the run: when it finishes, its folder is forgotten, and a stale run id fails instead of falling back to the project. Already-running operations keep their existing directory.
 - Persistent project CLI sessions, editor browsing, and the Git UI remain project-scoped.
 - The existing chat APIs expose `workingDir`. Composer shell requests continue taking the original `projectDir` and `chatId`; no new REST endpoint is needed.
