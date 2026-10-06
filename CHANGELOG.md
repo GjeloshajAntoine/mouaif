@@ -62,8 +62,11 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
   api.openai.com. Mistral and Groq answer 404 for those paths — and for a bogus
   path too, i.e. a catch-all, so the route does not exist — which meant every
   chat-open fired requests that could only fail, and the docs described a chip
-  that never rendered. Both now report "unsupported" without a request, and
-  DeepSeek reads its own documented `GET /user/balance` route instead.
+  that never rendered. Groq now reports "unsupported" without a request;
+  DeepSeek reads its own documented `GET /user/balance`; and Mistral reads the
+  Admin API's `GET /v1/admin/spend-limit` (monthly limit minus usage, sent as
+  `x-api-key`). That last one needs an Admin-scoped key, so a standard workspace
+  key still shows no chip — correctly, since the figure is not readable with it.
 - **Canonical folder approvals and run validation** — working-folder cards and allowlists use the real destination behind symbolic links. A destination changed during approval fails with `ESTALE_PATH` instead of switching elsewhere. Selected subagent folders and resets enforce the chat's home guard while inherited temporary projects keep their existing local sandbox.
 - **Delegated folder identity** — subagents retain the real parent chat for permissions, approval decisions, pending recovery, cancellation, tasks and chat tools. Only local folder operations use the separate run id; attachment reads follow the run's folder. Missing selected folders fail instead of silently launching a delegate in the original project.
 - **Native tools now work on Azure, Mistral, Groq, and DeepSeek** — the

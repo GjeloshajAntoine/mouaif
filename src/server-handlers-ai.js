@@ -90,13 +90,14 @@ async function handleAI(req, res, parsed) {
 
   // GET /api/ai/provider-credit?provider=<id> -> { supported, remaining? }
   // Provider-specific account balance lookup. OpenRouter exposes a simple
-  // key-scoped credits endpoint; DeepSeek answers its own /user/balance; and
+  // key-scoped credits endpoint; DeepSeek answers its own /user/balance;
+  // Mistral's Admin API answers /v1/admin/spend-limit (Admin key only); and
   // OpenAI compatible reaches the OpenAI dashboard billing routes — credit
   // grants first, then the subscription limit minus usage — in
-  // src/providerCredit.js. Mistral and Groq publish no balance API, so they
-  // report { supported: false } rather than firing requests that can only 404.
-  // Every other provider does the same, so the chat head hides the pill
-  // instead of showing a guessed number.
+  // src/providerCredit.js. Groq publishes no balance API, so it reports
+  // { supported: false } rather than firing a request that can only 404. Every
+  // other provider does the same, so the chat head hides the pill instead of
+  // showing a guessed number.
   if (urlPath === '/api/ai/provider-credit' && method === 'GET') {
     const provider = typeof parsed.query.provider === 'string' ? parsed.query.provider : '';
     const balances = providerCredit.supportsBalance(provider);

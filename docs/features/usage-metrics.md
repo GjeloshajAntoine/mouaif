@@ -81,7 +81,8 @@ Context 14.8K   Total $0.08306   Balance $12.41
 - If your connection is **OpenRouter**, the balance is the remaining credit of the key you stored, read live from OpenRouter.
 - If your connection is **OpenAI compatible** against OpenAI itself, the balance comes from the OpenAI dashboard billing routes: prepaid credit when the account has any, otherwise the account's spending limit minus what it has used.
 - If your connection is **DeepSeek**, the balance comes from its own `GET /user/balance` route.
-- **Mistral and Groq publish no balance API**, so they show no chip. They used to be asked the OpenAI dashboard routes, which those hosts answer with a 404 — the request could never succeed, so the chip never appeared.
+- If your connection is **Mistral**, the balance comes from the Admin API: `GET /v1/admin/spend-limit`, reported as the monthly limit minus usage. That route requires an **Admin-scoped** key (created in the Mistral Backoffice) and is sent as the `x-api-key` header — a standard workspace key is rejected, so no chip is shown.
+- **Groq publishes no balance API**, so it shows no chip. Mistral and Groq used to be asked the OpenAI dashboard routes, which neither host serves (both answer 404 for those paths *and* for a bogus path), so those requests could never succeed and the chip never appeared.
 - Every other provider, a local OpenAI-compatible server with no key, and a key without billing access simply show no chip. Nothing is guessed, so a chip that is there is a real number.
 
 The chip is informational: it refreshes when a chat opens and when you switch model or provider, so a long-open chat may show a slightly stale figure.

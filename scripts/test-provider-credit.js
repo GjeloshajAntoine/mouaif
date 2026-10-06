@@ -46,16 +46,15 @@ function fakeFetch(routes, opts = {}) {
 
 async function main() {
   // ---- which providers are supported -----------------------------------
-  // Only the providers with a balance route we can actually read. The OpenAI
-  // dashboard billing routes live on api.openai.com; mistral/groq 404 them, so
-  // listing them here meant a pill that could never appear.
+  // Each family has its own route: the OpenAI dashboard billing routes (which
+  // live on api.openai.com), DeepSeek's /user/balance, and Mistral's Admin API
+  // spend limit. Listing a provider that has none meant a pill that could
+  // never appear.
   check('openai-compatible reaches the OpenAI billing routes',
     credit.supportsBalance('openai-compatible'));
   check('deepseek has its own balance route', credit.supportsBalance('deepseek'));
-  check('mistral is NOT routed through the OpenAI billing shape',
-    !credit.supportsBalance('mistral'));
-  check('groq is NOT routed through the OpenAI billing shape',
-    !credit.supportsBalance('groq'));
+  check('mistral has an Admin API spend-limit route', credit.supportsBalance('mistral'));
+  check('groq is NOT routed through any balance lookup', !credit.supportsBalance('groq'));
   check('openrouter is NOT routed through the OpenAI billing shape',
     !credit.supportsBalance('openrouter'));
   check('anthropic/gemini have no balance route',
@@ -238,6 +237,57 @@ async function main() {
     // No balance_infos at all is "unsupported", never a guessed 0.
     check('deepseek: a body without balance_infos is not a number',
       (await credit.balanceFromDeepSeek({ is_available: true })) === null);
+  }
+
+  // ---- Mistral reads its Admin API spend limit --------------------------
+  //
+  // The Admin API answers { limits: { completion: { total_usage, usage_limit },
+  // currency } }, authenticated with x-api-key. Amounts are whole numbers in
+  // the billing currency, NOT cents (Mistral's docs, on the POST that writes
+  // the same field: "500 means 500, not 500 cents").
+  {
+    const calls = [];
+    const f = async (url, init) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith('/v1/admin/spend-limit')) {
+        return jsonResponse({
+          limits: {
+            completion: { no_monthly_limit: false, monthly_limit_reached: false, usage: 12.5, total_usage: 12.5, usage_limit: 500 },
+            currency: 'USD'
+          }
+        });
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+    const r = await credit.lookupBalance({
+      provider: 'mistral', baseUrl: 'https://api.mistral.ai/v1', cred: 'admin-key', fetchImpl: f
+    });
+    check('mistral: asks /v1/admin/spend-limit',
+      calls.length === 1 && calls[0].url === 'https://api.mistral.ai/v1/admin/spend-limit',
+      calls.map((c) => c.url).join(', '));
+    check('mistral: sends the key as x-api-key, not Bearer',
+      calls[0].init && calls[0].init.headers && calls[0].init.headers['x-api-key'] === 'admin-key'
+      && !calls[0].init.headers.Authorization,
+      JSON.stringify(calls[0].init && calls[0].init.headers));
+    check('mistral: limit minus usage, with no cents conversion (500 - 12.5)',
+      r.ok && r.remaining === 487.5 && r.totalCredits === 500 && r.totalUsage === 12.5,
+      JSON.stringify(r));
+
+    // Uncapped account: no ceiling to subtract from, so no pill and no guess.
+    check('mistral: no_monthly_limit is not a number',
+      (await credit.balanceFromMistral({ limits: { completion: { no_monthly_limit: true, total_usage: 12.5 } } })) === null);
+
+    // A missing usage figure is "unknown", never a zero-spend assumption.
+    check('mistral: a limit with no reported usage is not a number',
+      (await credit.balanceFromMistral({ limits: { completion: { usage_limit: 500 } } })) === null);
+
+    // Over-spend floors at 0 rather than reporting a negative balance.
+    const over = await credit.balanceFromMistral({ limits: { completion: { total_usage: 600, usage_limit: 500 } } });
+    check('mistral: over-spend floors at 0', over && over.remaining === 0, JSON.stringify(over));
+
+    // A body shaped like the OpenAI grants payload is not Mistral's shape.
+    check('mistral: an OpenAI-shaped body is not read as a balance',
+      (await credit.balanceFromMistral({ total_available: 7.5 })) === null);
   }
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');

@@ -47,10 +47,13 @@ function stubUpstream(routes, opts = {}) {
     calls.push({ url: href, init });
     if (opts.throwFor && opts.throwFor.test(href)) throw new Error('connect ECONNREFUSED');
     const pathname = new URL(href).pathname;
+    // A status override lets a case assert how an auth failure upstream (a
+    // workspace key hitting Mistral's admin-only route) is reported.
+    const status = (opts.statusFor && opts.statusFor[pathname]) || 200;
     const route = routes[pathname];
     if (!route) return { ok: false, status: 404, json: async () => ({ error: { message: 'not found' } }) };
     const body = typeof route === 'function' ? route() : route;
-    return { ok: true, status: 200, json: async () => body };
+    return { ok: status >= 200 && status < 300, status, json: async () => body };
   };
 }
 
@@ -63,7 +66,7 @@ async function main() {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port;
   const get = async (provider) => {
-    stubUpstream(stubRoutes, { serverOrigin: origin, throwFor: stubThrow });
+    stubUpstream(stubRoutes, { serverOrigin: origin, throwFor: stubThrow, statusFor: stubStatus });
     try {
       const r = await fetch(origin + '/api/ai/provider-credit?provider=' + encodeURIComponent(provider));
       return { status: r.status, body: await r.json() };
@@ -74,6 +77,7 @@ async function main() {
 
   let stubRoutes = {};
   let stubThrow = null;
+  let stubStatus = {};
 
   try {
     // ---- providers with no balance concept ----------------------------
@@ -136,27 +140,57 @@ async function main() {
       r.status === 503 && r.body.code === 'EUNREACHABLE', r.status + ' ' + JSON.stringify(r.body));
     stubThrow = null;
 
-    // ---- the vendors that do NOT serve the OpenAI billing routes ---------
-    // Mistral and Groq answer 404 for /dashboard/billing/* (a catch-all: a
-    // bogus path 404s too), so the lookup used to fire requests that could
-    // only fail and then report "no balance". They now report unsupported
-    // without making a call at all.
-    setProviders([{ id: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'k' }]);
+    // ---- Mistral reads its own Admin API spend limit --------------------
+    // /v1/admin/spend-limit, authenticated with x-api-key (not a Bearer
+    // token). The amounts are whole numbers in the billing currency, so the
+    // remaining balance is usage_limit - total_usage with no cents division.
+    setProviders([{ id: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'admin-key' }]);
     calls.length = 0;
-    stubRoutes = { '/dashboard/billing/credit_grants': { total_available: 7.5 } };
+    stubRoutes = {
+    '/v1/admin/spend-limit': {
+      limits: {
+      completion: { no_monthly_limit: false, monthly_limit_reached: false, total_usage: 12.5, usage_limit: 500 },
+      currency: 'USD'
+      }
+    }
+    };
     r = await get('mistral');
-    check('mistral: unsupported, no balance route exists',
-      r.status === 200 && r.body.supported === false, JSON.stringify(r.body));
-    check('mistral: no billing request was made',
-      calls.length === 0, calls.map((c) => c.url).join(', '));
+    check('mistral: reads /v1/admin/spend-limit',
+    r.status === 200 && r.body.supported === true && r.body.remaining === 487.5,
+    JSON.stringify(r.body));
+    check('mistral: used the Admin API path, not the OpenAI billing routes',
+    calls.length === 1 && calls[0].url === 'https://api.mistral.ai/v1/admin/spend-limit',
+    calls.map((c) => c.url).join(', '));
+    check('mistral: authenticated with x-api-key, not Bearer',
+    calls[0].init && calls[0].init.headers && calls[0].init.headers['x-api-key'] === 'admin-key'
+    && !calls[0].init.headers.Authorization,
+    JSON.stringify(calls[0].init && calls[0].init.headers));
 
+    // An uncapped account has no ceiling to subtract from: no pill, no guess.
+    stubRoutes = {
+    '/v1/admin/spend-limit': { limits: { completion: { no_monthly_limit: true, total_usage: 12.5 }, currency: 'USD' } }
+    };
+    r = await get('mistral');
+    check('mistral: no_monthly_limit shows no pill rather than a guessed number',
+    r.status === 200 && r.body.supported === false, JSON.stringify(r.body));
+
+    // A workspace key is rejected by the Admin API (401) — that reads as "no
+    // balance", not as an error the user cannot act on.
+    stubRoutes = {};
+    stubStatus['/v1/admin/spend-limit'] = 401;
+    r = await get('mistral');
+    check('mistral: a workspace key (401) reports no balance, not an error',
+    r.status === 200 && r.body.supported === false, r.status + ' ' + JSON.stringify(r.body));
+    delete stubStatus['/v1/admin/spend-limit'];
+
+    // ---- Groq publishes no balance API at all ---------------------------
     setProviders([{ id: 'groq', baseUrl: 'https://api.groq.com/openai/v1', apiKey: 'k' }]);
     calls.length = 0;
     r = await get('groq');
     check('groq: unsupported, no balance route exists',
-      r.status === 200 && r.body.supported === false, JSON.stringify(r.body));
-    check('groq: no billing request was made',
-      calls.length === 0, calls.map((c) => c.url).join(', '));
+    r.status === 200 && r.body.supported === false, JSON.stringify(r.body));
+    check('groq: no request was made',
+    calls.length === 0, calls.map((c) => c.url).join(', '));
 
     // ---- DeepSeek reads its own /user/balance route ---------------------
     setProviders([{ id: 'deepseek', baseUrl: 'https://api.deepseek.com', apiKey: 'k' }]);

@@ -36,9 +36,11 @@ const { joinUrl } = require('./util.js');
 // 404 and then reported "no balance": the pill never appeared, while the docs
 // claimed it would.
 //
-// DeepSeek has a balance route of its own (GET /user/balance), handled below.
-// Groq and Mistral expose no balance API at all, so no pill is the honest
-// answer for them.
+// Each other vendor has its own route, handled below:
+//   deepseek  GET {origin}/user/balance
+//   mistral   GET {origin}/v1/admin/spend-limit   (Admin API key only)
+//
+// Groq publishes no balance API at all, so no pill is the honest answer for it.
 const OPENAI_BILLING_PROVIDERS = Object.freeze([
   'openai-compatible'
 ]);
@@ -46,11 +48,26 @@ const OPENAI_BILLING_PROVIDERS = Object.freeze([
 // DeepSeek documents GET {origin}/user/balance.
 const DEEPSEEK_BALANCE_PATH = '/user/balance';
 
+// Mistral's Admin API. https://docs.mistral.ai/admin/admin-api/usage-metrics
+//
+//   GET {origin}/v1/admin/spend-limit  ->  { limits: { completion: {...},
+//                                              currency }, ... }
+//
+// It is deliberately *not* folded into the OpenAI routes above: Mistral's
+// auth is the `x-api-key` header (not `Authorization: Bearer`), the path is
+// /v1/admin/..., and — unlike the OpenAI dashboard routes — it needs an
+// Admin-scoped key ("Standard workspace/inference API keys are rejected",
+// per the OpenAPI security scheme). A workspace key therefore gets a 401 and
+// the pill stays hidden, which is correct: the balance is genuinely not
+// readable with the credential the user stored.
+const MISTRAL_SPEND_LIMIT_PATH = '/v1/admin/spend-limit';
+
 // supportsBalance(provider) -> does this connection have a balance route we
-// know how to read? Two families: the OpenAI dashboard routes, and DeepSeek
-// 's own /user/balance.
+// know how to read? Three families: the OpenAI dashboard routes, DeepSeek's
+// /user/balance, and Mistral's Admin API spend limit.
 function supportsBalance(provider) {
-  return provider === 'deepseek' || OPENAI_BILLING_PROVIDERS.indexOf(provider) !== -1;
+  if (provider === 'deepseek' || provider === 'mistral') return true;
+  return OPENAI_BILLING_PROVIDERS.indexOf(provider) !== -1;
 }
 
 // originOf(baseUrl) -> string
@@ -150,6 +167,35 @@ function balanceFromDeepSeek(body) {
   return out;
 }
 
+// balanceFromMistral(body) -> { remaining, totalCredits?, totalUsage? } | null
+//
+// The Admin API answers { limits: { completion: UsageLimits, currency, ... } },
+// where UsageLimits carries `total_usage` (spent) and `usage_limit` (the cap),
+// both as whole numbers in the Organization's billing currency — not cents
+// (Mistral's own docs, on the POST that writes the same field: "`500` means
+// 500, not 500 cents"). So the remaining balance is `usage_limit -
+// total_usage`, with no unit conversion.
+//
+// `no_monthly_limit: true` means the account is uncapped: there is no ceiling
+// to subtract from, so this returns null and no pill is shown. Guessing a
+// number there would be worse than showing none — the same rule the rest of
+// this module follows. `total_usage` absent is likewise "unknown", not zero.
+function balanceFromMistral(body) {
+  if (!body || typeof body !== 'object') return null;
+  const limits = body.limits && typeof body.limits === 'object' ? body.limits : null;
+  if (!limits) return null;
+  const completion = limits.completion && typeof limits.completion === 'object' ? limits.completion : limits;
+  if (completion.no_monthly_limit === true) return null;
+  const limit = numberOrNull(completion.usage_limit);
+  const used = numberOrNull(completion.total_usage) ?? numberOrNull(completion.usage);
+  if (limit == null || used == null) return null;
+  return {
+    remaining: Math.max(0, limit - used),
+    totalCredits: limit,
+    totalUsage: used
+  };
+}
+
 // lookupBalance({ provider, baseUrl, cred, fetchImpl }) ->
 //   { ok: true, label, remaining, totalCredits?, totalUsage? }
 // | { ok: false, code, status?, error }
@@ -162,6 +208,34 @@ async function lookupBalance({ provider, baseUrl, cred, fetchImpl } = {}) {
   const doFetch = typeof fetchImpl === 'function' ? fetchImpl : fetch;
   const origin = originOf(baseUrl);
   const headers = { Authorization: 'Bearer ' + cred, Accept: 'application/json' };
+
+  // Mistral's Admin API authenticates with `x-api-key`, not a Bearer token,
+  // and lives under /v1/admin. A workspace-scoped key gets 401 here (the
+  // route requires an Admin key), which surfaces as "no balance" rather than
+  // an error the user cannot act on.
+  if (provider === 'mistral') {
+    let res;
+    try {
+      const r = await doFetch(joinUrl(origin, MISTRAL_SPEND_LIMIT_PATH), {
+        headers: { 'x-api-key': cred, Accept: 'application/json' }
+      });
+      res = r && r.ok
+        ? { status: r.status, ok: true, body: await r.json().catch(() => null) }
+        : { status: r ? r.status : 0, ok: false, body: null };
+    } catch {
+      return { ok: false, code: 'EUNREACHABLE', error: 'provider unreachable' };
+    }
+    if (res.ok) {
+      const fromMistral = balanceFromMistral(res.body);
+      if (fromMistral) return Object.assign({ ok: true, label: 'Balance' }, fromMistral);
+    }
+    return {
+      ok: false,
+      code: 'EUPSTREAM',
+      status: res.status || 0,
+      error: provider + ' returned no usable balance'
+    };
+  }
 
   // softGet(path) -> { status, ok, body } | null (null = transport failure)
   const softGet = async (path) => {
@@ -230,10 +304,12 @@ async function lookupBalance({ provider, baseUrl, cred, fetchImpl } = {}) {
 module.exports = {
   OPENAI_BILLING_PROVIDERS,
   DEEPSEEK_BALANCE_PATH,
+  MISTRAL_SPEND_LIMIT_PATH,
   supportsBalance,
   originOf,
   balanceFromGrants,
   balanceFromSubscription,
   balanceFromDeepSeek,
+  balanceFromMistral,
   lookupBalance
 };
