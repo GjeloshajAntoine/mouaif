@@ -12,7 +12,7 @@
 import '../inspector.css';
 import { h, Fragment } from 'preact';
 import { createPortal } from 'preact/compat';
-import { useRef, useEffect, useState } from 'preact/hooks';
+import { useRef, useEffect, useState, useMemo } from 'preact/hooks';
 import { fetchJson } from '../api.js';
 import { ConsolePanel, NetworkPanel, PreviewPanel, OverviewPanel, StylesPanel, DetailSheet, ConfirmSheet, createCdpConnection } from './inspector/index.js';
 import { selectionAcrossModes } from './inspector/targetBar.js';
@@ -115,12 +115,12 @@ function hostOf(t) {
 // virtual-list renderers, so the user pays only for what they look at.
 //
 // `PANELS` is the canonical ordered list of panel IDs and labels.
-// `loadPanelState()` hydrates the visibility set from localStorage
+// `loadPanelState()` hydrates the active panel id from localStorage
 // (the key lives in `PANEL_STATE_KEY`) so the user's choice
-// persists across sessions and across inspected targets. The first
-// visit (no saved state) shows every panel — the new
-// design's default is to surface every signal, and the user narrows
-// it down on demand.
+// persists across sessions and across inspected targets. The panel
+// bar is single-select tabs: tapping a tab shows that panel's content
+// and hides the others. The first visit (no saved state) shows the
+// Preview panel.
 const PANELS = [
   { id: 'preview',  label: 'Preview' },
   { id: 'styles',   label: 'Styles' },
@@ -153,19 +153,20 @@ const VIEWPORT_STATE_KEY = 'mouaif:inspector:viewport';
 function loadPanelState() {
   try {
     const raw = localStorage.getItem(PANEL_STATE_KEY);
-    if (!raw) return new Set(PANELS.map((p) => p.id));
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr)) return new Set(PANELS.map((p) => p.id));
-    const known = new Set(PANELS.map((p) => p.id));
-    const next = new Set(arr.filter((id) => known.has(id)));
-    // Guard against an all-hidden state: a UI with zero panels is
-    // useless, and re-mounting after picking "hide all" would trap
-    // the user. Reset to the default instead.
-    return next.size ? next : new Set(PANELS.map((p) => p.id));
-  } catch { return new Set(PANELS.map((p) => p.id)); }
+    if (!raw) return 'preview';
+    // Backward compat: an old array value (multi-select era) → first entry.
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const known = new Set(PANELS.map((p) => p.id));
+      const first = parsed.find((id) => known.has(id));
+      return first || 'preview';
+    }
+    if (typeof parsed === 'string' && PANELS.some((p) => p.id === parsed)) return parsed;
+    return 'preview';
+  } catch { return 'preview'; }
 }
-function savePanelState(set) {
-  try { localStorage.setItem(PANEL_STATE_KEY, JSON.stringify(Array.from(set))); } catch { /* ignore */ }
+function savePanelState(id) {
+  try { localStorage.setItem(PANEL_STATE_KEY, JSON.stringify(id)); } catch { /* ignore */ }
 }
 // The Intent surface's own visibility. A separate key from the panel list
 // because it is a separate thing: PANELS is the five inspection views, and this
@@ -310,8 +311,10 @@ function SizeDropdown(props) {
 }
 
 function PanelCard(props) {
-const isVisible = props.isVisible;
-const toggleAria = isVisible ? 'Hide ' + props.label + ' panel' : 'Show ' + props.label + ' panel';
+// With single-select tabs every rendered card is visible. The
+// isVisible/onToggle props are kept for backward compatibility but
+// are always true/selectPanel respectively.
+const isVisible = props.isVisible !== false;
 // The panel's *name* is no longer printed in its header. It is replaced by the
 // full-screen button in the same slot, on every card — the pattern the Preview
 // card already shipped with, extended to the rest.
@@ -457,32 +460,11 @@ h('rect', { x: 3, y: 6, width: 18, height: 12, rx: 2 }),
 h('path', { d: 'M6 10h4M6 14h2M12 14h6' })
 )
 )
-: null,
-h('button', {
-class: 'inspector__panel-eye' + (isVisible ? ' is-visible' : ''),
-type: 'button',
-'aria-label': toggleAria,
-'aria-pressed': String(isVisible),
-title: toggleAria,
-onClick: () => props.onToggle(props.id)
-},
-// Eye-open glyph when the panel is visible, eye-closed
-// when it's hidden. Drawn as inline SVG so it inherits
-// the current color and matches the rest of the chrome
-// iconography.
-isVisible
-? h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-h('path', { d: 'M12 5C5 5 1 12 1 12s4 7 11 7 11-7 11-7-4-7-11-7Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Z', fill: 'currentColor' }),
-h('circle', { cx: 12, cy: 12, r: 2.2, fill: 'currentColor' })
-)
-: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
-h('path', { d: 'M2 5l2-2 18 18-2 2-3.4-3.4A12.8 12.8 0 0 1 12 19c-7 0-11-7-11-7a18.6 18.6 0 0 1 4.1-4.5L2 5Zm10 4a3 3 0 0 1 3 3l-3-3Zm0-4c7 0 11 7 11 7a18.4 18.4 0 0 1-3.3 3.9l-2.5-2.5A4 4 0 0 0 12 8a4 4 0 0 0-.6 0L9.3 5.9A11.5 11.5 0 0 1 12 5Z', fill: 'currentColor' })
-)
-)
-)
+: null
+  )
 ),
 h('div', { class: 'inspector__panel-body' },
-isVisible ? props.children : null
+props.children
 )
 );
 }
@@ -584,7 +566,6 @@ function InspectActionsMenu(props) {
     },
       h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onReload(); } }, 'Reload'),
       h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onOpenInNewTab(); } }, 'Open in new tab'),
-      h('button', { type: 'button', role: 'menuitem', onClick: () => { setOpen(false); props.onShowAll(); } }, 'Show all panels'),
       h('div', { class: 'menu-pop__sep', role: 'separator' }),
       h('button', { type: 'button', role: 'menuitem', 'data-danger': '1', onClick: () => { setOpen(false); props.onClose(); } }, 'Close tab')
     )
@@ -642,24 +623,27 @@ function PanelBar(props) {
   return h('div', {
     ref: barRef,
     class: 'inspector__panelbar' + (scrollable ? ' is-scrollable' : ''),
-    role: 'group',
-    'aria-label': 'Optional panels'
+    role: 'tablist',
+    'aria-label': 'Inspector panels'
   },
     PANELS.map((p) => {
-      const on = props.visiblePanels.has(p.id);
+      const on = props.activePanel === p.id;
       const count = p.id === 'console' ? props.consoleCount
         : p.id === 'network' ? props.networkCount
         : 0;
       const badgeText = count > 999 ? '999+' : String(count);
-      const showBadge = on && count > 0;
+      // Badge shows on console/network regardless of active state,
+      // so the user can see entry counts even when the panel is not shown.
+      const showBadge = count > 0;
       return h('button', {
         class: 'inspector__panelchip' + (on ? ' is-on' : '') + (showBadge ? ' has-badge' : ''),
         type: 'button',
-        'aria-label': (on ? 'Hide ' : 'Show ') + p.label + (showBadge ? ' (' + badgeText + ' entries)' : ''),
-        'aria-pressed': String(on),
-        title: (on ? 'Hide ' : 'Show ') + p.label,
+        role: 'tab',
+        'aria-label': 'Show ' + p.label + (showBadge ? ' (' + badgeText + ' entries)' : ''),
+        'aria-selected': String(on),
+        title: 'Show ' + p.label,
         'data-panel-id': p.id,
-        onClick: () => props.onToggle(p.id)
+        onClick: () => props.onSelect(p.id)
       },
         h('span', { class: 'inspector__panelchip-icon', 'aria-hidden': 'true' }, PANEL_ICONS[p.id]),
         h('span', { class: 'inspector__panelchip-label' }, p.label),
@@ -714,11 +698,11 @@ const navHistoryBusy = useRef(false);
 // callback was built.
 const currentTargetRef = useRef(null);
 currentTargetRef.current = currentTarget;
-  // visiblePanels: a Set of panel IDs currently rendered. Hydrated from
-  // localStorage on mount; updated by the per-panel toggle. The single
-  // 'panel' state from the previous design is gone — the new UI does
-  // not switch between panels, it shows all toggled-on panels stacked.
-  const [visiblePanels, setVisiblePanels] = useState(() => loadPanelState());
+  // activePanel: the single panel id currently shown. The panel bar
+  // is single-select tabs — tapping a tab switches the content area
+  // to that panel. Hydrated from localStorage on mount; updated by
+  // selectPanel. Always exactly one panel (default 'preview').
+  const [activePanel, setActivePanel] = useState(() => loadPanelState());
   // panelsContainerRef + chromeVars — the solo panel (only one visible)
   // fills the remaining viewport height on mobile. The CSS rule
   // `.inspector__panel--solo { min-height: calc(100dvh -
@@ -751,7 +735,7 @@ currentTargetRef.current = currentTarget;
       if (ro) ro.disconnect();
       window.removeEventListener('resize', measure);
     };
-  }, [currentTarget, visiblePanels]);
+  }, [currentTarget, activePanel]);
   const chromeVars = { '--inspector-chrome-h': chromeH + 'px' };
   const [detailItem, setDetailItem] = useState(null);
   // detailPayload — the Draft Craft payload built from the entry the detail
@@ -827,14 +811,13 @@ const fullscreenOverlayRef = useRef({ open: false });
 // remembered one would greet the next session with a screen the user cannot
 // explain.
 const [focusPanelId, setFocusPanelId] = useState('');
-// A hidden card cannot be the full-screen card: its body is not mounted, so the
-// mode would render an empty region with one header row in it. Closing the last
-// visible panel is already refused in togglePanel, but `showAllPanels` and
-// `loadPanelState` are both independent of this state, so the invariant is
-// enforced here rather than assumed.
+// A panel that is not active cannot be the full-screen card: with
+// single-select tabs, switching panels unmounts the previous panel's
+// body. selectPanel already clears focusPanelId on switch, but this
+// effect is a belt-and-braces guard.
 useEffect(() => {
-if (focusPanelId && !visiblePanels.has(focusPanelId)) setFocusPanelId('');
-}, [focusPanelId, visiblePanels]);
+if (focusPanelId && focusPanelId !== activePanel) setFocusPanelId('');
+}, [focusPanelId, activePanel]);
 // The Preview overlay taking over ends the card mode — see fullscreenOverlayRef.
 // The effect is unconditional (no dependency array) because the only way to learn
 // that the overlay closed is to re-render, and the ref is written during the
@@ -1131,26 +1114,26 @@ rerender();
 // wasteful. Clear the refs eagerly on visibility transitions so
 // events.js's `if (vl)` short-circuit fires instead.
 useEffect(() => {
-  if (!visiblePanels.has('console') && consoleVL.current) {
+  if (activePanel !== 'console' && consoleVL.current) {
     try { consoleVL.current.setData([]); } catch { /* destroyed */ }
     consoleVL.current = null;
   }
-}, [visiblePanels]);
+}, [activePanel]);
   useEffect(() => {
-    if (!visiblePanels.has('network') && networkVL.current) {
+    if (activePanel !== 'network' && networkVL.current) {
       try { networkVL.current.setData([]); } catch { /* destroyed */ }
       networkVL.current = null;
     }
-  }, [visiblePanels]);
-  // Run the CDP screencast only while a connected Preview is visible. Effect
-  // cleanup sends stop immediately; CDP command ordering makes rapid hide/show
-  // transitions resolve as start → stop → start without stale async ownership.
+  }, [activePanel]);
+  // Run the CDP screencast only while a connected Preview is the active tab.
+  // Effect cleanup sends stop immediately; CDP command ordering makes rapid
+  // tab switches resolve as start → stop → start without stale async ownership.
   useEffect(() => {
     const handlers = eventHandlers.current;
-    if (!cdpReady || !visiblePanels.has('preview') || !handlers) return;
+    if (!cdpReady || activePanel !== 'preview' || !handlers) return;
     handlers.startPreviewStream().catch(() => { /* screenshot fallback remains active */ });
     return () => handlers.stopPreviewStream().catch(() => { /* disconnected */ });
-  }, [cdpReady, visiblePanels]);
+  }, [cdpReady, activePanel]);
 
   function rerender() { setTick(t => t + 1); }
 
@@ -1940,89 +1923,29 @@ return stepAttachedHistory('forward');
     description: 'Add this Inspector entry to any chat draft.'
     });
   }
-  // revealPanelCard — bring one panel card into view inside the page
-  // scroller (.app__main). With all five panels on, the Styles card can
-  // sit 800 px below the chip row (measured at 375 x 667: the card's
-  // top was at +809). A chip tap, a new selection or an armed pick mode
-  // all answer in a card the user may not be looking at, so each of
-  // those reveals the card it acts on instead of leaving the outcome
-  // off screen.
-  //
-  // `align: 'top'` puts the card's header just below the chip row —
-  // showing a panel means showing its head. `align: 'bottom'` puts the
-  // card's *bottom* edge at the bottom of the visible region instead,
-  // which is what pick mode wants: the preview the user has to tap is
-  // the first card's body, and aligning its top would leave the tap
-  // surface below the fold.
-  //
-  // The scroll is instant, not smooth: a reveal is a consequence of the
-  // tap the user just made, and an animated jump reads as the page
-  // moving on its own. The chip row is subtracted from the visible
-  // region while it is in view, so a revealed card is never tucked
-  // underneath it.
+  // revealPanelCard — with single-select tabs this is a no-op. The active
+  // panel is always the only one rendered, so there is nothing to scroll
+  // into view. Kept as a function so callers don't need to change.
   function revealPanelCard(id, align) {
-  requestAnimationFrame(() => {
-  const main = document.querySelector('.app__main');
-  const card = document.querySelector('.inspector__panel[data-panel="' + id + '"]');
-  if (!main || !card) return;
-  const bounds = main.getBoundingClientRect();
-  if (!bounds.height) return; // the view is not on screen; nothing to reveal into
-  const bar = document.querySelector('.inspector__panelbar');
-  const barBox = bar ? bar.getBoundingClientRect() : null;
-  const top = barBox && barBox.height ? Math.max(bounds.top, barBox.bottom) : bounds.top;
-  if (top >= bounds.bottom) return;
-  const box = card.getBoundingClientRect();
-  const pad = 6;
-  if (align === 'bottom') {
-  if (box.bottom <= bounds.bottom - pad && box.top >= top) return;
-  main.scrollTop += box.bottom - (bounds.bottom - pad);
-  return;
+  // No-op: single-select tabs show exactly one panel, always in view.
   }
-  if (box.top >= top - pad && box.bottom <= bounds.bottom) return;
-  main.scrollTop += box.top - top - pad;
-  });
-  }
-  // togglePanel — flip a panel's visibility. The user's choice is
-  // persisted to localStorage so it survives a reload and a new
-  // target. If the user hides the last visible panel we keep it
-  // visible (loadPanelState would also re-default on next load;
-  // doing it here keeps the UI from being empty for a frame).
-  // Showing a panel reveals its card: the tap that turned it on is a
-  // request to look at it, and the card may be a screen away (see
-  // revealPanelCard). Hiding one leaves the page where it is — the
-  // cards below move up on their own and nothing new needs the eye.
-  function togglePanel(id) {
-  const prev = visiblePanels;
-  let shown = false;
-  let next;
-  if (prev.has(id)) {
-  if (prev.size === 1) return; // keep at least one visible
-  // Hiding the focused card ends full screen, and the mode is cleared *before*
-  // the visibility set is written: leaving it one render longer would show the
-  // overlay of a panel the user just switched off.
-  if (focusPanelId === id) setFocusPanelId('');
-  next = new Set(prev);
-  next.delete(id);
-  } else {
-  next = new Set(prev);
-  next.add(id);
-  shown = true;
-  }
-  savePanelState(next);
-  setVisiblePanels(next);
+  // selectPanel — switch the content area to a single panel. The panel
+  // bar is single-select tabs: tapping a tab replaces the current
+  // panel's content with the tapped one. The choice is persisted to
+  // localStorage so it survives a reload and a new target.
+  // Switching panels ends full screen (the overlay is for the panel
+  // that was focused; a different panel has no overlay to show).
+  function selectPanel(id) {
+  if (id === activePanel) return;
+  if (focusPanelId) setFocusPanelId('');
+  savePanelState(id);
+  setActivePanel(id);
   rerender();
-  if (shown) revealPanelCard(id, 'top');
   }
-  // showAllPanels — reset to the default "everything visible".
-  // Wired to a button in the empty-state hint and to the toolbar's
-  // reset action. Kept cheap (one state setter + persist) because
-  // the panels remount on visibility change anyway.
-  function showAllPanels() {
-    const all = new Set(PANELS.map((p) => p.id));
-    savePanelState(all);
-    setVisiblePanels(all);
-    rerender();
-    }
+  // togglePanel — alias for selectPanel, kept for callers that used
+  // the old multi-select name (the panel header eye button, the
+  // actions menu). Selecting the already-active panel is a no-op.
+  function togglePanel(id) { selectPanel(id); }
     // togglePanelFullscreen — the panel header's full-screen button, for every card
     // except Preview (whose button keeps opening that panel's own viewport-spanning
     // overlay, because Preview's full screen already exists and is the fuller one:
@@ -2061,10 +1984,9 @@ rerender();
   // closed eye = "tap to hide"). The body is a flex child that
   // takes whatever vertical space remains; the `grow` prop tells
   // the first visible panel to take the leftover height, so a user
-  // with one panel open gets a single full-height panel, and a
-  // user with all four open gets four equal-height panels.
-  const visibleIds = PANELS.map((p) => p.id).filter((id) => visiblePanels.has(id));
-  const noPanelsVisible = visibleIds.length === 0;
+  // With single-select tabs, exactly one panel is visible at a time.
+  const visibleIds = [activePanel];
+
   // Render the optional panels. Each card has its own header +
   // body; the first visible card also gets `grow` so the preview
   // (or whatever the user kept) fills the leftover height.
@@ -2167,7 +2089,7 @@ readSiblingValues: handlers ? handlers.readSiblingValues : null,
     // Whether the Preview panel is on screen. Pick mode only works by tapping
     // the live preview, so the panel uses this to disable the pick button (and
     // say why) instead of offering an action that cannot complete.
-    previewVisible: visiblePanels.has('preview'),
+    previewVisible: activePanel === 'preview',
     pickHandlerRef: stylesPickRef,
     panelHandlesRef: stylesHandlesRef,
     // The identity chip in the card body taps to copy the selector. The write
@@ -2209,19 +2131,18 @@ readSiblingValues: handlers ? handlers.readSiblingValues : null,
     const objectId = (info && info.objectId) || '';
     if (objectId && objectId !== revealedSelectionRef.current) {
       revealedSelectionRef.current = objectId;
-      revealPanelCard('styles', 'top');
+      // A new selection switches to the Styles tab so the user sees it.
+      selectPanel('styles');
     }
     if (!objectId) revealedSelectionRef.current = '';
     },
     pickMode: stylesActive,
-    // Arming pick mode reveals the Preview card: the mode's whole instruction
-    // is "tap an element in the page", and the page is the preview's body —
-    // off screen it is a mode that cannot be used. Bottom-aligned so the tap
-    // surface itself is in view, not just the card's header. Disarming leaves
-    // the page where the user left it.
+    // Arming pick mode switches to the Preview tab: the mode's whole
+    // instruction is "tap an element in the page", and the page is the
+    // preview's body. Disarming leaves the user where they were.
     onPickModeChange: (on) => {
     setStylesActive(on);
-    if (on) revealPanelCard('preview', 'bottom');
+    if (on) selectPanel('preview');
     }
   });
   if (id === 'console') return h(ConsolePanel, { onRowTap: (ev) => onListTap('console', ev), onReady: (vl) => { consoleVL.current = vl; if (handlers) handlers.pushConsole(); }, onEvaluate: (code) => { if (handlers) handlers.evaluateExpression(code); }, getEval: (desc, params) => { if (conn.current) return conn.current.cdpSend('Runtime.evaluate', params); return Promise.reject(new Error('not connected')); } });
@@ -2260,7 +2181,7 @@ pickMode: stylesActive,
 pickLabel: stylesActive
 ? 'Stop picking — tap the preview to select'
 : 'Pick an element from the preview',
-pickDisabled: !visiblePanels.has('preview') && !stylesActive,
+pickDisabled: activePanel !== 'preview' && !stylesActive,
 onClear: () => { const acts = stylesHandlesRef.current; if (acts && acts.clear) acts.clear(); },
 onRefresh: () => { const acts = stylesHandlesRef.current; if (acts && acts.refresh) acts.refresh(); },
 onPick: () => { const acts = stylesHandlesRef.current; if (acts && acts.togglePick) acts.togglePick(); }
@@ -2272,7 +2193,6 @@ onPick: () => { const acts = stylesHandlesRef.current; if (acts && acts.togglePi
       h(InspectActionsMenu, {
         onReload: reloadAttachedTarget,
         onOpenInNewTab: openAttachedPageInNewTab,
-        onShowAll: showAllPanels,
         onClose: closeAttachedTarget
       })
     ),
@@ -2349,14 +2269,13 @@ onPick: () => { const acts = stylesHandlesRef.current; if (acts && acts.togglePi
         // Close button moved to InspectActionsMenu so the nav row
         // carries only the URL field + Go (the most common action).
       ),
-      // Panelbar — horizontally scrollable pill tabs with a corner
-      // entry-count badge for the row-shaped panels (console, network).
-      // Preview/Info are not countable so they stay unbadged. The bar
-      // scrolls when chips overflow (narrow screens); a fade gradient
-      // on the right edge (toggled by PanelBar's scroll listener)
-      // signals more content. Each chip is a row pill: icon + label,
-      // min-width 64 px, 44 px tall tap target.
-      h(PanelBar, { visiblePanels, consoleCount, networkCount, onToggle: togglePanel }),
+      // Panelbar — horizontally scrollable pill tabs (single-select).
+      // Tapping a tab switches the content area to that panel.
+      // Corner entry-count badges on console/network show counts
+      // regardless of active state. The bar scrolls when pills overflow
+      // (narrow screens); a fade gradient on the right edge signals
+      // more content.
+      h(PanelBar, { activePanel, consoleCount, networkCount, onSelect: selectPanel }),
     // Intent — the describe-a-change surface (Part H). Its chip is hidden (see
 // INTENT_SURFACE): the panel bar carries PANELS only, so this renders nothing
 // unless the surface is switched back on. It is deliberately NOT folded into
@@ -2394,29 +2313,17 @@ INTENT_SURFACE && intentOpen
     })
     )
     : null,
-    noPanelsVisible
-    ? h('div', { class: 'inspector__panels-empty', role: 'status' },
-    h('p', null, 'No panels visible.'),
-    h('p', { class: 'inspector__panels-empty-hint' }, 'Tap a panel name above to show it.'),
-    h('button', { class: 'btn', type: 'button', onClick: showAllPanels }, 'Show all panels')
-    )
-    : h('div', { class: 'inspector__panels', ref: panelsContainerRef, style: chromeVars },
+    h('div', { class: 'inspector__panels', ref: panelsContainerRef, style: chromeVars },
     visibleIds.map((id, idx) => h(PanelCard, {
     id,
     label: PANELS.find((p) => p.id === id).label,
-    // The first visible card takes the leftover height. Full screen does not
-    // change that: the overlay below is a separate surface, so the stacked
-    // layout the user returns to after closing it is exactly the one they
-    // left, with this same card grown.
-    grow: idx === 0,
-    // Only panel visible: the page below it is otherwise empty, so
-    // the body should take the height it has been given instead of
-    // sitting at the shared 52 dvh and leaving a blank half-screen
-    // under a scroller that is needlessly short.
-    solo: visibleIds.length === 1,
-    isVisible: visiblePanels.has(id),
+    // Single-select tabs: exactly one panel is shown. It always grows
+    // and is always solo — the content area is one full-height card.
+    grow: true,
+    solo: true,
+    isVisible: true,
     focused: focusPanelId === id,
-    onToggle: togglePanel,
+    onToggle: selectPanel,
     // The Styles panel header's actions: Clear / Refresh /
     // Pick, wired to that panel's own handles. Null for every
     // other panel, so only the Styles card grows them.
@@ -2469,7 +2376,7 @@ grow: true,
 solo: true,
 focused: true,
 isVisible: true,
-onToggle: togglePanel,
+onToggle: selectPanel,
 stylesActions: focusPanelId === 'styles' ? stylesActions : null,
 sizeId: viewportId,
 onSizeChange: null,
