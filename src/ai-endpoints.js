@@ -49,6 +49,16 @@ async function openAIShapedListModels(def, cred, signal) {
 // The models list is a fixed path under the API root, so a connection pointed
 // at a proxy or a regional host lists *that* host's catalog. Falls back to the
 // shipped public base when the connection carries none.
+// geminiBase(model) — the API root a Gemini request goes to. The connection's
+// configured base URL wins (a proxy, gateway, or regional host), matching the
+// Anthropic and Ollama builders and the dictation path in src/transcribe.js,
+// which already honored model.baseUrl. The catalogue adapter reads the same
+// value, so list and chat can no longer disagree about the host.
+function geminiBase(model) {
+  const raw = String((model && model.baseUrl) || '').trim();
+  return raw || ENDPOINTS.gemini.baseUrl;
+}
+
 function geminiModelsUrl(baseUrl) {
   return (baseUrl || ENDPOINTS.gemini.baseUrl).replace(/\/+$/, '') + '/v1beta/models?pageSize=200';
 }
@@ -1655,14 +1665,14 @@ function buildGeminiRequest(model, messages, stream) {
       throw Object.assign(new Error('Imagen predict does not support image inputs here; choose a Gemini image-chat model.'), { code: 'EBADINPUT' });
     }
     return {
-      url: joinUrl(ENDPOINTS.gemini.baseUrl, '/v1beta/models/' + encodeURIComponent(model.id) + ':predict'),
+      url: joinUrl(geminiBase(model), '/v1beta/models/' + encodeURIComponent(model.id) + ':predict'),
       headers: { 'Content-Type': 'application/json', ...ENDPOINTS.gemini.authHeader(credential(model)) },
       body: { instances: [{ prompt: imagePrompt(messages) }], parameters: { sampleCount: 1 } },
       responseFormat: 'json', expectsImage: true
     };
   }
   // Gemini uses ?alt=sse for streaming responses.
-  const url = joinUrl(ENDPOINTS.gemini.baseUrl, '/v1beta/models/' + encodeURIComponent(model.id) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent'));
+  const url = joinUrl(geminiBase(model), '/v1beta/models/' + encodeURIComponent(model.id) + ':' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent'));
   const systemMsgs = messages.filter(m => m.role === 'system');
   // systemContentText handles both shapes a system message can take: a
   // plain string, and the block array the subagent runner pushes

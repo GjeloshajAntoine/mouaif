@@ -30,7 +30,11 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
   was offered localhost's models. Mistral's catalog hard-coded
   `api.mistral.ai`, so a connection pointed at a gateway, proxy, or regional
   host listed the public vendor catalog while chat went elsewhere. Gemini's
-  chat and image catalogs now follow the configured base URL too. See
+  chat and image builders, and both of its catalogue slices, now read the
+  connection's base URL — the builder had hard-coded the public API root even
+  though the Anthropic, Ollama, and dictation paths honored `model.baseUrl`,
+  so a configured Gemini proxy listed one host's models and chatted against
+  another's. See
   [docs/features/providers.md](docs/features/providers.md).
 - **OAuth namespaces the keyring cannot see** — `AI_TO_AUTH_PROVIDER` mapped
   `ollama`, `azure`, `mistral`, `groq`, and `deepseek` to keyring namespaces

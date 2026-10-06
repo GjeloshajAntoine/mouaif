@@ -180,6 +180,32 @@ async function main() {
       'url=' + lastUrl);
   });
 
+  // 8c) The Gemini *builder* reads the same base URL as the catalogue, so chat
+  //     and list cannot disagree about the host. The builder hard-coded the
+  //     public API root while the Anthropic and Ollama builders honored
+  //     model.baseUrl, which made a configured Gemini proxy list one host's
+  //     models and chat against another's.
+  {
+    const proxied = ai.BUILDERS.gemini({
+      id: 'gemini-2.5-flash', provider: 'gemini', apiKey: 'k',
+      baseUrl: 'https://gemini-proxy.internal'
+    }, [{ role: 'user', content: 'hi' }], true);
+    check('gemini builder: configured base URL used',
+      proxied.url === 'https://gemini-proxy.internal/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse',
+      'url=' + proxied.url);
+    const defaults = ai.BUILDERS.gemini({ id: 'gemini-2.5-flash', provider: 'gemini', apiKey: 'k' },
+      [{ role: 'user', content: 'hi' }], true);
+    check('gemini builder: public API root when no base URL is set',
+      defaults.url === 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse',
+      'url=' + defaults.url);
+    const imagen = ai.BUILDERS.gemini({
+      id: 'imagen-4', provider: 'gemini', apiKey: 'k', baseUrl: 'https://gemini-proxy.internal'
+    }, [{ role: 'user', content: 'draw' }], false);
+    check('gemini builder: Imagen predict uses the configured base URL',
+      imagen.url === 'https://gemini-proxy.internal/v1beta/models/imagen-4:predict',
+      'url=' + imagen.url);
+  }
+
   // 9) Ollama: { models: [{ name, ... }] } from /api/tags.
   await withStubbedFetch(async (url) => {
     lastUrl = url;

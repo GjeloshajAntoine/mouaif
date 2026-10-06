@@ -19,7 +19,7 @@ The built-in providers are:
 
 - **OpenAI compatible** — any OpenAI-shaped endpoint (OpenAI, Together, LM Studio, llama.cpp `llama-server`). The key may be left blank for a local server that needs none, see [Local OpenAI-compatible servers](./local-openai-servers.md).
 - **Anthropic** — API key or browser sign-in, see [Anthropic sign-in](./oauth-anthropic.md).
-- **Google Gemini** — API key. The catalog is read from the connection's base URL (a proxy or regional host works), and OAuth accounts for Gemini are indexed under the `google` namespace the server uses.
+- **Google Gemini** — API key. The connection's base URL drives both chat and the model catalog (a proxy, gateway, or regional host works), and OAuth accounts for Gemini are indexed under the `google` namespace the server uses.
 - **OpenAI Codex** — use your ChatGPT plan with device-code sign-in, see [OpenAI Codex](./codex.md).
 - **Ollama** — local server, no API key required. The connection's base URL is used for both chat and its model catalog, so a server on another host (or a non-default port) lists *its* models.
 - **OpenRouter** — one key for many upstream models, or browser sign-in, see [OpenRouter](./openrouter.md).
