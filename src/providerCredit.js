@@ -209,15 +209,33 @@ async function lookupBalance({ provider, baseUrl, cred, fetchImpl } = {}) {
   const origin = originOf(baseUrl);
   const headers = { Authorization: 'Bearer ' + cred, Accept: 'application/json' };
 
-  // Mistral's Admin API authenticates with `x-api-key`, not a Bearer token,
-  // and lives under /v1/admin. A workspace-scoped key gets 401 here (the
-  // route requires an Admin key), which surfaces as "no balance" rather than
-  // an error the user cannot act on.
+  // Mistral's Admin API lives under /v1/admin and requires an Admin-scoped
+  // key. Its two auth headers disagree across Mistral's own sources:
+  //
+  //   * the prose guide (docs.mistral.ai/admin/admin-api/authentication) says
+  //     "pass your Admin API key in the `x-api-key` header", and every curl
+  //     sample there sends `x-api-key`;
+  //   * the OpenAPI security scheme instead declares AdminApiKey as
+  //     `type: http / scheme: bearer` ("passed as a bearer token"), and the
+  //     reference generated from that spec renders every sample as
+  //     `Authorization: Bearer …` with no `x-api-key` anywhere.
+  //
+  // Both cannot be right, and the live gateway returns an identical
+  // `401 {"detail":"Invalid API Key"}` for either header (and for none), so it
+  // cannot settle the question without a real Admin key. Sending BOTH is safe
+  // because they are independent headers, and it is the pattern already used
+  // for OpenRouter's `X-OpenRouter-Title` / `X-Title` pair in
+  // src/ai-endpoints.js: whichever name the deployment reads, it finds one.
+  // This costs nothing and is the only choice that cannot be wrong-by-omission
+  // for a user whose key would otherwise silently produce no pill.
+  //
+  // A workspace-scoped key is rejected outright by this route, so it still
+  // reports "no balance" rather than an error the user cannot act on.
   if (provider === 'mistral') {
     let res;
     try {
       const r = await doFetch(joinUrl(origin, MISTRAL_SPEND_LIMIT_PATH), {
-        headers: { 'x-api-key': cred, Accept: 'application/json' }
+        headers: { 'x-api-key': cred, ...headers }
       });
       res = r && r.ok
         ? { status: r.status, ok: true, body: await r.json().catch(() => null) }

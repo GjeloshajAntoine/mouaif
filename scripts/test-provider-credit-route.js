@@ -141,9 +141,10 @@ async function main() {
     stubThrow = null;
 
     // ---- Mistral reads its own Admin API spend limit --------------------
-    // /v1/admin/spend-limit, authenticated with x-api-key (not a Bearer
-    // token). The amounts are whole numbers in the billing currency, so the
-    // remaining balance is usage_limit - total_usage with no cents division.
+    // /v1/admin/spend-limit, with the key sent under both documented header
+    // names (the prose guide says x-api-key, the OpenAPI scheme says bearer).
+    // Amounts are whole numbers in the billing currency, so the remaining
+    // balance is usage_limit - total_usage with no cents division.
     setProviders([{ id: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'admin-key' }]);
     calls.length = 0;
     stubRoutes = {
@@ -161,9 +162,10 @@ async function main() {
     check('mistral: used the Admin API path, not the OpenAI billing routes',
     calls.length === 1 && calls[0].url === 'https://api.mistral.ai/v1/admin/spend-limit',
     calls.map((c) => c.url).join(', '));
-    check('mistral: authenticated with x-api-key, not Bearer',
-    calls[0].init && calls[0].init.headers && calls[0].init.headers['x-api-key'] === 'admin-key'
-    && !calls[0].init.headers.Authorization,
+    check('mistral: sends the key under BOTH header names',
+    calls[0].init && calls[0].init.headers
+    && calls[0].init.headers['x-api-key'] === 'admin-key'
+    && calls[0].init.headers.Authorization === 'Bearer admin-key',
     JSON.stringify(calls[0].init && calls[0].init.headers));
 
     // An uncapped account has no ceiling to subtract from: no pill, no guess.

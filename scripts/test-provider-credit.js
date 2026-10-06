@@ -242,9 +242,10 @@ async function main() {
   // ---- Mistral reads its Admin API spend limit --------------------------
   //
   // The Admin API answers { limits: { completion: { total_usage, usage_limit },
-  // currency } }, authenticated with x-api-key. Amounts are whole numbers in
-  // the billing currency, NOT cents (Mistral's docs, on the POST that writes
-  // the same field: "500 means 500, not 500 cents").
+  // currency } }, with the key sent under both documented header names (the
+  // prose guide says x-api-key, the OpenAPI scheme says bearer). Amounts are
+  // whole numbers in the billing currency, NOT cents (Mistral's docs, on the
+  // POST that writes the same field: "500 means 500, not 500 cents").
   {
     const calls = [];
     const f = async (url, init) => {
@@ -265,9 +266,10 @@ async function main() {
     check('mistral: asks /v1/admin/spend-limit',
       calls.length === 1 && calls[0].url === 'https://api.mistral.ai/v1/admin/spend-limit',
       calls.map((c) => c.url).join(', '));
-    check('mistral: sends the key as x-api-key, not Bearer',
-      calls[0].init && calls[0].init.headers && calls[0].init.headers['x-api-key'] === 'admin-key'
-      && !calls[0].init.headers.Authorization,
+    check('mistral: sends the key under BOTH header names',
+      calls[0].init && calls[0].init.headers
+      && calls[0].init.headers['x-api-key'] === 'admin-key'
+      && calls[0].init.headers.Authorization === 'Bearer admin-key',
       JSON.stringify(calls[0].init && calls[0].init.headers));
     check('mistral: limit minus usage, with no cents conversion (500 - 12.5)',
       r.ok && r.remaining === 487.5 && r.totalCredits === 500 && r.totalUsage === 12.5,
