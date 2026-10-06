@@ -18,17 +18,19 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
-- **Provider model catalogs follow the connection** — Azure and Ollama read
-  their live model list from the URL you configured. Azure's adapter joined
-  Azure's *empty* default base URL, producing the relative
+- **Provider model catalogs follow the connection** — Azure, Ollama, Mistral,
+  and Gemini read their live model list from the URL you configured. Azure's
+  adapter joined Azure's *empty* default base URL, producing the relative
   `/openai/models?api-version=…`, which `fetch()` rejects outright: the live
   catalog could never answer, and no test noticed because the tests stubbed
   `fetch` and never passed a base URL. It now derives the resource origin from
   the deployment URL and fails early with a typed `EBADINPUT` naming the URL to
   fill in when none is set. Ollama hard-coded the loopback default while
   `buildOllamaRequest` honored `model.baseUrl`, so a remote Ollama connection
-  was offered localhost's models. Gemini's chat and image catalogs now follow
-  the configured base URL too. See
+  was offered localhost's models. Mistral's catalog hard-coded
+  `api.mistral.ai`, so a connection pointed at a gateway, proxy, or regional
+  host listed the public vendor catalog while chat went elsewhere. Gemini's
+  chat and image catalogs now follow the configured base URL too. See
   [docs/features/providers.md](docs/features/providers.md).
 - **OAuth namespaces the keyring cannot see** — `AI_TO_AUTH_PROVIDER` mapped
   `ollama`, `azure`, `mistral`, `groq`, and `deepseek` to keyring namespaces

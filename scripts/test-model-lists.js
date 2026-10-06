@@ -394,6 +394,25 @@ async function main() {
       req.body && req.body.stream_options && req.body.stream_options.include_usage === true);
   }
 
+  // 21b) Mistral honors the connection's base URL. The chat builder already
+  //      routes to model.baseUrl; the hard-coded catalog URL offered
+  //      api.mistral.ai's models to a connection pointed at a gateway, proxy,
+  //      or regional host — a list that disagreed with where chat went.
+  await withStubbedFetch(async (url) => {
+    lastUrl = url;
+    return { ok: true, status: 200, statusText: 'OK', json: async () => ({ data: [] }) };
+  }, async () => {
+    await ai.listModels('mistral', 'key-mistral', undefined, 'https://gateway.corp.example/v1');
+    check('mistral listModels: configured base URL used',
+      lastUrl === 'https://gateway.corp.example/v1/models', 'url=' + lastUrl);
+    await ai.listModels('mistral', 'key-mistral', undefined, 'https://gateway.corp.example/v1/');
+    check('mistral listModels: trailing slash collapsed',
+      lastUrl === 'https://gateway.corp.example/v1/models', 'url=' + lastUrl);
+    await ai.listModels('mistral', 'key-mistral');
+    check('mistral listModels: public endpoint when no base URL is set',
+      lastUrl === 'https://api.mistral.ai/v1/models', 'url=' + lastUrl);
+  });
+
   // 22) New providers: missing cred + 401 -> ENO_APIKEY. Azure is asked with
   //     the deployment URL a real connection carries (it has no public default
   //     resource, so an empty base URL is a separate, earlier EBADINPUT).

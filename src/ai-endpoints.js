@@ -365,9 +365,13 @@ staticHeaders: {
     baseUrl: 'https://api.mistral.ai/v1',
     chatPath: '/chat/completions',
     authHeader: (cred) => ({ 'Authorization': 'Bearer ' + cred }),
-    listModels: async (cred, signal) => openAIShapedListModels({
+    // The connection's configured base URL wins, so a gateway, proxy, or
+    // regional host lists its own catalog — the same rule buildOpenAIRequest
+    // applies to chat. Hard-coding the public endpoint here made the picker
+    // offer api.mistral.ai's models while the chat went to the configured one.
+    listModels: async (cred, signal, baseUrl) => openAIShapedListModels({
       name: 'mistral',
-      url: ENDPOINTS.mistral.baseUrl + '/models',
+      url: (baseUrl || ENDPOINTS.mistral.baseUrl).replace(/\/+$/, '') + '/models',
       authHeader: ENDPOINTS.mistral.authHeader,
       thinkingFor: (mm) => thinkingForOpenAIModel(mm.id)
     }, cred, signal),
