@@ -90,15 +90,17 @@ async function handleAI(req, res, parsed) {
 
   // GET /api/ai/provider-credit?provider=<id> -> { supported, remaining? }
   // Provider-specific account balance lookup. OpenRouter exposes a simple
-  // key-scoped credits endpoint; the OpenAI-shaped providers (OpenAI
-  // compatible, Mistral, Groq, DeepSeek) are asked through the OpenAI billing
-  // routes — credit grants first, then the subscription limit minus usage —
-  // in src/providerCredit.js. Every other provider returns { supported: false }
-  // so the chat head hides the pill instead of showing a guessed number.
+  // key-scoped credits endpoint; DeepSeek answers its own /user/balance; and
+  // OpenAI compatible reaches the OpenAI dashboard billing routes — credit
+  // grants first, then the subscription limit minus usage — in
+  // src/providerCredit.js. Mistral and Groq publish no balance API, so they
+  // report { supported: false } rather than firing requests that can only 404.
+  // Every other provider does the same, so the chat head hides the pill
+  // instead of showing a guessed number.
   if (urlPath === '/api/ai/provider-credit' && method === 'GET') {
     const provider = typeof parsed.query.provider === 'string' ? parsed.query.provider : '';
-    const openAIShaped = providerCredit.supportsOpenAIShaped(provider);
-    if (provider !== 'openrouter' && !openAIShaped) {
+    const balances = providerCredit.supportsBalance(provider);
+    if (provider !== 'openrouter' && !balances) {
       return sendJSON(res, 200, { provider, supported: false });
     }
     let cred;
@@ -107,14 +109,14 @@ async function handleAI(req, res, parsed) {
     if (!cred) {
       // A local OpenAI-shaped server needs no key at all, so it simply has no
       // account balance to report rather than being an error.
-      if (openAIShaped) return sendJSON(res, 200, { provider, supported: false });
+      if (balances) return sendJSON(res, 200, { provider, supported: false });
       return sendJSON(res, 400, { provider, supported: true, error: 'OpenRouter API key required', code: 'ENO_APIKEY' });
     }
-    if (openAIShaped) {
+    if (balances) {
       // The configured base URL wins: a connection pointed at a self-hosted or
       // gateway endpoint must be asked there, not at api.openai.com.
       const baseUrl = baseUrlForProvider(provider) || ai.ENDPOINTS[provider].baseUrl;
-      const result = await providerCredit.lookupOpenAIShaped({ provider, baseUrl, cred });
+      const result = await providerCredit.lookupBalance({ provider, baseUrl, cred });
       if (!result.ok) {
         if (result.code === 'EUNREACHABLE') {
           return sendJSON(res, 503, { provider, supported: true, error: 'Provider unreachable', code: 'EUNREACHABLE' });

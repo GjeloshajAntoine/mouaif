@@ -46,14 +46,20 @@ function fakeFetch(routes, opts = {}) {
 
 async function main() {
   // ---- which providers are supported -----------------------------------
-  check('openai-compatible is OpenAI-shaped', credit.supportsOpenAIShaped('openai-compatible'));
-  check('mistral and groq are OpenAI-shaped',
-    credit.supportsOpenAIShaped('mistral') && credit.supportsOpenAIShaped('groq'));
-  check('deepseek is OpenAI-shaped', credit.supportsOpenAIShaped('deepseek'));
+  // Only the providers with a balance route we can actually read. The OpenAI
+  // dashboard billing routes live on api.openai.com; mistral/groq 404 them, so
+  // listing them here meant a pill that could never appear.
+  check('openai-compatible reaches the OpenAI billing routes',
+    credit.supportsBalance('openai-compatible'));
+  check('deepseek has its own balance route', credit.supportsBalance('deepseek'));
+  check('mistral is NOT routed through the OpenAI billing shape',
+    !credit.supportsBalance('mistral'));
+  check('groq is NOT routed through the OpenAI billing shape',
+    !credit.supportsBalance('groq'));
   check('openrouter is NOT routed through the OpenAI billing shape',
-    !credit.supportsOpenAIShaped('openrouter'));
-  check('anthropic/gemini are not OpenAI-shaped',
-    !credit.supportsOpenAIShaped('anthropic') && !credit.supportsOpenAIShaped('gemini'));
+    !credit.supportsBalance('openrouter'));
+  check('anthropic/gemini have no balance route',
+    !credit.supportsBalance('anthropic') && !credit.supportsBalance('gemini'));
 
   // ---- origin handling -------------------------------------------------
   check('originOf strips /v1 from the API base',
@@ -71,7 +77,7 @@ async function main() {
         object: 'credit_summary', total_granted: 20, total_used: 16.58, total_available: 3.42
       })
     });
-    const r = await credit.lookupOpenAIShaped({
+    const r = await credit.lookupBalance({
       provider: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', cred: 'sk-demo', fetchImpl: f
     });
     check('grants: reports the remaining amount', r.ok && r.remaining === 3.42, JSON.stringify(r));
@@ -92,7 +98,7 @@ async function main() {
         grants: { object: 'list', data: [] }
       })
     });
-    const r = await credit.lookupOpenAIShaped({
+    const r = await credit.lookupBalance({
       provider: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', cred: 'k', fetchImpl: f
     });
     check('grants: string amounts are accepted', r.ok && r.remaining === 3.42, JSON.stringify(r));
@@ -103,7 +109,7 @@ async function main() {
     const f = fakeFetch({
       '/dashboard/billing/credit_grants': jsonResponse({ total_granted: 10, total_used: 4 })
     });
-    const r = await credit.lookupOpenAIShaped({
+    const r = await credit.lookupBalance({
       provider: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', cred: 'k', fetchImpl: f
     });
     check('grants: remaining is derived when only the totals are present',
@@ -116,7 +122,7 @@ async function main() {
       '/dashboard/billing/subscription': jsonResponse({ hard_limit_usd: 20, soft_limit_usd: 18 }),
       '/dashboard/billing/usage': jsonResponse({ total_usage: 1658 })  // cents
     });
-    const r = await credit.lookupOpenAIShaped({
+    const r = await credit.lookupBalance({
       provider: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', cred: 'k', fetchImpl: f
     });
     check('subscription: usage cents convert to dollars (20 - 16.58)',
@@ -133,7 +139,7 @@ async function main() {
       '/dashboard/billing/subscription': jsonResponse({ hard_limit_usd: 5 }),
       '/dashboard/billing/usage': jsonResponse({ total_usage: 900 })
     });
-    const r = await credit.lookupOpenAIShaped({
+    const r = await credit.lookupBalance({
       provider: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', cred: 'k', fetchImpl: f
     });
     check('subscription: over-spend floors at 0', r.ok && r.remaining === 0, JSON.stringify(r));
@@ -142,7 +148,7 @@ async function main() {
   // ---- a local server answers nothing usable ---------------------------
   {
     const f = fakeFetch({});
-    const r = await credit.lookupOpenAIShaped({
+    const r = await credit.lookupBalance({
       provider: 'openai-compatible', baseUrl: 'http://127.0.0.1:11434/v1', cred: 'k', fetchImpl: f
     });
     check('no billing route: reported as unsupported, not a number',
@@ -156,7 +162,7 @@ async function main() {
     const f = async (url) => ({
       ok: true, status: 200, json: async () => { throw new Error('Unexpected token <'); }
     });
-    const r = await credit.lookupOpenAIShaped({
+    const r = await credit.lookupBalance({
       provider: 'openai-compatible', baseUrl: 'https://gateway.example/v1', cred: 'k', fetchImpl: f
     });
     check('unparseable body: unsupported, never a guessed number',
@@ -166,7 +172,7 @@ async function main() {
   // ---- transport failure is its own code -------------------------------
   {
     const f = fakeFetch({}, { throwOn: /credit_grants/ });
-    const r = await credit.lookupOpenAIShaped({
+    const r = await credit.lookupBalance({
       provider: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', cred: 'k', fetchImpl: f
     });
     check('a refused connection is EUNREACHABLE', r.ok === false && r.code === 'EUNREACHABLE',
@@ -178,11 +184,60 @@ async function main() {
     const f = fakeFetch({
       '/dashboard/billing/subscription': jsonResponse({ hard_limit_usd: 12 })
     });
-    const r = await credit.lookupOpenAIShaped({
+    const r = await credit.lookupBalance({
       provider: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', cred: 'k', fetchImpl: f
     });
     check('subscription without a usage answer reports the full limit',
       r.ok && r.remaining === 12 && r.totalUsage === 0, JSON.stringify(r));
+  }
+
+  // ---- DeepSeek uses its own /user/balance route ------------------------
+  //
+  // It does NOT serve the OpenAI dashboard routes, so asking it for
+  // /dashboard/billing/* could only ever fail. These cases pin both the route
+  // and the response shape ({ balance_infos: [{ currency, total_balance }] },
+  // amounts as strings).
+  {
+    const calls = [];
+    const f = async (url) => {
+      calls.push(String(url));
+      if (String(url).endsWith('/user/balance')) {
+        return jsonResponse({
+          is_available: true,
+          balance_infos: [{ currency: 'CNY', total_balance: '12.50', granted_balance: '0.00', topped_up_balance: '12.50' }]
+        });
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+    const r = await credit.lookupBalance({
+      provider: 'deepseek', baseUrl: 'https://api.deepseek.com', cred: 'k', fetchImpl: f
+    });
+    check('deepseek: asks /user/balance, not the OpenAI billing routes',
+      calls.length === 1 && calls[0] === 'https://api.deepseek.com/user/balance',
+      calls.join(', '));
+    check('deepseek: parses total_balance into remaining',
+      r.ok && r.remaining === 12.5, JSON.stringify(r));
+
+    // USD is preferred when the account holds several currencies.
+    const multi = await credit.balanceFromDeepSeek({
+      balance_infos: [
+        { currency: 'CNY', total_balance: '71.00' },
+        { currency: 'USD', total_balance: '10.00' }
+      ]
+    });
+    check('deepseek: prefers the USD row when several currencies exist',
+      multi && multi.remaining === 10, JSON.stringify(multi));
+
+    // is_available: false is the provider saying the balance cannot be spent.
+    const spent = await credit.balanceFromDeepSeek({
+      is_available: false, balance_infos: [{ currency: 'USD', total_balance: '0.00' }]
+    });
+    check('deepseek: is_available false floors the balance at 0',
+      spent && spent.remaining === 0, JSON.stringify(spent));
+
+    // No balance_infos at all is "unsupported", never a guessed 0.
+    check('deepseek: a body without balance_infos is not a number',
+      (await credit.balanceFromDeepSeek({ is_available: true })) === null);
   }
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');

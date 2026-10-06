@@ -56,6 +56,14 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
   the chat header. The window is now read under any of the names providers use,
   and a provider that reports none still yields no window rather than a guess.
   See [docs/features/usage-metrics.md](docs/features/usage-metrics.md).
+- **The Balance pill could never appear for Mistral or Groq** — balance was
+  looked up through the OpenAI *dashboard* routes
+  (`/dashboard/billing/credit_grants`, `/subscription`, `/usage`), which live on
+  api.openai.com. Mistral and Groq answer 404 for those paths — and for a bogus
+  path too, i.e. a catch-all, so the route does not exist — which meant every
+  chat-open fired requests that could only fail, and the docs described a chip
+  that never rendered. Both now report "unsupported" without a request, and
+  DeepSeek reads its own documented `GET /user/balance` route instead.
 - **Canonical folder approvals and run validation** — working-folder cards and allowlists use the real destination behind symbolic links. A destination changed during approval fails with `ESTALE_PATH` instead of switching elsewhere. Selected subagent folders and resets enforce the chat's home guard while inherited temporary projects keep their existing local sandbox.
 - **Delegated folder identity** — subagents retain the real parent chat for permissions, approval decisions, pending recovery, cancellation, tasks and chat tools. Only local folder operations use the separate run id; attachment reads follow the run's folder. Missing selected folders fail instead of silently launching a delegate in the original project.
 - **Native tools now work on Azure, Mistral, Groq, and DeepSeek** — the

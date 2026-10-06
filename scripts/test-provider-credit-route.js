@@ -136,12 +136,41 @@ async function main() {
       r.status === 503 && r.body.code === 'EUNREACHABLE', r.status + ' ' + JSON.stringify(r.body));
     stubThrow = null;
 
-    // ---- the cloud providers that share the OpenAI shape --------------
+    // ---- the vendors that do NOT serve the OpenAI billing routes ---------
+    // Mistral and Groq answer 404 for /dashboard/billing/* (a catch-all: a
+    // bogus path 404s too), so the lookup used to fire requests that could
+    // only fail and then report "no balance". They now report unsupported
+    // without making a call at all.
     setProviders([{ id: 'mistral', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'k' }]);
+    calls.length = 0;
     stubRoutes = { '/dashboard/billing/credit_grants': { total_available: 7.5 } };
     r = await get('mistral');
-    check('mistral: routed through the OpenAI billing lookup',
-      r.status === 200 && r.body.remaining === 7.5, JSON.stringify(r.body));
+    check('mistral: unsupported, no balance route exists',
+      r.status === 200 && r.body.supported === false, JSON.stringify(r.body));
+    check('mistral: no billing request was made',
+      calls.length === 0, calls.map((c) => c.url).join(', '));
+
+    setProviders([{ id: 'groq', baseUrl: 'https://api.groq.com/openai/v1', apiKey: 'k' }]);
+    calls.length = 0;
+    r = await get('groq');
+    check('groq: unsupported, no balance route exists',
+      r.status === 200 && r.body.supported === false, JSON.stringify(r.body));
+    check('groq: no billing request was made',
+      calls.length === 0, calls.map((c) => c.url).join(', '));
+
+    // ---- DeepSeek reads its own /user/balance route ---------------------
+    setProviders([{ id: 'deepseek', baseUrl: 'https://api.deepseek.com', apiKey: 'k' }]);
+    calls.length = 0;
+    stubRoutes = {
+      '/user/balance': { is_available: true, balance_infos: [{ currency: 'USD', total_balance: '4.25' }] }
+    };
+    r = await get('deepseek');
+    check('deepseek: reads its own /user/balance route',
+      r.status === 200 && r.body.supported === true && r.body.remaining === 4.25,
+      JSON.stringify(r.body));
+    check('deepseek: did not ask the OpenAI billing routes',
+      calls.length === 1 && calls[0].url === 'https://api.deepseek.com/user/balance',
+      calls.map((c) => c.url).join(', '));
 
     // ---- OpenRouter keeps its own endpoint ----------------------------
     setProviders([{ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'sk-or-x' }]);

@@ -1,11 +1,12 @@
 'use strict';
 
-// Account balance lookup for the OpenAI-shaped providers.
+// Account balance lookup for the providers that expose one.
 //
 // The chat head shows a "Balance" pill next to "Context" and "Total" when the
 // connection's provider can report how much credit the account has left.
-// OpenRouter answers that with one key-scoped endpoint; the OpenAI-shaped
-// family instead has to be asked the way the OpenAI dashboard asks itself:
+// OpenRouter answers that with one key-scoped endpoint; DeepSeek answers its
+// own `GET {origin}/user/balance` (handled by balanceFromDeepSeek); and
+// OpenAI-compatible reaches the routes the OpenAI *dashboard* asks itself:
 //
 //   GET {origin}/dashboard/billing/credit_grants   (prepaid accounts)
 //   GET {origin}/dashboard/billing/subscription    (usage-capped accounts)
@@ -18,7 +19,7 @@
 // reported as unsupported rather than guessed at: the pill is informational, and
 // a wrong number is worse than no pill.
 //
-// The documented OpenAI billing routes are sent to the connection's *origin*
+// The OpenAI billing routes are sent to the connection's *origin*
 // (`https://api.openai.com`), not to its `/v1` API root, because that is where
 // the dashboard lives. A local OpenAI-shaped server (llama.cpp `llama-server`,
 // LM Studio) answers neither route; it is also the one case where a connection
@@ -26,19 +27,30 @@
 
 const { joinUrl } = require('./util.js');
 
-// The providers that serve the OpenAI billing routes. OpenRouter is
-// deliberately absent: it has its own key-scoped `/credits` endpoint, handled
-// directly in src/server-handlers-ai.js.
-const OPENAI_SHAPED_PROVIDERS = Object.freeze([
-  'openai-compatible',
-  'mistral',
-  'groq',
-  'deepseek'
+// The providers that serve the OpenAI *dashboard* billing routes. Only
+// openai-compatible reaches them: /dashboard/billing/{credit_grants,
+// subscription,usage} lives on api.openai.com, and the other vendors 404 it
+// (measured: api.mistral.ai and api.groq.com answer 404 for the billing path
+// *and* for a bogus path, i.e. a catch-all — the route does not exist). They
+// were listed here, so every chat-open fired requests that could only ever
+// 404 and then reported "no balance": the pill never appeared, while the docs
+// claimed it would.
+//
+// DeepSeek has a balance route of its own (GET /user/balance), handled below.
+// Groq and Mistral expose no balance API at all, so no pill is the honest
+// answer for them.
+const OPENAI_BILLING_PROVIDERS = Object.freeze([
+  'openai-compatible'
 ]);
 
-// supportsOpenAIShaped(provider) -> bool
-function supportsOpenAIShaped(provider) {
-  return OPENAI_SHAPED_PROVIDERS.indexOf(provider) !== -1;
+// DeepSeek documents GET {origin}/user/balance.
+const DEEPSEEK_BALANCE_PATH = '/user/balance';
+
+// supportsBalance(provider) -> does this connection have a balance route we
+// know how to read? Two families: the OpenAI dashboard routes, and DeepSeek
+// 's own /user/balance.
+function supportsBalance(provider) {
+  return provider === 'deepseek' || OPENAI_BILLING_PROVIDERS.indexOf(provider) !== -1;
 }
 
 // originOf(baseUrl) -> string
@@ -115,7 +127,30 @@ function balanceFromSubscription(subscription, usage) {
 
 // ---- the lookup ---------------------------------------------------------
 
-// lookupOpenAIShaped({ provider, baseUrl, cred, fetchImpl }) ->
+// balanceFromDeepSeek(body) -> { remaining, totalCredits?, totalUsage? } | null
+//
+// DeepSeek reports `{ is_available, balance_infos: [{ currency,
+// total_balance, granted_balance, topped_up_balance }] }`. `total_balance` is
+// already the remaining amount. Amounts arrive as strings, hence numberOrNull.
+// The account can hold several currencies; the USD row is preferred when one is
+// present, otherwise the first row — the pill has room for a single figure and
+// labelling the wrong currency would be worse than picking the primary one.
+function balanceFromDeepSeek(body) {
+  if (!body || typeof body !== 'object') return null;
+  const infos = Array.isArray(body.balance_infos) ? body.balance_infos.filter((i) => i && typeof i === 'object') : [];
+  if (!infos.length) return null;
+  const primary = infos.find((i) => String(i.currency || '').toUpperCase() === 'USD') || infos[0];
+  const remaining = numberOrNull(primary.total_balance);
+  if (remaining == null) return null;
+  const out = { remaining };
+  const granted = numberOrNull(primary.granted_balance);
+  const topped = numberOrNull(primary.topped_up_balance);
+  if (granted != null || topped != null) out.totalCredits = (granted || 0) + (topped || 0);
+  if (typeof body.is_available === 'boolean' && body.is_available === false) out.remaining = 0;
+  return out;
+}
+
+// lookupBalance({ provider, baseUrl, cred, fetchImpl }) ->
 //   { ok: true, label, remaining, totalCredits?, totalUsage? }
 // | { ok: false, code, status?, error }
 //
@@ -123,7 +158,7 @@ function balanceFromSubscription(subscription, usage) {
 // request handler has one error shape to translate. A non-2xx answer on *both*
 // billing routes is EUPSTREAM with the status of the first one, which is what
 // the UI would want to show if it ever surfaced the failure.
-async function lookupOpenAIShaped({ provider, baseUrl, cred, fetchImpl } = {}) {
+async function lookupBalance({ provider, baseUrl, cred, fetchImpl } = {}) {
   const doFetch = typeof fetchImpl === 'function' ? fetchImpl : fetch;
   const origin = originOf(baseUrl);
   const headers = { Authorization: 'Bearer ' + cred, Accept: 'application/json' };
@@ -139,6 +174,25 @@ async function lookupOpenAIShaped({ provider, baseUrl, cred, fetchImpl } = {}) {
       return null;
     }
   };
+
+  // DeepSeek has its own balance route, not the OpenAI dashboard ones. Asking
+  // api.deepseek.com for /dashboard/billing/* could only ever 404.
+  if (provider === 'deepseek') {
+    const res = await softGet(DEEPSEEK_BALANCE_PATH);
+    if (res == null) {
+      return { ok: false, code: 'EUNREACHABLE', error: 'provider unreachable' };
+    }
+    if (res.ok) {
+      const fromDeepSeek = balanceFromDeepSeek(res.body);
+      if (fromDeepSeek) return Object.assign({ ok: true, label: 'Balance' }, fromDeepSeek);
+    }
+    return {
+      ok: false,
+      code: 'EUPSTREAM',
+      status: res.status || 0,
+      error: provider + ' returned no usable balance'
+    };
+  }
 
   const grantsRes = await softGet('/dashboard/billing/credit_grants');
   if (grantsRes == null) {
@@ -174,10 +228,12 @@ async function lookupOpenAIShaped({ provider, baseUrl, cred, fetchImpl } = {}) {
 }
 
 module.exports = {
-  OPENAI_SHAPED_PROVIDERS,
-  supportsOpenAIShaped,
+  OPENAI_BILLING_PROVIDERS,
+  DEEPSEEK_BALANCE_PATH,
+  supportsBalance,
   originOf,
   balanceFromGrants,
   balanceFromSubscription,
-  lookupOpenAIShaped
+  balanceFromDeepSeek,
+  lookupBalance
 };
