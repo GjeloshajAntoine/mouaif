@@ -264,133 +264,81 @@
   color: var(--fg-soft);
 }
 
-/* ---- Inspector: scrollable pill tab bar with corner badge ----------- */
-/* Redesigned for mobile (2026-10): the old design squeezed 5 equal-width
-   chips into the bar, which at 360 px gave each chip only 63 px — just
-   55 px of inner width after padding. Labels fit today, but any future
-   panel name longer than "Network" would truncate, and the chips had no
-   room to grow. The bar is now a horizontally scrollable pill row:
-   chips keep a comfortable min-width (≥ 64 px), the bar scrolls when
-   they overflow, and a fade gradient on the right edge signals more
-   content. Active chips are filled pills; inactive chips are ghost
-   pills with a visible border, so the on/off state reads at a glance
-   even in bright light. */
+/* ---- Inspector: 2-line panel chips with corner badge -------------- */
 .inspector__panelbar {
+  /* Same outer shape as before; the chips inside have changed. */
   display: flex;
   flex-wrap: nowrap;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 4px;
+  padding: 4px;
   margin: 0 10px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  /* Horizontal scroll when chips overflow (narrow screens, future
-     panels). `overflow-y: visible` is impossible with overflow-x !=
-     visible, so the bar clips vertically — chips are 48 px tall and
-     the bar's content-box is exactly that, so nothing is lost. */
-  overflow-x: auto;
-  overflow-y: hidden;
-  /* Smooth scrolling on iOS; hide the scrollbar — the fade gradient
-     below is the affordance, not a scrollbar track. */
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  position: relative;
-}
-.inspector__panelbar::-webkit-scrollbar { display: none; }
-/* Right-edge fade: a 24 px gradient overlay that fades from the
-   surface color to transparent, positioned at the right edge of the
-   bar. It only appears when the bar is scrollable (JS toggles
-   `.is-scrollable`); when all chips fit, the class is absent and the
-   bar looks clean. The gradient sits above the chips (z-index) but
-   below the badge (which is inside the chip). */
-.inspector__panelbar.is-scrollable::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 24px;
-  background: linear-gradient(to right, transparent, var(--surface));
-  pointer-events: none;
-  border-radius: 0 var(--r-md) var(--r-md) 0;
 }
 .inspector__panelchip {
-  /* Fixed comfortable width: never shrink below 64 px. The bar
-     scrolls instead of crushing chips. `flex: 0 0 auto` so chips
-     keep their intrinsic width. */
-  flex: 0 0 auto;
-  min-width: 64px;
+  flex: 1 1 0;
+  min-width: 0;
   font: inherit;
-  /* Inactive: ghost pill — muted text on a subtle surface with a
-     visible border, so the tap target reads as a button even when
-     off. */
-  color: var(--fg-soft);
-  background: var(--surface-2);
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
   cursor: pointer;
-  padding: 6px 12px;
-  display: inline-flex;
-  flex-direction: row;
+  padding: 4px 4px 6px;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  min-height: var(--tap);
+  gap: 2px;
   position: relative;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
   -webkit-tap-highlight-color: transparent;
-  /* Prevent the chip from being selected/dragged on long-press. */
-  user-select: none;
-  -webkit-user-select: none;
 }
 .inspector__panelchip-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
 }
 .inspector__panelchip-icon svg { display: block; }
 .inspector__panelchip-label {
-  font-size: 0.72rem;
+  font-size: 0.66rem;
   font-weight: 600;
-  letter-spacing: 0;
-  line-height: 1;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 @media (hover: hover) {
-  .inspector__panelchip:hover { color: var(--fg); border-color: var(--muted); }
+  .inspector__panelchip:hover { color: var(--fg); }
 }
-.inspector__panelchip:active { transform: scale(0.96); }
-/* Active: filled accent pill. The icon inherits the on-accent color,
-   the label is bold, and the pill has a subtle inner highlight for
-   depth. High contrast in both light and dark themes. */
 .inspector__panelchip.is-on {
   color: var(--on-accent);
   background: var(--accent);
   border-color: var(--accent);
   box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 1px 4px rgba(110,168,254,.2);
 }
-@media (hover: hover) {
-  .inspector__panelchip.is-on:hover { color: var(--on-accent); border-color: var(--accent-press); background: var(--accent-press); }
-}
 /* Corner pill: a small absolute-positioned count badge on chips that
-   have entries. Sits in the top-right of the chip, offset outward so
-   it doesn't overlap the label or icon. */
+   have entries. Sits in the top-right of the chip; on a tiny 22 px
+   icon column it doesn't overlap the label that grows under the
+   glyph. */
 .inspector__panelchip-badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
+  top: 0;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
   border-radius: 999px;
   background: var(--danger);
   color: #fff;
   font-size: 0.62rem;
   font-weight: 700;
-  line-height: 18px;
+  line-height: 16px;
   text-align: center;
   letter-spacing: 0;
   box-shadow: 0 0 0 2px var(--surface);

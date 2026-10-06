@@ -17,18 +17,7 @@ The **Inspector** tab provides a mobile-first DevTools experience for inspecting
 
 ## Panels
 
-You can toggle each of the four panels on and off to customize your workspace. The panel switcher (the **Preview / Styles / Console / Network / Info** pill row) sits at the top of the inspect view and scrolls with the page.
-
-### Panel switcher (mobile redesign)
-
-The panel bar is a **horizontally scrollable pill row**, redesigned for narrow screens:
-
-- **Pill chips** — each panel is a rounded pill (`border-radius: 999px`) with an icon and a text label side by side, min-width 64 px, 44 px tall. Active panels are filled with the accent color; inactive panels are ghost pills (muted text on a subtle surface with a visible border), so the on/off state reads at a glance.
-- **Horizontal scroll** — at 360 px the five pills (478 px total) overflow the bar (338 px), so the bar scrolls horizontally. A **fade gradient** on the right edge signals more content. The scrollbar is hidden; the fade is the affordance.
-- **Corner badge** — the Console and Network pills show a small count badge (top-right, offset outward) when they have entries.
-- **Solo panel fills the screen** — when only one panel is visible, it fills the remaining viewport height (`100dvh − chrome − tabbar`) instead of sitting at a fixed 32 dvh, so a single Console or Styles panel uses the whole screen. The chrome height is measured by JS (`ResizeObserver`) and published as the `--inspector-chrome-h` CSS variable on the panels container.
-
-At 768 px and wider, all five pills fit without scrolling and the first visible panel grows to fill the leftover height (the existing `flex-grow` behavior).
+You can toggle each of the four panels on and off to customize your workspace. The panel switcher (the **Preview / Styles / Console / Network / Info** chip row) sits at the top of the inspect view and scrolls with the page.
 
 With all five panels on at 375 × 667 the Styles card can sit ~800 px below the chip row, so a card the user is not looking at can be a screen away. **Every action that answers in a card brings that card into view first**, in one instant jump (no animation, so it reads as a consequence of the tap rather than the page moving on its own):
 
