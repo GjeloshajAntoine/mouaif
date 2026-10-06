@@ -6,6 +6,18 @@ Every chat turn reports a `usage` block (`{ promptTokens, completionTokens }`) w
 
 ## Usage
 
+### Context window
+
+When the provider reports the model's context window, the `context` token shows how much of it the turn consumed, and the chat header's **Context** pill shows the latest prompt size:
+
+```text
+context 14.8K/200K (7%)
+```
+
+The window is read from the provider's own catalog under whichever name it uses — OpenAI-shaped hosts report `context_window`, **OpenRouter** reports `context_length` (with `top_provider.context_length` as a fallback), and **Mistral** reports `max_context_length`. A provider that reports no window (Ollama's `/api/tags`, a project model with no `contextWindow`) yields no window rather than a guess, so the line simply reads `context 14.8K`.
+
+Only `context_window` used to be read, which silently dropped the window for OpenRouter and Mistral entirely — the fraction and the percentage never appeared on those connections.
+
 ### What the user sees
 
 For every assistant message in the chat, the UI renders a small status line directly below the reply:
@@ -67,7 +79,6 @@ Context 14.8K   Total $0.08306   Balance $12.41
 ```
 
 - If your connection is **OpenRouter**, the balance is the remaining credit of the key you stored, read live from OpenRouter.
-- If your connection is **OpenAI compatible**, **Mistral**, **Groq**, or **DeepSeek**, the balance comes from the provider's own billing endpoints: prepaid credit when the account has any, otherwise the account's spending limit minus what it has used.
 - Every other provider, a local OpenAI-compatible server with no key, and a key without billing access simply show no chip. Nothing is guessed, so a chip that is there is a real number.
 
 The chip is informational: it refreshes when a chat opens and when you switch model or provider, so a long-open chat may show a slightly stale figure.

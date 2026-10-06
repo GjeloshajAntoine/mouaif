@@ -130,6 +130,39 @@ async function main() {
       JSON.stringify(out));
   });
 
+  // 6b) The context window is read under whichever name the provider uses.
+  //     Only `context_window` used to be read, so OpenRouter (which reports
+  //     `context_length` on all 465 of its chat rows and `context_window` on
+  //     none) and Mistral (`max_context_length`) lost the window entirely and
+  //     the chat header's Context pill fell back to a bare `context 14.8K` with
+  //     no `/200K (7%)` fraction.
+  {
+    const payloads = [
+      ['openrouter', { data: [{ id: 'anthropic/claude-sonnet-5.5', context_length: 1000000 }] }, 1000000],
+      ['openrouter', { data: [{ id: 'x', top_provider: { context_length: 131072 } }] }, 131072],
+      ['mistral', { data: [{ id: 'mistral-large-latest', max_context_length: 131072 }] }, 131072],
+      ['groq', { data: [{ id: 'llama-3.3-70b-versatile', context_window: 131072 }] }, 131072],
+      ['openai-compatible', { data: [{ id: 'gpt-4o', context_window: 128000 }] }, 128000]
+    ];
+    for (const [provider, body, expected] of payloads) {
+      await withStubbedFetch(async () => ({ ok: true, status: 200, json: async () => body }), async () => {
+        const out = await ai.listModels(provider, 'k');
+        check(provider + ': context window read as ' + expected,
+          out[0] && out[0].contextWindow === expected,
+          provider + ' -> ' + JSON.stringify(out[0] && out[0].contextWindow));
+      });
+    }
+    // A provider that reports no window still yields undefined (no guess), and
+    // a zero/garbage value is ignored rather than shown as a real budget.
+    await withStubbedFetch(async () => ({
+      ok: true, status: 200, json: async () => ({ data: [{ id: 'a' }, { id: 'b', context_length: 0 }, { id: 'c', context_length: 'nonsense' }] })
+    }), async () => {
+      const out = await ai.listModels('deepseek', 'k');
+      check('a provider with no reported window stays undefined',
+        out.every((m) => m.contextWindow === undefined), JSON.stringify(out));
+    });
+  }
+
   // 7) Gemini parser: { models: [{ name, displayName, inputTokenLimit, supportedGenerationMethods }] }
   await withStubbedFetch(async (url) => {
     lastUrl = url;

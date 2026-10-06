@@ -562,6 +562,34 @@ function thinkingForOpenRouterModel(m) {
   return { kind: 'levels', levels: OPENAI_THINKING_LEVELS.slice() };
 }
 
+// contextWindowFrom(m) — the model's context window under whichever name the
+// provider uses, or undefined when it reports none.
+//
+// Only `context_window` used to be read, so two whole catalogues silently
+// lost their window and the chat header's Context pill fell back to a bare
+// `context 14.8K` with no `/200K (7%)` fraction:
+//
+//   * OpenRouter reports `context_length` on all 465 of its chat rows and
+//     `context_window` on none (verified live);
+//   * Mistral reports `max_context_length`.
+//
+// Reading the union is the same "provider's own report, else absent" rule the
+// rest of this parser follows: a provider that reports nothing still yields
+// undefined, which the UI renders as no window rather than a guessed one.
+function contextWindowFrom(m) {
+  const candidates = [
+    m && m.context_window,
+    m && m.context_length,
+    m && m.max_context_length,
+    m && m.max_model_len,
+    m && m.top_provider && m.top_provider.context_length
+  ];
+  for (const v of candidates) {
+    if (typeof v === 'number' && isFinite(v) && v > 0) return v;
+  }
+  return undefined;
+}
+
 function parseOpenAIShapedModels(body, thinkingFor) {
   const arr = Array.isArray(body && body.data) ? body.data : [];
   const out = [];
@@ -570,7 +598,7 @@ function parseOpenAIShapedModels(body, thinkingFor) {
     const rec = {
       id: String(m.id),
       label: m.id,
-      contextWindow: typeof m.context_window === 'number' ? m.context_window : undefined
+      contextWindow: contextWindowFrom(m)
     };
     // OpenRouter advertises real per-model prices on GET /api/v1/models
     // (`pricing.prompt` / `pricing.completion`, strings in $ per TOKEN)
