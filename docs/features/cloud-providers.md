@@ -47,7 +47,7 @@ No special path. The chat composer posts to `/api/chats/:id/messages/stream`, wh
 - **Mistral / Groq / DeepSeek specifics.** Plain `Authorization: Bearer <key>` against their `/chat/completions`; model catalogs are fetched from their `/models` endpoints. Missing keys surface as `ENO_APIKEY` (the chat UI says "add API key in Settings → Providers") instead of a generic upstream 401.
 - **Thinking levels.** Reasoning families on these OpenAI-shaped endpoints (DeepSeek `deepseek-reasoner` / `deepseek-r1`, Qwen `qwq` / `-thinking` variants, Groq's `qwen-qwq-32b`) are inferred by `thinkingForOpenAIModel` and advertised as effort levels, so the chat thinking dropdown works without a client update.
 - **Pricing.** Built-in defaults were added for common Mistral, Groq, and DeepSeek model ids in `src/usage.js`; unknown ids fall back to `--` on the cost line (or a per-model `pricing` override).
-- **No OAuth.** All four are API-key-only. `AI_TO_AUTH_PROVIDER` maps each to its own keyring namespace (`azure`, `mistral`, `groq`, `deepseek`) so a key stored under one provider is never reused as a credential for another.
+- **No OAuth.** All four are API-key-only. `AI_TO_AUTH_PROVIDER` maps each to its own keyring namespace (`azure`, `mistral`, `groq`, `deepseek`) so a key stored under one provider is never reused as a credential for another. Those namespaces are listed in `SUPPORTED_PROVIDERS` — a namespace the keyring layer does not know cannot be indexed or read, and an `oauth`-flagged record on one of these providers now fails with a clean `ENOAUTH` ("sign in") instead of a misleading `EPROVIDER` ("unknown provider"). The mappings are pinned by [scripts/test-provider-namespaces.js](../../scripts/test-provider-namespaces.js).
 
 ## Related
 

@@ -30,6 +30,18 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
   was offered localhost's models. Gemini's chat and image catalogs now follow
   the configured base URL too. See
   [docs/features/providers.md](docs/features/providers.md).
+- **OAuth namespaces the keyring cannot see** — `AI_TO_AUTH_PROVIDER` mapped
+  `ollama`, `azure`, `mistral`, `groq`, and `deepseek` to keyring namespaces
+  that `SUPPORTED_PROVIDERS` did not list. `serviceName()` rejected them with
+  `EPROVIDER` and `readIndex()` dropped them from the account index, so an
+  `oauth`-flagged connection on one of the API-key-only providers failed with
+  "unknown provider" instead of a clean `ENOAUTH`, and `indexAdd()` could not
+  write. The namespaces are now listed. The web bundle's `authNsForProvider()`
+  also mapped `openai-compatible` but not `gemini`, so the provider form read
+  `accounts.gemini` while the server indexed that account under `google` and a
+  signed-in Gemini account stayed invisible. Both relationships are pinned by
+  a new parity test,
+  [scripts/test-provider-namespaces.js](scripts/test-provider-namespaces.js).
 - **Canonical folder approvals and run validation** — working-folder cards and allowlists use the real destination behind symbolic links. A destination changed during approval fails with `ESTALE_PATH` instead of switching elsewhere. Selected subagent folders and resets enforce the chat's home guard while inherited temporary projects keep their existing local sandbox.
 - **Delegated folder identity** — subagents retain the real parent chat for permissions, approval decisions, pending recovery, cancellation, tasks and chat tools. Only local folder operations use the separate run id; attachment reads follow the run's folder. Missing selected folders fail instead of silently launching a delegate in the original project.
 - **Native tools now work on Azure, Mistral, Groq, and DeepSeek** — the

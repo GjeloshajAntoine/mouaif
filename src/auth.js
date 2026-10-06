@@ -46,7 +46,18 @@ const settings = require('./settings.js');
 // will show entries with the full name; we do not strip the prefix.
 const SERVICE_PREFIX = 'mouaif';
 
-const SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'google', 'github-copilot', 'openrouter', 'codex'];
+// Keyring namespaces. Every provider id that appears as a *value* in
+// AI_TO_AUTH_PROVIDER below must be listed here: serviceName()/validateAccount()
+// reject anything else with EPROVIDER, and readIndex() builds the non-secret
+// account index by walking this list, so a namespace that is missing here is
+// silently dropped from the index and makes indexAdd() throw. The API-key-only
+// providers have a namespace but no sign-in flow: the namespace keeps a key
+// stored under one provider from ever being read as another's credential, and
+// gives an oauth-flagged record a clean ENOAUTH instead of a spurious EPROVIDER.
+const SUPPORTED_PROVIDERS = [
+  'openai', 'anthropic', 'google', 'github-copilot', 'openrouter', 'codex',
+  'azure', 'mistral', 'groq', 'deepseek', 'ollama'
+];
 
 function serviceName(provider) {
   if (!SUPPORTED_PROVIDERS.includes(provider)) {

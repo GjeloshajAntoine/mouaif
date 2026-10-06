@@ -121,9 +121,21 @@ export function providerDef(id) {
   return SETTINGS_PROVIDERS.find(p => p.id === id) || null;
 }
 
+// authNsForProvider(id) — the *auth* (keyring) namespace a provider connection
+// signs in under. It mirrors src/auth.js `AI_TO_AUTH_PROVIDER`; it is
+// duplicated here because the web bundle cannot require the server module. The
+// two tables are pinned together by scripts/test-provider-namespaces.js, which
+// fails if they drift — the previous copy mapped `openai-compatible` but not
+// `gemini`, so the provider form looked up `accounts.gemini` while the server
+// indexed that account under `google`, and a signed-in Gemini account was
+// invisible to the picker.
+const PROVIDER_AUTH_NAMESPACE = Object.freeze({
+  'openai-compatible': 'openai',
+  'gemini': 'google'
+});
+
 export function authNsForProvider(id) {
-  if (id === 'openai-compatible') return 'openai';
-  return id;
+  return PROVIDER_AUTH_NAMESPACE[id] || id;
 }
 
 // ---- Model recent (server-side, SQLite) -----------------------------
