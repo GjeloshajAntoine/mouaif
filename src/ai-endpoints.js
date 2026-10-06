@@ -45,6 +45,32 @@ async function openAIShapedListModels(def, cred, signal) {
 
 // ---- Provider endpoints ------------------------------------------------
 
+// geminiModelsUrl(baseUrl) — the Gemini catalog endpoint for a connection.
+// The models list is a fixed path under the API root, so a connection pointed
+// at a proxy or a regional host lists *that* host's catalog. Falls back to the
+// shipped public base when the connection carries none.
+function geminiModelsUrl(baseUrl) {
+  return (baseUrl || ENDPOINTS.gemini.baseUrl).replace(/\/+$/, '') + '/v1beta/models?pageSize=200';
+}
+
+// azureModelsUrl(baseUrl) — the Azure deployment catalog. Azure's base URL is
+// the *deployment* URL (`https://<res>.openai.azure.com/openai/deployments/…`)
+// while the catalog is served from the resource root (`/openai/models`), so
+// only the origin is kept. An unset base URL leaves nothing to derive from:
+// Azure has no public default resource, so we surface a typed EBADINPUT rather
+// than fetch a relative path (which throws a bare TypeError in fetch()).
+function azureModelsUrl(baseUrl) {
+  const raw = String(baseUrl || '').trim();
+  let origin = '';
+  try { origin = new URL(raw).origin; } catch { origin = ''; }
+  if (!origin) {
+    const e = new Error('Azure OpenAI needs the resource base URL (https://<resource>.openai.azure.com/openai/deployments/<deployment>) before its model list can be read.');
+    e.code = 'EBADINPUT';
+    throw e;
+  }
+  return origin + '/openai/models?api-version=' + encodeURIComponent(ENDPOINTS.azure.apiVersion);
+}
+
 const ENDPOINTS = {
   'codex': codex.endpoint,
   'openai-compatible': {
@@ -107,8 +133,8 @@ const ENDPOINTS = {
     // public, but the public list endpoint now returns 403 without
     // a key, so a missing cred is a typed ENO_APIKEY error rather
     // than a generic upstream 403.
-    listModels: async (cred, signal) => {
-      const url = ENDPOINTS.gemini.baseUrl + '/v1beta/models?pageSize=200'
+    listModels: async (cred, signal, baseUrl) => {
+      const url = geminiModelsUrl(baseUrl)
         + (cred ? '&key=' + encodeURIComponent(cred) : '');
       let r;
       try { r = await fetch(url, { signal }); }
@@ -125,8 +151,8 @@ const ENDPOINTS = {
     // the `predict`-only Imagen rows the chat list drops, so the agent
     // editor's model picker can offer them. There is no separate Gemini image
     // endpoint — the catalogue is one list, filtered by generation method.
-    listImageModels: async (cred, signal) => {
-      const url = ENDPOINTS.gemini.baseUrl + '/v1beta/models?pageSize=200'
+    listImageModels: async (cred, signal, baseUrl) => {
+      const url = geminiModelsUrl(baseUrl)
         + (cred ? '&key=' + encodeURIComponent(cred) : '');
       let r;
       try { r = await fetch(url, { signal }); }
@@ -152,8 +178,14 @@ const ENDPOINTS = {
     // failure). Surface that as EUNREACHABLE so the HTTP layer can
     // return 503 "service unavailable" instead of a misleading 502
     // "bad gateway".
-    listModels: async (cred, signal) => {
-      const url = ENDPOINTS.ollama.baseUrl + '/api/tags';
+    //
+    // The connection's configured base URL is honored (same rule as
+    // buildOllamaRequest below): a connection pointed at a remote Ollama
+    // host must list *that* server's models, not the loopback default's.
+    // Hard-coding the default here made the picker offer localhost's
+    // catalog while the chat went to the configured host.
+    listModels: async (cred, signal, baseUrl) => {
+      const url = (baseUrl || ENDPOINTS.ollama.baseUrl).replace(/\/+$/, '') + '/api/tags';
       let r;
       try { r = await fetch(url, { signal }); }
       catch (e) { throw unreachableError('ollama', e); }
@@ -303,16 +335,20 @@ staticHeaders: {
     baseUrl: '',
     chatPath: '/chat/completions',
     authHeader: (cred) => ({ 'api-key': cred }),
-    // GET /openai/models?api-version=<version> — OpenAI-shaped.
+    // GET {resource}/openai/models?api-version=<version> — OpenAI-shaped.
     // Azure requires an `api-version` query param on every call and
     // a valid deployment key, so the missing-cred path surfaces as
-    // ENO_APIKEY. The api-version is taken from the provider record
-    // (model.apiVersion, settable in the provider form) or defaults
-    // to a recent GA release (2024-10-21, which supports
-    // stream_options.include_usage for chat completions).
-    listModels: async (cred, signal, model) => openAIShapedListModels({
+    // ENO_APIKEY.
+    //
+    // The catalog lives at the *resource* root, while the connection's base
+    // URL is the deployment URL (`.../openai/deployments/<deployment>`), so
+    // the resource origin is derived from it. ENDPOINTS.azure.baseUrl is the
+    // empty string — Azure has no public default resource — and the previous
+    // hard-coded join therefore produced a relative `/openai/models` URL that
+    // fetch() rejects outright, so the live catalog could never answer.
+    listModels: async (cred, signal, baseUrl) => openAIShapedListModels({
       name: 'azure',
-      url: joinUrl(ENDPOINTS.azure.baseUrl, '/openai/models?api-version=' + encodeURIComponent((model && model.apiVersion) || '2024-10-21')),
+      url: azureModelsUrl(baseUrl),
       authHeader: ENDPOINTS.azure.authHeader,
       thinkingFor: (mm) => thinkingForOpenAIModel(mm.id)
     }, cred, signal),

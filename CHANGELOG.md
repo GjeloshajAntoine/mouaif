@@ -18,6 +18,18 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **Provider model catalogs follow the connection** — Azure and Ollama read
+  their live model list from the URL you configured. Azure's adapter joined
+  Azure's *empty* default base URL, producing the relative
+  `/openai/models?api-version=…`, which `fetch()` rejects outright: the live
+  catalog could never answer, and no test noticed because the tests stubbed
+  `fetch` and never passed a base URL. It now derives the resource origin from
+  the deployment URL and fails early with a typed `EBADINPUT` naming the URL to
+  fill in when none is set. Ollama hard-coded the loopback default while
+  `buildOllamaRequest` honored `model.baseUrl`, so a remote Ollama connection
+  was offered localhost's models. Gemini's chat and image catalogs now follow
+  the configured base URL too. See
+  [docs/features/providers.md](docs/features/providers.md).
 - **Canonical folder approvals and run validation** — working-folder cards and allowlists use the real destination behind symbolic links. A destination changed during approval fails with `ESTALE_PATH` instead of switching elsewhere. Selected subagent folders and resets enforce the chat's home guard while inherited temporary projects keep their existing local sandbox.
 - **Delegated folder identity** — subagents retain the real parent chat for permissions, approval decisions, pending recovery, cancellation, tasks and chat tools. Only local folder operations use the separate run id; attachment reads follow the run's folder. Missing selected folders fail instead of silently launching a delegate in the original project.
 - **Native tools now work on Azure, Mistral, Groq, and DeepSeek** — the

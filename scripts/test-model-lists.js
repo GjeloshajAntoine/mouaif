@@ -164,6 +164,22 @@ async function main() {
       /key=AIza-test/.test(lastUrl), 'url=' + lastUrl);
   });
 
+  // 8b) Gemini honors the connection's base URL, and does not double the path
+  //     when the saved URL carries a trailing slash or an existing /v1beta.
+  await withStubbedFetch(async (url) => {
+    lastUrl = url;
+    return { ok: true, status: 200, statusText: 'OK', json: async () => ({ models: [] }) };
+  }, async () => {
+    await ai.listModels('gemini', 'k', undefined, 'https://gemini-proxy.internal/');
+    check('gemini: configured base URL used, trailing slash collapsed',
+      lastUrl === 'https://gemini-proxy.internal/v1beta/models?pageSize=200&key=k',
+      'url=' + lastUrl);
+    await ai.listImageModels('gemini', 'k', undefined, 'https://gemini-proxy.internal/');
+    check('gemini image slice: same configured base URL',
+      lastUrl === 'https://gemini-proxy.internal/v1beta/models?pageSize=200&key=k',
+      'url=' + lastUrl);
+  });
+
   // 9) Ollama: { models: [{ name, ... }] } from /api/tags.
   await withStubbedFetch(async (url) => {
     lastUrl = url;
@@ -180,6 +196,18 @@ async function main() {
     check('ollama: drops entries with no name',
       out.length === 2 && out.every((m) => m.id));
     check('ollama: label === id', out.every((m) => m.label === m.id));
+  });
+
+  // 9b) Ollama honors the connection's base URL. buildOllamaRequest already
+  //     sends chat to model.baseUrl; hard-coding the loopback default here made
+  //     the picker list localhost's catalog for a remote connection.
+  await withStubbedFetch(async (url) => {
+    lastUrl = url;
+    return { ok: true, status: 200, statusText: 'OK', json: async () => ({ models: [] }) };
+  }, async () => {
+    await ai.listModels('ollama', null, undefined, 'http://10.0.0.9:11434/');
+    check('ollama: configured base URL used, trailing slash collapsed',
+      lastUrl === 'http://10.0.0.9:11434/api/tags', 'url=' + lastUrl);
   });
 
   // 10) listModels on an unknown provider -> ENO_LIST.
@@ -312,21 +340,37 @@ async function main() {
   check('azure: api-version default applied without model.apiVersion',
     /api-version=2024-10-21/.test(azureNoKey.url), 'url=' + azureNoKey.url);
 
-  // 20) Azure listModels: queries the deployment list with api-key.
+  // 20) Azure listModels: queries the *resource* catalog with api-key. Azure's
+  //     connection base URL is the deployment URL, so the adapter must derive
+  //     the resource origin and append /openai/models; joining ENDPOINTS.azure's
+  //     (empty) base URL produced a relative path fetch() rejects outright.
   await withStubbedFetch(async (url, opts) => {
     lastUrl = url; lastHeaders = opts && opts.headers;
     return { ok: true, status: 200, statusText: 'OK', json: async () => ({
       data: [{ id: 'gpt-4o', context_window: 128000 }]
     }) };
   }, async () => {
-    const out = await ai.listModels('azure', 'az-key');
-    check('azure listModels: /openai/models URL with api-version',
-      /\/openai\/models\?api-version=2024-10-21$/.test(lastUrl), 'url=' + lastUrl);
+    const out = await ai.listModels('azure', 'az-key', undefined,
+      'https://myres.openai.azure.com/openai/deployments/gpt4-deploy');
+    check('azure listModels: resource-root /openai/models URL with api-version',
+      lastUrl === 'https://myres.openai.azure.com/openai/models?api-version=2024-10-21',
+      'url=' + lastUrl);
     check('azure listModels: api-key header',
       lastHeaders && lastHeaders['api-key'] === 'az-key' && !lastHeaders.Authorization);
     check('azure listModels: parses OpenAI-shaped models',
       out.length === 1 && out[0].id === 'gpt-4o');
   });
+
+  // 20b) Azure listModels without a base URL: Azure has no public default
+  //      resource, so this is a typed EBADINPUT (actionable) rather than a
+  //      relative URL that fails as a bare TypeError inside fetch().
+  {
+    let caught = null;
+    try { await ai.listModels('azure', 'az-key'); }
+    catch (e) { caught = e; }
+    check('azure listModels: no base URL -> EBADINPUT',
+      caught && caught.code === 'EBADINPUT', 'caught=' + (caught && caught.code));
+  }
 
   // 21) Mistral / Groq / DeepSeek: OpenAI-shaped listModels adapters.
   for (const p of ['mistral', 'groq', 'deepseek']) {
@@ -350,13 +394,16 @@ async function main() {
       req.body && req.body.stream_options && req.body.stream_options.include_usage === true);
   }
 
-  // 22) New providers: missing cred + 401 -> ENO_APIKEY.
+  // 22) New providers: missing cred + 401 -> ENO_APIKEY. Azure is asked with
+  //     the deployment URL a real connection carries (it has no public default
+  //     resource, so an empty base URL is a separate, earlier EBADINPUT).
+  const AZURE_DEPLOY = 'https://myres.openai.azure.com/openai/deployments/gpt4-deploy';
   for (const p of ['azure', 'mistral', 'groq', 'deepseek']) {
     await withStubbedFetch(async () => ({
       ok: false, status: 401, statusText: 'Unauthorized', json: async () => ({})
     }), async () => {
       let caught = null;
-      try { await ai.listModels(p, null); }
+      try { await ai.listModels(p, null, undefined, p === 'azure' ? AZURE_DEPLOY : undefined); }
       catch (e) { caught = e; }
       check(p + ' (no cred, 401): ENO_APIKEY',
         caught && caught.code === 'ENO_APIKEY', 'caught=' + (caught && caught.code));
@@ -367,7 +414,7 @@ async function main() {
   for (const p of ['azure', 'mistral', 'groq', 'deepseek']) {
     await withStubbedFetch(async () => { throw new TypeError('fetch failed'); }, async () => {
       let caught = null;
-      try { await ai.listModels(p, 'k'); }
+      try { await ai.listModels(p, 'k', undefined, p === 'azure' ? AZURE_DEPLOY : undefined); }
       catch (e) { caught = e; }
       check(p + ': fetch throws -> EUNREACHABLE',
         caught && caught.code === 'EUNREACHABLE', 'caught=' + (caught && caught.code));
