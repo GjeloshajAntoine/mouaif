@@ -1408,3 +1408,158 @@ flex: 1 1 auto;
 max-width: 60%;
 }
 .inspector__style-remove { flex-shrink: 0; }
+
+/* ---- Inspector: styles panel, value display & navigation ---------- */
+/* ValueText — a CSS value split into typed segments (number, unit, function,
+   punctuation, colour). Each kind gets its own colour so `1px solid red` reads
+   as three tokens rather than one monospace wall. The segments are decorative
+   (aria-hidden); the plain string is in the DOM for screen readers and copy. */
+.inspector__styles-val {
+position: relative;
+flex: 1 1 auto;
+min-width: 0;
+color: var(--muted);
+white-space: normal;
+overflow-wrap: anywhere;
+}
+.inspector__styles-val--empty { color: var(--muted-2); font-style: italic; }
+/* The coloured segments: numbers in the text colour with tabular figures so
+   columns of values align, units in a softer tone, function names in the
+   accent, punctuation muted, colours in a warm tone that reads as a colour
+   even before the swatch is noticed. */
+.inspector__val-number {
+color: var(--fg);
+font-variant-numeric: tabular-nums;
+font-weight: 600;
+}
+.inspector__val-unit {
+color: var(--muted);
+font-size: 0.92em;
+}
+.inspector__val-fn {
+color: var(--accent-hi);
+font-weight: 600;
+}
+.inspector__val-punct {
+color: var(--muted-2);
+}
+.inspector__val-color {
+color: var(--warning);
+font-weight: 600;
+}
+.inspector__val-text {
+color: var(--fg-soft);
+}
+/* The plain string is visually hidden but available to screen readers and
+   copy/paste. It sits after the coloured segments in the DOM. */
+.inspector__val-plain {
+position: absolute;
+width: 1px;
+height: 1px;
+padding: 0;
+margin: -1px;
+overflow: hidden;
+clip: rect(0 0 0 0);
+white-space: nowrap;
+border: 0;
+}
+/* Keyword values (auto, flex, none) get a softer treatment so they read as
+   keywords rather than as values. */
+.inspector__styles-val--keyword .inspector__val-text {
+color: var(--fg-soft);
+font-style: italic;
+}
+/* Declared and computed rows keep the stronger value colour from before. */
+.inspector__styles-row--declared .inspector__styles-val { color: var(--fg); }
+.inspector__styles-row--computed .inspector__styles-val { color: var(--fg); }
+
+/* CopyValueButton — a small copy affordance at the end of a declared row.
+   Always visible (no hover-only affordance on touch), 44 px tall, glyph-only
+   with an aria-label. It stops propagation so tapping it does not also open
+   the editor. */
+.inspector__styles-copy {
+flex: 0 0 auto;
+width: var(--tap);
+min-width: var(--tap);
+min-height: var(--tap);
+display: inline-flex;
+align-items: center;
+justify-content: center;
+font: inherit;
+font-size: 0.85rem;
+line-height: 1;
+color: var(--muted);
+background: transparent;
+border: 0;
+border-radius: var(--r-sm);
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .inspector__styles-copy:hover { color: var(--fg); background: var(--surface-3); }
+}
+.inspector__styles-copy.is-copied { color: var(--success); }
+
+/* Copy confirmation line — shares the error line's slot under the pinned
+   identity, so a "Copied 12px" never needs its own row that shifts the list. */
+.inspector__style-copied {
+margin: 0;
+font-size: 0.72rem;
+color: var(--success);
+line-height: 1.35;
+}
+
+/* Section jump menu — a row of chips under the pinned identity that scrolls
+   to each named section. Wraps rather than scrolling sideways (at most five
+   chips), and each chip is a 44 px tap target. */
+.inspector__styles-jump {
+display: flex;
+flex-wrap: wrap;
+gap: 6px;
+margin: 0 -8px;
+padding: 4px 8px;
+background: var(--surface);
+border-bottom: 1px solid var(--border);
+}
+.inspector__styles-jump-chip {
+flex: 0 0 auto;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+min-height: var(--tap);
+padding: 0 12px;
+font: inherit;
+font-size: 0.72rem;
+font-weight: 600;
+color: var(--fg-soft);
+background: var(--surface-2);
+border: 1px solid var(--border-strong);
+border-radius: 999px;
+cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+@media (hover: hover) {
+  .inspector__styles-jump-chip:hover { background: var(--surface-3); color: var(--fg); }
+}
+.inspector__styles-jump-chip:active {
+transform: scale(0.96);
+background: var(--accent-soft);
+color: var(--accent-hi);
+border-color: var(--accent);
+}
+
+/* Matched-rule declaration rows also use ValueText, so the value is coloured
+   the same way as in the declared and computed lists. */
+.inspector__rule-pval .inspector__styles-val {
+flex: 1 1 auto;
+min-width: 0;
+text-align: right;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+}
+.inspector__rule-pval .inspector__val-plain {
+/* The ellipsis is visual; the plain string stays for screen readers. */
+position: absolute;
+}

@@ -59,6 +59,7 @@ import { groupDeclared, changedKey, groupChanged, memberNames, findDeclaration }
 import { scopeSummary, summarizeReceipt, receiptRows } from './scope.js';
 import { ORIGIN_LABEL } from './matchedRules.js';
 import { cleanSize, splitLabel } from './targetBar.js';
+import { splitValue, shortenValue, valueKind as valueKindOf } from './valueDisplay.js';
 
 // valueSwatch — a colour value gets a swatch in front of its text. `rgb(255,
 // 230, 0)` is the same length as three other colours at this row size, and the
@@ -76,6 +77,68 @@ class: 'inspector__styles-swatch',
 style: { background: raw },
 'aria-hidden': 'true'
 });
+}
+
+// ValueText — a CSS value rendered as typed segments: numbers, units, function
+// names, punctuation and colours each get their own colour and weight, so
+// `1px solid rgb(255, 230, 0)` reads as three tokens rather than one monospace
+// wall. The segments always join back to the original string (see
+// valueDisplay.js), so the accessible name is the plain value and copy/paste
+// is unaffected.
+//
+// `title` carries the full value so a row that wraps or ellipsizes still has
+// the complete text one tap away (the browser's native tooltip on long-press).
+function ValueText(props) {
+const raw = String(props.value == null ? '' : props.value);
+if (!raw) return h('span', { class: 'inspector__styles-val inspector__styles-val--empty' }, '—');
+const segs = splitValue(raw);
+return h('span', {
+class: 'inspector__styles-val inspector__styles-val--' + (props.kind || 'other'),
+title: props.title || raw
+},
+segs.map((seg, i) => seg.kind === 'space'
+? ' '
+: h('span', { key: i, class: 'inspector__val-' + seg.kind, 'aria-hidden': 'true' }, seg.text)
+),
+// The plain string is in the DOM for screen readers and copy: the coloured
+// segments are aria-hidden decoration over it.
+h('span', { class: 'inspector__val-plain' }, raw)
+);
+}
+
+// CopyValueButton — a small copy affordance for one value. Long values are the
+// ones a user wants to paste into a chat or a file, and on touch there is no
+// hover-reveal: the button is always visible, 44 px tall, and glyph-only with an
+// aria-label. `onCopy` reports the outcome through the panel's status line.
+function CopyValueButton(props) {
+const [copied, setCopied] = useState(false);
+async function copy() {
+try {
+if (navigator.clipboard && navigator.clipboard.writeText) {
+await navigator.clipboard.writeText(props.value);
+} else {
+// Fallback for browsers without the async clipboard API.
+const ta = document.createElement('textarea');
+ta.value = props.value;
+ta.style.position = 'fixed';
+ta.style.opacity = '0';
+document.body.appendChild(ta);
+ta.select();
+document.execCommand('copy');
+document.body.removeChild(ta);
+}
+setCopied(true);
+if (props.onCopy) props.onCopy(props.value);
+setTimeout(() => setCopied(false), 1200);
+} catch { /* clipboard unavailable — the button stays quiet */ }
+}
+return h('button', {
+class: 'inspector__styles-copy' + (copied ? ' is-copied' : ''),
+type: 'button',
+title: copied ? 'Copied' : 'Copy ' + (props.name ? props.name + ' ' : '') + 'value',
+'aria-label': copied ? 'Copied' : 'Copy the value of ' + (props.name || 'this property'),
+onClick: (e) => { e.stopPropagation(); copy(); }
+}, copied ? '✓' : '⧉');
 }
 
 // Receipt — the changes this session made, newest first, each with the value the
@@ -857,7 +920,7 @@ title: 'Set ' + p.name + ' on this element',
 onClick: () => props.onEdit(p.name, p.value)
 },
 h('span', { class: 'inspector__rule-pname' }, p.name),
-h('span', { class: 'inspector__rule-pval' }, p.value + (p.important ? ' !important' : ''))
+h(ValueText, { value: p.value + (p.important ? ' !important' : ''), kind: valueKindOf(p.name, p.value) })
 )
 )),
 r.more ? h('li', { class: 'inspector__rule-more' }, '+' + r.more + ' more') : null
@@ -903,6 +966,33 @@ const [edit, setEdit] = useState(null); // { prop, value } when editing
 const editorRef = useRef(null);
 const editorOrigin = useRef(null);
 const editScroll = useRef(null);
+// sectionRefs — one ref per named section, for the section-jump menu. The menu
+// is a row of chips under the pinned identity: on a phone the panel is five
+// sections deep and scrolling to "Computed" from the top is a 2 000 px drag.
+// Each chip scrolls its section to the top of the panel's scroller, so the
+// section's heading is the first thing on screen.
+const sectionRefs = useRef({});
+function scrollToSection(id) {
+const node = sectionRefs.current[id];
+const panel = panelRef.current;
+if (!node || !panel) return;
+// Offset by the pinned identity row's height so the section heading is not
+// hidden under it.
+const pin = pinRef.current;
+const offset = pin ? pin.offsetHeight : 0;
+const top = node.getBoundingClientRect().top - panel.getBoundingClientRect().top + panel.scrollTop - offset - 4;
+panel.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+}
+// copyStatus — a transient "copied" confirmation for the copy buttons. One
+// line under the pinned identity, cleared after a short delay so it never
+// lingers as stale state.
+const [copyStatus, setCopyStatus] = useState('');
+const copyTimer = useRef(null);
+function handleCopyValue(value) {
+setCopyStatus('Copied ' + shortenValue(value, 40));
+if (copyTimer.current) clearTimeout(copyTimer.current);
+copyTimer.current = setTimeout(() => setCopyStatus(''), 1500);
+}
 function openEditor(next) {
 if (!edit) {
 editScroll.current = panelRef.current ? panelRef.current.scrollTop : 0;
@@ -1951,9 +2041,37 @@ boxSize ? h('span', { class: 'inspector__styles-elem-size' }, boxSize) : null
 // wrong.
 error
 ? h('p', { class: 'inspector__style-error', role: 'alert' }, error)
+: null,
+// The copy confirmation shares the error line's slot: one transient line under
+// the identity, so a "Copied 12px" never needs its own row that shifts the
+// property list.
+copyStatus
+? h('p', { class: 'inspector__style-copied', role: 'status' }, '✓ ' + copyStatus)
 : null
 ),
 valueEditor,
+// Section jump menu — a row of chips that scrolls to each named section. On a
+// phone the panel is five sections deep (controls, declared, rules, computed),
+// and reaching "Computed" from the top is a 2 000 px drag. Each chip is a 44 px
+// tap target that smooth-scrolls its section to the top of the panel's
+// scroller, offset by the pinned identity row so the section heading is the
+// first thing on screen. The chips wrap rather than scrolling sideways: there
+// are at most five, and a horizontal scroller for five chips is a gesture the
+// user has to discover.
+h('div', { class: 'inspector__styles-jump', role: 'navigation', 'aria-label': 'Jump to section' },
+[
+{ id: 'controls', label: 'Controls' },
+{ id: 'declared', label: 'Declared' },
+{ id: 'rules', label: 'Rules' },
+{ id: 'computed', label: 'Computed' }
+].map((s) => h('button', {
+class: 'inspector__styles-jump-chip',
+type: 'button',
+key: s.id,
+'aria-label': 'Jump to the ' + s.label + ' section',
+onClick: () => scrollToSection(s.id)
+}, s.label))
+),
 // Pinned element preview: a clipped screenshot of the selected element, so
 // the result of an edit is readable without scrolling back to the Preview
 // panel. It is the *first row of the scroll flow*, immediately under the
@@ -2157,7 +2275,7 @@ tree.childCount > tree.children.length
 // for anything the surface does not name, and both write through applyEdit, so a
 // slider release and a typed value produce the same receipt entry and the same
 // undo.
-h('div', { class: 'inspector__styles-section' },
+h('div', { class: 'inspector__styles-section', ref: (el) => { if (el) sectionRefs.current['controls'] = el; } },
 h('h3', { class: 'inspector__styles-h' }, 'Style controls'),
 h(StyleControls, {
 // Keyed by element: a new selection remounts the surface, which is what resets
@@ -2205,7 +2323,7 @@ setAddOpen(false);
 openEditor({ prop: row.prop, value: row.isSet ? row.value : '' });
 }
 }),
-h('div', { class: 'inspector__styles-section' },
+h('div', { class: 'inspector__styles-section', ref: (el) => { if (el) sectionRefs.current['declared'] = el; } },
 h('div', { class: 'inspector__declared-bar' },
 h('h3', { class: 'inspector__styles-h' }, 'Declared styles'),
 // The count is of declarations as written (a `border` row is one), the same
@@ -2249,13 +2367,14 @@ row.priority === 'important'
 ? h('span', { class: 'inspector__styles-important', title: 'Stored as !important on this element' }, '!important')
 : null,
 valueSwatch(row.prop, row.value),
-h('span', { class: 'inspector__styles-val' }, row.value || '')
-)
+h(ValueText, { value: row.value, kind: valueKindOf(row.prop, row.value) })
+),
+row.value ? h(CopyValueButton, { value: row.value, name: row.prop, onCopy: handleCopyValue }) : null
 ))
 )
 : h('p', { class: 'inspector__styles-none' }, 'No inline styles yet.', h('br'), 'Tap Add property above to set one.')
 ),
-h('div', { class: 'inspector__styles-section' },
+h('div', { class: 'inspector__styles-section', ref: (el) => { if (el) sectionRefs.current['rules'] = el; } },
 h(MatchedRulesSection, {
 rules: rules ? rules.rules : null,
 counts: rules ? rules.counts : null,
@@ -2272,7 +2391,7 @@ onToggleUa: () => setShowUa(!showUa),
 onEdit: (prop, value) => openEditor({ prop, value })
 })
 ),
-h('div', { class: 'inspector__styles-section' },
+h('div', { class: 'inspector__styles-section', ref: (el) => { if (el) sectionRefs.current['computed'] = el; } },
 h('div', { class: 'inspector__computed-bar' },
 h('h3', { class: 'inspector__styles-h' }, 'Computed'),
 h('span', { class: 'inspector__computed-count' }, computedVisible.length + '/' + computedRows.length),
@@ -2370,7 +2489,7 @@ h('span', { class: 'inspector__computed-line' },
 h('span', { class: 'inspector__styles-prop' }, row.prop),
 changedRow ? h('span', { class: 'inspector__styles-changed', 'aria-hidden': 'true' }, 'changed') : null,
 valueSwatch(row.prop, row.value),
-h('span', { class: 'inspector__styles-val' }, row.value || '')
+h(ValueText, { value: row.value, kind: valueKindOf(row.prop, row.value) })
 ),
 h('span', { class: 'inspector__computed-source', 'aria-hidden': 'true' }, sourceText)
 )
