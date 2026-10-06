@@ -228,11 +228,6 @@ display: flex;
   gap: 6px;
   padding: 0 10px 10px;
   min-height: 0;
-  /* Single-select tabs: the panels container fills the remaining
-     viewport height so the one active panel can fill it. The solo
-     panel's height rule (below) uses --inspector-chrome-h measured
-     by JS. */
-  flex: 1 1 auto;
 }
 .inspector__panel {
   display: flex;
