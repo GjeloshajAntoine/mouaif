@@ -371,7 +371,19 @@ transition: background 120ms ease, color 120ms ease;
    the user sees Preview at the top and can scroll down to
    Console / Network / Info as needed. The wide-screen media
    query below re-enables the "first panel grows" behaviour
-   for tablet and desktop. */
+   for tablet and desktop.
+
+   The exception is the *solo* panel (only one visible): on a
+   phone the page below it is otherwise empty, so a 32 dvh
+   body would leave a blank half-screen under a needlessly
+   short list. The solo panel fills the remaining viewport
+   height (minus the chrome above it and the tab bar below)
+   via `height: calc(100dvh - var(--inspector-chrome-h))`,
+   where `--inspector-chrome-h` is measured by JS and set on
+   the panels container. This is the one place a viewport-
+   relative height is correct: the solo panel is the only
+   child of the panels container, so there is nothing to
+   share with. */
 .inspector__panel-body .inspector__scroller {
   flex: 0 0 auto;
   height: 32dvh;
@@ -394,6 +406,47 @@ transition: background 120ms ease, color 120ms ease;
 .inspector__panel-body .inspector__metrics {
   padding: 8px;
   /* Metrics grid is 2 columns on mobile, 4 on wider screens. */
+}
+/* Solo panel on mobile: fill the remaining viewport height.
+   `--inspector-chrome-h` is the measured height of the chrome
+   above the panels container (header + nav + panelbar + status),
+   set by JS on the `.inspector__panels` element. The solo panel's
+   body fills `100dvh - chrome - tabbar`, so a single visible panel
+   (e.g. just Console) uses the whole screen instead of leaving a
+   blank gap below. The scroller/preview inside inherit the height
+   via `flex: 1 1 auto; height: auto`. */
+.inspector__panel--solo {
+  /* Fill the remaining viewport: 100dvh minus the chrome above
+     (measured by JS as `--inspector-chrome-h` on the panels
+     container) minus the tab bar height. Falls back to a generous
+     min-height when the variable is not yet set (first paint).
+     Only applies below 900px — on wide screens the flex-grow
+     behaviour already fills the space. */
+  height: calc(100dvh - var(--inspector-chrome-h, 210px) - var(--tabbar-h, 50px) - 10px);
+  min-height: 280px;
+}
+.inspector__panel--solo .inspector__panel-body {
+  /* The body fills the panel (which is now height-constrained),
+     so the scroller/preview inside can flex-fill it. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.inspector__panel--solo .inspector__panel-body .inspector__scroller,
+.inspector__panel--solo .inspector__panel-body .inspector__preview {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+/* The preview frame inside a solo panel must also fill the preview
+   column, not keep its intrinsic 56 dvh. Without this the frame's
+   `height: 56dvh` (from inspector-pick-mode.css) wins over the
+   flex-grow and the image sizes to its natural dimensions, pushing
+   the panel taller than the viewport. */
+.inspector__panel--solo .inspector__panel-body .inspector__preview-frame {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
 }
 
 /* Wide-screen layout: 900 px and up. The page is short

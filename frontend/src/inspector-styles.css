@@ -66,11 +66,17 @@ rows, the tree chips, and the filter bar all wrap — so clip it outright. */
 overflow-x: hidden;
 }
 /* Only panel on screen: nothing else wants the space, so a 52 dvh scroller
-would leave a blank half-screen under a needlessly short list. Take the
-viewport instead — that is the difference between ~8 and ~14 visible rows on a
-360 x 680 phone, and far less scrolling for the same reading. */
+would leave a blank half-screen under a needlessly short list. The solo
+panel now fills the remaining viewport (see inspector-chrome.css
+`.inspector__panel--solo { min-height: calc(100dvh - …) }`), and the
+styles scroller inside it flex-fills that height via `flex: 1 1 auto;
+height: auto`. The old fixed 72 dvh is gone — the panel's min-height
+already accounts for the chrome, so the scroller just fills what it
+gets. */
 .inspector__panel--solo .inspector__panel-body .inspector__styles {
-height: 72dvh;
+flex: 1 1 auto;
+height: auto;
+min-height: 0;
 }
 /* On a wide screen (where the first panel grows) the styles list gets
 the leftover height like the scroller/preview do. */

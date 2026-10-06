@@ -591,13 +591,10 @@ function InspectActionsMenu(props) {
   );
 }
 
-// Panel chip icons. Inline SVG keeps the panelbar a single 36 px
-// row at 360 px (4 icon chips + gaps ≈ 152 px) instead of the
-// previous text-label design that wrapped the chips onto a
-// second line for "Show all" (104 px tall on a phone). Each
-// chip keeps its text label as a tooltip + aria-label for
-// screen readers; on screen only the glyph shows, the iOS
-// DevTools-style segmented-control pattern.
+// Panel chip icons. Inline SVG, 18 px, sits inline with the label in
+// the pill-shaped chip. The bar is a horizontally scrollable pill row
+// (see inspector-target-bar.css), so each chip keeps a comfortable
+// min-width and the icon + label read as one unit.
 const PANEL_ICONS = {
   preview: h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
     h('path', { d: 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 0v14h14V5H5Zm2 10h10v-2H7v2Zm0-4h10V9H7v2Zm0-4h6V5H7v2Z', fill: 'currentColor' })
@@ -615,6 +612,64 @@ const PANEL_ICONS = {
     h('path', { d: 'M3 4h7v7H3V4Zm0 9h7v7H3v-7Zm9-9h9v4h-9V4Zm0 6h9v10h-9V10Z', fill: 'currentColor' })
   )
 };
+// PanelBar — the horizontally scrollable pill tab bar. Hoisted to module
+// scope (stable identity across re-renders) so the scroll listener and
+// the scrollable-state check are set up once. The bar renders the five
+// panel chips as pill buttons; a right-edge fade gradient appears when
+// the chips overflow the bar's width (narrow screens).
+function PanelBar(props) {
+  const barRef = useRef(null);
+  const [scrollable, setScrollable] = useState(false);
+  // Check scrollability on mount and whenever the panel set changes
+  // (toggling a panel doesn't change chip count, but a resize does).
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const check = () => {
+      const canScroll = bar.scrollWidth > bar.clientWidth + 1;
+      setScrollable(canScroll);
+    };
+    check();
+    // Re-check on resize (viewport changes chip layout).
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(check) : null;
+    if (ro) ro.observe(bar);
+    window.addEventListener('resize', check);
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener('resize', check);
+    };
+  }, []);
+  return h('div', {
+    ref: barRef,
+    class: 'inspector__panelbar' + (scrollable ? ' is-scrollable' : ''),
+    role: 'group',
+    'aria-label': 'Optional panels'
+  },
+    PANELS.map((p) => {
+      const on = props.visiblePanels.has(p.id);
+      const count = p.id === 'console' ? props.consoleCount
+        : p.id === 'network' ? props.networkCount
+        : 0;
+      const badgeText = count > 999 ? '999+' : String(count);
+      const showBadge = on && count > 0;
+      return h('button', {
+        class: 'inspector__panelchip' + (on ? ' is-on' : '') + (showBadge ? ' has-badge' : ''),
+        type: 'button',
+        'aria-label': (on ? 'Hide ' : 'Show ') + p.label + (showBadge ? ' (' + badgeText + ' entries)' : ''),
+        'aria-pressed': String(on),
+        title: (on ? 'Hide ' : 'Show ') + p.label,
+        'data-panel-id': p.id,
+        onClick: () => props.onToggle(p.id)
+      },
+        h('span', { class: 'inspector__panelchip-icon', 'aria-hidden': 'true' }, PANEL_ICONS[p.id]),
+        h('span', { class: 'inspector__panelchip-label' }, p.label),
+        showBadge
+          ? h('span', { class: 'inspector__panelchip-badge', 'aria-hidden': 'true' }, badgeText)
+          : null
+      );
+    })
+  );
+}
 export function InspectorView() {
   const urlInput = useRef(null);
   const pageUrlInput = useRef(null);
@@ -664,6 +719,40 @@ currentTargetRef.current = currentTarget;
   // 'panel' state from the previous design is gone — the new UI does
   // not switch between panels, it shows all toggled-on panels stacked.
   const [visiblePanels, setVisiblePanels] = useState(() => loadPanelState());
+  // panelsContainerRef + chromeVars — the solo panel (only one visible)
+  // fills the remaining viewport height on mobile. The CSS rule
+  // `.inspector__panel--solo { min-height: calc(100dvh -
+  // var(--inspector-chrome-h) - var(--tabbar-h) - 10px) }` needs
+  // `--inspector-chrome-h`: the measured height of the chrome above
+  // the panels container (header + nav + panelbar + status). We
+  // measure it with a ResizeObserver on the container and publish it
+  // as an inline CSS variable, so the solo panel always knows exactly
+  // how much viewport is left. Falls back to 210px (a typical phone
+  // chrome height) before the first measurement lands.
+  const panelsContainerRef = useRef(null);
+  const [chromeH, setChromeH] = useState(210);
+  useEffect(() => {
+    const el = panelsContainerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      setChromeH(Math.round(top));
+    };
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    // Observe the element just above the panels container (the status
+    // pill or the panelbar) so chrome resizes (title wrap, panelbar
+    // scroll) re-measure.
+    const prev = el.previousElementSibling;
+    if (ro && prev) ro.observe(prev);
+    if (ro) ro.observe(el);
+    window.addEventListener('resize', measure);
+    return () => {
+      if (ro) ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [currentTarget, visiblePanels]);
+  const chromeVars = { '--inspector-chrome-h': chromeH + 'px' };
   const [detailItem, setDetailItem] = useState(null);
   // detailPayload — the Draft Craft payload built from the entry the detail
   // sheet is showing, set by its "Add to chat" button. While it is non-null
@@ -2260,36 +2349,15 @@ onPick: () => { const acts = stylesHandlesRef.current; if (acts && acts.togglePi
         // Close button moved to InspectActionsMenu so the nav row
         // carries only the URL field + Go (the most common action).
       ),
-      // Panelbar — 2-line chips with a corner entry-count badge for
-      // the row-shaped panels (console, network). Preview/Info are not
-      // countable so they stay unbadged but still print the label under
-      // the glyph, so the whole row reads identically at a glance — no
-      // icon-only buttons hiding behind aria-labels.
-      h('div', { class: 'inspector__panelbar', role: 'group', 'aria-label': 'Optional panels' },
-        PANELS.map((p) => {
-          const on = visiblePanels.has(p.id);
-          const count = p.id === 'console' ? consoleCount
-            : p.id === 'network' ? networkCount
-            : 0;
-          const badgeText = count > 999 ? '999+' : String(count);
-          const showBadge = on && count > 0;
-          return h('button', {
-            class: 'inspector__panelchip' + (on ? ' is-on' : '') + (showBadge ? ' has-badge' : ''),
-            type: 'button',
-            'aria-label': (on ? 'Hide ' : 'Show ') + p.label + (showBadge ? ' (' + badgeText + ' entries)' : ''),
-            'aria-pressed': String(on),
-            title: (on ? 'Hide ' : 'Show ') + p.label,
-            'data-panel-id': p.id,
-            onClick: () => togglePanel(p.id)
-          },
-            h('span', { class: 'inspector__panelchip-icon', 'aria-hidden': 'true' }, PANEL_ICONS[p.id]),
-            h('span', { class: 'inspector__panelchip-label' }, p.label),
-showBadge
-? h('span', { class: 'inspector__panelchip-badge', 'aria-hidden': 'true' }, badgeText)
-: null
-);
-}),
-// Intent — the describe-a-change surface (Part H). Its chip is hidden (see
+      // Panelbar — horizontally scrollable pill tabs with a corner
+      // entry-count badge for the row-shaped panels (console, network).
+      // Preview/Info are not countable so they stay unbadged. The bar
+      // scrolls when chips overflow (narrow screens); a fade gradient
+      // on the right edge (toggled by PanelBar's scroll listener)
+      // signals more content. Each chip is a row pill: icon + label,
+      // min-width 64 px, 44 px tall tap target.
+      h(PanelBar, { visiblePanels, consoleCount, networkCount, onToggle: togglePanel }),
+    // Intent — the describe-a-change surface (Part H). Its chip is hidden (see
 // INTENT_SURFACE): the panel bar carries PANELS only, so this renders nothing
 // unless the surface is switched back on. It is deliberately NOT folded into
 // PANELS — it is a request box and a cited diff, not a view of the connected
@@ -2305,8 +2373,7 @@ onClick: toggleIntent
 },
 h('span', { class: 'inspector__panelchip-icon', 'aria-hidden': 'true' }, '✎'),
 h('span', { class: 'inspector__panelchip-label' }, 'Intent')
-) : null
-),
+) : null,
 h(StatusPill, { text: statusText }),
 // Intent (Part H) — the describe-a-change surface, directly above the panels
 // because it is a way to *make* an edit rather than a view of the page. It
@@ -2333,7 +2400,7 @@ INTENT_SURFACE && intentOpen
     h('p', { class: 'inspector__panels-empty-hint' }, 'Tap a panel name above to show it.'),
     h('button', { class: 'btn', type: 'button', onClick: showAllPanels }, 'Show all panels')
     )
-    : h('div', { class: 'inspector__panels' },
+    : h('div', { class: 'inspector__panels', ref: panelsContainerRef, style: chromeVars },
     visibleIds.map((id, idx) => h(PanelCard, {
     id,
     label: PANELS.find((p) => p.id === id).label,
