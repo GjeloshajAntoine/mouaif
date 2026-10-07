@@ -1,0 +1,34 @@
+services:
+  app:
+    image: mouaif-app:latest
+    environment:
+      MOUAIF_HOME: /data
+      MOUAIF_ALLOW_ANY_ROOT: "1"
+      MOUAIF_CHROME_URL: http://chrome:9222
+    ports:
+      - "5732:5732"
+    volumes:
+      - ui-review-data:/data
+      - ./examples/docker-test-project:/workspace/example:ro
+    depends_on:
+      chrome:
+        condition: service_started
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:5732/api/settings').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+  chrome:
+    image: mouaif-app:latest
+    entrypoint: ["google-chrome"]
+    command: ["--headless=new", "--remote-debugging-port=9222", "--remote-debugging-address=0.0.0.0", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "about:blank"]
+    # No host port mapping — the app reaches Chrome over the compose network.
+    # The host already runs a Chrome on 127.0.0.1:9222 for the dev inspector.
+
+volumes:
+  ui-review-data:

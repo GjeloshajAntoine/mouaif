@@ -165,6 +165,7 @@ Published pages about how the app is built. They are reachable by URL but not li
 - [Design tokens and shared UI styles](features/design-tokens.md) — the CSS tokens, the shared overflow menu, and the spinner every screen reuses.
 - [Content Security Policy](features/content-security-policy.md) — the policy the app shell ships with.
 - [Docker smoke test](features/docker-smoke-test.md) — build and verify mouaif in containers.
+- [UI review in Docker](features/ui-review-docker.md) — run the production image with its own headless Chrome for a UI review.
 - [Test coverage guard](features/test-coverage-guard.md) — the meta-test that keeps every test file wired into `npm test`.
 - [Documentation site](features/docs-site.md) — how this site is built and published, and the landing screenshots.
 
