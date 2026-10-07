@@ -157,6 +157,10 @@ let cursor = 0;
     loadRecent: () => [],
     loadRecentFromServer: async () => false,
     togglePin: () => false,
+    // The picker module also exports the one-time fold of per-project pins
+    // onto the shared lists. Nothing in this page calls it, but the harness
+    // module has to satisfy the import or the whole page fails to parse.
+    migrateProjectScopedBookmarks: () => {},
     useState: (initial) => {
       const i = cursor++;
       if (first) states[i] = typeof initial === 'function' ? initial() : initial;
