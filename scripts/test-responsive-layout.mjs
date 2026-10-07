@@ -303,36 +303,74 @@ try {
         assert.equal(await evaluate(`document.querySelector('.chat-view__scroll-nav').dataset.mode`), 'pinned', 'Latest resumes following replies');
         assert.equal(await evaluate(`document.activeElement.className`), 'chat-view__transcript', 'Latest returns focus to the transcript');
         if (width >= 48 * fontSize) {
-          assert.ok(Math.abs(layout.row.left - layout.head.left) < 1, 'transcript stays centred even with a scrollbar');
-          // Its own 28px column right after the reading column: beside the
-          // conversation, not over it and not out at the frame edge.
-          // With less than a column to spare, it takes the frame edge and the
-          // rows give up that strip instead (checked above). Either way it
-          // stops at the scrollbar lane rather than sitting on the bar.
-          const room = layout.scrollbarLeft - layout.head.right >= 28;
-          assert.ok(room ? layout.nav.left >= layout.head.right - 1 && layout.nav.right <= layout.head.right + 29
-          : Math.abs(layout.nav.right - layout.scrollbarLeft) < 1,
-          `navigation stays beside the conversation, not at the frame edge (head ends ${layout.head.right}, bar starts ${layout.scrollbarLeft}, nav ${layout.nav.left}-${layout.nav.right})`);
-          assert.ok(layout.preview, 'web preview rendered');
-          assert.ok(layout.preview.right <= layout.composer.right, 'preview stays above the composer, not at the frame edge');
+        assert.ok(Math.abs(layout.row.left - layout.head.left) < 1, 'transcript stays centred even with a scrollbar');
+        // Past the wide breakpoint the reading column ends before the rail,
+        // so the rail sits just right of it. Below that breakpoint the
+        // column has no room to spare, and the rail takes the scrollbar's
+        // lane with the last row running under it — see the cover check
+        // below. Either way it stops at the bar rather than sitting on it.
+        const room = Math.min(layout.scrollbarLeft, width) - layout.head.right >= 28;
+        assert.ok(room ? layout.nav.left >= layout.head.right - 1 && layout.nav.right <= layout.head.right + 29
+        : Math.abs(layout.nav.right - Math.min(layout.scrollbarLeft, width)) < 1,
+        `navigation sits at the reading column's edge when there is room, else on the bar's lane (head ends ${layout.head.right}, bar starts ${layout.scrollbarLeft}, nav ${layout.nav.left}-${layout.nav.right})`);
+        assert.ok(layout.preview, 'web preview rendered');
+        assert.ok(layout.preview.right <= layout.composer.right, 'preview stays above the composer, not at the frame edge');
         }
-        // The buttons have their own strip: no transcript row runs under
-        // any of them, at any width (Latest and its 99+ badge included).
-        // Measured while the `99+` badge is showing (see historyNav).
-        const { rowsRight, badgeLeft } = historyNav;
-        assert.ok(historyNav.buttons.every(button => button.left >= rowsRight) && badgeLeft >= rowsRight,
-        `navigation never covers a message at ${width}px / ${fontSize}px (rows end at ${rowsRight}px, `
-        + `buttons start at ${Math.min(...historyNav.buttons.map(b => b.left))}px, badge at ${badgeLeft}px)`);
+        // Nothing is reserved for the rail any more. Measured as geometry, not
+        // by toggling the rail's display: hiding it used to leave the rows
+        // exactly where they were, so that check could never fail.
+        const railClosed = historyNav.buttons[0].left;
+        assert.ok(historyNav.badgeLeft >= railClosed - 0.5,
+        `the rail's badge stays inside its column at ${width}px / ${fontSize}px (badge at ${historyNav.badgeLeft}px, `
+        + `column starts at ${railClosed}px), so the covered corner never widens`);
+        assert.ok(Math.abs(historyNav.badgeLeft - railClosed) < 6,
+        `the badge sits on the pill's corner, not beside the rail (badge at ${historyNav.badgeLeft}px, column at ${railClosed}px)`);
+        // Below the wide breakpoint the rail is the widest thing the rows can
+        // meet: the rail is one 28px column, so the worst a row's bottom
+        // corner loses is that column. Above it, the rail sits at the reading
+        // column's edge and no row reaches it at all.
+        // The rows must still reach the reading column exactly. As an upper
+        // bound this assertion could never fail — the whole point is that the
+        // rows are no longer shortened to leave the rail a strip.
+        const readingColumnRight = Math.min(layout.head.right, historyNav.scrollbarLeft - 8);
+        assert.ok(historyNav.rowsRight >= readingColumnRight - 1,
+        `rows reach the reading column at ${width}px / ${fontSize}px (row ends at ${historyNav.rowsRight}px, `
+        + `column ends at ${readingColumnRight}px — the rail reserves no strip)`);
+        // The rail covers the last row's bottom-right corner below the wide
+        // breakpoint: that is the deliberate trade. It must therefore stay a
+        // small, corner-anchored cluster — never a full-width bar, and never
+        // taller than its three slots — and it must leave the row's text
+        // measure intact.
+        assert.ok(Math.abs(historyNav.buttons[0].left - historyNav.buttons[1].left) < 1
+          && Math.abs(historyNav.buttons[2].left - historyNav.buttons[0].left) < 1,
+          'the rail stays one column wide, so it covers a corner and not a band');
         assert.ok(historyNav.buttons.every(button => button.right <= layout.transcript.right),
         'navigation stays inside the transcript');
-        // The rail must not sit on the scrollbar either. It hangs off the
-        // transcript box, so before this it landed on the lane a classic
-        // scrollbar paints in as soon as the window was narrow enough to
-        // hold the rail at the frame edge — and the rail swallowed the
-        // drag, because a tap on the bar hit the pill instead.
+        // The rail must not sit on the scrollbar. It hangs off the
+        // transcript box while the bar is painted inside the scroller nested
+        // in it, so this is where a 28px rail used to overlap the bar by 2px
+        // and swallow its drag. Tested in the arrangement that actually has
+        // a bar: a classic one over a wide frame.
+        if (historyNav.scrollbarLane > 0) {
         assert.ok(historyNav.buttons.every(button => button.right <= historyNav.scrollbarLeft + 0.5),
         `navigation never covers the scrollbar at ${width}px / ${fontSize}px (bar starts at `
         + `${historyNav.scrollbarLeft}px, buttons end at ${Math.max(...historyNav.buttons.map(b => b.right))}px)`);
+        }
+        // The bar is genuinely draggable: a pointer press on the lane just
+        // left of the thumb must land on the scroller, not on a pill.
+        if (historyNav.scrollbarLane > 0) {
+        const onBar = await evaluate(`(() => {
+        const t = document.querySelector('.chat-view__transcript');
+        const r = t.getBoundingClientRect();
+        const lane = t.offsetWidth - t.clientWidth - t.clientLeft;
+        const x = r.right - lane / 2;
+        const y = r.top + r.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        return { x, y, hit: hit ? (hit.closest('.chat-view__nav-btn') ? 'nav-btn' : hit.className || hit.tagName) : null };
+        })()`);
+        assert.ok(!String(onBar.hit).includes('nav-btn'),
+        `the scrollbar lane stays draggable at ${width}px (elementFromPoint at x=${onBar.x} hit ${onBar.hit})`);
+        }
         if (width <= 430) {
         assert.ok(Math.abs(layout.preview.right - (width - 0.75 * fontSize)) < 1, 'phone preview keeps its existing inset');
         }

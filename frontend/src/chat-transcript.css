@@ -112,16 +112,14 @@
 .chat-view__transcript > .chat-msg,
 .chat-view__transcript > :not(.chat-msg) {
   align-self: stretch;
-  /* The scroll buttons get a strip of their own on the right, so no row
-     ever runs under them. The row keeps the centring margin on its left
-     (so it still lines up with the head and composer) and gives up
-     `--nav-gutter` on its right only when the frame is too narrow to hold
-     the strip beside the centred column. Percentages here are of the
-     transcript's content box, in both properties. */
-  --row-start: max(0px, calc((100% - var(--read-max, 44rem)) / 2));
-  width: min(var(--read-max, 44rem), calc(100% - var(--nav-gutter) - var(--row-start)));
-  max-width: none;
-  margin-inline: var(--row-start) auto;
+  /* Every row uses the full reading column again: the scroll buttons no
+     longer take a strip of their own on the right, because that strip was
+     reserved on every phone — where a phone's overlay scrollbar leaves the
+     column nowhere else to go — and cost each message its last few
+     characters to protect a corner the rail only occupies at the bottom. */
+  width: 100%;
+  max-width: var(--read-max, 44rem);
+  margin-inline: auto;
 }
 .chat-view__transcript > .chat-msg--assistant {
   align-items: flex-start;
@@ -509,19 +507,16 @@
    bar costs reading height on every phone and reads as a second
    toolbar wedged between the messages and the composer.
 
-  The four slots are fixed: Latest takes the upper row (spanning both
-  columns), Previous and Next keep the lower row, and Next stays
-  rendered but disabled while the transcript follows the reply. Showing
-  Latest or growing its unread badge therefore never moves a
-  message-navigation target under the user's finger.
+  Three fixed slots, top to bottom: Prev, Next, Latest. Latest's slot
+  stays allocated while that button is hidden, and Next stays rendered
+  but disabled while the transcript follows the reply, so showing Latest
+  or growing its unread badge never moves a message-navigation target
+  under the user's finger.
 
-  Each glyph paints at 26px so it covers little text, and a transparent
-  ::before grows its *hit* area to at least 44 x 44px without changing
-  what it paints. Every grid slot is 44px wide, so those expanded areas
-  fill their own slot and stop 4px short of the neighbour: the one
-  arrangement `.tap-target` documents as safe for side-by-side
-  controls. The row gap equals two hit extensions, so the Latest row
-  above meets the Prev/Next row without stealing from it.
+  Each glyph paints at 20px, and a transparent ::before grows its *hit*
+  area to fill its 28px slot. The 2px gap keeps those expanded areas
+  inside their own slot: the one arrangement `.tap-target` documents as
+  safe for stacked controls.
 
   The controls carry no visible text — a glyph plus aria-label/title —
   and stay in the tab order (see Chat.jsx). */
@@ -529,9 +524,10 @@
 /* Positioned box around the transcript: takes the transcript's old flex
    slot so the rail below can anchor to the transcript's own edges. */
 .chat-view__transcript-box {
-  /* The scroll buttons' column (--nav-col) and the strip the rows leave
-     free for it, inside the transcript's 8px right padding. Kept narrow:
-     a wider strip cost every message a visible slice of its width. */
+  /* The scroll buttons' column (--nav-col). The rail is the only thing that
+     occupies it: transcript rows use the full reading column, so the strip
+     is not reserved anywhere. Kept narrow — a wider column was rejected as
+     "way too big" and costs the rail's own clearance. */
   --nav-col: 28px;
   /* Width of the lane the transcript's own scrollbar occupies, measured
      from the live scroller (syncNavScrollbarLane in
@@ -540,7 +536,6 @@
      classic one is as wide as the platform makes it. Declared here so
      `max()` below stays valid before the first measurement lands. */
   --nav-scrollbar: 0px;
-  --nav-gutter: calc(var(--nav-col) - 8px + env(safe-area-inset-right, 0px));
   position: relative;
   display: flex;
   flex-direction: column;
@@ -550,15 +545,16 @@
 
 .chat-view__scroll-nav {
   position: absolute;
-  /* Follow the reading column on wide windows, not the shell's far edge. */
-  /* One --nav-col column in the strip the rows leave free (--nav-gutter):
-     at the frame edge on a phone, just past the centred reading column
-     when the frame is wide enough. Never over a message, and never over
-     the transcript's scrollbar: the rail hangs off this box, but the bar
-     is painted inside the scroller nested in it, so the frame-edge term
-     carries the bar's lane as a floor. Only the frame-edge case needs it
-     — whenever the reading column leaves the rail room beside itself, the
-     rail is nowhere near the bar. */
+  /* Follow the reading column on wide windows, not the shell's far edge.
+     Nothing is reserved for this column any more: the rows use the full
+     reading width again, so the rail is put where it costs the least —
+     flush with the lane the transcript's scrollbar takes, which is the
+     frame edge below the wide breakpoint and the bar's own left edge above
+     it. A phone therefore has the pills over the last pixels of a row in
+     the bottom corner, which is the trade for giving every message its
+     full width back; on a wide frame the reading column still ends before
+     the rail and nothing is covered. The bar itself is never covered: the
+     lane term is a floor, so the rail always stops at the bar. */
   right: max(calc(env(safe-area-inset-right, 0px) + var(--nav-scrollbar, 0px)),
     calc((100% - var(--read-max, 44rem)) / 2 - var(--nav-col)));
   /* Explicit slots keep Prev/Next fixed when Latest appears or its
