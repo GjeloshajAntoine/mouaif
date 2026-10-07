@@ -24,7 +24,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `get_chat` | Read one chat (`chatId`). `includeMessages: true` adds the last `messageLimit` messages (default 10, max 50). |
 | `create_chat` | Create a chat. `title` names it, `topic` seeds its composer draft, `providerId` + `modelId` pick its model. Returns the chat plus a `#/chat/<id>` link. |
 | `update_chat` | Change `title`, `draft`, `promptId`, `promptSize`, `providerId`, or `modelId` on an existing chat. Model changes apply to the next turn. |
-| `change_working_folder` | Change the calling chat's shell/file working folder. It takes no `chatId`: the chat is ambient context, and passing one is refused rather than silently retargeting. A `directory` string selects an existing folder (or `""` to reset); omitting it, or passing `false` or `null`, creates an empty workspace under `.mouaif/` or reuses its existing folder, without any Git operations, but only when the project or app enables **Allow automatic workspaces**, otherwise it fails with `EOFF`. `true` is refused with `EBADINPUT`. See [Chat working folders](./chat-working-folder.md). |
+| `change_working_folder` | Change a chat's shell/file working folder to an existing directory. `directory` is required: a project-relative or absolute path to a directory that already exists, or `""` (or `"."`) to return to the original project folder. `chatId` defaults to the calling chat. The tool never creates a folder and never runs Git, so prepare a checkout with an authorized shell command first. See [Chat working folders](./chat-working-folder.md). |
 | `search_models` | Search saved project models and configured providers’ live chat catalogs; returns bounded `providerId` / `modelId` choices with pagination and per-provider failures. |
 | `start_chat` | Send `content` to an existing `chatId` using its selected model and start a background response. Returns a chat URL without waiting for completion. |
 | `delete_chat` | Delete a chat and its transcript. Requires `confirm: true`. Refuses the chat the turn is running in. |
@@ -40,7 +40,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 
 ### Where the model's data comes from
 
-`get_chat`, `attach_chat_image`, and `list_chat_attachments` default `chatId` to the current chat; `change_working_folder` has no `chatId` parameter and always uses the calling chat. `update_chat`, `start_chat`, and `delete_chat` require an explicit `chatId`; the other tools do not target one chat.
+`get_chat`, `change_working_folder`, `attach_chat_image`, and `list_chat_attachments` default `chatId` to the current chat. `update_chat`, `start_chat`, and `delete_chat` require an explicit `chatId`; the other tools do not target one chat.
 
 See [Chat model tools](./chat-model-tools.md) for model search options and the search → create/update → start workflow. A background start uses the target chat's normal permissions, cancellation, live replay, and transcript persistence; a busy chat rejects the start without appending a message.
 

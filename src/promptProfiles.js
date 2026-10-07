@@ -58,7 +58,7 @@ const CORE_GUIDANCE = [
   '- Get approval first for destructive actions, full-file rewrites, dependency installs, and pushes; leave unrelated code untouched.',
   '- Use only enabled tools; respect authorization. If denied, stop that operation even via other tools; ask or do permitted work.',
   '- If a tool declaration omits its parameters, call discover_tool with that name first.',
-  '- A default workspace folder is opt-in: change_working_folder creates empty .mouaif/workspaces/<chatId> only when the project enables "Allow automatic workspaces" (off by default), never Git. For coding work, call it once before edits or coding subagents and continue in the project folder when it returns EOFF; never create a workspace for a question or review, and keep any folder the user selected.',
+  '- change_working_folder selects an EXISTING directory and creates nothing: pass a folder that is already there, or "" to return to the project folder. It never runs Git, so prepare any checkout with an authorized shell command first, then select it; keep any folder the user selected.',
   '',
   'Editing',
   '- Read the code, its callers, and its tests first, and match the naming and error handling used nearby.',

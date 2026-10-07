@@ -194,12 +194,6 @@ const CLIENT_SETTINGS_KEYS = Object.freeze([
   'tools',          // per-project tool config (e.g. tools.shell.enabled) — non-secret
   'toolFeedbackMaxBytes', // model-facing tool-result byte cap
   'toolOutput',     // per-project tool output profile { size, structure } — non-secret
-  /* App-level default for `autoWorkspace`: whether the assistant may create a
-     per-chat workspace folder without being asked. Allowlisted for the same
-     reason the composer display prefs are — a stored key the UI cannot read
-     back looks exactly like a switch that will not save. The per-project
-     value rides the project payload, which is sent whole. */
-  'autoWorkspace',
   'notifications',  // browser notification event preferences
   'flags'           // server-side feature toggles (non-secret)
 ]);

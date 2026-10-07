@@ -53,16 +53,15 @@ async function modelCalls(chat, calls, decision) {
 }
 
 async function main() {
-  assert.deepEqual(SPECS.change_working_folder.function.parameters.properties.directory.type, ['string', 'boolean', 'null']);
-  // The advertised schema carries no chatId: the model cannot name a chat.
-  assert.deepEqual(Object.keys(SPECS.change_working_folder.function.parameters.properties), ['directory']);
-  // The advertised description must name every accepted form the runner
-  // honors: `null` creates the workspace exactly like `false`, and `true`
-  // is refused. It used to describe only `false`, so the two option sets —
-  // schema and code — disagreed.
-  const directorySpec = SPECS.change_working_folder.function.parameters.properties.directory;
-  assert.equal(/pass false or null/.test(directorySpec.description), true, 'the schema names false and null alike');
-  assert.equal(/true is not a directory/.test(directorySpec.description), true, 'the schema says true is refused');
+  // `directory` is a plain string and required: it names an existing folder.
+  // `chatId` is an ordinary optional argument, defaulting to the calling chat.
+  assert.equal(SPECS.change_working_folder.function.parameters.properties.directory.type, 'string');
+  assert.deepEqual(Object.keys(SPECS.change_working_folder.function.parameters.properties), ['chatId', 'directory']);
+  assert.deepEqual(SPECS.change_working_folder.function.parameters.required, ['directory']);
+  assert.equal(/never creates a folder/.test(SPECS.change_working_folder.function.description), true,
+    'the tool description says the tool selects existing folders only');
+  assert.equal(/workspaces/.test(SPECS.change_working_folder.function.description), false,
+    'the default workspace is gone from the advertised description');
   assert.equal(authz.effectiveConfig(projectDir, 'change_working_folder').mode, 'ask');
   git('init', '-q');
   git('config', 'user.email', 'fixture@example.test');
@@ -80,46 +79,40 @@ async function main() {
   assert.equal(chats.getChat(projectDir, chat.id).workingDir, null, 'existing databases receive the additive migration');
   assert.equal(chats.getChat(projectDir, other.id).id, other.id, 'migration preserves existing chats');
   assert.equal(workspace.resolve(projectDir, chat.id), projectDir);
-  // The tool owns its chat: the chat id is ambient server context, so the
-  // target comes from `opts`, never from an argument.
+  // `chatId` defaults to the calling chat and may name another one; the
+  // argument is honoured, not refused.
   const call = (args, chatId = chat.id) => runAppTool('change_working_folder', args, { projectDir, chatId });
-  // A chat id is ambient context owned by the server. A spurious argument is
-  // refused (never silently retargeting), and no current chat is a clear error.
-  assert.equal((await runAppTool('change_working_folder', { chatId: other.id, directory: 'subfolder' }, { projectDir, chatId: chat.id })).result.code, 'EBADINPUT');
-  assert.equal((await runAppTool('change_working_folder', {}, { projectDir })).result.code, 'EBADINPUT');
+  fs.mkdirSync(path.join(projectDir, 'subfolder'));
+  const otherTarget = await runAppTool('change_working_folder', { chatId: other.id, directory: 'subfolder' }, { projectDir, chatId: chat.id });
+  assert.equal(otherTarget.ok, true, 'an explicit chatId is honoured');
+  assert.equal(otherTarget.result.chat.id, other.id);
+  assert.equal(chats.getChat(projectDir, other.id).workingDir, path.join(projectDir, 'subfolder'));
+  assert.equal(chats.getChat(projectDir, chat.id).workingDir, null, 'the calling chat is untouched by an explicit target');
+  await call({ directory: '' }, other.id);
+  assert.equal(chats.getChat(projectDir, other.id).workingDir, null);
+  // No chat to act on is still a clear error.
+  assert.equal((await runAppTool('change_working_folder', { directory: 'subfolder' }, { projectDir })).result.code, 'EBADINPUT');
+  // `directory` must be a string: the old boolean/null "workspace" forms are
+  // not directories and are refused like any other wrong type.
   assert.equal((await call({ directory: 1 })).result.code, 'EBADINPUT');
-  assert.equal((await call({}, 'missing')).result.code, 'ENOTFOUND');
+  assert.equal((await call({ directory: true })).result.code, 'EBADINPUT');
+  assert.equal((await call({ directory: false })).result.code, 'EBADINPUT');
+  assert.equal((await call({ directory: null })).result.code, 'EBADINPUT');
+  // Omitting `directory` is a schema error, not a folder selection.
+  assert.equal((await call({})).result.code, 'EBADINPUT');
+  assert.equal((await call({ directory: 'subfolder' }, 'missing')).result.code, 'ENOTFOUND');
   assert.equal((await call({ directory: 'missing' })).result.code, 'ENOENT');
   assert.equal((await call({ directory: 'notes.txt' })).result.code, 'ENOTDIR');
-  // Creating the default workspace is opt-in: off by default it fails with
-  // EOFF and writes nothing, including the parents.
-  assert.equal(authz.effectiveConfig(projectDir, 'change_working_folder').mode, 'ask');
-  const offByDefault = await call({});
-  assert.equal(offByDefault.ok, false);
-  assert.equal(offByDefault.result.code, 'EOFF');
-  assert.equal(offByDefault.result.message.includes('Settings → Project → General'), true,
-    'EOFF points at the switch’s real location (the tool row is not where it lives)');
-  assert.equal(fs.existsSync(path.join(projectDir, '.mouaif')), false, 'EOFF creates nothing');
-  assert.equal((await call({}, chat.id)).result.code, 'EOFF', 'the default chat target is still gated');
-  assert.equal((await call({ directory: null })).result.code, 'EOFF');
-  assert.equal((await call({ directory: true })).result.code, 'EBADINPUT', 'a boolean is only meaningful as false');
-  assert.equal((await call({ directory: true })).result.message.includes('true is not a directory'), true,
-    'the refusal names the offending value, not just the accepted types');
-  assert.equal(chats.getChat(projectDir, chat.id).workingDir, null);
-  // The app-level default can enable creation for every project that does
-  // not set its own value; a project value overrides it either way.
+  // The tool creates nothing, whether or not the old opt-in is set.
   settings.setApp({ autoWorkspace: true });
-  assert.equal((await call({ directory: 'notes.txt' })).result.code, 'ENOTDIR', 'explicit directories still never create');
-  const otherRoot = path.join(home, 'app-default');
-  fs.mkdirSync(otherRoot);
-  const appDefaultChat = chats.createChat(otherRoot, {});
-  const appDefault = await runAppTool('change_working_folder', {}, { projectDir: otherRoot, chatId: appDefaultChat.id });
-  assert.equal(appDefault.ok, true, 'app default on enables workspaces for projects without their own value');
-  assert.equal(appDefault.result.created, true);
-  settings.setProject(otherRoot, { autoWorkspace: false });
-  const projectOff = await runAppTool('change_working_folder', {}, { projectDir: otherRoot, chatId: appDefaultChat.id });
-  assert.equal(projectOff.result.code, 'EOFF', 'a project value overrides the app default');
+  settings.setProject(projectDir, { autoWorkspace: true });
+  assert.equal((await call({ directory: 'notes.txt' })).result.code, 'ENOTDIR', 'directories are never created');
+  assert.equal(fs.existsSync(path.join(projectDir, '.mouaif')), false, 'no workspace folder is ever created');
+  assert.equal((await call({ directory: 'subfolder' })).result.created, false, 'selecting a folder creates nothing');
+  assert.equal(chats.getChat(projectDir, chat.id).workingDir, path.join(projectDir, 'subfolder'));
+  await call({ directory: '' });
   settings.setApp({ autoWorkspace: false });
+  settings.setProject(projectDir, { autoWorkspace: false });
   if (process.env.MOUAIF_ALLOW_ANY_ROOT !== '1') {
     assert.equal((await call({ directory: os.tmpdir() })).result.code, 'EOUTSIDE_HOME');
     fs.symlinkSync(os.tmpdir(), path.join(projectDir, 'outside-link'));
@@ -130,12 +123,12 @@ async function main() {
   // Approval summaries name the operation, actual target and resolved path.
   // Recovering a pending approval must show the same details as its SSE event.
   const approvalCases = [
-    [{}, 'Use a separate folder', chat.id, path.join(projectDir, '.mouaif', 'workspaces', chat.id)],
-    [{ directory: false }, 'Use a separate folder', chat.id, path.join(projectDir, '.mouaif', 'workspaces', chat.id)],
-    [{ directory: null }, 'Use a separate folder', chat.id, path.join(projectDir, '.mouaif', 'workspaces', chat.id)],
     [{ directory: '' }, 'Return to the project folder', chat.id, projectDir],
     [{ directory: '.' }, 'Return to the project folder', chat.id, projectDir],
-    [{ directory: home }, 'Use a different folder', chat.id, home]
+    [{ directory: 'subfolder' }, 'Use a different folder', chat.id, path.join(projectDir, 'subfolder')],
+    [{ directory: home }, 'Use a different folder', chat.id, home],
+    // An explicit chatId is named on the card, since that is the chat it moves.
+    [{ chatId: other.id, directory: 'subfolder' }, 'Use a different folder', other.id, path.join(projectDir, 'subfolder')]
   ];
   for (const [args, action, targetId, destination] of approvalCases) {
     const approval = await modelCalls(chat, [{ name: 'change_working_folder', args }], 'deny');
@@ -144,45 +137,34 @@ async function main() {
     assert.ok(request.summary.includes('Chat: ' + chats.getChat(projectDir, targetId).title + ' (' + targetId + ')'));
     assert.ok(request.summary.includes('Folder: ' + destination));
     assert.ok(request.summary.includes('Files read or edited and commands run for this chat will use this folder.'));
-    assert.ok(request.summary.includes(action === 'Use a separate folder' ? 'starts empty; project files are not copied' : 'does not move or copy files'));
+    assert.ok(request.summary.includes('does not move or copy files'));
     assert.equal(request.summary.includes('Git'), false, 'approval explains user impact, not implementation details');
     assert.equal(approval.results[0].ok, false);
   }
   assert.equal(fs.existsSync(path.join(projectDir, '.mouaif')), false, 'approval previews have no filesystem side effects');
 
-  // Denial/off never creates a workspace or changes metadata.
-  const denied = await modelCalls(chat, [{ name: 'change_working_folder', args: {} }], 'deny');
+  // Denial/off never changes metadata.
+  const denied = await modelCalls(chat, [{ name: 'change_working_folder', args: { directory: 'subfolder' } }], 'deny');
   assert.equal(denied.results[0].ok, false);
   assert.equal(fs.existsSync(path.join(projectDir, '.mouaif')), false);
   authz.setAuthorization(projectDir, { tools: { change_working_folder: { mode: 'off' } } });
-  const off = await modelCalls(chat, [{ name: 'change_working_folder', args: {} }]);
+  const off = await modelCalls(chat, [{ name: 'change_working_folder', args: { directory: 'subfolder' } }]);
   assert.equal(off.results[0].ok, false);
   assert.equal(off.events.some((e) => e.name === 'authorization_required'), false);
 
-  settings.setProject(projectDir, { hideFileContent: [{ path: 'notes.txt', ranges: [{ start: 2, end: 2 }] }], autoWorkspace: true });
+  settings.setProject(projectDir, { hideFileContent: [{ path: 'notes.txt', ranges: [{ start: 2, end: 2 }] }] });
   authz.setAuthorization(projectDir, { tools: {
     change_working_folder: { mode: 'allow' }, shell: { mode: 'allow' }, file: { mode: 'allow' }
   } });
   const target = path.join(projectDir, '.mouaif', 'workspaces', chat.id);
-  const branchesBefore = git('branch', '--list');
-  const worktreesBefore = git('worktree', 'list', '--porcelain');
-  const originalPath = process.env.PATH;
-  let folder;
-  try {
-    process.env.PATH = '';
-    folder = await call({});
-  } finally { process.env.PATH = originalPath; }
-  assert.equal(folder.ok, true, 'creating a workspace does not require Git on PATH');
-  assert.equal(folder.result.created, true);
-  assert.equal(folder.result.branch, null, 'the directory tool does not inspect or create branches');
-  assert.deepEqual(fs.readdirSync(target), [], 'Git projects also receive an empty folder');
-  assert.equal(git('branch', '--list'), branchesBefore);
-  assert.equal(git('worktree', 'list', '--porcelain'), worktreesBefore);
   // Git setup is separate from folder selection, just as an assistant would
   // use an authorized shell call before selecting an existing checkout.
+  fs.mkdirSync(target, { recursive: true });
   git('worktree', 'add', '-b', 'fixture-workspace-' + chat.id, target, 'HEAD');
+  const branchesBefore = git('branch', '--list');
+  const worktreesBefore = git('worktree', 'list', '--porcelain');
   const flow = await modelCalls(chat, [
-    { name: 'change_working_folder', args: {} },
+    { name: 'change_working_folder', args: { directory: target } },
     { name: 'shell', args: { cmd: 'pwd' } },
     { name: 'read_file', args: { path: 'notes.txt' } },
     { name: 'search_files', args: { query: 'private-token' } },
@@ -190,8 +172,10 @@ async function main() {
     { name: 'edit_file', args: { path: 'notes.txt', oldText: 'committed', newText: 'workspace edit' } }
   ]);
   assert.ok(flow.results.every((r) => r.ok), JSON.stringify(flow.results));
-  assert.equal(flow.results[0].result.created, false, 'externally prepared workspaces are reused');
-  assert.equal(flow.results[0].result.branch, null);
+  assert.equal(flow.results[0].result.created, false, 'an externally prepared workspace is selected, not created');
+  assert.equal(flow.results[0].result.branch, null, 'the directory tool never inspects Git');
+  assert.equal(git('branch', '--list'), branchesBefore, 'selecting a folder creates no branch');
+  assert.equal(git('worktree', 'list', '--porcelain'), worktreesBefore, 'selecting a folder adds no worktree');
   assert.equal(flow.results[1].result.stdout.trim(), target);
   assert.equal(flow.results[2].result.body.includes('private-token'), false, 'original project redaction follows worktree reads');
   assert.equal(flow.results[3].result.matches.length, 0, 'original project redaction follows search');
@@ -205,7 +189,7 @@ async function main() {
   chats.updateChat(projectDir, chat.id, { title: 'Keep folder' });
   assert.equal(chats.getChat(projectDir, chat.id).workingDir, target);
   assert.equal((await runAppTool('get_chat', {}, { projectDir, chatId: chat.id })).result.chat.workingDir, target);
-  assert.equal((await call({})).result.created, false, 'retries reuse without resetting edits');
+  assert.equal((await call({ directory: target })).result.created, false, 'retries reuse without resetting edits');
   assert.equal(fs.readFileSync(path.join(target, 'notes.txt'), 'utf8').startsWith('workspace edit'), true);
   const later = await modelCalls(chat, [{ name: 'read_file', args: { path: 'notes.txt' } }]);
   assert.ok(later.bodies[0].messages.some((m) => m.role === 'system' && m.content.includes(target)), 'subsequent turns know the working folder');
@@ -269,7 +253,7 @@ async function main() {
   const runOut = await runNested([
     { name: 'change_working_folder', args: { directory: 'sub-checkout' } },
     { name: 'shell', args: { cmd: 'pwd' } },
-    { name: 'change_working_folder', args: {} },
+    { name: 'change_working_folder', args: { directory: '' } },
     { name: 'shell', args: { cmd: 'pwd' } }
   ]);
   assert.equal(runOut.ok, true, JSON.stringify(runOut.error));
@@ -308,14 +292,14 @@ async function main() {
   // A completed run is forgotten: its synthetic id no longer resolves, so a
   // stale or hand-crafted id fails instead of falling back to the project.
   assert.equal(workspace.isRunChatId(runFolder.workingDir), false);
-  assert.equal((await runAppTool('change_working_folder', {}, { projectDir, chatId: chat.id, workspaceChatId: 'subagent:run-nope' })).result.code, 'ENOTFOUND');
+  assert.equal((await runAppTool('change_working_folder', { directory: 'sub-checkout' }, { projectDir, chatId: chat.id, workspaceChatId: 'subagent:run-nope' })).result.code, 'ENOTFOUND');
   assert.throws(() => workspace.resolveForCall(projectDir, chat.id, anchorRun.chatId), { code: 'ENOTFOUND' }, 'settled runs never fall back to the parent');
-  // A run describes `directory` differently from a chat ("back to the folder
-  // this run started in", not "the default workspace"), but it must reject
-  // the same non-directory values with the same wording.
+  // A run takes the same `directory` contract as a chat: a string, required.
+  // Only the reset target differs ("the folder this run started in").
   const runStore = workspace.registerRun(target, { root: target, current: target }, chat.id);
   assert.throws(() => workspace.changeRun('', runStore.chatId, true), { code: 'EBADINPUT' });
-  assert.throws(() => workspace.changeRun('', runStore.chatId, true), /true is not a directory/);
+  assert.throws(() => workspace.changeRun('', runStore.chatId, undefined), { code: 'EBADINPUT' });
+  assert.match(workspace.changeRun('', runStore.chatId, '').workingDir, /workspaces/);
   workspace.clearRun(runStore.runId);
 
   // Chat permissions and approval sessions must never use the synthetic id.
@@ -429,7 +413,7 @@ async function main() {
     try {
       if (process.env.MOUAIF_ALLOW_ANY_ROOT !== '1') {
         assert.throws(() => workspace.resolveForCall(projectDir, chat.id, guardedRun.chatId), { code: 'EOUTSIDE_HOME' });
-        const reset = await runAppTool('change_working_folder', {}, { projectDir, chatId: chat.id, workspaceChatId: guardedRun.chatId });
+        const reset = await runAppTool('change_working_folder', { directory: '' }, { projectDir, chatId: chat.id, workspaceChatId: guardedRun.chatId });
         assert.equal(reset.result.code, 'EOUTSIDE_HOME');
       }
     } finally { workspace.clearRun(guardedRun.runId); }
@@ -446,7 +430,7 @@ async function main() {
         if (process.env.MOUAIF_ALLOW_ANY_ROOT !== '1') {
           assert.throws(() => workspace.resolveForCall(outside, chat.id, inheritedRun.chatId), { code: 'EOUTSIDE_HOME' }, 'an explicit selection enables the home guard even in an inherited temp run');
         }
-        assert.equal(workspace.changeRun(outside, inheritedRun.chatId, null, null).workingDir, fs.realpathSync(outside), 'reset restores the inherited sandbox policy');
+        assert.equal(workspace.changeRun(outside, inheritedRun.chatId, '', null).workingDir, fs.realpathSync(outside), 'reset restores the inherited sandbox policy');
       } finally {
         fs.unlinkSync(approvedA);
         fs.renameSync(moved, approvedA);
@@ -461,7 +445,7 @@ async function main() {
   const disappearingRun = workspace.registerRun(disappearing, { root: disappearing, current: disappearing }, chat.id);
   fs.rmdirSync(disappearing);
   assert.throws(() => workspace.resolveForCall(projectDir, chat.id, disappearingRun.chatId), { code: 'ENOENT' });
-  const disappearedReset = await runAppTool('change_working_folder', {}, { projectDir, chatId: chat.id, workspaceChatId: disappearingRun.chatId });
+  const disappearedReset = await runAppTool('change_working_folder', { directory: '' }, { projectDir, chatId: chat.id, workspaceChatId: disappearingRun.chatId });
   assert.equal(disappearedReset.result.code, 'ENOENT');
   workspace.clearRun(disappearingRun.runId);
   fs.writeFileSync(path.join(target, 'new-shot.png'), image);
@@ -480,16 +464,13 @@ async function main() {
   assert.equal(res.status, 200);
   assert.equal(JSON.parse(res.data.trim().split('\n').at(-1)).result.stdout.trim(), target);
 
-  fs.mkdirSync(path.join(projectDir, 'subfolder'));
   assert.equal((await call({ directory: 'subfolder' })).result.workingDir, path.join(projectDir, 'subfolder'));
   assert.equal((await call({ directory: home })).result.workingDir, home);
   assert.equal((await call({ directory: '' })).result.workingDir, projectDir);
   assert.equal(chats.getChat(projectDir, chat.id).workingDir, null);
-  // `other` gets its own default workspace by acting as the calling chat,
-  // which is the only way the tool now selects a chat.
-  assert.equal((await call({}, other.id)).ok, true, 'each chat creates its own workspace');
-  chats.deleteChat(projectDir, other.id);
-  assert.equal(fs.existsSync(path.join(projectDir, '.mouaif', 'workspaces', other.id)), true, 'deleting chats never deletes work');
+  // A missing directory fails; nothing is created for it, for any chat.
+  assert.equal((await call({ directory: 'no-such-folder' })).result.code, 'ENOENT');
+  assert.equal(fs.existsSync(path.join(projectDir, 'no-such-folder')), false, 'a failed selection creates nothing');
 
   const deletedFolder = chats.createChat(projectDir, {});
   chats.updateChat(projectDir, deletedFolder.id, { workingDir: path.join(home, 'no-longer-present') });
@@ -501,60 +482,33 @@ async function main() {
   assert.equal(missingDelegate.results[0].ok, false, 'delegation fails when the parent folder is missing');
   assert.equal(missingDelegate.results[0].result.error.code, 'ENOENT');
   assert.equal(missingDelegate.bodies.length, 2, 'no nested provider request or tool execution occurs');
-  const conflict = chats.createChat(projectDir, {});
-  fs.mkdirSync(path.join(projectDir, '.mouaif', 'workspaces', conflict.id));
-  fs.writeFileSync(path.join(projectDir, '.mouaif', 'workspaces', conflict.id, 'keep.txt'), 'keep');
-  assert.equal((await call({}, conflict.id)).result.created, false, 'existing folders are reused without Git checks');
-  assert.equal(fs.readFileSync(path.join(projectDir, '.mouaif', 'workspaces', conflict.id, 'keep.txt'), 'utf8'), 'keep');
   const cancelled = new AbortController();
   cancelled.abort();
-  const abort = await runAppTool('change_working_folder', {}, { projectDir, chatId: conflict.id, signal: cancelled.signal });
+  const abort = await runAppTool('change_working_folder', { directory: 'subfolder' }, { projectDir, chatId: chat.id, signal: cancelled.signal });
   assert.equal(abort.result.code, 'EABORTED');
   const busy = chats.createChat(projectDir, {});
-  const firstChange = call({}, busy.id);
-  assert.equal((await call({}, busy.id)).result.code, 'EBUSY', 'concurrent changes to one chat are serialized');
+  // Repeating a change is idempotent: nothing is created, so a second call
+  // cannot lose a race against the first.
+  const firstChange = call({ directory: 'subfolder' }, busy.id);
+  const secondChange = call({ directory: 'subfolder' }, busy.id);
   assert.equal((await firstChange).ok, true);
+  assert.equal((await secondChange).ok, true, 'a repeat selection is not serialized against itself');
+  assert.equal((await firstChange).result.workingDir, (await secondChange).result.workingDir);  // Selecting a folder never touches branches, symlinks or existing files.
   const collision = chats.createChat(projectDir, {});
   git('branch', 'mouaif/chat-' + collision.id);
   const collisionBranches = git('branch', '--list');
-  assert.equal((await call({}, collision.id)).ok, true, 'branch names are unrelated to folder creation');
+  assert.equal((await call({ directory: 'subfolder' }, collision.id)).ok, true, 'branch names are unrelated to folder selection');
   assert.equal(git('branch', '--list'), collisionBranches, 'existing branches are untouched');
-  const redirectedTarget = chats.createChat(projectDir, {});
-  fs.symlinkSync(target, path.join(projectDir, '.mouaif', 'workspaces', redirectedTarget.id));
-  assert.equal((await call({}, redirectedTarget.id)).result.code, 'EEXIST', 'default targets cannot be symlinks');
-  const fileTarget = chats.createChat(projectDir, {});
-  fs.writeFileSync(path.join(projectDir, '.mouaif', 'workspaces', fileTarget.id), 'keep');
-  assert.equal((await call({}, fileTarget.id)).result.code, 'ENOTDIR', 'an existing file is never replaced');
+  // A symlinked directory is resolved to its real target, never replaced.
   const plain = path.join(home, 'plain');
   fs.mkdirSync(plain);
-  settings.setProject(plain, { autoWorkspace: true });
   const plainChat = chats.createChat(plain, {});
-  const empty = await runAppTool('change_working_folder', {}, { projectDir: plain, chatId: plainChat.id });
-  assert.equal(empty.ok, true);
-  assert.equal(empty.result.branch, null);
-  assert.equal(fs.readdirSync(empty.result.workingDir).length, 0);
-  const cancelledRoot = path.join(home, 'cancelled');
-  fs.mkdirSync(cancelledRoot);
-  settings.setProject(cancelledRoot, { autoWorkspace: true });
-  const cancelledTarget = chats.createChat(cancelledRoot, {});
-  const cancelSignal = new AbortController();
-  cancelSignal.abort();
-  assert.equal((await runAppTool('change_working_folder', {}, { projectDir: cancelledRoot, chatId: cancelledTarget.id, signal: cancelSignal.signal })).result.code, 'EABORTED');
-  assert.equal(fs.existsSync(path.join(cancelledRoot, '.mouaif')), false, 'a cancelled change leaves no workspace folders behind');
-  const unborn = path.join(home, 'unborn');
-  fs.mkdirSync(unborn);
-  settings.setProject(unborn, { autoWorkspace: true });
-  execFileSync('git', ['init', '-q'], { cwd: unborn });
-  const unbornChat = chats.createChat(unborn, {});
-  const unbornFolder = await runAppTool('change_working_folder', {}, { projectDir: unborn, chatId: unbornChat.id });
-  assert.equal(unbornFolder.ok, true, 'repositories without HEAD still receive an empty folder');
-  assert.deepEqual(fs.readdirSync(unbornFolder.result.workingDir), []);
-  const redirected = path.join(home, 'redirected');
-  fs.mkdirSync(redirected);
-  settings.setProject(redirected, { autoWorkspace: true });
-  fs.symlinkSync(plain, path.join(redirected, '.mouaif'));
-  const redirectChat = chats.createChat(redirected, {});
-  assert.equal((await runAppTool('change_working_folder', {}, { projectDir: redirected, chatId: redirectChat.id })).result.code, 'EOUTSIDE_PROJECT');
+  assert.equal((await runAppTool('change_working_folder', { directory: '.' }, { projectDir: plain, chatId: plainChat.id })).ok, true);
+  const fileTarget = path.join(plain, 'a-file');
+  fs.writeFileSync(fileTarget, 'keep');
+  const redirectChat = chats.createChat(plain, {});
+  assert.equal((await runAppTool('change_working_folder', { directory: 'a-file' }, { projectDir: plain, chatId: redirectChat.id })).result.code, 'ENOTDIR', 'an existing file is never selected as a folder');
+  assert.equal(fs.readFileSync(fileTarget, 'utf8'), 'keep');
   // Serve smoke test in isolation; never start/restart the managed app.
   const server = require('../src/index.js').createServer(0);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -576,7 +530,7 @@ async function main() {
     assert.equal(updated.workingDir, null, 'generic REST patch cannot bypass folder validation');
     assert.equal(updated.title, 'HTTP title');
   } finally { await new Promise((resolve) => server.close(resolve)); }
-  console.log('PASS chat working folder: migration, Git-independent creation, external workspace reuse, retry, persistence, schema, paths, denial/off, shell/file/group/search redaction, delegation, direct HTTP shell, attachments, reset, safe lifecycle and serve smoke');
+  console.log('PASS chat working folder: migration, directory-only selection, canonical paths, denial/off, shell/file/group/search redaction, delegation, chatId targeting, direct HTTP shell, attachments, reset and serve smoke');
 }
 
 main().catch((e) => { console.error(e); process.exitCode = 1; }).finally(() => {

@@ -102,11 +102,10 @@ async function main() {
     ['denied operations cannot use another tool', /If denied, stop that operation even via other tools/],
     ['denial allows only clarification or permitted work', /If denied.*ask or do permitted work/],
     ['schema discovery', /omits its parameters.*discover_tool with that name/],
-    ['workspace opt-in is explained', /default workspace folder is opt-in.*only when the project enables "Allow automatic workspaces".*off by default/],
-    ['EOFF keeps work in the project', /call it once before edits or coding subagents and continue in the project folder when it returns EOFF/],
-    ['questions and reviews do not create folders', /never create a workspace for a question or review/],
+    ['directory tool selects existing folders', /change_working_folder selects an EXISTING directory and creates nothing/],
+    ['directory tool never runs Git', /never runs Git, so prepare any checkout with an authorized shell command first/],
+    ['reset returns to the project folder', /or "" to return to the project folder/],
     ['preserves chosen working folders', /keep any folder the user selected/],
-    ['directory tool never runs Git', /change_working_folder creates empty.*never Git/],
     ['inspect before editing', /Read the code, its callers, and its tests first/],
     ['root cause and minimal change', /Fix the cause, not the symptom.*smallest change that works/],
     ['exact edit blocks', /edit_file using an exact, unique oldText\/newText block/],
@@ -258,8 +257,8 @@ async function main() {
   for (const profile of ['very-small', 'average', 'extensive', 'chat']) {
     const specs = pp.reduceToolSpecs([workspaceSpec], profile);
     const description = specs.find((spec) => spec.function.name === 'change_working_folder').function.description;
-    check(profile + ' tool description explains the opt-in', /requires the project to have enabled "Allow automatic workspaces", is off by default, and returns EOFF when disabled/.test(description));
-    check(profile + ' tool description keeps explicit directories working', /Pass an existing project-relative or absolute directory, or "" to reset/.test(description));
+    check(profile + ' tool description says folders are never created', /never creates a folder/.test(description));
+    check(profile + ' tool description requires an existing directory', /directory` is required: a project-relative or absolute path to a directory that already exists/.test(description));
   }
   check('reduceToolSpecs invalid profile falls through to full',
     pp.reduceToolSpecs(sampleSpecs, 'huge')[0].function.parameters.properties.cmd,
@@ -307,9 +306,9 @@ async function main() {
     const c2 = chats.updateChat(projectDir, c1.id, { promptSize: 'average' });
     check('switching chat -> average keeps all tools', c2 && c2.promptSize === 'average' && c2.tools == null);
     const preview = await get(port, '/api/chats/' + c2.id + '/system-prompt?projectDir=' + encodeURIComponent(projectDir));
-    check('chat prompt preview explains the workspace opt-in', preview.status === 200
-    && preview.body.profile.systemMessage.includes('Allow automatic workspaces')
-    && preview.body.profile.systemMessage.includes('EOFF'));
+    check('chat prompt preview explains folder selection', preview.status === 200
+    && preview.body.profile.systemMessage.includes('selects an EXISTING directory')
+    && preview.body.profile.systemMessage.includes('creates nothing'));
     const c3 = chats.updateChat(projectDir, c2.id, { promptSize: 'chat' });
     check('switching to chat keeps all tools', c3 && c3.promptSize === 'chat' && c3.tools == null,
     'tools=' + JSON.stringify(c3 && c3.tools));

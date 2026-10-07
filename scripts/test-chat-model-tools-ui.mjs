@@ -120,10 +120,8 @@ try {
   }
   await evaluate('document.querySelector(".tool-popup__trigger").click()');
   const destination = '/home/user/a-very-long-project-name/packages/another-long-package-name';
-  for (const action of ['Use a different folder', 'Return to the project folder', 'Use a separate folder']) {
-    const effect = action === 'Use a separate folder'
-      ? 'Files read or edited and commands run for this chat will use this folder. If created, it starts empty; project files are not copied.'
-      : 'Files read or edited and commands run for this chat will use this folder. This change does not move or copy files.';
+  for (const action of ['Use a different folder', 'Return to the project folder']) {
+    const effect = 'Files read or edited and commands run for this chat will use this folder. This change does not move or copy files.';
     const summary = action + '\nChat: Another conversation (other-chat)\nFolder: ' + destination + '\n\n' + effect;
     await evaluate('window.showApproval(' + JSON.stringify(summary) + ')');
     for (const width of [360, 390, 430]) {

@@ -33,7 +33,6 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   // Structured controls
   const [promptSize, setPromptSize] = useState('');
   const [promptSizeStatusMsg, setPromptSizeStatusMsg] = useState('Following the app default until you change it here');
-
   // Tool output profile. Two selects map directly to the backend
   // { size, structure } combo. Values are seeded during load() from the
   // resolved settings so the File tool options page has defaults even when
@@ -107,12 +106,6 @@ const [previewChatId, setPreviewChatId] = useState((initialChatId || '').trim())
   const [agentFilesOn, setAgentFilesOn] = useState(false);
   const [agentFileNames, setAgentFileNames] = useState('');
   const [agentFilesStatusMsg, setAgentFilesStatusMsg] = useState('');
-
-  // Automatic chat workspaces: may the model create
-  // `.mouaif/workspaces/<chatId>` on its own? Off unless the project (or
-  // the app default) opts in.
-  const [autoWorkspaceOn, setAutoWorkspaceOn] = useState(false);
-  const [autoWorkspaceStatusMsg, setAutoWorkspaceStatusMsg] = useState('');
 
   // Agent file picker overlay
 const [agentFilePickerOpen, setAgentFilePickerOpen] = useState(false);
@@ -276,10 +269,6 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
     setAgentFilesOn(cp.agentFiles !== false);
   setAgentFileNames(Array.isArray(cp.agentFileNames) ? cp.agentFileNames.join('\n') : '');
   setSkillsOn(cp.skills !== false);
-    // The switch shows the project's own value; the app default is the
-    // fallback the backend resolves when this key is absent.
-    setAutoWorkspaceOn(cp.autoWorkspace === true);
-    setAutoWorkspaceStatusMsg(cp.autoWorkspace === true ? 'on' : 'off · folders are created only when you ask');
 
     setEditorText(JSON.stringify(cp, null, 2));
     setSaveDisabled(false);
@@ -569,23 +558,7 @@ setPreviewPromptOpen(true);
   }
 
   function toggleMcpToolAuth(toolName, checked) {
-    return saveMcpAuthorization({ tools: { [toolName]: checked ? null : { mode: 'off', allowlist: [] } } });
-  }
-
-  async function saveAutoWorkspace(enabled) {
-    setAutoWorkspaceStatusMsg('saving…');
-    try {
-      const okSaved = await patchProject({ autoWorkspace: enabled }, setAutoWorkspaceStatusMsg, 'saved');
-      if (okSaved) {
-        setAutoWorkspaceOn(enabled);
-        setAutoWorkspaceStatusMsg(enabled ? 'on' : 'off · folders are created only when you ask');
-      }
-    } catch (err) {
-      setAutoWorkspaceStatusMsg('save failed: ' + (err.message || String(err)));
-    }
-  }
-  function onAutoWorkspaceToggle(e) {
-    return saveAutoWorkspace(!!(e && e.target && e.target.checked));
+        return saveMcpAuthorization({ tools: { [toolName]: checked ? null : { mode: 'off', allowlist: [] } } });
   }
 
   async function saveAgentFiles(enabled, namesRaw) {
@@ -1207,28 +1180,6 @@ class: 'view-back',
               h('option', { value: 'extensive' }, 'Extensive — full tools + best-practice guidance'),
               h('option', { value: 'chat' }, 'Chat — empty prompt')
             )
-          ),
-          h('li', { class: 'settings-project__item settings-project__item--col' },
-          h('div', { class: 'settings-project__item-row' },
-          h('div', { class: 'settings-project__item-main' },
-          h('label', { class: 'settings-project__item-title', for: 'sp-auto-workspace' }, 'Allow automatic workspaces'),
-          h('div', { class: 'settings-project__item-note' },
-          'Let the assistant create a per-chat workspace under ', h('code', null, '.mouaif/workspaces/<chatId>'),
-          ' (an empty folder; Git setup is a separate assistant workflow). Off means folders change only when you ask for one; explicit folders and resetting always work.'),
-          h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, autoWorkspaceStatusMsg)
-          ),
-          h('label', { class: 'switch' },
-          h('input', {
-          id: 'sp-auto-workspace',
-          type: 'checkbox',
-          role: 'switch',
-          checked: autoWorkspaceOn,
-          'aria-checked': autoWorkspaceOn ? 'true' : 'false',
-          onChange: onAutoWorkspaceToggle
-          }),
-          h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
-          )
-          )
           ),
           h('li', null,
           h('a', {

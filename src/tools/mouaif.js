@@ -161,7 +161,7 @@ const PARAMETERS = {
           type: 'string',
           description: 'Image path relative to the calling chat’s working folder (the project by default; e.g. "docs/features/images/shot.png").'
         },
-        directory: { type: ['string', 'boolean', 'null'], description: 'Existing directory, relative to the original project or absolute, or "" to reset to the project root. Omit it, or pass false or null, to create/reuse the default .mouaif/workspaces/<chatId> workspace, which the project must allow via "Allow automatic workspaces". true is not a directory and is refused.' },
+        directory: { type: 'string', description: 'Required. An existing directory, relative to the original project or absolute, or "" (or ".") to return to the original project folder. Folders are never created: this tool selects a directory that already exists.' },
         target: {
         type: 'string',
           enum: ['draft', 'message'],
@@ -291,19 +291,17 @@ function resolveChatId(args, opts) {
   throw typedError('EBADINPUT', 'chatId is required (no current chat to default to)');
 }
 
-// Resolve the chat a context-bound tool acts on. The chat id is ambient
-// state owned by the server, never a model-supplied argument: a model that
-// passes the wrong id would silently retarget another chat, and a nested
-// subagent run carries the PARENT chat's id, so an argument could redirect
-// the parent conversation. There is no `args.chatId` fallback here, and the
-// refusal names no chat id.
-function requireCurrentChatId(args, opts) {
-  if (trimString(args && args.chatId, 128)) {
-    throw typedError('EBADINPUT', 'change_working_folder operates on the calling chat; it takes no chatId argument');
-  }
+// Resolve the chat `change_working_folder` acts on. An explicit `chatId`
+// argument is honoured (the same rule `get_chat` and `attach_chat_image`
+// follow), and otherwise the calling chat is used. A delegated run has no
+// chat record of its own, so it passes its own chat id explicitly: the run id
+// is process state, and the caller that knows it is the run itself.
+function resolveWorkingFolderChatId(args, opts) {
+  const explicit = trimString(args && args.chatId, 128);
+  if (explicit) return explicit;
   const current = opts && typeof opts.chatId === 'string' ? opts.chatId.trim() : '';
   if (current) return current;
-  throw typedError('EBADINPUT', 'No current chat: change_working_folder must run inside a chat');
+  throw typedError('EBADINPUT', 'chatId is required (no current chat to default to)');
 }
 
 function requireChat(projectDir, chatId) {
@@ -431,7 +429,7 @@ async function runChats(args, opts) {
   }
 
   if (action === 'working_folder') {
-    const chatId = requireCurrentChatId(args, opts);
+    const chatId = resolveWorkingFolderChatId(args, opts);
     // A delegated run is not a chat record: its folder is process state for
     // the live run, so it switches there instead of writing chat metadata.
     if (opts && opts.workspaceChatId) {
@@ -439,7 +437,7 @@ async function runChats(args, opts) {
       return ok({ ok: true, projectDir, ...run, updated: [], chat: null });
     }
     requireChat(projectDir, chatId);
-    const { chat, ...workspace } = await require('../chatWorkingFolder.js').change(projectDir, chatId, args.directory, opts && opts.signal, opts && opts.workingFolderDestination);
+    const { chat, ...workspace } = require('../chatWorkingFolder.js').change(projectDir, chatId, args.directory, opts && opts.signal, opts && opts.workingFolderDestination);
     return ok({ ok: true, projectDir, ...workspace, updated: ['workingDir'], chat: chatSummary(chat) });
   }
 

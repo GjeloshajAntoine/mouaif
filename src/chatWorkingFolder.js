@@ -2,13 +2,18 @@
 
 // Chat identity, settings and permissions stay anchored to the original
 // project. Only local shell/file operations use this directory.
+//
+// This tool selects an EXISTING directory, or resets to the project root.
+// It creates nothing: `.mouaif/workspaces/<chatId>` and the "Allow automatic
+// workspaces" opt-in that gated it were removed, because preparing a folder
+// (including a checkout) belongs to the assistant's shell workflow, where the
+// command is visible and separately authorized. See docs/decisions.md §34.
 const fs = require('node:fs');
 const path = require('node:path');
 const chats = require('./chats.js');
 const projects = require('./projects.js');
-const settings = require('./settings.js');
 const { err } = require('./util.js');
-const changing = new Set();
+
 
 function safeDirectory(directory) {
   const safe = projects.ensureSafeRoot(path.resolve(directory));
@@ -37,74 +42,6 @@ function resolveForCall(projectDir, chatId, workspaceChatId) {
     return runDirectory(store);
   }
   return resolve(projectDir, chatId);
-}
-
-// Does this project allow creating the default workspace folder? The
-// resolved settings are defaults -> app -> project, so a project (or the app
-// default) that never sets `autoWorkspace` resolves to the `false` floor in
-// src/settings.js. Reading the store can fail on a corrupt project file, and
-// that must not be a way to create a folder, so any error means "not
-// allowed". Explicit directory arguments do not consult this at all.
-function autoWorkspaceEnabled(projectDir) {
-  try {
-    return settings.getResolved(projectDir).autoWorkspace === true;
-  } catch {
-    return false;
-  }
-}
-
-// Create or reuse the default workspace for a chat. Only reached when the
-// project allows it (see autoWorkspaceEnabled).
-async function createDefaultWorkspace(root, chatId) {
-  // This tool only creates a directory. Repository setup belongs to the
-  // assistant's coding workflow through separately authorized shell calls.
-  // Validate existing parents before creating anything; redirected state
-  // and workspace parents are rejected even when they stay inside home.
-  const missingParents = [];
-  let parent = root;
-  for (const segment of ['.mouaif', 'workspaces']) {
-    parent = path.join(parent, segment);
-    if (!fs.existsSync(parent)) {
-      missingParents.push(parent);
-      continue;
-    }
-    if (fs.lstatSync(parent).isSymbolicLink()) throw err('EOUTSIDE_PROJECT', 'Workspace parent must not be a symlink');
-    safeDirectory(parent);
-  }
-  const target = path.join(parent, chatId);
-  const targetExisted = fs.existsSync(target);
-  // Undo only what this call created: the target when it did not exist
-  // before, then the parents, innermost first, and only while they are
-  // empty. A pre-existing folder and a workspace holding work survive.
-  const prune = () => {
-    if (!targetExisted) {
-      try { fs.rmdirSync(target); } catch { /* kept: not empty or already gone */ }
-    }
-    for (const dir of missingParents.slice().reverse()) {
-      try { fs.rmdirSync(dir); } catch { /* kept: not empty or already gone */ }
-    }
-  };
-  const createParents = () => {
-    for (const dir of missingParents) {
-      try { fs.mkdirSync(dir); }
-      catch (e) { if (e.code !== 'EEXIST') throw e; }
-    }
-  };
-  let created = false;
-  if (targetExisted) {
-    if (fs.lstatSync(target).isSymbolicLink()) throw err('EEXIST', 'Default workspace must not be a symlink');
-  } else {
-    try {
-      createParents();
-      fs.mkdirSync(target);
-    } catch (e) {
-      prune();
-      throw e;
-    }
-    created = true;
-  }
-  // Keep the result shape compatible; this tool never inspects branches.
-  return { workingDir: safeDirectory(target), branch: null, created };
 }
 
 // ---- Per-subagent-run working folders ---------------------------------
@@ -182,15 +119,14 @@ function runDirectory(store, start = false) {
   return usesSandbox ? require('./tools/files.js').resolveSandbox(directory) : safeDirectory(directory);
 }
 
-// One wording for the `directory` argument's accepted forms, shared by the
-// chat path, the preview path and the subagent-run path. The three used to
-// describe the same argument three different ways ("a string, or false/null
-// for the default workspace", "a string in a subagent run"), which is exactly
-// how a caller learns the wrong option set: `true` is type-legal in the
-// advertised union but is never a directory, and only the chat path ever said
-// what happens when it is passed.
-function directoryTypeError(forms) {
-  return err('EBADINPUT', 'directory must be ' + forms + '; true is not a directory');
+// The `directory` argument is always a directory: a string naming an existing
+// folder, or "" / "." to reset to the project root (a run resets to the folder
+// it started in). Nothing else is accepted — the boolean/null forms that used
+// to select the default workspace are gone with the workspace itself. The
+// chat, preview and run paths share one helper so a caller cannot learn two
+// different stories about the same argument.
+function directoryTypeError() {
+  return err('EBADINPUT', 'directory must be a string naming an existing directory, or "" to reset to the project root');
 }
 
 function checkApprovedDirectory(directory, approvedDirectory) {
@@ -199,9 +135,9 @@ function checkApprovedDirectory(directory, approvedDirectory) {
   }
 }
 
-// Switch a run's folder. A run never creates a folder: `created` is always
-// false, because preparing a checkout is a separately authorized shell call
-// and a run already has a folder to work in.
+// Switch a run's folder to an existing directory. A run never creates one:
+// `created` is always false, because preparing a checkout is a separately
+// authorized shell call and a run already has a folder to work in.
 //
 // `directory` resolves against the run's START folder — captured when the run
 // was registered — not against its current folder and not against the project
@@ -211,18 +147,14 @@ function checkApprovedDirectory(directory, approvedDirectory) {
 // was given. An absolute directory is accepted on the same home-boundary terms
 // the chat tool uses.
 //
-// Omitting `directory` (or passing false/null/"") returns the run to its start
-// folder. There is deliberately no default-workspace branch here: a run has no
-// `.mouaif/workspaces/<chatId>` counterfactual, and this tool is not the way a
-// subagent acquires a checkout.
+// An empty string (or ".") returns the run to its start folder — the run's
+// equivalent of a chat's reset to the project root.
 function changeRun(root, chatId, directory, signal, approvedDirectory) {
   const store = runStoreFor(chatId);
   if (!store) throw err('ENOTFOUND', 'This subagent run is no longer active');
   if (signal && signal.aborted) throw err('EABORTED', 'Working folder change cancelled');
-  const wantsStart = directory === undefined || directory === false || directory === null || directory === '';
-  if (!wantsStart && typeof directory !== 'string') {
-    throw directoryTypeError('a string, or ""/false/null to return to the folder this run started in');
-  }
+  if (typeof directory !== 'string') throw directoryTypeError();
+  const wantsStart = directory === '';
   const destination = wantsStart ? runDirectory(store, true) : safeDirectory(path.resolve(store.root, directory));
   checkApprovedDirectory(destination, approvedDirectory);
   store.current = destination;
@@ -234,7 +166,12 @@ function changeRun(root, chatId, directory, signal, approvedDirectory) {
 // changing state. The dispatcher keeps the canonical destination as server
 // context while authorization waits; runners recheck it before any mutation.
 function prepareChange(projectDir, currentChatId, args = {}, workspaceChatId) {
-  const chatId = workspaceChatId || currentChatId;
+  // The preview must name the same chat the call will act on. An explicit
+  // `chatId` argument wins over the calling chat, exactly as it does in
+  // src/tools/mouaif.js; a delegated run's own folder id wins over both,
+  // because a run resolves relative paths against its own start folder.
+  const explicit = typeof args.chatId === 'string' ? args.chatId.trim() : '';
+  const chatId = workspaceChatId || explicit || currentChatId;
   // A delegated run approves the same tool, but it has no chat record of its
   // own: its folder is live process state. The card must say so instead of
   // naming the parent chat as the target, which would claim the parent
@@ -243,16 +180,16 @@ function prepareChange(projectDir, currentChatId, args = {}, workspaceChatId) {
     const store = runStoreFor(chatId);
     if (!store) throw err('ENOTFOUND', 'This subagent run is no longer active');
     const directory = args.directory;
-    const wantsDefault = directory === undefined || directory === false || directory === null || directory === '';
-    if (!wantsDefault && typeof directory !== 'string') throw directoryTypeError('a string, ""/false/null for the default workspace, or "" to reset to the project root');
-    const destination = wantsDefault ? runDirectory(store, true) : safeDirectory(path.resolve(store.root, directory));
-    const action = wantsDefault ? 'Return the subagent to the folder it started in' : 'Use a different folder';
+    if (typeof directory !== 'string') throw directoryTypeError();
+    const wantsStart = directory === '';
+    const destination = wantsStart ? runDirectory(store, true) : safeDirectory(path.resolve(store.root, directory));
+    const action = wantsStart ? 'Return the subagent to the folder it started in' : 'Use a different folder';
     // The run id is separate from the real chat id used for approvals.
     const parentId = store && store.parentChatId ? store.parentChatId : currentChatId;
     const parent = parentId ? chats.getChat(projectDir, parentId) : null;
     const parentLabel = parent && parent.title ? parent.title + ' (' + parentId + ')' : String(parentId || 'unknown chat');
-    // No "starts empty; project files are not copied" wording: a run only ever
-    // selects an existing folder, so the card must not imply one is created.
+    // Nothing here creates a folder, for a run or for a chat, so the card
+    // says so once and nothing implies otherwise.
     const effect = 'Files read or edited and commands run by this subagent run will use this folder. '
       + 'The parent chat keeps its own folder; this selects an existing folder and does not create, move or copy files.';
     return { destination, summary: [action, 'Subagent run: ' + chatId, 'Delegated from: ' + parentLabel,
@@ -261,16 +198,11 @@ function prepareChange(projectDir, currentChatId, args = {}, workspaceChatId) {
   const chat = chats.getChat(projectDir, chatId);
   const root = safeDirectory(projectDir);
   const directory = args.directory;
-  const wantsDefault = directory === undefined || directory === false || directory === null;
-  if (!wantsDefault && typeof directory !== 'string') throw directoryTypeError('a string, or false/null for the default workspace');
-  const destination = wantsDefault ? path.join(root, '.mouaif', 'workspaces', chatId)
-    : safeDirectory(path.resolve(root, directory || '.'));
-  const action = wantsDefault ? 'Use a separate folder'
-    : destination === root ? 'Return to the project folder' : 'Use a different folder';
+  if (typeof directory !== 'string') throw directoryTypeError();
+  const destination = safeDirectory(path.resolve(root, directory || '.'));
+  const action = destination === root ? 'Return to the project folder' : 'Use a different folder';
   const title = chat && chat.title ? String(chat.title).replace(/\s+/g, ' ').trim() : '';
-  const effect = wantsDefault
-    ? 'Files read or edited and commands run for this chat will use this folder. If created, it starts empty; project files are not copied.'
-    : 'Files read or edited and commands run for this chat will use this folder. This change does not move or copy files.';
+  const effect = 'Files read or edited and commands run for this chat will use this folder. This change does not move or copy files.';
   return { destination, summary: [action, 'Chat: ' + (title ? title + ' (' + chatId + ')' : chatId),
     'Folder: ' + destination, '', effect].join('\n') };
 }
@@ -280,50 +212,28 @@ function describeChange(projectDir, currentChatId, args = {}, workspaceChatId) {
   return prepareChange(projectDir, currentChatId, args, workspaceChatId).summary;
 }
 
-async function change(projectDir, chatId, directory, signal, approvedDirectory) {
-  const key = projectDir + '\0' + chatId;
-  if (changing.has(key)) throw err('EBUSY', 'This chat is already changing its working folder');
+// Change a chat's working folder to an existing directory. Synchronous from
+// the caller's point of view: it validates, then writes one field. The
+// per-chat `EBUSY` guard that used to serialize overlapping calls existed for
+// folder creation and Git, both of which are gone — with no await between the
+// check and the write, two calls cannot interleave.
+function change(projectDir, chatId, directory, signal, approvedDirectory) {
   const chat = chats.getChat(projectDir, chatId);
   if (!chat) throw err('ENOTFOUND', 'Chat not found: ' + chatId);
-  changing.add(key);
-  try {
-    if (signal && signal.aborted) throw err('EABORTED', 'Working folder change cancelled');
-    const root = safeDirectory(projectDir);
-    let workspace;
-    // `directory` omitted, or explicitly false/null, asks for the default
-    // workspace. A string always selects an existing directory and never
-    // creates one. `false`/`null` exists because a compact profile may strip
-    // the parameter enumeration, so the explicit opt-in must not depend on
-    // the argument being absent.
-    const wantsDefault = directory === undefined || directory === false || directory === null;
-    if (!wantsDefault) {
-      if (typeof directory !== 'string') {
-        throw directoryTypeError('a string, or false/null for the default workspace');
-      }
-      // Relative paths always refer to the original project, never the
-      // previous working folder. Empty string resets to the project root.
-      const destination = safeDirectory(path.resolve(root, directory || '.'));
-      checkApprovedDirectory(destination, approvedDirectory);
-      workspace = { workingDir: destination, branch: null, created: false };
-    } else {
-      // Creating a folder is opt-in: the project (or the app default) must
-      // set `autoWorkspace`. Off means the tool reports why instead of
-      // quietly putting a folder in the user's checkout.
-      if (!autoWorkspaceEnabled(projectDir)) {
-        throw err('EOFF', 'Creating a workspace is disabled for this project. Ask the user to turn on "Allow automatic workspaces" in Settings → Project → General (or the app default in Settings → App defaults), or pass an existing directory.');
-      }
-      checkApprovedDirectory(path.join(root, '.mouaif', 'workspaces', chatId), approvedDirectory);
-      workspace = await createDefaultWorkspace(root, chatId);
-    }
-    const { workingDir, branch, created } = workspace;
-    // Do not resurrect a chat deleted during the change. Preserve all
-    // unrelated metadata by merging into the latest stored record.
-    const updated = chats.updateChat(projectDir, chatId, { workingDir: workingDir === root ? null : workingDir });
-    if (!updated) throw err('ENOTFOUND', 'Chat was deleted while creating the workspace; the folder has been kept');
-    return { chat: updated, workingDir, branch, created };
-  } finally {
-    changing.delete(key);
-  }
+  if (signal && signal.aborted) throw err('EABORTED', 'Working folder change cancelled');
+  const root = safeDirectory(projectDir);
+  if (typeof directory !== 'string') throw directoryTypeError();
+  // Relative paths always refer to the original project, never the
+  // previous working folder. Empty string resets to the project root.
+  const destination = safeDirectory(path.resolve(root, directory || '.'));
+  checkApprovedDirectory(destination, approvedDirectory);
+  // Do not resurrect a chat deleted during the change. Preserve all
+  // unrelated metadata by merging into the latest stored record.
+  const updated = chats.updateChat(projectDir, chatId, { workingDir: destination === root ? null : destination });
+  if (!updated) throw err('ENOTFOUND', 'Chat was deleted while changing its working folder');
+  // `branch` and `created` keep their shape for callers that read them:
+  // this tool never inspected Git, and it never creates a folder.
+  return { chat: updated, workingDir: destination, branch: null, created: false };
 }
 
 module.exports = { resolve, resolveForCall, change, changeRun, prepareChange, describeChange, registerRun, clearRun, isRunChatId };
