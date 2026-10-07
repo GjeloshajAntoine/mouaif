@@ -35,6 +35,13 @@ function response() {
 function skillNames(req) {
   return req.tools?.find((s) => s.function.name === 'activate_skill')?.function.parameters.properties.name.enum || [];
 }
+// Every project in this test also sees the catalog bundled with the app
+// (`mouaif-config`), so assertions name the project's own skills and filter
+// the rest out — a bundled skill must never be mistaken for a project one.
+const BUILTIN_SKILLS = ['mouaif-config'];
+function projectSkillNames(req) {
+  return skillNames(req).filter((name) => !BUILTIN_SKILLS.includes(name));
+}
 function activationFeedback(req) {
   return req.messages.filter((m) => m.role === 'tool' && m.name === 'activate_skill').map((m) => m.content).join('\n');
 }
@@ -87,33 +94,37 @@ async function main() {
 
     const on = await run({ skills: false, promptSnapshot: { content: 'Prompt', preset: { skills: true } } }, [activation, null]);
     assert.equal(on.preview.skillsEnabled, true);
-    assert.deepEqual(skillNames(on.requests[0]), ['other', 'testing']);
+    assert.deepEqual(projectSkillNames(on.requests[0]), ['other', 'testing']);
+    // The catalog bundled with the app rides along with the project's own.
+    assert.ok(skillNames(on.requests[0]).includes('mouaif-config'));
     assert.match(activationFeedback(on.requests[1]), /INSTRUCTIONS_testing/);
 
     const off = await run({ skills: true, promptSnapshot: { content: 'Prompt', preset: { skills: false } } }, [activation, null]);
     assert.equal(off.preview.skillsEnabled, false);
+    assert.deepEqual(projectSkillNames(off.requests[0]), []);
+    // The family toggle is off, so the bundled catalog is gone too.
     assert.deepEqual(skillNames(off.requests[0]), []);
     assert.match(activationFeedback(off.requests[1]), /ENO_SKILL/);
 
     const nested = await run({ disabledSkills: ['testing'] }, [delegate, activation, null, null]);
-    assert.deepEqual(skillNames(nested.requests[0]), ['other']);
-    assert.deepEqual(skillNames(nested.requests[1]), ['other']);
+    assert.deepEqual(projectSkillNames(nested.requests[0]), ['other']);
+    assert.deepEqual(projectSkillNames(nested.requests[1]), ['other']);
     assert.match(activationFeedback(nested.requests[2]), /ENO_SKILL/);
 
     for (const tools of [['shell'], []]) {
     const selected = await run({ tools }, [activation, null]);
-    assert.deepEqual(skillNames(selected.requests[0]), ['other', 'testing']);
+    assert.deepEqual(projectSkillNames(selected.requests[0]), ['other', 'testing']);
     assert.match(activationFeedback(selected.requests[1]), /INSTRUCTIONS_testing/);
     assert.equal(selected.requests[0].tools.some((s) => s.function.name === 'subagent'), false);
     }
     const filteredNested = await run({ tools: ['subagent'] }, [delegate, activation, null, null]);
-    assert.deepEqual(skillNames(filteredNested.requests[1]), ['other', 'testing']);
+    assert.deepEqual(projectSkillNames(filteredNested.requests[1]), ['other', 'testing']);
     assert.match(activationFeedback(filteredNested.requests[2]), /INSTRUCTIONS_testing/);
 
     const restricted = await run({ tools: ['subagent'] }, [
     { name: 'subagent', args: { task: 'Review', agent: 'Limited' } }, null, null
     ], { agents: [{ name: 'Limited', content: 'Use shell only.', tools: ['shell'] }] });
-    assert.deepEqual(skillNames(restricted.requests[1]), []);
+    assert.deepEqual(projectSkillNames(restricted.requests[1]), []);
 
     const locked = await run({ skills: true }, [activation, null], { skills: false });
     assert.deepEqual(skillNames(locked.requests[0]), []);

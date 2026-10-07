@@ -62,6 +62,7 @@ One page per feature: what it does and how to use it.
 - [Agents](features/agents.md) — named personas the model can delegate work to.
 - [Agent file picker](features/agent-file-picker.md) — choose which instruction files (`AGENTS.md`, …) a project reads.
 - [Skills](features/skills.md) — reusable instruction sets discovered from `.agents/skills/`.
+- [Built-in skill: mouaif config](features/mouaif-config-skill.md) — the config skill that ships with the app, and how to override it.
 - [Custom actions](features/custom-actions.md) — run project CLI commands or MCP tools from `@` mentions and the Tools popup.
 - [File tagging](features/file-tagging.md) — tag project files so they are included in a chat.
 - [Hide file content](features/hide-file-content.md) — mark lines or text the agent file tools must not reveal.

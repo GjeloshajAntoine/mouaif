@@ -13,6 +13,12 @@ process.env.MOUAIF_HOME = HOME;
 const skills = require('../src/agentSkills.js');
 const chats = require('../src/chats.js');
 
+// Every project also sees the catalog bundled with the app (`mouaif-config`),
+// so this helper keeps a project's own skills and filters the bundled ones
+// out — a bundled skill must never be mistaken for a project one.
+const BUILTIN_SKILLS = ['mouaif-config'];
+const projectSkills = (dir) => skills.discover(dir).filter((s) => !BUILTIN_SKILLS.includes(s.name));
+
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-skills-'));
 try {
   const parse = (fields) => skills.parseSkillFile('---\nname: testing\n' + fields + '\n---\nInstructions', 'testing');
@@ -47,14 +53,14 @@ try {
   fs.writeFileSync(path.join(root, '.agents', 'skills', 'invalid', 'SKILL.md'), '# no frontmatter\n');
   fs.mkdirSync(path.join(root, '.agents', 'skills', 'testing'), { recursive: true });
   fs.writeFileSync(path.join(root, '.agents', 'skills', 'testing', 'SKILL.md'), '---\nname: testing\ndescription: Run and diagnose project tests.\n---\n# Testing instructions\n');
-  const found = skills.discover(root);
+  const found = projectSkills(root);
   assert.strictEqual(found.length, 2);
   assert.strictEqual(found[0].name, 'pdf-processing');
   assert.match(found[0].description, /PDFs/);
   assert.match(skills.catalogMessage(root, {}), /metadata only/);
   assert.doesNotMatch(skills.catalogMessage(root, {}), /PDF instructions/);
   const spec = skills.buildSpec(root, {});
-  assert.deepStrictEqual(spec.function.parameters.properties.name.enum, ['pdf-processing', 'testing']);
+  assert.deepStrictEqual(spec.function.parameters.properties.name.enum, ['mouaif-config', 'pdf-processing', 'testing']);
   const active = skills.activate(root, {}, 'pdf-processing');
   assert.match(active.content, /PDF instructions/);
   assert.deepStrictEqual(active.result.resources, ['references/guide.md']);
@@ -67,7 +73,7 @@ try {
   const chatOffCatalog = skills.catalogMessage(root, chatOff);
   assert.match(chatOffCatalog, /- testing: Run and diagnose project tests\./);
   assert.doesNotMatch(chatOffCatalog, /pdf-processing/);
-  assert.deepStrictEqual(skills.buildSpec(root, chatOff).function.parameters.properties.name.enum, ['testing']);
+  assert.deepStrictEqual(skills.buildSpec(root, chatOff).function.parameters.properties.name.enum, ['mouaif-config', 'testing']);
   assert.throws(() => skills.activate(root, chatOff, 'pdf-processing'), /unavailable/);
   const oneOff = skills.resolve({ chat: chatOff, projectDir: root });
   assert.strictEqual(oneOff.enabled, true);
@@ -75,9 +81,13 @@ try {
   assert.strictEqual(oneOff.projectDisabled.has('pdf-processing'), false);
   assert.strictEqual(oneOff.disabled.has('pdf-processing'), true);
 
-  // Every skill opted out is the same catalog as the family toggle being
-  // off — the state the row switches land on when the last one goes off.
-  const allOff = { skills: true, disabledSkills: ['pdf-processing', 'testing'] };
+  // Every *project* skill opted out leaves only the bundled catalog, and
+  // opting the bundled one out too is the same empty catalog as the family
+  // toggle being off — the state the row switches land on when the last one
+  // goes off.
+  const allProjectOff = { skills: true, disabledSkills: ['pdf-processing', 'testing'] };
+  assert.deepStrictEqual(skills.buildSpec(root, allProjectOff).function.parameters.properties.name.enum, ['mouaif-config']);
+  const allOff = { skills: true, disabledSkills: ['pdf-processing', 'testing', 'mouaif-config'] };
   assert.strictEqual(skills.catalogMessage(root, allOff), '');
   assert.strictEqual(skills.buildSpec(root, allOff), null);
 
@@ -87,11 +97,31 @@ try {
   // A garbage `disabledSkills` (hand-edited .mouaif.json) is ignored, not fatal.
   assert.strictEqual(skills.resolve({ chat: { disabledSkills: 'testing' }, projectDir: root }).disabled.size, 0);
 
+  // ---- Bundled catalog -------------------------------------------------
+  // `mouaif-config` ships inside the package, so a project with no
+  // `.agents/skills` at all still gets one activatable skill, and a project
+  // copy of the same name replaces it rather than appearing twice.
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-skills-bare-'));
+  const bareFound = skills.discover(bare);
+  assert.deepStrictEqual(bareFound.map((s) => s.name), ['mouaif-config']);
+  assert.match(bareFound[0].absPath, /[\\/]src[\\/]skills[\\/]mouaif-config[\\/]SKILL\.md$/);
+  assert.strictEqual(bareFound[0].path, 'mouaif-config/SKILL.md');
+  assert.match(skills.activate(bare, {}, 'mouaif-config').content, /update_settings/);
+  fs.rmSync(bare, { recursive: true, force: true });
+
+  const shadowDir = path.join(root, '.agents', 'skills', 'mouaif-config');
+  fs.mkdirSync(shadowDir, { recursive: true });
+  fs.writeFileSync(path.join(shadowDir, 'SKILL.md'), '---\nname: mouaif-config\ndescription: Project copy wins.\n---\nPROJECT_COPY_BODY\n');
+  const shadowed = skills.discover(root).filter((s) => s.name === 'mouaif-config');
+  assert.strictEqual(shadowed.length, 1, 'a same-named project skill replaces the bundled one');
+  assert.strictEqual(shadowed[0].description, 'Project copy wins.');
+  assert.match(skills.activate(root, {}, 'mouaif-config').content, /PROJECT_COPY_BODY/);
+
   // ---- Persistence on the chat record ---------------------------------
   const chat = chats.createChat(root, { disabledSkills: ['testing'] });
   assert.deepStrictEqual(chat.disabledSkills, ['testing']);
   assert.deepStrictEqual(skills.resolve({ chat, projectDir: root }).chatDisabled, new Set(['testing']));
-  assert.deepStrictEqual(skills.buildSpec(root, chat).function.parameters.properties.name.enum, ['pdf-processing']);
+  assert.deepStrictEqual(skills.buildSpec(root, chat).function.parameters.properties.name.enum, ['mouaif-config', 'pdf-processing']);
 
   // Turning the last one back on clears the list (NULL, read back as absent).
   const cleared = chats.updateChat(root, chat.id, { disabledSkills: [] });

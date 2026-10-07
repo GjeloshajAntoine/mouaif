@@ -50,6 +50,7 @@ description: Run and diagnose project tests. Use when changing code or investiga
 ---
 Run the narrowest relevant tests first, then the full suite.</code></pre>
 <p>Save it as <code>.agents/skills/testing/SKILL.md</code>. Optional <code>scripts/</code>, <code>references/</code>, and <code>assets/</code> directories may sit beside it.</p>
+<p>The app also ships one skill of its own, <a href="mouaif-config-skill.html">mouaif config</a>, so a project with no <code>.agents/skills</code> still has something to activate. A project skill with the same name replaces the bundled one.</p>
 <p>Descriptions may use YAML block scalars and comments:</p>
 <pre><code class="language-yaml">name: testing # matches the directory name
 description: &gt;-

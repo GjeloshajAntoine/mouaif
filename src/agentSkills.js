@@ -8,6 +8,12 @@ const path = require('path');
 const settings = require('./settings.js');
 const MAX_BYTES = 512 * 1024;
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+// The bundled fallback catalog, shipped inside the package. It holds the
+// skills every project gets without a `.agents/skills` entry of its own —
+// currently `mouaif-config`, which teaches the model to read and change
+// project settings through get_settings / update_settings. A same-named
+// project skill shadows it, so the app never fights a user's own file.
+const BUILTIN_DIR = path.join(__dirname, 'skills');
 
 function parseScalar(raw) {
   const s = String(raw || '').trim();
@@ -134,27 +140,61 @@ function parseSkillFile(text, directoryName) {
   return { valid: diagnostics.length === 0 && validName && validDescription && validCompatibility, name, description, metadata, body: lines.slice(close + 1).join('\n').trim(), diagnostics };
 }
 
-function safeSkillFile(projectDir, root, entry) {
+// `dir` is `base` itself or a descendant of it — `realpath` returns the
+// directory unchanged, so equality has to count as inside.
+function isInside(dir, base) {
+  return dir === base || dir.startsWith(base + path.sep);
+}
+
+// safeSkillFile(baseDir, root, entry) -> skill | null
+//
+// Validate one `<root>/<entry>/SKILL.md` and return it, or null. `baseDir`
+// is the directory the skill must stay inside (the project dir for a user
+// skill, the bundled `src/skills` dir for a built-in one) and is also the
+// base of the relative `path` a project skill reports.
+function safeSkillFile(baseDir, root, entry) {
   const file = path.join(root, entry.name, 'SKILL.md');
   try {
-    const realRoot = fs.realpathSync(projectDir);
+    const realBase = fs.realpathSync(baseDir);
+    const realRoot = fs.realpathSync(root);
     const realFile = fs.realpathSync(file);
-    if (realFile !== realRoot && !realFile.startsWith(realRoot + path.sep)) return null;
+    if (!isInside(realRoot, realBase) || !isInside(realFile, realBase)) return null;
     const stat = fs.statSync(realFile);
     if (!stat.isFile() || stat.size > MAX_BYTES) return null;
     const text = fs.readFileSync(realFile, 'utf8');
     const parsed = parseSkillFile(text, entry.name);
     if (!parsed.valid) return null;
-    return Object.assign({ id: parsed.name, path: path.relative(projectDir, realFile).replace(/\\/g, '/'), absPath: realFile, root: path.dirname(realFile), size: stat.size }, parsed);
+    return Object.assign({ id: parsed.name, path: path.relative(baseDir, realFile).replace(/\\/g, '/'), absPath: realFile, root: path.dirname(realFile), size: stat.size }, parsed);
   } catch { return null; }
 }
 
-function discover(projectDir) {
-  if (!projectDir || typeof projectDir !== 'string') return [];
-  const root = path.join(projectDir, '.agents', 'skills');
+// discoverIn(baseDir, root) -> skill[]
+//
+// Every valid skill directory directly under `root`, sorted by name.
+// Unreadable roots and malformed skills are skipped, never thrown.
+function discoverIn(baseDir, root) {
   let entries;
   try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return []; }
-  return entries.filter((e) => e.isDirectory()).map((e) => safeSkillFile(projectDir, root, e)).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name));
+  return entries.filter((e) => e.isDirectory())
+    .map((e) => safeSkillFile(baseDir, root, e))
+    .filter(Boolean)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// discover(projectDir) -> skill[]
+//
+// The project's own skills plus the bundled ones it does not shadow. A
+// project skill whose name matches a bundled skill replaces it, so the
+// merged list has one entry per name and a `disabledSkills` opt-out keeps
+// working across both sources.
+function discover(projectDir) {
+  const merged = new Map();
+  for (const skill of discoverIn(BUILTIN_DIR, BUILTIN_DIR)) merged.set(skill.name, skill);
+  if (projectDir && typeof projectDir === 'string') {
+    const root = path.join(projectDir, '.agents', 'skills');
+    for (const skill of discoverIn(projectDir, root)) merged.set(skill.name, skill);
+  }
+  return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // normalizeDisabledSkills(raw) -> Set<string>

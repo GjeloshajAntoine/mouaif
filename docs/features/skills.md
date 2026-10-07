@@ -18,6 +18,8 @@ Run the narrowest relevant tests first, then the full suite.
 
 Save it as `.agents/skills/testing/SKILL.md`. Optional `scripts/`, `references/`, and `assets/` directories may sit beside it.
 
+The app also ships one skill of its own, [mouaif config](./mouaif-config-skill.md), so a project with no `.agents/skills` still has something to activate. A project skill with the same name replaces the bundled one.
+
 Descriptions may use YAML block scalars and comments:
 
 ```yaml

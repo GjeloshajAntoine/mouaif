@@ -9,6 +9,10 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ## [Unreleased]
 
+### Added
+
+- **Built-in `mouaif-config` skill** — the app now ships one skill of its own, so a project with no `.agents/skills` still has something to activate. It teaches the assistant to read and change a project's configuration through `get_settings` / `update_settings`: which settings key lives at app or project scope, the provider ids a project model may reference and which of them are key-based versus plan sign-ins, agents, the tool-authorization gates with their `off` / `ask` / `allow` modes, and that MCP servers are configured in the app. It appears, toggles and can be disabled like any other skill, and a project's own `.agents/skills/mouaif-config/SKILL.md` replaces it.
+
 ### Changed
 
 - **Working-folder changes no longer manage Git** — the tool only ever selected directories; Git isolation is coding-prompt guidance carried out through separately authorized shell calls. Existing folders and externally prepared worktrees are reused unchanged; the legacy `branch` result stays `null`.
@@ -21,6 +25,18 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **The subagent card is bounded again** — a delegated run's conversation
+  panel had no height cap, so a run with many tool rounds drew a card taller
+  than the screen: the rest of the chat — and the card's own head — was pushed
+  out of reach behind one message. The panel is capped at `60dvh` and is now
+  the card's single scroller; the nested prompt's own `50dvh` cap is removed
+  inside it, because a second scroll box nested in the first swallowed the
+  swipe. The cap had been attempted before and appeared to do nothing: the
+  panel's rules sit on the `.tool-card`-qualified selector (0,3,0) while the
+  obvious place to write a cap — `.tool-card--subagent .tool-card__body`
+  (0,2,0) — loses the cascade to the generic expanded-body rule. A regression
+  test now pins the cap to the selector that wins. See
+  [docs/features/subagent-transcript.md](docs/features/subagent-transcript.md).
 - **Provider model catalogs follow the connection** — Azure, Ollama, Mistral,
   and Gemini read their live model list from the URL you configured. Azure's
   adapter joined Azure's *empty* default base URL, producing the relative

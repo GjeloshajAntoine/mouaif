@@ -17,6 +17,8 @@ Project `skills: false` is a master gate; chat `skills: false` disables skills f
 
 **Activation path.** The streaming handler passes the preset-resolved chat into the AI loop and into delegated runs. The Skills UI shares response normalization and an ordered save queue in `frontend/src/components/chat/skillState.js`.
 
+**Bundled catalog.** `discover(projectDir)` merges `src/skills` (shipped in the package) with `<projectDir>/.agents/skills`, project entries replacing bundled ones by name. See [the built-in config skill](./mouaif-config-skill.md).
+
 Run the focused parser, streaming and UI regression coverage with:
 
 ```bash
