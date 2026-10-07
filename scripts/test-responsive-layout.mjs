@@ -110,6 +110,15 @@ try {
       // '' when the rail is a normal flex row (a real bar), 'absolute'
       // when it floats over the transcript. The overlay is the point.
       navFloat: navEl ? getComputedStyle(navEl).position : null,
+      // The rail's resting clearance, and the grid level it is lifted by:
+      // the slot size plus the gap between stacked slots. One level above
+      // the resting clearance is where the bottom pill settles.
+      navMetrics: navEl ? (() => {
+      const cs = getComputedStyle(navEl);
+      const slot = parseFloat(cs.getPropertyValue('--nav-col'));
+      const gap = parseFloat(cs.getPropertyValue('--nav-gap'));
+      return { bottom: parseFloat(cs.bottom), slot, gap, level: slot + gap };
+      })() : null,
       navButtons: [...document.querySelectorAll('.chat-view__nav-btn')].filter(button => button.getClientRects().length).map(button => {
       const r = button.getBoundingClientRect();
       // The ::before grows the hit area past the painted 26px control.
@@ -179,6 +188,19 @@ try {
         const ownGap = layout.preview && layout.preview.top < layout.composer.top ? 0.4 * fontSize : 6;
         assert.ok(Math.abs(layout.transcript.bottom - (belowTranscript - ownGap)) < 1, 'the transcript reaches the surface below it: the rail reserves no row');
         assert.ok(layout.nav.bottom <= layout.composer.top + 1, 'navigation stays above the composer');
+        // The rail floats one full grid level above its resting clearance:
+        // the bottom pill is Latest, so its slot plus the gap above it are
+        // clear air below the rail. Measured as geometry, so a stray
+        // `bottom` value that puts the rail back against the composer (or
+        // halfway up the transcript) fails here.
+        const { bottom: railBottom, level } = layout.navMetrics;
+        assert.ok(railBottom >= 24 && level > 0, `the rail keeps a resting clearance (bottom ${railBottom}px, level ${level}px)`);
+        assert.ok(Math.abs((layout.transcript.bottom - layout.nav.bottom) - railBottom) < 1.5,
+        `the rail floats its clearance above the transcript's bottom edge at ${width}px / ${fontSize}px `
+        + `(clearance ${(layout.transcript.bottom - layout.nav.bottom).toFixed(1)}px, expected ${railBottom}px)`);
+        assert.ok(Math.abs(railBottom - (24 + level)) < 0.6,
+        `the rail's clearance is one grid level above its 24px rest at ${width}px / ${fontSize}px `
+        + `(bottom ${railBottom}px, 24 + level ${level} = ${24 + level}px)`);
         assert.equal(layout.navButtons.length, 2, 'pinned history keeps Prev and Next in fixed slots');
         assert.equal(layout.navButtons[1].disabled, true, 'Next is disabled while following latest');
         assert.equal(layout.navButtons[0].text, '', 'previous message carries no visible label');

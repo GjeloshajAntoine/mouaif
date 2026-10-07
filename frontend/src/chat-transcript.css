@@ -536,6 +536,9 @@
      classic one is as wide as the platform makes it. Declared here so
      `max()` below stays valid before the first measurement lands. */
   --nav-scrollbar: 0px;
+  /* Gap between the rail's stacked slots. Named rather than written twice
+     so the rail's lift (one slot + this gap) follows it if it changes. */
+  --nav-gap: 2px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -558,10 +561,13 @@
   right: max(calc(env(safe-area-inset-right, 0px) + var(--nav-scrollbar, 0px)),
     calc((100% - var(--read-max, 44rem)) / 2 - var(--nav-col)));
   /* Explicit slots keep Prev/Next fixed when Latest appears or its
-     unread count grows. The overlay always clears the composer/dock, and
-     sits a comfortable 24px above the transcript's bottom edge so the
-     bottom pill is not crowded against the surface below it. */
-  bottom: 24px;
+     unread count grows. The overlay always clears the composer/dock.
+     The resting clearance above the transcript's bottom edge is a
+     comfortable 24px plus one full grid level — Latest's own 28px slot
+     and the gap above it — so the rail reads as floating clear of the
+     surface below instead of as an edge-attached strip. Written against
+     the slot and gap variables so the level follows them. */
+  bottom: calc(24px + var(--nav-col) + var(--nav-gap));
   z-index: 6;
   display: grid;
   /* Three fixed square slots, top to bottom: Prev, Next, Latest. The
@@ -570,7 +576,7 @@
      slot, and its hit area fills the slot without reaching a neighbour. */
   grid-template-columns: var(--nav-col);
   grid-template-rows: repeat(3, var(--nav-col));
-  gap: 2px;
+  gap: var(--nav-gap);
   justify-items: center;
   align-items: center;
   pointer-events: none;
