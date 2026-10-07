@@ -182,6 +182,17 @@ function runDirectory(store, start = false) {
   return usesSandbox ? require('./tools/files.js').resolveSandbox(directory) : safeDirectory(directory);
 }
 
+// One wording for the `directory` argument's accepted forms, shared by the
+// chat path, the preview path and the subagent-run path. The three used to
+// describe the same argument three different ways ("a string, or false/null
+// for the default workspace", "a string in a subagent run"), which is exactly
+// how a caller learns the wrong option set: `true` is type-legal in the
+// advertised union but is never a directory, and only the chat path ever said
+// what happens when it is passed.
+function directoryTypeError(forms) {
+  return err('EBADINPUT', 'directory must be ' + forms + '; true is not a directory');
+}
+
 function checkApprovedDirectory(directory, approvedDirectory) {
   if (approvedDirectory !== undefined && directory !== approvedDirectory) {
     throw err('ESTALE_PATH', 'Working folder destination changed since authorization; request approval again');
@@ -210,7 +221,7 @@ function changeRun(root, chatId, directory, signal, approvedDirectory) {
   if (signal && signal.aborted) throw err('EABORTED', 'Working folder change cancelled');
   const wantsStart = directory === undefined || directory === false || directory === null || directory === '';
   if (!wantsStart && typeof directory !== 'string') {
-    throw err('EBADINPUT', 'directory must be a string in a subagent run');
+    throw directoryTypeError('a string, or ""/false/null to return to the folder this run started in');
   }
   const destination = wantsStart ? runDirectory(store, true) : safeDirectory(path.resolve(store.root, directory));
   checkApprovedDirectory(destination, approvedDirectory);
@@ -233,7 +244,7 @@ function prepareChange(projectDir, currentChatId, args = {}, workspaceChatId) {
     if (!store) throw err('ENOTFOUND', 'This subagent run is no longer active');
     const directory = args.directory;
     const wantsDefault = directory === undefined || directory === false || directory === null || directory === '';
-    if (!wantsDefault && typeof directory !== 'string') throw err('EBADINPUT', 'directory must be a string in a subagent run');
+    if (!wantsDefault && typeof directory !== 'string') throw directoryTypeError('a string, ""/false/null for the default workspace, or "" to reset to the project root');
     const destination = wantsDefault ? runDirectory(store, true) : safeDirectory(path.resolve(store.root, directory));
     const action = wantsDefault ? 'Return the subagent to the folder it started in' : 'Use a different folder';
     // The run id is separate from the real chat id used for approvals.
@@ -251,7 +262,7 @@ function prepareChange(projectDir, currentChatId, args = {}, workspaceChatId) {
   const root = safeDirectory(projectDir);
   const directory = args.directory;
   const wantsDefault = directory === undefined || directory === false || directory === null;
-  if (!wantsDefault && typeof directory !== 'string') throw err('EBADINPUT', 'directory must be a string, or false/null for the default workspace');
+  if (!wantsDefault && typeof directory !== 'string') throw directoryTypeError('a string, or false/null for the default workspace');
   const destination = wantsDefault ? path.join(root, '.mouaif', 'workspaces', chatId)
     : safeDirectory(path.resolve(root, directory || '.'));
   const action = wantsDefault ? 'Use a separate folder'
@@ -287,7 +298,7 @@ async function change(projectDir, chatId, directory, signal, approvedDirectory) 
     const wantsDefault = directory === undefined || directory === false || directory === null;
     if (!wantsDefault) {
       if (typeof directory !== 'string') {
-        throw err('EBADINPUT', 'directory must be a string, or false/null for the default workspace');
+        throw directoryTypeError('a string, or false/null for the default workspace');
       }
       // Relative paths always refer to the original project, never the
       // previous working folder. Empty string resets to the project root.

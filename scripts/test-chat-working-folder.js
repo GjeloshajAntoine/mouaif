@@ -56,6 +56,13 @@ async function main() {
   assert.deepEqual(SPECS.change_working_folder.function.parameters.properties.directory.type, ['string', 'boolean', 'null']);
   // The advertised schema carries no chatId: the model cannot name a chat.
   assert.deepEqual(Object.keys(SPECS.change_working_folder.function.parameters.properties), ['directory']);
+  // The advertised description must name every accepted form the runner
+  // honors: `null` creates the workspace exactly like `false`, and `true`
+  // is refused. It used to describe only `false`, so the two option sets —
+  // schema and code — disagreed.
+  const directorySpec = SPECS.change_working_folder.function.parameters.properties.directory;
+  assert.equal(/pass false or null/.test(directorySpec.description), true, 'the schema names false and null alike');
+  assert.equal(/true is not a directory/.test(directorySpec.description), true, 'the schema says true is refused');
   assert.equal(authz.effectiveConfig(projectDir, 'change_working_folder').mode, 'ask');
   git('init', '-q');
   git('config', 'user.email', 'fixture@example.test');
@@ -96,6 +103,8 @@ async function main() {
   assert.equal((await call({}, chat.id)).result.code, 'EOFF', 'the default chat target is still gated');
   assert.equal((await call({ directory: null })).result.code, 'EOFF');
   assert.equal((await call({ directory: true })).result.code, 'EBADINPUT', 'a boolean is only meaningful as false');
+  assert.equal((await call({ directory: true })).result.message.includes('true is not a directory'), true,
+    'the refusal names the offending value, not just the accepted types');
   assert.equal(chats.getChat(projectDir, chat.id).workingDir, null);
   // The app-level default can enable creation for every project that does
   // not set its own value; a project value overrides it either way.
@@ -301,6 +310,13 @@ async function main() {
   assert.equal(workspace.isRunChatId(runFolder.workingDir), false);
   assert.equal((await runAppTool('change_working_folder', {}, { projectDir, chatId: chat.id, workspaceChatId: 'subagent:run-nope' })).result.code, 'ENOTFOUND');
   assert.throws(() => workspace.resolveForCall(projectDir, chat.id, anchorRun.chatId), { code: 'ENOTFOUND' }, 'settled runs never fall back to the parent');
+  // A run describes `directory` differently from a chat ("back to the folder
+  // this run started in", not "the default workspace"), but it must reject
+  // the same non-directory values with the same wording.
+  const runStore = workspace.registerRun(target, { root: target, current: target }, chat.id);
+  assert.throws(() => workspace.changeRun('', runStore.chatId, true), { code: 'EBADINPUT' });
+  assert.throws(() => workspace.changeRun('', runStore.chatId, true), /true is not a directory/);
+  workspace.clearRun(runStore.runId);
 
   // Chat permissions and approval sessions must never use the synthetic id.
   // Project Allow + chat Ask is the regression that otherwise executes a

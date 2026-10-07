@@ -161,7 +161,7 @@ const PARAMETERS = {
           type: 'string',
           description: 'Image path relative to the calling chat’s working folder (the project by default; e.g. "docs/features/images/shot.png").'
         },
-        directory: { type: ['string', 'boolean', 'null'], description: 'Existing directory, relative to the original project or absolute, or "" to reset to the project root. Omit (or pass false) only to create/reuse the default .mouaif/workspaces/<chatId> workspace, which the project must allow via "Allow automatic workspaces".' },
+        directory: { type: ['string', 'boolean', 'null'], description: 'Existing directory, relative to the original project or absolute, or "" to reset to the project root. Omit it, or pass false or null, to create/reuse the default .mouaif/workspaces/<chatId> workspace, which the project must allow via "Allow automatic workspaces". true is not a directory and is refused.' },
         target: {
         type: 'string',
           enum: ['draft', 'message'],

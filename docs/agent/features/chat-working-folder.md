@@ -23,6 +23,8 @@ npm run build:web
 
 `change_working_folder` is context-bound: it resolves its chat from the ambient call context, never from `args.chatId`. The advertised schema therefore carries only `directory`. A call that still passes `chatId` is refused with `EBADINPUT` instead of being honoured — a wrong id would silently retarget another conversation. A call with no current chat fails rather than guessing.
 
+The `directory` union (`['string','boolean','null']`) is wider than the accepted values on purpose: JSON Schema cannot say "boolean, but only `false`", and a compact profile may strip the parameter enumeration, so the explicit opt-in has to survive the argument being present. `false` and `null` both mean the default workspace; `true` is refused with `EBADINPUT` and the message `true is not a directory`. All three destination paths (a chat's `change`, a chat's `prepareChange`, and a run's `changeRun`) reject a non-directory through one shared `directoryTypeError(forms)` helper, so the wording names the run's accepted forms ("return to the folder this run started in") while still refusing the same values — the three used to have three separate strings.
+
 ### Delegated runs
 
 A delegated run keeps the real parent `opts.chatId` for permissions, approval sessions, images, tasks and app tools. Each run separately registers folder state under a synthetic id `subagent:run-<n>` and passes it as `opts.workspaceChatId`. Replacing `opts.chatId` with a synthetic id would bypass chat-specific Ask settings, strand approvals outside the parent session and break tools that default to the current chat.

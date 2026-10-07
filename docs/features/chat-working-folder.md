@@ -26,7 +26,7 @@ The tool takes no `chatId` argument. Which chat it acts on is ambient server con
 
 A delegated run gets independent working-folder state rather than changing the parent chat's. The run starts in whatever folder the parent chat is using, and a `change_working_folder` call from inside the run switches the run alone. Siblings share the same starting directory unless they explicitly select different existing folders; separate state does not automatically create isolated checkouts.
 
-Inside a run the `directory` argument means the same thing it does for a chat — an existing folder — but it resolves against the folder the run **started** in, not the project root and not the run's current folder. A fixed anchor is what keeps one argument meaning one folder; resolving against the current folder would make `sub-checkout` mean `sub-checkout` on the first call and `sub-checkout/sub-checkout` on the next. Omitting `directory` (or passing `""`, `false`, or `null`) returns the run to the folder it started in.
+Inside a run the `directory` argument means the same thing it does for a chat — an existing folder — but it resolves against the folder the run **started** in, not the project root and not the run's current folder. A fixed anchor is what keeps one argument meaning one folder; resolving against the current folder would make `sub-checkout` mean `sub-checkout` on the first call and `sub-checkout/sub-checkout` on the next. Omitting `directory` (or passing `""`, `false`, or `null`) returns the run to the folder it started in. The accepted forms differ from a chat's — a run returns to its start folder rather than creating a workspace — but both paths refuse the same non-string values with the same wording, so `true` fails identically inside and outside a run.
 
 A run never creates a folder: `created` is always `false` for it, and preparing a checkout stays a separately authorized shell call. There is no default-workspace branch inside a run, because a run already has a folder to work in and `.mouaif/workspaces/<chatId>` names a chat, not a run.
 
@@ -41,7 +41,8 @@ Permissions, approval decisions, pending-request recovery, cancellation, tasks a
 | `directory: "packages/my-feature"` | Use an existing directory relative to the original project, not the previous working folder. |
 | `directory: "/absolute/path"` | Use an existing absolute directory within the normal filesystem boundary. |
 | `directory: ""` or `"."` | Return to the original project folder. |
-| `directory` omitted or `directory: false` | Create or reuse `<project>/.mouaif/workspaces/<chatId>`. Requires _Allow automatic workspaces_; otherwise the call fails with `EOFF` and nothing is created. |
+| `directory` omitted, or `directory: false` / `directory: null` | Create or reuse `<project>/.mouaif/workspaces/<chatId>`. Requires _Allow automatic workspaces_; otherwise the call fails with `EOFF` and nothing is created. |
+| `directory: true` | Refused with `EBADINPUT`: `true` is not a directory. |
 
 Example tool arguments:
 
@@ -69,6 +70,8 @@ Creating the default workspace is controlled by the **Allow automatic workspaces
 | on | Creates an empty `<project>/.mouaif/workspaces/<chatId>` or reuses the existing directory without changing its contents. |
 
 Explicit `directory` strings are unaffected: selecting an existing folder or resetting to the project root always works, on or off, and never creates anything. An unreadable or corrupt project file counts as off — a configuration error is never a reason to write to the user's checkout.
+
+The advertised `directory` type is the union `["string","boolean","null"]`, and the accepted values are exactly `string`, `false` and `null`. `true` passes the type check, so the tool refuses it with `EBADINPUT` (`true is not a directory`) instead of treating it as a path — the schema cannot express "only `false`", and a silently ignored argument would be worse than a typed error. The tool description and the [mouaif tool table](./mouaif-tool.md) list the same three forms.
 
 ### Directory creation
 
