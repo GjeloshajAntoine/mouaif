@@ -234,6 +234,58 @@ window.pickerTest = { h, render, ModelPickerField };`,
     return !titles.includes('Recommended') && titles.includes('two');
     })()`);
     await evaluate(`query('');`);
+
+    // ---- Bookmarks survive an empty / unloaded catalog -------------------
+    // The chat picker opens from whatever the project model list already holds
+    // and refreshes the live catalogs in the background, so the first paint can
+    // have no models at all. Pinned and Recent rows are the user's own record
+    // and used to be filtered against that empty catalog, which left the sheet
+    // showing "No models yet" with the recent model the user was looking for
+    // nowhere in it. Both sections must render their row regardless, and the
+    // empty-state card must not claim there are no models over them.
+    await evaluate(`{
+    document.body.innerHTML = '<div id="fixture"></div>';
+    draw({ models: [], pinned: new Set(['one\u0000alpha']),
+    recent: [{ provider: 'two', id: 'beta' }, { provider: 'three', id: 'gamma' }] });
+    }`);
+    await wait();
+    await tap('.mp__trigger');
+    await check('bookmarks render with an empty catalog while live models load', `(() => {
+    const titles = Array.from(document.querySelectorAll('.mp__section-title')).map(el => el.textContent);
+    const ids = title => {
+    const section = Array.from(document.querySelectorAll('.mp__section'))
+      .find(s => s.querySelector('.mp__section-title').textContent === title);
+    return section ? Array.from(section.querySelectorAll('.mp__row-id'), el => el.textContent) : [];
+    };
+    return titles.join(',') === 'Pinned,Recent' &&
+    ids('Pinned').join(',') === 'alpha' && ids('Recent').join(',') === 'beta,gamma';
+    })()`);
+    await check('an unresolved recent row still names its provider', `(() => {
+    const row = Array.from(document.querySelectorAll('.mp__row'))
+    .find(el => el.querySelector('.mp__row-id').textContent === 'gamma');
+    return row.querySelector('.mp__row-meta').textContent === 'three';
+    })()`);
+    await check('a bookmarked-only sheet does not claim there are no models', `(() => {
+    const empty = document.querySelector('.mp__empty');
+    return !empty || empty.querySelector('.mp__empty-title').textContent !== 'No models yet';
+    })()`);
+    // A genuinely empty sheet still says so, so the empty state keeps its job.
+    await evaluate(`document.body.innerHTML = '<div id="fixture"></div>'; draw({ models: [], pinned: new Set(), recent: [] });`);
+    await wait();
+    await tap('.mp__trigger');
+    await check('an actually empty sheet still reports no models', `document.querySelector('.mp__empty-title').textContent === 'No models yet'`);
+    // A pinned row the catalog does carry keeps its label.
+    await evaluate(`{
+    document.body.innerHTML = '<div id="fixture"></div>';
+    draw({ models: [{ id: 'alpha', provider: 'one', label: 'Alpha label' }], pinned: new Set(['one\u0000alpha']) });
+    }`);
+    await wait();
+    await tap('.mp__trigger');
+    await check('a pinned row resolved against the catalog keeps its label', `(() => {
+    const row = document.querySelector('.mp__row');
+    return row.querySelector('.mp__row-id').textContent === 'alpha' &&
+    row.querySelector('.mp__row-label').textContent === 'Alpha label';
+    })()`);
     console.log('\nModel picker browser regressions passed.');
   } finally {
     ws.close();

@@ -13,6 +13,7 @@ The model picker saves the user time by showing **pinned** and **recently used**
 5. Both sections only appear when the provider filter is set to **All** and the search box is empty — they hide when you browse a specific provider or type a query.
 6. The last 20 selections are tracked per project; older entries are dropped when the list overflows.
 7. Each time the chat model picker is requested, it refreshes the server-backed recent list before showing the sheet, so stale entries are never briefly displayed.
+8. **Bookmarks do not depend on the loaded catalog.** The chat picker opens with whatever the project model list already holds and refreshes the live provider catalogs in the background, so the first paint can have no models at all. Pinned and Recent rows render anyway — they are your own record, kept from the server-backed recent list and per-project pins — so the model you just used is still one tap away while the catalogs load. A row whose catalog entry has not arrived yet shows its provider id in place of a label; when the catalog does carry it, the label is used. The sheet only reports **No models yet** when there is genuinely nothing to show, and says **No other models** over a list that holds only bookmarks.
 
 ## Related
 

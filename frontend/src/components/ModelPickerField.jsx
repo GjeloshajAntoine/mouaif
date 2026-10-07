@@ -64,6 +64,22 @@ function keyOf(m) {
   return (m.provider || '') + '\u0000' + m.id;
 }
 
+// rowFromKey(key, list) -> { id, provider, label }
+//
+// A bookmarked row addressed by its `provider\0id` key, resolved against the
+// loaded catalog for a label when one is present. Bookmarks are the user's own
+// record and must survive a catalog that is empty, still loading, or narrowed
+// by a filter, so an unresolved key yields a plain { id, provider } row rather
+// than being dropped.
+function rowFromKey(key, list) {
+  const at = key.indexOf('\u0000');
+  if (at < 0) return null;
+  const provider = key.slice(0, at);
+  const id = key.slice(at + 1);
+  if (!id) return null;
+  return (list || []).find((m) => keyOf(m) === key) || { id, provider, label: '' };
+}
+
 // Pin glyph (filled when pinned, outline otherwise). Mirrors the old
 // imperative chat picker's icon.
 function PinIcon({ pinned }) {
@@ -297,6 +313,11 @@ export function ModelPickerField(props) {
   const selectedKey = sel ? (sel.providerId + '\u0000' + sel.modelId) : null;
   const hasQuery = !!q.trim();
   const showingFullList = providerFilter === 'all' && !hasQuery;
+  // A bookmarked row is rendered even when the catalog is empty or still
+  // loading, so the empty-state card must not be drawn underneath one — that
+  // read as "no models" over a list that had rows in it.
+  const hasRows = groups.length > 0
+    || (showingFullList && (!!(recommended && recommended.length) || !!(pinned && pinned.size) || !!(recent && recent.length)));
 
   function pick(m) {
     closeAndRestoreFocus();
@@ -305,8 +326,7 @@ export function ModelPickerField(props) {
   function pickClear() {
     closeAndRestoreFocus();
     if (onChange) onChange(null);
-  }
-  async function doRefresh() {
+  }  async function doRefresh() {
     if (!refresh || refreshingRef.current) return;
     refreshingRef.current = true;
     setRefreshing(true);
@@ -458,10 +478,10 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
         showingFullList && recommended
         ? renderBookmarkSection('Recommended', recommendedRows(list, recommended, pinned, recent))
         : null,
-        showingFullList && pinned ? renderBookmarkSection('Pinned', list.filter((m) => pinned.has(keyOf(m)))) : null,
+        showingFullList && pinned ? renderBookmarkSection('Pinned', pinnedRows(pinned, list)) : null,
         showingFullList && recent ? renderRecentSection(recent, list, pinned) : null,
-        !groups.length ? h('div', { class: 'mp__empty' },
-          h('p', { class: 'mp__empty-title' }, hasQuery ? 'No matches' : (list.length ? 'No models for this provider' : 'No models yet')),
+        !groups.length && !hasRows ? h('div', { class: 'mp__empty' },
+          h('p', { class: 'mp__empty-title' }, hasQuery ? 'No matches' : (list.length ? 'No models for this provider' : (hasRows ? 'No other models' : 'No models yet'))),
           h('p', { class: 'mp__empty-text' }, hasQuery
             ? 'No model matches "' + q + '". Try a shorter query or clear the search.'
             : refreshEmpty),
@@ -544,6 +564,18 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
     );
   }
 
+  // pinnedRows(pinnedSet, fullList) — every pinned key as a row. The pin is the
+  // user's own record, so it survives a catalog that is empty or still loading;
+  // the loaded entry supplies the label when there is one.
+  function pinnedRows(pinnedSet, fullList) {
+    const rows = [];
+    for (const key of pinnedSet) {
+      const row = rowFromKey(key, fullList);
+      if (row) rows.push(row);
+    }
+    return rows;
+  }
+
   // recommendedRows(list, refs, pinnedSet, recentItems) — the caller's rows, in
   // the caller's order, resolved against the normalized list. Rows that the
   // Pinned/Recent sections below already show are dropped: the whole point of a
@@ -560,6 +592,9 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
     return out;
   }
 
+  // The Recent section is the server-backed record of what the user actually
+  // used, newest first, so it renders whether or not the loaded catalog still
+  // carries each entry (the picker opens before the live catalogs resolve).
   function renderRecentSection(recentItems, fullList, pinnedSet) {
     if (!recentItems.length) return null;
     const seen = new Set();
@@ -568,8 +603,9 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
       const key = (r.provider || '') + '\u0000' + r.id;
       if (seen.has(key)) continue;
       seen.add(key);
-      const m = fullList.find((x) => (x.provider || '') === (r.provider || '') && x.id === r.id);
-      if (m && !(pinnedSet && pinnedSet.has(key))) rows.push(m);
+      if (pinnedSet && pinnedSet.has(key)) continue;
+      const m = (fullList || []).find((x) => keyOf(x) === key);
+      rows.push(m || { id: r.id, provider: r.provider || '', label: '' });
       if (rows.length >= 5) break;
     }
     if (!rows.length) return null;
