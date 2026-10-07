@@ -67,7 +67,9 @@
 <h3 id="delegate-with-subagent">Delegate with <code>subagent</code></h3>
 <p>The native <code>subagent</code> tool accepts an optional <code>agent</code> argument matched against the stored names:</p>
 <pre><code class="language-json">{ &quot;task&quot;: &quot;Review the staged changes for regressions.&quot;, &quot;agent&quot;: &quot;reviewer&quot; }</code></pre>
-<p>The <code>agent</code> parameter&#39;s description is built per request and enumerates the current agent names, so the model sees exactly what it can call.</p>
+<p>The <code>agent</code> parameter&#39;s description is built per request and enumerates the current agent names, so the model sees exactly what it can call. Images are never inherited: the main model can explicitly pass an <code>images</code> array of current-chat <code>imageRef</code> values returned by <code>list_chat_attachments</code>. Omit it to send only task/context; see <a href="subagent-image-generation.html#send-only-selected-attachments">Subagent image generation</a>.</p>
+<h3 id="image-generation-agents">Image-generation agents</h3>
+<p>Pin an agent to an image model, then delegate a drawing task or send <code>@&lt;agent&gt; &lt;description&gt;</code>. Native OpenRouter and Gemini artwork appears in the nested transcript and is returned as image blocks to the parent model. Dedicated OpenRouter image models use <code>/images</code>; Imagen uses <code>:predict</code>; image-capable chat models request image output and parse inline pixels. See <a href="subagent-image-generation.html">Subagent image generation</a> for limits and failure behavior.</p>
 <h3 id="invoke-an-agent-yourself-with">Invoke an agent yourself with <code>@</code></h3>
 <p>You don&#39;t have to wait for the model to delegate. In the chat composer, type <code>@</code> and pick the agent from the <strong>Agents</strong> section (or type <code>@&lt;name&gt;</code>), write the task, and send:</p>
 <pre><code>@reviewer Check the staged changes for regressions.</code></pre>
