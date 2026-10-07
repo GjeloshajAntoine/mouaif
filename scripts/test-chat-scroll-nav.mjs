@@ -15,8 +15,14 @@ assert.equal(findAdjacentMessage(tops, 1200, 1), -1, 'nothing after the last row
 console.log('PASS findAdjacentMessage picks the right row in both directions');
 
 // ---- DOM-shaped fake transcript
-function makeTranscript(rowTops, clientHeight = 500, scrollHeight = 2000) {
-  const el = { scrollTop: 0, clientHeight, scrollHeight, children: [] };
+function makeTranscript(rowTops, clientHeight = 800, scrollHeight = 2000) {
+  const el = { clientHeight, scrollHeight, children: [] };
+  // Clamp like a browser: scrollTop stays within [0, scrollHeight - clientHeight].
+  let top = 0;
+  Object.defineProperty(el, 'scrollTop', {
+    get: () => top,
+    set: (v) => { top = Math.max(0, Math.min(v, el.scrollHeight - el.clientHeight)); }
+  });
   el.getBoundingClientRect = () => ({ top: 100 });
   for (const t of rowTops) {
     const isMsg = t.msg !== false;
@@ -78,7 +84,7 @@ function makeRefs(el) {
   // At the bottom the last row is usually cut off just above the top edge.
   // "Previous" must go to that row's start only if it is a real step; a
   // few-pixel nudge stayed inside the 48px pin band and re-pinned at once.
-  const el = makeTranscript([{ top: 0 }, { top: 600 }, { top: 1480 }], 500, 2000);
+  const el = makeTranscript([{ top: 0 }, { top: 600 }, { top: 1480 }], 1000, 2500);
   el.scrollTop = 1500;
   const { refs } = makeRefs(el);
   scrollToAdjacentMessage(refs, -1);
@@ -98,6 +104,40 @@ function makeRefs(el) {
   assert.equal(refs.pinnedToBottom.current, true, 'next to an unreachable tail row re-pins');
   assert.equal(jump.hidden, true);
   console.log('PASS next to the tail row re-pins');
+}
+
+{
+  // An agentic turn: two messages with thousands of pixels of tool cards
+  // between them. One tap must never fly past more than a screen.
+  const el = makeTranscript([{ top: 0 }, { top: 200, msg: false }, { top: 3000, msg: false }, { top: 4000 }], 600, 5000);
+  el.scrollTop = 4400;
+  const { refs } = makeRefs(el);
+  refs.pinnedToBottom.current = false;
+  scrollToAdjacentMessage(refs, -1);
+  assert.equal(el.scrollTop, 4000 - 6, 'prev to a near message still lands on its start');
+  scrollToAdjacentMessage(refs, -1);
+  assert.equal(el.scrollTop, 3994 - (600 - 64), 'prev to a far message pages one screen with overlap');
+  for (let i = 0; i < 20 && el.scrollTop > 0; i++) scrollToAdjacentMessage(refs, -1);
+  assert.equal(el.scrollTop, 0, 'repeated prev taps reach the top');
+  scrollToAdjacentMessage(refs, 1);
+  assert.equal(el.scrollTop, 600 - 64, 'next to a far message pages one screen');
+  assert.equal(refs.pinnedToBottom.current, false, 'paging down far from the bottom stays unpinned');
+  console.log('PASS prev/next page through long tool runs instead of skipping them');
+}
+
+{
+  // Next past the last message with the bottom still far away pages
+  // toward it; it re-pins only once the bottom is within one step.
+  const el = makeTranscript([{ top: 0 }, { top: 100, msg: false }], 600, 3000);
+  el.scrollTop = 500;
+  const { refs } = makeRefs(el);
+  refs.pinnedToBottom.current = false;
+  scrollToAdjacentMessage(refs, 1);
+  assert.equal(el.scrollTop, 500 + 536, 'next pages toward a far bottom');
+  assert.equal(refs.pinnedToBottom.current, false);
+  for (let i = 0; i < 10 && !refs.pinnedToBottom.current; i++) scrollToAdjacentMessage(refs, 1);
+  assert.equal(refs.pinnedToBottom.current, true, 'repeated next taps reach the bottom and follow again');
+  console.log('PASS next pages toward a far bottom, then re-pins');
 }
 
 {
