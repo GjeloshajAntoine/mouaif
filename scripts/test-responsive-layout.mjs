@@ -229,7 +229,9 @@ try {
         const buttons = [...nav.querySelectorAll('button')].filter(button => button.getClientRects().length);
         const transcript = document.querySelector('.chat-view__transcript');
         const nr = nav.getBoundingClientRect();
-        return { mode: nav.dataset.mode, bottom: nr.bottom, top: nr.top,
+        const badge = document.querySelector('.chat-view__jump-count').getBoundingClientRect();
+        const rowsRight = Math.max(...[...transcript.children].map(r => r.getBoundingClientRect()).filter(r => r.width).map(r => r.right));
+        return { mode: nav.dataset.mode, bottom: nr.bottom, top: nr.top, badgeLeft: badge.width ? badge.left : -1, rowsRight,
         inside: nr.top >= transcript.getBoundingClientRect().top - 1 && nr.bottom <= transcript.getBoundingClientRect().bottom + 1,
         buttons: buttons.map(button => {
         const r = button.getBoundingClientRect();
@@ -285,17 +287,27 @@ try {
         assert.equal(await evaluate(`document.activeElement.className`), 'chat-view__transcript', 'Latest returns focus to the transcript');
         if (width >= 48 * fontSize) {
           assert.ok(Math.abs(layout.row.left - layout.head.left) < 1, 'transcript stays centred even with a scrollbar');
-          assert.ok(layout.nav.right <= layout.head.right, 'navigation stays beside the conversation, not at the frame edge');
+          // Its own 44px column right after the reading column: beside the
+          // conversation, not over it and not out at the frame edge.
+          // With less than a column to spare, it takes the frame edge and the
+          // rows give up that strip instead (checked above).
+          const room = layout.transcript.right - layout.head.right >= 44;
+          assert.ok(room ? layout.nav.left >= layout.head.right - 1 && layout.nav.right <= layout.head.right + 45
+          : Math.abs(layout.nav.right - layout.transcript.right) < 1,
+          `navigation stays beside the conversation, not at the frame edge (head ends ${layout.head.right}, nav ${layout.nav.left}-${layout.nav.right})`);
           assert.ok(layout.preview, 'web preview rendered');
           assert.ok(layout.preview.right <= layout.composer.right, 'preview stays above the composer, not at the frame edge');
         }
+        // The buttons have their own strip: no transcript row runs under
+        // any of them, at any width (Latest and its 99+ badge included).
+        // Measured while the `99+` badge is showing (see historyNav).
+        const { rowsRight, badgeLeft } = historyNav;
+        assert.ok(historyNav.buttons.every(button => button.left >= rowsRight) && badgeLeft >= rowsRight,
+        `navigation never covers a message at ${width}px / ${fontSize}px (rows end at ${rowsRight}px, `
+        + `buttons start at ${Math.min(...historyNav.buttons.map(b => b.left))}px, badge at ${badgeLeft}px)`);
+        assert.ok(historyNav.buttons.every(button => button.right <= layout.transcript.right),
+        'navigation stays inside the transcript');
         if (width <= 430) {
-        // The floating rail sits a flat 10px (or the safe-area inset, if
-        // larger) inside the transcript's right edge — a fixed gap, not a
-        // rem-scaled one, because the rail is anchored to the box, not
-        // laid out inside a padded row.
-        assert.ok(layout.navButtons.every(button => button.left >= 0
-        && button.right <= layout.transcript.right - 9.5), 'phone navigation keeps a safe edge gap');
         assert.ok(Math.abs(layout.preview.right - (width - 0.75 * fontSize)) < 1, 'phone preview keeps its existing inset');
         }
       }

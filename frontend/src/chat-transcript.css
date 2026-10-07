@@ -112,9 +112,16 @@
 .chat-view__transcript > .chat-msg,
 .chat-view__transcript > :not(.chat-msg) {
   align-self: stretch;
-  width: 100%;
-  max-width: var(--read-max, 44rem);
-  margin-inline: auto;
+  /* The scroll buttons get a strip of their own on the right, so no row
+     ever runs under them. The row keeps the centring margin on its left
+     (so it still lines up with the head and composer) and gives up
+     `--nav-gutter` on its right only when the frame is too narrow to hold
+     the strip beside the centred column. Percentages here are of the
+     transcript's content box, in both properties. */
+  --row-start: max(0px, calc((100% - var(--read-max, 44rem)) / 2));
+  width: min(var(--read-max, 44rem), calc(100% - var(--nav-gutter) - var(--row-start)));
+  max-width: none;
+  margin-inline: var(--row-start) auto;
 }
 .chat-view__transcript > .chat-msg--assistant {
   align-items: flex-start;
@@ -522,6 +529,9 @@
 /* Positioned box around the transcript: takes the transcript's old flex
    slot so the rail below can anchor to the transcript's own edges. */
 .chat-view__transcript-box {
+  /* Width of the strip the rows leave free for the scroll buttons, inside
+     the transcript's 8px right padding: 36 + 8 = the 44px button column. */
+  --nav-gutter: calc(36px + env(safe-area-inset-right, 0px));
   position: relative;
   display: flex;
   flex-direction: column;
@@ -532,25 +542,31 @@
 .chat-view__scroll-nav {
   position: absolute;
   /* Follow the reading column on wide windows, not the shell's far edge. */
-  right: max(calc(10px + env(safe-area-inset-right, 0px)), calc((100% - var(--read-max, 44rem)) / 2 + 10px));
+  /* One 44px column in the strip the rows leave free (--nav-gutter): at
+     the frame edge on a phone, just past the centred reading column when
+     the frame is wide enough. Never over a message. */
+  right: max(env(safe-area-inset-right, 0px), calc((100% - var(--read-max, 44rem)) / 2 - 44px));
   /* Explicit slots keep Prev/Next fixed when Latest appears or its
      unread count grows. The overlay always clears the composer/dock. */
-  bottom: 18px;
+  bottom: 12px;
   z-index: 6;
   display: grid;
   /* 44px columns and rows: the visible control inside each slot is 26px,
      so a 9px transparent extension on every side still fits inside its
      own slot instead of reaching into a neighbour's. */
-  grid-auto-columns: 44px;
-  grid-auto-rows: 44px;
-  gap: 0.5rem;
+  /* Three fixed rows, top to bottom: Prev, Next, Latest. The Latest row
+     stays allocated while that button is hidden, so Prev and Next never
+     move when it appears. */
+  grid-template-columns: 44px;
+  grid-template-rows: repeat(3, 44px);
+  gap: 4px;
   justify-items: center;
   align-items: center;
   pointer-events: none;
 }
 .chat-view__scroll-nav[hidden] { display: none; }
-.chat-view__nav-btn--prev { grid-area: 2 / 1; }
-.chat-view__nav-btn--next { grid-area: 2 / 2; }
+.chat-view__nav-btn--prev { grid-area: 1 / 1; }
+.chat-view__nav-btn--next { grid-area: 2 / 1; }
 
 .chat-view__nav-btn {
   position: relative;
@@ -592,16 +608,26 @@
 .chat-view__nav-btn:active:not(:disabled) { transform: scale(0.92); opacity: 1; }
 .chat-view__nav-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; opacity: 1; }
 .chat-view__nav-btn svg { display: block; flex: 0 0 auto; width: 14px; height: 14px; }
-/* Latest spans the whole upper row. It is the only control that carries
-   text — the unread badge — so it widens inside its row instead of
-   staying a fixed 26px pill. */
+/* Latest takes the bottom slot, nearest the composer. Its unread badge is
+   pinned to the pill's corner instead of widening it, so a `99+` stays
+   inside the 44px column and off the messages. */
 .chat-view__jump {
-  grid-area: 1 / 1 / 2 / 3;
-  gap: 3px;
-  width: auto;
-  min-width: var(--tap-xs, 26px);
-  padding: 0 6px;
+  grid-area: 3 / 1;
   opacity: 1;
+}
+.chat-view__jump .chat-view__jump-count {
+  position: absolute;
+  top: -7px;
+  right: -9px;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  box-shadow: 0 0 0 1px var(--border-strong);
+  font-size: 0.6rem;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
 }
 .chat-view__transcript:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .chat-view__jump-count:empty { display: none; }
