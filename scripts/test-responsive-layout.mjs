@@ -98,6 +98,15 @@ try {
       content: rect('.app__main > section'), head: rect('.chat-view__head'),
       composer: rect('.chat-view__composer-row'), transcript: rect('.chat-view__transcript'),
       row: rect('.chat-view__transcript > .chat-msg'), nav: rect('.chat-view__scroll-nav'),
+      // The lane the transcript's scrollbar paints in. The rail hangs off
+      // the transcript box, which shares the transcript's bounds, so this
+      // is where the bar sits relative to the rail.
+      scrollbarLeft: (() => {
+      const t = document.querySelector('.chat-view__transcript');
+      if (!t) return null;
+      const lane = t.offsetWidth - t.clientWidth - t.clientLeft;
+      return t.getBoundingClientRect().right - lane;
+      })(),
       // '' when the rail is a normal flex row (a real bar), 'absolute'
       // when it floats over the transcript. The overlay is the point.
       navFloat: navEl ? getComputedStyle(navEl).position : null,
@@ -232,7 +241,14 @@ try {
         const nr = nav.getBoundingClientRect();
         const badge = document.querySelector('.chat-view__jump-count').getBoundingClientRect();
         const rowsRight = Math.max(...[...transcript.children].map(r => r.getBoundingClientRect()).filter(r => r.width).map(r => r.right));
+        // The scrollbar lane is painted inside the transcript's content box,
+        // but the rail hangs off the transcript box, which shares those
+        // bounds. Subtract the left lane (clientLeft) from the total inset
+        // to leave the lane the bar is actually drawn in.
+        const scrollbarLane = transcript.offsetWidth - transcript.clientWidth - transcript.clientLeft;
+        const scrollbarLeft = transcript.getBoundingClientRect().right - scrollbarLane;
         return { mode: nav.dataset.mode, bottom: nr.bottom, top: nr.top, badgeLeft: badge.width ? badge.left : -1, rowsRight,
+        scrollbarLane, scrollbarLeft, navRight: nr.right,
         inside: nr.top >= transcript.getBoundingClientRect().top - 1 && nr.bottom <= transcript.getBoundingClientRect().bottom + 1,
         buttons: buttons.map(button => {
         const r = button.getBoundingClientRect();
@@ -291,11 +307,12 @@ try {
           // Its own 28px column right after the reading column: beside the
           // conversation, not over it and not out at the frame edge.
           // With less than a column to spare, it takes the frame edge and the
-          // rows give up that strip instead (checked above).
-          const room = layout.transcript.right - layout.head.right >= 28;
+          // rows give up that strip instead (checked above). Either way it
+          // stops at the scrollbar lane rather than sitting on the bar.
+          const room = layout.scrollbarLeft - layout.head.right >= 28;
           assert.ok(room ? layout.nav.left >= layout.head.right - 1 && layout.nav.right <= layout.head.right + 29
-          : Math.abs(layout.nav.right - layout.transcript.right) < 1,
-          `navigation stays beside the conversation, not at the frame edge (head ends ${layout.head.right}, nav ${layout.nav.left}-${layout.nav.right})`);
+          : Math.abs(layout.nav.right - layout.scrollbarLeft) < 1,
+          `navigation stays beside the conversation, not at the frame edge (head ends ${layout.head.right}, bar starts ${layout.scrollbarLeft}, nav ${layout.nav.left}-${layout.nav.right})`);
           assert.ok(layout.preview, 'web preview rendered');
           assert.ok(layout.preview.right <= layout.composer.right, 'preview stays above the composer, not at the frame edge');
         }
@@ -308,6 +325,14 @@ try {
         + `buttons start at ${Math.min(...historyNav.buttons.map(b => b.left))}px, badge at ${badgeLeft}px)`);
         assert.ok(historyNav.buttons.every(button => button.right <= layout.transcript.right),
         'navigation stays inside the transcript');
+        // The rail must not sit on the scrollbar either. It hangs off the
+        // transcript box, so before this it landed on the lane a classic
+        // scrollbar paints in as soon as the window was narrow enough to
+        // hold the rail at the frame edge — and the rail swallowed the
+        // drag, because a tap on the bar hit the pill instead.
+        assert.ok(historyNav.buttons.every(button => button.right <= historyNav.scrollbarLeft + 0.5),
+        `navigation never covers the scrollbar at ${width}px / ${fontSize}px (bar starts at `
+        + `${historyNav.scrollbarLeft}px, buttons end at ${Math.max(...historyNav.buttons.map(b => b.right))}px)`);
         if (width <= 430) {
         assert.ok(Math.abs(layout.preview.right - (width - 0.75 * fontSize)) < 1, 'phone preview keeps its existing inset');
         }

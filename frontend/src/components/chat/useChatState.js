@@ -25,7 +25,7 @@ import {
 renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender, reconcileTranscript
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills, toggleSkill } from './cards.js';
-import { scrollTranscriptToBottom, scrollToAdjacentMessage, noteTranscriptScrollTop, noteTranscriptScroll, isNearBottom, updateJumpButton, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
+import { scrollTranscriptToBottom, scrollToAdjacentMessage, noteTranscriptScrollTop, noteTranscriptScroll, isNearBottom, updateJumpButton, syncNavScrollbarLane, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
   updateMetaLine, refreshSystemPrompt, activeProfileId, updateSwitch, updateSetupVisibility
@@ -1334,6 +1334,11 @@ loadOlderMessages(state, refs, scrollPager).catch(() => {});
     // Re-pin only while pinned and not during a chunked render/backfill
     // (which manages the scroll itself).
     function repinIfPinned() { pinTranscriptAfterSettle(refs); }
+    // The rail's offset depends on the lane the scroller's scrollbar takes,
+    // which changes with the platform, the window width and the zoom level.
+    // Re-measure with the same observer rather than at a breakpoint.
+    function measureNav() { syncNavScrollbarLane(refs); }
+    syncNavScrollbarLane(refs);
     let ro = null;
     const observedRows = new Set();
     function observeRow(row) {
@@ -1342,7 +1347,7 @@ loadOlderMessages(state, refs, scrollPager).catch(() => {});
       ro.observe(row);
     }
     if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(repinIfPinned);
+      ro = new ResizeObserver(() => { measureNav(); repinIfPinned(); });
       ro.observe(el);
       for (const row of el.children) observeRow(row);
     }

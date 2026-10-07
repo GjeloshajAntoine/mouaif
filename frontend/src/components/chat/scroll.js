@@ -269,6 +269,33 @@ export function cancelToolBodyScroll(descendant) {
   pendingBodyScrolls.delete(body);
 }
 
+// syncNavScrollbarLane(refs)
+//
+// The rail hangs off `.chat-view__transcript-box`, but the transcript
+// scroller's scrollbar is painted inside that same box: in the lane
+// `scrollbar-gutter: stable both-edges` reserves above the 48rem
+// breakpoint, or simply in the slice of the content box a classic
+// scrollbar takes below it. The rail's own right offset knew about
+// neither, so on a frame narrow enough to hold it at the frame edge a
+// pill overlapped the bar.
+//
+// Publish the lane the browser actually uses as `--nav-scrollbar`, which
+// the rail reads in chat-transcript.css. Measured rather than assumed
+// from the breakpoint: overlay scrollbars — every phone — reserve nothing,
+// and a classic one is as wide as the platform makes it. Layout reads
+// only, so this is safe to call from a ResizeObserver callback.
+export function syncNavScrollbarLane(refs) {
+  const el = refs.transcript.current;
+  const box = el && el.parentElement;
+  if (!el || !box) return;
+  // `offsetWidth - clientWidth` is both lanes where a gutter is reserved.
+  // Dropping the left one (`clientLeft`, the left border otherwise) leaves
+  // the lane the scrollbar is actually painted in.
+  const lane = Math.max(0, el.offsetWidth - el.clientWidth - el.clientLeft);
+  const value = lane + 'px';
+  if (box.style.getPropertyValue('--nav-scrollbar') !== value) box.style.setProperty('--nav-scrollbar', value);
+}
+
 // updateJumpButton(refs)
 //
 // Keep message navigation in fixed slots. While pinned, Next is disabled

@@ -16,6 +16,7 @@ Small icon-only controls sit in a narrow column of their own at the transcript's
 - Tapping ↑ or ↓ stops auto-follow, as scrolling up does. A streaming reply keeps arriving below, and Latest's counter goes up. These controls jump between messages, not pages: swipe or use Space/PageDown to read through a long answer without skipping its remainder.
 - Prev and Next occupy **fixed grid slots**. Showing Latest or growing its unread badge does not move either message-navigation target horizontally or vertically.
 - **The controls never cover a message.** Every transcript row ends before a narrow 28 px strip on the right, and the controls stay inside it. On a wide screen, where there is room beside the centred reading column, they sit just past it and the rows keep their full width.
+- **The controls never cover the scrollbar either.** The column stops at the lane the transcript's scrollbar occupies, so it stays clear of the bar on every screen. It is measured rather than assumed: a touch device's overlay scrollbar takes no space at all, and a desktop one is as wide as the platform makes it, so the column simply follows whatever the browser reports.
 - Each control stays **glyph-only and small**: a 20 × 20 px pill whose transparent hit area fills its 28 × 28 px slot. No label is drawn: the accessible name lives in `aria-label` / `title`, which screen readers and long-press tooltips still show. Latest's unread badge sits on the pill's corner, so `99+` stays inside the strip.
 - The column's slots are 28 px tall with a 2 px gap, so each hit area fills its own slot and never overlaps a neighbour's.
 - The column keeps clear of the composer and the web-preview dock, and hides when there is no scrollable history.
@@ -35,5 +36,5 @@ npm run test:chat-view
 node scripts/test-responsive-layout.mjs
 ```
 
-The layout regression checks phone widths from 360–430 px, larger viewports and enlarged fonts. It asserts 28 px hit areas around 20 px painted controls, the absence of visible labels, stable button coordinates across pin changes and a `99+` badge, repeat taps at the same coordinates, keyboard reachability, Space scrolling a focused transcript, and keyboard activation of Latest with focus restored. It also confirms the column reserves no reading row and that no row's right edge passes the controls' left edge, `99+` badge included.
+The layout regression checks phone widths from 360–430 px, larger viewports and enlarged fonts. It asserts 28 px hit areas around 20 px painted controls, the absence of visible labels, stable button coordinates across pin changes and a `99+` badge, repeat taps at the same coordinates, keyboard reachability, Space scrolling a focused transcript, and keyboard activation of Latest with focus restored. It also confirms the column reserves no reading row, that no row's right edge passes the controls' left edge (`99+` badge included), and that the controls stop short of the scrollbar's lane at every width.
 

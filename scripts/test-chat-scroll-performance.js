@@ -81,6 +81,7 @@ const vm = require('node:vm');
     ResizeObserver: class { constructor(fn) { resize = fn; } observe(node) { observed.add(node); } unobserve(node) { observed.delete(node); } disconnect() { observed.clear(); } },
     MutationObserver: class { constructor(fn) { mutation = fn; } observe() {} disconnect() {} },
     pinTranscriptAfterSettle() {}, cancelTranscriptPin() { cancelled = true; },
+    syncNavScrollbarLane() {},
     trackUserScrollIntent() { return { isUserScroll: () => false, dispose() { intentDisposed = true; } }; }
   });
   vm.runInContext(source.slice(start, end), context);
@@ -140,4 +141,52 @@ const vm = require('node:vm');
   const remaining = Object.values(listeners).reduce((n, set) => n + set.size, 0);
   assert.equal(remaining, 0, 'dispose removes every listener');
   console.log('PASS only wheel/touch/key/pointer input unpins; momentum is attributed; listeners disposed');
+
+  // The rail's offset is driven by the lane the transcript's scrollbar
+  // actually takes. Measure it, never assume the breakpoint's 10px: an
+  // overlay scrollbar (every phone) reserves nothing, and a classic one is
+  // as wide as the platform makes it.
+  const { syncNavScrollbarLane } = await import('../frontend/src/components/chat/scroll.js');
+  function laneHarness(metrics) {
+    const style = new Map();
+    const box = {
+      style: {
+        getPropertyValue: (name) => (style.has(name) ? style.get(name) : ''),
+        setProperty(name, value) { style.set(name, value); }
+      }
+    };
+    const el = Object.assign({ parentElement: box }, metrics);
+    return { refs: { transcript: { current: el } }, style, box };
+  }
+  {
+    // A classic bar with the reserved gutter: 10px on the right only.
+    const h = laneHarness({ offsetWidth: 768, clientWidth: 748, clientLeft: 10 });
+    syncNavScrollbarLane(h.refs);
+    assert.equal(h.style.get('--nav-scrollbar'), '10px', 'the reserved right lane is published');
+  }
+  {
+    // Overlay scrollbar: no lane at all, so the rail keeps the frame edge.
+    const h = laneHarness({ offsetWidth: 390, clientWidth: 390, clientLeft: 0 });
+    syncNavScrollbarLane(h.refs);
+    assert.equal(h.style.get('--nav-scrollbar'), '0px', 'an overlay scrollbar reserves nothing');
+  }
+  {
+    // No gutter reserved, but a classic bar still takes its own slice.
+    const h = laneHarness({ offsetWidth: 768, clientWidth: 758, clientLeft: 0 });
+    syncNavScrollbarLane(h.refs);
+    assert.equal(h.style.get('--nav-scrollbar'), '10px', 'a bar without a gutter still counts');
+  }
+  {
+    // A left border must not be mistaken for the scrollbar's lane.
+    const h = laneHarness({ offsetWidth: 768, clientWidth: 758, clientLeft: 1 });
+    syncNavScrollbarLane(h.refs);
+    assert.equal(h.style.get('--nav-scrollbar'), '9px', 'the left inset is not counted as the lane');
+  }
+  {
+    // Detached view: no transcript, no write, and no throw.
+    const write = () => { throw new Error('must not write'); };
+    syncNavScrollbarLane({ transcript: { current: null } });
+    syncNavScrollbarLane({ transcript: { current: { parentElement: null, style: { setProperty: write } } } });
+  }
+  console.log('PASS the scrollbar lane is measured from the live scroller, not assumed from a breakpoint');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

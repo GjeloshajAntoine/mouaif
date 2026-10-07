@@ -533,6 +533,13 @@
      free for it, inside the transcript's 8px right padding. Kept narrow:
      a wider strip cost every message a visible slice of its width. */
   --nav-col: 28px;
+  /* Width of the lane the transcript's own scrollbar occupies, measured
+     from the live scroller (syncNavScrollbarLane in
+     components/chat/scroll.js) instead of assumed from the breakpoint:
+     overlay scrollbars — every phone — reserve nothing at all, and a
+     classic one is as wide as the platform makes it. Declared here so
+     `max()` below stays valid before the first measurement lands. */
+  --nav-scrollbar: 0px;
   --nav-gutter: calc(var(--nav-col) - 8px + env(safe-area-inset-right, 0px));
   position: relative;
   display: flex;
@@ -546,8 +553,14 @@
   /* Follow the reading column on wide windows, not the shell's far edge. */
   /* One --nav-col column in the strip the rows leave free (--nav-gutter):
      at the frame edge on a phone, just past the centred reading column
-     when the frame is wide enough. Never over a message. */
-  right: max(env(safe-area-inset-right, 0px), calc((100% - var(--read-max, 44rem)) / 2 - var(--nav-col)));
+     when the frame is wide enough. Never over a message, and never over
+     the transcript's scrollbar: the rail hangs off this box, but the bar
+     is painted inside the scroller nested in it, so the frame-edge term
+     carries the bar's lane as a floor. Only the frame-edge case needs it
+     — whenever the reading column leaves the rail room beside itself, the
+     rail is nowhere near the bar. */
+  right: max(calc(env(safe-area-inset-right, 0px) + var(--nav-scrollbar, 0px)),
+    calc((100% - var(--read-max, 44rem)) / 2 - var(--nav-col)));
   /* Explicit slots keep Prev/Next fixed when Latest appears or its
      unread count grows. The overlay always clears the composer/dock. */
   bottom: 12px;
