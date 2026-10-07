@@ -393,15 +393,16 @@ if (!scroller || !node) return;
 // has nothing to bring anything into, and must not move the scroller.
 const bounds = scroller.getBoundingClientRect();
 if (!bounds.height) return;
-// The panel's pinned chrome — the identity row, and the group chip row that
-// pins directly under it — never scrolls, so it is opaque chrome welded to the
-// top of the scroller: anything aligned to `bounds.top` lands *under* it and is
-// invisible. The visible region therefore starts at the bottom of whichever
-// strip is lowest, measured fresh every time: the identity row's height follows
-// its content (it grows an error line after a failed tree hop), and the chip row
-// only pins once the user has scrolled past it, so a fixed offset is wrong for
-// half of the calls.
-const chromeBottom = ['.inspector__styles-pin', '.inspector__touch-tabs']
+// The panel's pinned chrome — the identity row, the section rail that pins
+// directly under it, and the group chip row below that — never scrolls, so it is
+// opaque chrome welded to the top of the scroller: anything aligned to
+// `bounds.top` lands *under* it and is invisible. The visible region therefore
+// starts at the bottom of whichever strip is lowest, measured fresh every time:
+// the identity row's height follows its content (it grows an error line after a
+// failed tree hop), the rail wraps to a second row on a narrow viewport, and the
+// chip row only pins once the user has scrolled past it — so a fixed offset is
+// wrong for half of the calls.
+const chromeBottom = ['.inspector__styles-pin', '.inspector__styles-jump', '.inspector__touch-tabs']
 .map((sel) => {
 const node = scroller.querySelector(sel);
 if (!node) return 0;

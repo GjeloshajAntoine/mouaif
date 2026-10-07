@@ -30,55 +30,71 @@ flex-direction: column;
 gap: 10px;
 min-width: 0;
 }
-/* Group chips. Wrapped, never a sideways scroller: six chips at 360 px land on
-   two rows, and a row that can be swiped sideways is how the panel gets dragged
-   off-centre. Pinned inside the Styles panel's scroller so the user can always
-   switch groups no matter how deep they have read: the reveal-on-tap only fires
-   *after* a tap, so the row needs to stay reachable while reading the cards
-   below it (otherwise scrolling past the chips strands the user on the only
-   group on screen).
+/* Group chips. Wrapped, never a sideways scroller: six chips at 360 px used to
+  land on two rows, and a row that can be swiped sideways is how the panel gets
+  dragged off-centre. Pinned inside the Styles panel's scroller so the user can
+  always switch groups no matter how deep they have read: the reveal-on-tap only
+  fires *after* a tap, so the row needs to stay reachable while reading the cards
+  below it (otherwise scrolling past the chips strands the user on the only
+  group on screen).
 
-   It pins **directly below** the panel's identity row (`.inspector__styles-pin`),
-   not on top of it. The row used to pin at `top: 0` and paint over that block,
-   because the block was 178 px tall (identity + element preview) inside a `~353 px`
-   scroller and there was no second offset to pin to — measured at `scrollTop 1493`
-   on the fixture: the chip row occupied `245 → 354`, the element preview occupied
-   the same band, and the top 109 px of the property list sat behind both while the
-   pin's full height stayed reserved underneath. Two layers of chrome, no rows.
+  It pins **directly below** the section rail (`.inspector__styles-jump`), which
+  itself pins below the panel's identity row (`.inspector__styles-pin`). The row
+  used to pin at `top: 0` and paint over the identity block, because the block
+  was 178 px tall (identity + element preview) inside a `~353 px` scroller and
+  there was no second offset to pin to — measured at `scrollTop 1493` on the
+  fixture: the chip row occupied `245 → 354`, the element preview occupied the
+  same band, and the top 109 px of the property list sat behind both while the
+  pin's full height stayed reserved underneath. Two layers of chrome, no rows.
 
-   The preview moved into the scroll flow (see `.inspector__styles-shotwrap`) and
-   the pin is now one 44 px row, so the row can pin under it:
+  The preview moved into the scroll flow (see `.inspector__styles-shotwrap`),
+  and each strip's offset is now the *measured* height of the strips above it:
 
-   ```
-   .inspector__styles-pin  { top: -6px; }
-   .inspector__touch-tabs  { top: calc(var(--insp-pin-h, 44px) - 6px); }
-   ```
+  ```
+  .inspector__styles-pin  { top: -6px; }
+  .inspector__styles-jump { top: calc(var(--insp-pin-h, 44px) - 6px); }
+  .inspector__touch-tabs  { top: calc(var(--insp-pin-h, 44px)
+                          + var(--insp-rail-h, 53px) - 6px); }
+  ```
 
-   `--insp-pin-h` is the pin's *measured* height, published on the panel element
-   by `pinnedStack.js` (the pin grows an error line when a tree hop fails, so a
-   hard-coded offset would drift straight back into the overlap this replaced).
-   The `-6px` is the panel's top padding, which the pin cancels with its own
-   negative `top`; the chip row pins into the same scrollport, so it subtracts
-   the same 6 px. The fallback is one `--tap` row for the frame before the first
-   measurement.
+  `--insp-pin-h` and `--insp-rail-h` are published on the panel element by
+  `pinnedStack.js` (the pin grows an error line when a tree hop fails, and the
+  rail wraps to a second row on a very narrow viewport, so a hard-coded offset
+  would drift straight back into the overlap this replaced). The `-6px` is the
+  panel's top padding, which the pin cancels with its own negative `top`; every
+  strip below pins into the same scrollport, so each subtracts the same 6 px.
+  The fallbacks are one `--tap` row each, for the frame before the first
+  measurement.
 
-   `z-index: 3` keeps the row *below* the pin (`z-index: 4`), so a chip row
-   scrolling away with its own section passes under the opaque identity row
-   instead of over it. The negative-margin trick spans the panel's own 8 px
-   padding so the chip row sits flush against the panel's edges (the row's left
-   and right padding keeps the chips off those edges). `background` must match
-   the panel surface so the cards scrolling underneath are hidden. The
-   `border-bottom` separates the row from the cards it sits over. */
+  `z-index: 2` puts the row *below* the rail (`z-index: 3`) and the identity row
+  (`z-index: 4`), so a strip scrolling away with its own section passes under the
+  opaque chrome instead of over it. The negative-margin trick spans the panel's
+  own 8 px padding so the chip row sits flush against the panel's edges (the
+  row's left and right padding keeps the chips off those edges). `background`
+  must match the panel surface so the cards scrolling underneath are hidden. The
+  `border-bottom` separates the row from the cards it sits over.
+
+  The chips fit **one row** at the 360 px minimum in the state the fixture
+  measures (314 px of the 320 px available): shrinking the label from 0.76rem to
+  0.7rem, the side padding from 12 px to 5 px and the gap from 6 px to 4 px takes
+  the six chips from 401 px — two rows, 109 px of pinned chrome, with the
+  "Effects" chip alone on the second line — to 314 px on one line. Measured on
+  the fixture: two rows cost 109 px and a ragged single chip, one row costs 59 px
+  and reads as one index. The 44 px floor is untouched — only the horizontal
+  footprint shrank. `flex-wrap: wrap` stays as the *escape hatch*, and the slack
+  is only ~6 px, so a longer label or a larger default font size wraps again
+  rather than clipping: the failure mode is the layout we have today, not a
+  broken row. */
 .inspector__touch-tabs {
 display: flex;
 flex-wrap: wrap;
-gap: 6px;
+gap: 4px;
 position: sticky;
-/* One `--tap` row until pinnedStack.js has measured the identity row above this
-   one; `calc()` because the pin cancels the panel's 6 px top padding with its own
-   negative `top`, so both pin into the same scrollport edge. */
-top: calc(var(--insp-pin-h, 44px) - 6px);
-z-index: 3;
+/* The measured height of *both* strips above: the identity row plus the section
+  rail, `calc()` because the pin cancels the panel's 6 px top padding with its
+  own negative `top`, so every strip pins into the same scrollport edge. */
+top: calc(var(--insp-pin-h, 44px) + var(--insp-rail-h, 53px) - 6px);
+z-index: 2;
 background: var(--surface);
 margin: 0 -8px;
 padding: 6px 8px 8px;
@@ -88,9 +104,9 @@ border-bottom: 1px solid var(--border);
 position: relative;
 flex: 0 1 auto;
 min-height: var(--tap);
-padding: 0 12px;
+padding: 0 5px;
 font: inherit;
-font-size: 0.76rem;
+font-size: 0.7rem;
 color: var(--fg-soft);
 background: var(--surface-2);
 border: 1px solid var(--border-strong);

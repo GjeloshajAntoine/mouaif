@@ -439,12 +439,12 @@ check('the panel wires the surface\'s ref, reveal and change reporter',
 /tabsRef,/.test(panelSource) && /revealRef,/.test(panelSource) && /onGroupChange: setTouchGroup/.test(panelSource));
 // The reveal must account for the panel's pinned chrome: it is opaque and
 // welded to the top of the scroller, so a node aligned to the scroller's top
-// edge lands *under* it and is invisible. Two strips pin there — the identity
-// row and, once the user has read past it, the group chip row — and which one
-// is lowest depends on the scroll offset, so both are measured and the lower
-// edge wins.
+// edge lands *under* it and is invisible. Three strips pin there — the identity
+// row, the section rail and, once the user has read past it, the group chip row
+// — and which one is lowest depends on the scroll offset, so all three are
+// measured and the lower edge wins.
 check('the reveal starts below the panel\'s pinned chrome, not at the scroller top',
-/\['\.inspector__styles-pin',\s*'\.inspector__touch-tabs'\]/.test(surfaceSource)
+/\['\.inspector__styles-pin',\s*'\.inspector__styles-jump',\s*'\.inspector__touch-tabs'\]/.test(surfaceSource)
 && /const top = Math\.max\(bounds\.top, chromeBottom\)/.test(surfaceSource));
 check('the reveal only counts a strip that is actually pinned at the top',
 /if \(box\.height && box\.top <= bounds\.top \+ 1\) return box\.bottom;/.test(surfaceSource));
@@ -712,18 +712,22 @@ check(cls + ' wraps', !!body && /flex-wrap:\s*wrap/.test(body));
 check('.inspector__touch-tabs is pinned inside the Styles scroller', 
   /position:\s*sticky/.test(rule(touchCss, '.inspector__touch-tabs') || '')
   && /top:\s*calc\(var\(--insp-pin-h/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
-// Pinning the chip row at `top: 0` put it directly *over* the pinned identity
-// block, which used to carry the element preview too: at `scrollTop 1493` on the
-// repo's own fixture the chips covered the preview's exact band (`245 → 354`) and
-// the first 109 px of the property rows, while the 178 px block stayed reserved
-// underneath. The row's offset is now the measured height of the block above it,
-// and the block is above the row rather than below it.
+// Three strips now stack in the same scrollport: the identity row (z-index 4),
+// the section rail (3) and the group chip row (2). Pinning the chip row at
+// `top: 0` put it directly *over* the pinned identity block, which used to carry
+// the element preview too: at `scrollTop 1493` on the repo's own fixture the
+// chips covered the preview's exact band (`245 → 354`) and the first 109 px of
+// the property rows, while the 178 px block stayed reserved underneath. Each
+// offset is now the measured height of the strips above it — so the chip row
+// clears both the identity row and the rail — and every strip is painted in
+// order rather than on top of the one above it.
 check('.inspector__touch-tabs stacks below the identity row, not over it',
-  /z-index:\s*3/.test(rule(touchCss, '.inspector__touch-tabs') || '')
+  /z-index:\s*2/.test(rule(touchCss, '.inspector__touch-tabs') || '')
   && !/top:\s*0\s*;/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
-check('the identity row wins the overlap with the chip row',
+check('the identity row wins the overlap with every strip below it',
   /z-index:\s*4/.test(rules(css, '.inspector__panel-body .inspector__styles-pin'))
-  && /z-index:\s*3/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
+  && /z-index:\s*3/.test(rule(css, '.inspector__styles-jump') || '')
+  && /z-index:\s*2/.test(rule(touchCss, '.inspector__touch-tabs') || ''));
 // The element preview is the first row of the scroll flow, not a second pinned
 // strip: it is what made the block tall enough that the chip row had nowhere to
 // pin except on top of it.

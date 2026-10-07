@@ -1509,13 +1509,37 @@ color: var(--success);
 line-height: 1.35;
 }
 
-/* Section jump menu — a row of chips under the pinned identity that scrolls
-   to each named section. Wraps rather than scrolling sideways (at most five
-   chips), and each chip is a 44 px tap target. */
+/* Section rail — the Controls / Declared / Rules / Computed chips, pinned
+   directly *under* the identity row so the panel's four sections are one tap
+   away from anywhere in a ~3300 px scroller. It used to be a plain block that
+   scrolled away with the top of the panel: measured on the 360 px fixture, the
+   rail sat at `-1174` while reading the Computed list, so the only way back to
+   the Style controls was a ~1600 px drag with the group chips — themselves
+   1200 px above — as the only landmark. Pinning it costs 53 px of chrome at
+   every depth (10 % of the panel) against chrome that used to be repainted at
+   each scroll position anyway.
+
+   The offset is `--insp-pin-h` (the identity row's *measured* height, published
+   by pinnedStack.js) minus the panel's own 6 px top padding, which the pin
+   cancels with its own negative `top` — both pin into the same scrollport edge,
+   so they subtract the same 6 px. A hard-coded offset would drift the moment the
+   pin grows an error line after a failed tree hop, and the drift is invisible
+   until the two strips overlap.
+
+   Wraps rather than scrolling sideways (at most five chips; a sideways scroller
+   here would hide its own content and drag the panel off-centre on a diagonal
+   swipe — the invariant test-inspector-styles.js guards). `z-index: 3` is the
+   same rung as the group chip row and *below* the identity row's 4, so a strip
+   scrolling away passes under the opaque identity row, never over it. The
+   negative margin spans the panel's 8 px padding so the rail reads flush with
+   the card's edges. */
 .inspector__styles-jump {
 display: flex;
 flex-wrap: wrap;
 gap: 6px;
+position: sticky;
+top: calc(var(--insp-pin-h, 44px) - 6px);
+z-index: 3;
 margin: 0 -8px;
 padding: 4px 8px;
 background: var(--surface);

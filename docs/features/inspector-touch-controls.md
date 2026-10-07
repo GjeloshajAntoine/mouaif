@@ -2,28 +2,24 @@
 
 ## Overview
 
-The **Style controls** section of the Inspector's Styles tab is a surface of
-finger-sized widgets — segmented chips, sliders with − / + steppers, a tappable
-box model, colour swatches and an **Add property** browser — for changing the
-selected element's CSS without a keyboard. It exists because the property rows
-that come before it can write anything but assume you already know that `display`
-takes `flex`, that `gap` is a length, and that `justify-content` wants
-`space-between`: knowing the CSS is exactly the tax a phone should not charge.
+The **Style controls** section of the Styles panel edits the selected element with chips, sliders and swatches instead of typed values. It writes the element's own inline style, so every change is visible immediately and reversible with **Remove**.
 
-Selecting the element does not change: you still tap an element in the live
-preview (or type a selector, or walk the element tree). The controls are what the
-selection leads to.
+The section's six group chips (**Layout / Spacing / Size / Text / Colour / Effects**) stay **pinned** while its cards scroll, so the group index is reachable from anywhere inside the section. They fit **one row** at the 360 px minimum; the identity row, the section rail and this chip row stack in that order and never overlap.
 
 ## Usage
+
+The controls are what selecting an element leads to. You still tap an element in
+the live preview (or type a selector, or walk the element tree); the surface then
+works on that element.
 
 1. **Select an element** — tap **Pick**, then tap the element in the live preview;
    or type a selector and tap **Select**; or walk **Element tree** with the
    parents breadcrumb and the child chips. The sticky header keeps the element's
    label (`div#hero.card`) and its box size on screen.
-2. **Choose a group** — the surface opens with six wrapped tab chips: **Layout**,
-   **Spacing**, **Size**, **Text**, **Colour**, **Effects**. It opens on
-   **Layout** for a flex or grid container and on **Spacing** otherwise, and a tab
-   carries a dot when the element declares something in that group.
+2. **Choose a group** — the surface opens with a pinned index of six tab chips:
+  **Layout**, **Spacing**, **Size**, **Text**, **Colour**, **Effects**. It opens
+  on **Layout** for a flex or grid container and on **Spacing** otherwise, and a
+  tab carries a dot when the element declares something in that group.
 3. **Change a value** — every row is one property:
    - **Segments** (`display`, `align-items`, `justify-content`, `text-align`,
      `font-weight`, `position`, `border-style`, `box-shadow`) are chips with a

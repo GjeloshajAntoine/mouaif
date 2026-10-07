@@ -34,7 +34,7 @@
 import { h } from 'preact';
 import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'preact/hooks';
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
-import { applyPinHeight, watchPin } from './pinnedStack.js';
+import { applyPinHeight, applyRailHeight, watchPin } from './pinnedStack.js';
 import { FILTERS, DEFAULT_FILTER, filterComputed, pageEnd, moreAfter, emptyMessage, statusLine } from './computedFilter.js';
 import { styledSources, sourceFor } from './styledProps.js';
 import { alternatives, unitOptions, classify, seedValue } from './valueKinds.js';
@@ -966,20 +966,45 @@ const [edit, setEdit] = useState(null); // { prop, value } when editing
 const editorRef = useRef(null);
 const editorOrigin = useRef(null);
 const editScroll = useRef(null);
-// sectionRefs — one ref per named section, for the section-jump menu. The menu
-// is a row of chips under the pinned identity: on a phone the panel is five
+// sectionRefs — one ref per named section, for the section rail. The rail is a
+// row of chips pinned under the identity row: on a phone the panel is five
 // sections deep and scrolling to "Computed" from the top is a 2 000 px drag.
 // Each chip scrolls its section to the top of the panel's scroller, so the
 // section's heading is the first thing on screen.
 const sectionRefs = useRef({});
+// The rail's own node, measured so the group chip row can pin below it (see
+// useSectionRailHeight further down).
+const railRef = useRef(null);
+// pinnedStackHeight — how much opaque chrome the destination of a jump will have
+// at the top of the scroller *after* the scroll, which is what a section heading
+// has to clear. It is deliberately not "the strips pinned right now": at
+// `scrollTop 0` the rail is still at its place in the flow, but jumping to any
+// section scrolls it into its pinned position, and the heading then lands under
+// it. So the identity row and the rail always count, and the group chip row
+// counts only when it sits *above* the destination — which means the jump will
+// have scrolled past it, pinning it too. Every strip is measured rather than
+// assumed, because the pin grows an error line, the rail wraps on a narrow
+// viewport, and the chip row is one or two rows depending on the labels.
+function pinnedStackHeight(destination) {
+const panel = panelRef.current;
+let height = 0;
+for (const node of [pinRef.current, railRef.current]) {
+if (!node) continue;
+height += node.getBoundingClientRect().height;
+}
+const tabs = tabsRef.current;
+if (tabs && destination && tabs.getBoundingClientRect().top < destination.getBoundingClientRect().top) {
+height += tabs.getBoundingClientRect().height;
+}
+return height;
+}
 function scrollToSection(id) {
 const node = sectionRefs.current[id];
 const panel = panelRef.current;
 if (!node || !panel) return;
-// Offset by the pinned identity row's height so the section heading is not
-// hidden under it.
-const pin = pinRef.current;
-const offset = pin ? pin.offsetHeight : 0;
+// Offset by the chrome the section heading will face, so the heading is the
+// first thing on screen instead of hidden under the identity row and the rail.
+const offset = pinnedStackHeight(node);
 const top = node.getBoundingClientRect().top - panel.getBoundingClientRect().top + panel.scrollTop - offset - 4;
 panel.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
 }
@@ -1232,13 +1257,15 @@ const remaining = panel.scrollHeight - panel.scrollTop - panel.clientHeight;
 if (remaining > 72) return;
 setComputedView((v) => ({ ...v, steps: v.steps + 1 }));
 }
-// pinHeight — keep the group chip row pinned directly *under* the identity row
-// rather than on top of it. Both rows are sticky to this panel's scroller, and
-// the chip row's offset is the pin's own height, which only a measurement can
-// answer (the identity row grows an error line when a tree hop fails, and its
-// label wraps differently per element). The height is published as a custom
-// property on the panel element and read by `.inspector__touch-tabs`; the
-// module owns the arithmetic and the observation, this is the wiring.
+// pinHeight — keep the section rail and the group chip row pinned in a stack
+// under the identity row rather than on top of it. All three strips are sticky
+// to this panel's scroller, and each one's offset is the measured height of the
+// strips above it, which only a measurement can answer (the identity row grows
+// an error line when a tree hop fails, the rail wraps to two rows on a very
+// narrow viewport, and the label wraps differently per element). The heights are
+// published as custom properties on the panel element and read by
+// `.inspector__styles-jump` and `.inspector__touch-tabs`; the module owns the
+// arithmetic and the observation, this is the wiring.
 //
 // `crumbKey` is the dependency that matters: the pin is remeasured whenever the
 // selected element changes, which is exactly when its content — and therefore
@@ -1246,16 +1273,20 @@ setComputedView((v) => ({ ...v, steps: v.steps + 1 }));
 // predict (a font loading, a rotation re-wrapping the label).
 //
 // `useLayoutEffect`, not `useEffect`: the property has to be on the element
-// *before* the browser paints, or the chip row is positioned with the 44 px
-// fallback for one frame and lands 9 px inside the 53 px identity row. The
-// module's own fallback is one `--tap` row, so the overlap is small, but it is
-// still the two strips painted on top of each other — the exact defect this
-// wiring exists to remove.
+// *before* the browser paints, or a strip is positioned with its fallback for
+// one frame and lands inside the strip above it. The module's own fallbacks are
+// one `--tap` row each, so the overlap is small, but it is still two strips
+// painted on top of each other — the exact defect this wiring exists to remove.
 useLayoutEffect(() => {
 const panel = panelRef.current;
 if (!panel) return undefined;
-const apply = () => applyPinHeight(panel, pinRef.current);
-return watchPin(pinRef.current, apply);
+const apply = () => {
+applyPinHeight(panel, pinRef.current);
+applyRailHeight(panel, railRef.current);
+};
+const stopPin = watchPin(pinRef.current, apply);
+const stopRail = watchPin(railRef.current, apply);
+return () => { stopPin(); stopRail(); };
 }, [crumbsKey, error]);
 // shotSerial — only the newest capture may write to state. Picks, applies,
 // and manual refreshes can overlap, and a slow capture for a previously
@@ -2050,15 +2081,17 @@ copyStatus
 : null
 ),
 valueEditor,
-// Section jump menu — a row of chips that scrolls to each named section. On a
-// phone the panel is five sections deep (controls, declared, rules, computed),
-// and reaching "Computed" from the top is a 2 000 px drag. Each chip is a 44 px
-// tap target that smooth-scrolls its section to the top of the panel's
-// scroller, offset by the pinned identity row so the section heading is the
-// first thing on screen. The chips wrap rather than scrolling sideways: there
-// are at most five, and a horizontal scroller for five chips is a gesture the
-// user has to discover.
-h('div', { class: 'inspector__styles-jump', role: 'navigation', 'aria-label': 'Jump to section' },
+// Section rail — a row of chips pinned under the identity row that scrolls to
+// each named section. On a phone the panel is five sections deep (controls,
+// declared, rules, computed), and reaching "Computed" from the top is a 2 000 px
+// drag. Each chip is a 44 px tap target that smooth-scrolls its section to the
+// top of the panel's scroller, offset by the pinned chrome so the section
+// heading is the first thing on screen. Pinned rather than scrolled away: the
+// rail is the only way back *up* the panel, and a rail that leaves the screen
+// with the identity row leaves the user with a 1 600 px drag and no landmark.
+// The chips wrap rather than scrolling sideways: a horizontal scroller for five
+// chips is a gesture the user has to discover, and it drags the panel off-centre.
+h('div', { class: 'inspector__styles-jump', ref: railRef, role: 'navigation', 'aria-label': 'Jump to section' },
 [
 { id: 'controls', label: 'Controls' },
 { id: 'declared', label: 'Declared' },

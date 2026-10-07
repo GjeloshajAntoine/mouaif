@@ -162,22 +162,42 @@ check('the panel wires the pin ref and the measurement',
   && /class: 'inspector__styles-pin', ref: pinRef/.test(panelSource)
   && /applyPinHeight\(panel, pinRef\.current\)/.test(panelSource)
   && /watchPin\(pinRef\.current, apply\)/.test(panelSource));
+check('the panel wires the rail ref and its own measurement',
+  /const railRef = useRef\(null\)/.test(panelSource)
+  && /ref: railRef/.test(panelSource)
+  && /applyRailHeight\(panel, railRef\.current\)/.test(panelSource)
+  && /watchPin\(railRef\.current, apply\)/.test(panelSource));
+check('the rail property is the one the chip row subtracts',
+  mod.RAIL_HEIGHT_VAR === '--insp-rail-h'
+  && /var\(--insp-rail-h,\s*53px\)/.test(ruleBody(touchCss, '.inspector__touch-tabs'))
+  && !/var\(--insp-rail-h/.test(ruleBody(stylesCss, '.inspector__styles-jump')));
+check('the rail has a one-row fallback for the frame before measurement',
+  mod.RAIL_HEIGHT_FALLBACK === '53px');
 check('the pin is re-measured when the selected element changes',
   /\}, \[crumbsKey, error\]\)/.test(panelSource));
-// The property has to be on the element before the browser paints, or the chip
-// row is laid out with the fallback for one frame and lands 9 px inside the
-// identity row — the two strips painted on top of each other, which is the
-// defect this wiring removes.
+// The property has to be on the element before the browser paints, or a strip is
+// laid out with its fallback for one frame and lands inside the strip above it —
+// the two strips painted on top of each other, which is the defect this wiring
+// removes.
 check('the measurement runs before paint, not after',
-  /useLayoutEffect\(\(\) => \{\s*const panel = panelRef\.current;\s*if \(!panel\) return undefined;\s*const apply = \(\) => applyPinHeight/.test(panelSource)
+  /useLayoutEffect\(\(\) => \{\s*const panel = panelRef\.current;\s*if \(!panel\) return undefined;\s*const apply = \(\) => \{/.test(panelSource)
   && /useLayoutEffect,/.test(panelSource));
-check('the chip row pins below the measured pin, into the same scrollport edge',
-  /top:\s*calc\(var\(--insp-pin-h,\s*44px\)\s*-\s*6px\)/.test(ruleBody(touchCss, '.inspector__touch-tabs')));
+// Three strips now pin, each below the one above it: the identity row, the
+// section rail, and the group chip row. Every offset is written in terms of the
+// measured heights of the strips above it, so a turned-on rail does not land on
+// top of the chip row (or the chip row on top of the rail).
+check('the section rail pins below the measured identity row',
+  /position:\s*sticky/.test(ruleBody(stylesCss, '.inspector__styles-jump'))
+  && /top:\s*calc\(var\(--insp-pin-h,\s*44px\)\s*-\s*6px\)/.test(ruleBody(stylesCss, '.inspector__styles-jump')));
+check('the chip row pins below both measured strips, into the same scrollport edge',
+  /top:\s*calc\(var\(--insp-pin-h,\s*44px\)\s*\+\s*var\(--insp-rail-h,\s*53px\)\s*-\s*6px\)/
+    .test(ruleBody(touchCss, '.inspector__touch-tabs')));
 check('the pin cancels the same 6 px of panel padding',
   /top:\s*-6px/.test(ruleBody(stylesCss, '.inspector__panel-body .inspector__styles-pin')));
-check('the identity row paints over the chip row, not the other way round',
+check('the stack paints in order: identity over rail over chip row',
   /z-index:\s*4/.test(ruleBody(stylesCss, '.inspector__panel-body .inspector__styles-pin'))
-  && /z-index:\s*3/.test(ruleBody(touchCss, '.inspector__touch-tabs')));
+  && /z-index:\s*3/.test(ruleBody(stylesCss, '.inspector__styles-jump'))
+  && /z-index:\s*2/.test(ruleBody(touchCss, '.inspector__touch-tabs')));
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 assert.equal(failed, 0, failed + ' pinnedStack assertion(s) failed');
