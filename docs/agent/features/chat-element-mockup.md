@@ -87,8 +87,10 @@ the in-repo record of what it contains and which element each case renders.
     scrolls inside `.app__main`, but a catalogue is one long document scroll —
     without this the page renders at full height yet the window cannot move,
     so a deep link into a late section could not be followed.
-  - a subagent card's nested transcript box is un-clipped: the live box is a
-    bottom-pinned scroller, and a screenshot can only show one scroll position.
+  - a subagent card's nested transcript box: the app caps the panel at
+    `60dvh` and lets it scroll its own content, but a screenshot can only show
+    one scroll position. The mockup un-caps it so the whole delegated
+    conversation is visible in one capture.
   - a **tool card body keeps its 40dvh cap** — that cap is the finding the
     oversized-argument cases document, so it is not opened. `.mock-box--open`
     lifts it (with `!important`, against the app's 0,3,0 rule) for the one

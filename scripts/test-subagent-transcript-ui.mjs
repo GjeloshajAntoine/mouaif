@@ -56,9 +56,26 @@ const bundle = await build({
         const child = head.querySelector(selector).getBoundingClientRect();
         check(child.left >= rect.left && child.right <= rect.right + 1, 'visible ' + selector);
         }
-        check(getComputedStyle(body).maxHeight === 'none', 'unclipped panel');
-        check(getComputedStyle(body).overflowY === 'visible', 'no inner scroll box');
-        check(body.scrollHeight <= body.clientHeight + 1, 'all conversation turns fit the panel');
+        // The panel is capped to a fraction of the viewport and scrolls its
+        // own content, so a long delegated run never grows the card past the
+        // screen. Its scroller is the ONLY one inside the card (below).
+        const panelCap = body.getBoundingClientRect().height;
+        check(panelCap < window.innerHeight, 'bounded panel, not taller than the viewport');
+        if (body.scrollHeight > body.clientHeight) {
+        check(getComputedStyle(body).overflowY === 'auto', 'an overflowing panel scrolls itself');
+        }
+        // No nested scroller: a second scroll box inside the panel swallows
+        // the swipe, so the nested prompt must not carry its own cap.
+        const nestedPrompt = card.querySelector('.chat-msg__system-body');
+        check(!nestedPrompt || (getComputedStyle(nestedPrompt).maxHeight === 'none' && getComputedStyle(nestedPrompt).overflowY === 'visible'), 'no scroll box nested in the panel');
+        // Nothing is clipped away: content taller than the cap is reachable by
+        // scrolling the panel to its bottom, not cut off.
+        if (body.scrollHeight > body.clientHeight) {
+        body.scrollTop = body.scrollHeight;
+        check(body.scrollTop + body.clientHeight >= body.scrollHeight - 1, 'the panel scrolls to the last turn');
+        check(parseFloat(getComputedStyle(body).maxHeight) > 0, 'the panel keeps a positive cap');
+        body.scrollTop = 0;
+        }
         check(root.scrollWidth <= root.clientWidth + 1, 'no horizontal overflow');
         check(!!card.querySelector('.tool-card__image-button img'), 'generated image is zoomable');
         check(!!card.querySelector('.chat-msg--user .chat-msg__attachment-button img'), 'selected input is zoomable');

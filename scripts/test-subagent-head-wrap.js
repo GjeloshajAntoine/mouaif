@@ -185,15 +185,20 @@ function resolveProp(css, node, prop) {
   let winner = null;
   for (const rule of splitRules(css)) {
     if (!rule.selector.includes('.tool-card')) continue;
-    const re = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)');
-    const m = re.exec(rule.body);
-    if (!m) continue;
+    const re = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'g');
+    // CSS keeps the LAST declaration of a property within a rule (the
+    // progressive-enhancement `max-height: 60vh; max-height: 60dvh;` pair
+    // depends on it), so match all of them and take the final one.
+    let m;
+    let value = null;
+    while ((m = re.exec(rule.body))) value = m[1].trim();
+    if (value == null) continue;
     for (const one of splitTopLevel(rule.selector, ',')) {
       const compounds = parseSelector(one.trim());
       if (!compounds.length) continue;
       if (!selectorMatches(node, compounds)) continue;
       const spec = selectorSpecificity(compounds);
-      if (!winner || spec >= winner.spec) winner = { spec, value: m[1].trim(), selector: one.trim() };
+      if (!winner || spec >= winner.spec) winner = { spec, value, selector: one.trim() };
     }
   }
   return winner;
@@ -270,13 +275,39 @@ function main() {
       valueOf(css, head, 'flex-wrap') === '(unset)', valueOf(css, head, 'flex-wrap'));
   }
 
-  // ---- 4. Full conversation, without a second scroll box -------------
+  // ---- 4. Bounded conversation panel, one scroller -------------------
+  //
+  // The panel used to be uncapped (`max-height: none`) so the main
+  // transcript owned every scroll. A long delegated run then grew the card
+  // past the viewport with no way back to the rest of the conversation, so
+  // the panel now carries the cap and is the ONE scroller inside the card:
+  // the nested prompt's own 50dvh scroller is neutralised below it, because
+  // a second box inside the first swallowed the swipe.
   const expandedCard = modelNode('div', ['tool-card', 'tool-card--subagent', 'is-expanded']);
   const body = modelNode('div', ['tool-card__body'], expandedCard);
-  check('the delegated conversation is not height-clipped',
-    valueOf(css, body, 'max-height') === 'none', valueOf(css, body, 'max-height'));
-  check('the delegated panel does not own scrolling',
-    valueOf(css, body, 'overflow') === 'visible', valueOf(css, body, 'overflow'));
+  check('the delegated panel is height-capped',
+    valueOf(css, body, 'max-height') === '60dvh', valueOf(css, body, 'max-height'));
+  check('the panel cap uses dvh, not vh',
+    valueOf(css, body, 'max-height').endsWith('dvh'), valueOf(css, body, 'max-height'));
+  check('the delegated panel owns the card\'s scrolling',
+    valueOf(css, body, 'overflow-y') === 'auto', valueOf(css, body, 'overflow-y'));
+  // A cap must sit next to the selector that WINS, or it silently loses the
+  // cascade to the generic expanded-body rule. Both the cap and the panel
+  // surface live on the `.tool-card`-qualified selector for that reason.
+  const shortSelectorRule = /(?:^|\})\s*\.tool-card--subagent \.tool-card__body\s*\{([^}]*)\}/m.exec(css);
+  check('the subagent panel rules are not split across two selectors',
+    !shortSelectorRule || !/max-height|overflow-y/.test(shortSelectorRule[1]),
+    shortSelectorRule ? shortSelectorRule[1].trim() : 'no shorter selector');
+  // The nested prompt must not nest a scroller inside the panel's own. The
+  // modelled row keeps its `.chat-msg--system` wrapper, so the override has
+  // to beat chat-transcript.css's own 50dvh rule at equal specificity by
+  // source order (tool-cards.css is imported after it in style.css).
+  const sysRow = modelNode('div', ['chat-msg', 'chat-msg--system', 'tool-card__subagent-msg'], body);
+  const nestedPrompt = modelNode('pre', ['chat-msg__system-body'], sysRow);
+  check('the nested prompt does not nest a second scroller',
+    valueOf(css, nestedPrompt, 'overflow') === 'visible', valueOf(css, nestedPrompt, 'overflow'));
+  check('the nested prompt is not height-clipped inside the panel',
+    valueOf(css, nestedPrompt, 'max-height') === 'none', valueOf(css, nestedPrompt, 'max-height'));
   const genericCard = modelNode('div', ['tool-card', 'is-expanded']);
   const genericBody = modelNode('div', ['tool-card__body'], genericCard);
   check('other tool outputs retain their height cap',

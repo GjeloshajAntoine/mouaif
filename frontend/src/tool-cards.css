@@ -427,21 +427,51 @@ color: var(--fg-soft);
    owned by the generic rules above (`:not(.is-expanded) … { display: none }`
    / `.is-expanded … { display: block }`); a `display: block` here
    out-specified the hide rule and welded the body open, so collapsing a
-   subagent card changed nothing on screen. */
+   subagent card changed nothing on screen.
+
+   The `.tool-card` qualifier (0,3,0) is also what makes the height cap
+   below the one that WINS. It is deliberately more specific than a plain
+   `.tool-card--subagent .tool-card__body` (0,2,0), so a cap written on the
+   shorter selector — the obvious place to put one — silently lost the
+   cascade and the panel stayed uncapped however large the value. Change
+   the cap HERE, next to the panel it belongs to, or it will not apply. */
 .tool-card.tool-card--subagent .tool-card__body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 4px 6px;
-  /* The main transcript owns scrolling, just like the mockup. A short
-     bottom-pinned inner scroller hid the prompt and intermediate turns. */
-  max-height: none;
-  overflow: visible;
+  /* One delegated run is bounded, however long it runs. Uncapped, a run
+     with twenty rounds grew the card past the viewport and pushed the rest
+     of the transcript off screen — the card the user was reading about had
+     no top or bottom in sight. The cap is generous (most runs fit whole)
+     and scrolls past it, so the panel is a window onto the run rather than
+     a document header. `dvh` (not `vh`) so the mobile URL bar does not
+     shrink it under the finger, with a `vh` line first for old engines. */
+  max-height: 60vh;
+  max-height: 60dvh;
+  overflow-y: auto;
+  /* No `overscroll-behavior: contain` here, unlike the bounded option lists
+     elsewhere: this is a content panel, not a menu. A swipe that reaches the
+     end of the run chains into the transcript, so the user is never stuck
+     re-swiping to carry on down the chat. */
+  -webkit-overflow-scrolling: touch;
   white-space: normal;
   font-size: 0.72rem;
   line-height: 1.4;
 }
 .tool-card--subagent .tool-card__body:empty { display: none; }
+/* The nested prompt folds to its own 50dvh scroller in the top-level
+   transcript. Inside a subagent card that would nest a second scroll box in
+   the panel's own scroller: a swipe started on the prompt moved the prompt
+   and never reached the rest of the run. The panel's cap is the single
+   scroller here, so the prompt grows inside it and scrolls with it. The
+   `.tool-card` qualifier is what beats chat-transcript.css's own
+   `.chat-msg--system .chat-msg__system-body` rule rather than relying on
+   this file being imported after it. */
+.tool-card.tool-card--subagent .chat-msg__system-body {
+  max-height: none;
+  overflow: visible;
+}
 
 .tool-card__subagent-live {
   display: flex;

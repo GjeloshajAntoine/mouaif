@@ -143,12 +143,24 @@ ellipsize to keep the cost and status visible on phones. The full agent name
 and task are readable in the nested system/user rows, without a hover tooltip.
 The header tap target remains at least 44 px tall.
 
-The expanded conversation panel grows with its content rather than clipping
-the run into a short, bottom-pinned inner scroller. Scroll the main chat to
-read the prompt, intermediate turns and final answer. Nested message rows use
-the panel's full width, with user bubbles on the right and assistant bubbles
-on the left; short replies no longer collapse into narrow text columns.
-Tool previews keep their independent fold controls.
+The expanded conversation panel is **bounded to 60% of the viewport height**
+and scrolls its own content past that. Before, the panel grew without limit:
+a delegated run with twenty tool rounds produced a card taller than the
+screen, so the rest of the chat (and the head of the card itself) was pushed
+out of reach and there was no way back except scrolling the whole transcript
+past a single message. The cap is generous enough that a typical run still
+fits whole, and past it the panel becomes a window onto the run. The nested
+system prompt is a `<pre>` that carries its own `50dvh` scroller in the
+top-level transcript (`.chat-msg--system .chat-msg__system-body` in
+`frontend/src/chat-transcript.css`); inside a subagent card that cap is
+removed, because a second scroll box nested in the panel's own swallowed the
+swipe — a drag started on the prompt moved the prompt and never reached the
+turns below it. Reaching the end of the run chains the swipe into the main
+transcript rather than trapping it.
+
+Nested message rows use the panel's full width, with user bubbles on the
+right and assistant bubbles on the left; short replies no longer collapse
+into narrow text columns. Tool previews keep their independent fold controls.
 
 Regression checks: `scripts/test-subagent-head-wrap.js` and
 `scripts/test-subagent-transcript-ui.mjs`.
