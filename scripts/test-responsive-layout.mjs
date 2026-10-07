@@ -103,9 +103,13 @@ try {
       navFloat: navEl ? getComputedStyle(navEl).position : null,
       navButtons: [...document.querySelectorAll('.chat-view__nav-btn')].filter(button => button.getClientRects().length).map(button => {
       const r = button.getBoundingClientRect();
+      // The ::before grows the hit area past the painted 26px control.
+      const before = getComputedStyle(button, '::before');
+      const insetX = parseFloat(before.left) + parseFloat(before.right);
+      const insetY = parseFloat(before.top) + parseFloat(before.bottom);
       return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height,
       tabIndex: button.tabIndex, disabled: button.disabled, text: button.textContent,
-      hit: { width: r.width, height: r.height } };
+      hit: { width: r.width - insetX, height: r.height - insetY } };
       }),
       preview: rect('.webpreview-dock'),
       overflow: main.scrollWidth - main.clientWidth };
@@ -168,10 +172,11 @@ try {
         assert.ok(layout.nav.bottom <= layout.composer.top + 1, 'navigation stays above the composer');
         assert.equal(layout.navButtons.length, 2, 'pinned history keeps Prev and Next in fixed slots');
         assert.equal(layout.navButtons[1].disabled, true, 'Next is disabled while following latest');
-        assert.equal(layout.navButtons[0].text, 'Prev', 'previous message has a visible label');
-        assert.equal(layout.navButtons[1].text, 'Next', 'next message has a visible label');
+        assert.equal(layout.navButtons[0].text, '', 'previous message carries no visible label');
+        assert.equal(layout.navButtons[1].text, '', 'next message carries no visible label');
         for (const button of layout.navButtons) {
         assert.ok(button.hit.width >= 44 && button.hit.height >= 44, 'navigation has a visible 44px hit area');
+        assert.ok(button.width < 44 && button.height < 44, 'the painted control stays small so it covers little text');
         assert.equal(button.tabIndex, 0, 'navigation buttons support keyboard focus');
         assert.ok(button.left >= 0 && button.right <= width, 'navigation targets stay inside the viewport');
         }
@@ -228,9 +233,11 @@ try {
         inside: nr.top >= transcript.getBoundingClientRect().top - 1 && nr.bottom <= transcript.getBoundingClientRect().bottom + 1,
         buttons: buttons.map(button => {
         const r = button.getBoundingClientRect();
+        const before = getComputedStyle(button, '::before');
         return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height,
         disabled: button.disabled, text: button.textContent,
-        hitW: r.width, hitH: r.height,
+        hitW: r.width - parseFloat(before.left) - parseFloat(before.right),
+        hitH: r.height - parseFloat(before.top) - parseFloat(before.bottom),
         hit: button.contains(document.elementFromPoint(r.left + 2, r.top + r.height / 2)) };
         }) };
         })()`);
@@ -245,7 +252,7 @@ try {
         assert.ok(Math.abs(historyNav.buttons[i].left - layout.navButtons[i].left) < 1, 'message target stays at the same horizontal position');
         }
         assert.equal(historyNav.buttons[1].disabled, false, 'Next enables in history');
-        assert.equal(historyNav.buttons[2].text, 'Latest99+', 'Latest is labelled even with an unread badge');
+        assert.equal(historyNav.buttons[2].text, '99+', 'the unread badge is the only text on Latest');
         assert.ok(historyNav.inside, 'the rail stays inside the transcript box');
         for (let i = 0; i < historyNav.buttons.length; i++) {
         const button = historyNav.buttons[i];

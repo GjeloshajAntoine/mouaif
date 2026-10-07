@@ -563,8 +563,10 @@ h('div', { class: 'chat-view__transcript-box' },
 h('div', { ref: refs.transcript, class: 'chat-view__transcript', tabIndex: 0, 'aria-label': 'Chat transcript', 'aria-live': 'polite' }),
 // Fixed message-navigation row, with a separate Latest slot above it.
 // scroll.js updates pin state imperatively, without rerendering on scroll.
-// The transcript and buttons are keyboard-accessible: Space scrolls a
-// focused transcript and activates a focused navigation button.
+// The controls are glyph-only: they stay small (26px, via --tap-xs) and
+// carry their meaning in aria-label/title, which the CSS grows to a 44px
+// hit area. The transcript and buttons are keyboard-accessible: Space
+// scrolls a focused transcript and activates a focused navigation button.
 h('nav', { ref: refs.scrollNav, class: 'chat-view__scroll-nav', 'data-mode': 'pinned', hidden: true, 'aria-label': 'Transcript navigation' },
 h('button', {
   class: 'chat-view__nav-btn chat-view__nav-btn--prev',
@@ -575,8 +577,7 @@ h('button', {
   },
       h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
         h('path', { d: 'M12 7.5 19.5 15l-1.4 1.4-6.1-6.1-6.1 6.1L4.5 15 12 7.5Z', fill: 'currentColor' })
-      ),
-      h('span', {}, 'Prev')
+      )
     ),
 h('button', {
   class: 'chat-view__nav-btn chat-view__nav-btn--next',
@@ -588,8 +589,7 @@ h('button', {
   },
       h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
         h('path', { d: 'M12 16.5 4.5 9l1.4-1.4 6.1 6.1 6.1-6.1L19.5 9 12 16.5Z', fill: 'currentColor' })
-      ),
-      h('span', {}, 'Next')
+      )
     ),
 h('button', {
 ref: refs.jumpBtn,
@@ -603,7 +603,8 @@ ref: refs.jumpBtn,
       h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
         h('path', { d: 'M12 13.5 4.5 6l1.4-1.4 6.1 6.1 6.1-6.1L19.5 6 12 13.5ZM4.5 17.5h15v2h-15z', fill: 'currentColor' })
       ),
-h('span', {}, 'Latest'),
+// Unread badge, the control's only text. It widens the pill leftwards,
+// away from the fixed Prev / Next slots.
 h('span', { class: 'chat-view__jump-count' }, '')
 )
 )

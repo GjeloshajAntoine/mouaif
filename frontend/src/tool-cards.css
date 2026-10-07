@@ -628,9 +628,9 @@ color: var(--fg-soft);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Keep a latest progress row's percentage clear of the labelled scroll
-  controls (two 3.5rem columns, their gap, and the rail's edge inset). */
-.chat-view__transcript > .tool-card--progress { padding-right: calc(7.25rem + 10px + env(safe-area-inset-right, 0px)); }
+/* Keep a latest progress row's percentage clear of the scroll controls
+  (two 44px columns, their gap, and the rail's edge inset). */
+.chat-view__transcript > .tool-card--progress { padding-right: calc(88px + 0.5rem + 10px + env(safe-area-inset-right, 0px)); }
 
 .tool-card__progress-row {
   display: flex;

@@ -502,16 +502,22 @@
    bar costs reading height on every phone and reads as a second
    toolbar wedged between the messages and the composer.
 
-   Only "previous" shows while pinned; reading history adds "next" and
-   "bottom" (with the count of rows that arrived meanwhile).
+  The four slots are fixed: Latest takes the upper row (spanning both
+  columns), Previous and Next keep the lower row, and Next stays
+  rendered but disabled while the transcript follows the reply. Showing
+  Latest or growing its unread badge therefore never moves a
+  message-navigation target under the user's finger.
 
-   Each glyph paints at 26px so it covers little text, and a
-   transparent ::before grows its *hit* area to 44 x 44px without
-   changing what it paints. The controls are stacked vertically, so
-   those expanded areas meet in the gap between them instead of
-   overlapping a neighbour — the one arrangement `.tap-target`
-   documents as safe. Tap-only: the buttons are held out of the tab
-   order (see Chat.jsx), so a tap is the only way in. */
+  Each glyph paints at 26px so it covers little text, and a transparent
+  ::before grows its *hit* area to at least 44 x 44px without changing
+  what it paints. Every grid slot is 44px wide, so those expanded areas
+  fill their own slot and stop 4px short of the neighbour: the one
+  arrangement `.tap-target` documents as safe for side-by-side
+  controls. The row gap equals two hit extensions, so the Latest row
+  above meets the Prev/Next row without stealing from it.
+
+  The controls carry no visible text — a glyph plus aria-label/title —
+  and stay in the tab order (see Chat.jsx). */
 
 /* Positioned box around the transcript: takes the transcript's old flex
    slot so the rail below can anchor to the transcript's own edges. */
@@ -529,12 +535,17 @@
   right: max(calc(10px + env(safe-area-inset-right, 0px)), calc((100% - var(--read-max, 44rem)) / 2 + 10px));
   /* Explicit slots keep Prev/Next fixed when Latest appears or its
      unread count grows. The overlay always clears the composer/dock. */
-  bottom: 0.5rem;
+  bottom: 18px;
   z-index: 6;
   display: grid;
-  grid-template-columns: repeat(2, 3.5rem);
-  grid-template-rows: repeat(2, minmax(44px, 2.75rem));
-  gap: 0.25rem;
+  /* 44px columns and rows: the visible control inside each slot is 26px,
+     so a 9px transparent extension on every side still fits inside its
+     own slot instead of reaching into a neighbour's. */
+  grid-auto-columns: 44px;
+  grid-auto-rows: 44px;
+  gap: 0.5rem;
+  justify-items: center;
+  align-items: center;
   pointer-events: none;
 }
 .chat-view__scroll-nav[hidden] { display: none; }
@@ -547,12 +558,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
   box-sizing: border-box;
-  min-width: 44px;
-  min-height: 44px;
-  height: 100%;
-  padding: 0 0.25rem;
+  /* Painted size. `width`/`height` are needed, not just `min-*`: this is a
+     flex item inside the button's own box, and a bare min-size is ignored
+     without a definite size. The hit area comes from ::before below. */
+  width: var(--tap-xs, 26px);
+  height: var(--tap-xs, 26px);
+  padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);
   background: var(--surface-3);
@@ -560,7 +572,7 @@
   box-shadow: var(--shadow-md);
   cursor: pointer;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 600;
   opacity: 0.8;
   -webkit-tap-highlight-color: transparent;
@@ -568,14 +580,33 @@
   transition: transform var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
 .chat-view__nav-btn[hidden] { display: none; }
+/* 44 x 44px hit area around the 26px control (9px on every side). The grid
+   slot is 44px wide and 44px tall, so the extension fills its own slot and
+   stops short of the neighbour's — never an invisible tap stole by Latest. */
+.chat-view__nav-btn::before {
+  content: "";
+  position: absolute;
+  inset: -9px;
+}
 .chat-view__nav-btn:disabled { cursor: default; opacity: 0.45; }
 .chat-view__nav-btn:active:not(:disabled) { transform: scale(0.92); opacity: 1; }
 .chat-view__nav-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; opacity: 1; }
 .chat-view__nav-btn svg { display: block; flex: 0 0 auto; width: 14px; height: 14px; }
-.chat-view__jump { grid-area: 1 / 1 / 2 / 3; opacity: 1; }
+/* Latest spans the whole upper row. It is the only control that carries
+   text — the unread badge — so it widens inside its row instead of
+   staying a fixed 26px pill. */
+.chat-view__jump {
+  grid-area: 1 / 1 / 2 / 3;
+  gap: 3px;
+  width: auto;
+  min-width: var(--tap-xs, 26px);
+  padding: 0 6px;
+  opacity: 1;
+}
 .chat-view__transcript:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .chat-view__jump-count:empty { display: none; }
 .chat-view__jump-count {
   color: var(--fg);
+  font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
 }
