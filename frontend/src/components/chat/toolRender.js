@@ -721,6 +721,62 @@ export function renderFileBatchToolResult(body, r, name) {
   }
 }
 
+// renderGroupCliToolResult(body, r, args)
+//
+// The expanded body of a `group_cli` batch: one section per command, in
+// entry order, each with its own status line and terminal output — the same
+// shape the grouped file tools use for their per-entry sections, so a batch
+// reads the same way whichever kind of work it grouped. A still-running
+// background entry gets a hint instead of output, because its output lives
+// in the log file the section names.
+function renderGroupCliToolResult(body, r, args) {
+  body.classList.add('tool-preview', 'tool-preview--terminal');
+  if (typeof r === 'string') r = coerceToolResult(r, 'group_cli');
+  if (!r || r.error) {
+    if (args != null) {
+      const block = buildToolArgs(args, 'group_cli');
+      if (block) body.appendChild(block);
+    }
+    return renderPreviewPre(body, formatReadableToolResult(r), 'tool-preview__pre');
+  }
+  const results = Array.isArray(r.results) ? r.results : [];
+  renderToolMeta(body, [
+    (r.succeededCount || 0) + ' succeeded',
+    (r.failedCount || 0) + ' failed',
+    r.runningCount ? r.runningCount + ' running' : null,
+    r.durationMs != null ? r.durationMs + 'ms' : null
+  ]);
+  if (!results.length) return renderPreviewPre(body, '(no entries)', 'tool-preview__pre');
+  for (const entry of results) {
+    const section = document.createElement('div');
+    section.className = 'tool-preview__batch-entry';
+    body.appendChild(section);
+    const result = entry.result || {};
+    const head = (entry.index + 1) + '. ' + (entry.label || entry.cmd || 'command');
+    if (result.async === true && result.status === 'running') {
+      renderToolMeta(section, [head, 'background', result.pid != null ? 'pid ' + result.pid : null]);
+      renderPreviewPre(section, 'Running in the background. Output: '
+        + (result.logPath || 'log unavailable') + '\nRead it with read_file when you need it.',
+      'tool-preview__pre');
+      continue;
+    }
+    if (!entry.ok) {
+      renderToolMeta(section, [head, 'failed']);
+      renderPreviewPre(section, formatReadableToolResult(result.error ? { error: result.error } : result), 'tool-preview__pre');
+      if (result.logPath) renderToolMeta(section, ['log: ' + result.logPath]);
+      continue;
+    }
+    renderToolMeta(section, [head, 'exit ' + (result.exitCode ?? 0), result.durationMs != null ? result.durationMs + 'ms' : null]);
+    const out = [];
+    if (result.stdout) out.push(result.stdout);
+    if (result.stderr) {
+      if (result.stdout) out.push('── stderr ──');
+      out.push(result.stderr);
+    }
+    renderPreviewPre(section, out.length ? out.join('\n\n') : '(exit ' + (result.exitCode ?? 0) + ', no output)', 'tool-preview__pre');
+  }
+}
+
 // renderToolResultBody(body, toolResult, isSubagentFn)
 //
 // The dispatcher called by appendToolResultCard in transcript.js.
@@ -742,6 +798,7 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   // render reached through another path still finds them.
   const args = (toolResult && toolResult.args) || (cardTool && cardTool._toolArgs) || null;
   if (name === 'shell') return renderShellToolResult(body, r, args);
+  if (name === 'group_cli') return renderGroupCliToolResult(body, r, args);
   if (name === 'read_file') return renderReadFileToolResult(body, r);
   if (name === 'group_read' || name === 'group_edit') return renderFileBatchToolResult(body, r, name);
   if (name === 'list_files') return renderListFilesToolResult(body, r);
@@ -784,6 +841,7 @@ export {
   imageBlockToElement,
   zoomableImage,
   renderShellToolResult,
+  renderGroupCliToolResult,
   renderReadFileToolResult,
   renderReadFileImage,
   openImageLightbox,

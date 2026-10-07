@@ -11,6 +11,8 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Added
 
+- **Grouped CLI tool** — a new native `group_cli` tool runs an ordered list of shell commands in one call and reports every entry's own stdout, stderr, exit code and duration, instead of stopping at the first failure. An entry marked `"async": true` (or a whole call marked `async`) is **started in the background**: the call returns immediately with a pid and a log path under the project's `.mouaif/logs/`, the command keeps running, and later entries can run while it is up. Each entry reuses the single shell runner, so the working folder, interpreter resolution, environment denylist and output cap cannot drift from a `shell` call, and the live preview streams per entry. It is a leaf of the `mouaif` tool family and ships with [its own doc](docs/features/grouped-cli-tool.md).
+
 - **Built-in `mouaif-config` skill** — the app now ships one skill of its own, so a project with no `.agents/skills` still has something to activate. It teaches the assistant to read and change a project's configuration through `get_settings` / `update_settings`: which settings key lives at app or project scope, the provider ids a project model may reference and which of them are key-based versus plan sign-ins, agents, the tool-authorization gates with their `off` / `ask` / `allow` modes, and that MCP servers are configured in the app. It appears, toggles and can be disabled like any other skill, and a project's own `.agents/skills/mouaif-config/SKILL.md` replaces it.
 
 ### Changed

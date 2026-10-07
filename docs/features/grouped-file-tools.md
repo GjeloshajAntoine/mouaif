@@ -44,4 +44,4 @@ A group accepts 1–50 replacements. Entries run **in order**, so multiple edits
 
 Results contain ordered `results` entries with `path`, `ok`, and `result`, plus `succeededCount` and `failedCount`. The call reports failure if any entry failed, while retaining all successful results. Expanded cards stack each file's content, image, diff, or error; collapsed cards show success/failure counts. These previews also work in nested agent transcripts.
 
-See also [Native file tools](./file-tools.md) and [Tool authorization](./tool-authorization.md).
+See also [Native file tools](./file-tools.md), [Grouped CLI tool](./grouped-cli-tool.md) (the same batch contract for shell commands, with a background mode), and [Tool authorization](./tool-authorization.md).

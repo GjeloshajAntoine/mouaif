@@ -54,7 +54,8 @@
       "list_projects",
       "get_app_info",
       "restart_app",
-      "list_features"
+      "list_features",
+      "group_cli"
     ]
   },
   {

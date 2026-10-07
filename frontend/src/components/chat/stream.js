@@ -748,7 +748,8 @@ export function startStreamRecovery(state, refs, partialText) {
   // hint the user sees a spinner with zero output and no feedback.
   if (refs.transcript && refs.transcript.current) {
     const shellCards = refs.transcript.current.querySelectorAll(
-      '.tool-card--call[data-tool-name="shell"]:not(.tool-card--result) .tool-card__shell-live-hint'
+      '.tool-card--call[data-tool-name="shell"]:not(.tool-card--result) .tool-card__shell-live-hint, '
+      + '.tool-card--call[data-tool-name="group_cli"]:not(.tool-card--result) .tool-card__shell-live-hint'
     );
     for (const hint of shellCards) {
       hint.textContent = 'Reconnecting — waiting for output…';

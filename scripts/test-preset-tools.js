@@ -59,9 +59,9 @@ const {
   PRESET_DEFAULT_OFF_TOOLS, presetDefaultSelection, presetToolSelection, commitTools, applyToolToggle
 } = m.exports;
 
-// The full rendered set, grouped tools included. The two grouped tools are
-// the default-off family under test.
-const DEFAULT_OFF = ['group_read', 'group_edit'];
+// The full rendered set, grouped tools included. The grouped tools — file
+// batches and the grouped CLI batch — are the default-off family under test.
+const DEFAULT_OFF = ['group_read', 'group_edit', 'group_cli'];
 const ALL = ['shell', 'subagent', 'report_progress', 'task', 'ask_user', 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file', ...DEFAULT_OFF];
 const SINGLES = ALL.filter((n) => !DEFAULT_OFF.includes(n));
 
@@ -74,8 +74,8 @@ const isOn = (selection, name) => {
 
 // 1. The default-off rule: the grouped tools are the only ones the baseline
 //    leaves unchecked.
-check('the default-off family is exactly the grouped file tools', () => {
-  assert.deepEqual(PRESET_DEFAULT_OFF_TOOLS, ['group_read', 'group_edit']);
+check('the default-off family is exactly the grouped tools', () => {
+  assert.deepEqual(PRESET_DEFAULT_OFF_TOOLS, ['group_read', 'group_edit', 'group_cli']);
 });
 
 check('the baseline excludes the grouped tools and includes everything else', () => {

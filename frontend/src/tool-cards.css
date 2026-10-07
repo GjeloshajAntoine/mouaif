@@ -702,6 +702,20 @@ color: var(--fg-soft);
 .tool-preview--list { gap: 1px; }
 .tool-preview--diff { gap: 1px; }
 .tool-preview--terminal { gap: 1px; }
+/* One entry of a grouped CLI batch (see renderGroupCliToolResult): the
+   entry's status line, then its terminal output, as a section of the batch
+   with a hairline between entries. Without the divider a four-command batch
+   read as one undifferentiated terminal block and no output could be
+   attributed to the command that produced it. The batch's own meta line
+   (succeeded / failed / running) is the outer `tool-preview__meta`. */
+.tool-preview__batch-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+.tool-preview__batch-entry:first-of-type { border-top: 0; padding-top: 0; }
 /* A shell card that shows a command AND its output is ONE visible terminal.
    The surface (background, border, radius, padding) lives on the card body
    and both sections inside it are transparent, so the card reads as a single

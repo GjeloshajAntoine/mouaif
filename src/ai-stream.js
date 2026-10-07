@@ -236,6 +236,17 @@ async function runSingleToolCall(c, cx) {
       let workingFolderDestination;
       if (c.name === 'shell') summary = (args && args.cmd) || '';
       else if (c.name === 'subagent') summary = (args && args.task) || '';
+      else if (c.name === 'group_cli') {
+      // One line per command so the approval card shows the whole batch,
+      // not just its first entry — the user is approving every command.
+      const commands = args && Array.isArray(args.commands) ? args.commands : [];
+      summary = commands.map((entry, index) => {
+      const cmd = entry && (typeof entry.cmd === 'string' ? entry.cmd : entry.command);
+      const background = entry && entry.async === true;
+      return (index + 1) + '. ' + (typeof cmd === 'string' && cmd.trim() ? cmd.trim() : '(missing cmd)')
+        + (background ? '  [background]' : '');
+      }).join('\n');
+      }
       else if (c.name === 'change_working_folder') {
       const prepared = require('./chatWorkingFolder.js').prepareChange(opts.projectDir, opts.chatId, args, opts.workspaceChatId);
       summary = prepared.summary;
@@ -526,6 +537,11 @@ async function streamChat(opts) {
 catch { /* task tool module unavailable; skip */ }
 try { toolSpecs.push(require('./tools/restart.js').SPEC); }
 catch { /* restart tool module unavailable; skip */ }
+// Native grouped CLI tool: an ordered batch of shell commands in one call,
+// with a per-entry background (`async`) mode. Same authorization family as
+// the app tools (`mouaif`), so it is advertised and hidden with them.
+try { toolSpecs.push(require('./tools/groupCli.js').SPEC); }
+catch { /* group CLI tool module unavailable; skip */ }
 // Ordinary native tools for chats, attachments, settings and projects.
 try { toolSpecs.push(...Object.values(require('./tools/mouaif.js').SPECS)); }
 catch { /* mouaif tool module unavailable; skip */ }
@@ -1447,7 +1463,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     // including delegated tools. Never replace projectDir for permissions,
     // settings, MCP connections, attachments inventory or chat persistence.
     let workingDir;
-    if (name === 'shell' || require('./tools/files.js').isFileToolName(name)) {
+    if (name === 'shell' || name === 'group_cli' || require('./tools/files.js').isFileToolName(name)) {
       try { workingDir = require('./chatWorkingFolder.js').resolveForCall(callOpts.projectDir, callOpts.chatId, callOpts.workspaceChatId); }
       catch (e) {
         const result = { ok: false, code: e.code || 'EBADPATH', error: e.message };
@@ -1560,20 +1576,63 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     }
 
     // Native app restart tool. Authorization is handled by the shared gate;
-// this dispatcher schedules the graceful relaunch after its result has had
-// time to flush through the current chat stream.
-if (name === 'restart_app') {
-try {
-return require('./tools/restart.js').runRestart(args, {
-lifecycle: callOpts && callOpts.lifecycle
-});
-} catch (e) {
-const r = { error: { code: e.code || 'ERESTART', message: e.message || String(e) } };
-return { ok: false, content: JSON.stringify(r), result: r };
-}
-}
-// Native subagent tool. It delegates to the same model with the same
-// project tool surface, including MCP. The nested call intentionally omits
+  // this dispatcher schedules the graceful relaunch after its result has had
+  // time to flush through the current chat stream.
+  if (name === 'restart_app') {
+  try {
+  return require('./tools/restart.js').runRestart(args, {
+  lifecycle: callOpts && callOpts.lifecycle
+  });
+  } catch (e) {
+  const r = { error: { code: e.code || 'ERESTART', message: e.message || String(e) } };
+  return { ok: false, content: JSON.stringify(r), result: r };
+  }
+  }
+  // Native grouped CLI tool: many shell commands in one call, entries in
+  // order, an entry with `async: true` started in the background. It shares
+  // the single shell runner, so an entry behaves exactly like a `shell` call
+  // (same sandbox, same timeout clamp, same output cap) and the live
+  // `shell_output` preview streams per entry with its index attached.
+  if (name === 'group_cli') {
+  try {
+  const groupCli = require('./tools/groupCli.js');
+  const parentOnEvent = callOpts && callOpts.onEvent;
+  const callId = callOpts && callOpts.callId;
+  const out = await groupCli.runGroupCli({
+  projectDir: workingDir,
+  args,
+  signal: callOpts && callOpts.signal,
+  // Clamped by the authorization gate against the project's
+  // maxTimeoutMs: it is the whole batch's budget, not one command's.
+  toolTimeoutMs: (callOpts && callOpts.toolTimeoutMs != null) ? callOpts.toolTimeoutMs : (args && args.timeoutMs),
+  onOutput: typeof parentOnEvent === 'function'
+  ? (stream, delta, entry) => {
+    try {
+    parentOnEvent('shell_output', { id: callId || null, stream, delta, index: entry && entry.index, label: entry && entry.label, cmd: entry && entry.cmd });
+    if (callOpts && callOpts.nestedSubagent) {
+      parentOnEvent('subagent_event', {
+      parentCallId: callOpts.callId || null,
+      kind: 'shell_output',
+      data: { id: callId || null, stream, delta, index: entry && entry.index, label: entry && entry.label, cmd: entry && entry.cmd }
+      });
+    }
+    } catch { /* preview is best-effort */ }
+  }
+  : null
+  });
+  return {
+  ok: out.failedCount === 0,
+  content: '# mouaif group_cli · ' + groupCli.formatGroupCliResult(out),
+  result: out
+  };
+  } catch (e) {
+  const code = e.code || 'EGROUPCLI';
+  const r = { ok: false, code, error: { code, message: e.message || String(e) } };
+  return { ok: false, content: JSON.stringify(r), result: r };
+  }
+  }
+  // Native subagent tool. It delegates to the same model with the same
+  // project tool surface, including MCP. The nested call intentionally omits
 
     // only `subagent` itself to avoid unbounded recursive delegation loops.
     // Authorization uses the parent chat id so the existing chat popup/card is

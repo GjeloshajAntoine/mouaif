@@ -33,12 +33,12 @@
 // set on the first uncheck, the same move the chat Tools card makes when
 // `chat.tools` is null (frontend/src/components/chat/cards.js).
 
-// Tools the preset tree leaves unchecked on a fresh prompt. The grouped file
+// Tools the preset tree leaves unchecked on a fresh prompt. The grouped
 // operations are opt-in: a preset is expected to advertise the single-file
-// tools, and a chat that wants the batch tools checks them on. Kept here so
-// the rule has one home (rendering, first-uncheck snapshot, and the
-// collapse-to-baseline step all read it).
-export const PRESET_DEFAULT_OFF_TOOLS = ['group_read', 'group_edit'];
+// and single-command tools, and a chat that wants the batches checks them
+// on. Kept here so the rule has one home (rendering, first-uncheck
+// snapshot, and the collapse-to-baseline step all read it).
+export const PRESET_DEFAULT_OFF_TOOLS = ['group_read', 'group_edit', 'group_cli'];
 
 // presetDefaultSelection(allIds, defaultOff) -> string[]
 //

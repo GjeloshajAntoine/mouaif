@@ -33,7 +33,10 @@ const ENV_DENYLIST = [
   'NODE_OPTIONS'
 ];
 
-// Live children, reaped on parent exit.
+// Live children, reaped on parent exit. `runShell` registers its child
+// here directly; a batch runner (src/tools/groupCli.js) registers a whole
+// batch through registerLiveChild/clearLiveChild so one live set covers
+// every native command mouaif spawns.
 const liveChildren = new Set();
 let exitHooked = false;
 function hookExit() {
@@ -48,6 +51,17 @@ function hookExit() {
   process.on('exit', reap);
   process.on('SIGINT', () => { reap(); process.exit(130); });
   process.on('SIGTERM', () => { reap(); process.exit(143); });
+}
+
+// Track one spawned child until it settles. Exported so a runner that
+// cannot use runShell (the background half of the batch tool) is reaped
+// by the same exit hook instead of leaking on a server shutdown.
+function registerLiveChild(child) {
+  hookExit();
+  liveChildren.add(child);
+}
+function clearLiveChild(child) {
+  liveChildren.delete(child);
 }
 
 // Human-readable label for the platform shell ("PowerShell 7 (pwsh)",
@@ -171,6 +185,52 @@ function platformShell() {
   return { file: process.env.SHELL || '/bin/sh', flags: ['-c'], wrapQuotes: false, verbatim: false };
 }
 
+// resolveShellPlan(cmd, shellOverride) -> { ok, file, args, identity }
+//                                         | { ok: false, error, code }
+//
+// Resolve the exact argv one command runs under, plus the identity line
+// naming the interpreter. `runShell` and the grouped `group_cli` runner
+// both go through this, so a batch entry runs byte-for-byte like a single
+// shell call — the flags, the cmd.exe wrapper quoting and the validation
+// of the optional interpreter override cannot drift between the two.
+function resolveShellPlan(cmd, shellOverrideRaw) {
+  // Optional explicit interpreter override (Windows: cmd.exe / pwsh /
+  // powershell.exe; POSIX: a path to a sh-compatible binary). The
+  // override is validated here and reuses the platform flags, so it
+  // cannot turn into an arbitrary-args injection.
+  let shellOverride = typeof shellOverrideRaw === 'string' ? shellOverrideRaw.trim() : '';
+  if (shellOverride && shellOverride !== 'default') {
+    const lower = shellOverride.toLowerCase();
+    const knownWin = ['cmd.exe', 'cmd', 'pwsh.exe', 'pwsh', 'powershell.exe', 'powershell'];
+    if (process.platform === 'win32' && !knownWin.includes(lower)) {
+      return { ok: false, error: 'unsupported shell override on Windows: ' + shellOverride + ' (expected cmd.exe, pwsh, or powershell)', code: 'EBADINPUT', durationMs: 0 };
+    }
+    if (process.platform !== 'win32' && (lower.endsWith('.exe') || lower.includes('\\') || !lower.includes('/'))) {
+      return { ok: false, error: 'unsupported shell override: ' + shellOverride + ' (expected a path to a sh-compatible binary)', code: 'EBADINPUT', durationMs: 0 };
+    }
+  } else {
+    shellOverride = '';
+  }
+  const base = platformShell();
+  const file = shellOverride || base.file;
+  // cmd.exe (and cmd aliases) must keep the wrapper-quote handling;
+  // any POSIX-style interpreter gets the plain `-c` flag path.
+  const isCmd = process.platform === 'win32' && (!shellOverride || ['cmd.exe', 'cmd'].includes(shellOverride.toLowerCase()));
+  const flags = isCmd ? base.flags : ['-c'];
+  const args = flags.concat(isCmd ? '"' + cmd + '"' : cmd);
+  // Identity reflects the interpreter that actually runs the command,
+  // which is the override when one was requested.
+  return {
+    ok: true,
+    file,
+    args,
+    verbatim: isCmd,
+    identity: shellOverride
+      ? 'mouaif shell · ' + osLabel() + ' · ' + shellLabelFor(file)
+      : 'mouaif shell · ' + osLabel() + ' · ' + shellLabel()
+  };
+}
+
 // runShell — execute cmd in projectDir, capturing stdout/stderr.
 // Optional opts.onOutput(stream, delta) fires per decoded output chunk
 // while the command is still running so callers can stream a live
@@ -187,50 +247,25 @@ async function runShell(opts) {
     return { ok: false, error: 'cmd is required', code: 'EBADINPUT', durationMs: 0 };
   }
   // Optional explicit interpreter override (Windows: cmd.exe / pwsh /
-  // powershell.exe; POSIX: a path to a sh-compatible binary). The
-  // override is validated below and reuses the platform flags, so it
-  // cannot turn into an arbitrary-args injection.
-  let shellOverride = opts && typeof opts.shell === 'string' ? opts.shell.trim() : '';
-  if (shellOverride && shellOverride !== 'default') {
-    const lower = shellOverride.toLowerCase();
-    const knownWin = ['cmd.exe', 'cmd', 'pwsh.exe', 'pwsh', 'powershell.exe', 'powershell'];
-    if (process.platform === 'win32' && !knownWin.includes(lower)) {
-      return { ok: false, error: 'unsupported shell override on Windows: ' + shellOverride + ' (expected cmd.exe, pwsh, or powershell)', code: 'EBADINPUT', durationMs: 0 };
-    }
-    if (process.platform !== 'win32' && (lower.endsWith('.exe') || lower.includes('\\') || !lower.includes('/'))) {
-      return { ok: false, error: 'unsupported shell override: ' + shellOverride + ' (expected a path to a sh-compatible binary)', code: 'EBADINPUT', durationMs: 0 };
-    }
-  } else {
-    shellOverride = '';
-  }
+  // powershell.exe; POSIX: a path to a sh-compatible binary), validated
+  // by resolveShellPlan below.
+  const shellOverride = opts && typeof opts.shell === 'string' ? opts.shell : '';
   // Clamp timeout to [1, MAX_TIMEOUT_MS].
   if (!(timeoutMs >= 1)) timeoutMs = DEFAULT_TIMEOUT_MS;
   if (timeoutMs > MAX_TIMEOUT_MS) timeoutMs = MAX_TIMEOUT_MS;
-
-  // Identity of this runner, surfaced in the tool result and prepended
-  // to the first model-facing tool message, so the model always knows
-  // which software and which shell executed the command.
-  let identity = 'mouaif shell · ' + osLabel() + ' · ' + shellLabel();
 
   let cwd;
   try { cwd = resolveSandbox(projectDir); }
   catch (e) { return { ok: false, error: e.message, code: e.code || 'EOUTSIDE_PROJECT', durationMs: 0 }; }
 
-  hookExit();
+  const plan = resolveShellPlan(cmd, shellOverride);
+  if (!plan.ok) return plan;
+  // Identity of this runner, surfaced in the tool result and prepended
+  // to the first model-facing tool message, so the model always knows
+  // which software and which shell executed the command.
+  const { file, args, verbatim, identity } = plan;
 
-  const base = platformShell();
-  const override = shellOverride || '';
-  const file = override || base.file;
-  // cmd.exe (and cmd aliases) must keep the wrapper-quote handling;
-  // any POSIX-style interpreter gets the plain `-c` flag path.
-  const isCmd = process.platform === 'win32' && (!override || ['cmd.exe', 'cmd'].includes(override.toLowerCase()));
-  const flags = isCmd ? base.flags : ['-c'];
-  const wrapQuotes = isCmd;
-  const verbatim = isCmd;
-  const args = flags.concat(wrapQuotes ? '"' + cmd + '"' : cmd);
-  // Identity reflects the interpreter that actually runs the command,
-  // which is the override when one was requested.
-  if (override) identity = 'mouaif shell · ' + osLabel() + ' · ' + shellLabelFor(file);
+  hookExit();
   const startedAt = Date.now();
 
   return await new Promise((resolve) => {
@@ -330,6 +365,9 @@ module.exports = {
   runShell,
   resolveSandbox,
   truncate,
+  resolveShellPlan,
+  registerLiveChild,
+  clearLiveChild,
   SPEC,
   DEFAULT_TIMEOUT_MS,
   MAX_TIMEOUT_MS,
@@ -337,5 +375,7 @@ module.exports = {
   DEFAULT_MAX_BYTES,
   shellLabel,
   shellDialectHint,
+  shellExeDescription,
+  osLabel,
   platformShell
 };

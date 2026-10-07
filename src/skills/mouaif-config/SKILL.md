@@ -82,10 +82,10 @@ An agent is a named persona (`{ name, content, tools?, modelId?, providerId?, th
 | `shell` | the `shell` tool |
 | `file` | `read_file`, `list_files`, `search_files`, `write_file`, `edit_file`, `group_read`, `group_edit` |
 | `chats` | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` |
-| `mouaif` | `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features` |
+| `mouaif` | `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli` |
 | `subagent` | the `subagent` tool |
 
-`ask_user` is binary: only `off` or `ask`.
+`ask_user` is binary: only `off` or `ask`. `group_cli` runs a batch of shell commands (some of them in the background); it is a `mouaif` leaf, so a family `allow` covers unattended command batches too — give it its own `tools.group_cli` entry if the family should stay open while command batches keep asking.
 
 A write to `tools`, `mcp`, `authAccounts` or `authPending` always asks the user for approval before it lands, even when `update_settings` is on `allow`. That is deliberate — this tool must not be able to widen its own reach. Say what you are about to change and why, so the approval card reads clearly.
 

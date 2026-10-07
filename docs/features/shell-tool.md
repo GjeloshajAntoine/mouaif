@@ -75,6 +75,7 @@ The chat composer also accepts an `@shell <cmd>` command that runs the tool dire
 
 ## Related
 
+- [docs/features/grouped-cli-tool.md](./grouped-cli-tool.md) — the batch counterpart: many commands in one call, some in the background.
 - [docs/features/ai-client.md](./ai-client.md) — `tool_call` and `tool_result` SSE event names.
 - [docs/features/tool-authorization.md](./tool-authorization.md) — every shell call passes through the authorization gate.
 - [docs/features/trace.md](./trace.md) — `tool_call` and `tool_result` lines on the NDJSON trace.

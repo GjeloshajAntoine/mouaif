@@ -92,6 +92,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Shell tool](shell-tool.md) — the model runs commands in the project and reads the output.
 - [File tools](file-tools.md) — the model lists, searches, reads, and edits project files.
 - [Grouped file tools](grouped-file-tools.md) — read several files or apply several block replacements in one call.
+- [Grouped CLI tool](grouped-cli-tool.md) — run several shell commands in one call, or start one in the background.
 - [Opening images with `read_file`](read-file-images.md) — the model looks at a picture and the card shows it.
 - [Project search](search-engine.md) — how `search_files` searches the project.
 - [Ask the user tool](ask-user-tool.md) — the model pauses to ask a question with options.

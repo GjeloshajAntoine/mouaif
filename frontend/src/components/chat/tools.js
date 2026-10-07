@@ -206,6 +206,10 @@ export function formatToolArgs(args, toolName) {
   if (typeof args === 'string') return args;
   const name = normalizeToolName(toolName);
   if (name === 'shell') return args.cmd || '';
+  if (name === 'group_cli') {
+    const commands = Array.isArray(args.commands) ? args.commands : [];
+    return commands.map((entry) => entry && (entry.label || entry.cmd || entry.command) || '?').join(' › ');
+  }
   if (name === 'group_read' || name === 'group_edit') {
     const items = args[name === 'group_read' ? 'files' : 'edits'];
     return Array.isArray(items) ? items.map((item) => item && (item.path || item.file) || '?').join(', ') : '';
@@ -245,6 +249,15 @@ export function formatToolArgsFull(args, toolName) {
   if (typeof args === 'string') return args;
   const name = normalizeToolName(toolName);
   if (name === 'shell') return String(args.cmd || '');
+  if (name === 'group_cli') {
+    const commands = Array.isArray(args.commands) ? args.commands : [];
+    return commands.map((entry, index) => {
+      const cmd = entry && (entry.cmd != null ? entry.cmd : entry.command);
+      const label = entry && entry.label ? entry.label + ': ' : '';
+      return (index + 1) + '. ' + label + String(cmd || '(missing cmd)')
+        + (entry && entry.async === true ? '  [background]' : '');
+    }).join('\n');
+  }
   if (name === 'read_file') {
     const range = args.startLine != null || args.endLine != null
       ? (' lines ' + (args.startLine || 1) + '-' + (args.endLine || 'end'))
@@ -311,6 +324,13 @@ export function formatResultSummary(name, r) {
   }
   if (n === 'group_read' || n === 'group_edit') {
     return (r.succeededCount || 0) + ' succeeded' + (r.failedCount ? ' · ' + r.failedCount + ' failed' : '');
+  }
+  if (n === 'group_cli') {
+    const parts = [(r.succeededCount || 0) + ' ok'];
+    if (r.failedCount) parts.push(r.failedCount + ' failed');
+    if (r.runningCount) parts.push(r.runningCount + ' running');
+    if (r.durationMs != null) parts.push(r.durationMs + 'ms');
+    return parts.join(' · ');
   }
   if (n === 'read_file') {
     if (r.kind === 'image') {

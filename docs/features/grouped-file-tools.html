@@ -65,7 +65,7 @@
 <p><strong>Groups are not all-or-nothing transactions.</strong> A failed entry leaves its file unchanged for that entry and does not stop later entries; earlier successful edits remain applied. Retry only the failed entries. Each successful replacement uses the existing atomic per-file write. Cancellation prevents subsequent entries from executing, without undoing edits already applied.</p>
 <h3 id="results">Results</h3>
 <p>Results contain ordered <code>results</code> entries with <code>path</code>, <code>ok</code>, and <code>result</code>, plus <code>succeededCount</code> and <code>failedCount</code>. The call reports failure if any entry failed, while retaining all successful results. Expanded cards stack each file&#39;s content, image, diff, or error; collapsed cards show success/failure counts. These previews also work in nested agent transcripts.</p>
-<p>See also <a href="file-tools.html">Native file tools</a> and <a href="tool-authorization.html">Tool authorization</a>.</p>
+<p>See also <a href="file-tools.html">Native file tools</a>, <a href="grouped-cli-tool.html">Grouped CLI tool</a> (the same batch contract for shell commands, with a background mode), and <a href="tool-authorization.html">Tool authorization</a>.</p>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>
