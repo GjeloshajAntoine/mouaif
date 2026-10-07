@@ -103,13 +103,9 @@ try {
       navFloat: navEl ? getComputedStyle(navEl).position : null,
       navButtons: [...document.querySelectorAll('.chat-view__nav-btn')].filter(button => button.getClientRects().length).map(button => {
       const r = button.getBoundingClientRect();
-      // The ::before grows the hit area past the painted control.
-      const before = getComputedStyle(button, '::before');
-      const insetX = parseFloat(before.left) + parseFloat(before.right);
-      const insetY = parseFloat(before.top) + parseFloat(before.bottom);
       return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height,
-        tabIndex: button.tabIndex,
-        hit: { width: r.width - insetX, height: r.height - insetY } };
+      tabIndex: button.tabIndex, disabled: button.disabled, text: button.textContent,
+      hit: { width: r.width, height: r.height } };
       }),
       preview: rect('.webpreview-dock'),
       overflow: main.scrollWidth - main.clientWidth };
@@ -170,37 +166,56 @@ try {
         const ownGap = layout.preview && layout.preview.top < layout.composer.top ? 0.4 * fontSize : 6;
         assert.ok(Math.abs(layout.transcript.bottom - (belowTranscript - ownGap)) < 1, 'the transcript reaches the surface below it: the rail reserves no row');
         assert.ok(layout.nav.bottom <= layout.composer.top + 1, 'navigation stays above the composer');
-        assert.equal(layout.navButtons.length, 1, 'pinned history shows only Previous');
+        assert.equal(layout.navButtons.length, 2, 'pinned history keeps Prev and Next in fixed slots');
+        assert.equal(layout.navButtons[1].disabled, true, 'Next is disabled while following latest');
+        assert.equal(layout.navButtons[0].text, 'Prev', 'previous message has a visible label');
+        assert.equal(layout.navButtons[1].text, 'Next', 'next message has a visible label');
         for (const button of layout.navButtons) {
-        // The painted glyph is compact; the hit area is the 44px minimum.
-        assert.ok(button.hit.width >= 44 && button.hit.height >= 44, 'navigation has a 44px hit area');
-        assert.ok(button.width < 44, 'the painted control stays compact so it covers little text');
-        assert.equal(button.tabIndex, -1, 'the rail stays out of the tab order');
+        assert.ok(button.hit.width >= 44 && button.hit.height >= 44, 'navigation has a visible 44px hit area');
+        assert.equal(button.tabIndex, 0, 'navigation buttons support keyboard focus');
         assert.ok(button.left >= 0 && button.right <= width, 'navigation targets stay inside the viewport');
         }
-        // Space must scroll the transcript, never activate a nav control.
-        // tabIndex -1 keeps the rail out of the sequential order, so Tab
-        // can never park focus on it (where Space activates it instead of
-        // scrolling); programmatic focus still works, so also assert the
-        // rail paints no focus ring when focused.
-        await evaluate(`(() => { document.activeElement.blur(); return true; })()`);
+        // Keyboard users can reach message navigation; Space scrolls when
+        // the transcript has focus and activates a button when it has focus.
+        // Start after the transcript's many message-action buttons, rather
+        // than depending on how many copy buttons fit in 25 Tab presses.
+        await evaluate(`document.querySelector('.chat-view__transcript').focus({ preventScroll: true })`);
         const reached = [];
-        for (let i = 0; i < 25; i++) {
+        for (let i = 0; i < 100; i++) {
         await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
         await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
         const at = await evaluate(`(() => { const a = document.activeElement; return a ? (a.className || a.tagName) : null; })()`);
         if (at) reached.push(at);
+        if (String(at).includes('chat-view__nav-btn--prev')) break;
         }
-        assert.equal(reached.some(name => String(name).includes('chat-view__nav-btn')), false,
-        'Tab never reaches a rail control, so Space can never jump a message');
-        // Positive control: with the rail out of the way, Space scrolls.
-        await evaluate(`(() => { if (document.activeElement) document.activeElement.blur(); const t = document.querySelector('.chat-view__transcript'); t.scrollTop = 0; return true; })()`);
-        await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+        assert.equal(reached.some(name => String(name).includes('chat-view__nav-btn--prev')), true,
+        'Tab reaches Previous message');
+        // Use the arrow to unpin before testing native transcript scrolling.
+        await evaluate(`document.querySelector('.chat-view__nav-btn--prev').click()`);
+        await settle();
+        await evaluate(`(() => { const t = document.querySelector('.chat-view__transcript'); t.scrollTop = 0; t.focus({ preventScroll: true }); return true; })()`);
+        await settle();
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', text: ' ', unmodifiedText: ' ', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
         await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
         await settle();
-        assert.equal(await evaluate(`document.querySelector('.chat-view__scroll-nav').dataset.mode`), 'pinned',
-        'Space scrolls instead of jumping a message');
-        assert.equal(layout.navButtons[0].tabIndex, -1, 'rail controls stay out of the tab order');
+        // Native keyboard scrolling can start after more than two frames,
+        // even with reduced motion. Wait for movement, not an animation guess.
+        for (let i = 0; i < 20 && !await evaluate(`document.querySelector('.chat-view__transcript').scrollTop > 0`); i++) {
+        await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        assert.ok(await evaluate(`document.querySelector('.chat-view__transcript').scrollTop`) > 0,
+        'Space scrolls a focused transcript: ' + JSON.stringify(await evaluate(`(() => {
+        const t = document.querySelector('.chat-view__transcript');
+        return { width: innerWidth, focus: document.activeElement.className, top: t.scrollTop,
+        height: t.scrollHeight, viewport: t.clientHeight, overflow: getComputedStyle(t).overflowY,
+        mode: document.querySelector('.chat-view__scroll-nav').dataset.mode };
+        })()`)));
+        // Let native keyboard-scroll animation finish before repinning, so
+        // its remaining frames cannot race the subsequent Previous tap.
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await evaluate(`document.querySelector('.chat-view__jump').click()`);
+        await settle();
+        await new Promise(resolve => setTimeout(resolve, 100));
         await evaluate(`document.querySelector('.chat-view__nav-btn--prev').click()`);
         await settle();
         const historyNav = await evaluate(`(() => {
@@ -213,30 +228,54 @@ try {
         inside: nr.top >= transcript.getBoundingClientRect().top - 1 && nr.bottom <= transcript.getBoundingClientRect().bottom + 1,
         buttons: buttons.map(button => {
         const r = button.getBoundingClientRect();
-        const before = getComputedStyle(button, '::before');
         return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height,
-        hitW: r.width - parseFloat(before.left) - parseFloat(before.right),
-        hitH: r.height - parseFloat(before.top) - parseFloat(before.bottom),
+        disabled: button.disabled, text: button.textContent,
+        hitW: r.width, hitH: r.height,
         hit: button.contains(document.elementFromPoint(r.left + 2, r.top + r.height / 2)) };
         }) };
         })()`);
         assert.equal(historyNav.mode, 'free', 'Previous unpins the transcript');
         assert.equal(historyNav.buttons.length, 3, 'history shows Previous, Next and Bottom');
-        // A stacked rail grows upward from a fixed bottom anchor, so adding
-        // controls never moves the cluster the user is aiming at.
-        assert.ok(Math.abs(historyNav.bottom - layout.nav.bottom) < 1, 'the rail keeps its bottom anchor when controls appear');
-        assert.ok(historyNav.top < layout.nav.top, 'the rail grows upward, away from the composer');
+        // Compare the actual buttons, not just the cluster's bottom edge.
+        // Latest and its badge must never displace the repeat-tap targets.
+        assert.ok(Math.abs(historyNav.bottom - layout.nav.bottom) < 1, 'the rail keeps its bottom anchor');
+        assert.ok(Math.abs(historyNav.top - layout.nav.top) < 1, 'the rail reserves a stable Latest slot');
+        for (let i = 0; i < 2; i++) {
+        assert.ok(Math.abs(historyNav.buttons[i].top - layout.navButtons[i].top) < 1, 'message target stays at the same vertical position');
+        assert.ok(Math.abs(historyNav.buttons[i].left - layout.navButtons[i].left) < 1, 'message target stays at the same horizontal position');
+        }
+        assert.equal(historyNav.buttons[1].disabled, false, 'Next enables in history');
+        assert.equal(historyNav.buttons[2].text, 'Latest99+', 'Latest is labelled even with an unread badge');
         assert.ok(historyNav.inside, 'the rail stays inside the transcript box');
         for (let i = 0; i < historyNav.buttons.length; i++) {
         const button = historyNav.buttons[i];
         assert.ok(button.hitW >= 44 && button.hitH >= 44, 'every navigation control keeps a 44px hit area');
         assert.ok(button.hit, 'the painted control is itself clickable');
         assert.ok(button.left >= 0 && button.right <= width, 'unread count fits inside the viewport');
-        if (i) assert.ok(button.top >= historyNav.buttons[i - 1].bottom, 'stacked navigation targets never overlap');
+        for (const other of historyNav.buttons.slice(0, i)) {
+        assert.ok(button.top >= other.bottom || button.bottom <= other.top
+        || button.left >= other.right || button.right <= other.left, 'navigation targets never overlap');
         }
-        await evaluate(`document.querySelector('.chat-view__jump').click()`);
+        }
+        // A second tap at the exact original coordinates must still hit
+        // Prev, not Latest. Exercise real hit testing rather than .click().
+        const prevPoint = layout.navButtons[0];
+        const beforeRepeat = await evaluate(`document.querySelector('.chat-view__transcript').scrollTop`);
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1,
+        x: prevPoint.left + prevPoint.width / 2, y: prevPoint.top + prevPoint.height / 2 });
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1,
+        x: prevPoint.left + prevPoint.width / 2, y: prevPoint.top + prevPoint.height / 2 });
         await settle();
-        assert.equal(await evaluate(`document.querySelector('.chat-view__scroll-nav').dataset.mode`), 'pinned', 'Bottom resumes following replies');
+        assert.ok(await evaluate(`document.querySelector('.chat-view__transcript').scrollTop`) < beforeRepeat,
+        'repeat tap at the same position goes to an earlier message');
+        assert.equal(await evaluate(`document.querySelector('.chat-view__scroll-nav').dataset.mode`), 'free',
+        'repeat Previous never accidentally returns to Latest');
+        await evaluate(`document.querySelector('.chat-view__jump').focus()`);
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+        await settle();
+        assert.equal(await evaluate(`document.querySelector('.chat-view__scroll-nav').dataset.mode`), 'pinned', 'Latest resumes following replies');
+        assert.equal(await evaluate(`document.activeElement.className`), 'chat-view__transcript', 'Latest returns focus to the transcript');
         if (width >= 48 * fontSize) {
           assert.ok(Math.abs(layout.row.left - layout.head.left) < 1, 'transcript stays centred even with a scrollbar');
           assert.ok(layout.nav.right <= layout.head.right, 'navigation stays beside the conversation, not at the frame edge');

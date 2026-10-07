@@ -31,14 +31,15 @@ function makeTranscript(rowTops, clientHeight = 500, scrollHeight = 2000) {
 function makeNav() {
   const count = { textContent: '' };
   const jump = { hidden: true, querySelector: () => count };
-  const nav = { hidden: true, dataset: { mode: 'pinned' } };
-  return { jump, nav, count };
+  const next = { disabled: true };
+  const nav = { hidden: true, dataset: { mode: 'pinned' }, querySelector: () => next };
+  return { jump, nav, count, next };
 }
 function makeRefs(el) {
-  const { jump, nav, count } = makeNav();
+  const { jump, nav, count, next } = makeNav();
   return {
     refs: { transcript: { current: el }, pinnedToBottom: { current: true }, pendingCount: { current: 0 }, jumpBtn: { current: jump }, scrollNav: { current: nav } },
-    jump, nav, count
+    jump, nav, count, next
   };
 }
 
@@ -101,20 +102,34 @@ function makeRefs(el) {
 
 {
   const el = makeTranscript([]);
-  const { refs, nav, jump, count } = makeRefs(el);
+  const { refs, nav, jump, count, next } = makeRefs(el);
   updateJumpButton(refs);
   assert.equal(nav.hidden, true, 'rail hidden while pinned and not overflowing');
   noteTranscriptScrollTop(refs, 250);
   assert.equal(nav.hidden, false, 'prev arrow shows once the transcript overflows');
   assert.equal(nav.dataset.mode, 'pinned');
   assert.equal(jump.hidden, true);
+  assert.equal(next.disabled, true, 'Next stays in place but is disabled while following');
   refs.pinnedToBottom.current = false;
   refs.pendingCount.current = 120;
   updateJumpButton(refs);
   assert.equal(jump.hidden, false);
   assert.equal(count.textContent, '99+');
+  assert.equal(next.disabled, false, 'Next enables when reading history');
   refs.pendingCount.current = 0;
   updateJumpButton(refs);
   assert.equal(count.textContent, '', 'no badge without pending rows');
   console.log('PASS rail visibility follows pinned state, overflow and pending count');
+}
+
+{
+  const el = makeTranscript([]);
+  const { refs, jump } = makeRefs(el);
+  let focused = false;
+  el.focus = options => { focused = options.preventScroll; };
+  jump.ownerDocument = { activeElement: jump };
+  updateJumpButton(refs);
+  assert.equal(focused, true, 'hiding focused Latest returns focus to the transcript without scrolling');
+  assert.equal(jump.hidden, true);
+  console.log('PASS Latest preserves keyboard focus when returning to live output');
 }

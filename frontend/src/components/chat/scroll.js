@@ -3,10 +3,9 @@
 // The transcript auto-scrolls to the newest message on every append
 // while the user is "pinned" to the bottom. Once they scroll up
 // more than a threshold we treat them as reading history: appends
-// no longer yank the view down, the floating scroll-nav rail grows
-// "next message" / "bottom" arrows, and a counter on the bottom arrow
-// tracks how many new rows arrived in the meantime. Tapping it (or
-// scrolling back to the very bottom) re-pins.
+// no longer yank the view down, Next enables and Latest appears in its
+// fixed slot with a counter of new rows. Tapping Latest (or scrolling
+// back to the very bottom) re-pins.
 
 // isNearBottom(el) -> bool
 //
@@ -272,11 +271,9 @@ export function cancelToolBodyScroll(descendant) {
 
 // updateJumpButton(refs)
 //
-// Sync the floating scroll-nav rail with the pinned state. While pinned
-// to the bottom only the "previous message" arrow shows (and only once
-// the transcript actually overflows); once the user reads history the
-// rail grows "next message" and "bottom" arrows, the latter carrying a
-// counter of rows that arrived in the meantime.
+// Keep message navigation in fixed slots. While pinned, Next is disabled
+// and Latest is hidden; reading history enables Next and shows Latest in
+// its own slot, with a counter of rows that arrived in the meantime.
 export function updateJumpButton(refs) {
   const pinned = refs.pinnedToBottom.current;
   const nav = refs.scrollNav && refs.scrollNav.current;
@@ -285,9 +282,16 @@ export function updateJumpButton(refs) {
     if (nav.dataset.mode !== mode) nav.dataset.mode = mode;
     const hide = pinned && !refs._transcriptOverflows;
     if (nav.hidden !== hide) nav.hidden = hide;
+    const next = nav.querySelector('.chat-view__nav-btn--next');
+    if (next && next.disabled !== pinned) next.disabled = pinned;
   }
   const btn = refs.jumpBtn.current;
   if (!btn) return;
+  // Returning to Latest hides this button. Keep keyboard focus in the
+  // conversation rather than dropping it onto the page body.
+  if (pinned && btn.ownerDocument?.activeElement === btn) {
+    refs.transcript.current?.focus({ preventScroll: true });
+  }
   btn.hidden = pinned;
   const label = btn.querySelector('.chat-view__jump-count');
   if (label) {
