@@ -558,8 +558,10 @@
   right: max(calc(env(safe-area-inset-right, 0px) + var(--nav-scrollbar, 0px)),
     calc((100% - var(--read-max, 44rem)) / 2 - var(--nav-col)));
   /* Explicit slots keep Prev/Next fixed when Latest appears or its
-     unread count grows. The overlay always clears the composer/dock. */
-  bottom: 12px;
+     unread count grows. The overlay always clears the composer/dock, and
+     sits a comfortable 24px above the transcript's bottom edge so the
+     bottom pill is not crowded against the surface below it. */
+  bottom: 24px;
   z-index: 6;
   display: grid;
   /* Three fixed square slots, top to bottom: Prev, Next, Latest. The
