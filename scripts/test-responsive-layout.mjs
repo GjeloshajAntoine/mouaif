@@ -175,8 +175,9 @@ try {
         assert.equal(layout.navButtons[0].text, '', 'previous message carries no visible label');
         assert.equal(layout.navButtons[1].text, '', 'next message carries no visible label');
         for (const button of layout.navButtons) {
-        assert.ok(button.hit.width >= 44 && button.hit.height >= 44, 'navigation has a visible 44px hit area');
-        assert.ok(button.width < 44 && button.height < 44, 'the painted control stays small so it covers little text');
+        // A compact column: the hit area fills its 28px slot around a 20px pill.
+        assert.ok(button.hit.width >= 28 && button.hit.height >= 28, 'navigation fills its 28px slot as a hit area');
+        assert.ok(button.width <= 20 && button.height <= 20, 'the painted control stays compact');
         assert.equal(button.tabIndex, 0, 'navigation buttons support keyboard focus');
         assert.ok(button.left >= 0 && button.right <= width, 'navigation targets stay inside the viewport');
         }
@@ -258,7 +259,7 @@ try {
         assert.ok(historyNav.inside, 'the rail stays inside the transcript box');
         for (let i = 0; i < historyNav.buttons.length; i++) {
         const button = historyNav.buttons[i];
-        assert.ok(button.hitW >= 44 && button.hitH >= 44, 'every navigation control keeps a 44px hit area');
+        assert.ok(button.hitW >= 28 && button.hitH >= 28, 'every navigation control fills its 28px slot');
         assert.ok(button.hit, 'the painted control is itself clickable');
         assert.ok(button.left >= 0 && button.right <= width, 'unread count fits inside the viewport');
         for (const other of historyNav.buttons.slice(0, i)) {
@@ -287,12 +288,12 @@ try {
         assert.equal(await evaluate(`document.activeElement.className`), 'chat-view__transcript', 'Latest returns focus to the transcript');
         if (width >= 48 * fontSize) {
           assert.ok(Math.abs(layout.row.left - layout.head.left) < 1, 'transcript stays centred even with a scrollbar');
-          // Its own 44px column right after the reading column: beside the
+          // Its own 28px column right after the reading column: beside the
           // conversation, not over it and not out at the frame edge.
           // With less than a column to spare, it takes the frame edge and the
           // rows give up that strip instead (checked above).
-          const room = layout.transcript.right - layout.head.right >= 44;
-          assert.ok(room ? layout.nav.left >= layout.head.right - 1 && layout.nav.right <= layout.head.right + 45
+          const room = layout.transcript.right - layout.head.right >= 28;
+          assert.ok(room ? layout.nav.left >= layout.head.right - 1 && layout.nav.right <= layout.head.right + 29
           : Math.abs(layout.nav.right - layout.transcript.right) < 1,
           `navigation stays beside the conversation, not at the frame edge (head ends ${layout.head.right}, nav ${layout.nav.left}-${layout.nav.right})`);
           assert.ok(layout.preview, 'web preview rendered');

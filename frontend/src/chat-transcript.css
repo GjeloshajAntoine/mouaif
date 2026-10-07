@@ -529,9 +529,11 @@
 /* Positioned box around the transcript: takes the transcript's old flex
    slot so the rail below can anchor to the transcript's own edges. */
 .chat-view__transcript-box {
-  /* Width of the strip the rows leave free for the scroll buttons, inside
-     the transcript's 8px right padding: 36 + 8 = the 44px button column. */
-  --nav-gutter: calc(36px + env(safe-area-inset-right, 0px));
+  /* The scroll buttons' column (--nav-col) and the strip the rows leave
+     free for it, inside the transcript's 8px right padding. Kept narrow:
+     a wider strip cost every message a visible slice of its width. */
+  --nav-col: 28px;
+  --nav-gutter: calc(var(--nav-col) - 8px + env(safe-area-inset-right, 0px));
   position: relative;
   display: flex;
   flex-direction: column;
@@ -542,24 +544,22 @@
 .chat-view__scroll-nav {
   position: absolute;
   /* Follow the reading column on wide windows, not the shell's far edge. */
-  /* One 44px column in the strip the rows leave free (--nav-gutter): at
-     the frame edge on a phone, just past the centred reading column when
-     the frame is wide enough. Never over a message. */
-  right: max(env(safe-area-inset-right, 0px), calc((100% - var(--read-max, 44rem)) / 2 - 44px));
+  /* One --nav-col column in the strip the rows leave free (--nav-gutter):
+     at the frame edge on a phone, just past the centred reading column
+     when the frame is wide enough. Never over a message. */
+  right: max(env(safe-area-inset-right, 0px), calc((100% - var(--read-max, 44rem)) / 2 - var(--nav-col)));
   /* Explicit slots keep Prev/Next fixed when Latest appears or its
      unread count grows. The overlay always clears the composer/dock. */
   bottom: 12px;
   z-index: 6;
   display: grid;
-  /* 44px columns and rows: the visible control inside each slot is 26px,
-     so a 9px transparent extension on every side still fits inside its
-     own slot instead of reaching into a neighbour's. */
-  /* Three fixed rows, top to bottom: Prev, Next, Latest. The Latest row
-     stays allocated while that button is hidden, so Prev and Next never
-     move when it appears. */
-  grid-template-columns: 44px;
-  grid-template-rows: repeat(3, 44px);
-  gap: 4px;
+  /* Three fixed square slots, top to bottom: Prev, Next, Latest. The
+     Latest slot stays allocated while that button is hidden, so Prev and
+     Next never move when it appears. Each 20px pill is centred in its
+     slot, and its hit area fills the slot without reaching a neighbour. */
+  grid-template-columns: var(--nav-col);
+  grid-template-rows: repeat(3, var(--nav-col));
+  gap: 2px;
   justify-items: center;
   align-items: center;
   pointer-events: none;
@@ -578,14 +578,14 @@
   /* Painted size. `width`/`height` are needed, not just `min-*`: this is a
      flex item inside the button's own box, and a bare min-size is ignored
      without a definite size. The hit area comes from ::before below. */
-  width: var(--tap-xs, 26px);
-  height: var(--tap-xs, 26px);
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: var(--r-pill);
   background: var(--surface-3);
   color: var(--accent);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.2));
   cursor: pointer;
   font: inherit;
   font-size: 0.7rem;
@@ -596,36 +596,36 @@
   transition: transform var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
 .chat-view__nav-btn[hidden] { display: none; }
-/* 44 x 44px hit area around the 26px control (9px on every side). The grid
-   slot is 44px wide and 44px tall, so the extension fills its own slot and
-   stops short of the neighbour's — never an invisible tap stole by Latest. */
+/* The hit area fills the 28px slot around the 20px pill (4px on every
+   side) and stops short of the neighbour's — never an invisible tap stolen
+   by Latest, and never reaching over a message. */
 .chat-view__nav-btn::before {
   content: "";
   position: absolute;
-  inset: -9px;
+  inset: -4px;
 }
 .chat-view__nav-btn:disabled { cursor: default; opacity: 0.45; }
 .chat-view__nav-btn:active:not(:disabled) { transform: scale(0.92); opacity: 1; }
 .chat-view__nav-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; opacity: 1; }
-.chat-view__nav-btn svg { display: block; flex: 0 0 auto; width: 14px; height: 14px; }
+.chat-view__nav-btn svg { display: block; flex: 0 0 auto; width: 12px; height: 12px; }
 /* Latest takes the bottom slot, nearest the composer. Its unread badge is
    pinned to the pill's corner instead of widening it, so a `99+` stays
-   inside the 44px column and off the messages. */
+   inside the narrow column and off the messages. */
 .chat-view__jump {
   grid-area: 3 / 1;
   opacity: 1;
 }
 .chat-view__jump .chat-view__jump-count {
   position: absolute;
-  top: -7px;
-  right: -9px;
-  min-width: 14px;
-  padding: 0 3px;
+  top: -6px;
+  right: -5px;
+  min-width: 12px;
+  padding: 0 2px;
   border-radius: var(--r-pill);
   background: var(--surface-3);
   box-shadow: 0 0 0 1px var(--border-strong);
-  font-size: 0.6rem;
-  line-height: 14px;
+  font-size: 0.55rem;
+  line-height: 12px;
   text-align: center;
   pointer-events: none;
 }
