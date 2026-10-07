@@ -12,8 +12,7 @@ Small icon-only controls float over the transcript's bottom-right corner: a fixe
 | **↓ Next message** | Scrolls so the start of the next message sits at the top. After the last message it goes back to the bottom. | Always beside Prev when history overflows; disabled while following latest. |
 | **⤓ Latest** | Goes back to the newest message and follows the reply again. A number next to it counts the rows that arrived while you were scrolled up. | After you scroll up, in its own slot above Prev / Next. |
 
-- The controls step between **messages** (yours, the assistant's, and system notes). Tool cards are not stops, so one tap does not stop at every command in an agentic turn.
-- **One tap never moves more than a screen.** When the adjacent message is further away (a long run of tool cards, or one very long reply), the tap pages one screen toward it, keeping a few lines of the previous screen in view. Keep tapping to reach it. Next re-pins to Latest only when the bottom is within one step.
+- The controls step between **messages** (yours, the assistant's, and system notes). Tool cards are skipped, so one tap does not stop at every command in an agentic turn.
 - Tapping ↑ or ↓ stops auto-follow, as scrolling up does. A streaming reply keeps arriving below, and Latest's counter goes up. These controls jump between messages, not pages: swipe or use Space/PageDown to read through a long answer without skipping its remainder.
 - Prev and Next occupy **fixed grid slots**. Showing Latest or growing its unread badge does not move either message-navigation target horizontally or vertically.
 - Each control stays **glyph-only and small**: a 26 × 26 px pill inside a 44 × 44 px transparent hit area. Nothing is painted over the text it floats above, and no label is drawn: the accessible name lives in `aria-label` / `title`, which screen readers and long-press tooltips still show.
@@ -26,6 +25,10 @@ Small icon-only controls float over the transcript's bottom-right corner: a fixe
 The transcript and enabled navigation buttons are in the **Tab order**, with visible focus outlines. Focus the transcript to scroll with Space, PageUp, PageDown, and the arrow keys; focus a button to activate it with Space or Enter. Disabled Next is skipped while following latest.
 
 Activating Latest resumes auto-follow and returns focus to the transcript before hiding that button, without changing the scroll position as a side effect of focus.
+
+## Implementation notes
+
+The overlay uses two explicit grid rows of 44 px slots: Latest spans the upper row, and Prev / Next occupy the lower row, so a 26 px pill's expanded hit area stays inside its own slot. The Latest slot remains allocated when hidden, and Next stays rendered but disabled while pinned. Latest's unread badge is the only text any control renders. Pin-state changes remain imperative in `scroll.js`, so ordinary scrolling does not rerender Preact.
 
 ## Verification
 

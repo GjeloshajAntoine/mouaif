@@ -339,14 +339,6 @@ const NAV_TOP_GAP = 6;
 // the arrow looked dead. Matches the isNearBottom() threshold, so a
 // "previous" tap from the bottom always leaves the pin band.
 const NAV_MIN_STEP = 48;
-// Lines of the previous screen kept in view when a tap pages instead of
-// landing on a message, so the reader keeps their place.
-const NAV_PAGE_OVERLAP = 64;
-
-// The largest distance one tap moves the view: a screen minus the overlap.
-function navPageStep(el) {
-  return Math.max(NAV_MIN_STEP, el.clientHeight - NAV_PAGE_OVERLAP);
-}
 
 function messageRows(el) {
   const rows = [];
@@ -377,10 +369,7 @@ export function scrollToAdjacentMessage(refs, dir) {
   // Past the last row — or the next row is the tail that can never reach
   // the top because the view is already as low as it goes — is "bottom":
   // re-pin rather than unpinning at the bottom with nothing to scroll.
-  // A bottom more than a screen away is paged toward like any other target.
-  const maxTop = el.scrollHeight - el.clientHeight;
-  if (dir > 0 && (idx < 0 || contentTop(el, rows[idx]) - NAV_TOP_GAP >= maxTop - 1)
-    && maxTop - el.scrollTop <= navPageStep(el) + NAV_MIN_STEP) {
+  if (dir > 0 && (idx < 0 || contentTop(el, rows[idx]) - NAV_TOP_GAP >= el.scrollHeight - el.clientHeight - 1)) {
     scrollTranscriptToBottom(refs);
     return;
   }
@@ -390,18 +379,6 @@ export function scrollToAdjacentMessage(refs, dir) {
   cancelTranscriptPin(refs);
   refs.pinnedToBottom.current = false;
   updateJumpButton(refs);
-  // Never skip more than one screen. Tool cards are skipped as stops, so in
-  // an agentic turn the adjacent message can sit thousands of pixels away
-  // and one tap flew past everything in between. When the target is
-  // further than a screen, page toward it instead (keeping a little
-  // overlap) and let the next tap continue.
-  const page = navPageStep(el);
-  // No row in that direction: the target is the very top (or bottom).
-  const rowTop = idx >= 0 ? contentTop(el, rows[idx]) - NAV_TOP_GAP : (dir < 0 ? 0 : maxTop);
-  if (Math.abs(rowTop - el.scrollTop) > page) {
-    el.scrollTop = Math.max(0, el.scrollTop + dir * page);
-    return;
-  }
   if (idx < 0) {
     el.scrollTop = 0;
     return;
