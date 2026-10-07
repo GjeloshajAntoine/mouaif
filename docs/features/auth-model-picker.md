@@ -11,7 +11,7 @@ The picker appears only on `subagent` approval cards. It lists the same union th
 - the per-provider live catalog (`GET /api/ai/models/live`)
 deduplicated by `(provider, modelId)`, sorted by provider then id. The first row is a **"(chat default)"** entry that keeps the run on the chat's current model (or the agent's model pin, when the called agent has one). The trigger shows `(chat default) <modelId>` until the user picks an override. Below it, a **thinking** dropdown offers the picked model's presets plus an "Inherit chat thinking" first row (the same `ThinkingSelectField` the Agents editor uses).
 
-The card's picker also shows the **Pinned** and **Recent** bookmark sections exactly like the chat top bar, using the same source of truth: pins live in localStorage (per project), and the recent list is the server-backed `model_recent` SQLite cache, refreshed when the sheet opens. Picking a model on the card records it as recently used; pinning/unpinning works right on the card.
+The card's picker also shows the **Pinned** and **Recent** bookmark sections exactly like the chat top bar, using the same source of truth: one app-wide pin list in localStorage and the server-backed `model_recent` list, both shared across every project, refreshed when the sheet opens. Picking a model on the card records it as recently used; pinning/unpinning works right on the card.
 
 Pick a model (and optionally a thinking level), then choose any non-deny action. The decision payload carries
 

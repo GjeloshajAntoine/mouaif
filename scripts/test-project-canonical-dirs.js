@@ -89,10 +89,17 @@ check('migration folds every non-canonical row onto one key', () => {
   assert.equal(cacheRows[0].project_dir, proj);
   assert.deepEqual(JSON.parse(cacheRows[0].tools), [{ name: 'new' }], 'newest cache wins');
 
-  const recentRows = settings.getDb().prepare('SELECT project_dir, ts FROM model_recent').all();
-  assert.equal(recentRows.length, 1, 'model_recent has one row');
-  assert.equal(recentRows[0].project_dir, proj);
-  assert.equal(recentRows[0].ts, 200, 'newest timestamp wins');
+  // model_recent is NOT project-scoped any more: the app-wide bookmark list is
+  // folded onto one keyless table by its own migration, asserted below.
+});
+
+check('migration folds the per-project model bookmarks onto one app-wide list', () => {
+  const recentRows = settings.getDb()
+    .prepare('SELECT provider, model_id, ts FROM model_recent ORDER BY ts DESC').all();
+  assert.deepEqual(recentRows, [{ provider: 'ollama', model_id: 'llama3', ts: 200 }],
+    'both project spellings collapse into one app-wide row, newest timestamp winning');
+  const cols = settings.getDb().prepare('PRAGMA table_info(model_recent)').all().map((c) => c.name);
+  assert.deepEqual(cols, ['provider', 'model_id', 'ts'], 'the directory key is gone');
 });
 
 check('migration is recorded and runs only once', () => {
@@ -130,20 +137,28 @@ check('a trailing-slash opt-in no longer silently misses its own row', () => {
   assert.equal(rows.length, 1);
 });
 
-check('mcp tool cache + recent models share the canonical key', () => {
+check('mcp tool cache keeps its canonical key', () => {
   settings.setMcpToolCache(proj + '/', 'chrome-debug', [{ name: 'again' }]);
   assert.deepEqual(settings.getMcpToolCache(proj, 'chrome-debug'), [{ name: 'again' }]);
-  settings.touchRecentModel(proj + '/', 'ollama', 'qwen', 1);
-  const recent = settings.getRecentModels(proj).map((r) => r.id);
-  assert.equal(recent.includes('qwen'), true);
+});
+
+check('recent models are written and read app-wide', () => {
+  settings.touchRecentModel('ollama', 'qwen');
+  assert.equal(settings.getRecentModels().some((r) => r.id === 'qwen'), true,
+    'a write is visible without naming any project');
+  // This is the same call a chat in a *different* project makes: the list is
+  // not partitioned, so a model touched once is offered everywhere.
+  settings.touchRecentModel('openrouter', 'vendor/other');
+  const ids = settings.getRecentModels().map((r) => r.provider + '/' + r.id);
+  assert.deepEqual(ids.includes('openrouter/vendor/other'), true, 'the new entry is in the one list');
+  assert.deepEqual(ids.includes('ollama/qwen'), true, 'and the earlier entry was not dropped');
 });
 
 check('writes reject a relative projectDir instead of storing junk', () => {
   assert.throws(() => settings.setDbProject('relative/dir', {}), /absolute path/);
-  assert.throws(() => settings.touchRecentModel('relative/dir', 'ollama', 'x'), /absolute path/);
   assert.throws(() => settings.setMcpToolCache('relative/dir', 's', []), /absolute path/);
   assert.equal(settings.isDbBacked('relative/dir'), false);
-  assert.deepEqual(settings.getRecentModels('relative/dir'), []);
+  assert.deepEqual(settings.getMcpToolCache('relative/dir', 's'), null);
 });
 
 settings.close();

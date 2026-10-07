@@ -263,7 +263,14 @@ function openDb(home) {
 
 // ---- Model recent store (app DB) -----------------------------------------
 //
-// Per-project list of recently used models, capped at 20 entries per project.
+// One app-wide list of recently used models, capped at 20 entries. It is
+// deliberately NOT keyed by project: a model is an app-level resource (its
+// provider connection lives in app settings, and the model slug means the same
+// thing everywhere), so the same list follows the user across every project
+// instead of being rebuilt from scratch in each one. Rows that older builds
+// wrote per project are folded onto the single list by the
+// `2026-10-07-share-model-bookmarks` migration.
+//
 // Stored in a dedicated table so the web UI can fetch and update it without
 // reading/writing the whole app-level settings object.
 
@@ -273,59 +280,49 @@ const MODEL_RECENT_CAP = 20;
 function ensureModelRecentTable() {
   db().exec(
     `CREATE TABLE IF NOT EXISTS ${MODEL_RECENT_TABLE} (
-       project_dir TEXT NOT NULL,
-       provider    TEXT NOT NULL,
-       model_id    TEXT NOT NULL,
-       ts          INTEGER NOT NULL,
-       PRIMARY KEY (project_dir, provider, model_id)
+       provider TEXT NOT NULL,
+       model_id TEXT NOT NULL,
+       ts       INTEGER NOT NULL,
+       PRIMARY KEY (provider, model_id)
      );`
   );
 }
 
-function getRecentModels(projectDir) {
-  const dir = canonicalProjectDir(projectDir);
-  if (!dir) return [];
+function getRecentModels() {
   ensureModelRecentTable();
-  const rows = db()
+  return db()
     .prepare(
       `SELECT provider, model_id AS id, ts
        FROM ${MODEL_RECENT_TABLE}
-       WHERE project_dir = ?
        ORDER BY ts DESC
        LIMIT ?`
     )
-    .all(dir, MODEL_RECENT_CAP);
-  return rows;
+    .all(MODEL_RECENT_CAP);
 }
 
-function touchRecentModel(projectDir, provider, modelId) {
+function touchRecentModel(provider, modelId) {
   if (!provider || !modelId) return;
-  const dir = requireCanonicalProjectDir(projectDir);
   ensureModelRecentTable();
   const now = Date.now();
   db()
     .prepare(
-      `INSERT INTO ${MODEL_RECENT_TABLE} (project_dir, provider, model_id, ts) VALUES (?, ?, ?, ?)
-       ON CONFLICT(project_dir, provider, model_id) DO UPDATE SET ts = excluded.ts`
+      `INSERT INTO ${MODEL_RECENT_TABLE} (provider, model_id, ts) VALUES (?, ?, ?)
+       ON CONFLICT(provider, model_id) DO UPDATE SET ts = excluded.ts`
     )
-    .run(dir, provider, modelId, now);
+    .run(provider, modelId, now);
   // Reap any entries beyond the cap (oldest first)
   db()
     .prepare(
-      `DELETE FROM ${MODEL_RECENT_TABLE} WHERE project_dir = ? AND rowid NOT IN (
-         SELECT rowid FROM ${MODEL_RECENT_TABLE} WHERE project_dir = ? ORDER BY ts DESC LIMIT ?
+      `DELETE FROM ${MODEL_RECENT_TABLE} WHERE rowid NOT IN (
+         SELECT rowid FROM ${MODEL_RECENT_TABLE} ORDER BY ts DESC LIMIT ?
        )`
     )
-    .run(dir, dir, MODEL_RECENT_CAP);
+    .run(MODEL_RECENT_CAP);
 }
 
-function clearRecentModels(projectDir) {
-  const dir = canonicalProjectDir(projectDir);
-  if (!dir) return;
+function clearRecentModels() {
   ensureModelRecentTable();
-  db()
-    .prepare(`DELETE FROM ${MODEL_RECENT_TABLE} WHERE project_dir = ?`)
-    .run(dir);
+  db().prepare(`DELETE FROM ${MODEL_RECENT_TABLE}`).run();
 }
 
 // ---- Legacy key normalization -------------------------------------------
@@ -337,9 +334,13 @@ function clearRecentModels(projectDir) {
 //     (that is the opt-in the user actually made, seeded from their file);
 //     otherwise the earliest row wins.
 //   - mcp_tool_cache: the most recently updated row wins per server.
-//   - model_recent: the newest timestamp wins per (provider, model).
 // Keys that are not absolute paths cannot be canonicalized; they are carried
 // over verbatim rather than dropped.
+//
+// `model_recent` is no longer one of these tables: it is app-wide, so a
+// directory key means nothing to it. Rows an older build wrote per project are
+// folded onto the single list by the `2026-10-07-share-model-bookmarks`
+// migration, which does not care how those directories were spelled.
 
 function projectKeysNeedRewrite(rows) {
   return rows.some((row) => {
@@ -399,27 +400,53 @@ function canonicalizeProjectKeys() {
     replace();
   }
 
-  // --- model_recent -----------------------------------------------------
-  const recentRows = d.prepare(`SELECT project_dir, provider, model_id, ts FROM ${MODEL_RECENT_TABLE}`).all();
-  if (projectKeysNeedRewrite(recentRows)) {
-    const groups = new Map();
-    for (const row of recentRows) {
-      const dir = canonicalProjectDir(row.project_dir) || row.project_dir;
-      const key = dir + '\0' + row.provider + '\0' + row.model_id;
-      const prev = groups.get(key);
-      if (!prev || row.ts > prev.ts) groups.set(key, { ...row, project_dir: dir });
-    }
-    const replace = d.transaction(() => {
-      d.prepare(`DELETE FROM ${MODEL_RECENT_TABLE}`).run();
-      const insert = d.prepare(
-        `INSERT INTO ${MODEL_RECENT_TABLE} (project_dir, provider, model_id, ts) VALUES (?, ?, ?, ?)`
-      );
-      for (const row of groups.values()) {
-        insert.run(row.project_dir, row.provider, row.model_id, row.ts);
-      }
-    });
-    replace();
+  // --- model_recent is not canonicalized here ---------------------------
+  // The table is app-wide now and carries no directory key, so there is
+  // nothing to normalize. Rows an older build wrote per project are folded
+  // onto the single list by the `2026-10-07-share-model-bookmarks` migration.
+}
+
+// shareModelBookmarks() — fold per-project recent-model rows onto one list.
+//
+// `model_recent` used to be keyed by `project_dir`, so the same model appeared
+// once per project and the picker's Recent section was rebuilt from scratch in
+// every project. The list is now app-wide, and this rewrites the old table
+// (dropping the directory key) keeping the newest timestamp per
+// (provider, model). The table is rebuilt rather than column-dropped so the
+// composite primary key becomes (provider, model_id) on every store, old and
+// new, without depending on ALTER TABLE support for that.
+//
+// Idempotent: a table already in the app-wide shape is left untouched.
+function shareModelBookmarks() {
+  const d = db();
+  const cols = d.prepare(`PRAGMA table_info(${MODEL_RECENT_TABLE})`).all();
+  if (!cols.length) return; // created lazily; nothing written yet
+  if (!cols.some((c) => c.name === 'project_dir')) return;
+
+  const rows = d.prepare(`SELECT provider, model_id, ts FROM ${MODEL_RECENT_TABLE}`).all();
+  const newest = new Map();
+  for (const row of rows) {
+    const key = row.provider + '\0' + row.model_id;
+    const prev = newest.get(key);
+    if (!prev || row.ts > prev.ts) newest.set(key, row);
   }
+  const replace = d.transaction(() => {
+    d.prepare(`DELETE FROM ${MODEL_RECENT_TABLE}`).run();
+    d.exec(`DROP TABLE ${MODEL_RECENT_TABLE}`);
+    ensureModelRecentTable();
+    const insert = d.prepare(
+      `INSERT INTO ${MODEL_RECENT_TABLE} (provider, model_id, ts) VALUES (?, ?, ?)`
+    );
+    for (const row of newest.values()) insert.run(row.provider, row.model_id, row.ts);
+  });
+  replace();
+  // Keep the cap: the fold can merge rows that were each under it.
+  const overflow = d.prepare(
+    `DELETE FROM ${MODEL_RECENT_TABLE} WHERE rowid NOT IN (
+       SELECT rowid FROM ${MODEL_RECENT_TABLE} ORDER BY ts DESC LIMIT ?
+     )`
+  );
+  overflow.run(MODEL_RECENT_CAP);
 }
 
 // ---- Migrations ----------------------------------------------------------
@@ -629,6 +656,13 @@ for (const dir of new Set(dirs)) {
     console.error('  [migration] autoWorkspace cleanup skipped for ' + dir + ': ' + e.message);
   }
 }
+}
+},
+{
+name: '2026-10-07-share-model-bookmarks',
+description: 'Fold the per-project recent-model rows onto one app-wide list',
+run() {
+shareModelBookmarks();
 }
 }
 ];
@@ -1104,6 +1138,8 @@ module.exports = {
   runMigrations,
   // project-dir canonicalization (exported for the migration + tests)
   canonicalProjectDir,
+  // one-shot model-bookmark fold (exported for tests)
+  shareModelBookmarks,
   // lifecycle (mostly for tests)
   close
 };

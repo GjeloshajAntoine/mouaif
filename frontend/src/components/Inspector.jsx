@@ -872,15 +872,17 @@ return String((r.body && r.body.text) || '');
 // currentModel — the model the project is configured to use, as the
 // { modelId, providerId } pair the chat picker also works in. The recent list
 // is the preference, so the inspector and the chat agree on the default without
-// a second setting; a recent row is `{ provider, id, ts }` (the same shape the
-// chat picker reads), so its model id is `id`, not `modelId`. Provider comes
-// from that same row because a model id can exist under more than one provider,
-// and `/api/ai/chat` resolves the pair against the app-level connection.
+// a second setting; it is app-wide, so the inspector uses whatever the user last
+// picked in ANY project (the same list the chat picker shows). A recent row is
+// `{ provider, id, ts }` (the same shape the chat picker reads), so its model id
+// is `id`, not `modelId`. Provider comes from that same row because a model id
+// can exist under more than one provider, and `/api/ai/chat` resolves the pair
+// against the app-level connection.
 // Falls back to the project's first model when there is no recent history.
 async function currentModel() {
 const projectDir = (activeProject && activeProject.value && activeProject.value.dir) || '';
 try {
-const recent = await fetchJson('/api/settings/models/recent?projectDir=' + encodeURIComponent(projectDir));
+const recent = await fetchJson('/api/settings/models/recent');
 const fromRecent = recent.status === 200 && recent.body && Array.isArray(recent.body.recent)
 ? recent.body.recent[0] : null;
 if (fromRecent && fromRecent.id) {

@@ -4,7 +4,8 @@ import { useState, useMemo, useCallback } from 'preact/hooks';
 import { ModelPickerField } from './ModelPickerField.jsx';
 import { ThinkingSelectField } from './ThinkingSelectField.jsx';
 import {
-loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin
+loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin,
+migrateProjectScopedBookmarks
 } from './chat/modelPicker.js';
 // AuthModelPicker({ models, initialValue, projectDir, onChange })
 //
@@ -19,21 +20,19 @@ loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin
 //
 // Bookmark state (pinned / recent) is owned here — the same source of
 // truth the chat top bar picker uses — so the card shows the Pinned and
-// Recent sections. `pinned` lives in localStorage (per project); `recent`
-// is a server-backed cache refreshed when the sheet opens.
+// Recent sections. Both lists are app-wide: `pinned` lives in localStorage,
+// `recent` is the server-backed list refreshed when the sheet opens.
 export function AuthModelPicker({ models, initialValue, projectDir, onChange }) {
 const [value, setValue] = useState(initialValue || null);
 const [thinking, setThinking] = useState('');
-// A minimal `state`-shaped bag with the fields the bookmark helpers read
-// (projectDir for localStorage keys / server fetch, recentModels for the
-// recent cache). Recomputed when projectDir changes so a project switch
-// never leaves stale pinnings or recents behind.
+// A minimal `state`-shaped bag with the field the recent cache lives on
+// (`recentModels`). Pins and recents are app-wide, so it carries no
+// projectDir and is stable for the life of the card.
 const bookmarks = useMemo(() => ({
-props: { projectDir },
 recentModels: [],
-}), [projectDir]);
+}), []);
 const [recent, setRecent] = useState(() => loadRecent(bookmarks));
-const [pinned, setPinned] = useState(() => loadPinned(bookmarks));
+const [pinned, setPinned] = useState(() => loadPinned());
 // Refresh the server-backed Recent list when the sheet opens, so stale
 // entries are never briefly shown. `ModelPickerField` calls `onOpen` as
 // the sheet becomes visible; the fresh list lands in one re-render (the
@@ -71,8 +70,8 @@ model: value
 }
 const onTogglePin = useCallback((m) => {
 if (!m || !m.provider || !m.id) return;
-togglePin(bookmarks, m.provider, m.id);
-setPinned(loadPinned(bookmarks));
+togglePin(m.provider, m.id);
+setPinned(loadPinned());
 // A newly pinned model leaves Recent to avoid duplication, matching
 // the chat top bar picker. Refresh Recent from the cache so any
 // pin-in-common entry is dropped.

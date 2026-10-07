@@ -139,26 +139,28 @@ export function authNsForProvider(id) {
 }
 
 // ---- Model recent (server-side, SQLite) -----------------------------
+//
+// One app-wide list: the same recent models follow the user across every
+// project, because a model id is an app-level resource (its provider
+// connection lives in app settings). No `projectDir` is sent.
 
-export async function loadRecentModels(projectDir) {
-  if (!projectDir) return [];
-  const r = await fetchJson('/api/settings/models/recent?projectDir=' + encodeURIComponent(projectDir));
+export async function loadRecentModels() {
+  const r = await fetchJson('/api/settings/models/recent');
   if (r.status !== 200) return [];
   return Array.isArray(r.body && r.body.recent) ? r.body.recent : [];
 }
 
-export async function touchRecentModel(projectDir, provider, modelId) {
-  if (!projectDir || !provider || !modelId) return;
+export async function touchRecentModel(provider, modelId) {
+  if (!provider || !modelId) return;
   await fetchJson('/api/settings/models/recent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ projectDir, provider, modelId })
+    body: JSON.stringify({ provider, modelId })
   });
 }
 
-export async function clearRecentModels(projectDir) {
-  if (!projectDir) return;
-  await fetchJson('/api/settings/models/recent?projectDir=' + encodeURIComponent(projectDir), { method: 'DELETE' });
+export async function clearRecentModels() {
+  await fetchJson('/api/settings/models/recent', { method: 'DELETE' });
 }
 
 // ---- Project settings storage (file vs DB) ---------------------------

@@ -14,8 +14,10 @@ async function main() {
   const bundle = await build({
     stdin: {
       contents: `import { h, render } from 'preact';
-import { ModelPickerField } from './frontend/src/components/ModelPickerField.jsx';
-window.pickerTest = { h, render, ModelPickerField };`,
+    import { ModelPickerField } from './frontend/src/components/ModelPickerField.jsx';
+    import { loadPinned, togglePin, migrateProjectScopedBookmarks } from './frontend/src/components/chat/modelPicker.js';
+    window.pickerTest = { h, render, ModelPickerField,
+    loadPinned, togglePin, migrateProjectScopedBookmarks };`,
       resolveDir: root, sourcefile: 'model-picker-test.js'
     }, bundle: true, write: false, format: 'iife', platform: 'browser'
   });
@@ -65,8 +67,22 @@ window.pickerTest = { h, render, ModelPickerField };`,
     await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
     const css = ['base.css', 'chat-view.css'].map(f => fs.readFileSync(path.join(root, 'frontend/src', f), 'utf8')).join('\n');
     await evaluate(`document.head.innerHTML = '<meta name="viewport" content="width=device-width,initial-scale=1">';
-      document.body.innerHTML = '<div id="fixture"></div><button id="outside">Outside</button>';
-      const style = document.createElement('style'); style.textContent = ${JSON.stringify(css)}; document.head.append(style);`);
+    document.body.innerHTML = '<div id="fixture"></div><button id="outside">Outside</button>';
+    const style = document.createElement('style'); style.textContent = ${JSON.stringify(css)}; document.head.append(style);
+    // about:blank denies the real localStorage. Install an in-memory shim so the
+    // shared pin list can be exercised without touching any origin's storage.
+    {
+      const store = new Map();
+      Object.defineProperty(window, 'localStorage', { configurable: true, value: {
+      getItem: k => (store.has(String(k)) ? store.get(String(k)) : null),
+      setItem: (k, v) => store.set(String(k), String(v)),
+      removeItem: k => store.delete(String(k)),
+      clear: () => store.clear(),
+      key: i => Array.from(store.keys())[i] || null,
+      get length() { return store.size; }
+      } });
+      }
+      void 0;`);
     await evaluate(bundle.outputFiles[0].text);
     await evaluate(`window.errors = [];
       addEventListener('unhandledrejection', ev => errors.push(String(ev.reason)));
@@ -285,6 +301,44 @@ window.pickerTest = { h, render, ModelPickerField };`,
     const row = document.querySelector('.mp__row');
     return row.querySelector('.mp__row-id').textContent === 'alpha' &&
     row.querySelector('.mp__row-label').textContent === 'Alpha label';
+    })()`);
+
+    // ---- The list is app-wide, not per project --------------------------
+    // Both sections used to be namespaced by the chat's project dir (pins by a
+    // localStorage key, recents by a `project_dir` column), so every project
+    // started from an empty list and the model just used in one was missing in
+    // the next. The helpers must now read and write ONE shared list.
+    await evaluate(`{
+    localStorage.clear();
+    pickerTest.togglePin('one', 'alpha');
+    }`);
+    await check('pins are stored under one key with no project namespace', `(() => {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+    return keys.includes('mouaif_models_pinned') &&
+    !keys.some(k => /^mouaif_models_.+_pinned$/.test(k)) &&
+    pickerTest.loadPinned().has('one\\u0000alpha');
+    })()`);
+    // The one-shot fold: per-project keys an older build wrote are merged into
+    // the shared list rather than orphaned.
+    await evaluate(`{
+    localStorage.clear();
+    localStorage.setItem('mouaif_models__home_me_alpha_pinned', JSON.stringify(['one\\u0000alpha']));
+    localStorage.setItem('mouaif_models__home_me_beta_pinned', JSON.stringify(['two\\u0000beta']));
+    pickerTest.migrateProjectScopedBookmarks();
+    }`);
+    await check('pins from every project are folded onto the shared list', `(() => {
+    const pinned = pickerTest.loadPinned();
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+    return pinned.has('one\\u0000alpha') && pinned.has('two\\u0000beta') &&
+    !keys.some(k => /^mouaif_models_.+_pinned$/.test(k));
+    })()`);
+    await check('a later unpin is not revived by the next fold', `(() => {
+    pickerTest.togglePin('one', 'alpha');            // unpin
+    pickerTest.migrateProjectScopedBookmarks();      // runs again
+    return !pickerTest.loadPinned().has('one\\u0000alpha') &&
+    pickerTest.loadPinned().has('two\\u0000beta');
     })()`);
     console.log('\nModel picker browser regressions passed.');
   } finally {

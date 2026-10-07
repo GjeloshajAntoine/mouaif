@@ -19,7 +19,8 @@ import { fetchJson, loadModels, loadApp } from '../../api.js';
 import { nav, back as goBack } from '../../router.js';
 import {
   refreshActiveProvider, refreshAllProviders, activeProviderId, touchRecent,
-  loadPinned, togglePin, modelsForPicker, loadRecent, loadRecentFromServer
+  loadPinned, togglePin, modelsForPicker, loadRecent, loadRecentFromServer,
+  migrateProjectScopedBookmarks
 } from './modelPicker.js';
 import {
 renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender, reconcileTranscript
@@ -660,7 +661,7 @@ draftAttachments: Array.isArray(draftAttachments) && draftAttachments.length ? d
       value: (c && c.providerId && c.modelId)
         ? { providerId: c.providerId, modelId: c.modelId }
         : null,
-      pinned: loadPinned(state),
+      pinned: loadPinned(),
       recent: loadRecent(state),
       open: current.open
     }));
@@ -683,7 +684,7 @@ providers: state.providers.map((p) => p && p.id).filter(Boolean),
 value: (c && c.providerId && c.modelId)
 ? { providerId: c.providerId, modelId: c.modelId }
 : null,
-pinned: loadPinned(state),
+pinned: loadPinned(),
 recent: loadRecent(state),
 open: true
 });
@@ -971,6 +972,9 @@ await sendTurn(state, refs, {
     let cancelled = false;
     state._skillSaveSession = null;
     state._skillSavePending = false;
+    // Fold any pin lists an older build wrote per project onto the shared one
+    // before the picker reads them (it renders from `loadPinned()`).
+    migrateProjectScopedBookmarks();
     async function load() {
       if (!projectDir || !chatId) return;
       try {
@@ -1622,7 +1626,7 @@ updateChat: updateChatBound,
     onPickerPick: onPickerPickBound,
     onPickerTogglePin: (m) => {
       if (!m) return;
-      togglePin(state, m.provider, m.id);
+      togglePin(m.provider, m.id);
       syncPickerState();
     },
     onPickerOpen: () => {

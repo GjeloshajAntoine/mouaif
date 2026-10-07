@@ -23,7 +23,8 @@ import { h, Fragment } from 'preact';
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
 import { fetchJson, activeProject, providerDef, saveApp } from '../api.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
-import { loadPinned, loadRecent, loadRecentFromServer, togglePin } from './chat/modelPicker.js';
+import { loadPinned, loadRecent, loadRecentFromServer, togglePin,
+  migrateProjectScopedBookmarks } from './chat/modelPicker.js';
 import {
   MAX_RECORDING_MS,
   blobToBase64,
@@ -248,9 +249,12 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
 
   useEffect(() => {
     let cancelled = false;
+    // Fold any per-project pin lists an older build wrote onto the shared one
+    // before reading it (see modelPicker.migrateProjectScopedBookmarks).
+    migrateProjectScopedBookmarks();
     // A pin is a localStorage read, so it is there on the first paint; the
     // recents are a server read and arrive a moment later.
-    setPinned(loadPinned(bookmarkState()));
+    setPinned(loadPinned());
     setRecent(loadRecent(bookmarkState()));
     loadRecentFromServer(bookmarkState()).then((ok) => {
       if (!cancelled && ok) setRecent(loadRecent(bookmarkState()));
@@ -259,9 +263,8 @@ if (!cancelled) setLive(liveDictationEnabled(saved));
   }, [projectDir]);
 
   function onTogglePin(model) {
-    const state = bookmarkState();
-    togglePin(state, model.provider || '', model.id);
-    setPinned(loadPinned(state));
+    togglePin(model.provider || '', model.id);
+    setPinned(loadPinned());
   }
 
   // ---- Recorder lifecycle -------------------------------------------------

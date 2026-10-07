@@ -6,31 +6,67 @@
 // All/<provider> filter, one section per provider, pinned + recent
 // sections, and a header refresh button.
 //
-// Pinned models are persisted per project in localStorage.
-// Recently used models are stored server-side in the app SQLite DB.
+// Pinned models are persisted app-wide in localStorage, and recently used
+// models are stored app-wide in the app SQLite DB. Neither is scoped to a
+// project: a model id is an app-level resource (its provider connection lives
+// in app settings and the slug means the same thing everywhere), so one
+// bookmark list follows the user across every project. The old per-project
+// storage is folded onto the shared lists by `migrateProjectScopedBookmarks`
+// below.
 
 import { fetchJson, fetchLiveModels, invalidateModelsCache, touchRecentModel, loadRecentModels } from '../../api.js';
 
 // ---- Model bookmarks (pinned + recent) -------------------------------
 
-// keyFor(projectDir) returns a prefix to namespace per-project data.
-function keyFor(projectDir) {
-  return 'mouaif_models_' + (projectDir || '').replace(/[^a-zA-Z0-9_-]/g, '_');
-}
+const PINNED_KEY = 'mouaif_models_pinned';
+// Old builds namespaced the pin list per project (`mouaif_models_<dir>_pinned`).
+// Kept only so the one-shot fold below can find them.
+const LEGACY_PINNED_RE = /^mouaif_models_.+_pinned$/;
 
-// loadPinned(state) -> Set<string> of "providerId::modelId"
-export function loadPinned(state) {
+// loadPinned(state) -> Set<string> of "providerId\0modelId"
+// `state` is accepted for signature compatibility with the callers that only
+// have a chat state bag; the list is app-wide, so it has no per-project input.
+export function loadPinned() {
   try {
-    const raw = localStorage.getItem(keyFor(state.props.projectDir) + '_pinned');
+    const raw = localStorage.getItem(PINNED_KEY);
     return new Set(raw ? JSON.parse(raw) : []);
   } catch { return new Set(); }
 }
 
-// savePinned(state, pinned)
-function savePinned(state, pinned) {
+// savePinned(pinned)
+function savePinned(pinned) {
   try {
-    localStorage.setItem(keyFor(state.props.projectDir) + '_pinned', JSON.stringify(Array.from(pinned)));
+    localStorage.setItem(PINNED_KEY, JSON.stringify(Array.from(pinned)));
   } catch { /* storage full or unavailable; non-fatal */ }
+}
+
+// migrateProjectScopedBookmarks() — fold per-project pin lists onto the shared
+// one, once. The union is the right merge: a pin is a deliberate, rare action
+// by the user, and dropping one because it was set in a different project would
+// silently lose it.
+//
+// Runs on the first picker mount and removes each legacy key afterwards, so it
+// is effectively one-shot. The flag records that it ran, so a user who unpins
+// everything is not re-seeded from keys that are already gone anyway.
+export function migrateProjectScopedBookmarks() {
+  try {
+    if (localStorage.getItem('mouaif_models_pinned_migrated')) return;
+    const merged = loadPinned();
+    const legacy = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && LEGACY_PINNED_RE.test(key)) legacy.push(key);
+    }
+    for (const key of legacy) {
+      try {
+        const rows = JSON.parse(localStorage.getItem(key) || '[]');
+        for (const row of (Array.isArray(rows) ? rows : [])) merged.add(row);
+      } catch { /* unreadable legacy list: drop it */ }
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+    }
+    savePinned(merged);
+    localStorage.setItem('mouaif_models_pinned_migrated', '1');
+  } catch { /* private mode: nothing to migrate */ }
 }
 
 // loadRecent(state) -> Array<{ provider, id, ts }> ordered by recency, newest first
@@ -42,18 +78,17 @@ export function loadRecent(state) {
 
 // loadRecentFromServer(state) — fetch recent models from the server DB and cache them on state.
 export async function loadRecentFromServer(state) {
-  const dir = state.props && state.props.projectDir;
   const request = (state._recentLoadRequest || 0) + 1;
   state._recentLoadRequest = request;
-  if (!dir) { state.recentModels = []; return true; }
   let recent;
   try {
-    recent = await loadRecentModels(dir);
+    recent = await loadRecentModels();
   } catch {
     recent = [];
   }
-  // Ignore an older response when open requests overlap or the project changes.
-  if (request !== state._recentLoadRequest || !state.props || state.props.projectDir !== dir) return false;
+  // Ignore an older response when open requests overlap: the newest request owns
+  // the cache. There is no project to compare against — the list is app-wide.
+  if (request !== state._recentLoadRequest) return false;
   state.recentModels = recent;
   return true;
 }
@@ -70,22 +105,21 @@ export function touchRecent(state, providerId, modelId) {
   recent.unshift({ provider: providerId, id: modelId, ts: Date.now() });
   if (recent.length > 20) recent.length = 20;
   state.recentModels = recent;
-  // Fire-and-forget to the server DB
-  const dir = state.props && state.props.projectDir;
-  if (dir) touchRecentModel(dir, providerId, modelId).catch(() => {});
+  // Fire-and-forget to the server DB (app-wide; no project to send)
+  touchRecentModel(providerId, modelId).catch(() => {});
 }
 
-// togglePin(state, providerId, modelId) — add or remove a pin. Returns the new state (true = pinned).
-export function togglePin(state, providerId, modelId) {
-  const pinned = loadPinned(state);
+// togglePin(providerId, modelId) — add or remove a pin. Returns the new state (true = pinned).
+export function togglePin(providerId, modelId) {
+  const pinned = loadPinned();
   const key = providerId + '\u0000' + modelId;
-  if (pinned.has(key)) { pinned.delete(key); savePinned(state, pinned); return false; }
-  pinned.add(key); savePinned(state, pinned); return true;
+  if (pinned.has(key)) { pinned.delete(key); savePinned(pinned); return false; }
+  pinned.add(key); savePinned(pinned); return true;
 }
 
-// isPinned(state, providerId, modelId) -> bool
-export function isPinned(state, providerId, modelId) {
-  return loadPinned(state).has(providerId + '\u0000' + modelId);
+// isPinned(providerId, modelId) -> bool
+export function isPinned(providerId, modelId) {
+  return loadPinned().has(providerId + '\u0000' + modelId);
 }
 
 // renderPinButton(state, providerId, modelId, refs) -> HTMLButtonElement
@@ -94,14 +128,14 @@ function renderPinButton(state, providerId, modelId, refs) {
   pinBtn.type = 'button';
   pinBtn.className = 'chat-view__picker-pin';
   pinBtn.setAttribute('aria-label', 'Pin model');
-  const pinned = isPinned(state, providerId, modelId);
+  const pinned = isPinned(providerId, modelId);
   pinBtn.setAttribute('aria-pressed', pinned ? 'true' : 'false');
   pinBtn.innerHTML = pinned
     ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>'
     : '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
   pinBtn.addEventListener('click', (ev) => {
     ev.stopPropagation();
-    const nowPinned = togglePin(state, providerId, modelId);
+    const nowPinned = togglePin(providerId, modelId);
     pinBtn.setAttribute('aria-pressed', nowPinned ? 'true' : 'false');
     pinBtn.innerHTML = nowPinned
       ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>'
@@ -329,7 +363,7 @@ export function renderModelPicker(state, refs) {
   const showingFullList = providerFilter === 'all' && !q;
   if (showingFullList) {
     // Pinned section
-    const pinned = loadPinned(state);
+    const pinned = loadPinned();
     const pinItems = all.filter((m) => pinned.has(m.provider + '\u0000' + m.id));
     if (pinItems.length) {
       const sec = document.createElement('section');

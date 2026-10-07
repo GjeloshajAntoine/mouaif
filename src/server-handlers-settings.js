@@ -242,36 +242,32 @@ async function handleSettings(req, res, parsed) {
     }
   }
 
-  // GET /api/settings/models/recent?projectDir=<abs>
-  // Returns the recent models list for the given project (newest first, capped at 20).
+  // GET /api/settings/models/recent
+  // The app-wide list of recently used models (newest first, capped at 20).
+  // Deliberately not project-scoped: the same list follows the user across
+  // every project. `projectDir` is accepted and ignored so an older client
+  // keeps working.
   if (urlPath === '/api/settings/models/recent' && method === 'GET') {
-    const dir = qs(q, 'projectDir');
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
-    return sendJSON(res, 200, { recent: settings.getRecentModels(dir) });
+    return sendJSON(res, 200, { recent: settings.getRecentModels() });
   }
 
-  // POST /api/settings/models/recent  body: { projectDir, provider, modelId }
+  // POST /api/settings/models/recent  body: { provider, modelId }
   // Records a model as recently used (touches timestamp, deduplicates, caps at 20).
   if (urlPath === '/api/settings/models/recent' && method === 'POST') {
     const body = await readJsonOr400(req, res);
     if (!body) return;
-    const { projectDir, provider, modelId } = body || {};
-    if (!projectDir || !provider || !modelId) {
-    return sendJSON(res, 400, { error: 'projectDir, provider, and modelId are required' });
+    const { provider, modelId } = body || {};
+    if (!provider || !modelId) {
+    return sendJSON(res, 400, { error: 'provider and modelId are required' });
     }
-    if (!settings.canonicalProjectDir(projectDir)) {
-    return sendJSON(res, 400, { error: 'projectDir must be an absolute path' });
-    }
-    settings.touchRecentModel(projectDir, provider, modelId);
+    settings.touchRecentModel(provider, modelId);
     return sendJSON(res, 200, { ok: true });
   }
 
-  // DELETE /api/settings/models/recent?projectDir=<abs>
-  // Clears the recent models list for the given project.
+  // DELETE /api/settings/models/recent
+  // Clears the app-wide recent models list.
   if (urlPath === '/api/settings/models/recent' && method === 'DELETE') {
-    const dir = qs(q, 'projectDir');
-    if (!dir) return sendJSON(res, 400, { error: 'projectDir query param is required' });
-    settings.clearRecentModels(dir);
+    settings.clearRecentModels();
     return sendJSON(res, 200, { ok: true });
   }
 

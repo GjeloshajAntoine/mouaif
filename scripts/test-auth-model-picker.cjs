@@ -91,14 +91,15 @@ get length() { return store.size; }
 } });
 window.recentFetch = 0;
 window.fetch = (url) => {
-if (url === '/api/settings/models/recent?projectDir=' + encodeURIComponent('/fixture/auth')) {
+if (url === '/api/settings/models/recent') {
 recentFetch++;
 return Promise.resolve(new Response(JSON.stringify({ recent: [{ provider: 'one', id: 'alpha', ts: Date.now() }] }), { status: 200 }));
 }
 return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
 };
-const key = 'mouaif_models__fixture_auth_pinned';
-localStorage.setItem(key, JSON.stringify(['two\\u0000beta']));
+// The pin list is app-wide too: one key, no project namespace. A pin set while
+// working in ANOTHER project still shows here, which is the point of sharing it.
+localStorage.setItem('mouaif_models_pinned', JSON.stringify(['two\\u0000beta']));
 window.models = [
 { id: 'alpha', provider: 'one', label: 'Alpha' },
 { id: 'beta', provider: 'two', label: 'Beta' }
@@ -109,7 +110,13 @@ await tap('.auth-model-picker .mp__trigger');
 await wait();
 await check('auth picker shows the Pinned section', `Array.from(document.querySelectorAll('.mp__section-title'), el => el.textContent).includes('Pinned')`);
 await check('auth picker shows the Recent section', `Array.from(document.querySelectorAll('.mp__section-title'), el => el.textContent).includes('Recent')`);
-await check('recent fetch hit the server-backed endpoint', 'recentFetch >= 1');
+// The card is mounted with projectDir '/fixture/auth', yet the pin seeded above
+// was written under the shared key by "another project". It must still show.
+await check('a pin set in another project is offered here', `(() => {
+const sec = Array.from(document.querySelectorAll('.mp__section')).find(s => s.querySelector('.mp__section-title') && s.querySelector('.mp__section-title').textContent === 'Pinned');
+return !!sec && sec.textContent.includes('beta');
+})()`);
+await check('recent fetch hit the shared app-wide endpoint', 'recentFetch >= 1');
 const pinnedRow = await evaluate(`(() => {
 const sec = Array.from(document.querySelectorAll('.mp__section')).find(s => s.querySelector('.mp__section-title') && s.querySelector('.mp__section-title').textContent === 'Pinned');
 return sec ? sec.textContent : '';
