@@ -33,6 +33,8 @@ The default `.mouaif/workspaces/<chatId>` workspace, `createDefaultWorkspace()`,
 
 That also removed `change()`'s per-chat `EBUSY` guard, which existed only to serialize overlapping folder creation: with no `await` between the validation and the single-field write, two calls cannot interleave, so the guard became dead code rather than a race to test.
 
+A store that ran the old switch keeps an inert `autoWorkspace` row, so the one-time migration `2026-10-07-drop-automatic-workspaces` deletes it from the app row and from every registered project, plus every project-scoped `project_settings` / `chat_store` row. It skips a project file it cannot parse (logged, not rewritten) and guards the two lazily-created tables with `tableExists()`, because migrations run before any chat or project read. Regression test: [scripts/test-automatic-workspace-migration.js](../../../scripts/test-automatic-workspace-migration.js).
+
 `created` stays in the result as `false` and `branch` as `null`, so existing readers keep working.
 
 ### Delegated runs

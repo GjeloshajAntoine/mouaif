@@ -584,10 +584,55 @@ for (const chat of list) {
 name: '2026-10-01-separate-native-app-tools',
 description: 'Convert legacy mouaif selections and permissions to ordinary native tools',
 run() { require('./migrateAppTools.js').run(); }
+},
+{
+name: '2026-10-07-drop-automatic-workspaces',
+description: 'Remove the retired autoWorkspace setting from app settings and every project',
+run() {
+// `change_working_folder` used to create a default workspace folder under an
+// opt-in switch, stored as `autoWorkspace` at app and project level. The tool
+// now only ever selects an existing directory, so the key is inert: it is no
+// longer in DEFAULTS or CLIENT_SETTINGS_KEYS, but a stored value would still
+// sit in `.mouaif.json` (or the app row) looking like a setting that matters.
+// Drop it from the app store and from every registered project's raw object.
+//
+// A project file that cannot be read is left alone rather than cleared: the
+// stale key is harmless, and rewriting a file we could not parse would be the
+// destructive half of this migration with none of the benefit.
+const app = getAppRaw();
+if (Object.prototype.hasOwnProperty.call(app, 'autoWorkspace')) {
+  const next = { ...app };
+  delete next.autoWorkspace;
+  setAppReplace(next);
+}
+let dirs = [];
+try { dirs = require('./projects.js').listProjects().map((p) => p && p.path).filter(Boolean); }
+catch (e) { console.error('  [migration] project list failed: ' + e.message); }
+// Fresh stores create these lazily on first use, and migrations run at
+// startup before any chat or project read — so the tables may not exist yet.
+// ensureChatTables() creates chat_store; project_settings comes from the
+// app-store open path, so a missing table means there is nothing to clean.
+require('./chatdb.js').ensureChatTables();
+const d = db();
+for (const table of ['project_settings', 'chat_store']) {
+  if (!tableExists(d, table)) continue;
+  for (const row of d.prepare(`SELECT DISTINCT project_dir FROM ${table}`).all()) {
+    if (row && row.project_dir) dirs.push(row.project_dir);
+  }
+}
+for (const dir of new Set(dirs)) {
+  try {
+    const project = getProject(dir);
+    if (!project || !Object.prototype.hasOwnProperty.call(project, 'autoWorkspace')) continue;
+    unsetProjectKeys(dir, ['autoWorkspace']);
+  } catch (e) {
+    console.error('  [migration] autoWorkspace cleanup skipped for ' + dir + ': ' + e.message);
+  }
+}
+}
 }
 ];
-function runMigrations() {
-  const d = db();
+function runMigrations() {  const d = db();
   const ran = new Set();
   for (const row of d.prepare(`SELECT name FROM ${MIGRATIONS_TABLE}`).iterate()) {
     ran.add(row.name);
@@ -673,6 +718,13 @@ function writeProjectJson(filePath, obj) {
 }
 
 // ---- App-level store ----------------------------------------------------
+
+// tableExists(d, name) — does this store carry the table yet? Migrations run
+// before any chat or project access, so a table created lazily on first use
+// (chat_store, project_settings) may legitimately be absent on a fresh store.
+function tableExists(d, name) {
+  return !!d.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+}
 
 let _appDb = null;
 function db() {
