@@ -243,11 +243,20 @@ check('tool-groups.md states the real native tool count', () => {
   const claimed = text.match(/\*\*(\d+) native tools\*\*/);
   assert.ok(claimed, 'the doc says how many native tools there are');
   assert.equal(Number(claimed[1]), listed.length, 'the stated count matches the model');
-  // And the conditional tools are named, since they are advertised without a
-  // row — a reader who counts the table alone would miss them.
+  // The conditional tools are advertised without a row, so the section that
+  // explains them is what keeps the stated count honest — a reader who counts
+  // the table alone would land short. Asserted as a section, not a substring:
+  // both names appear in prose elsewhere on the page, so `text.includes` kept
+  // passing after the section was deleted.
+  const section = text.split('\n### Tools the table cannot show\n')[1];
+  assert.ok(section, 'the page explains why two advertised tools have no row');
+  const body = section.split('\n### ')[0];
   for (const name of ['activate_skill', 'mcp__']) {
-    assert.ok(text.includes(name), 'the doc names the conditional tool ' + name);
+    assert.ok(body.includes(name), 'the section names the conditional tool ' + name);
   }
+  // Each is described as ungated-by-a-tools-key, which is the claim the
+  // `tools.<key>` check above relies on.
+  assert.ok(/no authorization gate of its own/.test(body), 'activate_skill is described as having no gate of its own');
 });
 
 check('mouaif-tool.md family table matches the server families', () => {
@@ -272,6 +281,79 @@ check('mouaif-tool.md family table matches the server families', () => {
   for (const gate of byFamily.keys()) {
     assert.ok(known.includes(gate), 'the doc names a family the server does not have: ' + gate);
   }
+});
+
+// ---- 6. Every `tools.<name>` the docs name is a key that resolves ---------
+//
+// A mistyped gate key is the worst kind of doc bug here: `.mouaif.json` accepts
+// any key, the server reads only the ones it knows, so `tools.chatz` stores
+// silently and does nothing at all. The tables above cannot catch it — the key
+// lives in the PROSE that explains what a row edits, and in the leaf-override
+// examples that tell the user what to write.
+//
+// So every `tools.<name>` occurrence across the two pages is resolved against
+// the same set the server resolves: the family gates, the single-tool gates,
+// and the family leaves.
+check('every tools.<key> the docs name resolves on the server', () => {
+  const authz = require('../src/tools/authorization.js');
+  const known = new Set([...authz.NATIVE_TOOLS, ...authz.FAMILY_TOOLS]);
+  for (const file of [DOC_GROUPS, DOC_APP_TOOLS]) {
+    const rel = path.relative(ROOT, file);
+    const text = fs.readFileSync(file, 'utf8');
+    // A trailing `.mode` is the nested read (`tools.chats.mode`), so stop the
+    // capture at a dot; a `<placeholder>` (`tools.<key>`) is a shape, not a
+    // name, and is skipped.
+    const keys = [...text.matchAll(/`tools\.([a-z_]+)/g)].map((m) => m[1]);
+    assert.ok(keys.length > 0, rel + ' names at least one gate key');
+    for (const key of new Set(keys)) {
+      assert.ok(known.has(key), rel + ' names `tools.' + key + '`, which the server does not resolve');
+    }
+  }
+  // The control: a key nobody resolves must be rejected, so this check cannot
+  // pass by having accidentally matched nothing.
+  assert.ok(!known.has('chatz'), 'the known set is real');
+});
+
+// ---- 7. The overview counts are the real counts ---------------------------
+//
+// Both pages open with a stated number. They are the sentences that rotted
+// last time (mouaif-tool.md said "fourteen independent tools" for a file
+// documenting 22), so the words are parsed, not trusted.
+
+const NUMBER_WORDS = Object.freeze({
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, 'twenty-two': 22
+});
+
+check('mouaif-tool.md states the real function and table counts', () => {
+  const authz = require('../src/tools/authorization.js');
+  const text = fs.readFileSync(DOC_APP_TOOLS, 'utf8');
+  const families = authz.TOOL_FAMILIES.chats.length + authz.TOOL_FAMILIES.mouaif.length;
+  // The overview states the total, then breaks it down per family. Both are
+  // read: the total is what rotted (the file said "Fifteen" for a 22-function
+  // surface), and the breakdown is what makes the total checkable by eye.
+  const total = text.match(/^(\w[\w-]*) ordinary native functions/m);
+  assert.ok(total, 'the overview states how many ordinary native functions there are');
+  const word = total[1].toLowerCase();
+  const count = NUMBER_WORDS[word] !== undefined ? NUMBER_WORDS[word] : Number(word);
+  assert.ok(Number.isFinite(count), 'the count is a number word or digits: ' + total[1]);
+  assert.equal(count, families, 'the Chats + mouaif function count');
+  const breakdown = text.match(/\*\*(\d+) in the Chats family\*\* and \*\*(\d+) in mouaif\*\*/);
+  assert.ok(breakdown, 'the overview breaks the total down by family');
+  assert.equal(Number(breakdown[1]), authz.TOOL_FAMILIES.chats.length, 'the stated Chats count');
+  assert.equal(Number(breakdown[2]), authz.TOOL_FAMILIES.mouaif.length, 'the stated mouaif count');
+  assert.equal(Number(breakdown[1]) + Number(breakdown[2]), count, 'the parts sum to the stated total');
+  // The `### Tools` table is one row per function. The scan is bounded to that
+  // section: a later table on the same page lists error CODES in its first
+  // column, backticked like a tool name, and an unbounded scan counted them.
+  const section = text.split('\n### Tools\n')[1];
+  assert.ok(section, 'the page has a Tools section');
+  const listing = section.split('\n### ')[0];
+  const rows = tableRows(listing, /^`[a-z_]+`$/);
+  const names = rows.map((row) => row.label.replace(/`/g, ''));
+  assert.equal(names.length, families, 'the Tools table has one row per function');
+  same([...names].sort(), [...authz.TOOL_FAMILIES.chats, ...authz.TOOL_FAMILIES.mouaif].sort(),
+    'the Tools table names exactly the functions the two families carry');
 });
 
 console.log('tool groups: ' + passed + ' checks passed');

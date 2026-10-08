@@ -2,7 +2,7 @@
 
 ## Overview
 
-Fifteen ordinary native tools let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report). Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument.
+Twenty-two ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report): **15 in the Chats family** and **7 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
 
 ## Usage
 
@@ -37,6 +37,11 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `get_app_info` | Report the mouaif feature state, including the running chat's effective tool permissions — the same report the shipped `list_features` tool returns — plus the list of native chat/app functions. |
 | `restart_app` | Gracefully relaunch the app worker from this chat, with an optional `reason`. The supervisor keeps running, so the port and terminal stay the same. See [Restart from chat](./chat-app-restart.md). |
 | `list_features` | Describe every mouaif feature available in this project and its current on/off/ask state. Read-only metadata; it takes no arguments. |
+| `ask_user` | Pause and ask the user a structured question with 2+ options. The user picks one and may always add a free-form note. Binary: Off / Ask only, because the answer cannot be predicted. See [Ask user tool](./ask-user-tool.md). |
+| `task` | Create, update, track progress on, and list structured tasks with subtasks, to break complex work into pieces and show progress. Each task gets an auto-generated id. See [Task tool](./task-tool.md). |
+| `report_progress` | Report real-time progress on a long-running operation, drawn as the chat's progress bar. Read-only UI metadata — answered without an approval card. See [Progress tool](./progress-tool.md). |
+| `webpreview` | Refresh the user-facing preview of a URL in the debug Chrome the Inspector uses. `viewport` is a preset (`phone`, `phone+`, `tablet`, `laptop`) or `WIDTHxHEIGHT`; `mode: "live"` shows the interactive page instead of a screenshot. See [Web preview](./webpreview.md). |
+| `group_cli` | Run a batch of up to 50 shell commands in one call and get every result, each with its own stdout, stderr, exit code and duration. An `async: true` entry starts in the background and names its log under `.mouaif/logs/`. See [Grouped CLI tool](./grouped-cli-tool.md). |
 
 ### Where the model's data comes from
 

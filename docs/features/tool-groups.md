@@ -46,6 +46,10 @@ Every group with an Off / Ask / Allow control is a **family**: one gate key unde
 
 The same precedence applies to every multi-tool family: a leaf `off` always wins, a family `allow` beats any other leaf value, otherwise the leaf entry wins over the family. A family `off` hides every leaf from the model.
 
+A **single-tool** group (`shell`, `subagent`) is its own gate, so its key is just the tool name. Every `tools.<name>` these pages name is one of the keys the server resolves: a family gate, a single-tool gate, or a family leaf that may carry its own override. A key the server does not know is stored and never read, so it silently does nothing — `scripts/test-tool-groups.mjs` fails on one.
+
+Two things are deliberately outside this model: `activate_skill` (no row and no `tools.*` key — it is governed by the Skills switches in **Settings → Project**) and the `mcp__<server>__<tool>` specs (they resolve through `.mcp.json`). Neither may be named as a `tools.<name>` key on these pages.
+
 ### Working with the tree
 
 Group rows carry a checkbox that flips every child at once (showing a half-check when only some children are on) and, in project settings and the chat, an Off / Ask / Allow segment that edits the family gate. In project settings each leaf of a multi-tool family also has its own segment for a per-leaf override. See [Tool tree](tool-tree.md) for the full row anatomy.
