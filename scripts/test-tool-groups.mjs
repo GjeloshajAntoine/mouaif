@@ -176,4 +176,102 @@ check('toolGroupId maps a tool back to its row', () => {
   assert.equal(model.toolGroupId('list_features'), 'mouaif-settings', 'and so does the feature report');
   assert.equal(model.toolGroupId('mcp__x__y'), null, 'MCP rows live outside the native model');
 });
+
+// ---- 5. The docs match the model -----------------------------------------
+//
+// The group model is guarded at three points already (this file, the generated
+// mirror, the auth module). The DOCS were the one surface nothing checked, and
+// they drifted: `webpreview` moved into the Chats family (commit 9c5be6fe) and
+// `docs/features/tool-groups.md` kept a "Web preview" row of its own for the
+// next six commits, while `docs/features/mouaif-tool.md` still listed 11 Chats
+// leaves instead of 15.
+//
+// So the two tables that enumerate tools are parsed here and compared against
+// the source of truth. A tool added to the model, moved between groups, or
+// dropped from a family fails this check until its doc row is updated with it.
+//
+// Only the TOOLS cell of each row is read. A note cell names tools in prose
+// (the Chats row explains `ask_user`, `task`, …), and counting those would
+// make the check pass on a row whose tool list is empty.
+
+// backtickedNames(cell) -> string[] — the `code` spans of one table cell.
+function backtickedNames(cell) {
+  return (String(cell).match(/`([^`]+)`/g) || []).map((s) => s.slice(1, -1));
+}
+
+// tableRows(text, caption) -> [{ label, tools }] for a `| Label | tools |` table.
+function tableRows(text, startsWith) {
+  const rows = [];
+  let inTable = false;
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('|')) { inTable = false; continue; }
+    const cells = trimmed.split('|').slice(1, -1).map((c) => c.trim());
+    if (cells.length < 2) continue;
+    // The first row after a blank line is the header; skip it and its rule.
+    if (/^-{2,}$/.test(cells[0].replace(/[\s:]/g, '-')) || /^:?-+:?$/.test(cells[0])) continue;
+    if (!inTable) { inTable = true; continue; }
+    if (!startsWith.test(cells[0])) continue;
+    rows.push({ label: cells[0], tools: backtickedNames(cells[1]) });
+  }
+  return rows;
+}
+
+const DOC_GROUPS = path.join(ROOT, 'docs', 'features', 'tool-groups.md');
+const DOC_APP_TOOLS = path.join(ROOT, 'docs', 'features', 'mouaif-tool.md');
+
+check('tool-groups.md lists every group, in tree order, with no stale row', () => {
+  const text = fs.readFileSync(DOC_GROUPS, 'utf8');
+  const rows = tableRows(text, /^\*\*/);
+  const documented = rows.map((row) => row.label.replace(/\*\*/g, '').trim());
+  const actual = model.TOOL_GROUPS.map((group) => group.name);
+  same(documented, actual, 'the doc table must name the model\'s rows in model order');
+  // A stale row names a group that no longer exists — the exact `Web preview`
+  // failure this check was written for.
+  const stale = rows.filter((row) => !actual.includes(row.label.replace(/\*\*/g, '').trim()));
+  same(stale.map((r) => r.label), [], 'no doc row describes a group the model dropped');
+  // Per row, the tool list itself: order and membership both matter, because
+  // a reorder in the model is a reorder on every surface.
+  for (let i = 0; i < model.TOOL_GROUPS.length; i++) {
+    same(rows[i].tools, model.TOOL_GROUPS[i].tools, rows[i].label + ' tool list');
+  }
+});
+
+check('tool-groups.md states the real native tool count', () => {
+  const text = fs.readFileSync(DOC_GROUPS, 'utf8');
+  const listed = model.TOOL_GROUPS.flatMap((group) => group.tools);
+  const claimed = text.match(/\*\*(\d+) native tools\*\*/);
+  assert.ok(claimed, 'the doc says how many native tools there are');
+  assert.equal(Number(claimed[1]), listed.length, 'the stated count matches the model');
+  // And the conditional tools are named, since they are advertised without a
+  // row — a reader who counts the table alone would miss them.
+  for (const name of ['activate_skill', 'mcp__']) {
+    assert.ok(text.includes(name), 'the doc names the conditional tool ' + name);
+  }
+});
+
+check('mouaif-tool.md family table matches the server families', () => {
+  const authz = require('../src/tools/authorization.js');
+  const text = fs.readFileSync(DOC_APP_TOOLS, 'utf8');
+  const rows = tableRows(text, /^\*\*/);
+  const byFamily = new Map();
+  for (const row of rows) {
+    // The label carries the gate in parentheses: **Chats** (`tools.chats`)
+    const gate = (row.label.match(/`tools\.([a-z_]+)`/) || [])[1];
+    if (gate) byFamily.set(gate, row.tools);
+  }
+  assert.ok(byFamily.size >= 2, 'the doc documents the Chats and mouaif families');
+  for (const [gate, tools] of byFamily) {
+    same(tools, authz.TOOL_FAMILIES[gate], 'docs/features/mouaif-tool.md ' + gate + ' family leaves');
+  }
+  // This file documents the chat and app families only — File tools has its
+  // own doc — so the check is that it invents no family and misses no leaf of
+  // the ones it does cover. Full family coverage is asserted against
+  // tool-groups.md above, which lists every group.
+  const known = Object.keys(authz.TOOL_FAMILIES);
+  for (const gate of byFamily.keys()) {
+    assert.ok(known.includes(gate), 'the doc names a family the server does not have: ' + gate);
+  }
+});
+
 console.log('tool groups: ' + passed + ' checks passed');
