@@ -1,0 +1,85 @@
+# Cross-process race probe.
+#
+# Two mouaif servers, one shared app store, one shared project folder, one
+# concurrent test client. A single-server run cannot produce these races: they
+# only exist because the two processes read-modify-write the same SQLite store
+# and the same on-disk files with no coordination between them.
+#
+#   npm run test:race
+#
+# The two `app` services are identical. They exist as a pair so the test can
+# address each server separately — two devices against one project, which is
+# also what a phone and a laptop signed into the same store look like. The
+# image is the production image: the race must be reproducible by what ships,
+# not by a dev server.
+#
+# Both volumes start empty. `race-workspace` is mounted at /workspace, which
+# the image ships owned by `node`, so Docker seeds the new volume with that
+# ownership and the server can prepare its own fixture. Nothing here needs a
+# root-owned init step, which matters because `--abort-on-container-exit`
+# (implied by `--exit-code-from`) stops the whole stack as soon as ANY
+# container exits — a one-shot init service would kill the run before the test
+# service started.
+
+x-app: &app
+  build:
+    context: .
+  environment:
+    MOUAIF_HOME: /data
+    MOUAIF_ALLOW_ANY_ROOT: "1"
+  volumes:
+    - race-data:/data
+    - race-workspace:/workspace
+  # The project folder has to exist before either server can register it:
+  # `createDir` is mkdir(2) with no recursive flag and registering a project
+  # stats the directory first. Both replicas write the same four bytes, so the
+  # overlap is not itself a race — the probe's file case is the one that
+  # actually exercises concurrent writes.
+  command:
+    - sh
+    - -c
+    - |
+      mkdir -p /workspace/project/race
+      printf '{}\n' > /workspace/project/.mouaif.json
+      exec node bin/mouaif.js serve --host 0.0.0.0 --port 5732
+  healthcheck:
+    test:
+      - CMD
+      - node
+      - -e
+      - "fetch('http://127.0.0.1:5732/api/settings').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+    interval: 2s
+    timeout: 2s
+    retries: 30
+    start_period: 5s
+
+services:
+  app-a:
+    <<: *app
+
+  app-b:
+    <<: *app
+
+  test:
+    image: node:22-bookworm-slim
+    depends_on:
+      app-a:
+        condition: service_healthy
+      app-b:
+        condition: service_healthy
+    environment:
+      BASE_URLS: http://app-a:5732,http://app-b:5732
+      PROJECT_DIR: /workspace/project
+      # 16 writers is enough to lose updates on every run without making the
+      # suite slow; raise it to widen the window when investigating a fix.
+      RACE_CONCURRENCY: "16"
+      RACE_SETTINGS_ROUNDS: "60"
+    volumes:
+      - ./scripts/test-race.js:/test/test-race.js:ro
+      - ./scripts/lib/race-target.js:/test/lib/race-target.js:ro
+      - ./scripts/lib/race-client-ids.js:/test/lib/race-client-ids.js:ro
+    command: ["node", "/test/test-race.js"]
+
+volumes:
+  race-data:
+  race-workspace:
