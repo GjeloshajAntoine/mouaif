@@ -19,6 +19,7 @@ No configuration is required.
 - The modal is limited to MCP server lifecycle actions in Settings.
 - Chat MCP tool failures continue to use the existing auto-expanded transcript error card.
 - Typed codes such as `EMCP_START`, `EMCP_TRANSPORT`, `EMCP_RPC`, and `EMCP_TIMEOUT` are preserved.
+- When the failing server wrote to **stderr**, the modal shows it in full under a **Server output** heading, above the raw JSON envelope. This is the only place the real cause appears for a stdio server that died before the MCP handshake: the typed error is just `Connection closed`, while stderr holds the child's own message (a failed `docker run` image pull, a missing binary, a rejected credential). The heading reads **Server output (truncated)** when the 16 KB capture cap clipped the text. Servers that wrote nothing show no such section.
 - The layout fills a phone viewport and becomes a centered sheet on wider screens.
 
 ## Related

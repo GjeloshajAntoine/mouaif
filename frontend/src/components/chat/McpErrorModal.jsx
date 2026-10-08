@@ -30,6 +30,11 @@ const contentMessage = Array.isArray(result.content)
 : null;
 const message = err.message || (contentMessage && contentMessage.text) || 'MCP operation failed';
 const tool = (error && error.name) || [result.serverSlug, result.toolName].filter(Boolean).join(' / ') || '';
+// The stdio child's own output, when there is any. For a start that
+// failed before the MCP handshake this is the only text that names the
+// cause (a failed image pull, a missing binary, a rejected credential),
+// so it is rendered as its own block rather than buried in the JSON.
+const stderr = result.stderr && typeof result.stderr.text === 'string' && result.stderr.text ? result.stderr : null;
 // The raw block renders the full JSON result envelope (already shown to
 // the model in the round) so the user sees every field, not just code/message.
 const raw = result && Object.keys(result).length
@@ -64,6 +69,12 @@ const raw = result && Object.keys(result).length
         : null,
       h('div', { class: 'mcp-err__code', 'data-code': code }, code),
       h('div', { class: 'mcp-err__message' }, message),
+          stderr
+            ? h('div', { class: 'mcp-err__stderr' },
+              h('div', { class: 'mcp-err__stderr-label' }, stderr.truncated ? 'Server output (truncated)' : 'Server output'),
+              h('pre', { class: 'mcp-err__stderr-text' }, stderr.text)
+            )
+            : null,
       raw
         ? h('pre', { class: 'mcp-err__raw' }, raw)
         : null

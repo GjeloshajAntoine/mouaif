@@ -2813,6 +2813,33 @@ background: var(--surface);
   max-height: 40dvh;
   overflow-y: auto;
 }
+/* The child process's own stderr: the cause of a start failure that the
+   JSON-RPC error cannot name. Sits above the raw envelope, which is the
+   secondary "every field" view. */
+.mcp-err__stderr { display: grid; gap: 6px; }
+.mcp-err__stderr-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg-soft);
+}
+.mcp-err__stderr-text {
+  margin: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--danger, var(--accent));
+  border-radius: var(--r-sm);
+  padding: 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-height: 40dvh;
+  overflow-y: auto;
+}
 .mcp-err__foot {
   flex: 0 0 auto;
   display: flex;

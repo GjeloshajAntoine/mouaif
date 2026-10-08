@@ -103,9 +103,21 @@ setActiveError({
 name: server.name || server.id || 'MCP server',
 result: {
 serverSlug: server.slug || server.id || '',
-error: typed
+error: typed,
+// The child's own stderr, when the server captured any. A stdio start
+// that dies before the MCP handshake reports only "Connection closed",
+// so this is where the real cause (a failed image pull, a missing
+// binary) is visible. Absent for servers that never wrote to stderr.
+...(error.stderr ? { stderr: error.stderr } : {})
 }
 });
+}
+// One-line gist of a server's stderr for the row subtitle: the first
+// non-empty line, capped so a long log line cannot take over the row.
+function stderrHint(stderr) {
+if (!stderr || typeof stderr.text !== 'string') return '';
+const line = stderr.text.split('\n').map((l) => l.trim()).find((l) => l.length > 0) || '';
+return line.length > 120 ? line.slice(0, 117) + '…' : line;
 }
 function serverRow(s) {
     const status = s.status || 'stopped';
@@ -125,14 +137,17 @@ const href = '#/settings/mcp/' + encodeURIComponent(s.id) + qs;
     // startable — there is no separate "enabled" off switch.
     const startDisabled = status === 'starting' || isBusy;
     const startTitle = status === 'starting' ? 'Starting…' : (status === 'ready' ? 'Restart this server' : 'Start this server');
+    const hint = stderrHint(s.stderr);
     const row = rowStatus[s.id];
     // One inline message slot per row: a failed action the user just
     // took, then the server's own typed error. The slot sits under the
     // action buttons so the feedback lands next to the tap that caused it.
+    // An errored server also gets its stderr's first line appended — the
+    // typed error alone ("Connection closed") rarely names the cause.
 const rowMessage = row && row.text
 ? { text: row.text, kind: row.kind || 'error', error: row.error || null }
 : (s.status === 'errored' && s.error)
-? { text: (s.error.code || 'ERR') + ': ' + (s.error.message || ''), kind: 'error', error: s.error }
+? { text: (s.error.code || 'ERR') + ': ' + (s.error.message || '') + (hint ? ' — ' + hint : ''), kind: 'error', error: { ...s.error, ...(s.stderr ? { stderr: s.stderr } : {}) } }
 : null;
     return h('li', { key: s.id, class: 'mcp__row' + (isBusy ? ' mcp__row--busy' : '') },
       h('a', { class: 'group__row settings-project__agent-link mcp__row-main', href },
@@ -202,9 +217,13 @@ return;
 if (r.status !== 200) {
       setBusyIds(prev => { const n = new Set(prev); n.delete(id); return n; });
 const error = {
-code: (r.body && r.body.code) || 'EMCP_START',
-message: (r.body && r.body.error) ? String(r.body.error) : ('HTTP ' + r.status)
-};
+  code: (r.body && r.body.code) || 'EMCP_START',
+  message: (r.body && r.body.error) ? String(r.body.error) : ('HTTP ' + r.status),
+  // Carried by a stdio start failure: the child's own output, which is
+  // the only place the real cause appears when the handshake never
+  // happened (see showServerError).
+  ...(r.body && r.body.stderr ? { stderr: r.body.stderr } : {})
+  };
 // The failed start may still have marked the server errored
 // server-side; reload so the row status reflects reality, but
 // keep the just-set row message (load clears rowStatus).

@@ -60,6 +60,19 @@ function mcpErrorStatus(err) {
   }
 }
 
+// mcpErrorBody(err) — the JSON body every MCP route returns on failure.
+//
+// `stderr` is not decoration: when a stdio child dies before the MCP
+// handshake the JSON-RPC error is only "Connection closed", while the child's
+// own last words ("pull access denied", "command not found") are in stderr.
+// Errors that captured it carry it to the client so Settings can show the
+// real cause instead of a generic failure.
+function mcpErrorBody(e) {
+  const body = { error: e.message, code: e.code || 'INTERNAL' };
+  if (e && e.stderr) body.stderr = e.stderr;
+  return body;
+}
+
 function readMcpProjectDir(q, body) {
   const fromQuery = qs(q, 'projectDir');
   const fromBody = body && typeof body.projectDir === 'string' ? body.projectDir : '';
@@ -80,7 +93,7 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
     try {
       return sendJSON(res, 200, { servers: mcp.listServers(dir || null) });
     } catch (e) {
-      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+      return sendJSON(res, mcpErrorStatus(e), mcpErrorBody(e));
     }
   }
 
@@ -95,7 +108,7 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
       const server = mcp.addServer(dir || null, Object.assign({}, body, { scope }));
       return sendJSON(res, 201, { server });
     } catch (e) {
-      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+      return sendJSON(res, mcpErrorStatus(e), mcpErrorBody(e));
     }
   }
 
@@ -111,7 +124,7 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
       if (!server) return sendJSON(res, 404, { error: 'Server not found', id });
       return sendJSON(res, 200, { server });
     } catch (e) {
-      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+      return sendJSON(res, mcpErrorStatus(e), mcpErrorBody(e));
     }
   }
 
@@ -124,7 +137,7 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
       if (!ok) return sendJSON(res, 404, { error: 'Server not found', id });
       return sendJSON(res, 200, { ok: true, removed: id });
     } catch (e) {
-      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+      return sendJSON(res, mcpErrorStatus(e), mcpErrorBody(e));
     }
   }
 
@@ -139,7 +152,7 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
       const server = await mcp.startServer(dir || null, id);
       return sendJSON(res, 200, { server });
     } catch (e) {
-      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+      return sendJSON(res, mcpErrorStatus(e), mcpErrorBody(e));
     }
   }
 
@@ -154,7 +167,7 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
       const ok = await mcp.stopServer(dir || null, id);
       return sendJSON(res, 200, { ok, removed: ok });
     } catch (e) {
-      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+      return sendJSON(res, mcpErrorStatus(e), mcpErrorBody(e));
     }
   }
 
@@ -167,7 +180,7 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
       const tools = await mcp.listDiscoveredTools(dir || null, id);
       return sendJSON(res, 200, { tools });
     } catch (e) {
-      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+      return sendJSON(res, mcpErrorStatus(e), mcpErrorBody(e));
     }
   }
 
@@ -311,7 +324,7 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
         res.off('close', onGone);
       }
     } catch (e) {
-      return sendJSON(res, mcpErrorStatus(e), { error: e.message, code: e.code || 'INTERNAL' });
+      return sendJSON(res, mcpErrorStatus(e), mcpErrorBody(e));
     }
   }
 

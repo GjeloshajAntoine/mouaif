@@ -814,6 +814,13 @@ function decorate(entry, projectDir, rawEntry) {
     });
   }
   if (error) decorated.error = error;
+  // A running server's recent stderr is diagnostic, not an error: a healthy
+  // MCP server logs progress there. Expose the tail whenever there is one so
+  // the Settings row can explain a failure that the JSON-RPC error cannot
+  // (the failing start has already shut the child down, so its stderr rides
+  // the thrown error instead of a session that no longer exists).
+  const stderr = session && typeof session.stderrView === 'function' ? session.stderrView() : null;
+  if (stderr) decorated.stderr = stderr;
   return decorated;
 }
 
@@ -1060,15 +1067,26 @@ async function startServer(projectDir, serverId) {
   // Track stderr so a misbehaving server's logs are visible from
   // /api/mcp/servers/:id for debugging. Cap the buffer to avoid
   // unbounded memory growth in a long-lived server.
+  //
+  // This is the only place a failing child's own explanation reaches the
+  // user: `docker run` prints "pull access denied" here and then exits, so
+  // the JSON-RPC error alone ("Connection closed") names no cause. `decorate`
+  // exposes the tail, and a failed start copies it onto the thrown error.
   const stderrBuf = [];
   const STDERR_CAP = 16 * 1024;
+  let stderrChars = 0;
+  let stderrTruncated = false;
+  const stderrText = () => stderrBuf.join('');
   if (transport.stderr && typeof transport.stderr.on === 'function') {
     transport.stderr.on('data', (chunk) => {
       const s = chunk.toString('utf8');
-      if (stderrBuf.length < STDERR_CAP) {
-        const remaining = STDERR_CAP - stderrBuf.reduce((n, c) => n + c.length, 0);
-        if (remaining > 0) stderrBuf.push(s.slice(0, Math.max(0, remaining)));
-      }
+      // The cap is measured in characters, not chunks: a server that writes
+      // one line per chunk would otherwise buffer 16 384 chunks.
+      const remaining = STDERR_CAP - stderrChars;
+      stderrChars += s.length;
+      if (remaining <= 0) { stderrTruncated = true; return; }
+      if (s.length > remaining) stderrTruncated = true;
+      stderrBuf.push(s.slice(0, remaining));
     });
   }
 
@@ -1104,6 +1122,12 @@ async function startServer(projectDir, serverId) {
     tools: [],
     error: null,
     stderr: stderrBuf,
+    // What decorate() and the start-error path read. Returns null when the
+    // child said nothing, so no empty field is tacked onto every server.
+    stderrView() {
+      const text = stderrText();
+      return text ? { text, truncated: stderrTruncated } : null;
+    },
     async shutdown() {
       try { await client.close(); } catch { /* ignore */ }
       try { await transport.close(); } catch { /* ignore */ }
@@ -1116,10 +1140,15 @@ async function startServer(projectDir, serverId) {
   } catch (e) {
     session.status = 'errored';
     session.error = { code: 'EMCP_START', message: entry.oauth?.enabled ? 'MCP OAuth connection failed. Sign in again in Settings.' : ((e && e.message) || String(e)) };
+    // A start that never handshakes is exactly when the child's stderr is
+    // the only real explanation (a failed image pull, a missing binary, a
+    // rejected credential). Keep it on the error so the HTTP layer returns
+    // it and the Settings error modal shows it.
+    const startStderr = session.stderrView();
     try { await session.shutdown(); } catch { /* ignore */ }
     untrackSession(projectDir, serverId);
     if (entry.oauth?.enabled) throw err('EMCP_AUTH', 'MCP connection failed. Check the endpoint and sign in again in Settings.', { serverId });
-    throw err('EMCP_START', 'Failed to start MCP server: ' + (e && e.message || e), { serverId });
+    throw err('EMCP_START', 'Failed to start MCP server: ' + (e && e.message || e), startStderr ? { serverId, stderr: startStderr } : { serverId });
   }
 
   // Discover tools. Some servers return a paginated list; walk cursors
@@ -1138,9 +1167,10 @@ async function startServer(projectDir, serverId) {
   } catch (e) {
     session.status = 'errored';
     session.error = { code: 'EMCP_RPC', message: entry.oauth?.enabled ? 'MCP tool discovery failed. Check sign-in in Settings.' : 'tools/list failed: ' + (e && e.message || e) };
+    const listStderr = session.stderrView();
     try { await session.shutdown(); } catch { /* ignore */ }
     untrackSession(projectDir, serverId);
-    throw err('EMCP_RPC', entry.oauth?.enabled ? session.error.message : 'MCP server failed to list tools: ' + (e && e.message || e), { serverId });
+    throw err('EMCP_RPC', entry.oauth?.enabled ? session.error.message : 'MCP server failed to list tools: ' + (e && e.message || e), listStderr ? { serverId, stderr: listStderr } : { serverId });
   }
 
   // Normalize tool descriptors: name (required), description, inputSchema.

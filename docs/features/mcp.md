@@ -115,6 +115,22 @@ The authorization module ([docs/features/tool-authorization.md](./tool-authoriza
 
 A server that crashes while a tool call is in flight fails that call immediately with an `EMCP_RPC` "Connection closed" error — it does not wait for the 60 s request timeout. mouaif chains the SDK's own `transport.onclose` handler (which rejects pending requests) rather than replacing it. The model sees the error as the tool result; its next call to the same server restarts it transparently.
 
+### Why a server failed: the child's own stderr
+
+When a stdio server dies before the MCP handshake, the JSON-RPC error on its own names no cause: it is `EMCP_START` with `MCP error -32000: Connection closed`. The explanation is in the child's **stderr**, and mouaif buffers it (capped at 16 KB) so it reaches you instead of being discarded with the process. A `docker run` against a missing or private image is the common case — the documented Docker install path in [MCP store](./mcp-registry-browser.md) — and it reports:
+
+```json
+{
+   "error": "Failed to start MCP server: MCP error -32000: Connection closed",
+   "code": "EMCP_START",
+   "stderr": { "text": "docker: Error response from daemon: pull access denied for …\n", "truncated": false }
+}
+```
+
+- A failed **Start** (or a failed `tools/list`) carries `stderr` on the error response. The Settings row appends the first line of it to the typed error and its **Details** button opens the [error modal](./mcp-error-modal.md), which shows the full output under a **Server output** heading — labelled **Server output (truncated)** when the 16 KB cap clipped it.
+- A **running** server exposes its most recent stderr on its list row as `stderr`, because a healthy server may still log a warning worth reading. Servers that wrote nothing report no `stderr` field at all, so no empty section appears.
+- The buffer is per session and in-memory, like the child itself: it starts empty on every start and is gone on Stop.
+
 ## Behavior
 
 - **Listings are sorted alphabetically by name.** `listServers` returns the merged view sorted case-insensitively by display name within the existing app-before-project scope grouping (scope wins, then name), so the Settings list is deterministic and easy to scan no matter what order servers were added in. The order is presentation-only — it does not change which entry shadows another or where a store write lands.

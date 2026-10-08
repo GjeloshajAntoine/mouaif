@@ -27,6 +27,20 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **A failed MCP server start now shows the child's own error** — a stdio
+  server that died before the MCP handshake reported only
+  `EMCP_START: MCP error -32000: Connection closed`, which names no cause. A
+  `docker run` against a missing or private image — the documented Docker
+  install path in the [MCP store](docs/features/mcp-registry-browser.md) —
+  prints `pull access denied` to **stderr** and exits, and that output was
+  captured into a buffer nothing ever read: `startServer` untracked the session
+  before throwing, so the text was discarded with the process. The stderr tail
+  now rides the error response, the Settings row appends its first line to the
+  typed error, and the error modal shows the full output under a **Server
+  output** heading. Servers that wrote nothing get no such section. The buffer
+  is also capped in characters rather than chunks — the old check compared an
+  array length against a byte cap — and a clipped capture says
+  `truncated: true`. See [docs/features/mcp.md](docs/features/mcp.md).
 - **The subagent card is bounded again** — a delegated run's conversation
   panel had no height cap, so a run with many tool rounds drew a card taller
   than the screen: the rest of the chat — and the card's own head — was pushed
