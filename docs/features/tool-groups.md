@@ -14,12 +14,22 @@ Nothing to configure: the grouping is a property of the app, not a per-project s
 | --- | --- | --- |
 | **Shell** | `shell` | One tool, one gate. |
 | **Subagent** | `subagent` | |
-| **Web preview** | `webpreview` | |
 | **Chats** | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` | A family, like File tools: the row edits `tools.chats`; a leaf can persist its own more-specific override. It lists everything the model can do with a chat — reading and writing them, and the four tools it uses *inside* one: `ask_user` (pause and ask), `task` (track the work), `report_progress` (report on it) and `webpreview` (show the user a page). `ask_user` stays binary (Off / Ask) and is declared in the family's `binaryTools`, so its leaf row shows the two-way segment while the family row keeps all three. |
 | **mouaif** | `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli` | A family: the row edits `tools.mouaif`, same rules. It lists every tool that acts on mouaif itself — reading and writing settings, the app restart, the feature report, and the grouped CLI batch tool. |
 | **File tools** | `read_file`, `list_files`, `search_files`, `write_file`, `edit_file`, `group_read`, `group_edit` | The row edits `tools.file`; a leaf checkbox can persist its own more-specific override. |
 
-MCP servers are not in this list — their rows come from the server registry, one row per configured server.
+The table above is the whole native surface: **31 native tools**, each listed exactly once.
+
+### Tools the table cannot show
+
+Two advertised tools are conditional, so they have no row — they are switched on by something other than a group:
+
+- **`activate_skill`** — added only when the project has a non-empty Agent Skills catalog, and its `name` enum is the enabled skills. It has no group row and no authorization gate of its own: it is governed by the Skills switches in **Settings → Project**, and a call is answered without an approval card because it is a read-only lookup constrained to that enum.
+- **`mcp__<server>__<tool>`** — one per tool of every configured MCP server. Their rows live outside this model, in the MCP registry.
+
+### Why `webpreview` sits in Chats
+
+`webpreview` used to be a group of its own. It is a leaf of the Chats family now, because the row that *is* a chat should list everything the model can do with one — and showing the user a page is one of those things. A stored `tools.webpreview` keeps working as that leaf's override.
 
 ### Families
 
@@ -49,12 +59,14 @@ The Chats family behaves the same way, with one deliberate exception: `ask_user`
 ## Testing
 
 ```bash
-node scripts/test-tool-groups.mjs          # the model + the generated mirror
+node scripts/test-tool-groups.mjs          # the model + the generated mirror + this doc's table
 node scripts/test-tool-authorization.js       # family gates on the server
 node scripts/test-mouaif-tool-categories.mjs
 node scripts/test-mouaif-tool-toggle.mjs
 node scripts/test-project-settings-render.mjs
 ```
+
+`scripts/test-tool-groups.mjs` parses the group table above and fails when it drifts from `frontend/src/toolGroups.js` — a tool added to the model without a doc row, a row naming a tool the model does not carry, or a stale extra group.
 
 ## See also
 

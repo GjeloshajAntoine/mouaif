@@ -60,8 +60,10 @@ The tools appear in two families in Settings → Project → Tools, the chat Too
 
 | Family (gate) | Native functions |
 | --- | --- |
-| **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments` |
+| **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` |
 | **mouaif** (`tools.mouaif`) | `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli` |
+
+The Chats family carries the app functions above *and* the four tools the model uses inside one chat: **Ask user** (`ask_user`, binary Off / Ask), **Task** (`task`), **Report progress** (`report_progress`) and **Web preview** (`webpreview`, see [Web preview](./webpreview.md)). They used to be rows of their own; a stored `tools.<leaf>` still works as that leaf's override.
 
 The mouaif family also carries the tools that act on the app itself rather than on one project: **Restart app** (`restart_app`), **Feature report** (`list_features`) and the grouped CLI batch tool (`group_cli`, see [Grouped CLI tool](grouped-cli-tool.md)). They are leaves of this family now, so a family `Allow` — including one earned by choosing **Always allow** on any mouaif call — also covers an app restart and a batch of shell commands. Store `tools.restart_app` / `tools.list_features` / `tools.group_cli` to override one leaf on its own. `list_features` is read-only, so it is never shown an approval card; an `off` on the family or the leaf hides it from the model. `group_cli` runs commands, so it keeps the ordinary approval card and its card lists every command in the batch.
 

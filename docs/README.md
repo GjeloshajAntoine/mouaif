@@ -93,7 +93,7 @@ One page per feature: what it does and how to use it.
 - [Tool authorization](features/tool-authorization.md) — Off, Ask, and Allow for every tool, and the approval card.
 - [Tool popup](features/tool-popup.md) — change tool visibility and approval mode from the chat header.
 - [Tool tree](features/tool-tree.md) — the list of tools with their checkboxes and approval modes.
-- [Tool groups](features/tool-groups.md) — which tool belongs to which group, defined once for every tool list.
+- [Tool groups](features/tool-groups.md) — which tool belongs to which group, defined once for every tool list; its table is the complete native surface (31 tools).
 - [Tool card expanded view](features/tool-card-expanded-view.md) — what an expanded tool card shows, for every tool type.
 - [Live tool preview](features/live-tool-preview.md) — live tool output when you return to a running chat.
 - [Shell tool](features/shell-tool.md) — the model runs commands in the project and reads the output.
@@ -107,7 +107,7 @@ One page per feature: what it does and how to use it.
 - [Progress tool](features/progress-tool.md) — a live progress bar for long operations.
 - [Legacy progress tool](features/legacy-progress-tool.md) — compatibility for older `report_progress` calls.
 - [Web preview tool](features/webpreview.md) — a phone-sized screenshot of a page above the composer.
-- [Native chat and app tools](features/mouaif-tool.md) — fourteen independent tools for chats, models, attachments, settings, and projects.
+- [Native chat and app tools](features/mouaif-tool.md) — the Chats and mouaif families: chat, model, attachment, settings, and project functions, plus the four tools the model uses inside a chat.
 - [Chat model tools](features/chat-model-tools.md) — search models, select one for a chat, and start a background response.
 - [Web preview page](features/webpreview-project-page.md) — capture and view a URL from project settings.
 - [Subagent transcript](features/subagent-transcript.md) — the delegated conversation inside a subagent card, and what that run cost.
