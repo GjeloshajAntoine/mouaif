@@ -29,6 +29,7 @@ The shipped public client works for most accounts. To use your own GitHub OAuth 
 - Tool calls, thinking levels, and max output tokens work as they do for other OpenAI-shaped providers.
 - `ENOCOPILOT` means the account has no active Copilot plan. `ESSO_REQUIRED` means the organization requires SAML SSO; the error includes the authorization link.
 - An unused code expires after about 15 minutes. Start sign-in again to get a new one.
+- If the server loses a pending sign-in session, the editor reports it and lets you start again rather than continuing to show the old code. App-login errors are also reported; transient network errors, rate limits, and server errors are retried.
 
 ## API
 

@@ -14,6 +14,8 @@ Use Codex through your ChatGPT plan, without an OpenAI API key or a local Codex 
 
 Device sign-in works from a phone, LAN connection, or reverse proxy: it does not redirect to localhost. Codes expire after 15 minutes. Cancel stops the pending sign-in; leaving the provider editor cancels it too.
 
+If ChatGPT approves the code but mouaif has lost the sign-in session (for example, after a server restart), the editor shows **The sign-in session was lost. Start sign-in again.** instead of staying pending. Start a new attempt and approve the new code. An expired mouaif app login is also reported; temporary network errors, rate limits, and server errors are retried until the code expires.
+
 For API-key access to OpenAI models, use **OpenAI compatible** instead. Codex is OAuth-only. ChatGPT plan limits and model availability are controlled by OpenAI. The generic maximum-output-token setting is not forwarded because the Codex endpoint does not support that field.
 
 ## Behavior

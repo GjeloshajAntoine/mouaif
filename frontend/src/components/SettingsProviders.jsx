@@ -286,6 +286,16 @@ export function SettingsProviderEditView(props) {
       let st;
       try { st = await fetchJson(deviceEndpoint + '?id=' + encodeURIComponent(flow.id)); } catch { continue; }
       if (deviceIdRef.current?.id !== flow.id) return;
+      // A lost flow or expired app session will not recover by polling.
+      // Keep retrying transient network/server failures, but expose 4xx errors.
+      if (st.status >= 400 && st.status < 500 && st.status !== 408 && st.status !== 429) {
+        cancelDeviceSignIn();
+        setSignInStatusMsg(st.status === 404
+          ? 'The sign-in session was lost. Start sign-in again.'
+          : (st.body?.error || ('Sign-in status check failed (HTTP ' + st.status + ').')));
+        setSignInStatusType('error');
+        return;
+      }
       if (st.status !== 200 || !st.body) continue;
       if (st.body.status === 'pending') continue;
       deviceIdRef.current = null;

@@ -18,22 +18,26 @@ window.requests = [];
 window.signedIn = false;
 window.saved = null;
 window.pollStatus = 'pending';
+window.pollHttpStatus = 200;
 window.addEventListener('error', e => errors.push(e.message));
 window.addEventListener('unhandledrejection', e => errors.push(String(e.reason)));
 window.fetch = async (url, init = {}) => {
   requests.push({ url, method: init.method || 'GET' });
   let body = {};
+  let status = 200;
   if (url === '/api/settings') body = { app: { providers: [] } };
   if (url === '/api/auth/accounts') body = { accounts: { codex: signedIn ? ['me@example.com (workspace)'] : [] } };
   if (url === '/api/auth/device/codex' && init.method === 'POST') body = { id: 'fixture-flow', userCode: 'ABCD-EFGH', verificationUri: 'https://auth.openai.com/codex/device', expiresAt: Date.now() + 900000, status: 'pending' };
   if (url.startsWith('/api/auth/device/codex?id=') && !init.method) {
     if (pollStatus === 'ok') window.signedIn = true;
-    body = { status: pollStatus, account: 'me@example.com (workspace)' };
+    status = pollHttpStatus;
+    body = status === 200 ? { status: pollStatus, account: 'me@example.com (workspace)' }
+      : { error: status === 404 ? 'device sign-in not found' : 'Sign in is required' };
   }
   if (url === '/api/settings/app/providers' && init.method === 'POST') {
     window.saved = JSON.parse(init.body); body = { ok: true };
   }
-  return new Response(JSON.stringify(body), { status: 200 });
+  return new Response(JSON.stringify(body), { status });
 };
 render(h(SettingsProviderEditView, {}), document.getElementById('fixture'));
 window.ready = true;
@@ -101,7 +105,26 @@ try {
   await evaluate(`Array.from(document.querySelectorAll('button')).find(el => el.textContent === 'Cancel').click()`);
   await settle();
   assert.equal(await evaluate(`requests.some(r => r.url === '/api/auth/device/codex?id=fixture-flow' && r.method === 'DELETE')`), true);
-  await evaluate(`window.pollStatus = 'ok'; Array.from(document.querySelectorAll('button')).find(el => el.textContent === 'Sign in with ChatGPT code').click()`);
+  for (const [status, message] of [[404, 'The sign-in session was lost. Start sign-in again.'], [401, 'Sign in is required']]) {
+    await evaluate(`window.pollHttpStatus = ${status}; Array.from(document.querySelectorAll('button')).find(el => el.textContent === 'Sign in with ChatGPT code').click()`);
+    await waitFor(`!!document.querySelector('.copilot-device__code')`);
+    await waitFor(`document.body.textContent.includes(${JSON.stringify(message)})`);
+    assert.equal(await evaluate(`!!document.querySelector('.copilot-device__code')`), false, 'failed polling clears the pending code');
+    assert.equal(await evaluate(`Array.from(document.querySelectorAll('button')).find(el => el.textContent === 'Sign in with ChatGPT code').disabled`), false, 'failed polling allows a new attempt');
+    const count = await evaluate(`requests.filter(r => r.url.includes('/api/auth/device/codex?id=') && r.method === 'GET').length`);
+    await evaluate('new Promise(resolve => setTimeout(resolve, 2100))');
+    assert.equal(await evaluate(`requests.filter(r => r.url.includes('/api/auth/device/codex?id=') && r.method === 'GET').length`), count, 'failed flow stops polling');
+  }
+  for (const status of [408, 429, 503]) {
+    const count = await evaluate(`requests.filter(r => r.url.includes('/api/auth/device/codex?id=') && r.method === 'GET').length`);
+    await evaluate(`window.pollHttpStatus = ${status}; Array.from(document.querySelectorAll('button')).find(el => el.textContent === 'Sign in with ChatGPT code').click()`);
+    await waitFor(`requests.filter(r => r.url.includes('/api/auth/device/codex?id=') && r.method === 'GET').length > ${count}`);
+    await settle();
+    assert.equal(await evaluate(`!!document.querySelector('.copilot-device__code')`), true, `HTTP ${status} keeps the flow pending for retry`);
+    await evaluate(`Array.from(document.querySelectorAll('button')).find(el => el.textContent === 'Cancel').click()`);
+    await settle();
+  }
+  await evaluate(`window.pollHttpStatus = 200; window.pollStatus = 'ok'; Array.from(document.querySelectorAll('button')).find(el => el.textContent === 'Sign in with ChatGPT code').click()`);
   await waitFor(`document.body.textContent.includes('signed in as me@example.com')`);
   await evaluate(`Array.from(document.querySelectorAll('button')).find(el => el.textContent === 'Add provider').click()`);
   await waitFor('!!window.saved');
