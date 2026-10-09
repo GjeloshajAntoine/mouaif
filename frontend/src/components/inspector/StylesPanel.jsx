@@ -1006,7 +1006,7 @@ if (!node || !panel) return;
 // first thing on screen instead of hidden under the identity row and the rail.
 const offset = pinnedStackHeight(node);
 const top = node.getBoundingClientRect().top - panel.getBoundingClientRect().top + panel.scrollTop - offset - 4;
-panel.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+panel.scrollTo({ top: Math.max(0, top), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 }
 // copyStatus — a transient "copied" confirmation for the copy buttons. One
 // line under the pinned identity, cleared after a short delay so it never
@@ -1910,7 +1910,8 @@ if (!model) {
 const previewHidden = props.previewVisible === false;
 return h('div', { class: 'inspector__styles', role: 'group', 'aria-label': 'Element styles' },
 h('div', { class: 'inspector__styles-empty', role: 'status' },
-h('p', { class: 'inspector__styles-intro' }, 'Select an element to edit its inline CSS and read the result here.'),
+h('h3', { class: 'inspector__styles-empty-title' }, 'Make the page your own'),
+h('p', { class: 'inspector__styles-intro' }, 'Select an element, adjust its styles, and see the result live.'),
 props.pickMode
 ? h('p', { class: 'inspector__styles-or' },
 previewHidden ? 'The Preview panel is hidden — use a selector below.' : 'Now tap the element in the live preview.')
@@ -1936,6 +1937,7 @@ class: 'input inspector__styles-sel',
 type: 'text',
 value: selValue,
 placeholder: '#hero, .card, button',
+'aria-label': 'CSS selector',
 autocapitalize: 'off',
 autocorrect: 'off',
 spellcheck: false,
@@ -2310,6 +2312,7 @@ tree.childCount > tree.children.length
 // undo.
 h('div', { class: 'inspector__styles-section', ref: (el) => { if (el) sectionRefs.current['controls'] = el; } },
 h('h3', { class: 'inspector__styles-h' }, 'Style controls'),
+h('p', { class: 'inspector__styles-guide' }, 'Adjust with a tap. Tap a value to type it precisely.'),
 h(StyleControls, {
 // Keyed by element: a new selection remounts the surface, which is what resets
 // its group tab to what the new element needs and its box-model edge to the
@@ -2364,6 +2367,7 @@ h('h3', { class: 'inspector__styles-h' }, 'Declared styles'),
 inlineRows.length ? h('span', { class: 'inspector__rules-count' }, String(groupedRows.length)) : null,
 h('span', { class: 'inspector__declared-where' }, 'element.style')
 ),
+h('p', { class: 'inspector__styles-guide' }, 'Written on this element. Tap any property to edit.'),
 inlineRows.length
 ? h('ul', { class: 'inspector__styles-list' },
 declaredRows.map((row) => h('li', {

@@ -69,7 +69,7 @@
     "prepublishOnly": "npm run lint && npm run build:web && npm run docs:build && node scripts/check-npm-name.js",
     "docs:publish:check": "node scripts/publish-docs.js --check",
     "test:cli": "node scripts/test-cli-session-newline.js && node scripts/test-cli-background.js && node scripts/test-cli-strip-ansi.js && node scripts/test-cli-suggest.js && node scripts/test-cli-pty-shim.js && node scripts/test-cli-pty-interactive.js && node scripts/test-cli-tab-program-mode.mjs",
-    "test:browser-build": "node scripts/test-chat-element-stability.mjs && node scripts/test-chat-reentry-ui.mjs && node scripts/test-responsive-layout.mjs && node scripts/test-subagent-transcript-ui.mjs",
+    "test:browser-build": "node scripts/test-chat-element-stability.mjs && node scripts/test-chat-reentry-ui.mjs && node scripts/test-responsive-layout.mjs && node scripts/test-inspector-styles-mobile.mjs && node scripts/test-subagent-transcript-ui.mjs",
     "test:chrome": "node scripts/test-auth-model-picker.cjs && node scripts/test-model-picker.cjs && node scripts/test-model-picker-chat.cjs"
   },
   "keywords": [

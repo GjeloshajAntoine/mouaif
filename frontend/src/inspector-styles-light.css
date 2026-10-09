@@ -1,0 +1,234 @@
+/* Styles only: soft mineral greys with a restrained lavender-grey accent.
+   Keep the rest of the Inspector in its existing theme. Layout heights and
+   measured sticky offsets still belong to inspector-styles / fullscreen. */
+.inspector__panel[data-panel="styles"],
+.inspector__styles {
+  color-scheme: light;
+  --bg: #f3f3f1;
+  --surface: #ffffff;
+  --surface-2: #f3f3f1;
+  --surface-3: #e9e9e6;
+  --fg: #252729;
+  --fg-soft: #484b50;
+  --muted: #575b60;
+  --muted-2: #575b60;
+  --border: #d5d6d3;
+  --border-strong: #7b7d79;
+  --accent: #54516d;
+  --accent-hi: #54516d;
+  --accent-hi-2: #54516d;
+  --accent-soft: #eeecf3;
+  --accent-press: #454259;
+  --on-accent: #ffffff;
+  --success: #296143;
+  --success-soft: #e6f0e9;
+  --warning: #79500c;
+  --warning-soft: #f6eedf;
+  --danger: #a33344;
+  --danger-soft: #f8e9ec;
+  --tap: 2.75rem;
+  color: var(--fg);
+  background: var(--surface-2);
+}
+.inspector__panel[data-panel="styles"] {
+  border-color: var(--border);
+  border-radius: 1rem;
+}
+.inspector__styles-title {
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.inspector__panel[data-panel="styles"] .inspector__panel-head {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+.inspector__panel-body .inspector__styles {
+  background: var(--surface-2);
+  border-color: var(--border);
+  border-radius: 0.75rem;
+  gap: 0.75rem;
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+}
+.inspector__styles :is(button, input, select, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.inspector__styles .input {
+  font-size: 1rem;
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+.inspector__styles .inspector__styles-pin,
+.inspector__styles .inspector__styles-jump,
+.inspector__styles .inspector__touch-tabs {
+  background: var(--surface-2);
+}
+.inspector__styles .inspector__styles-elem {
+  min-height: var(--tap);
+  padding: 0.5rem;
+  background: var(--surface);
+  border-color: var(--border);
+  border-radius: 0.625rem;
+}
+.inspector__styles .inspector__styles-elem-name { font-size: 0.8rem; }
+.inspector__styles .inspector__styles-elem-size { font-size: 0.7rem; }
+/* Four equal destinations fit on a phone without a stranded last chip. */
+.inspector__styles .inspector__styles-jump {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+.inspector__styles .inspector__styles-jump-chip {
+  min-width: 0;
+  padding: 0.25rem;
+  font-size: 0.75rem;
+  border-color: var(--border-strong);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.inspector__styles .inspector__styles-section {
+  min-width: 0;
+  padding-top: 0.75rem;
+}
+.inspector__styles .inspector__styles-section ~ .inspector__styles-section {
+  border-color: var(--border);
+  margin-top: 0.25rem;
+}
+.inspector__styles .inspector__styles-h {
+  font-size: 0.9rem;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+.inspector__styles-guide {
+  margin: 0.375rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+/* Preserve the compact measured pin stack, but give each group a fair share
+   of the row. Set markers no longer consume label width. Enlarged text wraps. */
+.inspector__styles .inspector__touch-tab {
+  flex: 1 1 auto;
+  min-width: var(--tap);
+  padding: 0.25rem;
+  font-size: 0.75rem;
+  border-radius: 0.5rem;
+}
+.inspector__styles .inspector__touch-tab.is-set::after {
+  position: absolute;
+  bottom: 0.2rem;
+  left: calc(50% - 0.125rem);
+  width: 0.25rem;
+  height: 0.25rem;
+  margin: 0;
+}
+.inspector__styles .inspector__touch-row,
+.inspector__styles .inspector__rule {
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+.inspector__styles .inspector__touch-head { align-items: flex-start; }
+.inspector__styles .inspector__touch-label { flex: 1 1 auto; }
+.inspector__styles .inspector__touch-name { font-size: 0.9rem; }
+.inspector__styles .inspector__touch-prop {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+.inspector__styles .inspector__touch-value {
+  font-size: 0.8rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.inspector__styles :is(.inspector__touch-note, .inspector__touch-footnote,
+  .inspector__styles-tree-hint, .inspector__computed-status) {
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.inspector__styles .inspector__styles-list { gap: 0.5rem; }
+.inspector__styles .inspector__styles-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  padding: 0 0.5rem;
+  font-size: 0.8rem;
+}
+/* Property above value: long custom names must not steal the value's column. */
+.inspector__styles .inspector__styles-row-main {
+  min-height: var(--tap);
+  flex-wrap: wrap;
+  gap: 0.25rem 0.375rem;
+  padding: 0.625rem 0;
+}
+.inspector__styles .inspector__styles-prop {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+}
+.inspector__styles .inspector__computed-line { flex-wrap: wrap; }
+.inspector__styles .inspector__computed-source {
+  font-size: 0.7rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.inspector__styles .inspector__styles-row--changed {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.inspector__styles .inspector__rule { padding: 0; }
+.inspector__styles .inspector__rule-prop {
+  flex-wrap: wrap;
+  padding: 0.625rem;
+  font-size: 0.8rem;
+}
+.inspector__styles .inspector__rule-pname {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.inspector__styles .inspector__computed-showgroup {
+  flex: 1 1 100%;
+  margin-left: 0;
+}
+.inspector__styles .inspector__computed-filters { flex: 1; }
+.inspector__styles .inspector__computed-filter {
+  flex: 1 1 auto;
+  padding: 0.375rem;
+  font-size: 0.75rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.inspector__styles .inspector__styles-empty {
+  margin: auto 0;
+  padding: 1.5rem 0.5rem;
+  gap: 0.75rem;
+}
+.inspector__styles-empty-title {
+  margin: 0;
+  color: var(--fg);
+  font-size: 1.1rem;
+  letter-spacing: -0.025em;
+}
+.inspector__styles .inspector__styles-intro { font-size: 0.875rem; line-height: 1.6; }
+.inspector__styles .inspector__styles-tap {
+  width: 100%;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+  border-radius: 0.625rem;
+}
+.inspector__styles .inspector__styles-tap:disabled {
+  background: var(--surface-3);
+  color: var(--muted);
+  border-color: var(--border);
+}
+@media (prefers-reduced-motion: reduce) {
+  .inspector__styles *, .inspector__styles *::after { transition: none; }
+}

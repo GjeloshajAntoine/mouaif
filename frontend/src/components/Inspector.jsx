@@ -358,6 +358,7 @@ class: 'inspector__panel'
 h('div', { class: 'inspector__panel-head' },
 h('div', { class: 'inspector__panel-head-left' },
 labelNode,
+props.id === 'styles' ? h('span', { class: 'inspector__styles-title' }, 'Styles') : null,
 props.onSizeChange ? h(SizeDropdown, { sizeId: props.sizeId, onChange: props.onSizeChange }) : null
 ),
 h('div', { class: 'inspector__panel-head-actions' },
