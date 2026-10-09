@@ -9,18 +9,9 @@ const crypto = require('node:crypto');
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-mcp-oauth-'));
 process.env.MOUAIF_HOME = home;
 
-// CI has no keychain daemon. Replace only the keychain adapter; exercise the
-// actual SDK discovery, DCR, PKCE, refresh, HTTP transport, and REST handlers.
-const credentials = new Map();
-const keyringPath = require.resolve('@napi-rs/keyring');
-require.cache[keyringPath] = { id: keyringPath, filename: keyringPath, loaded: true, exports: {
-  Entry: class {
-    constructor(service, account) { this.key = service + '/' + account; }
-    getPassword() { if (!credentials.has(this.key)) throw new Error('not found'); return credentials.get(this.key); }
-    setPassword(value) { credentials.set(this.key, value); }
-    deletePassword() { credentials.delete(this.key); }
-  }
-} };
+// Exercise real SQLite credential storage, SDK discovery, DCR, PKCE, refresh,
+// HTTP transport and REST handlers without an OS keychain.
+
 const mcp = require('../src/mcp.js');
 const oauth = require('../src/oauth-mcp.js');
 const { createServer } = require('../src/index.js');
@@ -124,7 +115,7 @@ async function main() {
   const refreshed = await mcp.callTool(project, entry.slug, 'hello', {});
   assert.equal(refreshed.content[0].text, 'OAuth works');
   assert.equal(refreshes, 1);
-  const stored = JSON.stringify([...credentials.values()]);
+  const stored = JSON.stringify(settings.getDb().prepare('SELECT value FROM credentials WHERE value IS NOT NULL').all());
   assert.ok(stored.includes('refresh-secret'), 'refresh token survives a refresh response without rotation');
   const config = fs.readFileSync(path.join(project, '.mcp.json'), 'utf8');
   assert.ok(!config.includes('access_token') && !config.includes('refresh-secret'));
@@ -162,10 +153,10 @@ async function main() {
   assert.equal((await request('/oauth/mcp/callback?state=' + fourthState + '&code=valid-code')).status, 400);
   assert.equal((await request(route + qs)).status, 404);
   const unavailable = oauth.createManager({
-    storage: { read: () => { throw Object.assign(new Error('Keychain unavailable'), { code: 'EKEYRING' }); } },
+    storage: { read: () => { throw Object.assign(new Error('Database unavailable'), { code: 'ECREDENTIALS' }); } },
     resolveContext: () => context
   });
-  assert.throws(() => unavailable.status(context), { code: 'EKEYRING' });
+  assert.throws(() => unavailable.status(context), { code: 'ECREDENTIALS' });
   assert.throws(() => oauth.safeUrl('http://example.com/mcp'), /HTTPS/);
   assert.throws(() => oauth.safeUrl('https://user:pass@example.com/mcp'), /without credentials/);
   assert.equal((await request('/')).status, 200, 'serve UI still works');

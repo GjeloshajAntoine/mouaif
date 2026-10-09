@@ -1,17 +1,8 @@
 'use strict';
 
-// Auth — @napi-rs/keyring wrapper + non-secret account index.
-//
-// Implements docs/decisions.md section 11. OAuth tokens live in the OS
-// keychain; the app SQLite store keeps a non-secret index of which
-// provider/account pairs are signed in, so the UI can list "logged in
-// as ..." without ever touching the keychain.
-//
-// In this commit, the keyring is the only auth storage. Provider-specific
-// OAuth flows (authorization endpoints, code exchange, refresh) land in
-// later commits — one per provider. The loopback callback in src/index.js
-// is wired but provider-neutral: it routes by `provider` and stores the
-// token blob returned by the provider's exchange.
+// Auth — app-database credentials + non-secret account index.
+// OAuth tokens live in a dedicated SQLite table, not the settings JSON
+// returned to clients. Accessible legacy keychain entries migrate on read.
 //
 // Public surface:
 //
@@ -29,24 +20,16 @@
 //   auth.consumePending(provider, state);  // -> the pending record or null
 //   auth.clearPending(provider, state);
 //
-// Errors are typed: EKEYRING (OS keychain unavailable), ENOENT (no such
-// account), EBADINPUT (validation), EPROVIDER (unknown provider).
-
-// The keyring is a native addon; load it on the first credential access
-// rather than at server start.
-let keyringMod = null;
-function keyringEntry(service, account) {
-  const { Entry } = keyringMod || (keyringMod = require('@napi-rs/keyring'));
-  return new Entry(service, account);
-}
+// Errors are typed: ECREDENTIALS (database unavailable), EBADINPUT
+// (validation), EPROVIDER (unknown provider).
 const settings = require('./settings.js');
+const credentials = require('./credentialStore.js');
 
-// 'mouaif' is the keyring service prefix; per-provider accounts are
-// namespaced under 'mouaif/<provider>'. Linux/Windows Credential Manager
-// will show entries with the full name; we do not strip the prefix.
+// Preserve the legacy service names for copy-on-read migration; per-provider
+// accounts remain namespaced under 'mouaif/<provider>'.
 const SERVICE_PREFIX = 'mouaif';
 
-// Keyring namespaces. Every provider id that appears as a *value* in
+// Credential namespaces. Every provider id that appears as a *value* in
 // AI_TO_AUTH_PROVIDER below must be listed here: serviceName()/validateAccount()
 // reject anything else with EPROVIDER, and readIndex() builds the non-secret
 // account index by walking this list, so a namespace that is missing here is
@@ -90,75 +73,42 @@ async function setToken(provider, account, blob) {
     e.code = 'EBADINPUT';
     throw e;
   }
-  let entry;
-  try {
-    entry = keyringEntry(serviceName(provider), account);
-    entry.setPassword(blob);
-  } catch (e) {
-    const wrapped = new Error('Keyring set failed: ' + (e && e.message || e));
-    wrapped.code = 'EKEYRING';
-    wrapped.cause = e;
-    throw wrapped;
-  }
-  // Update the non-secret index only after the keychain write succeeded.
-  indexAdd(provider, account);
+  settings.getDb().transaction(() => {
+    credentials.write(serviceName(provider), account, blob);
+    indexAdd(provider, account);
+  })();
   return { provider, account };
 }
 
 function getToken(provider, account) {
   validateAccount(provider, account);
-  let entry;
-  try {
-    entry = keyringEntry(serviceName(provider), account);
-    return entry.getPassword();
-  } catch (e) {
-    // @napi-rs/keyring throws when the entry does not exist. That's our
-    // "no such account" signal; map it to null so callers don't have to
-    // distinguish "absent" from "wrong password".
-    const msg = (e && e.message) || String(e);
-    if (/no matching entry|not found|No such file/i.test(msg)) return null;
-    const wrapped = new Error('Keyring get failed: ' + msg);
-    wrapped.code = 'EKEYRING';
-    wrapped.cause = e;
-    throw wrapped;
-  }
+  return credentials.read(serviceName(provider), account);
 }
 
 function deleteToken(provider, account) {
   validateAccount(provider, account);
-  try {
-    const entry = keyringEntry(serviceName(provider), account);
-    entry.deletePassword();
+  const service = serviceName(provider);
+  const deleted = credentials.read(service, account) !== null;
+  settings.getDb().transaction(() => {
+    credentials.remove(service, account);
     indexRemove(provider, account);
-    return { provider, account, deleted: true };
-  } catch (e) {
-    // deletePassword throws if the entry does not exist; we treat that
-    // as a successful no-op (idempotent delete).
-    const msg = (e && e.message) || String(e);
-    if (/no matching entry|not found|No such file/i.test(msg)) {
-      indexRemove(provider, account);
-      return { provider, account, deleted: false };
-    }
-    const wrapped = new Error('Keyring delete failed: ' + msg);
-    wrapped.code = 'EKEYRING';
-    wrapped.cause = e;
-    throw wrapped;
-  }
+  })();
+  return { provider, account, deleted };
 }
 
 // ---- Non-secret account index ------------------------------------------
-// The keychain is the source of truth for credentials; this index is a
-// hint so the UI can list "signed in accounts" without round-tripping
-// the keychain. Out of sync is recoverable: getToken/deleteToken still
-// work, and the index can be rebuilt by walking the keychain (later
-// commit, when @napi-rs/keyring exposes a find-by-service API).
+// Preserve the legacy account index for migration; merge saved DB accounts
+// without returning credential values to the UI.
 
 function readIndex() {
   const app = settings.getApp();
   const raw = app.authAccounts;
   const out = {};
   for (const p of SUPPORTED_PROVIDERS) {
-    out[p] = Array.isArray(raw && raw[p]) ? raw[p].slice() : [];
+    out[p] = [...new Set([
+      ...(Array.isArray(raw && raw[p]) ? raw[p] : []),
+      ...credentials.accounts(serviceName(p))
+    ])].sort();
   }
   return out;
 }
@@ -187,24 +137,24 @@ function listAccounts() {
 // ---- Model integration -------------------------------------------------
 
 // Map an AI client provider (the value stored on the model record's
-// `provider` field) to the auth provider that the keychain is keyed
+// `provider` field) to the auth provider that the credential table is keyed
 // under. The model record keeps the AI client provider verbatim per
 // decision §10; the mapping lives here, in the auth module, because
-// that is the subsystem that owns the keyring namespace.
+// that is the subsystem that owns the credential namespace.
 //
 // Today's pairs are 1:1 except for the OpenAI-compatible family, which
-// uses the openai keyring namespace so any signed-in OpenAI account
+// uses the openai credential namespace so any signed-in OpenAI account
 // can serve an openai-compatible model. New AI clients that should
 // re-use an existing auth flow register here.
 const AI_TO_AUTH_PROVIDER = Object.freeze({
   'openai-compatible': 'openai',
   'anthropic':         'anthropic',
   'gemini':            'google',
-  'ollama':            'ollama', // no keychain; rejected upstream as a non-OAuth model
+  'ollama':            'ollama', // no OAuth; rejected upstream as a non-OAuth model
   'github-copilot':    'github-copilot',
   'codex':             'codex',
   // Azure, Mistral, Groq, DeepSeek and the other OpenAI-shaped
-  // providers take API keys only; they map to their own keyring
+  // providers take API keys only; they map to their own credential
   // namespaces so a key stored under one provider is never treated
   // as a credential for another (the settings UI never offers an
   // OAuth option for them anyway).
@@ -212,10 +162,10 @@ const AI_TO_AUTH_PROVIDER = Object.freeze({
   'mistral':           'mistral',
   'groq':              'groq',
   'deepseek':          'deepseek',
-  // OpenRouter has its own keyring namespace ('openrouter'). The
+  // OpenRouter has its own credential namespace ('openrouter'). The
   // PKCE sign-in flow (src/oauth-openrouter.js) stores the issued
   // API key under that namespace; the apikey path uses
-  // model.apiKey directly and does not touch the keychain. Two
+  // model.apiKey directly and does not use the credential table. Two
   // signed-in OpenRouter accounts therefore live as separate rows
   // in the OAuth account picker; an OpenAI key in the 'openai'
   // namespace is NOT a valid OpenRouter credential — the two
@@ -258,7 +208,7 @@ function tokenForModel(model) {
 // Used by the loopback callback to remember which (state, code_verifier,
 // redirect_uri, scopes) tuple the client started, so the callback can
 // finish the exchange. The state is opaque, generated by the client and
-// echoed by the provider. Persisted in the app store (not the keychain —
+// echoed by the provider. Persisted in the app settings store (separate from saved credentials —
 // these are not secrets per se, but the code_verifier is a PKCE secret
 // and we treat it as one).
 //

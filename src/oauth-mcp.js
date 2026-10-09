@@ -1,16 +1,11 @@
 'use strict';
 
 // MCP OAuth is independent of AI-provider accounts. Credentials are scoped to
-// the saved server identity and stored only in the OS keychain.
+// the saved server identity and stored in the app database credential table.
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-// Native keyring addon, loaded on the first vault access.
-let keyringMod = null;
-function vaultEntry(key) {
-  const { Entry } = keyringMod || (keyringMod = require('@napi-rs/keyring'));
-  return new Entry('mouaif/mcp-oauth', key);
-}
+const credentials = require('./credentialStore.js');
 const CALLBACK_PATH = '/oauth/mcp/callback';
 const PENDING_TTL = 10 * 60 * 1000;
 const error = (code, message) => Object.assign(new Error(message), { code });
@@ -24,7 +19,7 @@ function identity({ entry, scope, projectDir }) {
 }
 
 // The client secret is configuration, not a grant: it lives in its own
-// keychain entry keyed by the server (not by its OAuth settings), so
+// DB entry keyed by the server (not by its OAuth settings), so
 // Disconnect and a scope change keep it, and it never reaches .mcp.json.
 function secretKey({ entry, scope, projectDir }) {
   let project = scope === 'app' ? 'app' : path.resolve(projectDir);
@@ -47,25 +42,15 @@ function safeUrl(value) {
 
 const vault = {
   read(key) {
-    try {
-      const text = vaultEntry(key).getPassword();
-      return text ? JSON.parse(text) : {};
-    } catch (e) {
-      if (/no matching entry|not found|No such file/i.test(e.message || '')) return {};
-      throw error('EKEYRING', 'MCP OAuth needs an available OS keychain.');
-    }
+    const text = credentials.read('mouaif/mcp-oauth', key);
+    try { return text ? JSON.parse(text) : {}; }
+    catch { throw error('ECREDENTIALS', 'Stored MCP OAuth credentials are invalid.'); }
   },
   write(key, value) {
-    try { vaultEntry(key).setPassword(JSON.stringify(value)); }
-    catch { throw error('EKEYRING', 'Could not save MCP OAuth credentials in the OS keychain.'); }
+    credentials.write('mouaif/mcp-oauth', key, JSON.stringify(value));
   },
   remove(key) {
-    try { vaultEntry(key).deletePassword(); }
-    catch (e) {
-      if (!/no matching entry|not found|No such file/i.test(e.message || '')) {
-        throw error('EKEYRING', 'Could not remove MCP OAuth credentials from the OS keychain.');
-      }
-    }
+    credentials.remove('mouaif/mcp-oauth', key);
   }
 };
 
@@ -234,7 +219,7 @@ function createManager({ storage = vault, resolveContext } = {}) {
       if (result !== 'AUTHORIZED') throw new Error('not authorized');
       return { connected: true, grant: 'client_credentials' };
     } catch (e) {
-      if (e.code === 'EKEYRING') throw e;
+      if (e.code === 'ECREDENTIALS') throw e;
       throw error('EMCP_AUTH', 'Could not get a token with client credentials. Check the client ID, secret, and scopes.');
     }
   }
@@ -269,7 +254,7 @@ function createManager({ storage = vault, resolveContext } = {}) {
       return { authorizationUrl: flow.authorizationUrl, redirectUrl, expiresAt: flow.expiresAt };
     } catch (e) {
       pending.delete(state);
-      if (e.code === 'EKEYRING' || e.code === 'EBADINPUT') throw e;
+      if (e.code === 'ECREDENTIALS' || e.code === 'EBADINPUT') throw e;
       // SDK errors may contain raw upstream response bodies (including secrets).
       throw error('EMCP_AUTH', 'Could not start OAuth. Check server OAuth support and the client ID/redirect URI.');
     }
@@ -288,7 +273,7 @@ function createManager({ storage = vault, resolveContext } = {}) {
       await auth(provider(current, flow), { serverUrl: current.entry.url, authorizationCode: code, fetchFn: oauthFetch });
       return { ok: true };
     } catch (e) {
-      if (e.code === 'EKEYRING') throw e;
+      if (e.code === 'ECREDENTIALS') throw e;
       throw error('EMCP_AUTH', 'OAuth exchange failed. Start sign-in again and check the server configuration.');
     }
   }

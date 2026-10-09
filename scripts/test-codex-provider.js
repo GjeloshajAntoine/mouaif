@@ -96,6 +96,10 @@ async function waitFor(predicate) {
       assert.ok(!fs.readFileSync(diagnosticFile, 'utf8').includes(secret), 'diagnostics exclude ' + secret);
     }
     assert.equal(Object.hasOwn(oauth.getDeviceFlow(flow.id), 'diagnostic'), false, 'REST shape is unchanged');
+    const dbFlow = await oauth.startDeviceFlow({ fetchImpl: deviceFetch, sleep: async () => {} });
+    await waitFor(() => oauth.getDeviceFlow(dbFlow.id).status === 'ok');
+    assert.equal(JSON.parse(auth.getToken('codex', 'me@example.com (workspace-1)')).accessToken, accessToken,
+      'real Codex sign-in saves through the SQLite credential adapter');
     const exchangeFailed = await oauth.startDeviceFlow({ fetchImpl: (url, init) => url.endsWith('/oauth/token')
       ? Promise.resolve(json({ error: 'PRIVATE_ERROR_BODY' }, 401)) : deviceFetch(url, init), sleep: async () => {} });
     await waitFor(() => oauth.getDeviceFlow(exchangeFailed.id).status === 'error');
@@ -104,10 +108,10 @@ async function waitFor(predicate) {
     assert.equal(readDiagnostic().errorCode, 'EOAUTH');
     assert.ok(!fs.readFileSync(diagnosticFile, 'utf8').includes('PRIVATE_ERROR_BODY'));
     const keychainFailed = await oauth.startDeviceFlow({ fetchImpl: deviceFetch, sleep: async () => {},
-      setToken: async () => { throw Object.assign(new Error('PRIVATE_KEYCHAIN_ERROR'), { code: 'EKEYRING' }); } });
+      setToken: async () => { throw Object.assign(new Error('PRIVATE_KEYCHAIN_ERROR'), { code: 'ECREDENTIALS' }); } });
     await waitFor(() => oauth.getDeviceFlow(keychainFailed.id).status === 'error');
-    assert.equal(readDiagnostic().stage, 'store_keychain');
-    assert.equal(readDiagnostic().errorCode, 'EKEYRING');
+    assert.equal(readDiagnostic().stage, 'store_credentials');
+    assert.equal(readDiagnostic().errorCode, 'ECREDENTIALS');
     assert.ok(!fs.readFileSync(diagnosticFile, 'utf8').includes('PRIVATE_KEYCHAIN_ERROR'));
 
     let release;
@@ -246,6 +250,8 @@ async function waitFor(predicate) {
     const response = await fetch(base + '/api/auth/device/codex', { method: 'POST' });
     assert.equal(response.status, 200);
     assert.equal((await response.json()).status, 'pending');
+    const publicSettings = await (await fetch(base + '/api/settings')).text();
+    assert.ok(!publicSettings.includes(accessToken) && !publicSettings.includes('REFRESH'), 'settings REST never returns DB credentials');
     assert.equal((await fetch(base + '/api/auth/device/codex?id=' + routeFlow.id)).status, 200);
     assert.equal((await fetch(base + '/api/auth/device/codex?id=missing')).status, 404);
     assert.equal((await fetch(base + '/api/auth/device/codex')).status, 400);

@@ -37,7 +37,8 @@ Anthropic and OpenRouter offer **Sign in** in the provider form: the browser is 
 ## Where credentials are kept
 
 - **API keys** are saved in the app's own settings store on the computer that runs mouaif (`~/.mouaif/store.sqlite`), never in a project folder. The web UI only learns whether a key is set; it never receives the key itself.
-- **Browser sign-in tokens** are saved in the operating system's keychain.
+- **Sign-in tokens and MCP OAuth secrets** are saved in a dedicated credential table in the same app SQLite DB, not in settings responses. New sign-ins do not require a keychain.
+- The DB is **not encrypted by mouaif**. Protect it and its backups like password files. See [Credential storage](./credential-storage.md).
 - Credentials never leave that computer except in requests to the provider they belong to.
 - **Delete** in the provider form removes a connection. Project models that use it stop working until you add it again.
 

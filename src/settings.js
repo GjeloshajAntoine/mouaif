@@ -116,7 +116,7 @@ const DEFAULTS = Object.freeze({
   projects: [],
   // Non-secret account index for OAuth sign-ins. Shape:
   //   { openai: ['me@example.com'], anthropic: [], google: [], 'github-copilot': [] }
-  // The actual tokens live in the OS keychain via src/auth.js.
+  // The actual tokens live in the separate credentials table via src/auth.js.
   authAccounts: {},
   // Default prompt-size profile for new chats. One of 'very-small' | 'average' | 'extensive' | 'chat'.
   promptSize: 'average',
@@ -210,8 +210,23 @@ function requireCanonicalProjectDir(projectDir) {
 function openDb(home) {
   ensureDir(home);
   const dbPath = path.join(home, APP_DB);
+  // The app DB includes credentials. Restrict the DB before creating WAL/SHM
+  // sidecars, whose permissions SQLite derives from the database file.
   const db = new Database(dbPath);
+  if (process.platform !== 'win32') fs.chmodSync(dbPath, 0o600);
   db.pragma('journal_mode = WAL');
+  if (process.platform !== 'win32') {
+    for (const suffix of ['-wal', '-shm']) {
+      try { fs.chmodSync(dbPath + suffix, 0o600); }
+      catch (e) { if (e.code !== 'ENOENT') throw e; }
+    }
+  }
+  db.exec(`CREATE TABLE IF NOT EXISTS credentials (
+    service TEXT NOT NULL,
+    account TEXT NOT NULL,
+    value TEXT,
+    PRIMARY KEY (service, account)
+  )`);
   db.exec(
     `CREATE TABLE IF NOT EXISTS ${APP_KV_TABLE} (
        key   TEXT PRIMARY KEY,

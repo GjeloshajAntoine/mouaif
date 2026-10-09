@@ -20,7 +20,7 @@ For API-key access to OpenAI models, use **OpenAI compatible** instead. Codex is
 
 ## Behavior
 
-- Access and refresh tokens are held in the OS keychain. Expiring chat credentials refresh automatically; settings only hold the account selection and non-secret account index.
+- Access and refresh tokens are held in the app SQLite credential table, not the settings JSON returned to clients. Expiring chat credentials refresh automatically. See [Credential storage](./credential-storage.md) for migration and backup security.
 - The live catalog excludes hidden models and preserves context windows and reasoning levels when provided.
 - Tool calls use mouaif's normal authorization and multi-turn behavior. Cached input tokens are reported separately.
 - The ChatGPT backend is distinct from the public OpenAI API; endpoint and sign-in behavior may change upstream. Real-account sign-in and model access depend on your plan and workspace policy.
@@ -31,7 +31,7 @@ The server writes a bounded snapshot of the most recent sign-in activity to `<mo
 
 The snapshot contains only the timestamp, local flow ID, status, stage, poll count, HTTP status when available, and a fixed error category or network-failure flag. It never records device codes, upstream device IDs, authorization codes, PKCE verifiers, tokens, account details, headers, upstream response bodies, or raw error messages.
 
-Use it during a fresh attempt to distinguish waiting for approval (`poll_approval_response`, HTTP 403/404), token exchange, account validation, keychain storage, and completion. In-progress requests show their stage before the response arrives. A snapshot survives restart, but the pending sign-in session itself does not; another attempt overwrites the snapshot.
+Use it during a fresh attempt to distinguish waiting for approval (`poll_approval_response`, HTTP 403/404), token exchange, account validation, database storage (`store_credentials`), and completion. In-progress requests show their stage before the response arrives. A snapshot survives restart, but the pending sign-in session itself does not; another attempt overwrites the snapshot.
 
 ## REST endpoints
 
@@ -41,4 +41,4 @@ These endpoints expose only the public flow status, never access/refresh tokens 
 - `GET /api/auth/device/codex?id=<id>` returns the same shape. Status is `pending`, `ok`, `expired`, `cancelled`, or `error`.
 - `DELETE /api/auth/device/codex?id=<id>` cancels a flow and returns `{ ok }`.
 
-Account listing and local sign-out use the existing `/api/auth/accounts` endpoints. Local sign-out removes the keychain credential; it does not revoke authorization at OpenAI. Live model discovery uses the existing `/api/ai/models/live?provider=codex` endpoint.
+Account listing and local sign-out use the existing `/api/auth/accounts` endpoints. Local sign-out clears the app DB credential; it does not revoke authorization at OpenAI. Live model discovery uses the existing `/api/ai/models/live?provider=codex` endpoint.

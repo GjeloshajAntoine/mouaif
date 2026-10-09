@@ -78,11 +78,11 @@ The "trace to file" feature is a **user export**, not a background stream and no
 - Streaming protocol: each upstream event is converted to an SSE event of the same name. The UI receives `event: message` for content deltas, `event: tool_call` / `event: tool_result` (later commits), and `event: done` when the response is complete. `event: error` carries a typed code.
 - 5xx from the upstream becomes an SSE `error` event; the connection is then closed. The chat UI is expected to surface the typed code.
 
-## 11. Auth — @napi-rs/keyring token store + per-model auth + loopback callback
+## 11. Auth — app SQLite credential store + per-model auth + loopback callback
 
-- OAuth tokens live in the OS keychain via `@napi-rs/keyring` (a napi-rs binding to `keyring-rs`, cross-platform: Windows Credential Manager, macOS Keychain, Linux Secret Service / libsecret). Chosen over `keytar` because keytar is unmaintained and rebuilds frequently fail on modern Node. New runtime dependency.
-- App settings keep a non-secret index of `{ provider, account }` so the UI can list "logged in as ..." without touching the keychain.
-- Loopback callback: `mouaif serve` exposes `GET /oauth/callback` on the same port. The user does the login in their system browser; the provider redirects back to the local server; the server exchanges the code, stores the token in the keyring, and the UI polls `GET /api/auth/status?provider=...` to learn when login finished.
+- OAuth tokens and MCP OAuth secrets live in a dedicated `credentials` table in the app SQLite DB. API keys already live in app settings in that DB. This supersedes the original OS-keychain backend, which failed on headless hosts. The DB is not encrypted by mouaif; POSIX DB/WAL/SHM permissions are owner-only. `@napi-rs/keyring` remains for non-destructive copy-on-read legacy migration; sign-out tombstones prevent old entries from resurrecting. See [Credential storage](features/credential-storage.md).
+- App settings keep a non-secret index of `{ provider, account }` so the UI can list "logged in as ..." without returning credential values.
+- Loopback callback: `mouaif serve` exposes `GET /oauth/callback` on the same port. The user does the login in their system browser; the provider redirects back to the local server; the server exchanges the code, stores the token in the app DB, and the UI polls `GET /api/auth/status?provider=...` to learn when login finished.
 - Per-model auth: a model with `auth: 'oauth'` is resolved to the matching `oauthAccount`; if missing, the proxy returns a typed `ENOAUTH` error and the UI prompts to sign in.
 
 ## 12. OAuth — one provider per commit
@@ -93,7 +93,7 @@ The "trace to file" feature is a **user export**, not a background stream and no
 
 ## 13. Proactive OAuth refresh
 
-- The AI client (`src/ai.js → requireApiKey`) inspects the stored access token's `expiresAt` before every chat. If the token is within `OAUTH_REFRESH_LEAD_MS` (60s) of expiry (or already past) and a `refresh_token` is on file, the client invokes the provider's registered refresher and persists the new blob back to the keychain. The outbound request uses the new access token, so a long chat never hits a 401 mid-stream.
+- The AI client (`src/ai.js → requireApiKey`) inspects the stored access token's `expiresAt` before every chat. If the token is within `OAUTH_REFRESH_LEAD_MS` (60s) of expiry (or already past) and a `refresh_token` is on file, the client invokes the provider's registered refresher and persists the new blob back to the app DB. The outbound request uses the new access token, so a long chat never hits a 401 mid-stream.
 - Refreshers are registered with `auth.registerRefresher(provider, fn)`, the same shape as the existing `auth.registerExchange(provider, fn)`. The fn signature is `({ provider, account, refreshToken, scope, baseUrl }) -> { accessToken, refreshToken?, expiresAt?, scope?, account? }`. Persistence of the new blob is the refresh path's responsibility; the AI client just consumes the result.
 - Failure mode: a refresh that throws is caught and swallowed; the chat falls through to the stored access token. The upstream's clean 401 is the recovery signal. We don't surface refresh failures to the chat UI as a hard error because (a) the token may still be valid for a few seconds, and (b) a flaky refresh should not block every chat past the lead window.
 - Anthropic wires this via `oauthAnthropic.refresh` (registered in `oauthAnthropic.register()`). Other providers register their own. The 60s lead matches the SDK's typical advisory-refresh threshold.

@@ -3,8 +3,7 @@
 // MCP OAuth gaps (docs/features/mcp-oauth.md): legacy SSE transport,
 // client_credentials grant, confidential-client secrets, and RFC 7009 remote
 // revocation on Disconnect. Real SDK discovery / token / transport code runs
-// against a local fixture authorization server + MCP server; only the OS
-// keychain is replaced with an in-memory map.
+// against local fixture servers and an isolated real SQLite credential store.
 
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -15,16 +14,7 @@ const crypto = require('node:crypto');
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-mcp-oauth-x-'));
 process.env.MOUAIF_HOME = home;
 
-const credentials = new Map();
-const keyringPath = require.resolve('@napi-rs/keyring');
-require.cache[keyringPath] = { id: keyringPath, filename: keyringPath, loaded: true, exports: {
-  Entry: class {
-    constructor(service, account) { this.key = service + '/' + account; }
-    getPassword() { if (!credentials.has(this.key)) throw new Error('not found'); return credentials.get(this.key); }
-    setPassword(value) { credentials.set(this.key, value); }
-    deletePassword() { credentials.delete(this.key); }
-  }
-} };
+
 
 const mcp = require('../src/mcp.js');
 const { createServer } = require('../src/index.js');
@@ -163,7 +153,7 @@ async function main() {
   assert.equal(cc.oauth.secretConfigured, true);
   assert.ok(!JSON.stringify(created.data).includes(CC_SECRET), 'secret never returned');
   assert.ok(!fs.readFileSync(path.join(project, '.mcp.json'), 'utf8').includes(CC_SECRET), 'secret never in .mcp.json');
-  assert.ok([...credentials.values()].some((v) => v.includes(CC_SECRET)), 'secret stored in keychain');
+  assert.ok(settings.getDb().prepare('SELECT value FROM credentials WHERE value IS NOT NULL').all().some(row => row.value.includes(CC_SECRET)), 'secret stored in app DB');
 
   const route = '/api/mcp/servers/' + cc.id + '/oauth';
   const st0 = await request(route + qs);
@@ -226,7 +216,7 @@ async function main() {
   assert.equal(cleared.data.server.oauth.secretConfigured, false);
   // CC server removal drops its secret.
   assert.equal((await request('/api/mcp/servers/' + cc.id + qs, 'DELETE')).status, 200);
-  assert.ok(![...credentials.values()].some((v) => v.includes(CC_SECRET)), 'removing the server removes its secret');
+  assert.ok(!settings.getDb().prepare('SELECT value FROM credentials WHERE value IS NOT NULL').all().some(row => row.value.includes(CC_SECRET)), 'removing the server removes its secret');
 
   // ---- legacy SSE transport ------------------------------------------------
   const sse = (await request('/api/mcp/servers', 'POST', { projectDir: project, scope: 'project', name: 'Legacy', transport: 'sse', url: origin + '/sse',

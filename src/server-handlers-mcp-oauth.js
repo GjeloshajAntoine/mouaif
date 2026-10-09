@@ -36,8 +36,8 @@ async function handleMcpOAuth(req, res, parsed, serverConfig) {
       sendJSON(res, 200, oauth.status(context));
     }
   } catch (e) {
-    const code = ['EBADINPUT', 'EKEYRING', 'EMCP_AUTH'].includes(e.code) ? e.code : 'EMCP_AUTH';
-    sendJSON(res, code === 'EBADINPUT' ? 400 : code === 'EKEYRING' ? 503 : 409, {
+    const code = ['EBADINPUT', 'ECREDENTIALS', 'EMCP_AUTH'].includes(e.code) ? e.code : 'EMCP_AUTH';
+    sendJSON(res, code === 'EBADINPUT' ? 400 : code === 'ECREDENTIALS' ? 503 : 409, {
       code, error: code === e.code ? e.message : 'MCP OAuth failed. Check configuration and try again.'
     });
   }

@@ -219,7 +219,7 @@ export function McpStoreSheet(props) {
                     h('span', { class: 'seg__pill' }, label)))
               ),
               h('span', { class: 'hint hint--compact mcps-sheet__hint' }, auth === 'oauth'
-                ? 'You sign in with your account in the browser after installing. Tokens stay in the OS keychain.'
+                ? 'You sign in with your account in the browser after installing. Tokens stay in the app database. Protect DB backups; credentials are not encrypted.'
                 : (needsBearer ? 'Paste the key the service gave you below.' : 'Pick OAuth if the service asks you to sign in.'))
             )
           : null,

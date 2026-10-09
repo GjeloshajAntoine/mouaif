@@ -689,7 +689,7 @@ async function finishOAuth({ provider, state, code, errorParam, format }) {
     await auth.setToken(provider, account, blob);
     return { status: 200, account };
   } catch (e) {
-    return { status: 500, error: e.message, code: e.code || 'EKEYRING' };
+    return { status: 500, error: e.message, code: e.code || 'ECREDENTIALS' };
   }
 }
 

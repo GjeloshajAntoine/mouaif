@@ -71,7 +71,7 @@ async function handleAuth(req, res, parsed, serverConfig) {
       const r = auth.deleteToken(provider, account);
       return sendJSON(res, 200, Object.assign({ ok: true }, r));
     } catch (e) {
-      return sendJSON(res, 500, { error: e.message, code: e.code || 'EKEYRING' });
+      return sendJSON(res, 500, { error: e.message, code: e.code || 'ECREDENTIALS' });
     }
   }
 

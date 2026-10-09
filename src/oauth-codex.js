@@ -16,7 +16,7 @@ function recordDiagnostic(flow, stage, details = {}) {
     pollAttempts: flow?.pollAttempts || 0,
     ...(Number.isInteger(details.httpStatus) ? { httpStatus: details.httpStatus } : {}),
     ...(details.networkError ? { networkError: true } : {}),
-    ...(details.errorCode ? { errorCode: ['EOAUTH', 'EPARSE', 'ETOKEN', 'EKEYRING'].includes(details.errorCode)
+    ...(details.errorCode ? { errorCode: ['EOAUTH', 'EPARSE', 'ETOKEN', 'EKEYRING', 'ECREDENTIALS'].includes(details.errorCode)
       ? details.errorCode : 'EUNKNOWN' } : {})
   };
   if (flow) flow.diagnostic = diagnostic;
@@ -167,7 +167,7 @@ async function startDeviceFlow({ fetchImpl = globalThis.fetch, setToken = auth.s
         if (flow.status !== 'pending') return;
         recordDiagnostic(flow, 'validate_account');
         if (!token.chatgptAccountId || !token.account) throw oauthError('ChatGPT account ID is missing from the token.', 'ETOKEN');
-        recordDiagnostic(flow, 'store_keychain');
+        recordDiagnostic(flow, 'store_credentials');
         await setToken('codex', token.account, JSON.stringify(token));
         if (flow.status !== 'pending') return;
         flow.account = token.account;
@@ -183,7 +183,7 @@ async function startDeviceFlow({ fetchImpl = globalThis.fetch, setToken = auth.s
     } catch (e) {
       if (flow.status === 'pending') {
         flow.status = 'error';
-        flow.error = e.code === 'EKEYRING' ? 'Could not store the token in the OS keychain.' : 'Codex sign-in failed. Start sign-in again.';
+        flow.error = e.code === 'ECREDENTIALS' ? 'Could not store the token in the app database.' : 'Codex sign-in failed. Start sign-in again.';
         // Preserve the failed stage/HTTP status, without copying Error.message.
         recordDiagnostic(flow, flow.diagnostic?.stage || 'failed',
           { httpStatus: flow.diagnostic?.httpStatus, errorCode: e.code || 'EUNKNOWN' });

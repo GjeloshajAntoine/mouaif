@@ -2,7 +2,7 @@
 
 ## Overview
 
-Remote MCP servers (Streamable HTTP or legacy SSE) can use OAuth instead of a manually entered bearer token. Two grants are supported: browser sign-in with PKCE (authorization code), and client credentials for machine-to-machine servers. Mouaif discovers the authorization server with the installed MCP SDK, stores tokens and client secrets in the OS keychain, refreshes access tokens, and revokes them at the server when you disconnect.
+Remote MCP servers (Streamable HTTP or legacy SSE) can use OAuth instead of a manually entered bearer token. Two grants are supported: browser sign-in with PKCE (authorization code), and client credentials for machine-to-machine servers. Mouaif discovers the authorization server with the installed MCP SDK, stores tokens and client secrets in the app SQLite credential table, refreshes access tokens, and revokes them at the server when you disconnect.
 
 ## Usage
 
@@ -34,7 +34,7 @@ When the token expires or the server returns `401`, mouaif requests a new one au
 
 - The secret is write-only. The editor shows only that a secret is stored, and the API returns `secretConfigured: true|false`.
 - Leave the field blank to keep the stored secret. Type a new one to replace it, or tap **Remove stored secret**.
-- The secret lives in the OS keychain, never in `.mcp.json` or the app store. Disconnect keeps it; turning OAuth off or deleting the server removes it.
+- The secret lives in a dedicated app DB credential table, never in `.mcp.json` or settings responses. Disconnect keeps it; turning OAuth off or deleting the server removes it. See [Credential storage](./credential-storage.md) for migration and backup security.
 
 ### Disconnect and revocation
 

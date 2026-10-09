@@ -23,7 +23,7 @@ The shipped public client works for most accounts. To use your own GitHub OAuth 
 
 ## Behavior
 
-- The GitHub token is stored in the OS keychain. The Copilot token lasts about 30 minutes, is kept only in memory, and is renewed automatically.
+- The GitHub token is stored in the app SQLite credential table. The Copilot token lasts about 30 minutes, is kept only in memory, and is renewed automatically. See [Credential storage](./credential-storage.md) for migration and backup security.
 - Business and Enterprise seats are routed to the API host GitHub assigns to the account. Only `https://*.githubcopilot.com` hosts are accepted.
 - The model list comes from your account's live Copilot catalog, so models disabled by your plan or organization policy are not offered. With no sign-in, or if that request fails, a built-in list is shown.
 - Tool calls, thinking levels, and max output tokens work as they do for other OpenAI-shaped providers.

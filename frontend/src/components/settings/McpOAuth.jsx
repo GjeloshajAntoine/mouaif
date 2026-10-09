@@ -89,7 +89,7 @@ export function McpOAuth({ id, projectDir, saved, value, onChange }) {
 
   const set = (patch) => onChange({ ...value, ...patch });
   const secretHint = secretStored
-    ? 'A secret is stored in the OS keychain. Leave blank to keep it.'
+    ? 'A secret is stored in the app database. Leave blank to keep it.'
     : isCC ? 'Required for client credentials.' : 'Only for a confidential client. Leave blank for a public client.';
 
   return h('div', { class: 'row' },
@@ -116,8 +116,8 @@ export function McpOAuth({ id, projectDir, saved, value, onChange }) {
       h('label', { class: 'label', for: 'mcp-oauth-scope' }, 'OAuth scopes (optional)'),
       h('input', { class: 'input', id: 'mcp-oauth-scope', value: value.scope, placeholder: 'Server-discovered scopes', onInput: (e) => set({ scope: e.target.value }) }),
       h('p', { class: 'hint hint--compact' }, isCC
-        ? 'mouaif requests a token directly from the authorization server with the client ID and secret, and gets a new one when it expires. Tokens and the secret stay in the OS keychain, not project files.'
-        : 'Uses authorization-code OAuth with PKCE. Tokens stay in the OS keychain, not project files. OAuth replaces any manual Authorization header. Servers without automatic client registration need a pre-registered client ID (plus its secret for a confidential client).'),
+        ? 'mouaif requests a token directly from the authorization server with the client ID and secret, and gets a new one when it expires. Tokens and the secret stay in the app database, not project files. Protect DB backups; credentials are not encrypted.'
+        : 'Uses authorization-code OAuth with PKCE. Tokens stay in the app database, not project files. Protect DB backups; credentials are not encrypted. OAuth replaces any manual Authorization header. Servers without automatic client registration need a pre-registered client ID (plus its secret for a confidential client).'),
       !isCC ? h('p', { class: 'hint hint--compact', style: 'overflow-wrap:anywhere' }, 'Register this callback URL if needed: ', status?.redirectUrl || (window.location.origin + '/oauth/mcp/callback')) : null,
       !canSignIn ? h('p', { class: 'hint' }, 'Save the URL and OAuth settings to ' + (isCC ? 'connect.' : 'sign in.')) : h('div', { class: 'row' },
         h('span', { class: 'hint' }, status?.connected ? (isCC ? 'Connected' : 'Signed in') : status?.pending ? 'Waiting for sign-in' : (isCC ? 'Not connected' : 'Not signed in')),
