@@ -21,7 +21,7 @@ The model calls `task` with these parameters:
 | `title` | string | on create | Task title (max 60 chars — keep it short, a few words) |
 | `description` | string | no | Optional description (max 2000 chars) |
 | `taskId` | string | on update/complete | The task ID returned when the task was created |
-| `current` | number | on update | Current progress value (0-based) |
+| `current` | number | on update | Current progress value (0-based), clamped to `0..total` |
 | `total` | number | on update | Total progress value (must be ≥ 1) |
 
 ### Example: creating a task

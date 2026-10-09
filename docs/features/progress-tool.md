@@ -21,7 +21,7 @@ The model calls `report_progress` with this schema:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `title` | string | yes | Short description of the operation (max 120 chars) |
-| `current` | number | yes | Current progress value (0-based) |
+| `current` | number | yes | Current progress value (0-based), clamped to `0..total` |
 | `total` | number | yes | Maximum progress value (must be positive) |
 | `status` | string | no | `"running"`, `"completed"`, or `"failed"` (default: `"running"`) |
 | `message` | string | no | Optional status message shown below the progress bar (max 500 chars) |

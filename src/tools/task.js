@@ -107,9 +107,9 @@ function validateArgs(args) {
     const current = Number.isFinite(args.current) ? Math.max(0, Math.round(args.current)) : null;
     const total = Number.isFinite(args.total) ? Math.max(1, Math.round(args.total)) : null;
     if (current == null || total == null) {
-      const e = new Error('current and total are required when action is "update_progress"'); e.code = 'EBADINPUT'; throw e;
+    const e = new Error('current and total are required when action is "update_progress"'); e.code = 'EBADINPUT'; throw e;
     }
-    return { action: 'update_progress', taskId, current, total };
+    return { action: 'update_progress', taskId, current: Math.min(total, current), total };
   }
   if (action === 'complete') {
     const taskId = typeof args.taskId === 'string' && args.taskId.trim() ? args.taskId.trim() : null;

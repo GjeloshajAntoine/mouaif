@@ -298,6 +298,7 @@ async function runSingleToolCall(c, cx) {
         tool: c.name,
         callId: c.id,
         cmd: args && args.cmd,
+        shell: args && args.shell,
         path: args && args.path,
         query: args && args.query,
         summary,
@@ -2167,14 +2168,37 @@ promptSize: callOpts && callOpts.promptSize,
         const r = { error: { code: 'ENOANSWER', message: 'ask_user resolved without a user answer; the question was not shown or the session was stale. Ask the user again.' } };
         return { ok: false, content: JSON.stringify(r), result: r };
       }
-      const choice = payload && Array.isArray(payload.choice) ? payload.choice.slice() : (payload && typeof payload.choice === 'string' ? payload.choice : '');
+      const validValues = new Set(validated.options.map((option) => option.value));
+      const hasChoice = Object.prototype.hasOwnProperty.call(payload, 'choice');
+      let choice = '';
+      if (Array.isArray(payload.choice)) {
+      if (!validated.multiSelect || payload.choice.some((value) => typeof value !== 'string' || !validValues.has(value))) {
+      const r = { error: { code: 'EBADINPUT', message: 'ask_user choice must contain only valid option values' } };
+      return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      choice = Array.from(new Set(payload.choice));
+      } else if (typeof payload.choice === 'string') {
+      if (payload.choice && !validValues.has(payload.choice)) {
+      const r = { error: { code: 'EBADINPUT', message: 'ask_user choice must match an option value' } };
+      return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      choice = payload.choice;
+      } else if (hasChoice && payload.choice != null) {
+      const r = { error: { code: 'EBADINPUT', message: 'ask_user choice must be a string or array' } };
+      return { ok: false, content: JSON.stringify(r), result: r };
+      }
       const extra = askMod.clampExtra(payload && typeof payload.extra === 'string' ? payload.extra : '');
+      const cancelled = !!(payload && payload.cancelled);
+      if (!cancelled && !choice && !extra) {
+      const r = { error: { code: 'EBADINPUT', message: 'ask_user answer must select a valid option or include a note' } };
+      return { ok: false, content: JSON.stringify(r), result: r };
+      }
       const out = askMod.buildResult({
         choice,
         extra,
         options: validated.options,
         multiSelect: validated.multiSelect,
-        cancelled: !!(payload && payload.cancelled)
+        cancelled
       });
       return { ok: out.ok, content: out.content, result: out.result };
     }

@@ -483,7 +483,7 @@ async function handleTools(req, res, parsed, sessionToken = '') {
     let authorization;
     try {
       authorization = await require('./tools/authorization.js').authorize({
-        projectDir, chatId, callId, tool: 'shell', cmd, summary: cmd, timeoutMs, flow: 'retry'
+        projectDir, chatId, callId, tool: 'shell', cmd, shell: shellOverride, summary: cmd, timeoutMs, flow: 'retry'
       });
     } catch (e) {
       const status = e.code === 'ETOOL_DISABLED' || e.code === 'EDENIED' ? 403 : 400;

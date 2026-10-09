@@ -2,7 +2,7 @@
 
 ## Overview
 
-`mouaif` ships a built-in `shell` tool the model can invoke. The tool runs a command in the project's working directory, captures stdout / stderr / exit code / duration, and returns the result to the model. Calls and results ride the chat as `tool_call` and `tool_result` SSE events (see [docs/features/ai-client.md](./ai-client.md) for the reserved event names) and are persisted with the transcript and written to the trace file when tracing is on. The tool is **off by default per project**; the user opts in through project settings and gates every call with the authorization system ([docs/features/tool-authorization.md](./tool-authorization.md)).
+`mouaif` ships a built-in `shell` tool the model can invoke. The tool runs a command in the project's working directory, captures stdout / stderr / exit code / duration, and returns the result to the model. Interpreter overrides are validated as executable files, and timeouts/cancellation terminate the POSIX process group so child processes do not outlive the call. Calls and results ride the chat as `tool_call` and `tool_result` SSE events (see [docs/features/ai-client.md](./ai-client.md) for the reserved event names) and are persisted with the transcript and written to the trace file when tracing is on. The tool is **off by default per project**; the user opts in through project settings and gates every call with the authorization system ([docs/features/tool-authorization.md](./tool-authorization.md)).
 
 ## Usage
 

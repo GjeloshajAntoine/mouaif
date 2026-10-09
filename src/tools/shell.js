@@ -239,6 +239,7 @@ async function runShell(opts) {
   const projectDir = opts && opts.projectDir;
   const cmd = opts && opts.cmd;
   const onOutput = opts && typeof opts.onOutput === 'function' ? opts.onOutput : null;
+  const signal = opts && opts.signal;
   let timeoutMs = opts && typeof opts.timeoutMs === 'number' ? opts.timeoutMs : DEFAULT_TIMEOUT_MS;
   const maxChars = opts && typeof opts.maxChars === 'number' ? opts.maxChars
     : (opts && typeof opts.maxBytes === 'number' ? opts.maxBytes : DEFAULT_MAX_CHARS);
@@ -270,19 +271,31 @@ async function runShell(opts) {
 
   return await new Promise((resolve) => {
     let child;
+    const detached = process.platform !== 'win32';
     try {
       child = spawn(file, args, {
         cwd,
         env: childEnv(),
         windowsHide: true,
         windowsVerbatimArguments: verbatim,
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached
       });
     } catch (e) {
       return resolve({ ok: false, error: e.message, code: 'ESPAWN', durationMs: Date.now() - startedAt });
     }
 
     liveChildren.add(child);
+
+    // Keep the shell and every descendant in one process group on POSIX so
+    // a timeout/cancellation cannot leave grandchildren running after the
+    // shell wrapper exits.
+    const killTree = (signal) => {
+    try {
+      if (detached && child.pid) process.kill(-child.pid, signal);
+      else child.kill(signal);
+    } catch { /* already gone */ }
+    };
 
     // Output is accumulated as decoded text (StringDecoder keeps
     // multi-byte UTF-8 sequences intact across chunk boundaries) so
@@ -293,6 +306,24 @@ async function runShell(opts) {
     let errText = '';
     let settled = false;
     let killGrace = null;
+    let timer = null;
+    const abortHandler = () => {
+      killTree('SIGTERM');
+      killGrace = setTimeout(() => killTree('SIGKILL'), KILL_GRACE_MS);
+      killGrace.unref && killGrace.unref();
+      if (!settled) {
+        settled = true;
+        resolve({
+          ok: false,
+          error: 'aborted',
+          code: 'EABORTED',
+          stdout: truncate(outText, maxChars),
+          stderr: truncate(errText, maxChars),
+          identity,
+          durationMs: Date.now() - startedAt
+        });
+      }
+    };
 
     const appendCapped = (existing, decoder, chunk, stream) => {
       const text = decoder.write(chunk);
@@ -309,54 +340,60 @@ async function runShell(opts) {
     child.stdout.on('data', (c) => { outText = appendCapped(outText, outDec, c, 'stdout'); });
     child.stderr.on('data', (c) => { errText = appendCapped(errText, errDec, c, 'stderr'); });
 
-    const timer = setTimeout(() => {
-      // Timed out: SIGTERM, then SIGKILL after the grace window.
-      try { child.kill('SIGTERM'); } catch { /* gone */ }
-      killGrace = setTimeout(() => {
-        try { child.kill('SIGKILL'); } catch { /* gone */ }
-      }, KILL_GRACE_MS);
-      killGrace.unref && killGrace.unref();
-      if (!settled) {
-        settled = true;
-        // Note: the child may still be alive (waiting out the SIGKILL
-        // grace window). Keep it in liveChildren so the exit hook can
-        // reap it; its late 'close' is a no-op because `settled` is true.
-        resolve({
-          ok: false,
-          error: 'timed out',
-          code: 'ETIMEDOUT',
-          stdout: truncate(outText, maxChars),
-          stderr: truncate(errText, maxChars),
-          identity,
-          durationMs: Date.now() - startedAt
-        });
-      }
+    timer = setTimeout(() => {
+    // Timed out: SIGTERM, then SIGKILL after the grace window.
+    killTree('SIGTERM');
+    killGrace = setTimeout(() => {
+      killTree('SIGKILL');
+    }, KILL_GRACE_MS);
+    killGrace.unref && killGrace.unref();
+    if (!settled) {
+      settled = true;
+      // Note: the child may still be alive (waiting out the SIGKILL
+      // grace window). Keep it in liveChildren so the exit hook can
+      // reap it; its late 'close' is a no-op because `settled` is true.
+      resolve({
+      ok: false,
+      error: 'timed out',
+      code: 'ETIMEDOUT',
+      stdout: truncate(outText, maxChars),
+      stderr: truncate(errText, maxChars),
+      identity,
+      durationMs: Date.now() - startedAt
+      });
+    }
     }, timeoutMs);
     timer.unref && timer.unref();
+    if (signal) {
+    if (signal.aborted) abortHandler();
+    else signal.addEventListener('abort', abortHandler, { once: true });
+    }
 
     child.on('error', (e) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (killGrace) clearTimeout(killGrace);
-      liveChildren.delete(child);
-      resolve({ ok: false, error: e.message, code: 'ESPAWN', durationMs: Date.now() - startedAt });
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    if (killGrace) clearTimeout(killGrace);
+    if (signal) signal.removeEventListener('abort', abortHandler);
+    liveChildren.delete(child);
+    resolve({ ok: false, error: e.message, code: 'ESPAWN', durationMs: Date.now() - startedAt });
     });
 
     child.on('close', (exitCode) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (killGrace) clearTimeout(killGrace);
-      liveChildren.delete(child);
-      resolve({
-        ok: exitCode === 0,
-        stdout: truncate(outText, maxChars),
-        stderr: truncate(errText, maxChars),
-        exitCode: exitCode == null ? -1 : exitCode,
-        identity,
-        durationMs: Date.now() - startedAt
-      });
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    if (killGrace) clearTimeout(killGrace);
+    if (signal) signal.removeEventListener('abort', abortHandler);
+    liveChildren.delete(child);
+    resolve({
+      ok: exitCode === 0,
+      stdout: truncate(outText, maxChars),
+      stderr: truncate(errText, maxChars),
+      exitCode: exitCode == null ? -1 : exitCode,
+      identity,
+      durationMs: Date.now() - startedAt
+    });
     });
   });
 }

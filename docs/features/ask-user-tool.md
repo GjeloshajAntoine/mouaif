@@ -34,7 +34,7 @@ While sending an answer or dismissal, the controls are disabled and the primary 
 
 Once the call settles, the persisted transcript shows it as a collapsed tool card whose head line is the question and whose trailing slot is the recorded answer (`main`, `2 choices`, or `dismissed`).
 
-The user picks one option (or several, when `multiSelect: true`) and may attach a free-form note in the "extra" box. Tapping **Send answer** posts the selection + extra to the server, the chat continues, and the model receives a `tool` message shaped like:
+The user picks one option (or several, when `multiSelect: true`) and may attach a free-form note in the "extra" box. The server accepts only values present in the original option list (or a non-empty note), so forged UI payloads cannot invent a choice. Tapping **Send answer** posts the selection + extra to the server, the chat continues, and the model receives a `tool` message shaped like:
 
 ```json
 {

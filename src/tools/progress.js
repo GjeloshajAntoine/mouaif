@@ -55,7 +55,7 @@ function validateArgs(args) {
   }
   const status = (args.status === 'completed' || args.status === 'failed') ? args.status : 'running';
   const message = trimString(args.message, MAX_MESSAGE_CHARS);
-  return { title, current: Math.max(0, current), total, status, message };
+  return { title, current: Math.min(total, Math.max(0, current)), total, status, message };
 }
 
 function buildResult(args) {

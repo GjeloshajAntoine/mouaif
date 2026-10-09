@@ -33,6 +33,7 @@
 //
 // Defaults:
 //   fileReadMaxLines     = 10000   (whole-file reads cap by line count; use startLine/endLine for larger files)
+//   fileReadMaxBytes    = 4 MB    (text bytes read by one call; prevents huge single-line files from bypassing the line cap)
 //   fileReadDefaultLines = 2000    (default window when the model asks for a slice)
 //   fileReadMaxImageBytes = 4 MB   (cap on an image attached to the result)
 //   fileListMaxEntries   = 1000    (cap on list_files result rows)
@@ -60,6 +61,7 @@ const { isImageExt, mimeForExt } = require('../files.js');
 // ---- Constants ---------------------------------------------------------
 
 const DEFAULT_READ_MAX_LINES = 10000;
+const DEFAULT_READ_MAX_BYTES = 4 * 1024 * 1024;
 const DEFAULT_READ_LINES = 2000;
 const DEFAULT_READ_MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4 MiB
 const DEFAULT_LIST_MAX_ENTRIES = 1000;
@@ -194,14 +196,42 @@ async function runReadFile(opts) {
     return await readImageFile(rel, abs, st, settings);
   }
 
-  // The cap only applies to whole-file reads. A bounded slice always
-  // succeeds, no matter how large the file is.
+  // Refuse oversized text before decoding it. This protects the server even
+  // when a one-line file would otherwise bypass the line-count cap; callers
+  // can use the shell tool to extract a smaller copy before reading it.
   const cap = (settings && settings.fileReadMaxLines) || DEFAULT_READ_MAX_LINES;
+  const byteCap = (settings && Number.isInteger(settings.fileReadMaxBytes) && settings.fileReadMaxBytes > 0)
+    ? settings.fileReadMaxBytes : DEFAULT_READ_MAX_BYTES;
   const startLine = Number.isInteger(args && args.startLine) ? args.startLine : null;
   const endLine = Number.isInteger(args && args.endLine) ? args.endLine : null;
   const isSlice = startLine != null && endLine != null && endLine >= startLine;
+  if (!isSlice && st.size > byteCap) {
+    throw err('ETOOL_CAP', 'file is ' + formatBytes(st.size) + ', exceeds cap ' + formatBytes(byteCap)
+      + ' (use startLine/endLine)', { bytes: st.size, cap: byteCap });
+  }
 
-  const raw = await fsp.readFile(abs, 'utf8');
+  // Read through a fixed-size buffer rather than `readFile`: a local writer
+  // can grow the file after the stat above, and the old call would then
+  // allocate the entire new size before the cap was checked.
+  let rawBuffer;
+  let handle;
+  try {
+    handle = await fsp.open(abs, 'r');
+    rawBuffer = Buffer.allocUnsafe(byteCap + 1);
+    let offset = 0;
+    while (offset < rawBuffer.length) {
+      const chunk = await handle.read(rawBuffer, offset, rawBuffer.length - offset, offset);
+      if (!chunk.bytesRead) break;
+      offset += chunk.bytesRead;
+    }
+    rawBuffer = rawBuffer.subarray(0, offset);
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+  }
+  if (rawBuffer.length > byteCap) {
+    throw err('ETOOL_CAP', 'file exceeds cap ' + formatBytes(byteCap) + ' (use a smaller file)', { bytes: rawBuffer.length, cap: byteCap });
+  }
+  const raw = rawBuffer.toString('utf8');
   const totalLines = raw ? raw.split('\n').length : 0;
   // Project-level redaction: any 1-indexed line the user marked hidden in
   // project settings is replaced with the REDACT_MARKER before the model
@@ -1099,7 +1129,7 @@ const SINGLE_FILE_SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read a text file from the project directory, or open an image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.ico`) by attaching its pixels as an image part so a vision model can see it. A text read returns the file body with a header that shows the path, line range, and total line count. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; whole-file reads over 10000 lines are refused. An image read returns a header (path, MIME type, size) plus the picture; images over 4 MB are refused — downscale first.',
+      description: 'Read a text file from the project directory, or open an image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.ico`) by attaching its pixels as an image part so a vision model can see it. A text read returns the file body with a header that shows the path, line range, and total line count. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; text reads over 10000 lines or 4 MB are refused. An image read returns a header (path, MIME type, size) plus the picture; images over 4 MB are refused — downscale first.',
       parameters: {
         type: 'object',
         properties: {
@@ -1233,6 +1263,7 @@ module.exports = {
   globToRegExp,
   // constants
   DEFAULT_READ_MAX_LINES,
+  DEFAULT_READ_MAX_BYTES,
   DEFAULT_READ_LINES,
   DEFAULT_READ_MAX_IMAGE_BYTES,
   DEFAULT_LIST_MAX_ENTRIES,

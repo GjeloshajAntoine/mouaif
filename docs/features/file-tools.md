@@ -54,7 +54,7 @@ Every tool:
 
 - Refuses paths that escape the project root with `EOUTSIDE_PROJECT` (`. .`, absolute paths outside the root, and symlinks that point outside are all rejected).
 - Skips generated/private directories during walks (`node_modules`, `.git`, `.mouaif`, `dist`, `build`).
-- Refuses whole-file reads over `fileReadMaxLines` (default 10000 lines). A `startLine` / `endLine` slice bypasses the cap.
+- Refuses text reads over `fileReadMaxLines` (default 10000 lines) or `fileReadMaxBytes` (default 4 MiB), including slices. This bounds server memory before decoding a large single-line file.
 - Attaches an image read as a picture (see [read-file-images.md](./read-file-images.md)) and refuses one over `fileReadMaxImageBytes` (default 4 MB). `startLine` / `endLine` do not apply to images.
 - Honors per-project [hide-file-content](./hide-file-content.md) rules: `read_file` returns `[hidden]` for each marked line, and `search_files` drops matches on marked lines and matches inside marked character spans. `write_file` / `edit_file` and `list_files` are unaffected.
 - Caps `write_file` content at `fileWriteMaxBytes` (default 1 MB).

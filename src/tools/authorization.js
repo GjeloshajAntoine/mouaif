@@ -73,10 +73,10 @@ function clearGrants(projectDir, chatId) {
   return rejected;
 }
 
-// Reject every pending authorization wait for a chat. Called when the
-// SSE client disconnects mid-run. The session itself is kept (its grants
-// are still meaningful if the user reconnects), but every parked wait is
-// settled so the tool loop can unwind.
+// Reject every pending authorization wait for a chat. Called by the
+// chat-cancel endpoint when the caller abandons a run. The session itself
+// is kept (its grants are still meaningful if the user reconnects), but
+// every parked wait is settled so the tool loop can unwind.
 function cancelSession(projectDir, chatId) {
   if (!projectDir || !chatId) return 0;
   return rejectPending(sessions.get(sessionKey(projectDir, chatId)), 'client disconnected');
@@ -827,6 +827,15 @@ async function matchesAllowlist(summary, allowlist) {
   return false;
 }
 
+// Shell allowlists cover both the command and an explicitly requested
+// interpreter. A command pattern must not authorize a different executable
+// through the `shell` override; the override needs its own matching pattern.
+async function matchesShellAllowlist(cmd, shellOverride, allowlist) {
+  if (!await matchesAllowlist(cmd, allowlist)) return false;
+  const override = typeof shellOverride === 'string' ? shellOverride.trim() : '';
+  return !override || override === 'default' || await matchesAllowlist(override, allowlist);
+}
+
 function clampTimeout(requested, config) {
   const value = Number.isFinite(requested) ? Math.round(requested) : config.defaultTimeoutMs;
   return Math.max(1, Math.min(config.maxTimeoutMs, value));
@@ -876,13 +885,19 @@ async function authorize(input) {
         const target = batchKey === 'commands'
           ? (item && (typeof item.cmd === 'string' ? item.cmd : item.command))
           : (item && (item.path || item.file));
-        if (typeof target !== 'string' || !target || !await matchesAllowlist(target, config.allowlist)) {
-          allowed = false;
-          break;
+        const itemShell = batchKey === 'commands' && item && typeof item.shell === 'string' ? item.shell : input.shell;
+        const matches = batchKey === 'commands'
+        ? await matchesShellAllowlist(target, itemShell, config.allowlist)
+        : await matchesAllowlist(target, config.allowlist);
+        if (typeof target !== 'string' || !target || !matches) {
+        allowed = false;
+        break;
         }
       }
+    } else if (tool === 'shell') {
+    allowed = await matchesShellAllowlist(input.cmd || input.summary || '', input.shell, config.allowlist);
     } else {
-      allowed = await matchesAllowlist(input.summary || input.cmd || '', config.allowlist);
+    allowed = await matchesAllowlist(input.summary || input.cmd || '', config.allowlist);
     }
     if (allowed) return { decision: 'allow', timeoutMs: clampTimeout(input.timeoutMs, config) };
   }
@@ -914,6 +929,7 @@ async function authorize(input) {
       query: input.query,
       summary: input.summary,
       images: Array.isArray(input.images) && input.images.length ? input.images : undefined,
+      shell: input.shell,
       timeoutMs: input.timeoutMs,
       projectDir,
       args: input.args && typeof input.args === 'object' ? input.args : undefined

@@ -375,6 +375,7 @@ async function runGroupCli(opts) {
       cmd,
       shell: entryShellOverride(entry, shared.shell),
       timeoutMs,
+      signal: opts && opts.signal,
       onOutput: onOutput
         ? (stream, delta) => { try { onOutput(stream, delta, { index, label, cmd }); } catch { /* best-effort */ } }
         : null
