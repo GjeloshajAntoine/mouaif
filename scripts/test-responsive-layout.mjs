@@ -169,7 +169,25 @@ try {
       assert.ok(Math.abs(layout.shell.left - (width - layout.shell.width) / 2) < 1, 'shell is centred');
       assert.ok(layout.main.bottom <= height, 'content stays inside the viewport');
       if (name === 'chat') {
-        assert.ok(layout.transcript.height > 200, 'transcript fills available height');
+      // Composer accessory buttons must keep the shared chromeless styling,
+      // including after lazy Inspector CSS has joined the page's cascade.
+      const imageButton = await evaluate(`(() => {
+      const button = document.querySelector('.chat-view__image-btn');
+      if (!button) return null;
+      const css = getComputedStyle(button);
+      const mic = getComputedStyle(document.querySelector('.chat-view__mic-btn'));
+      const r = button.getBoundingClientRect();
+      return { background: css.backgroundColor, border: css.borderTopWidth,
+        radius: css.borderTopLeftRadius, color: css.color, micColor: mic.color,
+        width: r.width, height: r.height };
+      })()`);
+      assert.ok(imageButton, 'image import button is present');
+      assert.equal(imageButton.background, 'rgba(0, 0, 0, 0)', 'image button keeps its transparent background');
+      assert.equal(imageButton.border, '0px', 'image button has no browser-default border');
+      assert.equal(imageButton.radius, '50%', 'image button keeps its round shape');
+      assert.equal(imageButton.color, imageButton.micColor, 'image and microphone glyphs share the same color');
+      assert.ok(Math.abs(imageButton.width - imageButton.height) < 1, 'image button stays square');
+      assert.ok(layout.transcript.height > 200, 'transcript fills available height');
         assert.ok(layout.composer.bottom <= height, 'composer remains visible');
         assert.ok(Math.abs(layout.head.left - layout.composer.left) < 1, 'chat controls share a column');
         // The rail is an overlay, not a row: it must not take reading

@@ -27,6 +27,7 @@ Turn a switch back on and the button returns — including in a chat that is alr
 
 ### What does not change
 
+- **The appearance.** The image button stays a round, transparent icon beside the microphone, including after using the Inspector's light-grey Styles view.
 - **The tap target.** An optional button is either drawn exactly as it was (44 × 44, its usual margin) or not drawn at all. Nothing is squeezed to make room.
 - **The keyboard.** Enter / Shift+Enter behaviour is `enterForNewline` and is untouched.
 - **The draft.** Whatever is already typed, and any attachment already made, stays put.

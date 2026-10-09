@@ -192,7 +192,7 @@ check('ChatView draws the microphone only when it is enabled', () => {
 });
 
 check('ChatView draws the image button only when it is enabled', () => {
-  assert.match(chat, /composerTools\.image\s*\n?\s*\? h\('button', \{ class: 'chat-view__iconbtn chat-view__image-btn'/,
+  assert.match(chat, /composerTools\.image\s*\n?\s*\? h\('button', \{ class: 'glyph-btn chat-view__iconbtn--round chat-view__image-btn'/,
     'the image button must sit behind composerTools.image');
   // The button's own markup must disappear with the flag, not merely its paint.
   const afterFlag = chat.slice(chat.indexOf('composerTools.image'));
