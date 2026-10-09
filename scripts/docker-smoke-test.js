@@ -54,6 +54,28 @@ async function main() {
     assert.equal(body.dbBacked, true);
   });
 
+  await step('persists DB-backed project settings without a config file', async () => {
+    const projectQuery = new URLSearchParams({ projectDir: PROJECT_DIR });
+    const { body: storage } = await request(`/api/settings/project/storage?${projectQuery}`);
+    assert.equal(storage.dbBacked, true);
+
+    const { body: saved } = await request('/api/settings/project', {
+      method: 'PUT',
+      body: JSON.stringify({ projectDir: PROJECT_DIR, promptSize: 'chat' })
+    });
+    assert.equal(saved.dbBacked, true);
+    assert.equal(saved.path, null);
+    assert.equal(saved.project.promptSize, 'chat');
+
+    const { body: project } = await request(`/api/settings/project?${projectQuery}`);
+    assert.equal(project.dbBacked, true);
+    assert.equal(project.path, null);
+    assert.equal(project.project.promptSize, 'chat');
+
+    const { body: resolved } = await request(`/api/settings/resolved?${projectQuery}`);
+    assert.equal(resolved.resolved.promptSize, 'chat');
+  });
+
   await step('reads example content through the file API', async () => {
     const query = new URLSearchParams({ projectDir: PROJECT_DIR, path: 'README.md' });
     const { body } = await request(`/api/file?${query}`);
