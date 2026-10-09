@@ -27,6 +27,18 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **Codex models are listed again** — the chat model picker was empty for a
+  signed-in ChatGPT plan because the Codex catalog request advertised a pinned
+  `client_version` of `0.99.0`, and that endpoint answers with the model set of
+  the named CLI release: anything older than roughly `0.150` comes back as the
+  hidden `codex-auto-review` row alone, which the adapter then filtered out.
+  Chatting with a model id already in the project kept working, because chat
+  never reads that catalog — which is what made it look like an account or
+  sign-in problem. The request now advertises the newer of mouaif's own version
+  and `0.150.0`, and a catalog that is empty after filtering is reported as an
+  upstream failure (`Codex returned no available models for client_version …`)
+  instead of a silently empty list. See [docs/features/codex.md](docs/features/codex.md).
+
 - **A failed MCP server start now shows the child's own error** — a stdio
   server that died before the MCP handshake reported only
   `EMCP_START: MCP error -32000: Connection closed`, which names no cause. A

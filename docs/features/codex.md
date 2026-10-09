@@ -16,12 +16,18 @@ Device sign-in works from a phone, LAN connection, or reverse proxy: it does not
 
 If ChatGPT approves the code but mouaif has lost the sign-in session (for example, after a server restart), the editor shows **The sign-in session was lost. Start sign-in again.** instead of staying pending. Start a new attempt and approve the new code. An expired mouaif app login is also reported; temporary network errors, rate limits, and server errors are retried until the code expires.
 
+### Model picker
+
+The model list comes from the Codex catalog endpoint, which answers according to the client version the request advertises. A version below the floor OpenAI currently serves returns no usable rows, so mouaif asks for the newer of its own version and `0.150.0`. If the catalog still comes back empty, the picker reports it as a model-list failure (`Codex returned no available models for client_version …`) rather than as an empty list, which is what a stale version used to look like.
+
+A model typed by hand into a project still works even when the picker is empty, because chat does not read the catalog. Chatting with a known model id is a way to tell a catalog problem from an authorization one.
+
 For API-key access to OpenAI models, use **OpenAI compatible** instead. Codex is OAuth-only. ChatGPT plan limits and model availability are controlled by OpenAI. The generic maximum-output-token setting is not forwarded because the Codex endpoint does not support that field.
 
 ## Behavior
 
 - Access and refresh tokens are held in the app SQLite credential table, not the settings JSON returned to clients. Expiring chat credentials refresh automatically. See [Credential storage](./credential-storage.md) for migration and backup security.
-- The live catalog excludes hidden models and preserves context windows and reasoning levels when provided.
+- The live catalog excludes hidden models and preserves context windows and reasoning levels when provided. It is read from the Codex catalog endpoint, which selects the model set by the `client_version` the caller advertises: a release older than roughly `0.150` is answered with the hidden `codex-auto-review` row alone. mouaif therefore requests the newer of its own version and that floor, so a pinned version cannot silently empty the picker, and an empty answer is reported as an upstream error instead of "no models".
 - Tool calls use mouaif's normal authorization and multi-turn behavior. Cached input tokens are reported separately.
 - The ChatGPT backend is distinct from the public OpenAI API; endpoint and sign-in behavior may change upstream. Real-account sign-in and model access depend on your plan and workspace policy.
 

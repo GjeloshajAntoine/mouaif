@@ -9,6 +9,7 @@ const auth = require('../src/auth.js');
 const ai = require('../src/ai.js');
 const { requireApiKey } = require('../src/ai-endpoints.js');
 const oauth = require('../src/oauth-codex.js');
+const codex = require('../src/ai-codex.js');
 const jwt = (claims) => 'header.' + Buffer.from(JSON.stringify(claims)).toString('base64url') + '.signature';
 const accessToken = jwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'workspace-1' } });
 const idToken = jwt({ email: 'me@example.com', 'https://api.openai.com/auth': { chatgpt_account_id: 'workspace-1' } });
@@ -199,20 +200,39 @@ async function waitFor(predicate) {
     assert.equal(parse('response.failed', { response: { error: { message: 'Denied' } } })[0].data.message, 'Denied');
     assert.equal(parse('response.incomplete', {})[0].name, 'error');
 
+    let catalogUrl = '';
     global.fetch = async (url, init) => {
-      assert.ok(url.includes('/models?client_version='));
-      assert.equal(init.headers['ChatGPT-Account-Id'], 'workspace-1');
-      return json({ models: [{ slug: 'gpt-codex', display_name: 'Codex', context_window: 200000, visibility: 'list',
-        supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }], input_modalities: ['text', 'image'] },
-      { slug: 'hidden', visibility: 'hide' }] });
+    catalogUrl = url;
+    assert.ok(url.includes('/models?client_version='));
+    assert.equal(init.headers['ChatGPT-Account-Id'], 'workspace-1');
+    return json({ models: [{ slug: 'gpt-codex', display_name: 'Codex', context_window: 200000, visibility: 'list',
+      supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }], input_modalities: ['text', 'image'] },
+    { slug: 'hidden', visibility: 'hide' }] });
     };
     const models = await ai.listModels('codex', accessToken);
     assert.equal(models.length, 1);
     assert.equal(models[0].contextWindow, 200000);
     assert.deepEqual(models[0].thinking.levels, ['low', 'high']);
+    // The catalog is version-gated upstream: asking for a release older than
+    // the floor returns only hidden rows, so the requested version must never
+    // fall below it, and a released version above it is reported verbatim.
+    const askedVersion = catalogUrl.split('client_version=')[1];
+    const [maj, min, patch] = askedVersion.split('.').map(Number);
+    assert.ok([maj, min, patch].every(Number.isInteger), 'client_version must be dotted numeric, got ' + askedVersion);
+    assert.ok(maj > 0 || min >= 150, 'client_version must be at or above the catalog floor, got ' + askedVersion);
+    assert.equal(codex.clientVersionFor(require('../package.json').version), askedVersion);
+    assert.equal(codex.clientVersionFor('0.8.7'), '0.150.0');
+    assert.equal(codex.clientVersionFor('0.150.0'), '0.150.0');
+    assert.equal(codex.clientVersionFor('1.2.3'), '1.2.3');
+    assert.equal(codex.clientVersionFor('2.0.0-beta.4'), '2.0.0');
     await assert.rejects(ai.listModels('codex', null), { code: 'ENO_APIKEY' });
     global.fetch = async () => json({}, 401);
     await assert.rejects(ai.listModels('codex', accessToken), { code: 'EUPSTREAM', status: 401 });
+    // A 200 carrying no visible model is the version gate, not an empty
+    // account: it must surface as a typed upstream failure rather than a
+    // silently empty picker.
+    global.fetch = async () => json({ models: [{ slug: 'hidden', visibility: 'hide' }] });
+    await assert.rejects(ai.listModels('codex', accessToken), { code: 'EUPSTREAM' });
 
     // Exercise the real shared loop: function_call -> dispatch -> Responses
     // function_call_output -> final answer. No separate Codex executor.

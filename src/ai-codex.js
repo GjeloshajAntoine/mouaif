@@ -5,7 +5,30 @@
 const { joinUrl } = require('./util.js');
 const { accountIdFor } = require('./oauth-codex.js');
 const BASE_URL = 'https://chatgpt.com/backend-api/codex';
-const CLIENT_VERSION = '0.99.0';
+// The catalog endpoint is gated by `client_version`: it answers with the model
+// set that the named CLI release knows about, and every release older than
+// ~0.150 returns only the hidden `codex-auto-review` row. A pinned version
+// therefore goes stale and silently empties the picker — the bug that made
+// Codex models disappear while chat against an already-known model id kept
+// working. There is no "latest" keyword (it is rejected with HTTP 400), so the
+// request floors the advertised major version at or above the minimum that
+// still returns the visible catalog.
+const CLIENT_VERSION_FLOOR = [0, 150, 0];
+
+// clientVersionFor(version) — the `client_version` query the catalog is asked
+// for. The app's own version is used when it is at or above the floor, so the
+// request states which release is really asking; a version below the floor
+// (an older published mouaif, or a prerelease) is reported as the floor
+// instead, which keeps the picker populated rather than empty. Accepts a
+// dotted numeric string, whatever it carries after a `-`.
+function clientVersionFor(version = require('../package.json').version) {
+  const parts = String(version).split('-')[0].split('.').map((n) => parseInt(n, 10));
+  const num = [parts[0] || 0, parts[1] || 0, parts[2] || 0];
+  const below = num[0] < CLIENT_VERSION_FLOOR[0]
+    || (num[0] === CLIENT_VERSION_FLOOR[0] && num[1] < CLIENT_VERSION_FLOOR[1])
+    || (num[0] === CLIENT_VERSION_FLOOR[0] && num[1] === CLIENT_VERSION_FLOOR[1] && num[2] < CLIENT_VERSION_FLOOR[2]);
+  return (below ? CLIENT_VERSION_FLOOR : num).join('.');
+}
 
 function headersFor(token, accountId = accountIdFor(token)) {
   return { Authorization: 'Bearer ' + token, ...(accountId ? { 'ChatGPT-Account-Id': accountId } : {}),
@@ -21,7 +44,7 @@ const endpoint = {
     if (!cred) throw Object.assign(new Error('Sign in with ChatGPT to list Codex models.'), { code: 'ENO_APIKEY' });
     let res;
     try {
-      res = await fetch(joinUrl(baseUrl || BASE_URL, '/models') + '?client_version=' + CLIENT_VERSION,
+      res = await fetch(joinUrl(baseUrl || BASE_URL, '/models') + '?client_version=' + clientVersionFor(),
         { headers: headersFor(cred), signal });
     } catch (e) {
       if (signal?.aborted) throw e;
@@ -29,15 +52,21 @@ const endpoint = {
     }
     if (!res.ok) throw Object.assign(new Error('Codex model list failed (HTTP ' + res.status + ').'), { code: 'EUPSTREAM', status: res.status });
     const json = await res.json();
-    return (Array.isArray(json.models) ? json.models : []).filter((m) => m && m.slug && m.visibility !== 'hide')
-      .map((m) => ({
-        id: m.slug, label: m.display_name || m.slug,
-        ...(Number(m.context_window) > 0 ? { contextWindow: Number(m.context_window) } : {}),
-        inputModalities: Array.isArray(m.input_modalities) ? m.input_modalities : ['text'],
-        outputModalities: ['text'],
-        thinking: Array.isArray(m.supported_reasoning_levels) && m.supported_reasoning_levels.length
-          ? { kind: 'levels', levels: m.supported_reasoning_levels.map((r) => r.effort).filter(Boolean) } : null
-      }));
+    const rows = (Array.isArray(json.models) ? json.models : []).filter((m) => m && m.slug && m.visibility !== 'hide');
+    // An empty catalog must not look like success. The picker shows a 200 with
+    // nothing as "no models", which reads as an account problem rather than
+    // the version gate it usually is.
+    if (!rows.length) {
+      throw Object.assign(new Error('Codex returned no available models for client_version ' + clientVersionFor() + '.'), { code: 'EUPSTREAM' });
+    }
+    return rows.map((m) => ({
+      id: m.slug, label: m.display_name || m.slug,
+      ...(Number(m.context_window) > 0 ? { contextWindow: Number(m.context_window) } : {}),
+      inputModalities: Array.isArray(m.input_modalities) ? m.input_modalities : ['text'],
+      outputModalities: ['text'],
+      thinking: Array.isArray(m.supported_reasoning_levels) && m.supported_reasoning_levels.length
+        ? { kind: 'levels', levels: m.supported_reasoning_levels.map((r) => r.effort).filter(Boolean) } : null
+    }));
   }
 };
 
@@ -114,4 +143,4 @@ function* parseEvent(eventName, data) {
   }
 }
 
-module.exports = { endpoint, buildRequest, parseEvent };
+module.exports = { endpoint, buildRequest, parseEvent, clientVersionFor };
