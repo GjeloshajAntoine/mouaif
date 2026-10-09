@@ -78,10 +78,13 @@ Next to **Context** and **Total**, the chat header shows a third chip — **Bala
 Context 14.8K   Total $0.08306   Balance $12.41
 ```
 
+Two shapes are possible: a money balance (`Balance $12.41`) and, on a subscription connection where no such number exists, the plan's used share of its rate limit (`Plan plus 62%`).
+
 - If your connection is **OpenRouter**, the balance is the remaining credit of the key you stored, read live from OpenRouter.
 - If your connection is **OpenAI compatible** against OpenAI itself, the balance comes from the OpenAI dashboard billing routes: prepaid credit when the account has any, otherwise the account's spending limit minus what it has used.
 - If your connection is **DeepSeek**, the balance comes from its own `GET /user/balance` route.
 - If your connection is **Mistral**, the balance comes from the Admin API: `GET /v1/admin/spend-limit`, reported as the monthly limit minus usage. That route requires an **Admin-scoped** key created in the Mistral Backoffice — a standard workspace key is rejected, so no chip is shown. The key is sent under both header names (`x-api-key` and `Authorization: Bearer`) because Mistral's own documentation disagrees: the prose guide specifies `x-api-key` while the OpenAPI scheme declares a bearer token. A request carries whichever one the deployment reads.
+- If your connection is **Codex**, there is no dollar balance: the ChatGPT plan is a subscription, not credit. The chip shows instead which plan the account is on and how much of the **session** rate-limit window it has used, e.g. `Plan plus 62%`. That figure comes from the Codex backend's usage route (`GET https://chatgpt.com/backend-api/wham/usage`), read with your stored ChatGPT token. The 5-hour session window is reported, not the weekly one — the session is the limit that stops work first, and the two are different facts that would be wrong to add together or to swap silently. The chip carries no `$`, precisely so a percentage is never mistaken for a remaining amount.
 - **Groq publishes no balance API**, so it shows no chip. Mistral and Groq used to be asked the OpenAI dashboard routes, which neither host serves (both answer 404 for those paths *and* for a bogus path), so those requests could never succeed and the chip never appeared.
 - Every other provider, a local OpenAI-compatible server with no key, and a key without billing access simply show no chip. Nothing is guessed, so a chip that is there is a real number.
 

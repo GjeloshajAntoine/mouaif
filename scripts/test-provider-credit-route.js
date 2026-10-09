@@ -25,6 +25,7 @@ process.env.MOUAIF_HOME = home;
 
 const { createServer } = require('../src/index.js');
 const settings = require('../src/settings.js');
+const auth = require('../src/auth.js');
 
 let passed = 0;
 let failed = 0;
@@ -207,6 +208,39 @@ async function main() {
     check('deepseek: did not ask the OpenAI billing routes',
       calls.length === 1 && calls[0].url === 'https://api.deepseek.com/user/balance',
       calls.map((c) => c.url).join(', '));
+
+    // ---- Codex: a plan window, not a balance ---------------------------
+    // Codex is OAuth-only and has no credit. The route still answers, with the
+    // ChatGPT plan's used percentage in `value` (no `remaining`), so the chat
+    // head can show "Plan plus 62%" without any currency formatting.
+    await auth.setToken('codex', 'codex@example.com',
+    JSON.stringify({ accessToken: 'tok', refreshToken: null, expiresAt: Date.now() + 3600e3 }));
+    setProviders([{ id: 'codex', auth: 'oauth', oauthAccount: 'codex@example.com',
+    baseUrl: 'https://chatgpt.com/backend-api/codex' }]);
+    calls.length = 0;
+    stubRoutes = {
+    '/backend-api/wham/usage': {
+      plan_type: 'plus',
+      rate_limit: { primary_window: { used_percent: 61.5 }, secondary_window: { used_percent: 12 } }
+    }
+    };
+    r = await get('codex');
+    check('codex: reports the plan window as a formatted value',
+    r.status === 200 && r.body.supported === true && r.body.value === '62%'
+    && r.body.remaining === undefined, r.status + ' ' + JSON.stringify(r.body));
+    check('codex: labelled with the plan, not Balance',
+    r.body.label === 'Plan plus', JSON.stringify(r.body));
+    check('codex: asked /backend-api/wham/usage on the origin',
+    calls.length === 1 && calls[0].url === 'https://chatgpt.com/backend-api/wham/usage',
+    calls.map((c) => c.url).join(', '));
+
+    // An account whose plan the backend will not describe (403) reads as "no
+    // pill", not as an error the user cannot act on.
+    stubStatus['/backend-api/wham/usage'] = 403;
+    r = await get('codex');
+    check('codex: an unreadable plan reports no pill at 200',
+    r.status === 200 && r.body.supported === false, r.status + ' ' + JSON.stringify(r.body));
+    delete stubStatus['/backend-api/wham/usage'];
 
     // ---- OpenRouter keeps its own endpoint ----------------------------
     setProviders([{ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiKey: 'sk-or-x' }]);

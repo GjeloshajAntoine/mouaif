@@ -6,6 +6,8 @@ Use Codex through your ChatGPT plan, without an OpenAI API key or a local Codex 
 
 ## Usage
 
+The chat head's **Balance** chip shows the plan and how much of the session rate-limit window the account has used (`Plan plus 62%`), read from `GET https://chatgpt.com/backend-api/wham/usage` with the stored ChatGPT token. ChatGPT plans are subscriptions with no dollar balance, so no currency figure is shown; see [Usage metrics](./usage-metrics.md#account-balance).
+
 1. Enable **Device code authorization** in ChatGPT **Settings → Security**, if your account requires it. A ChatGPT account with Codex access is required; workspace policy may restrict device sign-in.
 2. Open mouaif **Settings → Providers → Add provider** and choose **OpenAI Codex**.
 3. Tap **Sign in with ChatGPT code**, copy the displayed code, and open the ChatGPT sign-in link. Only approve a code you requested yourself.
@@ -29,6 +31,7 @@ For API-key access to OpenAI models, use **OpenAI compatible** instead. Codex is
 - Access and refresh tokens are held in the app SQLite credential table, not the settings JSON returned to clients. Expiring chat credentials refresh automatically. See [Credential storage](./credential-storage.md) for migration and backup security.
 - The live catalog excludes hidden models and preserves context windows and reasoning levels when provided. It is read from the Codex catalog endpoint, which selects the model set by the `client_version` the caller advertises, so a pinned version goes stale: releases below roughly `0.150` are answered with the hidden `codex-auto-review` row alone, and `0.150` already omits the newest models the account can chat with. mouaif therefore requests the newer of its own version and a floor that is kept current, and an empty answer is reported as an upstream error instead of "no models".
 - Tool calls use mouaif's normal authorization and multi-turn behavior. Cached input tokens are reported separately.
+- The plan-window figure is informational and read-only: it never blocks a turn, and a failure to read it hides the chip rather than failing the chat. The percentage is the *used* share, so a growing number means a filling window.
 - The ChatGPT backend is distinct from the public OpenAI API; endpoint and sign-in behavior may change upstream. Real-account sign-in and model access depend on your plan and workspace policy.
 
 ## Sign-in diagnostics

@@ -5,8 +5,11 @@
 // The chat head shows a "Balance" pill next to "Context" and "Total" when the
 // connection's provider can report how much credit the account has left.
 // OpenRouter answers that with one key-scoped endpoint; DeepSeek answers its
-// own `GET {origin}/user/balance` (handled by balanceFromDeepSeek); and
-// OpenAI-compatible reaches the routes the OpenAI *dashboard* asks itself:
+// own `GET {origin}/user/balance` (handled by balanceFromDeepSeek); Codex is
+// the one *subscription* connection, with no money balance at all — it reports
+// the ChatGPT plan's rate-limit windows instead (handled by
+// balanceFromCodexUsage); and OpenAI-compatible reaches the routes the OpenAI
+// *dashboard* asks itself:
 //
 //   GET {origin}/dashboard/billing/credit_grants   (prepaid accounts)
 //   GET {origin}/dashboard/billing/subscription    (usage-capped accounts)
@@ -39,6 +42,7 @@ const { joinUrl } = require('./util.js');
 // Each other vendor has its own route, handled below:
 //   deepseek  GET {origin}/user/balance
 //   mistral   GET {origin}/v1/admin/spend-limit   (Admin API key only)
+//   codex     GET {origin}/backend-api/wham/usage (ChatGPT plan windows)
 //
 // Groq publishes no balance API at all, so no pill is the honest answer for it.
 const OPENAI_BILLING_PROVIDERS = Object.freeze([
@@ -62,11 +66,26 @@ const DEEPSEEK_BALANCE_PATH = '/user/balance';
 // readable with the credential the user stored.
 const MISTRAL_SPEND_LIMIT_PATH = '/v1/admin/spend-limit';
 
+// Codex (ChatGPT plan) has no money balance — it is the one subscription
+// connection. What it does have is the account's rate-limit windows, which the
+// backend that serves the Codex CLI answers at `GET {origin}/backend-api/wham/usage`
+// (measured: 401 without a bearer token, while a bogus sibling path answers 403,
+// so the route exists). The payload carries the plan type and a primary
+// (session, 5 h) plus a secondary (weekly) window, each with `used_percent`.
+//
+// The pill is defined as "the number of dollars the account has left", and this
+// provider has no such number. Reporting the *used* percentage in that slot
+// would be a lie in the same shape as the other providers' figures, so the
+// label says what the value really is ("Plan 62%") and no dollar sign is
+// involved. The two windows are not summed or picked apart: the shorter one is
+// the one that actually stops work, so it is the one reported.
+const CODEX_USAGE_PATH = '/backend-api/wham/usage';
+
 // supportsBalance(provider) -> does this connection have a balance route we
-// know how to read? Three families: the OpenAI dashboard routes, DeepSeek's
-// /user/balance, and Mistral's Admin API spend limit.
+// know how to read? Four families: the OpenAI dashboard routes, DeepSeek's
+// /user/balance, Mistral's Admin API spend limit, and Codex's plan windows.
 function supportsBalance(provider) {
-  if (provider === 'deepseek' || provider === 'mistral') return true;
+  if (provider === 'deepseek' || provider === 'mistral' || provider === 'codex') return true;
   return OPENAI_BILLING_PROVIDERS.indexOf(provider) !== -1;
 }
 
@@ -196,9 +215,50 @@ function balanceFromMistral(body) {
   };
 }
 
+// codexWindowPercent(entry) -> number | null
+//
+// One rate-limit window as a used percentage. The window is reported as an
+// object (`used_percent`); a bare number is accepted too, because the shape is
+// only known from measurement and a number is the other plausible spelling.
+// Anything above 100 is clamped rather than shown as-is.
+function codexWindowPercent(entry) {
+  const raw = entry && typeof entry === 'object' ? (entry.used_percent ?? entry.usedPercent) : entry;
+  const pct = numberOrNull(raw);
+  if (pct == null) return null;
+  return Math.min(100, pct);
+}
+
+// balanceFromCodexUsage(body) -> { label, value } | null
+//
+// Codex answers with the plan and its rate-limit windows, e.g.
+// `{ plan_type: 'plus', rate_limit: { primary_window: { used_percent: 62 }, … } }`
+// — the primary window is the 5-hour session and the secondary is the weekly
+// one. The pill shows the *primary* window's used percentage, because that is
+// the limit the user actually hits first; the weekly window is not summed in
+// and does not substitute for it, since "62% of the session" and "62% of the
+// week" are different facts and the pill has room for one.
+//
+// The plan type is folded into the label so the value reads as what it is
+// ("Plan plus 62%") instead of as a dollar balance. A payload with no window at
+// all returns null — no number is guessed, exactly as for every other provider.
+function balanceFromCodexUsage(body) {
+  if (!body || typeof body !== 'object') return null;
+  const root = body.rate_limit && typeof body.rate_limit === 'object' ? body.rate_limit : body;
+  const used = codexWindowPercent(root.primary_window ?? root.primary);
+  if (used == null) return null;
+  const plan = typeof body.plan_type === 'string' ? body.plan_type.trim() : '';
+  return { label: plan ? 'Plan ' + plan : 'Plan', value: Math.round(used) + '%' };
+}
+
 // lookupBalance({ provider, baseUrl, cred, fetchImpl }) ->
 //   { ok: true, label, remaining, totalCredits?, totalUsage? }
+// | { ok: true, label, value }
 // | { ok: false, code, status?, error }
+//
+// Two successful shapes: a *money* answer (`remaining`, in the billing
+// currency, plus the totals the usage surfaces want) and a *percentage* answer
+// (`value`, already formatted — the ChatGPT plan windows). The request handler
+// passes either through to the UI.
 //
 // Never throws: a `fetchImpl` that rejects comes back as EUNREACHABLE, so the
 // request handler has one error shape to translate. A non-2xx answer on *both*
@@ -286,6 +346,28 @@ async function lookupBalance({ provider, baseUrl, cred, fetchImpl } = {}) {
     };
   }
 
+  // Codex is a subscription, not a credit: ask the ChatGPT backend for the
+  // plan's rate-limit windows. Its base URL is already the backend root
+  // (`https://chatgpt.com/backend-api/codex`), while the usage route hangs off
+  // `/backend-api` — hence originOf above, and the same reasoning that sends
+  // the OpenAI billing routes to the origin rather than the API root.
+  if (provider === 'codex') {
+    const res = await softGet(CODEX_USAGE_PATH);
+    if (res == null) {
+      return { ok: false, code: 'EUNREACHABLE', error: 'provider unreachable' };
+    }
+    if (res.ok) {
+      const fromCodex = balanceFromCodexUsage(res.body);
+      if (fromCodex) return Object.assign({ ok: true }, fromCodex);
+    }
+    return {
+      ok: false,
+      code: 'EUPSTREAM',
+      status: res.status || 0,
+      error: provider + ' returned no usable balance'
+    };
+  }
+
   const grantsRes = await softGet('/dashboard/billing/credit_grants');
   if (grantsRes == null) {
     return { ok: false, code: 'EUNREACHABLE', error: 'provider unreachable' };
@@ -323,11 +405,13 @@ module.exports = {
   OPENAI_BILLING_PROVIDERS,
   DEEPSEEK_BALANCE_PATH,
   MISTRAL_SPEND_LIMIT_PATH,
+  CODEX_USAGE_PATH,
   supportsBalance,
   originOf,
   balanceFromGrants,
   balanceFromSubscription,
   balanceFromDeepSeek,
   balanceFromMistral,
+  balanceFromCodexUsage,
   lookupBalance
 };

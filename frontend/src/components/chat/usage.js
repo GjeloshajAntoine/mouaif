@@ -68,9 +68,18 @@ export async function refreshProviderCredit(state, refs) {
   try {
     const r = await fetchJson('/api/ai/provider-credit?provider=' + encodeURIComponent(provider));
     if (r.status !== 200 || !r.body || !r.body.supported) return updateProviderCredit(state, null, refs);
-    if (typeof r.body.remaining !== 'number') return updateProviderCredit(state, null, refs);
     const label = r.body.label || 'Balance';
-    updateProviderCredit(state, label + ' ' + formatCost(r.body.remaining), refs);
+    // Two shapes: a money balance (`remaining`, formatted here) and a figure the
+    // server already formatted (`value`) — Codex has no dollar balance at all
+    // and reports its ChatGPT plan's rate-limit window as "62%". Never run a
+    // percentage through the currency formatter.
+    if (typeof r.body.remaining === 'number') {
+      return updateProviderCredit(state, label + ' ' + formatCost(r.body.remaining), refs);
+    }
+    if (typeof r.body.value === 'string' && r.body.value) {
+      return updateProviderCredit(state, label + ' ' + r.body.value, refs);
+    }
+    return updateProviderCredit(state, null, refs);
   } catch {
     updateProviderCredit(state, null, refs);
   }

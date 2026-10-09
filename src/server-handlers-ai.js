@@ -88,16 +88,18 @@ async function handleAI(req, res, parsed) {
     }
   }
 
-  // GET /api/ai/provider-credit?provider=<id> -> { supported, remaining? }
+  // GET /api/ai/provider-credit?provider=<id> -> { supported, remaining? , label?, value? }
   // Provider-specific account balance lookup. OpenRouter exposes a simple
   // key-scoped credits endpoint; DeepSeek answers its own /user/balance;
-  // Mistral's Admin API answers /v1/admin/spend-limit (Admin key only); and
-  // OpenAI compatible reaches the OpenAI dashboard billing routes — credit
-  // grants first, then the subscription limit minus usage — in
-  // src/providerCredit.js. Groq publishes no balance API, so it reports
-  // { supported: false } rather than firing a request that can only 404. Every
-  // other provider does the same, so the chat head hides the pill instead of
-  // showing a guessed number.
+  // Mistral's Admin API answers /v1/admin/spend-limit (Admin key only); Codex
+  // has no money balance at all and reports its ChatGPT plan's rate-limit
+  // window instead, as an already-formatted `value` ("62%") rather than a
+  // number of dollars; and OpenAI compatible reaches the OpenAI dashboard
+  // billing routes — credit grants first, then the subscription limit minus
+  // usage — in src/providerCredit.js. Groq publishes no balance API, so it
+  // reports { supported: false } rather than firing a request that can only
+  // 404. Every other provider does the same, so the chat head hides the pill
+  // instead of showing a guessed number.
   if (urlPath === '/api/ai/provider-credit' && method === 'GET') {
     const provider = typeof parsed.query.provider === 'string' ? parsed.query.provider : '';
     const balances = providerCredit.supportsBalance(provider);
@@ -127,9 +129,15 @@ async function handleAI(req, res, parsed) {
         // act on — report it as "no balance pill" instead of a failure.
         return sendJSON(res, 200, { provider, supported: false });
       }
-      const okBody = { provider, supported: true, label: result.label || 'Balance', remaining: result.remaining };
+      const okBody = { provider, supported: true, label: result.label || 'Balance' };
       if (isFinite(result.totalCredits)) okBody.totalCredits = result.totalCredits;
       if (isFinite(result.totalUsage)) okBody.totalUsage = result.totalUsage;
+      // Codex reports its ChatGPT plan's rate-limit window, which is not a
+      // number of dollars: `remaining` stays absent and the already-formatted
+      // `value` carries the figure, so the client can never render a percentage
+      // through the currency formatter.
+      if (typeof result.remaining === 'number') okBody.remaining = result.remaining;
+      else if (typeof result.value === 'string' && result.value) okBody.value = result.value;
       return sendJSON(res, 200, okBody);
     }
     let r;

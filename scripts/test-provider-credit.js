@@ -54,6 +54,8 @@ async function main() {
     credit.supportsBalance('openai-compatible'));
   check('deepseek has its own balance route', credit.supportsBalance('deepseek'));
   check('mistral has an Admin API spend-limit route', credit.supportsBalance('mistral'));
+  check('codex reports its ChatGPT plan window instead of a balance',
+    credit.supportsBalance('codex'));
   check('groq is NOT routed through any balance lookup', !credit.supportsBalance('groq'));
   check('openrouter is NOT routed through the OpenAI billing shape',
     !credit.supportsBalance('openrouter'));
@@ -290,6 +292,60 @@ async function main() {
     // A body shaped like the OpenAI grants payload is not Mistral's shape.
     check('mistral: an OpenAI-shaped body is not read as a balance',
       (await credit.balanceFromMistral({ total_available: 7.5 })) === null);
+  }
+
+  // ---- Codex reports plan windows, not a money balance ------------------
+  //
+  // Codex is the one subscription connection: there are no dollars to report,
+  // so the pill carries the ChatGPT plan's rate-limit *used* percentage and no
+  // currency symbol. The route is the backend's /backend-api/wham/usage, which
+  // hangs off the origin (the connection's base URL is already
+  // /backend-api/codex).
+  {
+    const f = fakeFetch({
+      '/backend-api/wham/usage': jsonResponse({
+        plan_type: 'plus',
+        rate_limit: {
+          primary_window: { used_percent: 61.5, window_minutes: 300 },
+          secondary_window: { used_percent: 12, window_minutes: 10080 }
+        }
+      })
+    });
+    const r = await credit.lookupBalance({
+      provider: 'codex', baseUrl: 'https://chatgpt.com/backend-api/codex', cred: 'tok', fetchImpl: f
+    });
+    check('codex: asks /backend-api/wham/usage on the origin',
+      f.calls.length === 1 && f.calls[0].url === 'https://chatgpt.com/backend-api/wham/usage',
+      f.calls.map((c) => c.url).join(', '));
+    check('codex: sends the ChatGPT access token',
+      f.calls[0].init.headers.Authorization === 'Bearer tok');
+    check('codex: reports the primary (session) window, rounded',
+      r.ok && r.value === '62%', JSON.stringify(r));
+    check('codex: labels the plan, never "Balance"', r.ok && r.label === 'Plan plus', JSON.stringify(r));
+    check('codex: carries no dollar amount',
+      r.ok && r.remaining === undefined && r.totalCredits === undefined, JSON.stringify(r));
+
+    // The weekly window does not substitute for the session window.
+    const weeklyOnly = credit.balanceFromCodexUsage({
+      plan_type: 'pro', rate_limit: { secondary_window: { used_percent: 12 } }
+    });
+    check('codex: a payload with only the weekly window is not a number', weeklyOnly === null,
+      JSON.stringify(weeklyOnly));
+
+    // An unknown plan still yields the window, under a bare "Plan" label.
+    const noPlan = credit.balanceFromCodexUsage({ rate_limit: { primary_window: { used_percent: 100.4 } } });
+    check('codex: no plan type still reports the window, clamped at 100%',
+      noPlan && noPlan.label === 'Plan' && noPlan.value === '100%', JSON.stringify(noPlan));
+
+    // A flat rate_limit.primary_window (no nested object) is the other
+    // plausible spelling; a bare number is accepted there too.
+    const flat = credit.balanceFromCodexUsage({ rate_limit: { primary_window: 5 } });
+    check('codex: accepts a bare number for the window', flat && flat.value === '5%', JSON.stringify(flat));
+
+    // No window at all is "unsupported", never a guessed 0%.
+    check('codex: a body with no window is not a number',
+      credit.balanceFromCodexUsage({ plan_type: 'plus', rate_limit: {} }) === null);
+    check('codex: a non-object body is not a number', credit.balanceFromCodexUsage(null) === null);
   }
 
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
