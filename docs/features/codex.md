@@ -25,6 +25,14 @@ For API-key access to OpenAI models, use **OpenAI compatible** instead. Codex is
 - Tool calls use mouaif's normal authorization and multi-turn behavior. Cached input tokens are reported separately.
 - The ChatGPT backend is distinct from the public OpenAI API; endpoint and sign-in behavior may change upstream. Real-account sign-in and model access depend on your plan and workspace policy.
 
+## Sign-in diagnostics
+
+The server writes a bounded snapshot of the most recent sign-in activity to `<mouaif app home>/codex-sign-in.json` (normally `~/.mouaif/codex-sign-in.json`, or under `MOUAIF_HOME` when overridden). It is overwritten at each stage and created with owner-only permissions. Diagnostic write failures do not interrupt sign-in.
+
+The snapshot contains only the timestamp, local flow ID, status, stage, poll count, HTTP status when available, and a fixed error category or network-failure flag. It never records device codes, upstream device IDs, authorization codes, PKCE verifiers, tokens, account details, headers, upstream response bodies, or raw error messages.
+
+Use it during a fresh attempt to distinguish waiting for approval (`poll_approval_response`, HTTP 403/404), token exchange, account validation, keychain storage, and completion. In-progress requests show their stage before the response arrives. A snapshot survives restart, but the pending sign-in session itself does not; another attempt overwrites the snapshot.
+
 ## REST endpoints
 
 These endpoints expose only the public flow status, never access/refresh tokens or the private device authorization ID:

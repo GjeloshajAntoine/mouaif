@@ -86,6 +86,29 @@ async function waitFor(predicate) {
     assert.equal(stored[0][1], 'me@example.com (workspace-1)');
     assert.equal(JSON.parse(stored[0][2]).chatgptAccountId, 'workspace-1');
     assert.ok(!JSON.stringify(oauth.getDeviceFlow(flow.id)).includes(accessToken));
+    const diagnosticFile = path.join(process.env.MOUAIF_HOME, 'codex-sign-in.json');
+    const readDiagnostic = () => JSON.parse(fs.readFileSync(diagnosticFile, 'utf8'));
+    assert.equal(readDiagnostic().stage, 'complete');
+    assert.equal(readDiagnostic().status, 'ok');
+    assert.equal(readDiagnostic().pollAttempts, 2);
+    assert.equal(fs.statSync(diagnosticFile).mode & 0o777, 0o600);
+    for (const secret of ['PRIVATE_DEVICE', 'ABCD-EFGH', 'AUTH_CODE', 'PKCE_VERIFIER', accessToken, idToken, 'REFRESH', 'me@example.com', 'workspace-1']) {
+      assert.ok(!fs.readFileSync(diagnosticFile, 'utf8').includes(secret), 'diagnostics exclude ' + secret);
+    }
+    assert.equal(Object.hasOwn(oauth.getDeviceFlow(flow.id), 'diagnostic'), false, 'REST shape is unchanged');
+    const exchangeFailed = await oauth.startDeviceFlow({ fetchImpl: (url, init) => url.endsWith('/oauth/token')
+      ? Promise.resolve(json({ error: 'PRIVATE_ERROR_BODY' }, 401)) : deviceFetch(url, init), sleep: async () => {} });
+    await waitFor(() => oauth.getDeviceFlow(exchangeFailed.id).status === 'error');
+    assert.equal(readDiagnostic().stage, 'token_exchange_response');
+    assert.equal(readDiagnostic().httpStatus, 401);
+    assert.equal(readDiagnostic().errorCode, 'EOAUTH');
+    assert.ok(!fs.readFileSync(diagnosticFile, 'utf8').includes('PRIVATE_ERROR_BODY'));
+    const keychainFailed = await oauth.startDeviceFlow({ fetchImpl: deviceFetch, sleep: async () => {},
+      setToken: async () => { throw Object.assign(new Error('PRIVATE_KEYCHAIN_ERROR'), { code: 'EKEYRING' }); } });
+    await waitFor(() => oauth.getDeviceFlow(keychainFailed.id).status === 'error');
+    assert.equal(readDiagnostic().stage, 'store_keychain');
+    assert.equal(readDiagnostic().errorCode, 'EKEYRING');
+    assert.ok(!fs.readFileSync(diagnosticFile, 'utf8').includes('PRIVATE_KEYCHAIN_ERROR'));
 
     let release;
     const cancelled = await oauth.startDeviceFlow({ fetchImpl: deviceFetch,
@@ -93,12 +116,35 @@ async function waitFor(predicate) {
     assert.equal(oauth.cancelDeviceFlow(cancelled.id), true);
     release();
     assert.equal(oauth.getDeviceFlow(cancelled.id).status, 'cancelled');
+    assert.equal(readDiagnostic().stage, 'cancelled');
     assert.equal(oauth.getDeviceFlow('missing'), null);
     await assert.rejects(oauth.startDeviceFlow({ fetchImpl: async () => json({}, 404) }), { code: 'EOAUTH' });
     await assert.rejects(oauth.startDeviceFlow({ fetchImpl: async () => json({}) }), { code: 'EPARSE' });
     const failed = await oauth.startDeviceFlow({ fetchImpl: async (url) => url.endsWith('/usercode')
       ? json({ device_auth_id: 'private', user_code: 'XYZ' }) : json({}, 500), sleep: async () => {} });
     await waitFor(() => oauth.getDeviceFlow(failed.id).status === 'error');
+    assert.equal(readDiagnostic().stage, 'poll_approval_response');
+    assert.equal(readDiagnostic().httpStatus, 500);
+    assert.equal(readDiagnostic().status, 'error');
+    let networkPolls = 0;
+    let sawNetworkError = false;
+    const networkRetry = await oauth.startDeviceFlow({ fetchImpl: (url, init) => {
+    if (url.endsWith('/deviceauth/token') && !networkPolls++) throw new Error('PRIVATE_NETWORK_ERROR');
+    return deviceFetch(url, init);
+    }, sleep: async () => {
+    if (readDiagnostic().networkError) {
+      sawNetworkError = true;
+      assert.equal(readDiagnostic().stage, 'poll_approval_response');
+      assert.ok(!fs.readFileSync(diagnosticFile, 'utf8').includes('PRIVATE_NETWORK_ERROR'));
+    }
+    }, setToken: async () => {} });
+    await waitFor(() => oauth.getDeviceFlow(networkRetry.id).status === 'ok');
+    assert.equal(sawNetworkError, true);
+    assert.equal(readDiagnostic().stage, 'complete');
+    await assert.rejects(oauth.startDeviceFlow({ fetchImpl: async () => { throw new Error('PRIVATE_START_ERROR'); } }));
+    assert.equal(readDiagnostic().networkError, true);
+    assert.equal(readDiagnostic().stage, 'request_code_response');
+    assert.ok(!fs.readFileSync(diagnosticFile, 'utf8').includes('PRIVATE_START_ERROR'));
 
     let refreshCalls = 0;
     global.fetch = async (_url, init) => {
