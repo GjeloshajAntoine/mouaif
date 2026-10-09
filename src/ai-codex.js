@@ -5,21 +5,22 @@
 const { joinUrl } = require('./util.js');
 const { accountIdFor } = require('./oauth-codex.js');
 const BASE_URL = 'https://chatgpt.com/backend-api/codex';
-// The catalog endpoint is gated by `client_version`: it answers with the model
-// set that the named CLI release knows about, and every release older than
-// ~0.150 returns only the hidden `codex-auto-review` row. A pinned version
-// therefore goes stale and silently empties the picker — the bug that made
-// Codex models disappear while chat against an already-known model id kept
-// working. There is no "latest" keyword (it is rejected with HTTP 400), so the
-// request floors the advertised major version at or above the minimum that
-// still returns the visible catalog.
-const CLIENT_VERSION_FLOOR = [0, 150, 0];
+// The catalog endpoint is gated by `client_version`: it answers with the
+// model set the named CLI release knows about, so a pinned version goes stale
+// and silently empties (or truncates) the picker — the bug that made Codex
+// models disappear while chat against an already-known model id kept working.
+// Below ~0.150 only the hidden `codex-auto-review` row comes back, and at
+// 0.150 the catalog already omits the newest models the account can chat with.
+// There is no "latest" keyword (it is rejected with HTTP 400), so the request
+// asks for the floor, kept ahead of the oldest release that still lists the
+// current model set.
+const CLIENT_VERSION_FLOOR = [0, 200, 0];
 
 // clientVersionFor(version) — the `client_version` query the catalog is asked
-// for. The app's own version is used when it is at or above the floor, so the
-// request states which release is really asking; a version below the floor
-// (an older published mouaif, or a prerelease) is reported as the floor
-// instead, which keeps the picker populated rather than empty. Accepts a
+// for. A released mouaif version is reported verbatim, so the request states
+// which release is really asking; anything below the floor (an older published
+// mouaif, or a prerelease) is reported as the floor instead, because a lower
+// number is answered with a shorter catalog rather than refused. Accepts a
 // dotted numeric string, whatever it carries after a `-`.
 function clientVersionFor(version = require('../package.json').version) {
   const parts = String(version).split('-')[0].split('.').map((n) => parseInt(n, 10));

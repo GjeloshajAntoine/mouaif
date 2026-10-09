@@ -219,10 +219,11 @@ async function waitFor(predicate) {
     const askedVersion = catalogUrl.split('client_version=')[1];
     const [maj, min, patch] = askedVersion.split('.').map(Number);
     assert.ok([maj, min, patch].every(Number.isInteger), 'client_version must be dotted numeric, got ' + askedVersion);
-    assert.ok(maj > 0 || min >= 150, 'client_version must be at or above the catalog floor, got ' + askedVersion);
+    assert.ok(maj > 0 || min >= 200, 'client_version must be at or above the catalog floor, got ' + askedVersion);
     assert.equal(codex.clientVersionFor(require('../package.json').version), askedVersion);
-    assert.equal(codex.clientVersionFor('0.8.7'), '0.150.0');
-    assert.equal(codex.clientVersionFor('0.150.0'), '0.150.0');
+    assert.equal(codex.clientVersionFor('0.8.7'), '0.200.0');
+    assert.equal(codex.clientVersionFor('0.150.0'), '0.200.0');
+    assert.equal(codex.clientVersionFor('0.200.0'), '0.200.0');
     assert.equal(codex.clientVersionFor('1.2.3'), '1.2.3');
     assert.equal(codex.clientVersionFor('2.0.0-beta.4'), '2.0.0');
     await assert.rejects(ai.listModels('codex', null), { code: 'ENO_APIKEY' });
