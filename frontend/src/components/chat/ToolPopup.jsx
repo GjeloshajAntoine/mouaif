@@ -227,7 +227,7 @@ export function ToolPopup(props) {
   return h('div', { class: 'tool-popup' },
     h('button', {
       ref: triggerRef,
-      class: 'chat-view__toolbar-btn tool-popup__trigger',
+      class: 'glyph-btn chat-view__toolbar-btn tool-popup__trigger',
       type: 'button',
       onClick: () => setOpen(!open),
       'aria-label': 'Toggle available tools',
@@ -257,7 +257,7 @@ export function ToolPopup(props) {
         h('div', { class: 'tool-popup__head' },
           h('span', { class: 'tool-popup__title' }, 'Tools'),
           h('button', {
-            class: 'tool-popup__close',
+            class: 'glyph-btn tool-popup__close',
             type: 'button',
             onClick: () => setOpen(false),
             'aria-label': 'Close'

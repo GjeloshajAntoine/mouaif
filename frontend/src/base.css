@@ -61,9 +61,6 @@
      supported consistently by iOS WebKit and is rewritten by CSS minifiers,
      which can invalidate every declaration that consumes this token. */
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --pad-x: 10px;
-  --pad-y: 6px;
-  --gap: 6px;
   /* Frame + measures. The layout stays mobile-first: at phone widths the
      app frame *is* the viewport, and above that it grows with the window
      up to --shell-max instead of staying a 480px phone column. The old
@@ -113,14 +110,12 @@
      users who opt out. */
   --dur-fast:   120ms;
   --dur:        180ms;
-  --dur-slow:   240ms;
   --ease:       cubic-bezier(.2, .7, .2, 1);
   --ease-out:   cubic-bezier(.16, .84, .44, 1);
 }
 
 * { box-sizing: border-box; }
 
-html,
 html,
 body {
   margin: 0;
@@ -240,6 +235,68 @@ body {
 }
 .icon-btn:active { background: var(--surface-3); }
 .icon-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* `.icon-btn--round` — the glyph button with a circular hit shape instead of
+   the 6 px rounded square. Used where two compact controls sit side by side
+   (the composer's image + mic buttons) and the round shape keeps them reading
+   as a pair. */
+.icon-btn--round { border-radius: 50%; }
+
+/* ---- .glyph-btn — a bare round icon button ----------------------- */
+/* The round, chromeless icon button the app uses for its accessory glyphs.
+   It is the round sibling of `.icon-btn`: same near-transparent look, but
+   sized by the caller and always circular.
+
+   Reach for this instead of re-declaring `background: transparent; border: 0;
+   border-radius: 50%` plus the 80 ms `background`/`color` transition in a
+   component file. Prior to this the idiom was hand-copied into the tool
+   popup, the composer's image and mic buttons, and the chat head icons, and
+   the copies had already drifted (a 28 px, a 32 px and a 24 px glyph, and two
+   different `:active` surfaces).
+
+   Size comes from a modifier — the glyph's own class or `--tap-sm` / `--tap`. */
+.glyph-btn {
+  flex: 0 0 auto;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+@media (hover: hover) {
+  .glyph-btn:hover { background: var(--surface-3); color: var(--fg); }
+}
+.glyph-btn:active { background: var(--surface); }
+.glyph-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---- .stack-tight — primary line plus a one-pixel meta line ------ */
+/* Explicit `flex: 1 1 auto` rather than the `flex` shorthand's implied
+   `flex-basis: 0%`, so a label that is the widest thing in an auto-width row
+   still sets the width. Adopters: `.cli__title-stack`,
+   `.gm__stash-main`, `.mp__stack`, `.inspector__profile-body`,
+   `.inspector__addprop-text`, `.tool-card__ask-option-text`. */
+.stack-tight {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* ---- .rowline — single-line, ellipsised text --------------------- */
+/* `.truncate` plus `min-width: 0`, so the class also works when the text is a
+   flex item that has to be allowed to shrink. Prior to this, four selectors
+   re-inlined those four declarations. */
+.rowline {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .icon-btn--close { color: var(--fg-soft); }
 @media (hover: hover) {
   .icon-btn--close:hover { color: var(--danger); background: var(--danger-soft); }

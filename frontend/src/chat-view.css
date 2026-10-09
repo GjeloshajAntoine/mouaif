@@ -116,35 +116,18 @@ min-width: 96px;
 .chat-view__head-icons > .chat-view__toolbar-btn {
   margin: 0;
 }
-/* The gear is an anchor <a> with no built-in chrome — give it the
-same round icon-button look as the tools wrench so the two read as a
-matching pair when stacked. */
-.chat-view__head-icons > .chat-view__iconbtn {
+/* The gear is an anchor <a> with no built-in chrome — give it the round
+icon-button look the tools wrench has, so the two read as a matching pair
+when stacked. Shared with .chat-view__image-btn and .chat-view__mic-btn
+through the .glyph-btn utility (base.css). */
+.chat-view__head-icons > .chat-view__iconbtn.glyph-btn {
   width: var(--tap-sm);
   height: var(--tap-sm);
   min-width: var(--tap-sm);
   min-height: var(--tap-sm);
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--fg-soft);
-  background: transparent;
-  border: 0;
-  border-radius: 50%;
   text-decoration: none;
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
 }
-@media (hover: hover) {
-  .chat-view__head-icons > .chat-view__iconbtn:hover {
-  background: var(--surface-3);
-  color: var(--fg);
-}
-}
-.chat-view__head-icons > .chat-view__iconbtn:active {
-  background: var(--surface);
-}
+
 .chat-view__head-icons > .chat-view__toolbar-btn.tool-popup__trigger,
 .chat-view__head-icons > .tool-popup > .tool-popup__trigger {
   align-self: center;
@@ -415,7 +398,6 @@ transition: background 80ms ease;
 /* ---- Small screens / desktop fallback ---------------------------- */
 
 @media (max-width: 360px) {
-  :root { --pad-x: 10px; }
   /* Squeeze chat bubbles only — never the full-width transcript
      cards (system prompt, tools, agent-files), which must stay
      flush with the transcript edges. */

@@ -519,7 +519,7 @@ setPreviewPromptOpen(false);
     ),
       h('div', { class: 'chat-view__head-icons' },
           h('a', {
-            class: 'chat-view__iconbtn',
+            class: 'glyph-btn chat-view__iconbtn chat-view__iconbtn--round',
             href: '#/settings/project?projectDir=' + encodeURIComponent(projectDir || '') + '&chatId=' + encodeURIComponent(chatId || ''),
             'aria-label': 'Project settings',
             title: 'Settings'
@@ -631,7 +631,7 @@ onRefreshCustomActions: refreshCustomActions
         h('div', { ref: atMentionRef, class: 'at-mention', role: 'listbox', 'aria-label': 'Suggestions', hidden: true }),
         h('div', { ref: atArgBarRef, class: 'at-mention__arg-bar', hidden: true }),
         composerTools.image
-        ? h('button', { class: 'chat-view__iconbtn chat-view__image-btn', type: 'button', onClick: () => refs.imageInput.current && refs.imageInput.current.click(), 'aria-label': 'Add image', title: 'Add image' },
+        ? h('button', { class: 'glyph-btn chat-view__iconbtn--round chat-view__image-btn', type: 'button', onClick: () => refs.imageInput.current && refs.imageInput.current.click(), 'aria-label': 'Add image', title: 'Add image' },
         h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
           h('path', { d: 'M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm0 13.5L9.5 13l3 3 2-2.5 4.5 4.5V6H5v11.5ZM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z', fill: 'currentColor' })
         )

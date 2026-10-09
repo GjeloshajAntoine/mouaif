@@ -426,32 +426,15 @@
 
 /* ---- Composer mic button (chat view) -------------------------------- */
 
-/* Sits beside the image button inside the composer row. Same 32px square and
-   transparent treatment as .chat-view__image-btn, plus a recording state so
-   the composer itself says "the mic is live". */
+/* Sits beside the image button inside the composer row. Shared with
+   .chat-view__image-btn through the .glyph-btn utility (base.css): the two
+   were byte-identical apart from this comment. */
 .chat-view__mic-btn {
   width: var(--tap-sm);
   height: var(--tap-sm);
-  padding: 0;
   min-height: var(--tap-sm);
-  flex: 0 0 auto;
   align-self: flex-start;
-  color: var(--fg-soft);
-  background: transparent;
-  border: 0;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
 }
-
-@media (hover: hover) {
-  .chat-view__mic-btn:hover { background: var(--surface-3); color: var(--fg); }
-}
-.chat-view__mic-btn:active { background: var(--surface); }
-
 /* Waiting: the model is being resolved or the take is being transcribed, so
    the button holds a spinner instead of its glyph and does not look pressable.
    Muted on purpose — this is work in progress, not a state the user has to

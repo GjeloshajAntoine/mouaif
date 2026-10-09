@@ -745,7 +745,7 @@ d: 'M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Zm7 9a1 1 0 1 0-2 0 5 5 0
 fill: 'currentColor'
 });
 return h('button', {
-class: 'chat-view__mic-btn' + (recording ? ' is-recording' : '') + (working ? ' is-busy' : ''),
+class: 'glyph-btn chat-view__mic-btn' + (recording ? ' is-recording' : '') + (working ? ' is-busy' : ''),
 type: 'button',
 onClick,
 disabled: busy,
