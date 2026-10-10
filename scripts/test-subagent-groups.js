@@ -1,0 +1,103 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { Scope, SPECS, PARENT_TOOLS } = require('../src/tools/subagent-orchestration.js');
+const tick = () => new Promise((r) => setImmediate(r));
+const result = (ok = true) => ({ ok, result: { text: 'done' } });
+const declaration = (name = 'build') => ({ name, objective: 'shared goal', members: [
+  { memberId: 'a', role: 'contract', workspace: 'branch-a', owns: ['src/a.js'] },
+  { memberId: 'b', role: 'consumer', workspace: 'branch-b', dependsOn: ['a'] },
+  { memberId: 'c', role: 'review', workspace: 'branch-c', dependsOn: ['b'] }
+] });
+(async () => {
+  const s = new Scope('/project', 'chat');
+  const bad = declaration(); bad.members[0].dependsOn = ['c'];
+  assert.throws(() => s.dispatch('subagent_group_create', bad), { code: 'ECYCLE' });
+  assert.equal(s.groups.rows.size, 0);
+  const unknown = declaration(); unknown.members[0].dependsOn = ['missing'];
+  assert.throws(() => s.dispatch('subagent_group_create', unknown), { code: 'EBADINPUT' });
+  const g = s.dispatch('subagent_group_create', declaration());
+  const meta = (memberId) => ({ groupId: g.groupId, memberId, workspace: '/actual' });
+  let finishA, bRan = false;
+  const b = s.start('b', '', async () => { bRan = true; return result(); }, () => {}, meta('b'));
+  await tick(); assert.equal(bRan, false);
+  assert.equal(s.dispatch('subagent_group_status', { groupId: g.groupId }).members[1].state, 'waiting');
+  const a = s.start('a', '', () => new Promise((r) => { finishA = r; }), () => {}, meta('a'));
+  await tick();
+  const sent = s.dispatch('subagent_send', { callId: 'a', message: 'guidance' });
+  assert.equal(sent.state, 'queued');
+  assert.throws(() => s.dispatch('subagent_messages', { callId: 'a', message: 'write' }), { code: 'EBADINPUT' });
+  assert.equal(a.inbox.length, 1);
+  assert.deepEqual(s.drain(a.author), ['guidance']);
+  assert.equal(s.dispatch('subagent_messages', { callId: 'a' }).deliveries[0].state, 'delivered');
+  for (const name of PARENT_TOOLS) assert.throws(() => s.dispatch(name, {}, a.author), { code: 'EPARENT_ONLY' });
+  assert.throws(() => s.start('duplicate', '', async () => result(), () => {}, meta('a')), { code: 'EALREADY_FINISHED' });
+  s.dispatch('subagent_publish', { name: 'api-contract', summary: 'metadata', files: ['src/a.js'] }, a.author);
+  const artifact = s.dispatch('subagent_read', {}).artifacts[0];
+  assert.equal(artifact.workspace, '/actual'); assert.equal(artifact.groupId, g.groupId);
+  assert.throws(() => s.dispatch('subagent_publish', { name: 'secret', summary: 'x', files: ['../secret'] }, a.author), { code: 'EBADINPUT' });
+  assert.equal(s.publications.size, 1);
+  s.dispatch('subagent_decision', { groupId: g.groupId, name: 'api', proposal: 'candidate' }, a.author);
+  assert.equal(s.dispatch('subagent_group_status', {}, a.author).decisions[0].state, 'proposed');
+  assert.throws(() => s.dispatch('subagent_group_update', { groupId: g.groupId, action: 'approve', name: 'api', contract: 'x' }, a.author), { code: 'EPARENT_ONLY' });
+  assert.throws(() => s.dispatch('subagent_group_update', { groupId: g.groupId, action: 'approve', name: 'api', contract: '' }), { code: 'EBADINPUT' });
+  s.dispatch('subagent_group_update', { groupId: g.groupId, action: 'approve', name: 'api', contract: 'parent contract' });
+  s.dispatch('subagent_conflict', { groupId: g.groupId, name: 'ownership', summary: 'overlap', members: ['a', 'b'] }, a.author);
+  assert.equal(s.dispatch('subagent_group_status', { groupId: g.groupId }).state, 'blocked');
+  s.dispatch('subagent_group_update', { groupId: g.groupId, action: 'arbitrate', name: 'ownership', contract: 'a owns API' });
+  finishA(result()); await a.promise; await b.promise; assert.equal(bRan, true);
+  const c = s.start('c', '', async () => result(), () => {}, meta('c')); await c.promise;
+  assert.equal(s.dispatch('subagent_group_status', { groupId: g.groupId }).complete, true);
+  assert.equal(s.dispatch('subagent_send', { callId: 'a', message: 'too late' }).state, 'undelivered');
+  const cursor = a.cursor; s.event(a, 'message', { delta: 'late' }); assert.equal(a.cursor, cursor);
+  assert.throws(() => s.dispatch('subagent_status', { callId: 'a', waitMs: 30000 }), { code: 'EBADINPUT' });
+  const isolated = new Scope('/project', 'chat');
+  assert.throws(() => isolated.dispatch('subagent_group_status', { groupId: g.groupId }), { code: 'EUNKNOWN_GROUP' });
+  await isolated.finish(); await s.finish();
+
+  for (const failure of ['failed', 'cancelled']) {
+    const scope = new Scope('/p', 'chat');
+    const group = scope.dispatch('subagent_group_create', declaration());
+    let ran = false;
+    const launch = (id, exec) => scope.start(id, '', exec, () => {}, { groupId: group.groupId, memberId: id });
+    const child = launch('b', async () => { ran = true; return result(); });
+    const review = launch('c', async () => { ran = true; return result(); });
+    const upstream = launch('a', async () => result(false));
+    if (failure === 'cancelled') scope.stop(upstream);
+    await Promise.all([upstream.promise, child.promise, review.promise]);
+    assert.equal(ran, false);
+    assert.equal(scope.status(child).state, 'blocked');
+    assert.equal(scope.dispatch('subagent_group_status', { groupId: group.groupId }).state, failure);
+    await scope.finish();
+  }
+  const cancelScope = new Scope('/p', 'chat');
+  const cancelGroup = cancelScope.dispatch('subagent_group_create', declaration('cancel-all'));
+  const foreign = cancelScope.dispatch('subagent_group_create', declaration('foreign'));
+  const active = cancelScope.start('active', '', () => new Promise(() => {}), () => {}, { groupId: cancelGroup.groupId, memberId: 'a' });
+  await tick();
+  assert.throws(() => cancelScope.dispatch('subagent_group_status', { groupId: foreign.groupId }, active.author), { code: 'EPARENT_ONLY' });
+  assert.throws(() => cancelScope.dispatch('subagent_decision', { groupId: foreign.groupId, name: 'forged', proposal: 'x' }, active.author), { code: 'EPARENT_ONLY' });
+  const cancelled = cancelScope.dispatch('subagent_group_update', { groupId: cancelGroup.groupId, action: 'cancel' });
+  assert.equal(cancelled.settled, true);
+  assert.equal(cancelled.complete, false);
+  assert.throws(() => cancelScope.start('late-member', '', async () => result(), () => {}, { groupId: cancelGroup.groupId, memberId: 'b' }), { code: 'EALREADY_FINISHED' });
+  await cancelScope.finish();
+  const scope = new Scope('/p', 'chat'); let release, completed = 0;
+  const stuck = scope.start('stuck', '', () => new Promise((r) => { release = r; }), () => { completed++; });
+  await tick(); scope.dispatch('subagent_send', { callId: 'stuck', message: 'pending' });
+  const start = Date.now(); await scope.finish();
+  assert.ok(Date.now() - start < 1600); assert.equal(completed, 1);
+  assert.equal(stuck.receipts[0].state, 'undelivered');
+  release(result()); await stuck.promise; assert.equal(completed, 1);
+  assert.throws(() => scope.dispatch('subagent_publish', { name: 'late', summary: 'x' }), { code: 'EABORTED' });
+  const polls = new Scope('/p', 'chat');
+  for (let i = 0; i < 256; i++) polls.dispatch('subagent_status', {});
+  assert.throws(() => polls.dispatch('subagent_status', {}), { code: 'EPOLL_LIMIT' }); await polls.finish();
+  // Every new leaf uses ordinary family/leaf authorization, never file privileges.
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  process.env.MOUAIF_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'groups-auth-'));
+  const auth = require('../src/tools/authorization.js');
+  const { TOOL_NAMES } = require('../src/tools/subagent-orchestration.js');
+  for (const name of TOOL_NAMES) assert.ok(auth.NATIVE_TOOLS.has(name) || auth.FAMILY_TOOLS.has(name));
+  for (const spec of SPECS) assert.equal(spec.function.parameters.additionalProperties, false);
+  console.log('cooperative groups: DAG readiness/propagation, contracts/arbitration, artifacts/provenance, role isolation, delivery, bounded shutdown/late events and polling passed');
+})().catch((e) => { console.error(e); process.exitCode = 1; });

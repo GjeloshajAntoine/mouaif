@@ -31,7 +31,7 @@ export const TOOL_GROUPS = Object.freeze([
   // families first, the Chats / mouaif families next, then the File tools
   // family.
   { id: 'shell', name: 'Shell', source: 'shell', authKey: 'shell', tools: ['shell'] },
-  { id: 'subagent', name: 'Subagent', source: 'subagent', authKey: 'subagent', tools: ['subagent', 'subagent_messages', 'subagent_status', 'subagent_stop', 'subagent_publish', 'subagent_read'] },
+  { id: 'subagent', name: 'Subagent', source: 'subagent', authKey: 'subagent', tools: ['subagent', 'subagent_messages', 'subagent_status', 'subagent_stop', 'subagent_send', 'subagent_group_create', 'subagent_group_update', 'subagent_publish', 'subagent_read', 'subagent_group_status', 'subagent_decision', 'subagent_conflict'] },
 
   // ---- Chat and app tools: two multi-tool families ---------------------
   // Same shape as File tools: one gate (`tools.chats` / `tools.mouaif`)

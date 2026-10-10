@@ -18,8 +18,14 @@
       "subagent_messages",
       "subagent_status",
       "subagent_stop",
+      "subagent_send",
+      "subagent_group_create",
+      "subagent_group_update",
       "subagent_publish",
-      "subagent_read"
+      "subagent_read",
+      "subagent_group_status",
+      "subagent_decision",
+      "subagent_conflict"
     ]
   },
   {

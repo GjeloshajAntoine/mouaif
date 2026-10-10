@@ -28,7 +28,7 @@ async function unit() {
   assert.equal(lines.truncated, true);
   assert.equal(a.lines.length, 128);
   assert.ok(!JSON.stringify(lines).includes('secret'));
-  scope.dispatch('subagent_messages', { callId: 'a', message: 'focus on tests' });
+  scope.dispatch('subagent_send', { callId: 'a', message: 'focus on tests' });
   assert.deepEqual(scope.drain(a.author), ['focus on tests']);
   assert.deepEqual(scope.drain(a.author), []);
   for (const name of PARENT_TOOLS) assert.throws(() => scope.dispatch(name, { callId: 'a' }, a.author), { code: 'EPARENT_ONLY' });
@@ -121,7 +121,7 @@ async function integration() {
       assert.equal(parentToolResults[0].result.background, true);
       if (parentRound === 2) {
         parentObservedRunning = true;
-        if (mode === 'steer') return send('subagent_messages', { callId: 'child', message: 'revise scope' }, 'steer');
+        if (mode === 'steer') return send('subagent_send', { callId: 'child', message: 'revise scope' }, 'steer');
         if (mode === 'end') return send();
         // Wait for child fetch/tool approval before stopping it.
         const wait = () => {
@@ -135,7 +135,8 @@ async function integration() {
           const release = () => { if (childPending) childPending(); else setTimeout(release, 5); };
           release();
         }
-        return send('subagent_status', { callId: 'child', waitMs: 2000 }, 'status');
+        // Fixture scheduling only; production status never waits.
+        return setTimeout(() => send('subagent_status', { callId: 'child' }, 'status'), 100);
       }
       assert.equal(parentToolResults.at(-1).result.state, mode === 'steer' ? 'completed' : 'cancelled');
       send();

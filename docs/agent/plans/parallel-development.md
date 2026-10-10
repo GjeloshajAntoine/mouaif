@@ -40,6 +40,19 @@ Rules that keep those merges cheap:
 4. **Review contracts before coding.** Schemas, settings, and fields below are proposals,
   not user-approved decisions. Resolve lifecycle, authorization, and persistence gaps first.
 
+## User-approved cooperative groups follow-up
+
+This section is approved implementation scope and supersedes the older Track A message/wait contract below; the other tracks remain proposals. Track A completed at `8f0a331f`. Follow-up work uses its committed tip in a separate `feat/cooperative-groups-8f0a331f` worktree, never writes Track A/E or master, and does not merge/push automatically.
+
+1. Parent declares group identity/shared objective and immutable members (roles, ownership references, workspace claims and dependency DAG). Validate the complete declaration, reject unknown dependencies/cycles before effects. Launch named members with `background:true`; downstream dispatch waits for successful dependencies. Failure/cancellation blocks descendants, never starts them.
+2. Metadata-only named artifacts are discoverable with author/member/group and actual workspace provenance. References never read files, move workspaces, prepare checkouts or bypass File tools authorization/redaction. Ownership is advisory, not a filesystem lock.
+3. Shared decisions remain proposals until explicit parent approval; no consensus. Children escalate conflicts; only the parent arbitrates. Group status reports readiness and pending/running/completed/blocked/failed/cancelled, distinguishing settled from successful completion. No recursion, automatic merge or rollback.
+4. `subagent_messages` is read-only. Explicit `subagent_send` receipts are queued/delivered/undelivered; delivered means inserted into context, not obeyed. Status is immediate and rejects `waitMs`. Scope observation budget is 256 calls; no infinite polling. Shutdown settles at most one second then finalizes once and drops late events/results.
+5. Track E chat `bbc387ca` was inspected and its draft updated with the immediate-status/scoped-handle contract. Its unfinished job-registry work is not imported. A future wait adapter must have finite deadlines/poll budgets, reject self-wait, and distinguish blocked/failed/cancelled outcomes. No wait tool is shipped here.
+6. Ship group lifecycle/authorization/DAG/conflict/delivery/shutdown tests, feature and agent docs, matching tool catalog/mirror (42 tools before E), changelog and this plan in one focused Conventional Commit. Landing must regenerate the matching committed web build and re-run shared suites; no dependency installs or host CLI restart.
+
+See [feature contract](../../features/cooperative-subagent-groups.md) and [implementation notes](../features/cooperative-subagent-groups.md). Remaining limitations: in-memory turn scope, advisory workspace/ownership, cooperative cancellation cannot undo writes or detached commands, and usage arriving after shutdown timeout is not reconciled.
+
 ## Baseline
 
 Already on `master` at plan time:
@@ -346,7 +359,7 @@ The summary here is the coordination view only.
 **New tool names (first track to touch the pinned surface).** `wait_for`, `wait_check` (the
 **Waits** family) and `chat_restart`, `chat_restart_stop` (the **Chat restarts** family). Two new
 families in `src/tools/authorization.js`, two new rows in `frontend/src/toolGroups.js` + its
-generated mirror, four names in `PRESET_TOOL_NAMES`, and the tool count moving **31 → 36 after A → 40 after E** in
+generated mirror, four names in `PRESET_TOOL_NAMES`, and the tool count moving **31 → 42 after A plus cooperative follow-up → 46 after E** in
 `scripts/test-tool-groups.mjs`, `docs/features/tool-groups.md`, and `docs/features/mouaif-features.md`.
 
 **Proposed guardrails.** No total turn deadline exists today; add one explicitly or use
@@ -378,7 +391,7 @@ fresh-context restarts need a persisted context boundary. Land subagent waits af
 
 **Tests.** `scripts/test-wait-for.js`, `scripts/test-wait-check.js`,
 `scripts/test-chat-restart-schedule.js`, `scripts/test-chat-restart-tools-http.js`, plus
-`scripts/test-tool-groups.mjs` at 40 tools after A + E (35 for E alone), and a 360 px review.
+`scripts/test-tool-groups.mjs` at 46 tools after A + cooperative follow-up + E (35 for E alone), and a 360 px review.
 
 ## Landing order and merge queue
 
@@ -387,9 +400,9 @@ re-running the shared-surface suites before the next one starts. The order puts 
 newest-tool-name track first (it settles the tool-group counts), then the tracks that only touch
 the same two UI files:
 
-1. **A** — subagent orchestration (five new tool names: baseline 31 → 36).
+1. **A + cooperative follow-up** — subagent orchestration/groups (eleven new tool names: baseline 31 → 42).
 2. **E** — waits and chat restarts (four new tool names **on top of A's**, two new families, the
-  36 → 40 count bump after A (A adds five names to the baseline 31); rebase immediately after A, before any other tool-name track).
+  42 → 46 count bump after A plus cooperative follow-up (eleven names above baseline 31); rebase immediately after A, before any other tool-name track).
 3. **C** — subagent model choice (no new tool names; `cards.js` + `agents.js`).
 4. **D** — subagent attachments (no new tool names; files, definitions, and budget arguments).
 5. **B** — MCP Apps (largest, new render surface; `cards.js` third writer, `mcp.js`, new components).

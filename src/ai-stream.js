@@ -1512,14 +1512,16 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     // including delegated tools. Never replace projectDir for permissions,
     // settings, MCP connections, attachments inventory or chat persistence.
     let workingDir;
-    if (name === 'shell' || name === 'group_cli' || require('./tools/files.js').isFileToolName(name)) {
+    if (name === 'shell' || name === 'group_cli' || name === 'subagent' || name === 'subagent_publish' || require('./tools/files.js').isFileToolName(name)) {
       try { workingDir = require('./chatWorkingFolder.js').resolveForCall(callOpts.projectDir, callOpts.chatId, callOpts.workspaceChatId); }
       catch (e) {
-        const result = { ok: false, code: e.code || 'EBADPATH', error: e.message };
+        const result = name === 'subagent'
+        ? { error: { code: e.code || 'EBADPATH', message: e.message } }
+        : { ok: false, code: e.code || 'EBADPATH', error: e.message };
         return { ok: false, content: JSON.stringify(result), result };
       }
-    }
-    // Native shell tool.
+      }
+      // Native shell tool.
     if (name === 'shell') {
       let out;
       try {
@@ -1688,14 +1690,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     // reused for any nested tool or MCP call that needs approval.
     if (orchestration.TOOL_NAMES.includes(name)) {
     try {
-      if (name === 'subagent_status' && !opts.orchestrationAuthor && args.waitMs !== undefined) {
-      if (!args.callId || !Number.isInteger(args.waitMs) || args.waitMs < 0 || args.waitMs > 30000) throw Object.assign(new Error('waitMs requires callId and an integer from 0 to 30000'), { code: 'EBADINPUT' });
-      const row = scope.get(args.callId);
-      let timer;
-      try { await Promise.race([row.promise, new Promise((resolve) => { timer = setTimeout(resolve, args.waitMs); })]); }
-      finally { clearTimeout(timer); }
-      }
-      const result = scope.dispatch(name, args || {}, opts.orchestrationAuthor);
+    const result = scope.dispatch(name, args || {}, opts.orchestrationAuthor, workingDir);
       return { ok: true, result, content: JSON.stringify(result) };
     } catch (e) {
       const result = { error: { code: e.code || 'EBADINPUT', message: e.message } };
@@ -1711,25 +1706,42 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       const result = { error: { code: 'EBADINPUT', message: 'background must be boolean' } };
       return { ok: false, result, content: JSON.stringify(result) };
     }
+    if (typeof args.task !== 'string' || !args.task.trim() || ((args.groupId !== undefined || args.memberId !== undefined) && args.background !== true)) {
+    const result = { error: { code: 'EBADINPUT', message: 'task is required; group members must use background:true' } };
+    return { ok: false, result, content: JSON.stringify(result) };
+    }
     const id = callOpts.callId || require('node:crypto').randomUUID();
-    const row = scope.start(id, args.agent, (run) => runDelegation(run), (exec) => {
+    let row;
+    try {
+    row = scope.start(id, args.agent, (run) => runDelegation(run), (exec) => {
       if (args.background) onEvent('tool_result', { id, name: 'subagent', ok: exec.ok, result: exec.result });
-    });
+    }, { groupId: args.groupId, memberId: args.memberId, workspace: workingDir });
+    } catch (e) {
+    const result = { error: { code: e.code || 'EBADINPUT', message: e.message } };
+    return { ok: false, result, content: JSON.stringify(result) };
+    }
     if (!args.background) return row.promise;
-    const result = { callId: id, background: true, state: 'running', nextSuggested: 'Use subagent_status/messages/stop before ending this parent turn. Unfinished children are cancelled at turn end.' };
+    const result = { callId: id, background: true, state: row.state, groupId: row.groupId || null, memberId: row.memberId || null, nextSuggested: 'Use immediate subagent_status/messages, explicit subagent_send or stop. Avoid tight polling; unfinished children cancel at turn end.' };
     return { ok: true, backgroundPending: true, result, content: JSON.stringify(result) };
 
     async function runDelegation(run) {
     const signal = run.controller.signal;
     const onEvent = (eventName, data) => {
-      if (eventName === 'subagent_event') {
-      scope.event(run, data.kind, data.data);
+    if (!scope.accepts(run)) return;
+    if (eventName === 'subagent_event') {
+    scope.event(run, data.kind, data.data);
       if (data.kind === 'start') run.modelId = data.data?.model?.id || null;
       } else if (eventName === 'progress_update') scope.event(run, eventName, data);
       opts.onEvent(eventName, data);
     };
     const task = args && typeof args.task === 'string' ? args.task.trim() : '';
-      const context = args && typeof args.context === 'string' ? args.context.trim() : '';
+      let context = args && typeof args.context === 'string' ? args.context.trim() : '';
+      if (run.groupId) {
+      const group = scope.groups.get(run.groupId);
+      const member = group.members.get(run.memberId);
+      context += '\n\nCooperative group metadata (not file authorization): ' + JSON.stringify({ groupId: group.groupId, objective: group.objective, memberId: member.memberId, role: member.role, owns: member.owns, workspaceClaim: member.workspace, dependsOn: member.dependsOn });
+      context += '\nOnly the parent coordinates and approves contracts. Discover artifacts/decisions with subagent_group_status and subagent_read; propose decisions or escalate conflicts, never recursively delegate, merge or roll back.';
+      }
       const agentName = args && typeof args.agent === 'string' ? args.agent.trim() : '';
       if (!task) {
         const r = { error: { code: 'EBADINPUT', message: 'task is required' } };
@@ -1961,7 +1973,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // usage and forward the increments to the parent's delegated totals,
       // which also updates the chat UI's running total.
       function forwardNestedRound(round) {
-        if (!round) return;
+      if (!round || run.finalized) return;
         const promptTokens = Number(round.promptTokens);
         const completionTokens = Number(round.completionTokens);
         if (isFinite(promptTokens) && promptTokens > 0) mirror.lastPromptTokens = promptTokens;
@@ -2021,6 +2033,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
           return false;
         });
       }
+      if (!scope.accepts(run)) {
+        const r = { error: { code: 'EABORTED', message: 'delegated run is no longer active' } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
       // The resolved instructions are already known before the first
       // upstream request. Send them through the buffered nested channel,
       // not a top-level message (which would pollute the parent transcript).
@@ -2041,6 +2057,8 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       const r = { error: { code: e.code || 'EBADPATH', message: e.message } };
       return { ok: false, content: JSON.stringify(r), result: r };
       }
+      run.workspace = parentRoot;
+      if (run.groupId) scope.groups.member(run.groupId, run.memberId).member.actualWorkspace = parentRoot;
       const runWorkspace = require('./chatWorkingFolder.js').registerRun(parentRoot, {
       root: parentRoot, current: parentRoot
       }, callOpts && callOpts.chatId);
@@ -2071,7 +2089,8 @@ promptSize: callOpts && callOpts.promptSize,
         orchestrationScope: scope,
         orchestrationAuthor: run.author,
         onEvent: (eventName, data) => {
-          nestedEvents.push({ name: eventName, data });
+        if (!scope.accepts(run)) return;
+        nestedEvents.push({ name: eventName, data });
           if (typeof onEvent !== 'function') return;
           // Authorization (and ask_user) still ride the normal event
           // so the parent chat popup/card handles the nested

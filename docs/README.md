@@ -16,6 +16,7 @@ The guides linked from the site navigation.
 
 One page per feature: what it does and how to use it.
 
+- [Cooperative subagent groups](features/cooperative-subagent-groups.md) — parent-coordinated objectives, dependency readiness, artifacts, contracts and arbitration.
 - [Subagent orchestration](features/subagent-tools.md) — background handles, parent steering/cancellation and turn-scoped sibling handoffs.
 
 - [mouaif feature reference](features/mouaif-features.md) — every feature on one page, in one-line summaries, so you can hand the link to an AI agent.
