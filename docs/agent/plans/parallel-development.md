@@ -49,6 +49,40 @@ Already on `master` at plan time:
 - The MCP client speaks stdio / Streamable HTTP / legacy SSE and discovers tools only; it has
   **no** `resources/read` path yet (`src/mcp.js`).
 
+## Model policy — two models, pinned
+
+The project has exactly two models in `.mouaif.json`, both verified live in their provider
+catalogs:
+
+| Model | Provider | Available |
+|---|---|---|
+| `deepseek/deepseek-v4.1-flash` | `openrouter` | yes |
+| `mistral-large-4` | `mistral` | yes |
+
+Allocation — the only decision a track makes:
+
+| Slot | Model | Why |
+|---|---|---|
+| Chat / orchestrator driver | `deepseek/deepseek-v4.1-flash` | cheap enough to run long turns |
+| Review, second opinion, EU-hosted work | `mistral-large-4` | different family, so a review is a real cross-check |
+| Nested subagent pin (`defaultAgent`, every agent) | `deepseek/deepseek-v4.1-flash` | a nested call should never inherit a pricier chat model |
+| Delegated chat | either; the whole point of a per-chat pin | |
+
+Rules that keep this honest:
+
+- **Never pin a `~`-prefixed OpenRouter alias** (158 of 458 rows). They move upstream and silently
+  change which model an agent runs.
+- **Use the full slug, not a short id.** A bare `deepseek-v4.1-flash` exists in the Mistral catalog
+  but is a different model; Track C's provider qualification is what prevents that class of
+  mistake, so Track C lands before any agent pin is created.
+- **No third model without amending this table.** Adding one is a policy change, not a per-track
+  choice.
+- Consequence to accept knowingly: the `codex` provider (ChatGPT plan, effectively free) is
+  unused, so long autonomous runs bill OpenRouter instead of the plan.
+
+Lane 0 adds one step: pin `defaultAgent` to `deepseek/deepseek-v4.1-flash` and give the existing
+`Search` agent the same pin, so a bare `subagent` call cannot fall back to a chat's model.
+
 ## Lane 0 — kickoff (serial, half a day)
 
 1. Create the five worktrees from committed `HEAD` (never from dirty state):
