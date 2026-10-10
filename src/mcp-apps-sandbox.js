@@ -88,7 +88,7 @@ function createSandboxService(options = {}) {
       'Referrer-Policy': 'no-referrer'
     });
     // Trusted proxy source only. App HTML arrives by postMessage, not HTTP.
-    res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%;overflow:hidden}iframe{width:100%;height:100%;border:0}</style><script>'
+    res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%;overflow:hidden;background:transparent}iframe{width:100%;height:100%;border:0;background:transparent}</style><script>'
       + fs.readFileSync(path.join(__dirname, 'mcp-apps-sandbox-proxy.js'), 'utf8') + '</script>');
   });
   let starting;

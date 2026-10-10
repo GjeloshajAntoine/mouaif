@@ -88,6 +88,37 @@ try {
   assert(appEvaluate, 'single-file app initializes in opaque sandbox');
   for (let i = 0; i < 100 && await appEvaluate("document.querySelector('#ready').textContent") !== 'initialized'; i++) await sleep(50);
   assert.equal(await appEvaluate("document.querySelector('#ready').textContent"), 'initialized');
+  assert.equal(await appEvaluate("[document.documentElement,document.body].every(e=>getComputedStyle(e).backgroundColor==='rgba(0, 0, 0, 0)')"), true, 'app shell stays transparent');
+  assert.equal(await cdp.evaluate("getComputedStyle(document.querySelector('.mcp-app iframe')).backgroundColor"), 'rgba(0, 0, 0, 0)', 'host frame stays transparent');
+  async function assertBackdrop(rgb, label) {
+    await cdp.evaluate("document.querySelector('.mcp-app iframe').scrollIntoView({block:'center'})");
+    await sleep(100); // wait for cross-process frame compositing
+    const point = await cdp.evaluate("(()=>{const r=document.querySelector('.mcp-app iframe').getBoundingClientRect();return [Math.floor(r.right-16),Math.floor(r.bottom-16)];})()");
+    const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png' });
+    const pixel = await cdp.evaluate(`(async()=>{
+      const bytes=Uint8Array.from(atob(${JSON.stringify(screenshot.data)}),c=>c.charCodeAt(0));
+      const image=await createImageBitmap(new Blob([bytes],{type:'image/png'}));
+      const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;
+      const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);image.close();
+      return Array.from(ctx.getImageData(${point[0]},${point[1]},1,1).data);
+    })()`);
+    assert.deepEqual(pixel, [...rgb, 255], label);
+  }
+  for (const width of [360, 390, 430]) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: true });
+    for (const rgb of [[236, 240, 245], [24, 32, 42]]) {
+      await cdp.evaluate(`document.body.style.backgroundColor='rgb(${rgb.join(',')})'`);
+      await assertBackdrop(rgb, 'host backdrop visible through both sandbox layers at ' + width);
+    }
+  }
+  await cdp.evaluate("document.documentElement.style.setProperty('--bg','rgb(50, 60, 70)');document.querySelector('.mcp-app__header button').click()");
+  await sleep(100);
+  await assertBackdrop([50, 60, 70], 'fullscreen shows its sheet backdrop, not underlying chat');
+  await cdp.evaluate("document.querySelector('.mcp-app__header button').click()");
+  await sleep(100);
+  await appEvaluate("document.body.style.backgroundColor='rgb(70, 90, 110)'");
+  await assertBackdrop([70, 90, 110], 'author-selected opaque app background is preserved');
+  await appEvaluate("document.body.style.backgroundColor='transparent'");
   await appEvaluate("document.querySelector('#message').click()");
   for (let i = 0; !appMessages.length && i < 100; i++) await sleep(50);
   assert.deepEqual(appMessages, [{ role: 'user', content: [{ type: 'text', text: 'Single-file message' }] }]);
@@ -106,7 +137,7 @@ try {
   assert.deepEqual(requests, [{ projectDir: '/fixture', name: 'On-the-fly app', request: 'A checklist' }]);
   for (let i = 0; await cdp.evaluate('location.hash') !== '#/chat/devchat' && i < 100; i++) await sleep(50);
   assert.equal(await cdp.evaluate('location.hash'), '#/chat/devchat', 'request opens separate development chat');
-  console.log('PASS single-file SDK sandbox initialization/messaging, path/upload/request forms, chat navigation, mobile widths and 44px targets');
+  console.log('PASS single-file SDK sandbox initialization/messaging, transparent light/dark/mobile pixels, fullscreen/author backgrounds, path/upload/request forms, chat navigation and 44px targets');
 } finally {
   cdp?.close();
   if (chrome && chrome.exitCode === null) {

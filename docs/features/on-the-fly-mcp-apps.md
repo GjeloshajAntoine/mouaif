@@ -26,6 +26,8 @@ This separates app development from your current feature conversation. Multiple 
 
 HTML must be self-contained, with inline CSS and browser JavaScript. Browser-JS files receive a mobile page shell and a `<main id="app">` mount point. External imports, CDN assets, Node APIs and network requests are not supported by this zero-network adapter. JavaScript source is never executed on the Node server.
 
+The frame and generated browser-JS shell are transparent by default. Request drafts ask for transparent `html`/`body` backgrounds unless the request needs an opaque background. For an imported HTML app, leave its backgrounds unpainted or use `html, body { background: transparent; }` to show the chat backdrop. Author-selected backgrounds are not overridden. Fullscreen keeps its sheet backdrop, and sandbox permissions remain unchanged.
+
 The host injects the official MCP Apps SDK, connects it automatically, and exposes `window.mouaifApp` plus `window.mouaifAppReady`. Author modules can await the ready promise; classic inline scripts can listen for `mouaif-app-ready` before using it. Do not initialize a second bridge.
 
 Example single-file browser app:

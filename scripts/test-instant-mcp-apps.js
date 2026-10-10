@@ -72,6 +72,7 @@ async function post(route, body, headers = {}) {
     assert.match(chat.draft, /A project checklist/);
     assert(chat.draft.includes(requested.body.path));
     assert.match(chat.draft, /Do not install dependencies/);
+    assert.match(chat.draft, /Keep html\/body backgrounds transparent/);
     assert.equal(fs.existsSync(path.join(projectDir, requested.body.path)), false, 'request only prepares a draft');
     assert.equal(mcp.listServers(projectDir).length, 3, 'request does not register a server');
 

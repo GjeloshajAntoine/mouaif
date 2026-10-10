@@ -52,7 +52,7 @@ function renderHtml(source, kind, name) {
   let html;
   if (kind === 'js') {
     html = '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'
-      + '<style>body{margin:0;padding:1rem;font-family:system-ui,sans-serif}button,input,select{min-height:2.75rem;max-width:100%}*{box-sizing:border-box}</style>'
+      + '<style>html,body{background:transparent}body{margin:0;padding:1rem;font-family:system-ui,sans-serif}button,input,select{min-height:2.75rem;max-width:100%}*{box-sizing:border-box}</style>'
       + '</head><body><main id="app"></main>' + script + '</body></html>';
   } else {
     // Module scripts execute in document order. Put the bridge before any
@@ -93,7 +93,7 @@ function developmentDraft(request, filename) {
   return 'Build a mobile-first, self-contained MCP App for this request:\n\n' + request
     + '\n\nWrite the finished single HTML file to ' + filename + '. Do not install dependencies, run a server, or change unrelated files. '
     + 'Inline CSS and browser JavaScript only; no external resources, network requests, Node APIs, or eval. '
-    + 'Touch targets must be at least 44px and fit a 360px viewport. '
+    + 'Touch targets must be at least 44px and fit a 360px viewport. Keep html/body backgrounds transparent so the host backdrop shows through, unless the request needs an opaque background. '
     + 'The host injects the official MCP Apps SDK and connects it automatically. '
     + 'If host messaging is needed, use window.mouaifApp after the mouaif-app-ready event; '
     + 'send user text with window.mouaifApp.sendMessage({role:"user",content:[{type:"text",text:"..."}]}). '
