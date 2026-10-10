@@ -1,0 +1,8 @@
+.mcp-app { width: 100%; max-width: 100%; min-width: 0; border: 1px solid var(--border, #8885); border-radius: .75rem; overflow: hidden; margin-block: .75rem; }
+.mcp-app__header { display: flex; align-items: center; gap: .5rem; min-height: 2.75rem; padding: .25rem .5rem; }
+.mcp-app__header strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mcp-app__header button { min-width: 2.75rem; min-height: 2.75rem; font: inherit; }
+.mcp-app p { padding: .5rem; overflow-wrap: anywhere; }
+.mcp-app iframe { display: block; width: 100%; max-width: 100%; border: 0; background: transparent; }
+.mcp-app--fullscreen { position: fixed; inset: 0; z-index: 1000; margin: 0; border-radius: 0; height: 100dvh; display: flex; flex-direction: column; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--bg, #fff); box-sizing: border-box; }
+.mcp-app--fullscreen iframe { flex: 1; min-height: 0; }

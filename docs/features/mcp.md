@@ -4,6 +4,8 @@
 
 `mouaif` includes an **MCP client** that connects to any [Model Context Protocol](https://modelcontextprotocol.io/) server. MCP servers provide third-party integrations (such as databases, custom APIs, browser automation, or search) over stdio or HTTP transports. Once a server is configured, its tools are automatically made available to the AI assistant in your chat sessions.
 
+Enable [MCP Apps](mcp-apps.md) per project to render interactive tool views using the official AppBridge SDK. Initial sandbox hosting supports direct HTTP; normal text/image results remain available when an app cannot render.
+
 ## Usage
 
 ### Scope: global or per-project

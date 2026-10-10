@@ -14,6 +14,7 @@ import { nav } from '../router.js';
 import { projectQS } from './settings/projectQS.js';
 import { settingsLink } from './settings/projectNavigation.js';
 import { McpErrorModal } from './chat/McpErrorModal.jsx';
+import { InstantMcpApp } from './settings/InstantMcpApp.jsx';
 
 export function SettingsMcpView(props = {}) {
   // Scope comes from the URL, never from local tab state: the route
@@ -289,6 +290,7 @@ const backHref = projectDir ? settingsLink('settings/project', ctx) : '#/setting
         projectDir
           ? 'Servers this project can use: the app-wide servers (app badge) plus any servers committed to this project\'s .mcp.json (project badge). If a project server has the same name as an app one, the project server is the one that runs.'
           : 'Model Context Protocol servers available in every project. The AI client discovers each server\'s tools and advertises them to the model. A project can add its own servers on top of these.'),
+      projectDir ? h(InstantMcpApp, { key: projectDir, projectDir, onImported: load }) : null,
       // ---- Server list -----------------------------------------------------
       // Tool-call permissions (Off/Ask/Allow) deliberately do NOT live on
       // this page: they are per project and sit with the other tool

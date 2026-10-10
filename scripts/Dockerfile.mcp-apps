@@ -1,0 +1,8 @@
+# Isolated regression image; never restarts or mounts the running host app.
+FROM mouaif-app:latest
+USER root
+WORKDIR /track
+COPY . .
+RUN npm ci --include=dev --no-audit --no-fund
+ENV MOUAIF_HOME=/tmp/mouaif-apps-tests
+CMD ["sh", "-c", "node scripts/test-mcp-apps-detection.js && node scripts/test-mcp-apps-host.js && node scripts/test-mcp-apps-ui.mjs && node scripts/test-mcp-apps-e2e.mjs && node scripts/test-mcp.js && node scripts/test-web-csp.js"]

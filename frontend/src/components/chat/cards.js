@@ -691,8 +691,10 @@ return host;
 
 export function authorizationCard(request, projectDir, chatId, refs, resume, state) {
   return new Promise((resolve) => {
-    if (!refs.transcript.current) return resolve('deny');
+    if (!refs.transcript.current || request.signal?.aborted) return resolve('deny');
     const card = document.createElement('div');
+    const cancel = () => { card.remove(); resolve('deny'); };
+    request.signal?.addEventListener('abort', cancel, { once: true });
     card.className = 'tool-card tool-card--authorization';
     if (request.callId) card.dataset.authCallId = request.callId;
     const head = document.createElement('div');
@@ -716,7 +718,7 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     detail.className = 'tool-card__body';
     detail.textContent = request.tool === 'change_working_folder'
     ? [request.summary || 'Change where this chat works', 'Project: ' + request.projectDir].join('\n')
-    : [request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
+    : [request.summary || request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
       .filter(Boolean).join('\n');
     // A delegation that shares chat images lists them (names only, no
     // pixels), so the user knows what goes to the delegated model.
@@ -779,6 +781,7 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
           }
           return;
         }
+        request.signal?.removeEventListener('abort', cancel);
         card.remove();
         if (decision !== 'deny' && typeof resume === 'function') await resume();
         resolve(decision);

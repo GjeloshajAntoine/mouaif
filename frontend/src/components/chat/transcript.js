@@ -8,6 +8,8 @@
 // matches the rest of the transcript which is also imperative.
 
 import { renderMarkdown } from '../../markdown.js';
+import { mountMcpApp } from './McpAppFrame.jsx';
+import { authorizationCard } from './cards.js';
 import { afterTranscriptAppend, scrollToolBodyToBottomSoon, cancelToolBodyScroll, pinTranscriptAfterSettle } from './scroll.js';
 import {
   isSubagentTool,
@@ -1615,6 +1617,13 @@ if (!card) {
     // rows the user opened or folded while the run was streaming.
     const nestedRows = isSubagent ? snapshotNestedRowState(card) : null;
     renderToolResultBody(body, callArgs ? Object.assign({}, toolResult, { args: callArgs }) : toolResult, isSubagentTool);
+    if (toolResult.name?.startsWith('mcp__') && id && refs.mcpAppContext) {
+      const context = refs.mcpAppContext;
+      const app = document.createElement('div');
+      body.prepend(app);
+      mountMcpApp(app, { ...context, callId: id,
+        onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, context.projectDir, context.chatId, refs) });
+    }
     if (isSubagent) {
     renderSubagentChat(card, toolResult);
     restoreNestedRowState(card, nestedRows);

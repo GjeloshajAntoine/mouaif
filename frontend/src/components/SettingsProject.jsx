@@ -32,6 +32,8 @@ export function SettingsProjectView({ projectDir: initialDir, chatId: initialCha
   const [projectPath, setProjectPath] = useState('…');
 
   // Structured controls
+  const [mcpAppsOn, setMcpAppsOn] = useState(false);
+  const [mcpAppsStatus, setMcpAppsStatus] = useState('');
   const [promptSize, setPromptSize] = useState('');
   const [promptSizeStatusMsg, setPromptSizeStatusMsg] = useState('Following the app default until you change it here');
   // Tool output profile. Two selects map directly to the backend
@@ -174,6 +176,8 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
     setProjectPath(projRes.body.path || d);
     setDbBacked(projRes.body.dbBacked === true);
 
+    setMcpAppsOn(cp.mcpApps?.enabled === true);
+    setMcpAppsStatus('');
     setPromptSize((cp.promptSize && String(cp.promptSize)) || '');
     setPromptSizeStatusMsg('');
 
@@ -1168,9 +1172,22 @@ class: 'view-back',
           )
         ),
         h('ul', { class: 'group__list' },
-          h('li', { class: 'settings-project__item' },
-            h('div', { class: 'settings-project__item-main' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Prompt style'),
+        h('li', { class: 'settings-project__item' },
+        h('div', { class: 'settings-project__item-main' },
+        h('label', { class: 'settings-project__item-title', for: 'sp-mcp-apps' }, 'MCP Apps'),
+        h('div', { class: 'settings-project__item-note' }, 'Interactive tool views on direct HTTP. Tool permissions still apply; text results remain available.'),
+        h('div', { role: 'status' }, mcpAppsStatus)
+        ),
+        h('input', { id: 'sp-mcp-apps', type: 'checkbox', checked: mcpAppsOn,
+        style: { minWidth: '2.75rem', minHeight: '2.75rem' },
+        onChange: async e => {
+          const enabled = e.target.checked; setMcpAppsOn(enabled);
+          if (!await patchProject({ mcpApps: { enabled } }, setMcpAppsStatus, 'saved')) setMcpAppsOn(!enabled);
+        } })
+        ),
+        h('li', { class: 'settings-project__item' },
+        h('div', { class: 'settings-project__item-main' },
+        h('label', { class: 'settings-project__item-title', for: 'sp-prompt-size' }, 'Prompt style'),
               h('div', { class: 'settings-project__item-note' }, 'How much tool and instruction detail chats receive.'),
               h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, promptSizeStatusMsg)
             ),

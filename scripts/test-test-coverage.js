@@ -32,6 +32,7 @@ const PKG = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
 // Fixture servers spawned by other tests — not standalone tests.
 const HELPERS = new Set([
   'test-mcp-server.js',
+  'test-mcp-apps-server.js',
   'test-mcp-cancel-server.js',
   'test-mcp-names-server.js',
   'test-mcp-crash-server.js',
