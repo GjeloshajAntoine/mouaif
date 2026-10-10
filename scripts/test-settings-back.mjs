@@ -23,6 +23,7 @@ const readFront = (file) => fs.readFileSync(new URL('../frontend/src/' + file, i
 const strip = (text) => text
   .replace(/^import\s+[\s\S]*?from\s+'[^']*';?\s*$/gm, '')
   .replace(/^import\s+'[^']*';\s*$/gm, '')
+  .replace(/^export\s*\{[^}]*\};?\s*$/gm, '')
   .replace(/^export /gm, '');
 const load = (file) => import('data:text/javascript;base64,' + Buffer.from(readFront(file)).toString('base64'));
 
@@ -134,6 +135,7 @@ function harness(globals) {
     Fragment: 'fragment', ToolTree: 'tree', McpAuthSeg: 'seg', ToolAuthSeg: 'seg',
     TOOL_MODE_CHOICES: [], ASK_USER_MODE_CHOICES: [], segMode: (m) => m,
     AgentFilePicker: 'picker', WebpreviewModal: 'modal', PreviewUrlPrompt: 'prompt',
+    SubagentModelDefaults: 'subagent-defaults',
     projectsReload: { value: 0 }, getProjectStorage() {}, setProjectStorage() {}, requestWebpreview() {},
     sectionIcon: () => null, toolModeSegs: () => [], shortDesc: () => '',
     fetchJson: async () => ({ status: 200, body: {} })
@@ -189,7 +191,7 @@ function harness(globals) {
 {
   const h = harness({
     activeProject: { value: { dir: '' } }, setActiveProject() {}, nav() {},
-    Fragment: 'fragment', McpErrorModal: 'modal',
+    Fragment: 'fragment', McpErrorModal: 'modal', InstantMcpApp: 'instant-app',
     fetchJson: async () => ({ status: 200, body: { servers: [] } })
   });
   h.evalFile('components/settings/projectNavigation.js');
@@ -238,6 +240,7 @@ function harness(globals) {
   h.evalFile('components/settings/projectNavigation.js');
   h.evalFile('components/settings/agentNavigation.js');
   h.evalFile('components/settings/agentAutosave.js');
+  h.evalFile('toolGroups.js');
   h.evalFile('components/ToolTree.jsx');
   h.evalFile('components/SettingsAgents.jsx');
   const list = h.renderView('SettingsAgentsView', { projectDir: PROJECT, chatId: CHAT, from: FROM }, { fresh: true });
