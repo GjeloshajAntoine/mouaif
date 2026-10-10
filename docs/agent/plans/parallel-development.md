@@ -59,10 +59,43 @@ Already on `master` at plan time:
    `scripts/test-tool-groups.mjs`, `npm run lint`, `npm run test:subagent-prompt`,
    `node scripts/test-docs-links.js`.
 
-## Track A — Subagent orchestration and inter-subagent coordination
+## Delegation unit — a real chat, not a nested subagent
+
+**Revision after review.** The unit of delegation is a **chat**, driven by the existing Chats
+tools; `subagent` is kept only for throwaway nested work that must not appear as a chat.
+
+The reasons are structural:
+
+- A delegated chat has its own transcript, its own pinned model and its own custom prompt, so the
+  delegating model can hand off work and **the user can open that chat later and continue it**. A
+  subagent's transcript lives inside the parent's tool card and dies with the turn.
+- Context and cost stay separated: the delegated turn bills to its own `chat_store` row, and the
+  parent's window never holds the delegated reasoning.
+- The parts already ship: `create_chat` (title, topic, providerId, modelId), `update_chat` (adds
+  `promptId` / `promptSize` — the role persona is a **custom prompt**, not an agent),
+  `start_chat` (start a background turn, returns a URL), `get_chat` (recent messages),
+  `search_chats`, `change_working_folder`.
+
+Three gaps make this a feature rather than a prompt trick:
+
+1. **No fan-out.** `src/ai-stream.js` dispatches Chats tools inline through
+   `tools/mouaif.js → runAppTool`, so the parallel branch
+   (`calls.length > 1 && calls.every(c => c.name === 'subagent')`) never covers `start_chat`:
+   several delegations in one turn run one after another. Either teach that branch to recognise
+   chat delegations or add a `delegate_chat` tool that starts N of them together.
+2. **Persona plumbing.** `create_chat` accepts no `promptId`, so giving a delegated chat its role
+   prompt costs a second `update_chat` call.
+3. **Waiting and read-back.** A delegated turn is asynchronous, so the parent has to poll. Track
+   E's `wait_for` already specifies `until: "chat:<chatId>"`, which closes the loop as
+   delegate → wait → `get_chat`.
+
+## Track A — Subagent orchestration (isolated nested work only)
 
 **Goal.** A parent model can observe, message, and steer the subagents it started, and two
 sibling subagents can hand work to each other without the parent relaying it.
+
+> Scope narrowed by the revision above: Track A's tools serve delegations that must **not** become
+> chats (one-shot reviews, throwaway probes). Chat-shaped delegation is the path above.
 
 **Files.** `src/tools/subagent*.js`, `src/ai-stream.js` (dispatch + in-flight registry),
 `src/tools/authorization.js`, `src/prompts.js`, `frontend/src/toolGroups.js`,
@@ -342,6 +375,10 @@ set, which has no npm alias today), and a `docs:build` + `docs:publish:check` pa
 - A short written note in the track's agent notes: what shipped, what was verified, what is open.
 
 ## Open product questions (answer before the affected commit, not at the end)
+
+- Delegation: does a delegated chat start **empty** or with the delegating chat's recent context
+  summarized into its `topic`? (Default: a summary line plus the task, not a transcript copy.)
+- Delegation: fan-out — extend the parallel branch for `start_chat`, or add `delegate_chat`?
 
 - Track B: should MCP App frames be *opt-in per project* (default off) or on whenever a server
   declares a `ui://` resource? Default-off is the reversible choice.
