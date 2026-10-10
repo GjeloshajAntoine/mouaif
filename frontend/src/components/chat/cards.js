@@ -637,11 +637,11 @@ export function removePendingAuthorizationCards(refs) {
 // pick which model executes it (this call only — nothing is
 // persisted on the chat or an agent). The list is the same union
 // the main chat model picker shows: project-defined models plus the
-// per-provider live catalog, deduped by (provider, id). The chat's
-// current model is preselected. The control is the same trigger +
+// per-provider live catalog, deduped by (provider, id). The server's
+// effective default is displayed without becoming an implicit override. The control is the same trigger +
 // modal the chat top bar uses (see ModelPickerField), including its
 // Pinned and Recent bookmark sections.
-// Returns null when there is nothing to pick from.
+// An empty catalog still shows the effective model and supports clearing.
 function buildAuthModelPicker(state, request, projectDir) {
   if (!state || request.tool !== 'subagent') return null;
   const out = new Map();
@@ -660,24 +660,27 @@ function buildAuthModelPicker(state, request, projectDir) {
   }
   const list = Array.from(out.values()).sort((a, b) =>
     (a.provider + a.id).localeCompare(b.provider + b.id));
-  if (!list.length) return null;
-
   const chat = state.chat || {};
-  let selected = (chat.providerId && chat.modelId)
-    ? { providerId: chat.providerId, modelId: chat.modelId }
-    : null;
+  const chatValue = (chat.providerId && chat.modelId)
+    ? { providerId: chat.providerId, modelId: chat.modelId } : null;
+  const selection = request.subagentModel;
+  const initialValue = selection && selection.modelId ? selection : (selection && selection.error ? null : chatValue);
+  let selected = null;
 
 const host = document.createElement('div');
 host.className = 'tool-card__auth-model';
 
   // The picker holds its own selection; expose it for the decision
   // payload. Picking a model sets the override; tapping the
-  // "inherit" row clears it back to the chat default / agent pin.
+  // "default" row clears it back to the resolved agent/chat/project default.
 const mpHost = document.createElement('div');
 mpHost.className = 'tool-card__auth-model-field';
 render(h(AuthModelPicker, {
 models: list,
-initialValue: selected,
+initialValue,
+chatValue,
+modelSource: selection && selection.source,
+modelError: selection && selection.error,
 projectDir,
 onChange: (next) => { selected = next; }
 }), mpHost);

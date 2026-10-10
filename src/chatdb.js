@@ -101,6 +101,11 @@ d.exec('ALTER TABLE chat_store ADD COLUMN cost_known_count INTEGER NOT NULL DEFA
 if (!chatColumns.some((column) => column.name === 'auto_retry')) {
 d.exec('ALTER TABLE chat_store ADD COLUMN auto_retry INTEGER NOT NULL DEFAULT 1');
 }
+for (const column of ['subagent_provider_id', 'subagent_model_id']) {
+if (!chatColumns.some((entry) => entry.name === column)) {
+d.exec('ALTER TABLE chat_store ADD COLUMN ' + column + ' TEXT');
+}
+}
 // Per-chat skill opt-outs (JSON array of skill ids). NULL means "no
 // per-skill opt-outs", which is what every chat written before this
 // column existed has.
@@ -176,6 +181,8 @@ function rowToChat(row) {
     promptSnapshot: normalizePromptSnapshot(row.prompt_snapshot),
     providerId: row.provider_id || null,
     modelId: row.model_id || null,
+    subagentProviderId: row.subagent_provider_id || null,
+    subagentModelId: row.subagent_model_id || null,
     workingDir: row.working_dir || null,
     thinkingLevel: row.thinking_level || '',
     maxOutputTokens: row.max_output_tokens || '',
@@ -253,7 +260,7 @@ const DRAFT_SNIPPET_CHARS = 400;
 
 const LIST_COLUMNS = `
   project_dir, id, title, created_at, last_opened_at, trace, prompt_size,
-  prompt_id, provider_id, model_id, working_dir, thinking_level, max_output_tokens,
+  prompt_id, provider_id, model_id, subagent_provider_id, subagent_model_id, working_dir, thinking_level, max_output_tokens,
   substr(draft, 1, ${DRAFT_SNIPPET_CHARS}) AS draft_snippet,
   (draft_attachments IS NOT NULL) AS has_draft_image,
   tools, agent_id, agent_files, skills, auto_retry,
@@ -288,6 +295,8 @@ function chatToRow(projectDir, chat) {
     prompt_snapshot: chat.promptSnapshot ? JSON.stringify(chat.promptSnapshot) : null,
     provider_id: chat.providerId || null,
     model_id: chat.modelId || null,
+    subagent_provider_id: chat.subagentProviderId || null,
+    subagent_model_id: chat.subagentModelId || null,
     working_dir: chat.workingDir || null,
     thinking_level: chat.thinkingLevel || '',
     max_output_tokens: chat.maxOutputTokens || '',
@@ -607,10 +616,10 @@ function createChat(projectDir, chat) {
   const row = chatToRow(projectDir, chat);
   d.prepare(`
 INSERT INTO chat_store (project_dir, id, title, created_at, last_opened_at,
-trace, prompt_size, prompt_id, prompt_snapshot, provider_id, model_id, working_dir, thinking_level, max_output_tokens, draft, draft_attachments, tools,
+trace, prompt_size, prompt_id, prompt_snapshot, provider_id, model_id, subagent_provider_id, subagent_model_id, working_dir, thinking_level, max_output_tokens, draft, draft_attachments, tools,
 agent_id, agent_files, skills, disabled_skills, tool_auth, auto_retry, total_cost, cost_known_count)
 VALUES (@project_dir, @id, @title, @created_at, @last_opened_at,
-@trace, @prompt_size, @prompt_id, @prompt_snapshot, @provider_id, @model_id, @working_dir, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
+@trace, @prompt_size, @prompt_id, @prompt_snapshot, @provider_id, @model_id, @subagent_provider_id, @subagent_model_id, @working_dir, @thinking_level, @max_output_tokens, @draft, @draft_attachments, @tools,
 @agent_id, @agent_files, @skills, @disabled_skills, @tool_auth, @auto_retry, @total_cost, @cost_known_count)
 `).run(row);
   return rowToChat(d.prepare(
@@ -634,7 +643,8 @@ title = @title, last_opened_at = @last_opened_at,
 trace = @trace, prompt_size = @prompt_size,
 prompt_id = @prompt_id, prompt_snapshot = @prompt_snapshot,
 provider_id = @provider_id,
-model_id = @model_id, working_dir = @working_dir, thinking_level = @thinking_level,
+model_id = @model_id, subagent_provider_id = @subagent_provider_id,
+subagent_model_id = @subagent_model_id, working_dir = @working_dir, thinking_level = @thinking_level,
 max_output_tokens = @max_output_tokens,
 draft = @draft, draft_attachments = @draft_attachments, tools = @tools,
 agent_id = @agent_id, agent_files = @agent_files,

@@ -145,6 +145,8 @@ const PARAMETERS = {
         includeLive: { type: 'boolean', description: 'Model search: include configured providers’ live catalogs (default true). False searches only saved project models.' },
         providerId: { type: 'string', description: 'Provider connection id for the chat\u2019s model (e.g. "openai-compatible").' },
         modelId: { type: 'string', description: 'create/update: project or live-catalog model id. A project model can infer its provider; a live model needs providerId. update: "" clears the model choice.' },
+        subagentProviderId: { type: 'string', description: 'update: provider connection for the chat’s subagent default.' },
+        subagentModelId: { type: 'string', description: 'update: model for unpinned subagents; "" clears the chat default.' },
         promptId: { type: 'string', description: 'Custom prompt id to attach to the chat ("" clears it).' },
         promptSize: {
           type: 'string',
@@ -263,6 +265,8 @@ function chatSummary(chat) {
     lastOpenedAt: chat.lastOpenedAt || null,
     providerId: chat.providerId || null,
     modelId: chat.modelId || null,
+    subagentProviderId: chat.subagentProviderId || null,
+    subagentModelId: chat.subagentModelId || null,
     workingDir: chat.workingDir || null,
     promptSize: chat.promptSize || null,
     promptId: chat.promptId || null,
@@ -492,8 +496,11 @@ async function runChats(args, opts) {
       Object.assign(patch, modelSelection(projectDir, providerId, modelId));
     }
     }
+    for (const key of ['subagentProviderId', 'subagentModelId']) {
+    if (typeof args[key] === 'string') patch[key] = trimString(args[key], 256);
+    }
     if (!Object.keys(patch).length) {
-      throw typedError('EBADINPUT', 'nothing to update: pass title, draft, promptId, promptSize, providerId, or modelId');
+    throw typedError('EBADINPUT', 'nothing to update: pass title, draft, promptId, promptSize, providerId, modelId, or subagentModelId');
     }
     const updated = chats.updateChat(projectDir, chatId, patch);
     if (!updated) throw typedError('ENOTFOUND', 'chat not found: ' + chatId);

@@ -20,10 +20,12 @@ const bundle = await build({
 stdin: {
 contents: `import { h, render } from 'preact';
 import { AuthModelPicker } from './frontend/src/components/AuthModelPicker.jsx';
+import { SubagentModelDefaults } from './frontend/src/components/SubagentModelDefaults.jsx';
+import { SettingsAgentsView } from './frontend/src/components/SettingsAgents.jsx';
 import { loadPinned } from './frontend/src/components/chat/modelPicker.js';
-window.authPickerTest = { h, render, AuthModelPicker, loadPinned };`,
+window.authPickerTest = { h, render, AuthModelPicker, SubagentModelDefaults, SettingsAgentsView, loadPinned };`,
 resolveDir: root, sourcefile: 'auth-model-picker-test.js'
-}, bundle: true, write: false, format: 'iife', platform: 'browser'
+}, bundle: true, write: false, format: 'iife', platform: 'browser', loader: { '.css': 'empty' }
 });
 const target = await (await fetch(endpoint + '/json/new?about:blank', { method: 'PUT', signal: AbortSignal.timeout(5000) })).json();
 const ws = new WebSocket(target.webSocketDebuggerUrl);
@@ -63,14 +65,21 @@ assert.equal(await evaluate(expression), true, name);
 console.log('  ok - ' + name);
 };
 const wait = () => evaluate('new Promise(resolve => setTimeout(resolve, 120))');
+const pickProvider = async (provider) => {
+await evaluate(`(() => {
+const row = Array.from(document.querySelectorAll('.mp__row')).find(el => el.querySelector('.mp__row-meta')?.textContent === ${JSON.stringify(provider)});
+if (!row) throw new Error('Missing provider row'); row.click();
+})()`);
+await wait();
+};
 const tap = async (selector) => {
 await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('Missing tap target'); el.click(); })()`);
 await wait();
 };
 try {
-await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+await send('Emulation.setDeviceMetricsOverride', { width: 360, height: 844, deviceScaleFactor: 1, mobile: true });
 await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
-const css = ['base.css', 'chat-view.css'].map(f => fs.readFileSync(path.join(root, 'frontend/src', f), 'utf8')).join('\n');
+const css = ['base.css', 'chat-view.css', 'components/settings/agents.css'].map(f => fs.readFileSync(path.join(root, 'frontend/src', f), 'utf8')).join('\n');
 await evaluate(`document.open(); document.write('<!doctype html><html><head></head><body></body></html>'); document.close();
 document.head.innerHTML = '<meta name="viewport" content="width=device-width,initial-scale=1">';
 document.body.innerHTML = '<div id="fixture"></div>';
@@ -105,7 +114,15 @@ window.models = [
 { id: 'beta', provider: 'two', label: 'Beta' }
 ];
 const { h, render, AuthModelPicker } = authPickerTest;
-render(h(AuthModelPicker, { models, projectDir: '/fixture/auth', initialValue: { providerId: 'one', modelId: 'alpha' } }), document.getElementById('fixture'));`);
+window.selections = [];
+render(h(AuthModelPicker, { models, projectDir: '/fixture/auth',
+  initialValue: { providerId: 'one', modelId: 'alpha' }, chatValue: { providerId: 'two', modelId: 'beta' }, modelSource: 'agent',
+  onChange: selection => selections.push(selection) }), document.getElementById('fixture'));`);
+await check('effective default is discoverable and provider-qualified', `document.querySelector('.auth-model-picker').textContent.includes('Runs on one / alpha instead of two / beta (agent)')`);
+await check('mounting never creates an override', 'selections.length === 0');
+await evaluate(`document.querySelector('.auth-model-picker select').dispatchEvent(new Event('change', { bubbles: true }))`);
+await wait();
+await check('thinking-only edit does not override the default model', 'selections.at(-1).modelOverride === null');
 await tap('.auth-model-picker .mp__trigger');
 await wait();
 await check('auth picker shows the Pinned section', `Array.from(document.querySelectorAll('.mp__section-title'), el => el.textContent).includes('Pinned')`);
@@ -129,6 +146,73 @@ return sec ? sec.textContent : '';
 })()`);
 assert.ok(recentRow.includes('alpha'), 'Recent section lists the used model');
 console.log('  ok - Recent section lists the used model');
+await tap('.mp__clear');
+await check('clearing keeps the default without an override', 'selections.at(-1).modelOverride === null');
+await tap('.auth-model-picker .mp__trigger');
+await pickProvider('two');
+await check('explicit pick is a provider-qualified one-run override', `selections.at(-1).modelOverride.providerId === 'two' && selections.at(-1).modelOverride.modelId === 'beta'`);
+await check('override summary updates', `document.querySelector('.auth-model-picker').textContent.includes('Runs on two / beta (this run only)')`);
+await check('360px approval has no horizontal overflow', 'document.documentElement.scrollWidth <= 360');
+await evaluate(`authPickerTest.render(null, document.getElementById('fixture'));
+authPickerTest.render(authPickerTest.h(authPickerTest.AuthModelPicker, { models: [], initialValue: { providerId: 'gone', modelId: 'ghost' }, modelSource: 'agent' }), document.getElementById('fixture'));`);
+await wait();
+await check('empty catalog still displays the provider-qualified pin', `document.querySelector('.auth-model-picker').textContent.includes('Runs on gone / ghost')`);
+await tap('.auth-model-picker .mp__trigger');
+await tap('.mp__clear');
+await evaluate(`authPickerTest.render(null, document.getElementById('fixture'));
+authPickerTest.render(authPickerTest.h(authPickerTest.AuthModelPicker, { models: [], modelError: 'Unknown pinned model' }), document.getElementById('fixture'));`);
+await wait();
+await check('invalid default is explained before approval', `document.querySelector('.auth-model-picker').textContent.includes('Default unavailable: Unknown pinned model')`);
+await evaluate(`authPickerTest.render(null, document.getElementById('fixture'));
+window.writes = [];
+window.catalogQueries = [];
+window.failNext = false;
+window.fetch = async (url, init = {}) => {
+  if (init.method === 'PUT' || init.method === 'PATCH') {
+    writes.push({ url, method: init.method, body: JSON.parse(init.body) });
+    if (failNext) { failNext = false; return new Response('{}', { status: 500 }); }
+    return new Response(JSON.stringify({ project: JSON.parse(init.body), chat: JSON.parse(init.body) }));
+  }
+  if (url.startsWith('/api/settings/resolved')) return new Response(JSON.stringify({ resolved: {} }));
+  if (url.startsWith('/api/chats/')) return new Response(JSON.stringify({ chat: {} }));
+  if (url === '/api/ai/models/providers') return new Response(JSON.stringify({ providers: [{ id: 'one' }, { id: 'two' }] }));
+  if (url.startsWith('/api/ai/models/live')) { catalogQueries.push(url); return new Response(JSON.stringify({ models: [{ id: 'alpha' }] })); }
+  return new Response(JSON.stringify({ models: [] }));
+};
+authPickerTest.render(authPickerTest.h(authPickerTest.SubagentModelDefaults, { projectDir: '/fixture/defaults', chatId: 'chat' }), document.getElementById('fixture'));`);
+await wait();
+await check('opening defaults never changes configuration', 'writes.length === 0');
+await check('chat and project defaults have discoverable touch controls', `document.querySelectorAll('#fixture .mp__trigger').length === 2 && Array.from(document.querySelectorAll('#fixture .mp__trigger')).every(el => el.getBoundingClientRect().height >= 44 && el.getBoundingClientRect().width >= 44)`);
+await check('catalog loads provider-qualified chat and image slices', `catalogQueries.length === 4 && catalogQueries.every(url => !url.includes('object'))`);
+await tap('#fixture .mp__trigger');
+await pickProvider('two');
+await check('project choice uses the existing settings PUT', `writes.at(-1).method === 'PUT' && writes.at(-1).body.subagentProviderId === 'two' && writes.at(-1).body.subagentModelId === 'alpha' && !('patch' in writes.at(-1).body)`);
+await evaluate(`document.querySelectorAll('#fixture .mp__trigger')[1].click()`);
+await wait();
+await pickProvider('one');
+await check('chat choice uses the existing chat PATCH', `writes.at(-1).method === 'PATCH' && writes.at(-1).body.subagentProviderId === 'one'`);
+await evaluate(`document.querySelectorAll('#fixture .mp__trigger')[1].click()`);
+await wait();
+await tap('.mp__clear');
+await check('clearing chat follows project and clears both fields', `writes.at(-1).body.subagentModelId === '' && writes.at(-1).body.subagentProviderId === ''`);
+await evaluate(`failNext = true; document.querySelectorAll('#fixture .mp__trigger')[1].click()`);
+await wait();
+await pickProvider('two');
+await check('failed save stays unsaved and offers retry by picking again', `document.getElementById('fixture').textContent.includes('Not saved: HTTP 500') && document.querySelectorAll('#fixture .mp__trigger')[1].textContent.includes('Follow project default')`);
+await check('360px defaults have no horizontal overflow', 'document.documentElement.scrollWidth <= 360');
+if (process.env.TRACK_C_SCREENSHOT) {
+  const shot = await send('Page.captureScreenshot', { format: 'png' });
+  fs.writeFileSync(process.env.TRACK_C_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+}
+await evaluate(`authPickerTest.render(null, document.getElementById('fixture'));
+window.fetch = async url => new Response(JSON.stringify(url.startsWith('/api/agents/_default')
+  ? { agent: { modelId: 'default-pin', providerId: 'two' } }
+  : { agents: [{ name: 'Pinned', modelId: 'same-slug', providerId: 'one' }, { name: 'Unpinned' }] }));
+authPickerTest.render(authPickerTest.h(authPickerTest.SettingsAgentsView, { projectDir: '/fixture/agents' }), document.getElementById('fixture'));`);
+await wait();
+await check('Agents list shows named and default provider-qualified pins', `document.getElementById('fixture').textContent.includes('Runs on: one / same-slug') && document.getElementById('fixture').textContent.includes('Runs on: two / default-pin')`);
+await check('unpinned agent explicitly follows defaults, not defaultAgent pin', `document.getElementById('fixture').textContent.includes('Follows chat / project subagent defaults, then the chat model')`);
+await check('360px Agents list has no horizontal overflow', 'document.documentElement.scrollWidth <= 360');
 await check('unhandled errors', 'errors.length === 0');
 console.log('\nAuth model picker browser regressions passed.');
 } finally {

@@ -165,6 +165,20 @@ dbPatch.providerId = (patch.providerId === null || patch.providerId === '') ? nu
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'modelId')) {
 dbPatch.modelId = (patch.modelId === null || patch.modelId === '') ? null : String(patch.modelId);
 }
+if (patch && (Object.prototype.hasOwnProperty.call(patch, 'subagentModelId') || Object.prototype.hasOwnProperty.call(patch, 'subagentProviderId'))) {
+const current = getChat(projectDir, chatId);
+if (!current) return null;
+const has = (key) => Object.prototype.hasOwnProperty.call(patch, key);
+const modelId = has('subagentModelId') ? String(patch.subagentModelId || '').trim() : current.subagentModelId;
+const providerId = has('subagentProviderId') ? String(patch.subagentProviderId || '').trim() : current.subagentProviderId;
+if (modelId && !providerId) {
+const error = new Error('Subagent default must set providerId and modelId');
+error.code = 'EBADINPUT';
+throw error;
+}
+dbPatch.subagentModelId = modelId || null;
+dbPatch.subagentProviderId = modelId ? providerId : null;
+}
 if (patch && Object.prototype.hasOwnProperty.call(patch, 'thinkingLevel')) {
 dbPatch.thinkingLevel = typeof patch.thinkingLevel === 'string' ? patch.thinkingLevel : '';
 }

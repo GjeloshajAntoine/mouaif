@@ -319,11 +319,20 @@ async function runSingleToolCall(c, cx) {
       try { authImages = require('./chatImages.js').describeChatImages(opts && opts.projectDir, opts && opts.chatId, args.images); }
       catch { authImages = undefined; }
       }
-      if (opts && opts.signal && opts.signal.aborted) throw Object.assign(new Error('aborted'), { code: 'EABORTED' });
+  let subagentModel;
+  if (c.name === 'subagent') {
+  try {
+  const selection = require('./agents.js').subagentModelForCall(
+  opts && opts.projectDir, opts && opts.chatId, args && args.agent, opts && opts.model);
+  subagentModel = { providerId: selection.model.provider, modelId: selection.model.id, source: selection.source };
+  } catch (e) { subagentModel = { error: e.message }; }
+  }
+  if (opts && opts.signal && opts.signal.aborted) throw Object.assign(new Error('aborted'), { code: 'EABORTED' });
       const authResult = await authGate.authorize({
       forcePrompt: forcePrompt || !!(opts.inheritedPermissions?.[c.name] && !['allow', 'off'].includes(opts.inheritedPermissions[c.name].mode)),
       signal: opts && opts.signal,
       images: authImages,
+      subagentModel,
         projectDir: opts && opts.projectDir,
         chatId: opts && opts.chatId,
         tool: c.name,
@@ -396,6 +405,7 @@ async function runSingleToolCall(c, cx) {
             query: args && args.query,
             summary,
             images: authImages,
+            subagentModel,
             timeoutMs: clampedTimeoutMs,
             projectDir: opts && opts.projectDir
             });
@@ -1835,30 +1845,6 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
           const r = { error: { code: 'EUNKNOWN_AGENT', message: 'Unknown agent "' + agentName + '"', available } };
           return { ok: false, content: JSON.stringify(r), result: r };
         }
-        // Optional per-agent model pin. When set, the nested call runs
-        // on that project model (hydrated with its provider connection)
-        // instead of inheriting the chat's model. Unknown model ids
-        // fail loudly — never a silent fallback.
-        if (agent.modelId) {
-          try {
-            const rec = agentMod.resolveModel(callOpts.projectDir, agent);
-            const settingsMod = require('./settings.js');
-            const app = settingsMod.getApp();
-            const providers = Array.isArray(app.providers) ? app.providers : [];
-            const connection = providers.find((p) => p && p.id === rec.provider) || null;
-            if (!connection) {
-              const r = { error: { code: 'EPROVIDER_NOT_FOUND', message: 'No provider connection for "' + rec.provider + '"' } };
-              return { ok: false, content: JSON.stringify(r), result: r };
-            }
-            nestedModel = Object.assign({}, connection, projectModelRecord(rec), {
-              provider: rec.provider,
-              auth: connection.auth || 'apikey'
-            });
-          } catch (e) {
-            const r = { error: { code: e.code || 'EUNKNOWN_MODEL', message: e.message || String(e) } };
-            return { ok: false, content: JSON.stringify(r), result: r };
-          }
-        }
         nestedMessages.push({ role: 'system', content: [{ type: 'text', text: agent.isDefault ? agent.effectiveContent : agent.content, cache_control: { type: 'ephemeral' } }] });
         agentTools = Array.isArray(agent.tools) && agent.tools.length ? agent.tools : null;
         // Per-agent thinking level (optional). Applies only when no
@@ -1872,43 +1858,29 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
           content: [{ type: 'text', text: require('./agents.js').DEFAULT_CONTENT, cache_control: { type: 'ephemeral' } }]
         });
       }
-      // Authorization-time model override. The user picked a model on
-      // the approval card for THIS delegated run, so it wins over both
-      // the chat's model and an agent's pin. Resolve it the same way
-      // the chat model is resolved: prefer the project model record,
-      // then fall back to a live-catalog entry for the provider, and
-      // hydrate either with the app-level provider connection. The
-      // project record may only contribute identity/selection metadata
-      // — committed project JSON must never redirect a credentialed
-      // provider connection candidate (mirrors resolveModel in
-      // server-shared.js).
-      if (chosenModel) {
-        try {
-          const settingsMod = require('./settings.js');
-          const resolved = settingsMod.getResolved(callOpts && callOpts.projectDir || null);
-          const models = Array.isArray(resolved.models) ? resolved.models : [];
-          let rec = models.find((x) => x && x.id === chosenModel.modelId && x.provider === chosenModel.providerId) || null;
-          if (!rec) {
-            // Live-catalog models (OpenRouter & co.) are resolved by
-            // provider id; the URL/credential come from the connection.
-            rec = { id: chosenModel.modelId, provider: chosenModel.providerId };
-          }
-          const safe = projectModelRecord(rec);
-          const app = settingsMod.getApp();
-          const providers = Array.isArray(app.providers) ? app.providers : [];
-          const connection = providers.find((p) => p && p.id === rec.provider) || null;
-          if (!connection) {
-          const r = { error: { code: 'EPROVIDER_NOT_FOUND', message: 'No provider connection for "' + rec.provider + '"' } };
-          return { ok: false, content: JSON.stringify(r), result: r };
-          }
-          nestedModel = Object.assign({}, connection, safe, {
-          provider: rec.provider,
-          auth: connection.auth || 'apikey'
-          });
-        } catch (e) {
-          const r = { error: { code: e.code || 'EUNKNOWN_MODEL', message: e.message || String(e) } };
-          return { ok: false, content: JSON.stringify(r), result: r };
-        }
+      // Hydrate only the winning identity. Project records contribute safe
+      // selection metadata, never the URL/credential of the app connection.
+      try {
+      const settingsMod = require('./settings.js');
+      const selection = require('./agents.js').subagentModelForCall(
+      callOpts && callOpts.projectDir, callOpts && callOpts.chatId, agentName, model, chosenModel);
+      if (selection.source !== 'chat model') {
+      const rec = selection.model;
+      const app = settingsMod.getApp();
+      const providers = Array.isArray(app.providers) ? app.providers : [];
+      const connection = providers.find((p) => p && p.id === rec.provider);
+      if (!connection) {
+        const r = { error: { code: 'EPROVIDER_NOT_FOUND', message: 'No provider connection for "' + rec.provider + '"' } };
+        return { ok: false, content: JSON.stringify(r), result: r };
+      }
+      nestedModel = Object.assign({}, connection, projectModelRecord(rec), {
+        provider: rec.provider,
+        auth: connection.auth || 'apikey'
+      });
+      }
+      } catch (e) {
+      const r = { error: { code: e.code || 'EUNKNOWN_MODEL', message: e.message || String(e) } };
+      return { ok: false, content: JSON.stringify(r), result: r };
       }
       // Live agent pins store identity only. Resolve their image API and
       // modalities from the same cached catalog the picker used. Do not let
