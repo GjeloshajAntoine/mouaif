@@ -30,7 +30,7 @@
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
-import { FRAME_ALLOW, frameScale as fitScale, isLivePayload, viewportDims } from './webpreviewFrame.js';
+import { FRAME_ALLOW, frameScale as fitScale, frameSource, isLivePayload, previewProxyPath, viewportDims } from './webpreviewFrame.js';
 // Keep this small list aligned with VIEWPORTS in src/tools/webpreview.js.
 const VIEWPORT_PRESETS = [
   { id: 'phone', label: 'Phone', width: 375, height: 667 },
@@ -225,7 +225,12 @@ const [recapturing, setRecapturing] = useState(false);
   const frameDims = viewportDims(selectedViewport, preview, VIEWPORT_PRESETS);
   const safeScale = fitScale(frameDims, bodySize, 16);
   if (live) {
+    // A local page is loaded through the preview proxy (this device cannot
+    // reach the machine's own localhost); say so, because the frame is then
+    // the app's origin, not the page's.
+    const proxied = !!(url && previewProxyPath(url));
     meta.push('live · ' + frameDims.width + ' × ' + frameDims.height);
+    if (proxied) meta.push('via proxy');
     if (safeScale < 1) meta.push(Math.round(safeScale * 100) + '%');
   }
   else if (width && height) meta.push(width + ' × ' + height);
@@ -346,7 +351,7 @@ h('path', { d: 'M6 6 18 18 M18 6 6 18', fill: 'none', stroke: 'currentColor', 's
               h('iframe', {
                 key: frameKey,
                 class: 'wp__frame',
-                src: url,
+                src: frameSource(url),
                 title: 'Live preview of ' + url,
                 allow: FRAME_ALLOW,
                 allowFullScreen: true,

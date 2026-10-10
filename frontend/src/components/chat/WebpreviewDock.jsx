@@ -15,7 +15,7 @@
 // where the page is interactive.
 import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { FRAME_ALLOW, isLivePayload } from './webpreviewFrame.js';
+import { FRAME_ALLOW, frameSource, isLivePayload } from './webpreviewFrame.js';
 
 // Fallback card width before the first measurement (`min(26%, 6.5rem)`).
 const DOCK_WIDTH_PX = 104;
@@ -54,8 +54,8 @@ export function WebpreviewDock({ preview, onOpen, onDismiss }) {
             style: { aspectRatio: vw + ' / ' + vh }
           },
             h('iframe', {
-              class: 'webpreview-dock__frame',
-              src: preview.url,
+            class: 'webpreview-dock__frame',
+            src: frameSource(preview.url),
               title: 'Live preview of ' + title,
               allow: FRAME_ALLOW,
               allowFullScreen: true,

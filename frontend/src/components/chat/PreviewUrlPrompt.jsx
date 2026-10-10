@@ -110,7 +110,7 @@ export function PreviewUrlPrompt({ onSubmit, onClose }) {
   h('button', { class: 'btn btn--primary wp__prompt-submit', type: 'submit' },
   'Preview'),
   error ? h('div', { class: 'wp__prompt-error', role: 'alert' }, error) : null,
-  h('p', { class: 'wp__prompt-hint' }, 'A screenshot is captured using the Inspector debug Chrome.')
+  h('p', { class: 'wp__prompt-hint' }, 'A screenshot is captured using the Inspector debug Chrome. A local address (', h('code', null, 'localhost:5173'), ') can be opened live: the app proxies it, so a dev server on the machine running mouaif is reachable from this device.')
   )
   )
   );

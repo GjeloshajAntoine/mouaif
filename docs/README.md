@@ -111,6 +111,7 @@ One page per feature: what it does and how to use it.
 - [Native chat and app tools](features/mouaif-tool.md) — the Chats and mouaif families: chat, model, attachment, settings, and project functions, plus the four tools the model uses inside a chat.
 - [Chat model tools](features/chat-model-tools.md) — search models, select one for a chat, and start a background response.
 - [Web preview page](features/webpreview-project-page.md) — capture and view a URL from project settings.
+- [Local preview proxy](features/local-preview-proxy.md) — frame a dev server running on the machine with mouaif, from your phone.
 - [Subagent transcript](features/subagent-transcript.md) — the delegated conversation inside a subagent card, and what that run cost.
 - [Model choice on subagent approval](features/auth-model-picker.md) — pick the model when approving a subagent run.
 - [Tool output profile](features/tool-output.md) — how much of each tool result is sent back to the model.

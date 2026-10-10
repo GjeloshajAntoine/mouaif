@@ -79,6 +79,7 @@ const { handleActions } = require('./server-handlers-actions.js');
 const { handlePrompts, handleFeatures, handleAgents } = require('./server-handlers-prompts.js');
 const { handleMcp, handleRestart, handleInspector, handleToolAuthorization } = require('./server-handlers-misc.js');
 const { handleMcpOAuth, handleMcpOAuthCallback } = require('./server-handlers-mcp-oauth.js');
+const previewProxy = require('./previewProxy.js');
 const { serveWebFile, serveWebRequest } = require('./server-web-static.js');
 
 // ---- Route table --------------------------------------------------------
@@ -356,6 +357,16 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   // event (see createServer below), not here.
   if (urlPath.startsWith('/api/inspector/')) {
     return handleInspector(req, res, parsed);
+  }
+
+  // Local preview proxy — re-serves a dev server running on this machine
+  // under the mouaif origin, so the web preview's Live iframe reaches
+  // `localhost:5173` from a phone. Loopback (and the Docker host aliases)
+  // only; GET/HEAD only. See docs/features/local-preview-proxy.md. It sits
+  // under `/api/`, so the same-origin, session and access gates above have
+  // already run, and it is dispatched before the API 404 below.
+  if (urlPath.startsWith(previewProxy.PREFIX)) {
+    return previewProxy.handlePreviewProxy(req, res, parsed, sessionToken, serverConfig);
   }
 
   // Root serves the mobile UI directly (served above in the static

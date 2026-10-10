@@ -29,6 +29,30 @@ await ok('isLivePayload needs mode live and a url', () => {
   assert.equal(f.isLivePayload({ url: 'https://x', thumbnail: 'data:' }), false);
   assert.equal(f.isLivePayload(null), false);
 });
+await ok('a local page is framed through the preview proxy', () => {
+  assert.equal(f.isLocalPreviewHost('localhost'), true);
+  assert.equal(f.isLocalPreviewHost('127.0.0.1'), true);
+  assert.equal(f.isLocalPreviewHost('host.docker.internal'), true);
+  assert.equal(f.isLocalPreviewHost('example.com'), false);
+  assert.equal(f.previewProxyPath('http://localhost:5173/src/a.js?x=1#f'),
+    '/api/preview/http/localhost:5173/src/a.js?x=1#f');
+  assert.equal(f.previewProxyPath('https://example.com/'), null);
+  assert.equal(f.previewProxyPath('file:///tmp/a.html'), null);
+  assert.equal(f.frameSource('http://localhost:5173/'), '/api/preview/http/localhost:5173/');
+  assert.equal(f.frameSource('https://example.com/'), 'https://example.com/');
+});
+await ok('the frontend and server host lists agree', () => {
+  const server = require('../src/previewProxy.js');
+  for (const h of ['localhost', 'app.localhost', '127.0.0.1', '127.1.2.3', '::1', '::ffff:127.0.0.1', '0.0.0.0',
+    'host.docker.internal', 'gateway.docker.internal', 'host.containers.internal',
+    'example.com', '192.168.1.10', 'localhost.evil.com', '']) {
+    assert.equal(f.isLocalPreviewHost(h), server.isLocalHost(h), h);
+  }
+  for (const u of ['http://localhost:5173/', 'https://localhost/app', 'http://127.0.0.1:3000/a',
+    'https://example.com/', 'file:///tmp/a.html', 'about:blank']) {
+    assert.equal(f.previewProxyPath(u), server.proxyPathFor(u), u);
+  }
+});
 await ok('frame delegates every powerful feature', () => {
   for (const feat of ['camera', 'microphone', 'geolocation', 'clipboard-write', 'fullscreen']) {
     assert.match(f.FRAME_ALLOW, new RegExp('\\b' + feat + '\\b'));
@@ -97,6 +121,12 @@ await ok('viewer and dock frames carry no sandbox or referrer restriction', () =
     assert.doesNotMatch(src, /sandbox:/, file);
     assert.doesNotMatch(src, /referrerpolicy/i, file);
     assert.match(src, /allow: FRAME_ALLOW/, file);
+  }
+});
+await ok('the live frame loads a local page through the proxy', () => {
+  for (const file of ['WebpreviewModal.jsx', 'WebpreviewDock.jsx']) {
+    const src = fs.readFileSync(path.join(here, '../frontend/src/components/chat', file), 'utf8');
+    assert.match(src, /src: frameSource\(/, file + ' frames the raw URL');
   }
 });
 await ok('viewer offers a fullscreen toggle for the whole overlay', () => {

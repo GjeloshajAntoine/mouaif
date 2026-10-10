@@ -54,7 +54,7 @@
 <p>Presets, when the model supplies them, render as chips above the option list: tapping one submits that answer immediately. Long preset text wraps inside the card rather than overflowing on a phone. Chips and action buttons have actual 44 px minimum heights, without invisible hit areas extending into adjacent controls.</p>
 <p>While sending an answer or dismissal, the controls are disabled and the primary button reads <strong>Sending…</strong>. If the request fails (including a lost connection), an inline alert appears, the selection and note are kept, and the controls become usable again so you can retry.</p>
 <p>Once the call settles, the persisted transcript shows it as a collapsed tool card whose head line is the question and whose trailing slot is the recorded answer (<code>main</code>, <code>2 choices</code>, or <code>dismissed</code>).</p>
-<p>The user picks one option (or several, when <code>multiSelect: true</code>) and may attach a free-form note in the &quot;extra&quot; box. Tapping <strong>Send answer</strong> posts the selection + extra to the server, the chat continues, and the model receives a <code>tool</code> message shaped like:</p></li></ul>
+<p>The user picks one option (or several, when <code>multiSelect: true</code>) and may attach a free-form note in the &quot;extra&quot; box. The server accepts only values present in the original option list (or a non-empty note), so forged UI payloads cannot invent a choice. Tapping <strong>Send answer</strong> posts the selection + extra to the server, the chat continues, and the model receives a <code>tool</code> message shaped like:</p></li></ul>
 <pre><code class="language-json">{
   &quot;answered&quot;: true,
   &quot;choice&quot;: &quot;main&quot;,
