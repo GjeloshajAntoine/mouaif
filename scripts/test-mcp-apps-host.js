@@ -3,8 +3,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const http = require('node:http');
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-app-host-'));
 process.env.MOUAIF_HOME = home;
+const { runningChats, runningKey } = require('../src/server-shared.js');
 const settings = require('../src/settings.js');
 const mcp = require('../src/mcp.js');
 const chats = require('../src/chats.js');
@@ -15,6 +17,20 @@ const { buildPolicy } = require('../src/mcp-apps-sandbox.js');
 const projectDir = path.join(home, 'project');
 fs.mkdirSync(projectDir);
 const app = createServer(0);
+let releaseUpstream;
+const seen = [];
+const upstream = http.createServer((req, res) => {
+  let raw = '';
+  req.on('data', chunk => { raw += chunk; });
+  req.on('end', () => {
+    seen.push(JSON.parse(raw));
+    releaseUpstream = () => {
+      if (res.writableEnded) return;
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.end('data: ' + JSON.stringify({ choices: [{ index: 0, delta: { content: 'AI response' }, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n');
+    };
+  });
+});
 let base;
 const post = async (route, body = {}) => {
   const res = await fetch(base + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -71,6 +87,29 @@ const post = async (route, body = {}) => {
     const denied = await post(route + '/call', { requestId: 'two', name: 'edit', arguments: {} });
     authz.recordDecision(projectDir, chat.id, denied.body.request.callId, 'deny');
     assert.equal((await post(route + '/call', { requestId: 'two', name: 'edit', arguments: {} })).status, 403);
+    await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+    settings.setApp({ providers: [{ id: 'openai-compatible', type: 'openai-compatible', baseUrl: 'http://127.0.0.1:' + upstream.address().port }] });
+    settings.setProject(projectDir, { models: [{ id: 'apps_model', provider: 'openai-compatible' }] });
+    chats.updateChat(projectDir, chat.id, { modelId: 'apps_model', providerId: 'openai-compatible' });
+    const message = { role: 'user', content: [{ type: 'text', text: 'Explain this chart' }] };
+    const usersBefore = messages.listMessages(projectDir, chat.id).filter(r => r.role === 'user').length;
+    assert.equal((await post(route + '/message', { ...message, role: 'assistant' })).status, 400);
+    assert.equal((await post(route + '/message', { ...message, chatId: 'forged' })).status, 400);
+    assert.equal((await post(route + '/message', { role: 'user', content: [{ type: 'image', data: 'bad' }] })).status, 400);
+    assert.equal((await post(route + '/message', { role: 'user', content: [{ type: 'text', text: 'x'.repeat(16385) }] })).status, 400);
+    assert.equal(messages.listMessages(projectDir, chat.id).filter(r => r.role === 'user').length, usersBefore);
+    const accepted = await post(route + '/message', message);
+    assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+    assert.deepEqual(accepted.body, {}, 'App receives no conversation or AI response');
+    assert.equal((await post(route + '/message', message)).body.code, 'EALREADY_RUNNING', JSON.stringify(messages.listMessages(projectDir, chat.id)));
+    for (let i = 0; !releaseUpstream && i < 100; i++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert(releaseUpstream, 'automatic App message starts actual provider request');
+    assert.match(seen[0].messages.find(r => r.role === 'user').content, /MCP App: Apps fixture/);
+    assert.match(messages.listMessages(projectDir, chat.id).find(r => r.role === 'user').content, /Explain this chart/);
+    releaseUpstream();
+    for (let i = 0; runningChats.has(runningKey(projectDir, chat.id)) && i < 100; i++) await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal((await post(route + '/message', message)).body.code, 'EMCP_APP_LIMIT');
+    assert.equal(messages.listMessages(projectDir, chat.id).filter(r => r.role === 'user').length, usersBefore + 1);
     const cancelArgs = { requestId: 'cancelled', name: 'edit', arguments: {} };
     const cancellable = await post(route + '/call', cancelArgs);
     assert.equal(cancellable.status, 409);
@@ -86,6 +125,8 @@ const post = async (route, body = {}) => {
     assert.equal((await post('/api/mcp/apps/' + next.id + '/status')).body.code, 'EMCP_APP_GONE');
     console.log('PASS MCP Apps actual HTTP routes, opt-in, identity binding, CSP, server-scoped approvals, denial, replay, updates and teardown');
   } finally {
+    releaseUpstream?.();
+    upstream.closeAllConnections(); if (upstream.listening) await new Promise(resolve => upstream.close(resolve));
     await mcp.stopAll(); app.closeAllConnections();
     await new Promise(resolve => app.close(resolve)); settings.close();
     fs.rmSync(home, { recursive: true, force: true });

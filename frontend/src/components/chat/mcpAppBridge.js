@@ -21,11 +21,11 @@ export function boundedHeight(height, viewport) {
   return Number.isFinite(height) ? Math.max(176, Math.min(height, viewport * 0.7)) : 288;
 }
 
-export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, onCall, onClose }) {
+export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, onCall, onMessage, onClose }) {
   let initialized = false;
   let closed = false;
   const bridge = new AppBridge(null, { name: 'mouaif', version: '1' }, {
-    serverTools: {}, sandbox: { csp: mount.csp, permissions: {} }
+    serverTools: {}, message: { text: {} }, sandbox: { csp: mount.csp, permissions: {} }
   }, { hostContext: {
     displayMode: 'inline', availableDisplayModes: ['inline', 'fullscreen'],
     containerDimensions: { width: iframe.clientWidth || 360, maxHeight: window.innerHeight * 0.7 },
@@ -48,6 +48,10 @@ export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, on
     if (!initialized || closed) throw new Error('App is not initialized');
     return onCall(params, extra.mcpReq.signal);
   };
+  bridge.onmessage = async (params, extra) => {
+    if (!initialized || closed) throw new Error('App is not initialized');
+    return onMessage(params, extra.mcpReq.signal);
+  };
   bridge.onsizechange = ({ height }) => { if (initialized && !closed) onSize(height); };
   bridge.onrequestdisplaymode = async ({ mode }) => {
     if (!initialized || closed) throw new Error('App is not initialized');
@@ -57,7 +61,7 @@ export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, on
     return { mode: accepted };
   };
   bridge.onrequestteardown = onClose;
-  // Open links, messages, downloads and model-context mutation are deliberately
+  // Open links, downloads and model-context mutation are deliberately
   // unsupported. The SDK returns typed unknown/unsupported method errors.
   await bridge.connect(originTransport(iframe.contentWindow, mount.origin));
   return {

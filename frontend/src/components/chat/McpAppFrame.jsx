@@ -67,6 +67,13 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize }) {
       onReady: () => { clearTimeout(timeout); if (active) setStatus(''); },
       onSize: value => { if (active) setHeight(boundedHeight(value, window.innerHeight)); },
       onMode: value => { if (active) setMode(value); }, onClose: fail,
+      onMessage: async (params, signal) => {
+        const response = await post('/message', params, signal);
+        if (response.status !== 200) throw new Error(response.body.error || 'App message failed');
+        // App receives an acknowledgement only; the normal chat follower loads
+        // the user row and AI response without exposing them back to the view.
+        return {};
+      },
       onCall: async (params, signal) => {
         const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
         const body = { requestId, name: params.name, arguments: params.arguments || {} };

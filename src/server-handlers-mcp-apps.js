@@ -6,13 +6,14 @@ const messages = require('./messages.js');
 const mcp = require('./mcp.js');
 const apps = require('./mcp-apps.js');
 const authz = require('./tools/authorization.js');
-const { sendJSON, readJsonOr400, expectedOrigin } = require('./server-shared.js');
+const { sendJSON, readJsonOr400, expectedOrigin, runningChats, runningKey } = require('./server-shared.js');
 const { buildPolicy, createSandboxService } = require('./mcp-apps-sandbox.js');
 const { err } = require('./util.js');
 
-function createMcpAppsHost(options = {}) {
+function createMcpAppsHost(options = {}, lifecycle = {}) {
   const sandbox = createSandboxService(options);
   const mounts = new Map();
+  const messageLimits = new Map(); // project/chat scoped; remount cannot bypass rate limits
   function dispose(id) {
     const mount = mounts.get(id);
     if (!mount) return;
@@ -25,6 +26,7 @@ function createMcpAppsHost(options = {}) {
   }
   const timer = setInterval(() => {
     for (const [id, mount] of mounts) if (mount.expires < Date.now()) dispose(id);
+    for (const [key, limit] of messageLimits) if (!limit.busy && limit.at < Date.now() - 60000) messageLimits.delete(key);
   }, 60000);
   timer.unref();
 
@@ -73,7 +75,7 @@ function createMcpAppsHost(options = {}) {
         const id = crypto.randomBytes(24).toString('base64url');
         let toolResult;
         try { toolResult = JSON.parse(result.content); } catch { toolResult = { content: [{ type: 'text', text: result.content }] }; }
-        const mount = { projectDir, chatId, serverId: server.id, serverSlug: server.slug, uri, session,
+        const mount = { projectDir, chatId, serverId: server.id, serverSlug: server.slug, uri, session, sourceTool: call.name,
           epoch, title: server.name + ' — ' + tool.name, ticket,
           expires: Date.now() + 30 * 60 * 1000, requests: new Map() };
         mounts.set(id, mount);
@@ -81,13 +83,48 @@ function createMcpAppsHost(options = {}) {
           title: mount.title, html: resource.text, csp: policy.csp, permissions: {},
           arguments: call.args || {}, result: toolResult });
       }
-      const match = parsed.pathname.match(/^\/api\/mcp\/apps\/([A-Za-z0-9_-]+)(?:\/(call|status|cancel))?$/);
+      const match = parsed.pathname.match(/^\/api\/mcp\/apps\/([A-Za-z0-9_-]+)(?:\/(call|status|cancel|message))?$/);
       if (!match) return sendJSON(res, 404, { error: 'Not found' });
       const id = match[1];
       const mount = mounts.get(id);
       if (req.method === 'DELETE') { dispose(id); return sendJSON(res, 200, { ok: true }); }
       const session = validate(mount);
       if (match[2] === 'status') return sendJSON(res, 200, { ok: true });
+      if (match[2] === 'message' && req.method === 'POST') {
+        // ui/message is app-authored USER text, never assistant/system authority.
+        // Only acknowledge acceptance; no conversation or AI response is returned.
+        if (body.role !== 'user' || !Array.isArray(body.content) || !body.content.length || body.content.length > 16
+          || body.content.some(block => !block || block.type !== 'text' || typeof block.text !== 'string')) {
+          throw err('EBADINPUT', 'MCP App messages support user text only');
+        }
+        const text = body.content.map(block => block.text).join('\n');
+        if (!text.trim() || Buffer.byteLength(text, 'utf8') > 16384) throw err('EBADINPUT', 'MCP App message must be non-empty and at most 16 KiB');
+        if (body.projectDir !== undefined || body.chatId !== undefined || body.modelId !== undefined || body.providerId !== undefined) {
+          throw err('EBADINPUT', 'MCP App cannot select a chat or model');
+        }
+        if (authz.effectiveConfig(mount.projectDir, mount.sourceTool, mount.chatId).mode === 'off') {
+          throw err('ETOOL_DISABLED', 'MCP App source tool is disabled');
+        }
+        const chat = chats.getChat(mount.projectDir, mount.chatId);
+        if (!chat.modelId) throw err('EBADINPUT', 'Select a chat model before sending an App message');
+        if (runningChats.has(runningKey(mount.projectDir, mount.chatId))) throw err('EALREADY_RUNNING', 'Wait for the current response to finish');
+        const key = mount.projectDir + '::' + mount.chatId;
+        const now = Date.now();
+        const limit = messageLimits.get(key);
+        if (limit?.busy || (limit && now - limit.at < 5000)) throw err('EMCP_APP_LIMIT', 'Wait before sending another App message');
+        const reservation = { busy: true, at: now };
+        messageLimits.set(key, reservation);
+        try {
+          const started = await require('./server-handlers-chats.js').startChatTurn({
+            projectDir: mount.projectDir, chatId: mount.chatId,
+            providerId: chat.providerId || '', modelId: chat.modelId,
+            thinkingLevel: chat.thinkingLevel || '', maxOutputTokens: chat.maxOutputTokens || '',
+            content: '[MCP App: ' + mount.title + ']\n' + text
+          }, lifecycle);
+          if (!started.ok) throw err(started.code || 'EMCP_APP_MESSAGE', started.error || 'Could not start chat');
+          return sendJSON(res, 200, {});
+        } finally { reservation.busy = false; }
+      }
       if (match[2] === 'cancel') {
         const request = mount.requests.get(body.requestId);
         if (request) {
@@ -135,7 +172,7 @@ function createMcpAppsHost(options = {}) {
       return sendJSON(res, status, { error: e.message, code: e.code || 'EMCP_APP' });
     }
   }
-  async function close() { clearInterval(timer); for (const id of mounts.keys()) dispose(id); await sandbox.close(); }
+  async function close() { clearInterval(timer); messageLimits.clear(); for (const id of mounts.keys()) dispose(id); await sandbox.close(); }
   return { handle, close, sandbox, mounts };
 }
 module.exports = { createMcpAppsHost };

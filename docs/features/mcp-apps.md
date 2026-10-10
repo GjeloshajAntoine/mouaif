@@ -14,7 +14,11 @@ MCP Apps are interactive HTML tool views inside the conversation, as described b
 
 The initial deployment supports **direct HTTP** clients using an app-managed second listener on an ephemeral port. That port must be reachable from the client. HTTPS, reverse proxies which do not expose that port, unsupported app policies, stopped servers and initialization failures keep the ordinary tool result instead. The main app's port remains 5732 by default.
 
-Camera, microphone, geolocation, clipboard, external links, downloads, app messages and model-context writes are not granted. Apps requiring those capabilities may not work in this release. No app action starts an AI turn automatically.
+**App text messages are automatic:** a view can send `ui/message` with user text to its bound chat, starting a normal AI turn without another confirmation. The transcript labels the message with its app/server. This can consume provider credits; enable MCP Apps only for servers you trust to initiate prompts. Existing tool approvals still apply to the AI's actions.
+
+Only user-role text is accepted (up to 16 blocks and 16 KiB). Messages cannot select another chat/model or insert assistant/system authority. They are rejected while the chat is running and limited to one attempt per chat per 5 seconds, including across remounts. The app receives only an acknowledgement, never conversation history or the AI response. Once accepted, the turn continues if the view closes; use the normal chat Stop control to cancel it.
+
+Camera, microphone, geolocation, clipboard, external links, downloads and model-context writes are not granted. Image/audio/resource messages remain unsupported.
 
 ## Official reference
 
@@ -41,9 +45,20 @@ All routes use the main app's normal access and same-origin authorization. Frame
 | --- | --- | --- |
 | POST | `/api/mcp/apps/mount` | Bind `{ projectDir, chatId, callId }` to a completed MCP tool result; return an isolated view mount, or disabled/fallback. |
 | POST | `/api/mcp/apps/:mountId/call` | Call a bound server tool with `{ requestId, name, arguments }`; `409 EAUTH_REQUIRED` returns a server-generated approval request for the existing decision endpoint. |
+| POST | `/api/mcp/apps/:mountId/message` | Accept `{ role: "user", content: [{ type: "text", text }] }` and automatically start the bound chat's normal AI turn; returns `{}` only. |
 | POST | `/api/mcp/apps/:mountId/status` | Detect resource/session changes, expiry or revoked project opt-in. |
 | POST | `/api/mcp/apps/:mountId/cancel` | Cancel a host request ID and its outstanding approval. |
 | DELETE | `/api/mcp/apps/:mountId` | Revoke the mount and cancel outstanding calls. |
+
+## Remaining capabilities
+
+- Configured HTTPS sandbox hosting on a separate hostname without an extra browser-facing port.
+- `ui/updateModelContext` and image/audio/resource-bearing messages.
+- Host-controlled links, downloads and optional device permissions.
+- App preloading/streaming tool inputs and resource subscriptions.
+- Broader external-content policies (nested frames, dedicated domains and wildcard origins).
+
+These are not enabled by automatic text messages; each needs its own implementation and security checks.
 
 ## Verification
 

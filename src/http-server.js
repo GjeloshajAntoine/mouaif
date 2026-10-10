@@ -474,7 +474,7 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   }
   const sessionToken = crypto.randomBytes(32).toString('base64url');
   const lifecycle = (options && typeof options === 'object') ? (options.lifecycle || {}) : {};
-  const mcpAppsHost = require('./server-handlers-mcp-apps.js').createMcpAppsHost(options.mcpAppsSandbox || {});
+  const mcpAppsHost = require('./server-handlers-mcp-apps.js').createMcpAppsHost(options.mcpAppsSandbox || {}, lifecycle);
   const serverConfig = { publicOrigin, authEnabled: options.authEnabled === true, mcpAppsHost };
   const server = http.createServer((req, res) => {
     // Bind port to the request handler
