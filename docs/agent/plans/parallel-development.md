@@ -1,12 +1,12 @@
 # Coordinated parallel development plan
 
 > Maintainer-only working plan (never published: the docs build reads `docs/features/` and
-> `docs/agent/features/` only). Written for the four tracks requested after the screen-capture
+> `docs/agent/features/` only). Written for the five tracks requested after the screen-capture
 > fix landed as `87189be4 fix: attach screen captures without losing concurrent draft edits`.
 
 ## Overview
 
-Four features are developed in parallel on four worktrees/branches, then landed in a fixed
+Five features are developed in parallel on five worktrees/branches, then landed in a fixed
 order through a single merge queue. Each feature keeps the repo rules: **one feature = one
 commit**, Conventional Commits, mobile-first UI, a `docs/features/<slug>.md` page plus a
 `docs/README.md` line, and the matching `docs/agent/features/<slug>.md` implementation notes.
@@ -19,7 +19,7 @@ every track that adds or renames a tool, and they conflict textually, not semant
 | `src/prompts.js` | the native tool allowlist (`PRESET_TOOL_NAMES`) |
 | `src/tools/authorization.js` | tool families / binary gates |
 | `frontend/src/toolGroups.js` + `frontend/build/toolGroups.json` | the app-wide group model and its generated mirror |
-| `scripts/test-tool-groups.mjs`, `docs/features/tool-groups.md`, `docs/features/mouaif-features.md` | the pinned tool count and the tools table |
+| `scripts/test-tool-groups.mjs`, `docs/features/tool-groups.md`, `docs/features/mouaif-features.md` | the pinned tool count (**31 today**, asserted as both a number and a per-row table) and the tools table |
 | `frontend/src/components/chat/cards.js` | the subagent approval card |
 | `frontend/dist/**` | the committed web build |
 | `docs/README.md`, `CHANGELOG.md` | one-line additions, adjacent lines |
@@ -51,9 +51,9 @@ Already on `master` at plan time:
 
 ## Lane 0 — kickoff (serial, half a day)
 
-1. Create the four worktrees from committed `HEAD` (never from dirty state):
-   `feat/subagent-orchestration`, `feat/mcp-apps`, `feat/subagent-model-choice`,
-   `feat/subagent-attachments`.
+1. Create the five worktrees from committed `HEAD` (never from dirty state):
+  `feat/subagent-orchestration`, `feat/mcp-apps`, `feat/subagent-model-choice`,
+  `feat/subagent-attachments`, `feat/wait-and-chat-restart`.
 2. Freeze the contracts (below) in this file.
 3. Add the one test every track needs to keep green and re-run after each rebase:
    `scripts/test-tool-groups.mjs`, `npm run lint`, `npm run test:subagent-prompt`,
@@ -264,6 +264,49 @@ shape), plus `test-file-preview-safety.js` and `test-hidden-content-*`.
 the card's payload must win the same way `modelOverride` does, and the tool result must show the
 merged set once.
 
+## Track E — Waiting tools and scheduled chat restarts
+
+**Goal.** A long autonomous run can *wait productively* instead of polling, and can hand itself a
+fresh context on a schedule that the user can see and cancel.
+
+**Full build spec:** [`../specs/chat-restart-tools.md`](../specs/chat-restart-tools.md) — frozen
+tool contracts, guardrails, commit series, tests, and the deliberately excluded `interval` mode.
+The summary here is the coordination view only.
+
+**New tool names (first track to touch the pinned surface).** `wait_for`, `wait_check` (the
+**Waits** family) and `chat_restart`, `chat_restart_stop` (the **Chat restarts** family). Two new
+families in `src/tools/authorization.js`, two new rows in `frontend/src/toolGroups.js` + its
+generated mirror, four names in `PRESET_TOOL_NAMES`, and the tool count moving **31 → 35** in
+`scripts/test-tool-groups.mjs`, `docs/features/tool-groups.md`, and `docs/features/mouaif-features.md`.
+
+**Guardrails (frozen, they are the whole design).**
+
+- `wait_for` is bounded by `min(timeoutMs ≤ 240000, time left in the turn)` and returns
+  `timedOut` — never an error, never a zombie turn. One `.unref()`ed ticker serves every wait, so
+  no per-call timer and no unbounded buffer accumulates.
+- `chat_restart` fires **only when the chat is idle**, defers while a turn is open, and gives up
+  with `EBUSY` after ~10 min of deferrals rather than interrupting a live turn.
+- **One pending restart per chat**, always announced: a `chat_restart_scheduled` /
+  `chat_restart_fired` / `chat_restart_cancelled` event, a system row in the transcript, and a
+  cancellable chip in the chat header.
+- **No `interval` mode.** A recurring restart belongs in `src/tools/mouaif.js` as a real scheduled
+  job with its own Settings page; a tool-only interval would be a hidden loop. The model chains
+  handoffs instead — same benefit, one visible schedule.
+- A nested (subagent) call is refused with `ENOTCHAT`: a delegated run must not reschedule its
+  parent's context.
+
+**Commits.** (1) `feat(wait): add wait_for and wait_check with one ticker`; (2)
+`feat(chat): schedule a fresh-context restart of a chat`; (3) `docs: record the wait and
+chat-restart decisions`. Each is revertible alone.
+
+**Depends on Track A** for the `subagent:<callId>` wait target (A's in-flight registry) and
+**on nothing else**; `shell:` and `log:` targets read today's `groupCli.js` background children
+and `.mouaif/logs/` files. Land E **after A** so the registry exists.
+
+**Tests.** `scripts/test-wait-for.js`, `scripts/test-wait-check.js`,
+`scripts/test-chat-restart-schedule.js`, `scripts/test-chat-restart-tools-http.js`, plus
+`scripts/test-tool-groups.mjs` at 35 tools and a 360 px pass on the restart chip.
+
 ## Landing order and merge queue
 
 Tracks develop in parallel; they land **serially**, each rebasing on the new `master` and
@@ -272,9 +315,15 @@ newest-tool-name track first (it settles the tool-group counts), then the tracks
 the same two UI files:
 
 1. **A** — subagent orchestration (new tool names: `toolGroups.js`, `prompts.js`, counts, docs table).
-2. **C** — subagent model choice (no new tool names; `cards.js` + `agents.js`).
-3. **D** — subagent attachments (no new tool names, one new argument; `cards.js` second writer).
-4. **B** — MCP Apps (largest, new render surface; `cards.js` third writer, `mcp.js`, new components).
+2. **E** — waits and chat restarts (four new tool names **on top of A's**, two new families, the
+  31 → 35 count bump; rebase immediately after A, before any other tool-name track).
+3. **C** — subagent model choice (no new tool names; `cards.js` + `agents.js`).
+4. **D** — subagent attachments (no new tool names, one new argument; `cards.js` second writer).
+5. **B** — MCP Apps (largest, new render surface; `cards.js` third writer, `mcp.js`, new components).
+
+Only **A** and **E** add tool names, so they land back to back; every other track is a consumer
+of the frozen count and just re-runs `scripts/test-tool-groups.mjs`. If E is deferred, C, D and B
+can land without renumbering anything.
 
 After each landing: `chore: refresh frontend build artifacts` (single caretaker commit), the
 track's targeted suites (`npm run test:subagent-prompt` for A/C/D; for B the `scripts/test-mcp-*.js`
@@ -302,3 +351,8 @@ set, which has no npm alias today), and a `docs:build` + `docs:publish:check` pa
   files plus named agents?
 - Track A: should `subagent_publish`/`subagent_read` survive the parent turn (a real scratchpad)
   or die with it (a coordination bus only)?
+- Track E: does a restart handoff keep the same chat (spec default) or open a new one per run?
+- Track E: is the dropped-context archive always written, or opt-in per chat like the trace
+  toggle (spec default)?
+- Track E: may the user pin a standing restart prompt on the chat, or is every prompt
+  model-authored?
