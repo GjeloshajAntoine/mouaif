@@ -10,7 +10,7 @@ MCP Apps are interactive HTML tool views inside the conversation, as described b
 2. Restart the relevant MCP server using its Settings lifecycle control so it receives the Apps capability at initialization.
 3. Call a tool declaring `_meta.ui.resourceUri`. Expand its completed tool card to load the app beside the ordinary text/image result.
 4. Interact with the view. App tool calls use the server's Off/Ask/Allow policy; Ask displays the app/server identity and arguments on a normal approval card.
-5. Use **Fullscreen** / **Inline** for the mobile sheet, or **Retry** after an app resource changes or fails to initialize.
+5. Use **Fullscreen** / **Inline** for the mobile sheet, **Close** to revoke a view, or **Retry** after closure, tab hiding, a resource change or initialization failure.
 
 The initial deployment supports **direct HTTP** clients using an app-managed second listener on an ephemeral port. That port must be reachable from the client. HTTPS, reverse proxies which do not expose that port, unsupported app policies, stopped servers and initialization failures keep the ordinary tool result instead. The main app's port remains 5732 by default.
 
@@ -30,11 +30,13 @@ The installed official SDK is pinned to `@modelcontextprotocol/ext-apps@2.0.3`, 
 
 - The outer proxy has a different origin from the app. Its inner app frame has an opaque origin and cannot read host DOM, cookies or storage, navigate the parent, or remove the outer sandbox.
 - HTTP-header CSP defaults deny network connections. Validated public HTTPS resources and HTTPS/WSS connections can be allowed only when declared by the app. Host/private origins, wildcard rules, CSP fragments, nested frames, dedicated app domains and external base URIs are rejected in this initial host.
-- The isolated listener serves only short-lived proxy tickets, no app API, cookies, service worker or HTML resources. App HTML arrives over a source-and-origin-checked message channel; proxy responses are `no-store`.
+- The isolated listener serves only single-use, host-bound proxy tickets, no app API, session-cookie setting, service worker or HTML resource routes. App HTML arrives over a source-and-origin-checked message channel; proxy responses are `no-store`. Reload requires a fresh mount.
+- **Different ports do not isolate cookies.** `HttpOnly` prevents JavaScript reads, not browser transmission: same-host sandbox requests can carry main-app cookies. The trusted listener ignores cookie/auth headers and does not reflect them into HTML, responses or bridge messages. Separate-hostname HTTPS hosting with a reviewed cookie policy remains required before production rollout; prefer a separate registrable domain.
+- Every operation rechecks the live server generation, registered server, source-tool visibility/resource URI, tool Off settings, project opt-in and chat existence. Invalid mounts revoke their ticket and pending approvals; late tool results are not returned to a revoked app. APIs pin the mount's exact host origin, reject null/cross-site browser requests, and accept only the documented HTTP methods. No-Origin non-browser CLI access retains the ordinary access policy.
 - AppBridge performs initialization. Tool input is delivered before the original result. Unknown/unimplemented requests are rejected; capabilities are not advertised merely because the overview lists them.
 - Mount identities come from persisted tool call/result rows. The app cannot select another project, chat or server, or nominate its approval call ID. Only raw tools with app visibility on its own server are callable, through existing per-chat/per-tool authorization.
 - Resource reads are session-scoped and bounded to 16 cached HTML resources of at most 1 MiB each. Updates invalidate the cache and mounted views detect resource/session changes; they fall back and offer Retry rather than injecting replacement HTML into an initialized app.
-- Initialization has a 10-second timeout. Teardown requests wait at most 500 ms on explicit closure; navigation or recycled transcript rows use best-effort teardown because the browser may already remove the frame. Pending calls are cancelled and listeners/timers are removed when the view closes; the server revokes its mount capability. Mounts expire after 30 minutes and limits prevent unbounded frame/call growth.
+- Initialization has a 10-second timeout. Teardown requests wait at most 500 ms on explicit closure; navigation or recycled transcript rows use best-effort teardown because the browser may already remove the frame. Close/tab hide removes app approval UI and sends independent keepalive revocation; restore requires Retry. A 20-second server lease renewed by 5-second host polling bounds abandoned capabilities/approvals, with a 5-second sweep even if browser teardown fails. Absolute expiry is 30 minutes; limits prevent unbounded mount/call growth. Accepted automatic AI turns remain independent of app teardown.
 - Inline views are width-constrained with bounded heights; fullscreen uses a safe-area sheet and controls at least 44 px tall. Text/image results remain independent of app success.
 
 ## HTTP interface
@@ -62,7 +64,9 @@ These are not enabled by automatic text messages; each needs its own implementat
 
 ## Verification
 
-Regression tests use a real stdio MCP fixture, actual HTTP mount/authorization routes, and the official App SDK inside Chrome at 360 px. They cover initialization, source/origin isolation, host-API CSP blocking, app tool approval/denial, unsupported context mutation, fullscreen, touch targets and cleanup. An isolated Docker test image runs the same checks without restarting the running host app.
+Regression tests use a real stdio MCP fixture, actual HTTP mount/authorization routes, and the official App SDK inside Chrome with normal site isolation. The combined real-host test covers automatic message → attributed persisted prompt → normally approved MCP tool → actual SSE reply, Close/Retry and abandoned approval cleanup, normal Stop, draft preservation and 360/390/430 px. Cookie/auth sentinels, ticket replay, wrong host/origin/method, source/requested-tool Off, resource/visibility changes, server restart, chat deletion and abandoned leases are also checked. An isolated Docker test image runs the same checks without restarting the running host app.
+
+Passing regressions are not a complete security audit. Remaining review includes real HTTPS/PWA hosting, malicious navigation and reload storms, approval races across multiple followers, and DNS rebinding/private addresses behind declared external hostnames. CSP origin syntax checks alone do not prove that a hostname resolves publicly.
 
 ```bash
 docker build -f scripts/Dockerfile.mcp-apps -t mouaif-track-b-mcp-apps:test .

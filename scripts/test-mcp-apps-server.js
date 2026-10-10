@@ -13,7 +13,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
     { name: 'model', inputSchema: { type: 'object' }, _meta: { ui: { visibility: ['model'] } } }
   ] });
   else if (method === 'resources/read') {
-    const result = { contents: [{ uri: params.uri, mimeType: 'text/html;profile=mcp-app', text: '<!doctype html><p>' + revision + '</p>', _meta: { ui: { csp: { connectDomains: [] } } } }] };
+    const result = { contents: [{ uri: params.uri, mimeType: 'text/html;profile=mcp-app', text: process.argv[2] ? require('node:fs').readFileSync(process.argv[2], 'utf8') : '<!doctype html><p>' + revision + '</p>', _meta: { ui: { csp: { connectDomains: [] } } } }] };
     if (params.uri.endsWith('/race')) {
       send({ method: 'notifications/resources/updated', params: { uri: params.uri } });
       setTimeout(() => reply(result), 40);

@@ -33,6 +33,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **MCP App mount lifecycle and isolation** — exact host/generation binding, single-use sandbox tickets, source/tool revocation checks, abandoned-lease cleanup and Close/tab-hide approval removal. Cookie transmission risks are documented; normal-site-isolation Chrome and combined real-host automatic-message/SSE/approval/Stop regressions added. See [MCP Apps](docs/features/mcp-apps.md).
 - **Codex models are listed again** — the chat model picker was empty for a
   signed-in ChatGPT plan because the Codex catalog request advertised a pinned
   `client_version` of `0.99.0`, and that endpoint answers with the model set of

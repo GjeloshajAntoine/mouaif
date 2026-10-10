@@ -1622,7 +1622,7 @@ if (!card) {
       const app = document.createElement('div');
       body.prepend(app);
       mountMcpApp(app, { ...context, callId: id,
-        onAuthorize: request => authorizationCard(request, context.projectDir, context.chatId, refs) });
+        onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, context.projectDir, context.chatId, refs) });
     }
     if (isSubagent) {
     renderSubagentChat(card, toolResult);

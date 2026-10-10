@@ -32,6 +32,12 @@ const upstream = http.createServer((req, res) => {
   });
 });
 let base;
+const raw = (url, headers, method = 'POST') => new Promise((resolve, reject) => {
+  const req = http.request(url, { method, headers: { 'Content-Type': 'application/json', ...headers } }, res => {
+    res.resume(); resolve(res.statusCode);
+  });
+  req.on('error', reject); req.end('{}');
+});
 const post = async (route, body = {}) => {
   const res = await fetch(base + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   return { status: res.status, body: await res.json() };
@@ -42,6 +48,9 @@ const post = async (route, body = {}) => {
     assert.throws(() => buildPolicy({ csp: { connectDomains: ['http://127.0.0.1:5732'] } }, 'http://localhost:5732'), { code: 'EMCP_APP_CSP' });
     assert.throws(() => buildPolicy({ csp: { connectDomains: ['https://localhost:5732'] } }, 'http://localhost:5732'), { code: 'EMCP_APP_CSP' });
     assert.throws(() => buildPolicy({ csp: { frameDomains: ['https://example.com'] } }, 'http://localhost:5732'), { code: 'EMCP_APP_CSP' });
+    for (const csp of [[], 'fragment', { frameDomains: {} }, { baseUriDomains: {} }, { resourceDomains: [123] }]) {
+    assert.throws(() => buildPolicy({ csp }, 'http://localhost:5732'), { code: 'EMCP_APP_CSP' });
+    }
     const policy = buildPolicy({}, 'http://localhost:5732');
     assert.match(policy.header, /connect-src 'none'/);
     assert.match(policy.header, /object-src 'none'/);
@@ -66,13 +75,24 @@ const post = async (route, body = {}) => {
     assert.notEqual(mount.origin, base);
     assert.deepEqual(mount.arguments, { sample: true });
     assert.equal((await fetch(mount.url)).status, 403);
-    const proxy = await fetch(mount.url, { headers: { Referer: base + '/' } });
+    assert.equal(await raw(mount.url, { Referer: base + '/', Host: 'spoofed.example' }, 'GET'), 403);
+    const secret = 'cookie-and-auth-sentinel';
+    const proxy = await fetch(mount.url, { headers: { Referer: base + '/', Cookie: 'mouaif_session=' + secret, Authorization: 'Bearer ' + secret } });
     assert.equal(proxy.status, 200);
     assert.match(proxy.headers.get('content-security-policy'), /frame-ancestors/);
     assert.equal(proxy.headers.get('cache-control'), 'no-store');
     assert.equal(proxy.headers.get('set-cookie'), null);
+    assert.equal((await proxy.text()).includes(secret), false);
+    assert.equal(JSON.stringify([...proxy.headers]).includes(secret), false);
+    assert.equal((await fetch(mount.url, { headers: { Referer: base + '/' } })).status, 403, 'ticket cannot be replayed');
     assert.equal((await fetch(mount.origin + '/api/settings')).status, 404);
     const route = '/api/mcp/apps/' + mount.id;
+    for (const headers of [{ Origin: 'null' }, { Origin: 'http://evil.example' }, { 'Sec-Fetch-Site': 'cross-site' }, { 'Sec-Fetch-Site': 'same-site' }]) {
+    const res = await fetch(base + route + '/status', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: '{}' });
+    assert.equal(res.status, 403, JSON.stringify(headers));
+    }
+    assert.equal((await fetch(base + route + '/status')).status, 405);
+    assert.equal(await raw(base + route + '/status', { Host: 'wrong.example' }), 403, 'mount pins exact host origin');
     assert.equal((await post(route + '/call', { requestId: 'bad', name: 'model', arguments: {} })).status, 403);
     const request = { requestId: 'one', name: 'edit', arguments: { text: 'user action' }, serverId: 'forged' };
     const asking = await post(route + '/call', request);
@@ -120,9 +140,60 @@ const post = async (route, body = {}) => {
     assert.equal((await post(route + '/status')).body.code, 'EMCP_APP_STALE');
     await fetch(base + route, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     assert.equal((await fetch(mount.url, { headers: { Referer: base + '/' } })).status, 404);
-    const next = (await post('/api/mcp/apps/mount', body)).body;
-    await mcp.stopServer(projectDir, server.id);
-    assert.equal((await post('/api/mcp/apps/' + next.id + '/status')).body.code, 'EMCP_APP_GONE');
+    const fresh = async () => {
+    const response = await post('/api/mcp/apps/mount', body);
+    assert.equal(response.status, 200, JSON.stringify(response.body));
+    return response.body;
+    };
+    const assertRevoked = async (view, code) => {
+    const pending = await post('/api/mcp/apps/' + view.id + '/call', { requestId: 'revoke', name: 'edit', arguments: {} });
+    assert.equal(pending.body.code, 'EAUTH_REQUIRED');
+    return async () => {
+      assert.equal((await post('/api/mcp/apps/' + view.id + '/status')).body.code, code);
+      assert.equal(authz.listPending(projectDir, chat.id).some(p => p.callId === pending.body.request.callId), false);
+      assert.equal((await fetch(view.url, { headers: { Referer: base + '/' } })).status, 404);
+    };
+    };
+    let view = await fresh();
+    let check = await assertRevoked(view, 'ETOOL_DISABLED');
+    authz.setAuthorization(projectDir, { mcp: { tools: { [name]: { mode: 'off' } } } });
+    await check();
+    authz.setAuthorization(projectDir, { mcp: { tools: { [name]: { mode: 'ask' } } } });
+    view = await fresh(); check = await assertRevoked(view, 'ETOOL_DISABLED');
+    settings.setProject(projectDir, { mcpApps: { enabled: false } }); await check();
+    settings.setProject(projectDir, { mcpApps: { enabled: true } });
+    view = await fresh(); check = await assertRevoked(view, 'EMCP_APP_STALE');
+    const liveSession = mcp._sessions.get(projectDir + '::' + server.id);
+    const source = liveSession.tools.find(t => t.name === 'view');
+    source._meta.ui.visibility = ['app']; await check(); delete source._meta.ui.visibility;
+    view = await fresh(); check = await assertRevoked(view, 'EMCP_APP_GONE');
+    // No DELETE/status from an abandoned browser: lease expiry clears approval.
+    await new Promise(resolve => setTimeout(resolve, 26000));
+    assert.equal(authz.listPending(projectDir, chat.id).length, 0);
+    await check();
+    view = await fresh();
+    const originalAuthorize = authz.authorize;
+    let resumeAuthorization;
+    authz.authorize = async input => {
+      await new Promise(resolve => { resumeAuthorization = resolve; });
+      return originalAuthorize(input);
+    };
+    try {
+      const inFlight = post('/api/mcp/apps/' + view.id + '/call', { requestId: 'race', name: 'edit', arguments: {} });
+      while (!resumeAuthorization) await new Promise(resolve => setTimeout(resolve, 10));
+      await fetch(base + '/api/mcp/apps/' + view.id, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      resumeAuthorization();
+      assert.equal((await inFlight).body.code, 'EMCP_APP_GONE');
+      assert.equal(authz.listPending(projectDir, chat.id).length, 0, 'late authorization cannot recreate an abandoned approval');
+    } finally { authz.authorize = originalAuthorize; resumeAuthorization?.(); }
+    view = await fresh(); check = await assertRevoked(view, 'ETOOL_DISABLED');
+    const editName = mcp.composedToolName(server.slug, 'edit');
+    authz.setAuthorization(projectDir, { mcp: { tools: { [editName]: { mode: 'off' } } } }); await check();
+    authz.setAuthorization(projectDir, { mcp: { tools: { [editName]: { mode: 'ask' } } } });
+    view = await fresh(); check = await assertRevoked(view, 'EMCP_APP_GONE');
+    await mcp.stopServer(projectDir, server.id); await mcp.startServer(projectDir, server.id); await check();
+    view = await fresh(); check = await assertRevoked(view, 'EMCP_APP_GONE');
+    chats.deleteChat(projectDir, chat.id); await check();
     console.log('PASS MCP Apps actual HTTP routes, opt-in, identity binding, CSP, server-scoped approvals, denial, replay, updates and teardown');
   } finally {
     releaseUpstream?.();

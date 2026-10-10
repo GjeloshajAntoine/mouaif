@@ -30,6 +30,11 @@ function approvedDomains(values, hostOrigin, connect = false) {
 
 function buildPolicy(ui, hostOrigin) {
   const declared = ui?.csp || {};
+  if (typeof declared !== 'object' || Array.isArray(declared)
+    || ['frameDomains', 'baseUriDomains'].some(key => declared[key] !== undefined
+      && (!Array.isArray(declared[key]) || declared[key].length > 0))) {
+    throw err('EMCP_APP_CSP', 'Unsupported or invalid CSP declaration');
+  }
   const csp = {
     connectDomains: approvedDomains(declared.connectDomains, hostOrigin, true),
     resourceDomains: approvedDomains(declared.resourceDomains, hostOrigin),
@@ -66,8 +71,17 @@ function createSandboxService(options = {}) {
     if (referrerOrigin !== ticket.hostOrigin) {
       res.writeHead(403, { 'Cache-Control': 'no-store' }); res.end(); return;
     }
+    // Ports are not cookie boundaries. Ignore all cookie/auth headers and
+    // never reflect them into the trusted proxy or its messages.
+    if (req.headers.host !== ticket.host || ticket.used) {
+    res.writeHead(403, { 'Cache-Control': 'no-store' }); res.end(); return;
+    }
+    try { ticket.validate?.(); } catch {
+    res.writeHead(404, { 'Cache-Control': 'no-store' }); res.end(); return;
+    }
+    ticket.used = true; // reload/navigation requires a fresh mount
     res.writeHead(200, {
-      'Content-Type': 'text/html; charset=utf-8',
+    'Content-Type': 'text/html; charset=utf-8',
       'Content-Security-Policy': ticket.policy.header,
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), clipboard-write=(), display-capture=()',
       'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
@@ -90,19 +104,21 @@ function createSandboxService(options = {}) {
       });
     });
     await starting;
+    if (tickets.size >= 64) throw err('EMCP_APP_LIMIT', 'Sandbox ticket limit reached');
     const token = crypto.randomBytes(24).toString('base64url');
-    tickets.set(token, { hostOrigin, policy, expires: Date.now() + 30 * 60 * 1000 });
     const sandboxOrigin = 'http://' + host.hostname + ':' + server.address().port;
     if (sandboxOrigin === hostOrigin) throw err('EMCP_APP_ORIGIN', 'Sandbox and host origins must differ');
+    tickets.set(token, { hostOrigin, host: new URL(sandboxOrigin).host, policy, used: false, expires: Date.now() + 30 * 60 * 1000 });
     return { token, url: sandboxOrigin + '/' + token, origin: sandboxOrigin };
   }
+  function bind(token, validate) { tickets.get(token).validate = validate; }
   function revoke(token) { tickets.delete(token); }
   async function close() {
     tickets.clear();
     server.closeAllConnections();
     if (server.listening) await new Promise(resolve => server.close(resolve));
   }
-  return { issue, revoke, close, server };
+  return { issue, bind, revoke, close, server };
 }
 
 module.exports = { approvedDomains, buildPolicy, createSandboxService };

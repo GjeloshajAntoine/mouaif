@@ -7,7 +7,8 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 const require = createRequire(import.meta.url);
-const { findChrome, createCdp } = require('./lib/capture-fixture.js');
+const { findChrome } = require('./lib/capture-fixture.js');
+import { connectAppCdp } from './lib/mcp-apps-cdp.mjs';
 const { createSandboxService, buildPolicy } = require('../src/mcp-apps-sandbox.js');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-apps-browser-'));
 const sandbox = createSandboxService({ host: '127.0.0.1' });
@@ -72,11 +73,11 @@ try {
   base = 'http://127.0.0.1:' + server.address().port;
   const chromePath = findChrome();
   assert(chromePath, 'Chrome is required');
-  chrome = spawn(chromePath, ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-site-isolation-trials', '--disable-features=IsolateOrigins,site-per-process', '--no-first-run', '--remote-debugging-port=0', '--user-data-dir=' + temp, 'about:blank'], { stdio: 'ignore' });
+  chrome = spawn(chromePath, ['--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--remote-debugging-port=0', '--user-data-dir=' + temp, 'about:blank'], { stdio: 'ignore' });
   for (let i = 0; !fs.existsSync(path.join(temp, 'DevToolsActivePort')) && i < 100; i++) await sleep(50);
   const port = fs.readFileSync(path.join(temp, 'DevToolsActivePort'), 'utf8').split('\n')[0];
   const pages = await (await fetch('http://127.0.0.1:' + port + '/json/list')).json();
-  cdp = await createCdp(pages.find(p => p.type === 'page').webSocketDebuggerUrl);
+  cdp = await connectAppCdp(pages.find(p => p.type === 'page').webSocketDebuggerUrl);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 800, deviceScaleFactor: 1, mobile: true });
@@ -96,15 +97,10 @@ try {
   await evaluate("document.querySelector('.mcp-app button').click()");
   assert.equal(await evaluate("!!document.querySelector('.mcp-app--fullscreen')"), false);
   // Evaluate inside the actual opaque-origin app, not through parent DOM access.
-  const tree = await cdp.send('Page.getFrameTree');
-  const proxyFrame = tree.frameTree.childFrames[0];
-  const appFrame = proxyFrame.childFrames[0];
-  const isolated = await cdp.send('Page.createIsolatedWorld', { frameId: appFrame.frame.id, worldName: 'apps-test' });
-  const appEvaluate = async expression => {
-    const r = await cdp.send('Runtime.evaluate', { expression, contextId: isolated.executionContextId, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails));
-    return r.result.value;
-  };
+  await cdp.attachFrames();
+  let appEvaluate;
+  for (let i = 0; !appEvaluate && i < 100; i++) { appEvaluate = await cdp.appContext(); if (!appEvaluate) await sleep(50); }
+  assert(appEvaluate, 'opaque view found through normal site-isolated child sessions');
   assert.equal(await appEvaluate("document.querySelector('#result').textContent"), 'original result');
   await appEvaluate("document.querySelector('#escape').click()");
   assert.equal(await appEvaluate("document.querySelector('#security').textContent"), 'isolated');
@@ -123,6 +119,7 @@ try {
   await appEvaluate("document.querySelector('#message').click()");
   for (let i = 0; appMessages.length === 0 && i < 100; i++) await sleep(20);
   assert.deepEqual(appMessages, [{ role: 'user', content: [{ type: 'text', text: 'Explain this chart' }] }], 'official SDK ui/message reaches host without approval');
+  for (let i = 0; i < 100 && await appEvaluate("document.querySelector('#security').textContent") !== 'message accepted'; i++) await sleep(20);
   assert.equal(await appEvaluate("document.querySelector('#security').textContent"), 'message accepted');
   // Wrong-source messages cannot resize or initialize the app.
   await evaluate("window.postMessage({jsonrpc:'2.0',method:'ui/notifications/size-changed',params:{height:9999}},location.origin)");

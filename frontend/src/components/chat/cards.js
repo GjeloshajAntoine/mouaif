@@ -688,8 +688,10 @@ return host;
 
 export function authorizationCard(request, projectDir, chatId, refs, resume, state) {
   return new Promise((resolve) => {
-    if (!refs.transcript.current) return resolve('deny');
+    if (!refs.transcript.current || request.signal?.aborted) return resolve('deny');
     const card = document.createElement('div');
+    const cancel = () => { card.remove(); resolve('deny'); };
+    request.signal?.addEventListener('abort', cancel, { once: true });
     card.className = 'tool-card tool-card--authorization';
     if (request.callId) card.dataset.authCallId = request.callId;
     const head = document.createElement('div');
@@ -776,6 +778,7 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
           }
           return;
         }
+        request.signal?.removeEventListener('abort', cancel);
         card.remove();
         if (decision !== 'deny' && typeof resume === 'function') await resume();
         resolve(decision);

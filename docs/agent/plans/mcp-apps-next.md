@@ -40,6 +40,10 @@ Phases 0–1 precede production-facing rollout. Phases 2–4 can ship independen
 
 Commit: `fix(mcp): harden app mount lifecycle and isolation` (split independent defects if discovered). No new capabilities until critical findings are resolved. Record findings and coverage gaps; passing tests are not a complete security audit.
 
+### Phase 0 progress
+
+First scoped hardening adds host/generation binding, single-use tickets, source/requested-tool revocation, abandoned leases and Close/tab-hide approval cleanup. Normal-site-isolation browser tests now include a combined real-host official SDK → persisted automatic prompt → authorized MCP tool → actual SSE reply/Stop flow with unchanged drafts and mobile widths. See [implementation findings and gaps](../features/mcp-apps.md#phase-0-securitylifecycle-review). This does not mark the complete security audit done or authorize deployment; hostile navigation/reload storms, multi-follower approval races and external DNS/private-resolution risks remain before production rollout.
+
 ## Phase 1 — HTTPS without an extra browser-facing port
 
 Proposed configuration: app-level sandbox public origin, distinct from mouaif's configured public origin. Exact setting names and routing are settled before implementation; never trust a server's `ui.domain` as deployment configuration.
