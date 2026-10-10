@@ -52,6 +52,7 @@ const { URL, pathToFileURL } = require('url');
 const { err } = require('./util.js');
 const settings = require('./settings.js');
 const mcpOAuth = require('./oauth-mcp.js');
+const mcpApps = require('./mcp-apps.js');
 
 // ---- SDK lazy load ------------------------------------------------------
 
@@ -649,6 +650,8 @@ function normalizeToolCache(raw) {
       if (t.outputSchema && typeof t.outputSchema === 'object' && !Array.isArray(t.outputSchema)) {
         out.outputSchema = shrinkMcpSchema(t.outputSchema);
       }
+      const appMeta = mcpApps.normalizeToolMeta(t._meta);
+      if (appMeta) out._meta = appMeta;
       return out;
     });
 }
@@ -1120,6 +1123,9 @@ async function startServer(projectDir, serverId) {
     transport,
     status: 'starting',
     tools: [],
+    // Bounded to this live session; cleared on updates, disconnect and shutdown.
+    appResources: new Map(),
+    appResourceEpoch: 0,
     error: null,
     stderr: stderrBuf,
     // What decorate() and the start-error path read. Returns null when the
@@ -1129,6 +1135,7 @@ async function startServer(projectDir, serverId) {
       return text ? { text, truncated: stderrTruncated } : null;
     },
     async shutdown() {
+      this.appResources.clear();
       try { await client.close(); } catch { /* ignore */ }
       try { await transport.close(); } catch { /* ignore */ }
     }
@@ -1195,6 +1202,7 @@ async function startServer(projectDir, serverId) {
       try { if (typeof sdkOnclose === 'function') sdkOnclose(); } catch { /* keep marking the session */ }
       if (_sessions.get(keyOf(projectDir, serverId)) === session) {
         session.status = 'errored';
+        session.appResources.clear();
         session.error = { code: 'EMCP_TRANSPORT', message: 'Server process exited' };
       }
     };
@@ -1231,6 +1239,20 @@ async function startServer(projectDir, serverId) {
       });
     }
   } catch { /* SDK without notification support; tool list stays start-time */ }
+
+  // Invalidate on server updates even without subscriptions. The host will
+  // explicitly refresh on remount; no cross-session HTML survives a restart.
+  try {
+    const { ResourceUpdatedNotificationSchema, ResourceListChangedNotificationSchema } = require('@modelcontextprotocol/sdk/types.js');
+    client.setNotificationHandler(ResourceUpdatedNotificationSchema, notification => {
+      session.appResourceEpoch++;
+      session.appResources.delete(notification.params.uri);
+    });
+    client.setNotificationHandler(ResourceListChangedNotificationSchema, () => {
+      session.appResourceEpoch++;
+      session.appResources.clear();
+    });
+  } catch { /* SDK without resource notifications: explicit refresh still works */ }
 
   session.status = 'ready';
   return decorate(Object.assign({}, entry, { scope: found.scope }), projectDir);
@@ -1274,6 +1296,43 @@ async function listDiscoveredTools(projectDir, serverId) {
   // Keep the persisted cache in sync when the user taps Refresh.
   try { persistToolCache(projectDir, serverId, session.tools); } catch { /* ignore */ }
   return session.tools.slice();
+}
+
+// Read only an App resource referenced by a discovered tool on this exact
+// project/server session. No REST exposure or HTML rendering until the isolated
+// web-host contract is implemented. Callers must apply authorization first.
+async function readAppResource(projectDir, serverId, uri, opts = {}) {
+  if (!mcpApps.isUiUri(uri)) throw err('EBADINPUT', 'MCP App resource must use ui://');
+  const session = getSession(projectDir, serverId);
+  if (!session || session.status !== 'ready') {
+    throw err('EMCP_NOSESSION', 'MCP App server is not ready', { serverId });
+  }
+  if (!session.tools.some(t => t._meta?.ui?.resourceUri === uri)) {
+    throw err('EMCP_NOTFOUND', 'MCP App resource is not declared by this server', { serverId, uri });
+  }
+  if (opts.signal?.aborted) throw err('EABORTED', 'MCP App resource read cancelled');
+  if (!opts.refresh && session.appResources.has(uri)) {
+    return structuredClone(session.appResources.get(uri));
+  }
+  const epoch = session.appResourceEpoch;
+  let result;
+  try {
+    result = await session.client.readResource({ uri }, { timeout: 10000, signal: opts.signal });
+  } catch (e) {
+    if (opts.signal?.aborted) throw err('EABORTED', 'MCP App resource read cancelled');
+    throw err('EMCP_RPC', 'MCP App resource read failed', { serverId, uri });
+  }
+  if (getSession(projectDir, serverId) !== session || session.status !== 'ready') {
+    throw err('EMCP_NOSESSION', 'MCP App server disconnected during resource read', { serverId });
+  }
+  if (opts.signal?.aborted) throw err('EABORTED', 'MCP App resource read cancelled');
+  if (epoch !== session.appResourceEpoch) {
+    throw err('EMCP_APP_STALE', 'MCP App resource changed during read; retry', { serverId, uri });
+  }
+  const resource = mcpApps.parseUiResource(result, uri);
+  if (session.appResources.size >= 16) session.appResources.delete(session.appResources.keys().next().value);
+  session.appResources.set(uri, resource);
+  return structuredClone(resource);
 }
 
 // ---- Tool dispatch ------------------------------------------------------
@@ -1433,6 +1492,12 @@ async function callTool(projectDir, serverSlug, toolName, args, callOpts) {
   // server receives the name it advertised.
   const tool = findToolByCallName(session.tools, serverSlug, toolName);
   if (!tool) throw err('EMCP_NOTFOUND', 'Tool not found on MCP server: ' + toolName, { serverSlug, toolName });
+  // Model dispatch is the default. Future app hosts must pass caller: 'app'
+  // only after binding the frame to its server and authorizing the raw tool.
+  const caller = callOpts?.caller === 'app' ? 'app' : 'model';
+  if (!mcpApps.toolVisibleTo(tool, caller)) {
+    throw err('EMCP_VISIBILITY', 'MCP tool is not visible to this caller', { serverSlug, toolName });
+  }
 
   // args must be a JSON object; the MCP spec requires an object even
   // when empty. Defensive: a string or null from upstream gets coerced
@@ -1614,6 +1679,7 @@ function listComposedToolSpecs(projectDir) {
       seen.add(serverId);
       const entry = session.entry;
       for (const tool of session.tools) {
+        if (!mcpApps.toolVisibleTo(tool, 'model')) continue;
         out.push({
           name: composedToolName(entry.slug, tool.name),
           description: tool.description || ('MCP tool: ' + entry.name + '/' + tool.name),
@@ -1635,6 +1701,7 @@ function listComposedToolSpecs(projectDir) {
       const cache = loadToolCache(projectDir, raw || entry);
       if (!cache.length) continue;
       for (const tool of cache) {
+        if (!mcpApps.toolVisibleTo(tool, 'model')) continue;
         out.push({
           name: composedToolName(entry.slug, tool.name),
           description: tool.description || ('MCP tool: ' + entry.name + '/' + tool.name),
@@ -1692,6 +1759,7 @@ module.exports = {
   ensureServersRunning,
   // discovery + dispatch
   listDiscoveredTools,
+  readAppResource,
   callTool,
   composedToolNameFor,
   listComposedToolSpecs,

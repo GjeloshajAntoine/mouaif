@@ -121,6 +121,7 @@ One page per feature: what it does and how to use it.
 ### MCP
 
 - [MCP servers](features/mcp.md) — connect Model Context Protocol servers as extra tools.
+- [MCP Apps foundation](features/mcp-apps.md) — pinned protocol, tool visibility and session-scoped UI resources; interactive rendering deferred.
 - [MCP OAuth sign-in](features/mcp-oauth.md) — browser sign-in or client credentials for remote MCP servers, with remote revocation.
 - [MCP store](features/mcp-registry-browser.md) — search, filter, and install servers from the public MCP Registry in a few taps.
 - [MCP server error modal](features/mcp-error-modal.md) — read a server's full startup error in Settings.
