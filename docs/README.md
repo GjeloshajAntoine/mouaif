@@ -16,6 +16,7 @@ The guides linked from the site navigation.
 
 One page per feature: what it does and how to use it.
 
+- [Recursive subagent delegation](features/recursive-subagent-delegation.md) — rooted local-parent controls, finite shared budgets, subtree cancellation and descendant billing.
 - [Cooperative subagent groups](features/cooperative-subagent-groups.md) — parent-coordinated objectives, dependency readiness, artifacts, contracts and arbitration.
 - [Subagent orchestration](features/subagent-tools.md) — background handles, parent steering/cancellation and turn-scoped sibling handoffs.
 

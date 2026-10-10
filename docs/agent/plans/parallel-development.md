@@ -46,7 +46,7 @@ This section is approved implementation scope and supersedes the older Track A m
 
 1. Parent declares group identity/shared objective and immutable members (roles, ownership references, workspace claims and dependency DAG). Validate the complete declaration, reject unknown dependencies/cycles before effects. Launch named members with `background:true`; downstream dispatch waits for successful dependencies. Failure/cancellation blocks descendants, never starts them.
 2. Metadata-only named artifacts are discoverable with author/member/group and actual workspace provenance. References never read files, move workspaces, prepare checkouts or bypass File tools authorization/redaction. Ownership is advisory, not a filesystem lock.
-3. Shared decisions remain proposals until explicit parent approval; no consensus. Children escalate conflicts; only the parent arbitrates. Group status reports readiness and pending/running/completed/blocked/failed/cancelled, distinguishing settled from successful completion. No recursion, automatic merge or rollback.
+3. Shared decisions remain proposals until explicit local-parent approval; no consensus. USER-APPROVED RECURSION CORRECTION supersedes the earlier no-recursion restriction: nested child/group delegation uses rooted identities, local-parent controls and upward conflict escalation. Root-shared `subagentLimits` bounds depth, simultaneous child provider requests and total admitted runs. Default depth 1 preserves opt-in compatibility; each level inherits/narrows tools, permissions, model and selected attachments. Cancellation covers subtrees; descendants bill once through ancestor aggregation. Group status distinguishes settled from successful completion. No automatic merge or rollback. Dependencies are strictly local group DAGs; self/ancestor control/wait and cross-scope dependency targets are rejected, and provider slots release before tool dispatch to avoid single-slot recursive deadlock.
 4. `subagent_messages` is read-only. Explicit `subagent_send` receipts are queued/delivered/undelivered; delivered means inserted into context, not obeyed. Status is immediate and rejects `waitMs`. Scope observation budget is 256 calls; no infinite polling. Shutdown settles at most one second then finalizes once and drops late events/results.
 5. Track E chat `bbc387ca` was inspected and its draft updated with the immediate-status/scoped-handle contract. Its unfinished job-registry work is not imported. A future wait adapter must have finite deadlines/poll budgets, reject self-wait, and distinguish blocked/failed/cancelled outcomes. No wait tool is shipped here.
 6. Ship group lifecycle/authorization/DAG/conflict/delivery/shutdown tests, feature and agent docs, matching tool catalog/mirror (42 tools before E), changelog and this plan in one focused Conventional Commit. Landing must regenerate the matching committed web build and re-run shared suites; no dependency installs or host CLI restart.
@@ -178,8 +178,8 @@ sibling subagents can hand work to each other without the parent relaying it.
 stop semantics, publish/read round-trip, unknown `callId` typed error `EUNKNOWN_CALL`), plus the
 existing `test-tool-groups.mjs`, `test-prompt-snapshot.js`, and `test-subagent-*` scripts.
 
-**Risks.** The natural spin risk is recursion — new tools must stay *out* of the nested run's
-surface for parent-only status/stop/messages exactly like `subagent` does today. However,
+**Risks (superseded by approved recursion correction).** Recursive controls are allowed only
+within the nested run's own local-parent scope and root-shared finite budgets. However,
 `subagent_publish`/`subagent_read` must be explicitly available to siblings if sibling handoff
 is the goal; excluding all five makes that goal impossible. Also, synchronous `subagent`
 calls hold the parent until completion: useful mid-run steering needs a background handle

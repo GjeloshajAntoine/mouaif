@@ -164,7 +164,7 @@ function subagentModelResult(result, content, imageRefs) {
   if (!source || typeof source !== 'object') return null;
   const out = { ok: source.ok !== false, text: typeof source.text === 'string' ? source.text : '' };
   // Background receipts must remain actionable after compaction/history replay.
-  for (const key of ['callId', 'background', 'state', 'groupId', 'memberId', 'nextSuggested', 'published']) {
+  for (const key of ['callId', 'rootId', 'parentCallId', 'depth', 'background', 'state', 'groupId', 'memberId', 'nextSuggested', 'published']) {
     if (source[key] !== undefined) out[key] = source[key];
   }
   if (source.model && source.model.id) out.modelId = source.model.id;

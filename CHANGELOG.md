@@ -11,6 +11,8 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Added
 
+- **Recursive subagent delegation** — opt-in finite root depth/concurrency/total-run budgets, local-parent child/group control, upward conflict escalation, inherited restricted permissions/attachments/model and subtree cancellation with descendant billing counted once. See [recursive delegation](docs/features/recursive-subagent-delegation.md).
+
 - **Cooperative subagent groups** — parent-created member DAGs with shared objectives, ownership/workspace provenance, discoverable artifacts, proposed versus approved contracts and explicit conflict arbitration. Status is immediate, messages are read-only, explicit sends have delivery receipts, observations and shutdown are bounded. See [the feature page](docs/features/cooperative-subagent-groups.md).
 
 - **Subagent orchestration** — opt-in background handles let the parent observe, steer and cancel isolated nested work while it runs. Parent-only controls and bounded sibling publish/read handoffs share the existing Subagent gate; handles and handoffs expire with the parent turn. Pending approvals cancel per child, final transcripts/costs settle once, and synchronous calls remain the default. See [the feature page](docs/features/subagent-tools.md).

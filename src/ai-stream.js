@@ -137,8 +137,28 @@ async function runSingleToolCall(c, cx) {
   let exec;
   let callEmitted = false;
   // Reject forged parent controls before creating a nested approval wait.
-  if (opts && opts.nestedSubagent && (c.name === 'subagent' || require('./tools/subagent-orchestration.js').PARENT_TOOLS.includes(c.name))) {
+  if (opts?.nestedSubagent && (c.name === 'subagent' || require('./tools/subagent-orchestration.js').PARENT_TOOLS.includes(c.name)) && !opts.orchestrationScope?.owner) {
     const result = { error: { code: 'EPARENT_ONLY', message: 'only the delegating parent can control runs' } };
+    onEvent('tool_call', { id: c.id || null, name: c.name, args });
+    onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result });
+    if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: JSON.stringify(result) });
+    return { exec: { ok: false, result, content: JSON.stringify(result) }, imageParts: [] };
+  }
+  // Reject scope escapes/self/ancestor targets before creating approvals.
+  if (opts?.orchestrationScope && require('./tools/subagent-orchestration.js').PARENT_TOOLS.includes(c.name)) {
+    try { opts.orchestrationScope.validateControl(c.name, args, opts.orchestrationAuthor); }
+    catch (e) {
+      const result = { error: { code: e.code || 'EPARENT_ONLY', message: e.message } };
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+      onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result });
+      if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: JSON.stringify(result) });
+      return { exec: { ok: false, result, content: JSON.stringify(result) }, imageParts: [] };
+    }
+  }
+  // Enforce the inherited advertised surface even against forged calls,
+  // before approval/effects. Agent allowlists can only narrow it.
+  if (opts?.nestedSubagent && ((Array.isArray(opts.enabledTools) && !opts.enabledTools.includes(c.name)) || opts.inheritedPermissions?.[c.name]?.mode === 'off')) {
+    const result = { error: { code: 'ETOOL_DISABLED', message: 'tool is outside the inherited child surface' } };
     onEvent('tool_call', { id: c.id || null, name: c.name, args });
     onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result });
     if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: JSON.stringify(result) });
@@ -301,7 +321,7 @@ async function runSingleToolCall(c, cx) {
       }
       if (opts && opts.signal && opts.signal.aborted) throw Object.assign(new Error('aborted'), { code: 'EABORTED' });
       const authResult = await authGate.authorize({
-      forcePrompt,
+      forcePrompt: forcePrompt || !!(opts.inheritedPermissions?.[c.name] && !['allow', 'off'].includes(opts.inheritedPermissions[c.name].mode)),
       signal: opts && opts.signal,
       images: authImages,
         projectDir: opts && opts.projectDir,
@@ -469,11 +489,12 @@ function promptCacheKeyFor(opts) {
 async function streamChat(opts) {
   opts = opts || {};
   const ownsScope = !opts.orchestrationScope;
-  const scope = ownsScope ? new (require('./tools/subagent-orchestration.js').Scope)(opts.projectDir, opts.chatId, opts.signal) : opts.orchestrationScope;
+  const limits = ownsScope ? require('./settings.js').getResolved(opts.projectDir).subagentLimits || {} : {};
+  const scope = ownsScope ? new (require('./tools/subagent-orchestration.js').Scope)(opts.projectDir, opts.chatId, opts.signal, limits) : opts.orchestrationScope;
   try {
     return await streamChatInScope(Object.assign({}, opts, { orchestrationScope: scope }));
   } finally {
-    if (ownsScope) await scope.finish();
+    await scope.finish();
   }
 }
 
@@ -663,7 +684,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   //   same set on the chat record, so we don't need to re-read it.
   // Nested controls are excluded independently of allowlists, including
   // forged tool calls (the dispatcher checks the role again).
-  if (opts.nestedSubagent) {
+  if (opts.nestedSubagent && scope.owner?.depth >= scope.root.limits.maxDepth) {
     for (let i = toolSpecs.length - 1; i >= 0; i--) {
       const name = toolSpecs[i]?.function?.name;
       if (name === 'subagent' || orchestration.PARENT_TOOLS.includes(name)) toolSpecs.splice(i, 1);
@@ -750,11 +771,11 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
 
   while (true) {
     if (signal && signal.aborted) {
-    if (!opts.nestedSubagent) await scope.finish();
+    await scope.finish();
     return { ok: false, error: { code: 'EABORTED', message: 'aborted' }, usage: usageWithDelegated(), providerCost: totalProviderCost(), delegatedCost: delegatedCostTotal(), totalCost: totalRunCost() };
     }
     if (opts.orchestrationAuthor) {
-      for (const message of scope.drain(opts.orchestrationAuthor)) convo.push({ role: 'user', content: 'Parent steering: ' + message });
+      for (const message of (scope.parentScope || scope).drain(opts.orchestrationAuthor)) convo.push({ role: 'user', content: 'Parent steering: ' + message });
     }
     let effectiveToolSpecs = visibleToolSpecs;
     try {
@@ -762,9 +783,12 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         ? promptProfilesMod.reduceToolSpecs(visibleToolSpecs, opts && opts.promptSize, { discoveredToolNames })
         : visibleToolSpecs;
     } catch { /* non-fatal; fall back to the per-chat filtered set */ }
-    const result = await runUpstreamTurn(convo, effectiveToolSpecs);
+    const release = opts.nestedSubagent ? await scope.acquire(signal) : () => {};
+    let result;
+    try { result = await runUpstreamTurn(convo, effectiveToolSpecs); }
+    finally { release(); }
     if (!result.ok) {
-    if (!opts.nestedSubagent) await scope.finish();
+    await scope.finish();
     return { ok: false, error: result.error, usage: usageWithDelegated(), providerCost: totalProviderCost(), delegatedCost: delegatedCostTotal(), totalCost: totalRunCost() };
     }
 
@@ -801,7 +825,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // chat's total usage/cost matches what providers billed.
       // A handle cannot outlive its parent turn. Settle cancellation and
       // final delegated billing before the parent emits done/persists cost.
-      if (!opts.nestedSubagent) await scope.finish();
+      await scope.finish();
       const finalUsage = usageWithDelegated();
       const finalProviderCost = totalProviderCost();
       const finalDelegatedCost = delegatedCostTotal();
@@ -1317,7 +1341,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     return (typeof providerCost === 'number' && isFinite(providerCost) && providerCost >= 0) ? providerCost : null;
   }
   function delegatedCostTotal() {
-    if (!delegatedUsage.count) return 0;
+    if (!delegatedUsage.count) return delegatedProviderCost || 0;
     return delegatedUsage.costCount === delegatedUsage.count ? delegatedProviderCost : null;
   }
   function totalProviderCost() {
@@ -1387,6 +1411,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // the card the user is watching, not just the chat-wide total.
   function reportDelegatedUsage(report) {
     if (!report) return;
+    if (typeof opts.onDelegatedUsage === 'function') opts.onDelegatedUsage(report);
     const promptTokens = Number(report.promptTokens);
     const completionTokens = Number(report.completionTokens);
     if (isFinite(promptTokens) && promptTokens > 0) delegatedUsage.promptTokens += promptTokens;
@@ -1683,9 +1708,8 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   }
   }
   // Native subagent tool. It delegates to the same model with the same
-  // project tool surface, including MCP. The nested call intentionally omits
-
-    // delegation and parent controls to avoid recursive/cross-child steering.
+  // inherited project tool surface, including MCP. Rooted local-parent scopes
+  // permit recursive delegation within the shared depth/admission budgets.
     // Authorization uses the parent chat id so the existing chat popup/card is
     // reused for any nested tool or MCP call that needs approval.
     if (orchestration.TOOL_NAMES.includes(name)) {
@@ -1698,9 +1722,9 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     }
     }
     if (name === 'subagent') {
-    if (opts.nestedSubagent) {
-      const result = { error: { code: 'EPARENT_ONLY', message: 'nested delegation is disabled' } };
-      return { ok: false, result, content: JSON.stringify(result) };
+    if (opts.nestedSubagent && !scope.owner) {
+    const result = { error: { code: 'EPARENT_ONLY', message: 'nested delegation requires a rooted local parent scope' } };
+    return { ok: false, result, content: JSON.stringify(result) };
     }
     if (args.background !== undefined && typeof args.background !== 'boolean') {
       const result = { error: { code: 'EBADINPUT', message: 'background must be boolean' } };
@@ -1721,7 +1745,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     return { ok: false, result, content: JSON.stringify(result) };
     }
     if (!args.background) return row.promise;
-    const result = { callId: id, background: true, state: row.state, groupId: row.groupId || null, memberId: row.memberId || null, nextSuggested: 'Use immediate subagent_status/messages, explicit subagent_send or stop. Avoid tight polling; unfinished children cancel at turn end.' };
+    const result = { callId: id, rootId: row.rootId, parentCallId: row.parentCallId, depth: row.depth, background: true, state: row.state, groupId: row.groupId || null, memberId: row.memberId || null, nextSuggested: 'Use immediate subagent_status/messages, explicit subagent_send or stop. Avoid tight polling; unfinished children cancel at turn end.' };
     return { ok: true, backgroundPending: true, result, content: JSON.stringify(result) };
 
     async function runDelegation(run) {
@@ -1740,7 +1764,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       const group = scope.groups.get(run.groupId);
       const member = group.members.get(run.memberId);
       context += '\n\nCooperative group metadata (not file authorization): ' + JSON.stringify({ groupId: group.groupId, objective: group.objective, memberId: member.memberId, role: member.role, owns: member.owns, workspaceClaim: member.workspace, dependsOn: member.dependsOn });
-      context += '\nOnly the parent coordinates and approves contracts. Discover artifacts/decisions with subagent_group_status and subagent_read; propose decisions or escalate conflicts, never recursively delegate, merge or roll back.';
+      context += '\nYour local parent approves your group contracts. You may delegate to children within inherited root budgets and coordinate your own child groups. Escalate conflicts upward; never auto-merge, obtain consensus or roll back.';
       }
       const agentName = args && typeof args.agent === 'string' ? args.agent.trim() : '';
       if (!task) {
@@ -1749,6 +1773,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       }
       let inputImages;
       try {
+      if (opts.nestedSubagent && (args.images || []).some((ref) => !(opts.allowedImageRefs || []).includes(ref))) throw Object.assign(new Error('image is outside the inherited attachment selection'), { code: 'EDENIED' });
       inputImages = require('./chatImages.js').resolveChatImages(callOpts && callOpts.projectDir, callOpts && callOpts.chatId, args && args.images);
       } catch (e) {
       const r = { error: { code: e.code || 'EBADINPUT', message: e.message } };
@@ -1949,6 +1974,8 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       };
       const forwarded = { promptTokens: 0, completionTokens: 0, cost: 0 };
       let runCostKnown = false;
+      let descendantCost = 0;
+      let ownPromptForwarded = 0;
 
       // Cost of the nested run as reported so far, resolved the same way
       // the completion path resolves it: provider-reported cost when a
@@ -1985,9 +2012,11 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         // shadow the estimate for every round.
         const roundCost = round.providerCost == null ? NaN : Number(round.providerCost);
         if (isFinite(roundCost) && roundCost >= 0) mirror.providerCost = (mirror.providerCost || 0) + roundCost;
-        const promptDelta = Math.max(0, mirror.lastPromptTokens - forwarded.promptTokens);
+        const promptDelta = Math.max(0, mirror.lastPromptTokens - ownPromptForwarded);
+        ownPromptForwarded += promptDelta;
         const completionDelta = isFinite(completionTokens) && completionTokens > 0 ? completionTokens : 0;
-        const costSoFar = nestedCostSoFar();
+        const ownCost = nestedCostSoFar();
+        const costSoFar = ownCost == null ? null : ownCost + descendantCost;
         if (costSoFar != null) runCostKnown = true;
         const costDelta = costSoFar == null ? 0 : Math.max(0, costSoFar - forwarded.cost);
         forwarded.promptTokens += promptDelta;
@@ -2011,12 +2040,16 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         }
       }
 
+      if (opts.nestedSubagent && !chosenModel && (nestedModel.id !== model.id || nestedModel.provider !== model.provider)) {
+        const r = { error: { code: 'EDENIED', message: 'recursive agent model pin cannot widen the inherited model; explicit user override required' } };
+        return { ok: false, result: r, content: JSON.stringify(r) };
+      }
       const nestedEvents = [];
       // Inherit the actually advertised surface, including skill activation
       // controlled independently of the parent's ordinary tool selection.
       let nestedEnabled = visibleToolSpecs
       .map((spec) => spec && spec.function && spec.function.name)
-      .filter((toolName) => toolName && toolName !== 'subagent' && !orchestration.PARENT_TOOLS.includes(toolName));
+      .filter(Boolean);
       // An agent's tool allowlist restricts the nested call's surface.
       // Agent tool entries can be exact tool names (e.g. "shell") or MCP
       // server slugs (e.g. "mcp__fs") which should allow every tool from
@@ -2081,13 +2114,28 @@ promptSize: callOpts && callOpts.promptSize,
 
         toolOutput: callOpts && callOpts.toolOutput,
         enabledTools: nestedEnabled,
+        inheritedPermissions: Object.fromEntries(nestedEnabled.map((name) => {
+        const current = require('./tools/authorization.js').effectiveConfig(callOpts.projectDir, name, callOpts.chatId);
+        const inherited = opts.inheritedPermissions?.[name];
+        return [name, inherited && inherited.mode !== 'allow' ? inherited : current];
+        })),
         // Per-round billing for the live delegated cost (see above).
         onRoundCommit: forwardNestedRound,
+        onDelegatedUsage: (report) => {
+        if (run.finalized) return;
+        const promptTokens = Math.max(0, Number(report.promptTokens) || 0);
+        const completionTokens = Math.max(0, Number(report.completionTokens) || 0);
+        const cost = Math.max(0, Number(report.cost) || 0);
+        forwarded.promptTokens += promptTokens; forwarded.completionTokens += completionTokens; forwarded.cost += cost;
+        descendantCost += cost;
+        reportDelegatedUsage({ promptTokens, completionTokens, cost, callId: run.callId, modelId: report.modelId });
+        },
         // Marker the shell dispatcher reads to re-emit live output
         // chunks as subagent_event so they render inside this card.
         nestedSubagent: true,
-        orchestrationScope: scope,
+        orchestrationScope: scope.child(run),
         orchestrationAuthor: run.author,
+        allowedImageRefs: Array.isArray(args.images) ? args.images.slice() : [],
         onEvent: (eventName, data) => {
         if (!scope.accepts(run)) return;
         nestedEvents.push({ name: eventName, data });
@@ -2120,7 +2168,7 @@ promptSize: callOpts && callOpts.promptSize,
           // parent's SSE layer persists every `tool_call` / `tool_result`
           // / `message` it sees, so reusing those names would corrupt
           // the transcript with the subagent's internal turns.
-          if (eventName === 'tool_call' || eventName === 'tool_result' || eventName === 'message' || eventName === 'image'
+          if (eventName === 'subagent_event' || eventName === 'tool_call' || eventName === 'tool_result' || eventName === 'message' || eventName === 'image'
           || eventName === 'reasoning' || eventName === 'assistant_turn_end') {
             onEvent('subagent_event', {
               parentCallId: (callOpts && callOpts.callId) || null,
@@ -2234,7 +2282,9 @@ promptSize: callOpts && callOpts.promptSize,
       // never reported usage, or a cost estimate that only became
       // resolvable from the full result — and marks the run as counted so
       // delegatedCostTotal() can be known again.
+      if (run.finalized) return { ok: false, result: { error: { code: 'EABORTED', message: 'run already finalized' } } };
       const finalCost = delegatedCostForResult(r);
+      reportDelegatedUsage({ promptTokens: Math.max(0, (r.usage?.promptTokens || 0) - forwarded.promptTokens), completionTokens: Math.max(0, (r.usage?.completionTokens || 0) - forwarded.completionTokens) });
       if (finalCost != null) {
         runCostKnown = true;
         if (finalCost > forwarded.cost) {

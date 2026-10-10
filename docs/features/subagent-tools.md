@@ -33,11 +33,11 @@ The result immediately supplies a `callId`, `background: true` and `state: "runn
 { "name": "parser-review", "summary": "Two cancellation races need tests", "files": ["src/ai-stream.js"] }
 ```
 
-Only the parent can list, message or stop runs. Children see publish/read and their group's status/proposal/conflict tools when those names survive the parent’s tool selection and the selected agent’s allowlist; they never see delegation or parent controls.
+Only the parent can list, message or stop runs. Children see publish/read and their group's status/proposal/conflict tools when those names survive the parent’s tool selection and the selected agent’s allowlist; at the default depth limit they do not see delegation or local-parent controls. Increasing the root depth budget enables those inherited controls for their own children only.
 
 ### Cooperative groups
 
-See [Cooperative subagent groups](cooperative-subagent-groups.md) for objective/member declarations, dependency readiness, workspace-aware artifact discovery, proposed versus parent-approved contracts, conflicts and arbitration. The parent remains the sole coordinator; children cannot delegate recursively.
+See [Cooperative subagent groups](cooperative-subagent-groups.md) for objective/member declarations, dependency readiness, workspace-aware artifact discovery, proposed versus parent-approved contracts, conflicts and arbitration. Each local parent coordinates its own children; [recursive delegation](recursive-subagent-delegation.md) is opt-in through shared finite root limits.
 
 ### Ending the turn
 

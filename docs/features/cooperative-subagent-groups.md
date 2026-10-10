@@ -2,7 +2,7 @@
 
 ## Overview
 
-A cooperative group gives turn-scoped subagent work a shared objective, declared members and dependency readiness. The delegating parent is the sole coordinator: children propose decisions and escalate conflicts, but cannot delegate recursively, approve contracts, merge work or roll back effects.
+A cooperative group gives turn-scoped subagent work a shared objective, declared members and dependency readiness. Each local parent coordinates its own children and approves only its own group contracts. Recursive delegation is opt-in, rooted in one finite-budget run tree; conflicts can escalate upward to the root. No automatic consensus, merges or rollback.
 
 ## Usage
 
@@ -51,8 +51,8 @@ Status does not wait and rejects `waitMs`. Observation tools share a 256-call tu
 
 ## Limits and permissions
 
-All twelve Subagent-family functions retain the existing gate and per-leaf overrides. Child-visible metadata/proposal tools still honor the parent's tool selection and the agent allowlist; forged parent controls fail before approval. No new REST endpoint, persistent scratchpad, consensus process, recursive delegation, automatic merge or rollback is added.
+All twelve Subagent-family functions retain the existing gate and per-leaf overrides. Child-visible metadata/proposal tools still honor the parent's tool selection and the agent allowlist; forged cross-scope and ancestor controls fail before approval. No new REST endpoint, persistent scratchpad, consensus process, automatic merge or rollback is added. See [Recursive delegation](recursive-subagent-delegation.md) for opt-in nested child/group controls and root-shared budgets.
 
-Limits: eight groups per turn, 32 members per group, 32 delegations total, 64 decisions/conflicts per group, 64 artifacts per turn, 64 send receipts per child, 16 queued messages, and 256 observation calls. Handles disappear when the parent turn ends or the worker restarts. Shared summaries and model prose are not a secrecy boundary.
+Limits: eight groups per turn, 32 members per group, 32 delegations total by default (configurable root budget), 64 decisions/conflicts per group, 64 artifacts per turn, 64 send receipts per child, 16 queued messages, and 256 observation calls. Handles disappear when the parent turn ends or the worker restarts. Shared summaries and model prose are not a secrecy boundary.
 
 Shutdown cancels outstanding children and waits at most one second. Non-cooperative children finalize once with `ESHUTDOWN_TIMEOUT`; late public events, publications and results cannot reopen them. Cancellation cannot undo existing writes or kill deliberately detached commands. Usage arriving after the shutdown deadline is not reconciled; saved ordinary nested tool cards remain the historical record.

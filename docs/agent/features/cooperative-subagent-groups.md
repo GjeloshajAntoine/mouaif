@@ -2,7 +2,7 @@
 
 ## Overview
 
-The follow-up to Track A `8f0a331f` implements parent-coordinated cooperative metadata and dependency-gated execution in its own isolated branch. It imports no Track E uncommitted files and introduces no recursive delegation or persistent chat/job registry.
+The follow-up to Track A `8f0a331f` implements parent-coordinated cooperative metadata and dependency-gated execution in its own isolated branch. It imports no Track E uncommitted files and now supports opt-in rooted recursive delegation (see [recursive internals](recursive-subagent-delegation.md)); no persistent chat/job registry is introduced.
 
 ## Usage
 
