@@ -49,9 +49,13 @@ Already on `master` at plan time:
 - The MCP client speaks stdio / Streamable HTTP / legacy SSE and discovers tools only; it has
   **no** `resources/read` path yet (`src/mcp.js`).
 
-## Model policy — two models, pinned
+## Model policy — two models (proposed, not applied)
 
-The project has exactly two models in `.mouaif.json`, both verified live in their provider
+Status: **proposal only.** `.mouaif.json` is deliberately unchanged — no project `models`, no
+`defaultAgent`, no agent pin. Applying the table below is an open decision (see the last
+section), and it is a config change, never a code change.
+
+When applied, the project carries exactly two models, both verified live in their provider
 catalogs:
 
 | Model | Provider | Available |
@@ -80,14 +84,16 @@ Rules that keep this honest:
 - Consequence to accept knowingly: the `codex` provider (ChatGPT plan, effectively free) is
   unused, so long autonomous runs bill OpenRouter instead of the plan.
 
-Lane 0 adds one step: pin `defaultAgent` to `deepseek/deepseek-v4.1-flash` and give the existing
-`Search` agent the same pin, so a bare `subagent` call cannot fall back to a chat's model.
+Lane 0 adds one **pending** step: if the table is approved, pin `defaultAgent` to
+`deepseek/deepseek-v4.1-flash` and give the existing `Search` agent the same pin, so a bare
+`subagent` call cannot fall back to a chat's model. Until then the status quo holds: every
+`subagent` call inherits its chat's model.
 
 ## Lane 0 — kickoff (serial, half a day)
 
 1. Create the five worktrees from committed `HEAD` (never from dirty state):
-  `feat/subagent-orchestration`, `feat/mcp-apps`, `feat/subagent-model-choice`,
-  `feat/subagent-attachments`, `feat/wait-and-chat-restart`.
+   `feat/subagent-orchestration`, `feat/mcp-apps`, `feat/subagent-model-choice`,
+   `feat/subagent-attachments`, `feat/wait-and-chat-restart`.
 2. Freeze the contracts (below) in this file.
 3. Add the one test every track needs to keep green and re-run after each rebase:
    `scripts/test-tool-groups.mjs`, `npm run lint`, `npm run test:subagent-prompt`,
@@ -413,7 +419,8 @@ set, which has no npm alias today), and a `docs:build` + `docs:publish:check` pa
 - Delegation: does a delegated chat start **empty** or with the delegating chat's recent context
   summarized into its `topic`? (Default: a summary line plus the task, not a transcript copy.)
 - Delegation: fan-out — extend the parallel branch for `start_chat`, or add `delegate_chat`?
-
+- Config: is the two-model policy applied, or does it stay documented advice? (Leaning: apply,
+  since it is one `.mouaif.json` edit and reversible.)
 - Track B: should MCP App frames be *opt-in per project* (default off) or on whenever a server
   declares a `ui://` resource? Default-off is the reversible choice.
 - Track B: does the app get its own authorization identity on the approval card, or is it
