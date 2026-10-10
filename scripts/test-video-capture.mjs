@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { formatVideoTime, videoSampleTimes, waitForVideo, seekVideoFrame, releaseVideo } from '../frontend/src/components/chat/videoCapture.js';
+import { formatVideoTime, videoSampleTimes, waitForVideo, waitForVideoDuration, seekVideoFrame, releaseVideo } from '../frontend/src/components/chat/videoCapture.js';
 
 assert.equal(formatVideoTime(65.4), '1:05.4');
 assert.deepEqual(videoSampleTimes(0, 7, 3, 8), [0, 3, 6]);
@@ -31,6 +31,13 @@ const controller = new AbortController();
 await assert.rejects(waitForVideo(video, 'seeked', () => controller.abort(), controller.signal), { name: 'AbortError' });
 assert.equal(video.listeners.size, 0, 'abort removes listeners');
 await assert.rejects(waitForVideo(video, 'seeked', () => {}, controller.signal), { name: 'AbortError' });
+video.duration = NaN;
+const durationPending = waitForVideoDuration(video, undefined, 1000);
+video.duration = 7;
+video.dispatchEvent(new Event('durationchange'));
+assert.equal(await durationPending, 7, 'duration waits for late metadata');
+video.duration = 7;
+assert.equal(await waitForVideoDuration(video), 7, 'known duration resolves immediately');
 await seekVideoFrame(video, 0);
 assert.equal(video.paused, true, 'capture pauses playback');
 const pending = seekVideoFrame(video, 3);

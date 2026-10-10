@@ -44,6 +44,42 @@ export function waitForVideo(video, eventName, action, signal, timeoutMs = 15000
   });
 }
 
+// Wait for a usable duration. Some fragmented MP4/WebM files fire loadeddata
+// before their duration metadata is available, so checking duration once after
+// that event can reject a valid local recording.
+export function waitForVideoDuration(video, signal, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(abortError()); return; }
+    let timer;
+    function cleanup() {
+      clearTimeout(timer);
+      video.removeEventListener('loadedmetadata', onChange);
+      video.removeEventListener('durationchange', onChange);
+      video.removeEventListener('loadeddata', onChange);
+      video.removeEventListener('error', onError);
+      signal?.removeEventListener('abort', onAbort);
+    }
+    function usable() {
+      return Number.isFinite(video.duration) && video.duration > 0;
+    }
+    function onChange() {
+      if (!usable()) return;
+      cleanup(); resolve(video.duration);
+    }
+    function onError() {
+      cleanup(); reject(new Error('This browser cannot decode that video. Try an MP4 (H.264) or WebM recording.'));
+    }
+    function onAbort() { cleanup(); reject(abortError()); }
+    if (usable()) { resolve(video.duration); return; }
+    video.addEventListener('loadedmetadata', onChange);
+    video.addEventListener('durationchange', onChange);
+    video.addEventListener('loadeddata', onChange);
+    video.addEventListener('error', onError);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    timer = setTimeout(() => { cleanup(); reject(new Error('The video took too long to load its duration. Try a shorter recording.')); }, timeoutMs);
+  });
+}
+
 export async function seekVideoFrame(video, seconds, signal) {
   if (signal?.aborted) throw abortError();
   video.pause();

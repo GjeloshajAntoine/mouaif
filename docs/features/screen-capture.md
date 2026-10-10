@@ -32,7 +32,7 @@ Only confirmed PNG images are attached. The original video and its audio are **n
 
 ### Browser support and privacy
 
-Live sharing uses the browser's `getDisplayMedia` permission dialog and needs a secure context (HTTPS or localhost). Many mobile browsers do not implement it: use imported screenshots or video there. An HTTP page on a phone connected over a LAN may also lack live-sharing support.
+Live sharing uses the browser's `getDisplayMedia` permission dialog and needs a secure context (HTTPS or localhost). Many mobile browsers do not implement it: use imported screenshots or video there. An HTTP page on a phone connected over a LAN may also lack live-sharing support. Imported recordings wait for duration metadata as well as the first decoded frame, so fragmented MP4/WebM files get time to report their duration before being rejected.
 
 Raw frames stay in browser memory only while the sheet is open. Ignored zones both suppress change detection **and are blacked out in exported full and cropped images**. They are not merely comparison exclusions. Capture does not upload continuously, record video, or acquire audio. Only selected, masked images are saved to the existing chat draft attachment endpoint on confirmation; the provider receives them on the usual chat Send.
 

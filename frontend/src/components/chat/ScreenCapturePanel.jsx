@@ -3,7 +3,7 @@ import { h } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
 import { fileToImageAttachment } from './imageInput.js';
-import { formatVideoTime, videoSampleTimes, waitForVideo, seekVideoFrame, releaseVideo } from './videoCapture.js';
+import { formatVideoTime, videoSampleTimes, waitForVideo, waitForVideoDuration, seekVideoFrame, releaseVideo } from './videoCapture.js';
 import { MAX_CAPTURE_FRAMES, captureCanvas, captureAttachment, exportCapture, frameDifference, normalizedZone } from './screenCapture.js';
 
 export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
@@ -68,6 +68,7 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
       const video = videoRef.current;
       video.srcObject = stream;
       const track = stream.getVideoTracks()[0];
+      if (!track) throw new Error('The selected share has no video track. Try sharing a tab, window or screen.');
       track.onended = () => { stopSharing(); setMessage('Screen sharing ended. Your captures are still available to review.'); };
       await video.play();
       if (!aliveRef.current || request !== requestRef.current) return;
@@ -105,8 +106,9 @@ export function ScreenCapturePanel({ onClose, onAttach, availableSlots = 8 }) {
     try {
       await waitForVideo(video, 'loadeddata', () => { video.src = url; video.load(); }, controller.signal);
       if (!aliveRef.current || controller.signal.aborted) return;
-      if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error('This video has no readable duration. Try a saved MP4 or WebM recording.');
-      setImportedVideo({ name: file.name || 'Imported video', duration: video.duration });
+      const duration = await waitForVideoDuration(video, controller.signal);
+      if (!aliveRef.current || controller.signal.aborted) return;
+      setImportedVideo({ name: file.name || 'Imported video', duration });
       setMessage('Video loaded locally. Scrub to a moment and capture it, or extract images at the chosen interval. The video is never uploaded.');
     } catch (e) {
       if (aliveRef.current && !controller.signal.aborted) { onRemoveVideo(); setError(e.message); }

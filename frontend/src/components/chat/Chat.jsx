@@ -66,17 +66,36 @@ const dictationCostRef = useRef(null);
 const [FileEditor, setFileEditor] = useState(null);
 const [screenCaptureOpen, setScreenCaptureOpen] = useState(false);
 const ScreenCapturePanel = useLazyView(screenCaptureOpen, () => import('./ScreenCapturePanel.jsx'), 'ScreenCapturePanel');
+const capturedImagesSaveRef = useRef(Promise.resolve());
 useEffect(() => { setScreenCaptureOpen(false); }, [projectDir, chatId]);
 
-async function onCapturedImages(items) {
-const next = imageAttachments.concat(toPublicImageAttachments(items));
-if (next.length > 8) throw new Error('A chat draft can contain at most 8 images.');
-// Persist only the confirmed, masked PNGs. A failed save leaves the review
-// sheet open for retry and never duplicates the in-memory draft.
-if (updateChat && await updateChat({ draftAttachments: toPublicImageAttachments(next) }) !== true) throw new Error('The chat draft could not be saved. Please retry.');
-if (s.state.props.projectDir !== projectDir || s.state.props.chatId !== chatId) return;
-setImageAttachments(next);
-setStatus(refs.status, items.length + ' screen images attached', 'success');
+function onCapturedImages(items) {
+const additions = toPublicImageAttachments(items);
+const save = capturedImagesSaveRef.current.then(async () => {
+  if (s.state.props.projectDir !== projectDir || s.state.props.chatId !== chatId) return;
+  // Publish the additions before awaiting the PATCH. The ref-backed state
+  // getter is current at this synchronous point, and later image operations
+  // use functional updates so they preserve these optimistic additions.
+  const current = Array.isArray(s.state.imageAttachments) ? s.state.imageAttachments : [];
+  const next = current.concat(additions);
+  if (next.length > 8) throw new Error('A chat draft can contain at most 8 images.');
+  setImageAttachments(next);
+  try {
+    // Persist only the confirmed, masked PNGs. updateChat serializes draft
+    // writes, and the optimistic state keeps concurrent paste/import/remove
+    // operations from constructing a payload without these additions.
+    if (updateChat && await updateChat({ draftAttachments: toPublicImageAttachments(next) }) !== true) throw new Error('The chat draft could not be saved. Please retry.');
+  } catch (error) {
+    if (s.state.props.projectDir === projectDir && s.state.props.chatId === chatId) {
+      setImageAttachments((latest) => (Array.isArray(latest) ? latest.filter((image) => !additions.includes(image)) : []));
+    }
+    throw error;
+  }
+  if (s.state.props.projectDir !== projectDir || s.state.props.chatId !== chatId) return;
+  setStatus(refs.status, additions.length + ' screen images attached', 'success');
+});
+capturedImagesSaveRef.current = save.catch(() => {});
+return save;
 }
 // dictationTailRef — the live region of the composer, as the last dictation
 // write left it: where it started and what it said. A second write for the
