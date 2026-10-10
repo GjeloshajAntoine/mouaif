@@ -14,7 +14,12 @@
     "source": "subagent",
     "authKey": "subagent",
     "tools": [
-      "subagent"
+      "subagent",
+      "subagent_messages",
+      "subagent_status",
+      "subagent_stop",
+      "subagent_publish",
+      "subagent_read"
     ]
   },
   {

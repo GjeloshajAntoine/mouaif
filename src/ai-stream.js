@@ -136,6 +136,14 @@ async function runSingleToolCall(c, cx) {
   }
   let exec;
   let callEmitted = false;
+  // Reject forged parent controls before creating a nested approval wait.
+  if (opts && opts.nestedSubagent && (c.name === 'subagent' || require('./tools/subagent-orchestration.js').PARENT_TOOLS.includes(c.name))) {
+    const result = { error: { code: 'EPARENT_ONLY', message: 'only the delegating parent can control runs' } };
+    onEvent('tool_call', { id: c.id || null, name: c.name, args });
+    onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result });
+    if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: JSON.stringify(result) });
+    return { exec: { ok: false, result, content: JSON.stringify(result) }, imageParts: [] };
+  }
   // Captured when the authorization gate resolves a prompt for an
   // `ask_user` call. The runner reads it to fold the user's
   // structured answer into the `tool` message it returns.
@@ -160,7 +168,8 @@ async function runSingleToolCall(c, cx) {
   // the command or answer in plain text. Counts per consecutive
   // identical call; any different call resets the streak.
   const callKey = c.name + '\n' + (c.arguments || '');
-  if (callKey === cx.getLastToolCallKey()) {
+  const polling = ['subagent_status', 'subagent_messages'].includes(c.name) && !args.message;
+  if (!polling && callKey === cx.getLastToolCallKey()) {
     cx.setRepeatedToolCallCount(cx.getRepeatedToolCallCount() + 1);
   } else {
     cx.setLastToolCallKey(callKey);
@@ -290,8 +299,10 @@ async function runSingleToolCall(c, cx) {
       try { authImages = require('./chatImages.js').describeChatImages(opts && opts.projectDir, opts && opts.chatId, args.images); }
       catch { authImages = undefined; }
       }
+      if (opts && opts.signal && opts.signal.aborted) throw Object.assign(new Error('aborted'), { code: 'EABORTED' });
       const authResult = await authGate.authorize({
       forcePrompt,
+      signal: opts && opts.signal,
       images: authImages,
         projectDir: opts && opts.projectDir,
         chatId: opts && opts.chatId,
@@ -392,6 +403,7 @@ async function runSingleToolCall(c, cx) {
           }
         }
       }
+      if (opts && opts.signal && opts.signal.aborted) throw Object.assign(new Error('aborted'), { code: 'EABORTED' });
       // Only announce a running tool after authorization has completed.
       // Previously the UI showed "tool call — running" while the server
       // was actually blocked waiting for an authorization decision. If the
@@ -423,7 +435,7 @@ async function runSingleToolCall(c, cx) {
     }
   }
 
-  onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result });
+  if (!exec.backgroundPending) onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result });
 
   pushToolMessage(c.name, modelContentForTool(c.name, exec));
   // webpreview screenshots are rendered for the user in the preview dock. The
@@ -455,7 +467,20 @@ function promptCacheKeyFor(opts) {
 }
 
 async function streamChat(opts) {
+  opts = opts || {};
+  const ownsScope = !opts.orchestrationScope;
+  const scope = ownsScope ? new (require('./tools/subagent-orchestration.js').Scope)(opts.projectDir, opts.chatId, opts.signal) : opts.orchestrationScope;
+  try {
+    return await streamChatInScope(Object.assign({}, opts, { orchestrationScope: scope }));
+  } finally {
+    if (ownsScope) await scope.finish();
+  }
+}
+
+async function streamChatInScope(opts) {
   const { model, messages, signal, onEvent, onRoundUsage, onRoundCommit, thinkingLevel, maxOutputTokens } = opts || {};
+  const orchestration = require('./tools/subagent-orchestration.js');
+  const scope = opts.orchestrationScope;
   if (!model || !model.provider) {
     return { ok: false, error: { code: 'EBADMODEL', message: 'Missing model.provider' } };
   }
@@ -528,6 +553,7 @@ async function streamChat(opts) {
       if (opts && opts.projectDir) agentNames = require('./agents.js').list(opts.projectDir).map((a) => a.name);
     } catch { /* no agents */ }
     toolSpecs.push(sub.buildSpec ? sub.buildSpec(agentNames) : sub.SPEC);
+    toolSpecs.push(...orchestration.SPECS);
   }
   catch { /* subagent tool module unavailable; skip */ }
   try { toolSpecs.push(require('./tools/ask.js').SPEC); }
@@ -635,6 +661,14 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   //   or whose MCP server was stopped) does not fail the request.
   //   The array is captured here once — the chat UI persists the
   //   same set on the chat record, so we don't need to re-read it.
+  // Nested controls are excluded independently of allowlists, including
+  // forged tool calls (the dispatcher checks the role again).
+  if (opts.nestedSubagent) {
+    for (let i = toolSpecs.length - 1; i >= 0; i--) {
+      const name = toolSpecs[i]?.function?.name;
+      if (name === 'subagent' || orchestration.PARENT_TOOLS.includes(name)) toolSpecs.splice(i, 1);
+    }
+  }
   let visibleToolSpecs = toolSpecs;
   if (opts && Array.isArray(opts.enabledTools)) {
     const allow = new Set(opts.enabledTools.map((n) => String(n)));
@@ -715,6 +749,13 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   }
 
   while (true) {
+    if (signal && signal.aborted) {
+    if (!opts.nestedSubagent) await scope.finish();
+    return { ok: false, error: { code: 'EABORTED', message: 'aborted' }, usage: usageWithDelegated(), providerCost: totalProviderCost(), delegatedCost: delegatedCostTotal(), totalCost: totalRunCost() };
+    }
+    if (opts.orchestrationAuthor) {
+      for (const message of scope.drain(opts.orchestrationAuthor)) convo.push({ role: 'user', content: 'Parent steering: ' + message });
+    }
     let effectiveToolSpecs = visibleToolSpecs;
     try {
       effectiveToolSpecs = promptProfilesMod
@@ -722,7 +763,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         : visibleToolSpecs;
     } catch { /* non-fatal; fall back to the per-chat filtered set */ }
     const result = await runUpstreamTurn(convo, effectiveToolSpecs);
-    if (!result.ok) return { ok: false, error: result.error, usage };
+    if (!result.ok) {
+    if (!opts.nestedSubagent) await scope.finish();
+    return { ok: false, error: result.error, usage: usageWithDelegated(), providerCost: totalProviderCost(), delegatedCost: delegatedCostTotal(), totalCost: totalRunCost() };
+    }
 
     const calls = result.toolCalls;
     if (!calls || !calls.length) {
@@ -755,6 +799,9 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // prompt tokens stay last-round-wins, but delegated subagent
       // requests are separate upstream calls and must be added so the
       // chat's total usage/cost matches what providers billed.
+      // A handle cannot outlive its parent turn. Settle cancellation and
+      // final delegated billing before the parent emits done/persists cost.
+      if (!opts.nestedSubagent) await scope.finish();
       const finalUsage = usageWithDelegated();
       const finalProviderCost = totalProviderCost();
       const finalDelegatedCost = delegatedCostTotal();
@@ -766,6 +813,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
 
     for (const c of calls) {
       if (!c.id) c.id = 'call_' + Math.random().toString(36).slice(2, 12);
+      if (opts.orchestrationAuthor) c.id = opts.orchestrationAuthor + '_' + c.id;
     }
 
     // The model asked for tools. Append the assistant's tool-call
@@ -1635,11 +1683,52 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // Native subagent tool. It delegates to the same model with the same
   // project tool surface, including MCP. The nested call intentionally omits
 
-    // only `subagent` itself to avoid unbounded recursive delegation loops.
+    // delegation and parent controls to avoid recursive/cross-child steering.
     // Authorization uses the parent chat id so the existing chat popup/card is
     // reused for any nested tool or MCP call that needs approval.
+    if (orchestration.TOOL_NAMES.includes(name)) {
+    try {
+      if (name === 'subagent_status' && !opts.orchestrationAuthor && args.waitMs !== undefined) {
+      if (!args.callId || !Number.isInteger(args.waitMs) || args.waitMs < 0 || args.waitMs > 30000) throw Object.assign(new Error('waitMs requires callId and an integer from 0 to 30000'), { code: 'EBADINPUT' });
+      const row = scope.get(args.callId);
+      let timer;
+      try { await Promise.race([row.promise, new Promise((resolve) => { timer = setTimeout(resolve, args.waitMs); })]); }
+      finally { clearTimeout(timer); }
+      }
+      const result = scope.dispatch(name, args || {}, opts.orchestrationAuthor);
+      return { ok: true, result, content: JSON.stringify(result) };
+    } catch (e) {
+      const result = { error: { code: e.code || 'EBADINPUT', message: e.message } };
+      return { ok: false, result, content: JSON.stringify(result) };
+    }
+    }
     if (name === 'subagent') {
-      const task = args && typeof args.task === 'string' ? args.task.trim() : '';
+    if (opts.nestedSubagent) {
+      const result = { error: { code: 'EPARENT_ONLY', message: 'nested delegation is disabled' } };
+      return { ok: false, result, content: JSON.stringify(result) };
+    }
+    if (args.background !== undefined && typeof args.background !== 'boolean') {
+      const result = { error: { code: 'EBADINPUT', message: 'background must be boolean' } };
+      return { ok: false, result, content: JSON.stringify(result) };
+    }
+    const id = callOpts.callId || require('node:crypto').randomUUID();
+    const row = scope.start(id, args.agent, (run) => runDelegation(run), (exec) => {
+      if (args.background) onEvent('tool_result', { id, name: 'subagent', ok: exec.ok, result: exec.result });
+    });
+    if (!args.background) return row.promise;
+    const result = { callId: id, background: true, state: 'running', nextSuggested: 'Use subagent_status/messages/stop before ending this parent turn. Unfinished children are cancelled at turn end.' };
+    return { ok: true, backgroundPending: true, result, content: JSON.stringify(result) };
+
+    async function runDelegation(run) {
+    const signal = run.controller.signal;
+    const onEvent = (eventName, data) => {
+      if (eventName === 'subagent_event') {
+      scope.event(run, data.kind, data.data);
+      if (data.kind === 'start') run.modelId = data.data?.model?.id || null;
+      } else if (eventName === 'progress_update') scope.event(run, eventName, data);
+      opts.onEvent(eventName, data);
+    };
+    const task = args && typeof args.task === 'string' ? args.task.trim() : '';
       const context = args && typeof args.context === 'string' ? args.context.trim() : '';
       const agentName = args && typeof args.agent === 'string' ? args.agent.trim() : '';
       if (!task) {
@@ -1915,7 +2004,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // controlled independently of the parent's ordinary tool selection.
       let nestedEnabled = visibleToolSpecs
       .map((spec) => spec && spec.function && spec.function.name)
-      .filter((toolName) => toolName && toolName !== 'subagent');
+      .filter((toolName) => toolName && toolName !== 'subagent' && !orchestration.PARENT_TOOLS.includes(toolName));
       // An agent's tool allowlist restricts the nested call's surface.
       // Agent tool entries can be exact tool names (e.g. "shell") or MCP
       // server slugs (e.g. "mcp__fs") which should allow every tool from
@@ -1979,6 +2068,8 @@ promptSize: callOpts && callOpts.promptSize,
         // Marker the shell dispatcher reads to re-emit live output
         // chunks as subagent_event so they render inside this card.
         nestedSubagent: true,
+        orchestrationScope: scope,
+        orchestrationAuthor: run.author,
         onEvent: (eventName, data) => {
           nestedEvents.push({ name: eventName, data });
           if (typeof onEvent !== 'function') return;
@@ -2138,6 +2229,7 @@ promptSize: callOpts && callOpts.promptSize,
       }
       reportDelegatedUsage({ complete: true, ok: !!(nested && nested.ok), costKnown: runCostKnown });
       return { ok: !!(nested && nested.ok), content: JSON.stringify(r), result: r };
+      }
     }
 
     // Native ask_user tool. The runner is a thin shim: it folds the

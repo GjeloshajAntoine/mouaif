@@ -373,6 +373,9 @@ function listNativeTools() {
   const tools = [];
 pushNativeTool(tools, { load: './tools/shell.js', name: 'shell', source: 'shell', fallback: 'Run a shell command in the project directory.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/subagent.js', name: 'subagent', source: 'subagent', fallback: 'Delegate a focused task to a nested AI call.', spec: (m) => m.SPEC && m.SPEC.function });
+for (const spec of require('./tools/subagent-orchestration.js').SPECS) {
+  pushNativeTool(tools, { load: './tools/subagent-orchestration.js', name: spec.function.name, source: 'subagent', fallback: spec.function.description, spec: () => spec.function });
+}
 pushNativeTool(tools, { load: './agentFeatures.js', name: 'list_features', source: 'mouaif', fallback: 'Describe mouaif feature state.', spec: (m) => m.LIST_FEATURES_SPEC && m.LIST_FEATURES_SPEC.function });
 // ask_user, task, report_progress and webpreview advertise the `chats`
 // source: they are leaves of that family in frontend/src/toolGroups.js

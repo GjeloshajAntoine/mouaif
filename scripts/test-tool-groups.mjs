@@ -115,7 +115,7 @@ check('the server mirror matches the model', () => {
 check('the feature summary prints one line per family gate', () => {
   const { listNativeTools } = require('../src/server-handlers-tools.js');
   const groups = require('../src/toolGroups.js');
-  const lines = groups.summaryLines(listNativeTools(), { chats: { mode: 'ask' }, mouaif: { mode: 'allow' } }, new Set(['file']));
+  const lines = groups.summaryLines(listNativeTools(), { chats: { mode: 'ask' }, mouaif: { mode: 'allow' } }, new Set(['file', 'subagent']));
   same(lines.map((line) => line.split(']')[0] + ']'), ['[Chats]', '[mouaif]'], 'families report under their row name');
   assert.ok(lines[0].includes('→ ask') && lines[0].includes('list_chats'));
   assert.ok(lines[1].includes('→ allow') && lines[1].includes('get_app_info'));
@@ -123,10 +123,10 @@ check('the feature summary prints one line per family gate', () => {
   // appear (under the mouaif label) rather than only inside the tool list.
   assert.ok(lines[1].includes('restart_app'), 'the app restart is named by its family line');
   assert.ok(lines[1].includes('list_features'), 'and so is the feature report');
-  const off = groups.summaryLines(listNativeTools(), { chats: { mode: 'off' }, get_app_info: { mode: 'off' } }, new Set(['file']));
+  const off = groups.summaryLines(listNativeTools(), { chats: { mode: 'off' }, get_app_info: { mode: 'off' } }, new Set(['file', 'subagent']));
   same(off.map((line) => line.split(']')[0] + ']'), ['[mouaif]'], 'a family gate Off drops its line');
   assert.ok(!off[0].includes('get_app_info'), 'a leaf Off drops out of its family line');
-  const familyOff = groups.summaryLines(listNativeTools(), { chats: { mode: 'ask' }, mouaif: { mode: 'off' } }, new Set(['file']));
+  const familyOff = groups.summaryLines(listNativeTools(), { chats: { mode: 'ask' }, mouaif: { mode: 'off' } }, new Set(['file', 'subagent']));
   same(familyOff.map((line) => line.split(']')[0] + ']'), ['[Chats]'], 'a mouaif Off drops the whole family line');
 });
 
@@ -144,7 +144,10 @@ check('groupAuthKey resolves a family and refuses a category', () => {
   // (`shell`) legitimately has its tool name as the key.
   for (const group of model.TOOL_GROUPS) {
     if (!group.authKey || group.tools.length < 2) continue;
-    assert.ok(!group.tools.includes(group.authKey), group.id + ' must not list its family gate as a leaf');
+    // Subagent retains its pre-existing gate/name for backward compatibility.
+    // The launch leaf edits that same gate; controls have optional overrides.
+    if (group.id === 'subagent') assert.equal(group.tools[0], group.authKey);
+    else assert.ok(!group.tools.includes(group.authKey), group.id + ' must not list its family gate as a leaf');
   }
 });
 check('isBinaryTool narrows ask_user only', () => {

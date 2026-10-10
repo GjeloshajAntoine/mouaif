@@ -188,9 +188,14 @@ if (!m || typeof m !== 'object') continue;
 if (m.role === 'tool') {
 if (!includeTools) continue;
 if (m.phase !== 'call') continue;
-const result = source[i + 1];
-if (!result || result.role !== 'tool' || result.phase !== 'result') continue;
 const callId = typeof m.toolCallId === 'string' ? m.toolCallId : '';
+// Background subagents settle after intervening parent/sibling calls. Pair
+// only this delegation by identity; ordinary tool replay keeps adjacency.
+const resultIndex = m.name === 'subagent'
+? source.findIndex((row, index) => index > i && row && row.role === 'tool' && row.phase === 'result' && row.toolCallId === callId)
+: i + 1;
+const result = source[resultIndex];
+if (!result || result.role !== 'tool' || result.phase !== 'result') continue;
 const resultId = typeof result.toolCallId === 'string' ? result.toolCallId : '';
 if (callId !== resultId) continue;
 pairNumber++;
@@ -230,7 +235,7 @@ imageRefs: name === 'subagent' && Number.isSafeInteger(result.seq)
 ? require('./chatImages.js').generatedImageRefs(result.seq, storedResult) : undefined
 })
 });
-i++;
+if (resultIndex === i + 1) i++;
 continue;
 }
 const content = contentOf(m);

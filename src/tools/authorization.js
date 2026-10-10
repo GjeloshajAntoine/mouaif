@@ -193,7 +193,7 @@ const FAMILY_EXTRAS = Object.freeze({
   chats: Object.freeze(['ask_user', 'task', 'report_progress', 'webpreview'])
 });
 const TOOL_FAMILIES = Object.freeze(Object.assign(
-  { file: Object.freeze([...FILE_TOOL_NAMES]) },
+  { file: Object.freeze([...FILE_TOOL_NAMES]), subagent: require('./subagent-orchestration.js').FAMILY_NAMES },
   APP_TOOL_NAMES.reduce((families, name) => {
     const source = APP_TOOL_DEFINITIONS[name].source;
     (families[source] = families[source] || []).push(name);
@@ -917,8 +917,8 @@ async function authorize(input) {
   session.pending.set(callId, {
     tool,
     flow: input.flow === 'retry' ? 'retry' : 'wait',
-    resolve: resolveWait,
-    reject: rejectWait,
+    resolve: (value) => { cleanupAbort(); resolveWait(value); },
+    reject: (value) => { cleanupAbort(); rejectWait(value); },
     publicResult,
     request: {
       chatId,
@@ -935,6 +935,19 @@ async function authorize(input) {
       args: input.args && typeof input.args === 'object' ? input.args : undefined
     }
   });
+  // A child's abort removes ONLY this pending decision. Never cancel the
+  // shared parent-chat session: siblings can have approvals there too.
+  const abortPending = () => {
+    const pending = session.pending.get(callId);
+    if (!pending || pending.publicResult !== publicResult) return;
+    session.pending.delete(callId);
+    pending.reject(typedError('EABORTED', 'delegated run cancelled'));
+  };
+  const cleanupAbort = () => { if (input.signal) input.signal.removeEventListener('abort', abortPending); };
+  if (input.signal) {
+    if (input.signal.aborted) abortPending();
+    else input.signal.addEventListener('abort', abortPending, { once: true });
+  }
   return publicResult;
 }
 

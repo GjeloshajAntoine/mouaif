@@ -8,7 +8,7 @@
 // several subagent calls in one turn, the tool loop runs them concurrently
 // (see the parallel branch in src/ai.js).
 
-const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call. The subagent can use the project tools and MCP tools, with normal authorization prompts. You may call subagent multiple times in a single turn; same-turn subagent calls run in parallel. Images are never inherited automatically; use images with selected imageRef values from list_chat_attachments (including generated:<seq>:<i> refs for earlier subagent artwork you want edited).';
+const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call. The subagent can use the project tools and MCP tools, with normal authorization prompts. You may call subagent multiple times in a single turn; same-turn subagent calls run in parallel. Set background:true to get a turn-scoped handle and steer with subagent_messages/status/stop; unfinished children are cancelled when the parent turn ends. Images are never inherited automatically; use images with selected imageRef values from list_chat_attachments (including generated:<seq>:<i> refs for earlier subagent artwork you want edited).';
 
 const AGENT_DESCRIPTION = 'Optional project agent name (from Settings → Project → Agents) to use for this delegation. Omit it to use the project\'s default subagent.';
 
@@ -21,6 +21,7 @@ const SPEC = {
       type: 'object',
       properties: {
         task: { type: 'string', description: 'The focused task or question for the subagent.' },
+        background: { type: 'boolean', description: 'Opt in to a background handle so the parent can steer/poll while this child runs. Default false (wait for result). Handles and handoffs expire with this parent turn; unfinished children are cancelled when it ends.' },
         context: { type: 'string', description: 'Optional relevant context to include with the task.' },
         agent: { type: 'string', description: AGENT_DESCRIPTION },
         images: {

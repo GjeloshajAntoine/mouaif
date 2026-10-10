@@ -76,7 +76,7 @@ return typeof icon === 'string' && PROMPT_ICONS.has(icon) ? icon : DEFAULT_ICON;
 // `list_features`, `restart_app` and `group_cli` are mouaif-family leaves
 // (see frontend/src/toolGroups.js) but are not app-store functions, so they
 // are listed by name here.
-const PRESET_TOOL_NAMES = new Set(['shell', 'file', 'subagent', 'report_progress', 'task', 'ask_user', 'webpreview', 'restart_app', 'list_features', 'group_cli', ...require('./tools/appToolNames.js').TOOL_NAMES]);
+const PRESET_TOOL_NAMES = new Set(['shell', 'file', 'subagent', ...require('./tools/subagent-orchestration.js').TOOL_NAMES, 'report_progress', 'task', 'ask_user', 'webpreview', 'restart_app', 'list_features', 'group_cli', ...require('./tools/appToolNames.js').TOOL_NAMES]);
 
 // MCP tool ids in the catalog look like `mcp__<slug>__<tool>`. Anything
 // starting with this prefix is accepted as a tool name in the preset,

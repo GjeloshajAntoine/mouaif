@@ -13,12 +13,12 @@ Nothing to configure: the grouping is a property of the app, not a per-project s
 | Group | Tools | Notes |
 | --- | --- | --- |
 | **Shell** | `shell` | One tool, one gate. |
-| **Subagent** | `subagent` | |
+| **Subagent** | `subagent`, `subagent_messages`, `subagent_status`, `subagent_stop`, `subagent_publish`, `subagent_read` | Turn-scoped delegation and handoffs; controls are parent-only. |
 | **Chats** | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` | A family, like File tools: the row edits `tools.chats`; a leaf can persist its own more-specific override. It lists everything the model can do with a chat — reading and writing them, and the four tools it uses *inside* one: `ask_user` (pause and ask), `task` (track the work), `report_progress` (report on it) and `webpreview` (show the user a page). `ask_user` stays binary (Off / Ask) and is declared in the family's `binaryTools`, so its leaf row shows the two-way segment while the family row keeps all three. |
 | **mouaif** | `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli` | A family: the row edits `tools.mouaif`, same rules. It lists every tool that acts on mouaif itself — reading and writing settings, the app restart, the feature report, and the grouped CLI batch tool. |
 | **File tools** | `read_file`, `list_files`, `search_files`, `write_file`, `edit_file`, `group_read`, `group_edit` | The row edits `tools.file`; a leaf checkbox can persist its own more-specific override. |
 
-The table above is the whole native surface: **31 native tools**, each listed exactly once.
+The table above is the whole native surface: **36 native tools**, each listed exactly once.
 
 ### Tools the table cannot show
 
@@ -33,7 +33,7 @@ Two advertised tools are conditional, so they have no row — they are switched 
 
 ### Families
 
-Every group with an Off / Ask / Allow control is a **family**: one gate key under `tools.<key>` in the project (or app, or chat) settings. A single-tool family's key is the tool name. A multi-tool family (**File tools** → `file`, **Chats** → `chats`, **mouaif** → `mouaif`) has one key for all of its leaves, and each leaf may also carry its own entry:
+Every group with an Off / Ask / Allow control is a **family**: one gate key under `tools.<key>` in the project (or app, or chat) settings. A single-tool family's key is the tool name. A multi-tool family (**Subagent** → `subagent`, **File tools** → `file`, **Chats** → `chats`, **mouaif** → `mouaif`) has one key for all of its leaves, and each leaf may also carry its own entry:
 
 ```json
 {
@@ -46,7 +46,7 @@ Every group with an Off / Ask / Allow control is a **family**: one gate key unde
 
 The same precedence applies to every multi-tool family: a leaf `off` always wins, a family `allow` beats any other leaf value, otherwise the leaf entry wins over the family. A family `off` hides every leaf from the model.
 
-A **single-tool** group (`shell`, `subagent`) is its own gate, so its key is just the tool name. Every `tools.<name>` these pages name is one of the keys the server resolves: a family gate, a single-tool gate, or a family leaf that may carry its own override. A key the server does not know is stored and never read, so it silently does nothing — `scripts/test-tool-groups.mjs` fails on one.
+A **single-tool** group (`shell`) is its own gate, so its key is just the tool name. Every `tools.<name>` these pages name is one of the keys the server resolves: a family gate, a single-tool gate, or a family leaf that may carry its own override. A key the server does not know is stored and never read, so it silently does nothing — `scripts/test-tool-groups.mjs` fails on one.
 
 Two things are deliberately outside this model: `activate_skill` (no row and no `tools.*` key — it is governed by the Skills switches in **Settings → Project**) and the `mcp__<server>__<tool>` specs (they resolve through `.mcp.json`). Neither may be named as a `tools.<name>` key on these pages.
 

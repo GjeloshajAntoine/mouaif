@@ -163,6 +163,11 @@ function subagentModelResult(result, content, imageRefs) {
   }
   if (!source || typeof source !== 'object') return null;
   const out = { ok: source.ok !== false, text: typeof source.text === 'string' ? source.text : '' };
+  // Background receipts must remain actionable after compaction/history replay.
+  for (const key of ['callId', 'background', 'state', 'nextSuggested', 'published']) {
+    if (source[key] !== undefined) out[key] = source[key];
+  }
+  if (source.model && source.model.id) out.modelId = source.model.id;
   if (source.error) {
     out.ok = false;
     out.error = {

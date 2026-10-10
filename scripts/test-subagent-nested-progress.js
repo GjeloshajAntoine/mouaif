@@ -204,7 +204,7 @@ async function serverForwardsParentCallId() {
   fs.rmSync(tmp, { recursive: true, force: true });
   const p = events.find((e) => e.name === 'progress_update');
   check('server: nested progress_update carries the parent subagent call id',
-    !!p && p.data.parentCallId === 'call_parent' && p.data.callId === 'call_nested',
+    !!p && p.data.parentCallId === 'call_parent' && p.data.callId.endsWith('_call_nested'),
     JSON.stringify(p && p.data));
 }
 

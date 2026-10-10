@@ -102,6 +102,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Web preview tool](webpreview.md) — a phone-sized screenshot of a page above the composer.
 - [Web preview page](webpreview-project-page.md) — capture and view a URL from project settings.
 - [Local preview proxy](local-preview-proxy.md) — frame a dev server on the machine running mouaif, from any device.
+- [Subagent orchestration](subagent-tools.md) — background handles, parent steering/cancellation and turn-scoped sibling handoffs.
 - [Subagent transcript](subagent-transcript.md) — the delegated conversation inside a subagent card, and what that run cost.
 - [Model choice on subagent approval](auth-model-picker.md) — pick the model when approving a subagent run.
 - [Tool output profile](tool-output.md) — how much of each tool result is sent back to the model.

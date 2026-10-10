@@ -56,13 +56,7 @@ function buildFeatureSummary(opts) {
       } catch { /* label is best-effort */ }
     }
   }
-  // subagent
-  if (authz && authz.tools && authz.tools.subagent) {
-    const s = authz.tools.subagent;
-    if (s.mode !== 'off') {
-      feat.push('[subagent](off|ask|allow) → ' + s.mode);
-    }
-  }
+  // Subagent is now a multi-tool family, printed by summaryLines below.
   // report_progress, ask_user, the task tool and web preview no longer have
   // lines of their own: all four are Chats leaves now
   // (frontend/src/toolGroups.js), so the family line below already names them
