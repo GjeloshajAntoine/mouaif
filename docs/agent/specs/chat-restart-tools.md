@@ -7,6 +7,17 @@
 > a `docs/features/<slug>.md` page plus its `docs/README.md` line, and the matching
 > `docs/agent/features/<slug>.md` notes in the same commit.
 
+## Track E implementation status
+
+The independent job-handle and internal bounded-wait foundations are documented in
+[Track E integration contracts](../features/track-e-integration.md). No four-tool catalog or
+schedule is enabled. The proposal below still contains superseded turn-budget assumptions:
+there is **no total turn deadline**; implemented waits use their own cap plus caller abort.
+Recursive delegation requires scoped invocation/run/group identity and rejection of self,
+ancestor and dependency-cycle waits before adapters can be exposed. Track A/group APIs are
+not assumed landed. Context boundary, schedule durability, authenticated cancellation and
+persisted failed outcomes remain gating work and product decisions.
+
 ## 1. Purpose and the problem being solved
 
 Two operational gaps in long autonomous runs:
