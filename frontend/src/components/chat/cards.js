@@ -713,7 +713,7 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     detail.className = 'tool-card__body';
     detail.textContent = request.tool === 'change_working_folder'
     ? [request.summary || 'Change where this chat works', 'Project: ' + request.projectDir].join('\n')
-    : [request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
+    : [request.summary || request.cmd || '', request.projectDir || '', request.timeoutMs ? ('timeout: ' + request.timeoutMs + ' ms') : '']
       .filter(Boolean).join('\n');
     // A delegation that shares chat images lists them (names only, no
     // pixels), so the user knows what goes to the delegated model.

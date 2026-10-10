@@ -510,6 +510,7 @@ setCustomActions(next);
     _autoresize: () => autoresize({ promptInput })
   };
   const refs = refsRef.current;
+  refs.mcpAppContext = { projectDir, chatId };
 
   // ---- Bound action creators --------------------------------
   // Most actions need to be stable (so the same identity is

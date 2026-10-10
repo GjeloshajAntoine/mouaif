@@ -340,6 +340,9 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
 
   // MCP (Model Context Protocol) — per-project server registry +
   // lifecycle + tool dispatch. Routes are mounted in handleMcp below.
+  if (urlPath.startsWith('/api/mcp/apps/')) {
+    return serverConfig.mcpAppsHost.handle(req, res, parsed, serverConfig.publicOrigin);
+  }
   if (urlPath === '/api/mcp' || urlPath.startsWith('/api/mcp/')) {
     if (/^\/api\/mcp\/servers\/[^/]+\/oauth(?:\/start)?$/.test(urlPath)) return handleMcpOAuth(req, res, parsed, serverConfig);
     return handleMcp(req, res, parsed, sessionToken);
@@ -471,11 +474,13 @@ function createServer(port = DEFAULT_PORT, options = {}) {
   }
   const sessionToken = crypto.randomBytes(32).toString('base64url');
   const lifecycle = (options && typeof options === 'object') ? (options.lifecycle || {}) : {};
-  const serverConfig = { publicOrigin, authEnabled: options.authEnabled === true };
+  const mcpAppsHost = require('./server-handlers-mcp-apps.js').createMcpAppsHost(options.mcpAppsSandbox || {});
+  const serverConfig = { publicOrigin, authEnabled: options.authEnabled === true, mcpAppsHost };
   const server = http.createServer((req, res) => {
     // Bind port to the request handler
     handleRequest(req, res, port, sessionToken, lifecycle, serverConfig);
   });
+  server.once('close', () => { mcpAppsHost.close().catch(() => {}); });
   // Track connections so the graceful-restart path can force-close
   // SSE / keep-alive sockets that would otherwise hang server.close().
   server.on('connection', trackSocket);
