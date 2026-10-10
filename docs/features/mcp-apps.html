@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCP Apps — mouaif docs</title>
+  <meta name="description" content="MCP Apps are interactive HTML tool views inside the conversation, as described by the [official MCP Apps…" />
+  <meta property="og:site_name" content="mouaif docs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="MCP Apps — mouaif docs" />
+  <meta property="og:description" content="MCP Apps are interactive HTML tool views inside the conversation, as described by the [official MCP Apps…" />
+  <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/mcp-apps.html" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="mcp-apps">MCP Apps</h1>
+<h2 id="overview">Overview</h2>
+<p>MCP Apps are interactive HTML tool views inside the conversation, as described by the <a href="https://modelcontextprotocol.io/extensions/apps/overview" target="_blank" rel="noopener noreferrer">official MCP Apps overview</a>. mouaif uses the official AppBridge SDK to connect these views to their serving MCP server, with sandbox isolation and the existing tool authorization gate.</p>
+<h2 id="usage">Usage</h2>
+<ol><li><p>Enable <strong>Settings → This project → General → MCP Apps</strong>. It is off by default.</p></li><li><p>Restart the relevant MCP server using its Settings lifecycle control so it receives the Apps capability at initialization.</p></li><li><p>Call a tool declaring <code>_meta.ui.resourceUri</code>. Expand its completed tool card to load the app beside the ordinary text/image result.</p></li><li><p>Interact with the view. App tool calls use the server&#39;s Off/Ask/Allow policy; Ask displays the app/server identity and arguments on a normal approval card.</p></li><li><p>Use <strong>Fullscreen</strong> / <strong>Inline</strong> for the mobile sheet, <strong>Close</strong> to revoke a view, or <strong>Retry</strong> after closure, tab hiding, a resource change or initialization failure.</p>
+<p>App frames and sandbox wrappers have transparent backgrounds: unpainted app areas show the chat backdrop in inline mode. An app&#39;s own background is preserved; fullscreen retains its normal sheet backdrop. Transparency does not change sandbox isolation or permissions.</p>
+<p>The initial deployment supports <strong>direct HTTP</strong> clients using an app-managed second listener on an ephemeral port. That port must be reachable from the client. HTTPS, reverse proxies which do not expose that port, unsupported app policies, stopped servers and initialization failures keep the ordinary tool result instead. The main app&#39;s port remains 5732 by default.</p>
+<p><strong>App text messages are automatic:</strong> a view can send <code>ui/message</code> with user text to its bound chat, starting a normal AI turn without another confirmation. The transcript labels the message with its app/server. This can consume provider credits; enable MCP Apps only for servers you trust to initiate prompts. Existing tool approvals still apply to the AI&#39;s actions.</p>
+<p>Only user-role text is accepted (up to 16 blocks and 16 KiB). Messages cannot select another chat/model or insert assistant/system authority. They are rejected while the chat is running and limited to one attempt per chat per 5 seconds, including across remounts. The app receives only an acknowledgement, never conversation history or the AI response. Once accepted, the turn continues if the view closes; use the normal chat Stop control to cancel it.</p>
+<p>Camera, microphone, geolocation, clipboard, external links, downloads and model-context writes are not granted. Image/audio/resource messages remain unsupported.</p>
+<p>For local single-file apps or a request-to-development-chat workflow, see <a href="on-the-fly-mcp-apps.html">On-the-fly MCP Apps</a>. Imports reuse this host and its opt-in/security restrictions.</p></li></ol>
+<h2 id="official-reference">Official reference</h2>
+<p>The <a href="https://modelcontextprotocol.io/extensions/apps/overview" target="_blank" rel="noopener noreferrer">official overview</a> is the entry point and source for the feature: tool metadata, UI resources, sandbox rendering, bidirectional JSON-RPC, consent and framework-independent apps. Its linked <a href="https://apps.extensions.modelcontextprotocol.io/api/modules/app-bridge.html" target="_blank" rel="noopener noreferrer">AppBridge API</a> and <a href="https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx" target="_blank" rel="noopener noreferrer">official specification</a> supply the wire details that the overview does not define.</p>
+<p>The installed official SDK is pinned to <code>@modelcontextprotocol/ext-apps@2.0.3</code>, reviewed at <code>82221c0c8ce7661efa6771c9d461511b1650495f</code>, with extension protocol <code>2026-01-26</code>. The SDK version is not the protocol date. No third-party protocol summary is used.</p>
+<h2 id="security-and-supported-behavior">Security and supported behavior</h2>
+<ul><li><p>The outer proxy has a different origin from the app. Its inner app frame has an opaque origin and cannot read host DOM, cookies or storage, navigate the parent, or remove the outer sandbox.</p></li><li><p>HTTP-header CSP defaults deny network connections. Validated public HTTPS resources and HTTPS/WSS connections can be allowed only when declared by the app. Host/private origins, wildcard rules, CSP fragments, nested frames, dedicated app domains and external base URIs are rejected in this initial host.</p></li><li><p>The isolated listener serves only single-use, host-bound proxy tickets, no app API, session-cookie setting, service worker or HTML resource routes. App HTML arrives over a source-and-origin-checked message channel; proxy responses are <code>no-store</code>. Reload requires a fresh mount.</p></li><li><p><strong>Different ports do not isolate cookies.</strong> <code>HttpOnly</code> prevents JavaScript reads, not browser transmission: same-host sandbox requests can carry main-app cookies. The trusted listener ignores cookie/auth headers and does not reflect them into HTML, responses or bridge messages. Separate-hostname HTTPS hosting with a reviewed cookie policy remains required before production rollout; prefer a separate registrable domain.</p></li><li><p>Every operation rechecks the live server generation, registered server, source-tool visibility/resource URI, tool Off settings, project opt-in and chat existence. Invalid mounts revoke their ticket and pending approvals; late tool results are not returned to a revoked app. APIs pin the mount&#39;s exact host origin, reject null/cross-site browser requests, and accept only the documented HTTP methods. No-Origin non-browser CLI access retains the ordinary access policy.</p></li><li><p>AppBridge performs initialization. Tool input is delivered before the original result. Unknown/unimplemented requests are rejected; capabilities are not advertised merely because the overview lists them.</p></li><li><p>Mount identities come from persisted tool call/result rows. The app cannot select another project, chat or server, or nominate its approval call ID. Only raw tools with app visibility on its own server are callable, through existing per-chat/per-tool authorization.</p></li><li><p>Resource reads are session-scoped and bounded to 16 cached HTML resources of at most 1 MiB each. Updates invalidate the cache and mounted views detect resource/session changes; they fall back and offer Retry rather than injecting replacement HTML into an initialized app.</p></li><li><p>Initialization has a 10-second timeout. Teardown requests wait at most 500 ms on explicit closure; navigation or recycled transcript rows use best-effort teardown because the browser may already remove the frame. Close/tab hide removes app approval UI and sends independent keepalive revocation; restore requires Retry. A 20-second server lease renewed by 5-second host polling bounds abandoned capabilities/approvals, with a 5-second sweep even if browser teardown fails. Absolute expiry is 30 minutes; limits prevent unbounded mount/call growth. Accepted automatic AI turns remain independent of app teardown.</p></li><li><p>Inline views are width-constrained with bounded heights; fullscreen uses a safe-area sheet and controls at least 44 px tall. Text/image results remain independent of app success.</p></li></ul>
+<h2 id="http-interface">HTTP interface</h2>
+<p>All routes use the main app&#39;s normal access and same-origin authorization. Frame requests are proxied by the host; sandbox frames cannot call these APIs directly.</p>
+<div class="table-wrap"><table><thead><tr><th>Method</th><th>Route</th><th>Purpose</th></tr></thead><tbody><tr><td>POST</td><td><code>/api/mcp/apps/mount</code></td><td>Bind <code>{ projectDir, chatId, callId }</code> to a completed MCP tool result; return an isolated view mount, or disabled/fallback.</td></tr><tr><td>POST</td><td><code>/api/mcp/apps/:mountId/call</code></td><td>Call a bound server tool with <code>{ requestId, name, arguments }</code>; <code>409 EAUTH_REQUIRED</code> returns a server-generated approval request for the existing decision endpoint.</td></tr><tr><td>POST</td><td><code>/api/mcp/apps/:mountId/message</code></td><td>Accept <code>{ role: &quot;user&quot;, content: [{ type: &quot;text&quot;, text }] }</code> and automatically start the bound chat&#39;s normal AI turn; returns <code>{}</code> only.</td></tr><tr><td>POST</td><td><code>/api/mcp/apps/:mountId/status</code></td><td>Detect resource/session changes, expiry or revoked project opt-in.</td></tr><tr><td>POST</td><td><code>/api/mcp/apps/:mountId/cancel</code></td><td>Cancel a host request ID and its outstanding approval.</td></tr><tr><td>DELETE</td><td><code>/api/mcp/apps/:mountId</code></td><td>Revoke the mount and cancel outstanding calls.</td></tr></tbody></table></div>
+<h2 id="remaining-capabilities">Remaining capabilities</h2>
+<ul><li><p>Configured HTTPS sandbox hosting on a separate hostname without an extra browser-facing port.</p></li><li><p><code>ui/updateModelContext</code> and image/audio/resource-bearing messages.</p></li><li><p>Host-controlled links, downloads and optional device permissions.</p></li><li><p>App preloading/streaming tool inputs and resource subscriptions.</p></li><li><p>Broader external-content policies (nested frames, dedicated domains and wildcard origins).</p>
+<p>These are not enabled by automatic text messages; each needs its own implementation and security checks.</p></li></ul>
+<h2 id="verification">Verification</h2>
+<p>Regression tests use a real stdio MCP fixture, actual HTTP mount/authorization routes, and the official App SDK inside Chrome with normal site isolation. The combined real-host test covers automatic message → attributed persisted prompt → normally approved MCP tool → actual SSE reply, Close/Retry and abandoned approval cleanup, normal Stop, draft preservation and 360/390/430 px. Cookie/auth sentinels, ticket replay, wrong host/origin/method, source/requested-tool Off, resource/visibility changes, server restart, chat deletion and abandoned leases are also checked. An isolated Docker test image runs the same checks without restarting the running host app.</p>
+<p>Passing regressions are not a complete security audit. Remaining review includes real HTTPS/PWA hosting, malicious navigation and reload storms, approval races across multiple followers, and DNS rebinding/private addresses behind declared external hostnames. CSP origin syntax checks alone do not prove that a hostname resolves publicly.</p>
+<pre><code class="language-bash">docker build -f scripts/Dockerfile.mcp-apps -t mouaif-track-b-mcp-apps:test .
+docker run --rm --shm-size=256m mouaif-track-b-mcp-apps:test</code></pre>
+<p>This test image uses the locally built <code>mouaif-app:latest</code> as its Chrome-equipped base; it does not modify that image or run its default server command.</p>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>
