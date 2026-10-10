@@ -38,7 +38,7 @@
     "test:subagent-prompt": "node scripts/test-subagent-image-inputs.js && node scripts/test-subagent-images.js && node scripts/test-default-subagent-stream.js && node scripts/test-subagent-start-http.js && node scripts/test-agent-command-card.js && node scripts/test-subagent-transcript-parity.js && node scripts/test-subagent-card-cost.js",
     "test:skills": "node scripts/test-agent-skills.js && node scripts/test-agent-skills-stream.js && node scripts/test-agent-skills-ui.mjs",
     "test:mouaif-tool": "node scripts/test-mouaif-tool.js && node scripts/test-chat-model-tools.js && node scripts/test-mouaif-tool-stream.js && node scripts/test-mouaif-tool-sync.mjs && node scripts/test-mouaif-tool-categories.mjs && node scripts/test-mouaif-tool-toggle.mjs",
-    "test:group-cli": "node scripts/test-group-cli.js",
+    "test:group-cli": "node scripts/test-background-jobs.js && node scripts/test-group-cli.js",
     "test:chat-working-folder": "node scripts/test-chat-working-folder.js && node scripts/test-mouaif-tool-sync.mjs && node scripts/test-mouaif-tool-categories.mjs && node scripts/test-mouaif-tool-toggle.mjs && node scripts/test-chat-model-tools-ui.mjs",
     "test:chat-model-tools-ui": "node scripts/test-chat-model-tools-ui.mjs",
     "test:tool-tree": "node scripts/test-tool-tree-layout.mjs",

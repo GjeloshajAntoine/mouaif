@@ -1601,6 +1601,9 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   const callId = callOpts && callOpts.callId;
   const out = await groupCli.runGroupCli({
   projectDir: workingDir,
+  ownerProjectDir: callOpts && callOpts.projectDir,
+  chatId: callOpts && callOpts.chatId,
+  invocationId: callOpts && callOpts.workspaceChatId,
   args,
   signal: callOpts && callOpts.signal,
   // Clamped by the authorization gate against the project's
