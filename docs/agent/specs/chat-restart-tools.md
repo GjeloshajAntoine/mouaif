@@ -1,6 +1,8 @@
 # Spec — long-running wait tools and scheduled chat restarts
 
-> Maintainer-only build spec for **Track E** of [the parallel development plan](../plans/parallel-development.md).
+> Maintainer design proposal for **Track E** of [the parallel development plan](../plans/parallel-development.md).
+> Not build-ready: stable job/run handles, context boundaries, restart persistence, and
+> authorization/cancellation surfaces must be designed before implementation.
 > Same rules as every track: one feature = one commit, Conventional Commits, mobile-first UI,
 > a `docs/features/<slug>.md` page plus its `docs/README.md` line, and the matching
 > `docs/agent/features/<slug>.md` notes in the same commit.
@@ -29,11 +31,28 @@ Track E therefore adds **two families**:
 Both families are ordinary native tools: same approval card, same `tool_call` / `tool_result`
 events, same Off / Ask / Allow gate.
 
-## 2. Hard constraints (frozen)
+## 2. Proposed constraints and missing prerequisites
+
+The current stream loop has cancellation and provider idle timeout handling, not a total
+turn-budget deadline exposed to tools. Introduce an explicit deadline policy if wanted;
+otherwise bound waits by their own timeout and the turn's abort signal. An unref'd timer
+permits process exit; it does not guarantee cleanup or cancellation. Every wait needs abort
+listeners, bounded reads, and deterministic registry removal.
+
+Restarting the same chat with fresh context requires a persisted context-start sequence
+(or equivalent epoch) used by all provider-history builders. Do not delete history. Define
+how system prompts, tool results, attachments, summaries, and context compaction cross that
+boundary. Today `start_chat` alone does not reset context.
+
+Authorize the target chat in the calling project, isolate records by project and chat,
+and refuse self-chat waits that would deadlock the calling turn. Define whether schedules
+survive app restart (durable records) or are explicitly ephemeral. Scheduling cannot return
+an `EBUSY` error ten minutes later: emit a terminal failed event and persist the outcome.
+A cancel chip needs an authenticated endpoint; a transcript row is visibility, not consent.
 
 - **No block may outlive its turn.** `wait_for`'s `timeoutMs` is clamped to 240000 (4 min) and the
   effective deadline is `min(timeoutMs, time left in the turn)`. A wait that would exceed the turn
-  deadline returns `{ ok: true, waited: true-ish, timedOut: true, reason: 'turn-budget' }` and the
+  deadline returns `{ ok: true, satisfied: false, timedOut: true, reason: 'turn-budget' }` and the
   model decides again. A zombie turn is worse than an unwaited job.
 - **No unbounded in-memory buffers.** Timed waits are tracked in a single `setInterval` ticker
   registry (one interval for every wait, `.unref()`ed), never one `setTimeout` per call. The
@@ -43,7 +62,7 @@ events, same Off / Ask / Allow gate.
   busy at the due time, the scheduler defers and re-checks; it never interrupts a live turn.
 - **A restart is one opt-in schedule per chat, and it is always visible.** Never a silent loop.
 
-## 3. Frozen tool contracts
+## 3. Proposed tool contracts
 
 ### 3.1 `wait_for` — the wait family's leaf
 
@@ -51,7 +70,7 @@ events, same Off / Ask / Allow gate.
 {
   "name": "wait_for",
   "arguments": {
-    "until": "shell:<label-or-cmd>|subagent:<callId>|file:<relPath>|log:<relPath>|chat:<chatId>|duration",
+    "until": "shell:<jobId>|subagent:<callId>|file:<relPath>|log:<relPath>|chat:<chatId>|duration",
     "contains": "optional literal the output must contain (shell/log targets)",
     "changed": true,
     "timeoutMs": 180000,
@@ -63,12 +82,12 @@ events, same Off / Ask / Allow gate.
 
 | `until` | satisfied when |
 |---|---|
-| `shell:<label or cmd prefix>` | that background child (`src/tools/groupCli.js` `backgroundChildren`) has exited |
+| `shell:<jobId>` (revised proposal) | a new scoped job registry retains that stable job's terminal state; the existing child Set is insufficient |
 | `subagent:<callId>` | the delegated run (Track A's registry) reaches a terminal state |
 | `file:<relPath>` | the file exists, or its `mtimeMs`/size changed since the call (`changed: true`) |
 | `log:<relPath>` | the `.mouaif/logs/<file>` has grown past its size at call time, and, when `contains` is set, the appended text contains that literal |
-| `chat:<chatId>` | that chat's live turn (`src/live-chat.js`) is no longer running |
-| `duration` | `timeoutMs` elapsed — the plain sleep |
+| `chat:<chatId>` | a captured run ID has settled; reject the calling chat and distinguish failure/cancellation from success |
+| `duration` | the requested delay elapsed: return satisfied, not timedOut; cancellation remains distinct |
 
 Result (one shape for every target, so the model has one thing to read):
 
@@ -79,7 +98,7 @@ Result (one shape for every target, so the model has one thing to read):
   "timedOut": false,
   "waitedMs": 4210,
   "polls": 1,
-  "target": "shell:npm run build",
+  "target": "shell:job-123",
   "detail": { "exitCode": 0, "tail": "…last 20 lines…" },
   "checked": { "subagentRuns": 2, "backgroundCommands": 1 }
 }
@@ -124,7 +143,7 @@ Returns, in one call, what a renewed wait could act on — the cheapest way to e
 }
 ```
 
-Frozen semantics:
+Proposed semantics (subject to the prerequisites in §2):
 
 - **`mode: "handoff"` (the only mode shipped).** At the due time, if the chat is idle:
   1. the current turn's transcript is optionally archived to
@@ -137,7 +156,8 @@ Frozen semantics:
 - **`mode: "interval"` is explicitly unsupported in the first version** and returns
   `EUNSUPPORTED` with a message telling the model to chain handoffs instead (schedule the next
   `chat_restart` from the fresh turn). This is the reversible choice: a true periodic loop
-  belongs in `src/tools/mouaif.js` (a real scheduled job), documented in §7.
+  requires a scheduler with explicit lifecycle and authorization; its module location is
+  not decided by the existing app-tool dispatcher. See §7.
 - **Idle-only (`untilIdle: true` default).** Never fires mid-turn; defers by 30 s and re-checks,
   up to `maxDeferrals` (default 20, ~10 min) before failing with `EBUSY`.
 - **One pending restart per chat.** A second call replaces the pending one and the result says so
@@ -169,7 +189,7 @@ Cancels the pending schedule: `{ ok: true, cancelled: true, dueAt }` or
 | `src/tools/authorization.js` | `TOOL_FAMILIES.wait = ['wait_for','wait_check']`, `TOOL_FAMILIES.chat_restart = ['chat_restart','chat_restart_stop']`; both families take the ordinary Off / Ask / Allow segment |
 | `src/prompts.js` | `PRESET_TOOL_NAMES` gains the four names |
 | `frontend/src/toolGroups.js` (+ `node scripts/build-tool-groups.js`) | a **Waits** row and a **Chat restarts** row |
-| `scripts/test-tool-groups.mjs`, `docs/features/tool-groups.md` | the count moves from 31 → 35 and the table gains two rows (the tool-column count is pinned by test **and** prose) |
+| `scripts/test-tool-groups.mjs`, `docs/features/tool-groups.md` | the count moves 31 → 35 if E lands alone, or 36 → 40 after A and the table gains two rows (the tool-column count is pinned by test **and** prose) |
 | `src/live-chat.js`, `frontend/src/components/chat/*` | the three new SSE events, the pending-restart chip, the restart system row |
 | `docs/features/*`, `docs/README.md`, `CHANGELOG.md` | per feature |
 
@@ -184,11 +204,13 @@ Cancels the pending schedule: `{ ok: true, cancelled: true, dueAt }` or
    row, the `ENOTCHAT` guard for nested runs. Docs: `docs/features/chat-restart-scheduling.md`,
    agent notes, `docs/README.md`.
 3. `docs: record the wait and chat-restart decisions` — a new `docs/decisions.md` section
-   (§28) pinning: turn-bounded waits, no `interval` mode yet, handoff archives are opt-in and
+   (next available section at landing) pinning: turn-bounded waits, no `interval` mode yet, handoff archives are opt-in and
    never middle-of-turn, one pending restart per chat.
 
-Each commit is independently revertible; (2) does not depend on (1) beyond the shared ticker,
-which (1) introduces — so if (1) is reverted first, (2) keeps its own interval.
+These are dependent implementation steps, not independently revertible commits. If the
+scheduler shares the wait ticker, revert dependents first or introduce shared infrastructure
+separately. Do not promise an automatic fallback interval that has not been implemented.
+Ship each feature's code, tests, docs, and decisions together.
 
 ## 6. Tests
 
@@ -203,8 +225,12 @@ which (1) introduces — so if (1) is reverted first, (2) keeps its own interval
   empty and its first message is `prompt`.
 - `scripts/test-chat-restart-tools-http.js` — the composer-direct `@chat_restart` path
   (like `@restart_app`), the SSE events, and the chat-scoped cancel.
-- `scripts/test-tool-groups.mjs` — green at 35 tools with the two new rows.
+- `scripts/test-tool-groups.mjs` — green at 40 tools after A + E (35 if E lands alone), with the two new rows.
 - Mobile pass at 360 px on the restart chip and system row, 44 px cancel target.
+- Cross-project denial, path traversal/symlink escape, hidden-content redaction, retained
+  terminal job state, self-wait rejection, run-ID races, cancellation cleanup, schedule
+  recovery/loss policy, authenticated cancel, and fresh-context boundary across providers.
+- Proposed script names above are new tests to implement, not existing passing suites.
 - `node scripts/test-docs-links.js` after the doc pages land.
 
 ## 7. Deliberately out of scope (with the reason)

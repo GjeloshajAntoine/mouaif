@@ -1,8 +1,9 @@
 # Coordinated parallel development plan
 
-> Maintainer-only working plan (never published: the docs build reads `docs/features/` and
-> `docs/agent/features/` only). Written for the five tracks requested after the screen-capture
-> fix landed as `87189be4 fix: attach screen captures without losing concurrent draft edits`.
+> Maintainer working proposal, not an approved implementation contract. The current docs
+> builder does not enumerate `docs/agent/plans/` or `docs/agent/specs/`; public builds render
+> feature pages, while `--with-internal` also renders decisions and agent feature notes.
+> This is a build-selection fact, not a guarantee that these files can never be published.
 
 ## Overview
 
@@ -19,7 +20,7 @@ every track that adds or renames a tool, and they conflict textually, not semant
 | `src/prompts.js` | the native tool allowlist (`PRESET_TOOL_NAMES`) |
 | `src/tools/authorization.js` | tool families / binary gates |
 | `frontend/src/toolGroups.js` + `frontend/build/toolGroups.json` | the app-wide group model and its generated mirror |
-| `scripts/test-tool-groups.mjs`, `docs/features/tool-groups.md`, `docs/features/mouaif-features.md` | the pinned tool count (**31 today**, asserted as both a number and a per-row table) and the tools table |
+| `scripts/test-tool-groups.mjs`, `docs/features/tool-groups.md`, `docs/features/mouaif-features.md` | the baseline **31** tool count and tables; tests compare documented counts to the actual catalog, not a hard-coded 31 |
 | `frontend/src/components/chat/cards.js` | the subagent approval card |
 | `frontend/dist/**` | the committed web build |
 | `docs/README.md`, `CHANGELOG.md` | one-line additions, adjacent lines |
@@ -28,15 +29,16 @@ Rules that keep those merges cheap:
 
 1. **One writer per shared surface at a time.** Tracks edit the shared surfaces inside the commit
    that adds the name, and rebase immediately after the previous track lands.
-2. **Never commit `frontend/dist/` from a feature branch.** The build artifacts are regenerated
-   once per landed track by the release caretaker as a separate
-   `chore: refresh frontend build artifacts` commit (precedent: `6910395d`), which removes the
-   only diff that conflicts on *every* frontend commit.
+2. **Proposed artifact ownership, not a repository rule.** A caretaker may regenerate
+  `frontend/dist/` after landing UI changes to reduce conflicts. The CLI serves committed
+  build artifacts, so do not ship a source-only UI change without its matching build.
+  A separate artifact commit must be treated as dependent, not independently deployable.
 3. **`frontend/build/toolGroups.json` is regenerated inside the same commit** as the
-  `toolGroups.js` edit with `node scripts/build-tool-groups.js` (it exits non-zero when the
-  mirror is stale, and `scripts/test-tool-groups.mjs` fails when the two disagree).
-4. **Freeze the contracts before coding.** The tool schemas, setting keys, and chat fields listed
-   below are agreed here and may only change by amending this file.
+   `toolGroups.js` edit with `node scripts/build-tool-groups.js`. Generation writes the mirror;
+   `node scripts/build-tool-groups.js --check` exits non-zero when it is stale, and
+   `scripts/test-tool-groups.mjs` checks agreement.
+4. **Review contracts before coding.** Schemas, settings, and fields below are proposals,
+  not user-approved decisions. Resolve lifecycle, authorization, and persistence gaps first.
 
 ## Baseline
 
@@ -49,52 +51,37 @@ Already on `master` at plan time:
 - The MCP client speaks stdio / Streamable HTTP / legacy SSE and discovers tools only; it has
   **no** `resources/read` path yet (`src/mcp.js`).
 
-## Model policy — two models (proposed, not applied)
+## Model policy — unverified proposal, not applied
 
-Status: **proposal only.** `.mouaif.json` is deliberately unchanged — no project `models`, no
-`defaultAgent`, no agent pin. Applying the table below is an open decision (see the last
-section), and it is a config change, never a code change.
+The previous live-catalog claims are withdrawn: no dated provider response was recorded here.
+Do not assume `deepseek/deepseek-v4.1-flash`, `mistral-large-4`, the claimed alias counts,
+or the alleged Mistral DeepSeek row exist. Provider connection IDs are user-defined, not
+necessarily `openrouter` or `mistral`. Verify configured connections and live catalogs with
+`search_models` before proposing any pin. Catalog identity alone does not establish price,
+hosting region, or review quality. A ChatGPT subscription is not equivalent to unlimited
+free Codex usage. No settings change is authorized by this plan.
 
-When applied, the project carries exactly two models, both verified live in their provider
-catalogs:
+The following replaces the unsupported policy:
 
-| Model | Provider | Available |
-|---|---|---|
-| `deepseek/deepseek-v4.1-flash` | `openrouter` | yes |
-| `mistral-large-4` | `mistral` | yes |
+Status: **proposal only.** This documentation correction does not change settings.
+Effective settings can come from app storage and project overrides; absence of a key in
+`.mouaif.json` alone does not prove an unset effective value or chat-model inheritance.
 
-Allocation — the only decision a track makes:
+If a model policy is requested, compare verified models on availability, task quality,
+limits, and actual pricing; no exact two-model restriction is justified here. Persist a
+provider-qualified identity using the existing agent pin and approval picker. These already
+support model choice; Track C is not a prerequisite for configuring a pin.
 
-| Slot | Model | Why |
-|---|---|---|
-| Chat / orchestrator driver | `deepseek/deepseek-v4.1-flash` | cheap enough to run long turns |
-| Review, second opinion, EU-hosted work | `mistral-large-4` | different family, so a review is a real cross-check |
-| Nested subagent pin (`defaultAgent`, every agent) | `deepseek/deepseek-v4.1-flash` | a nested call should never inherit a pricier chat model |
-| Delegated chat | either; the whole point of a per-chat pin | |
-
-Rules that keep this honest:
-
-- **Never pin a `~`-prefixed OpenRouter alias** (158 of 458 rows). They move upstream and silently
-  change which model an agent runs.
-- **Use the full slug, not a short id.** A bare `deepseek-v4.1-flash` exists in the Mistral catalog
-  but is a different model; Track C's provider qualification is what prevents that class of
-  mistake, so Track C lands before any agent pin is created.
-- **No third model without amending this table.** Adding one is a policy change, not a per-track
-  choice.
-- Consequence to accept knowingly: the `codex` provider (ChatGPT plan, effectively free) is
-  unused, so long autonomous runs bill OpenRouter instead of the plan.
-
-Lane 0 adds one **pending** step: if the table is approved, pin `defaultAgent` to
-`deepseek/deepseek-v4.1-flash` and give the existing `Search` agent the same pin, so a bare
-`subagent` call cannot fall back to a chat's model. Until then the status quo holds: every
-`subagent` call inherits its chat's model.
+Current code resolves an approval override first, then the selected named agent's pin (or
+`defaultAgent` when no agent is named), then the chat model. It does not always inherit the
+chat model. App/project defaults must be inspected before describing this project's policy.
 
 ## Lane 0 — kickoff (serial, half a day)
 
 1. Create the five worktrees from committed `HEAD` (never from dirty state):
    `feat/subagent-orchestration`, `feat/mcp-apps`, `feat/subagent-model-choice`,
    `feat/subagent-attachments`, `feat/wait-and-chat-restart`.
-2. Freeze the contracts (below) in this file.
+2. Review the proposed contracts and dependencies below before freezing them.
 3. Add the one test every track needs to keep green and re-run after each rebase:
    `scripts/test-tool-groups.mjs`, `npm run lint`, `npm run test:subagent-prompt`,
    `node scripts/test-docs-links.js`.
@@ -108,7 +95,8 @@ The reasons are structural:
 
 - A delegated chat has its own transcript, its own pinned model and its own custom prompt, so the
   delegating model can hand off work and **the user can open that chat later and continue it**. A
-  subagent's transcript lives inside the parent's tool card and dies with the turn.
+  subagent's transcript is retained with the parent's tool result/card and can be reopened;
+  it is not a separately resumable chat. The live execution ends, not its saved transcript.
 - Context and cost stay separated: the delegated turn bills to its own `chat_store` row, and the
   parent's window never holds the delegated reasoning.
 - The parts already ship: `create_chat` (title, topic, providerId, modelId), `update_chat` (adds
@@ -116,18 +104,20 @@ The reasons are structural:
   `start_chat` (start a background turn, returns a URL), `get_chat` (recent messages),
   `search_chats`, `change_working_folder`.
 
-Three gaps make this a feature rather than a prompt trick:
+Existing capabilities and possible ergonomic improvements:
 
-1. **No fan-out.** `src/ai-stream.js` dispatches Chats tools inline through
-   `tools/mouaif.js → runAppTool`, so the parallel branch
-   (`calls.length > 1 && calls.every(c => c.name === 'subagent')`) never covers `start_chat`:
-   several delegations in one turn run one after another. Either teach that branch to recognise
-   chat delegations or add a `delegate_chat` tool that starts N of them together.
+1. **Sequential dispatch is not sequential execution.** The all-subagent parallel branch
+  does not cover `start_chat`, but `start_chat` launches a background turn and returns without
+  awaiting its completion (`src/tools/mouaif.js`). Successive starts on distinct chats can
+  overlap already. Do not widen side-effectful dispatch or add a tool merely to get fan-out.
+  Approval latency, same-chat busy handling, and explicit workspace isolation still matter.
 2. **Persona plumbing.** `create_chat` accepts no `promptId`, so giving a delegated chat its role
    prompt costs a second `update_chat` call.
-3. **Waiting and read-back.** A delegated turn is asynchronous, so the parent has to poll. Track
-   E's `wait_for` already specifies `until: "chat:<chatId>"`, which closes the loop as
-   delegate → wait → `get_chat`.
+3. **Waiting and read-back.** `get_chat` polling is available now. Track E proposes a wait
+  primitive; it is not implemented. A chat wait needs a captured run identity so idle-before-
+  start or a later unrelated run is not mistaken for completion.
+
+This chat workflow is usable today; only ergonomic improvements need a new feature.
 
 ## Track A — Subagent orchestration (isolated nested work only)
 
@@ -142,7 +132,7 @@ sibling subagents can hand work to each other without the parent relaying it.
 `frontend/src/components/chat/cards.js`, `docs/features/subagent-tools.md`,
 `docs/agent/features/subagent-tools.md`.
 
-**Frozen tool contract** (all under the existing binary `subagent` gate — no new gate):
+**Proposed tool contract** (all under the existing binary `subagent` gate — no new gate):
 
 ```json
 { "name": "subagent_messages", "arguments": { "callId": "…", "since": "…", "limit": 20 } }
@@ -176,7 +166,11 @@ stop semantics, publish/read round-trip, unknown `callId` typed error `EUNKNOWN_
 existing `test-tool-groups.mjs`, `test-prompt-snapshot.js`, and `test-subagent-*` scripts.
 
 **Risks.** The natural spin risk is recursion — new tools must stay *out* of the nested run's
-surface exactly like `subagent` does today; the parallel-batch branch in `ai-stream.js`
+surface for parent-only status/stop/messages exactly like `subagent` does today. However,
+`subagent_publish`/`subagent_read` must be explicitly available to siblings if sibling handoff
+is the goal; excluding all five makes that goal impossible. Also, synchronous `subagent`
+calls hold the parent until completion: useful mid-run steering needs a background handle
+or another concurrent control surface first. The parallel-batch branch in `ai-stream.js`
 (`calls.every(c => c.name === 'subagent')`) must not start treating orchestration calls as
 parallelizable.
 
@@ -196,7 +190,10 @@ interactive UI inside the chat, sandboxed, with tool calls routed through the no
 - Package: `@modelcontextprotocol/ext-apps@2.0.3`
   (exports `.`, `./server`, `./app-bridge`, `./react*`, `./schema.json`).
 
-**Facts the implementation rests on** (from the spec text):
+**External protocol checklist to verify before implementation** (not revalidated here).
+The URLs and package version above are references, not evidence of compatibility. Pin a
+reviewed revision and test initialization, sandbox origin isolation, notifications, resource
+updates, cancellation, and authorization before calling a hand-written bridge build-ready:
 
 - A tool declares its UI with `_meta.ui.resourceUri` (the flat `_meta["ui/resourceUri"]` form is
   deprecated, still accepted) and may restrict callers with
@@ -248,7 +245,7 @@ behind a project setting so an unrenderable app degrades to today's tool result.
 **Goal.** Choosing the model a delegation runs on is a first-class, discoverable option rather
 than a hidden picker on an approval card.
 
-**Precedence (frozen).**
+**Proposed precedence (new chat/project defaults do not exist yet).**
 `approval-card pick` → `agent pin` → `chat subagent model` → `project subagent model` →
 `chat's own model`.
 
@@ -289,7 +286,7 @@ as a bounded enum.
 **Goal.** The user (or the parent model) attaches files and project definitions to a delegation
 *before* it starts, so the subagent reads exactly what it should instead of rediscovering it.
 
-**Frozen contract.**
+**Proposed contract.**
 
 ```json
 {
@@ -342,17 +339,19 @@ merged set once.
 **Goal.** A long autonomous run can *wait productively* instead of polling, and can hand itself a
 fresh context on a schedule that the user can see and cancel.
 
-**Full build spec:** [`../specs/chat-restart-tools.md`](../specs/chat-restart-tools.md) — frozen
+**Design proposal:** [`../specs/chat-restart-tools.md`](../specs/chat-restart-tools.md) — proposed
 tool contracts, guardrails, commit series, tests, and the deliberately excluded `interval` mode.
 The summary here is the coordination view only.
 
 **New tool names (first track to touch the pinned surface).** `wait_for`, `wait_check` (the
 **Waits** family) and `chat_restart`, `chat_restart_stop` (the **Chat restarts** family). Two new
 families in `src/tools/authorization.js`, two new rows in `frontend/src/toolGroups.js` + its
-generated mirror, four names in `PRESET_TOOL_NAMES`, and the tool count moving **31 → 35** in
+generated mirror, four names in `PRESET_TOOL_NAMES`, and the tool count moving **31 → 36 after A → 40 after E** in
 `scripts/test-tool-groups.mjs`, `docs/features/tool-groups.md`, and `docs/features/mouaif-features.md`.
 
-**Guardrails (frozen, they are the whole design).**
+**Proposed guardrails.** No total turn deadline exists today; add one explicitly or use
+per-wait timeout plus turn cancellation. Timer count is an implementation choice, not a
+bounded-memory guarantee. The restart spec lists missing lifecycle and security contracts.
 
 - `wait_for` is bounded by `min(timeoutMs ≤ 240000, time left in the turn)` and returns
   `timedOut` — never an error, never a zombie turn. One `.unref()`ed ticker serves every wait, so
@@ -362,8 +361,8 @@ generated mirror, four names in `PRESET_TOOL_NAMES`, and the tool count moving *
 - **One pending restart per chat**, always announced: a `chat_restart_scheduled` /
   `chat_restart_fired` / `chat_restart_cancelled` event, a system row in the transcript, and a
   cancellable chip in the chat header.
-- **No `interval` mode.** A recurring restart belongs in `src/tools/mouaif.js` as a real scheduled
-  job with its own Settings page; a tool-only interval would be a hidden loop. The model chains
+- **No `interval` mode proposed initially.** A recurring restart requires an explicit scheduler
+  lifecycle (not merely a branch in `src/tools/mouaif.js`) with its own Settings page; a tool-only interval would be a hidden loop. The model chains
   handoffs instead — same benefit, one visible schedule.
 - A nested (subagent) call is refused with `ENOTCHAT`: a delegated run must not reschedule its
   parent's context.
@@ -373,12 +372,13 @@ generated mirror, four names in `PRESET_TOOL_NAMES`, and the tool count moving *
 chat-restart decisions`. Each is revertible alone.
 
 **Depends on Track A** for the `subagent:<callId>` wait target (A's in-flight registry) and
-**on nothing else**; `shell:` and `log:` targets read today's `groupCli.js` background children
-and `.mouaif/logs/` files. Land E **after A** so the registry exists.
+on additional infrastructure: `groupCli.js` has a child Set, not a scoped stable-handle job
+API with retained exit state. Add that API before shell waits. Chat waits need run identity;
+fresh-context restarts need a persisted context boundary. Land subagent waits after A.
 
 **Tests.** `scripts/test-wait-for.js`, `scripts/test-wait-check.js`,
 `scripts/test-chat-restart-schedule.js`, `scripts/test-chat-restart-tools-http.js`, plus
-`scripts/test-tool-groups.mjs` at 35 tools and a 360 px pass on the restart chip.
+`scripts/test-tool-groups.mjs` at 40 tools after A + E (35 for E alone), and a 360 px review.
 
 ## Landing order and merge queue
 
@@ -387,11 +387,11 @@ re-running the shared-surface suites before the next one starts. The order puts 
 newest-tool-name track first (it settles the tool-group counts), then the tracks that only touch
 the same two UI files:
 
-1. **A** — subagent orchestration (new tool names: `toolGroups.js`, `prompts.js`, counts, docs table).
+1. **A** — subagent orchestration (five new tool names: baseline 31 → 36).
 2. **E** — waits and chat restarts (four new tool names **on top of A's**, two new families, the
-  31 → 35 count bump; rebase immediately after A, before any other tool-name track).
+  36 → 40 count bump after A (A adds five names to the baseline 31); rebase immediately after A, before any other tool-name track).
 3. **C** — subagent model choice (no new tool names; `cards.js` + `agents.js`).
-4. **D** — subagent attachments (no new tool names, one new argument; `cards.js` second writer).
+4. **D** — subagent attachments (no new tool names; files, definitions, and budget arguments).
 5. **B** — MCP Apps (largest, new render surface; `cards.js` third writer, `mcp.js`, new components).
 
 Only **A** and **E** add tool names, so they land back to back; every other track is a consumer
@@ -404,11 +404,13 @@ set, which has no npm alias today), and a `docs:build` + `docs:publish:check` pa
 
 ## Per-track definition of done
 
-- Conventional-Commit series, one feature per commit, each revertible on its own.
+- The numbered lists above are implementation steps, not mandatory separate commits.
+  Ship one coherent feature with its tests and docs in the same Conventional Commit;
+  dependent commits must be reverted in reverse dependency order.
 - `node -c` (or `node --check` for ESM) on every touched file; the targeted `npm run test:*`
   scripts for that track green; `npm run test:tool-groups` green whenever a tool name changed.
-- A `docs/features/<slug>.md` page (H1, Overview / Usage, no decision numbers, no
-  "Implementation notes" section), its `docs/README.md` line, and the `docs/agent/features/`
+- A `docs/features/<slug>.md` page (H1, Overview / Usage, no framework-specific markup;
+  Implementation notes are permitted), its `docs/README.md` line, and the `docs/agent/features/`
   counterpart holding paths and wire shapes.
 - `CHANGELOG.md` entry in the feature commit.
 - UI work reviewed at 360 px width first, 44 px touch targets, no hover-only affordance.
@@ -418,9 +420,8 @@ set, which has no npm alias today), and a `docs:build` + `docs:publish:check` pa
 
 - Delegation: does a delegated chat start **empty** or with the delegating chat's recent context
   summarized into its `topic`? (Default: a summary line plus the task, not a transcript copy.)
-- Delegation: fan-out — extend the parallel branch for `start_chat`, or add `delegate_chat`?
-- Config: is the two-model policy applied, or does it stay documented advice? (Leaning: apply,
-  since it is one `.mouaif.json` edit and reversible.)
+- Delegation: any demonstrated ergonomic gap beyond existing overlapping background starts?
+- Config: does the user want a model policy at all? Verify catalogs and costs before proposing one.
 - Track B: should MCP App frames be *opt-in per project* (default off) or on whenever a server
   declares a `ui://` resource? Default-off is the reversible choice.
 - Track B: does the app get its own authorization identity on the approval card, or is it
