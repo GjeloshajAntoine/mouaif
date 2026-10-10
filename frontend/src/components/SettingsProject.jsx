@@ -16,6 +16,7 @@ import { TOOL_GROUPS, GROUP_BY_ID, isBinaryTool, isFamilyLeaf, toolGroupId } fro
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg, ToolAuthSeg, segMode, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
+import { SubagentModelDefaults } from './SubagentModelDefaults.jsx';
 
 import { agentEditorPath } from './settings/agentNavigation.js';
 import { backHref, backTarget, settingsLink } from './settings/projectNavigation.js';
@@ -1321,6 +1322,12 @@ href: '#/settings/project/output?' + projectBackQS()
             )
           )
         ),
+        (dir() || initialDir) && h(SubagentModelDefaults, { projectDir: dir() || initialDir, chatId: chatId(),
+        onProjectSaved: project => {
+        setCurrentProject(project);
+        setEditorText(JSON.stringify(project, null, 2));
+        }
+        }),
         h('div', { class: 'settings-project__agents' },
           h('ul', { class: 'settings-project__agents-list' },
             h('li', null,

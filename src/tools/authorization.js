@@ -929,6 +929,7 @@ async function authorize(input) {
       query: input.query,
       summary: input.summary,
       images: Array.isArray(input.images) && input.images.length ? input.images : undefined,
+      subagentModel: input.subagentModel,
       shell: input.shell,
       timeoutMs: input.timeoutMs,
       projectDir,

@@ -89,6 +89,7 @@ export function SettingsAgentsView(props) {
   const projectDir = resolveProjectDir(props);
   const context = { ...props, projectDir };
   const [agents, setAgents] = useState([]);
+  const [defaultAgent, setDefaultAgent] = useState(null);
   const [statusMsg, setStatusMsg] = useState({ text: '', kind: '' });
 
   async function load() {
@@ -104,6 +105,10 @@ export function SettingsAgentsView(props) {
     if (r.status !== 200) { setStatusMsg({ text: 'HTTP ' + r.status, kind: 'error' }); return; }
     const list = r.body.agents || [];
     setAgents(list);
+    try {
+      const dr = await fetchJson('/api/agents/_default?projectDir=' + encodeURIComponent(projectDir));
+      if (dr.status === 200) setDefaultAgent(dr.body.agent);
+    } catch { /* named agents remain available */ }
     setStatusMsg({ text: list.length + (list.length === 1 ? ' agent' : ' agents'), kind: 'success' });
   }
 
@@ -138,6 +143,9 @@ export function SettingsAgentsView(props) {
           h('a', { class: 'prompt-row__main', href: '#/' + agentEditorPath(DEFAULT_AGENT_NAME, context) },
             h('div', { class: 'prompt-row__title' }, 'Default subagent'),
             h('div', { class: 'prompt-row__meta' }, 'Used when the subagent tool is called without an agent'),
+            h('div', { class: 'prompt-row__meta' }, defaultAgent && defaultAgent.modelId
+            ? 'Runs on: ' + (defaultAgent.providerId || 'project model') + ' / ' + defaultAgent.modelId
+            : 'Follows chat / project subagent defaults, then the chat model'),
             h('div', { class: 'prompt-row__chev' }, '›')
           )
         )
@@ -148,7 +156,8 @@ export function SettingsAgentsView(props) {
           bits.push(Array.isArray(a.tools) && a.tools.length
             ? a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools')
             : 'all tools');
-          if (a.modelId) bits.push(a.modelId);
+          bits.push(a.modelId ? 'Runs on: ' + (a.providerId || 'project model') + ' / ' + a.modelId
+          : 'Follows chat / project subagent defaults, then the chat model');
           const snippet = (a.content || '').trim().replace(/\s+/g, ' ');
           if (snippet) bits.push(snippet.length > 48 ? snippet.slice(0, 48) + '…' : snippet);
           return h('li', { key: a.name, class: 'prompt-row' },
@@ -454,7 +463,7 @@ catalog: toolsCatalog
     ),
     h('section', { class: 'agent-editor' },
       h('p', { class: 'hint hint--compact' }, h('code', null, projectDir)),
-      isDefault && h('p', { class: 'hint hint--compact' }, 'Used when the subagent tool (or the model) delegates without naming an agent. Every field is optional; empty fields use the built-in persona and follow the chat.'),
+      isDefault && h('p', { class: 'hint hint--compact' }, 'Used when the subagent tool (or the model) delegates without naming an agent. Every field is optional; empty model fields follow chat / project subagent defaults, then the chat model.'),
       h('fieldset', { class: 'agent-editor__fields', disabled: isCreating || isDeleting },
         !isDefault && h('div', { class: 'row' },
           h('label', { class: 'label', for: 'sae-name' }, 'Name'),
@@ -490,13 +499,14 @@ catalog: toolsCatalog
             variant: 'sheet',
             extraProviders: modelProviders,
             allowClear: true,
-            clearLabel: 'Inherit chat model',
+            clearLabel: 'Follow chat / project subagent defaults',
             placeholder: 'Pick a model',
             disabled: isCreating || isDeleting,
             ariaLabel: 'Model for this agent',
             onChange: onModelChange
-          })
-        ),
+          }),
+          h('p', { class: 'hint hint--compact' }, 'No pin: this chat’s subagent default → project subagent default → the chat model. A one-run approval pick wins over every default.')
+          ),
         h('div', { class: 'row' },
           h('span', { class: 'label' }, 'Thinking'),
           h(ThinkingSelectField, {

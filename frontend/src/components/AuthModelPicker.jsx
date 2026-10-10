@@ -22,8 +22,9 @@ migrateProjectScopedBookmarks
 // truth the chat top bar picker uses — so the card shows the Pinned and
 // Recent sections. Both lists are app-wide: `pinned` lives in localStorage,
 // `recent` is the server-backed list refreshed when the sheet opens.
-export function AuthModelPicker({ models, initialValue, projectDir, onChange }) {
-const [value, setValue] = useState(initialValue || null);
+export function AuthModelPicker({ models, initialValue, chatValue, modelSource, modelError, projectDir, onChange }) {
+// The effective default is display-only, never an implicit per-run override.
+const [value, setValue] = useState(null);
 const [thinking, setThinking] = useState('');
 // A minimal `state`-shaped bag with the field the recent cache lives on
 // (`recentModels`). Pins and recents are app-wide, so it carries no
@@ -77,14 +78,19 @@ setPinned(loadPinned());
 // pin-in-common entry is dropped.
 setRecent(loadRecent(bookmarks));
 }, [bookmarks]);
-const clearLabel = initialValue
-? '(chat default) ' + initialValue.modelId
-: '(chat default)';
-const pickedModel = value && models.find((m) => m.id === value.modelId && m.provider === value.providerId);
+const effective = value || initialValue;
+const identity = (m) => m ? m.providerId + ' / ' + m.modelId : 'the chat model';
+const clearLabel = 'Use default: ' + identity(initialValue);
+const pickedModel = effective && models.find((m) => m.id === effective.modelId && m.provider === effective.providerId);
+const differs = effective && chatValue && (effective.modelId !== chatValue.modelId || effective.providerId !== chatValue.providerId);
 return h('div', { class: 'auth-model-picker' },
+h('p', { class: 'hint hint--compact', 'aria-live': 'polite' },
+  !value && modelError ? 'Default unavailable: ' + modelError + '. Choose a model for this run.'
+  : 'Runs on ' + identity(effective) + (differs ? ' instead of ' + identity(chatValue) : '')
+    + ' (' + (value ? 'this run only' : modelSource || 'chat model') + ').'),
 h(ModelPickerField, {
 models,
-value,
+value: effective,
 variant: 'sheet',
 allowClear: true,
 clearLabel,

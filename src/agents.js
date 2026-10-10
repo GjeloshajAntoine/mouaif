@@ -17,7 +17,8 @@
 //            Absent/empty = inherit the parent's full tool surface.
 //   modelId: optional model id the nested call runs on. It may be a
 //            project model or a live-catalog model when providerId is set.
-//            Absent/empty = inherit the chat's model and provider.
+//            Absent/empty = chat subagent default, then resolved project
+//            subagent default, then the chat's model and provider.
 //   providerId: provider connection for the pinned model. Required for a
 //            live-catalog model; inferred for legacy project-model pins.
 //   thinkingLevel: optional reasoning-effort override for the nested
@@ -102,6 +103,46 @@ function resolveModel(projectDir, agent) {
   const error = new Error('Agent "' + (agent.name || '?') + '" references unknown model "' + modelId + '"');
   error.code = 'EUNKNOWN_MODEL';
   throw error;
+}
+
+// Resolve only the winning identity: a stale lower-priority pin must not
+// prevent an explicit approval choice. Named agents never inherit defaultAgent.
+function resolveSubagentModel({ projectDir, agent, chat, project, override, model }) {
+  const identity = (value, source) => {
+    if (!value || !value.modelId) return null;
+    if (!value.providerId) {
+      const error = new Error(source + ' must set providerId and modelId');
+      error.code = 'EBADINPUT';
+      throw error;
+    }
+    return { model: resolveModel(projectDir, value), source };
+  };
+  if (override) {
+    if (!override.modelId || !override.providerId) {
+      const error = new Error('Model override must set providerId and modelId');
+      error.code = 'EBADINPUT';
+      throw error;
+    }
+    return identity(override, 'approval');
+  }
+  if (agent && agent.modelId) return { model: resolveModel(projectDir, agent), source: 'agent' };
+  for (const [value, source] of [[chat, 'chat default'], [project, 'project default']]) {
+    const resolved = identity(value && { modelId: value.subagentModelId, providerId: value.subagentProviderId }, source);
+    if (resolved) return resolved;
+  }
+  return { model, source: 'chat model' };
+}
+
+function subagentModelForCall(projectDir, chatId, agentName, model, override) {
+  const agent = agentName ? get(projectDir, agentName) : getDefault(projectDir);
+  if (agentName && !agent) {
+    const error = new Error('Unknown agent "' + agentName + '"');
+    error.code = 'EUNKNOWN_AGENT';
+    throw error;
+  }
+  return resolveSubagentModel({ projectDir, agent,
+    chat: chatId ? require('./chats.js').getChat(projectDir, chatId) : null,
+    project: settings.getResolved(projectDir || null), override, model });
 }
 
 function readRawList(project) {
@@ -284,5 +325,7 @@ module.exports = {
   create,
   update,
   remove,
-  resolveModel
+  resolveModel,
+  resolveSubagentModel,
+  subagentModelForCall
 };

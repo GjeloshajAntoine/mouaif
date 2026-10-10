@@ -73,7 +73,7 @@ ToolAuthSeg: 'auth-seg',
 TOOL_MODE_CHOICES: [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }, { value: 'allow', label: 'Allow' }],
 ASK_USER_MODE_CHOICES: [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }],
 segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
-    AgentFilePicker: 'file-picker', WebpreviewModal: 'preview-modal', PreviewUrlPrompt: 'preview-prompt',
+    AgentFilePicker: 'file-picker', SubagentModelDefaults: 'subagent-defaults', WebpreviewModal: 'preview-modal', PreviewUrlPrompt: 'preview-prompt',
     useState: (initial) => {
       const i = cursor++;
       if (first) states[i] = typeof initial === 'function' ? initial() : initial;
