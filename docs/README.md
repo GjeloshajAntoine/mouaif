@@ -30,6 +30,8 @@ One page per feature: what it does and how to use it.
 - [Install as an app](features/pwa.md) — install the web app, the offline shell, and the update prompt.
 - [Restart from chat](features/chat-app-restart.md) — ask the assistant to relaunch the app worker.
 - [Restart API](features/restart-api.md) — restart the worker from a script with `POST /api/restart`.
+- [Background job handles](features/background-job-handles.md) — scoped async command identity with retained terminal metadata.
+- [Bounded wait foundation](features/bounded-wait-foundation.md) — internal finite observations; public wait tools remain unenabled.
 
 ### Providers and models
 

@@ -44,6 +44,7 @@ const { spawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
 
 const shell = require('./shell.js');
+const backgroundJobs = require('./backgroundJobs.js');
 const { err } = require('../util.js');
 
 // The grouped entry cap, shared with the file batches so every "grouped"
@@ -177,6 +178,13 @@ async function startBackgroundCommand(root, entry, shared) {
     logger = null;
   }
 
+  let job;
+  try {
+    job = backgroundJobs.create(shared.jobScope, { workingDir: root, logPath: log && log.relPath });
+  } catch (e) {
+    if (logger) await logger.close();
+    return { ok: false, error: { code: e.code || 'ETOOL_CAP', message: e.message } };
+  }
   let child;
   try {
     child = spawn(plan.file, plan.args, {
@@ -188,8 +196,9 @@ async function startBackgroundCommand(root, entry, shared) {
       stdio: ['ignore', 'pipe', 'pipe']
     });
   } catch (e) {
-    if (logger) { logger.write('\n[mouaif] failed to start: ' + e.message + '\n').catch?.(() => {}); await logger.close(); }
-    return { ok: false, error: { code: 'ESPAWN', message: e.message } };
+    backgroundJobs.settle(shared.jobScope, job.jobId, { state: 'failed' });
+    if (logger) { logger.write('\n[mouaif] failed to start: ' + e.message + '\n'); await logger.close(); }
+    return { ok: false, jobId: job.jobId, error: { code: 'ESPAWN', message: e.message } };
   }
 
   const buf = { bytes: 0 };
@@ -205,7 +214,7 @@ async function startBackgroundCommand(root, entry, shared) {
       }
       return;
     }
-    logger.write(streamName === 'stderr' ? text : text);
+    if (logger) logger.write(text);
     if (shared.onOutput) {
       try { shared.onOutput(streamName, text); } catch { /* preview is best-effort */ }
     }
@@ -217,24 +226,30 @@ async function startBackgroundCommand(root, entry, shared) {
   backgroundChildren.add(child);
   const finished = new Promise((resolve) => {
     let done = false;
-    const settle = async (exitCode) => {
-      if (done) return;
-      done = true;
-      const code = exitCode == null ? -1 : exitCode;
+    const settle = async (exitCode, signal) => {
+    if (done) return;
+    done = true;
+    const code = exitCode == null ? -1 : exitCode;
+    backgroundJobs.settle(shared.jobScope, job.jobId, {
+      state: code === 0 ? 'completed' : 'failed', exitCode: code, signal
+    });
       shell.clearLiveChild(child);
       backgroundChildren.delete(child);
       if (logger) {
         await logger.close('\n[mouaif] exit ' + code + ' after ' + (nowMs() - startedAt) + 'ms\n');
       }
       if (log) { log.exitCode = code; log.durationMs = nowMs() - startedAt; }
-      shared.onBackgroundExit && shared.onBackgroundExit({ cmd, relPath: log && log.relPath, exitCode: code, durationMs: nowMs() - startedAt });
+      if (shared.onBackgroundExit) {
+      try { shared.onBackgroundExit({ jobId: job.jobId, cmd, relPath: log && log.relPath, exitCode: code, durationMs: nowMs() - startedAt }); }
+      catch { /* observation must not prevent settlement */ }
+      }
       resolve({ exitCode: code, durationMs: nowMs() - startedAt });
     };
     child.on('error', async (e) => {
       if (log) log.spawnError = e.message;
       await settle(-1);
     });
-    child.on('close', (code) => { settle(code); });
+    child.on('close', (code, signal) => { settle(code, signal); });
   });
   // Never let a rejection escape: the promise is awaited only by the
   // detach check below, which ignores a failure.
@@ -248,6 +263,7 @@ async function startBackgroundCommand(root, entry, shared) {
     await finished;
     return {
       ok: false,
+      jobId: job.jobId,
       async: true,
       error: { code: 'ESPAWN', message: (log && log.spawnError) || 'command exited immediately' },
       exitCode: log && log.exitCode,
@@ -258,6 +274,7 @@ async function startBackgroundCommand(root, entry, shared) {
 
   return {
     ok: true,
+    jobId: job.jobId,
     async: true,
     status: 'running',
     pid: child.pid == null ? null : child.pid,
@@ -307,6 +324,8 @@ async function runGroupCli(opts) {
     ? Math.max(1, Math.min(MAX_TIMEOUT_MS, opts.toolTimeoutMs))
     : DEFAULT_TOTAL_BUDGET_MS;
   const shared = {
+    jobScope: { projectDir: opts && opts.ownerProjectDir || root, chatId: opts && opts.chatId,
+    invocationId: opts && opts.invocationId },
     shell: str(args.shell),
     onOutput,
     onBackgroundExit: opts && typeof opts.onBackgroundExit === 'function' ? opts.onBackgroundExit : null
@@ -352,6 +371,7 @@ async function runGroupCli(opts) {
         }
         results.push(Object.assign({}, base, { ok: true, result: {
           async: true,
+          jobId: started.jobId,
           status: 'running',
           pid: started.pid,
           logPath: started.relPath,
@@ -361,6 +381,7 @@ async function runGroupCli(opts) {
       } else {
         results.push(Object.assign({}, base, { ok: false, result: {
           async: true,
+          ...(started.jobId ? { jobId: started.jobId } : {}),
           error: started.error,
           logPath: started.relPath || null,
           exitCode: started.exitCode != null ? started.exitCode : null
@@ -418,7 +439,7 @@ function formatGroupCliResult(out) {
     const head = (entry.index + 1) + '. ' + (entry.label || entry.cmd || '(entry)');
     const r = entry.result || {};
     if (r.async === true && r.status === 'running') {
-      lines.push(head + '\n    → started in the background (pid ' + (r.pid == null ? '?' : r.pid) + '), log: ' + (r.logPath || 'unavailable'));
+      lines.push(head + '\n    → started in the background (job ' + r.jobId + ', pid ' + (r.pid == null ? '?' : r.pid) + '), log: ' + (r.logPath || 'unavailable'));
       continue;
     }
     if (!entry.ok) {
