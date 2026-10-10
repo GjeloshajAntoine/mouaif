@@ -33,6 +33,7 @@
     "dev:web": "vite --config frontend/vite.config.js",
     "test:codex": "node scripts/test-codex-provider.js && node scripts/test-codex-ui.mjs",
     "test:mcp-apps": "node scripts/test-mcp-apps-detection.js && node scripts/test-mcp-apps-host.js && node scripts/test-mcp-apps-ui.mjs && node scripts/test-mcp-apps-e2e.mjs",
+    "test:instant-mcp-apps": "node scripts/test-instant-mcp-apps.js && node scripts/test-instant-mcp-apps-ui.mjs",
     "test:credentials": "node scripts/test-credential-store.js && node scripts/test-oauth-refresh-account.js && node scripts/test-mcp-oauth.js && node scripts/test-mcp-oauth-extras.js",
     "test:screen-capture": "node scripts/test-screen-capture.mjs && node scripts/test-video-capture.mjs && node scripts/test-composer-tools.mjs && node scripts/test-screen-capture-ui.mjs",
     "build:web": "vite build --config frontend/vite.config.js",

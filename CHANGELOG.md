@@ -11,6 +11,8 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Added
 
+- **On-the-fly MCP Apps** — create an app development draft in a separate chat or import one HTML/browser-JS file from project MCP settings. A trusted zero-network stdio adapter serves it through the existing opt-in MCP Apps sandbox. See [On-the-fly MCP Apps](docs/features/on-the-fly-mcp-apps.md).
+
 - **Automatic MCP App text messages** — sandboxed apps can send user text into their server-bound chat and start the normal AI runner without confirmation. Prompts are app-attributed, text-only, size/rate limited, rejected for busy chats, and return no conversation or AI output to the app. See [MCP Apps](docs/features/mcp-apps.md).
 
 - **MCP Apps** — opt-in interactive tool views following the official MCP Apps overview and linked official protocol, using AppBridge 2.0.3, a distinct-origin sandbox listener, deny-by-default HTTP CSP, bound server/tool approvals, cancellation and mobile inline/fullscreen views with text/image fallback. Direct HTTP initially; HTTPS and unsupported app capabilities fall back. Verified with the official App SDK in Chrome and isolated Docker tests. See [MCP Apps](docs/features/mcp-apps.md).

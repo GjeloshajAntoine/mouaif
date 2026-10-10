@@ -20,6 +20,8 @@ Only user-role text is accepted (up to 16 blocks and 16 KiB). Messages cannot se
 
 Camera, microphone, geolocation, clipboard, external links, downloads and model-context writes are not granted. Image/audio/resource messages remain unsupported.
 
+For local single-file apps or a request-to-development-chat workflow, see [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). Imports reuse this host and its opt-in/security restrictions.
+
 ## Official reference
 
 The [official overview](https://modelcontextprotocol.io/extensions/apps/overview) is the entry point and source for the feature: tool metadata, UI resources, sandbox rendering, bidirectional JSON-RPC, consent and framework-independent apps. Its linked [AppBridge API](https://apps.extensions.modelcontextprotocol.io/api/modules/app-bridge.html) and [official specification](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx) supply the wire details that the overview does not define.

@@ -340,6 +340,9 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
 
   // MCP (Model Context Protocol) — per-project server registry +
   // lifecycle + tool dispatch. Routes are mounted in handleMcp below.
+  if (urlPath === '/api/mcp/apps/import' || urlPath === '/api/mcp/apps/request') {
+    return require('./server-handlers-instant-mcp-apps.js').handleInstantMcpApps(req, res, parsed, serverConfig.publicOrigin);
+  }
   if (urlPath.startsWith('/api/mcp/apps/')) {
     return serverConfig.mcpAppsHost.handle(req, res, parsed, serverConfig.publicOrigin);
   }
