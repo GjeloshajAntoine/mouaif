@@ -2,7 +2,7 @@
 
 ## Overview
 
-This user-approved correction extends committed cooperative groups `33f26fe4` in the existing isolated follow-up worktree. The old blanket nested `EPARENT_ONLY`/no-recursion contract is superseded by rooted local-parent controls and opt-in finite budgets.
+This user-approved correction extends committed cooperative groups `d9786e18` in the existing isolated follow-up worktree. The old blanket nested `EPARENT_ONLY`/no-recursion contract is superseded by rooted local-parent controls and opt-in finite budgets.
 
 ## Usage
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This branch contains independent scoped background-job and bounded-wait foundations, not the four proposed native tools or a schedule. Baseline is committed `d45b1f23`. `f36130f6` identifies the **recursive cooperative groups chat**, not a Git revision; its draft was read through `get_chat`. The correction requires rooted ancestry, root-shared finite budgets, inherited restrictions, subtree cancellation, root-turn lifecycle, exactly-once descendant billing and cycle/self/ancestor-wait rejection. Neither that draft nor another track's uncommitted code is a landed API. The Track E draft coordination note was also read.
+This branch contains independent scoped background-job and bounded-wait foundations, not the four proposed native tools or a schedule. Baseline is committed `6933d3ba`. `f36130f6` identifies the **recursive cooperative groups chat**, not a Git revision; its draft was read through `get_chat`. The correction requires rooted ancestry, root-shared finite budgets, inherited restrictions, subtree cancellation, root-turn lifecycle, exactly-once descendant billing and cycle/self/ancestor-wait rejection. Neither that draft nor another track's uncommitted code is a landed API. The Track E draft coordination note was also read.
 
 ## Usage
 

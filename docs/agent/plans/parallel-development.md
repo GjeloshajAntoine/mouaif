@@ -42,7 +42,7 @@ Rules that keep those merges cheap:
 
 ## User-approved cooperative groups follow-up
 
-This section is approved implementation scope and supersedes the older Track A message/wait contract below; the other tracks remain proposals. Track A completed at `8f0a331f`. Follow-up work uses its committed tip in a separate `feat/cooperative-groups-8f0a331f` worktree, never writes Track A/E or master, and does not merge/push automatically.
+This section is approved implementation scope and supersedes the older Track A message/wait contract below; the other tracks remain proposals. Track A completed at `d3e7056e`. Follow-up work uses its committed tip in a separate `feat/cooperative-groups-8f0a331f` worktree, never writes Track A/E or master, and does not merge/push automatically.
 
 1. Parent declares group identity/shared objective and immutable members (roles, ownership references, workspace claims and dependency DAG). Validate the complete declaration, reject unknown dependencies/cycles before effects. Launch named members with `background:true`; downstream dispatch waits for successful dependencies. Failure/cancellation blocks descendants, never starts them.
 2. Metadata-only named artifacts are discoverable with author/member/group and actual workspace provenance. References never read files, move workspaces, prepare checkouts or bypass File tools authorization/redaction. Ownership is advisory, not a filesystem lock.
@@ -57,7 +57,7 @@ See [feature contract](../../features/cooperative-subagent-groups.md) and [imple
 
 Already on `master` at plan time:
 
-- `87189be4` — screen-capture draft-merge fix, imported-video duration retention, missing-video-track guard.
+- `c398e2c6` — screen-capture draft-merge fix, imported-video duration retention, missing-video-track guard.
 - The `subagent` tool already supports `{ task, context, agent, images }`, an agent pin
   (`modelId`/`providerId`/`thinkingLevel` in `.mouaif.json`), and a per-call model picker on the
   approval card (`callOpts.modelOverride`, `frontend/src/components/AuthModelPicker.jsx`).

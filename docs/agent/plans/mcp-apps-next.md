@@ -2,7 +2,7 @@
 
 ## Overview
 
-Continue Track B from `bd1b825c` on its isolated branch. This is a proposed sequence, not permission to change deployment, install additional dependencies, merge/push, or restart the running app. Automatic user-text messages were approved and implemented; do not reintroduce a confirmation step for those messages.
+Continue Track B from `f2efb127` on its isolated branch. This is a proposed sequence, not permission to change deployment, install additional dependencies, merge/push, or restart the running app. Automatic user-text messages were approved and implemented; do not reintroduce a confirmation step for those messages.
 
 The product reference is the [official MCP Apps overview](https://modelcontextprotocol.io/extensions/apps/overview) and its linked official API/specification. Current implementation uses official SDK `2.0.3`, reviewed revision `82221c0c8ce7661efa6771c9d461511b1650495f`. Revalidate linked protocol schemas against the pinned SDK before each capability; use immutable source references for reproducibility, not third-party summaries. A later upgrade requires explicit dependency approval and regression evidence.
 

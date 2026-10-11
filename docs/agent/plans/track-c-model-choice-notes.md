@@ -2,7 +2,7 @@
 
 ## Overview
 
-Implemented on `feat/track-c-model-choice-d45b1f23`, isolated from committed `d45b1f23`. No master edits, merges, pushes, dependency installs, server CLI restarts, or live provider/model policy changes.
+Implemented on `feat/track-c-model-choice-d45b1f23`, isolated from committed `6933d3ba`. No master edits, merges, pushes, dependency installs, server CLI restarts, or live provider/model policy changes.
 
 ## Shipped
 
