@@ -23,7 +23,9 @@ Add them to the "test" script (or a test:* group) in package.json,
 or add them to EXEMPT in scripts/test-test-coverage.js with a reason.
 ```
 
-## What it checks
+## Implementation notes
+
+The guard checks seven things:
 
 | Check | What it catches |
 |-------|-----------------|
@@ -33,11 +35,11 @@ or add them to EXEMPT in scripts/test-test-coverage.js with a reason.
 | `test` script exists | Accidental deletion of the main test entry |
 | `test` script runs ≥ 100 test files | Mass removal of tests from the suite |
 | Helper fixture servers are not run directly as tests | Fixture servers (`test-mcp-server.js`, …) executed as standalone tests |
-| Tracked broken tests still exist on disk | Broken tests removed without updating the tracking list |
+| `BROKEN_TESTS` entries still exist on disk | Broken tests removed without updating the tracking list |
 
-## Tests that cannot run in `npm test`
+### Exempt files
 
-A few test files legitimately cannot run in the main suite — a fixture server that other tests spawn, a browser harness that needs a debug Chrome, a test pinned to a known bug. They are tracked by name with a reason instead of being dropped, and the guard fails if a tracked file disappears:
+Some test files legitimately cannot run in `npm test`. They are listed in the guard with a reason:
 
 ```js
 // scripts/test-test-coverage.js
@@ -75,4 +77,4 @@ const BROKEN_TESTS = new Set([
 | `npm run test:browser-build` | Tests that need the web bundle (`frontend/dist`) built first |
 | `npm run test:chrome` | Tests that need the debug Chrome on `:9222` |
 
-The browser-build and chrome tests live in separate scripts so `npm test` stays fast and dependency-free on a fresh clone.
+The browser-build and chrome tests are wired into separate scripts so `npm test` stays fast and dependency-free on a fresh clone.
