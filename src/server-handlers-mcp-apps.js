@@ -107,7 +107,7 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
         const instantApps = require('./instant-mcp-apps.js');
         const root = instantApps.projectRoot(projectDir);
         const { source, kind } = instantApps.readSource(root, created.path);
-        const appName = created.name || created.server?.name || 'On-the-fly app';
+        const appName = created.name || created.server?.name || call.args?.name || 'On-the-fly app';
         const html = instantApps.renderHtml(source, kind, appName);
         const policy = buildPolicy({ csp: { connectDomains: [], resourceDomains: [] } }, origin);
         if (mounts.size >= 64) throw err('EMCP_APP_LIMIT', 'Too many open MCP Apps');

@@ -244,7 +244,7 @@ export function formatToolArgs(args, toolName) {
   if (name === 'start_chat') return [args.chatId, args.content].filter(Boolean).join(': ');
   if (name === 'attach_chat_image') return args.path || '';
   if (name === 'list_chat_attachments') return args.chatId || '';
-  if (name === 'create_mcp_app') return args.name || args.filename || args.path || '';
+  if (name === 'create_mcp_app') return args.message ? [args.name, args.message].filter(Boolean).join(': ') : (args.name || args.filename || args.path || '');
   if (name === 'subagent_messages' || name === 'subagent_status' || name === 'subagent_stop') return args.callId || '';
   if (name === 'subagent_send') return [args.callId, args.message].filter(Boolean).join(': ');
   if (name === 'subagent_group_create') return args.name || args.objective || '';
@@ -444,7 +444,7 @@ export function formatResultSummary(name, r) {
     const keys = Object.keys(r).filter(k => k !== 'ok');
     return keys.length ? keys.length + ' features' : null;
   }
-  if (n === 'create_mcp_app') return (r.mode === 'request' || r.chatId) ? 'draft' : (r.server && r.server.status) || (r.path ? 'ready' : null);
+  if (n === 'create_mcp_app') return (r.mode === 'request' || r.chatId) ? 'draft' : r.mode === 'message' ? 'sent' : (r.path ? 'ready' : null);
   if (n === 'webpreview') return r.mode || null;
   if (n === 'subagent_status' || n === 'subagent_stop' || n === 'subagent_send' || n === 'subagent_decision') {
     return r.state || null;

@@ -79,7 +79,7 @@
    instead: a steady scroll is worth more than the skipped paint. */
 @supports (overflow-anchor: auto) {
   .chat-view__transcript > .chat-msg:not([data-live="1"]),
-  .chat-view__transcript > .tool-card:not([data-auth-call-id]) {
+  .chat-view__transcript > .tool-card:not([data-auth-call-id]):not([data-mcp-app-card]) {
     content-visibility: auto;
     contain-intrinsic-size: auto 120px;
   }

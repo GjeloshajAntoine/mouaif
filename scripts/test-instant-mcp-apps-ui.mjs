@@ -14,7 +14,11 @@ const { createSandboxService, buildPolicy } = require('../src/mcp-apps-sandbox.j
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-instant-ui-'));
 const sandbox = createSandboxService({ host: '127.0.0.1' });
 const html = renderHtml(`
-  document.querySelector('#app').innerHTML = '<p id="ready">waiting</p><button id="message">Send text</button>';
+  document.querySelector('#app').innerHTML = '<p id="ready">waiting</p><p id="incoming"></p><button id="message">Send text</button>';
+  window.mouaifApp.addEventListener('toolresult', params => {
+    const text = params?.content?.[0]?.text || '';
+    if (text && text !== 'ready') document.querySelector('#incoming').textContent = text;
+  });
   window.mouaifAppReady.then(() => document.querySelector('#ready').textContent = 'initialized');
   document.querySelector('#message').onclick = async () => {
     await window.mouaifApp.sendMessage({ role: 'user', content: [{ type: 'text', text: 'Single-file message' }] });
@@ -24,17 +28,25 @@ const html = renderHtml(`
 const bundle = await build({ stdin: { resolveDir: process.cwd(), loader: 'jsx', contents: `
   import { h, render } from 'preact';
   import { InstantMcpApp } from './frontend/src/components/settings/InstantMcpApp.jsx';
-  import { appendToolCallCard, appendToolResultCard } from './frontend/src/components/chat/transcript.js';
+  import { appendMessageToTranscript, appendToolCallCard, appendToolResultCard } from './frontend/src/components/chat/transcript.js';
   render(h(InstantMcpApp, { projectDir: '/fixture', onImported: () => window.imported = true }), document.querySelector('#form'));
   const root = document.querySelector('#frame');
   const refs = { transcript: { current: root }, pinnedToBottom: { current: false }, pendingCount: { current: 0 },
     jumpBtn: { current: null }, usageSummary: { current: null }, _suspendScrollPin: true,
     mcpAppContext: { projectDir: '/fixture', chatId: 'chat' } };
+  window.sendAgentMessageToApp = text => {
+    appendToolCallCard({ id: 'agent-msg', name: 'create_mcp_app', args: { name: 'Single-file app', message: text } }, refs);
+    appendToolResultCard({ id: 'agent-msg', name: 'create_mcp_app', ok: true,
+      result: { ok: true, mode: 'message', name: 'Single-file app', message: text, content: [{ type: 'text', text }] } }, refs);
+    appendMessageToTranscript({ role: 'assistant', content: 'Agent reply after message', ts: new Date().toISOString() }, false, refs, { chat: {} });
+  };
   appendToolCallCard({ id: 'native-create', name: 'create_mcp_app', args: { name: 'Single-file app', filename: 'app.js' } }, refs);
   appendToolResultCard({ id: 'native-create', name: 'create_mcp_app', ok: true,
     result: { ok: true, name: 'Single-file app', path: 'app.js', content: [{ type: 'text', text: 'ready' }] } }, refs);
-  window.nativeCard = root.querySelector('.tool-card');
-  window.nativeAutoExpanded = window.nativeCard.classList.contains('is-expanded') && !!root.querySelector('.mcp-app');
+  appendMessageToTranscript({ role: 'assistant', content: 'App is ready below', ts: new Date().toISOString() }, false, refs, { chat: {} });
+  window.nativeCard = root.querySelector('[data-tool-id="native-create"]');
+  window.nativeAutoExpanded = window.nativeCard.classList.contains('is-expanded') && !!root.querySelector('.mcp-app')
+    && root.lastElementChild === window.nativeCard;
 ` }, bundle: true, write: false, outdir: '/tmp/instant-ui', format: 'esm' });
 const js = bundle.outputFiles.find(file => file.path.endsWith('.js')).text;
 const css = bundle.outputFiles.find(file => file.path.endsWith('.css')).text;
@@ -44,7 +56,7 @@ const server = http.createServer(async (req, res) => {
   const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
   let raw = ''; for await (const chunk of req) raw += chunk;
   if (req.url === '/api/mcp/apps/import') {
-    imports.push(JSON.parse(raw)); return json(201, { server: { id: 'one' }, path: 'counter.js' });
+    imports.push(JSON.parse(raw)); return json(201, { name: 'On-the-fly app', path: 'counter.js' });
   }
   if (req.url === '/api/mcp/apps/request') {
     requests.push(JSON.parse(raw)); return json(201, { chatId: 'devchat', path: '.mouaif/mcp-apps/unique.html' });
@@ -139,6 +151,10 @@ try {
   await appEvaluate("document.querySelector('#message').click()");
   for (let i = 0; !appMessages.length && i < 100; i++) await sleep(50);
   assert.deepEqual(appMessages, [{ role: 'user', content: [{ type: 'text', text: 'Single-file message' }] }]);
+  await cdp.evaluate("window.sendAgentMessageToApp('Hello from agent')");
+  for (let i = 0; i < 100 && await appEvaluate("document.querySelector('#incoming').textContent") !== 'Hello from agent'; i++) await sleep(50);
+  assert.equal(await appEvaluate("document.querySelector('#incoming').textContent"), 'Hello from agent', 'agent pushes message to app via AppBridge sendToolResult');
+  assert.equal(await cdp.evaluate("document.querySelector('#frame').lastElementChild === window.nativeCard"), true, 'MCP App card remains pinned at the bottom of the transcript after later tool calls and messages');
   assert.equal(await appEvaluate("fetch('" + base + "/api/settings').then(()=>false).catch(()=>true)"), true, 'no host API fetch');
   await cdp.evaluate("const upload=document.querySelector('#instant-mcp-app-file');const data=new DataTransfer();data.items.add(new File(['document.body.textContent=\"Uploaded\";'],'upload.js'));upload.files=data.files;upload.dispatchEvent(new Event('change',{bubbles:true}));");
   await sleep(50);

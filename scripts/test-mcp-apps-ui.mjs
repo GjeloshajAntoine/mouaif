@@ -72,7 +72,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'DELETE') { deleted++; return json(200, { ok: true }); }
   if (req.url === '/app.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); res.end(js); return; }
   if (req.url === '/app.css') { res.writeHead(200, { 'Content-Type': 'text/css' }); res.end(css); return; }
-  res.writeHead(200, { 'Content-Type': 'text/html', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src 'self' http://127.0.0.1:*" });
+  res.writeHead(200, { 'Content-Type': 'text/html', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src 'self' http://127.0.0.1:*" });
   res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><div id="app"></div><p id="fallback">text fallback remains</p><script type="module" src="/app.js"></script>');
 });
 let chrome, cdp;

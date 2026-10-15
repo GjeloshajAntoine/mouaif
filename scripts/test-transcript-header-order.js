@@ -70,7 +70,10 @@ function createElement(tag) {
     },
     setAttribute(name, value) { node.attributes[name] = String(value); },
     getAttribute(name) {
-      return Object.prototype.hasOwnProperty.call(node.attributes, name) ? node.attributes[name] : null;
+    return Object.prototype.hasOwnProperty.call(node.attributes, name) ? node.attributes[name] : null;
+    },
+    prepend(child) {
+    return node.insertBefore(child, node.children[0] || null);
     },
     appendChild(child) {
       if (child.parentNode) child.parentNode.removeChild(child);
@@ -553,8 +556,13 @@ function main() {
         headerCardIndex: headerCards.headerCardIndex,
         isHeaderCardNode: headerCards.isHeaderCardNode,
         HEADER_CARD_ORDER: H,
-        cssEscape: (s) => String(s)
-      }, dom.globals),
+        cssEscape: (s) => String(s),
+        normalizeToolName: (s) => String(s || ''),
+        coerceToolResult: (r) => {
+        if (typeof r === 'string') { try { return JSON.parse(r); } catch { return { raw: r }; } }
+        return r;
+        }
+        }, dom.globals),
       'this.reconcileTranscriptRows = reconcileTranscriptRows; this.transcriptRowKey = transcriptRowKey;');
     const K = transcript.transcriptRowKey;
     const mkRow = (el, cls, m, text) => {
@@ -641,6 +649,32 @@ function main() {
       check('a live-streamed tool card is kept and keyed by its persisted row',
         el.children.length === 2 && el.children[1] === live && live._rowKey === K(call),
         JSON.stringify(order(el)));
+    }
+
+    // 7d. An MCP App card stays pinned at the bottom below later messages without mutating when settled.
+    {
+      const el = createElement('div');
+      const refs = makeRefs(el);
+      refs.mcpAppContext = { projectDir: '/fixture', chatId: 'chat' };
+      const u1 = { role: 'user', content: 'make app', seq: 0 };
+      const call = { role: 'tool', phase: 'call', name: 'create_mcp_app', toolCallId: 'app1', args: { name: 'App', filename: 'app.html' }, seq: 1 };
+      const res = { role: 'tool', phase: 'result', name: 'create_mcp_app', toolCallId: 'app1', ok: true, content: JSON.stringify({ ok: true, name: 'App', path: '.mouaif/mcp-apps/app.html' }), seq: 2 };
+      const a1 = { role: 'assistant', content: 'opened', seq: 3 };
+      const u2 = { role: 'user', content: 'follow up', seq: 4 };
+      const a2 = { role: 'assistant', content: 'replied', seq: 5 };
+      mkRow(el, 'chat-msg chat-msg--user', u1, 'make app');
+      mkRow(el, 'chat-msg chat-msg--assistant', a1, 'opened');
+      mkRow(el, 'chat-msg chat-msg--user', u2, 'follow up');
+      mkRow(el, 'chat-msg chat-msg--assistant', a2, 'replied');
+      const state = { messages: [u1, call, res, a1, u2, a2], chat: {} };
+      transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3, 4, 5]);
+      check('an MCP App card stays pinned at the bottom after later conversation rows',
+        JSON.stringify(order(el)) === JSON.stringify(['msg:make app', 'msg:opened', 'msg:follow up', 'msg:replied', 'tool:app1']),
+        JSON.stringify(order(el)));
+      const n = noMutations(el, () => transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3, 4, 5]));
+      check('a second pass with a bottom-pinned MCP App card mutates nothing',
+        n === 0 && JSON.stringify(order(el)) === JSON.stringify(['msg:make app', 'msg:opened', 'msg:follow up', 'msg:replied', 'tool:app1']),
+        'mutations=' + n + ' ' + JSON.stringify(order(el)));
     }
   }
 

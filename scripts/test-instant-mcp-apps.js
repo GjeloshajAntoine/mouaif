@@ -28,42 +28,37 @@ async function post(route, body, headers = {}) {
     base = 'http://127.0.0.1:' + server.address().port;
     const html = '<!doctype html><html><head><title>Counter</title></head><body><p id="ready">Counter</p></body></html>';
     fs.writeFileSync(path.join(projectDir, 'counter.html'), html);
+    const serverCount = mcp.listServers(projectDir).length;
     const imported = await post('import', { name: 'Counter', path: 'counter.html' });
     assert.equal(imported.status, 201, JSON.stringify(imported.body));
-    const entry = imported.body.server;
-    assert.equal(entry.scope, 'project');
-    assert.equal(entry.status, 'stopped');
-    assert.equal(entry.command, process.execPath);
+    assert.equal(imported.body.name, 'Counter');
+    assert.equal(imported.body.path, 'counter.html');
+    assert.equal(imported.body.server, undefined, 'import does not register a project MCP server or tool');
+    assert.equal(mcp.listServers(projectDir).length, serverCount, 'MCP server list stays untouched');
     assert.equal(settings.getProject(projectDir).mcpApps?.enabled, undefined, 'import does not enable apps');
-    await mcp.startServer(projectDir, entry.id);
-    const tool = (await mcp.listDiscoveredTools(projectDir, entry.id))[0];
-    assert.equal(tool.name, 'view');
-    assert.equal(tool._meta.ui.resourceUri, 'ui://mouaif/instant-app');
-    const resource = await mcp.readAppResource(projectDir, entry.id, tool._meta.ui.resourceUri, { refresh: true });
-    assert.equal(resource.mimeType, 'text/html;profile=mcp-app');
-    assert.match(resource.text, /window\.mouaifAppReady/);
-    assert.match(resource.text, /id="ready"/);
-    assert.deepEqual(resource._meta.ui.csp, { connectDomains: [], resourceDomains: [] });
-    assert(resource.text.indexOf('window.mouaifApp') < resource.text.indexOf('<title>'), 'bridge precedes author modules');
-    assert.match((await mcp.callTool(projectDir, entry.slug, 'view', {})).content[0].text, /Counter is ready/);
+    const rendered = apps.renderHtml(html, 'html', 'Counter');
+    assert.match(rendered, /window\.mouaifAppReady/);
+    assert.match(rendered, /id="ready"/);
+    assert(rendered.indexOf('window.mouaifApp') < rendered.indexOf('<title>'), 'bridge precedes author modules');
     fs.writeFileSync(path.join(projectDir, 'counter.html'), html.replace('Counter</p>', 'Updated</p>'));
-    assert.match((await mcp.readAppResource(projectDir, entry.id, tool._meta.ui.resourceUri, { refresh: true })).text, /Updated<\/p>/);
+    assert.match(apps.renderHtml(apps.readSource(projectDir, 'counter.html').source, 'html', 'Counter'), /Updated<\/p>/);
+    fs.writeFileSync(path.join(projectDir, 'counter.html'), html);
 
     const sentinel = path.join(home, 'never-execute');
     const source = 'document.querySelector("#app").textContent="JS app";\nconst marker="</script>";';
     const uploaded = await post('import', { name: 'Browser JS', filename: 'browser.js', source });
     assert.equal(uploaded.status, 201, JSON.stringify(uploaded.body));
+    assert.equal(uploaded.body.server, undefined, 'uploaded import does not register an MCP server');
     assert.equal(fs.readFileSync(path.join(projectDir, uploaded.body.path), 'utf8'), source);
     assert(uploaded.body.path.startsWith(apps.APP_DIR + '/'));
-    await mcp.startServer(projectDir, uploaded.body.server.id);
-    const jsResource = await mcp.readAppResource(projectDir, uploaded.body.server.id, 'ui://mouaif/instant-app');
-    assert.match(jsResource.text, /<main id="app">/);
-    assert.match(jsResource.text, /<\\\/script>/, 'script end in source cannot break out of module');
-    assert.equal((jsResource.text.match(/<script type="module">/g) || []).length, 2, 'SDK and author scope stay separate');
+    const jsRendered = apps.renderHtml(source, 'js', 'Browser JS');
+    assert.match(jsRendered, /<main id="app">/);
+    assert.match(jsRendered, /<\\\/script>/, 'script end in source cannot break out of module');
+    assert.equal((jsRendered.match(/<script type="module">/g) || []).length, 2, 'SDK and author scope stay separate');
     const nodeSource = 'require("node:fs").writeFileSync(' + JSON.stringify(sentinel) + ', "unsafe");';
     const nodeImported = await post('import', { name: 'Not Node', filename: 'node.js', source: nodeSource });
-    await mcp.startServer(projectDir, nodeImported.body.server.id);
-    await mcp.callTool(projectDir, nodeImported.body.server.slug, 'view', {});
+    assert.equal(nodeImported.status, 201);
+    assert.equal(nodeImported.body.server, undefined);
     assert.equal(fs.existsSync(sentinel), false, 'JS never executes on the server');
 
     const requested = await post('request', { name: 'Checklist', request: 'A project checklist' });
@@ -74,8 +69,9 @@ async function post(route, body, headers = {}) {
     assert(chat.draft.includes(requested.body.path));
     assert.match(chat.draft, /Do not install dependencies/);
     assert.match(chat.draft, /Keep html\/body backgrounds transparent/);
+    assert.match(chat.draft, /create_mcp_app/);
     assert.equal(fs.existsSync(path.join(projectDir, requested.body.path)), false, 'request only prepares a draft');
-    assert.equal(mcp.listServers(projectDir).length, 3, 'request does not register a server');
+    assert.equal(mcp.listServers(projectDir).length, serverCount, 'request does not register a server');
 
     for (const body of [{}, { path: 'counter.html', source: html }, { path: '../outside.html' },
       { path: path.join(projectDir, 'counter.html') }, { filename: 'app.ts', source: html },
@@ -101,7 +97,6 @@ async function post(route, body, headers = {}) {
     const messages = require('../src/messages.js');
     const host = chats.createChat(projectDir, { title: 'Native app host' });
     const opts = { projectDir, chatId: host.id };
-    const serverCount = mcp.listServers(projectDir).length;
     const nativeCreated = await native.runAppTool('create_mcp_app', { name: 'Native app', filename: 'native.html', source: html }, opts);
     assert.equal(nativeCreated.ok, true, nativeCreated.content);
     assert.equal(nativeCreated.result.name, 'Native app');
@@ -115,12 +110,23 @@ async function post(route, body, headers = {}) {
     assert.equal(mounted.body.enabled, true, 'native creation card mounts the app directly');
     assert.deepEqual(mounted.body.arguments, {}, 'creation source is not forwarded as view arguments');
     assert.match(mounted.body.html, /Counter/);
+    assert.equal((await post(mounted.body.id + '/call', { requestId: 'req-1', name: 'view', arguments: {} })).status, 403, 'on-the-fly app has no server-callable MCP tools');
     authz.setAuthorization(projectDir, { tools: { create_mcp_app: { mode: 'off' } } });
     assert.equal((await post(mounted.body.id + '/status', {})).status, 403, 'native Off revokes existing mount');
     assert.equal((await post('mount', { chatId: host.id, callId })).status, 403);
     authz.setAuthorization(projectDir, { tools: { create_mcp_app: { mode: 'ask' } } });
+    const msgOut = await native.runAppTool('create_mcp_app', { name: 'Native app', message: 'Hello from agent' }, opts);
+    assert.equal(msgOut.ok, true);
+    assert.equal(msgOut.result.mode, 'message');
+    assert.equal(msgOut.result.message, 'Hello from agent');
+    assert.equal(msgOut.result.path, undefined, 'message mode does not create a source file');
+    const msgCallId = 'native-msg-call';
+    messages.appendMessage(projectDir, host.id, { role: 'tool', phase: 'call', name: 'create_mcp_app', toolCallId: msgCallId, content: '{}' });
+    messages.appendMessage(projectDir, host.id, { role: 'tool', phase: 'result', name: 'create_mcp_app', toolCallId: msgCallId, content: msgOut.content });
+    assert.equal((await post('mount', { chatId: host.id, callId: msgCallId })).body.enabled, false, 'message result card does not mount a second iframe');
     const chatCount = chats.countChats(projectDir);
     for (const args of [{}, { path: 'counter.html', source: html }, { request: 'test', source: html },
+    { message: 'hi', path: 'counter.html' }, { message: '' }, { message: '   ' }, { message: 'x'.repeat(16385) },
     { source: html }, { filename: 'x.ts', source: html }, { filename: 'x.html', source: '' },
     { name: '', path: 'counter.html' }, { request: '' }, { request: 'x'.repeat(16001) },
     { path: '../outside.html' }, { path: 'escape.html' }, { projectDir: home, path: 'counter.html' },

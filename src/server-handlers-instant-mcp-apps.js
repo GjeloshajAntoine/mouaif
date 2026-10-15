@@ -15,9 +15,9 @@ async function handleInstantMcpApps(req, res, parsed, publicOrigin) {
   if (!body) return;
   try {
     const isRequest = parsed.pathname.endsWith('/request');
-    if (isRequest ? body.request === undefined : body.request !== undefined) throw err('EBADINPUT', 'Use the matching request or import endpoint');
-    // HTTP imports remain stopped; only the explicitly approved native tool
-    // starts its fixed adapter. Both paths use the same validation/storage.
+    if (body.message !== undefined || (isRequest ? body.request === undefined : body.request !== undefined)) throw err('EBADINPUT', 'Use the matching request or import endpoint');
+    // Both paths validate and store the single-file app source or prepare a
+    // development draft without registering a project MCP server or tool.
     return sendJSON(res, 201, apps.createApp(body.projectDir, body));
   } catch (error) {
     const status = ['EBADINPUT', 'ENOENT', 'ENOTDIR', 'EEXIST'].includes(error.code) ? 400 : 500;

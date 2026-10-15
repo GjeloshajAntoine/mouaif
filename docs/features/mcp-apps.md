@@ -8,7 +8,7 @@ MCP Apps are interactive HTML tool views inside the conversation, as described b
 
 1. MCP Apps are always available for compatible project MCP tools; there is no project enable/disable switch. Legacy `mcpApps.enabled` values are ignored.
 2. Start the relevant MCP server using its Settings lifecycle control. Restart servers connected before this update so they receive the Apps capability at initialization.
-3. Call a tool declaring `_meta.ui.resourceUri`. Expand its completed tool card to load the app beside the ordinary text/image result.
+3. Call a tool declaring `_meta.ui.resourceUri`. Expand its completed tool card to load the app beside the ordinary text/image result; mounted MCP App cards stay pinned at the bottom of the transcript as new messages arrive.
 4. Interact with the view. App tool calls use the server's Off/Ask/Allow policy; Ask displays the app/server identity and arguments on a normal approval card.
 5. Use **Fullscreen** / **Inline** for the mobile sheet, **Close** to revoke a view, or **Retry** after closure, tab hiding, a resource change or initialization failure.
 
@@ -22,7 +22,7 @@ Only user-role text is accepted (up to 16 blocks and 16 KiB). Messages cannot se
 
 Camera, microphone, geolocation, clipboard, external links, downloads and model-context writes are not granted. Image/audio/resource messages remain unsupported.
 
-For local single-file apps or a request-to-development-chat workflow, see [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). Imports reuse this host and its sandbox/tool-permission restrictions.
+For local single-file apps in the current chat or a request-to-development-chat workflow, see [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). On-the-fly apps reuse this host and its sandbox/messaging restrictions without registering an MCP server or tool.
 
 ## Official reference
 

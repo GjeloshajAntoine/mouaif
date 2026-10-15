@@ -8,7 +8,7 @@
 // matches the rest of the transcript which is also imperative.
 
 import { renderMarkdown } from '../../markdown.js';
-import { mountMcpApp } from './McpAppFrame.jsx';
+import { mountMcpApp, deliverMcpAppMessage } from './McpAppFrame.jsx';
 import { authorizationCard } from './cards.js';
 import { afterTranscriptAppend, scrollToolBodyToBottomSoon, cancelToolBodyScroll, pinTranscriptAfterSettle } from './scroll.js';
 import {
@@ -153,7 +153,9 @@ export function renderSystemPromptMessage(refs, systemPrompt) {
 // backfill pass is running — insert it before the current backfill
 // anchor (refs._insertAnchor) so older rows land ABOVE the tail that
 // was already painted at the bottom. When no anchor is set (the live
-// path and the tail phase) this is a plain appendChild.
+// path and the tail phase), non-bottom rows land before any bottom-pinned
+// card (MCP App cards and ask_user / authorization overlay cards) so those
+// always remain at the very bottom of the transcript.
 function transcriptInsert(refs, node) {
   const el = refs.transcript.current;
   if (!el) return;
@@ -164,7 +166,14 @@ function transcriptInsert(refs, node) {
     // compositor work in the middle of the user's scroll, for nothing seen.
     if (node.classList) node.classList.add('is-backfilled');
     el.insertBefore(node, anchor);
-  } else el.appendChild(node);
+  } else {
+    const tailAnchor = isMcpAppCard(node) ? firstOverlayCard(el) : (!isOverlayCard(node) ? firstBottomPinnedCard(el) : null);
+    if (tailAnchor && tailAnchor !== node && tailAnchor.parentNode === el) {
+      el.insertBefore(node, tailAnchor);
+    } else {
+      el.appendChild(node);
+    }
+  }
   // Remember the node just placed. The transcript's row builders all insert
   // through here, and the reconciler stamps identity from this rather than
   // guessing "the last message row": the chunked backfill inserts ABOVE its
@@ -1544,6 +1553,8 @@ export function handleSubagentStreamEvent(ev, data, refs) {
 // see the result regardless of order. Tap the header row to expand.
 // Unlike the call card, a result has no "still waiting" state to
 // render, so it takes no replay flag.
+const _deliveredAppMessageIds = new Set();
+
 export function appendToolResultCard(toolResult, refs) {
   if (!refs.transcript.current) return;
   // Adopt the id of an unidentified call card when this result has none of
@@ -1554,7 +1565,18 @@ export function appendToolResultCard(toolResult, refs) {
   let card = id ? findToolCard(refs, id) : null;
   const isSubagent = isSubagentTool(toolResult && toolResult.name);
 const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
-  const isMcpAppCreate = normalizeToolName(toolResult && toolResult.name) === 'create_mcp_app' && !!toolResult.ok && !!(rawR && (rawR.path || rawR.server) && !rawR.chatId);
+  const isMcpAppCreate = normalizeToolName(toolResult && toolResult.name) === 'create_mcp_app' && !!toolResult.ok && !!(rawR && rawR.path && !rawR.chatId);
+  if (normalizeToolName(toolResult && toolResult.name) === 'create_mcp_app' && toolResult.ok && !toolResult.replay
+    && rawR && rawR.mode === 'message' && typeof rawR.message === 'string' && refs.mcpAppContext) {
+    const dedupeKey = id ? String(id) : '';
+    if (!dedupeKey || !_deliveredAppMessageIds.has(dedupeKey)) {
+      if (dedupeKey) {
+        _deliveredAppMessageIds.add(dedupeKey);
+        if (_deliveredAppMessageIds.size > 200) _deliveredAppMessageIds.delete(_deliveredAppMessageIds.values().next().value);
+      }
+      deliverMcpAppMessage(refs.mcpAppContext.projectDir, refs.mcpAppContext.chatId, rawR);
+    }
+  }
   const partial = rawR && rawR.failedCount > 0 && rawR.succeededCount > 0;
   const pillClass = partial ? 'tool-card__pill--partial' : toolResult.ok ? 'tool-card__pill--ok' : 'tool-card__pill--err';
   const pillText = partial ? 'Partial success' : toolResult.ok ? 'ok' : 'error';
@@ -1663,11 +1685,16 @@ if (!card) {
     const nestedRows = isSubagent ? snapshotNestedRowState(card) : null;
     renderToolResultBody(body, callArgs ? Object.assign({}, toolResult, { args: callArgs }) : toolResult, isSubagentTool);
     if ((toolResult.name?.startsWith('mcp__') || isMcpAppCreate) && id && refs.mcpAppContext) {
-      const context = refs.mcpAppContext;
-      const app = document.createElement('div');
-      body.prepend(app);
-      mountMcpApp(app, { ...context, callId: id,
-        onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, context.projectDir, context.chatId, refs) });
+    const context = refs.mcpAppContext;
+    const app = document.createElement('div');
+    body.prepend(app);
+    if (isMcpAppCreate) pinMcpAppCardToBottom(refs, card);
+    mountMcpApp(app, { ...context, callId: id,
+      onMountStateChange: (enabled) => {
+      if (enabled) pinMcpAppCardToBottom(refs, card);
+      else if (!isMcpAppCreate && card.dataset) delete card.dataset.mcpAppCard;
+      },
+      onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, context.projectDir, context.chatId, refs) });
     }
     if (isSubagent) {
     renderSubagentChat(card, toolResult);
@@ -2494,7 +2521,7 @@ return null;
 // Render a single persisted message into a transcript row. Extracted
 // from the old renderTranscript loop body so the chunked pass and the
 // empty-transcript case can share the exact same rendering.
-function renderMessageRow(state, refs, m) {
+function renderMessageRow(state, refs, m, isLiveTail = false) {
   // Forget the node the PREVIOUS build placed. A builder that inserts nothing
   // (a de-duplicated call, a result that updates its call's card in place)
   // would otherwise leave that stale node behind for stampLastTranscriptRow,
@@ -2529,7 +2556,8 @@ const recoveredArgs = m.args || toolCallArgsFor(state, m);
 appendToolResultCard({
 id: m.toolCallId, name: m.name, ok: m.ok,
 args: recoveredArgs,
-result: m.content || ''
+result: m.content || '',
+replay: !isLiveTail
 }, refs);
 } else if (kind === 'error') {
 const payload = retryPayloadForError(state.messages, m);
@@ -2794,24 +2822,35 @@ function restoreExpandedState(exp, root) {
   restoreNestedRowState(root, exp.nestedRows);
 }
 
-// reanchorOverlayCards(refs) — move any standing ask_user /
-// authorization overlay cards to the very bottom of the transcript.
-// They are appended (and reattached after a rebuild) at the end, but a
-// reconcile / recovery tail sync renders message rows AFTER that point,
-// stranding the card mid-transcript — it would then float "at a random
-// place" above content that arrived later. Re-anchoring after every
-// batch keeps the live question the user must answer always on top.
+// reanchorOverlayCards(refs) — move any bottom-pinned MCP App cards and
+// standing ask_user / authorization overlay cards to the very bottom of
+// the transcript.
+//
+// MCP App cards are placed before overlay cards so a live prompt or
+// approval question still sits at the very end, while interactive app
+// views always stay below the conversation messages instead of getting
+// buried as new turns arrive. Nodes already sitting in their bottom slot
+// are left untouched so iframe state in mounted MCP Apps is never reset.
 function reanchorOverlayCards(refs) {
 const el = refs.transcript.current;
 if (!el) return;
-// querySelectorAll returns a static NodeList, so collecting first and
-// then moving is safe — no need to iterate in reverse.
-const cards = el.querySelectorAll(OVERLAY_CARD_SELECTOR);
-if (!cards.length) return;
-for (const card of cards) {
-if (card.parentNode) card.parentNode.removeChild(card);
+const mcpCards = [];
+const overlayCards = [];
+for (const child of el.children) {
+if (isMcpAppCard(child)) mcpCards.push(child);
+else if (isOverlayCard(child)) overlayCards.push(child);
 }
-for (const card of cards) el.appendChild(card);
+const tail = mcpCards.concat(overlayCards);
+if (!tail.length) return;
+let cursor = null;
+for (let i = tail.length - 1; i >= 0; i--) {
+const card = tail[i];
+const next = card.nextElementSibling === undefined ? (card.nextSibling || null) : card.nextElementSibling;
+if (card.parentNode !== el || next !== cursor) {
+el.insertBefore(card, cursor);
+}
+cursor = card;
+}
 }
 
 // syncTranscriptAppend(state, refs, prevCount)
@@ -2867,7 +2906,7 @@ export function syncTranscriptAppend(state, refs, prevCount) {
     // to one row per segment.
     const key = transcriptRowKey(m);
     if (key && findKeyedRow(transcriptEl, key)) continue;
-    renderMessageRow(state, refs, m);
+    renderMessageRow(state, refs, m, true);
   }
   if (anchor && anchor.parentNode === transcriptEl) refs._insertAnchor = anchor;
   // Don't let newly appended rows bury a pending auth/ask card.
@@ -2919,6 +2958,54 @@ function isOverlayCard(el) {
   return !!(el && el.dataset && (el.dataset.authCallId || el.dataset.authDecisionId));
 }
 
+// isMcpAppCard(el) -> bool
+//
+// Tool cards hosting an interactive MCP App (`data-mcp-app-card="1"`).
+// They stay pinned at the bottom of the transcript (above any active
+// authorization / ask_user overlay card) so new conversation turns never
+// bury the interactive app view.
+function isMcpAppCard(el) {
+  return !!(el && el.dataset && el.dataset.mcpAppCard);
+}
+
+// firstOverlayCard(el) -> Element | null
+function firstOverlayCard(el) {
+  for (const child of el.children) if (isOverlayCard(child)) return child;
+  return null;
+}
+
+// firstBottomPinnedCard(el) -> Element | null
+function firstBottomPinnedCard(el) {
+  for (const child of el.children) if (isMcpAppCard(child) || isOverlayCard(child)) return child;
+  return null;
+}
+
+// pinMcpAppCardToBottom(refs, card)
+//
+// Mark `card` as an interactive MCP App card and ensure it sits in the
+// bottom-pinned slot (after regular transcript rows, before any overlay
+// card). If `card` is already in that slot, no DOM mutation occurs so an
+// already-mounted iframe is not reloaded.
+function pinMcpAppCardToBottom(refs, card) {
+  if (!card) return;
+  if (card.dataset) card.dataset.mcpAppCard = '1';
+  if (card.classList) card.classList.add('tool-card--mcp-app');
+  const el = refs && refs.transcript && refs.transcript.current;
+  if (!el || card.parentNode !== el) return;
+  const overlayAnchor = firstOverlayCard(el);
+  let needsMove = false;
+  let seenCard = false;
+  for (const child of el.children) {
+    if (child === card) { seenCard = true; continue; }
+    if (!seenCard) continue;
+    if (!isMcpAppCard(child) && !isOverlayCard(child)) { needsMove = true; break; }
+  }
+  if (needsMove) {
+    el.insertBefore(card, overlayAnchor);
+    afterTranscriptAppend(refs, false);
+  }
+}
+
 // isMessageRowNode(el) -> bool
 //
 // A transcript row the reconciler may match, move, or remove. Header cards
@@ -2931,12 +3018,6 @@ function isOverlayCard(el) {
 function isMessageRowNode(el) {
   if (!el || el.nodeType !== 1 || isOverlayCard(el) || isHeaderCardNode(el)) return false;
   return hasClass(el, 'chat-msg') || hasClass(el, 'tool-card');
-}
-
-// firstOverlayCard(el) -> Element | null
-function firstOverlayCard(el) {
-  for (const child of el.children) if (isOverlayCard(child)) return child;
-  return null;
 }
 
 // chatTranscriptKey(state) -> string
@@ -3027,18 +3108,20 @@ export function reconcileTranscriptRows(state, refs, order) {
     else { child.remove(); stats.removed++; }
   }
 
-  // The row block sits between the header cards and the overlay cards, so
-  // an insert with no cursor yet belongs just before the first overlay.
+  // The row block sits between the header cards and the bottom-pinned cards
+  // (MCP App cards + overlay cards), so an insert with no cursor yet belongs
+  // just before the first bottom-pinned card.
   let cursor = null;
   for (const child of el.children) {
-    if (isMessageRowNode(child)) { cursor = child; break; }
-    if (isOverlayCard(child)) { cursor = child; break; }
+    if (isMessageRowNode(child) && !isMcpAppCard(child)) { cursor = child; break; }
+    if (isMcpAppCard(child) || isOverlayCard(child)) { cursor = child; break; }
   }
 
   // Every node this pass put in position. A tool call and its result are two
   // messages but ONE card: the card takes the call's slot, and the result row
   // that follows must not move it again.
   const placed = new Set();
+  const pinnedMcpCards = [];
   for (let i = 0; i < order.length; i++) {
     const m = state.messages[order[i]];
     const key = transcriptRowKey(m);
@@ -3057,9 +3140,13 @@ export function reconcileTranscriptRows(state, refs, order) {
         // in place. A result's content never changes, so a card that already
         // shows one is left untouched.
         const had = !!node;
+        const wasMcpApp = had && isMcpAppCard(node);
         renderMessageRow(state, refs, m);
         node = findToolCard(refs, m.toolCallId);
         if (node && !had) stats.created++;
+        if (node && !wasMcpApp && isMcpAppCard(node) && !pinnedMcpCards.includes(node)) {
+          pinnedMcpCards.push(node);
+        }
       } else {
         stats.reused++;
       }
@@ -3088,6 +3175,25 @@ export function reconcileTranscriptRows(state, refs, order) {
     // (the cheap append path) only needs it to recognise the card as keyed.
     if (!node._rowKey || !hasClass(node, 'tool-card')) node._rowKey = key;
 
+    // Interactive MCP App cards belong in the bottom-pinned slot below all
+    // regular transcript rows, not at their mid-transcript call slot.
+    if (isMcpAppCard(node)) {
+      pinnedMcpCards.push(node);
+      continue;
+    }
+
+    if (node === cursor) {
+      cursor = node.nextElementSibling;
+      continue;
+    }
+    el.insertBefore(node, cursor);
+    cursor = node.nextElementSibling;
+  }
+
+  // Place bottom-pinned MCP App cards after all regular transcript rows and
+  // before any overlay cards, without moving a card that is already in place.
+  for (let i = 0; i < pinnedMcpCards.length; i++) {
+    const node = pinnedMcpCards[i];
     if (node === cursor) {
       cursor = node.nextElementSibling;
       continue;

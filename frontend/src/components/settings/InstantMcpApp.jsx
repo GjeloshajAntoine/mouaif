@@ -36,11 +36,11 @@ export function InstantMcpApp({ projectDir, onImported }) {
       if (!mounted.current) return;
       if (result.status !== 201) throw new Error(result.body?.error || 'HTTP ' + result.status);
       if (mode === 'request') {
-        setActiveProject(projectDir, '');
-        nav('chat/' + encodeURIComponent(result.body.chatId));
+      setActiveProject(projectDir, '');
+      nav('chat/' + encodeURIComponent(result.body.chatId));
       } else {
-        setStatus('Added. Start the server, then ask a chat to open its view tool.');
-        onImported();
+      setStatus('Saved to ' + result.body.path + '. Ask a chat to open it with create_mcp_app.');
+      if (onImported) onImported();
       }
     } catch (error) {
       if (mounted.current) setStatus(error.message || 'Could not create app');
@@ -62,8 +62,8 @@ export function InstantMcpApp({ projectDir, onImported }) {
       ? h('div', null,
           h('label', { class: 'label', for: id + '-request' }, 'What should the app do?'),
           h('textarea', { class: 'input', id: id + '-request', value: request, required: true, rows: 4, maxLength: 16000, disabled: busy,
-            placeholder: 'A tap-friendly project checklist…', onInput: event => setRequest(event.target.value) }),
-          h('p', { class: 'hint' }, 'Opens a draft for review. Choose a model and send it when ready; import the generated file afterward.'))
+          placeholder: 'A tap-friendly project checklist…', onInput: event => setRequest(event.target.value) }),
+          h('p', { class: 'hint' }, 'Opens a draft for review. Choose a model and send it when ready; the agent can open the generated file directly in the chat.'))
       : h('div', null,
           h('label', { class: 'label', for: id + '-file' }, 'Upload a file (512 KiB max)'),
           h('input', { class: 'input', id: id + '-file', type: 'file', accept: '.html,.htm,.js,.mjs', disabled: busy,

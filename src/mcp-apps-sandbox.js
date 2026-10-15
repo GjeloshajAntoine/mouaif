@@ -69,9 +69,14 @@ function createSandboxService(options = {}) {
     if (req.method !== 'GET' || !ticket || ticket.expires < Date.now()) {
       res.writeHead(404, { 'Cache-Control': 'no-store' }); res.end(); return;
     }
-    let referrerOrigin;
-    try { referrerOrigin = new URL(req.headers.referer).origin; } catch { /* reject malformed referrer */ }
-    if (referrerOrigin !== ticket.hostOrigin) {
+    if (req.headers.referer !== undefined) {
+      let referrerOrigin;
+      try { referrerOrigin = new URL(req.headers.referer).origin; } catch { /* reject malformed referrer */ }
+      if (referrerOrigin !== ticket.hostOrigin) {
+        res.writeHead(403, { 'Cache-Control': 'no-store' }); res.end(); return;
+      }
+    } else if (req.headers['sec-fetch-dest'] !== 'iframe'
+      || !['same-origin', 'same-site'].includes(req.headers['sec-fetch-site'])) {
       res.writeHead(403, { 'Cache-Control': 'no-store' }); res.end(); return;
     }
     // Ports are not cookie boundaries. Ignore all cookie/auth headers and
@@ -95,6 +100,7 @@ function createSandboxService(options = {}) {
     });
     // Trusted proxy source only. App HTML arrives by postMessage, not HTTP.
     res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%;overflow:hidden;background:transparent}iframe{width:100%;height:100%;border:0;background:transparent}</style><script>'
+    + 'const EXPECTED_HOST_ORIGIN=' + JSON.stringify(ticket.hostOrigin) + ';\n'
     + fs.readFileSync(path.join(__dirname, 'mcp-apps-sandbox-proxy.js'), 'utf8') + '</script>');
   }
   const server = http.createServer((req, res) => {

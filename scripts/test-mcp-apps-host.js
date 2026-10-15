@@ -101,6 +101,12 @@ const post = async (route, body = {}) => {
     const tokenPath = new URL(httpsMounted.body.url).pathname;
     assert.equal(await raw(httpsBase + tokenPath, { Referer: 'https://apps.example.com/', Host: 'apps.example.com' }, 'GET'), 200);
     assert.equal(await raw(httpsBase + tokenPath, { Referer: 'https://apps.example.com/', Host: 'apps.example.com' }, 'GET'), 403, 'HTTPS sandbox ticket cannot be replayed');
+    const httpsMountedNoRef = await fetch(httpsBase + '/api/mcp/apps/mount', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }).then(async r => ({ status: r.status, body: await r.json() }));
+    const noRefPath = new URL(httpsMountedNoRef.body.url).pathname;
+    assert.equal(await raw(httpsBase + noRefPath, { Host: 'apps.example.com', 'Sec-Fetch-Dest': 'iframe', 'Sec-Fetch-Site': 'same-origin' }, 'GET'), 200, 'HTTPS sandbox ticket works when parent document has Referrer-Policy: no-referrer');
+    assert.equal(await raw(httpsBase + noRefPath, { Host: 'apps.example.com', 'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Site': 'same-origin' }, 'GET'), 403, 'non-iframe without Referer is rejected');
     } finally {
     httpsApp.closeAllConnections();
     await new Promise(resolve => httpsApp.close(resolve));

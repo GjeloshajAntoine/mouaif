@@ -68,6 +68,16 @@ export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, on
   await bridge.connect(originTransport(iframe.contentWindow, mount.origin));
   return {
     setMode(mode) { bridge.setHostContext({ displayMode: mode }); },
+    async sendAgentMessage(payload) {
+      if (!initialized || closed) return false;
+      const text = typeof payload === 'string' ? payload : String(payload?.message || '');
+      const content = Array.isArray(payload?.content) && payload.content.length
+        ? payload.content
+        : [{ type: 'text', text }];
+      await bridge.sendToolInput({ arguments: { message: text, name: payload?.name || mount.title } });
+      await bridge.sendToolResult({ content, structuredContent: { message: text, name: payload?.name || mount.title } });
+      return true;
+    },
     async close() {
       if (closed) return;
       closed = true;

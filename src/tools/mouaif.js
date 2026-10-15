@@ -131,7 +131,8 @@ const PARAMETERS = {
         title: { type: 'string', description: 'Chat title (max 200 chars).' },
         name: { type: 'string', description: 'App name (1–100 characters; default On-the-fly app).' },
         filename: { type: 'string', description: 'Required with source: .html/.htm or browser .js/.mjs filename.' },
-        source: { type: 'string', description: 'Self-contained HTML or browser JavaScript, at most 512 KiB. No external assets, imports, Node APIs or network. The host injects window.mouaifApp and window.mouaifAppReady; do not create another bridge. To communicate with the agent in this chat, await window.mouaifAppReady and call window.mouaifApp.sendMessage({ role: "user", content: [{ type: "text", text: "..." }] }).' },
+        source: { type: 'string', description: 'Self-contained HTML or browser JavaScript, at most 512 KiB. No external assets, imports, Node APIs or network. The host injects window.mouaifApp and window.mouaifAppReady; do not create another bridge. To communicate with the agent in this chat, await window.mouaifAppReady and call window.mouaifApp.sendMessage({ role: "user", content: [{ type: "text", text: "..." }] }); listen for agent messages via window.mouaifApp.addEventListener("toolresult", params => ...) or window.addEventListener("mouaif-app-message", e => ...).' },
+        message: { type: 'string', description: 'Send a message (1–16384 bytes) from the agent to the mounted MCP App in the current chat via official AppBridge sendToolInput / sendToolResult notifications.' },
         request: { type: 'string', description: 'Prepare a separate unsent development chat draft (1–16000 characters); does not generate or start an app.' },
         topic: {
           type: 'string',
@@ -793,8 +794,8 @@ async function runInfo(args, opts) {
 async function runApps(args, opts) {
   const projectDir = require('../instant-mcp-apps.js').projectRoot(resolveProjectDir(opts));
   if (opts.signal?.aborted) throw typedError('EABORTED', 'App creation cancelled');
-  const result = { ok: true, ...require('../instant-mcp-apps.js').createApp(projectDir, args, { registerServer: false }) };
-  if (result.chatId) return ok(result);
+  const result = { ok: true, ...require('../instant-mcp-apps.js').createApp(projectDir, args) };
+  if (result.chatId || result.mode === 'message') return ok(result);
   result.content = [{ type: 'text', text: result.name + ' is ready in this chat.' }];
   return ok(result);
 }

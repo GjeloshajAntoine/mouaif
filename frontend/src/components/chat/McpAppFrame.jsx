@@ -4,12 +4,14 @@ import { fetchJson } from '../../api.js';
 import { boundedHeight, connectMcpApp } from './mcpAppBridge.js';
 import './mcp-app.css';
 
-export function McpAppFrame({ projectDir, chatId, callId, onAuthorize }) {
+export function McpAppFrame({ projectDir, chatId, callId, onAuthorize, onMountStateChange }) {
   const frame = useRef(null);
   const session = useRef(null);
   const closeView = useRef(null);
   const authorize = useRef(onAuthorize);
   authorize.current = onAuthorize;
+  const mountStateChange = useRef(onMountStateChange);
+  mountStateChange.current = onMountStateChange;
   const [mount, setMount] = useState(null);
   const [status, setStatus] = useState('Loading app…');
   const [mode, setMode] = useState('inline');
@@ -28,8 +30,14 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize }) {
     }).then(async response => {
       if (!response.body?.enabled) {
         if (active) {
-        if (response.status === 200 && response.body?.enabled === false) setUnavailable(true);
-        else { setFailed(true); setStatus(response.body?.error || 'App unavailable — tool result shown below.'); }
+        if (response.status === 200 && response.body?.enabled === false) {
+          setUnavailable(true);
+          mountStateChange.current?.(false);
+        } else {
+          setFailed(true);
+          setStatus(response.body?.error || 'App unavailable — tool result shown below.');
+          mountStateChange.current?.(true);
+        }
         }
         return;
       }
@@ -38,7 +46,14 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize }) {
         await fetch('/api/mcp/apps/' + id, { method: 'DELETE', body: '{}' }); return;
       }
       setMount(response.body);
-    }).catch(error => { if (active) { setFailed(true); setStatus(error.message); } });
+      mountStateChange.current?.(true);
+    }).catch(error => {
+      if (active) {
+        setFailed(true);
+        setStatus(error.message);
+        mountStateChange.current?.(true);
+      }
+    });
     return () => {
       active = false; ctl.abort();
       const closing = session.current; session.current = null;
@@ -78,8 +93,14 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize }) {
     document.addEventListener('visibilitychange', onVisibility);
     const timeout = setTimeout(() => fail(new Error('App initialization timed out — tool result shown below.')), 10000);
     connectMcpApp({ iframe: frame.current, mount,
-      onReady: () => { clearTimeout(timeout); if (active) setStatus(''); },
-      onSize: value => { if (active) setHeight(boundedHeight(value, window.innerHeight)); },
+    onReady: () => {
+      clearTimeout(timeout);
+      if (!active) return;
+      setStatus('');
+      const pending = consumePendingAgentMessages(projectDir, chatId, mount.title);
+      for (const item of pending) void session.current?.sendAgentMessage(item).catch(() => {});
+    },
+    onSize: value => { if (active) setHeight(boundedHeight(value, window.innerHeight)); },
       onMode: value => { if (active) setMode(value); }, onClose: fail,
       onMessage: async (params, signal) => {
         const response = await post('/message', params, AbortSignal.any([signal, ctl.signal]));
@@ -107,15 +128,20 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize }) {
         } finally { signal.removeEventListener('abort', cancel); }
       }
     }).then(bridge => {
-      if (active && !closing) { session.current = bridge; frame.current.src = mount.url; }
-      else bridge.close();
+    if (active && !closing) {
+      session.current = bridge;
+      registerActiveAppSession(projectDir, chatId, callId, mount.title, bridge);
+      frame.current.src = mount.url;
+    }
+    else bridge.close();
     }).catch(fail);
     const poll = setInterval(async () => {
-      try { const result = await post('/status', {}); if (result.status !== 200) await fail(new Error(result.body.error)); }
-      catch (error) { if (active) await fail(error); }
+    try { const result = await post('/status', {}); if (result.status !== 200) await fail(new Error(result.body.error)); }
+    catch (error) { if (active) await fail(error); }
     }, 5000);
     return () => {
     active = false; closeView.current = null; clearTimeout(timeout); clearInterval(poll); ctl.abort();
+    unregisterActiveAppSession(callId, session.current);
     window.removeEventListener('pagehide', onPageHide);
     document.removeEventListener('visibilitychange', onVisibility);
     };
@@ -146,6 +172,65 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize }) {
 // DOM connectivity checks do not trigger layout or poll detached nodes.
 const mountedContainers = new Set();
 let removalObserver;
+const activeAppSessions = new Map();
+const pendingAgentMessages = new Map();
+
+function registerActiveAppSession(projectDir, chatId, callId, title, bridge) {
+  activeAppSessions.set(callId, { projectDir, chatId, callId, title: title || '', bridge, at: Date.now() });
+}
+
+function unregisterActiveAppSession(callId, bridge) {
+  const entry = activeAppSessions.get(callId);
+  if (entry && (!bridge || entry.bridge === bridge)) activeAppSessions.delete(callId);
+}
+
+function consumePendingAgentMessages(projectDir, chatId, title) {
+  const key = projectDir + '::' + chatId;
+  const list = pendingAgentMessages.get(key);
+  if (!Array.isArray(list) || !list.length) return [];
+  const keep = [];
+  const matched = [];
+  for (const item of list) {
+    if (!item.name || item.name === 'On-the-fly app' || item.name === title) matched.push(item);
+    else keep.push(item);
+  }
+  if (keep.length) pendingAgentMessages.set(key, keep);
+  else pendingAgentMessages.delete(key);
+  return matched;
+}
+
+export function deliverMcpAppMessage(projectDir, chatId, payload) {
+  if (!projectDir || !chatId || !payload || typeof payload.message !== 'string') return false;
+  const candidates = [];
+  for (const entry of activeAppSessions.values()) {
+    if (entry.projectDir === projectDir && entry.chatId === chatId) candidates.push(entry);
+  }
+  const wantedName = typeof payload.name === 'string' && payload.name.trim() && payload.name !== 'On-the-fly app'
+    ? payload.name.trim()
+    : '';
+  let target = null;
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    if (!wantedName || candidates[i].title === wantedName) { target = candidates[i]; break; }
+  }
+  if (!target && candidates.length) target = candidates[candidates.length - 1];
+  if (target) {
+    Promise.resolve(target.bridge.sendAgentMessage(payload)).then(sent => {
+      if (!sent) queuePendingAgentMessage(projectDir, chatId, payload);
+    }).catch(() => {});
+    return true;
+  }
+  queuePendingAgentMessage(projectDir, chatId, payload);
+  return false;
+}
+
+function queuePendingAgentMessage(projectDir, chatId, payload) {
+  const key = projectDir + '::' + chatId;
+  const list = pendingAgentMessages.get(key) || [];
+  list.push(payload);
+  if (list.length > 16) list.shift();
+  pendingAgentMessages.set(key, list);
+}
+
 export function mountMcpApp(container, props) {
   render(h(McpAppFrame, props), container);
   mountedContainers.add(container);

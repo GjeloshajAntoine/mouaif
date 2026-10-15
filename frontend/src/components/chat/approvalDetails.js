@@ -36,6 +36,7 @@ const CHAT_TARGET_TOOLS = new Set(['get_chat', 'update_chat', 'change_working_fo
 export function approvalTitle(request) {
   const args = request.details?.args || request.args || {};
   if (request.tool === 'create_mcp_app' && args.request !== undefined) return 'Prepare app draft';
+  if (request.tool === 'create_mcp_app' && args.message !== undefined) return 'Message MCP App';
   if (request.tool === 'task') return ({ list: 'List tasks', create: 'Create task', update_progress: 'Update task', complete: 'Complete task' })[args.action] || 'Manage task';
   const count = args.edits?.length || (request.tool === 'group_read' && args.files?.length) || args.commands?.length;
   const title = TITLES[request.tool] || request.tool.replace(/^mcp__/, '').replace(/__/g, ' · ').replace(/_/g, ' ');
