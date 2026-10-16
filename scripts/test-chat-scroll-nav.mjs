@@ -22,6 +22,7 @@ function makeTranscript(rowTops, clientHeight = 500, scrollHeight = 2000) {
     const isMsg = t.msg !== false;
     el.children.push({
       isConnected: true,
+      dataset: t.sysPrompt ? { sysPrompt: '1' } : {},
       classList: { contains: (c) => c === 'chat-msg' && isMsg },
       getBoundingClientRect: () => ({ top: 100 + t.top - el.scrollTop })
     });
@@ -61,6 +62,21 @@ function makeRefs(el) {
   scrollToAdjacentMessage(refs, -1);
   assert.equal(el.scrollTop, 0, 'prev past the first row lands at the very top');
   console.log('PASS prev/next step between message rows and skip tool cards');
+}
+
+{
+  // Top-level system-prompt header card carries .chat-msg + data-sys-prompt="1"
+  // and must be skipped by message navigation.
+  const el = makeTranscript([{ top: 0, sysPrompt: true }, { top: 200 }, { top: 700 }]);
+  el.scrollTop = 750;
+  const { refs } = makeRefs(el);
+  scrollToAdjacentMessage(refs, -1);
+  assert.equal(el.scrollTop, 700 - 6, 'prev jumps to start of current message');
+  scrollToAdjacentMessage(refs, -1);
+  assert.equal(el.scrollTop, 200 - 6, 'prev jumps to first user message');
+  scrollToAdjacentMessage(refs, -1);
+  assert.equal(el.scrollTop, 0, 'prev past first user message skips system-prompt card and goes to top');
+  console.log('PASS prev/next skips the top-level system-prompt header card');
 }
 
 {

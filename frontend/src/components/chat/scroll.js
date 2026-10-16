@@ -367,9 +367,12 @@ const NAV_TOP_GAP = 6;
 // "previous" tap from the bottom always leaves the pin band.
 const NAV_MIN_STEP = 48;
 
+// messageRows(el) — only navigable conversation message rows (excluding the
+// top-level system-prompt header card, which also carries `.chat-msg`).
 function messageRows(el) {
   const rows = [];
   for (const row of el.children) {
+    if (row.dataset && row.dataset.sysPrompt !== undefined) continue;
     if (row.classList && row.classList.contains('chat-msg')) rows.push(row);
   }
   return rows;
