@@ -175,3 +175,42 @@
   margin: 0;
   accent-color: var(--accent);
 }
+
+/* ---- Mermaid / schema diagrams ----------------------------------- */
+:is(.chat-msg--assistant, .chat-msg--system, .tool-card__body) .md-diagram {
+  margin: 4px 0 6px 0;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow-x: auto;
+  white-space: normal;
+}
+:is(.chat-msg--assistant, .chat-msg--system, .tool-card__body) .md-diagram__img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  border-radius: var(--r-sm);
+}
+:is(.chat-msg--assistant, .chat-msg--system, .tool-card__body) .tool-preview__schema-button {
+  width: 100%;
+}
+:is(.chat-msg--assistant, .chat-msg--system, .tool-card__body) .md-diagram__details {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 2px;
+}
+:is(.chat-msg--assistant, .chat-msg--system, .tool-card__body) .md-diagram__summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap-sm, 32px);
+  padding: 2px 4px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+:is(.chat-msg--assistant, .chat-msg--system, .tool-card__body) .md-diagram__source {
+  margin: 2px 0 0 0;
+}

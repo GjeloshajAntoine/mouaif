@@ -3,9 +3,22 @@
 const file = { relPath: 'src/example.js', startLine: 1, endLine: 2, totalLines: 2, body: 'export const port = 5732;\n' };
 const edit = { relPath: 'src/example.js', diff: '@@ -1 +1 @@\n-export const port = 3000;\n+export const port = 5732;' };
 const chat = { id: 'demo-chat', title: 'Review expanded tool states', modelId: 'demo-model', draftSnippet: 'Keep the expanded card open.' };
-const status = { callId: 'demo-worker', state: 'running', agent: 'reviewer', modelId: 'demo-model' };
-const group = { groupId: 'demo-group', objective: 'Review mobile tool cards', members: [{ memberId: 'reviewer', state: 'running', workspace: '.', owns: ['frontend/src/components/chat/'] }] };
-const artifact = { name: 'review', summary: 'Expanded cards should preserve the user’s choice.', files: ['docs/features/chat-view-mockup.md'] };
+const status = { callId: 'demo-worker', state: 'running', agent: 'reviewer', modelId: 'demo-model', lastLine: 'Checking 360px layout' };
+const group = {
+  groupId: 'demo-group',
+  name: 'Mobile review',
+  state: 'running',
+  objective: 'Review mobile tool cards',
+  members: [
+    { memberId: 'architect', role: 'Design schema', state: 'completed', workspace: '.', owns: ['docs/'], dependsOn: [] },
+    { memberId: 'reviewer', role: 'Inspect cards', state: 'running', workspace: '.', owns: ['frontend/src/components/chat/'], dependsOn: ['architect'] },
+    { memberId: 'verifier', role: 'Run tests', state: 'waiting', workspace: '.', owns: ['scripts/'], dependsOn: ['reviewer'] }
+  ],
+  decisions: [{ name: 'layout', author: 'architect', state: 'approved', proposal: 'Single-column mobile first' }],
+  conflicts: [{ name: 'ownership', author: 'reviewer', state: 'open', members: ['reviewer', 'verifier'], summary: 'Shared CSS file' }],
+  artifacts: ['review-spec']
+};
+const artifact = { name: 'review', author: 'architect', memberId: 'architect', summary: 'Expanded cards should preserve the user’s choice.', files: ['docs/features/chat-view-mockup.md'] };
 const task = { id: 'demo-task', title: 'Review expanded cards', description: 'Check the request and result on a phone.', status: 'in_progress', current: 1, total: 3 };
 const settings = { scope: 'project', settings: { promptSize: 'average', tools: { shell: { mode: 'ask' } } } };
 const features = { shell: { enabled: true, mode: 'ask' }, files: { enabled: true, mode: 'allow' } };

@@ -32,3 +32,12 @@ Inline code (`` `…` ``) is extracted before the HTML-escape pass, but its **co
 ### Images to internal routes
 
 Markdown images (`![alt](url)`) whose target resolves to an internal SPA route (`/#/…` or `http(s)://…/#/…`) are rendered as their plain alt text instead of a live `<img>`. A live `<img src="/…">` would make the browser fetch the app shell as an image (and a quoted `![alt](url)` in a reasoning trace would otherwise load garbage paths).
+
+### Mermaid diagram blocks (`frontend/src/mermaid.js`)
+
+When `renderMarkdown` encounters a fenced block whose info language is `mermaid` or `mmd`, it passes the raw body to `renderMermaidSvg(source)`:
+- Every node, participant, edge, and note label is XML-escaped (`&`, `<`, `>`, `"`, `'`) before SVG construction; no `<foreignObject>`, `<script>`, or event attributes are ever emitted.
+- The resulting SVG is URI-encoded into `<img class="md-diagram__img" src="data:image/svg+xml;utf8,..." alt="Mermaid diagram" loading="lazy" />` inside `<div class="md-diagram">`, followed by a `<details class="md-diagram__details">` holding the escaped source `<pre class="md-diagram__source">`.
+- Because `makeMarkdownImagesZoomable` in `frontend/src/components/chat/transcript.js` wraps every `<img>` in `renderMarkdown` output with `zoomableImage`, tapping a rendered Mermaid diagram opens the full-screen lightbox on mobile with zero extra wiring.
+- `buildSubagentToolMermaid(toolName, result, args)` and `buildSubagentRunMermaid(result, args)` in `frontend/src/mermaid.js` synthesize Mermaid `flowchart` and `sequenceDiagram` definitions from subagent orchestration tool calls (`subagent_group_*`, `subagent_status`, `subagent_messages`, `subagent_send`, `subagent_stop`, `subagent_publish`, `subagent_read`, `subagent_decision`, `subagent_conflict`) and complex multi-agent `subagent` runs, rendered via `renderSubagentSchemaDiagram` in `frontend/src/components/chat/toolRender.js`.
+

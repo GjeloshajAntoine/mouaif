@@ -6,6 +6,8 @@
 // Output is safe for innerHTML (all special chars escaped except
 // those produced by the recognised patterns).
 
+import { isMermaidLanguage, renderMermaidSvg, svgToDataUrl } from './mermaid.js';
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, '&amp;')
@@ -278,6 +280,21 @@ export function renderMarkdown(text) {
   const out = [];
   for (const block of blocks) {
     if (block.type === 'code') {
+      if (isMermaidLanguage(block.lang)) {
+        const svg = renderMermaidSvg(block.content);
+        if (svg) {
+          out.push(
+            '<div class="md-diagram">' +
+              '<img class="md-diagram__img" src="' + svgToDataUrl(svg) + '" alt="Mermaid diagram" loading="lazy" />' +
+              '<details class="md-diagram__details">' +
+                '<summary class="md-diagram__summary">Mermaid source</summary>' +
+                '<pre class="md-diagram__source"><code class="language-' + escapeHtml(block.lang) + '">' + escapeHtml(block.content) + '</code></pre>' +
+              '</details>' +
+            '</div>'
+          );
+          continue;
+        }
+      }
       out.push('<pre><code' + (block.lang ? ' class="language-' + escapeHtml(block.lang) + '"' : '') + '>' + escapeHtml(block.content) + '</code></pre>');
       continue;
     }

@@ -9,6 +9,7 @@ The chat view renders AI responses as HTML using a zero-dependency, server-side-
 | Feature | Example |
 |---|---|
 | **Fenced code blocks** | `` ```js … ``` `` or `~~~ … ~~~` |
+| **Mermaid diagrams** | `` ```mermaid … ``` `` or `` ```mmd … ``` `` (rendered as visual SVG with tap-to-zoom and collapsible source) |
 | **Inline code** | `` `code` `` |
 | **Headings** | `# H1` through `###### H6` |
 | **Bold** | `**bold**` or `__bold__` |
@@ -71,6 +72,21 @@ DOM running with the user's session. Two rules follow, and both are pinned by
 Urls that address the app's own SPA routes (`…/#/chat/<id>`) are deliberately
 rendered as plain text, so a stray tap on tool output cannot navigate the app
 away from the current chat.
+
+## Mermaid diagram rendering
+
+Fenced code blocks tagged `mermaid` or `mmd` are rendered into responsive SVG diagrams (`frontend/src/mermaid.js`) for the common diagram families LLMs emit:
+
+- **Flowcharts & graphs** (`flowchart TD`, `flowchart LR`, `graph TD`, subgraphs, node shapes `[]`, `()`, `{}`, `(())`, `([])`, `[()]`, labelled and dashed/thick edges).
+- **Sequence diagrams** (`sequenceDiagram`, participants/actors, sync/async/dashed messages, self-calls, `Note`, and `loop`/`alt`/`opt` blocks).
+- **State diagrams** (`stateDiagram`, `stateDiagram-v2`, `[*]` start/end transitions).
+- **Class & ER diagrams** (`classDiagram`, `erDiagram`, entities/attributes, and relationship connectors).
+
+Each rendered diagram includes:
+- A tap-to-zoom `<img class="md-diagram__img">` backed by an inert `data:image/svg+xml;utf8,…` URI, so tapping the diagram on a phone opens it in the full-screen image lightbox.
+- A collapsible **Mermaid source** / **Schema source** `<details>` disclosure below the diagram to inspect or copy the raw definition.
+- Automatic fallback to a standard `<pre><code class="language-mermaid">` block when a diagram uses an unrecognised directive.
+- Automatic structure & communication schema generation (`buildSubagentToolMermaid`, `buildSubagentRunMermaid`) inside expanded subagent orchestration tool cards (`subagent_group_*`, `subagent_status`, `subagent_messages`, `subagent_send`, `subagent_stop`, `subagent_publish`, `subagent_read`, `subagent_decision`, `subagent_conflict`) and complex multi-agent `subagent` runs.
 
 ## Mobile considerations
 

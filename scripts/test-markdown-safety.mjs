@@ -21,13 +21,18 @@
 import assert from 'node:assert/strict';
 
 const { renderMarkdown } = await import('../frontend/src/markdown.js');
+const {
+  buildSubagentRunMermaid,
+  buildSubagentToolMermaid,
+  renderMermaidSvg
+} = await import('../frontend/src/mermaid.js');
 
 // ---- Minimal tag/attribute parser -------------------------------------
 
 const ALLOWED_TAGS = new Set([
   'p', 'br', 'strong', 'em', 'del', 'code', 'pre', 'blockquote', 'ul', 'ol',
   'li', 'label', 'input', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr',
-  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'img'
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'img', 'div', 'details', 'summary'
 ]);
 const ALLOWED_ATTRS = new Set([
   'href', 'src', 'alt', 'target', 'rel', 'class', 'loading', 'type',
@@ -35,6 +40,7 @@ const ALLOWED_ATTRS = new Set([
 ]);
 const URL_ATTRS = new Set(['href', 'src']);
 const SAFE_SCHEMES = new Set(['http', 'https', 'mailto', 'ftp', 'ftps']);
+const DIAGRAM_SVG_DATA_PREFIX = 'data:image/svg+xml;utf8,';
 
 function parseTags(html) {
   const tags = [];
@@ -85,10 +91,22 @@ function assertInert(html, label) {
   const TAG_RE = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)((?:\s+[^<>]*?)?)\s*\/?>/g;
   for (const tag of parseTags(html)) {
     assert.ok(ALLOWED_TAGS.has(tag.name), `${label}: unexpected tag <${tag.name}> in ${html}`);
+    const attrMap = new Map(tag.attrs);
     for (const [name, value] of tag.attrs) {
       assert.ok(!name.startsWith('on'), `${label}: event handler ${name} in ${html}`);
       assert.ok(ALLOWED_ATTRS.has(name), `${label}: unexpected attribute ${name} in ${html}`);
       if (URL_ATTRS.has(name)) {
+        const isDiagramSvgImg =
+          tag.name === 'img' &&
+          name === 'src' &&
+          attrMap.get('class') === 'md-diagram__img' &&
+          value.startsWith(DIAGRAM_SVG_DATA_PREFIX);
+        if (isDiagramSvgImg) {
+          const decodedSvg = decodeURIComponent(value.slice(DIAGRAM_SVG_DATA_PREFIX.length));
+          assert.ok(!/<script|<foreignObject|\son[a-z]+\s*=/i.test(decodedSvg),
+            `${label}: active content inside diagram SVG: ${decodedSvg}`);
+          continue;
+        }
         const scheme = schemeOf(value);
         assert.ok(
           !scheme || SAFE_SCHEMES.has(scheme),
@@ -264,5 +282,156 @@ check('code fences escape both body and language', () => {
   assertInert(out, 'fence');
 });
 
-console.log(`\n${PAYLOADS.length + 6} checks, ${failures} failed`);
+// 8. Mermaid diagram fences render inert SVG images + escaped source details.
+check('mermaid fences escape labels and stay inert', () => {
+  const out = renderMarkdown([
+    '```mermaid',
+    'flowchart TD',
+    '  A["<script>alert(1)</script>"] -->|"onload=alert(1)"| B["<img src=x onerror=alert(1)>"]',
+    '```'
+  ].join('\n'));
+  assert.ok(out.includes('class="md-diagram__img"'), out);
+  assert.ok(out.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), out);
+  assertInert(out, 'mermaid');
+});
+
+// 9. Supported Mermaid diagram families (flowchart, sequence, state, class, ER)
+//    render visual SVG cards with collapsible source and fall back cleanly.
+check('mermaid diagram families render SVG and fallback on unknown syntax', () => {
+  const families = [
+    [
+      '```mermaid',
+      'flowchart LR',
+      '  subgraph API [Backend API]',
+      '    A[Client] --> B{Auth?}',
+      '    B -->|Yes| C[(Database)]',
+      '  end',
+      '```'
+    ].join('\n'),
+    [
+      '```mermaid',
+      'sequenceDiagram',
+      '  participant U as User',
+      '  participant S as Server',
+      '  U->>S: POST /api/chat',
+      '  Note over U,S: SSE stream',
+      '  S-->>U: 200 OK',
+      '```'
+    ].join('\n'),
+    [
+      '```mermaid',
+      'stateDiagram-v2',
+      '  [*] --> Idle',
+      '  Idle --> Running : start',
+      '  Running --> [*]',
+      '```'
+    ].join('\n'),
+    [
+      '```mermaid',
+      'classDiagram',
+      '  class Session {',
+      '    +String id',
+      '    +close()',
+      '  }',
+      '  Session --> Message : owns',
+      '```'
+    ].join('\n'),
+    [
+      '```mermaid',
+      'erDiagram',
+      '  PROJECT ||--o{ CHAT : contains',
+      '```'
+    ].join('\n')
+  ];
+  for (const sample of families) {
+    const html = renderMarkdown(sample);
+    assert.ok(html.includes('<div class="md-diagram">'), sample);
+    assert.ok(html.includes('class="md-diagram__img"'), sample);
+    assert.ok(html.includes('<summary class="md-diagram__summary">Mermaid source</summary>'), sample);
+    assertInert(html, 'mermaid-family');
+  }
+  const unknown = renderMarkdown('```mermaid\npie title Pets\n  "Dogs" : 40\n```');
+  assert.ok(!unknown.includes('md-diagram__img'), unknown);
+  assert.ok(unknown.includes('<pre><code class="language-mermaid">'), unknown);
+  assertInert(unknown, 'mermaid-fallback');
+});
+
+check('subagent structure and communication schemas render inert SVG diagrams', () => {
+  const groupSchema = buildSubagentToolMermaid(
+    'subagent_group_create',
+    {
+      groupId: 'group-1',
+      name: 'Release pipeline <script>',
+      state: 'running',
+      members: [
+        { memberId: 'architect', role: 'Design <img onerror=alert(1)>', state: 'completed', dependsOn: [] },
+        { memberId: 'builder', role: 'Implement', state: 'running', dependsOn: ['architect'] },
+        { memberId: 'tester', role: 'Verify', state: 'waiting', dependsOn: ['builder'] }
+      ],
+      decisions: [{ name: 'api-contract', author: 'architect', state: 'approved' }],
+      conflicts: [{ name: 'lockfile', author: 'builder', state: 'open', members: ['builder', 'tester'] }],
+      artifacts: ['schema-spec']
+    },
+    {}
+  );
+  assert.ok(groupSchema && groupSchema.startsWith('flowchart TD'), groupSchema);
+  const groupSvg = renderMermaidSvg(groupSchema);
+  assert.ok(groupSvg && groupSvg.startsWith('<svg') && groupSvg.includes('architect'), groupSvg);
+  assertInert(renderMarkdown('```mermaid\n' + groupSchema + '\n```'), 'subagent-group-schema');
+
+  const statusSchema = buildSubagentToolMermaid(
+    'subagent_status',
+    {
+      runs: [
+        { callId: 'w1', agent: 'search', memberId: 'architect', state: 'completed', lastLine: 'Done', published: ['spec-v1'] },
+        { callId: 'w2', parentCallId: 'w1', agent: 'coder', memberId: 'builder', state: 'running', lastLine: 'Editing files' }
+      ],
+      escalations: [{ name: 'merge-conflict', sourceCallId: 'w2', state: 'open' }]
+    },
+    {}
+  );
+  assert.ok(statusSchema && statusSchema.startsWith('flowchart TD'), statusSchema);
+  assertInert(renderMarkdown('```mermaid\n' + statusSchema + '\n```'), 'subagent-status-schema');
+
+  const msgSchema = buildSubagentToolMermaid(
+    'subagent_messages',
+    {
+      callId: 'worker-1',
+      state: 'running',
+      deliveries: [{ messageId: 'm1', state: 'delivered' }],
+      lines: [
+        { cursor: 1, kind: 'progress_update', text: 'Step 1/3' },
+        { cursor: 2, kind: 'message', text: 'Found 3 endpoints <script>alert(1)</script>' }
+      ]
+    },
+    { callId: 'worker-1' }
+  );
+  assert.ok(msgSchema && msgSchema.startsWith('sequenceDiagram'), msgSchema);
+  assertInert(renderMarkdown('```mermaid\n' + msgSchema + '\n```'), 'subagent-messages-schema');
+
+  const runSchema = buildSubagentRunMermaid(
+    {
+      ok: true,
+      agent: 'coordinator',
+      state: 'completed',
+      published: ['final-handoff'],
+      chat: [
+        {
+          role: 'assistant',
+          tool_calls: [
+            { id: 'c1', function: { name: 'subagent_group_create', arguments: JSON.stringify({ name: 'team', objective: 'ship', members: [{ memberId: 'a', role: 'r', workspace: '.' }] }) } },
+            { id: 'c2', function: { name: 'subagent', arguments: JSON.stringify({ task: 'Audit auth', memberId: 'a', background: true }) } },
+            { id: 'c3', function: { name: 'subagent_send', arguments: JSON.stringify({ callId: 'c2', message: 'Check JWT expiry' }) } },
+            { id: 'c4', function: { name: 'subagent_messages', arguments: JSON.stringify({ callId: 'c2' }) } }
+          ]
+        }
+      ]
+    },
+    { task: 'Coordinate release audit' }
+  );
+  assert.ok(runSchema && runSchema.startsWith('sequenceDiagram'), runSchema);
+  assertInert(renderMarkdown('```mermaid\n' + runSchema + '\n```'), 'subagent-run-schema');
+});
+
+console.log(`\n${PAYLOADS.length + 9} checks, ${failures} failed`);
 if (failures) process.exitCode = 1;
