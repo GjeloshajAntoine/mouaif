@@ -38,9 +38,17 @@ export function approvalTitle(request) {
   if (request.tool === 'create_mcp_app' && args.request !== undefined) return 'Prepare app draft';
   if (request.tool === 'create_mcp_app' && args.message !== undefined) return 'Message MCP App';
   if (request.tool === 'task') return ({ list: 'List tasks', create: 'Create task', update_progress: 'Update task', complete: 'Complete task' })[args.action] || 'Manage task';
-  const count = args.edits?.length || (request.tool === 'group_read' && args.files?.length) || args.commands?.length;
+  if (request.tool === 'subagent_group_update') return ({ approve: 'Approve group decision', reject: 'Reject group decision', arbitrate: 'Arbitrate group conflict', cancel: 'Cancel worker group' })[args.action] || 'Update worker group';
+  if (request.tool === 'subagent_read' && !args.name) return 'List handoffs';
+  if (request.tool === 'subagent_status' && !args.callId) return 'Check all workers';
+  if (request.tool === 'subagent_group_status' && !args.groupId) return 'Check worker groups';
+  const count = args.edits?.length || (request.tool === 'group_read' && args.files?.length) || args.commands?.length || (request.tool === 'subagent_group_create' && args.members?.length);
   const title = TITLES[request.tool] || request.tool.replace(/^mcp__/, '').replace(/__/g, ' · ').replace(/_/g, ' ');
   return count ? title + ' (' + count + ')' : title;
+}
+function shortGroupId(id) {
+  const s = String(id || '');
+  return /^group-[0-9a-f]{8}-/i.test(s) ? s.slice(0, 14) + '…' : s;
 }
 export function approvalText(request) {
   const details = request.details || {};
@@ -81,7 +89,41 @@ export function approvalText(request) {
   } else if (tool === 'change_working_folder') {
     lines.push('Chat: ' + (args.chatId || details.targetChat?.id || 'current') + ' → ' + (details.workingDirectory || request.projectDir || '.') + ' (' + (args.directory || '.') + ')');
   } else if (tool === 'subagent') {
-    lines.push((args.agent ? '@' + args.agent + ': ' : '') + (args.task || request.summary || ''));
+    const meta = [args.agent ? '@' + args.agent : '', args.memberId ? 'member: ' + args.memberId : '', args.groupId ? shortGroupId(args.groupId) : '', args.background ? 'background' : ''].filter(Boolean).join(' · ');
+    if (meta) lines.push(meta);
+    lines.push(args.task || request.summary || '');
+  } else if (tool === 'subagent_group_create') {
+    lines.push((args.name ? args.name + ' — ' : '') + (args.objective || ''));
+    for (const m of (Array.isArray(args.members) ? args.members : [])) {
+      if (!m || typeof m !== 'object') continue;
+      const deps = Array.isArray(m.dependsOn) && m.dependsOn.length ? ' (after ' + m.dependsOn.join(', ') + ')' : '';
+      const owns = Array.isArray(m.owns) && m.owns.length ? ' [' + m.owns.join(', ') + ']' : '';
+      lines.push('• ' + (m.memberId || '?') + ': ' + (m.role || '') + deps + owns);
+    }
+  } else if (tool === 'subagent_group_update') {
+    lines.push([args.action ? args.action.toUpperCase() : '', args.name, args.groupId ? '(' + shortGroupId(args.groupId) + ')' : ''].filter(Boolean).join(' '));
+    if (args.contract) lines.push(String(args.contract));
+  } else if (tool === 'subagent_group_status') {
+    lines.push(args.groupId ? 'Group ' + shortGroupId(args.groupId) : 'All active worker groups');
+  } else if (tool === 'subagent_status') {
+    lines.push(args.callId ? 'Worker ' + args.callId : 'All active workers');
+  } else if (tool === 'subagent_messages') {
+    const range = [args.since ? 'since #' + args.since : '', args.limit ? 'limit ' + args.limit : ''].filter(Boolean).join(', ');
+    lines.push('Worker ' + (args.callId || '?') + (range ? ' (' + range + ')' : ''));
+  } else if (tool === 'subagent_send') {
+    lines.push('To ' + (args.callId || 'worker') + ': ' + (args.message || ''));
+  } else if (tool === 'subagent_stop') {
+    lines.push('Stop worker ' + (args.callId || ''));
+  } else if (tool === 'subagent_publish') {
+    lines.push((args.name ? args.name + ': ' : '') + (args.summary || ''));
+    if (Array.isArray(args.files) && args.files.length) lines.push('Files: ' + args.files.join(', '));
+  } else if (tool === 'subagent_read') {
+    lines.push(args.name ? 'Artifact: ' + args.name : 'List all published handoffs');
+  } else if (tool === 'subagent_decision') {
+    lines.push((args.name || 'decision') + (args.groupId ? ' (' + shortGroupId(args.groupId) + ')' : '') + ': ' + (args.proposal || ''));
+  } else if (tool === 'subagent_conflict') {
+    const who = Array.isArray(args.members) && args.members.length ? ' [' + args.members.join(', ') + ']' : '';
+    lines.push((args.name || 'conflict') + who + (args.groupId ? ' (' + shortGroupId(args.groupId) + ')' : '') + ': ' + (args.summary || ''));
   } else if (tool === 'webpreview') {
     lines.push([args.url || request.summary, args.viewport, args.mode].filter(Boolean).join(' · '));
   } else {

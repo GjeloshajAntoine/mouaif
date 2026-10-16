@@ -223,7 +223,7 @@ export function formatToolArgs(args, toolName) {
   if (name === 'list_files') return args.pattern || 'all text and image files';
   if (name === 'search_files') return [args.path, args.query].filter(Boolean).join(': ');
   if (name === 'write_file' || name === 'edit_file') return args.path || args.file || '';
-  if (name === 'subagent') return args.task || '';
+  if (name === 'subagent') return (args.memberId ? '[' + args.memberId + '] ' : '') + (args.task || '');
   if (name === 'ask_user') return args.question || '';
   if (name === 'task') return (args.action || '') + (args.title ? ': ' + args.title : '');
   if (name === 'report_progress') return args.title || '';
@@ -245,13 +245,19 @@ export function formatToolArgs(args, toolName) {
   if (name === 'attach_chat_image') return args.path || '';
   if (name === 'list_chat_attachments') return args.chatId || '';
   if (name === 'create_mcp_app') return args.message ? [args.name, args.message].filter(Boolean).join(': ') : (args.name || args.filename || args.path || '');
-  if (name === 'subagent_messages' || name === 'subagent_status' || name === 'subagent_stop') return args.callId || '';
+  if (name === 'subagent_status') return args.callId || 'all workers';
+  if (name === 'subagent_messages' || name === 'subagent_stop') return args.callId || '';
   if (name === 'subagent_send') return [args.callId, args.message].filter(Boolean).join(': ');
-  if (name === 'subagent_group_create') return args.name || args.objective || '';
-  if (name === 'subagent_group_update') return [args.groupId, args.action, args.name].filter(Boolean).join(' · ');
-  if (name === 'subagent_publish' || name === 'subagent_read') return args.name || '';
-  if (name === 'subagent_group_status') return args.groupId || '';
-  if (name === 'subagent_decision' || name === 'subagent_conflict') return [args.groupId, args.name].filter(Boolean).join(' · ');
+  if (name === 'subagent_group_create') {
+    const members = Array.isArray(args.members) ? args.members.map((m) => m && m.memberId).filter(Boolean) : [];
+    return [args.name, members.length ? members.join(', ') : args.objective].filter(Boolean).join(' · ');
+  }
+  if (name === 'subagent_group_update') return [args.action, args.name, args.contract].filter(Boolean).join(' · ');
+  if (name === 'subagent_publish') return [args.name, args.summary].filter(Boolean).join(': ');
+  if (name === 'subagent_read') return args.name || 'all handoffs';
+  if (name === 'subagent_group_status') return /^group-[0-9a-f]{8}-/i.test(String(args.groupId || '')) ? String(args.groupId).slice(0, 14) + '…' : (args.groupId || 'current group');
+  if (name === 'subagent_decision') return [args.name, args.proposal].filter(Boolean).join(': ');
+  if (name === 'subagent_conflict') return [args.name, args.summary].filter(Boolean).join(': ');
   if (args && typeof args === 'object' && !Array.isArray(args) && Object.keys(args).length === 0) return '';
   try { return JSON.stringify(args, null, 2); }
   catch { return String(args); }
@@ -446,17 +452,34 @@ export function formatResultSummary(name, r) {
   }
   if (n === 'create_mcp_app') return (r.mode === 'request' || r.chatId) ? 'draft' : r.mode === 'message' ? 'sent' : (r.path ? 'ready' : null);
   if (n === 'webpreview') return r.mode || null;
-  if (n === 'subagent_status' || n === 'subagent_stop' || n === 'subagent_send' || n === 'subagent_decision') {
+  if (n === 'subagent_status') {
+    if (Array.isArray(r.runs)) {
+      const active = r.runs.filter((x) => x && (x.state === 'running' || x.state === 'waiting' || x.state === 'ready')).length;
+      return r.runs.length + ' worker' + (r.runs.length === 1 ? '' : 's') + (active ? ' · ' + active + ' active' : '');
+    }
+    return [r.memberId, r.state].filter(Boolean).join(' · ') || null;
+  }
+  if (n === 'subagent_stop' || n === 'subagent_send' || n === 'subagent_decision') {
     return r.state || null;
   }
   if (n === 'subagent_messages') {
-    return Array.isArray(r.lines) ? r.lines.length + ' msg' + (r.lines.length === 1 ? '' : 's') : (r.state || null);
+    return Array.isArray(r.lines) ? r.lines.length + ' line' + (r.lines.length === 1 ? '' : 's') : (r.state || null);
   }
   if (n === 'subagent_group_create' || n === 'subagent_group_status' || n === 'subagent_group_update') {
-    return Array.isArray(r.members) ? r.members.length + ' member' + (r.members.length === 1 ? '' : 's') : (r.groupId || null);
+    if (Array.isArray(r.groups)) return r.groups.length + ' group' + (r.groups.length === 1 ? '' : 's');
+    if (Array.isArray(r.members)) {
+      const done = r.members.filter((m) => m && m.state === 'completed').length;
+      const count = r.members.length;
+      return (r.state ? r.state + ' · ' : '') + done + '/' + count + ' done';
+    }
+    return r.conflict?.state || r.state || null;
   }
-  if (n === 'subagent_publish' || n === 'subagent_read') return r.name || null;
-  if (n === 'subagent_conflict') return (r.conflict && r.conflict.state) || null;
+  if (n === 'subagent_publish') return r.name || null;
+  if (n === 'subagent_read') {
+    if (Array.isArray(r.artifacts)) return r.artifacts.length + ' handoff' + (r.artifacts.length === 1 ? '' : 's');
+    return r.name || null;
+  }
+  if (n === 'subagent_conflict') return r.state || (r.conflict && r.conflict.state) || null;
   return null;
 }
 

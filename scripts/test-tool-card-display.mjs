@@ -21,6 +21,10 @@ assert.ok(formatReadableToolResult({ values: Array.from({ length: 1000 }, () => 
 const approval = approvalText({ tool: 'update_settings', details: { args: { patch: { apiKey: 'hide-me', nested: { token: 'secret-token' } } }, before: { password: 'old-secret' } } });
 assert.ok(!/hide-me|secret-token|old-secret/.test(approval));
 assert.match(approvalTitle({ tool: 'group_edit', details: { args: { edits: [{}, {}] } } }), /2/);
+assert.match(approvalTitle({ tool: 'subagent_group_create', details: { args: { name: 'g', objective: 'goal', members: [{ memberId: 'a', role: 'r', workspace: 'w' }] } } }), /Create worker group \(1\)/);
+assert.match(approvalText({ tool: 'subagent_group_create', details: { args: { name: 'g', objective: 'goal', members: [{ memberId: 'a', role: 'design', workspace: 'w', dependsOn: ['b'] }] } } }), /a: design \(after b\)/);
+assert.equal(approvalTitle({ tool: 'subagent_group_update', details: { args: { action: 'approve', name: 'api', contract: 'ok' } } }), 'Approve group decision');
+assert.equal(approvalTitle({ tool: 'subagent_read', details: { args: {} } }), 'List handoffs');
 assert.match(permissionExplanation({ tool: 'read_file', details: { permissionScope: ['read_file', 'write_file'] } }), /write_file/);
 assert.match(approvalText({ tool: 'delete_chat', details: { targetChat: { id: 'id1', title: 'Target title' } } }), /Target title/);
 console.log('PASS all-tool action titles, readable nested data, bounded/circular results, redacted settings, counts, and exact permission scope');

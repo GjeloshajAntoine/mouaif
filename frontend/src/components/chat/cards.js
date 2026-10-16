@@ -717,7 +717,7 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     name.textContent = approvalTitle(request);
     const meta = document.createElement('span');
     meta.className = 'tool-card__args';
-    meta.textContent = request.tool || '';
+    meta.textContent = request.parentTool === 'subagent' ? 'subagent · ' + (request.tool || '') : (request.tool || '');
     const title = document.createElement('div');
     title.className = 'tool-card__role';
     title.textContent = request.tool === 'change_working_folder' ? 'permission needed' : 'authorization required';
