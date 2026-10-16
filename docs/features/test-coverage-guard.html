@@ -52,10 +52,11 @@ node scripts/test-test-coverage.js # run the guard alone</code></pre>
 
 Add them to the &quot;test&quot; script (or a test:* group) in package.json,
 or add them to EXEMPT in scripts/test-test-coverage.js with a reason.</code></pre>
-<h2 id="what-it-checks">What it checks</h2>
-<div class="table-wrap"><table><thead><tr><th>Check</th><th>What it catches</th></tr></thead><tbody><tr><td>Every test file on disk is referenced in <code>package.json</code></td><td>New tests added without wiring them into CI</td></tr><tr><td>Every referenced test file exists on disk</td><td>Renamed/deleted files leaving dangling references</td></tr><tr><td>No <code>node --check</code> on a test file inside a <code>test:*</code> script</td><td>Syntax checks masquerading as behavioral tests</td></tr><tr><td><code>test</code> script exists</td><td>Accidental deletion of the main test entry</td></tr><tr><td><code>test</code> script runs ≥ 100 test files</td><td>Mass removal of tests from the suite</td></tr><tr><td>Helper fixture servers are not run directly as tests</td><td>Fixture servers (<code>test-mcp-server.js</code>, …) executed as standalone tests</td></tr><tr><td>Tracked broken tests still exist on disk</td><td>Broken tests removed without updating the tracking list</td></tr></tbody></table></div>
-<h2 id="tests-that-cannot-run-in-npm-test">Tests that cannot run in <code>npm test</code></h2>
-<p>A few test files legitimately cannot run in the main suite — a fixture server that other tests spawn, a browser harness that needs a debug Chrome, a test pinned to a known bug. They are tracked by name with a reason instead of being dropped, and the guard fails if a tracked file disappears:</p>
+<h2 id="implementation-notes">Implementation notes</h2>
+<p>The guard checks seven things:</p>
+<div class="table-wrap"><table><thead><tr><th>Check</th><th>What it catches</th></tr></thead><tbody><tr><td>Every test file on disk is referenced in <code>package.json</code></td><td>New tests added without wiring them into CI</td></tr><tr><td>Every referenced test file exists on disk</td><td>Renamed/deleted files leaving dangling references</td></tr><tr><td>No <code>node --check</code> on a test file inside a <code>test:*</code> script</td><td>Syntax checks masquerading as behavioral tests</td></tr><tr><td><code>test</code> script exists</td><td>Accidental deletion of the main test entry</td></tr><tr><td><code>test</code> script runs ≥ 100 test files</td><td>Mass removal of tests from the suite</td></tr><tr><td>Helper fixture servers are not run directly as tests</td><td>Fixture servers (<code>test-mcp-server.js</code>, …) executed as standalone tests</td></tr><tr><td><code>BROKEN_TESTS</code> entries still exist on disk</td><td>Broken tests removed without updating the tracking list</td></tr></tbody></table></div>
+<h3 id="exempt-files">Exempt files</h3>
+<p>Some test files legitimately cannot run in <code>npm test</code>. They are listed in the guard with a reason:</p>
 <pre><code class="language-js">// scripts/test-test-coverage.js
 const HELPERS = new Set([
   &#39;test-mcp-server.js&#39;,        // fixture server spawned by other tests
@@ -83,7 +84,7 @@ const BROKEN_TESTS = new Set([
 ]);</code></pre>
 <h3 id="npm-scripts">npm scripts</h3>
 <div class="table-wrap"><table><thead><tr><th>Script</th><th>Purpose</th></tr></thead><tbody><tr><td><code>npm test</code></td><td>Runs the guard first, then all CI-safe tests (194 files)</td></tr><tr><td><code>npm run test:browser-build</code></td><td>Tests that need the web bundle (<code>frontend/dist</code>) built first</td></tr><tr><td><code>npm run test:chrome</code></td><td>Tests that need the debug Chrome on <code>:9222</code></td></tr></tbody></table></div>
-<p>The browser-build and chrome tests live in separate scripts so <code>npm test</code> stays fast and dependency-free on a fresh clone.</p>
+<p>The browser-build and chrome tests are wired into separate scripts so <code>npm test</code> stays fast and dependency-free on a fresh clone.</p>
       <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
     </main>
   </div>
