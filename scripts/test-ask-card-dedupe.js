@@ -325,7 +325,7 @@ const ASK_RESULT = {
 
 function main() {
   const globals = installDom();
-  const transcript = loadModule('transcript.js', ['appendToolCallCard', 'appendToolResultCard'], globals);
+  const transcript = loadModule('transcript.js', ['appendToolCallCard', 'appendToolResultCard', 'handleSubagentStreamEvent'], globals);
   const cards = loadModule('cards.js', ['removePendingAuthorizationCards'], globals);
 
   // ---- 1. the call frame supersedes the standing question card -----
@@ -508,6 +508,21 @@ function main() {
             el3.appendChild(resultReceipt);
             transcript.appendToolResultCard({ id: 'call_result_receipt', name: 'shell', ok: false, result: { error: 'Denied' } }, refs3);
             check('result-first path replaces a decision receipt', !resultReceipt.parentNode);
+
+            // Nested subagent tool_call / tool_result also clears its standing decision receipt
+            // and blocks late overlay remounts via data-nested-tool-id.
+            const el4 = createElement('div');
+            el4._root = true;
+            const refs4 = makeRefs(el4);
+            transcript.appendToolCallCard({ id: 'sub_parent', name: 'subagent', args: { task: 'run' } }, refs4);
+            const nestedReceipt = createElement('div');
+            nestedReceipt.className = 'tool-card tool-card--authorization tool-card--decided';
+            nestedReceipt.dataset.authDecisionId = 'nested_call_1';
+            el4.appendChild(nestedReceipt);
+            transcript.handleSubagentStreamEvent({ eventName: 'tool_call' }, { parentCallId: 'sub_parent', id: 'nested_call_1', name: 'subagent_decision', args: { name: 'id-regex', proposal: 'ok' } }, refs4);
+            check('nested subagent tool_call removes its decision receipt', !nestedReceipt.parentNode);
+            check('nested tool row blocks late authorization remount', !overlay.authCardGuard(refs4, 'nested_call_1'));
+
             console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
             if (failed) process.exitCode = 1;
             resolve();

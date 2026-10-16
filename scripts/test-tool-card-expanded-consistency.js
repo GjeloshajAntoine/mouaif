@@ -163,7 +163,7 @@ function textOf(node) {
 
 function installContext() {
   const base = {
-    console, JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, WeakMap, Promise, Error,
+    console, JSON, Math, Date, Number, String, Boolean, Array, Object, Set, Map, WeakMap, WeakSet, Promise, Error,
     isFinite, parseFloat, parseInt, encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout,
     document: {
       createElement: makeNode,
@@ -183,14 +183,15 @@ function installContext() {
     has: () => true,
     get: (target, key) => (key in target ? target[key] : () => undefined)
   }));
-  const load = (file) => {
-    const source = fs.readFileSync(path.join(CHAT_DIR, file), 'utf8')
+  const loadSrc = (relPath) => {
+    const source = fs.readFileSync(path.join(__dirname, '../frontend/src', relPath), 'utf8')
       .replace(/^import[\s\S]*?from\s+'[^']+';$/gm, '')
       .replace(/^export /gm, '');
-    vm.runInContext(source, context, { filename: file });
+    vm.runInContext(source, context, { filename: relPath });
   };
-  load('tools.js');
-  load('toolRender.js');
+  loadSrc('mermaid.js');
+  loadSrc('components/chat/tools.js');
+  loadSrc('components/chat/toolRender.js');
   const transcript = fs.readFileSync(path.join(CHAT_DIR, 'transcript.js'), 'utf8')
     .replace(/^import[\s\S]*?from\s+'[^']+';$/gm, '')
     .replace(/^export /gm, '');
@@ -375,6 +376,67 @@ function main() {
       check('.' + cls + ' wraps long content',
         /overflow-wrap:\s*anywhere/.test(rule[1]), rule[1].trim());
     }
+  }
+
+  // ---- 6. Subagent coordination tools and complex runs render SVG schema diagrams ----
+  {
+    const refs = makeRefs();
+    mod.appendToolResultCard({
+      id: 'call_group',
+      name: 'subagent_group_create',
+      ok: true,
+      args: {
+        name: 'ReleaseGroup',
+        objective: 'Verify and ship',
+        members: [
+          { memberId: 'architect', role: 'Design', workspace: '.', dependsOn: [] },
+          { memberId: 'verifier', role: 'Test', workspace: '.', dependsOn: ['architect'] }
+        ]
+      },
+      result: {
+        groupId: 'group-1',
+        name: 'ReleaseGroup',
+        state: 'running',
+        members: [
+          { memberId: 'architect', role: 'Design', state: 'completed', dependsOn: [] },
+          { memberId: 'verifier', role: 'Test', state: 'running', dependsOn: ['architect'] }
+        ]
+      }
+    }, refs);
+    const groupCard = refs.transcript.current.children[0];
+    if (groupCard && typeof groupCard._lazyBody === 'function') groupCard._lazyBody();
+    const schemaImg = groupCard && groupCard.querySelector('.md-diagram__img');
+    check('subagent_group_create renders a visual SVG schema diagram in the expanded card',
+      !!schemaImg && String(schemaImg.src || '').startsWith('data:image/svg+xml;utf8,'));
+
+    const subRefs = makeRefs();
+    mod.appendToolResultCard({
+      id: 'call_sub_complex',
+      name: 'subagent',
+      ok: true,
+      args: { task: 'Orchestrate subagents' },
+      result: {
+        ok: true,
+        text: 'Completed coordination.',
+        agent: 'lead',
+        chat: [
+          { role: 'user', content: 'Orchestrate subagents' },
+          {
+            role: 'assistant',
+            tool_calls: [
+              { id: 'nc1', function: { name: 'subagent', arguments: JSON.stringify({ task: 'Subtask A', memberId: 'workerA', background: true }) } },
+              { id: 'nc2', function: { name: 'subagent_send', arguments: JSON.stringify({ callId: 'nc1', message: 'Focus on edge cases' }) } }
+            ]
+          },
+          { role: 'assistant', content: 'Completed coordination.' }
+        ]
+      }
+    }, subRefs);
+    const subCard = subRefs.transcript.current.children[0];
+    const subChat = subCard && subCard.querySelector('.tool-card__subagent-chat');
+    const subSchema = subChat && subChat.querySelector('.md-diagram__img');
+    check('complex subagent run with child delegations/messages renders an orchestration schema diagram',
+    !!subSchema && String(subSchema.src || '').startsWith('data:image/svg+xml;utf8,'));
   }
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');

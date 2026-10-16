@@ -114,4 +114,4 @@ The rule is wrapped in `@supports (overflow-anchor: auto)`. A skipped row report
 Two selectors are excluded on purpose:
 
 - `[data-live="1"]` — the streaming assistant row grows every frame and must stay laid out.
-- `[data-auth-call-id]` — the authorization / `ask_user` overlay cards are scrolled into view on mount, and a skipped element cannot be measured.
+- `[data-auth-call-id]`, `[data-mcp-app-card]`, and `.tool-card--subagent.tool-card--call` — bottom-pinned overlay prompts, interactive MCP App cards, and running subagent cards stay laid out at the bottom of the transcript.

@@ -31,7 +31,8 @@ const existing = refs.transcript.current.querySelector(
 '.tool-card--authorization[data-auth-call-id="' + id + '"],' +
 '.tool-card--ask-user[data-auth-call-id="' + id + '"],' +
 '[data-auth-decision-id="' + id + '"],' +
-'[data-tool-id="' + id + '"]'
+'[data-tool-id="' + id + '"],' +
+'[data-nested-tool-id="' + id + '"]'
 );
 return !existing;
 }

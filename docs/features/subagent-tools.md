@@ -39,11 +39,19 @@ Only the parent can list, message or stop runs. Children see publish/read and th
 
 See [Cooperative subagent groups](cooperative-subagent-groups.md) for objective/member declarations, dependency readiness, workspace-aware artifact discovery, proposed versus parent-approved contracts, conflicts and arbitration. Each local parent coordinates its own children; nested subagents can delegate further by default ([recursive delegation](recursive-subagent-delegation.md), depth 3, shared finite root limits).
 
+### Visual structure and communication schemas
+
+Expanded Subagent orchestration tool cards (`subagent_group_create`, `subagent_group_status`, `subagent_group_update`, `subagent_status`, `subagent_messages`, `subagent_send`, `subagent_stop`, `subagent_publish`, `subagent_read`, `subagent_decision`, `subagent_conflict`) and complex `subagent` runs that coordinate child workers or group handoffs automatically render a responsive SVG schema diagram (`frontend/src/mermaid.js` + `frontend/src/components/chat/toolRender.js`) above the structured details:
+
+- **Group & worker topology** (`flowchart TD` / `flowchart LR`) showing parent coordinators, group subgraphs, member states, `dependsOn` edges, published handoff artifacts, proposals, and escalated conflicts.
+- **Inter-agent message flows** (`sequenceDiagram`) showing parent-to-worker task delegation, `subagent_send` steering receipts, `subagent_messages` progress/output lines, decision proposals, and stop signals.
+- Every schema diagram is wrapped in a tap-to-zoom button for the full-screen mobile lightbox and includes a collapsible **Schema source** disclosure.
+
 ### Ending the turn
 
 Completed runs remain observable until the parent finishes. Ending the parent turn cancels unfinished children and waits at most one second for settlement, then discards handles, inboxes and handoffs. A non-cooperative child receives a single synthetic cancelled result (`ESHUTDOWN_TIMEOUT`); later events/results cannot reopen it. Billing after that deadline is not attributed. Parent cancellation or failure also cleans up children. Nothing can be controlled from another chat or later turn, even with a copied handle. Worker restart loses this in-memory coordination state; saved transcripts remain ordinary chat tool cards.
 
-The background call card stays running until its **single final result** arrives, with the same nested conversation and cost rendering as a synchronous call. The parent receives a bounded text answer through status; generated image pixels are not automatically inserted into its live background-result context. Prefer synchronous image delegation when the parent needs immediate vision content.
+The background call card stays running until its **single final result** arrives, with the same nested conversation and cost rendering as a synchronous call. While a `subagent` card is running, it stays pinned at the bottom of the chat transcript (below any new parent or sibling messages, tool calls, progress updates, and live streaming text, and above mounted MCP App cards and active approval/question overlays); once its final result arrives, it returns to its original chronological slot in the conversation. The parent receives a bounded text answer through status; generated image pixels are not automatically inserted into its live background-result context. Prefer synchronous image delegation when the parent needs immediate vision content.
 
 ## Limits and permissions
 

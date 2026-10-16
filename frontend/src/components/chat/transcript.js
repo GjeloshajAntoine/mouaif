@@ -22,7 +22,14 @@ import {
   progressLevelOf,
   TOOL_ARGS_PREVIEW_CHARS
 } from './tools.js';
-import { renderToolResultBody, renderFileBatchToolResult, renderGroupCliToolResult, zoomableImage } from './toolRender.js';
+import {
+  renderToolResultBody,
+  renderFileBatchToolResult,
+  renderGroupCliToolResult,
+  renderSubagentOrchestrationToolResult,
+  renderSubagentRunSchema,
+  zoomableImage
+} from './toolRender.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
 import { cssEscape, copyText, messageCopyText } from './utils.js';
 import { formatCost } from '../../usage.js';
@@ -154,8 +161,8 @@ export function renderSystemPromptMessage(refs, systemPrompt) {
 // anchor (refs._insertAnchor) so older rows land ABOVE the tail that
 // was already painted at the bottom. When no anchor is set (the live
 // path and the tail phase), non-bottom rows land before any bottom-pinned
-// card (MCP App cards and ask_user / authorization overlay cards) so those
-// always remain at the very bottom of the transcript.
+// card (running subagent cards, MCP App cards, and ask_user / authorization
+// overlay cards) so those always remain in their bottom tiers.
 function transcriptInsert(refs, node) {
   const el = refs.transcript.current;
   if (!el) return;
@@ -167,7 +174,13 @@ function transcriptInsert(refs, node) {
     if (node.classList) node.classList.add('is-backfilled');
     el.insertBefore(node, anchor);
   } else {
-    const tailAnchor = isMcpAppCard(node) ? firstOverlayCard(el) : (!isOverlayCard(node) ? firstBottomPinnedCard(el) : null);
+    let tailAnchor = null;
+    if (!isOverlayCard(node)) {
+      if (isMcpAppCard(node)) tailAnchor = firstOverlayCard(el);
+      else if (isRunningSubagentCard(node)) tailAnchor = firstMcpOrOverlayCard(el);
+      else if (isLiveAssistantRow(node)) tailAnchor = firstBottomPinnedCard(el);
+      else tailAnchor = firstLiveOrBottomPinnedCard(el);
+    }
     if (tailAnchor && tailAnchor !== node && tailAnchor.parentNode === el) {
       el.insertBefore(node, tailAnchor);
     } else {
@@ -1164,7 +1177,6 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
   card.className = 'tool-card tool-card--call';
   card.dataset.toolId = id;
   card.dataset.toolName = normalizeToolName(toolCall.name);
-  indexToolCard(refs, id, card);
   // Keep the call's arguments on the card. The matching `tool_result`
   // frame carries only the result, so a preview that renders the model's
   // own payload — write_file's content — reads it from here when the
@@ -1220,6 +1232,12 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
 // would expose placeholder text instead of actual tool output.
   card.querySelector('.tool-card__head')?.setAttribute('aria-expanded', String(card.classList.contains('is-expanded')));
   transcriptInsert(refs, card);
+  indexToolCard(refs, id, card);
+  // While a subagent is running, it stays pinned to the bottom of the
+  // transcript as the parent or sibling agents perform other work. A slot
+  // marker sitting at the call's original chronological position lets the
+  // card return to its exact place once its final result lands.
+  if (isSubagentTool(toolCall.name)) ensureSubagentSlotMarker(card);
   afterTranscriptAppend(refs, true);
   // Park the minted id when the provider gave us none, so the matching
   // result can adopt it instead of appending a duplicate card.
@@ -1383,6 +1401,24 @@ function findSubagentCard(refs, parentCallId) {
   return cards.length ? cards[cards.length - 1] : null;
 }
 
+// firstRunningNestedSubagentRow(live) -> Element | null
+function firstRunningNestedSubagentRow(live) {
+  if (!live || !live.children) return null;
+  for (const child of live.children) {
+    if (child && child.dataset && child.dataset.nestedSubagent === '1' && child.dataset.settled !== '1') return child;
+  }
+  return null;
+}
+
+// firstUnsettledNestedToolRow(live) -> Element | null
+function firstUnsettledNestedToolRow(live) {
+  if (!live || !live.children) return null;
+  for (const child of live.children) {
+    if (hasClass(child, 'tool-card__subagent-tool') && (!child.dataset || child.dataset.settled !== '1')) return child;
+  }
+  return null;
+}
+
 // ensureSubagentLive(card)
 function ensureSubagentLive(card) {
   if (!card) return null;
@@ -1446,7 +1482,9 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     body.className = 'chat-msg__body';
     renderSubagentImages(body, [data]);
     row.appendChild(body);
-    live.appendChild(row);
+    const firstRunningSubagent = firstRunningNestedSubagentRow(live);
+    if (firstRunningSubagent && firstRunningSubagent.parentNode === live) live.insertBefore(row, firstRunningSubagent);
+    else live.appendChild(row);
     const hint = live.querySelector('.tool-card__subagent-live-hint');
     if (hint) hint.remove();
     afterTranscriptAppend(refs, false);
@@ -1475,7 +1513,9 @@ export function handleSubagentStreamEvent(ev, data, refs) {
       row._content = '';
       row._reasoning = '';
       row.appendChild(rowBody);
-      live.appendChild(row);
+      const firstRunningSubagent = firstRunningNestedSubagentRow(live);
+      if (firstRunningSubagent && firstRunningSubagent.parentNode === live) live.insertBefore(row, firstRunningSubagent);
+      else live.appendChild(row);
       // First delta of this nested segment: give the body its answer element
       // once (renderAssistantBody), then append to it. Without this the row
       // held a raw empty body and every delta below had nowhere to append.
@@ -1523,19 +1563,54 @@ export function handleSubagentStreamEvent(ev, data, refs) {
     return true;
   }
   if (ev.eventName === 'tool_call') {
+    if (data && data.id) {
+      for (const stale of refs.transcript.current.querySelectorAll(OVERLAY_CARD_SELECTOR)) {
+        if ((stale.dataset.authCallId || stale.dataset.authDecisionId) === String(data.id)) stale.remove();
+      }
+    }
     const hint = live.querySelector('.tool-card__subagent-live-hint');
     if (hint) hint.remove();
     // Same row builder the settled render uses, so the live view and the
     // final view of one call cannot differ in label, args or status dot.
     const row = buildSubagentToolRow(data.name, data.id, formatToolArgs(data.args, data.name), data.args);
-    live.appendChild(row);
+    if (!isSubagentTool(data.name)) {
+      const firstRunningSubagent = firstRunningNestedSubagentRow(live);
+      if (firstRunningSubagent && firstRunningSubagent.parentNode === live) live.insertBefore(row, firstRunningSubagent);
+      else live.appendChild(row);
+    } else {
+      if (row.dataset) row.dataset.nestedSubagent = '1';
+      row._slotOrder = ++_subagentSlotCounter;
+      const children = live.children;
+      let prev = null;
+      if (children) {
+        for (let i = 0; i < children.length; i++) {
+          const c = children[i];
+          if (!(c && c.dataset && c.dataset.nestedSubagent === '1' && c.dataset.settled !== '1')) prev = c;
+        }
+      }
+      row._slotPrev = prev;
+      row._slotRecorded = true;
+      live.appendChild(row);
+    }
     scrollToolBodyToBottomSoon(live);
     afterTranscriptAppend(refs, false);
     return true;
   }
   if (ev.eventName === 'tool_result') {
+    if (data && data.id) {
+      for (const stale of refs.transcript.current.querySelectorAll(OVERLAY_CARD_SELECTOR)) {
+        if ((stale.dataset.authCallId || stale.dataset.authDecisionId) === String(data.id)) stale.remove();
+      }
+    }
     let row = data.id ? live.querySelector('[data-nested-tool-id="' + cssEscape(String(data.id)) + '"]') : null;
-    if (!row) row = live.querySelector('.tool-card__subagent-tool:last-child');
+    if (!row) row = firstUnsettledNestedToolRow(live) || live.querySelector('.tool-card__subagent-tool:last-child');
+    if (row) {
+      row._settled = true;
+      if (row.dataset) row.dataset.settled = '1';
+      if (isSubagentTool(data.name)) {
+        restoreSubagentCardToSlot(row, live);
+      }
+    }
     // The live result frame carries the authoritative ok flag; the settled
     // transcript only has the result body, so the flag is a hint here.
     fillSubagentToolRow(row, data.name, data.result, row && row._toolArgs, data.ok);
@@ -1582,9 +1657,9 @@ const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName
   const pillText = partial ? 'Partial success' : toolResult.ok ? 'ok' : 'error';
 const level = toolResult.ok ? progressLevelOf(toolResult.name, rawR) : null;
 if (level && (normalizeToolName(toolResult.name) === 'report_progress'
-  || (rawR && (rawR.action === 'progress_updated' || rawR.action === 'completed')))) {
+  || (normalizeToolName(toolResult.name) === 'task' && rawR && (rawR.action === 'progress_updated' || rawR.action === 'completed')))) {
   const src = normalizeToolName(toolResult.name) === 'task' ? rawR.task : rawR;
-  card = updateProgressCard(refs, Object.assign({}, level, { callId: id, title: src.title }));
+  card = updateProgressCard(refs, Object.assign({}, level, { callId: id, title: src && src.title }));
   if (card) {
     card.classList.add('tool-card--result');
     card.classList.remove('tool-card--call');
@@ -1645,6 +1720,7 @@ if (!card) {
     card.classList.add('tool-card--result');
     card.classList.remove('tool-card--call');
     card.dataset.toolName = normalizeToolName(toolResult.name);
+    if (isSubagent || hasClass(card, 'tool-card--subagent')) restoreSubagentCardToSlot(card, refs.transcript.current);
     const oldArgs = card.querySelector('.tool-card__args');
     const headArgs = callArgs != null
     ? formatToolArgs(callArgs, toolResult.name)
@@ -1742,7 +1818,13 @@ if (!card._userCollapsed) card.classList.add('is-expanded');
 
 // rebuildToolCardHead(card, toolName, args, pillClass, pillText, resultSummary, toolArgs)
 function rebuildToolCardHead(card, toolName, args, pillClass, pillText, resultSummary, toolArgs) {
-  const oldHead = card.querySelector(':scope > .tool-card__head');
+  let oldHead = null;
+  if (card && card.children) {
+    for (const child of card.children) {
+      if (hasClass(child, 'tool-card__head')) { oldHead = child; break; }
+    }
+  }
+  if (!oldHead && card && card.querySelector) oldHead = card.querySelector(':scope > .tool-card__head');
   const fresh = buildToolCardHead(toolName, args, pillClass, pillText, resultSummary, toolArgs);
   fresh.setAttribute('aria-expanded', String(card.classList.contains('is-expanded')));
   if (oldHead && oldHead.parentNode === card) {
@@ -1813,6 +1895,9 @@ function renderSubagentToolPreview(parent, name, raw, args) {
   if (toolName === 'search_files') return renderSearchFilesInPreview(preview, r);
   if (toolName === 'edit_file') return renderEditFileInPreview(preview, r);
   if (toolName === 'write_file') return renderWriteFileInPreview(preview, r, args);
+  if (toolName && toolName.startsWith('subagent_') && typeof renderSubagentOrchestrationToolResult === 'function') {
+    return renderSubagentOrchestrationToolResult(preview, r, args, toolName);
+  }
   if (r && Array.isArray(r.content)) {
     const lines = [];
     for (const c of r.content) {
@@ -1962,6 +2047,10 @@ export function renderSubagentChat(card, toolResult) {
   // Don't let taps inside the nested chat bubble up to the parent
   // card's expand/collapse toggle.
   wrap.addEventListener('click', (e) => e.stopPropagation());
+  if (typeof renderSubagentRunSchema === 'function') {
+    const runArgs = (toolResult && toolResult.args) || card._toolArgs || null;
+    renderSubagentRunSchema(wrap, r, runArgs);
+  }
   const turns = chat && chat.length ? chat : [{ role: 'assistant', content: r.text }];
   // One row per tool CALL, keyed by call id. The persisted nested chat
   // splits a call and its result into two messages (an assistant turn with
@@ -1976,8 +2065,13 @@ export function renderSubagentChat(card, toolResult) {
   const pendingCallRows = [];
   const appendCallRows = (parent, toolCalls) => {
     for (const tc of toolCalls) {
-      const callRow = appendSubagentNestedToolCall(parent, tc);
       const id = tc && (tc.id || (tc.function && tc.function.id));
+      if (id && card.parentNode) {
+        for (const stale of card.parentNode.querySelectorAll(OVERLAY_CARD_SELECTOR)) {
+          if ((stale.dataset.authCallId || stale.dataset.authDecisionId) === String(id)) stale.remove();
+        }
+      }
+      const callRow = appendSubagentNestedToolCall(parent, tc);
       if (callRow && id) rowsByCallId.set(id, callRow);
       if (callRow) pendingCallRows.push(callRow);
     }
@@ -2416,16 +2510,18 @@ export function rekeyToolCard(refs, id, card) {
 // on it (see setSubagentCardCost).
 export function findToolCard(refs, id) {
   if (!id || !refs.transcript || !refs.transcript.current) return null;
+  const host = refs.transcript.current;
   const key = String(id);
   const index = cardIndexFor(refs);
   if (index) {
     const hit = index.cards.get(key);
     if (hit) {
-      if (hit.isConnected === false) index.cards.delete(key);
-      else return hit;
+      if (hit.isConnected === false || (hit.parentNode && hit.parentNode !== host)) index.cards.delete(key);
+      else if (hit.parentNode === host || hit.isConnected === true) return hit;
+      else index.cards.delete(key);
     }
   }
-  const found = refs.transcript.current.querySelector('[data-tool-id="' + cssEscape(key) + '"]');
+  const found = host.querySelector('[data-tool-id="' + cssEscape(key) + '"]');
   if (found && index) index.cards.set(key, found);
   return found;
 }
@@ -2677,7 +2773,6 @@ function renderTranscriptChunked(state, refs, expanded) {
   // this phase manages the scroll itself with a single pin at the end.
   refs._suspendScrollPin = true;
   const tailStart = Math.max(0, order.length - TRANSCRIPT_CHUNK_ROWS);
-  const childrenBefore = transcriptEl.children.length;
   refs._insertAnchor = null;
   try {
     for (let k = tailStart; k < order.length; k++) {
@@ -2702,9 +2797,10 @@ function renderTranscriptChunked(state, refs, expanded) {
   }
 
   // Phase 2 — backfill older rows above the first tail row. The anchor
-  // is the first element the tail phase appended; inserting before it
-  // keeps older history between the header cards and the tail.
-  const anchor = transcriptEl.children[childrenBefore] || null;
+  // is the first non-header element in the transcript; inserting before it
+  // keeps older history between the header cards and the tail even if
+  // overlay cards were mounted before the tail rendered.
+  const anchor = findTranscriptContentStart(transcriptEl);
   refs._insertAnchor = anchor;
   refs._pendingTranscriptChunk = requestAnimationFrame(() => renderTranscriptBackfill(state, refs, {
     order, index: tailStart - 1, token, expanded
@@ -2730,21 +2826,20 @@ function renderTranscriptBackfill(state, refs, chunk) {
   // Walk backwards so rows are inserted in reverse; because each insert
   // goes before the SAME anchor, the net order stays chronological. The
   // anchor advances to the node just inserted so the next (older) row
-  // lands above it — but only when a node was actually inserted (a
-  // duplicate tool-call row is skipped and inserts nothing, in which
-  // case the anchor must stay put).
+  // lands above it — using the recorded `_lastInsertedRow` (or its slot
+  // marker if a running subagent card inserted one) so a de-duplicated call
+  // row or an in-place result update does not advance the anchor.
   try {
   while (chunk.index >= 0 && rendered < TRANSCRIPT_CHUNK_ROWS) {
     const m = state.messages[chunk.order[chunk.index]];
     chunk.index--;
-    const before = transcriptEl.childElementCount;
-    const prevInserted = refs._insertAnchor ? refs._insertAnchor.previousElementSibling : transcriptEl.lastElementChild;
+    const anchorBefore = refs._insertAnchor;
     renderMessageRow(state, refs, m);
-    if (transcriptEl.childElementCount > before) {
-      // The newly inserted node is the one now sitting right before the
-      // old anchor; make it the new anchor.
-      const nowInserted = refs._insertAnchor ? refs._insertAnchor.previousElementSibling : transcriptEl.lastElementChild;
-      if (nowInserted && nowInserted !== prevInserted) refs._insertAnchor = nowInserted;
+    const inserted = refs._lastInsertedRow;
+    if (inserted && inserted.parentNode === transcriptEl) {
+      if (!anchorBefore || inserted.nextElementSibling === anchorBefore || inserted.nextSibling === anchorBefore) {
+        refs._insertAnchor = inserted;
+      }
     }
     rendered++;
   }
@@ -2822,25 +2917,29 @@ function restoreExpandedState(exp, root) {
   restoreNestedRowState(root, exp.nestedRows);
 }
 
-// reanchorOverlayCards(refs) — move any bottom-pinned MCP App cards and
-// standing ask_user / authorization overlay cards to the very bottom of
-// the transcript.
+// reanchorOverlayCards(refs) — move any running subagent cards, bottom-pinned
+// MCP App cards, and standing ask_user / authorization overlay cards to the
+// bottom of the transcript in tier order.
 //
-// MCP App cards are placed before overlay cards so a live prompt or
-// approval question still sits at the very end, while interactive app
-// views always stay below the conversation messages instead of getting
-// buried as new turns arrive. Nodes already sitting in their bottom slot
-// are left untouched so iframe state in mounted MCP Apps is never reset.
+// Running subagent cards sit right below the regular conversation rows (and
+// any live assistant bubble) so active delegations stay visible at the bottom
+// while parent or sibling agents perform other work, then return to their
+// original slot when done. MCP App cards sit below running subagents, and
+// overlay cards (live ask_user / authorization prompts) sit at the very end.
+// Nodes already sitting in their bottom slot are left untouched so iframe
+// state in mounted MCP Apps and entry animations are never reset.
 function reanchorOverlayCards(refs) {
 const el = refs.transcript.current;
 if (!el) return;
+const runningSubagentCards = [];
 const mcpCards = [];
 const overlayCards = [];
 for (const child of el.children) {
-if (isMcpAppCard(child)) mcpCards.push(child);
+if (isRunningSubagentCard(child)) runningSubagentCards.push(child);
+else if (isMcpAppCard(child)) mcpCards.push(child);
 else if (isOverlayCard(child)) overlayCards.push(child);
 }
-const tail = mcpCards.concat(overlayCards);
+const tail = runningSubagentCards.concat(mcpCards, overlayCards);
 if (!tail.length) return;
 let cursor = null;
 for (let i = tail.length - 1; i >= 0; i--) {
@@ -2936,6 +3035,7 @@ export function syncTranscriptAppend(state, refs, prevCount) {
 
 const _rowKeys = new WeakMap();
 let _rowKeyCounter = 0;
+let _subagentSlotCounter = 0;
 
 // hasClass(el, name) -> bool
 //
@@ -2968,15 +3068,139 @@ function isMcpAppCard(el) {
   return !!(el && el.dataset && el.dataset.mcpAppCard);
 }
 
+// isRunningSubagentCard(el) -> bool
+//
+// A subagent card that is still in flight (`tool-card--subagent` without
+// `tool-card--result`). While running, it stays pinned at the bottom of the
+// transcript (below regular conversation rows and live assistant text, above
+// MCP App cards and overlay prompts) even when parent or sibling agents do
+// other work. Once its result arrives (`tool-card--result`), it returns to
+// its original chronological slot in the conversation.
+function isRunningSubagentCard(el) {
+  return !!(el && el.nodeType === 1 && !isOverlayCard(el) && !isMcpAppCard(el)
+    && hasClass(el, 'tool-card--subagent') && !hasClass(el, 'tool-card--result'));
+}
+
+// isLiveAssistantRow(el) -> bool
+function isLiveAssistantRow(el) {
+  return !!(el && el.dataset && el.dataset.live === '1');
+}
+
+// ensureSubagentSlotMarker(card)
+//
+// Record the card's original chronological anchor (`_slotPrev`) at the moment
+// it was placed, so its original position in the conversation is preserved
+// while the running card stays pinned at the bottom of the transcript. Kept on
+// the card element itself rather than as an extra child node in the DOM.
+function ensureSubagentSlotMarker(card) {
+  if (!card || !card.parentNode) return;
+  const host = card.parentNode;
+  const children = host.children;
+  if (!children || typeof children.length !== 'number') return;
+  let prev = null;
+  for (let i = 0; i < children.length; i++) {
+    const c = children[i];
+    if (c === card) break;
+    if (!isHeaderCardNode(c) && !isRunningSubagentCard(c) && !isMcpAppCard(c) && !isOverlayCard(c) && !isLiveAssistantRow(c)) {
+      prev = c;
+    }
+  }
+  card._slotPrev = prev;
+  card._slotOrder = ++_subagentSlotCounter;
+  card._slotRecorded = true;
+}
+
+// restoreSubagentCardToSlot(card, el)
+//
+// Move a settled subagent card back to the chronological slot recorded while
+// it was running (immediately after `_slotPrev`, or after the header block if
+// it started before any message row). If multiple subagents started after the
+// same `_slotPrev`, `_slotOrder` preserves their launch order regardless of
+// completion order. If the card is already at that position, no DOM move
+// occurs.
+function restoreSubagentCardToSlot(card, el) {
+  if (!card || !card._slotRecorded) return;
+  card._slotRecorded = false;
+  const prevAnchor = card._slotPrev;
+  const myOrder = card._slotOrder || 0;
+  card._slotPrev = null;
+  const host = el || card.parentNode;
+  if (!host || card.parentNode !== host) return;
+  const children = host.children;
+  let ref = null;
+  if (prevAnchor && prevAnchor.parentNode === host) {
+    if (children) {
+      let idx = Array.prototype.indexOf.call(children, prevAnchor);
+      if (idx >= 0) {
+        idx++;
+        while (idx < children.length) {
+          const cur = children[idx];
+          if (cur && cur._settledPrevAnchor === prevAnchor && (cur._slotOrder || 0) < myOrder) {
+            idx++;
+          } else {
+            break;
+          }
+        }
+        ref = children[idx] || null;
+      }
+    } else {
+      ref = prevAnchor.nextElementSibling === undefined ? (prevAnchor.nextSibling || null) : prevAnchor.nextElementSibling;
+    }
+    card._settledPrevAnchor = prevAnchor;
+  } else if (prevAnchor === null) {
+    if (children) {
+      let idx = 0;
+      while (idx < children.length && isHeaderCardNode(children[idx])) idx++;
+      while (idx < children.length) {
+        const cur = children[idx];
+        if (cur && cur._settledPrevAnchor === null && (cur._slotOrder || 0) < myOrder) {
+          idx++;
+        } else {
+          break;
+        }
+      }
+      ref = children[idx] || null;
+    } else {
+      ref = findTranscriptContentStart(host);
+    }
+    card._settledPrevAnchor = null;
+  } else {
+    return;
+  }
+  if (ref === card) return;
+  if (children) {
+    const cardIdx = Array.prototype.indexOf.call(children, card);
+    const refIdx = ref ? Array.prototype.indexOf.call(children, ref) : children.length;
+    if (cardIdx >= 0 && cardIdx + 1 === refIdx) return;
+  }
+  host.insertBefore(card, ref);
+}
+
 // firstOverlayCard(el) -> Element | null
 function firstOverlayCard(el) {
   for (const child of el.children) if (isOverlayCard(child)) return child;
   return null;
 }
 
+// firstMcpOrOverlayCard(el) -> Element | null
+function firstMcpOrOverlayCard(el) {
+  for (const child of el.children) if (isMcpAppCard(child) || isOverlayCard(child)) return child;
+  return null;
+}
+
 // firstBottomPinnedCard(el) -> Element | null
 function firstBottomPinnedCard(el) {
-  for (const child of el.children) if (isMcpAppCard(child) || isOverlayCard(child)) return child;
+  for (const child of el.children) {
+    if (isRunningSubagentCard(child) || isMcpAppCard(child) || isOverlayCard(child)) return child;
+  }
+  return null;
+}
+
+// firstLiveOrBottomPinnedCard(el) -> Element | null
+function firstLiveOrBottomPinnedCard(el) {
+  for (const child of el.children) {
+    if (isLiveAssistantRow(child) || isRunningSubagentCard(child) || isMcpAppCard(child) || isOverlayCard(child)) return child;
+  }
   return null;
 }
 
@@ -3109,18 +3333,20 @@ export function reconcileTranscriptRows(state, refs, order) {
   }
 
   // The row block sits between the header cards and the bottom-pinned cards
-  // (MCP App cards + overlay cards), so an insert with no cursor yet belongs
-  // just before the first bottom-pinned card.
+  // (running subagent cards + MCP App cards + overlay cards), so an insert
+  // with no cursor yet belongs just before the first bottom-pinned card (or
+  // an unkeyed live assistant row).
   let cursor = null;
   for (const child of el.children) {
-    if (isMessageRowNode(child) && !isMcpAppCard(child)) { cursor = child; break; }
-    if (isMcpAppCard(child) || isOverlayCard(child)) { cursor = child; break; }
+    if (isMessageRowNode(child) && !isRunningSubagentCard(child) && !isMcpAppCard(child) && !isLiveAssistantRow(child)) { cursor = child; break; }
+    if (isLiveAssistantRow(child) || isRunningSubagentCard(child) || isMcpAppCard(child) || isOverlayCard(child)) { cursor = child; break; }
   }
 
   // Every node this pass put in position. A tool call and its result are two
   // messages but ONE card: the card takes the call's slot, and the result row
   // that follows must not move it again.
   const placed = new Set();
+  const pinnedRunningSubagents = [];
   const pinnedMcpCards = [];
   for (let i = 0; i < order.length; i++) {
     const m = state.messages[order[i]];
@@ -3144,6 +3370,13 @@ export function reconcileTranscriptRows(state, refs, order) {
         renderMessageRow(state, refs, m);
         node = findToolCard(refs, m.toolCallId);
         if (node && !had) stats.created++;
+        if (node && m.phase === 'result') {
+          const runIdx = pinnedRunningSubagents.indexOf(node);
+          if (runIdx >= 0) {
+            pinnedRunningSubagents.splice(runIdx, 1);
+            placed.delete(node);
+          }
+        }
         if (node && !wasMcpApp && isMcpAppCard(node) && !pinnedMcpCards.includes(node)) {
           pinnedMcpCards.push(node);
         }
@@ -3175,6 +3408,20 @@ export function reconcileTranscriptRows(state, refs, order) {
     // (the cheap append path) only needs it to recognise the card as keyed.
     if (!node._rowKey || !hasClass(node, 'tool-card')) node._rowKey = key;
 
+    // Running subagent cards stay pinned at the bottom while in flight; once
+    // their result row arrives in `order`, they fall through and take their
+    // call's chronological slot (or the slot marker left when they started).
+    if (isRunningSubagentCard(node)) {
+      const hasResultInOrder = m.phase !== 'result' && m.toolCallId && order.some((idx) => {
+        const rm = state.messages[idx];
+        return rm && rm.role === 'tool' && rm.phase === 'result' && rm.toolCallId === m.toolCallId;
+      });
+      if (!hasResultInOrder) {
+        pinnedRunningSubagents.push(node);
+        continue;
+      }
+    }
+
     // Interactive MCP App cards belong in the bottom-pinned slot below all
     // regular transcript rows, not at their mid-transcript call slot.
     if (isMcpAppCard(node)) {
@@ -3190,7 +3437,33 @@ export function reconcileTranscriptRows(state, refs, order) {
     cursor = node.nextElementSibling;
   }
 
-  // Place bottom-pinned MCP App cards after all regular transcript rows and
+  // Keep any unkeyed live assistant row (a follower's streaming bubble that
+  // is not in state.messages yet) right after the persisted conversation rows
+  // and ahead of the bottom-pinned cards, instead of culling it mid-stream.
+  for (const child of Array.from(el.children)) {
+    if (!isMessageRowNode(child) || placed.has(child) || !isLiveAssistantRow(child)) continue;
+    placed.add(child);
+    if (child === cursor) {
+      cursor = child.nextElementSibling;
+      continue;
+    }
+    el.insertBefore(child, cursor);
+    cursor = child.nextElementSibling;
+  }
+
+  // Place running subagent cards after all regular transcript rows (and any
+  // live assistant bubble) and before MCP App / overlay cards.
+  for (let i = 0; i < pinnedRunningSubagents.length; i++) {
+    const node = pinnedRunningSubagents[i];
+    if (node === cursor) {
+      cursor = node.nextElementSibling;
+      continue;
+    }
+    el.insertBefore(node, cursor);
+    cursor = node.nextElementSibling;
+  }
+
+  // Place bottom-pinned MCP App cards after running subagent cards and
   // before any overlay cards, without moving a card that is already in place.
   for (let i = 0; i < pinnedMcpCards.length; i++) {
     const node = pinnedMcpCards[i];
@@ -3261,9 +3534,12 @@ function ensureEmptyState(refs, want) {
   if (!el) return;
   const existing = el.querySelector ? el.querySelector('.chat-view__empty') : null;
   if (want) {
-    if (existing && existing.parentNode === el) return;
+    if (existing && existing.parentNode === el) {
+      placeHeaderCard(el, existing, HEADER_CARD_ORDER.empty);
+      return;
+    }
     if (existing) existing.remove();
-    el.appendChild(buildEmptyState());
+    placeHeaderCard(el, buildEmptyState(), HEADER_CARD_ORDER.empty);
   } else if (existing && existing.parentNode === el) {
     existing.remove();
   }

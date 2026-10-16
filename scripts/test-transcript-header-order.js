@@ -83,14 +83,21 @@ function createElement(tag) {
       return child;
     },
     insertBefore(child, ref) {
-      if (child.parentNode) child.parentNode.removeChild(child);
-      child.parentNode = node;
-      const at = ref == null ? -1 : node.children.indexOf(ref);
-      if (at === -1) node.children.push(child);
-      else node.children.splice(at, 0, child);
-      node.childElementCount = node.children.length;
+    if (child === ref) return child;
+    if (child.parentNode) {
+      if (child.parentNode === node && ref != null && node.children.indexOf(child) + 1 === node.children.indexOf(ref)) {
       return child;
+      }
+      child.parentNode.removeChild(child);
+    }
+    child.parentNode = node;
+    const at = ref == null ? -1 : node.children.indexOf(ref);
+    if (at === -1) node.children.push(child);
+    else node.children.splice(at, 0, child);
+    node.childElementCount = node.children.length;
+    return child;
     },
+    get isConnected() { return !!node.parentNode; },
     removeChild(child) {
       const i = node.children.indexOf(child);
       if (i >= 0) node.children.splice(i, 1);
@@ -169,9 +176,24 @@ function matchesSimple(node, spec) {
   return true;
 }
 
+function matchesCompound(node, part) {
+  if (!node || node.nodeType !== 1) return false;
+  const steps = String(part).trim().split(/\s+/).filter(Boolean);
+  if (!steps.length) return false;
+  if (!matchesSimple(node, parseSimple(steps[steps.length - 1]))) return false;
+  let cur = node.parentNode;
+  for (let i = steps.length - 2; i >= 0; i--) {
+    const spec = parseSimple(steps[i]);
+    while (cur && !matchesSimple(cur, spec)) cur = cur.parentNode;
+    if (!cur) return false;
+    cur = cur.parentNode;
+  }
+  return true;
+}
+
 function matchesSelector(node, selector) {
   if (!node || node.nodeType !== 1) return false;
-  return String(selector).split(',').some((part) => matchesSimple(node, parseSimple(part)));
+  return String(selector).split(',').some((part) => matchesCompound(node, part));
 }
 
 function findAll(root, selector) {
@@ -201,11 +223,12 @@ function installDom() {
     frames,
     globals: {
       document: {
-        createElement,
-        querySelector: () => null,
-        querySelectorAll: () => [],
-        addEventListener() {},
-        removeEventListener() {}
+      createElement,
+      createTextNode: (t) => ({ nodeType: 3, textContent: String(t == null ? '' : t), parentNode: null, children: [] }),
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      addEventListener() {},
+      removeEventListener() {}
       },
       window: {
         requestAnimationFrame: raf,
@@ -276,7 +299,11 @@ function order(el) {
     if (ds.skillsCard !== undefined) return 'skills';
     if (ds.authCallId !== undefined) return 'overlay';
     if (ds.live !== undefined) return 'live';
-    if (child.classList.contains('chat-msg')) return 'msg:' + (child.textContent || '?');
+    if (child.classList.contains('chat-msg')) {
+      const body = child.querySelector && child.querySelector('.chat-msg__body');
+      const txt = child.textContent || (body && body.textContent) || '?';
+      return 'msg:' + txt;
+    }
     if (child.classList.contains('tool-card')) return 'tool:' + (ds.toolId || '?');
     return 'other';
   });
@@ -550,20 +577,30 @@ function main() {
   // answer — messages and tool cards out of order.
   {
     const transcript = loadModule('frontend/src/components/chat/transcript.js',
-      Object.assign({
-        placeHeaderCard: headerCards.placeHeaderCard,
-        orderHeaderCards: headerCards.orderHeaderCards,
-        headerCardIndex: headerCards.headerCardIndex,
-        isHeaderCardNode: headerCards.isHeaderCardNode,
-        HEADER_CARD_ORDER: H,
-        cssEscape: (s) => String(s),
-        normalizeToolName: (s) => String(s || ''),
-        coerceToolResult: (r) => {
-        if (typeof r === 'string') { try { return JSON.parse(r); } catch { return { raw: r }; } }
-        return r;
-        }
-        }, dom.globals),
-      'this.reconcileTranscriptRows = reconcileTranscriptRows; this.transcriptRowKey = transcriptRowKey;');
+    Object.assign({
+    placeHeaderCard: headerCards.placeHeaderCard,
+    orderHeaderCards: headerCards.orderHeaderCards,
+    headerCardIndex: headerCards.headerCardIndex,
+    isHeaderCardNode: headerCards.isHeaderCardNode,
+    HEADER_CARD_ORDER: H,
+    cssEscape: (s) => String(s),
+    normalizeToolName: (s) => String(s || ''),
+    isSubagentTool: (s) => String(s || '') === 'subagent',
+    progressLevelOf: () => null,
+    coerceToolResult: (r) => {
+    if (typeof r === 'string') { try { return JSON.parse(r); } catch { return { raw: r }; } }
+    return r;
+    }
+    }, dom.globals),
+    'this.reconcileTranscriptRows = reconcileTranscriptRows;'
+    + ' this.transcriptRowKey = transcriptRowKey;'
+    + ' this.appendMessageToTranscript = appendMessageToTranscript;'
+    + ' this.appendDeltaToLive = appendDeltaToLive;'
+    + ' this.appendToolCallCard = appendToolCallCard;'
+    + ' this.appendToolResultCard = appendToolResultCard;'
+    + ' this.appendErrorCard = appendErrorCard;'
+    + ' this.updateProgressCard = updateProgressCard;'
+    + ' this.finalizeLiveMessage = finalizeLiveMessage;');
     const K = transcript.transcriptRowKey;
     const mkRow = (el, cls, m, text) => {
       const row = createElement('div');
@@ -653,28 +690,155 @@ function main() {
 
     // 7d. An MCP App card stays pinned at the bottom below later messages without mutating when settled.
     {
-      const el = createElement('div');
-      const refs = makeRefs(el);
-      refs.mcpAppContext = { projectDir: '/fixture', chatId: 'chat' };
-      const u1 = { role: 'user', content: 'make app', seq: 0 };
-      const call = { role: 'tool', phase: 'call', name: 'create_mcp_app', toolCallId: 'app1', args: { name: 'App', filename: 'app.html' }, seq: 1 };
-      const res = { role: 'tool', phase: 'result', name: 'create_mcp_app', toolCallId: 'app1', ok: true, content: JSON.stringify({ ok: true, name: 'App', path: '.mouaif/mcp-apps/app.html' }), seq: 2 };
-      const a1 = { role: 'assistant', content: 'opened', seq: 3 };
-      const u2 = { role: 'user', content: 'follow up', seq: 4 };
-      const a2 = { role: 'assistant', content: 'replied', seq: 5 };
-      mkRow(el, 'chat-msg chat-msg--user', u1, 'make app');
-      mkRow(el, 'chat-msg chat-msg--assistant', a1, 'opened');
-      mkRow(el, 'chat-msg chat-msg--user', u2, 'follow up');
-      mkRow(el, 'chat-msg chat-msg--assistant', a2, 'replied');
-      const state = { messages: [u1, call, res, a1, u2, a2], chat: {} };
-      transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3, 4, 5]);
-      check('an MCP App card stays pinned at the bottom after later conversation rows',
-        JSON.stringify(order(el)) === JSON.stringify(['msg:make app', 'msg:opened', 'msg:follow up', 'msg:replied', 'tool:app1']),
-        JSON.stringify(order(el)));
-      const n = noMutations(el, () => transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3, 4, 5]));
-      check('a second pass with a bottom-pinned MCP App card mutates nothing',
-        n === 0 && JSON.stringify(order(el)) === JSON.stringify(['msg:make app', 'msg:opened', 'msg:follow up', 'msg:replied', 'tool:app1']),
-        'mutations=' + n + ' ' + JSON.stringify(order(el)));
+    const el = createElement('div');
+    const refs = makeRefs(el);
+    refs.mcpAppContext = { projectDir: '/fixture', chatId: 'chat' };
+    const u1 = { role: 'user', content: 'make app', seq: 0 };
+    const call = { role: 'tool', phase: 'call', name: 'create_mcp_app', toolCallId: 'app1', args: { name: 'App', filename: 'app.html' }, seq: 1 };
+    const res = { role: 'tool', phase: 'result', name: 'create_mcp_app', toolCallId: 'app1', ok: true, content: JSON.stringify({ ok: true, name: 'App', path: '.mouaif/mcp-apps/app.html' }), seq: 2 };
+    const a1 = { role: 'assistant', content: 'opened', seq: 3 };
+    const u2 = { role: 'user', content: 'follow up', seq: 4 };
+    const a2 = { role: 'assistant', content: 'replied', seq: 5 };
+    mkRow(el, 'chat-msg chat-msg--user', u1, 'make app');
+    mkRow(el, 'chat-msg chat-msg--assistant', a1, 'opened');
+    mkRow(el, 'chat-msg chat-msg--user', u2, 'follow up');
+    mkRow(el, 'chat-msg chat-msg--assistant', a2, 'replied');
+    const state = { messages: [u1, call, res, a1, u2, a2], chat: {} };
+    transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3, 4, 5]);
+    check('an MCP App card stays pinned at the bottom after later conversation rows',
+      JSON.stringify(order(el)) === JSON.stringify(['msg:make app', 'msg:opened', 'msg:follow up', 'msg:replied', 'tool:app1']),
+      JSON.stringify(order(el)));
+    const n = noMutations(el, () => transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3, 4, 5]));
+    check('a second pass with a bottom-pinned MCP App card mutates nothing',
+      n === 0 && JSON.stringify(order(el)) === JSON.stringify(['msg:make app', 'msg:opened', 'msg:follow up', 'msg:replied', 'tool:app1']),
+      'mutations=' + n + ' ' + JSON.stringify(order(el)));
+    }
+
+    // 7e. Running subagent cards stay pinned at the bottom while other tools,
+    // messages, progress and errors arrive, then return to their chronological
+    // slot when settled (both on the live stream and across reconciliation).
+    {
+    const el = createElement('div');
+    const refs = makeRefs(el);
+    refs.mcpAppContext = { projectDir: '/fixture', chatId: 'chat' };
+    const state = { messages: [], chat: {} };
+
+    const u1 = { role: 'user', content: 'start workers', seq: 0 };
+    mkRow(el, 'chat-msg chat-msg--user', u1, 'start workers');
+
+    // Start two background subagents back-to-back.
+    transcript.appendToolCallCard({ id: 'sub1', name: 'subagent', args: { task: 'worker 1', background: true } }, refs);
+    transcript.appendToolCallCard({ id: 'sub2', name: 'subagent', args: { task: 'worker 2', background: true } }, refs);
+
+    // Mount an MCP App card and an authorization overlay card to verify all bottom tiers.
+    transcript.appendToolCallCard({ id: 'app1', name: 'create_mcp_app', args: { name: 'App', filename: 'app.html' } }, refs);
+    transcript.appendToolResultCard({ id: 'app1', name: 'create_mcp_app', ok: true, result: { ok: true, name: 'App', path: '.mouaif/mcp-apps/app.html' } }, refs);
+    const overlay = createElement('div');
+    overlay.className = 'tool-card tool-card--authorization';
+    overlay.dataset.authCallId = 'auth1';
+    el.appendChild(overlay);
+
+    // Now the parent agent performs other work while sub1 and sub2 are still running:
+    // 1) assistant message segment
+    const a1 = { role: 'user', content: 'checking status', seq: 3 };
+    transcript.appendMessageToTranscript(a1, false, refs, state);
+    // 2) parent tool call + result (e.g. subagent_status / shell)
+    transcript.appendToolCallCard({ id: 'st1', name: 'subagent_status', args: {} }, refs);
+    transcript.appendToolResultCard({ id: 'st1', name: 'subagent_status', ok: true, result: { runs: [] } }, refs);
+    // 3) progress card
+    transcript.updateProgressCard(refs, { callId: 'prog1', title: 'Parent progress', current: 1, total: 2, status: 'running' });
+    // 4) live streaming assistant delta
+    transcript.appendDeltaToLive('streaming parent text', refs, state);
+
+    check('running subagents stay pinned at the bottom below parent messages, tools, progress and live streaming bubble, and above MCP App + overlay cards',
+      JSON.stringify(order(el)) === JSON.stringify([
+      'msg:start workers',
+      'msg:checking status',
+      'tool:st1',
+      'tool:prog1',
+      'live',
+      'tool:sub1',
+      'tool:sub2',
+      'tool:app1',
+      'overlay'
+      ]),
+      JSON.stringify(order(el)));
+
+    // Settle sub2 first (out of launch order), then sub1: both must return to
+    // their original launch slots (between u1 and a1) in chronological order!
+    transcript.appendToolResultCard({ id: 'sub2', name: 'subagent', ok: true, result: { ok: true, text: 'w2 done' } }, refs);
+    check('when sub2 finishes while sub1 is still running, sub2 returns to its slot above a1 while sub1 stays at the bottom',
+      JSON.stringify(order(el)) === JSON.stringify([
+      'msg:start workers',
+      'tool:sub2',
+      'msg:checking status',
+      'tool:st1',
+      'tool:prog1',
+      'live',
+      'tool:sub1',
+      'tool:app1',
+      'overlay'
+      ]),
+      JSON.stringify(order(el)));
+
+    transcript.appendToolResultCard({ id: 'sub1', name: 'subagent', ok: true, result: { ok: true, text: 'w1 done' } }, refs);
+    check('when sub1 finishes later, it returns to its slot before sub2 (preserving launch order)',
+      JSON.stringify(order(el)) === JSON.stringify([
+      'msg:start workers',
+      'tool:sub1',
+      'tool:sub2',
+      'msg:checking status',
+      'tool:st1',
+      'tool:prog1',
+      'live',
+      'tool:app1',
+      'overlay'
+      ]),
+      JSON.stringify(order(el)));
+    }
+
+    // 7f. Reconciler also pins running subagents to the bottom and restores them
+    // to their call slot once their result row is present, without culling a
+    // follower's unkeyed live assistant row.
+    {
+    const el = createElement('div');
+    const refs = makeRefs(el);
+    const u1 = { role: 'user', content: 'go', seq: 0 };
+    const subCall = { role: 'tool', phase: 'call', name: 'subagent', toolCallId: 'subR', args: { task: 'bg', background: true }, seq: 1 };
+    const u2 = { role: 'user', content: 'working meanwhile', seq: 2 };
+    const shCall = { role: 'tool', phase: 'call', name: 'shell', toolCallId: 'sh1', args: { cmd: 'ls' }, seq: 3 };
+    const shRes = { role: 'tool', phase: 'result', name: 'shell', toolCallId: 'sh1', ok: true, content: 'ok', seq: 4 };
+    const state = { messages: [u1, subCall, u2, shCall, shRes], chat: {} };
+
+    // Follower also has an unkeyed live assistant bubble streaming at the bottom.
+    transcript.appendDeltaToLive('follower live', refs, state);
+    transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3, 4]);
+    check('reconciler pins running subagent below later rows and preserves unkeyed live bubble',
+      JSON.stringify(order(el)) === JSON.stringify([
+      'msg:go',
+      'msg:working meanwhile',
+      'tool:sh1',
+      'live',
+      'tool:subR'
+      ]),
+      JSON.stringify(order(el)));
+    const nRunning = noMutations(el, () => transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3, 4]));
+    check('a second reconcile pass while subagent is running mutates nothing',
+      nRunning === 0, 'mutations=' + nRunning);
+
+    // Now the background subagent result arrives at seq 5 (after shRes).
+    const subRes = { role: 'tool', phase: 'result', name: 'subagent', toolCallId: 'subR', ok: true, content: JSON.stringify({ ok: true, text: 'done' }), seq: 5 };
+    state.messages = [u1, subCall, u2, shCall, shRes, subRes];
+    transcript.reconcileTranscriptRows(state, refs, [0, 1, 2, 3, 4, 5]);
+    check('reconciler moves settled subagent back to its call slot (seq 1) above u2 and sh1',
+      JSON.stringify(order(el)) === JSON.stringify([
+      'msg:go',
+      'tool:subR',
+      'msg:working meanwhile',
+      'tool:sh1',
+      'live'
+      ]),
+      JSON.stringify(order(el)));
     }
   }
 

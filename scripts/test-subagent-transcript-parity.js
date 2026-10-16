@@ -753,6 +753,36 @@ function main() {
     check('selected image bytes never become prompt text', !user.textContent.includes('AQ=='));
   }
 
+  // A subagent that delegates to its own background child subagents stays
+  // pinned at the bottom of its parent's live container while running, then
+  // returns to its chronological slot when done.
+  {
+    const card = makeCard();
+    const root = createElement('div');
+    root.appendChild(card);
+    const refs = { transcript: { current: root } };
+    card.classList.remove('tool-card--result');
+    mod.handleSubagentStreamEvent({ eventName: 'tool_call' }, { parentCallId: 'call_1', id: 'child1', name: 'subagent', args: { task: 'bg 1', background: true } }, refs);
+    mod.handleSubagentStreamEvent({ eventName: 'tool_call' }, { parentCallId: 'call_1', id: 'child2', name: 'subagent', args: { task: 'bg 2', background: true } }, refs);
+    mod.handleSubagentStreamEvent({ eventName: 'message' }, { parentCallId: 'call_1', delta: 'Polling children.' }, refs);
+    mod.handleSubagentStreamEvent({ eventName: 'assistant_turn_end' }, { parentCallId: 'call_1' }, refs);
+    mod.handleSubagentStreamEvent({ eventName: 'tool_call' }, { parentCallId: 'call_1', id: 'status1', name: 'subagent_status', args: {} }, refs);
+    mod.handleSubagentStreamEvent({ eventName: 'tool_result' }, { parentCallId: 'call_1', id: 'status1', name: 'subagent_status', ok: true, result: { runs: [] } }, refs);
+    const live = card.querySelector('.tool-card__subagent-live');
+    const liveOrder = () => live.children.map((c) => c.dataset?.nestedToolId || (c.classList.contains('chat-msg') ? 'msg' : 'other'));
+    check('nested running subagents stay at the bottom of the live container while the parent subagent speaks and runs tools',
+      JSON.stringify(liveOrder()) === JSON.stringify(['msg', 'status1', 'child1', 'child2']),
+      JSON.stringify(liveOrder()));
+    mod.handleSubagentStreamEvent({ eventName: 'tool_result' }, { parentCallId: 'call_1', id: 'child2', name: 'subagent', ok: true, result: { ok: true, text: 'c2' } }, refs);
+    check('when nested child2 settles, it returns to its slot at the top while child1 stays at the bottom',
+      JSON.stringify(liveOrder()) === JSON.stringify(['child2', 'msg', 'status1', 'child1']),
+      JSON.stringify(liveOrder()));
+    mod.handleSubagentStreamEvent({ eventName: 'tool_result' }, { parentCallId: 'call_1', id: 'child1', name: 'subagent', ok: true, result: { ok: true, text: 'c1' } }, refs);
+    check('when nested child1 settles, it returns to its slot before child2',
+      JSON.stringify(liveOrder()) === JSON.stringify(['child1', 'child2', 'msg', 'status1']),
+      JSON.stringify(liveOrder()));
+  }
+
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   if (failed) process.exitCode = 1;
 }
