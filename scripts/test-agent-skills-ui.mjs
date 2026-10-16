@@ -114,4 +114,83 @@ const defer = () => { let resolve; const promise = new Promise((r) => { resolve 
   popupContext.ToolPopup({ skills: { ...skills, items: [{ id: 'locked', disabled: true }] } });
   assert.equal(nodes.find((node) => node.tag === 'tree').props.groups[0].disabled, true);
 }
+// Transcript Agent files and Skills cards use inert div rows (not <label>),
+// matching ToolTree's click discipline so only the checkbox toggles.
+{
+  const created = [];
+  const doc = {
+    createElement(tag) {
+      const el = {
+        tagName: String(tag).toUpperCase(), className: '', dataset: {}, textContent: '',
+        children: [], setAttribute() {}, addEventListener() {},
+        appendChild(child) { this.children.push(child); return child; }
+      };
+      created.push(el);
+      return el;
+    }
+  };
+  const cardCtx = vm.createContext({ document: doc, saveSkillSelection, Promise, Set, Object, Array, console });
+  vm.runInContext(source + ';globalThis.buildAgentFilesCard = buildAgentFilesCard; globalThis.buildSkillsCard = buildSkillsCard;', cardCtx);
+  const afCard = cardCtx.buildAgentFilesCard({ agentFiles: { files: ['AGENTS.md'], enabled: true, projectLocked: false } });
+  const afRows = created.filter((el) => el.className === 'chat-view__agent-files-row');
+  assert.equal(afRows.length, 1);
+  assert.equal(afRows[0].tagName, 'DIV', 'agent-files row is a div, not a <label>');
+  const skCard = cardCtx.buildSkillsCard({ skills: initial() });
+  const skRows = created.filter((el) => el.className === 'chat-view__skills-row');
+  assert.equal(skRows.length, 3);
+  assert.ok(skRows.every((el) => el.tagName === 'DIV'), 'skills rows are divs, not <label>s');
+  assert.ok(afCard && skCard);
+}
+// Agent editor ToolTree: MCP child toggles expand/collapse server slug and
+// native leaf rows carry catalog descriptions.
+{
+  const strip = (s) => s.replace(/^import[\s\S]*?;\s*$/gm, '').replace(/^export \{.*?\};$/gms, '').replace(/^export /gm, '');
+  const agentCtx = vm.createContext({ Set, Object, Array, String, console });
+  vm.runInContext(
+    strip(fs.readFileSync('frontend/src/toolGroups.js', 'utf8')) + '\n' +
+    strip(fs.readFileSync('frontend/src/components/ToolTree.jsx', 'utf8')) + '\n' +
+    strip(fs.readFileSync('frontend/src/components/SettingsAgents.jsx', 'utf8')) +
+    '\nglobalThis.buildAgentToolGroups = buildAgentToolGroups; globalThis.toggleToolInList = toggleToolInList; globalThis.toggleGroupInList = toggleGroupInList; globalThis.toolChoicesWithMcp = toolChoicesWithMcp;',
+    agentCtx
+  );
+  const servers = [{ id: 'srv', slug: 'srv', name: 'Srv', status: 'ready', tools: [{ name: 'alpha', description: 'Alpha tool.' }, { name: 'beta', description: 'Beta tool.' }] }];
+  const choices = agentCtx.toolChoicesWithMcp(servers);
+  const catalog = [{ name: 'read_file', kind: 'native', source: 'files', description: 'Read a text file from the project.' }];
+  let agentTools = undefined;
+  const buildGroups = () => agentCtx.buildAgentToolGroups({
+    choices,
+    restricted: agentTools !== undefined,
+    selected: (v) => (agentTools || []).includes(v),
+    mcpServers: servers,
+    catalog
+  });
+  let groups = buildGroups();
+  const filesGroup = groups.find((g) => g.id === 'files');
+  const readLeaf = filesGroup.tools.find((t) => t.id === 'read_file');
+  assert.equal(readLeaf.description, 'Read a text file from the project.', 'native leaf in agent editor carries shortDesc');
+  assert.equal(readLeaf.title, 'Read a text file from the project.', 'native leaf in agent editor carries title');
+
+  let mcpGroup = groups.find((g) => g.id === 'mcp__srv');
+  assert.equal(mcpGroup.checked, true);
+  assert.equal(mcpGroup.tools.length, 2);
+  // Uncheck one MCP child from inherit-all state.
+  let r = agentCtx.toggleToolInList(agentTools, 'mcp__srv__alpha', false, choices, groups);
+  agentTools = r.tools;
+  assert.ok(Array.isArray(agentTools), 'unchecking one MCP child creates an explicit allowlist');
+  assert.ok(!agentTools.includes('mcp__srv'), 'server slug is expanded');
+  assert.ok(!agentTools.includes('mcp__srv__alpha'), 'unchecked MCP child is omitted');
+  assert.ok(agentTools.includes('mcp__srv__beta'), 'remaining MCP child stays selected');
+  groups = buildGroups();
+  mcpGroup = groups.find((g) => g.id === 'mcp__srv');
+  assert.equal(mcpGroup.checked, false, 'MCP group is no longer fully checked');
+  assert.equal(mcpGroup.tools[0].checked, false);
+  assert.equal(mcpGroup.tools[1].checked, true);
+
+  // Re-check the child -> collapses back to server slug and inherit-all.
+  r = agentCtx.toggleToolInList(agentTools, 'mcp__srv__alpha', true, choices, groups);
+  agentTools = r.tools;
+  assert.equal(agentTools, undefined, 're-checking all MCP children collapses back to inherit-all');
+  groups = buildGroups();
+  assert.equal(groups.find((g) => g.id === 'mcp__srv').checked, true);
+}
 console.log('agent skills UI: popup rendering, scoped toggles, rollback, ordering, navigation, and preset reconciliation passed');

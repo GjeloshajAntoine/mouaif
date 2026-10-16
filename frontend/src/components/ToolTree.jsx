@@ -267,7 +267,16 @@ for (const group of TOOL_GROUPS) {
     description: shortDesc((entry && entry.description) || group.description),
     title: (entry && entry.description) || group.description || '',
     checked: members.every((c) => isOn(c.value)),
-    tools: members.map((c) => ({ id: c.value, name: c.label, checked: isOn(c.value) }))
+    tools: members.map((c) => {
+      const catEntry = catalog.find((t) => t && t.name === c.value);
+      return {
+        id: c.value,
+        name: c.label,
+        description: shortDesc(catEntry && catEntry.description),
+        title: (catEntry && catEntry.description) || '',
+        checked: isOn(c.value)
+      };
+    })
   });
 }
   for (const c of choices) {
@@ -276,7 +285,11 @@ for (const group of TOOL_GROUPS) {
     const server = mcpServers.find((s) => s && (s.slug || s.id) === slug);
     const label = c.label.replace(/^MCP:\s*/, '');
     const prefix = c.value + '__';
-    const tools = server && Array.isArray(server.tools) ? server.tools.map((tool) => {
+    let serverTools = catalog.filter((t) => t && t.kind === 'mcp' && t.source === slug);
+    if (!serverTools.length && server && Array.isArray(server.tools)) {
+      serverTools = server.tools;
+    }
+    const tools = serverTools.map((tool) => {
       const rawName = typeof tool === 'string' ? tool : tool && tool.name;
       if (!rawName) return null;
       const name = rawName.startsWith(prefix) ? rawName.slice(prefix.length) : rawName;
@@ -292,12 +305,13 @@ for (const group of TOOL_GROUPS) {
         title: (tool && tool.description) || '',
         checked: isOn(c.value) || isOn(id)
       };
-    }).filter(Boolean) : [];
+    }).filter(Boolean);
+    const allToolsChecked = tools.length ? tools.every((t) => t.checked) : isOn(c.value);
     groups.push({
       id: c.value, // Agent allowlists may select the whole server.
       name: label,
       description: (server && server.status ? server.status : 'MCP server') + (tools.length ? '' : ' · no tools discovered'),
-      checked: isOn(c.value),
+      checked: allToolsChecked,
       tools: tools.length ? tools : [{ id: c.value, name: label, checked: isOn(c.value) }]
     });
   }

@@ -309,6 +309,28 @@ assert.equal(failedPermission.tools.filter.length, 0, 'failed permission saves c
 const shellOnly = buildToolGroups([{ name: 'shell' }], [], []);
 assert.equal(shellOnly[0].checked, false, 'selection off remains off even when permission is Ask');
 
+// Checking ONE leaf of an Off family while filter is null snapshots the
+// visible selection so sibling leaves stay unchecked instead of all turning on.
+{
+  const nullFilterPatches = [];
+  const nullFilterAuthWrites = [];
+  const nullFilterState = {
+    tools: { catalog: liveCatalog, filter: null },
+    mcpServers: [],
+    toolAuth: { chats: { mode: 'off', allowlist: [] } },
+    _saveToolAuth: async (...args) => { nullFilterAuthWrites.push(args); return true; }
+  };
+  await toggleToolGroup(['list_chats'], true, nullFilterState, refs, async (patch) => {
+    nullFilterPatches.push(patch);
+    return true;
+  });
+  same(nullFilterAuthWrites, [['chats', 'ask', []]], 'checking one leaf of an Off family restores family gate to Ask');
+  assert.ok(Array.isArray(nullFilterState.tools.filter), 'filter snapshots visible selection instead of staying null');
+  assert.ok(nullFilterState.tools.filter.includes('list_chats'), 'checked leaf is in the filter');
+  assert.ok(!nullFilterState.tools.filter.includes('delete_chat'), 'unchecked sibling in the Off family stays excluded');
+  assert.ok(nullFilterState.tools.filter.includes('shell'), 'already-on families remain selected');
+}
+
 // ---- 5. Both chat surfaces resolve through the shared helper -------------
 for (const relPath of ['frontend/src/components/chat/cards.js', 'frontend/src/components/chat/ToolPopup.jsx']) {
   const src = fs.readFileSync(relPath, 'utf8');

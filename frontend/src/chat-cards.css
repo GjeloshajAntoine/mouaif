@@ -102,11 +102,8 @@ flex-wrap: wrap;
   min-height: var(--tap);
   padding: 0 4px;
   border-radius: var(--r-sm);
-  cursor: pointer;
-  -webkit-tap-highlight-color: var(--accent-soft, transparent);
 }
 .chat-view__skills-row:has(input:disabled) {
-  cursor: not-allowed;
   opacity: 0.6;
 }
 .chat-view__skills-row:has(input:focus-visible) {
@@ -188,11 +185,8 @@ flex-wrap: wrap;
   min-height: var(--tap);
   padding: 0 4px;
   border-radius: var(--r-sm);
-  cursor: pointer;
-  -webkit-tap-highlight-color: var(--accent-soft, transparent);
 }
 .chat-view__agent-files-row:has(input:disabled) {
-  cursor: not-allowed;
   opacity: 0.6;
 }
 .chat-view__agent-files-row:has(input:focus-visible) {

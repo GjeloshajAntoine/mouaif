@@ -305,4 +305,40 @@ await new Promise(resolve => setImmediate(resolve));
 assert.equal(treeFor(queued).attrs.groups.find((g) => g.id === 'shell').checked, true, 'rapid saves finish in tap order');
 assert.deepEqual(queued.requests.filter((r) => r.tools?.shell).map((r) => r.tools.shell.mode), ['off', 'ask']);
 
+// Group checkbox reflects child leaf overrides, and stopped MCP servers keep
+// their cached child tools in project settings.
+const stoppedServerView = createView({}, [
+  { name: 'read_file', kind: 'native', source: 'files', description: 'Read a file.' },
+  { name: 'write_file', kind: 'native', source: 'files', description: 'Write a file.' }
+], {
+  servers: [{ id: 'stopped-srv', slug: 'stopped_srv', status: 'stopped', tools: [{ name: 'ping', description: 'Ping tool.' }, { name: 'pong', description: 'Pong tool.' }] }]
+});
+stoppedServerView.render(); await stoppedServerView.load();
+let stTree = treeFor(stoppedServerView);
+let filesGroup = stTree.attrs.groups.find((g) => g.id === 'files');
+assert.equal(filesGroup.checked, true);
+stTree.attrs.onToggleTool('files', 'read_file', false);
+await new Promise(resolve => setImmediate(resolve));
+filesGroup = treeFor(stoppedServerView).attrs.groups.find((g) => g.id === 'files');
+assert.equal(filesGroup.checked, false, 'partial child selection unchecks group (ToolTree renders indeterminate)');
+stTree = treeFor(stoppedServerView);
+stTree.attrs.onToggleTool('files', 'write_file', false);
+await new Promise(resolve => setImmediate(resolve));
+filesGroup = treeFor(stoppedServerView).attrs.groups.find((g) => g.id === 'files');
+assert.equal(filesGroup.checked, false, 'all children off unchecks the parent group');
+assert.ok(filesGroup.tools.every((t) => !t.checked));
+
+const mcpGroup = treeFor(stoppedServerView).attrs.groups.find((g) => g.id === 'mcp-stopped_srv');
+assert.ok(mcpGroup, 'stopped MCP server group renders');
+assert.equal(mcpGroup.tools.length, 2, 'stopped MCP server falls back to cached server.tools');
+assert.equal(mcpGroup.tools[0].id, 'mcp__stopped_srv__ping');
+assert.equal(mcpGroup.checked, true);
+treeFor(stoppedServerView).attrs.onToggleTool('mcp-stopped_srv', 'mcp__stopped_srv__ping', false);
+treeFor(stoppedServerView).attrs.onToggleTool('mcp-stopped_srv', 'mcp__stopped_srv__pong', false);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(treeFor(stoppedServerView).attrs.groups.find((g) => g.id === 'mcp-stopped_srv').checked, false, 'MCP group unchecks when all children are off');
+treeFor(stoppedServerView).attrs.onToggleGroup('mcp-stopped_srv', true);
+await new Promise(resolve => setImmediate(resolve));
+assert.ok(treeFor(stoppedServerView).attrs.groups.find((g) => g.id === 'mcp-stopped_srv').tools.every((t) => t.checked), 're-checking MCP group clears per-tool off overrides');
+
 console.log('PASS project settings renders, confirmed permission saves, failure recovery, scoped links and Back targets');

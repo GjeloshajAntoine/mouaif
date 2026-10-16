@@ -555,11 +555,30 @@ setPreviewPromptOpen(true);
   }
 
   function toggleMcpServerAuth(slug, checked) {
-    return checked ? clearServerAuthMode(slug) : pickServerAuthMode(slug, 'off');
+    if (!checked) return pickServerAuthMode(slug, 'off');
+    const prefix = 'mcp__' + slug + '__';
+    const tools = {};
+    for (const [name, entry] of Object.entries((mcpAuth && mcpAuth.tools) || {})) {
+      if (name.startsWith(prefix) && entry && entry.mode === 'off') tools[name] = null;
+    }
+    const patch = { servers: { [slug]: null } };
+    if (Object.keys(tools).length) patch.tools = tools;
+    return saveMcpAuthorization(patch);
   }
 
   function toggleMcpToolAuth(toolName, checked) {
-        return saveMcpAuthorization({ tools: { [toolName]: checked ? null : { mode: 'off', allowlist: [] } } });
+    if (!checked) {
+      return saveMcpAuthorization({ tools: { [toolName]: { mode: 'off', allowlist: [] } } });
+    }
+    const slug = toolName.startsWith('mcp__') ? toolName.slice(5).split('__')[0] : '';
+    const serverEntry = slug && mcpAuth.servers && mcpAuth.servers[slug];
+    const effMode = (serverEntry && serverEntry.mode) ? serverEntry.mode : ((mcpAuth && mcpAuth.mode) || 'ask');
+    const patch = { tools: { [toolName]: null } };
+    if (slug && effMode === 'off') {
+      if (serverEntry && serverEntry.mode === 'off') patch.servers = { [slug]: null };
+      else patch.servers = { [slug]: { mode: 'ask', allowlist: [] } };
+    }
+    return saveMcpAuthorization(patch);
   }
 
   async function saveAgentFiles(enabled, namesRaw) {
@@ -708,98 +727,116 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
     const family = toolAuth[key] || { mode: 'ask', allowlist: [] };
     const label = group.name;
     const binary = isBinaryTool(group.id);
-    groups.push({
-        id: group.id,
-        name: group.name,
-        // A single tool shows its own description; a multi-tool family
-        // names what it covers (same rule as the chat tree).
-        description: shortDesc(members.length === 1 ? members[0].description : (group.description || '')),
-        title: (members.length === 1 ? members[0].description : group.description) || '',
-        checked: isOn(family.mode),
-        control: toolModeSegs(label, segMode(family.mode), (mode) => pickFamilyGroupMode(group.id, mode), [
-          { value: 'off', label: 'Off' },
-          { value: 'ask', label: 'Ask' },
-          ...(binary ? [] : [{ value: 'allow', label: 'Allow' }])
-        ]),
-        tools: members.map((tool) => {
-          // A leaf carries its own override until the family mode moves it;
-          // a leaf without one reads the family mode, so the row and its
-          // children always agree on screen.
-          const leafAuth = toolAuth[tool.name];
-          // A binary leaf (`ask_user`) narrows to Off / Ask on its own row
-          // even when its family row carries the full three-way segment:
-          // a family `allow` shows as Ask, the strongest mode it honors.
-          const leafBinary = isBinaryTool(tool.name);
-          const inherited = family.mode;
-          const mode = (leafAuth && leafAuth.mode) || (leafBinary && inherited === 'allow' ? 'ask' : inherited);
-          return leaf(tool, {
-          checked: isOn(mode),
-          control: h(ToolAuthSeg, {
-          tool: tool.name, mode, allowlist: (leafAuth && leafAuth.allowlist) || family.allowlist,
-          namePrefix: 'sp', modes: leafBinary ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
-          onPick: (next, list) => (group.tools.length > 1
-          ? pickLeafMode(tool.name, next, list)
-          : saveToolAuthorization(tool.name, next, list, group.id))
-          })
-          });
-        }),
-        extra: toolStatus[group.id] ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, toolStatus[group.id]) : null
+    const childTools = members.map((tool) => {
+      // A leaf carries its own override until the family mode moves it;
+      // a leaf without one reads the family mode, so the row and its
+      // children always agree on screen.
+      const leafAuth = toolAuth[tool.name];
+      // A binary leaf (`ask_user`) narrows to Off / Ask on its own row
+      // even when its family row carries the full three-way segment:
+      // a family `allow` shows as Ask, the strongest mode it honors.
+      const leafBinary = isBinaryTool(tool.name);
+      const inherited = family.mode;
+      const mode = (leafAuth && leafAuth.mode) || (leafBinary && inherited === 'allow' ? 'ask' : inherited);
+      return leaf(tool, {
+      checked: isOn(mode),
+      control: h(ToolAuthSeg, {
+      tool: tool.name, mode, allowlist: (leafAuth && leafAuth.allowlist) || family.allowlist,
+      namePrefix: 'sp', modes: leafBinary ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
+      onPick: (next, list) => (group.tools.length > 1
+      ? pickLeafMode(tool.name, next, list)
+      : saveToolAuthorization(tool.name, next, list, group.id))
+      })
       });
+      });
+    groups.push({
+      id: group.id,
+      name: group.name,
+      // A single tool shows its own description; a multi-tool family
+      // names what it covers (same rule as the chat tree).
+      description: shortDesc(members.length === 1 ? members[0].description : (group.description || '')),
+      title: (members.length === 1 ? members[0].description : group.description) || '',
+      checked: childTools.length ? childTools.every((t) => t.checked) : isOn(family.mode),
+      control: toolModeSegs(label, segMode(family.mode), (mode) => pickFamilyGroupMode(group.id, mode), [
+      { value: 'off', label: 'Off' },
+      { value: 'ask', label: 'Ask' },
+      ...(binary ? [] : [{ value: 'allow', label: 'Allow' }])
+      ]),
+      tools: childTools,
+      extra: toolStatus[group.id] ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, toolStatus[group.id]) : null
+    });
     }
 
     const servers = (mcpServers || []).filter((s) => s && s.id);
     if (servers.length) {
-      for (const server of servers) {
-        const slug = server.slug || server.id;
-        const entry = mcpAuth.servers && mcpAuth.servers[slug];
-        const overridden = !!(entry && entry.mode);
-        const effMode = overridden ? entry.mode : (mcpAuth.mode || 'ask');
-        const serverTools = (toolsCatalog || []).filter((t) => t && t.kind === 'mcp' && t.source === slug);
-        const toolCount = serverTools.length || (Array.isArray(server.tools) ? server.tools.length : 0);
-        groups.push({
-          // Key the group by the *slug* (canonical override key), not the
-          // id. The checkbox toggle below (`toggleMcpServerAuth(groupId
-          // .slice(4))`) writes the per-server override under this key, and
-          // McpAuthSeg + effMode read it back from the same slug. Using the
-          // id here (a hyphenated display id like `chrome-debug`) writes the
-          // override under a different key than the underscore slug the rest
-          // of the tree reads (`chrome_debug`), so a toggled-off checkbox
-          // never reflected its off state.
-          id: 'mcp-' + slug,
-          name: server.name || server.id,
-          description: (server.status || 'stopped') + (toolCount ? ' · ' + toolCount + (toolCount === 1 ? ' tool' : ' tools') : '')
-            + (overridden ? ' · override: ' + segMode(effMode) : ' · default (' + segMode(effMode) + ')'),
-          checked: effMode !== 'off',
-          // MCP lifecycle state for the reload control (same fields the
-          // chat tools card threads): a stopped-but-enabled server shows
-          // the start button; a disabled (off) one never does.
-          status: server.status || 'stopped',
-          enabled: effMode !== 'off',
-          serverId: server.id,
-          control: h(McpAuthSeg, {
-            name: server.name || server.id,
-            slug,
-            servers: mcpAuth.servers,
-            shared: mcpAuth,
-            namePrefix: 'sp-mcp',
-            onSave: (patch) => {
-              if (!patch || !patch.servers) return;
-              const key = Object.keys(patch.servers)[0];
-              const val = patch.servers[key];
-              if (val == null) clearServerAuthMode(key);
-              else saveMcpAuthorization({ servers: { [key]: val } });
-            }
-          }),
-          tools: serverTools.map((tool) => {
-            const entry = mcpAuth.tools && mcpAuth.tools[tool.name];
-            const mode = entry && entry.mode ? entry.mode : effMode;
-            const prefix = 'mcp__' + slug + '__';
-            const displayName = tool.name.startsWith(prefix) ? tool.name.slice(prefix.length) : tool.name;
-            return leaf(tool, { name: displayName, checked: mode !== 'off' });
-            }),
-            extra: mcpAuthStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg) : null
-        });
+    for (const server of servers) {
+      const slug = server.slug || server.id;
+      const prefix = 'mcp__' + slug + '__';
+      const entry = mcpAuth.servers && mcpAuth.servers[slug];
+      const overridden = !!(entry && entry.mode);
+      const effMode = overridden ? entry.mode : (mcpAuth.mode || 'ask');
+      let serverTools = (toolsCatalog || []).filter((t) => t && t.kind === 'mcp' && t.source === slug);
+      // Stopped servers contribute no live catalog entries — fall
+      // back to the cached tool list on the server record so the
+      // group never loses its child checkboxes in project settings.
+      if (!serverTools.length && Array.isArray(server.tools)) {
+      serverTools = server.tools.map((t) => {
+        const rawName = typeof t === 'string' ? t : (t && t.name);
+        if (!rawName) return null;
+        const composed = t && typeof t === 'object' && t.composedName;
+        return {
+        name: composed || (rawName.startsWith(prefix) ? rawName : prefix + rawName),
+        kind: 'mcp',
+        source: slug,
+        description: (t && t.description) || ''
+        };
+      }).filter(Boolean);
       }
+      const toolCount = serverTools.length;
+      const mcpChildTools = serverTools.map((tool) => {
+        const entry = mcpAuth.tools && mcpAuth.tools[tool.name];
+        const mode = (effMode === 'off') ? 'off' : (entry && entry.mode ? entry.mode : effMode);
+        const displayName = tool.name.startsWith(prefix) ? tool.name.slice(prefix.length) : tool.name;
+        return leaf(tool, { name: displayName, checked: mode !== 'off' });
+      });
+      groups.push({
+      // Key the group by the *slug* (canonical override key), not the
+      // id. The checkbox toggle below (`toggleMcpServerAuth(groupId
+      // .slice(4))`) writes the per-server override under this key, and
+      // McpAuthSeg + effMode read it back from the same slug. Using the
+      // id here (a hyphenated display id like `chrome-debug`) writes the
+      // override under a different key than the underscore slug the rest
+      // of the tree reads (`chrome_debug`), so a toggled-off checkbox
+      // never reflected its off state.
+      id: 'mcp-' + slug,
+      name: server.name || server.id,
+      description: (server.status || 'stopped') + (toolCount ? ' · ' + toolCount + (toolCount === 1 ? ' tool' : ' tools') : '')
+        + (overridden ? ' · override: ' + segMode(effMode) : ' · default (' + segMode(effMode) + ')'),
+      checked: effMode !== 'off' && (!mcpChildTools.length || mcpChildTools.every((t) => t.checked)),
+      // MCP lifecycle state for the reload control (same fields the
+      // chat tools card threads): a stopped-but-enabled server shows
+      // the start button; a disabled (off) one never does.
+      status: server.status || 'stopped',
+      enabled: effMode !== 'off',
+      serverId: server.id,
+      control: h(McpAuthSeg, {
+        name: server.name || server.id,
+        slug,
+        servers: mcpAuth.servers,
+        shared: mcpAuth,
+        namePrefix: 'sp-mcp',
+        onSave: (patch) => {
+        if (!patch || !patch.servers) return;
+        const key = Object.keys(patch.servers)[0];
+        const val = patch.servers[key];
+        if (val == null) clearServerAuthMode(key);
+        else saveMcpAuthorization({ servers: { [key]: val } });
+        }
+      }),
+      tools: mcpChildTools,
+      extra: mcpAuthStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, mcpAuthStatusMsg) : null
+      });
+    }
     }
 
     return groups;

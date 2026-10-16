@@ -45,15 +45,29 @@ function toolChoicesWithMcp(servers) {
 // editors. currentTools === undefined means "inherit everything".
 // Returns { tools, send }: `tools` is the new state value
 // (undefined = inherit), `send` is what to PATCH ([] = inherit).
-function toggleToolInList(currentTools, toolId, checked, allChoices) {
+function toggleToolInList(currentTools, toolId, checked, allChoices, groups = []) {
   const all = allChoices.map((c) => c.value);
   const current = currentTools !== undefined ? currentTools.slice() : null;
-  let next;
-  if (current == null) {
-    // Was inheriting all tools; unchecking one builds an explicit list.
-    next = checked ? all.slice() : all.filter((t) => t !== toolId);
+  let next = current == null ? all.slice() : current.slice();
+  // When toggling an individual MCP tool (`mcp__<slug>__<tool>`), expand
+  // a server-wide slug (`mcp__<slug>`) into its concrete child tool ids first,
+  // and collapse back to the server slug once every child is checked.
+  if (toolId.startsWith('mcp__') && toolId.indexOf('__', 5) > 0) {
+    const serverKey = 'mcp__' + toolId.slice(5).split('__')[0];
+    const mcpGroup = Array.isArray(groups) ? groups.find((g) => g && g.id === serverKey) : null;
+    const childIds = mcpGroup && Array.isArray(mcpGroup.tools)
+      ? mcpGroup.tools.map((t) => t && t.id).filter((id) => id && id !== serverKey)
+      : [];
+    if (next.includes(serverKey) && childIds.length) {
+      next = next.filter((t) => t !== serverKey).concat(childIds);
+    }
+    next = checked ? next.concat(toolId) : next.filter((t) => t !== toolId);
+    next = Array.from(new Set(next));
+    if (childIds.length && childIds.every((id) => next.includes(id))) {
+      next = next.filter((t) => !childIds.includes(t)).concat(serverKey);
+    }
   } else {
-    next = checked ? current.concat(toolId) : current.filter((t) => t !== toolId);
+    next = checked ? next.concat(toolId) : next.filter((t) => t !== toolId);
   }
   // De-dupe, and collapse back to "inherit" when everything is on.
   next = Array.from(new Set(next));
@@ -66,9 +80,20 @@ function toggleToolInList(currentTools, toolId, checked, allChoices) {
 function toggleGroupInList(currentTools, group, checked, allChoices) {
   // MCP server groups are represented by their server slug in an agent
   // allowlist; selecting it grants every discovered tool, including tools
-  // added by the server later.
+  // added by the server later. Clear any individual tool overrides for
+  // that server so unchecking or checking the server group is clean.
   if (group.id.startsWith('mcp__')) {
-    return toggleToolInList(currentTools, group.id, checked, allChoices);
+    const prefix = group.id + '__';
+    const base = currentTools !== undefined
+      ? currentTools.filter((t) => !t.startsWith(prefix))
+      : undefined;
+    const r = toggleToolInList(base, group.id, checked, allChoices);
+    if (r.tools === undefined) return r;
+    const cleaned = r.send.filter((t) => !t.startsWith(prefix));
+    const all = allChoices.map((c) => c.value);
+    const full = cleaned.length === all.length && all.every((tool) => cleaned.includes(tool));
+    const send = full ? [] : cleaned;
+    return { tools: send.length ? send : undefined, send };
   }
   let tools = currentTools;
   let send = currentTools === undefined ? [] : currentTools.slice();
@@ -358,7 +383,7 @@ export function SettingsAgentEditView(props) {
   }
 
   function onToolToggle(tool, checked) {
-    const r = toggleToolInList(agent && agent.tools, tool, checked, toolChoices);
+    const r = toggleToolInList(agent && agent.tools, tool, checked, toolChoices, agentToolGroups);
     setAgent(a => Object.assign({}, a, { tools: r.tools }));
     saveNow({ tools: r.send });
   }

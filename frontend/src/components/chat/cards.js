@@ -305,7 +305,9 @@ function buildAgentFilesCard(state) {
   const list = document.createElement('div');
   list.className = 'chat-view__agent-files-list';
   for (const name of af.files) {
-    const row = document.createElement('label');
+    // Same click discipline as ToolTree: only the checkbox toggles the row,
+    // so tapping the filename while scrolling on touch never flips it.
+    const row = document.createElement('div');
     row.className = 'chat-view__agent-files-row';
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
@@ -367,7 +369,9 @@ const disabledByProject = !!skill.disabled;
 const disabledForChat = !!skill.chatDisabled;
 const checked = !!(sk.enabled && !disabledByProject && !disabledForChat);
 const disabled = !!sk.projectLocked || disabledByProject;
-const row = document.createElement('label');
+// Same click discipline as ToolTree: only the checkbox toggles the skill,
+// so scrolling on touch never toggles a row when tapping its text.
+const row = document.createElement('div');
 row.className = 'chat-view__skills-row';
 const checkbox = document.createElement('input');
 checkbox.type = 'checkbox';
@@ -1111,7 +1115,21 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
   }
   let nextFilter;
   if (cur.filter == null) {
-    nextFilter = next ? null : allNames.filter((n) => !wanted.has(n));
+    if (!next) {
+      nextFilter = allNames.filter((n) => !wanted.has(n));
+    } else {
+      // When filter is null, any tool that is currently Off in permissions
+      // is visually unchecked. If the user checks only a subset of an Off
+      // family (e.g. a single leaf), snapshot the currently visible selection
+      // plus `wanted` so sibling leaves that were Off stay unchecked instead
+      // of all turning on at once when the family gate is restored to Ask.
+      const permNative = state.toolAuth || {};
+      const permMcp = state.mcpAuth || {};
+      const visible = allNames.filter((n) =>
+        wanted.has(n) || toolPermission(n, permNative, permMcp).mode !== 'off'
+      );
+      nextFilter = allNames.every((n) => visible.includes(n)) ? null : visible;
+    }
   } else {
     const set = new Set(cur.filter);
     if (next) for (const n of wanted) set.add(n);
