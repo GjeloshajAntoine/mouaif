@@ -118,7 +118,10 @@ function eventToolId(e) {
   const data = e && e.data;
   if (!data) return '';
   if (e.name === 'shell_output') return String(data.id == null ? '' : data.id);
-  if (e.name === 'subagent_event') return String(data.parentCallId == null ? '' : data.parentCallId);
+  if (e.name === 'subagent_event') {
+    const inner = data.data && data.data.id != null ? String(data.data.id) : '';
+    return inner || String(data.parentCallId == null ? '' : data.parentCallId);
+  }
   if (e.name === 'authorization_required' || e.name === 'ask_user_required') return String(data.callId == null ? '' : data.callId);
   // Deliberately NOT `progress_update`: pruneLive drops everything matching a
   // tool id whose result was just persisted, and a progress frame is never

@@ -830,6 +830,9 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}) {
     if (name === 'shell_output' || name === 'subagent_event'
     || name === 'authorization_required' || name === 'ask_user_required') {
     liveChat.pushLive(runKey, name, data);
+    if (name === 'subagent_event' && (data?.kind === 'tool_call' || data?.kind === 'tool_result') && data?.data?.id) {
+    liveChat.pruneLive(runKey, data.data.id);
+    }
     } else if (name === 'progress_update') {
     // Latest-value, not a log: each frame carries the whole state, so an
     // earlier one is worthless once a newer exists. Coalesced in the buffer

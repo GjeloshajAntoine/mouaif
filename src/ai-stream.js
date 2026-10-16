@@ -188,7 +188,7 @@ async function runSingleToolCall(c, cx) {
   // the command or answer in plain text. Counts per consecutive
   // identical call; any different call resets the streak.
   const callKey = c.name + '\n' + (c.arguments || '');
-  const polling = ['subagent_status', 'subagent_messages'].includes(c.name) && !args.message;
+  const polling = ['subagent_status', 'subagent_messages', 'subagent_group_status', 'subagent_read'].includes(c.name) && !args.message;
   if (!polling && callKey === cx.getLastToolCallKey()) {
     cx.setRepeatedToolCallCount(cx.getRepeatedToolCallCount() + 1);
   } else {
@@ -282,11 +282,39 @@ async function runSingleToolCall(c, cx) {
       workingFolderDestination = prepared.destination;
       }
       else if (c.name === 'webpreview') {
-        // Show the URL the model wants to open so the user can tell
-        // at a glance which site it'll preview — beats the generic
-        // first-arg fallback because every webpreview call has a
-        // `url` argument anyway.
-        summary = (args && args.url) || '';
+      // Show the URL the model wants to open so the user can tell
+      // at a glance which site it'll preview — beats the generic
+      // first-arg fallback because every webpreview call has a
+      // `url` argument anyway.
+      summary = (args && args.url) || '';
+      }
+      else if (c.name === 'subagent_group_create') {
+      const members = Array.isArray(args && args.members) ? args.members.map((m) => m && m.memberId).filter(Boolean).join(', ') : '';
+      summary = [args && args.name, args && args.objective, members ? 'members: ' + members : ''].filter(Boolean).join(' — ');
+      }
+      else if (c.name === 'subagent_group_update') {
+      summary = [args && args.action, args && args.name, args && args.contract].filter(Boolean).join(': ');
+      }
+      else if (c.name === 'subagent_publish') {
+      summary = [args && args.name, args && args.summary].filter(Boolean).join(': ');
+      }
+      else if (c.name === 'subagent_decision') {
+      summary = [args && args.name, args && args.proposal].filter(Boolean).join(': ');
+      }
+      else if (c.name === 'subagent_conflict') {
+      summary = [args && args.name, args && args.summary].filter(Boolean).join(': ');
+      }
+      else if (c.name === 'subagent_send') {
+      summary = [args && args.callId, args && args.message].filter(Boolean).join(': ');
+      }
+      else if (c.name === 'subagent_read') {
+      summary = (args && args.name) || 'all handoffs';
+      }
+      else if (c.name === 'subagent_status') {
+      summary = (args && args.callId) || 'all workers';
+      }
+      else if (c.name === 'subagent_group_status') {
+      summary = (args && args.groupId) || 'all worker groups';
       }
       else if (authGate.FILE_TOOL_NAMES.has(c.name)) {
       if (c.name === 'group_read' || c.name === 'group_edit') {
@@ -2206,30 +2234,35 @@ promptSize: callOpts && callOpts.promptSize,
       if (segmentReasoning) turn.reasoning = segmentReasoning;
       if (segmentImages.length) turn.images = segmentImages;
       if (pendingCalls.length) turn.tool_calls = pendingCalls.map((c) => ({
-        id: c.id || undefined,
-        type: 'function',
-        function: { name: c.name, arguments: typeof c.args === 'string' ? c.args : JSON.stringify(c.args || {}) }
-        }));
-        chat.push(turn);
-        pendingCalls = [];
-        segmentText = '';
-        segmentReasoning = '';
-        segmentImages = [];
-        };
-        for (const ev of nestedEvents) {
-        const d = ev.data || {};
-        if (ev.name === 'image') {
-        // Store the pixels once, on r.content. The nested turn keeps a
-        // pointer so the settled card renders it in place without a second
-        // base64 copy in the persisted row.
-        segmentImages.push({ type: 'image', mimeType: d.mimeType, contentIndex: nestedImageParts.length });
-        nestedImageParts.push(d);
-        } else if (ev.name === 'message' && typeof d.delta === 'string') {
-        segmentText += d.delta;
-        } else if (ev.name === 'reasoning' && typeof d.delta === 'string') {
-        segmentReasoning += d.delta;
-        } else if (ev.name === 'tool_call') {
-        pendingCalls.push({ id: d.id, name: d.name, args: d.args });
+      id: c.id || undefined,
+      type: 'function',
+      function: { name: c.name, arguments: typeof c.args === 'string' ? c.args : JSON.stringify(c.args || {}) }
+      }));
+      chat.push(turn);
+      pendingCalls = [];
+      segmentText = '';
+      segmentReasoning = '';
+      segmentImages = [];
+      };
+      for (const ev of nestedEvents) {
+      const d = ev.data || {};
+      if (ev.name === 'image') {
+      if (pendingCalls.length) flushSegment();
+      // Store the pixels once, on r.content. The nested turn keeps a
+      // pointer so the settled card renders it in place without a second
+      // base64 copy in the persisted row.
+      segmentImages.push({ type: 'image', mimeType: d.mimeType, contentIndex: nestedImageParts.length });
+      nestedImageParts.push(d);
+      } else if (ev.name === 'message' && typeof d.delta === 'string') {
+      if (pendingCalls.length) flushSegment();
+      segmentText += d.delta;
+      } else if (ev.name === 'reasoning' && typeof d.delta === 'string') {
+      if (pendingCalls.length) flushSegment();
+      segmentReasoning += d.delta;
+      } else if (ev.name === 'assistant_turn_end') {
+      if (pendingCalls.length) flushSegment();
+      } else if (ev.name === 'tool_call') {
+      pendingCalls.push({ id: d.id, name: d.name, args: d.args });
       } else if (ev.name === 'tool_result') {
       flushSegment();
       chat.push({
@@ -2237,12 +2270,12 @@ promptSize: callOpts && callOpts.promptSize,
         tool_call_id: d.id || undefined,
         name: d.name,
         content: typeof d.result === 'string' ? d.result : JSON.stringify(d.result)
-        });
-        // webpreview's screenshot is a user-only preview (see line ~387);
-        // never forward it as a model vision part.
-        if (d.name !== 'webpreview') {
+      });
+      // webpreview's screenshot is a user-only preview (see line ~387);
+      // never forward it as a model vision part.
+      if (d.name !== 'webpreview') {
         for (const block of rawImageBlocks(d.result)) nestedImageParts.push(block);
-        }
+      }
       }
       }
       flushSegment();
