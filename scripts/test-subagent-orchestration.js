@@ -20,13 +20,16 @@ async function unit() {
   let resolve;
   const a = scope.start('a', 'Review', () => new Promise((r) => { resolve = r; }), () => {});
   await tick();
-  for (let i = 0; i < 150; i++) scope.event(a, 'message', { delta: String(i) });
+  for (let i = 0; i < 150; i++) scope.event(a, 'message', { delta: String(i) + '\n' });
+  scope.event(a, 'message', { delta: 'stream ' });
+  scope.event(a, 'message', { delta: 'coalesced' });
   scope.event(a, 'reasoning', { delta: 'secret reasoning' });
   scope.event(a, 'tool_result', { result: { body: 'hidden file' } });
   const lines = scope.dispatch('subagent_messages', { callId: 'a', limit: 50 });
   assert.equal(lines.lines.length, 50);
   assert.equal(lines.truncated, true);
   assert.equal(a.lines.length, 128);
+  assert.equal(scope.status(a).lastLine, 'stream coalesced');
   assert.ok(!JSON.stringify(lines).includes('secret'));
   scope.dispatch('subagent_send', { callId: 'a', message: 'focus on tests' });
   assert.deepEqual(scope.drain(a.author), ['focus on tests']);

@@ -215,6 +215,22 @@ class Scope {
     // security boundary for model-repeated secrets.
     const text = kind === 'message' ? data?.delta : kind === 'progress_update' ? data?.message || data?.title : null;
     if (typeof text !== 'string' || !text) return;
+    if (kind === 'message') {
+      const parts = text.split('\n');
+      for (let i = 0; i < parts.length; i++) {
+        const chunk = parts[i];
+        const prev = row.lines.at(-1);
+        if (i === 0 && prev && prev.kind === 'message' && !prev.newline && prev.text.length < 2048) {
+          prev.text = (prev.text + chunk).slice(0, 2048);
+          prev.cursor = ++row.cursor;
+          if (parts.length > 1) prev.newline = true;
+        } else if (chunk || i < parts.length - 1) {
+          row.lines.push({ cursor: ++row.cursor, kind, text: chunk.slice(0, 2048), ...(i < parts.length - 1 ? { newline: true } : {}) });
+          if (row.lines.length > 128) row.lines.shift();
+        }
+      }
+      return;
+    }
     row.lines.push({ cursor: ++row.cursor, kind, text: text.slice(0, 2048) });
     if (row.lines.length > 128) row.lines.shift();
   }
