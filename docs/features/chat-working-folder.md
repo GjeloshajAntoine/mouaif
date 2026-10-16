@@ -79,7 +79,7 @@ Shell and file operations use the new folder immediately, including subsequent c
 
 ## Where workspaces come from
 
-This tool deliberately does not create anything in your project. To work in an isolated copy, the assistant prepares one first with an authorized shell command — for example a Git worktree from committed `HEAD` on a new branch — and then selects that existing folder. You see and approve the command that creates it, and nothing is created behind your back.
+This tool deliberately does not create anything in your project. To work in an isolated copy, the assistant prepares one first under `.mouaif/workspaces/<name>` with an authorized shell command — for example a Git worktree from committed `HEAD` on a new branch — and then selects that existing folder. You see and approve the command that creates it, and nothing is created behind your back.
 
 - A workspace folder is **not** special: it is an ordinary directory, and any directory inside the project (or elsewhere within the home boundary) works.
 - Add `.mouaif/` to the project's `.gitignore` if you keep scratch folders there and do not want them offered for staging.

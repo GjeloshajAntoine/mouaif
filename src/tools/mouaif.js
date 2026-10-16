@@ -170,7 +170,7 @@ const PARAMETERS = {
           type: 'string',
           description: 'Image path relative to the calling chat’s working folder (the project by default; e.g. "docs/features/images/shot.png").'
         },
-        directory: { type: 'string', description: 'Required. An existing directory, relative to the original project or absolute, or "" (or ".") to return to the original project folder. Folders are never created: this tool selects a directory that already exists.' },
+        directory: { type: 'string', description: 'Required. An existing directory, relative to the original project or absolute (e.g. ".mouaif/workspaces/<name>"), or "" (or ".") to return to the original project folder. Folders are never created: prepare any new workspace or worktree under .mouaif/workspaces/<name> with an authorized shell command first, then select that existing directory.' },
         target: {
         type: 'string',
           enum: ['draft', 'message'],

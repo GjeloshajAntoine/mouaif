@@ -85,8 +85,9 @@ async function main() {
   check('very-small stays compact', core.length < 2200, 'chars=' + core.length);
   check('average extends the complete compact core', average.startsWith(core + '\n\n'));
   for (const [id, text] of [['average', average], ['extensive', extensive]]) {
-    check(id + ' keeps Git setup in authorized shell workflow', /Git isolation is a workflow.*authorized shell calls.*committed HEAD.*unique branch/.test(text));
+    check(id + ' keeps Git setup in authorized shell workflow', /Git isolation is a workflow.*authorized shell calls.*\.mouaif\/workspaces\/<name>.*committed HEAD.*unique branch/.test(text));
     check(id + ' inspects existing workspaces and preserves work', /inspect the original repository and existing workspace first/.test(text)
+      && /never outside the project root unless asked/.test(text)
       && /never force\/reset a branch or run Git after a denied operation/.test(text));
   }
   check('extensive extends the complete average workflow', extensive.startsWith(average + '\n\n'));
@@ -103,7 +104,7 @@ async function main() {
     ['denial allows only clarification or permitted work', /If denied.*ask or do permitted work/],
     ['schema discovery', /omits its parameters.*discover_tool with that name/],
     ['directory tool selects existing folders', /change_working_folder selects an EXISTING directory and creates nothing/],
-    ['directory tool never runs Git', /never runs Git, so prepare any checkout with an authorized shell command first/],
+    ['directory tool never runs Git', /never runs Git, so prepare any new workspace or checkout under \.mouaif\/workspaces\/<name> with an authorized shell command first/],
     ['reset returns to the project folder', /or "" to return to the project folder/],
     ['preserves chosen working folders', /keep any folder the user selected/],
     ['inspect before editing', /Read the code, its callers, and its tests first/],
@@ -259,6 +260,7 @@ async function main() {
     const description = specs.find((spec) => spec.function.name === 'change_working_folder').function.description;
     check(profile + ' tool description says folders are never created', /never creates a folder/.test(description));
     check(profile + ' tool description requires an existing directory', /directory` is required: a project-relative or absolute path to a directory that already exists/.test(description));
+    check(profile + ' tool description points new workspaces at .mouaif/workspaces/<name>', /\.mouaif\/workspaces\/<name>/.test(description));
   }
   check('reduceToolSpecs invalid profile falls through to full',
     pp.reduceToolSpecs(sampleSpecs, 'huge')[0].function.parameters.properties.cmd,

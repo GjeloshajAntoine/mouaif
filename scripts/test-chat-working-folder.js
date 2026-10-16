@@ -60,8 +60,12 @@ async function main() {
   assert.deepEqual(SPECS.change_working_folder.function.parameters.required, ['directory']);
   assert.equal(/never creates a folder/.test(SPECS.change_working_folder.function.description), true,
     'the tool description says the tool selects existing folders only');
-  assert.equal(/workspaces/.test(SPECS.change_working_folder.function.description), false,
-    'the default workspace is gone from the advertised description');
+  assert.equal(/\.mouaif\/workspaces\/<name>/.test(SPECS.change_working_folder.function.description), true,
+    'the tool description points new workspaces at .mouaif/workspaces/<name>');
+  assert.equal(/\.mouaif\/workspaces\/<name>/.test(SPECS.change_working_folder.function.parameters.properties.directory.description), true,
+    'the directory parameter description points new workspaces at .mouaif/workspaces/<name>');
+  assert.equal(/Allow automatic workspaces/.test(SPECS.change_working_folder.function.description), false,
+    'the retired automatic-workspace setting is gone from the advertised description');
   assert.equal(authz.effectiveConfig(projectDir, 'change_working_folder').mode, 'ask');
   git('init', '-q');
   git('config', 'user.email', 'fixture@example.test');
