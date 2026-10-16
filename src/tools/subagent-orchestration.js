@@ -15,32 +15,58 @@ const error = (code, message) => Object.assign(new Error(message), { code });
 const spec = (name, description, properties, required = []) => ({ type: 'function', function: {
   name, description, parameters: { type: 'object', properties, required, additionalProperties: false }
 } });
-const callId = { type: 'string', description: 'Background callId returned by subagent, in this parent turn only.' };
+const callId = { type: 'string', description: 'Background callId returned by subagent in this local-parent scope.' };
+const keyDesc = '1–80 letters, digits, dots, underscores, or hyphens ([A-Za-z0-9_.-]).';
 const SPECS = [
-  spec('subagent_status', 'Parent only: immediate status, never waits. Maximum 256 observation calls per turn; do not poll tightly.', { callId }),
-  spec('subagent_messages', 'Parent only: read bounded public lines and delivery receipts; no writes or waiting.', {
-    callId, since: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 50 }
+  spec('subagent_status', 'Local parent only: immediate status for your delegated children, never waits. Maximum 256 observation calls per turn; do not poll tightly.', {
+    callId: { ...callId, description: 'Optional child callId; omit to list all direct runs, root limits, and escalated conflicts.' }
+  }),
+  spec('subagent_messages', 'Local parent only: read bounded public lines and delivery receipts from a delegated child; no writes or waiting.', {
+    callId,
+    since: { type: 'integer', minimum: 0, description: 'Cursor from a previous nextCursor (default 0).' },
+    limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Maximum lines to return (1–50, default 20).' }
   }, ['callId']),
-  spec('subagent_send', 'Parent only: explicitly queue steering for the next child model round. Receipt is queued, delivered (inserted into context), or undelivered; not an interrupt.', { callId, message: { type: 'string', maxLength: 4096 } }, ['callId', 'message']),
-  spec('subagent_group_create', 'Parent only: declare a shared objective and member DAG before launching members. Ownership/workspace are metadata, never permission or checkout effects.', {
-    name: { type: 'string', maxLength: 80 }, objective: { type: 'string', maxLength: 4096 },
+  spec('subagent_send', 'Local parent only: explicitly queue steering for the next child model round. Receipt is queued, delivered (inserted into context), or undelivered; not an interrupt.', {
+    callId, message: { type: 'string', minLength: 1, maxLength: 4096, description: 'Non-empty guidance text (1–4096 chars).' }
+  }, ['callId', 'message']),
+  spec('subagent_group_create', 'Local parent only: declare a shared objective and member DAG before launching members. Ownership/workspace are metadata, never permission or checkout effects.', {
+    name: { type: 'string', maxLength: 80, description: 'Unique group name: ' + keyDesc },
+    objective: { type: 'string', maxLength: 4096, description: 'Shared group objective (1–4096 chars).' },
     members: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'object', additionalProperties: false, required: ['memberId', 'role', 'workspace'], properties: {
-      memberId: { type: 'string' }, role: { type: 'string', maxLength: 512 }, workspace: { type: 'string', maxLength: 1024 },
-      owns: { type: 'array', maxItems: 20, items: { type: 'string' } }, dependsOn: { type: 'array', maxItems: 32, items: { type: 'string' } }
+      memberId: { type: 'string', maxLength: 80, description: 'Unique member identifier: ' + keyDesc },
+      role: { type: 'string', maxLength: 512 },
+      workspace: { type: 'string', maxLength: 1024, description: 'Advisory workspace or branch name (metadata only).' },
+      owns: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 512 }, description: 'Advisory relative file paths (no leading /, \\, or ..).' },
+      dependsOn: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 80 }, description: 'Upstream memberId list in this group.' }
     } } }
   }, ['name', 'objective', 'members']),
-  spec('subagent_group_status', 'Immediate discoverable group/member readiness, artifacts, proposed/approved decisions and conflicts. Parent sees all; children see only their group.', { groupId: { type: 'string' } }),
-  spec('subagent_group_update', 'Parent only: approve/reject a proposed contract, arbitrate an escalated conflict, or cancel the group. Never merges, rolls back or obtains consensus.', {
-    groupId: { type: 'string' }, action: { type: 'string', enum: ['approve', 'reject', 'arbitrate', 'cancel'] }, name: { type: 'string' }, contract: { type: 'string', maxLength: 4096 }
+  spec('subagent_group_status', 'Immediate discoverable group/member readiness, artifacts, proposed/approved decisions and conflicts. Local parent sees all its groups; group members see only their assigned group.', {
+    groupId: { type: 'string', description: 'Optional groupId; omit to list local-parent groups or inspect your own assigned group.' }
+  }),
+  spec('subagent_group_update', 'Local parent only: approve/reject a proposed contract, arbitrate an escalated conflict (including ancestor arbitration), or cancel the group. Never merges, rolls back or obtains consensus.', {
+    groupId: { type: 'string' },
+    action: { type: 'string', enum: ['approve', 'reject', 'arbitrate', 'cancel'] },
+    name: { type: 'string', maxLength: 80, description: 'Proposal or conflict name (required for approve, reject, and arbitrate).' },
+    contract: { type: 'string', maxLength: 4096, description: 'Approved contract, rejection reason, or arbitration resolution (required for approve, reject, and arbitrate).' }
   }, ['groupId', 'action']),
-  spec('subagent_decision', 'Propose a named shared decision. It is not a contract until the parent explicitly approves it.', { groupId: { type: 'string' }, name: { type: 'string' }, proposal: { type: 'string', maxLength: 4096 } }, ['groupId', 'name', 'proposal']),
-  spec('subagent_conflict', 'Escalate an ownership/contract conflict for parent arbitration; no child consensus or automatic file effects.', { groupId: { type: 'string' }, name: { type: 'string' }, summary: { type: 'string', maxLength: 4096 }, members: { type: 'array', maxItems: 32, items: { type: 'string' } } }, ['groupId', 'name', 'summary', 'members']),
-  spec('subagent_stop', 'Parent only: cancel one child, including its pending approvals, without cancelling siblings. Idempotent; cancellation is cooperative.', { callId }, ['callId']),
-  spec('subagent_publish', 'Publish a bounded named handoff in this turn only. Names are immutable; siblings can read summaries and project-relative file references. No arbitrary file contents/snippets.', {
-    name: { type: 'string', maxLength: 80 }, summary: { type: 'string', maxLength: 8192 },
-    files: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 512 } }
+  spec('subagent_decision', 'Propose an immutable named shared decision in a group. It is not a contract until the owning local parent explicitly approves it.', {
+    groupId: { type: 'string', description: 'Target groupId (optional when called by an assigned group member).' },
+    name: { type: 'string', maxLength: 80, description: 'Immutable proposal name: ' + keyDesc },
+    proposal: { type: 'string', maxLength: 4096 }
+  }, ['name', 'proposal']),
+  spec('subagent_conflict', 'Escalate an ownership/contract conflict for parent/ancestor arbitration; no child consensus or automatic file effects.', {
+    groupId: { type: 'string', description: 'Target groupId (optional when called by an assigned group member).' },
+    name: { type: 'string', maxLength: 80, description: 'Conflict name: ' + keyDesc },
+    summary: { type: 'string', maxLength: 4096 },
+    members: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'string', maxLength: 80 }, description: '1–32 declared memberIds involved in the conflict.' }
+  }, ['name', 'summary', 'members']),
+  spec('subagent_stop', 'Local parent only: cancel one child (and its descendants/pending approvals) without cancelling siblings. Idempotent; cancellation is cooperative.', { callId }, ['callId']),
+  spec('subagent_publish', 'Publish a bounded named handoff in this turn only. Names are immutable; local parent and eligible siblings can read summaries and project-relative file references. No arbitrary file contents/snippets.', {
+    name: { type: 'string', maxLength: 80, description: 'Immutable artifact name: ' + keyDesc },
+    summary: { type: 'string', maxLength: 8192 },
+    files: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 512 }, description: 'Optional project-relative paths (no leading /, \\, or ..).' }
   }, ['name', 'summary']),
-  spec('subagent_read', 'Read a named sibling handoff (metadata only). Use ordinary authorized read_file for contents and redaction; the handoff never bypasses File tools.', {
+  spec('subagent_read', 'Read a named sibling/child handoff (metadata only). Use ordinary authorized read_file for contents and redaction; the handoff never bypasses File tools.', {
     name: { type: 'string', maxLength: 80, description: 'Omit to discover all accessible named artifacts.' }
   })
 ];
@@ -226,15 +252,16 @@ class Scope {
       const inherited = child?.groupId && (!args.groupId || args.groupId === child.groupId);
       const store = inherited ? child.scope.groups : this.groups;
       if (child && !localParent && !inherited) throw error('EPARENT_ONLY', 'children can access only their own group');
+      const targetGroupId = args.groupId || (inherited ? child.groupId : undefined);
       if (name === 'subagent_group_status') {
-      if (args.groupId || inherited) return store.status(store.get(args.groupId || child.groupId));
+      if (targetGroupId) return store.status(store.get(targetGroupId));
       return { groups: [...this.groups.rows.values()].map((g) => this.groups.status(g)), escalations: this.listEscalations() };
       }
-      if (name === 'subagent_decision') return store.propose(args, child);
+      if (name === 'subagent_decision') return store.propose({ ...args, groupId: targetGroupId }, child);
       if (name === 'subagent_conflict') {
       if (this.root.escalations.length >= 64) throw error('ETOOL_CAP', 'root conflict escalation budget exhausted');
-      const conflict = store.conflict(args, child);
-      this.root.escalations.push({ groupId: args.groupId, name: conflict.name, summary: conflict.summary, sourceCallId: child?.callId || this.owner?.callId || null, store, scope: inherited ? child.scope : this });
+      const conflict = store.conflict({ ...args, groupId: targetGroupId }, child);
+      this.root.escalations.push({ groupId: targetGroupId, name: conflict.name, summary: conflict.summary, sourceCallId: child?.callId || this.owner?.callId || null, store, scope: inherited ? child.scope : this });
       return conflict;
       }
       if (name === 'subagent_group_update' && !this.groups.rows.has(args.groupId)) {
@@ -264,13 +291,13 @@ class Scope {
     if (name === 'subagent_status') return args.callId ? this.status(this.get(args.callId)) : { runs: [...this.runs.values()].map((r) => this.status(r)), limits: { ...this.root.limits }, escalations: this.listEscalations() };
     if (name === 'subagent_stop') return this.stop(this.get(args.callId));
     if (name === 'subagent_messages') {
-      const row = this.get(args.callId);
-      const since = args.since ?? 0;
-      const limit = args.limit ?? 20;
-      if (!Number.isInteger(since) || since < 0 || !Number.isInteger(limit) || limit < 1 || limit > 50) throw error('EBADINPUT', 'invalid cursor or limit');
-      const lines = row.lines.filter((line) => line.cursor > since).slice(0, limit);
-      return { callId: row.callId, state: row.state, lines, nextCursor: lines.at(-1)?.cursor ?? since,
-        truncated: since < (row.lines[0]?.cursor || 1) - 1, deliveries: row.receipts.map(({ messageId, state }) => ({ messageId, state })) };
+    const row = this.get(args.callId);
+    const since = args.since ?? 0;
+    const limit = args.limit ?? 20;
+    if (!Number.isInteger(since) || since < 0 || !Number.isInteger(limit) || limit < 1 || limit > 50) throw error('EBADINPUT', 'invalid cursor or limit');
+    const lines = row.lines.filter((line) => line.cursor > since).slice(0, limit).map(({ cursor, kind, text }) => ({ cursor, kind, text }));
+    return { callId: row.callId, state: row.state, lines, nextCursor: lines.at(-1)?.cursor ?? since,
+      truncated: since < (row.lines[0]?.cursor || 1) - 1, deliveries: row.receipts.map(({ messageId, state }) => ({ messageId, state })) };
     }
     const bus = localParent ? this.parentScope : this;
     const accessible = (item) => !child || !item.groupId || item.groupId === child.groupId;

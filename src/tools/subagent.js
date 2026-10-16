@@ -22,8 +22,8 @@ const SPEC = {
       properties: {
         task: { type: 'string', description: 'The focused task or question for the subagent.' },
         background: { type: 'boolean', description: 'Opt in to a background handle so the parent can steer/poll while this child runs. Default false (wait for result). Handles and handoffs expire with this parent turn; unfinished children are cancelled when it ends.' },
-        groupId: { type: 'string', description: 'Parent-created group handle; requires memberId and background:true.' },
-        memberId: { type: 'string', description: 'Declared group member; dispatch waits for successful dependencies.' },
+        groupId: { type: 'string', description: 'Local-parent group handle from subagent_group_create; requires memberId and background:true.' },
+        memberId: { type: 'string', description: 'Declared group memberId (requires groupId and background:true); dispatch waits for successful dependencies.' },
         context: { type: 'string', description: 'Optional relevant context to include with the task.' },
         agent: { type: 'string', description: AGENT_DESCRIPTION },
         images: {

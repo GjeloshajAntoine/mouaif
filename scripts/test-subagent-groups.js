@@ -36,12 +36,13 @@ const declaration = (name = 'build') => ({ name, objective: 'shared goal', membe
   assert.equal(artifact.workspace, '/actual'); assert.equal(artifact.groupId, g.groupId);
   assert.throws(() => s.dispatch('subagent_publish', { name: 'secret', summary: 'x', files: ['../secret'] }, a.author), { code: 'EBADINPUT' });
   assert.equal(s.publications.size, 1);
-  s.dispatch('subagent_decision', { groupId: g.groupId, name: 'api', proposal: 'candidate' }, a.author);
+  s.dispatch('subagent_decision', { name: 'api', proposal: 'candidate' }, a.author);
   assert.equal(s.dispatch('subagent_group_status', {}, a.author).decisions[0].state, 'proposed');
+  assert.throws(() => s.dispatch('subagent_decision', { name: 'parent-missing-group', proposal: 'x' }), { code: 'EUNKNOWN_GROUP' });
   assert.throws(() => s.dispatch('subagent_group_update', { groupId: g.groupId, action: 'approve', name: 'api', contract: 'x' }, a.author), { code: 'EPARENT_ONLY' });
   assert.throws(() => s.dispatch('subagent_group_update', { groupId: g.groupId, action: 'approve', name: 'api', contract: '' }), { code: 'EBADINPUT' });
   s.dispatch('subagent_group_update', { groupId: g.groupId, action: 'approve', name: 'api', contract: 'parent contract' });
-  s.dispatch('subagent_conflict', { groupId: g.groupId, name: 'ownership', summary: 'overlap', members: ['a', 'b'] }, a.author);
+  s.dispatch('subagent_conflict', { name: 'ownership', summary: 'overlap', members: ['a', 'b'] }, a.author);
   assert.equal(s.dispatch('subagent_group_status', { groupId: g.groupId }).state, 'blocked');
   s.dispatch('subagent_group_update', { groupId: g.groupId, action: 'arbitrate', name: 'ownership', contract: 'a owns API' });
   finishA(result()); await a.promise; await b.promise; assert.equal(bRan, true);

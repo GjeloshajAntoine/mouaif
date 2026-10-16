@@ -35,10 +35,10 @@ The member is admitted once. It waits without a provider/tool request until ever
 
 ### Decisions and conflicts
 
-- `subagent_decision({ groupId, name, proposal })` creates an immutable named **proposal**, not an approved contract.
+- `subagent_decision({ groupId?, name, proposal })` creates an immutable named **proposal**, not an approved contract. Assigned group members may omit `groupId` to target their own group; local parents must pass `groupId`.
 - Only `subagent_group_update({ groupId, action: "approve", name, contract })` establishes the parent's approved contract. `action: "reject"` records a rejection reason in `contract` instead.
-- `subagent_conflict({ groupId, name, summary, members })` escalates a conflict among known members. An open conflict makes group status blocked, including after all members finish.
-- Only the parent resolves it using `subagent_group_update({ groupId, action: "arbitrate", name, contract })`. Arbitration records a resolution; it never edits, merges or restarts members. Conflicts are an explicit coordination signal, not an automatic filesystem lock or interrupt.
+- `subagent_conflict({ groupId?, name, summary, members })` escalates a conflict among known members (`groupId` is optional for assigned group members). An open conflict makes group status blocked, including after all members finish.
+- Only the parent (or an ancestor for an escalated conflict) resolves it using `subagent_group_update({ groupId, action: "arbitrate", name, contract })`. Arbitration records a resolution; it never edits, merges or restarts members. Conflicts are an explicit coordination signal, not an automatic filesystem lock or interrupt.
 - `subagent_group_update({ groupId, action: "cancel" })` cancels outstanding members and their approvals. Completed work remains completed; dependency consumers become blocked. Cancelled groups cannot admit cancelled members later.
 
 Group state is `pending`, `running`, `completed`, `blocked`, `failed` or `cancelled`. Failure/cancellation takes precedence over blocked. `settled` means every member has a terminal outcome, while `complete` requires every member to succeed and no open conflict. An unlaunched member prevents success. A proposal alone never becomes an approved decision by consensus or successful completion.
