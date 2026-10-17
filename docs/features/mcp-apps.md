@@ -10,7 +10,7 @@ MCP Apps are interactive HTML tool views inside the conversation, as described b
 2. Start the relevant MCP server using its Settings lifecycle control. Restart servers connected before this update so they receive the Apps capability at initialization.
 3. Call a tool declaring `_meta.ui.resourceUri`. Expand its completed tool card to load the app beside the ordinary text/image result; mounted MCP App cards stay pinned at the bottom of the transcript as new messages arrive.
 4. Interact with the view. App tool calls use the server's Off/Ask/Allow policy; Ask displays the app/server identity and arguments on a normal approval card.
-5. Use **Fullscreen** / **Inline** for the mobile sheet, **Close** to revoke a view, or **Retry** after closure, tab hiding, a resource change or initialization failure.
+5. Use **Fullscreen** / **Inline** (or press **Escape**) for the mobile sheet, **Close** to revoke a view, or **Retry** after closure, tab hiding, a resource change or initialization failure.
 
 App frames and sandbox wrappers have transparent backgrounds: unpainted app areas show the chat backdrop in inline mode. An app's own background is preserved; fullscreen retains its normal sheet backdrop. Transparency does not change sandbox isolation or permissions.
 

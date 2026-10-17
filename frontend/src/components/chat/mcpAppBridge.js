@@ -23,6 +23,15 @@ export function boundedHeight(height, viewport) {
   return Number.isFinite(height) ? Math.max(176, Math.min(height, viewport * 0.7)) : 288;
 }
 
+export function containerDimensionsFor(iframe, mode = 'inline') {
+  const width = iframe?.clientWidth || window.innerWidth || 360;
+  if (mode === 'fullscreen') {
+    const height = iframe?.clientHeight || Math.max(176, window.innerHeight - 44);
+    return { width, height };
+  }
+  return { width, maxHeight: window.innerHeight * 0.7 };
+}
+
 export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, onCall, onMessage, onClose }) {
   let initialized = false;
   let closed = false;
@@ -30,7 +39,7 @@ export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, on
     serverTools: {}, message: { text: {} }, sandbox: { csp: mount.csp, permissions: {} }
   }, { hostContext: {
     displayMode: 'inline', availableDisplayModes: ['inline', 'fullscreen'],
-    containerDimensions: { width: iframe.clientWidth || 360, maxHeight: window.innerHeight * 0.7 },
+    containerDimensions: containerDimensionsFor(iframe, 'inline'),
     theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   } });
   bridge.onsandboxready = () => {
@@ -59,7 +68,14 @@ export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, on
     if (!initialized || closed) throw new Error('App is not initialized');
     const accepted = mode === 'fullscreen' ? 'fullscreen' : 'inline';
     onMode(accepted);
-    bridge.setHostContext({ displayMode: accepted });
+    queueMicrotask(() => {
+      if (!closed) {
+        bridge.setHostContext({
+          displayMode: accepted,
+          containerDimensions: containerDimensionsFor(iframe, accepted)
+        });
+      }
+    });
     return { mode: accepted };
   };
   bridge.onrequestteardown = onClose;
@@ -67,7 +83,12 @@ export async function connectMcpApp({ iframe, mount, onReady, onSize, onMode, on
   // unsupported. The SDK returns typed unknown/unsupported method errors.
   await bridge.connect(originTransport(iframe.contentWindow, mount.origin));
   return {
-    setMode(mode) { bridge.setHostContext({ displayMode: mode }); },
+    setMode(mode, containerDimensions) {
+      bridge.setHostContext({
+        displayMode: mode,
+        containerDimensions: containerDimensions || containerDimensionsFor(iframe, mode)
+      });
+    },
     async sendAgentMessage(payload) {
       if (!initialized || closed) return false;
       const text = typeof payload === 'string' ? payload : String(payload?.message || '');

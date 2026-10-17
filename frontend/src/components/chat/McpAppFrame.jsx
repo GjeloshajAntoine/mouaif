@@ -1,7 +1,8 @@
 import { h, render } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
-import { boundedHeight, connectMcpApp } from './mcpAppBridge.js';
+import { useModal } from '../../hooks/useModal.js';
+import { boundedHeight, connectMcpApp, containerDimensionsFor } from './mcpAppBridge.js';
 import './mcp-app.css';
 
 export function McpAppFrame({ projectDir, chatId, callId, onAuthorize, onMountStateChange }) {
@@ -19,6 +20,77 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize, onMountSt
   const [generation, setGeneration] = useState(0);
   const [failed, setFailed] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
+  const sheetRef = useModal({
+    active: mode === 'fullscreen' && !!mount && !failed,
+    onClose: () => applyMode('inline'),
+    initialFocus: 'none'
+  });
+
+  function applyMode(next) {
+    setMode(next);
+    queueMicrotask(() => {
+      if (session.current && frame.current) {
+        session.current.setMode(next, containerDimensionsFor(frame.current, next));
+      }
+    });
+  }
+
+  useLayoutEffect(() => {
+    const el = sheetRef.current;
+    if (!el) return undefined;
+    if (mode !== 'fullscreen' || !mount || failed) {
+      if (el.open && typeof el.close === 'function') {
+        try { el.close(); } catch { /* ignore */ }
+      }
+      el.setAttribute('open', '');
+      el.style.removeProperty('--mcp-app-vv-top');
+      el.style.removeProperty('--mcp-app-vv-height');
+      return undefined;
+    }
+    if (el.open && typeof el.close === 'function') {
+      try { el.close(); } catch { /* ignore */ }
+    }
+    if (!el.open && typeof el.showModal === 'function') {
+      try { el.showModal(); } catch { el.setAttribute('open', ''); }
+    }
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+    const syncViewport = () => {
+      const top = vv ? Math.max(0, vv.offsetTop) : 0;
+      const vh = vv && vv.height ? vv.height : window.innerHeight;
+      el.style.setProperty('--mcp-app-vv-top', top + 'px');
+      el.style.setProperty('--mcp-app-vv-height', vh + 'px');
+      if (session.current && frame.current) {
+        session.current.setMode('fullscreen', containerDimensionsFor(frame.current, 'fullscreen'));
+      }
+    };
+    const onCancel = event => {
+      event.preventDefault();
+      applyMode('inline');
+    };
+    el.addEventListener('cancel', onCancel);
+    if (vv) {
+      vv.addEventListener('resize', syncViewport);
+      vv.addEventListener('scroll', syncViewport);
+    }
+    window.addEventListener('resize', syncViewport);
+    window.addEventListener('orientationchange', syncViewport);
+    syncViewport();
+    return () => {
+      el.removeEventListener('cancel', onCancel);
+      if (vv) {
+        vv.removeEventListener('resize', syncViewport);
+        vv.removeEventListener('scroll', syncViewport);
+      }
+      window.removeEventListener('resize', syncViewport);
+      window.removeEventListener('orientationchange', syncViewport);
+      if (el.open && typeof el.close === 'function') {
+        try { el.close(); } catch { /* ignore */ }
+      }
+      el.setAttribute('open', '');
+      el.style.removeProperty('--mcp-app-vv-top');
+      el.style.removeProperty('--mcp-app-vv-height');
+    };
+  }, [mode, mount, failed]);
 
   useEffect(() => {
     let active = true;
@@ -148,23 +220,57 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize, onMountSt
   }, [mount]);
 
   function changeMode() {
-    const next = mode === 'inline' ? 'fullscreen' : 'inline';
-    setMode(next); session.current?.setMode(next);
+    applyMode(mode === 'inline' ? 'fullscreen' : 'inline');
   }
   if (unavailable) return null;
-  return h('section', { class: 'mcp-app' + (mode === 'fullscreen' ? ' mcp-app--fullscreen' : ''), 'aria-label': 'MCP App' },
+  const isFullscreen = mode === 'fullscreen';
+  return h('dialog', {
+    ref: sheetRef,
+    open: isFullscreen ? undefined : true,
+    class: 'mcp-app' + (isFullscreen ? ' mcp-app--fullscreen' : ''),
+    role: isFullscreen ? 'dialog' : 'region',
+    'aria-modal': isFullscreen ? 'true' : undefined,
+    'aria-label': mount?.title || 'MCP App'
+  },
     h('header', { class: 'mcp-app__header' },
-      h('strong', null, mount?.title || 'MCP App'),
-      mount && !failed && h('button', { type: 'button', onClick: changeMode }, mode === 'inline' ? 'Fullscreen' : 'Inline'),
-      mount && !failed && h('button', { type: 'button', onClick: () => closeView.current?.() }, 'Close'),
-      failed && h('button', { type: 'button', onClick: () => setGeneration(n => n + 1) }, 'Retry')
+      h('strong', { class: 'mcp-app__title' }, mount?.title || 'MCP App'),
+      mount && !failed && h('button', {
+        type: 'button',
+        class: 'btn mcp-app__btn mcp-app__btn--mode' + (isFullscreen ? ' is-active' : ''),
+        onClick: changeMode,
+        'aria-pressed': String(isFullscreen),
+        'aria-label': isFullscreen ? 'Exit fullscreen' : 'Fullscreen app',
+        title: isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen app'
+      },
+        h('svg', { viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
+          h('path', {
+            d: isFullscreen
+              ? 'M9 4v5H4 M15 4v5h5 M9 20v-5H4 M15 20v-5h5'
+              : 'M4 9V4h5 M20 9V4h-5 M4 15v5h5 M20 15v5h-5',
+            fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+          })
+        ),
+        h('span', null, isFullscreen ? 'Inline' : 'Fullscreen')
+      ),
+      mount && !failed && h('button', {
+        type: 'button',
+        class: 'btn mcp-app__btn mcp-app__btn--close',
+        onClick: () => closeView.current?.(),
+        'aria-label': 'Close app',
+        title: 'Close app'
+      }, 'Close'),
+      failed && h('button', {
+        type: 'button',
+        class: 'btn mcp-app__btn mcp-app__btn--retry',
+        onClick: () => setGeneration(n => n + 1)
+      }, 'Retry')
     ),
     status && h('p', { role: 'status' }, status),
     mount && !failed && h('iframe', { ref: frame, title: mount.title,
       sandbox: mount.origin === 'null' ? 'allow-scripts' : 'allow-scripts allow-same-origin',
       referrerPolicy: 'origin',
       allow: "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-write 'none'",
-      style: { height: mode === 'fullscreen' ? '100%' : height + 'px' } })
+      style: { height: isFullscreen ? '100%' : height + 'px' } })
   );
 }
 

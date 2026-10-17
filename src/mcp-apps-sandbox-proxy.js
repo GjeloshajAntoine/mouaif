@@ -10,7 +10,7 @@
   const inner = document.createElement('iframe');
   inner.setAttribute('sandbox', 'allow-scripts');
   inner.setAttribute('allow', "camera 'none'; microphone 'none'; geolocation 'none'; clipboard-write 'none'");
-  document.documentElement.appendChild(inner);
+  (document.body || document.documentElement).appendChild(inner);
   let loaded = false;
   window.addEventListener('message', event => {
     const data = event.data;

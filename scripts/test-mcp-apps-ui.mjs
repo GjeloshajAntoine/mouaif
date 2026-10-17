@@ -103,13 +103,38 @@ try {
   assert.equal(await evaluate("document.querySelector('.mcp-app button').getBoundingClientRect().height >= 44"), true);
   await evaluate("document.querySelector('.mcp-app button').click()");
   assert.equal(await evaluate("!!document.querySelector('.mcp-app--fullscreen')"), true);
+  assert.equal(await evaluate("document.querySelector('.mcp-app').matches(':modal')"), true, 'fullscreen promotes dialog to top layer via showModal');
+  assert.equal(await evaluate("document.querySelector('.mcp-app__header').getBoundingClientRect().top >= 0"), true, 'fullscreen top bar is visible inside viewport');
+  assert.equal(await evaluate("document.elementFromPoint(180, 22)?.closest('.mcp-app__header') !== null"), true, 'fullscreen top bar is hit-testable at the top of the screen');
+  assert.equal(await evaluate("document.querySelector('.mcp-app').getAttribute('role')"), 'dialog');
+  assert.equal(await evaluate("document.querySelector('.mcp-app').getAttribute('aria-modal')"), 'true');
+  assert.equal(await evaluate("document.querySelector('.mcp-app button').getAttribute('aria-pressed')"), 'true');
+  await evaluate("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+  assert.equal(await evaluate("!!document.querySelector('.mcp-app--fullscreen')"), false, 'Escape exits fullscreen back to inline');
+  assert.equal(await evaluate("document.querySelector('.mcp-app button').getAttribute('aria-pressed')"), 'false');
   await evaluate("document.querySelector('.mcp-app button').click()");
-  assert.equal(await evaluate("!!document.querySelector('.mcp-app--fullscreen')"), false);
+  assert.equal(await evaluate("!!document.querySelector('.mcp-app--fullscreen')"), true);
   // Evaluate inside the actual opaque-origin app, not through parent DOM access.
   await cdp.attachFrames();
   let appEvaluate;
   for (let i = 0; !appEvaluate && i < 100; i++) { appEvaluate = await cdp.appContext(); if (!appEvaluate) await sleep(50); }
   assert(appEvaluate, 'opaque view found through normal site-isolated child sessions');
+  const fsState = await appEvaluate(`(() => {
+    const filler = document.createElement('div');
+    filler.style.height = '2400px';
+    document.body.appendChild(filler);
+    window.scrollTo(0, 600);
+    const scroller = document.scrollingElement || document.documentElement;
+    return {
+      innerHeight: window.innerHeight,
+      scrollTop: scroller.scrollTop,
+      scrollHeight: scroller.scrollHeight
+    };
+  })()`);
+  assert(fsState.innerHeight >= 700, 'fullscreen inner app frame fills the viewport below the header');
+  assert(fsState.scrollTop >= 500, 'fullscreen inner app frame scrolls tall content');
+  await evaluate("document.querySelector('.mcp-app button').click()");
+  assert.equal(await evaluate("!!document.querySelector('.mcp-app--fullscreen')"), false);
   assert.equal(await appEvaluate("document.querySelector('#result').textContent"), 'original result');
   await appEvaluate("document.querySelector('#escape').click()");
   assert.equal(await appEvaluate("document.querySelector('#security').textContent"), 'isolated');
