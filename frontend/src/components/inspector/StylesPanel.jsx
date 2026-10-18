@@ -36,6 +36,7 @@ import { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'preact/ho
 import { markChanged, unmarkChanged, orderChangedFirst, isChanged } from './stylesOrder.js';
 import { applyPinHeight, applyRailHeight, watchPin } from './pinnedStack.js';
 import { FILTERS, DEFAULT_FILTER, filterComputed, pageEnd, moreAfter, emptyMessage, statusLine } from './computedFilter.js';
+import { SECTIONS, activeSection, isAtEnd } from './sectionSpy.js';
 import { styledSources, sourceFor } from './styledProps.js';
 import { alternatives, unitOptions, classify, seedValue } from './valueKinds.js';
 import { buildValueIndex, scaleFor, tokensFor, scaleNote, valuesFor } from './valueIndex.js';
@@ -972,6 +973,24 @@ const editScroll = useRef(null);
 // Each chip scrolls its section to the top of the panel's scroller, so the
 // section's heading is the first thing on screen.
 const sectionRefs = useRef({});
+// activeId — which section the user is reading, so the rail can report a
+// position instead of only offering destinations. It is derived from the
+// sections' offsets on scroll (see sectionSpy.js) rather than set only on a
+// jump: a rail that lights up solely after a tap is a list of buttons, while one
+// that follows the scroller is the index of a 3 300 px panel.
+//
+// Driven by rAF-throttled scroll measurement below, and seeded to the first
+// section so the rail is never stateless on first paint.
+const [activeId, setActiveId] = useState(SECTIONS[0].id);
+// sectionBoxesRef is gone on purpose: an earlier version cached the sections'
+// offsets and refreshed them from a ResizeObserver, which went stale exactly
+// when the rules or the computed page grew after a render — and a stale offset
+// makes the rail light the wrong chip. The offsets are cheap to read and are
+// read inside the same rAF the scroll already scheduled (see syncActiveSection),
+// so there is no gesture-time layout cost and no cache to invalidate.
+// spyFrame — the pending rAF handle for the rail's scroll-spy update (see
+// onPanelScroll). A ref, not state: it exists to coalesce reads, not to render.
+const spyFrame = useRef(0);
 // The rail's own node, measured so the group chip row can pin below it (see
 // useSectionRailHeight further down).
 const railRef = useRef(null);
@@ -980,21 +999,23 @@ const railRef = useRef(null);
 // has to clear. It is deliberately not "the strips pinned right now": at
 // `scrollTop 0` the rail is still at its place in the flow, but jumping to any
 // section scrolls it into its pinned position, and the heading then lands under
-// it. So the identity row and the rail always count, and the group chip row
-// counts only when it sits *above* the destination — which means the jump will
-// have scrolled past it, pinning it too. Every strip is measured rather than
-// assumed, because the pin grows an error line, the rail wraps on a narrow
-// viewport, and the chip row is one or two rows depending on the labels.
-function pinnedStackHeight(destination) {
-const panel = panelRef.current;
+// it. So the identity row and the rail always count. Both are measured rather
+// than assumed, because the pin grows an error line and the rail wraps on a
+// narrow viewport or with enlarged text.
+//
+// The **group chip row is deliberately not counted**, even when it sits above
+// the destination. It is sticky inside the Style-controls section, so it can
+// only pin *within its own section* — it slides away with that section rather
+// than staying welded under the rail. Counting it made every jump past Controls
+// overshoot by its height: measured on a fixture with a 59 px chip row, tapping
+// "Declared" landed its heading 59 px lower than planned, and the scroll-spy
+// (whose reading line is the same pin + rail) then still reported "Controls".
+// The two numbers have to agree, so the term is gone from both.
+function pinnedStackHeight() {
 let height = 0;
 for (const node of [pinRef.current, railRef.current]) {
 if (!node) continue;
 height += node.getBoundingClientRect().height;
-}
-const tabs = tabsRef.current;
-if (tabs && destination && tabs.getBoundingClientRect().top < destination.getBoundingClientRect().top) {
-height += tabs.getBoundingClientRect().height;
 }
 return height;
 }
@@ -1004,9 +1025,42 @@ const panel = panelRef.current;
 if (!node || !panel) return;
 // Offset by the chrome the section heading will face, so the heading is the
 // first thing on screen instead of hidden under the identity row and the rail.
-const offset = pinnedStackHeight(node);
+const offset = pinnedStackHeight();
 const top = node.getBoundingClientRect().top - panel.getBoundingClientRect().top + panel.scrollTop - offset - 4;
+// The destination becomes current on the tap rather than only when the smooth
+// scroll lands: a rail that keeps the old chip lit for the length of the
+// animation reads as a tap that missed.
+setActiveId(id);
 panel.scrollTo({ top: Math.max(0, top), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+}
+// syncActiveSection — recompute which section owns the top of the visible
+// region and publish it if it changed.
+//
+// The offsets are read **live** here rather than from a cache. The read happens
+// inside the rAF that the scroll handler scheduled, so it is once per frame
+// after the browser has already done its layout work — no forced reflow inside
+// the gesture — while a cache would have to be invalidated by every post-render
+// growth (the element preview arriving from a capture, the matched rules
+// finishing their load, the computed list paging in another 60 rows). Each of
+// those moved a section's boundary without re-rendering this component, and a
+// stale boundary is what made tapping "Rules" light "Declared".
+function syncActiveSection() {
+const panel = panelRef.current;
+if (!panel) return;
+const panelTop = panel.getBoundingClientRect().top;
+const boxes = [];
+for (const section of SECTIONS) {
+const node = sectionRefs.current[section.id];
+if (!node) continue;
+const box = node.getBoundingClientRect();
+boxes.push({ id: section.id, top: box.top - panelTop + panel.scrollTop });
+}
+const chrome = (pinRef.current ? pinRef.current.getBoundingClientRect().height : 0)
++ (railRef.current ? railRef.current.getBoundingClientRect().height : 0);
+const next = activeSection(boxes, panel.scrollTop + chrome, {
+atEnd: isAtEnd(panel.scrollTop, panel.clientHeight, panel.scrollHeight)
+});
+setActiveId((current) => (current === next ? current : next));
 }
 // copyStatus — a transient "copied" confirmation for the copy buttons. One
 // line under the pinned identity, cleared after a short delay so it never
@@ -1252,7 +1306,18 @@ setComputedView((v) => ({ ...v, steps: Math.max(0, steps) }));
 // costs nothing per scroll event.
 function onPanelScroll() {
 const panel = panelRef.current;
-if (!panel || computedMoreRef.current <= 0) return;
+if (!panel) return;
+// The rail follows the scroller through one rAF-coalesced read per frame. A
+// scroll event fires many times per gesture and the spy needs a `scrollTop`
+// plus the cached offsets — no layout — but coalescing still keeps the rail
+// from re-rendering several times inside one frame.
+if (!spyFrame.current) {
+spyFrame.current = typeof requestAnimationFrame === 'function'
+? requestAnimationFrame(() => { spyFrame.current = 0; syncActiveSection(); })
+: 0;
+if (!spyFrame.current) syncActiveSection();
+}
+if (computedMoreRef.current <= 0) return;
 const remaining = panel.scrollHeight - panel.scrollTop - panel.clientHeight;
 if (remaining > 72) return;
 setComputedView((v) => ({ ...v, steps: v.steps + 1 }));
@@ -1288,6 +1353,20 @@ const stopPin = watchPin(pinRef.current, apply);
 const stopRail = watchPin(railRef.current, apply);
 return () => { stopPin(); stopRail(); };
 }, [crumbsKey, error]);
+// Seed the rail once the panel has content, and re-seed whenever the selected
+// element changes: the spy reads live offsets, so it needs no cache, only one
+// measurement after a render that could have moved the sections (on mount the
+// seeded first chip is already correct; after a hop the new element's sections
+// are at different offsets than the old one's).
+useLayoutEffect(() => {
+syncActiveSection();
+}, [crumbsKey]);
+// Drop a pending rAF when the panel goes away, so a scroll handler that fired
+// just before an unmount cannot call setState on a gone component.
+useEffect(() => () => {
+if (spyFrame.current && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(spyFrame.current);
+spyFrame.current = 0;
+}, []);
 // shotSerial — only the newest capture may write to state. Picks, applies,
 // and manual refreshes can overlap, and a slow capture for a previously
 // selected element must not replace the current element's preview.
@@ -1998,6 +2077,25 @@ const computedPageLimit = pageEnd(computedVisible, computedSteps);
 const computedPage = computedVisible.slice(0, computedPageLimit);
 const computedMore = moreAfter(computedVisible, computedSteps);
 computedMoreRef.current = computedMore;
+// sectionCount — the number a rail chip carries, so the index says how much is
+// in each section and not just where the sections are. One definition per
+// section, matching the heading's own count where it has one:
+//
+//   controls — 0: the touch surface is a fixed set of widgets, not a list, so a
+//              count would measure the UI rather than the element;
+//   declared — declarations as written (a `border` row is one, the same unit the
+//              list renders), 0 when the element has no inline style;
+//   rules    — *author* rules only: a user-agent-only list is not worth a
+//              detour, so the chip stays uncounted rather than advertising rows
+//              the user did not write;
+//   computed — the rows the active filter actually shows, which is the number
+//              the section's own "shown/total" counter leads with.
+function sectionCount(id) {
+if (id === 'declared') return inlineRows.length ? groupedRows.length : 0;
+if (id === 'rules') return rules && rules.counts ? (rules.counts.author || 0) : 0;
+if (id === 'computed') return computedVisible.length;
+return 0;
+}
 const valueEditor = edit ? h(StyleValueEditor, {
 key: 'editor-' + edit.prop,
 editorRef,
@@ -2084,28 +2182,50 @@ copyStatus
 ),
 valueEditor,
 // Section rail — a row of chips pinned under the identity row that scrolls to
-// each named section. On a phone the panel is five sections deep (controls,
-// declared, rules, computed), and reaching "Computed" from the top is a 2 000 px
-// drag. Each chip is a 44 px tap target that smooth-scrolls its section to the
-// top of the panel's scroller, offset by the pinned chrome so the section
-// heading is the first thing on screen. Pinned rather than scrolled away: the
-// rail is the only way back *up* the panel, and a rail that leaves the screen
-// with the identity row leaves the user with a 1 600 px drag and no landmark.
-// The chips wrap rather than scrolling sideways: a horizontal scroller for five
-// chips is a gesture the user has to discover, and it drags the panel off-centre.
+// each named section, and **reports which one the user is in**.
+//
+// On a phone the panel is four named sections (controls, declared, rules,
+// computed) inside a ~3 300 px scroller, so reaching "Computed" from the top is
+// a 2 000 px drag. Each chip is a 44 px tap target that smooth-scrolls its
+// section to the top of the panel's scroller, offset by the pinned chrome so the
+// section heading is the first thing on screen. Pinned rather than scrolled
+// away: the rail is the only way back *up* the panel, and a rail that leaves the
+// screen with the identity row leaves the user with a 1 600 px drag and no
+// landmark.
+//
+// Two changes make it navigation rather than a list of buttons:
+//
+//   1. **An active chip.** The spy (sectionSpy.js) follows the scroller, so the
+//      chip lit is the section on screen — the rail answers "where am I?" as
+//      well as "where can I go?". `aria-current="true"` carries the same state
+//      to assistive tech; the lit chip is not just a colour.
+//   2. **A count on each chip.** Controls / Declared / Computed say *how much*
+//      is there, so the user can tell an empty section from one they have not
+//      read yet without opening it — on a deep element the difference between
+//      "no inline styles" and "17 of them" is the whole reason to go there.
+//      Rules counts the author rules (a user-agent-only list is not worth a
+//      detour), Declared the declarations as written, Computed the rows the
+//      active filter shows.
+//
+// The chips are a four-column grid rather than a wrapped flex row: four
+// destinations fill one phone row exactly, so a wrapped row would only ever hurt
+// by dropping a single orphan chip onto a second line of pinned chrome.
 h('div', { class: 'inspector__styles-jump', ref: railRef, role: 'navigation', 'aria-label': 'Jump to section' },
-[
-{ id: 'controls', label: 'Controls' },
-{ id: 'declared', label: 'Declared' },
-{ id: 'rules', label: 'Rules' },
-{ id: 'computed', label: 'Computed' }
-].map((s) => h('button', {
-class: 'inspector__styles-jump-chip',
+SECTIONS.map((s) => {
+const count = sectionCount(s.id);
+return h('button', {
+class: 'inspector__styles-jump-chip' + (s.id === activeId ? ' is-on' : ''),
 type: 'button',
 key: s.id,
-'aria-label': 'Jump to the ' + s.label + ' section',
+'aria-current': s.id === activeId ? 'true' : undefined,
+'aria-label': 'Jump to the ' + s.label + ' section'
++ (count ? ', ' + count + (count === 1 ? ' entry' : ' entries') : ''),
+title: 'Jump to the ' + s.label + ' section',
 onClick: () => scrollToSection(s.id)
-}, s.label))
+},
+h('span', { class: 'inspector__styles-jump-label' }, s.label),
+count ? h('span', { class: 'inspector__styles-jump-count', 'aria-hidden': 'true' }, String(count)) : null);
+})
 ),
 // Pinned element preview: a clipped screenshot of the selected element, so
 // the result of an edit is readable without scrolling back to the Preview
