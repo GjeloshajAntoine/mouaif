@@ -341,15 +341,17 @@ async function runSingleToolCall(c, cx) {
         if (keys.length) { forcePrompt = true; summary = 'permission keys: ' + keys.join(', '); }
       }
       if (c.name === 'create_mcp_app') {
-      // Creating an interactive app in the chat card always prompts the user
-      // even when the family or tool is Allow. The request-only draft and
-      // agent-to-app message delivery have no file or server side effects.
+      // Creating or updating an interactive app in the chat card always prompts
+      // the user even when the family or tool is Allow. The request-only draft
+      // and agent-to-app message delivery have no file or server side effects.
       forcePrompt = args.request === undefined && args.message === undefined;
       summary = args.request !== undefined
       ? 'Prepare development draft: ' + (args.name || 'On-the-fly app')
       : args.message !== undefined
       ? 'Send message to MCP App (' + (args.name || 'On-the-fly app') + '): ' + String(args.message).slice(0, 200)
-      : 'Create and open local MCP App in this chat: ' + (args.name || 'On-the-fly app')
+      : (args.path !== undefined && args.source !== undefined
+      ? 'Update and reload local MCP App in this chat: '
+      : 'Create and open local MCP App in this chat: ') + (args.name || 'On-the-fly app')
       + '\nSource: ' + (args.path || args.filename || '(missing filename)')
       + '\nNo installs, Node execution of app source, MCP server registration or permission changes.';
       }

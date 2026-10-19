@@ -5,7 +5,7 @@ import { useModal } from '../../hooks/useModal.js';
 import { boundedHeight, connectMcpApp, containerDimensionsFor } from './mcpAppBridge.js';
 import './mcp-app.css';
 
-export function McpAppFrame({ projectDir, chatId, callId, onAuthorize, onMountStateChange }) {
+export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onAuthorize, onMountStateChange }) {
   const frame = useRef(null);
   const session = useRef(null);
   const closeView = useRef(null);
@@ -18,8 +18,22 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize, onMountSt
   const [mode, setMode] = useState('inline');
   const [height, setHeight] = useState(288);
   const [generation, setGeneration] = useState(0);
+  const [titleOverride, setTitleOverride] = useState('');
   const [failed, setFailed] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
+  const resolvedPath = normalizeAppPath(mount?.result?.path || appPath);
+  const resolvedTitle = titleOverride || mount?.title || appTitle || '';
+
+  useEffect(() => {
+    const reload = payload => {
+      if (payload && typeof payload.name === 'string' && payload.name.trim() && payload.name !== 'On-the-fly app') {
+        setTitleOverride(payload.name.trim());
+      }
+      setGeneration(n => n + 1);
+    };
+    registerActiveAppFrame(projectDir, chatId, callId, { path: resolvedPath, title: resolvedTitle, reload });
+    return () => unregisterActiveAppFrame(callId, reload);
+  }, [projectDir, chatId, callId, resolvedPath, resolvedTitle]);
   const sheetRef = useModal({
     active: mode === 'fullscreen' && !!mount && !failed,
     onClose: () => applyMode('inline'),
@@ -201,9 +215,9 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize, onMountSt
       }
     }).then(bridge => {
     if (active && !closing) {
-      session.current = bridge;
-      registerActiveAppSession(projectDir, chatId, callId, mount.title, bridge);
-      frame.current.src = mount.url;
+    session.current = bridge;
+    registerActiveAppSession(projectDir, chatId, callId, resolvedTitle, bridge, resolvedPath);
+    frame.current.src = mount.url;
     }
     else bridge.close();
     }).catch(fail);
@@ -230,10 +244,10 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize, onMountSt
     class: 'mcp-app' + (isFullscreen ? ' mcp-app--fullscreen' : ''),
     role: isFullscreen ? 'dialog' : 'region',
     'aria-modal': isFullscreen ? 'true' : undefined,
-    'aria-label': mount?.title || 'MCP App'
+    'aria-label': resolvedTitle || 'MCP App'
   },
     h('header', { class: 'mcp-app__header' },
-      h('strong', { class: 'mcp-app__title' }, mount?.title || 'MCP App'),
+      h('strong', { class: 'mcp-app__title' }, resolvedTitle || 'MCP App'),
       mount && !failed && h('button', {
         type: 'button',
         class: 'btn mcp-app__btn mcp-app__btn--mode' + (isFullscreen ? ' is-active' : ''),
@@ -279,10 +293,54 @@ export function McpAppFrame({ projectDir, chatId, callId, onAuthorize, onMountSt
 const mountedContainers = new Set();
 let removalObserver;
 const activeAppSessions = new Map();
+const activeAppFrames = new Map();
 const pendingAgentMessages = new Map();
 
-function registerActiveAppSession(projectDir, chatId, callId, title, bridge) {
-  activeAppSessions.set(callId, { projectDir, chatId, callId, title: title || '', bridge, at: Date.now() });
+function normalizeAppPath(value) {
+  return typeof value === 'string' ? value.trim().replace(/^\.\/+/, '') : '';
+}
+
+function registerActiveAppFrame(projectDir, chatId, callId, entry) {
+  activeAppFrames.set(callId, { projectDir, chatId, callId, ...entry, at: Date.now() });
+}
+
+function unregisterActiveAppFrame(callId, reload) {
+  const entry = activeAppFrames.get(callId);
+  if (entry && (!reload || entry.reload === reload)) activeAppFrames.delete(callId);
+}
+
+export function reloadMcpApp(projectDir, chatId, payload = {}) {
+  if (!projectDir || !chatId) return false;
+  const wantedCallId = typeof payload.callId === 'string' && payload.callId ? payload.callId : '';
+  const wantedPath = normalizeAppPath(payload.path);
+  const wantedName = typeof payload.name === 'string' && payload.name.trim() && payload.name !== 'On-the-fly app'
+    ? payload.name.trim()
+    : '';
+  const candidates = [];
+  for (const entry of activeAppFrames.values()) {
+    if (entry.projectDir === projectDir && entry.chatId === chatId) candidates.push(entry);
+  }
+  let target = null;
+  if (wantedCallId) {
+    target = candidates.find(entry => entry.callId === wantedCallId) || null;
+  }
+  if (!target && wantedPath) {
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      if (candidates[i].path && candidates[i].path === wantedPath) { target = candidates[i]; break; }
+    }
+  }
+  if (!target && wantedName) {
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      if (candidates[i].title === wantedName) { target = candidates[i]; break; }
+    }
+  }
+  if (!target) return false;
+  target.reload(payload);
+  return true;
+}
+
+function registerActiveAppSession(projectDir, chatId, callId, title, bridge, path = '') {
+  activeAppSessions.set(callId, { projectDir, chatId, callId, title: title || '', path: normalizeAppPath(path), bridge, at: Date.now() });
 }
 
 function unregisterActiveAppSession(callId, bridge) {

@@ -8,14 +8,15 @@ Create an interactive single-file app view inside the current chat from inline H
 
 ### From a chat tool
 
-Ask the assistant to create an interactive app. The native **`create_mcp_app`** tool lives in the **mouaif** tool family and accepts:
+Ask the assistant to create or update an interactive app. The native **`create_mcp_app`** tool lives in the **mouaif** tool family and accepts:
 
 - `source` plus `filename` (`.html`, `.htm`, `.js`, or `.mjs`): writes a uniquely named source file and renders the interactive app view directly inside the current chat's tool card (without registering a project MCP server or MCP tool).
-- `path`: renders an existing file relative to the original project folder (not the chat's alternate working folder) directly inside the current chat's tool card (without registering a project MCP server or MCP tool).
+- `path`: renders an existing file relative to the original project folder (not the chat's alternate working folder) directly inside the current chat's tool card, or reloads an already-mounted app card for that `path` in place (without registering a project MCP server or MCP tool).
+- `path` plus `source`: updates an existing project-relative `.html`, `.htm`, `.js`, or `.mjs` app file in place (such as the `path` returned by an earlier `create_mcp_app` call) and automatically reloads its mounted app card in the current chat without creating a duplicate iframe.
 - `message`: pushes a message from the agent to the mounted app view in the current chat using the official `AppBridge` `sendToolInput` / `sendToolResult` notifications (`ui/notifications/tool-input` and `ui/notifications/tool-result`).
 - `request`: prepares a separate development chat with an unsent draft. This mode does not generate source, register a server, start an AI response, or spend credits.
 
-`name` is optional. File creation/import always requires an explicit approval, even when the family or tool is **Allow**. **Off** hides and blocks it. Denying approval writes no file. No tool permissions or project MCP servers are changed.
+`name` is optional. File creation, import, and in-place updates always require an explicit approval, even when the family or tool is **Allow**. **Off** hides and blocks it. Denying approval writes no file. No tool permissions or project MCP servers are changed.
 
 ```json
 {
@@ -25,7 +26,7 @@ Ask the assistant to create an interactive app. The native **`create_mcp_app`** 
 }
 ```
 
-The successful creation tool card automatically expands, opens the app view immediately in the current chat, and stays pinned at the bottom of the transcript as later messages and tool calls arrive. Its result includes `name` and `path`. Inside the app:
+The successful creation tool card automatically expands, opens the app view immediately in the current chat, and stays pinned at the bottom of the transcript as later messages and tool calls arrive. Its result includes `name` and `path`. To update an existing app in place, call `create_mcp_app` with `path` (from the earlier creation result) and the updated `source` (or edit the file and call `create_mcp_app` with `path`); the existing mounted app card reloads in place with `updated: true` instead of opening a second iframe. Inside the app:
 
 - **App → Agent (`ui/message`)**: await `window.mouaifAppReady` and call `window.mouaifApp.sendMessage({ role: 'user', content: [{ type: 'text', text: '...' }] })`.
 - **Agent → App (`ui/notifications/tool-input` & `ui/notifications/tool-result`)**: register `window.mouaifApp.addEventListener('toolresult', params => ...)` (or `window.addEventListener('mouaif-app-message', e => ...)`), which receives `{ content: [{ type: 'text', text }], structuredContent: { message, name } }` whenever the agent calls `create_mcp_app` with `message`.
@@ -83,9 +84,9 @@ Both endpoints use the main app's existing access gate and reject null/cross-sit
 | Method | Route | Body | Result |
 | --- | --- | --- | --- |
 | POST | `/api/mcp/apps/request` | `{ projectDir, name?, request }` | `201 { chatId, path, url }`; a new chat with an unsent development draft. |
-| POST | `/api/mcp/apps/import` | `{ projectDir, name?, path }` or `{ projectDir, name?, filename, source }` | `201 { name, path }`; validates and saves the single-file app without registering an MCP server. |
+| POST | `/api/mcp/apps/import` | `{ projectDir, name?, path }` or `{ projectDir, name?, filename, source }` or `{ projectDir, name?, path, source }` | `201 { name, path, updated? }`; validates and saves or updates the single-file app without registering an MCP server. |
 
-App names are 1–100 characters; requests are non-empty and at most 16,000 characters. Source files are non-empty and at most 512 KiB; rendered HTML including the SDK must fit the MCP host's 1 MiB resource limit. Exactly one `path` or `source` is accepted. Paths must be relative and resolve inside the project, including after symlink resolution. App storage symlinks resolving outside the project are rejected.
+App names are 1–100 characters; requests are non-empty and at most 16,000 characters. Source files are non-empty and at most 512 KiB; rendered HTML including the SDK must fit the MCP host's 1 MiB resource limit. Provide `path`, `filename` + `source`, or `path` + `source` (to update an existing file in place). Paths must be relative and resolve inside the project, including after symlink resolution. App storage symlinks resolving outside the project are rejected.
 
 ## Verification
 

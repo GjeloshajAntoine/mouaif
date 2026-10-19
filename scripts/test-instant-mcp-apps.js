@@ -73,15 +73,25 @@ async function post(route, body, headers = {}) {
     assert.equal(fs.existsSync(path.join(projectDir, requested.body.path)), false, 'request only prepares a draft');
     assert.equal(mcp.listServers(projectDir).length, serverCount, 'request does not register a server');
 
-    for (const body of [{}, { path: 'counter.html', source: html }, { path: '../outside.html' },
-      { path: path.join(projectDir, 'counter.html') }, { filename: 'app.ts', source: html },
-      { filename: 123, source: html }, { source: html },
-      { filename: 'app.html', source: '' }, { filename: 'app.html', source: 'x'.repeat(apps.MAX_SOURCE_BYTES + 1) }]) {
-      assert.equal((await post('import', body)).status, 400, JSON.stringify(body).slice(0, 160));
+    for (const body of [{}, { path: 'missing.html', source: html }, { path: 'counter.html', filename: 'wrong.js', source: html },
+    { path: '../outside.html' }, { path: '../outside.html', source: html },
+    { path: path.join(projectDir, 'counter.html') }, { filename: 'app.ts', source: html },
+    { filename: 123, source: html }, { source: html },
+    { filename: 'app.html', source: '' }, { filename: 'app.html', source: 'x'.repeat(apps.MAX_SOURCE_BYTES + 1) }]) {
+    assert.equal((await post('import', body)).status, 400, JSON.stringify(body).slice(0, 160));
     }
+    const updatedHtml = html.replace('Counter</p>', 'Updated via import</p>');
+    const reimported = await post('import', { name: 'Counter v2', path: 'counter.html', source: updatedHtml });
+    assert.equal(reimported.status, 201, JSON.stringify(reimported.body));
+    assert.equal(reimported.body.name, 'Counter v2');
+    assert.equal(reimported.body.path, 'counter.html');
+    assert.equal(reimported.body.updated, true);
+    assert.equal(fs.readFileSync(path.join(projectDir, 'counter.html'), 'utf8'), updatedHtml);
+    fs.writeFileSync(path.join(projectDir, 'counter.html'), html);
     fs.writeFileSync(path.join(home, 'outside.html'), html);
     fs.symlinkSync(path.join(home, 'outside.html'), path.join(projectDir, 'escape.html'));
     assert.equal((await post('import', { path: 'escape.html' })).status, 400);
+    assert.equal((await post('import', { path: 'escape.html', source: html })).status, 400);
     const unsafe = path.join(home, 'unsafe-project'); fs.mkdirSync(unsafe);
     fs.symlinkSync(home, path.join(unsafe, '.mouaif'));
     assert.equal((await post('request', { projectDir: unsafe, request: 'test' })).status, 400);
@@ -111,6 +121,19 @@ async function post(route, body, headers = {}) {
     assert.deepEqual(mounted.body.arguments, {}, 'creation source is not forwarded as view arguments');
     assert.match(mounted.body.html, /Counter/);
     assert.equal((await post(mounted.body.id + '/call', { requestId: 'req-1', name: 'view', arguments: {} })).status, 403, 'on-the-fly app has no server-callable MCP tools');
+    const nativeUpdatedHtml = html.replace('Counter</p>', 'Updated native</p>');
+    const nativeUpdated = await native.runAppTool('create_mcp_app', {
+    name: 'Native app v2',
+    path: nativeCreated.result.path,
+    source: nativeUpdatedHtml
+    }, opts);
+    assert.equal(nativeUpdated.ok, true, nativeUpdated.content);
+    assert.equal(nativeUpdated.result.path, nativeCreated.result.path, 'update reuses existing app path in place');
+    assert.equal(nativeUpdated.result.updated, true);
+    assert.equal(fs.readFileSync(path.join(projectDir, nativeCreated.result.path), 'utf8'), nativeUpdatedHtml);
+    const remounted = await post('mount', { chatId: host.id, callId });
+    assert.equal(remounted.status, 200);
+    assert.match(remounted.body.html, /Updated native/);
     authz.setAuthorization(projectDir, { tools: { create_mcp_app: { mode: 'off' } } });
     assert.equal((await post(mounted.body.id + '/status', {})).status, 403, 'native Off revokes existing mount');
     assert.equal((await post('mount', { chatId: host.id, callId })).status, 403);
@@ -125,12 +148,15 @@ async function post(route, body, headers = {}) {
     messages.appendMessage(projectDir, host.id, { role: 'tool', phase: 'result', name: 'create_mcp_app', toolCallId: msgCallId, content: msgOut.content });
     assert.equal((await post('mount', { chatId: host.id, callId: msgCallId })).body.enabled, false, 'message result card does not mount a second iframe');
     const chatCount = chats.countChats(projectDir);
-    for (const args of [{}, { path: 'counter.html', source: html }, { request: 'test', source: html },
-    { message: 'hi', path: 'counter.html' }, { message: '' }, { message: '   ' }, { message: 'x'.repeat(16385) },
+    for (const args of [{}, { path: 'missing.html', source: html }, { path: 'counter.html', filename: 'mismatch.js', source: html },
+    { request: 'test', source: html }, { request: 'test', path: 'counter.html' },
+    { message: 'hi', path: 'counter.html' }, { message: 'hi', source: html }, { message: '' }, { message: '   ' }, { message: 'x'.repeat(16385) },
     { source: html }, { filename: 'x.ts', source: html }, { filename: 'x.html', source: '' },
     { name: '', path: 'counter.html' }, { request: '' }, { request: 'x'.repeat(16001) },
-    { path: '../outside.html' }, { path: 'escape.html' }, { projectDir: home, path: 'counter.html' },
-    { filename: 'x.html', source: 'x'.repeat(apps.MAX_SOURCE_BYTES + 1) }]) {
+    { path: '../outside.html' }, { path: '../outside.html', source: html }, { path: 'escape.html' }, { path: 'escape.html', source: html },
+    { projectDir: home, path: 'counter.html' },
+    { filename: 'x.html', source: 'x'.repeat(apps.MAX_SOURCE_BYTES + 1) },
+    { path: 'counter.html', source: 'x'.repeat(apps.MAX_SOURCE_BYTES + 1) }]) {
     const out = await native.runAppTool('create_mcp_app', args, opts);
     assert.equal(out.ok, false, JSON.stringify(args).slice(0, 120));
     }

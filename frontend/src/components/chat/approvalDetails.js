@@ -37,6 +37,7 @@ export function approvalTitle(request) {
   const args = request.details?.args || request.args || {};
   if (request.tool === 'create_mcp_app' && args.request !== undefined) return 'Prepare app draft';
   if (request.tool === 'create_mcp_app' && args.message !== undefined) return 'Message MCP App';
+  if (request.tool === 'create_mcp_app' && args.path !== undefined && args.source !== undefined) return 'Update MCP App';
   if (request.tool === 'task') return ({ list: 'List tasks', create: 'Create task', update_progress: 'Update task', complete: 'Complete task' })[args.action] || 'Manage task';
   if (request.tool === 'subagent_group_update') return ({ approve: 'Approve group decision', reject: 'Reject group decision', arbitrate: 'Arbitrate group conflict', cancel: 'Cancel worker group' })[args.action] || 'Update worker group';
   if (request.tool === 'subagent_read' && !args.name) return 'List handoffs';

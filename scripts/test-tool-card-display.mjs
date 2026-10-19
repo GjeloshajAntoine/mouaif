@@ -10,6 +10,8 @@ for (const test of TOOL_CASES) {
 assert.equal(formatResultSummary('attach_chat_image', { target: 'draft', attached: { name: 'shot.png', mimeType: 'image/png' } }), 'shot.png');
 assert.equal(formatResultSummary('list_chat_attachments', { drafts: [{}], messages: [], generated: [{}, {}] }), '3 images');
 assert.equal(formatResultSummary('list_chat_attachments', { drafts: [{}], messages: [], generated: [] }), '1 image');
+assert.equal(formatResultSummary('create_mcp_app', { path: 'app.html', updated: true }), 'updated');
+assert.equal(approvalTitle({ tool: 'create_mcp_app', details: { args: { path: 'app.html', source: '<!doctype html>' } } }), 'Update MCP App');
 const nested = { scope: 'project', settings: { apiKey: 'hidden-key', accessToken: 'private-token', promptSize: 'average' }, models: [{ id: 'model-1' }] };
 const output = formatReadableToolResult(nested);
 assert.match(output, /promptSize/); assert.match(output, /model-1/);

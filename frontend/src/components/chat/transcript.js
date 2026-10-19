@@ -8,7 +8,7 @@
 // matches the rest of the transcript which is also imperative.
 
 import { renderMarkdown } from '../../markdown.js';
-import { mountMcpApp, deliverMcpAppMessage } from './McpAppFrame.jsx';
+import { mountMcpApp, deliverMcpAppMessage, reloadMcpApp } from './McpAppFrame.jsx';
 import { authorizationCard } from './cards.js';
 import { afterTranscriptAppend, scrollToolBodyToBottomSoon, cancelToolBodyScroll, pinTranscriptAfterSettle } from './scroll.js';
 import {
@@ -1629,6 +1629,7 @@ export function handleSubagentStreamEvent(ev, data, refs) {
 // Unlike the call card, a result has no "still waiting" state to
 // render, so it takes no replay flag.
 const _deliveredAppMessageIds = new Set();
+const _reloadedAppUpdateIds = new Set();
 
 export function appendToolResultCard(toolResult, refs) {
   if (!refs.transcript.current) return;
@@ -1640,7 +1641,26 @@ export function appendToolResultCard(toolResult, refs) {
   let card = id ? findToolCard(refs, id) : null;
   const isSubagent = isSubagentTool(toolResult && toolResult.name);
 const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName(toolResult && toolResult.name));
-  const isMcpAppCreate = normalizeToolName(toolResult && toolResult.name) === 'create_mcp_app' && !!toolResult.ok && !!(rawR && rawR.path && !rawR.chatId);
+  const isMcpAppPathResult = normalizeToolName(toolResult && toolResult.name) === 'create_mcp_app' && !!toolResult.ok && !!(rawR && rawR.path && !rawR.chatId);
+  const existingMcpAppCard = isMcpAppPathResult ? findExistingMcpAppCard(refs, rawR, card) : null;
+  const isMcpAppCreate = isMcpAppPathResult && !existingMcpAppCard;
+  if (existingMcpAppCard && !toolResult.replay && refs.mcpAppContext) {
+    const dedupeKey = id ? String(id) : '';
+    if (!dedupeKey || !_reloadedAppUpdateIds.has(dedupeKey)) {
+      if (dedupeKey) {
+        _reloadedAppUpdateIds.add(dedupeKey);
+        if (_reloadedAppUpdateIds.size > 200) _reloadedAppUpdateIds.delete(_reloadedAppUpdateIds.values().next().value);
+      }
+      if (rawR.name && rawR.name !== 'On-the-fly app' && existingMcpAppCard.dataset) {
+        existingMcpAppCard.dataset.mcpAppName = rawR.name;
+      }
+      reloadMcpApp(refs.mcpAppContext.projectDir, refs.mcpAppContext.chatId, {
+        callId: existingMcpAppCard.dataset && existingMcpAppCard.dataset.toolId,
+        path: rawR.path,
+        name: rawR.name
+      });
+    }
+  }
   if (normalizeToolName(toolResult && toolResult.name) === 'create_mcp_app' && toolResult.ok && !toolResult.replay
     && rawR && rawR.mode === 'message' && typeof rawR.message === 'string' && refs.mcpAppContext) {
     const dedupeKey = id ? String(id) : '';
@@ -1764,13 +1784,21 @@ if (!card) {
     const context = refs.mcpAppContext;
     const app = document.createElement('div');
     body.prepend(app);
-    if (isMcpAppCreate) pinMcpAppCardToBottom(refs, card);
+    if (isMcpAppCreate) {
+    if (card.dataset) {
+      if (rawR && rawR.path) card.dataset.mcpAppPath = String(rawR.path).trim().replace(/^\.\/+/, '');
+      if (rawR && rawR.name) card.dataset.mcpAppName = String(rawR.name);
+    }
+    pinMcpAppCardToBottom(refs, card);
+    }
     mountMcpApp(app, { ...context, callId: id,
-      onMountStateChange: (enabled) => {
-      if (enabled) pinMcpAppCardToBottom(refs, card);
-      else if (!isMcpAppCreate && card.dataset) delete card.dataset.mcpAppCard;
-      },
-      onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, context.projectDir, context.chatId, refs) });
+    appPath: rawR && rawR.path,
+    appTitle: rawR && rawR.name,
+    onMountStateChange: (enabled) => {
+    if (enabled) pinMcpAppCardToBottom(refs, card);
+    else if (!isMcpAppCreate && card.dataset) delete card.dataset.mcpAppCard;
+    },
+    onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, context.projectDir, context.chatId, refs) });
     }
     if (isSubagent) {
     renderSubagentChat(card, toolResult);
@@ -3200,6 +3228,27 @@ function firstBottomPinnedCard(el) {
 function firstLiveOrBottomPinnedCard(el) {
   for (const child of el.children) {
     if (isLiveAssistantRow(child) || isRunningSubagentCard(child) || isMcpAppCard(child) || isOverlayCard(child)) return child;
+  }
+  return null;
+}
+
+// findExistingMcpAppCard(refs, rawR, currentCard) -> Element | null
+//
+// Locate an already-mounted on-the-fly MCP App card in the transcript that
+// owns `rawR.path`, so an update (`create_mcp_app` with `path + source` or
+// `path`) reloads that existing bottom-pinned app card in place instead of
+// mounting a duplicate iframe.
+function findExistingMcpAppCard(refs, rawR, currentCard) {
+  const el = refs && refs.transcript && refs.transcript.current;
+  if (!el || !rawR || typeof rawR.path !== 'string') return null;
+  const wantedPath = rawR.path.trim().replace(/^\.\/+/, '');
+  if (!wantedPath) return null;
+  const children = el.children || [];
+  for (let i = children.length - 1; i >= 0; i--) {
+    const child = children[i];
+    if (!child || child === currentCard || !isMcpAppCard(child)) continue;
+    const cardPath = child.dataset && child.dataset.mcpAppPath;
+    if (cardPath === wantedPath) return child;
   }
   return null;
 }

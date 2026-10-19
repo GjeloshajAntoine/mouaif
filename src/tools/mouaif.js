@@ -130,8 +130,8 @@ const PARAMETERS = {
         },
         title: { type: 'string', description: 'Chat title (max 200 chars).' },
         name: { type: 'string', description: 'App name (1–100 characters; default On-the-fly app).' },
-        filename: { type: 'string', description: 'Required with source: .html/.htm or browser .js/.mjs filename.' },
-        source: { type: 'string', description: 'Self-contained HTML or browser JavaScript, at most 512 KiB. No external assets, imports, Node APIs or network. The host injects window.mouaifApp and window.mouaifAppReady; do not create another bridge. To communicate with the agent in this chat, await window.mouaifAppReady and call window.mouaifApp.sendMessage({ role: "user", content: [{ type: "text", text: "..." }] }); listen for agent messages via window.mouaifApp.addEventListener("toolresult", params => ...) or window.addEventListener("mouaif-app-message", e => ...).' },
+        filename: { type: 'string', description: 'Required when creating a new file with source (omit when updating an existing path): .html/.htm or browser .js/.mjs filename.' },
+        source: { type: 'string', description: 'Self-contained HTML or browser JavaScript, at most 512 KiB. Combine with filename to create a new app file, or with an existing path to update that app in place and reload it in the chat. No external assets, imports, Node APIs or network. The host injects window.mouaifApp and window.mouaifAppReady; do not create another bridge. To communicate with the agent in this chat, await window.mouaifAppReady and call window.mouaifApp.sendMessage({ role: "user", content: [{ type: "text", text: "..." }] }); listen for agent messages via window.mouaifApp.addEventListener("toolresult", params => ...) or window.addEventListener("mouaif-app-message", e => ...).' },
         message: { type: 'string', description: 'Send a message (1–16384 bytes) from the agent to the mounted MCP App in the current chat via official AppBridge sendToolInput / sendToolResult notifications.' },
         request: { type: 'string', description: 'Prepare a separate unsent development chat draft (1–16000 characters); does not generate or start an app.' },
         topic: {
@@ -204,7 +204,7 @@ const SPECS = Object.freeze(Object.fromEntries(TOOL_NAMES.map((name) => {
     properties.limit = { ...properties.limit, description: 'Maximum models to return (default 20, max 100).' };
     properties.providerId = { type: 'string', description: 'Restrict results to this provider connection id; omit to search all configured providers.' };
   }
-  if (name === 'create_mcp_app') properties.path = { type: 'string', description: 'Existing HTML/browser-JS path relative to the original project folder, not the chat working folder. Must resolve inside the project.' };
+  if (name === 'create_mcp_app') properties.path = { type: 'string', description: 'Existing HTML/browser-JS path relative to the original project folder, not the chat working folder. Pass path alone to open/reload an existing app file, or path + source to update it in place. Must resolve inside the project.' };
   if (name === 'start_chat') properties.content = { type: 'string', description: 'Prompt to send to the selected chat (required, max 200000 chars). Starts an AI turn, not a draft.' };
   return [name, { type: 'function', function: { name, description: definition.description,
     parameters: { type: 'object', properties, required: definition.required || [], additionalProperties: false }
@@ -798,7 +798,7 @@ async function runApps(args, opts) {
   if (opts.signal?.aborted) throw typedError('EABORTED', 'App creation cancelled');
   const result = { ok: true, ...require('../instant-mcp-apps.js').createApp(projectDir, args) };
   if (result.chatId || result.mode === 'message') return ok(result);
-  result.content = [{ type: 'text', text: result.name + ' is ready in this chat.' }];
+  result.content = [{ type: 'text', text: result.name + (result.updated ? ' was updated in this chat.' : ' is ready in this chat.') }];
   return ok(result);
 }
 

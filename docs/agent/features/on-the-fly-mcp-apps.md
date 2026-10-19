@@ -6,7 +6,7 @@ An isolated follow-up to the existing MCP Apps branch: render an interactive sin
 
 ## Usage
 
-The native `create_mcp_app` tool creates or opens an interactive app view directly inside the current chat's tool card (`source` + `filename` or `path`) after explicit approval, or prepares a development draft (`request`). The project MCP settings page also exposes a form for saving a single-file app under `.mouaif/mcp-apps/` or opening a request draft chat, without registering any MCP server or tool.
+The native `create_mcp_app` tool creates, opens, or updates an interactive app view directly inside the current chat's tool card (`source` + `filename`, `path`, or `path` + `source`) after explicit approval, or prepares a development draft (`request`). Updating an existing `path` reloads the mounted app card in place without spawning a second iframe. The project MCP settings page also exposes a form for saving a single-file app under `.mouaif/mcp-apps/` or opening a request draft chat, without registering any MCP server or tool.
 
 ## Implementation notes
 

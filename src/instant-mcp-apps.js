@@ -104,6 +104,17 @@ function developmentDraft(request, filename) {
     + 'Do not register MCP servers or change tool permissions.';
 }
 
+function writeExistingSource(root, filename, source) {
+  if (typeof filename !== 'string' || !filename || path.isAbsolute(filename)) throw err('EBADINPUT', 'path must be project-relative');
+  const resolved = path.resolve(root, filename);
+  if (!fs.existsSync(resolved)) throw err('EBADINPUT', 'App path must be an existing file');
+  const target = fs.realpathSync(resolved);
+  if (!inside(root, target)) throw err('EBADINPUT', 'App path must stay inside the project');
+  const stat = fs.statSync(target);
+  if (!stat.isFile()) throw err('EBADINPUT', 'App path must be an existing file');
+  fs.writeFileSync(target, source, { mode: stat.mode & 0o777 });
+}
+
 // Shared by the HTTP routes and the model-facing native tool.
 // On-the-fly apps render as interactive views inside a chat card and never
 // register a project MCP server or MCP tool.
@@ -112,9 +123,17 @@ function createApp(projectDir, body) {
   const name = body.name === undefined ? 'On-the-fly app' : body.name;
   if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) throw err('EBADINPUT', 'App name must be 1–100 characters');
   const title = name.trim();
+  const hasRequest = body.request !== undefined;
+  const hasMessage = body.message !== undefined;
+  const hasPath = body.path !== undefined;
+  const hasSource = body.source !== undefined;
+  const isSourceUpdate = hasPath && hasSource && !hasRequest && !hasMessage;
   const inputs = ['request', 'path', 'source', 'message'].filter(key => body[key] !== undefined);
-  if (inputs.length !== 1) throw err('EBADINPUT', 'Provide exactly one request, path, source or message');
-  if (inputs[0] !== 'source' && body.filename !== undefined) throw err('EBADINPUT', 'filename is only used with source');
+  if (!isSourceUpdate && inputs.length !== 1) throw err('EBADINPUT', 'Provide request, message, path, source + filename, or path + source to update');
+  if (!hasSource && body.filename !== undefined) throw err('EBADINPUT', 'filename is only used with source');
+  if (isSourceUpdate && body.filename !== undefined && sourceKind(body.filename) !== sourceKind(body.path)) {
+    throw err('EBADINPUT', 'filename extension must match path when updating an app');
+  }
   if (inputs[0] === 'message') {
     if (typeof body.message !== 'string' || !body.message.trim() || Buffer.byteLength(body.message, 'utf8') > 16384) {
       throw err('EBADINPUT', 'App message must be non-empty and at most 16 KiB');
@@ -131,7 +150,14 @@ function createApp(projectDir, body) {
     return { chatId: chat.id, path: filename, url: '#/chat/' + encodeURIComponent(chat.id) };
   }
   let filename;
-  if (inputs[0] === 'path') {
+  let updated = false;
+  if (isSourceUpdate) {
+    const kind = sourceKind(body.path);
+    renderHtml(body.source, kind, title);
+    writeExistingSource(root, body.path, body.source);
+    filename = body.path;
+    updated = true;
+  } else if (inputs[0] === 'path') {
     const { source, kind } = readSource(root, body.path);
     renderHtml(source, kind, title);
     filename = body.path;
@@ -141,7 +167,7 @@ function createApp(projectDir, body) {
     filename = newSourcePath(root, kind);
     fs.writeFileSync(path.join(root, filename), body.source, { flag: 'wx', mode: 0o600 });
   }
-  return { name: title, path: filename };
+  return updated ? { name: title, path: filename, updated: true } : { name: title, path: filename };
 }
 
 module.exports = { APP_DIR, MAX_SOURCE_BYTES, projectRoot, sourceKind, renderHtml, readSource, newSourcePath, developmentDraft, createApp };

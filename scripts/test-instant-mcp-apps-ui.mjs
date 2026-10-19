@@ -13,13 +13,14 @@ const { renderHtml } = require('../src/instant-mcp-apps.js');
 const { createSandboxService, buildPolicy } = require('../src/mcp-apps-sandbox.js');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'mouaif-instant-ui-'));
 const sandbox = createSandboxService({ host: '127.0.0.1' });
-const html = renderHtml(`
+let currentLabel = 'initialized';
+const makeHtml = () => renderHtml(`
   document.querySelector('#app').innerHTML = '<p id="ready">waiting</p><p id="incoming"></p><button id="message">Send text</button>';
   window.mouaifApp.addEventListener('toolresult', params => {
     const text = params?.content?.[0]?.text || '';
     if (text && text !== 'ready') document.querySelector('#incoming').textContent = text;
   });
-  window.mouaifAppReady.then(() => document.querySelector('#ready').textContent = 'initialized');
+  window.mouaifAppReady.then(() => document.querySelector('#ready').textContent = ${JSON.stringify(currentLabel)});
   document.querySelector('#message').onclick = async () => {
     await window.mouaifApp.sendMessage({ role: 'user', content: [{ type: 'text', text: 'Single-file message' }] });
     document.querySelector('#ready').textContent = 'accepted';
@@ -39,6 +40,12 @@ const bundle = await build({ stdin: { resolveDir: process.cwd(), loader: 'jsx', 
     appendToolResultCard({ id: 'agent-msg', name: 'create_mcp_app', ok: true,
       result: { ok: true, mode: 'message', name: 'Single-file app', message: text, content: [{ type: 'text', text }] } }, refs);
     appendMessageToTranscript({ role: 'assistant', content: 'Agent reply after message', ts: new Date().toISOString() }, false, refs, { chat: {} });
+  };
+  window.updateNativeAppInPlace = () => {
+    appendToolCallCard({ id: 'native-update', name: 'create_mcp_app', args: { name: 'Single-file app v2', path: 'app.js', source: 'updated' } }, refs);
+    appendToolResultCard({ id: 'native-update', name: 'create_mcp_app', ok: true,
+      result: { ok: true, updated: true, name: 'Single-file app v2', path: 'app.js', content: [{ type: 'text', text: 'updated' }] } }, refs);
+    appendMessageToTranscript({ role: 'assistant', content: 'App was updated in place', ts: new Date().toISOString() }, false, refs, { chat: {} });
   };
   appendToolCallCard({ id: 'native-create', name: 'create_mcp_app', args: { name: 'Single-file app', filename: 'app.js' } }, refs);
   appendToolResultCard({ id: 'native-create', name: 'create_mcp_app', ok: true,
@@ -64,8 +71,8 @@ const server = http.createServer(async (req, res) => {
   if (req.url === '/api/mcp/apps/mount') {
     mounts.push(JSON.parse(raw));
     const ticket = await sandbox.issue(base, buildPolicy({}, base));
-    return json(200, { enabled: true, id: 'fixture', title: 'Single-file app', html, ...ticket, csp: {},
-      arguments: {}, result: { content: [{ type: 'text', text: 'ready' }] } });
+    return json(200, { enabled: true, id: 'fixture', title: 'Single-file app', html: makeHtml(), ...ticket, csp: {},
+      arguments: {}, result: { path: 'app.js', content: [{ type: 'text', text: 'ready' }] } });
   }
   if (req.url === '/api/mcp/apps/fixture/message') { appMessages.push(JSON.parse(raw)); return json(200, {}); }
   if (req.url.startsWith('/api/')) return json(200, { ok: true });
@@ -155,6 +162,21 @@ try {
   for (let i = 0; i < 100 && await appEvaluate("document.querySelector('#incoming').textContent") !== 'Hello from agent'; i++) await sleep(50);
   assert.equal(await appEvaluate("document.querySelector('#incoming').textContent"), 'Hello from agent', 'agent pushes message to app via AppBridge sendToolResult');
   assert.equal(await cdp.evaluate("document.querySelector('#frame').lastElementChild === window.nativeCard"), true, 'MCP App card remains pinned at the bottom of the transcript after later tool calls and messages');
+  currentLabel = 'reloaded-v2';
+  await cdp.evaluate("window.updateNativeAppInPlace()");
+  for (let i = 0; mounts.length < 2 && i < 100; i++) await sleep(50);
+  assert.equal(mounts.length, 2, 'update reloads the existing mounted app card');
+  assert.deepEqual(mounts[1], { projectDir: '/fixture', chatId: 'chat', callId: 'native-create' }, 'in-place update remounts the original card rather than spawning a second iframe');
+  assert.equal(await cdp.evaluate("document.querySelectorAll('.mcp-app').length"), 1, 'only one MCP App frame stays mounted after an in-place update');
+  assert.equal(await cdp.evaluate("document.querySelector('.mcp-app__title').textContent"), 'Single-file app v2', 'app header title updates when renamed');
+  assert.equal(await cdp.evaluate("document.querySelector('#frame').lastElementChild === window.nativeCard"), true, 'updated MCP App card stays pinned at the bottom');
+  appEvaluate = null;
+  for (let i = 0; i < 100; i++) {
+    appEvaluate = await cdp.appContext();
+    if (appEvaluate && await appEvaluate("document.querySelector('#ready')?.textContent").catch(() => '') === 'reloaded-v2') break;
+    await sleep(50);
+  }
+  assert.equal(await appEvaluate("document.querySelector('#ready').textContent"), 'reloaded-v2', 'updated app source renders in the existing card');
   assert.equal(await appEvaluate("fetch('" + base + "/api/settings').then(()=>false).catch(()=>true)"), true, 'no host API fetch');
   await cdp.evaluate("const upload=document.querySelector('#instant-mcp-app-file');const data=new DataTransfer();data.items.add(new File(['document.body.textContent=\"Uploaded\";'],'upload.js'));upload.files=data.files;upload.dispatchEvent(new Event('change',{bubbles:true}));");
   await sleep(50);
