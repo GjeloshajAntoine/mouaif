@@ -46,7 +46,7 @@ function check(name, condition, detail) {
 //
 // `costed` controls whether each round reports a provider cost. Without it the
 // cost has to be estimated from the app pricing table.
-function serve(seen, costed, failedRun = false) {
+function serve(seen, costed, failedRun = false, failParentFollowUp = false, parentFollowUpPartialText = false) {
   let count = 0;
   const server = http.createServer((req, res) => {
     req.resume();
@@ -56,6 +56,18 @@ function serve(seen, costed, failedRun = false) {
       if (failedRun && n === 2) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: { message: 'Nested provider failed' } }));
+      return;
+      }
+      if (failParentFollowUp && n === 3) {
+      if (parentFollowUpPartialText) {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Partial parent reply' }, index: 0 }] }) + '\n\n');
+        res.write('data: ' + JSON.stringify({ error: { message: 'Parent provider failed mid-stream', code: 'EUPSTREAM' } }) + '\n\n');
+        res.end();
+        return;
+      }
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'Parent provider failed' } }));
       return;
       }
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -139,7 +151,7 @@ async function runScenario(opts) {
   fs.mkdirSync(projectDir, { recursive: true });
   const res = mockRes();
   const seen = { requests: 0, body: () => res.body, bodyAtSecondNestedRound: '' };
-  const { server, port } = await serve(seen, opts.costed, opts.failedRun);
+  const { server, port } = await serve(seen, opts.costed, opts.failedRun, opts.failParentFollowUp, opts.parentFollowUpPartialText);
   settings.setProject(projectDir, {
     models: [{ id: 'mock', provider: 'openai-compatible', label: 'Mock' }],
     tools: { subagent: { enabled: true, mode: 'allow' } }
@@ -171,6 +183,23 @@ async function runScenario(opts) {
     check('failed run: completed-round cost and model survive reload', result?.model.id === 'mock'
       && near(result.totalCost, 0.002) && near(result.providerCost, 0.002));
     check('failed run: usage survives alongside the error', result?.usage.completionTokens === 20 && !!result.error);
+    const chatTotal = chats.chatTotalCost(projectDir, chat.id);
+    check('failed run: completed nested round cost still updates chat total', chatTotal.known && near(chatTotal.total, 0.0035), JSON.stringify(chatTotal));
+    return;
+  }
+
+  if (opts.failParentFollowUp) {
+    const errEvent = events.find((e) => e.name === 'error');
+    check(opts.label + ': parent turn emitted error', !!errEvent);
+    const chatTotal = chats.chatTotalCost(projectDir, chat.id);
+    check(opts.label + ': completed parent and subagent rounds persist in chat total on turn failure',
+      chatTotal.known && near(chatTotal.total, opts.persistedTotal), JSON.stringify(chatTotal));
+    if (opts.parentFollowUpPartialText) {
+      const assistant = messages.listMessages(projectDir, chat.id).filter((m) => m && m.role === 'assistant');
+      check(opts.label + ': partial assistant row carries unpersisted cost',
+        assistant.length === 1 && assistant[0].cost && assistant[0].cost.known && near(assistant[0].cost.total, opts.persistedTotal),
+        JSON.stringify(assistant[0] && assistant[0].cost));
+    }
     return;
   }
 
@@ -247,6 +276,8 @@ async function runScenario(opts) {
   });
 
   await runScenario({ label: 'failed run', costed: true, failedRun: true });
+  await runScenario({ label: 'failed parent follow-up', costed: true, failParentFollowUp: true, persistedTotal: 0.006 });
+  await runScenario({ label: 'failed parent follow-up partial text', costed: true, failParentFollowUp: true, parentFollowUpPartialText: true, persistedTotal: 0.006 });
 
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   fs.rmSync(tmp, { recursive: true, force: true });

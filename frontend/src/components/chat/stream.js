@@ -1475,7 +1475,12 @@ state.messages = state.messages.filter((m) => m !== userMsg);
         : (data.status || 'running');
       setChatStatus(refs, data.title + ' ' + pct, 'busy');
 } else if (ev.eventName === 'error') {
-streamFailed = true;
+  // Clear any live subagent cost delta when the turn fails: the
+  // server persists the unpersisted billed remainder (onto the
+  // partial assistant row or via addChatCost) before closing,
+  // and the recovery poll's costSnapshot will cover it.
+  liveSubagentCost = 0;
+  streamFailed = true;
 // Clear the per-round counters so a subsequent turn does not
 // inherit stale tokens from the failed exchange.
 roundPromptTokens = 0;

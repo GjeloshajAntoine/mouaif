@@ -1074,8 +1074,12 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}) {
 let persistedSegmentCost = 0;
 // Nested subagents are separate billed model calls. ai-stream reports their
 // fully resolved total independently so it can be added without pretending
-// their tokens used the parent model's price.
+// their tokens used the parent model's price. `liveDelegatedCost` tracks
+// `usage_update` deltas as they arrive so a turn that throws or fails before
+// `done` still knows what completed subagent rounds cost.
 let delegatedCost = null;
+let liveDelegatedCost = 0;
+let liveDelegatedCostKnown = false;
 function accumulateRoundUsage(roundUsage) {
     if (!roundUsage) return;
     turnTokens += (Number(roundUsage.promptTokens) || 0) + (Number(roundUsage.completionTokens) || 0);
@@ -1249,6 +1253,24 @@ function accumulateRoundUsage(roundUsage) {
   // polling persisted messages instead of causing an upstream abort with
   // "client disconnected".
 
+  // Compute the unpersisted billed cost accumulated before a turn failed or
+  // aborted (completed parent rounds not yet saved on a segment, plus any
+  // completed subagent rounds).
+  function unpersistedBilledCost(resObj) {
+    const del = resObj && typeof resObj.delegatedCost === 'number' && isFinite(resObj.delegatedCost) && resObj.delegatedCost >= 0
+      ? resObj.delegatedCost
+      : (liveDelegatedCostKnown ? liveDelegatedCost : null);
+    if (!turnCostKnown && !(del != null && del > 0)) return null;
+    const remaining = Math.max(0, (turnCostKnown ? turnCost : 0) + (del || 0) - persistedSegmentCost);
+    return {
+      known: true,
+      input: 0,
+      output: 0,
+      total: remaining,
+      currency: 'USD'
+    };
+  }
+
   let result;
   try {
     result = await ai.streamChat({
@@ -1414,6 +1436,12 @@ promptSize: resolvedProfileId,
       bodyFor: (sub) => statusBody(sub, pctNum, info),
       tag: statusPushTag
       });
+      } else if (name === 'usage_update') {
+      const updateCost = data && data.cost;
+      if (updateCost && updateCost.known && typeof updateCost.total === 'number' && isFinite(updateCost.total) && updateCost.total > 0) {
+      liveDelegatedCost += updateCost.total;
+      liveDelegatedCostKnown = true;
+      }
       } else if (name === 'done') {
       const info = statusInfo({ kind: 'complete', message: 'Response complete' });
       sendChatPush('completion', {
@@ -1540,6 +1568,21 @@ promptSize: resolvedProfileId,
     // Capture the failure's context before resetting the completed turn.
     lastToolName = '';
     turnStartedAt = 0;
+    const partialCost = unpersistedBilledCost(null);
+    if (assistantContent.trim() || assistantReasoning.trim()) {
+      try {
+        messages.appendMessage(projectDir, chatId, {
+          role: 'assistant',
+          content: assistantContent,
+          reasoning: assistantReasoning,
+          cost: partialCost || undefined,
+          modelId: model.id,
+          clientId: messages.newClientId('a')
+        });
+      } catch { /* non-fatal */ }
+    } else if (partialCost && partialCost.known && partialCost.total > 0) {
+      try { messages.addChatCost(projectDir, chatId, partialCost.total); } catch { /* non-fatal */ }
+    }
     const errClientId = persistStreamError(errPayload);
     if (errClientId) errPayload.clientId = errClientId;
     try { emit('error', errPayload); } catch { /* socket closed */ }
@@ -1565,16 +1608,28 @@ promptSize: resolvedProfileId,
     // the error itself, so the transcript shows exactly what the
     // model produced before the failure.
     const errPayload = Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error);
+    const partialCost = unpersistedBilledCost(result);
     if (assistantContent.trim() || assistantReasoning.trim()) {
       try {
         messages.appendMessage(projectDir, chatId, {
           role: 'assistant',
           content: assistantContent,
           reasoning: assistantReasoning,
+          usage: pendingRoundUsage
+            ? {
+                promptTokens: pendingRoundUsage.promptTokens,
+                completionTokens: pendingRoundUsage.completionTokens,
+                cacheReadTokens: pendingRoundUsage.cacheReadTokens || 0,
+                cacheCreationTokens: pendingRoundUsage.cacheCreationTokens || 0
+              }
+            : (result.usage && (result.usage.promptTokens || result.usage.completionTokens) ? result.usage : undefined),
+          cost: partialCost || undefined,
           modelId: model.id,
           clientId: messages.newClientId('a')
         });
       } catch { /* non-fatal */ }
+    } else if (partialCost && partialCost.known && partialCost.total > 0) {
+      try { messages.addChatCost(projectDir, chatId, partialCost.total); } catch { /* non-fatal */ }
     }
     const errClientId = persistStreamError(errPayload);
     if (errClientId) errPayload.clientId = errClientId;
