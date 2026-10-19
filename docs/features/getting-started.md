@@ -147,7 +147,7 @@ Restart `mouaif serve` after updating. Your data is not touched by an update.
 | What | Where |
 |---|---|
 | App settings, provider keys, chats, login | `~/.mouaif/store.sqlite` (change with `MOUAIF_HOME`) |
-| Browser sign-in tokens (Anthropic, OpenRouter, Copilot, MCP) | Your operating system's keychain |
+| Browser sign-in tokens (Anthropic, OpenRouter, Copilot, MCP) | Same app store, in a credential table (see [Credential storage](./credential-storage.md)) |
 | Project settings | `<project>/.mouaif.json` (can be moved into the app store per project) |
 | Chat traces, when enabled | `<project>/.mouaif/traces/` |
 

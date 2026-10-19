@@ -1,5 +1,9 @@
 # Authentication
 
+## Overview
+
+App access is a username and password — optionally a passkey — that must be entered before the mouaif app opens. It is off by default and turned on per run with a command-line flag, so a copy that only listens on your own computer can skip it.
+
 ## Usage
 
 App access is on for a run when you pass `--auth`, `--auth-setup`, or `--user`. Without one of them the server does not ask for a login, even if you created a user before; the stored user is kept for the next time you turn access on.

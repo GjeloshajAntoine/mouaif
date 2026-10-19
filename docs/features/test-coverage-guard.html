@@ -52,7 +52,7 @@ node scripts/test-test-coverage.js # run the guard alone</code></pre>
 
 Add them to the &quot;test&quot; script (or a test:* group) in package.json,
 or add them to EXEMPT in scripts/test-test-coverage.js with a reason.</code></pre>
-<h2 id="implementation-notes">Implementation notes</h2>
+<h2 id="what-it-checks">What it checks</h2>
 <p>The guard checks seven things:</p>
 <div class="table-wrap"><table><thead><tr><th>Check</th><th>What it catches</th></tr></thead><tbody><tr><td>Every test file on disk is referenced in <code>package.json</code></td><td>New tests added without wiring them into CI</td></tr><tr><td>Every referenced test file exists on disk</td><td>Renamed/deleted files leaving dangling references</td></tr><tr><td>No <code>node --check</code> on a test file inside a <code>test:*</code> script</td><td>Syntax checks masquerading as behavioral tests</td></tr><tr><td><code>test</code> script exists</td><td>Accidental deletion of the main test entry</td></tr><tr><td><code>test</code> script runs ≥ 100 test files</td><td>Mass removal of tests from the suite</td></tr><tr><td>Helper fixture servers are not run directly as tests</td><td>Fixture servers (<code>test-mcp-server.js</code>, …) executed as standalone tests</td></tr><tr><td><code>BROKEN_TESTS</code> entries still exist on disk</td><td>Broken tests removed without updating the tracking list</td></tr></tbody></table></div>
 <h3 id="exempt-files">Exempt files</h3>

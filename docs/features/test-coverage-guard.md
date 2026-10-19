@@ -23,7 +23,7 @@ Add them to the "test" script (or a test:* group) in package.json,
 or add them to EXEMPT in scripts/test-test-coverage.js with a reason.
 ```
 
-## Implementation notes
+## What it checks
 
 The guard checks seven things:
 
