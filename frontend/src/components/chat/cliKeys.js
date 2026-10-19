@@ -41,37 +41,49 @@
 // keys first, then movement — six keys fit a 360 px column even as small
 // buttons (see `.cli__key` in frontend/src/chat-composer.css).
 //
-// The table holds twelve keys plus the two modifiers (`role: 'modifier'` —
-// Ctrl and Fn): a phone keyboard has no Escape, Tab, arrows, Page keys or
-// function keys, and two small rows are what the sheet shows instead plus the
-// two keys that turn the next letter or digit into a control character or a
-// function key.
+// The table is organized into:
+//   * `row: 1` — the single swipeable primary bar shown by default (Esc, Tab,
+//     Ctrl, Alt, ^C, ←, ↑, ↓, →, and the three core shell punctuation keys `-`,
+//     `/`, `|`), flanked on the right by the pinned Expand (`▾`/`▴`) toggle.
+//   * `row: 2`, `row: 3`, `row: 4` — the expanded key tray revealed when the
+//     user taps Expand: Home/End/PgUp/PgDn/Fn, ^D/^Z/^L/Del/Space/Paste, and
+//     the remaining shell symbols (`~`, `$`, `*`, `&`, `>`).
 export const CLI_KEYS = [
+  // Row 1 — swipeable primary bar (always visible)
   { id: 'esc', row: 1, label: 'Esc', title: 'Escape — leave a full-screen program; clears the prompt at the shell', seq: '\x1b', local: 'clear' },
   { id: 'tab', row: 1, label: 'Tab', title: 'Tab — complete a path or command', seq: '\t', local: 'complete' },
-  { id: 'int', row: 1, label: '^C', title: 'Ctrl+C — interrupt the running command', seq: '\x03' },
-  { id: 'eof', row: 1, label: '^D', title: 'Ctrl+D — end input (EOF)', seq: '\x04' },
-  { id: 'susp', row: 1, label: '^Z', title: 'Ctrl+Z — suspend the running command', seq: '\x1a' },
-  { id: 'ff', row: 1, label: '^L', title: 'Ctrl+L — clear the screen', seq: '\x0c' },
-  // The two modifier keys. They carry no sequence of their own: they *arm* the
-  // next thing written, so the rest of the control characters (`^A`, `^E`,
-  // `^K`, `^U`, `^W`, `^R`, `^]`…) cost no buttons — see `modifiedSequence` and
-  // `applyModifiers` below. They sit at the *end* of each row and render as
-  // toggles rather than senders (`role: 'modifier'`), so the row keeps reading
-  // left to right as the keys a phone keyboard lacks, plus one that turns the
-  // next letter into a control character.
-  // The movement keys share the first row, and the two Page keys take the
-  // second — the shape the small key row uses at 360 px (see `.cli__key` in
-  // frontend/src/chat-composer.css). Ctrl sits between the control keys and the
-  // arrows, Fn between the arrows and the pages.
   { id: 'ctrl', row: 1, role: 'modifier', label: 'Ctrl', title: 'Ctrl — tap, then a letter: Ctrl+C is ^C', seq: '' },
+  { id: 'alt', row: 1, role: 'modifier', label: 'Alt', title: 'Alt — tap, then a key: sends ESC + key (Meta)', seq: '' },
+  { id: 'int', row: 1, kind: 'danger', label: '^C', title: 'Ctrl+C — interrupt the running command', seq: '\x03' },
   { id: 'left', row: 1, label: '←', title: 'Left — move the cursor left', seq: '\x1b[D', app: '\x1bOD', local: 'caret-left' },
   { id: 'up', row: 1, label: '↑', title: 'Up — previous command from this session', seq: '\x1b[A', app: '\x1bOA', local: 'history-up' },
   { id: 'down', row: 1, label: '↓', title: 'Down — next command from this session', seq: '\x1b[B', app: '\x1bOB', local: 'history-down' },
   { id: 'right', row: 1, label: '→', title: 'Right — move the cursor right', seq: '\x1b[C', app: '\x1bOC', local: 'caret-right' },
-  { id: 'fn', row: 1, role: 'modifier', label: 'Fn', title: 'Fn — tap, then a digit: sends F1–F9', seq: '' },
+  { id: 'dash', row: 1, kind: 'sym', label: '-', title: 'Hyphen / flag (-)', seq: '-', insert: '-' },
+  { id: 'slash', row: 1, kind: 'sym', label: '/', title: 'Slash / path separator (/)', seq: '/', insert: '/' },
+  { id: 'pipe', row: 1, kind: 'sym', label: '|', title: 'Pipe — pass output to another command (|)', seq: '|', insert: '|' },
+
+  // Row 2 — expanded tray: navigation & function modifier
+  { id: 'home', row: 2, label: 'Home', title: 'Home — jump to start of line', seq: '\x1b[H', app: '\x1bOH', local: 'caret-home' },
+  { id: 'end', row: 2, label: 'End', title: 'End — jump to end of line', seq: '\x1b[F', app: '\x1bOF', local: 'caret-end' },
   { id: 'pgup', row: 2, label: 'PgUp', title: 'Page Up — scroll the output up', seq: '\x1b[5~', local: 'page-up' },
-  { id: 'pgdn', row: 2, label: 'PgDn', title: 'Page Down — scroll the output down', seq: '\x1b[6~', local: 'page-down' }
+  { id: 'pgdn', row: 2, label: 'PgDn', title: 'Page Down — scroll the output down', seq: '\x1b[6~', local: 'page-down' },
+  { id: 'fn', row: 2, role: 'modifier', label: 'Fn', title: 'Fn — tap, then a digit: sends F1–F9', seq: '' },
+
+  // Row 3 — expanded tray: signals & editing keys
+  { id: 'eof', row: 3, label: '^D', title: 'Ctrl+D — end input (EOF)', seq: '\x04' },
+  { id: 'susp', row: 3, label: '^Z', title: 'Ctrl+Z — suspend the running command', seq: '\x1a' },
+  { id: 'ff', row: 3, label: '^L', title: 'Ctrl+L — clear the screen', seq: '\x0c' },
+  { id: 'del', row: 3, label: 'Del', title: 'Delete — delete character at cursor', seq: '\x1b[3~', local: 'delete-char' },
+  { id: 'space', row: 3, label: 'Space', title: 'Space — insert space or page down in a pager', seq: ' ', insert: ' ' },
+  { id: 'paste', row: 3, label: 'Paste', title: 'Paste — insert clipboard text into the prompt', seq: '', local: 'paste' },
+
+  // Row 4 — expanded tray: shell symbols hard to reach on a phone keyboard
+  { id: 'tilde', row: 4, kind: 'sym', label: '~', title: 'Tilde / home directory (~)', seq: '~', insert: '~' },
+  { id: 'dollar', row: 4, kind: 'sym', label: '$', title: 'Dollar / variable ($)', seq: '$', insert: '$' },
+  { id: 'star', row: 4, kind: 'sym', label: '*', title: 'Asterisk / wildcard (*)', seq: '*', insert: '*' },
+  { id: 'amp', row: 4, kind: 'sym', label: '&', title: 'Ampersand (&)', seq: '&', insert: '&' },
+  { id: 'gt', row: 4, kind: 'sym', label: '>', title: 'Redirect (>)', seq: '>', insert: '>' }
 ];
 
 // modifiedSequence(key, text) → the bytes a modifier turns `text` into, or null
@@ -83,6 +95,9 @@ export const CLI_KEYS = [
 //     terminal applies — so *every* control character is reachable, not just the
 //     four that used to have a button. A multi-character answer (a chip, a whole
 //     typed word) is not a control character and answers null.
+//   * **Alt** — `text` is one printable ASCII character, and the sequence is
+//     `ESC` followed by that character (`\x1b` + ch), which is how VT terminals
+//     send Meta chords (`Alt+b` → `\x1bb`, `Alt+f` → `\x1bf`, `Alt+.` → `\x1b.`).
 //   * **Fn** — a single digit `1`–`9` is that function key's VT sequence
 //     (`ESC O P` … `ESC [ 9 ~`), because a phone has no F-row and no other way to
 //     press one.
@@ -94,6 +109,12 @@ export function modifiedSequence(key, text) {
     const code = s.charCodeAt(0);
     if (code > 0xff) return null;
     return String.fromCharCode(code & 0x1f);
+  }
+  if (id === 'alt') {
+    if (s.length !== 1) return null;
+    const code = s.charCodeAt(0);
+    if (code < 0x20 || code > 0x7e) return null;
+    return '\x1b' + s;
   }
   if (id === 'fn') {
     const m = /^([1-9])$/.exec(s);
@@ -113,7 +134,7 @@ export function fnSequence(n) {
 
 // applyModifiers(armed, text) → { seq, consumed }
 //
-//   * `armed` — the modifier ids currently on (`ctrl`, `fn`).
+//   * `armed` — the modifier ids currently on (`ctrl`, `alt`, `fn`).
 //   * `text` — what the user was about to write: a key from the row, a chip, or
 //     the line they typed in the prompt.
 //   * `seq` — the bytes to write instead, or null when nothing applies and the
@@ -123,11 +144,10 @@ export function fnSequence(n) {
 //     `M-x` — and a modifier that matched nothing stays armed, so a mistyped
 //     letter costs a correction, not a second tap.
 //
-// With both armed the outer one wins: Ctrl is the byte a chord is named for, and
-// `Fn` and Ctrl are never combined in practice.
+// With multiple armed the outer one wins: Ctrl first, then Alt, then Fn.
 export function applyModifiers(armed, text) {
   const set = armed && typeof armed === 'object' ? armed : {};
-  for (const id of ['ctrl', 'fn']) {
+  for (const id of ['ctrl', 'alt', 'fn']) {
     if (!set[id]) continue;
     const seq = modifiedSequence(id, text);
     if (seq != null) return { seq, consumed: true, modifier: id };
@@ -135,30 +155,37 @@ export function applyModifiers(armed, text) {
   return { seq: null, consumed: false, modifier: null };
 }
 
-// keyPayload(key, mode) → { seq, clearDraft, local }
+// keyPayload(key, mode) → { seq, clearDraft, local, insert }
 //
 //   * `mode.program`   — a program owns stdin (see above);
 //   * `mode.appCursor` — the screen is in application cursor mode.
 //
-// In local mode a key with a `local` action returns that action and **no
-// bytes**: the field is edited in place and nothing reaches the child until
-// Enter (an earlier version flushed the draft onto readline and emptied the
-// field — "Tab ate my text"). Otherwise the key's sequence is written raw.
+// In local mode a key with a `local` action or `insert` text returns that
+// action and **no bytes**: the field is edited in place and nothing reaches the
+// child until Enter (an earlier version flushed the draft onto readline and
+// emptied the field — "Tab ate my text"). Otherwise the key's sequence is
+// written raw.
 //
 // ^C discards the local draft and sends ETX without a terminator — a newline
 // after it would also press Enter and answer a prompt you never saw.
 export function keyPayload(key, mode) {
-  if (!key) return { seq: '', clearDraft: false, local: null };
+  if (!key) return { seq: '', clearDraft: false, local: null, insert: null };
   const m = mode || {};
-  if (!m.program && key.local) return { seq: '', clearDraft: false, local: key.local };
+  if (!m.program) {
+    if (key.insert) return { seq: '', clearDraft: false, local: 'insert', insert: key.insert };
+    if (key.local) return { seq: '', clearDraft: false, local: key.local, insert: null };
+  }
+  if (m.program && key.local === 'paste') {
+    return { seq: '', clearDraft: false, local: 'paste', insert: null };
+  }
   const seq = m.appCursor && key.app ? key.app : key.seq;
-  return { seq, clearDraft: key.id === 'int', local: null };
+  return { seq, clearDraft: key.id === 'int', local: null, insert: null };
 }
 
 // keyForEvent(event) — the CLI_KEYS entry a hardware key press stands for, so
 // a desktop keyboard's Tab and arrows go through the same two modes as the
 // row. Escape is not mapped: the sheet's own Escape closes it (useModal).
-const HARDWARE_KEYS = { Tab: 'tab', ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', PageUp: 'pgup', PageDown: 'pgdn' };
+const HARDWARE_KEYS = { Tab: 'tab', ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', PageUp: 'pgup', PageDown: 'pgdn', Home: 'home', End: 'end' };
 export function keyForEvent(event) {
   if (!event || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return null;
   const id = HARDWARE_KEYS[event.key];

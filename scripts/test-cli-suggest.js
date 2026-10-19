@@ -40,19 +40,23 @@ async function run() {
   const byId = {};
   for (const k of CLI_KEYS) byId[k.id] = k;
 
-  t('the rows offer the twelve keys a phone keyboard lacks plus the two modifiers',
-    CLI_KEYS.length === 14
-    && ['esc', 'tab', 'int', 'eof', 'susp', 'ff', 'left', 'up', 'down', 'right', 'pgup', 'pgdn'].every((id) => byId[id])
-    && ['ctrl', 'fn'].every((id) => byId[id] && byId[id].role === 'modifier'),
+  t('the rows offer the primary swipeable keys, the expanded tray keys, and the three modifiers',
+    CLI_KEYS.length === 28
+    && ['esc', 'tab', 'int', 'eof', 'susp', 'ff', 'left', 'up', 'down', 'right', 'home', 'end', 'pgup', 'pgdn', 'del', 'space', 'paste', 'dash', 'slash', 'pipe', 'tilde', 'dollar', 'star', 'amp', 'gt'].every((id) => byId[id])
+    && ['ctrl', 'alt', 'fn'].every((id) => byId[id] && byId[id].role === 'modifier'),
     CLI_KEYS.map((k) => k.id));
-  t('one row keeps the control keys and the arrows, the other the Page keys',
-    CLI_KEYS.filter((k) => k.row === 1).length === 12 && CLI_KEYS.filter((k) => k.row === 2).length === 2);
+  t('row 1 holds the 12 swipeable primary keys, and rows 2–4 hold the expanded tray',
+    CLI_KEYS.filter((k) => k.row === 1).length === 12
+    && CLI_KEYS.filter((k) => k.row === 2).length === 5
+    && CLI_KEYS.filter((k) => k.row === 3).length === 6
+    && CLI_KEYS.filter((k) => k.row === 4).length === 5);
 
-  // A sender carries the bytes it writes; a modifier arms the next key instead,
-  // so its empty `seq` is the point rather than an omission.
+  // A sender carries the bytes it writes (unless it is a pure local action like
+  // Paste); a modifier arms the next key instead, so its empty `seq` is the
+  // point rather than an omission.
   t('every sending key has a sequence and a label, every modifier a label',
     CLI_KEYS.every((k) => typeof k.label === 'string' && k.label.length > 0
-      && (k.role === 'modifier' ? k.seq === '' : (typeof k.seq === 'string' && k.seq.length > 0))));
+      && (k.role === 'modifier' || k.local === 'paste' ? k.seq === '' : (typeof k.seq === 'string' && k.seq.length > 0))));
 
   // The sequences themselves. These are what a real terminal sends, so the
   // assertion is written as the literal bytes rather than as a formula.
@@ -62,7 +66,8 @@ async function run() {
   t('Down is the VT cursor-down sequence', byId.down.seq === '\x1b[B' && byId.down.app === '\x1bOB', JSON.stringify(byId.down));
   t('Right is the VT cursor-right sequence', byId.right.seq === '\x1b[C' && byId.right.app === '\x1bOC');
   t('Left is the VT cursor-left sequence', byId.left.seq === '\x1b[D' && byId.left.app === '\x1bOD');
-  t('PgUp / PgDn are the VT page sequences', byId.pgup.seq === '\x1b[5~' && byId.pgdn.seq === '\x1b[6~');
+  t('Home / End are the VT home/end sequences', byId.home.seq === '\x1b[H' && byId.home.app === '\x1bOH' && byId.end.seq === '\x1b[F' && byId.end.app === '\x1bOF');
+  t('PgUp / PgDn / Del are the VT sequences', byId.pgup.seq === '\x1b[5~' && byId.pgdn.seq === '\x1b[6~' && byId.del.seq === '\x1b[3~');
   t('Ctrl+C is ETX', byId.int.seq === '\x03', JSON.stringify(byId.int.seq));
   t('Ctrl+D is EOT', byId.eof.seq === '\x04', JSON.stringify(byId.eof.seq));
   t('Ctrl+Z is SUB', byId.susp.seq === '\x1a', JSON.stringify(byId.susp.seq));
@@ -87,10 +92,9 @@ async function run() {
 
   // ---- 1b. The modifiers and the function keys -------------------------
   //
-  // Ctrl and Fn are what make the small row enough: a phone keyboard has no
-  // Ctrl and no F-row, so `Ctrl` + `c` is a tap on the toggle and then a `c` in
-  // the field, and `Fn` + `2` is F2. The rule is the terminal's own (`& 0x1f`),
-  // asserted here as the bytes rather than as the formula.
+  // Ctrl, Alt and Fn are what make the compact bar enough: a phone keyboard has
+  // no Ctrl, no Alt/Meta and no F-row, so `Ctrl` + `c` is a tap on the toggle
+  // and then a `c` in the field, `Alt` + `b` is ESC + `b`, and `Fn` + `2` is F2.
 
   t('Ctrl is the character with its top three bits cleared',
     modifiedSequence('ctrl', 'c') === '\x03'
@@ -108,6 +112,13 @@ async function run() {
     modifiedSequence('ctrl', 'npm run build') === null && modifiedSequence('ctrl', '') === null
     && modifiedSequence('ctrl', '\u0100') === null && modifiedSequence('nope', 'c') === null);
 
+  t('Alt prefixes a printable ASCII character with ESC (Meta)',
+    modifiedSequence('alt', 'b') === '\x1bb'
+    && modifiedSequence('alt', 'f') === '\x1bf'
+    && modifiedSequence('alt', '.') === '\x1b.'
+    && modifiedSequence('alt', '') === null
+    && modifiedSequence('alt', 'ab') === null);
+
   t('Fn sends the SS3 form for F1-F4 and the CSI form after that',
     fnSequence(1) === '\x1bOP' && fnSequence(4) === '\x1bOS' && fnSequence(5) === '\x1b[5~' && fnSequence(9) === '\x1b[9~');
   t('Fn turns a digit into its function key',
@@ -119,12 +130,15 @@ async function run() {
     applyModifiers({}, 'c').seq === null && applyModifiers(null, 'c').seq === null && applyModifiers(undefined, 'c').consumed === false);
   t('an armed modifier reports what it consumed',
     applyModifiers({ ctrl: true }, 'c').seq === '\x03' && applyModifiers({ ctrl: true }, 'c').consumed === true
-    && applyModifiers({ ctrl: true }, 'c').modifier === 'ctrl');
+    && applyModifiers({ ctrl: true }, 'c').modifier === 'ctrl'
+    && applyModifiers({ alt: true }, 'b').seq === '\x1bb' && applyModifiers({ alt: true }, 'b').modifier === 'alt');
   t('a modifier that matched nothing reports nothing',
     applyModifiers({ fn: true }, 'z').seq === null && applyModifiers({ fn: true }, 'z').consumed === false);
   t('the armed modifier keeps its bytes free of a line terminator',
     ['a', 'c', 'd', 'z', '[', ']'].concat(['1', '9']).every((ch) =>
-      !/[\r\n]/.test(modifiedSequence('ctrl', ch) || '') && !/[\r\n]/.test(modifiedSequence('fn', ch) || '')));
+      !/[\r\n]/.test(modifiedSequence('ctrl', ch) || '')
+      && !/[\r\n]/.test(modifiedSequence('alt', ch) || '')
+      && !/[\r\n]/.test(modifiedSequence('fn', ch) || '')));
 
   // keepEditorFocus — the mousedown guard that keeps the soft keyboard open.
   let prevented = 0;
@@ -145,7 +159,12 @@ async function run() {
   const local = (id) => keyPayload(byId[id], shell);
   t('at the shell, Tab completes locally and writes nothing', local('tab').seq === '' && local('tab').local === 'complete');
   t('at the shell, ↑/↓ recall locally', local('up').local === 'history-up' && local('down').local === 'history-down' && local('up').seq === '');
-  t('at the shell, ←/→ move the caret locally', local('left').local === 'caret-left' && local('right').local === 'caret-right');
+  t('at the shell, ←/→/Home/End move the caret locally',
+    local('left').local === 'caret-left' && local('right').local === 'caret-right'
+    && local('home').local === 'caret-home' && local('end').local === 'caret-end');
+  t('at the shell, symbol keys and Space insert locally into the prompt',
+    local('dash').local === 'insert' && local('dash').insert === '-'
+    && local('slash').insert === '/' && local('pipe').insert === '|' && local('space').insert === ' ');
   t('at the shell, PgUp/PgDn scroll the output', local('pgup').local === 'page-up' && local('pgdn').local === 'page-down');
   t('at the shell, Esc clears the field instead of arming readline\'s Meta prefix',
     local('esc').local === 'clear' && local('esc').seq === '');
@@ -155,16 +174,17 @@ async function run() {
     ['eof', 'susp', 'ff'].every((id) => local(id).seq === byId[id].seq && !local(id).clearDraft && !local(id).local));
 
   t('to a program, every sending key writes its sequence',
-    CLI_KEYS.filter((k) => k.role !== 'modifier')
+    CLI_KEYS.filter((k) => k.role !== 'modifier' && k.local !== 'paste')
       .every((k) => keyPayload(k, prog).seq === k.seq && !keyPayload(k, prog).local));
-  t('in application cursor mode the arrows use ESC O',
+  t('in application cursor mode the arrows and Home/End use ESC O',
     keyPayload(byId.up, { program: true, appCursor: true }).seq === '\x1bOA'
     && keyPayload(byId.left, { program: true, appCursor: true }).seq === '\x1bOD'
+    && keyPayload(byId.home, { program: true, appCursor: true }).seq === '\x1bOH'
     && keyPayload(byId.pgup, { program: true, appCursor: true }).seq === '\x1b[5~');
   t('no payload ever carries a line terminator',
     CLI_KEYS.every((k) => [shell, prog].every((m) => !/[\r\n]/.test(keyPayload(k, m).seq))));
   t('a modifier sends nothing of its own',
-    ['ctrl', 'fn'].every((id) => keyPayload(byId[id], shell).seq === '' && keyPayload(byId[id], prog).seq === ''));
+    ['ctrl', 'alt', 'fn'].every((id) => keyPayload(byId[id], shell).seq === '' && keyPayload(byId[id], prog).seq === ''));
   t('a missing key writes nothing', keyPayload(null).seq === '' && keyPayload(null).local === null);
   t('no mode given means the shell', keyPayload(byId.tab).local === 'complete');
 

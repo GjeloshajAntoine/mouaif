@@ -143,8 +143,9 @@ try {
     if (await evaluate("!!document.querySelector('.cli__prompt')")) break;
     await sleep(50);
   }
-  assert.equal(await evaluate("[...document.querySelectorAll('.cli__key')].length"), 14, 'the two key rows carry the twelve keys and the two modifiers');
-  assert.deepEqual(await evaluate("[...document.querySelectorAll('.cli__key--mod')].map((b) => b.textContent)"), ['Ctrl', 'Fn'], 'Ctrl and Fn are the toggles in the rows');
+  assert.equal(await evaluate("[...document.querySelectorAll('.cli__key')].length"), 12, 'collapsed by default: only the 12 primary swipeable keys render');
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('.cli__key--mod')].map((b) => b.textContent)"), ['Ctrl', 'Alt'], 'Ctrl and Alt are the toggles in the primary row');
+  assert.equal(await evaluate("!!document.querySelector('.cli__key-expand') && document.querySelector('.cli__key-expand').getAttribute('aria-expanded') === 'false'"), true, 'pinned expand button starts collapsed');
   assert.equal(await evaluate("[...document.querySelectorAll('.cli__key')].every((b) => b.getBoundingClientRect().height <= 34)"), true, 'the keys are small buttons, not 44 px primary targets');
 
   // 1. Seed the session history with a command, sent to a shell-owned prompt.
@@ -158,7 +159,7 @@ try {
   //    restoring it — the case that used to leave the latch on.
   emit('\x1b[?1049h\x1b[2J\x1b[1;1hhtop');
   await sleep(200);
-  assert.equal(await keysClass(), 'cli__keys is-prompt', 'a full-screen program puts the rows in program mode');
+  assert.equal(await keysClass(), 'cli__keys cli__keys--primary is-prompt', 'a full-screen program puts the rows in program mode');
 
   await type('y');
   await tapKey('Tab');
@@ -170,8 +171,8 @@ try {
   // 3. The program was killed: bash is back at its prompt and says so.
   emit('\x1b[?2004h$ ');
   await sleep(200);
-  assert.equal(await keysClass(), 'cli__keys', 'the shell prompt leaves program mode');
-  assert.equal(await hint(), 'Tab completes, ↑/↓ recall. Ctrl + a letter is a control key, Fn + a digit is F1–F9.');
+  assert.equal(await keysClass(), 'cli__keys cli__keys--primary', 'the shell prompt leaves program mode');
+  assert.equal(await hint(), 'Tab completes, ↑/↓ recall. Ctrl/Alt + a key sends a chord, ▾ shows more keys.');
 
   // 4. The fix: Tab completes in the prompt again, and writes nothing.
   const before = posts.length;
@@ -262,9 +263,10 @@ try {
   await tapKey('Tab');
   assert.match(await hint(), /Nothing to complete/, 'an empty line reports that there is nothing to complete');
 
-  // Ctrl and Fn: two toggles that turn the next letter or digit into the control
-  // character or function key a phone keyboard cannot produce. The character
-  // never reaches the command line — it is sent and consumed.
+  // Ctrl, Alt and Fn: toggles that turn the next letter or digit into the
+  // control character, Meta chord or function key a phone keyboard cannot
+  // produce. The character never reaches the command line — it is sent and
+  // consumed.
   await type('');
   const beforeMod = posts.length;
   await tapKey('Ctrl');
@@ -277,6 +279,13 @@ try {
   assert.equal(posts[posts.length - 1].raw, true, 'written raw, with no line terminator');
   assert.equal(await value(), '', 'and the letter is consumed, never left on the command line');
   assert.equal(await evaluate("[...document.querySelectorAll('.cli__key')].find((b) => b.textContent === 'Ctrl').getAttribute('aria-pressed')"), 'false', 'a spent modifier disarms itself');
+
+  // Expand the key tray to access Fn, Home/End, ^D/^Z/^L, Del, Space, Paste,
+  // and the extra shell symbols.
+  await evaluate("document.querySelector('.cli__key-expand').click()");
+  await sleep(150);
+  assert.equal(await evaluate("document.querySelector('.cli__key-expand').getAttribute('aria-expanded')"), 'true', 'tapping ▾ expands the extra key tray');
+  assert.equal(await evaluate("[...document.querySelectorAll('.cli__key')].length"), 28, 'all 28 keys are rendered when expanded');
 
   await tapKey('Fn');
   await type('2');

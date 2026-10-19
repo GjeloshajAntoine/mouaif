@@ -40,7 +40,14 @@ Type **`!!`** and press **Enter** to repeat the previous command — the shell's
 
 ### Keys
 
-A phone keyboard has letters, digits and Enter, and nothing a terminal actually needs. Under the prompt, two rows of **small** keys carry the ones it lacks — small because the prompt above keeps the finger-sized target and the keys are a secondary control:
+A phone keyboard has letters, digits and Enter, and nothing a terminal actually needs. Under the prompt, a **single swipeable helper row** with a pinned **Expand (`▾` / `▴`)** toggle on the right carries the keys a mobile keyboard lacks — keeping the default footprint to one line while offering the full terminal tray on demand:
+
+- **Primary swipeable row (`row: 1`, always visible):** `Esc`, `Tab`, `Ctrl`, `Alt`, `^C`, `←`, `↑`, `↓`, `→`, `-`, `/`, `|`, plus the pinned `▾` toggle on the right.
+- **Expanded tray (`row: 2..4`, shown when `▾` is tapped):**
+  - Navigation & F-keys: `Home`, `End`, `PgUp`, `PgDn`, `Fn`
+  - Signals & editing: `^D`, `^Z`, `^L`, `Del`, `Space`, `Paste`
+  - Shell symbols: `~`, `$`, `*`, `&`, `>`
+- **Prompt inline actions:** a clear (`✕`) button when the field is non-empty and an explicit `↵` (Enter) button beside the prompt.
 
 | Key | At the shell prompt | While a program runs |
 | --- | --- | --- |
@@ -50,15 +57,18 @@ A phone keyboard has letters, digits and Enter, and nothing a terminal actually 
 | **^D** | sends EOF | ends input (EOF) |
 | **^Z** | sends `SUB` | suspends the running command |
 | **^L** | clears the screen | redraws / clears the screen |
-| **←** / **→** | moves the cursor in the prompt | sends the arrow |
+| **←** / **→** / **Home** / **End** | moves the cursor in the prompt | sends the cursor / Home / End sequence |
 | **↑** / **↓** | previous / next command from this session | sends the arrow — scroll `less`, move in a menu |
 | **PgUp** / **PgDn** | scrolls the output | sends Page Up / Page Down |
+| **Del** | deletes the character at the cursor | sends `ESC [ 3 ~` |
+| **Space** / **-** / **/** / **\|** / **~** / **$** / **\*** / **&** / **>** | inserts the character at the cursor | sends the character raw |
+| **Paste** | inserts clipboard text at the cursor | writes clipboard text raw |
 
 Every key is one raw write with **no line terminator**, so `^C` interrupts without also pressing Enter — which would answer a second prompt you never saw.
 
-#### Ctrl and Fn
+#### Ctrl, Alt and Fn
 
-Two of the keys are **modifiers**, not senders, and they are what makes a small row enough: a phone keyboard has no Ctrl and no F-row at all. Tap **Ctrl** and the next character is that control key; tap **Fn** and the next digit is that function key. The character is sent as its bytes and **never reaches the command line**, so `Ctrl` + `c` is exactly `^C` and leaves the prompt as it was.
+Three of the keys are **modifiers**, not senders, and they are what makes a compact bar enough: a phone keyboard has no Ctrl, no Alt/Meta and no F-row at all. Tap **Ctrl** and the next character is that control key; tap **Alt** and the next character is prefixed with `ESC` (Meta); tap **Fn** and the next digit is that function key. The character is sent as its bytes and **never reaches the command line**, so `Ctrl` + `c` is exactly `^C` and leaves the prompt as it was.
 
 | Armed | Then | Sends |
 | --- | --- | --- |
@@ -66,6 +76,7 @@ Two of the keys are **modifiers**, not senders, and they are what makes a small 
 | **Ctrl** | `d` | `\x04` — `^D`, EOF |
 | **Ctrl** | `a`, `e`, `k`, `u`, `w`, `r`, `]`, … | the matching control key (`\x01`, `\x05`, …) |
 | **Ctrl** | `[` | `ESC` |
+| **Alt** | `b`, `f`, `d`, `.`, … | `ESC` + key (`\x1bb` back word, `\x1bf` forward word, `\x1b.` last arg) |
 | **Fn** | `1`–`4` | `F1`–`F4` (`ESC O P` … `ESC O S`) |
 | **Fn** | `5`–`9` | `F5`–`F9` (`ESC [ 5 ~` …) |
 

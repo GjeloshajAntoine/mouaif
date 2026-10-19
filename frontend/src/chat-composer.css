@@ -1412,12 +1412,49 @@ color: var(--muted);
 .cli__prompt:focus { border-color: #4fc1ff; }
 .cli__prompt:disabled { opacity: 0.6; }
 
+.cli__prompt-clear,
+.cli__prompt-send {
+  flex: 0 0 auto;
+  height: 34px;
+  font: inherit;
+  font-family: var(--font-mono, monospace);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+.cli__prompt-clear {
+  min-width: 30px;
+  padding: 0 7px;
+  font-size: 0.72rem;
+  color: #8b9bb4;
+  background: #11151d;
+  border: 1px solid #222a38;
+}
+.cli__prompt-clear:active {
+  color: #d7e0ee;
+  border-color: #4fc1ff;
+}
+.cli__prompt-send {
+  min-width: 36px;
+  padding: 0 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #d6eeff;
+  background: #162c42;
+  border: 1px solid rgba(79, 193, 255, 0.42);
+}
+.cli__prompt-send:active {
+  background: #1f3d5a;
+  border-color: #4fc1ff;
+}
+
 /* ---- Suggestion row and key row ------------------------------------
    Both rows sit between the output and the prompt (suggestions) and under
    the prompt (keys), because that is where a thumb already is: the sheet is
-   full-bleed on a phone and the output above is read-only. Neither row
-   scrolls the page — the chips wrap, and the keys are six 44 px targets
-   that fit a 360 px column.
+   full-bleed on a phone and the output above is read-only.
 
    Colours are literals, like the rest of the terminal surface (`#0b0e14`,
    `#d7e0ee`, `#4fc1ff` above): this block paints inside the terminal, whose
@@ -1426,12 +1463,16 @@ color: var(--muted);
 .cli__suggest {
   flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px;
   padding: 7px 12px 0;
   background: #0b0e14;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.cli__suggest::-webkit-scrollbar { display: none; }
 .cli__suggest-chip {
+  flex: 0 0 auto;
   font: inherit;
   font-family: var(--font-mono, monospace);
   font-size: 0.72rem;
@@ -1457,36 +1498,63 @@ color: var(--muted);
 .cli__keys {
   flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
+  align-items: center;
+  gap: 4px;
   padding: 0 12px 6px;
   background: #0b0e14;
 }
-/* The keys are small on purpose. Six 44 px keys filled a 360 px column (the
-   row *was* the whole bottom of the sheet), which left no room for the two
-   modifier keys (`Ctrl`, `Fn`) under it. At 30 px they are a secondary control:
-   the prompt above keeps the finger-sized target, and the keys a phone
-   keyboard lacks are still one tap away — the tap target stays readable and
-   the hit area is widened by the gap, the way a keyboard's own rows are. */
+.cli__keys--primary {
+  flex-wrap: nowrap;
+}
+.cli__keys-track {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cli__keys-track::-webkit-scrollbar { display: none; }
+
+.cli__keys-drawer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0 2px;
+  background: #0b0e14;
+  border-top: 1px dashed #1b2433;
+}
+.cli__keys--drawer-row {
+  padding-bottom: 4px;
+}
+
 .cli__key {
   font: inherit;
   font-family: var(--font-mono, monospace);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 600;
   line-height: 1;
-  /* The row's keys share a phone's width evenly; the cap keeps them from
-     stretching into bars on the desktop card (the sheet is 860 px there),
-     where `flex: 1` alone would give each one 130 px. */
   flex: 1 1 0;
-  min-width: 0;
-  max-width: 56px;
-  min-height: 30px;
-  padding: 0 5px;
+  min-width: 38px;
+  max-width: 68px;
+  min-height: 32px;
+  padding: 0 7px;
   color: #d7e0ee;
   background: #11151d;
   border: 1px solid #222a38;
   border-radius: var(--r-sm);
   cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: background 80ms ease, border-color 80ms ease, transform 80ms ease;
+}
+.cli__keys-track .cli__key {
+  flex: 0 0 auto;
+  min-width: 40px;
 }
 .cli__key:active {
   background: #1b2230;
@@ -1498,25 +1566,51 @@ color: var(--muted);
   cursor: not-allowed;
   transform: none;
 }
-/* The two modifier keys (`Ctrl`, `Fn`) are narrower and sit at a fixed size
-   instead of sharing the row: they are toggles, not keys, so they do not need
-   to line up with the keys they modify. */
 .cli__key--mod {
-  flex: 0 0 auto;
-  padding: 0 9px;
-  font-size: 0.64rem;
-  letter-spacing: 0.02em;
+  color: #a8d4ff;
+  border-color: #293c56;
+  background: #131c2b;
 }
-/* Armed: the next letter or digit becomes a control character or a function
-   key (see `armed` in CliModal.jsx). The accent is the terminal's own — the
-   prompt mark and the program-mode key borders use it too. */
+.cli__key--sym {
+  color: #9ad1ff;
+}
+.cli__key--danger {
+  color: #ff9494;
+  border-color: rgba(255, 107, 107, 0.32);
+}
+/* Armed: the next letter or digit becomes a control character, Meta chord or
+   function key (see `armed` in CliModal.jsx). */
 .cli__key[aria-pressed='true'] {
   color: #cfe6ff;
   background: #1b2f3f;
   border-color: #4fc1ff;
 }
-/* Two key rows: the first sits flush under the prompt, the second under it.
-   While a program owns stdin every key goes to it as bytes, so the rows take
+.cli__key-expand {
+  flex: 0 0 auto;
+  min-width: 36px;
+  min-height: 32px;
+  padding: 0 8px;
+  font: inherit;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #b8cae4;
+  background: #171f2e;
+  border: 1px solid #2d3b54;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cli__key-expand.is-open,
+.cli__key-expand:active {
+  color: #cfe6ff;
+  background: #1b2f3f;
+  border-color: #4fc1ff;
+}
+/* While a program owns stdin every key goes to it as bytes, so the rows take
    the prompt's accent to say so; nothing is dimmed — every key is live in both
    modes. */
 .cli__keys + .cli__keys { padding-top: 0; }

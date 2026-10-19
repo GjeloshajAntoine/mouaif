@@ -394,17 +394,17 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     return queueRef.current;
   }, [projectDir, writeOut]);
 
-  // ---- armed modifiers ----------------------------------------------
-  // Ctrl and Fn (see CLI_KEYS in cliKeys.js) are *modifiers*: a tap arms one,
-  // and the next letter or digit typed becomes a control character (`c` → ETX)
-  // or a function key (`2` → F2). That is how a small key row reaches every
-  // control character — a phone keyboard has no Ctrl at all — without a button
-  // per letter.
+  // ---- armed modifiers & expanded tray -------------------------------
+  // Ctrl, Alt and Fn (see CLI_KEYS in cliKeys.js) are *modifiers*: a tap arms
+  // one, and the next letter or digit typed becomes a control character (`c` →
+  // ETX), a Meta chord (`b` → ESC b) or a function key (`2` → F2). That is how
+  // a compact bar reaches every control character, Meta shortcut, and F-key
+  // without a button per letter.
   //
-  // `armed` is UI state *and* the thing the handlers read, so the arming tap and
-  // the read are never a render apart: arming only fires an `onClick` (the input
-  // is not a control, so every tap rebuilds no field), and the `input` handler
-  // that reads it fires later still.
+  // `expanded` toggles the extra key rows (`row: 2..4` in CLI_KEYS) beneath the
+  // single swipeable primary row (`row: 1`), so the default footprint is one
+  // line with a pinned Expand (`▾`/`▴`) button on the right.
+  const [expanded, setExpanded] = useState(false);
   const [armed, setArmed] = useState({});
   const armedRef = useRef(armed);
   armedRef.current = armed;
@@ -415,13 +415,17 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   // A modifier describes the *next* key, so anything else the user does spends
   // it (see spendArmed).
   const spendArmed = useCallback(() => {
-    if (armedRef.current.ctrl || armedRef.current.fn) { armedRef.current = {}; setArmed({}); }
+    if (armedRef.current.ctrl || armedRef.current.alt || armedRef.current.fn) {
+      armedRef.current = {};
+      setArmed({});
+    }
   }, []);
-  // Both modifiers are told apart in one place; the label under the rows says
+  // Modifiers are told apart in one place; the label under the rows says
   // what the armed one is about to do.
   const armedLabel = armed.ctrl ? 'Ctrl armed — a letter is that control key: c is ^C, u is ^U, [ is Esc.'
-    : armed.fn ? 'Fn armed — a digit is a function key: 1 is F1, 2 is F2.'
-      : '';
+    : armed.alt ? 'Alt armed — a key sends ESC + that key (Meta: b back word, f forward word).'
+      : armed.fn ? 'Fn armed — a digit is a function key: 1 is F1, 2 is F2.'
+        : '';
 
   // sendKey(key) — one on-screen key from the row below the prompt (see
   // keyPayload in cliKeys.js). Every key is a raw write: a terminator after
@@ -437,13 +441,66 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     return ownerRef.current === 'program' || !!(screenRef.current && screenRef.current.isFullScreen);
   }
 
-  // moveCaret(delta) / scrollOut(dir) / clearField() — the local actions of
-  // ←/→, PgUp/PgDn and Esc (see `local` in cliKeys.js).
+  // moveCaret(delta) / jumpCaret(toEnd) / deleteAtCaret() / insertAtCaret(str) /
+  // pasteClipboard() / scrollOut(dir) / clearField() — the local actions of the
+  // helper bar keys (see `local` and `insert` in cliKeys.js).
   function moveCaret(delta) {
     const el = inputRef.current;
     if (!el) return;
     const at = Math.max(0, Math.min(el.value.length, (el.selectionStart == null ? el.value.length : el.selectionStart) + delta));
     el.setSelectionRange(at, at);
+  }
+  function jumpCaret(toEnd) {
+    const el = inputRef.current;
+    if (!el) return;
+    const at = toEnd ? el.value.length : 0;
+    el.setSelectionRange(at, at);
+  }
+  function insertAtCaret(str) {
+    const el = inputRef.current;
+    const val = el ? el.value : cmdText;
+    const start = el && typeof el.selectionStart === 'number' ? el.selectionStart : val.length;
+    const end = el && typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+    const next = val.slice(0, start) + str + val.slice(end);
+    const pos = start + str.length;
+    endCycle();
+    recallIndexRef.current = -1;
+    setCmdText(next);
+    if (el) {
+      el.value = next;
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    }
+  }
+  function deleteAtCaret() {
+    const el = inputRef.current;
+    const val = el ? el.value : cmdText;
+    const start = el && typeof el.selectionStart === 'number' ? el.selectionStart : val.length;
+    const end = el && typeof el.selectionEnd === 'number' ? el.selectionEnd : start;
+    if (start === end && start >= val.length) return;
+    const next = start !== end ? val.slice(0, start) + val.slice(end) : val.slice(0, start) + val.slice(start + 1);
+    endCycle();
+    recallIndexRef.current = -1;
+    setCmdText(next);
+    if (el) {
+      el.value = next;
+      el.setSelectionRange(start, start);
+    }
+  }
+  function pasteClipboard() {
+    if (typeof navigator === 'undefined' || !navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
+      showNotice('Clipboard read is unavailable — long-press the prompt to paste.');
+      return;
+    }
+    navigator.clipboard.readText()
+      .then((clip) => {
+        if (!clip) return;
+        if (programMode()) post(clip, true);
+        else insertAtCaret(clip);
+      })
+      .catch(() => {
+        showNotice('Clipboard permission denied — long-press the prompt to paste.');
+      });
   }
   function scrollOut(dir) {
     const el = outRef.current;
@@ -463,6 +520,18 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
   function sendKey(key) {
     if (!key) return;
     if (key.role === 'modifier') { toggleArm(key.id); return; }
+    // If a modifier is armed and the user taps a single-character helper key
+    // (such as `-`, `/`, or Space), apply the modifier to that character.
+    const armedNow = armedRef.current;
+    if ((armedNow.ctrl || armedNow.alt || armedNow.fn) && key.insert) {
+      const modHit = applyModifiers(armedNow, key.insert);
+      spendArmed();
+      if (modHit.seq != null) {
+        pinnedRef.current = true;
+        post(modHit.seq, true);
+        return;
+      }
+    }
     const payload = keyPayload(key, { program: programMode(), appCursor: appCursorRef.current });
     switch (payload.local) {
       case 'complete': complete(); return;
@@ -470,6 +539,11 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
       case 'history-down': recall('down'); return;
       case 'caret-left': moveCaret(-1); return;
       case 'caret-right': moveCaret(1); return;
+      case 'caret-home': jumpCaret(false); return;
+      case 'caret-end': jumpCaret(true); return;
+      case 'delete-char': deleteAtCaret(); return;
+      case 'insert': insertAtCaret(payload.insert || ''); return;
+      case 'paste': pasteClipboard(); return;
       case 'page-up': scrollOut(-1); return;
       case 'page-down': scrollOut(1); return;
       case 'clear': clearField(); return;
@@ -585,13 +659,20 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
     // Read through the ref: a tap arms a modifier and the keystroke that follows
     // can arrive before the rows have re-rendered.
     const armedNow = armedRef.current;
-    if (armedNow.ctrl || armedNow.fn) {
-      const hit = applyModifiers(armedNow, text);
+    if (armedNow.ctrl || armedNow.alt || armedNow.fn) {
+      // Offer the newly typed character (or the whole field when a single
+      // character is in it) so arming Ctrl/Alt while text is already in the
+      // prompt still converts the newly typed character and keeps the rest.
+      const candidate = text.length === 1
+        ? text
+        : (text.length === cmdText.length + 1 && text.startsWith(cmdText) ? text.slice(-1) : text);
+      const hit = applyModifiers(armedNow, candidate);
       spendArmed();
       if (hit.seq != null) {
-        el.value = '';
-        setCmdText('');
-        recallIndexRef.current = -1;
+        const restored = text.length === 1 ? '' : cmdText;
+        el.value = restored;
+        setCmdText(restored);
+        if (restored === '') recallIndexRef.current = -1;
         endCycle();
         pinnedRef.current = true;
         post(hit.seq, true);
@@ -720,75 +801,131 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                     )
                   : null,
                 h('div', { class: 'cli__prompt-row' },
-                  h('span', { class: 'cli__prompt-mark', 'aria-hidden': 'true' }, '❯'),
-                  h('input', {
-                    ref: inputRef,
-                    class: 'input cli__prompt',
-                    type: 'text',
-                    value: cmdText,
-                    onInput: onPromptInput,
-                    placeholder: 'Type a command — runs in the project folder',
-                    'aria-label': 'Command line',
-                    autocomplete: 'off',
-                    autocapitalize: 'off',
-                    // Labels the phone's own action key with what it does here.
-                    enterkeyhint: 'send',
-                    spellcheck: 'false',
-                    // Plain Tab is the shell's completion key here, not focus
-                    // navigation: the sheet's Tab cycle (useModal) skips a
-                    // control marked `data-own-tab`. Shift+Tab still moves on.
-                    'data-own-tab': '',
-                    // Never disabled: disabling a focused input blurs it, which
-                    // closes a phone's keyboard. Writes are queued instead.
-                    onKeyDown: (e) => {
-                    // A hardware Tab, arrow or Page key does what the same
-                    // key on the row does (local edit at the shell, bytes to
-                    // a program). ←/→ at the shell keep the browser's own
-                    // caret movement.
-                    const hk = keyForEvent(e);
-                    if (hk) {
-                    if (!programMode() && (hk.id === 'left' || hk.id === 'right')) return;
-                    e.preventDefault();
-                    sendKey(hk);
-                    return;
-                    }
-                    if (e.key !== 'Enter') return;
-                      e.preventDefault();
-                      // Ctrl+Enter (or Cmd+Enter) sends the line with no
-                      // terminator, for a program waiting on a single key.
-                      if (e.ctrlKey || e.metaKey) runRaw();
-                      else runCommand();
-                    }
-                  })
+                h('span', { class: 'cli__prompt-mark', 'aria-hidden': 'true' }, '❯'),
+                h('input', {
+                ref: inputRef,
+                class: 'input cli__prompt',
+                type: 'text',
+                value: cmdText,
+                onInput: onPromptInput,
+                placeholder: 'Type a command — runs in the project folder',
+                'aria-label': 'Command line',
+                autocomplete: 'off',
+                autocapitalize: 'off',
+                // Labels the phone's own action key with what it does here.
+                enterkeyhint: 'send',
+                spellcheck: 'false',
+                // Plain Tab is the shell's completion key here, not focus
+                // navigation: the sheet's Tab cycle (useModal) skips a
+                // control marked `data-own-tab`. Shift+Tab still moves on.
+                'data-own-tab': '',
+                // Never disabled: disabling a focused input blurs it, which
+                // closes a phone's keyboard. Writes are queued instead.
+                onKeyDown: (e) => {
+                // A hardware Tab, arrow or Page key does what the same
+                // key on the row does (local edit at the shell, bytes to
+                // a program). ←/→/Home/End at the shell keep the
+                // browser's own caret movement.
+                const hk = keyForEvent(e);
+                if (hk) {
+                if (!programMode() && (hk.id === 'left' || hk.id === 'right' || hk.id === 'home' || hk.id === 'end')) return;
+                e.preventDefault();
+                sendKey(hk);
+                return;
+                }
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                // Ctrl+Enter (or Cmd+Enter) sends the line with no
+                // terminator, for a program waiting on a single key.
+                if (e.ctrlKey || e.metaKey) runRaw();
+                else runCommand();
+                }
+                }),
+                cmdText
+                ? h('button', {
+                class: 'cli__prompt-clear',
+                type: 'button',
+                title: 'Clear command line',
+                'aria-label': 'Clear command line',
+                tabindex: '-1',
+                onMouseDown: keepEditorFocus,
+                onClick: clearField
+                }, '✕')
+                : null,
+                h('button', {
+                class: 'cli__prompt-send',
+                type: 'button',
+                title: 'Run command (Enter)',
+                'aria-label': 'Run command',
+                tabindex: '-1',
+                onMouseDown: keepEditorFocus,
+                onClick: runCommand
+                }, '↵')
                 ),
-                // The key rows: the keys a phone keyboard does not have, in
-                // two rows (see cliKeys.js). Every key keeps the same tested
-                // byte sequence; what changed is the size — six small keys fit
-                // a 360 px column where six 44 px keys filled it — and that
-                // Ctrl and Fn are now *toggles* in the rows (see `armed`),
-                // turning the next letter or digit into a control character or
-                // a function key. `is-prompt` only recolours the rows so it is
-                // clear the keys now go to the program.
-                [1, 2].map((row) => h('div', {
-                key: 'keys' + row,
-                class: 'cli__keys' + (isProgram ? ' is-prompt' : ''),
+                // The key bar: a single swipeable primary row (`row === 1`)
+                // with a pinned Expand (`▾`/`▴`) toggle on the right. Tapping
+                // Expand reveals the drawer (`row === 2..4`) with Home/End,
+                // PgUp/PgDn, Fn, ^D/^Z/^L, Del, Space, Paste, and the extra
+                // shell symbols (`~`, `$`, `*`, `&`, `>`).
+                h('div', {
+                class: 'cli__keys cli__keys--primary' + (isProgram ? ' is-prompt' : ''),
                 role: 'group',
-                'aria-label': row === 1 ? 'Terminal control keys' : 'Terminal movement keys'
+                'aria-label': 'Terminal control keys'
                 },
-                CLI_KEYS.filter((k) => k.row === row).map((k) => h('button', {
+                h('div', { class: 'cli__keys-track' },
+                CLI_KEYS.filter((k) => k.row === 1).map((k) => h('button', {
                 key: k.id,
-                class: 'cli__key' + (k.role === 'modifier' ? ' cli__key--mod' : ''),
+                class: 'cli__key'
+                + (k.role === 'modifier' ? ' cli__key--mod' : '')
+                + (k.kind === 'sym' ? ' cli__key--sym' : '')
+                + (k.kind === 'danger' ? ' cli__key--danger' : ''),
                 type: 'button',
                 title: k.title,
                 'aria-label': k.title,
-                // A modifier is a toggle a screen reader must be able to read
-                // back: tap Ctrl and the button says it is on.
                 'aria-pressed': k.role === 'modifier' ? (armed[k.id] ? 'true' : 'false') : null,
                 tabindex: '-1',
                 onMouseDown: keepEditorFocus,
                 onClick: () => sendKey(k)
                 }, k.label))
-                )),
+                ),
+                h('button', {
+                class: 'cli__key-expand' + (expanded ? ' is-open' : ''),
+                type: 'button',
+                title: expanded ? 'Hide extra terminal keys' : 'Show more terminal keys',
+                'aria-label': expanded ? 'Hide extra terminal keys' : 'Show more terminal keys',
+                'aria-expanded': expanded ? 'true' : 'false',
+                tabindex: '-1',
+                onMouseDown: keepEditorFocus,
+                onClick: () => setExpanded((v) => !v)
+                }, expanded ? '▴' : '▾')
+                ),
+                expanded
+                ? h('div', {
+                class: 'cli__keys-drawer' + (isProgram ? ' is-prompt' : ''),
+                role: 'group',
+                'aria-label': 'More terminal keys'
+                },
+                [2, 3, 4].map((row) => h('div', {
+                key: 'drawer' + row,
+                class: 'cli__keys cli__keys--drawer-row' + (isProgram ? ' is-prompt' : '')
+                },
+                CLI_KEYS.filter((k) => k.row === row).map((k) => h('button', {
+                key: k.id,
+                class: 'cli__key'
+                + (k.role === 'modifier' ? ' cli__key--mod' : '')
+                + (k.kind === 'sym' ? ' cli__key--sym' : '')
+                + (k.kind === 'danger' ? ' cli__key--danger' : ''),
+                type: 'button',
+                title: k.title,
+                'aria-label': k.title,
+                'aria-pressed': k.role === 'modifier' ? (armed[k.id] ? 'true' : 'false') : null,
+                tabindex: '-1',
+                onMouseDown: keepEditorFocus,
+                onClick: () => sendKey(k)
+                }, k.label))
+                ))
+                )
+                : null,
                 // One-line hint under the rows, naming the current mode — and,
                 // while a modifier is armed, what it is about to do. A Tab that
                 // could not advance the line replaces it for a moment with the
@@ -800,7 +937,7 @@ outRef.current.removeEventListener('scroll', outRef.current._onScroll);
                 ? armedLabel
                 : isProgram
                 ? 'Keys go to the running program — ^C stops it, Esc leaves it.'
-                : 'Tab completes, ↑/↓ recall. Ctrl + a letter is a control key, Fn + a digit is F1–F9.'
+                : 'Tab completes, ↑/↓ recall. Ctrl/Alt + a key sends a chord, ▾ shows more keys.'
                 )
               )
       )
