@@ -21,7 +21,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 | Tool | What it does |
 | --- | --- |
 | `list_chats` | List this project's chats, newest first, with bounded draft previews (`limit`, default 20, max 100). |
-| `get_chat` | Read one chat (`chatId`). `includeMessages: true` adds the last `messageLimit` messages (default 10, max 50). |
+| `get_chat` | Read one chat (`chatId`). `includeMessages: true` adds the last `messageLimit` messages (default 10, max 50) with bounded content, `seq`, and any `attachments` count. |
 | `create_chat` | Create a chat. `title` names it, `topic` seeds its composer draft, `providerId` + `modelId` pick its model. Returns the chat plus a `#/chat/<id>` link. |
 | `update_chat` | Change `title`, `draft`, `promptId`, `promptSize`, `providerId`, or `modelId` on an existing chat. Model changes apply to the next turn. |
 | `change_working_folder` | Change a chat's shell/file working folder to an existing directory. `directory` is required: a project-relative or absolute path to a directory that already exists, or `""` (or `"."`) to return to the original project folder. `chatId` defaults to the calling chat. The tool never creates a folder and never runs Git, so prepare a checkout with an authorized shell command first. See [Chat working folders](./chat-working-folder.md). |
@@ -30,7 +30,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `delete_chat` | Delete a chat and its transcript. Requires `confirm: true`. Refuses the chat the turn is running in. |
 | `search_chats` | Search titles, drafts, and message text (`query`). Results retain `matchField` and a bounded matching `snippet`. |
 | `attach_chat_image` | Put an image from the project into a chat: `path` is relative to the calling chat's working folder (the project by default), `target` is `draft` (default — the composer holds it until the user presses send) or `message` (appends a real user message carrying the image, with optional `content`). |
-| `list_chat_attachments` | Show draft and message image names/types and `imageRef` values, not pixels. Scans the newest 200 messages by default; follow `nextBeforeSeq` with `beforeSeq` to retrieve older images. |
+| `list_chat_attachments` | Show draft, user-message, and subagent-generated image names/types and `imageRef` values, not pixels. Scans the newest 200 messages by default; follow `nextBeforeSeq` with `beforeSeq` to retrieve older images. |
 | `create_mcp_app` | Show an interactive single-file MCP App in the current chat from `source` + `filename` or project-relative `path` (requires explicit approval, auto-expands in its tool card, does not register a project MCP server, and can message the agent via `window.mouaifApp.sendMessage`). Alternatively `request` prepares an unsent development draft. See [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). |
 | `get_settings` | Read settings. `scope` is `app` (default) or `project`; `keys` narrows the result. |
 | `update_settings` | Merge `patch` into the chosen scope; `unset` removes keys (project scope). Defaults to the project scope. |

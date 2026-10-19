@@ -219,6 +219,11 @@ async function main() {
   }, chatOpts);
   check('attach to a message works', asMessage.ok === true && asMessage.result.target === 'message');
   check('the message attachment is persisted', !!asMessage.result.messageTs);
+  const gotWithAttachment = await mouaif.runMouaif({ action: 'get', chatId: imgChat, includeMessages: true }, opts);
+  check('get with includeMessages reports message seq and attachment count',
+    gotWithAttachment.ok === true
+    && gotWithAttachment.result.chat.messages[0].seq === 0
+    && gotWithAttachment.result.chat.messages[0].attachments === 1);
 
   const listed = await mouaif.runMouaif({ action: 'list_attachments' }, chatOpts);
   // Two images sit in the draft: the first attach plus the "defaults chatId"

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { formatReadableToolResult } from '../frontend/src/components/chat/tools.js';
+import { formatReadableToolResult, formatResultSummary } from '../frontend/src/components/chat/tools.js';
 import { approvalTitle, approvalText, permissionExplanation } from '../frontend/src/components/chat/approvalDetails.js';
 import { TOOL_CASES } from './chat-view-mockup/fixtures.js';
 for (const test of TOOL_CASES) {
@@ -7,6 +7,9 @@ for (const test of TOOL_CASES) {
   assert.ok(approvalTitle(request).length > 0, test.name);
   assert.ok(approvalText(request).length > 0, test.name);
 }
+assert.equal(formatResultSummary('attach_chat_image', { target: 'draft', attached: { name: 'shot.png', mimeType: 'image/png' } }), 'shot.png');
+assert.equal(formatResultSummary('list_chat_attachments', { drafts: [{}], messages: [], generated: [{}, {}] }), '3 images');
+assert.equal(formatResultSummary('list_chat_attachments', { drafts: [{}], messages: [], generated: [] }), '1 image');
 const nested = { scope: 'project', settings: { apiKey: 'hidden-key', accessToken: 'private-token', promptSize: 'average' }, models: [{ id: 'model-1' }] };
 const output = formatReadableToolResult(nested);
 assert.match(output, /promptSize/); assert.match(output, /model-1/);

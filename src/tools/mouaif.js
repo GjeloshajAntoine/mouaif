@@ -426,16 +426,18 @@ async function runChats(args, opts) {
     detail.totalCost = chat.totalCost || null;
     let out = ok({ ok: true, chat: detail });
     if (args.includeMessages) {
-      const limit = clampLimit(args.messageLimit, 10, 50);
-      const rows = messages.listMessagesWindow(projectDir, chatId, { limit });
-      detail.messages = (rows || []).map((m) => ({
-        role: m.role,
-        ts: m.ts,
-        name: m.name || undefined,
-        phase: m.phase || undefined,
-        content: typeof m.content === 'string' ? m.content.slice(0, MESSAGE_PREVIEW_CHARS) : ''
-      }));
-      out = ok({ ok: true, chat: detail });
+    const limit = clampLimit(args.messageLimit, 10, 50);
+    const rows = messages.listMessagesWindow(projectDir, chatId, { limit });
+    detail.messages = (rows || []).map((m) => ({
+      ...(Number.isSafeInteger(m.seq) ? { seq: m.seq } : {}),
+      role: m.role,
+      ts: m.ts,
+      name: m.name || undefined,
+      phase: m.phase || undefined,
+      ...(Array.isArray(m.attachments) && m.attachments.length ? { attachments: m.attachments.length } : {}),
+      content: typeof m.content === 'string' ? m.content.slice(0, MESSAGE_PREVIEW_CHARS) : ''
+    }));
+    out = ok({ ok: true, chat: detail });
     }
     return out;
   }

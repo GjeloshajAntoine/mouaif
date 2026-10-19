@@ -436,10 +436,18 @@ export function formatResultSummary(name, r) {
     return count != null ? count + ' model' + (count === 1 ? '' : 's') : null;
   }
   if (n === 'start_chat') return r.started ? 'started' : null;
-  if (n === 'attach_chat_image') return (r.attachment && r.attachment.name) || r.target || null;
+  if (n === 'attach_chat_image') return (r.attached && r.attached.name) || (r.attachment && r.attachment.name) || r.target || null;
   if (n === 'list_chat_attachments') {
-    const list = r.attachments || r.messages;
-    return Array.isArray(list) ? list.length + ' image' + (list.length === 1 ? '' : 's') : null;
+    if (Array.isArray(r.drafts) || Array.isArray(r.messages) || Array.isArray(r.generated)) {
+      const count = (Array.isArray(r.drafts) ? r.drafts.length : 0)
+        + (Array.isArray(r.messages) ? r.messages.length : 0)
+        + (Array.isArray(r.generated) ? r.generated.length : 0);
+      return count + ' image' + (count === 1 ? '' : 's');
+    }
+    if (Array.isArray(r.attachments)) {
+      return r.attachments.length + ' image' + (r.attachments.length === 1 ? '' : 's');
+    }
+    return null;
   }
   if (n === 'get_settings' || n === 'update_settings') return r.scope || null;
   if (n === 'list_projects') {
