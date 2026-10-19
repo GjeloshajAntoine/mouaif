@@ -783,6 +783,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     }
   }
   const usage = { promptTokens: 0, completionTokens: 0 };
+  let billedPromptTokens = 0;
   const generatedImages = [];
   // Anthropic prompt-cache totals across all tool rounds in this turn.
   // Filled by commitRoundUsage() from the per-round trackers; folded into
@@ -1222,17 +1223,26 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // so a provider that stamps running totals on intermediate chunks
       // is not double-counted.
       if (ev.data && ev.data.usage) {
-        const p = Number(ev.data.usage.promptTokens);
-        const c = Number(ev.data.usage.completionTokens);
-        // Only overwrite when the provider actually reported a count;
-        // a 0/absent value must not clobber a real number.
-        if (isFinite(p) && p > 0) roundPromptTokens = p;
-        if (isFinite(c) && c > 0) roundCompletionTokens = c;
-        // Surface the round's prompt footprint so the chat UI can
-        // refresh its context-usage line mid-exchange (tool rounds).
-        // Anthropic already streams usage_input/usage_output; this
-        // covers OpenAI-shaped providers that only report on `done`.
-        if (isFinite(p) && p > 0) onEvent('usage_input', { promptTokens: p });
+      const p = Number(ev.data.usage.promptTokens);
+      const c = Number(ev.data.usage.completionTokens);
+      const cr = Number(ev.data.usage.cacheReadTokens);
+      const cc = Number(ev.data.usage.cacheCreationTokens);
+      // Only overwrite when the provider actually reported a count;
+      // a 0/absent value must not clobber a real number.
+      if (isFinite(p) && p > 0) roundPromptTokens = p;
+      if (isFinite(c) && c > 0) roundCompletionTokens = c;
+      if (isFinite(cr) && cr > 0) roundCacheReadTokens = cr;
+      if (isFinite(cc) && cc > 0) roundCacheCreationTokens = cc;
+      // Surface the round's prompt footprint so the chat UI can
+      // refresh its context-usage line mid-exchange (tool rounds).
+      // Anthropic already streams usage_input/usage_output; this
+      // covers OpenAI-shaped providers that only report on `done`.
+      if (isFinite(p) && p > 0) {
+      const inputPayload = { promptTokens: p };
+      if (isFinite(cr) && cr > 0) inputPayload.cacheReadTokens = cr;
+      if (isFinite(cc) && cc > 0) inputPayload.cacheCreationTokens = cc;
+      onEvent('usage_input', inputPayload);
+      }
       }
       const cost = ev.data && ev.data.providerCost;
       if (typeof cost === 'number' && isFinite(cost) && cost >= 0) {
@@ -1330,7 +1340,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     const hasUsage = promptTokens > 0 || completionTokens > 0;
     const hasCost = typeof roundProviderCost === 'number' && isFinite(roundProviderCost) && roundProviderCost >= 0;
     if (!hasUsage && !hasCost) return;
-    if (promptTokens > 0) usage.promptTokens = promptTokens;
+    if (promptTokens > 0) {
+    usage.promptTokens = promptTokens;
+    billedPromptTokens += promptTokens;
+    }
     if (completionTokens > 0) usage.completionTokens = (usage.completionTokens || 0) + completionTokens;
     if (roundCacheReadTokens) usageCache.readTokens += roundCacheReadTokens;
     if (roundCacheCreationTokens) usageCache.creationTokens += roundCacheCreationTokens;
@@ -1415,7 +1428,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     if (exact != null) return exact;
     try {
       const app = opts && opts.appSettings ? opts.appSettings : require('./settings.js').getApp();
-      const estimate = usageMetrics.computeCost({ model, usage: usageWithDelegated(false), app });
+      const billedUsage = Object.assign({}, usageWithDelegated(false), {
+        promptTokens: billedPromptTokens || usage.promptTokens || 0
+      });
+      const estimate = usageMetrics.computeCost({ model, usage: billedUsage, app });
       return estimate && estimate.known ? estimate.total : null;
     } catch { return null; }
   }
@@ -1988,11 +2004,12 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         ? { id: nestedModel.id, pricing: nestedModel.pricing }
         : null;
       const mirror = {
-        lastPromptTokens: 0,
-        completionTokens: 0,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
-        providerCost: null
+      lastPromptTokens: 0,
+      billedPromptTokens: 0,
+      completionTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      providerCost: null
       };
       const forwarded = { promptTokens: 0, completionTokens: 0, cost: 0 };
       let runCostKnown = false;
@@ -2002,20 +2019,20 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // Cost of the nested run as reported so far, resolved the same way
       // the completion path resolves it: provider-reported cost when a
       // round carried one, otherwise an estimate priced with the nested
-      // model. Null while pricing is unknown.
+      // model across all billed rounds. Null while pricing is unknown.
       function nestedCostSoFar() {
-        const usageSoFar = {
-          promptTokens: mirror.lastPromptTokens,
-          completionTokens: mirror.completionTokens
-        };
-        if (mirror.cacheReadTokens) usageSoFar.cacheReadTokens = mirror.cacheReadTokens;
-        if (mirror.cacheCreationTokens) usageSoFar.cacheCreationTokens = mirror.cacheCreationTokens;
-        return delegatedCostForResult({
-          ok: true,
-          model: nestedModelRef,
-          providerCost: mirror.providerCost,
-          usage: usageSoFar
-        });
+      const usageSoFar = {
+      promptTokens: mirror.billedPromptTokens || mirror.lastPromptTokens,
+      completionTokens: mirror.completionTokens
+      };
+      if (mirror.cacheReadTokens) usageSoFar.cacheReadTokens = mirror.cacheReadTokens;
+      if (mirror.cacheCreationTokens) usageSoFar.cacheCreationTokens = mirror.cacheCreationTokens;
+      return delegatedCostForResult({
+      ok: true,
+      model: nestedModelRef,
+      providerCost: mirror.providerCost,
+      usage: usageSoFar
+      });
       }
 
       // One nested round finished (streamChat's onRoundCommit): mirror its
@@ -2023,9 +2040,12 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       // which also updates the chat UI's running total.
       function forwardNestedRound(round) {
       if (!round || run.finalized) return;
-        const promptTokens = Number(round.promptTokens);
-        const completionTokens = Number(round.completionTokens);
-        if (isFinite(promptTokens) && promptTokens > 0) mirror.lastPromptTokens = promptTokens;
+      const promptTokens = Number(round.promptTokens);
+      const completionTokens = Number(round.completionTokens);
+      if (isFinite(promptTokens) && promptTokens > 0) {
+      mirror.lastPromptTokens = promptTokens;
+      mirror.billedPromptTokens += promptTokens;
+      }
         if (isFinite(completionTokens) && completionTokens > 0) mirror.completionTokens += completionTokens;
         mirror.cacheReadTokens += Number(round.cacheReadTokens) || 0;
         mirror.cacheCreationTokens += Number(round.cacheCreationTokens) || 0;

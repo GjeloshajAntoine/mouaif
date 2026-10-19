@@ -218,6 +218,50 @@ async function main() {
       JSON.stringify(roundUsages[roundUsages.length - 1] && roundUsages[roundUsages.length - 1].data));
   }
 
+  // 8) OpenAI-shaped cacheReadTokens on `done` flow into round snapshots,
+  //    final usage, and parent/totalRunCost estimation across tool rounds.
+  {
+    const toolCall = { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_c', function: { name: 'shell', arguments: '{"cmd":"echo hi"}' } }] }, index: 0 }] };
+    const toolStop = { choices: [{ delta: {}, finish_reason: 'tool_calls', index: 0 }] };
+    const { server, port } = await serve([
+      [delta('round1.'), toolCall, toolStop, usage(1000, 100, { prompt_tokens_details: { cached_tokens: 800 } })],
+      [delta('round2.'), stop(), usage(2000, 100, { prompt_tokens_details: { cached_tokens: 1500 } })]
+    ]);
+    const events = [];
+    const model = {
+      id: 'gpt-4o',
+      provider: 'openai-compatible',
+      baseUrl: 'http://127.0.0.1:' + port,
+      apiKey: 'k',
+      auth: 'apikey',
+      pricing: { inputPer1K: 1, outputPer1K: 2, cacheReadFactor: 0.1 }
+    };
+    const result = await ai.streamChat({
+      model,
+      messages: [{ role: 'user', content: 'hi' }],
+      projectDir,
+      chatId: 'usageacc1',
+      onEvent: (name, data) => events.push({ name, data }),
+      onRoundUsage: (ru) => events.push({ name: '_roundUsage', data: ru })
+    });
+    server.close();
+    check('openai cache: ok', result.ok === true, JSON.stringify(result.error || {}));
+    check('openai cache: final usage carries summed cacheReadTokens (800 + 1500 = 2300)',
+      result.usage.cacheReadTokens === 2300, 'got ' + result.usage.cacheReadTokens);
+    const roundUsages = events.filter(e => e.name === '_roundUsage');
+    check('openai cache: round 1 snapshot carries cacheReadTokens (800)',
+      roundUsages[0] && roundUsages[0].data.cacheReadTokens === 800,
+      JSON.stringify(roundUsages[0] && roundUsages[0].data));
+    check('openai cache: round 2 snapshot carries cacheReadTokens (1500)',
+      roundUsages[1] && roundUsages[1].data.cacheReadTokens === 1500,
+      JSON.stringify(roundUsages[1] && roundUsages[1].data));
+    // Round 1 cost: (200 uncached * 1 + 800 cached * 0.1 + 100 out * 2) / 1000 = 0.2 + 0.08 + 0.2 = 0.48
+    // Round 2 cost: (500 uncached * 1 + 1500 cached * 0.1 + 100 out * 2) / 1000 = 0.5 + 0.15 + 0.2 = 0.85
+    // Total billed across both rounds = 1.33
+    check('openai cache: totalCost sums billed prompt/cache/completion across both rounds (1.33)',
+      Math.abs(result.totalCost - 1.33) < 1e-9, 'got ' + result.totalCost);
+  }
+
   console.log('--- ' + passed + ' passed, ' + failed + ' failed ---');
   fs.rmSync(tmp, { recursive: true, force: true });
   process.exit(failed ? 1 : 0);

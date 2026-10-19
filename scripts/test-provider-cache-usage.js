@@ -61,13 +61,15 @@ function events(parser, data) {
     usageMetadata: {
       promptTokenCount: 1200,
       candidatesTokenCount: 60,
+      thoughtsTokenCount: 140,
       cachedContentTokenCount: 1000
     }
   });
   const usage = parsed.find((event) => event.name === 'done').data.usage;
   check('Gemini: prompt total preserved', usage.promptTokens === 1200, JSON.stringify(usage));
+  check('Gemini: thoughtsTokenCount added to completionTokens (60 + 140 = 200)', usage.completionTokens === 200, JSON.stringify(usage));
   check('Gemini: cached content subset normalized', usage.cacheReadTokens === 1000, JSON.stringify(usage));
 }
 
-console.log('--- ' + (7 - failed) + ' passed, ' + failed + ' failed ---');
+console.log('--- ' + (8 - failed) + ' passed, ' + failed + ' failed ---');
 process.exit(failed ? 1 : 0);

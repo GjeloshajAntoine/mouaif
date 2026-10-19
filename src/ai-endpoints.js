@@ -2098,8 +2098,10 @@ function* parseGeminiSSE(eventName, data) {
       data: { usage: {
         // Gemini includes cachedContentTokenCount in promptTokenCount, so
         // it maps directly to the provider-neutral cache-read subset.
+        // thoughtsTokenCount (thinking tokens on Gemini 2.5+) is billed at
+        // the output rate alongside candidatesTokenCount.
         promptTokens: metadata.promptTokenCount || 0,
-        completionTokens: metadata.candidatesTokenCount || 0,
+        completionTokens: (metadata.candidatesTokenCount || 0) + (metadata.thoughtsTokenCount || 0),
         cacheReadTokens: metadata.cachedContentTokenCount || 0
       } }
     };

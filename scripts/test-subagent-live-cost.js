@@ -259,20 +259,20 @@ async function runScenario(opts) {
   });
 
   // Estimate-only: the app pricing table drives both the live and the final
-  // number, so the incremental estimate must converge on the run's own
-  // aggregate estimate (prompt tokens are last-round-wins, completion sums).
+  // number, so every nested round bills its own prompt + completion tokens.
   // mock pricing: $3 / 1K input, $6 / 1K output.
   //   nested round 1: 300 in / 20 out = 0.9 + 0.12 = 1.02
-  //   nested run    : 400 in / 25 out = 1.2 + 0.15 = 1.35  (delta 0.33)
+  //   nested round 2: 400 in / 5 out  = 1.2 + 0.03 = 1.23
+  //   nested run    : 1.02 + 1.23 = 2.25
   //   parent rounds : 0.36 + 0.66 = 1.02
   await runScenario({
     label: 'estimated cost',
     costed: false,
     pricing: { inputPer1K: 3, outputPer1K: 6 },
     midRunCost: 1.02,
-    roundCosts: [1.02, 0.33],
-    delegatedCost: 1.35,
-    persistedTotal: 2.37
+    roundCosts: [1.02, 1.23],
+    delegatedCost: 2.25,
+    persistedTotal: 3.27
   });
 
   await runScenario({ label: 'failed run', costed: true, failedRun: true });
