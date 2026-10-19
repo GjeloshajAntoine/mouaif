@@ -263,6 +263,23 @@ try {
     const html = fs.readFileSync(path.join(pub.out, 'features', 'at-mention.html'), 'utf8');
     assert.match(html, /<code>@mcp__fs__read:path=`\/etc\/my file`<\/code>/);
   });
+
+  check('the feature reference lists every indexed feature page', () => {
+    // mouaif-features.md is the page users hand to an AI agent so it can look
+    // up what the app does. A feature page missing from it is invisible to
+    // that agent, so it must track the docs/README.md index.
+    const slugs = (file, pattern) => new Set([...fs.readFileSync(file, 'utf8')
+    .matchAll(pattern)].map((m) => m[1]));
+    // The index writes features/<slug>.md; the reference page links its own
+    // siblings as bare <slug>.md. Maintainer pages (decisions, agent notes)
+    // are never part of the reference.
+    const indexed = slugs(path.join(ROOT, 'docs', 'README.md'),
+    /\]\(features\/([a-z0-9-]+)\.md(?:#[a-z0-9-]+)?\)/g);
+    const listed = slugs(path.join(ROOT, 'docs', 'features', 'mouaif-features.md'),
+    /\]\((?:features\/)?([a-z0-9-]+)\.md(?:#[a-z0-9-]+)?\)/g);
+    const missing = [...indexed].filter((s) => s !== 'mouaif-features' && !listed.has(s)).sort();
+    assert.deepStrictEqual(missing, [], missing.length + ' feature page(s) missing from the reference');
+  });
 } finally {
   fs.rmSync(pub.out, { recursive: true, force: true });
   fs.rmSync(internal.out, { recursive: true, force: true });

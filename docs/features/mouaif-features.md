@@ -27,15 +27,19 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Install as an app](pwa.md) — install the web app, the offline shell, and the update prompt.
 - [Restart from chat](chat-app-restart.md) — ask the assistant to relaunch the app worker.
 - [Restart API](restart-api.md) — restart the worker from a script with `POST /api/restart`.
+- [Background job handles](background-job-handles.md) — a stable `jobId` for background `group_cli` runs, with retained terminal metadata.
+- [Bounded wait foundation](bounded-wait-foundation.md) — internal finite waits; no public wait tool is enabled.
 
 ## Providers and models
 
 - [AI providers](providers.md) — connect the providers mouaif calls, and where their credentials are kept.
+- [Credential storage](credential-storage.md) — where API keys, sign-in tokens, and MCP secrets are kept, and how the database is protected.
 - [Cloud model providers](cloud-providers.md) — Azure OpenAI, Mistral, Groq, and DeepSeek.
 - [Local OpenAI-compatible servers](local-openai-servers.md) — connect llama.cpp's `llama-server` or LM Studio with no API key.
 - [OpenRouter](openrouter.md) — one key for many upstream models, with browser sign-in.
 - [Anthropic sign-in](oauth-anthropic.md) — sign in with an Anthropic account instead of an API key.
 - [GitHub Copilot](github-copilot.md) — chat with your Copilot plan's models after a one-time-code GitHub sign-in.
+- [OpenAI Codex](codex.md) — use your ChatGPT plan with device sign-in, Responses streaming, and tool calls.
 - [Model picker](model-picker.md) — search, filter by provider, and switch the chat's model.
 - [Model bookmarks](model-bookmarks.md) — pinned and recently used models at the top of the picker.
 - [Thinking level](thinking-level.md) — choose how much the model reasons, when the provider supports it.
@@ -43,8 +47,15 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Prompt caching](prompt-caching.md) — how cached prompt prefixes lower Anthropic costs.
 - [Usage metrics](usage-metrics.md) — per-turn cost, live token speed, and the account **Balance** chip.
 
+### Subagents
+
+- [Subagent image generation](subagent-image-generation.md) — let an agent on an image model produce artwork the parent chat can see.
+- [Recursive subagent delegation](recursive-subagent-delegation.md) — a subagent can delegate further, under a finite root depth budget.
+- [Cooperative subagent groups](cooperative-subagent-groups.md) — a shared objective, member dependencies, contracts, and conflict arbitration.
+
 ## Projects and settings
 
+- [Chat working folders](chat-working-folder.md) — give one chat its own existing directory, or send it back to the project folder.
 - [Project card](project-card.md) — each project's chats, New chat, and options menu on the Chats tab.
 - [Project card search](project-card-search.md) — the magnifier on a project card: search that project's chats, drafts, and messages.
 - [New-project folder picker](folder-picker.md) — browse to a folder or create one to add a project, and choose where its settings live.
@@ -58,6 +69,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Agents](agents.md) — named personas the model can delegate work to.
 - [Agent file picker](agent-file-picker.md) — choose which instruction files (`AGENTS.md`, …) a project reads.
 - [Skills](skills.md) — reusable instruction sets discovered from `.agents/skills/`.
+- [Built-in skill: mouaif config](mouaif-config-skill.md) — the config skill that ships with the app, and how to override it.
 - [Custom actions](custom-actions.md) — run project CLI commands or MCP tools from `@` mentions and the Tools popup.
 - [File tagging](file-tagging.md) — tag project files so they are included in a chat.
 - [Hide file content](hide-file-content.md) — mark lines or text the agent file tools must not reveal.
@@ -73,6 +85,8 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Touch taps](touch-taps.md) — every control answers a single tap on a phone; hover styling is scoped to mouse devices.
 - [Retry and auto-retry](retry-and-auto-retry.md) — retry a failed turn, or let the app retry once automatically.
 - [Chat error surfacing](chat-error-surfacing.md) — how a failed request shows up in the chat.
+- [Screen capture](screen-capture.md) — capture a screen, take timed snapshots, review the PNGs, and attach the ones you pick.
+- [Chat view mockup](chat-view-mockup.md) — a reproducible page that renders every tool card for review.
 - [Trace to file](trace.md) — save a chat's events to a file in the project.
 - [Dictation](dictation.md) — speech-to-text from a Settings page and from the composer microphone.
 - [Composer tool buttons](composer-tool-buttons.md) — show or hide the microphone, image button and composer status line.
@@ -88,6 +102,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Tool popup](tool-popup.md) — change tool visibility and approval mode from the chat header.
 - [Tool tree](tool-tree.md) — the list of tools with their checkboxes and approval modes.
 - [Tool card expanded view](tool-card-expanded-view.md) — what an expanded tool card shows, for every tool type.
+- [Readable tool approvals and results](tool-card-usability.md) — clear targets, grant scope, retry feedback, and bounded results.
 - [Live tool preview](live-tool-preview.md) — live tool output when you return to a running chat.
 - [Shell tool](shell-tool.md) — the model runs commands in the project and reads the output.
 - [File tools](file-tools.md) — the model lists, searches, reads, and edits project files.
@@ -108,6 +123,9 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Tool output profile](tool-output.md) — how much of each tool result is sent back to the model.
 - [Tool feedback compaction](tool-feedback-compaction.md) — large results stay complete in the chat but are trimmed for the model.
 - [Agent feature prompt](agent-feature-prompt.md) — how the model learns which features are enabled.
+- [Tool groups](tool-groups.md) — which tool belongs to which group, defined once for every tool list.
+- [Native chat and app tools](mouaif-tool.md) — the Chats and mouaif families: chats, models, images, settings, and projects.
+- [Chat model tools](chat-model-tools.md) — search models, pick one for a chat, and start a background response.
 
 ## MCP
 
@@ -116,6 +134,8 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [MCP store](mcp-registry-browser.md) — search, filter, and install servers from the public MCP Registry in a few taps.
 - [MCP server error modal](mcp-error-modal.md) — read a server's full startup error in Settings.
 - [Chrome Debug MCP](chrome-debug-mcp.md) — let the model drive the debug browser.
+- [MCP Apps](mcp-apps.md) — interactive tool views in a chat, in an isolated sandbox with server-scoped approval.
+- [On-the-fly MCP Apps](on-the-fly-mcp-apps.md) — render a single HTML/browser-JS app in the current chat, with no server project.
 
 ## Inspector
 
@@ -157,6 +177,9 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Design tokens and shared UI styles](design-tokens.md) — the CSS tokens, the shared overflow menu, and the spinner every screen reuses.
 - [Content Security Policy](content-security-policy.md) — the policy the app shell ships with.
 - [Docker smoke test](docker-smoke-test.md) — build and verify mouaif in containers.
+- [Cross-process race test](docker-race-test.md) — two servers over one store, to expose the races one process cannot.
+- [UI review in Docker](ui-review-docker.md) — run the production image with its own headless Chrome.
+- [Test coverage guard](test-coverage-guard.md) — the meta-test that keeps every test file wired into `npm test`.
 - [Documentation site](docs-site.md) — how this site is built and published, and the landing screenshots.
 
 ## Related
