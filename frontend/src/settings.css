@@ -528,6 +528,10 @@ transform: rotate(45deg); }
   border-top: 1px solid var(--border);
 }
 .settings-project__item-actions .settings-project__item-status { margin: 0 auto 0 0; }
+/* A row that distinguishes in-flight saving from a settled save: the default
+   colour means "saved", the other two say what is happening. */
+.settings-project__item-status[data-state="busy"] { color: var(--accent); }
+.settings-project__item-status[data-state="error"] { color: var(--danger); }
 .settings-project__item-actions .btn--danger { margin-left: auto; }
 .settings-project__select {
   width: 100%;
@@ -966,51 +970,27 @@ textarea#projectEditor {
 
 /* ---- Shell review page ---------------------------------------------- */
 /* Settings → Project → Shell review is its own page (docs/features/
-   shell-review.md): a mode, the app's model picker, and a prompt. One column at
-   every width — a label above its control, which is what keeps a 360 px phone
-   usable and gives the picker's trigger the full width for a long model slug.
-   The picker keeps its own styles (.mp in chat-view.css); this only lays the
-   rows out and sizes the controls that are not pickers. */
+   shell-review.md). It is built from the same pieces as its sibling pages —
+   `.group` sections, a `.group__list` of `.settings-project__item` cards, the
+   shared `ModelPickerField` — so it has almost no styles of its own. What is
+   left is the two controls that are not pickers, and one warning. */
 
-.settings-project__shell-review {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 10px 12px;
-}
-
-.settings-project__shell-review .row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.settings-project__shell-review .label {
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-
-.settings-project__shell-review textarea {
-  min-height: 5.5rem;
-  font-size: 0.74rem;
-  line-height: 1.5;
-}
-
-.settings-project__shell-review .hint { margin: 0; }
-
-/* The mode select is a real input, not a picker trigger: keep it at the app's
-   input height so it lines up with the rows above and below. */
-.settings-project__shell-review select {
+/* The prompt is a multi-line field that fills its card; the shared mono class
+   gives it the app's monospace face, this gives it room to breathe. */
+.settings-project__shell-review-prompt {
   width: 100%;
   min-width: 0;
-  min-height: 44px;
-  padding: 0 0.6rem;
-  font-size: 0.8rem;
+  min-height: 6.5rem;
+  line-height: 1.5;
+  resize: vertical;
 }
 
 /* An unconfigured provider is a warning, not an error: the stored pair still
    works the moment the connection is added, so it must not read as broken. */
+/* The status line under a row is transient save feedback, so it follows the
+   app's `.status[data-state]` colours (success green, error red, busy accent).
+   The standing description of the saved choice lives in the row's note, not
+   here — painting a permanent sentence green made it read as unread feedback. */
 .settings-project__shell-review-warn {
   color: var(--warn, #c98a1a);
-  padding: 0 2px;
 }

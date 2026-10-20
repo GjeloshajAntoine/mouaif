@@ -28,16 +28,17 @@ import { settingsLink, backHref, backTarget } from './settings/projectNavigation
 import { SHELL_REVIEW_MODES, shellReviewFromResolved } from './chat/shellReview.js';
 import { loadPinned, togglePin, loadRecent, loadRecentFromServer, migrateProjectScopedBookmarks } from './chat/modelPicker.js';
 
-// statusFor(saved) -> the one-line summary under the controls. It names the
-// consequence of the current choice instead of echoing the fields: "off" means
-// nothing is sent, a half-configured review means nothing is sent either, and a
-// complete one names the model that will be asked.
-function statusFor(saved) {
+// stateFor(saved) -> the row's standing description of the current choice.
+//
+// This is a NOTE, never a status message: `.settings-project__item-note` is the
+// neutral grey line under a row's title, while `.settings-project__item-status`
+// is the green/red line that means "just saved" / "save failed". Putting the
+// configuration summary in the status slot painted a permanent sentence green,
+// which reads as unread save feedback and never stops saying it.
+function stateFor(saved) {
   if (!saved) return '';
   if (saved.mode === 'off') return 'Off — no command is sent to another model.';
-  if (!saved.configured) {
-    return 'No review is sent yet: pick a model above.';
-  }
+  if (!saved.configured) return 'No review is sent yet: pick a model below.';
   const when = saved.mode === 'always'
     ? 'every shell command is reviewed before you approve it'
     : 'reviews happen only from the chat’s Review a command button';
@@ -50,7 +51,12 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
   const [config, setConfig] = useState(null);
   const [models, setModels] = useState([]);
   const [providers, setProviders] = useState([]);
-  const [status, setStatus] = useState('Loading…');
+  // Two separate lines, like every sibling row: `note` is the standing
+  // description of the saved choice, `status` is transient save feedback and
+  // is empty unless a save is in flight or just failed.
+  const [note, setNote] = useState('');
+  const [status, setStatus] = useState('');
+  const [statusState, setStatusState] = useState('');   // '' | 'busy' | 'success' | 'error'
   const [busy, setBusy] = useState(false);
   const [catalogBusy, setCatalogBusy] = useState(false);
   const [prompt, setPrompt] = useState('');
@@ -131,17 +137,21 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      if (!dir) { setStatus('Open this page from a project’s settings.'); return; }
-      setStatus('Loading…');
+      if (!dir) { setStatus('Open this page from a project’s settings.'); setStatusState('error'); return; }
+      setStatus('Loading…'); setStatusState('busy');
       try {
         const r = await fetchJson('/api/settings/resolved?projectDir=' + encodeURIComponent(dir));
         if (cancelled) return;
         const next = shellReviewFromResolved(r.status === 200 ? r.body.resolved : null);
         setConfig(next);
         setPrompt(next.prompt || '');
-        setStatus(statusFor(next));
+        setNote(stateFor(next));
+        setStatus(''); setStatusState('');
       } catch (error) {
-        if (!cancelled) setStatus('Cannot load: ' + (error && error.message ? error.message : String(error)));
+        if (!cancelled) {
+          setStatus('Cannot load: ' + (error && error.message ? error.message : String(error)));
+          setStatusState('error');
+        }
       }
     }
     load();
@@ -151,9 +161,9 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
 
   // write(next) — one complete `shellReview` object per save.
   async function write(next) {
-    if (!dir) { setStatus('Open this page from a project’s settings.'); return false; }
+    if (!dir) { setStatus('Open this page from a project’s settings.'); setStatusState('error'); return false; }
     setBusy(true);
-    setStatus('Saving…');
+    setStatus('Saving…'); setStatusState('busy');
     try {
       const r = await fetchJson('/api/settings/project', {
         method: 'PUT',
@@ -175,10 +185,14 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
       // a reload.
       const saved = shellReviewFromResolved(r.body && r.body.project);
       setConfig(saved);
-      setStatus(statusFor(saved));
+      setNote(stateFor(saved));
+      setStatus('Saved'); setStatusState('success');
       return true;
     } catch (error) {
-      if (alive.current) setStatus('Not saved: ' + (error && error.message ? error.message : String(error)));
+      if (alive.current) {
+        setStatus('Not saved: ' + (error && error.message ? error.message : String(error)));
+        setStatusState('error');
+      }
       return false;
     } finally {
       if (alive.current) setBusy(false);
@@ -233,10 +247,17 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
       h('a', { href: backHref(context), class: 'view-back', 'aria-label': back.label }, '←'),
       h('h2', { class: 'view-title' }, 'Shell review')
     ),
-    h('section', { class: 'settings-project settings-project--shell-review' },
+    h('section', { class: 'settings-project' },
       h('p', { class: 'settings-project__lede' },
         'A second model reads a shell command before you approve it and reports what it would do. It never runs, approves or changes anything — the normal approval card still decides whether a command runs.'),
 
+      // ---- When -----------------------------------------------------------
+      // The same settings row idiom as Settings → Project → File tool options:
+      // a `.group__list` of `.settings-project__item` cards, each with a bold
+      // title, a note, an optional status line, and its control. The page used
+      // to nest the generic `.row` inside its own padded wrapper, which indented
+      // every control twice and shrank the labels to 0.72 rem — it read as a
+      // different app next to the pages beside it.
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },
           sectionIcon('tools'),
@@ -248,9 +269,20 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
             )
           )
         ),
-        h('div', { class: 'settings-project__shell-review' },
-          h('div', { class: 'row' },
-            h('label', { class: 'label', for: 'sr-mode' }, 'Mode'),
+        h('ul', { class: 'group__list' },
+          h('li', { class: 'settings-project__item settings-project__item--col' },
+            h('div', { class: 'settings-project__item-main' },
+              h('label', { class: 'settings-project__item-title', for: 'sr-mode' }, 'Mode'),
+              h('div', { class: 'settings-project__item-note' }, note || 'When a proposed shell command is sent to the reviewer.'),
+              status
+                ? h('div', {
+                  class: 'settings-project__item-status',
+                  'data-state': statusState || undefined,
+                  role: 'status',
+                  'aria-live': 'polite'
+                }, status)
+                : null
+            ),
             h('select', {
               class: 'input settings-project__select',
               id: 'sr-mode',
@@ -258,11 +290,11 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
               disabled: !config || busy,
               onChange: onModeChange
             }, SHELL_REVIEW_MODES.map((m) => h('option', { key: m.value, value: m.value }, m.label)))
-          ),
-          h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, status)
+          )
         )
       ),
 
+      // ---- Model ----------------------------------------------------------
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },
           sectionIcon('general'),
@@ -275,17 +307,22 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
             )
           )
         ),
-        h('div', { class: 'settings-project__shell-review' },
-          h('div', { class: 'row' },
-            h('span', { class: 'label' }, 'Model'),
+        h('ul', { class: 'group__list' },
+          h('li', { class: 'settings-project__item settings-project__item--col' },
+            h('div', { class: 'settings-project__item-main' },
+              h('span', { class: 'settings-project__item-title' }, 'Model'),
+              h('div', { class: 'settings-project__item-note' }, 'A review is a request on this model’s account. Mode Off means no reviewer.')
+            ),
+            // Full width, on its own line: the picker's two-line trigger needs
+            // the room a long model id takes, and putting it beside the title on
+            // a 360 px phone only ellipsized it.
             h(ModelPickerField, {
               models,
               extraProviders: providers,
               variant: 'sheet',
               value: selection,
               // No clear row: a review without a model is not a state anyone
-              // wants, and the mode's Off already means "no reviewer". The
-              // hint below says how to stop reviews.
+              // wants, and the mode's Off already means "no reviewer".
               placeholder: catalogBusy ? 'Loading models…' : 'Pick a model',
               ariaLabel: 'Model that reviews shell commands',
               disabled: !config || busy,
@@ -296,17 +333,16 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
               refreshEmpty: 'Refresh models',
               onChange: onPickModel,
               onOpen: () => { loadRecentFromServer(bookmarkState()).then(setRecent); }
-            })
-          ),
-          providerUnknown
-            ? h('p', { class: 'hint hint--compact settings-project__shell-review-warn', role: 'status' },
-              'The saved model is on “' + config.providerId + '”, which has no connection any more — reviews will fail until it is added back in Settings → Providers.')
-            : null,
-          h('p', { class: 'hint hint--compact' },
-            'Set the mode to Off to stop reviewing. A review never blocks a command: if the model cannot answer, the approval card simply has no verdict.')
+            }),
+            providerUnknown
+              ? h('div', { class: 'settings-project__item-note settings-project__shell-review-warn', role: 'status' },
+                'The saved model is on “' + config.providerId + '”, which has no connection any more — reviews will fail until it is added back in Settings → Providers.')
+              : null
+          )
         )
       ),
 
+      // ---- Prompt ---------------------------------------------------------
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },
           sectionIcon('chat'),
@@ -319,22 +355,28 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
             )
           )
         ),
-        h('div', { class: 'settings-project__shell-review' },
-          h('textarea', {
-            class: 'input settings-project__mono',
-            id: 'sr-prompt',
-            rows: 6,
-            spellcheck: false,
-            placeholder: 'Built-in prompt: describe the effects, then answer SAFE, CAUTION or DANGER. Leave blank to use it.',
-            value: prompt,
-            disabled: !config,
-            onInput: (e) => onPromptInput(e.currentTarget.value),
-            'aria-label': 'Prompt the reviewer receives'
-          }),
-          h('p', { class: 'hint hint--compact' }, 'Saved automatically as you type.')
+        h('ul', { class: 'group__list' },
+          h('li', { class: 'settings-project__item settings-project__item--col' },
+            h('div', { class: 'settings-project__item-main' },
+              h('label', { class: 'settings-project__item-title', for: 'sr-prompt' }, 'Review prompt'),
+              h('div', { class: 'settings-project__item-note' }, 'Saved automatically as you type. Blank uses the built-in instruction.')
+            ),
+            h('textarea', {
+              class: 'input settings-project__mono settings-project__shell-review-prompt',
+              id: 'sr-prompt',
+              rows: 6,
+              spellcheck: false,
+              placeholder: 'Built-in prompt: describe the effects, then answer SAFE, CAUTION or DANGER. Leave blank to use it.',
+              value: prompt,
+              disabled: !config,
+              onInput: (e) => onPromptInput(e.currentTarget.value),
+              'aria-label': 'Prompt the reviewer receives'
+            })
+          )
         )
       ),
 
+      // ---- Where the verdict appears --------------------------------------
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },
           sectionIcon('more'),

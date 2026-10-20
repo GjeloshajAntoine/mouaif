@@ -211,9 +211,44 @@ function byId(nodes, id) {
 
   const prompt = byId(flat, 'sr-prompt');
   assert.equal(prompt.attrs.value, 'My prompt');
+  // The page is built from its sibling pages' pieces, not a bespoke layout:
+  // `.group__list` cards with a bold title + note + status, the same idiom as
+  // Settings → Project → File tool options. The first version nested the
+  // generic `.row` in its own padded wrapper, which double-indented every
+  // control and shrank the labels — this pins the fix.
+  const root = rendered.view;
+  const cls = (n) => String((n.attrs && n.attrs.class) || '');
+  const has = (n, name) => cls(n).split(/\s+/).includes(name);
+  // The page root is the shell's `.settings-project` section, like every other
+  // settings sub-page — not a bespoke wrapper of its own.
+  const section = flat.find((n) => n.tag === 'section');
+  assert.equal(cls(section), 'settings-project', 'the page uses the shared settings section wrapper');
+  const items = flat.filter((n) => has(n, 'settings-project__item'));
+  assert.ok(items.length >= 4, 'the page uses settings item cards: ' + items.length);
+  assert.ok(flat.some((n) => n.tag === 'ul' && has(n, 'group__list')),
+    'controls live in a .group__list, like every sibling page');
+  const titles = flat.filter((n) => has(n, 'settings-project__item-title'))
+    .map((n) => n.children.join(''));
+  assert.ok(titles.includes('Mode'), 'the Mode row is titled like a settings row');
+  assert.ok(titles.includes('Model'), 'the Model row is titled like a settings row');
+  assert.ok(titles.includes('Review prompt'), 'the prompt row is titled like a settings row');
+  // ...and there is no leftover bespoke container or .row wrapper.
+  assert.ok(!flat.some((n) => cls(n).includes('settings-project__shell-review') && !/warn|prompt/.test(cls(n))),
+    'no bespoke page container remains');
+  assert.ok(!flat.some((n) => cls(n) === 'row'),
+    'no generic .row wrapper inside the page');
+  assert.match(JSON.stringify(root), /settings-project__item-note/, 'rows carry the shared note line');
   const text = JSON.stringify(rendered.view);
   assert.match(text, /never runs, approves or changes anything/);
-  assert.match(text, /Reviews go to openrouter · x\/y/, 'the status names the model that will be asked');
+  assert.match(text, /Reviews go to openrouter · x\/y/, 'the row names the model that will be asked');
+  // That sentence is a NOTE, not a status: a permanent green "saved"-looking
+  // line was the layout complaint this pins.
+  const noteNode = flat.find((n) => cls(n).split(/\s+/).includes('settings-project__item-note')
+    && JSON.stringify(n.children).includes('Reviews go to'));
+  assert.ok(noteNode, 'the standing state renders as a settings note');
+  assert.ok(!flat.some((n) => cls(n).split(/\s+/).includes('settings-project__item-status')
+    && JSON.stringify(n.children).includes('Reviews go to')),
+    'the standing state is never painted as save feedback');
 }
 {
   // Picking a model saves ONE complete block, keeps the mode and prompt, and
@@ -244,7 +279,7 @@ function byId(nodes, id) {
   const prompt = byId(flatten(rendered.view), 'sr-prompt');
   prompt.attrs.onInput({ currentTarget: { value: 'Review it.' } });
   assert.equal(rendered.requests.length, 0, 'typing alone does not write');
-  assert.match(JSON.stringify(rendered.view), /Saved automatically as you type/);
+  assert.match(JSON.stringify(rendered.view), /Saved automatically as you type/, 'the prompt row says it autosaves');
 }
 {
   // A saved model whose provider lost its connection is called out, and the
@@ -265,7 +300,7 @@ function byId(nodes, id) {
   const half = await renderShellReviewPage({
     resolved: { shellReview: { mode: 'always' } }, models: [], providers: []
   }).load();
-  assert.match(JSON.stringify(half.view), /No review is sent yet: pick a model above/,
+  assert.match(JSON.stringify(half.view), /No review is sent yet: pick a model below/,
     'a mode without a model says what is missing');
 }
 

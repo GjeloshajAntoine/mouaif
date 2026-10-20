@@ -107,6 +107,35 @@ h(ModelPickerField, {
 trick `DictationPage.jsx` uses, so there is one bookmark list rather than a
 page-local one.
 
+Layout is the sibling pages' layout, and it is not cosmetic: the first version
+wrapped the generic `.row` control in a page-specific padded container
+(`.settings-project__shell-review`), which indented every control twice and used
+the 0.72 rem form label instead of the settings row's bold
+`.settings-project__item-title`. It read as a different app next to
+File tool options. It now uses the same pieces as every other project sub-page:
+
+```
+section.settings-project
+  p.settings-project__lede
+  div.group.settings-project__section
+    div.group__title.settings-project__section-title   (icon + name + ? info)
+    ul.group__list
+      li.settings-project__item
+        div.settings-project__item-main
+          label.settings-project__item-title
+          div.settings-project__item-note      ← standing state lives HERE
+          div.settings-project__item-status    ← transient save feedback only
+        <the control>
+```
+
+The two lines are different things and must stay apart. Before the fix the
+standing summary ("Reviews go to openrouter · …") rendered in
+`.settings-project__item-status`, which is the app's green "just saved" line —
+a permanent green sentence that reads as unread feedback and never stops saying
+it. The standing state is a note (grey); the status slot is empty unless a save
+is in flight (`data-state="busy"`), just succeeded (`success`), or failed
+(`error`). `scripts/test-shell-review-ui.mjs` pins both halves.
+
 Save policy:
 
 | Control | Commit |

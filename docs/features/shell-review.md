@@ -30,7 +30,7 @@ There is **no default reviewer**. A review is a request on your account, so noth
 
 If the saved model's provider connection is later removed, the picker still shows the saved pair and the page says so — the value starts working again the moment the connection is added back.
 
-The mode and the model save immediately (both are closed choices). The prompt saves as you type, debounced, like the agent editor's instructions. Every save writes the whole `shellReview` object: the server keeps it as one value, so saving a prompt cannot clear the model.
+The page is laid out like its sibling pages (File tool options, Web preview): a mode row, a model row, a prompt row, each a card with a bold title, a one-line description, and its control underneath. The mode and the model save immediately (both are closed choices). The prompt saves as you type, debounced, like the agent editor's instructions. Every save writes the whole `shellReview` object: the server keeps it as one value, so saving a prompt cannot clear the model.
 
 ### 2. Review a command on demand
 
