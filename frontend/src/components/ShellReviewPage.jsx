@@ -4,19 +4,21 @@
 // second model reads a shell command before it is approved and reports its
 // effects with a SAFE / CAUTION / DANGER verdict.
 //
-// It is a page rather than a section of Project settings because it has four
-// real inputs (mode, provider, model id, prompt) plus a connection check, and
-// the project page is a scrolling list of one-line rows — a picker alone there
-// left no way to name a provider and a model id explicitly. This page gives
-// both: the catalog picker for browsing, and plain provider + model id fields
-// for the model you already know the id of (a live-catalog model, a local
-// llama.cpp alias, an Azure deployment).
+// The model control is the app's model control. Every surface that picks a
+// model — the chat head, the agent editor, the subagent defaults, dictation —
+// renders `ModelPickerField` over the project's models unioned with each
+// configured provider's live catalog, with the same pinned and recent
+// sections and the same refresh action. This page does exactly that: one
+// picker, one `{ providerId, modelId }` value, saved when it changes. There is
+// no second way to spell a model here, so a reviewer cannot be configured with
+// a shape the rest of the app would not recognise.
 //
 // Everything writes the same project value, `shellReview`, as one complete
 // object per save: the server stores it as one value, so a partial write would
 // be a read-modify-write with no guarantee both halves came from the same
-// snapshot. Text fields debounce; the mode, provider and model-id change
-// commits on blur or with the Save button, so a half-typed id is never saved.
+// snapshot. The mode and the model commit immediately (both are closed
+// choices); the prompt is text and saves as you type, debounced, like the
+// agent editor's instructions.
 import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
@@ -24,6 +26,7 @@ import { ModelPickerField } from './ModelPickerField.jsx';
 import { sectionIcon } from './settingsProjectUi.js';
 import { settingsLink, backHref, backTarget } from './settings/projectNavigation.js';
 import { SHELL_REVIEW_MODES, shellReviewFromResolved } from './chat/shellReview.js';
+import { loadPinned, togglePin, loadRecent, loadRecentFromServer, migrateProjectScopedBookmarks } from './chat/modelPicker.js';
 
 // statusFor(saved) -> the one-line summary under the controls. It names the
 // consequence of the current choice instead of echoing the fields: "off" means
@@ -33,7 +36,7 @@ function statusFor(saved) {
   if (!saved) return '';
   if (saved.mode === 'off') return 'Off — no command is sent to another model.';
   if (!saved.configured) {
-    return 'No review is sent yet: pick a provider and a model id, then save.';
+    return 'No review is sent yet: pick a model above.';
   }
   const when = saved.mode === 'always'
     ? 'every shell command is reviewed before you approve it'
@@ -45,22 +48,85 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
   const dir = projectDir || (activeProject.value && activeProject.value.dir) || '';
   const context = { projectDir: dir, chatId, from };
   const [config, setConfig] = useState(null);
-  const [providers, setProviders] = useState([]);      // configured connection ids
-  const [catalog, setCatalog] = useState([]);          // live rows for the picked provider
-  const [projectModels, setProjectModels] = useState([]);
+  const [models, setModels] = useState([]);
+  const [providers, setProviders] = useState([]);
   const [status, setStatus] = useState('Loading…');
   const [busy, setBusy] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [checkResult, setCheckResult] = useState(null);
-
-  // The three text/number-free inputs are edited locally and committed on
-  // blur / Save, so the page never persists a half-typed model id.
-  const [providerId, setProviderId] = useState('');
-  const [modelId, setModelId] = useState('');
+  const [catalogBusy, setCatalogBusy] = useState(false);
   const [prompt, setPrompt] = useState('');
-  const [dirty, setDirty] = useState(false);
   const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  // The debounce for the prompt's autosave. One timer, cleared on unmount, so
+  // navigating away never writes a prompt the user had already abandoned.
+  const promptTimer = useRef(null);
+  useEffect(() => () => {
+    alive.current = false;
+    if (promptTimer.current) clearTimeout(promptTimer.current);
+  }, []);
+
+  // ---- Model bookmarks, exactly as the chat picker and dictation use them ----
+  // Pins are a localStorage read (there on the first paint); recents are a
+  // server read that arrives a moment later. Both helpers take a state-shaped
+  // object because the chat head owns them; this page only supplies the two
+  // fields they read, which is cheaper than a second implementation that could
+  // drift from theirs.
+  const bookmarkStateRef = useRef(null);
+  const [pinned, setPinned] = useState(() => new Set());
+  const [recent, setRecent] = useState([]);
+  function bookmarkState() {
+    const state = bookmarkStateRef.current || { props: { projectDir: '' }, recentModels: [] };
+    bookmarkStateRef.current = state;
+    state.props.projectDir = dir;
+    return state;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    migrateProjectScopedBookmarks();
+    setPinned(loadPinned());
+    setRecent(loadRecent(bookmarkState()));
+    loadRecentFromServer(bookmarkState()).then((ok) => {
+      if (!cancelled && ok) setRecent(loadRecent(bookmarkState()));
+    });
+    return () => { cancelled = true; };
+  }, [dir]);
+
+  function onTogglePin(model) {
+    togglePin(model.provider || '', model.id);
+    setPinned(loadPinned());
+  }
+
+  // loadCatalogs(force) — the project's saved models unioned with every
+  // configured provider's live chat catalog. The union is the same one the
+  // agent editor builds, so a reviewer can be any model the app can chat with.
+  async function loadCatalogs(force = false) {
+    setCatalogBusy(true);
+    const query = '?projectDir=' + encodeURIComponent(dir || '');
+    try {
+      const [saved, connections] = await Promise.all([
+        fetchJson('/api/ai/models' + query).catch(() => ({ body: {} })),
+        fetchJson('/api/ai/models/providers').catch(() => ({ body: {} }))
+      ]);
+      if (!alive.current) return;
+      const rows = (saved.body && saved.body.models) || [];
+      const ids = ((connections.body && connections.body.providers) || []).map((p) => p && p.id).filter(Boolean);
+      setProviders(ids);
+      setModels(rows);
+      const live = await Promise.all(ids.map(async (provider) => {
+        const result = await fetchLiveModels(provider, { force }).catch(() => ({ models: [] }));
+        return (result.models || []).map((m) => Object.assign({}, m, { provider }));
+      }));
+      if (!alive.current) return;
+      const union = new Map();
+      for (const m of rows.concat(...live)) {
+        if (!m || !m.id) continue;
+        const key = (m.provider || '') + '\u0000' + m.id;
+        if (!union.has(key)) union.set(key, m);
+      }
+      setModels(Array.from(union.values()));
+    } finally {
+      if (alive.current) setCatalogBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -68,42 +134,20 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
       if (!dir) { setStatus('Open this page from a project’s settings.'); return; }
       setStatus('Loading…');
       try {
-        const query = '?projectDir=' + encodeURIComponent(dir);
-        const [resolved, connections, saved] = await Promise.all([
-          fetchJson('/api/settings/resolved' + query),
-          fetchJson('/api/ai/models/providers').catch(() => ({ body: {} })),
-          fetchJson('/api/ai/models' + query).catch(() => ({ body: {} }))
-        ]);
+        const r = await fetchJson('/api/settings/resolved?projectDir=' + encodeURIComponent(dir));
         if (cancelled) return;
-        const next = shellReviewFromResolved(resolved.status === 200 ? resolved.body.resolved : null);
+        const next = shellReviewFromResolved(r.status === 200 ? r.body.resolved : null);
         setConfig(next);
-        setProviderId(next.providerId || '');
-        setModelId(next.modelId || '');
         setPrompt(next.prompt || '');
-        setDirty(false);
         setStatus(statusFor(next));
-        setProviders(((connections.body && connections.body.providers) || []).map((p) => p && p.id).filter(Boolean));
-        setProjectModels((saved.body && saved.body.models) || []);
       } catch (error) {
         if (!cancelled) setStatus('Cannot load: ' + (error && error.message ? error.message : String(error)));
       }
     }
     load();
+    if (dir) loadCatalogs();
     return () => { cancelled = true; };
   }, [dir]);
-
-  // The live catalog for the chosen provider, so the model-id field can
-  // suggest real ids. A provider that cannot answer contributes nothing — the
-  // free-text field still works, which is the point of having one.
-  useEffect(() => {
-    let cancelled = false;
-    setCatalog([]);
-    if (!providerId) return () => { cancelled = true; };
-    fetchLiveModels(providerId, { purpose: 'chat' })
-      .then((result) => { if (!cancelled && result && Array.isArray(result.models)) setCatalog(result.models); })
-      .catch(() => { /* the field stays free-text */ });
-    return () => { cancelled = true; };
-  }, [providerId]);
 
   // write(next) — one complete `shellReview` object per save.
   async function write(next) {
@@ -131,8 +175,6 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
       // a reload.
       const saved = shellReviewFromResolved(r.body && r.body.project);
       setConfig(saved);
-      setPrompt(saved.prompt || '');
-      setDirty(false);
       setStatus(statusFor(saved));
       return true;
     } catch (error) {
@@ -145,72 +187,45 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
 
   function nextConfig(patch) {
     const base = config || { mode: 'off', providerId: '', modelId: '', prompt: '' };
-    return Object.assign({}, base, { providerId, modelId, prompt }, patch || {});
+    return Object.assign({}, base, { prompt }, patch || {});
   }
 
   function onModeChange(e) {
     const mode = e && e.target ? e.target.value : 'off';
     if (!config) return;
-    // The mode is the one control that is safe to commit immediately: it is a
-    // closed choice, and leaving it unsaved would misreport whether reviews
-    // happen at all.
+    // A closed choice, committed immediately: leaving it unsaved would
+    // misreport whether reviews happen at all.
     setConfig(Object.assign({}, config, { mode }));
     write(nextConfig({ mode }));
   }
 
-  function commitFields() {
-    if (!config) return Promise.resolve(false);
-    return write(nextConfig());
+  // One { providerId, modelId } pair, saved on pick — the same contract every
+  // other model control in the app has.
+  function onPickModel(selection) {
+    if (!config) return;
+    const providerId = (selection && selection.providerId) || '';
+    const modelId = (selection && selection.modelId) || '';
+    setConfig(Object.assign({}, config, { providerId, modelId }));
+    write(nextConfig({ providerId, modelId }));
   }
 
-  // The catalog picker sets both halves at once (a live row carries its
-  // provider), which is the fast path; the two fields below are the explicit
-  // path for an id the catalog does not list.
-  function onPickerPick(selection) {
-    if (!selection) {
-      setProviderId('');
-      setModelId('');
-      setDirty(true);
-      setCheckResult(null);
-      return;
-    }
-    setProviderId(selection.providerId || '');
-    setModelId(selection.modelId || '');
-    setDirty(true);
-    setCheckResult(null);
-    if (config) {
-      write(nextConfig({ providerId: selection.providerId || '', modelId: selection.modelId || '' }));
-    }
+  // The prompt saves as you type, debounced: it is free text, and a PUT per
+  // keystroke would rewrite the project file dozens of times for one sentence
+  // (the same rule the agent editor's instructions follow).
+  function onPromptInput(value) {
+    setPrompt(value);
+    if (promptTimer.current) clearTimeout(promptTimer.current);
+    promptTimer.current = setTimeout(() => {
+      promptTimer.current = null;
+      if (alive.current) write(nextConfig({ prompt: value }));
+    }, 600);
   }
 
-  // checkModel() — POST /api/ai/test against the named model. A second model is
-  // a second account: "is this connection actually usable?" is worth one cheap
-  // request before every command in the project starts paying for reviews.
-  async function checkModel() {
-    if (!providerId || !modelId || checking) return;
-    setChecking(true);
-    setCheckResult(null);
-    try {
-      const r = await fetchJson('/api/ai/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectDir: dir, modelId, providerId })
-      });
-      const ok = r.status === 200 && r.body && r.body.ok === true;
-      setCheckResult({
-        ok,
-        text: ok ? 'Model answered.' : ('No answer: ' + ((r.body && (r.body.error || r.body.code)) || ('HTTP ' + r.status)))
-      });
-    } catch (error) {
-      setCheckResult({ ok: false, text: 'No answer: ' + (error && error.message ? error.message : String(error)) });
-    } finally {
-      if (alive.current) setChecking(false);
-    }
-  }
-
-  const pickerModels = projectModels.concat(catalog.map((m) => Object.assign({}, m, { provider: providerId })));
-  const selection = modelId ? { providerId, modelId } : null;
-  const providerUnknown = !!providerId && providers.length > 0 && !providers.includes(providerId);
+  const selection = config && config.modelId
+    ? { providerId: config.providerId || '', modelId: config.modelId }
+    : null;
+  const providerUnknown = !!(config && config.providerId) && providers.length > 0
+    && !providers.includes(config.providerId);
   const back = backTarget(context);
 
   return h(Fragment, null,
@@ -255,96 +270,40 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
           h('details', { class: 'settings-project__info' },
             h('summary', { 'aria-label': 'About the review model' }, '?'),
             h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'The model that reviews. It is independent of the chat’s model: pick a cheaper or a stricter one. There is no default — a review is a request on your account, so nothing is sent until you name a provider and a model id here.'),
-              h('p', null, 'A model that is not in the project’s list still works when its provider connection is configured: type its id, or pick it from the provider’s live catalog.')
+              h('p', null, 'The model that reviews. It is independent of the chat’s model: pick a cheaper or a stricter one.'),
+              h('p', null, 'There is no default — a review is a request on your account, so nothing is sent until a model is picked. The list is your project’s models plus every configured provider’s live catalog, with the same pinned and recent rows as the chat’s model picker.')
             )
           )
         ),
         h('div', { class: 'settings-project__shell-review' },
           h('div', { class: 'row' },
-            h('span', { class: 'label' }, 'Browse catalog'),
+            h('span', { class: 'label' }, 'Model'),
             h(ModelPickerField, {
-              models: pickerModels,
+              models,
               extraProviders: providers,
               variant: 'sheet',
               value: selection,
-              allowClear: true,
-              clearLabel: 'No reviewer',
-              placeholder: 'Pick a model',
-              ariaLabel: 'Pick the model that reviews shell commands',
+              // No clear row: a review without a model is not a state anyone
+              // wants, and the mode's Off already means "no reviewer". The
+              // hint below says how to stop reviews.
+              placeholder: catalogBusy ? 'Loading models…' : 'Pick a model',
+              ariaLabel: 'Model that reviews shell commands',
               disabled: !config || busy,
-              onChange: onPickerPick
+              pinned,
+              onTogglePin,
+              recent,
+              refresh: () => loadCatalogs(true),
+              refreshEmpty: 'Refresh models',
+              onChange: onPickModel,
+              onOpen: () => { loadRecentFromServer(bookmarkState()).then(setRecent); }
             })
-          ),
-          h('div', { class: 'row' },
-            h('label', { class: 'label', for: 'sr-provider' }, 'Provider'),
-            h('select', {
-              class: 'input settings-project__select',
-              id: 'sr-provider',
-              value: providerId,
-              disabled: !config || busy,
-              onChange: (e) => { setProviderId(e.currentTarget.value); setDirty(true); setCheckResult(null); }
-            },
-              h('option', { value: '' }, '— pick a provider —'),
-              // A provider the connection list no longer carries stays
-              // selectable so the page never silently rewrites the stored id.
-              providerId && !providers.includes(providerId)
-                ? h('option', { key: providerId, value: providerId }, providerId + ' (not configured)')
-                : null,
-              providers.map((id) => h('option', { key: id, value: id }, id))
-            )
-          ),
-          h('div', { class: 'row' },
-            h('label', { class: 'label', for: 'sr-model' }, 'Model id'),
-            h('input', {
-              class: 'input settings-project__mono',
-              id: 'sr-model',
-              type: 'text',
-              autocomplete: 'off',
-              autocapitalize: 'off',
-              spellcheck: false,
-              enterkeyhint: 'done',
-              placeholder: catalog.length ? 'e.g. ' + catalog[0].id : 'the provider’s model id',
-              value: modelId,
-              list: 'sr-model-suggestions',
-              disabled: !config || busy,
-              onInput: (e) => { setModelId(e.currentTarget.value); setDirty(true); setCheckResult(null); },
-              onKeyDown: (e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } },
-              onBlur: () => { if (dirty) commitFields(); }
-            }),
-            // The id field suggests this provider's live catalog. A provider
-            // that could not answer leaves the field free-text rather than
-            // empty-looking.
-            h('datalist', { id: 'sr-model-suggestions' },
-              catalog.slice(0, 500).map((m) => h('option', { key: m.id, value: m.id }))
-            )
           ),
           providerUnknown
             ? h('p', { class: 'hint hint--compact settings-project__shell-review-warn', role: 'status' },
-              'No connection is configured for “' + providerId + '”, so reviews will fail until one is added in Settings → Providers.')
+              'The saved model is on “' + config.providerId + '”, which has no connection any more — reviews will fail until it is added back in Settings → Providers.')
             : null,
-          h('div', { class: 'row row--actions' },
-            h('button', {
-              class: 'btn btn--primary',
-              type: 'button',
-              onClick: () => commitFields(),
-              disabled: !config || busy || !dirty
-            }, busy ? 'Saving…' : 'Save model'),
-            h('button', {
-              class: 'btn',
-              type: 'button',
-              onClick: checkModel,
-              disabled: !config || checking || !providerId || !modelId,
-              'aria-busy': checking ? 'true' : 'false'
-            }, checking ? 'Checking…' : 'Check model'),
-            checkResult
-              ? h('span', {
-                class: 'settings-project__item-status',
-                'data-state': checkResult.ok ? 'success' : 'error',
-                role: 'status'
-              }, checkResult.text)
-              : null
-          )
+          h('p', { class: 'hint hint--compact' },
+            'Set the mode to Off to stop reviewing. A review never blocks a command: if the model cannot answer, the approval card simply has no verdict.')
         )
       ),
 
@@ -368,19 +327,11 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
             spellcheck: false,
             placeholder: 'Built-in prompt: describe the effects, then answer SAFE, CAUTION or DANGER. Leave blank to use it.',
             value: prompt,
-            disabled: !config || busy,
-            onInput: (e) => { setPrompt(e.currentTarget.value); setDirty(true); },
+            disabled: !config,
+            onInput: (e) => onPromptInput(e.currentTarget.value),
             'aria-label': 'Prompt the reviewer receives'
           }),
-          h('div', { class: 'row row--actions' },
-            h('button', {
-              class: 'btn',
-              type: 'button',
-              onClick: () => commitFields(),
-              disabled: !config || busy || !dirty
-            }, 'Save prompt'),
-            h('span', { class: 'hint hint--compact' }, 'Saved with the mode and model: one project value, one write.')
-          )
+          h('p', { class: 'hint hint--compact' }, 'Saved automatically as you type.')
         )
       ),
 

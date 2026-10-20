@@ -16,7 +16,7 @@
 | `frontend/src/components/chat/shellReview.js` | `shellReviewFromResolved`, `verdictMeta`, `buildReviewBlock`, `applyReviewToCard`. |
 | `frontend/src/components/chat/ShellReviewSheet.jsx` | The on-demand sheet (lazy chunk). |
 | `frontend/src/components/chat/ToolPopup.jsx` | The **Review a command** action row. |
-| `frontend/src/components/ShellReviewPage.jsx` | The Shell review page (`settingsProjectShellReview`): mode, catalog picker, provider select, model-id field with catalog suggestions, prompt, and a Check model action. |
+| `frontend/src/components/ShellReviewPage.jsx` | The Shell review page (`settingsProjectShellReview`): mode, the app's `ModelPickerField`, and a prompt. |
 | `frontend/src/components/chat/cards.js` | Renders `request.review` in the approval card. |
 | `frontend/src/components/chat/transcript.js` | `handleShellReviewEvent` folds a frame into the card by call id. |
 
@@ -64,25 +64,56 @@ The alternative — review after approval — would produce a verdict about a co
 
 Priced through `src/usage.js` `computeCost` with the reviewer's own model record. `POST /api/tools/shell/review` attributes a known cost to `chatId` through `messages.addChatCost` — the same "priced run that is not a chat turn" rule dictation follows. The automatic path does not attribute: the parent turn's own `done` already bills the chat, and the reviewer's usage is not part of the chat model's usage block. (Adding it would double-count on any future per-turn reconciliation.)
 
-### The page, not a section
+### The page, and the app's model control
 
 The feature first shipped as a section of Project settings with only the
-catalog picker. That left two inputs missing: there was no way to name a
-**provider** and a **model id** explicitly, so a model the picker did not list
-(a live slug after a catalog failure, a local alias, an Azure deployment) could
-not be configured at all. It is now its own route,
-`settingsProjectShellReview` (`#/settings/project/shell-review`), rendered by
+catalog picker. It is now its own route, `settingsProjectShellReview`
+(`#/settings/project/shell-review`), rendered by
 `frontend/src/components/ShellReviewPage.jsx` and lazy-loaded like its
 siblings.
+
+An intermediate revision added a bespoke **provider select + free-text model
+id** pair so an id the picker did not list could be typed by hand. That was the
+wrong shape for this app: every other model surface (chat head, agent editor,
+subagent defaults, dictation) configures a model with one
+`ModelPickerField` over the project's models unioned with each configured
+provider's live catalog, and stores one `{ providerId, modelId }` pair. A
+second way to spell a model means a reviewer can hold a shape the rest of the
+app would not recognise, and it duplicated catalog loading, bookmark state and
+row rendering for no gain — the union already contains live-catalog rows, local
+aliases and deployment names, because every configured provider is asked.
+
+So the page renders exactly that control:
+
+```jsx
+h(ModelPickerField, {
+  models,                 // project models ∪ each configured provider's live catalog
+  extraProviders: providers,
+  variant: 'sheet',       // the app's mobile viewport modal
+  value: selection,       // { providerId, modelId } | null
+  pinned, onTogglePin,    // app-wide pin list (chat/modelPicker.js)
+  recent,                 // app-wide recents
+  refresh: () => loadCatalogs(true),
+  onChange: onPickModel   // one pick = one complete shellReview write
+})
+```
+
+`loadCatalogs()` is the same union the agent editor builds
+(`SettingsAgents.jsx`): `/api/ai/models` for the project rows plus
+`fetchLiveModels(provider)` for every connection in
+`/api/ai/models/providers`. Bookmarks come from the chat picker's helpers
+(`loadPinned`, `togglePin`, `loadRecent`, `loadRecentFromServer`,
+`migrateProjectScopedBookmarks`) with a minimal state-shaped object, the same
+trick `DictationPage.jsx` uses, so there is one bookmark list rather than a
+page-local one.
 
 Save policy:
 
 | Control | Commit |
 | --- | --- |
 | Mode | Immediately on change (a closed choice; leaving it unsaved misreports whether reviews happen). |
-| Catalog picker | Immediately, filling provider + model id. |
-| Provider, model id | Locally, committed by **Save model** or on the id field's blur. |
-| Prompt | Locally, committed by **Save prompt**. |
+| Model picker | Immediately on pick, one request. |
+| Prompt | Debounced 600 ms as you type, like the agent editor's instructions. |
 
 Every write sends the complete `{ mode, providerId, modelId, prompt }` object.
 The server stores `shellReview` as one value, so a partial write would be a
@@ -91,18 +122,14 @@ snapshot. The project page no longer edits any of it — its link row reads
 `shellReviewFromResolved()` from the resolved settings and prints the
 consequence (`off`, `no model yet`, or `<mode> · <model id>`).
 
-A provider whose connection was removed stays in the select, labelled
-*(not configured)*, and the page shows a warning rather than silently rewriting
-the stored id: the value is still valid config, and it starts working the moment
-the connection is added back.
-
-**Check model** calls `POST /api/ai/test` with the named pair. The route
-resolves a live-catalog model too (it takes `providerId`), so checking does not
-require the model to be saved in the project's `models` list.
+There is no clear row on the picker: a review without a model is not a state
+worth offering, and mode `Off` already means "no reviewer". A saved pair whose
+provider connection was removed stays visible in the trigger and the page warns
+rather than rewriting it.
 
 ### Tests
 
 - `scripts/test-shell-review.js` — normalization, request shape, verdict parsing, the CLI-shaped failures, dedupe, pending attachment, and the REST route.
-- `scripts/test-shell-review-ui.mjs` — the shared choice model, the settings section's complete-block writes, the verdict block, and the popup/sheet wiring.
+- `scripts/test-shell-review-ui.mjs` — the shared choice model; the page renders the SAME `ModelPickerField` as every other model surface (project ∪ live catalog, shared pins/recents, refresh), there is no bespoke provider select or id field, one pick is one complete-block write, the prompt autosaves debounced, and a saved pair with a removed provider is warned about rather than rewritten; plus the verdict block and the popup/sheet wiring.
 - `scripts/test-routes.js` pins `#/settings/project/shell-review` as a real route with the same `projectDir`/`chatId`/`from` context as its siblings.
 - `scripts/test-project-settings-render.mjs` / `scripts/test-settings-back.mjs` assert the project page's link row points at that route.

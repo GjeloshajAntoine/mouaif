@@ -10,11 +10,12 @@
 //   1. frontend/src/components/chat/shellReview.js — normalization mirrors
 //      src/shellReview.js (unknown mode → off, blank prompt → built-in), and
 //      verdictMeta maps the three verdicts;
-//   2. ShellReviewPage renders all four inputs — mode, provider, model id
-//      and prompt — saves ONE complete `shellReview` object per change (never
-//      a partial one that would clear the model on a mode change), suggests
-//      the provider's live catalog in the id field, and reports the
-//      not-configured and unconfigured-provider states;
+//   2. ShellReviewPage uses the app's model control: the SAME
+//      ModelPickerField the chat head / agent editor / dictation render, over
+//      project models unioned with every provider's live catalog, with the
+//      shared pinned + recent rows and refresh action — no bespoke provider
+//      select or free-text id. One pick is one write, and the write is always
+//      the complete `shellReview` object;
 //   3. ToolPopup renders the "Review a command" row outside the tool tree, and
 //      the row opens the sheet with the composer draft as its seed;
 //   4. buildReviewBlock renders a verdict (and a failure) with the same text
@@ -59,26 +60,25 @@ assert.deepEqual([...SHELL_REVIEW_MODES].map((m) => String(m.value)), ['off', 'a
 }
 
 // ---- 2. ShellReviewPage -------------------------------------------------
-// A tiny Preact stand-in: h() records vnodes, hooks keep a slot array, and the
-// model picker is a marker component (its own behaviour is tested elsewhere).
-// The page is the only editor of `shellReview`, so this pins its inputs — the
-// provider select and the free-text model id are the two fields the inline
-// section did not have.
+// "Like the rest of the app" is the requirement this pins: the reviewer is
+// configured with the SAME ModelPickerField every other surface uses — project
+// models unioned with each provider's live catalog, pinned and recent rows,
+// one { providerId, modelId } value saved on pick — not with a bespoke
+// provider select + free-text id.
 function renderShellReviewPage({ resolved, saveStatus = 200, models = [], providers = [], live = [] }) {
   const requests = [];
   const nodes = [];
+  const effects = [];
   let cursor = 0;
   let first = true;
   let states = [];
-  // Effect slots: an effect re-runs when its dependency list changes, the way
-  // Preact does. The page's catalog fetch depends on the chosen provider, so a
-  // once-only effect would never see the provider the load set.
-  const effectDeps = [];
+  const effectKeys = [];
   const h = (tag, attrs, ...children) => {
     const node = { tag, attrs: attrs || {}, children: children.flat(Infinity).filter((c) => c != null) };
     nodes.push(node);
     return node;
   };
+  const bookmarks = new Set();
   const context = vm.createContext({
     h,
     Fragment: 'fragment',
@@ -94,6 +94,12 @@ function renderShellReviewPage({ resolved, saveStatus = 200, models = [], provid
     settingsLink: (path) => '#/' + path,
     backHref: () => '#/settings/project',
     backTarget: () => ({ path: 'settings/project', label: 'Back to project settings' }),
+    // The shared bookmark helpers the chat picker and dictation use.
+    loadPinned: () => new Set(bookmarks),
+    togglePin: (provider, id) => { const k = provider + '\u0000' + id; if (bookmarks.has(k)) bookmarks.delete(k); else bookmarks.add(k); },
+    loadRecent: () => [{ provider: 'ollama', id: 'recent-model', ts: 1 }],
+    loadRecentFromServer: async () => true,
+    migrateProjectScopedBookmarks: () => {},
     fetchLiveModels: async (provider) => ({ models: live.filter((m) => m.provider === provider) }),
     fetchJson: async (url, init) => {
       if (init && init.method === 'PUT') {
@@ -101,10 +107,6 @@ function renderShellReviewPage({ resolved, saveStatus = 200, models = [], provid
         if (saveStatus !== 200) return { status: saveStatus, body: {} };
         const body = JSON.parse(init.body);
         return { status: 200, body: { project: { shellReview: body.shellReview } } };
-      }
-      if (init && init.method === 'POST') {
-        requests.push({ test: JSON.parse(init.body) });
-        return { status: 200, body: { ok: true } };
       }
       if (url.startsWith('/api/settings/resolved')) return { status: 200, body: { resolved } };
       if (url.startsWith('/api/ai/models/providers')) return { status: 200, body: { providers: providers.map((id) => ({ id })) } };
@@ -116,32 +118,33 @@ function renderShellReviewPage({ resolved, saveStatus = 200, models = [], provid
       if (first) states[i] = typeof initial === 'function' ? initial() : initial;
       return [states[i], (value) => { states[i] = typeof value === 'function' ? value(states[i]) : value; }];
     },
-    useRef: (initial) => ({ current: initial === undefined ? null : initial }),
-    // Dependency-aware effects: a mount runs every effect once, and a re-render
-    // only re-runs one whose deps changed (the page's catalog fetch follows the
-    // provider). The returned cleanup is deliberately NOT called: unmounting
-    // would cancel the asynchronous load the test is waiting for.
+    useRef: (initial) => {
+      const i = cursor++;
+      if (first) states[i] = { current: initial === undefined ? null : initial };
+      return states[i];
+    },
+    // Dependency-aware effects, like Preact: a mount runs every effect, a
+    // re-render only one whose deps changed (the catalog load follows the
+    // project). Cleanups are not called — unmounting would cancel the
+    // asynchronous load this test waits for.
     useEffect: (fn, deps) => {
       const i = cursor++;
       const key = deps === undefined ? 'always' : JSON.stringify(deps);
-      if (effectDeps[i] === key) return;
-      effectDeps[i] = key;
+      if (effectKeys[i] === key) return;
+      effectKeys[i] = key;
+      effects.push(fn);
       fn();
     },
-    Promise, console
+    Promise, console, setTimeout, clearTimeout
   });
   vm.runInContext(read('frontend/src/components/ShellReviewPage.jsx')
     + '\n;globalThis.__shellReviewPage = ShellReviewPageView;', context);
   const View = context.__shellReviewPage;
   const render = () => { cursor = 0; nodes.length = 0; return View({ projectDir: '/p' }); };
   return {
-    // The page loads asynchronously, so the caller renders, waits for the load
-    // to settle, and renders again to read the loaded view.
     async load() {
       const before = render();
       first = false;
-      // Two passes: the load effect fills in the saved provider, and the
-      // catalog effect (which depends on that provider) answers after it.
       await settle();
       render();
       await settle();
@@ -166,96 +169,94 @@ function byId(nodes, id) {
 }
 
 {
-  // A fully configured reviewer: every input shows the saved value.
+  // A configured reviewer: the mode select, the app's model picker, and the
+  // prompt — nothing bespoke.
   const rendered = await renderShellReviewPage({
     resolved: { shellReview: { mode: 'ask', providerId: 'openrouter', modelId: 'x/y', prompt: 'My prompt' } },
     models: [{ id: 'x/y', provider: 'openrouter' }],
     providers: ['openrouter', 'ollama'],
-    live: [{ id: 'x/y', provider: 'openrouter' }, { id: 'x/z', provider: 'openrouter' }]
+    live: [{ id: 'x/z', provider: 'openrouter' }, { id: 'llama-local', provider: 'ollama' }]
   }).load();
   const flat = flatten(rendered.view);
   const mode = byId(flat, 'sr-mode');
   assert.ok(mode, 'the mode select renders');
-  assert.equal(mode.attrs.value, 'ask', 'the select shows the resolved mode');
+  assert.equal(mode.attrs.value, 'ask');
   assert.deepEqual(flat.filter((n) => n.tag === 'option' && n.attrs.value).map((n) => n.attrs.value).slice(0, 3),
     ['off', 'ask', 'always'], 'every mode is offered');
-  const provider = byId(flat, 'sr-provider');
-  assert.ok(provider, 'the provider select renders — the input the old section lacked');
-  assert.equal(provider.attrs.value, 'openrouter');
-  assert.deepEqual(provider.children.filter((n) => n.tag === 'option').map((n) => String(n.attrs.value)),
-    ['', 'openrouter', 'ollama'], 'the configured connections are offered');
-  const model = byId(flat, 'sr-model');
-  assert.ok(model, 'the model-id field renders — the other input the old section lacked');
-  assert.equal(model.attrs.value, 'x/y');
-  assert.equal(model.attrs.list, 'sr-model-suggestions', 'the id field suggests the live catalog');
-  const suggestions = byId(flat, 'sr-model-suggestions');
-  assert.ok(suggestions, 'a datalist backs the id field');
-  assert.deepEqual(suggestions.children.map((n) => String(n.attrs.value)), ['x/y', 'x/z']);
+
+  // The model control is the shared picker — the same component the chat head,
+  // the agent editor, the subagent defaults and dictation render.
+  const pickers = flat.filter((n) => n.tag === 'model-picker');
+  assert.equal(pickers.length, 1, 'exactly one model control, the shared picker');
+  const picker = pickers[0];
+  assert.deepEqual({ ...picker.attrs.value }, { modelId: 'x/y', providerId: 'openrouter' });
+  assert.equal(picker.attrs.variant, 'sheet', 'the picker uses the app\'s mobile sheet variant');
+  assert.equal(picker.attrs.ariaLabel, 'Model that reviews shell commands');
+  // Pinned + recent rows are the app-wide bookmark lists, not a private copy.
+  assert.ok(picker.attrs.pinned instanceof Object, 'pins come from the shared bookmark list');
+  assert.deepEqual([...picker.attrs.recent].map((r) => r.id), ['recent-model'], 'recents come from the shared list');
+  assert.equal(typeof picker.attrs.onTogglePin, 'function');
+  assert.equal(typeof picker.attrs.refresh, 'function', 'the picker keeps the app\'s refresh action');
+  assert.equal(picker.attrs.refreshEmpty, 'Refresh models');
+  // The catalog is the project models UNION every configured provider's live
+  // list — so an id the project never saved can still be picked.
+  // Arrays read out of the vm are another realm's Array, so compare values.
+  const listed = [...picker.attrs.models].map((m) => (m.provider || '') + '/' + m.id).sort();
+  assert.deepEqual([...listed], ['ollama/llama-local', 'openrouter/x/y', 'openrouter/x/z']);
+  assert.deepEqual([...picker.attrs.extraProviders], ['openrouter', 'ollama']);
+
+  // There is no bespoke provider select or free-text model-id field any more.
+  assert.equal(byId(flat, 'sr-provider'), undefined, 'no separate provider select');
+  assert.equal(byId(flat, 'sr-model'), undefined, 'no free-text model-id field');
+
   const prompt = byId(flat, 'sr-prompt');
   assert.equal(prompt.attrs.value, 'My prompt');
-  const picker = flat.find((n) => n.tag === 'model-picker');
-  assert.ok(picker, 'the catalog picker is still the fast path');
-  assert.deepEqual({ ...picker.attrs.value }, { modelId: 'x/y', providerId: 'openrouter' });
-  // The page must say the reviewer cannot approve or run anything.
   const text = JSON.stringify(rendered.view);
   assert.match(text, /never runs, approves or changes anything/);
   assert.match(text, /Reviews go to openrouter · x\/y/, 'the status names the model that will be asked');
 }
 {
-  // Typing a model id + provider and saving writes ONE complete block, and
-  // keeps the mode/prompt that were already stored.
+  // Picking a model saves ONE complete block, keeps the mode and prompt, and
+  // is the single write a pick makes (one tap = one request, like every other
+  // model control in the app).
   const rendered = await renderShellReviewPage({
     resolved: { shellReview: { mode: 'always', providerId: '', modelId: '', prompt: 'Keep me' } },
-    models: [], providers: ['openrouter', 'ollama']
+    models: [], providers: ['ollama'], live: [{ id: 'llama-local', provider: 'ollama' }]
   }).load();
-  let flat = flatten(rendered.view);
-  byId(flat, 'sr-provider').attrs.onChange({ currentTarget: { value: 'ollama' } });
-  flat = flatten(rendered.rerender());
-  byId(flat, 'sr-model').attrs.onInput({ currentTarget: { value: 'qwen2.5-coder:7b' } });
-  flat = flatten(rendered.rerender());
-  const save = flat.find((n) => n.tag === 'button' && JSON.stringify(n.children) === '["Save model"]');
-  assert.ok(save, 'the page has a Save model action');
-  assert.equal(save.attrs.disabled, false, 'an edited model can be saved');
-  await save.attrs.onClick();
+  const picker = flatten(rendered.view).find((n) => n.tag === 'model-picker');
+  picker.attrs.onChange({ providerId: 'ollama', modelId: 'llama-local' });
   await settle();
-  const put = rendered.requests[0];
-  assert.ok(put && put.shellReview, 'saving writes shellReview');
-  assert.deepEqual({ ...put.shellReview }, {
+  assert.equal(rendered.requests.length, 1, 'one pick is one write');
+  assert.deepEqual({ ...rendered.requests[0].shellReview }, {
     mode: 'always',
     providerId: 'ollama',
-    modelId: 'qwen2.5-coder:7b',
+    modelId: 'llama-local',
     prompt: 'Keep me'
-  }, 'a manual model id saves with the mode and prompt intact');
+  }, 'a pick saves with the mode and prompt intact');
 }
 {
-  // A provider with no configured connection is called out: reviews would fail.
+  // The prompt autosaves, debounced: typing does not send a request per
+  // keystroke, and what lands is one complete block.
+  const rendered = await renderShellReviewPage({
+    resolved: { shellReview: { mode: 'ask', providerId: 'openrouter', modelId: 'x/y', prompt: '' } },
+    models: [], providers: ['openrouter']
+  }).load();
+  const prompt = byId(flatten(rendered.view), 'sr-prompt');
+  prompt.attrs.onInput({ currentTarget: { value: 'Review it.' } });
+  assert.equal(rendered.requests.length, 0, 'typing alone does not write');
+  assert.match(JSON.stringify(rendered.view), /Saved automatically as you type/);
+}
+{
+  // A saved model whose provider lost its connection is called out, and the
+  // stored pair is not rewritten by the option list.
   const rendered = await renderShellReviewPage({
     resolved: { shellReview: { mode: 'always', providerId: 'openrouter', modelId: 'x/y' } },
     models: [], providers: ['ollama']
   }).load();
-  const text = JSON.stringify(rendered.view);
-  assert.match(text, /No connection is configured for .*openrouter/,
-    'an unconfigured provider is warned about');
-  // ...and the stored id is not silently rewritten by the option list.
-  const optionValues = flatten(rendered.view)
-    .filter((n) => n.tag === 'option').map((n) => String(n.attrs.value));
-  assert.ok(optionValues.includes('openrouter'), 'the unconfigured provider stays selectable');
-  assert.match(text, /not configured/);
-}
-{
-  // Check model asks the real test route about the named pair.
-  const rendered = await renderShellReviewPage({
-    resolved: { shellReview: { mode: 'ask', providerId: 'openrouter', modelId: 'x/y' } },
-    models: [], providers: ['openrouter']
-  }).load();
-  const flat = flatten(rendered.view);
-  const check = flat.find((n) => n.tag === 'button' && JSON.stringify(n.children) === '["Check model"]');
-  assert.ok(check, 'the page has a Check model action');
-  await check.attrs.onClick();
-  await settle();
-  const post = rendered.requests.find((r) => r.test);
-  assert.ok(post, 'checking sends a request');
-  assert.deepEqual({ ...post.test }, { projectDir: '/p', modelId: 'x/y', providerId: 'openrouter' });
+  const picker = flatten(rendered.view).find((n) => n.tag === 'model-picker');
+  assert.deepEqual({ ...picker.attrs.value }, { providerId: 'openrouter', modelId: 'x/y' },
+    'the saved pair is shown even when its provider is gone');
+  assert.match(JSON.stringify(rendered.view), /which has no connection any more/);
 }
 {
   // Off with nothing configured still renders and explains the state.
@@ -264,7 +265,7 @@ function byId(nodes, id) {
   const half = await renderShellReviewPage({
     resolved: { shellReview: { mode: 'always' } }, models: [], providers: []
   }).load();
-  assert.match(JSON.stringify(half.view), /No review is sent yet/,
+  assert.match(JSON.stringify(half.view), /No review is sent yet: pick a model above/,
     'a mode without a model says what is missing');
 }
 
@@ -343,4 +344,4 @@ function renderReviewBlock(review) {
   assert.match(sheet, /settings\/project\/shell-review/, 'an unconfigured reviewer links to its own page');
 }
 
-console.log('PASS  shell review choice model, settings page (mode/provider/model id/prompt + check), verdict block, popup row and sheet');
+console.log('PASS  shell review choice model, settings page (shared model picker + mode + prompt), verdict block, popup row and sheet');

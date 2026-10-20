@@ -18,21 +18,19 @@ The reviewer is **display-only**:
 
 Shell review has **its own page**: **Settings → Project settings → Shell review**, or straight to `#/settings/project/shell-review?projectDir=…`. The project page carries a one-line link row that names the current choice (*off*, *no model yet*, or `always · <model id>`).
 
-The page has four inputs:
+The page has three controls:
 
-| Input | What it does |
+| Control | What it does |
 | --- | --- |
 | **Mode** | `Off` (default) never reviews. `On demand` only reviews when you tap the review button. `Always` reviews every shell command the assistant proposes, before its approval card is answered. |
-| **Browse catalog** | The fast path: the provider-qualified picker over the project's models plus every configured provider's live catalog. Picking a row fills both fields below and saves. |
-| **Provider** | The provider connection the reviewer runs on. Only connections configured in Settings → Providers are listed. A stored provider whose connection was removed stays selectable and is marked *(not configured)* — the page never silently rewrites the id you saved. |
-| **Model id** | The exact model id, as a plain text field with the chosen provider's live catalog as suggestions. This is the input for a model the picker does not list: a live-catalog slug, a local `llama.cpp` alias, an Azure deployment name. |
-| **Prompt** | What the reviewer is asked (its system message). Blank uses the built-in instruction: describe the effects, then answer with one verdict line — `SAFE`, `CAUTION` or `DANGER`. |
+| **Model** | The reviewer. It is the **same model picker the rest of the app uses** — the chat head, the agent editor, the subagent defaults and dictation all render it: your project's models plus every configured provider's live catalog, the same pinned and recent rows, the same refresh action. Picking a row saves it. |
+| **Prompt** | What the reviewer is asked (its system message). Blank uses the built-in instruction: describe the effects, then answer with one verdict line — `SAFE`, `CAUTION` or `DANGER`. Saved as you type. |
 
-There is **no default reviewer**. A review is a request on your account, so nothing is sent until both the provider and the model id are filled in; the status line says *No review is sent yet* until they are, and *No connection is configured for …* when the chosen provider has no connection.
+There is **no default reviewer**. A review is a request on your account, so nothing is sent until a model is picked; the status line says *No review is sent yet: pick a model above* until then.
 
-**Check model** sends one cheap test prompt to the named pair (`POST /api/ai/test`) and reports whether it answered — worth doing once before every command in the project starts paying for reviews.
+If the saved model's provider connection is later removed, the picker still shows the saved pair and the page says so — the value starts working again the moment the connection is added back.
 
-The mode and the catalog pick save immediately. The provider, model id and prompt are edited locally and committed with **Save model** / **Save prompt**, or when the field loses focus, so a half-typed model id is never stored. Every save writes the whole `shellReview` object: the server keeps it as one value, so saving a prompt cannot clear the model.
+The mode and the model save immediately (both are closed choices). The prompt saves as you type, debounced, like the agent editor's instructions. Every save writes the whole `shellReview` object: the server keeps it as one value, so saving a prompt cannot clear the model.
 
 ### 2. Review a command on demand
 
