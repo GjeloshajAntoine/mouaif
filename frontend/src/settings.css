@@ -964,10 +964,12 @@ textarea#projectEditor {
 }
 .afp__foot .afp__up { margin-right: auto; }
 
-/* ---- Settings → Project → Shell review ------------------------------ */
-/* A model + a mode + a prompt, stacked. One column at every width: the
-   model picker opens its own sheet, so a two-column row would only shrink
-   the trigger on the screen where it is already tightest. */
+/* ---- Shell review page ---------------------------------------------- */
+/* Settings → Project → Shell review is its own page (docs/features/
+   shell-review.md): four inputs (mode, provider, model id, prompt) and a
+   connection check. One column at every width — each row is a label above its
+   control, which is what keeps a 360 px phone usable and lets the id field own
+   the full width for a long model slug. */
 
 .settings-project__shell-review {
   display: flex;
@@ -1004,3 +1006,27 @@ textarea#projectEditor {
 }
 
 .settings-project__shell-review .hint { margin: 0; }
+
+/* The provider select and the model-id field are real inputs, not a picker
+   trigger: keep them at the app's input height so they line up with the rows
+   above and below, and let the id wrap rather than clip a long slug. */
+.settings-project__shell-review select,
+.settings-project__shell-review input[type="text"] {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 0.6rem;
+  font-size: 0.8rem;
+}
+
+.settings-project__shell-review input.settings-project__mono { font-size: 0.78rem; min-height: 44px; }
+
+/* An unconfigured provider is a warning, not an error: the stored id still
+   works the moment the connection is added, so it must not read as broken. */
+.settings-project__shell-review-warn {
+  color: var(--warn, #c98a1a);
+  padding: 0 2px;
+}
+
+.settings-project--shell-review .settings-project__item-status[data-state="success"] { color: var(--success, #2f9e5f); }
+.settings-project--shell-review .settings-project__item-status[data-state="error"] { color: var(--danger, #d04545); }

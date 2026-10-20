@@ -75,10 +75,10 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
         setConfig(next);
         setPrompt(next.prompt || '');
         setStatus(next.mode === 'off'
-          ? 'Shell review is off — turn it on in project settings.'
+          ? 'Shell review is off — open Shell review to turn it on and pick a model.'
           : (next.configured
             ? 'Reviewed by ' + next.providerId + ' · ' + next.modelId
-            : 'Shell review has no model yet — pick one in project settings.'));
+            : 'Shell review has no model yet — open Shell review to choose one.'));
       } catch (err) {
         if (!cancelled) setStatus('Cannot load settings: ' + (err && err.message ? err.message : String(err)));
       }
@@ -99,8 +99,11 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
   }, [result]);
 
   const canReview = !!(config && config.configured && String(command).trim() && !busy);
+  // Straight to the reviewer's page, not the project page root: this link
+  // exists for the one thing a user needs when the sheet cannot review, and
+  // that thing is the model/provider pair on that page.
   const settingsHref = useMemo(
-    () => settingsLink('settings/project', { projectDir, chatId }),
+    () => settingsLink('settings/project/shell-review', { projectDir, chatId }),
     [projectDir, chatId]
   );
 
@@ -193,7 +196,7 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
       h('div', { class: 'sr__body' },
         h('p', { class: 'hint hint--compact sr__status', 'aria-live': 'polite' }, status),
         !ready && config ? h('a', { class: 'btn sr__settings-link', href: settingsHref },
-          'Open Project settings → Shell review') : null,
+          'Open Shell review settings') : null,
         h('label', { class: 'label sr__label', for: 'sr-command' }, 'Command'),
         h('textarea', {
           ref: commandRef,

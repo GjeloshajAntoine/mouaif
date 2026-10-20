@@ -14,10 +14,10 @@ import { nav, back } from '../router.js';
 import { ToolTree, shortDesc } from './ToolTree.jsx';
 import { TOOL_GROUPS, GROUP_BY_ID, isBinaryTool, isFamilyLeaf, toolGroupId } from '../toolGroups.js';
 import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
+import { shellReviewFromResolved } from './chat/shellReview.js';
 import { McpAuthSeg, ToolAuthSeg, segMode, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 import { SubagentModelDefaults } from './SubagentModelDefaults.jsx';
-import { ShellReviewSettings } from './settings/ShellReviewSettings.jsx';
 
 import { agentEditorPath } from './settings/agentNavigation.js';
 import { backHref, backTarget, settingsLink } from './settings/projectNavigation.js';
@@ -116,6 +116,10 @@ const [skillsOn, setSkillsOn] = useState(true);
   const [skillsStatusMsg, setSkillsStatusMsg] = useState('');
 
   const [promptsSummaryMsg, setPromptsSummaryMsg] = useState('—');
+  // Shell review's current choice, as the link row's detail. Read from the
+  // resolved settings (the same value the page shows) so the row and the page
+  // cannot disagree; the page itself is the only place it is edited.
+  const [shellReviewSummary, setShellReviewSummary] = useState('');
   const [mcpSummaryMsg, setMcpSummaryMsg] = useState('—');
 
   // Agents
@@ -179,6 +183,17 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
     setPromptSizeStatusMsg('');
 
     const resolved = (resolvedRes.status === 200 && resolvedRes.body && resolvedRes.body.resolved) || {};
+    // The link row's detail: name the consequence, not the fields. A configured
+    // reviewer names its model; an off or half-configured one says so, which is
+    // the difference between "I thought this was on" and knowing.
+    try {
+      const sr = shellReviewFromResolved(resolved);
+      setShellReviewSummary(sr.mode === 'off'
+        ? 'off'
+        : (!sr.configured
+          ? 'no model yet'
+          : (sr.mode === 'always' ? 'always · ' : 'on demand · ') + (sr.modelId || '')));
+    } catch { setShellReviewSummary(''); }
     const to = (resolved && resolved.toolOutput && typeof resolved.toolOutput === 'object') ? resolved.toolOutput : {};
     setOutputSize(normalizeOutputSize(to && to.size));
     setOutputStructure(normalizeOutputStructure(to && to.structure));
@@ -1289,30 +1304,32 @@ class: 'view-back',
         )
         ),
 
-        // Shell review — a second model that reads a shell command before it is
-        // approved (docs/features/shell-review.md). Its own section rather than a
-        // row in the Tools tree: it is not a tool (nothing is advertised to the
-        // model, no gate is flipped), it is a review of what the shell tool is
-        // about to do, and its settings are a model + a prompt.
+        // Shell review — its own page (docs/features/shell-review.md). A link
+        // row, not a section: the page carries four real inputs (mode,
+        // provider, model id, prompt) plus a connection check, and Project
+        // settings is a scrolling list of one-line rows. The row still names
+        // the current choice, so the page's state reads without opening it.
         h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },
         sectionIcon('tools'),
-        h('span', null, 'Shell review'),
-        h('details', { class: 'settings-project__info' },
-          h('summary', { 'aria-label': 'About shell review' }, '?'),
-          h('div', { class: 'settings-project__info-body' },
-          h('p', null, 'Pick a second model to read a shell command and report what it would do before you approve it. The verdict appears on the approval card; the command still runs only when you approve it, and this reviewer can never approve or run anything.'),
-          h('p', null, 'On demand reviews a command you ask about from the chat’s tool menu. Always reviews every shell command the assistant proposes — each review is a separate request on the chosen model’s account.')
-          )
-        )
+        h('span', null, 'Shell review')
         ),
-        (dir() || initialDir) && h(ShellReviewSettings, {
-        projectDir: dir() || initialDir,
-        onProjectSaved: (project) => {
-          setCurrentProject(project);
-          setEditorText(JSON.stringify(project, null, 2));
-        }
-        })
+        h('ul', { class: 'group__list' },
+        h('li', null,
+        h('a', {
+        class: 'group__row settings-project__link-row',
+        'aria-label': 'Shell review',
+        href: '#/settings/project/shell-review?' + projectBackQS()
+        },
+        h('span', { class: 'group__row-body' },
+        h('span', { class: 'group__row-label' }, 'Second opinion on shell commands'),
+        h('span', { class: 'settings-project__link-sub' }, 'Model, prompt, and when a command is reviewed')
+        ),
+        h('span', { class: 'group__row-detail' }, shellReviewSummary),
+        h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+        )
+        )
+        )
         ),
 
       h('div', { class: 'group settings-project__section' },

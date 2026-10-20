@@ -74,10 +74,6 @@ TOOL_MODE_CHOICES: [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask'
 ASK_USER_MODE_CHOICES: [{ value: 'off', label: 'Off' }, { value: 'ask', label: 'Ask' }],
 segMode: (mode) => (mode === 'allowlist' ? 'ask' : mode),
     AgentFilePicker: 'file-picker', SubagentModelDefaults: 'subagent-defaults', WebpreviewModal: 'preview-modal', PreviewUrlPrompt: 'preview-prompt',
-    // Shell review (docs/features/shell-review.md) renders its own section; the
-    // component is exercised by scripts/test-shell-review-ui.mjs, so here it is
-    // only a marker that the section is wired in.
-    ShellReviewSettings: 'shell-review-settings',
     useState: (initial) => {
       const i = cursor++;
       if (first) states[i] = typeof initial === 'function' ? initial() : initial;

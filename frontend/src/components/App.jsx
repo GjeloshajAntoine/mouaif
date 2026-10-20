@@ -26,6 +26,7 @@ const SettingsProvidersView = lazyNamed(() => import('./SettingsProviders.jsx'),
 const SettingsProviderEditView = lazyNamed(() => import('./SettingsProviders.jsx'), 'SettingsProviderEditView');
 const SettingsProjectView = lazyNamed(() => import('./SettingsProject.jsx'), 'SettingsProjectView');
 const SettingsHiddenContentView = lazyNamed(() => import('./SettingsHiddenContent.jsx'), 'SettingsHiddenContentView');
+const ShellReviewPageView = lazyNamed(() => import('./ShellReviewPage.jsx'), 'ShellReviewPageView');
 const SettingsDefaultsView = lazyNamed(() => import('./SettingsDefaults.jsx'), 'SettingsDefaultsView');
 const SettingsNotificationsView = lazyNamed(() => import('./SettingsNotifications.jsx'), 'SettingsNotificationsView');
 const SettingsAboutView = lazyNamed(() => import('./SettingsAbout.jsx'), 'SettingsAboutView');
@@ -59,6 +60,7 @@ settingsProject: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ proj
 settingsProjectTechnical: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from, page: 'technical' })],
 settingsProjectOutput: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from, page: 'output' })],
 settingsProjectPreview: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from, page: 'preview' })],
+settingsProjectShellReview: [ShellReviewPageView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from })],
 settingsProjectHide: [SettingsHiddenContentView, ({ projectDir, chatId, from, filePath }) => ({ projectDir, chatId, from, filePath })],
 settingsDefaults: [SettingsDefaultsView],
 settingsNotifications: [SettingsNotificationsView],
@@ -85,7 +87,7 @@ const FULL_PAGE_ROUTES = new Set([
 const LAZY_ROUTE_NAMES = new Set([
 'inspector', 'settingsDictation',
 'settingsProviders', 'settingsProviderNew', 'settingsProviderEdit',
-'settingsProject', 'settingsProjectTechnical', 'settingsProjectOutput', 'settingsProjectPreview', 'settingsProjectHide',
+'settingsProject', 'settingsProjectTechnical', 'settingsProjectOutput', 'settingsProjectPreview', 'settingsProjectHide', 'settingsProjectShellReview',
 'settingsDefaults', 'settingsNotifications', 'settingsAbout',
 'settingsPrompts', 'settingsAgents', 'settingsAgentEdit',
 'settingsActions', 'settingsActionEdit',

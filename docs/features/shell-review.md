@@ -16,15 +16,23 @@ The reviewer is **display-only**:
 
 ### 1. Configure a reviewer
 
-In **Settings → Project settings → Shell review**, set three things:
+Shell review has **its own page**: **Settings → Project settings → Shell review**, or straight to `#/settings/project/shell-review?projectDir=…`. The project page carries a one-line link row that names the current choice (*off*, *no model yet*, or `always · <model id>`).
 
-| Control | What it does |
+The page has four inputs:
+
+| Input | What it does |
 | --- | --- |
-| **When** | `Off` (default) never reviews. `On demand` only reviews when you tap the review button. `Always` reviews every shell command the assistant proposes, before its approval card is answered. |
-| **Model** | The provider-qualified model that reviews. Any project model or live-catalog model of a configured provider works. There is no default: the section says "Pick a model below" until you choose one. |
-| **Prompt** | What the reviewer is asked. Blank uses the built-in instruction, which asks for the effects and then a single verdict line. |
+| **Mode** | `Off` (default) never reviews. `On demand` only reviews when you tap the review button. `Always` reviews every shell command the assistant proposes, before its approval card is answered. |
+| **Browse catalog** | The fast path: the provider-qualified picker over the project's models plus every configured provider's live catalog. Picking a row fills both fields below and saves. |
+| **Provider** | The provider connection the reviewer runs on. Only connections configured in Settings → Providers are listed. A stored provider whose connection was removed stays selectable and is marked *(not configured)* — the page never silently rewrites the id you saved. |
+| **Model id** | The exact model id, as a plain text field with the chosen provider's live catalog as suggestions. This is the input for a model the picker does not list: a live-catalog slug, a local `llama.cpp` alias, an Azure deployment name. |
+| **Prompt** | What the reviewer is asked (its system message). Blank uses the built-in instruction: describe the effects, then answer with one verdict line — `SAFE`, `CAUTION` or `DANGER`. |
 
-Everything saves immediately — there is no Save button except for the prompt, which has its own **Save prompt** action because a PUT per keystroke would rewrite `.mouaif.json` dozens of times for one sentence.
+There is **no default reviewer**. A review is a request on your account, so nothing is sent until both the provider and the model id are filled in; the status line says *No review is sent yet* until they are, and *No connection is configured for …* when the chosen provider has no connection.
+
+**Check model** sends one cheap test prompt to the named pair (`POST /api/ai/test`) and reports whether it answered — worth doing once before every command in the project starts paying for reviews.
+
+The mode and the catalog pick save immediately. The provider, model id and prompt are edited locally and committed with **Save model** / **Save prompt**, or when the field loses focus, so a half-typed model id is never stored. Every save writes the whole `shellReview` object: the server keeps it as one value, so saving a prompt cannot clear the model.
 
 ### 2. Review a command on demand
 
@@ -33,7 +41,8 @@ Open the chat's wrench (**Tool settings**) popup and tap **Review a command**. T
 1. edit the command;
 2. tap **Review** — the sheet sends that text to the configured reviewer and nothing else. It never runs the command;
 3. read the verdict block, with the reviewer's model and the review's cost underneath;
-4. optionally edit the **Review prompt** and tap **Save prompt** to reuse that wording next time.
+4. optionally edit the **Review prompt** and tap **Save prompt** to reuse that wording next time;
+5. if no reviewer is configured, the sheet says so and links straight to the Shell review page.
 
 With `When` set to `On demand` this is the only way a review happens.
 

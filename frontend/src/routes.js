@@ -155,6 +155,16 @@ const ROUTES = [
     chatId: m.params.get('chatId') || '',
     from: fromParam(m.params)
   })),
+  // `Shell review`: the second model that reads a shell command before
+  // approval (docs/features/shell-review.md). Its own page rather than a
+  // section of the project page because it carries four real inputs and a
+  // connection check.
+  exactOrQuery('settings/project/shell-review', (m) => ({
+    name: 'settingsProjectShellReview',
+    projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
+    from: fromParam(m.params)
+  })),
   // `Hide file content`: redaction rules for the agent file tools.
   exactOrQuery('settings/project/hide', (m) => ({
     name: 'settingsProjectHide',

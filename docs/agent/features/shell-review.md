@@ -16,7 +16,7 @@
 | `frontend/src/components/chat/shellReview.js` | `shellReviewFromResolved`, `verdictMeta`, `buildReviewBlock`, `applyReviewToCard`. |
 | `frontend/src/components/chat/ShellReviewSheet.jsx` | The on-demand sheet (lazy chunk). |
 | `frontend/src/components/chat/ToolPopup.jsx` | The **Review a command** action row. |
-| `frontend/src/components/settings/ShellReviewSettings.jsx` | The Settings → Project section. |
+| `frontend/src/components/ShellReviewPage.jsx` | The Shell review page (`settingsProjectShellReview`): mode, catalog picker, provider select, model-id field with catalog suggestions, prompt, and a Check model action. |
 | `frontend/src/components/chat/cards.js` | Renders `request.review` in the approval card. |
 | `frontend/src/components/chat/transcript.js` | `handleShellReviewEvent` folds a frame into the card by call id. |
 
@@ -64,8 +64,45 @@ The alternative — review after approval — would produce a verdict about a co
 
 Priced through `src/usage.js` `computeCost` with the reviewer's own model record. `POST /api/tools/shell/review` attributes a known cost to `chatId` through `messages.addChatCost` — the same "priced run that is not a chat turn" rule dictation follows. The automatic path does not attribute: the parent turn's own `done` already bills the chat, and the reviewer's usage is not part of the chat model's usage block. (Adding it would double-count on any future per-turn reconciliation.)
 
+### The page, not a section
+
+The feature first shipped as a section of Project settings with only the
+catalog picker. That left two inputs missing: there was no way to name a
+**provider** and a **model id** explicitly, so a model the picker did not list
+(a live slug after a catalog failure, a local alias, an Azure deployment) could
+not be configured at all. It is now its own route,
+`settingsProjectShellReview` (`#/settings/project/shell-review`), rendered by
+`frontend/src/components/ShellReviewPage.jsx` and lazy-loaded like its
+siblings.
+
+Save policy:
+
+| Control | Commit |
+| --- | --- |
+| Mode | Immediately on change (a closed choice; leaving it unsaved misreports whether reviews happen). |
+| Catalog picker | Immediately, filling provider + model id. |
+| Provider, model id | Locally, committed by **Save model** or on the id field's blur. |
+| Prompt | Locally, committed by **Save prompt**. |
+
+Every write sends the complete `{ mode, providerId, modelId, prompt }` object.
+The server stores `shellReview` as one value, so a partial write would be a
+client-side read-modify-write with no guarantee both halves came from the same
+snapshot. The project page no longer edits any of it — its link row reads
+`shellReviewFromResolved()` from the resolved settings and prints the
+consequence (`off`, `no model yet`, or `<mode> · <model id>`).
+
+A provider whose connection was removed stays in the select, labelled
+*(not configured)*, and the page shows a warning rather than silently rewriting
+the stored id: the value is still valid config, and it starts working the moment
+the connection is added back.
+
+**Check model** calls `POST /api/ai/test` with the named pair. The route
+resolves a live-catalog model too (it takes `providerId`), so checking does not
+require the model to be saved in the project's `models` list.
+
 ### Tests
 
 - `scripts/test-shell-review.js` — normalization, request shape, verdict parsing, the CLI-shaped failures, dedupe, pending attachment, and the REST route.
 - `scripts/test-shell-review-ui.mjs` — the shared choice model, the settings section's complete-block writes, the verdict block, and the popup/sheet wiring.
-- `scripts/test-project-settings-render.mjs` / `scripts/test-settings-back.mjs` stub `ShellReviewSettings` as a marker (their subject is the page, not the section).
+- `scripts/test-routes.js` pins `#/settings/project/shell-review` as a real route with the same `projectDir`/`chatId`/`from` context as its siblings.
+- `scripts/test-project-settings-render.mjs` / `scripts/test-settings-back.mjs` assert the project page's link row points at that route.
