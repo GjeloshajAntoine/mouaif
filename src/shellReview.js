@@ -381,6 +381,9 @@ function startReview(opts) {
     signal: opts && opts.signal
   }).then((review) => {
     const payload = Object.assign({}, review, { id: callId, cmd: typeof cmd === 'string' ? cmd : '' });
+    if (review && review.ok && chatId && review.cost && review.cost.known && Number.isFinite(review.cost.total) && review.cost.total > 0) {
+      try { require('./messages.js').addChatCost(projectDir, chatId, review.cost.total); } catch { /* non-fatal */ }
+    }
     if (onEvent && review) {
       try { onEvent('shell_review', payload); } catch { /* client gone; the run continues */ }
     }

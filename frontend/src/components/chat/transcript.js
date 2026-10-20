@@ -1156,9 +1156,13 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
   // so one question was on screen twice and the tool_result was folded
   // into the first match (the overlay card) while the call card sat on
   // "running" forever.
+  let priorReview = toolCall.id ? takePendingShellReview(refs, toolCall.id) : null;
   if (toolCall.id) {
     for (const stale of refs.transcript.current.querySelectorAll(OVERLAY_CARD_SELECTOR)) {
-    if ((stale.dataset.authCallId || stale.dataset.authDecisionId) === String(toolCall.id)) stale.remove();
+      if ((stale.dataset.authCallId || stale.dataset.authDecisionId) === String(toolCall.id)) {
+        if (!priorReview && stale._shellReview) priorReview = stale._shellReview;
+        stale.remove();
+      }
     }
   }
   // Progress is the call's card, not a transient second row below it. Use
@@ -1227,6 +1231,7 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
     if (hint) hint.textContent = 'Running…';
     for (const chunk of held) appendShellLiveChunk(pre, chunk);
     }
+    if (priorReview) applyReviewToCard(card, priorReview);
   }
 // Other tools have no expandable body until a tool_result arrives.
 // Their header already shows the call arguments; creating a body here
@@ -1388,6 +1393,31 @@ export function handleShellOutputEvent(data, refs) {
   return true;
 }
 
+// bufferPendingShellReview(refs, data) -> bool
+//
+// Park a `shell_review` frame whose card has not mounted yet (for example,
+// when `mountOverlayCard` is still waiting on `whenTranscriptSettled`).
+function bufferPendingShellReview(refs, data) {
+  const id = data && data.id != null ? String(data.id) : '';
+  if (!id) return false;
+  const pending = refs._pendingShellReview || (refs._pendingShellReview = new Map());
+  if (pending.size > 100 && !pending.has(id)) {
+    pending.delete(pending.keys().next().value);
+  }
+  pending.set(id, data);
+  return true;
+}
+
+// takePendingShellReview(refs, id) -> object | null
+export function takePendingShellReview(refs, id) {
+  const pending = refs && refs._pendingShellReview;
+  if (!pending || !id) return null;
+  const key = String(id);
+  const entry = pending.get(key) || null;
+  if (entry) pending.delete(key);
+  return entry;
+}
+
 // handleShellReviewEvent(data, refs)
 //
 // Fold a `shell_review` frame into the card for that call: the approval card
@@ -1395,16 +1425,22 @@ export function handleShellOutputEvent(data, refs) {
 // result card. The review is produced by a second model BEFORE anything runs
 // (docs/features/shell-review.md), so the normal order is: the call lands, its
 // approval card mounts, then the verdict lands into it. A fast reviewer can
-// beat the card; the buffered live replay covers that, and both cases use the
-// same in-place update, so a verdict never produces a second card.
+// beat the card; the buffered live replay and `bufferPendingShellReview` cover
+// that, and both cases use the same in-place update, so a verdict never
+// produces a second card.
 //
-// Returns true when a card took the review, false when there is nothing to
-// attach it to (the call already scrolled out of the retained window).
+// Returns true when a card took (or buffered) the review, false when there is
+// nothing to attach it to.
 export function handleShellReviewEvent(data, refs) {
-  if (!refs.transcript.current || !data || !data.id) return false;
-  const card = findToolCard(refs, data.id);
-  if (!card) return false;
-  delete card.dataset.awaitingReview;
+  if (!refs || !refs.transcript || !refs.transcript.current || !data || !data.id) return false;
+  const host = refs.transcript.current;
+  const key = cssEscape(String(data.id));
+  const authCard = host.querySelector(
+    '.tool-card--authorization[data-auth-call-id="' + key + '"],' +
+    '.tool-card--authorization[data-auth-decision-id="' + key + '"]'
+  );
+  const card = authCard || findToolCard(refs, data.id);
+  if (!card) return bufferPendingShellReview(refs, data);
   return applyReviewToCard(card, data);
 }
 
@@ -1801,6 +1837,7 @@ if (!card) {
     // rows the user opened or folded while the run was streaming.
     const nestedRows = isSubagent ? snapshotNestedRowState(card) : null;
     renderToolResultBody(body, callArgs ? Object.assign({}, toolResult, { args: callArgs }) : toolResult, isSubagentTool);
+    if (card._shellReview) applyReviewToCard(card, card._shellReview);
     if ((toolResult.name?.startsWith('mcp__') || isMcpAppCreate) && id && refs.mcpAppContext) {
     const context = refs.mcpAppContext;
     const app = document.createElement('div');

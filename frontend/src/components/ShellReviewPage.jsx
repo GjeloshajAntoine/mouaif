@@ -26,7 +26,7 @@ import { ModelPickerField } from './ModelPickerField.jsx';
 import { sectionIcon } from './settingsProjectUi.js';
 import { settingsLink, backHref, backTarget } from './settings/projectNavigation.js';
 import { SHELL_REVIEW_MODES, shellReviewFromResolved } from './chat/shellReview.js';
-import { loadPinned, togglePin, loadRecent, loadRecentFromServer, migrateProjectScopedBookmarks } from './chat/modelPicker.js';
+import { loadPinned, togglePin, loadRecent, loadRecentFromServer, touchRecent, migrateProjectScopedBookmarks } from './chat/modelPicker.js';
 
 // stateFor(saved) -> the row's standing description of the current choice.
 //
@@ -59,8 +59,13 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
   const [statusState, setStatusState] = useState('');   // '' | 'busy' | 'success' | 'error'
   const [busy, setBusy] = useState(false);
   const [catalogBusy, setCatalogBusy] = useState(false);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [prompt, setPrompt] = useState('');
   const alive = useRef(true);
+  // Authoritative config snapshot for serialized writes, so rapid mode/model/prompt
+  // edits never overwrite each other with stale closure state.
+  const configRef = useRef({ mode: 'off', providerId: '', modelId: '', prompt: '' });
+  const writeChainRef = useRef(Promise.resolve());
   // The debounce for the prompt's autosave. One timer, cleared on unmount, so
   // navigating away never writes a prompt the user had already abandoned.
   const promptTimer = useRef(null);
@@ -97,8 +102,10 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
   }, [dir]);
 
   function onTogglePin(model) {
+    if (!model) return;
     togglePin(model.provider || '', model.id);
     setPinned(loadPinned());
+    setRecent(loadRecent(bookmarkState()));
   }
 
   // loadCatalogs(force) — the project's saved models unioned with every
@@ -116,6 +123,7 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
       const rows = (saved.body && saved.body.models) || [];
       const ids = ((connections.body && connections.body.providers) || []).map((p) => p && p.id).filter(Boolean);
       setProviders(ids);
+      setCatalogLoaded(true);
       setModels(rows);
       const live = await Promise.all(ids.map(async (provider) => {
         const result = await fetchLiveModels(provider, { force }).catch(() => ({ models: [] }));
@@ -143,6 +151,7 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
         const r = await fetchJson('/api/settings/resolved?projectDir=' + encodeURIComponent(dir));
         if (cancelled) return;
         const next = shellReviewFromResolved(r.status === 200 ? r.body.resolved : null);
+        configRef.current = next;
         setConfig(next);
         setPrompt(next.prompt || '');
         setNote(stateFor(next));
@@ -159,49 +168,63 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
     return () => { cancelled = true; };
   }, [dir]);
 
-  // write(next) — one complete `shellReview` object per save.
-  async function write(next) {
-    if (!dir) { setStatus('Open this page from a project’s settings.'); setStatusState('error'); return false; }
-    setBusy(true);
-    setStatus('Saving…'); setStatusState('busy');
-    try {
-      const r = await fetchJson('/api/settings/project', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectDir: dir,
-          shellReview: {
-            mode: next.mode,
-            providerId: next.providerId || '',
-            modelId: next.modelId || '',
-            prompt: next.prompt || ''
-          }
-        })
-      });
-      if (r.status !== 200) throw new Error('HTTP ' + r.status);
-      if (!alive.current) return false;
-      // Re-derive from the server's echo rather than the local object: a
-      // server-side clamp (an unknown mode) then shows up here, not only after
-      // a reload.
-      const saved = shellReviewFromResolved(r.body && r.body.project);
-      setConfig(saved);
-      setNote(stateFor(saved));
-      setStatus('Saved'); setStatusState('success');
-      return true;
-    } catch (error) {
-      if (alive.current) {
-        setStatus('Not saved: ' + (error && error.message ? error.message : String(error)));
-        setStatusState('error');
-      }
-      return false;
-    } finally {
-      if (alive.current) setBusy(false);
+  // write(next) — one complete `shellReview` object per save, serialized so
+  // rapid mode/model/prompt edits never overwrite each other.
+  function write(next) {
+    if (!dir) {
+      setStatus('Open this page from a project’s settings.');
+      setStatusState('error');
+      return Promise.resolve(false);
     }
+    configRef.current = next;
+    writeChainRef.current = writeChainRef.current.then(async () => {
+      if (!alive.current) return false;
+      const latest = configRef.current;
+      setBusy(true);
+      setStatus('Saving…'); setStatusState('busy');
+      try {
+        const r = await fetchJson('/api/settings/project', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectDir: dir,
+            shellReview: {
+              mode: latest.mode,
+              providerId: latest.providerId || '',
+              modelId: latest.modelId || '',
+              prompt: latest.prompt || ''
+            }
+          })
+        });
+        if (r.status !== 200) throw new Error('HTTP ' + r.status);
+        if (!alive.current) return false;
+        // Re-derive from the server's echo rather than the local object: a
+        // server-side clamp (an unknown mode) then shows up here, not only after
+        // a reload.
+        const saved = shellReviewFromResolved(r.body && r.body.project);
+        configRef.current = Object.assign({}, saved, { prompt: configRef.current.prompt });
+        setConfig(saved);
+        setNote(stateFor(saved));
+        setStatus('Saved'); setStatusState('success');
+        return true;
+      } catch (error) {
+        if (alive.current) {
+          setStatus('Not saved: ' + (error && error.message ? error.message : String(error)));
+          setStatusState('error');
+        }
+        return false;
+      } finally {
+        if (alive.current) setBusy(false);
+      }
+    });
+    return writeChainRef.current;
   }
 
   function nextConfig(patch) {
-    const base = config || { mode: 'off', providerId: '', modelId: '', prompt: '' };
-    return Object.assign({}, base, { prompt }, patch || {});
+    const base = configRef.current || config || { mode: 'off', providerId: '', modelId: '', prompt: '' };
+    const merged = Object.assign({}, base, { prompt }, patch || {});
+    merged.configured = merged.mode !== 'off' && !!merged.providerId && !!merged.modelId;
+    return merged;
   }
 
   function onModeChange(e) {
@@ -209,8 +232,10 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
     if (!config) return;
     // A closed choice, committed immediately: leaving it unsaved would
     // misreport whether reviews happen at all.
-    setConfig(Object.assign({}, config, { mode }));
-    write(nextConfig({ mode }));
+    const next = nextConfig({ mode });
+    setConfig(next);
+    setNote(stateFor(next));
+    write(next);
   }
 
   // One { providerId, modelId } pair, saved on pick — the same contract every
@@ -219,8 +244,17 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
     if (!config) return;
     const providerId = (selection && selection.providerId) || '';
     const modelId = (selection && selection.modelId) || '';
-    setConfig(Object.assign({}, config, { providerId, modelId }));
-    write(nextConfig({ providerId, modelId }));
+    // If the user picks a reviewer model while mode is still 'off', switch
+    // mode to 'ask' (on demand) so the newly picked model is immediately ready.
+    const mode = config.mode === 'off' && providerId && modelId ? 'ask' : config.mode;
+    if (providerId && modelId && typeof touchRecent === 'function') {
+      touchRecent(bookmarkState(), providerId, modelId);
+      setRecent(loadRecent(bookmarkState()));
+    }
+    const next = nextConfig({ mode, providerId, modelId });
+    setConfig(next);
+    setNote(stateFor(next));
+    write(next);
   }
 
   // The prompt saves as you type, debounced: it is free text, and a PUT per
@@ -228,6 +262,7 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
   // (the same rule the agent editor's instructions follow).
   function onPromptInput(value) {
     setPrompt(value);
+    configRef.current = Object.assign({}, configRef.current, { prompt: value });
     if (promptTimer.current) clearTimeout(promptTimer.current);
     promptTimer.current = setTimeout(() => {
       promptTimer.current = null;
@@ -236,9 +271,10 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
   }
 
   const selection = config && config.modelId
-    ? { providerId: config.providerId || '', modelId: config.modelId }
+    ? { providerId: config.providerId || (models.find((m) => m && m.id === config.modelId) || {}).provider || '', modelId: config.modelId }
     : null;
-  const providerUnknown = !!(config && config.providerId) && providers.length > 0
+  const noProviders = catalogLoaded && providers.length === 0 && models.length === 0;
+  const providerUnknown = !!(config && config.providerId) && catalogLoaded && providers.length > 0
     && !providers.includes(config.providerId);
   const back = backTarget(context);
 
@@ -317,27 +353,37 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
             // the room a long model id takes, and putting it beside the title on
             // a 360 px phone only ellipsized it.
             h(ModelPickerField, {
-              models,
-              extraProviders: providers,
-              variant: 'sheet',
-              value: selection,
-              // No clear row: a review without a model is not a state anyone
-              // wants, and the mode's Off already means "no reviewer".
-              placeholder: catalogBusy ? 'Loading models…' : 'Pick a model',
-              ariaLabel: 'Model that reviews shell commands',
-              disabled: !config || busy,
-              pinned,
-              onTogglePin,
-              recent,
-              refresh: () => loadCatalogs(true),
-              refreshEmpty: 'Refresh models',
-              onChange: onPickModel,
-              onOpen: () => { loadRecentFromServer(bookmarkState()).then(setRecent); }
+            className: 'settings-project__shell-review-model',
+            models,
+            extraProviders: providers,
+            noProviders,
+            variant: 'sheet',
+            value: selection,
+            // No clear row: a review without a model is not a state anyone
+            // wants, and the mode's Off already means "no reviewer".
+            placeholder: catalogBusy ? 'Loading models…' : (noProviders ? 'No providers connected' : 'Pick a model'),
+            ariaLabel: 'Model that reviews shell commands',
+            disabled: !config || busy,
+            pinned,
+            onTogglePin,
+            recent,
+            refresh: () => loadCatalogs(true),
+            refreshEmpty: 'Refresh models',
+            onChange: onPickModel,
+            onOpen: () => {
+            loadRecentFromServer(bookmarkState()).then((ok) => {
+            if (alive.current && ok) setRecent(loadRecent(bookmarkState()));
+            });
+            }
             }),
+            noProviders
+            ? h('a', { class: 'btn settings-project__shell-review-providers-link', href: '#/settings/providers' },
+            'Open Providers settings')
+            : null,
             providerUnknown
-              ? h('div', { class: 'settings-project__item-note settings-project__shell-review-warn', role: 'status' },
-                'The saved model is on “' + config.providerId + '”, which has no connection any more — reviews will fail until it is added back in Settings → Providers.')
-              : null
+            ? h('div', { class: 'settings-project__item-note settings-project__shell-review-warn', role: 'status' },
+            'The saved model is on “' + config.providerId + '”, which has no connection any more — reviews will fail until it is added back in Settings → Providers.')
+            : null
           )
         )
       ),

@@ -972,8 +972,41 @@ textarea#projectEditor {
 /* Settings → Project → Shell review is its own page (docs/features/
    shell-review.md). It is built from the same pieces as its sibling pages —
    `.group` sections, a `.group__list` of `.settings-project__item` cards, the
-   shared `ModelPickerField` — so it has almost no styles of its own. What is
-   left is the two controls that are not pickers, and one warning. */
+   shared `ModelPickerField` — so it has almost no styles of its own. */
+
+/* Full-width two-line model trigger inside the settings card (same treatment as
+   Dictation's model card, since `.mp--sheet` hides `.mp__provider` and shrinks
+   `.mp__id` to 0.72rem for the compact chat header). */
+.settings-project__shell-review-model {
+  width: 100%;
+}
+.settings-project__shell-review-model > .mp__trigger {
+  min-height: var(--tap);
+  padding: 6px 10px;
+  border-color: var(--border-strong);
+}
+.settings-project__shell-review-model > .mp__trigger .mp__stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.settings-project__shell-review-model > .mp__trigger .mp__id {
+  font-size: 0.84rem;
+}
+.settings-project__shell-review-model > .mp__trigger .mp__provider {
+  display: block;
+  color: var(--fg-soft);
+  font-size: 0.68rem;
+}
+.settings-project__shell-review-model > .mp__trigger .mp__provider:empty {
+  display: none;
+}
+.settings-project__shell-review-providers-link {
+  align-self: flex-start;
+  min-height: var(--tap);
+  display: inline-flex;
+  align-items: center;
+}
 
 /* The prompt is a multi-line field that fills its card; the shared mono class
    gives it the app's monospace face, this gives it room to breathe. */

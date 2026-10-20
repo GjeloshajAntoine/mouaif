@@ -149,7 +149,17 @@ export function ModelPickerField(props) {
     children
   } = props;
 
-  const list = useMemo(() => normalizeModels(models), [models]);
+  const list = useMemo(() => {
+    const normalized = normalizeModels(models);
+    if (value && value.modelId) {
+      const p = value.providerId || '';
+      const id = value.modelId;
+      if (!normalized.some((m) => m.id === id && (m.provider || '') === p)) {
+        return [{ id, provider: p, label: '', ghost: true }, ...normalized];
+      }
+    }
+    return normalized;
+  }, [models, value && value.providerId, value && value.modelId]);
   const [open, setOpen] = useState(false);
   // Support both uncontrolled (internal state, the default for the auth
   // card / Agents editor) and controlled (chat head's `open` +
@@ -365,7 +375,7 @@ export function ModelPickerField(props) {
     h('button', {
       ref: triggerRef,
       type: 'button',
-      class: 'mp__trigger' + (isEmpty ? ' is-empty' : '') + (noProviders ? ' no-providers' : '') + (!list.length && !noProviders ? ' is-empty' : ''),
+      class: 'mp__trigger' + (isEmpty ? ' is-empty' : '') + (noProviders ? ' no-providers' : ''),
       disabled: !!disabled,
       'aria-label': ariaLabel,
       'aria-haspopup': 'dialog',
@@ -471,7 +481,10 @@ export function ModelPickerField(props) {
           class: 'mp__clear' + (!sel ? ' is-active' : ''),
           role: 'button',
           tabindex: '0',
-          onClick: pickClear
+          onClick: pickClear,
+          onKeyDown: (ev) => {
+            if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pickClear(); }
+          }
         },
 h('span', { class: 'mp__clear-id' }, clearLabel)
 ) : null,
@@ -513,7 +526,10 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
                 class: 'mp__row' + (key === selectedKey ? ' is-active' : '') + (m.ghost ? ' is-ghost' : ''),
                 role: 'button',
                 tabindex: '0',
-                onClick: () => pick(m)
+                onClick: () => pick(m),
+                onKeyDown: (ev) => {
+                  if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(m); }
+                }
               },
               !m.ghost && onTogglePin ? h('button', {
                 type: 'button',
@@ -547,7 +563,10 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
           class: 'mp__row' + (key === selectedKey ? ' is-active' : ''),
           role: 'button',
           tabindex: '0',
-          onClick: () => pick(m)
+          onClick: () => pick(m),
+          onKeyDown: (ev) => {
+            if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(m); }
+          }
         },
         onTogglePin ? h('button', {
           type: 'button',

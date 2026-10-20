@@ -23,12 +23,12 @@ The page has three controls:
 | Control | What it does |
 | --- | --- |
 | **Mode** | `Off` (default) never reviews. `On demand` only reviews when you tap the review button. `Always` reviews every shell command the assistant proposes, before its approval card is answered. |
-| **Model** | The reviewer. It is the **same model picker the rest of the app uses** — the chat head, the agent editor, the subagent defaults and dictation all render it: your project's models plus every configured provider's live catalog, the same pinned and recent rows, the same refresh action. Picking a row saves it. |
+| **Model** | The reviewer. It is the **same model picker the rest of the app uses** — the chat head, the agent editor, the subagent defaults and dictation all render it: your project's models plus every configured provider's live catalog, the same pinned and recent rows, the same refresh action. Picking a row saves it (and if Mode was `Off`, switches Mode to `On demand` so the model is ready right away). |
 | **Prompt** | What the reviewer is asked (its system message). Blank uses the built-in instruction: describe the effects, then answer with one verdict line — `SAFE`, `CAUTION` or `DANGER`. Saved as you type. |
 
-There is **no default reviewer**. A review is a request on your account, so nothing is sent until a model is picked; the status line says *No review is sent yet: pick a model above* until then.
+There is **no default reviewer**. A review is a request on your account, so nothing is sent until a model is picked; the status line says *No review is sent yet: pick a model below* until then.
 
-If the saved model's provider connection is later removed, the picker still shows the saved pair and the page says so — the value starts working again the moment the connection is added back.
+If the saved model's provider connection is later removed, the picker still shows the saved pair (and marks it unavailable inside the sheet) and the page warns — the value starts working again the moment the connection is added back.
 
 The page is laid out like its sibling pages (File tool options, Web preview): a mode row, a model row, a prompt row, each a card with a bold title, a one-line description, and its control underneath. The mode and the model save immediately (both are closed choices). The prompt saves as you type, debounced, like the agent editor's instructions. Every save writes the whole `shellReview` object: the server keeps it as one value, so saving a prompt cannot clear the model.
 

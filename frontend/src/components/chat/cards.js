@@ -15,6 +15,7 @@ import { AuthModelPicker } from '../AuthModelPicker.jsx';
 import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
 import { saveSkillSelection } from './skillState.js';
 import { buildReviewBlock } from './shellReview.js';
+import { takePendingShellReview } from './transcript.js';
 
 // buildSetupCard()
 //
@@ -858,10 +859,15 @@ card.addEventListener('keydown', onKey);
     // `handleShellReviewEvent` folds in by call id. It sits above the decision
     // buttons because it is what the user reads before deciding — and it never
     // answers for them: the buttons below are still the only decision.
-    const existingReview = request && request.review ? request.review : null;
+    const existingReview = (request && request.review) || (request && request.callId ? takePendingShellReview(refs, request.callId) : null);
     const reviewBlock = existingReview ? buildReviewBlock(existingReview) : null;
-    if (reviewBlock) card.appendChild(reviewBlock);
-    else if (request && request.tool === 'shell') card.dataset.awaitingReview = '1';
+    if (reviewBlock) {
+    card._shellReview = existingReview;
+    card.dataset.reviewed = existingReview.verdict ? String(existingReview.verdict).toLowerCase() : 'plain';
+    card.appendChild(reviewBlock);
+    } else if (request && request.tool === 'shell') {
+    card.dataset.awaitingReview = '1';
+    }
     if (modelPicker) card.appendChild(modelPicker);
     card.appendChild(actions); card.appendChild(feedback); card.appendChild(retry);
     refs.transcript.current.appendChild(card);

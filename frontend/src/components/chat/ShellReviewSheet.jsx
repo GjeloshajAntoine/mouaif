@@ -108,7 +108,7 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
   );
 
   async function savePrompt() {
-    if (!projectDir) return;
+    if (!projectDir || !config) return;
     setPromptStatus('saving…');
     try {
       const r = await fetchJson('/api/settings/project', {
@@ -119,9 +119,9 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
         body: JSON.stringify({
           projectDir,
           shellReview: {
-            mode: config ? config.mode : 'ask',
-            providerId: config ? config.providerId : '',
-            modelId: config ? config.modelId : '',
+            mode: config.mode || 'off',
+            providerId: config.providerId || '',
+            modelId: config.modelId || '',
             prompt
           }
         })
@@ -146,8 +146,7 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
         body: JSON.stringify({
           projectDir,
           chatId: chatId || '',
-          cmd: command,
-          cwd: projectDir || ''
+          cmd: command
         })
       });
       // The endpoint answers 200 for a review and a typed status for a
@@ -239,10 +238,10 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
         }),
         h('div', { class: 'sr__row sr__row--prompt' },
           h('button', {
-            class: 'btn sr__save-prompt',
-            type: 'button',
-            onClick: savePrompt,
-            disabled: !projectDir || !promptDirty
+          class: 'btn sr__save-prompt',
+          type: 'button',
+          onClick: savePrompt,
+          disabled: !projectDir || !config || !promptDirty
           }, 'Save prompt'),
           h('span', { class: 'status', 'aria-live': 'polite' }, promptStatus)
         ),

@@ -99,6 +99,7 @@ function renderShellReviewPage({ resolved, saveStatus = 200, models = [], provid
     togglePin: (provider, id) => { const k = provider + '\u0000' + id; if (bookmarks.has(k)) bookmarks.delete(k); else bookmarks.add(k); },
     loadRecent: () => [{ provider: 'ollama', id: 'recent-model', ts: 1 }],
     loadRecentFromServer: async () => true,
+    touchRecent: () => {},
     migrateProjectScopedBookmarks: () => {},
     fetchLiveModels: async (provider) => ({ models: live.filter((m) => m.provider === provider) }),
     fetchJson: async (url, init) => {
@@ -217,7 +218,7 @@ function byId(nodes, id) {
   // generic `.row` in its own padded wrapper, which double-indented every
   // control and shrank the labels — this pins the fix.
   const root = rendered.view;
-  const cls = (n) => String((n.attrs && n.attrs.class) || '');
+  const cls = (n) => String((n.attrs && (n.attrs.class || n.attrs.className)) || '');
   const has = (n, name) => cls(n).split(/\s+/).includes(name);
   // The page root is the shell's `.settings-project` section, like every other
   // settings sub-page — not a bespoke wrapper of its own.
@@ -233,7 +234,7 @@ function byId(nodes, id) {
   assert.ok(titles.includes('Model'), 'the Model row is titled like a settings row');
   assert.ok(titles.includes('Review prompt'), 'the prompt row is titled like a settings row');
   // ...and there is no leftover bespoke container or .row wrapper.
-  assert.ok(!flat.some((n) => cls(n).includes('settings-project__shell-review') && !/warn|prompt/.test(cls(n))),
+  assert.ok(!flat.some((n) => cls(n).includes('settings-project__shell-review') && !/warn|prompt|model|providers/.test(cls(n))),
     'no bespoke page container remains');
   assert.ok(!flat.some((n) => cls(n) === 'row'),
     'no generic .row wrapper inside the page');
@@ -297,6 +298,13 @@ function byId(nodes, id) {
   // Off with nothing configured still renders and explains the state.
   const rendered = await renderShellReviewPage({ resolved: {}, models: [], providers: [] }).load();
   assert.match(JSON.stringify(rendered.view), /Off — no command is sent to another model/);
+  // Picking a model when mode is 'off' automatically activates 'ask' (On demand)
+  // so the user's pick is immediately ready without a second dropdown change.
+  const offPicker = flatten(rendered.view).find((n) => n.tag === 'model-picker');
+  offPicker.attrs.onChange({ providerId: 'openrouter', modelId: 'x/y' });
+  await settle();
+  assert.equal(rendered.requests.at(-1).shellReview.mode, 'ask',
+    'picking a model from Off switches mode to ask');
   const half = await renderShellReviewPage({
     resolved: { shellReview: { mode: 'always' } }, models: [], providers: []
   }).load();
@@ -304,27 +312,66 @@ function byId(nodes, id) {
     'a mode without a model says what is missing');
 }
 
-// ---- 3. buildReviewBlock -------------------------------------------------
-function renderReviewBlock(review) {
-  // A minimal DOM: createElement returns a node whose textContent/appendChild
-  // behave enough for the renderer, and querySelector is unused on a fresh node.
-  const make = (tag) => ({
-    tag,
+// ---- 3. buildReviewBlock + applyReviewToCard -----------------------------
+function makeDomNode(tag) {
+  return {
+    tag: String(tag || '').toUpperCase(),
     className: '',
     dataset: {},
     children: [],
-    textContent: '',
+    parentNode: null,
+    _text: '',
     get firstChild() { return this.children[0] || null; },
     set textContent(value) { this._text = String(value); this.children = []; },
     get textContent() { return this._text || ''; },
-    appendChild(child) { this.children.push(child); return child; },
-    insertBefore(child) { this.children.unshift(child); return child; },
-    replaceWith(child) { this._replaced = child; },
-    querySelector() { return null; }
-  });
-  const context = vm.createContext({ document: { createElement: make } });
+    appendChild(child) {
+      if (child.parentNode) {
+        const idx = child.parentNode.children.indexOf(child);
+        if (idx >= 0) child.parentNode.children.splice(idx, 1);
+      }
+      child.parentNode = this;
+      this.children.push(child);
+      return child;
+    },
+    insertBefore(child, ref) {
+      if (child.parentNode) {
+        const idx = child.parentNode.children.indexOf(child);
+        if (idx >= 0) child.parentNode.children.splice(idx, 1);
+      }
+      child.parentNode = this;
+      const at = ref ? this.children.indexOf(ref) : -1;
+      if (at >= 0) this.children.splice(at, 0, child);
+      else this.children.unshift(child);
+      return child;
+    },
+    replaceWith(child) {
+      this._replaced = child;
+      if (!this.parentNode) return;
+      const idx = this.parentNode.children.indexOf(this);
+      if (idx >= 0) {
+        child.parentNode = this.parentNode;
+        this.parentNode.children.splice(idx, 1, child);
+      }
+    },
+    querySelector(sel) {
+      const parts = String(sel).split(',').map((s) => s.trim().replace(/^\./, ''));
+      const visit = (node) => {
+        for (const c of node.children || []) {
+          const classes = String(c.className || '').split(/\s+/);
+          if (parts.some((p) => classes.includes(p))) return c;
+          const found = visit(c);
+          if (found) return found;
+        }
+        return null;
+      };
+      return visit(this);
+    }
+  };
+}
+function renderReviewBlock(review) {
+  const context = vm.createContext({ document: { createElement: makeDomNode } });
   vm.runInContext(read('frontend/src/components/chat/shellReview.js')
-    + '\n;globalThis.__block = buildReviewBlock;', context);
+    + '\n;globalThis.__block = buildReviewBlock; globalThis.__apply = applyReviewToCard;', context);
   return context.__block(review);
 }
 {
@@ -342,6 +389,29 @@ function renderReviewBlock(review) {
   assert.match(failed.children[1].textContent, /No review: review timed out/);
   const plain = renderReviewBlock({ ok: true, text: 'Reads a file.' });
   assert.equal(plain.dataset.tone, 'plain', 'an answer without a verdict stays neutral');
+
+  // Approval card placement: applyReviewToCard inserts the review block ABOVE
+  // `.tool-card__actions` (and never inside the `<pre class="tool-card__body">`
+  // command detail or below the decision buttons).
+  const context = vm.createContext({ document: { createElement: makeDomNode } });
+  vm.runInContext(read('frontend/src/components/chat/shellReview.js')
+    + '\n;globalThis.__apply = applyReviewToCard;', context);
+  const authCard = makeDomNode('div');
+  authCard.className = 'tool-card tool-card--authorization';
+  authCard.dataset.awaitingReview = '1';
+  const cardHead = makeDomNode('div'); cardHead.className = 'tool-card__head';
+  const cardDetail = makeDomNode('pre'); cardDetail.className = 'tool-card__body'; cardDetail.textContent = 'rm -rf dist';
+  const cardActions = makeDomNode('div'); cardActions.className = 'tool-card__actions';
+  authCard.appendChild(cardHead);
+  authCard.appendChild(cardDetail);
+  authCard.appendChild(cardActions);
+  context.__apply(authCard, { ok: true, text: 'Deletes dist.\nDANGER', verdict: 'DANGER', model: { provider: 'openrouter', id: 'x/y' } });
+  assert.equal(authCard.dataset.awaitingReview, undefined, 'applying review clears awaitingReview');
+  assert.equal(authCard.dataset.reviewed, 'danger');
+  assert.equal(cardDetail.children.length, 0, 'the command <pre> is untouched');
+  const reviewIdx = authCard.children.findIndex((c) => c.className === 'tool-card__review');
+  const actionsIdx = authCard.children.indexOf(cardActions);
+  assert.ok(reviewIdx > 0 && reviewIdx < actionsIdx, 'review block sits above the decision buttons on the approval card');
 }
 
 // ---- 4. the popup row and the sheet -------------------------------------
@@ -377,6 +447,12 @@ function renderReviewBlock(review) {
   assert.match(sheet, /buildReviewBlock/, 'the sheet reuses the shared verdict block');
   assert.match(sheet, /useModal/, 'the sheet uses the shared Escape/Tab/focus hook');
   assert.match(sheet, /settings\/project\/shell-review/, 'an unconfigured reviewer links to its own page');
+
+  const transcript = fs.readFileSync(new URL('../frontend/src/components/chat/transcript.js', import.meta.url), 'utf8');
+  assert.match(transcript, /\.tool-card--authorization\[data-auth-call-id=/,
+    'handleShellReviewEvent locates the pending approval card by data-auth-call-id');
+  assert.match(transcript, /takePendingShellReview/,
+    'early shell_review frames are buffered until the card mounts');
 }
 
 console.log('PASS  shell review choice model, settings page (shared model picker + mode + prompt), verdict block, popup row and sheet');

@@ -479,12 +479,18 @@ async function handleTools(req, res, parsed, sessionToken = '') {
     if (!body) return;
     const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
     const cmd = body && typeof body.cmd === 'string' ? body.cmd : '';
-    const cwd = body && typeof body.cwd === 'string' ? body.cwd : '';
     const chatId = body && typeof body.chatId === 'string' ? body.chatId : '';
+    let cwd = body && typeof body.cwd === 'string' ? body.cwd : '';
     if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
     if (!cmd.trim()) return sendJSON(res, 400, { error: 'cmd is required' });
     if (chatId && !chats.getChat(projectDir, chatId)) {
-      return sendJSON(res, 404, { error: 'Chat not found', chatId });
+    return sendJSON(res, 404, { error: 'Chat not found', chatId });
+    }
+    if (!cwd && chatId) {
+    try { cwd = require('./chatWorkingFolder.js').resolve(projectDir, chatId); }
+    catch { cwd = projectDir; }
+    } else if (!cwd) {
+    cwd = projectDir;
     }
     const review = await require('./shellReview.js').reviewCommand({ projectDir, cmd, cwd, chatId });
     if (review.ok && chatId && review.cost && review.cost.known && Number.isFinite(review.cost.total) && review.cost.total > 0) {

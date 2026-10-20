@@ -39,9 +39,9 @@ REVIEW_MODES, DEFAULT_PROMPT, REVIEW_TIMEOUT_MS, REVIEW_DEDUPE_MS
 
 `reviewCommand` resolves `{ ok: false, code, error }` for every failure (`EBADINPUT`, `EREVIEW_OFF`, `EREVIEW_MODEL`, `EABORTED`, `ETIMEOUT`, `EEMPTY_REVIEW`, upstream codes). Nothing in the approval path awaits it, so a slow reviewer cannot delay the prompt; the card opens first and the verdict fills in.
 
-### Why the review is started before the gate
+### Why the review is started on `decision === 'prompt'`
 
-The approval card is what the user reads before deciding. Starting the request *before* `authorize()` means the reviewer runs while the prompt is being rendered and answered, so a verdict that takes a second or two is usually already there when the user looks. The request is fired and not awaited; `authorize()` blocks on the user, not on the reviewer.
+The approval card is what the user reads before deciding. Starting the request when `authorize()` returns `decision === 'prompt'` (right before `authorization_required` is emitted and `await authResult.wait` parks) means the reviewer runs while the prompt is being rendered and answered, without paying for a review on auto-allowed or allowlisted calls where no approval card is shown. The request is fired and not awaited; `authResult.wait` blocks on the user, not on the reviewer.
 
 The alternative — review after approval — would produce a verdict about a command that has already run, which is the wrong question.
 
@@ -57,12 +57,12 @@ The alternative — review after approval — would produce a verdict about a co
 
 1. `onEvent('shell_review', { id, cmd, ...review })` on the chat stream.
 2. `liveChat.pushLive` buffers it (see `eventToolId` — keyed by `data.id`) so a late subscriber and the reconnect poll replay it; `pruneLive` drops it with the call's other transient frames once the result is persisted.
-3. `attachReview` stores it on the pending entry, so `GET /api/tools/pending` (via `listPending`) re-delivers it after a reload; `pending.publicResult` and `pending.request` are kept in sync so both reads agree.
-4. The client applies it in place: `applyReviewToCard` replaces an existing `.tool-card__review` or inserts one above the card body's first child. `data-awaiting-review` on a shell approval card records that the card is waiting; `handleShellReviewEvent` clears it.
+3. `attachReview` stores it on the pending entry, so `GET /api/tools/authorization/pending` (via `listPending`) re-delivers it after a reload; `pending.publicResult` and `pending.request` are kept in sync so both reads agree.
+4. The client applies it in place: `handleShellReviewEvent` locates `.tool-card--authorization[data-auth-call-id]` (or `findToolCard` once the call is running, or buffers via `bufferPendingShellReview` if the frame arrived before `mountOverlayCard` settled), and `applyReviewToCard` inserts `.tool-card__review` above `.tool-card__actions` on an approval card or at the top of `.tool-card__body` on a shell card. When the approval card is replaced by the running/result shell card, the review is carried over so it remains visible.
 
 ### Cost
 
-Priced through `src/usage.js` `computeCost` with the reviewer's own model record. `POST /api/tools/shell/review` attributes a known cost to `chatId` through `messages.addChatCost` — the same "priced run that is not a chat turn" rule dictation follows. The automatic path does not attribute: the parent turn's own `done` already bills the chat, and the reviewer's usage is not part of the chat model's usage block. (Adding it would double-count on any future per-turn reconciliation.)
+Priced through `src/usage.js` `computeCost` with the reviewer's own model record. Both `POST /api/tools/shell/review` and `startReview` attribute a known cost to `chatId` through `messages.addChatCost` — the same "priced run that is not a chat turn" rule dictation follows.
 
 ### The page, and the app's model control
 

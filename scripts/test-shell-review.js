@@ -262,13 +262,18 @@ async function main() {
 
   // ---- 6. the REST route --------------------------------------------------
   await checkAsync('POST /api/tools/shell/review answers a review and attributes its cost', async () => {
+    const subDir = path.join(projectDir, 'sub');
+    fs.mkdirSync(subDir, { recursive: true });
     const chat = chats.createChat(projectDir, { title: 'Route chat' });
+    chats.updateChat(projectDir, chat.id, { workingDir: subDir });
     configure({ mode: 'ask', providerId: 'openai-compatible', modelId: 'reviewer-model' });
     mockProvider('Lists the folder.\nSAFE');
-    const res = await post({ projectDir, chatId: chat.id, cmd: 'ls', cwd: projectDir });
+    const res = await post({ projectDir, chatId: chat.id, cmd: 'ls' });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.ok, true);
     assert.equal(res.body.verdict, 'SAFE');
+    assert.match(fetchBody.messages[1].content, new RegExp('Working directory: ' + subDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      'the route defaults cwd from the chat working folder when omitted');
     // A review is priced work that is not a chat turn: when the chat is named,
     // its persisted total carries it (the dictation rule).
     assert.equal(typeof chats.getChat(projectDir, chat.id).totalCost.total, 'number');

@@ -124,12 +124,20 @@ export function applyReviewToCard(card, review) {
   const existing = card.querySelector('.tool-card__review');
   if (existing) existing.replaceWith(block);
   else {
-    // A review on a shell card goes above the output: it is about the command,
-    // not about what the command printed.
+    // On an approval card (`authorizationCard`), the review goes above the
+    // decision buttons (or per-run model picker) so the user reads the
+    // second opinion before deciding. On a shell call/result card, it goes at
+    // the top of `.tool-card__body` above the command output.
+    const authAnchor = card.querySelector('.tool-card__auth-model-field, .tool-card__actions');
     const body = card.querySelector('.tool-card__body');
-    if (body) body.insertBefore(block, body.firstChild);
+    if (authAnchor && authAnchor.parentNode === card) card.insertBefore(block, authAnchor);
+    else if (body && body.tagName !== 'PRE') body.insertBefore(block, body.firstChild);
     else card.appendChild(block);
   }
-  card.dataset.reviewed = review.verdict ? String(review.verdict).toLowerCase() : 'plain';
+  if (card.dataset) {
+    delete card.dataset.awaitingReview;
+    card.dataset.reviewed = review.verdict ? String(review.verdict).toLowerCase() : 'plain';
+  }
+  card._shellReview = review;
   return true;
 }

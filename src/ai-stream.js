@@ -371,34 +371,6 @@ async function runSingleToolCall(c, cx) {
   } catch (e) { subagentModel = { error: e.message }; }
   }
   if (opts && opts.signal && opts.signal.aborted) throw Object.assign(new Error('aborted'), { code: 'EABORTED' });
-      // Shell review (docs/features/shell-review.md). Started BEFORE the
-      // authorization gate so a verdict can ride the same approval card the
-      // user is about to answer: the request is fired and not awaited, the
-      // card renders immediately, and `shell_review` fills its review section
-      // when the answer lands. A review never decides anything — the gate
-      // below still prompts, and a denied/approved call runs exactly as it
-      // would with no reviewer configured.
-      //
-      // Only `mode: 'always'` reaches this line (startReview returns null
-      // otherwise); nested subagent calls are skipped because their approval
-      // card belongs to the parent's subagent card, which has no review
-      // section, and a delegated reviewer's own budget is the parent's.
-      if (c.name === 'shell' && !opts.nestedSubagent) {
-        try {
-          require('./shellReview.js').startReview({
-            projectDir: opts && opts.projectDir,
-            chatId: opts && opts.chatId,
-            callId: c.id,
-            cmd: args && args.cmd,
-            cwd: (() => {
-              try { return require('./chatWorkingFolder.js').resolveForCall(opts.projectDir, opts.chatId, opts.workspaceChatId); }
-              catch { return opts && opts.projectDir; }
-            })(),
-            signal: opts && opts.signal,
-            onEvent
-          });
-        } catch { /* a reviewer that cannot start never blocks a command */ }
-      }
       const authResult = await authGate.authorize({
       forcePrompt: forcePrompt || !!(opts.inheritedPermissions?.[c.name] && !['allow', 'off'].includes(opts.inheritedPermissions[c.name].mode)),
       signal: opts && opts.signal,
@@ -456,35 +428,62 @@ async function runSingleToolCall(c, cx) {
       }
 
       if (authResult.decision === 'prompt') {
-        if (c.name === 'ask_user' && askUserPayload) {
-          onEvent('ask_user_required', {
-            chatId: opts && opts.chatId,
-            callId: c.id,
-            tool: c.name,
-            question: askUserPayload.question,
-            options: askUserPayload.options,
-            multiSelect: askUserPayload.multiSelect,
-            presets: askUserPayload.presets,
-            projectDir: opts && opts.projectDir
-          });
-        } else {
-          onEvent('authorization_required', {
-            chatId: opts && opts.chatId,
-            callId: c.id,
-            tool: c.name,
-            cmd: args && args.cmd,
-            path: args && args.path,
-            query: args && args.query,
-            summary,
-            details: require('./toolApproval.js').buildApprovalDetails({
-            tool: c.name, args, projectDir: opts.projectDir, chatId: opts.chatId, workspaceChatId: opts.workspaceChatId
-            }),
-            images: authImages,
-            subagentModel,
-            timeoutMs: clampedTimeoutMs,
-            projectDir: opts && opts.projectDir
-            });
-        }
+      if (c.name === 'ask_user' && askUserPayload) {
+      onEvent('ask_user_required', {
+        chatId: opts && opts.chatId,
+        callId: c.id,
+        tool: c.name,
+        question: askUserPayload.question,
+        options: askUserPayload.options,
+        multiSelect: askUserPayload.multiSelect,
+        presets: askUserPayload.presets,
+        projectDir: opts && opts.projectDir
+      });
+      } else {
+      // Shell review (docs/features/shell-review.md). Started only when the
+      // call actually prompts for approval, so an auto-allowed or
+      // allowlisted shell call never pays for a reviewer nobody is asked
+      // to read. The request is fired and not awaited; `authorization_required`
+      // mounts the card immediately and `shell_review` fills its review
+      // section when the answer lands.
+      //
+      // Only `mode: 'always'` reaches this line (startReview returns null
+      // otherwise); nested subagent calls are skipped because their approval
+      // card belongs to the parent's subagent card, which has no review
+      // section, and a delegated reviewer's own budget is the parent's.
+      if (c.name === 'shell' && !opts.nestedSubagent) {
+        try {
+        require('./shellReview.js').startReview({
+        projectDir: opts && opts.projectDir,
+        chatId: opts && opts.chatId,
+        callId: c.id,
+        cmd: args && args.cmd,
+        cwd: (() => {
+          try { return require('./chatWorkingFolder.js').resolveForCall(opts.projectDir, opts.chatId, opts.workspaceChatId); }
+          catch { return opts && opts.projectDir; }
+        })(),
+        signal: opts && opts.signal,
+        onEvent
+        });
+        } catch { /* a reviewer that cannot start never blocks a command */ }
+      }
+      onEvent('authorization_required', {
+        chatId: opts && opts.chatId,
+        callId: c.id,
+        tool: c.name,
+        cmd: args && args.cmd,
+        path: args && args.path,
+        query: args && args.query,
+        summary,
+        details: require('./toolApproval.js').buildApprovalDetails({
+        tool: c.name, args, projectDir: opts.projectDir, chatId: opts.chatId, workspaceChatId: opts.workspaceChatId
+        }),
+        images: authImages,
+        subagentModel,
+        timeoutMs: clampedTimeoutMs,
+        projectDir: opts && opts.projectDir
+        });
+      }
         // Capture the resolved value (allow, payload, ...) so the
         // `ask_user` runner can read the user's structured answer.
         // For every other tool the payload is undefined and the
