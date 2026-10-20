@@ -371,6 +371,34 @@ async function runSingleToolCall(c, cx) {
   } catch (e) { subagentModel = { error: e.message }; }
   }
   if (opts && opts.signal && opts.signal.aborted) throw Object.assign(new Error('aborted'), { code: 'EABORTED' });
+      // Shell review (docs/features/shell-review.md). Started BEFORE the
+      // authorization gate so a verdict can ride the same approval card the
+      // user is about to answer: the request is fired and not awaited, the
+      // card renders immediately, and `shell_review` fills its review section
+      // when the answer lands. A review never decides anything — the gate
+      // below still prompts, and a denied/approved call runs exactly as it
+      // would with no reviewer configured.
+      //
+      // Only `mode: 'always'` reaches this line (startReview returns null
+      // otherwise); nested subagent calls are skipped because their approval
+      // card belongs to the parent's subagent card, which has no review
+      // section, and a delegated reviewer's own budget is the parent's.
+      if (c.name === 'shell' && !opts.nestedSubagent) {
+        try {
+          require('./shellReview.js').startReview({
+            projectDir: opts && opts.projectDir,
+            chatId: opts && opts.chatId,
+            callId: c.id,
+            cmd: args && args.cmd,
+            cwd: (() => {
+              try { return require('./chatWorkingFolder.js').resolveForCall(opts.projectDir, opts.chatId, opts.workspaceChatId); }
+              catch { return opts && opts.projectDir; }
+            })(),
+            signal: opts && opts.signal,
+            onEvent
+          });
+        } catch { /* a reviewer that cannot start never blocks a command */ }
+      }
       const authResult = await authGate.authorize({
       forcePrompt: forcePrompt || !!(opts.inheritedPermissions?.[c.name] && !['allow', 'off'].includes(opts.inheritedPermissions[c.name].mode)),
       signal: opts && opts.signal,
@@ -577,6 +605,7 @@ async function streamChatInScope(opts) {
   if (typeof maxOutputTokens === 'string' && maxOutputTokens) {
     model.maxOutputTokens = maxOutputTokens;
   }
+  if (opts.noTools) model.noTools = true;
 
   let def, build, parse;
   try {
@@ -747,6 +776,12 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
       if (name === 'subagent' || orchestration.PARENT_TOOLS.includes(name)) toolSpecs.splice(i, 1);
     }
   }
+  // `opts.noTools` — a caller that must not be given a tool surface at all.
+  // Used by the shell reviewer (src/shellReview.js): it answers one question
+  // about one command, so a tool call would be a way to act instead of answer.
+  // Emptying the collected list here (after every off-gate has run, before the
+  // per-chat filter) means the request carries no `tools` field at all.
+  if (opts && opts.noTools) toolSpecs.length = 0;
   let visibleToolSpecs = toolSpecs;
   if (opts && Array.isArray(opts.enabledTools)) {
     const allow = new Set(opts.enabledTools.map((n) => String(n)));

@@ -106,6 +106,7 @@ One page per feature: what it does and how to use it.
 - [Tool card expanded view](features/tool-card-expanded-view.md) — what an expanded tool card shows, for every tool type.
 - [Live tool preview](features/live-tool-preview.md) — live tool output when you return to a running chat.
 - [Shell tool](features/shell-tool.md) — the model runs commands in the project and reads the output.
+- [Shell review](features/shell-review.md) — a second model reads a command before you approve it, with its own model, prompt, and review button.
 - [File tools](features/file-tools.md) — the model lists, searches, reads, and edits project files.
 - [Grouped file tools](features/grouped-file-tools.md) — read several files or apply several block replacements in one call.
 - [Grouped CLI tool](features/grouped-cli-tool.md) — run several shell commands in one call, or start one in the background.

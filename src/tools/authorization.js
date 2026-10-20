@@ -88,8 +88,35 @@ function listPending(projectDir, chatId) {
   if (!session || !session.pending.size) return [];
   return Array.from(session.pending.entries()).map(([callId, pending]) => {
     const request = pending && pending.request && typeof pending.request === 'object' ? pending.request : {};
-    return Object.assign({ callId, tool: pending.tool }, request);
+    // A pending request carries whatever review had already landed for it
+    // (see attachReview). The live `shell_review` event is the only other
+    // delivery path, so a page reload mid-review would otherwise lose it.
+    const review = pending && pending.review ? pending.review : undefined;
+    return Object.assign({ callId, tool: pending.tool }, request, review ? { review } : {});
   });
+}
+
+// attachReview(projectDir, chatId, callId, review) -> boolean
+//
+// Attach a completed shell review (src/shellReview.js) to the approval request
+// parked for `callId`, so `listPending` re-delivers it to a client that
+// reconnected after the review landed. Display-only: this touches no mode, no
+// grant and no decision. Returns false when the call is not pending any more
+// (already decided, denied, or the chat was cancelled) — which is expected,
+// not an error.
+function attachReview(projectDir, chatId, callId, review) {
+  if (!projectDir || !chatId || !callId || !review) return false;
+  const session = sessions.get(sessionKey(projectDir, chatId));
+  const pending = session && session.pending && session.pending.get(callId);
+  if (!pending) return false;
+  pending.review = review;
+  // Keep the public request in sync too: `authorize()` hands the same object
+  // to the SSE emitter, and a second read of it must agree with listPending.
+  if (pending.publicResult && typeof pending.publicResult === 'object') {
+    pending.publicResult.review = review;
+  }
+  if (pending.request && typeof pending.request === 'object') pending.request.review = review;
+  return true;
 }
 
 function normalizeConfig(raw, source, enabled, tool) {
@@ -1047,6 +1074,9 @@ getAuthorization,
   clearGrants,
   cancelSession,
   listPending,
+  // Attach a completed shell review to a parked approval request so a
+  // reconnecting client still sees the verdict (see src/shellReview.js).
+  attachReview,
   regexMatch,
   matchesAllowlist,
   configToolName,

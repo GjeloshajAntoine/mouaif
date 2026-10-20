@@ -1091,6 +1091,92 @@ font-size: 14px;
 line-height: 15px;
 pointer-events: none;
 }
+
+/* ---- @-mentioned file context chips in composer ------------------- */
+.chat-view__file-preview {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 2px 6px 4px;
+  min-width: 0;
+}
+.chat-view__file-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  overflow: hidden;
+}
+.chat-view__file-chip--warn {
+  border-color: var(--danger);
+}
+.chat-view__file-chipbody {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 26px;
+  padding: 2px 6px 2px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .chat-view__file-chipbody:hover { background: var(--surface-3); }
+}
+.chat-view__file-chipbody:active { background: var(--accent-soft); }
+.chat-view__file-chipicon {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+.chat-view__file-chippath {
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14rem;
+}
+.chat-view__file-chipmeta {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.66rem;
+  white-space: nowrap;
+}
+.chat-view__file-chip--warn .chat-view__file-chipmeta {
+  color: var(--danger);
+}
+.chat-view__file-chipremove {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (hover: hover) {
+  .chat-view__file-chipremove:hover { background: var(--surface-3); color: var(--fg); }
+}
+.chat-view__file-chipremove:active { background: var(--accent-soft); color: var(--fg); }
 .chat-view__send {
   width: var(--tap-sm);
   height: var(--tap-sm);
@@ -1257,6 +1343,74 @@ gap: 6px;
 .tool-popup__foot-note {
 font-size: 0.6rem;
 color: var(--muted);
+}
+
+/* ---- Tool popup: shell-review action row ---------------------------- */
+/* One tappable row above the footer. It is an ACTION, not a tool toggle:
+   nothing here grants or runs anything (see docs/features/shell-review.md),
+   so it must not read like the checkboxes in the tree above it. */
+
+.tool-popup__actions {
+flex: 0 0 auto;
+padding: 4px 6px;
+border-top: 1px solid var(--border);
+}
+
+.tool-popup__action {
+display: flex;
+align-items: center;
+gap: 8px;
+width: 100%;
+min-height: 44px;
+padding: 4px 8px;
+background: var(--surface-3);
+border: 1px solid var(--border);
+border-radius: var(--r-sm);
+color: var(--fg);
+text-align: left;
+cursor: pointer;
+font: inherit;
+}
+
+.tool-popup__action:active { background: var(--surface-2); }
+@media (hover: hover) {
+  .tool-popup__action:hover { border-color: var(--border-strong); }
+}
+
+.tool-popup__action-icon {
+flex: 0 0 auto;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+width: 24px; height: 24px;
+color: var(--accent);
+}
+
+.tool-popup__action-body {
+flex: 1 1 auto;
+min-width: 0;
+display: flex;
+flex-direction: column;
+gap: 1px;
+}
+
+.tool-popup__action-label {
+font-size: 0.74rem;
+font-weight: 600;
+color: var(--fg);
+}
+
+.tool-popup__action-sub {
+font-size: 0.62rem;
+line-height: 1.25;
+color: var(--muted);
+}
+
+.tool-popup__action-chev {
+flex: 0 0 auto;
+color: var(--muted-2);
+font-size: 1rem;
+line-height: 1;
 }
 
 /* Segments inside the popup use a more compact style */
@@ -2925,3 +3079,205 @@ background: var(--surface);
   min-height: 44px;
 }
 .mcp-err__foot .btn { min-height: 36px; font-size: 0.78rem; }
+
+/* ---- Shell review: the verdict block -------------------------------- */
+/* Rendered by frontend/src/components/chat/shellReview.js buildReviewBlock,
+   so the approval card, the shell card and the review sheet all read the
+   same. `data-tone` carries SAFE / CAUTION / DANGER; an answer without a
+   recognised verdict stays neutral (`plain`) and is shown in full. */
+
+.tool-card__review {
+  margin: 6px 10px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-card__review[data-tone="safe"] { border-left-color: var(--success, #2f9e5f); }
+.tool-card__review[data-tone="caution"] { border-left-color: var(--warn, #c98a1a); }
+.tool-card__review[data-tone="danger"] { border-left-color: var(--danger, #d04545); }
+
+.tool-card__review-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool-card__review-title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tool-card__review-verdict {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--fg);
+}
+
+.tool-card__review[data-tone="safe"] .tool-card__review-verdict { background: rgba(47, 158, 95, 0.16); color: var(--success, #2f9e5f); }
+.tool-card__review[data-tone="caution"] .tool-card__review-verdict { background: rgba(201, 138, 26, 0.16); color: var(--warn, #c98a1a); }
+.tool-card__review[data-tone="danger"] .tool-card__review-verdict { background: rgba(208, 69, 69, 0.16); color: var(--danger, #d04545); }
+
+.tool-card__review-model {
+  font-size: 0.62rem;
+  color: var(--muted-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tool-card__review-text {
+  margin: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-height: 32dvh;
+  overflow-y: auto;
+}
+
+.tool-card__review-cost {
+  font-size: 0.6rem;
+  color: var(--muted-2);
+}
+
+/* ---- Shell review sheet --------------------------------------------- */
+
+/* Overlay / sheet / head / close come from the shared sheet idiom in
+   frontend/src/sheets.css (.gm__*). This file only adds the body layout. */
+
+.sr__overlay { z-index: var(--sheet-z, 60); }
+
+.sr__sheet { overflow: hidden; }
+
+.sr__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px 2px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  min-height: 44px;
+}
+
+.sr__head-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sr__title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sr__sub {
+  font-size: 0.64rem;
+  color: var(--muted-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sr__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+}
+
+.sr__status { margin: 0; }
+.sr__status:empty { display: none; }
+
+.sr__settings-link {
+  align-self: flex-start;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sr__label {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.sr__command,
+.sr__prompt {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  resize: vertical;
+}
+
+.sr__command { min-height: 6rem; }
+.sr__prompt { min-height: 7rem; font-size: 0.74rem; }
+
+.sr__command:focus-visible,
+.sr__prompt:focus-visible {
+  border-color: var(--accent);
+  outline: 0;
+}
+
+.sr__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sr__review { min-height: 44px; }
+
+.sr__row-hint {
+  font-size: 0.64rem;
+  color: var(--muted-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sr__row--prompt { align-items: center; }
+.sr__save-prompt { min-height: 44px; }
+
+.sr__verdict:empty { display: none; }
+.sr__verdict .tool-card__review { margin: 0; }
+
+@media (min-width: 720px) {
+  .sr__sheet { max-width: 620px; margin: auto; border-radius: var(--r-md); border: 1px solid var(--border-strong); }
+  .sr__body { max-height: 72dvh; }
+}

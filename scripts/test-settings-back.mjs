@@ -136,6 +136,8 @@ function harness(globals) {
     TOOL_MODE_CHOICES: [], ASK_USER_MODE_CHOICES: [], segMode: (m) => m,
     AgentFilePicker: 'picker', WebpreviewModal: 'modal', PreviewUrlPrompt: 'prompt',
     SubagentModelDefaults: 'subagent-defaults',
+    // Section marker only; scripts/test-shell-review-ui.mjs drives the real one.
+    ShellReviewSettings: 'shell-review-settings',
     projectsReload: { value: 0 }, getProjectStorage() {}, setProjectStorage() {}, requestWebpreview() {},
     sectionIcon: () => null, toolModeSegs: () => [], shortDesc: () => '',
     fetchJson: async () => ({ status: 200, body: {} })

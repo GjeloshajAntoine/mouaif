@@ -105,6 +105,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Readable tool approvals and results](tool-card-usability.md) — clear targets, grant scope, retry feedback, and bounded results.
 - [Live tool preview](live-tool-preview.md) — live tool output when you return to a running chat.
 - [Shell tool](shell-tool.md) — the model runs commands in the project and reads the output.
+- [Shell review](shell-review.md) — a second model reads a command before you approve it, with its own model, prompt, and review button.
 - [File tools](file-tools.md) — the model lists, searches, reads, and edits project files.
 - [Grouped file tools](grouped-file-tools.md) — read several files or apply several block replacements in one call.
 - [Grouped CLI tool](grouped-cli-tool.md) — run several shell commands in one call, or start one in the background.

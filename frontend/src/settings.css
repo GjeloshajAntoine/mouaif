@@ -963,3 +963,44 @@ textarea#projectEditor {
   border-top: 1px solid var(--border);
 }
 .afp__foot .afp__up { margin-right: auto; }
+
+/* ---- Settings → Project → Shell review ------------------------------ */
+/* A model + a mode + a prompt, stacked. One column at every width: the
+   model picker opens its own sheet, so a two-column row would only shrink
+   the trigger on the screen where it is already tightest. */
+
+.settings-project__shell-review {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.settings-project__shell-review .row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-project__shell-review .label {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.settings-project__shell-review .row--actions {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-project__shell-review .row--actions .btn { min-height: 44px; }
+.settings-project__shell-review .status { margin-left: auto; }
+
+.settings-project__shell-review textarea {
+  min-height: 5.5rem;
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.settings-project__shell-review .hint { margin: 0; }

@@ -11,6 +11,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Added
 
+- **Shell review** — an optional second model reads a shell command before you approve it and reports its effects with a SAFE / CAUTION / DANGER verdict. Its own provider-qualified model and prompt live in Settings → Project → Shell review, with three modes (off / on demand / always); the chat's tool popup gains a **Review a command** button that reviews a draft on demand. The reviewer is display-only: it cannot run, approve or change anything, its verdict rides the existing approval card (and survives a reload), and a failed review never blocks a command. See [shell review](docs/features/shell-review.md).
 - **Recursive subagent delegation** — opt-in finite root depth/concurrency/total-run budgets, local-parent child/group control, upward conflict escalation, inherited restricted permissions/attachments/model and subtree cancellation with descendant billing counted once. See [recursive delegation](docs/features/recursive-subagent-delegation.md).
 
 - **Cooperative subagent groups** — parent-created member DAGs with shared objectives, ownership/workspace provenance, discoverable artifacts, proposed versus approved contracts and explicit conflict arbitration. Status is immediate, messages are read-only, explicit sends have delivery receipts, observations and shutdown are bounded. See [the feature page](docs/features/cooperative-subagent-groups.md).

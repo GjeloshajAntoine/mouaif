@@ -461,6 +461,45 @@ async function handleTools(req, res, parsed, sessionToken = '') {
     return sendJSON(res, 200, { tools });
   }
 
+  // POST /api/tools/shell/review  body: { projectDir, cmd, cwd?, chatId? }
+  //   -> { ok, text, verdict, model, usage, cost, durationMs } | { ok:false, error, code }
+  //
+  // The shell-review reviewer (src/shellReview.js): a second model reads one
+  // command and reports what it does. Display-only — this route never runs the
+  // command, never grants a permission and never answers an approval; it is
+  // what the composer's review button and an on-demand review use. The
+  // automatic (`mode: 'always'`) path runs inside the tool loop and emits
+  // `shell_review` on the chat stream instead of calling this endpoint.
+  //
+  // The reviewer's own cost is attributed to the chat when one is given: it is
+  // billed work that is not a chat turn, the same rule dictation follows
+  // (see src/server-handlers-transcribe.js).
+  if (urlPath === '/api/tools/shell/review' && method === 'POST') {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
+    const cmd = body && typeof body.cmd === 'string' ? body.cmd : '';
+    const cwd = body && typeof body.cwd === 'string' ? body.cwd : '';
+    const chatId = body && typeof body.chatId === 'string' ? body.chatId : '';
+    if (!projectDir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    if (!cmd.trim()) return sendJSON(res, 400, { error: 'cmd is required' });
+    if (chatId && !chats.getChat(projectDir, chatId)) {
+      return sendJSON(res, 404, { error: 'Chat not found', chatId });
+    }
+    const review = await require('./shellReview.js').reviewCommand({ projectDir, cmd, cwd, chatId });
+    if (review.ok && chatId && review.cost && review.cost.known && Number.isFinite(review.cost.total) && review.cost.total > 0) {
+      try { messages.addChatCost(projectDir, chatId, review.cost.total); } catch { /* non-fatal */ }
+    }
+    // A failure keeps the HTTP status meaningful for a misconfigured review
+    // and stays 200 for an upstream problem: the caller renders the same text
+    // either way, and a 5xx would read as "the app is broken" rather than
+    // "the reviewer could not answer".
+    const status = review.ok ? 200
+      : (review.code === 'EBADINPUT' ? 400
+        : (review.code === 'EREVIEW_OFF' || review.code === 'EREVIEW_MODEL' ? 409 : 502));
+    return sendJSON(res, status, review);
+  }
+
   if (urlPath === '/api/tools/shell' && method === 'POST') {
     const body = await readJsonOr400(req, res);
     if (!body) return;

@@ -123,6 +123,12 @@ function eventToolId(e) {
     return inner || String(data.parentCallId == null ? '' : data.parentCallId);
   }
   if (e.name === 'authorization_required' || e.name === 'ask_user_required') return String(data.callId == null ? '' : data.callId);
+  // A shell review belongs to the tool call it reviewed (see
+  // src/shellReview.js). Keying it by that id is what lets pruneLive drop it
+  // together with the rest of the call's transient frames once the call's
+  // result is persisted: the verdict is already on the settled card by then
+  // (it is attached to the card, not to the transcript row).
+  if (e.name === 'shell_review') return String(data.id == null ? '' : data.id);
   // Deliberately NOT `progress_update`: pruneLive drops everything matching a
   // tool id whose result was just persisted, and a progress frame is never
   // persisted — dropping it would lose the run's progress card for a late

@@ -17,6 +17,7 @@ import { sectionIcon, toolModeSegs } from './settingsProjectUi.js';
 import { McpAuthSeg, ToolAuthSeg, segMode, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from './settings/toolAuth.js';
 import { AgentFilePicker } from './AgentFilePicker.jsx';
 import { SubagentModelDefaults } from './SubagentModelDefaults.jsx';
+import { ShellReviewSettings } from './settings/ShellReviewSettings.jsx';
 
 import { agentEditorPath } from './settings/agentNavigation.js';
 import { backHref, backTarget, settingsLink } from './settings/projectNavigation.js';
@@ -1276,17 +1277,43 @@ class: 'view-back',
             : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
         ),
         h('a', {
-class: 'group__row settings-project__link-row settings-project__options-link',
-'aria-label': 'File tool options',
-href: '#/settings/project/output?' + projectBackQS()
-},
-          h('span', { class: 'group__row-body' },
-            h('span', { class: 'group__row-label' }, 'File tool options'),
-            h('span', { class: 'settings-project__link-sub' }, 'Output size, structure, and the JSON value')
-          ),
-          h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+      class: 'group__row settings-project__link-row settings-project__options-link',
+      'aria-label': 'File tool options',
+      href: '#/settings/project/output?' + projectBackQS()
+      },
+        h('span', { class: 'group__row-body' },
+          h('span', { class: 'group__row-label' }, 'File tool options'),
+          h('span', { class: 'settings-project__link-sub' }, 'Output size, structure, and the JSON value')
+        ),
+        h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
         )
-      ),
+        ),
+
+        // Shell review — a second model that reads a shell command before it is
+        // approved (docs/features/shell-review.md). Its own section rather than a
+        // row in the Tools tree: it is not a tool (nothing is advertised to the
+        // model, no gate is flipped), it is a review of what the shell tool is
+        // about to do, and its settings are a model + a prompt.
+        h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' },
+        sectionIcon('tools'),
+        h('span', null, 'Shell review'),
+        h('details', { class: 'settings-project__info' },
+          h('summary', { 'aria-label': 'About shell review' }, '?'),
+          h('div', { class: 'settings-project__info-body' },
+          h('p', null, 'Pick a second model to read a shell command and report what it would do before you approve it. The verdict appears on the approval card; the command still runs only when you approve it, and this reviewer can never approve or run anything.'),
+          h('p', null, 'On demand reviews a command you ask about from the chat’s tool menu. Always reviews every shell command the assistant proposes — each review is a separate request on the chosen model’s account.')
+          )
+        )
+        ),
+        (dir() || initialDir) && h(ShellReviewSettings, {
+        projectDir: dir() || initialDir,
+        onProjectSaved: (project) => {
+          setCurrentProject(project);
+          setEditorText(JSON.stringify(project, null, 2));
+        }
+        })
+        ),
 
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },

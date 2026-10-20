@@ -9,7 +9,15 @@ import { h } from 'preact';
 import { useRef, useEffect, useState } from 'preact/hooks';
 import { useChatState } from './useChatState.js';
 import { setThinkingCustomOpen, commitThinkingCustom, thinkingCustomOpen, syncThinkingSelect } from './thinking.js';
-import { mountAtMention, refreshAtMentionItems } from './atMention.js';
+import {
+  mountAtMention,
+  refreshAtMentionItems,
+  getAtMentionItems,
+  subscribeAtMentionItems,
+  resolveMentionedFiles,
+  removeMentionedFileFromText,
+  formatMentionFileMeta
+} from './atMention.js';
 import { FileToolbar } from './FileToolbar.jsx';
 import { ToolPopup } from './ToolPopup.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
@@ -64,10 +72,21 @@ onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refre
 // instead of adding the earlier runs a second time.
 const dictationCostRef = useRef(null);
 const [FileEditor, setFileEditor] = useState(null);
+const [fileEditorInitialPath, setFileEditorInitialPath] = useState('');
+const [atMentionItems, setAtMentionItems] = useState(() => getAtMentionItems());
 const [screenCaptureOpen, setScreenCaptureOpen] = useState(false);
 const ScreenCapturePanel = useLazyView(screenCaptureOpen, () => import('./ScreenCapturePanel.jsx'), 'ScreenCapturePanel');
 const capturedImagesSaveRef = useRef(Promise.resolve());
-useEffect(() => { setScreenCaptureOpen(false); }, [projectDir, chatId]);
+useEffect(() => {
+  setScreenCaptureOpen(false);
+  setFileEditorInitialPath('');
+}, [projectDir, chatId]);
+useEffect(() => {
+  setAtMentionItems(getAtMentionItems());
+  return subscribeAtMentionItems((nextItems) => {
+    setAtMentionItems(Array.isArray(nextItems) ? nextItems.slice() : []);
+  });
+}, [projectDir, chatId]);
 
 function onCapturedImages(items) {
 const additions = toPublicImageAttachments(items);
@@ -297,6 +316,23 @@ saveComposerDraftNow(nextText, refs, updateChat, {
 draftAttachments: toPublicImageAttachments(shifted)
 }).catch(() => {});
 }
+}
+const mentionedFiles = resolveMentionedFiles(composerText, atMentionItems);
+function onRemoveMentionedFile(file) {
+  const currentText = refs.promptInput.current ? refs.promptInput.current.value : composerText;
+  const nextText = removeMentionedFileFromText(currentText, file, atMentionItems);
+  syncComposer(nextText);
+  if (updateChat) {
+    saveComposerDraftNow(nextText, refs, updateChat).catch(() => {});
+  }
+  if (refs.promptInput.current) {
+    try { refs.promptInput.current.focus(); } catch { /* ignore */ }
+  }
+}
+function onOpenMentionedFile(file) {
+  if (!file || !file.path) return;
+  setFileEditorInitialPath(file.path);
+  setFileEditorOpen(true);
 }
 // The latest webpreview capture lives in a fixed dock above the composer.
 // The full-screen viewer is a separate local toggle so dismissing the viewer
@@ -569,6 +605,12 @@ onToggleTool: s.state._toggleTool,
             mcpStartBusy,
             // Last start failure per server id, shown under the row.
             mcpStartErrors: s.state._mcpStartErrors,
+            // Shell review: the project/chat the review sheet is scoped to, and
+            // the composer draft that seeds its command field (a command typed
+            // for later review). See docs/features/shell-review.md.
+            projectDir,
+            chatId,
+            draftCommand: composerText,
             // Render stamps keep ref-backed authorization and catalog data fresh.
             authStamp,
             toolDataStamp
@@ -638,7 +680,7 @@ h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {
 projectDir,
 orb: fileOrb,
-onOpenFileEditor: () => setFileEditorOpen(true),
+onOpenFileEditor: () => { setFileEditorInitialPath(''); setFileEditorOpen(true); },
 onOpenPreview: () => setPreviewPromptOpen(true),
 onOpenScreenCapture: () => setScreenCaptureOpen(true),
 customActions,
@@ -689,6 +731,37 @@ h('button', { class: 'chat-view__image-chipremove', type: 'button', onClick: () 
 h('span', null, '×')
 )
 ))
+) : null,
+mentionedFiles.length ? h('div', { class: 'chat-view__file-preview', 'aria-label': 'Files attached by @-mention' },
+mentionedFiles.map((file) => {
+const meta = formatMentionFileMeta(file);
+const titleText = file.oversized
+  ? file.path + ' — exceeds the 256 KB mention limit (not attached in full)'
+  : 'Attached with message: ' + file.path + (meta ? ' (' + meta + ')' : '');
+return h('div', {
+  key: file.path,
+  class: 'chat-view__file-chip' + (file.oversized ? ' chat-view__file-chip--warn' : '')
+},
+  h('button', {
+  class: 'chat-view__file-chipbody',
+  type: 'button',
+  onClick: () => onOpenMentionedFile(file),
+  title: titleText,
+  'aria-label': 'Preview attached file ' + file.path
+  },
+  h('span', { class: 'chat-view__file-chipicon', 'aria-hidden': 'true' }, file.oversized ? '⚠️' : '📄'),
+  h('span', { class: 'chat-view__file-chippath' }, file.path),
+  meta ? h('span', { class: 'chat-view__file-chipmeta' }, meta) : null
+  ),
+  h('button', {
+  class: 'chat-view__file-chipremove',
+  type: 'button',
+  onClick: () => onRemoveMentionedFile(file),
+  title: 'Remove @' + file.path,
+  'aria-label': 'Remove @' + file.path + ' from message'
+  }, '×')
+);
+})
 ) : null
 )
 ),
@@ -696,13 +769,13 @@ h('span', null, '×')
 // defaults): a dozen modules write to `refs.status`. The CSS modifier hides
 // the text but keeps the safe-area inset and any error state.
 h('div', { class: 'chat-view__status-row' + (composerTools.status ? '' : ' chat-view__status-row--hidden') },
-      h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
-    ),
+  h('span', { ref: refs.status, class: 'status chat-view__status', 'aria-live': 'polite' })
+  ),
 screenCaptureOpen && ScreenCapturePanel
 ? h(ScreenCapturePanel, { onClose: () => setScreenCaptureOpen(false), onAttach: onCapturedImages, availableSlots: Math.max(0, 8 - imageAttachments.length) })
 : null,
 fileEditorOpen && FileEditor
-? h(FileEditor, { projectDir, onClose: () => setFileEditorOpen(false), onDraftCraftAdded })
+? h(FileEditor, { projectDir, initialPath: fileEditorInitialPath, onClose: () => { setFileEditorOpen(false); setFileEditorInitialPath(''); }, onDraftCraftAdded })
 : null,
 webPreviewOpen && webPreviewPayload && WebpreviewModal
 ? h(WebpreviewModal, {

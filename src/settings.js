@@ -154,6 +154,15 @@ fileOrbButton: false,
   // Lives in the same default floor so projects without a key resolve to a
   // sane value.
   toolOutput: { size: 'average', structure: 'tree' },
+  // Shell review — an optional second model that reads a proposed shell
+  // command before it runs and reports what it would do. Shape:
+  //   { mode, providerId, modelId, prompt }
+  // `mode` is 'off' (default), 'always' (review every command the shell tool
+  // runs) or 'ask' (review only from the composer's review button). Nothing
+  // here grants permission: the reviewing model is display-only, and a
+  // command still passes through the normal authorization gate. See
+  // docs/features/shell-review.md.
+  shellReview: { mode: 'off' },
   // Maximum UTF-8 bytes of one tool result copied into model context.
   // The complete result remains available to the UI and transcript.
   toolFeedbackMaxBytes: 64 * 1024,

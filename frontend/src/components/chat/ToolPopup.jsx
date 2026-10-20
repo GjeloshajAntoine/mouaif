@@ -57,11 +57,41 @@ export function ToolPopup(props) {
     onReloadMcpServer,
     mcpStartBusy,
     mcpStartErrors,
+    projectDir,
+    chatId,
+    draftCommand,
   } = props;
   const [open, setOpen] = useState(false);
   const popupRef = useRef(null);
   const triggerRef = useRef(null);
   useClickOutside([popupRef, triggerRef], () => setOpen(false), open);
+
+  // Shell review (docs/features/shell-review.md). The sheet is lazy-loaded on
+  // first open, the same way the CLI / Git modals are: it is a full-screen
+  // surface, not something every chat render should pay for. The draft command
+  // seeds its field, which is the whole point of the row — paste or type a
+  // command in the composer, then ask a second model about it.
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [ShellReviewSheet, setShellReviewSheet] = useState(null);
+  useEffect(() => {
+    if (!reviewOpen || ShellReviewSheet) return;
+    let cancelled = false;
+    import('./ShellReviewSheet.jsx').then((mod) => {
+      if (!cancelled) setShellReviewSheet(() => mod.ShellReviewSheet);
+    }).catch(() => {
+      if (!cancelled) setShellReviewSheet(null);
+    });
+    return () => { cancelled = true; };
+  }, [reviewOpen, ShellReviewSheet]);
+
+  function openReview(command) {
+    // Closing the popup first keeps the sheet as the only dialog on screen;
+    // two stacked sheets would fight over Escape (see hooks/modalStack.js).
+    setOpen(false);
+    setReviewCommand(typeof command === 'string' ? command : '');
+    setReviewOpen(true);
+  }
+  const [reviewCommand, setReviewCommand] = useState('');
 
   // Anchor the fixed popover below the complete, wrapping chat header. Using
   // only the trigger bottom makes the top-bar variant overlap the model row.
@@ -273,12 +303,47 @@ export function ToolPopup(props) {
             class: 'tool-popup__tree'
           })
         ),
+        // Shell review — a second model reads a command before it is run.
+        // Its own action row, above the footer: it is not a tool toggle (it
+        // grants nothing and runs nothing), so it does not belong in the tree.
+        h('div', { class: 'tool-popup__actions' },
+        h('button', {
+        class: 'tool-popup__action',
+        type: 'button',
+        onClick: () => openReview(draftCommand || ''),
+        'aria-haspopup': 'dialog',
+        title: 'Ask a second model what a shell command would do'
+        },
+        h('span', { class: 'tool-popup__action-icon', 'aria-hidden': 'true' },
+        h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+          h('path', { d: 'M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z' }),
+          h('circle', { cx: '12', cy: '12', r: '2.8' })
+        )
+        ),
+        h('span', { class: 'tool-popup__action-body' },
+        h('span', { class: 'tool-popup__action-label' }, 'Review a command'),
+        h('span', { class: 'tool-popup__action-sub' }, 'Ask a second model what it would do — nothing runs')
+        ),
+        h('span', { class: 'tool-popup__action-chev', 'aria-hidden': 'true' }, '›')
+        )
+        ),
         h('div', { class: 'tool-popup__foot' },
         h('span', { class: 'tool-popup__foot-note' },
-          'Actions run immediately. Off / Ask / Allow here applies to this chat only; project-wide modes live in Settings → Project. Tools marked \u25CF have been used in this chat.'
+        'Actions run immediately. Off / Ask / Allow here applies to this chat only; project-wide modes live in Settings → Project. Tools marked \u25CF have been used in this chat.'
         )
         )
       )
-    )
+    ),
+    // The review sheet renders outside the popup's fixed card so it can own the
+    // whole viewport (a sheet inside a positioned popover would be clipped by
+    // the popup's max-height). Lazy component: null until its chunk has loaded.
+    reviewOpen && ShellReviewSheet
+      ? h(ShellReviewSheet, {
+        projectDir: projectDir || '',
+        chatId: chatId || '',
+        initialCommand: reviewCommand,
+        onClose: () => setReviewOpen(false)
+      })
+      : null
   );
 }

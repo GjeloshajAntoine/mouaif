@@ -31,6 +31,7 @@ import {
   zoomableImage
 } from './toolRender.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
+import { applyReviewToCard } from './shellReview.js';
 import { cssEscape, copyText, messageCopyText } from './utils.js';
 import { formatCost } from '../../usage.js';
 import { buildSetupCard, mountToolsCard, mountAgentFilesCard, mountSkillsCard } from './cards.js';
@@ -1385,6 +1386,26 @@ export function handleShellOutputEvent(data, refs) {
   scrollToolBodyToBottomSoon(pre);
   afterTranscriptAppend(refs, false);
   return true;
+}
+
+// handleShellReviewEvent(data, refs)
+//
+// Fold a `shell_review` frame into the card for that call: the approval card
+// when the call is still waiting for a decision, otherwise the shell call /
+// result card. The review is produced by a second model BEFORE anything runs
+// (docs/features/shell-review.md), so the normal order is: the call lands, its
+// approval card mounts, then the verdict lands into it. A fast reviewer can
+// beat the card; the buffered live replay covers that, and both cases use the
+// same in-place update, so a verdict never produces a second card.
+//
+// Returns true when a card took the review, false when there is nothing to
+// attach it to (the call already scrolled out of the retained window).
+export function handleShellReviewEvent(data, refs) {
+  if (!refs.transcript.current || !data || !data.id) return false;
+  const card = findToolCard(refs, data.id);
+  if (!card) return false;
+  delete card.dataset.awaitingReview;
+  return applyReviewToCard(card, data);
 }
 
 // findSubagentCard(refs, parentCallId)

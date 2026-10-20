@@ -19,6 +19,7 @@ findToolCard,
 rekeyToolCard,
 finalizeLiveMessage,
 handleShellOutputEvent,
+handleShellReviewEvent,
 handleSubagentStreamEvent,
 setSubagentCardCost,
 syncTranscriptAppend,
@@ -1248,6 +1249,13 @@ state.messages = state.messages.filter((m) => m !== userMsg);
     }
     if (ev.eventName === 'shell_output' && data) {
       handleShellOutputEvent(data, refs);
+      return;
+    }
+    // A second model's verdict on a shell command (docs/features/shell-review.md).
+    // It is display-only: it lands in the card that is about to ask for (or
+    // already asked for) permission, and never answers that prompt itself.
+    if (ev.eventName === 'shell_review' && data) {
+      handleShellReviewEvent(data, refs);
       return;
     }
     if (data && data.parentTool === 'subagent' && ev.eventName === 'authorization_required') {

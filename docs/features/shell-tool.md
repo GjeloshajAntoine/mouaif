@@ -71,11 +71,13 @@ The chat composer also accepts an `@shell <cmd>` command that runs the tool dire
 - **Live output preview.** While the command runs, decoded stdout/stderr chunks ride the SSE stream as `shell_output` events so the chat card can stream a live preview (same for shell calls nested inside a subagent, which re-emit as `subagent_event` with `kind: "shell_output"`). These frames are UI-only — never persisted and never sent back to the model; the authoritative output is the single `tool_result` after the command exits.
 - **Disabled when off.** A project with `tools.shell.mode` set to `off` returns `ETOOL_DISABLED` for any call (model-initiated or `@shell`). The authorization gate is the single source of truth for enablement; there is no separate `enabled` flag.
 - **Persisted with the chat.** `tool_call` and `tool_result` events are written to `<projectDir>/.mouaif.traces.<chatId>.json` (when tracing is on) and to the per-chat NDJSON trace as `tool_call` and `tool_result` lines.
+- **Optional second opinion.** A project can configure a reviewer model (see [shell review](./shell-review.md)) that reads each proposed command and reports its effects with a SAFE / CAUTION / DANGER verdict. The verdict is display-only: it rides the same approval card, changes no mode, and never runs or approves anything.
 - **No new runtime dependencies.** The runner is built on `node:child_process.spawn` only. No third-party shell wrappers.
 
 ## Related
 
 - [docs/features/grouped-cli-tool.md](./grouped-cli-tool.md) — the batch counterpart: many commands in one call, some in the background.
+- [docs/features/shell-review.md](./shell-review.md) — a second model reads a command before you approve it.
 - [docs/features/ai-client.md](./ai-client.md) — `tool_call` and `tool_result` SSE event names.
 - [docs/features/tool-authorization.md](./tool-authorization.md) — every shell call passes through the authorization gate.
 - [docs/features/trace.md](./trace.md) — `tool_call` and `tool_result` lines on the NDJSON trace.

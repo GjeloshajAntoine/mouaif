@@ -23,6 +23,7 @@ import { parseSSEFrame } from '../../api.js';
 import { authorizationCard, askUserCard } from './cards.js';
 import {
   handleShellOutputEvent,
+  handleShellReviewEvent,
   handleSubagentStreamEvent,
   updateProgressCard,
   appendDeltaToLive,
@@ -210,6 +211,13 @@ function dispatchLiveEvent(ev, refs, state, key) {
   }
   if (ev.eventName === 'shell_output') {
     handleShellOutputEvent(data, refs);
+    return;
+  }
+  // A shell review is buffered server-side with the approval prompt it
+  // belongs to (src/live-chat.js), so a follower that joins late — or a page
+  // that reconnects while the card is open — still gets the verdict.
+  if (ev.eventName === 'shell_review') {
+    handleShellReviewEvent(data, refs);
     return;
   }
   if (ev.eventName === 'subagent_event') {

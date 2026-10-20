@@ -14,6 +14,7 @@ import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } fro
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
 import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
 import { saveSkillSelection } from './skillState.js';
+import { buildReviewBlock } from './shellReview.js';
 
 // buildSetupCard()
 //
@@ -851,6 +852,16 @@ card.addEventListener('keydown', onKey);
     // catalogue can opt out so mounting many examples does not jump the page.
     if (autoFocus && buttons[0]) { setTimeout(() => { if (!settled && card.isConnected) buttons[0].focus(); }, 100); }
     card.appendChild(head); card.appendChild(detail);
+    // The second-opinion block (docs/features/shell-review.md). It arrives in
+    // one of two ways: already on the request (a recovered pending prompt or a
+    // live event that beat the card), or later as a `shell_review` frame, which
+    // `handleShellReviewEvent` folds in by call id. It sits above the decision
+    // buttons because it is what the user reads before deciding — and it never
+    // answers for them: the buttons below are still the only decision.
+    const existingReview = request && request.review ? request.review : null;
+    const reviewBlock = existingReview ? buildReviewBlock(existingReview) : null;
+    if (reviewBlock) card.appendChild(reviewBlock);
+    else if (request && request.tool === 'shell') card.dataset.awaitingReview = '1';
     if (modelPicker) card.appendChild(modelPicker);
     card.appendChild(actions); card.appendChild(feedback); card.appendChild(retry);
     refs.transcript.current.appendChild(card);

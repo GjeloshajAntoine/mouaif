@@ -828,7 +828,10 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}) {
     // connected ones. Conveniently, the run entry also gives us the
     // toolResultId for a later prune on `tool_result`.
     if (name === 'shell_output' || name === 'subagent_event'
-    || name === 'authorization_required' || name === 'ask_user_required') {
+    || name === 'authorization_required' || name === 'ask_user_required'
+    // A shell review (src/shellReview.js) arrives while the call is still
+    // pending, so it must be buffered with the approval prompt it belongs to.
+    || name === 'shell_review') {
     liveChat.pushLive(runKey, name, data);
     if (name === 'subagent_event' && (data?.kind === 'tool_call' || data?.kind === 'tool_result') && data?.data?.id) {
     liveChat.pruneLive(runKey, data.data.id);
