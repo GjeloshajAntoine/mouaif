@@ -22,6 +22,13 @@ Thumbs.db
 .mouaif.json
 .mouaif.messages.*.json
 .mouaif/
+# Raw V8 heap snapshots and the run manifest written by the performance
+# profiler (scripts/perf-profile.mjs). A snapshot of a real chat is 40-200 MB of
+# JSON, so only the report itself (perf/latest.json) is committed; the
+# snapshots stay on the machine that recorded them.
+perf/snapshots/
+perf/*.manifest.json
+
 # Transient staging files from the atomic project-file writes (see
 # src/settings.js writeJsonFile). They exist only between the write and the
 # rename; a crash can leave one behind.

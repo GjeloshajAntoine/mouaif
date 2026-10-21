@@ -1,0 +1,2336 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-10-21T18:18:15.625Z",
+  "stamp": "2026-10-21T18-18-15-531Z",
+  "environment": {
+    "generatedAt": "2026-10-21T18:18:15.625Z",
+    "visibility": "visible",
+    "auth": "session",
+    "base": "http://127.0.0.1:8080",
+    "projectDir": "/home/ubuntu/mouaif",
+    "chromePort": 9222,
+    "browser": "Chrome/140.0.7339.80",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/140.0.0.0 Safari/537.36",
+    "viewport": {
+      "width": 430,
+      "height": 932,
+      "deviceScaleFactor": 2,
+      "mobile": true
+    },
+    "platform": "linux",
+    "nodeVersion": "v24.15.0",
+    "host": "vps-d86a3e06",
+    "cpus": 2,
+    "totalMemBytes": 4005425152,
+    "loadAverage": [
+      0.76,
+      0.91,
+      0.65
+    ],
+    "store": {
+      "path": "/home/ubuntu/.mouaif/store.sqlite",
+      "bytes": 1659125760,
+      "walBytes": 9929232
+    },
+    "serverMetricSample": {
+      "note": "Chrome-side metrics from the already-open tab",
+      "Timestamp": 1161015.491691,
+      "AudioHandlers": 0,
+      "AudioWorkletProcessors": 0,
+      "Documents": 9,
+      "Frames": 8,
+      "JSEventListeners": 13040,
+      "LayoutObjects": 20493,
+      "MediaKeySessions": 0,
+      "MediaKeys": 0,
+      "Nodes": 264775,
+      "Resources": 10,
+      "ContextLifecycleStateObservers": 3180,
+      "V8PerContextDatas": 7,
+      "WorkerGlobalScopes": 1,
+      "UACSSResources": 0,
+      "RTCPeerConnections": 0,
+      "ResourceFetchers": 9,
+      "AdSubframes": 0,
+      "DetachedScriptStates": 2,
+      "ArrayBufferContents": 25,
+      "LayoutCount": 1,
+      "RecalcStyleCount": 2,
+      "LayoutDuration": 0.000247,
+      "RecalcStyleDuration": 0.004388,
+      "DevToolsCommandDuration": 0.003387,
+      "ScriptDuration": 0.000032,
+      "V8CompileDuration": 0,
+      "TaskDuration": 0.021608,
+      "TaskOtherDuration": 0.013554,
+      "ThreadTime": 0.011419,
+      "ProcessTime": 0,
+      "JSHeapUsedSize": 64160468,
+      "JSHeapTotalSize": 66322432,
+      "FirstMeaningfulPaint": 1160932.41459,
+      "DomContentLoaded": 1160932.334668,
+      "NavigationStart": 1160932.131419
+    }
+  },
+  "app": {
+    "shellMs": 22555.18,
+    "vitals": {
+      "fcpMs": 484,
+      "lcpMs": null,
+      "domContentLoadedMs": 363.8,
+      "loadMs": 364,
+      "ttfbMs": 51.5,
+      "transferBytes": 4393,
+      "jsHeapUsedAtLoad": 64614748,
+      "jsHeapTotalAtLoad": 77332480,
+      "domNodesAtLoad": 265588,
+      "listenersAtLoad": 13313
+    },
+    "heapAfterLoad": {
+      "jsHeapUsed": 67985199,
+      "jsHeapTotal": 80693735,
+      "jsHeapLimit": 2103443456,
+      "domNodes": 590
+    },
+    "trace": {
+      "longTaskCount": 2,
+      "longTaskTotalMs": 237.94,
+      "longestTasks": [
+        {
+          "ms": 152.01,
+          "startMs": 1161015889.96
+        },
+        {
+          "ms": 85.93,
+          "startMs": 1161016233.16
+        }
+      ],
+      "byCost": [
+        {
+          "name": "FunctionCall",
+          "ms": 267.38
+        },
+        {
+          "name": "UpdateLayoutTree",
+          "ms": 164.67
+        },
+        {
+          "name": "PrePaint",
+          "ms": 57.94
+        },
+        {
+          "name": "Layout",
+          "ms": 37.97
+        },
+        {
+          "name": "Paint",
+          "ms": 14.9
+        },
+        {
+          "name": "EvaluateScript",
+          "ms": 9.63
+        },
+        {
+          "name": "ParseHTML",
+          "ms": 4.52
+        }
+      ]
+    }
+  },
+  "chatsTab": {
+    "projectCards": 3,
+    "chatRows": 79,
+    "listScrollHeight": 932,
+    "listClientHeight": 932,
+    "scrollsPage": false,
+    "vitals": {
+      "fcpMs": 236,
+      "lcpMs": null,
+      "domContentLoadedMs": 168.4,
+      "loadMs": 169.3,
+      "ttfbMs": 19.4,
+      "transferBytes": 4393,
+      "jsHeapUsedAtLoad": 74931672,
+      "jsHeapTotalAtLoad": 83886080,
+      "domNodesAtLoad": 281647,
+      "listenersAtLoad": 15745
+    },
+    "heap": {
+      "jsHeapUsed": 76336147,
+      "domNodes": 590
+    },
+    "trace": {
+      "longTaskCount": 2,
+      "longTaskTotalMs": 178.29,
+      "longestTasks": [
+        {
+          "ms": 107.54,
+          "startMs": 1161326268.62
+        },
+        {
+          "ms": 70.75,
+          "startMs": 1161326398.03
+        }
+      ],
+      "byCost": [
+        {
+          "name": "FunctionCall",
+          "ms": 249.81
+        },
+        {
+          "name": "UpdateLayoutTree",
+          "ms": 141.23
+        },
+        {
+          "name": "PrePaint",
+          "ms": 52.87
+        },
+        {
+          "name": "Layout",
+          "ms": 24.54
+        },
+        {
+          "name": "Paint",
+          "ms": 18.12
+        },
+        {
+          "name": "ParseHTML",
+          "ms": 6.91
+        },
+        {
+          "name": "EvaluateScript",
+          "ms": 3.27
+        }
+      ]
+    }
+  },
+  "inspectorTab": {
+    "route": "#/inspector",
+    "heap": {
+      "jsHeapUsed": 79122889,
+      "domNodes": 152
+    },
+    "trace": {
+      "longTaskCount": 2,
+      "longTaskTotalMs": 125.71,
+      "longestTasks": [
+        {
+          "ms": 68.92,
+          "startMs": 1161355859.57
+        },
+        {
+          "ms": 56.79,
+          "startMs": 1161355695.2
+        }
+      ],
+      "byCost": [
+        {
+          "name": "Layout",
+          "ms": 79.8
+        },
+        {
+          "name": "UpdateLayoutTree",
+          "ms": 27.88
+        },
+        {
+          "name": "FunctionCall",
+          "ms": 23.38
+        },
+        {
+          "name": "ParseHTML",
+          "ms": 9.06
+        },
+        {
+          "name": "Paint",
+          "ms": 9.04
+        },
+        {
+          "name": "EvaluateScript",
+          "ms": 3.49
+        },
+        {
+          "name": "PrePaint",
+          "ms": 2.1
+        }
+      ]
+    }
+  },
+  "transcripts": [
+    {
+      "label": "synthetic tiny",
+      "kind": "synthetic",
+      "chatId": "429f4e59",
+      "source": {
+        "rows": 30,
+        "bytes": 10316
+      },
+      "scrollSteps": 6,
+      "open": {
+        "firstRowMs": 1083,
+        "completeMs": 1235.5,
+        "totalWallMs": 2039.59,
+        "domNodesAtOpen": 1062,
+        "jsHeapAtOpen": 73959603,
+        "scriptTaskLongestMs": 238,
+        "longTaskCountInPage": 3,
+        "metrics": {
+          "fcpMs": 416,
+          "lcpMs": null,
+          "domContentLoadedMs": 337.9,
+          "loadMs": 338.1,
+          "ttfbMs": 30.3,
+          "transferBytes": 4393,
+          "jsHeapUsedAtLoad": 69949644,
+          "jsHeapTotalAtLoad": 82837504,
+          "domNodesAtLoad": 266597,
+          "listenersAtLoad": 13288
+        }
+      },
+      "trace": {
+        "longTaskCount": 5,
+        "longTaskTotalMs": 564.73,
+        "longestTasks": [
+          {
+            "ms": 242.07,
+            "startMs": 1161047720.39
+          },
+          {
+            "ms": 132.23,
+            "startMs": 1161047156.36
+          },
+          {
+            "ms": 69.42,
+            "startMs": 1161046781.54
+          },
+          {
+            "ms": 65.31,
+            "startMs": 1161047962.53
+          },
+          {
+            "ms": 55.7,
+            "startMs": 1161046843.52
+          }
+        ],
+        "byCost": [
+          {
+            "name": "Layout",
+            "ms": 79.68
+          },
+          {
+            "name": "ParseHTML",
+            "ms": 77.23
+          },
+          {
+            "name": "FunctionCall",
+            "ms": 66.51
+          },
+          {
+            "name": "UpdateLayoutTree",
+            "ms": 64.36
+          },
+          {
+            "name": "Paint",
+            "ms": 20.58
+          },
+          {
+            "name": "EvaluateScript",
+            "ms": 9.91
+          },
+          {
+            "name": "PrePaint",
+            "ms": 8.59
+          }
+        ]
+      },
+      "heap": {
+        "baselineBeforeOpen": 64470152,
+        "baselineDelta": 9489451,
+        "jsHeapUsed": 73959603,
+        "jsHeapTotal": 86834999,
+        "jsHeapLimit": 2103443456,
+        "domNodes": 1062,
+        "transcriptNodes": 612,
+        "rows": 23,
+        "toolCards": 4,
+        "scrollHeight": 4894,
+        "bytesPerNode": 69641.81,
+        "gcBeforeScroll": 66167620,
+        "afterLeaveBaseline": 60234452,
+        "retainedAfterLeave": 0
+      },
+      "scroll": {
+        "steps": 7,
+        "maxScrollHeight": 4143,
+        "stepMs": {
+          "count": 7,
+          "min": 13.9,
+          "median": 16.5,
+          "p90": 18.2,
+          "p99": 18.2,
+          "max": 18.2,
+          "total": 113.5
+        },
+        "frameToFrameMs": {
+          "count": 7,
+          "min": 0,
+          "median": 0.1,
+          "p90": 0.2,
+          "p99": 0.2,
+          "max": 0.2,
+          "total": 0.6
+        },
+        "heapAfter": 69548772,
+        "msPerStep": 16.21
+      },
+      "windowing": {
+        "renderedRows": 23,
+        "sourceRows": 30,
+        "ratio": 0.767,
+        "renderedToolCards": 4
+      }
+    },
+    {
+      "label": "synthetic medium",
+      "kind": "synthetic",
+      "chatId": "1033d384",
+      "source": {
+        "rows": 500,
+        "bytes": 286525
+      },
+      "scrollSteps": 6,
+      "open": {
+        "firstRowMs": 906.4,
+        "completeMs": 1080,
+        "totalWallMs": 1786.72,
+        "domNodesAtOpen": 7121,
+        "jsHeapAtOpen": 68610420,
+        "scriptTaskLongestMs": 283,
+        "longTaskCountInPage": 5,
+        "metrics": {
+          "fcpMs": 340,
+          "lcpMs": null,
+          "domContentLoadedMs": 250.5,
+          "loadMs": 250.6,
+          "ttfbMs": 23.2,
+          "transferBytes": 4393,
+          "jsHeapUsedAtLoad": 64333148,
+          "jsHeapTotalAtLoad": 80740352,
+          "domNodesAtLoad": 258889,
+          "listenersAtLoad": 10785
+        }
+      },
+      "trace": {
+        "longTaskCount": 3,
+        "longTaskTotalMs": 452.04,
+        "longestTasks": [
+          {
+            "ms": 284.05,
+            "startMs": 1161052640.87
+          },
+          {
+            "ms": 114.05,
+            "startMs": 1161052215.62
+          },
+          {
+            "ms": 53.94,
+            "startMs": 1161052925.12
+          }
+        ],
+        "byCost": [
+          {
+            "name": "Layout",
+            "ms": 58.82
+          },
+          {
+            "name": "FunctionCall",
+            "ms": 58.57
+          },
+          {
+            "name": "ParseHTML",
+            "ms": 51.09
+          },
+          {
+            "name": "UpdateLayoutTree",
+            "ms": 49.24
+          },
+          {
+            "name": "Paint",
+            "ms": 27.07
+          },
+          {
+            "name": "PrePaint",
+            "ms": 9.81
+          },
+          {
+            "name": "EvaluateScript",
+            "ms": 4.43
+          }
+        ]
+      },
+      "heap": {
+        "baselineBeforeOpen": 60234560,
+        "baselineDelta": 8375860,
+        "jsHeapUsed": 68610420,
+        "jsHeapTotal": 85005160,
+        "jsHeapLimit": 2103443456,
+        "domNodes": 7121,
+        "transcriptNodes": 6671,
+        "rows": 241,
+        "toolCards": 30,
+        "scrollHeight": 36110,
+        "bytesPerNode": 9634.94,
+        "gcBeforeScroll": 62413972,
+        "afterLeaveBaseline": 54776432,
+        "retainedAfterLeave": 0
+      },
+      "scroll": {
+        "steps": 7,
+        "maxScrollHeight": 46607,
+        "stepMs": {
+          "count": 7,
+          "min": 0.5,
+          "median": 27.1,
+          "p90": 40,
+          "p99": 40,
+          "max": 40,
+          "total": 164.6
+        },
+        "frameToFrameMs": {
+          "count": 7,
+          "min": 0,
+          "median": 0,
+          "p90": 0.1,
+          "p99": 0.1,
+          "max": 0.1,
+          "total": 0.3
+        },
+        "heapAfter": 66265667,
+        "msPerStep": 23.51
+      },
+      "fullHistory": {
+        "pages": 2,
+        "growthCurve": [
+          {
+            "rows": 452,
+            "nodes": 11439,
+            "heap": 66354593
+          },
+          {
+            "rows": 452,
+            "nodes": 11439,
+            "heap": 66265321
+          },
+          {
+            "rows": 452,
+            "nodes": 11439,
+            "heap": 66265321
+          }
+        ],
+        "exhausted": true,
+        "deadlineHit": false,
+        "error": null,
+        "ms": 6934.1,
+        "rowsBefore": 361,
+        "rowsAfter": 452,
+        "pageMs": {
+          "count": 2,
+          "min": 648.5,
+          "median": 6281.8,
+          "p90": 6281.8,
+          "p99": 6281.8,
+          "max": 6281.8,
+          "total": 6930.3
+        },
+        "nodesAfter": 11439,
+        "heapBefore": 62475892,
+        "heapAfter": 66265321,
+        "heapGrowth": 3789429,
+        "perRowBytes": 164430.08,
+        "samples": [
+          {
+            "page": 1,
+            "ms": 648.5,
+            "added": 91,
+            "rows": 452,
+            "nodes": 11439,
+            "heap": 66354593
+          },
+          {
+            "page": 2,
+            "ms": 6281.8,
+            "added": 0,
+            "rows": 452,
+            "nodes": 11439,
+            "heap": 66265321
+          }
+        ]
+      },
+      "windowing": {
+        "renderedRows": 241,
+        "sourceRows": 500,
+        "ratio": 0.482,
+        "renderedToolCards": 30
+      },
+      "snapshot": {
+        "file": "perf/snapshots/2026-10-21T18-18-15-531Z/500-rows.heapsnapshot",
+        "bytes": 206728512,
+        "at": "after draining history (452 rows)",
+        "rowsInDom": 403,
+        "retained": {
+          "nodeCount": 2210474,
+          "stringCount": 98136,
+          "totalSelfBytes": 106779330,
+          "top": [
+            {
+              "type": "array",
+              "name": "(object properties)",
+              "count": 28851,
+              "selfBytes": 13380980
+            },
+            {
+              "type": "closure",
+              "name": "?",
+              "count": 349166,
+              "selfBytes": 9785300
+            },
+            {
+              "type": "native",
+              "name": "Text",
+              "count": 96846,
+              "selfBytes": 7778224
+            },
+            {
+              "type": "object",
+              "name": "Object",
+              "count": 173970,
+              "selfBytes": 4787148
+            },
+            {
+              "type": "native",
+              "name": "SVGAnimatedLength",
+              "count": 69962,
+              "selfBytes": 4477568
+            },
+            {
+              "type": "object",
+              "name": "system / Context",
+              "count": 166544,
+              "selfBytes": 4356048
+            },
+            {
+              "type": "native",
+              "name": "system / ExternalStringData",
+              "count": 1320,
+              "selfBytes": 3222934
+            },
+            {
+              "type": "array",
+              "name": "?",
+              "count": 17724,
+              "selfBytes": 1711436
+            },
+            {
+              "type": "object shape",
+              "name": "system / Map",
+              "count": 39465,
+              "selfBytes": 1578600
+            },
+            {
+              "type": "native",
+              "name": "SVGSVGElement",
+              "count": 7460,
+              "selfBytes": 1493760
+            },
+            {
+              "type": "array",
+              "name": "(object elements)",
+              "count": 29149,
+              "selfBytes": 1473872
+            },
+            {
+              "type": "closure",
+              "name": "get",
+              "count": 49515,
+              "selfBytes": 1386672
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "synthetic long",
+      "kind": "synthetic",
+      "chatId": "be679afa",
+      "source": {
+        "rows": 2000,
+        "bytes": 1686074
+      },
+      "scrollSteps": 6,
+      "open": {
+        "firstRowMs": 935.4,
+        "completeMs": 1109.3,
+        "totalWallMs": 2053,
+        "domNodesAtOpen": 10654,
+        "jsHeapAtOpen": 67443966,
+        "scriptTaskLongestMs": 184,
+        "longTaskCountInPage": 5,
+        "metrics": {
+          "fcpMs": 328,
+          "lcpMs": null,
+          "domContentLoadedMs": 260.2,
+          "loadMs": 260.5,
+          "ttfbMs": 20.4,
+          "transferBytes": 4393,
+          "jsHeapUsedAtLoad": 63057596,
+          "jsHeapTotalAtLoad": 77594624,
+          "domNodesAtLoad": 47686,
+          "listenersAtLoad": 2480
+        }
+      },
+      "trace": {
+        "longTaskCount": 3,
+        "longTaskTotalMs": 396.04,
+        "longestTasks": [
+          {
+            "ms": 184.94,
+            "startMs": 1161182291.65
+          },
+          {
+            "ms": 125.96,
+            "startMs": 1161181770.07
+          },
+          {
+            "ms": 85.14,
+            "startMs": 1161182476.62
+          }
+        ],
+        "byCost": [
+          {
+            "name": "Layout",
+            "ms": 88.82
+          },
+          {
+            "name": "UpdateLayoutTree",
+            "ms": 82
+          },
+          {
+            "name": "FunctionCall",
+            "ms": 74.79
+          },
+          {
+            "name": "ParseHTML",
+            "ms": 37.11
+          },
+          {
+            "name": "Paint",
+            "ms": 35.92
+          },
+          {
+            "name": "PrePaint",
+            "ms": 12.53
+          },
+          {
+            "name": "EvaluateScript",
+            "ms": 12.34
+          }
+        ]
+      },
+      "heap": {
+        "baselineBeforeOpen": 54776820,
+        "baselineDelta": 12667146,
+        "jsHeapUsed": 67443966,
+        "jsHeapTotal": 81968530,
+        "jsHeapLimit": 2103443456,
+        "domNodes": 10654,
+        "transcriptNodes": 10204,
+        "rows": 316,
+        "toolCards": 43,
+        "scrollHeight": 49811,
+        "bytesPerNode": 6330.39,
+        "gcBeforeScroll": 57551016,
+        "afterLeaveBaseline": 59157396,
+        "retainedAfterLeave": 4380576
+      },
+      "scroll": {
+        "steps": 7,
+        "maxScrollHeight": 49060,
+        "stepMs": {
+          "count": 7,
+          "min": 4,
+          "median": 16.4,
+          "p90": 97.8,
+          "p99": 97.8,
+          "max": 97.8,
+          "total": 177.3
+        },
+        "frameToFrameMs": {
+          "count": 7,
+          "min": 0,
+          "median": 0.1,
+          "p90": 0.1,
+          "p99": 0.1,
+          "max": 0.1,
+          "total": 0.6
+        },
+        "heapAfter": 62117448,
+        "msPerStep": 25.33
+      },
+      "fullHistory": {
+        "pages": 8,
+        "growthCurve": [
+          {
+            "rows": 704,
+            "nodes": 20333,
+            "heap": 62314006
+          },
+          {
+            "rows": 1403,
+            "nodes": 40031,
+            "heap": 65238738
+          },
+          {
+            "rows": 1750,
+            "nodes": 49515,
+            "heap": 67378060
+          }
+        ],
+        "exhausted": true,
+        "deadlineHit": false,
+        "error": null,
+        "ms": 12225.6,
+        "rowsBefore": 533,
+        "rowsAfter": 1750,
+        "pageMs": {
+          "count": 8,
+          "min": 679.7,
+          "median": 897.8,
+          "p90": 6303.8,
+          "p99": 6303.8,
+          "max": 6303.8,
+          "total": 12188.2
+        },
+        "nodesAfter": 49515,
+        "heapBefore": 57807480,
+        "heapAfter": 67378060,
+        "heapGrowth": 9570580,
+        "perRowBytes": 44948.67,
+        "samples": [
+          {
+            "page": 1,
+            "ms": 776.6,
+            "added": 171,
+            "rows": 704,
+            "nodes": 20333,
+            "heap": 62314006
+          },
+          {
+            "page": 2,
+            "ms": 679.7,
+            "added": 172,
+            "rows": 876,
+            "nodes": 25036,
+            "heap": 62594474
+          },
+          {
+            "page": 3,
+            "ms": 713.3,
+            "added": 178,
+            "rows": 1054,
+            "nodes": 30198,
+            "heap": 63174497
+          },
+          {
+            "page": 4,
+            "ms": 792.5,
+            "added": 174,
+            "rows": 1228,
+            "nodes": 35046,
+            "heap": 64684918
+          },
+          {
+            "page": 5,
+            "ms": 897.8,
+            "added": 175,
+            "rows": 1403,
+            "nodes": 40031,
+            "heap": 65238738
+          },
+          {
+            "page": 6,
+            "ms": 957.2,
+            "added": 172,
+            "rows": 1575,
+            "nodes": 44615,
+            "heap": 65375747
+          },
+          {
+            "page": 7,
+            "ms": 1067.3,
+            "added": 175,
+            "rows": 1750,
+            "nodes": 49515,
+            "heap": 65863260
+          },
+          {
+            "page": 8,
+            "ms": 6303.8,
+            "added": 0,
+            "rows": 1750,
+            "nodes": 49515,
+            "heap": 67378060
+          }
+        ]
+      },
+      "windowing": {
+        "renderedRows": 316,
+        "sourceRows": 2000,
+        "ratio": 0.158,
+        "renderedToolCards": 43
+      }
+    },
+    {
+      "label": "real «Are all the tools visible in the ui»",
+      "kind": "real",
+      "chatId": "cb88df9e",
+      "source": {
+        "rows": 2622,
+        "bytes": 920330
+      },
+      "scrollSteps": 6,
+      "open": {
+        "firstRowMs": 763.1,
+        "completeMs": 968.6,
+        "totalWallMs": 1707.13,
+        "domNodesAtOpen": 2151,
+        "jsHeapAtOpen": 62666753,
+        "scriptTaskLongestMs": 141,
+        "longTaskCountInPage": 2,
+        "metrics": {
+          "fcpMs": 380,
+          "lcpMs": null,
+          "domContentLoadedMs": 270.6,
+          "loadMs": 270.7,
+          "ttfbMs": 17.5,
+          "transferBytes": 4393,
+          "jsHeapUsedAtLoad": 61163048,
+          "jsHeapTotalAtLoad": 77594624,
+          "domNodesAtLoad": 120008,
+          "listenersAtLoad": 4912
+        }
+      },
+      "trace": {
+        "longTaskCount": 2,
+        "longTaskTotalMs": 235.63,
+        "longestTasks": [
+          {
+            "ms": 141.7,
+            "startMs": 1161199579.78
+          },
+          {
+            "ms": 93.93,
+            "startMs": 1161200066.58
+          }
+        ],
+        "byCost": [
+          {
+            "name": "FunctionCall",
+            "ms": 83.13
+          },
+          {
+            "name": "Paint",
+            "ms": 82.7
+          },
+          {
+            "name": "Layout",
+            "ms": 75.1
+          },
+          {
+            "name": "UpdateLayoutTree",
+            "ms": 40.33
+          },
+          {
+            "name": "PrePaint",
+            "ms": 15.01
+          },
+          {
+            "name": "ParseHTML",
+            "ms": 13.75
+          },
+          {
+            "name": "EvaluateScript",
+            "ms": 5.53
+          }
+        ]
+      },
+      "heap": {
+        "baselineBeforeOpen": 59157976,
+        "baselineDelta": 3508777,
+        "jsHeapUsed": 62666753,
+        "jsHeapTotal": 79084317,
+        "jsHeapLimit": 2103443456,
+        "domNodes": 2151,
+        "transcriptNodes": 1696,
+        "rows": 1,
+        "toolCards": 150,
+        "scrollHeight": 15612,
+        "bytesPerNode": 29133.78,
+        "gcBeforeScroll": 60814824,
+        "afterLeaveBaseline": 63018536,
+        "retainedAfterLeave": 3860560
+      },
+      "scroll": {
+        "steps": 7,
+        "maxScrollHeight": 21461,
+        "stepMs": {
+          "count": 7,
+          "min": 0.3,
+          "median": 13.6,
+          "p90": 18.5,
+          "p99": 18.5,
+          "max": 18.5,
+          "total": 81.7
+        },
+        "frameToFrameMs": {
+          "count": 7,
+          "min": 0,
+          "median": 0,
+          "p90": 0.1,
+          "p99": 0.1,
+          "max": 0.1,
+          "total": 0.3
+        },
+        "heapAfter": 62769756,
+        "msPerStep": 11.67
+      },
+      "fullHistory": {
+        "pages": 12,
+        "growthCurve": [
+          {
+            "rows": 350,
+            "nodes": 4267,
+            "heap": 63631109
+          },
+          {
+            "rows": 950,
+            "nodes": 10282,
+            "heap": 66290828
+          },
+          {
+            "rows": 1312,
+            "nodes": 14101,
+            "heap": 70127015
+          }
+        ],
+        "exhausted": true,
+        "deadlineHit": false,
+        "error": null,
+        "ms": 13297,
+        "rowsBefore": 251,
+        "rowsAfter": 1312,
+        "pageMs": {
+          "count": 12,
+          "min": 512.6,
+          "median": 661.8,
+          "p90": 718.5,
+          "p99": 6281.3,
+          "max": 6281.3,
+          "total": 13278
+        },
+        "nodesAfter": 14101,
+        "heapBefore": 60971988,
+        "heapAfter": 70127015,
+        "heapGrowth": 9155027,
+        "perRowBytes": 6375183.18,
+        "samples": [
+          {
+            "page": 1,
+            "ms": 512.6,
+            "added": 99,
+            "rows": 350,
+            "nodes": 4267,
+            "heap": 63631109
+          },
+          {
+            "page": 2,
+            "ms": 521.2,
+            "added": 100,
+            "rows": 450,
+            "nodes": 5267,
+            "heap": 63785053
+          },
+          {
+            "page": 3,
+            "ms": 624,
+            "added": 100,
+            "rows": 550,
+            "nodes": 6267,
+            "heap": 63860951
+          },
+          {
+            "page": 4,
+            "ms": 566.5,
+            "added": 100,
+            "rows": 650,
+            "nodes": 7267,
+            "heap": 64760709
+          },
+          {
+            "page": 5,
+            "ms": 599.2,
+            "added": 100,
+            "rows": 750,
+            "nodes": 8267,
+            "heap": 65874515
+          },
+          {
+            "page": 6,
+            "ms": 718.5,
+            "added": 100,
+            "rows": 850,
+            "nodes": 9270,
+            "heap": 66142348
+          },
+          {
+            "page": 7,
+            "ms": 718.1,
+            "added": 100,
+            "rows": 950,
+            "nodes": 10282,
+            "heap": 66290828
+          },
+          {
+            "page": 8,
+            "ms": 659.6,
+            "added": 98,
+            "rows": 1048,
+            "nodes": 11262,
+            "heap": 66427066
+          },
+          {
+            "page": 9,
+            "ms": 706.9,
+            "added": 102,
+            "rows": 1150,
+            "nodes": 12329,
+            "heap": 68119518
+          },
+          {
+            "page": 10,
+            "ms": 708.3,
+            "added": 99,
+            "rows": 1249,
+            "nodes": 13327,
+            "heap": 70144520
+          },
+          {
+            "page": 11,
+            "ms": 661.8,
+            "added": 63,
+            "rows": 1312,
+            "nodes": 14101,
+            "heap": 70052375
+          },
+          {
+            "page": 12,
+            "ms": 6281.3,
+            "added": 0,
+            "rows": 1312,
+            "nodes": 14101,
+            "heap": 70127015
+          }
+        ]
+      },
+      "windowing": {
+        "renderedRows": 1,
+        "sourceRows": 2622,
+        "ratio": 0,
+        "renderedToolCards": 150
+      }
+    },
+    {
+      "label": "real «On pwa there’s too much bottom margin Ch»",
+      "kind": "real",
+      "chatId": "ba69f08a",
+      "source": {
+        "rows": 2729,
+        "bytes": 2579465
+      },
+      "scrollSteps": 6,
+      "open": {
+        "firstRowMs": 617.6,
+        "completeMs": 849,
+        "totalWallMs": 1533.99,
+        "domNodesAtOpen": 2153,
+        "jsHeapAtOpen": 68189830,
+        "scriptTaskLongestMs": 122,
+        "longTaskCountInPage": 3,
+        "metrics": {
+          "fcpMs": 312,
+          "lcpMs": null,
+          "domContentLoadedMs": 242.9,
+          "loadMs": 243,
+          "ttfbMs": 31,
+          "transferBytes": 4393,
+          "jsHeapUsedAtLoad": 66477796,
+          "jsHeapTotalAtLoad": 82313216,
+          "domNodesAtLoad": 138441,
+          "listenersAtLoad": 7494
+        }
+      },
+      "trace": {
+        "longTaskCount": 2,
+        "longTaskTotalMs": 216.31,
+        "longestTasks": [
+          {
+            "ms": 122.98,
+            "startMs": 1161218247.75
+          },
+          {
+            "ms": 93.33,
+            "startMs": 1161218612.86
+          }
+        ],
+        "byCost": [
+          {
+            "name": "FunctionCall",
+            "ms": 76.85
+          },
+          {
+            "name": "Paint",
+            "ms": 66.6
+          },
+          {
+            "name": "Layout",
+            "ms": 66.43
+          },
+          {
+            "name": "UpdateLayoutTree",
+            "ms": 45.67
+          },
+          {
+            "name": "PrePaint",
+            "ms": 18.43
+          },
+          {
+            "name": "ParseHTML",
+            "ms": 13.91
+          },
+          {
+            "name": "EvaluateScript",
+            "ms": 9.22
+          }
+        ]
+      },
+      "heap": {
+        "baselineBeforeOpen": 63008744,
+        "baselineDelta": 5181086,
+        "jsHeapUsed": 68189830,
+        "jsHeapTotal": 83845474,
+        "jsHeapLimit": 2103443456,
+        "domNodes": 2153,
+        "transcriptNodes": 1698,
+        "rows": 2,
+        "toolCards": 150,
+        "scrollHeight": 14158,
+        "bytesPerNode": 31672.01,
+        "gcBeforeScroll": 65671044,
+        "afterLeaveBaseline": 71344784,
+        "retainedAfterLeave": 8336040
+      },
+      "scroll": {
+        "steps": 7,
+        "maxScrollHeight": 13407,
+        "stepMs": {
+          "count": 7,
+          "min": 11.6,
+          "median": 16.4,
+          "p90": 38.2,
+          "p99": 38.2,
+          "max": 38.2,
+          "total": 126.6
+        },
+        "frameToFrameMs": {
+          "count": 7,
+          "min": 0,
+          "median": 0.1,
+          "p90": 5.6,
+          "p99": 5.6,
+          "max": 5.6,
+          "total": 6.5
+        },
+        "heapAfter": 68474761,
+        "msPerStep": 18.09
+      },
+      "fullHistory": {
+        "pages": 13,
+        "growthCurve": [
+          {
+            "rows": 352,
+            "nodes": 4149,
+            "heap": 69757673
+          },
+          {
+            "rows": 952,
+            "nodes": 10873,
+            "heap": 74643571
+          },
+          {
+            "rows": 1373,
+            "nodes": 17187,
+            "heap": 75137784
+          }
+        ],
+        "exhausted": true,
+        "deadlineHit": false,
+        "error": null,
+        "ms": 14953.6,
+        "rowsBefore": 252,
+        "rowsAfter": 1373,
+        "pageMs": {
+          "count": 13,
+          "min": 537.7,
+          "median": 688.4,
+          "p90": 909.8,
+          "p99": 6466.2,
+          "max": 6466.2,
+          "total": 14929.1
+        },
+        "nodesAfter": 17187,
+        "heapBefore": 66298236,
+        "heapAfter": 75137784,
+        "heapGrowth": 8839548,
+        "perRowBytes": 4696111.5,
+        "samples": [
+          {
+            "page": 1,
+            "ms": 537.7,
+            "added": 100,
+            "rows": 352,
+            "nodes": 4149,
+            "heap": 69757673
+          },
+          {
+            "page": 2,
+            "ms": 548.6,
+            "added": 100,
+            "rows": 452,
+            "nodes": 5147,
+            "heap": 71083489
+          },
+          {
+            "page": 3,
+            "ms": 661.2,
+            "added": 100,
+            "rows": 552,
+            "nodes": 6145,
+            "heap": 71153259
+          },
+          {
+            "page": 4,
+            "ms": 602,
+            "added": 100,
+            "rows": 652,
+            "nodes": 7143,
+            "heap": 73124636
+          },
+          {
+            "page": 5,
+            "ms": 628.4,
+            "added": 100,
+            "rows": 752,
+            "nodes": 8141,
+            "heap": 74395648
+          },
+          {
+            "page": 6,
+            "ms": 824.1,
+            "added": 100,
+            "rows": 852,
+            "nodes": 9481,
+            "heap": 72802656
+          },
+          {
+            "page": 7,
+            "ms": 688.4,
+            "added": 100,
+            "rows": 952,
+            "nodes": 10873,
+            "heap": 74643571
+          },
+          {
+            "page": 8,
+            "ms": 746,
+            "added": 100,
+            "rows": 1052,
+            "nodes": 12791,
+            "heap": 77425792
+          },
+          {
+            "page": 9,
+            "ms": 909.8,
+            "added": 100,
+            "rows": 1152,
+            "nodes": 14046,
+            "heap": 79086332
+          },
+          {
+            "page": 10,
+            "ms": 863.4,
+            "added": 100,
+            "rows": 1252,
+            "nodes": 15226,
+            "heap": 80940950
+          },
+          {
+            "page": 11,
+            "ms": 836.2,
+            "added": 103,
+            "rows": 1355,
+            "nodes": 16908,
+            "heap": 78441773
+          },
+          {
+            "page": 12,
+            "ms": 617.1,
+            "added": 18,
+            "rows": 1373,
+            "nodes": 17187,
+            "heap": 80200554
+          },
+          {
+            "page": 13,
+            "ms": 6466.2,
+            "added": 0,
+            "rows": 1373,
+            "nodes": 17187,
+            "heap": 75137784
+          }
+        ]
+      },
+      "windowing": {
+        "renderedRows": 2,
+        "sourceRows": 2729,
+        "ratio": 0.001,
+        "renderedToolCards": 150
+      }
+    },
+    {
+      "label": "real «Fix non expanded data of file tools»",
+      "kind": "real",
+      "chatId": "1b951df7",
+      "source": {
+        "rows": 2927,
+        "bytes": 1362451
+      },
+      "scrollSteps": 6,
+      "open": {
+        "firstRowMs": 870.2,
+        "completeMs": 1047.3,
+        "totalWallMs": 1761.77,
+        "domNodesAtOpen": 2153,
+        "jsHeapAtOpen": 79338705,
+        "scriptTaskLongestMs": 186,
+        "longTaskCountInPage": 3,
+        "metrics": {
+          "fcpMs": 316,
+          "lcpMs": null,
+          "domContentLoadedMs": 249.4,
+          "loadMs": 249.6,
+          "ttfbMs": 20.7,
+          "transferBytes": 4393,
+          "jsHeapUsedAtLoad": 77019760,
+          "jsHeapTotalAtLoad": 90439680,
+          "domNodesAtLoad": 144532,
+          "listenersAtLoad": 9735
+        }
+      },
+      "trace": {
+        "longTaskCount": 2,
+        "longTaskTotalMs": 312.58,
+        "longestTasks": [
+          {
+            "ms": 188.16,
+            "startMs": 1161238672.58
+          },
+          {
+            "ms": 124.42,
+            "startMs": 1161238153.36
+          }
+        ],
+        "byCost": [
+          {
+            "name": "FunctionCall",
+            "ms": 74.06
+          },
+          {
+            "name": "Layout",
+            "ms": 57.48
+          },
+          {
+            "name": "Paint",
+            "ms": 46.45
+          },
+          {
+            "name": "ParseHTML",
+            "ms": 42.71
+          },
+          {
+            "name": "UpdateLayoutTree",
+            "ms": 37.13
+          },
+          {
+            "name": "PrePaint",
+            "ms": 14.86
+          },
+          {
+            "name": "EvaluateScript",
+            "ms": 12.94
+          }
+        ]
+      },
+      "heap": {
+        "baselineBeforeOpen": 71344072,
+        "baselineDelta": 7994633,
+        "jsHeapUsed": 79338705,
+        "jsHeapTotal": 92746161,
+        "jsHeapLimit": 2103443456,
+        "domNodes": 2153,
+        "transcriptNodes": 1698,
+        "rows": 2,
+        "toolCards": 150,
+        "scrollHeight": 15862,
+        "bytesPerNode": 36850.3,
+        "gcBeforeScroll": 73169824,
+        "afterLeaveBaseline": 72762984,
+        "retainedAfterLeave": 1418912
+      },
+      "scroll": {
+        "steps": 7,
+        "maxScrollHeight": 21711,
+        "stepMs": {
+          "count": 7,
+          "min": 0.3,
+          "median": 16.6,
+          "p90": 24.2,
+          "p99": 24.2,
+          "max": 24.2,
+          "total": 97.5
+        },
+        "frameToFrameMs": {
+          "count": 7,
+          "min": 0,
+          "median": 0,
+          "p90": 0.1,
+          "p99": 0.1,
+          "max": 0.1,
+          "total": 0.1
+        },
+        "heapAfter": 74934210,
+        "msPerStep": 13.93
+      },
+      "fullHistory": {
+        "pages": 14,
+        "growthCurve": [
+          {
+            "rows": 352,
+            "nodes": 4149,
+            "heap": 75785579
+          },
+          {
+            "rows": 1052,
+            "nodes": 11135,
+            "heap": 79816443
+          },
+          {
+            "rows": 1466,
+            "nodes": 15291,
+            "heap": 79671485
+          }
+        ],
+        "exhausted": true,
+        "deadlineHit": false,
+        "error": null,
+        "ms": 15400.1,
+        "rowsBefore": 252,
+        "rowsAfter": 1466,
+        "pageMs": {
+          "count": 14,
+          "min": 530.4,
+          "median": 680.2,
+          "p90": 848.8,
+          "p99": 6324,
+          "max": 6324,
+          "total": 15368.4
+        },
+        "nodesAfter": 15291,
+        "heapBefore": 73276268,
+        "heapAfter": 79671485,
+        "heapGrowth": 6395217,
+        "perRowBytes": 19917871.25,
+        "samples": [
+          {
+            "page": 1,
+            "ms": 664.6,
+            "added": 100,
+            "rows": 352,
+            "nodes": 4149,
+            "heap": 75785579
+          },
+          {
+            "page": 2,
+            "ms": 658.3,
+            "added": 100,
+            "rows": 452,
+            "nodes": 5147,
+            "heap": 75993575
+          },
+          {
+            "page": 3,
+            "ms": 530.4,
+            "added": 100,
+            "rows": 552,
+            "nodes": 6145,
+            "heap": 76864875
+          },
+          {
+            "page": 4,
+            "ms": 639,
+            "added": 100,
+            "rows": 652,
+            "nodes": 7143,
+            "heap": 75931751
+          },
+          {
+            "page": 5,
+            "ms": 565.2,
+            "added": 100,
+            "rows": 752,
+            "nodes": 8141,
+            "heap": 77732164
+          },
+          {
+            "page": 6,
+            "ms": 727.1,
+            "added": 100,
+            "rows": 852,
+            "nodes": 9139,
+            "heap": 77467174
+          },
+          {
+            "page": 7,
+            "ms": 655,
+            "added": 100,
+            "rows": 952,
+            "nodes": 10137,
+            "heap": 78585224
+          },
+          {
+            "page": 8,
+            "ms": 680.2,
+            "added": 100,
+            "rows": 1052,
+            "nodes": 11135,
+            "heap": 79816443
+          },
+          {
+            "page": 9,
+            "ms": 848.8,
+            "added": 100,
+            "rows": 1152,
+            "nodes": 12133,
+            "heap": 79079407
+          },
+          {
+            "page": 10,
+            "ms": 773,
+            "added": 100,
+            "rows": 1252,
+            "nodes": 13134,
+            "heap": 80515209
+          },
+          {
+            "page": 11,
+            "ms": 832.4,
+            "added": 100,
+            "rows": 1352,
+            "nodes": 14132,
+            "heap": 80631095
+          },
+          {
+            "page": 12,
+            "ms": 800.4,
+            "added": 100,
+            "rows": 1452,
+            "nodes": 15133,
+            "heap": 83042620
+          },
+          {
+            "page": 13,
+            "ms": 670,
+            "added": 14,
+            "rows": 1466,
+            "nodes": 15291,
+            "heap": 78742049
+          },
+          {
+            "page": 14,
+            "ms": 6324,
+            "added": 0,
+            "rows": 1466,
+            "nodes": 15291,
+            "heap": 79671485
+          }
+        ]
+      },
+      "windowing": {
+        "renderedRows": 2,
+        "sourceRows": 2927,
+        "ratio": 0.001,
+        "renderedToolCards": 150
+      }
+    },
+    {
+      "label": "synthetic huge",
+      "kind": "synthetic",
+      "chatId": "342cde65",
+      "source": {
+        "rows": 10000,
+        "bytes": 3902139
+      },
+      "scrollSteps": 6,
+      "open": {
+        "firstRowMs": 972.7,
+        "completeMs": 1138.6,
+        "totalWallMs": 1933.67,
+        "domNodesAtOpen": 6556,
+        "jsHeapAtOpen": 78696015,
+        "scriptTaskLongestMs": 264,
+        "longTaskCountInPage": 5,
+        "metrics": {
+          "fcpMs": 344,
+          "lcpMs": null,
+          "domContentLoadedMs": 274.9,
+          "loadMs": 275.1,
+          "ttfbMs": 17.8,
+          "transferBytes": 4393,
+          "jsHeapUsedAtLoad": 76488032,
+          "jsHeapTotalAtLoad": 93847552,
+          "domNodesAtLoad": 83546,
+          "listenersAtLoad": 10084
+        }
+      },
+      "trace": {
+        "longTaskCount": 3,
+        "longTaskTotalMs": 500.91,
+        "longestTasks": [
+          {
+            "ms": 266.04,
+            "startMs": 1161259449.39
+          },
+          {
+            "ms": 147.68,
+            "startMs": 1161258963.52
+          },
+          {
+            "ms": 87.19,
+            "startMs": 1161259715.45
+          }
+        ],
+        "byCost": [
+          {
+            "name": "Layout",
+            "ms": 84.72
+          },
+          {
+            "name": "FunctionCall",
+            "ms": 76.25
+          },
+          {
+            "name": "UpdateLayoutTree",
+            "ms": 61.97
+          },
+          {
+            "name": "ParseHTML",
+            "ms": 45.33
+          },
+          {
+            "name": "Paint",
+            "ms": 30.84
+          },
+          {
+            "name": "PrePaint",
+            "ms": 11.27
+          },
+          {
+            "name": "EvaluateScript",
+            "ms": 7.61
+          }
+        ]
+      },
+      "heap": {
+        "baselineBeforeOpen": 72752524,
+        "baselineDelta": 5943491,
+        "jsHeapUsed": 78696015,
+        "jsHeapTotal": 96043071,
+        "jsHeapLimit": 2103443456,
+        "domNodes": 6556,
+        "transcriptNodes": 6106,
+        "rows": 261,
+        "toolCards": 20,
+        "scrollHeight": 37180,
+        "bytesPerNode": 12003.66,
+        "gcBeforeScroll": 74875732,
+        "afterLeaveBaseline": 74986440,
+        "retainedAfterLeave": 2233916
+      },
+      "scroll": {
+        "steps": 7,
+        "maxScrollHeight": 48249,
+        "stepMs": {
+          "count": 7,
+          "min": 3.8,
+          "median": 25.4,
+          "p90": 35,
+          "p99": 35,
+          "max": 35,
+          "total": 159.6
+        },
+        "frameToFrameMs": {
+          "count": 7,
+          "min": 0,
+          "median": 0,
+          "p90": 0.1,
+          "p99": 0.1,
+          "max": 0.1,
+          "total": 0.3
+        },
+        "heapAfter": 76479971,
+        "msPerStep": 22.8
+      },
+      "fullHistory": {
+        "pages": 34,
+        "growthCurve": [
+          {
+            "rows": 558,
+            "nodes": 12342,
+            "heap": 76658863
+          },
+          {
+            "rows": 3678,
+            "nodes": 77163,
+            "heap": 84500815
+          },
+          {
+            "rows": 6603,
+            "nodes": 138137,
+            "heap": 83957502
+          }
+        ],
+        "exhausted": false,
+        "deadlineHit": true,
+        "error": null,
+        "ms": 61039.8,
+        "rowsBefore": 376,
+        "rowsAfter": 6603,
+        "pageMs": {
+          "count": 34,
+          "min": 593.5,
+          "median": 1693.2,
+          "p90": 2920.7,
+          "p99": 3846.5,
+          "max": 3846.5,
+          "total": 60552.2
+        },
+        "nodesAfter": 138137,
+        "heapBefore": 74932316,
+        "heapAfter": 83972198,
+        "heapGrowth": 9039882,
+        "perRowBytes": 13983.71,
+        "samples": [
+          {
+            "page": 1,
+            "ms": 618.6,
+            "added": 182,
+            "rows": 558,
+            "nodes": 12342,
+            "heap": 76658863
+          },
+          {
+            "page": 2,
+            "ms": 593.5,
+            "added": 179,
+            "rows": 737,
+            "nodes": 16237,
+            "heap": 77459676
+          },
+          {
+            "page": 3,
+            "ms": 716.6,
+            "added": 180,
+            "rows": 917,
+            "nodes": 19960,
+            "heap": 77215629
+          },
+          {
+            "page": 4,
+            "ms": 638.5,
+            "added": 186,
+            "rows": 1103,
+            "nodes": 24066,
+            "heap": 78690769
+          },
+          {
+            "page": 5,
+            "ms": 794.7,
+            "added": 185,
+            "rows": 1288,
+            "nodes": 28028,
+            "heap": 79611320
+          },
+          {
+            "page": 6,
+            "ms": 845.3,
+            "added": 181,
+            "rows": 1469,
+            "nodes": 31815,
+            "heap": 78513996
+          },
+          {
+            "page": 7,
+            "ms": 917.3,
+            "added": 185,
+            "rows": 1654,
+            "nodes": 35425,
+            "heap": 79401360
+          },
+          {
+            "page": 8,
+            "ms": 847.1,
+            "added": 184,
+            "rows": 1838,
+            "nodes": 39426,
+            "heap": 80293869
+          },
+          {
+            "page": 9,
+            "ms": 914.9,
+            "added": 182,
+            "rows": 2020,
+            "nodes": 43148,
+            "heap": 79414068
+          },
+          {
+            "page": 10,
+            "ms": 1039.8,
+            "added": 185,
+            "rows": 2205,
+            "nodes": 46900,
+            "heap": 82707739
+          },
+          {
+            "page": 11,
+            "ms": 1191.6,
+            "added": 183,
+            "rows": 2388,
+            "nodes": 50668,
+            "heap": 82055678
+          },
+          {
+            "page": 12,
+            "ms": 1220.3,
+            "added": 183,
+            "rows": 2571,
+            "nodes": 54567,
+            "heap": 81376836
+          },
+          {
+            "page": 13,
+            "ms": 1230.8,
+            "added": 187,
+            "rows": 2758,
+            "nodes": 58395,
+            "heap": 80487804
+          },
+          {
+            "page": 14,
+            "ms": 1247.4,
+            "added": 187,
+            "rows": 2945,
+            "nodes": 62219,
+            "heap": 83952425
+          },
+          {
+            "page": 15,
+            "ms": 1443.7,
+            "added": 187,
+            "rows": 3132,
+            "nodes": 66030,
+            "heap": 83359316
+          },
+          {
+            "page": 16,
+            "ms": 1657.2,
+            "added": 180,
+            "rows": 3312,
+            "nodes": 69505,
+            "heap": 82255060
+          },
+          {
+            "page": 17,
+            "ms": 1652.1,
+            "added": 184,
+            "rows": 3496,
+            "nodes": 73387,
+            "heap": 82011884
+          },
+          {
+            "page": 18,
+            "ms": 1693.2,
+            "added": 182,
+            "rows": 3678,
+            "nodes": 77163,
+            "heap": 84500815
+          },
+          {
+            "page": 19,
+            "ms": 1946.9,
+            "added": 185,
+            "rows": 3863,
+            "nodes": 81006,
+            "heap": 80140108
+          },
+          {
+            "page": 20,
+            "ms": 1920.6,
+            "added": 182,
+            "rows": 4045,
+            "nodes": 84988,
+            "heap": 83096547
+          },
+          {
+            "page": 21,
+            "ms": 1890.9,
+            "added": 190,
+            "rows": 4235,
+            "nodes": 89053,
+            "heap": 86504030
+          },
+          {
+            "page": 22,
+            "ms": 2270.1,
+            "added": 180,
+            "rows": 4415,
+            "nodes": 92852,
+            "heap": 81639168
+          },
+          {
+            "page": 23,
+            "ms": 2121.1,
+            "added": 181,
+            "rows": 4596,
+            "nodes": 96565,
+            "heap": 84983573
+          },
+          {
+            "page": 24,
+            "ms": 2058.3,
+            "added": 182,
+            "rows": 4778,
+            "nodes": 100294,
+            "heap": 87634707
+          },
+          {
+            "page": 25,
+            "ms": 2364.8,
+            "added": 183,
+            "rows": 4961,
+            "nodes": 104021,
+            "heap": 84845157
+          },
+          {
+            "page": 26,
+            "ms": 2671.9,
+            "added": 173,
+            "rows": 5134,
+            "nodes": 107376,
+            "heap": 87388793
+          },
+          {
+            "page": 27,
+            "ms": 2606.5,
+            "added": 179,
+            "rows": 5313,
+            "nodes": 110756,
+            "heap": 82957931
+          },
+          {
+            "page": 28,
+            "ms": 2662,
+            "added": 183,
+            "rows": 5496,
+            "nodes": 114798,
+            "heap": 85905267
+          },
+          {
+            "page": 29,
+            "ms": 2454.4,
+            "added": 189,
+            "rows": 5685,
+            "nodes": 118839,
+            "heap": 89436719
+          },
+          {
+            "page": 30,
+            "ms": 3271.2,
+            "added": 186,
+            "rows": 5871,
+            "nodes": 122741,
+            "heap": 85740638
+          },
+          {
+            "page": 31,
+            "ms": 3458.3,
+            "added": 179,
+            "rows": 6050,
+            "nodes": 126649,
+            "heap": 89215528
+          },
+          {
+            "page": 32,
+            "ms": 2920.7,
+            "added": 183,
+            "rows": 6233,
+            "nodes": 130422,
+            "heap": 84878681
+          },
+          {
+            "page": 33,
+            "ms": 2825.4,
+            "added": 187,
+            "rows": 6420,
+            "nodes": 134332,
+            "heap": 87112165
+          },
+          {
+            "page": 34,
+            "ms": 3846.5,
+            "added": 183,
+            "rows": 6603,
+            "nodes": 138137,
+            "heap": 83957502
+          }
+        ]
+      },
+      "windowing": {
+        "renderedRows": 261,
+        "sourceRows": 10000,
+        "ratio": 0.026,
+        "renderedToolCards": 20
+      }
+    }
+  ],
+  "storedHistory": {
+    "chatId": "1b951df7",
+    "title": "Fix non expanded data of file tools",
+    "rows": 2927,
+    "bytes": 1362451,
+    "probe": {
+      "listPage20": {
+        "ms": 17.1,
+        "bytes": 10589,
+        "status": 200
+      },
+      "newestPage100": {
+        "ms": 10.5,
+        "bytes": 58338,
+        "status": 200
+      },
+      "fullTranscript": {
+        "ms": 138.7,
+        "bytes": 2015788,
+        "status": 200
+      },
+      "revision": {
+        "ms": 10.3,
+        "bytes": 32,
+        "status": 200
+      }
+    }
+  },
+  "seeded": {
+    "stamp": "2026-10-21T18-18-15-531Z",
+    "home": "/home/ubuntu/.mouaif",
+    "projectDir": "/home/ubuntu/mouaif",
+    "chats": [
+      {
+        "id": "429f4e59",
+        "profile": "tiny",
+        "label": "tiny (30 rows)",
+        "rows": 30,
+        "bytes": 10316,
+        "projectDir": "/home/ubuntu/mouaif"
+      },
+      {
+        "id": "1033d384",
+        "profile": "medium",
+        "label": "medium (500 rows)",
+        "rows": 500,
+        "bytes": 286525,
+        "projectDir": "/home/ubuntu/mouaif"
+      },
+      {
+        "id": "be679afa",
+        "profile": "long",
+        "label": "long (2,000 rows)",
+        "rows": 2000,
+        "bytes": 1686074,
+        "projectDir": "/home/ubuntu/mouaif"
+      },
+      {
+        "id": "342cde65",
+        "profile": "huge",
+        "label": "huge (10,000 rows)",
+        "rows": 10000,
+        "bytes": 3902139,
+        "projectDir": "/home/ubuntu/mouaif"
+      }
+    ],
+    "createdAt": "2026-10-21T18:18:38.954Z",
+    "removed": {
+      "removed": 4,
+      "missing": []
+    }
+  },
+  "notes": [
+    "Time to first row: 0.9× across a 333.3× row increase (30 → 10000 rows; 1.08 s → 973 ms). A chat opens with only its newest page (100 rows), so open cost is dominated by the app shell, not by stored length.",
+    "Heap added by the open page: 9.05 MB at 30 rows vs 5.67 MB at 10000 rows (0.63×).",
+    "synthetic medium: draining history to 452 rows costs 63.2 MB (160.6 KB/row) and 11439 DOM nodes; 2 page(s) at a median of 6.28 s each.",
+    "synthetic long: draining history to 1750 rows costs 64.26 MB (43.9 KB/row) and 49515 DOM nodes; 8 page(s) at a median of 898 ms each.",
+    "synthetic huge: draining history to 6603 rows costs 80.08 MB (13.7 KB/row) and 138137 DOM nodes; 34 page(s) at a median of 1.69 s each.",
+    "Leaving a chat does not return the tab to its previous heap: after 2729 rows, the settled heap on the chat list is 7.95 MB above the pre-open baseline (largest retention of the 7 transcripts measured).",
+    "synthetic medium: 3 long task(s) over 50 ms while opening, longest 284 ms.",
+    "synthetic huge: 3 long task(s) over 50 ms while opening, longest 266 ms.",
+    "synthetic tiny: 5 long task(s) over 50 ms while opening, longest 242 ms.",
+    "The Node server serving the app holds 271.46 MB RSS with 11 threads (pid 2404956).",
+    "Measured against the real app store: 1582.27 MB (/home/ubuntu/.mouaif/store.sqlite)."
+  ],
+  "server": {
+    "pid": 2404956,
+    "port": 8080,
+    "rssBytes": 284647424,
+    "vmBytes": 10539556864,
+    "threads": 11,
+    "cmd": "/home/ubuntu/.nvm/versions/node/v24.15.0/bin/node /home/ubuntu/mouaif/bin/mouaif.js serve --port 8080 --host 127.0.0.1 --public-origin https://dev.definer.space --auth"
+  },
+  "summary": {
+    "shell": {
+      "shellMs": 22555.18,
+      "fcpMs": 484,
+      "lcpMs": null,
+      "domContentLoadedMs": 363.8,
+      "loadMs": 364,
+      "heapUsedBytes": 67985199
+    },
+    "transcripts": [
+      {
+        "label": "synthetic tiny",
+        "rows": 30,
+        "bytes": 10316,
+        "firstRowMs": 1083,
+        "completeMs": 1235.5,
+        "domNodes": 1062,
+        "heapUsedBytes": 73959603,
+        "longTasks": 5,
+        "longestTaskMs": 242.07,
+        "scrollMsPerStep": 16.21,
+        "windowedRatio": 0.767
+      },
+      {
+        "label": "synthetic medium",
+        "rows": 500,
+        "bytes": 286525,
+        "firstRowMs": 906.4,
+        "completeMs": 1080,
+        "domNodes": 7121,
+        "heapUsedBytes": 68610420,
+        "longTasks": 3,
+        "longestTaskMs": 284.05,
+        "scrollMsPerStep": 23.51,
+        "windowedRatio": 0.482
+      },
+      {
+        "label": "synthetic long",
+        "rows": 2000,
+        "bytes": 1686074,
+        "firstRowMs": 935.4,
+        "completeMs": 1109.3,
+        "domNodes": 10654,
+        "heapUsedBytes": 67443966,
+        "longTasks": 3,
+        "longestTaskMs": 184.94,
+        "scrollMsPerStep": 25.33,
+        "windowedRatio": 0.158
+      },
+      {
+        "label": "real «Are all the tools visible in the ui»",
+        "rows": 2622,
+        "bytes": 920330,
+        "firstRowMs": 763.1,
+        "completeMs": 968.6,
+        "domNodes": 2151,
+        "heapUsedBytes": 62666753,
+        "longTasks": 2,
+        "longestTaskMs": 141.7,
+        "scrollMsPerStep": 11.67,
+        "windowedRatio": 0
+      },
+      {
+        "label": "real «On pwa there’s too much bottom margin Ch»",
+        "rows": 2729,
+        "bytes": 2579465,
+        "firstRowMs": 617.6,
+        "completeMs": 849,
+        "domNodes": 2153,
+        "heapUsedBytes": 68189830,
+        "longTasks": 2,
+        "longestTaskMs": 122.98,
+        "scrollMsPerStep": 18.09,
+        "windowedRatio": 0.001
+      },
+      {
+        "label": "real «Fix non expanded data of file tools»",
+        "rows": 2927,
+        "bytes": 1362451,
+        "firstRowMs": 870.2,
+        "completeMs": 1047.3,
+        "domNodes": 2153,
+        "heapUsedBytes": 79338705,
+        "longTasks": 2,
+        "longestTaskMs": 188.16,
+        "scrollMsPerStep": 13.93,
+        "windowedRatio": 0.001
+      },
+      {
+        "label": "synthetic huge",
+        "rows": 10000,
+        "bytes": 3902139,
+        "firstRowMs": 972.7,
+        "completeMs": 1138.6,
+        "domNodes": 6556,
+        "heapUsedBytes": 78696015,
+        "longTasks": 3,
+        "longestTaskMs": 266.04,
+        "scrollMsPerStep": 22.8,
+        "windowedRatio": 0.026
+      }
+    ],
+    "server": {
+      "pid": 2404956,
+      "port": 8080,
+      "rssBytes": 284647424,
+      "vmBytes": 10539556864,
+      "threads": 11,
+      "cmd": "/home/ubuntu/.nvm/versions/node/v24.15.0/bin/node /home/ubuntu/mouaif/bin/mouaif.js serve --port 8080 --host 127.0.0.1 --public-origin https://dev.definer.space --auth"
+    }
+  }
+}
