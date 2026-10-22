@@ -45,6 +45,23 @@ Nothing runs a tool, calls a provider, changes a setting or touches a real chat.
 | Turn budget | The run stops on its own once the budget is spent, instead of running forever. |
 | Designer | One surface for both creating and tweaking. The phone layout is a bottom sheet; the wide layout is a side panel. |
 
+## The agent control panel
+
+The same proposal has a second face: a single-file **on-the-fly MCP App** that lives in the chat as a live control panel for the running agent.
+
+Its source is tracked at `scripts/long-running-agent-mockup/agent-panel.html`. It is a real MCP App — the host mounts it in the sandbox with the official AppBridge, so it can talk to the agent in the same chat both ways:
+
+- **Panel → agent**: `window.mouaifApp.sendMessage({ role: 'user', content: [{ type: 'text', text }] })`. The **Pause**, **Skip step** and **Stop** buttons, the steer field and the **Apply tweak** button all send through it.
+- **Agent → panel**: the agent pushes a run state into the panel with `create_mcp_app({ message })`, which arrives through the AppBridge `sendToolInput` / `sendToolResult` notifications. The panel reads the state from `structuredContent.state`, and falls back to a JSON object in a plain text reply.
+
+The panel opens by asking the agent for the current run state, so it is filled in rather than blank when it appears. It shows the run name, state, goal, progress bar, plan steps, spent turns, cost and elapsed time; the four run actions; a free-text steer field; and the agent / model / budget tweak controls.
+
+To try it in a chat, ask the assistant to open it:
+
+```json
+{ "name": "Agent run control", "path": "scripts/long-running-agent-mockup/agent-panel.html" }
+```
+
 ## Related
 
 - [Subagent orchestration](./subagent-tools.md) — the shipped background delegation this mockup builds on.

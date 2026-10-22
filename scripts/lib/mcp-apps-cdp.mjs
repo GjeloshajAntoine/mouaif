@@ -56,18 +56,25 @@ export async function connectAppCdp(url) {
       return out.result.value;
     },
     async appContext() {
-      for (const [sessionId, session] of sessions) {
-        await session.ready;
-        for (const context of session.contexts.values()) {
-          if (!context.auxData?.isDefault) continue;
-          try {
-            if (await this.evaluate("!!document.querySelector('#ready')", sessionId, context.id)) {
-              return expression => this.evaluate(expression, sessionId, context.id);
-            }
-          } catch { /* context navigated while inspecting */ }
+    return this.appContextBySelector('#ready');
+    },
+    // appContextBySelector(selector) — the same lookup, but keyed on a
+    // selector the fixture chooses. The shared '#ready' probe only fits the
+    // original fixture; an app with its own markup needs its own anchor.
+    async appContextBySelector(selector) {
+    const probe = '!!document.querySelector(' + JSON.stringify(selector) + ')';
+    for (const [sessionId, session] of sessions) {
+      await session.ready;
+      for (const context of session.contexts.values()) {
+      if (!context.auxData?.isDefault) continue;
+      try {
+        if (await this.evaluate(probe, sessionId, context.id)) {
+        return expression => this.evaluate(expression, sessionId, context.id);
         }
+      } catch { /* context navigated while inspecting */ }
       }
-      return null;
+    }
+    return null;
     },
     close() {
       for (const wait of pending.values()) { clearTimeout(wait.timer); wait.reject(new Error('CDP closed')); }

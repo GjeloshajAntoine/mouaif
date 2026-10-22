@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agent run control</title>
+<style>
+  html, body { background: transparent; }
+  :root {
+    --bg: #131824; --surface: #1c2333; --surface-3: #273046;
+    --border: rgba(255,255,255,.07); --border-strong: #333d52;
+    --fg: #eceaf1; --fg-soft: #b6bac9; --muted: #8b8a98; --muted-2: #62616e;
+    --accent: #6ea8fe; --accent-soft: rgba(110,168,254,.16); --on-accent: #0a1428;
+    --success: #6fd49a; --warning: #f0c46a; --danger: #ff8a8a;
+    --font-mono: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+    --tap: 44px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 12px;
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: var(--fg);
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  .panel {
+    display: flex; flex-direction: column; gap: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    max-width: 34rem; margin-inline: auto;
+  }
+
+  .head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--muted-2); }
+  .dot[data-state="running"] { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .dot[data-state="paused"] { background: var(--warning); }
+  .dot[data-state="done"] { background: var(--success); }
+  .dot[data-state="failed"] { background: var(--danger); }
+  .link { flex: 0 0 auto; font-size: 11px; color: var(--muted-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px 7px; }
+  .link[data-connected="1"] { color: var(--success); border-color: color-mix(in srgb, var(--success) 40%, transparent); }
+  @keyframes pulse {
+    0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(110,168,254,.45); }
+    50% { opacity: .7; box-shadow: 0 0 0 4px rgba(110,168,254,.12); }
+  }
+  .name { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill {
+    margin-left: auto; flex: 0 0 auto;
+    font: 12px/1 var(--font-mono); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
+    text-transform: lowercase;
+  }
+
+  .goal { margin: 0; color: var(--fg-soft); font-size: 14px; line-height: 1.4; }
+
+  .bar { height: 6px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+  .fill { height: 100%; width: 0; background: var(--accent); transition: width .24s linear; }
+  .fill[data-state="done"] { background: var(--success); }
+  .fill[data-state="failed"] { background: var(--danger); }
+  .fill[data-state="paused"] { background: var(--warning); }
+
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 4px 12px;
+    font: 12px/1.4 var(--font-mono); color: var(--muted);
+  }
+
+  .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+  .step { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; line-height: 1.4; color: var(--fg-soft); }
+  .step[data-state="running"] .mark { color: var(--accent); }
+  .step[data-state="done"] .mark { color: var(--success); }
+  .step[data-state="failed"] .mark { color: var(--danger); }
+  .step[data-state="skipped"] { color: var(--muted); text-decoration: line-through; }
+  .mark { flex: 0 0 auto; width: 14px; text-align: center; color: var(--muted-2); }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .actions button {
+    min-height: var(--tap); padding: 0 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    font-size: 14px; color: var(--fg);
+  }
+  .actions button:active { background: var(--surface-3); }
+  .actions .primary { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+  .actions .danger { color: var(--danger); }
+
+  .group { display: flex; flex-direction: column; gap: 6px; }
+  .group > label { font-size: 12.5px; color: var(--muted); }
+  .row { display: flex; gap: 6px; }
+  .row > * { flex: 1 1 0; min-width: 0; }
+  select, input, textarea {
+    min-height: var(--tap); width: 100%; padding: 8px 10px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    font-size: 14px; color: var(--fg);
+  }
+  select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  textarea { min-height: 76px; resize: vertical; line-height: 1.4; }
+
+  .hint { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.4; }
+
+  .log {
+    display: flex; flex-direction: column; gap: 4px;
+    max-height: 30dvh; overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-top: 1px solid var(--border); padding-top: 8px;
+  }
+  .log:empty { display: none; }
+  .logline { font: 12px/1.4 var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+  .logline b { color: var(--fg-soft); font-weight: 600; }
+
+  .send { display: flex; gap: 6px; }
+  .send input { flex: 1 1 auto; }
+  .send button { flex: 0 0 auto; min-height: var(--tap); padding: 0 16px; border-radius: 6px; border: 0; background: var(--accent); color: var(--on-accent); font-weight: 600; }
+  .send button[disabled] { opacity: .5; }
+
+  .pending { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--warning); }
+  .pending[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="head">
+    <span class="dot" id="dot" data-state="idle"></span>
+    <span class="name" id="name">No run yet</span>
+    <span class="link" id="link" data-connected="0">linking…</span>
+    <span class="pill" id="pill">idle</span>
+  </div>
+
+  <p class="goal" id="goal">Start a long-running agent run in the chat, and it appears here.</p>
+
+  <div class="bar"><div class="fill" id="fill" data-state="idle"></div></div>
+  <div class="meta" id="meta">turns 0/0 · $0.000 · 0s</div>
+
+  <ul class="steps" id="steps"></ul>
+
+  <div class="pending" id="pending" hidden>Agent is busy — your message is queued for its next turn.</div>
+
+  <div class="actions" id="actions">
+    <button class="primary" type="button" data-cmd="resume">Resume</button>
+    <button type="button" data-cmd="pause">Pause</button>
+    <button type="button" data-cmd="skip">Skip step</button>
+    <button type="button" data-cmd="stop">Stop</button>
+  </div>
+
+  <div class="group">
+    <label for="instruction">Steer the run</label>
+    <div class="row">
+      <input id="instruction" type="text" placeholder="e.g. skip the docs step" autocomplete="off">
+      <button class="primary" type="button" id="send" style="flex:0 0 auto;padding:0 16px;border-radius:6px;border:0;background:var(--accent);color:var(--on-accent);font-weight:600;min-height:44px">Send</button>
+    </div>
+    <p class="hint">Sent to the agent in this chat. It is delivered at the run's next turn boundary — it never interrupts a step in flight.</p>
+  </div>
+
+  <div class="group">
+    <label for="agent">Agent</label>
+    <select id="agent">
+      <option value="reviewer">reviewer</option>
+      <option value="builder">builder</option>
+      <option value="verifier">verifier</option>
+    </select>
+    <label for="model" style="margin-top:6px">Model</label>
+    <select id="model">
+      <option value="demo-model">demo-model</option>
+      <option value="demo-fast">demo-fast</option>
+      <option value="demo-cheap">demo-cheap</option>
+    </select>
+    <label for="budget" style="margin-top:6px">Turn budget</label>
+    <input id="budget" type="number" min="1" max="200" value="40">
+    <button type="button" id="apply" style="margin-top:6px;min-height:44px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--fg)">Apply tweak</button>
+  </div>
+
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { name: 'No run yet', goal: '', state: 'idle', step: 0, total: 0, turns: 0, budget: 0, cost: 0, steps: [], elapsed: 0 };
+  var ready = false;
+
+  function esc(text) {
+    return String(text == null ? '' : text).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  function render() {
+    $('dot').dataset.state = state.state;
+    $('fill').dataset.state = state.state;
+    $('name').textContent = state.name;
+    $('pill').textContent = state.state;
+    $('goal').textContent = state.goal || 'Start a long-running agent run in the chat, and it appears here.';
+
+    var pct = state.total ? Math.round((state.step / state.total) * 100) : 0;
+    $('fill').style.width = pct + '%';
+    $('meta').textContent = 'turns ' + state.turns + '/' + state.budget
+      + ' · $' + state.cost.toFixed(3)
+      + ' · ' + state.elapsed + 's';
+
+    var list = $('steps');
+    list.replaceChildren();
+    (state.steps || []).forEach(function (step, index) {
+      var mark = index < state.step ? '✓' : index === state.step ? '▸' : '·';
+      var li = document.createElement('li');
+      li.className = 'step';
+      li.dataset.state = index < state.step ? 'done' : index === state.step ? 'running' : 'pending';
+      li.innerHTML = '<span class="mark">' + mark + '</span><span>' + esc(step.title || step) + '</span>';
+      list.appendChild(li);
+    });
+
+    var live = state.state === 'running';
+    $('actions').querySelector('[data-cmd="resume"]').hidden = live;
+    $('actions').querySelector('[data-cmd="pause"]').hidden = !live;
+    $('actions').querySelector('[data-cmd="skip"]').hidden = state.state !== 'running' && state.state !== 'paused';
+    $('actions').querySelector('[data-cmd="stop"]').hidden = state.state !== 'running' && state.state !== 'paused';
+  }
+
+  function log(text, who) {
+    var line = document.createElement('div');
+    line.className = 'logline';
+    line.innerHTML = '<b>' + esc(who || 'agent') + '</b> ' + esc(text);
+    $('log').appendChild(line);
+    while ($('log').children.length > 40) $('log').removeChild($('log').firstChild);
+    $('log').scrollTop = $('log').scrollHeight;
+  }
+
+  // applyState — the agent pushes the whole run state in one message, so the
+  // panel never has to guess.
+  function applyState(patch) {
+    if (!patch || typeof patch !== 'object') return;
+    Object.keys(patch).forEach(function (key) { state[key] = patch[key]; });
+    render();
+  }
+
+  function send(text) {
+    if (!text || !text.trim()) return;
+    if (!window.mouaifApp) { log('The chat bridge is not ready yet.', 'panel'); return; }
+    window.mouaifApp.sendMessage({ role: 'user', content: [{ type: 'text', text: text }] });
+    log(text, 'you');
+  }
+
+  function setConnected(connected) {
+    var link = $('link');
+    link.dataset.connected = connected ? '1' : '0';
+    link.textContent = connected ? 'linked' : 'linking…';
+  }
+
+  $('actions').addEventListener('click', function (event) {
+    var button = event.target.closest('[data-cmd]');
+    if (!button) return;
+    var cmd = button.dataset.cmd;
+    var text = {
+      pause: 'Pause the run.',
+      resume: 'Resume the run.',
+      skip: 'Skip the current step and move to the next one.',
+      stop: 'Stop the run now.'
+    }[cmd];
+    if (text) send(text);
+  });
+
+  $('send').addEventListener('click', function () {
+    var field = $('instruction');
+    send(field.value);
+    field.value = '';
+  });
+
+  $('instruction').addEventListener('keydown', function (event) {
+    if (event.key === 'Enter') { event.preventDefault(); $('send').click(); }
+  });
+
+  $('apply').addEventListener('click', function () {
+    send('Tweak the run: agent ' + $('agent').value + ', model ' + $('model').value
+      + ', turn budget ' + $('budget').value + '.');
+  });
+
+  // The agent pushes updates into this app through the AppBridge
+  // sendToolInput / sendToolResult notifications.
+  function onMessage(event) {
+    var params = event.detail || event.params || {};
+    var content = params.content || [];
+    var text = '';
+    for (var i = 0; i < content.length; i++) {
+      if (content[i] && content[i].type === 'text') text += content[i].text;
+    }
+    var structured = params.structuredContent || {};
+    if (structured && structured.state) applyState(structured.state);
+    // Fallback: the agent may answer in plain text that carries the state as
+    // a JSON object. The panel understands both shapes, so a plain reply
+    // still fills it in.
+    if (!structured || !structured.state) {
+      var match = /\{[\s\S]*\}/.exec(text);
+      if (match) {
+        try {
+          var parsed = JSON.parse(match[0]);
+          if (parsed && parsed.state) applyState(parsed.state);
+        } catch (error) { /* not JSON: a normal chat reply */ }
+      }
+    }
+    if (text) log(text, 'agent');
+  }
+
+  window.addEventListener('mouaif-app-message', onMessage);
+  if (window.mouaifApp && window.mouaifApp.addEventListener) {
+    window.mouaifApp.addEventListener('toolresult', onMessage);
+  }
+
+  function boot() {
+    ready = true;
+    setConnected(true);
+    render();
+    // Ask the agent for the current state so the panel opens filled in.
+    send('Show the current long-running run state as JSON: { name, goal, state, step, total, turns, budget, cost, elapsed, steps: [{ title }] }.');
+  }
+
+  if (window.mouaifAppReady && typeof window.mouaifAppReady.then === 'function') {
+    window.mouaifAppReady.then(boot).catch(function (err) { log(String(err), 'panel'); });
+  } else {
+    window.addEventListener('mouaif-app-ready', boot, { once: true });
+  }
+  setConnected(false);
+  render();
+})();
+</script>
+</body>
+</html>

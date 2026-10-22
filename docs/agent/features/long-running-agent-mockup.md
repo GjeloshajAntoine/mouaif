@@ -51,6 +51,33 @@ JavaScript and its text matcher mistakes regex literals for paths.
   was replaced (Start again, Reset) must not land its result on the new run;
   the closure compares `run.token`.
 
+## The agent control panel
+
+`scripts/long-running-agent-mockup/agent-panel.html` is the same proposal as
+a single-file **on-the-fly MCP App**: a live control panel for the running
+agent, mounted by the production host (`InstantMcpApp`) in the real MCP Apps
+sandbox.
+
+It is a real AppBridge participant, not a picture of one:
+
+- panel → agent: `window.mouaifApp.sendMessage(...)`;
+- agent → panel: `create_mcp_app({ message })`, delivered through the
+  AppBridge `sendToolInput` / `sendToolResult` notifications. The panel
+  reads `structuredContent.state` and falls back to a JSON object in a
+  plain text reply, so a plain answer still fills it in.
+
+`scripts/test-agent-panel-app.mjs` drives it through the production host:
+the real `InstantMcpApp` component, the real sandbox, the real AppBridge.
+It checks that the app boots and links, that an agent push fills the panel
+in, that the buttons and the steer field send real `ui/message` payloads,
+and that the panel fits 360 / 390 / 430 px with 44 px touch targets. It
+writes `.mouaif/agent-panel.png` and `.mouaif/agent-panel-chat.png` as
+review captures.
+
+`scripts/lib/mcp-apps-cdp.mjs` gained `appContextBySelector(selector)`: the
+shared `appContext()` probes for a `#ready` element, which only fits the
+original fixture. An app with its own markup needs its own anchor.
+
 ## Test coverage
 
 `scripts/test-long-running-agent-mockup.mjs` drives the page in headless
