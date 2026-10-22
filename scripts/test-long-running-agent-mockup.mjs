@@ -65,9 +65,18 @@ try {
     }))()`);
     assert.ok(layout.overflow <= 1, 'no horizontal document overflow at ' + width + 'px');
 
-    // The designer opens as a bottom sheet on a phone.
-    await evaluate('document.querySelector("#open-designer").click()');
-    await new Promise(resolve => setTimeout(resolve, 250));
+    // The designer opens as a bottom sheet on a phone. Open it explicitly
+    // (not by clicking the toggle button): the button TOGGLES, so a click
+    // while the sheet is already open would close it again.
+    await evaluate('mockup.closeDesigner()');
+    await evaluate('mockup.openDesigner("create")');
+    // The sheet slides in; wait for it to settle instead of guessing a
+    // delay, so the geometry below is the resting one.
+    for (let i = 0; i < 100; i++) {
+    const settled = await evaluate("(()=>{const r=document.querySelector('#designer').getBoundingClientRect();return r.bottom<=innerHeight+1 && r.top<innerHeight;})()");
+    if (settled) break;
+    await new Promise(resolve => setTimeout(resolve, 50));
+    }
     const sheet = await evaluate(`(() => {
       const panel = document.querySelector('#designer');
       const rect = panel.getBoundingClientRect();
@@ -171,8 +180,32 @@ try {
     assert.equal(slot.pinned[slot.pinned.length - 1], 'run', 'the live run card is pinned last');
     assert.equal(slot.settled[1], 'run', 'the settled run card returns to its creation slot');
 
+    // A tweak on a SETTLED run is applied at once: the run will never reach
+    // another turn boundary, so queueing the instruction would strand it.
+    const settledTweak = await evaluate(`(() => {
+    const card = document.querySelector('.lra__note');
+    mockup.openDesigner('tweak');
+    const agent = document.querySelector('#lra-agent');
+    agent.value = 'builder';
+    agent.dispatchEvent(new Event('change'));
+    mockup.applyTweak();
+    return {
+      agent: mockup.run.draft.agent,
+      queued: mockup.run.pendingInstruction,
+      note: card.textContent,
+      noteHidden: card.hidden,
+      meta: document.querySelector('.lra__meta').textContent
+    };
+    })()`);
+    assert.equal(settledTweak.agent, 'builder', 'the settled run takes the new agent');
+    assert.equal(settledTweak.queued, '', 'a settled run does not strand a queued instruction');
+    assert.equal(settledTweak.noteHidden, false, 'the settled run shows what changed');
+    assert.match(settledTweak.note, /already finished/, 'the card says the change applies to the next run');
+    assert.match(settledTweak.meta, /builder/, 'the card meta shows the current agent');
+
     assert.deepEqual(await evaluate('window.fixtureErrors'), [], 'no runtime errors at ' + width + 'px');
     // Reset between widths: the next pass starts from a clean transcript.
+    await evaluate('mockup.closeDesigner()');
     await evaluate('document.querySelector("#reset").click()');
     await new Promise(resolve => setTimeout(resolve, 100));
     assert.equal(await evaluate('document.querySelector("#designer").dataset.open'), '0', 'reset closes the designer');

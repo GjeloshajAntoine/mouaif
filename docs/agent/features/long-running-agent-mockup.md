@@ -42,6 +42,14 @@ JavaScript and its text matcher mistakes regex literals for paths.
   change on `run.draft` and puts the free-text instruction in
   `run.pendingInstruction`; `advance()` delivers it at the next turn
   boundary. The run keeps its identity and its current step.
+- **A tweak on a settled run applies at once.** Only `advance()` delivers a
+  queued instruction, and `advance()` returns early unless the run is
+  running — so queueing on a finished run stranded the message forever.
+  `applyTweak()` now branches: a live run queues, a settled run applies the
+  change and says on the card that it applies to the next run.
+- **The card shows the agent and the model.** The meta line reads
+  `agent · model · turns …`, so a tweak to either is visible on the card
+  and not only in the designer.
 - **One step runs at a time.** `run.pending` guards the interval-driven
   `advance()` so a step whose result has not landed yet is not started twice.
   Each step gets its own tool-call id (`mock-<index>-<counter>`), because the

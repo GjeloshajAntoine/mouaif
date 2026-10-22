@@ -387,7 +387,8 @@ function paint() {
   const pct = run.draft.steps.length ? Math.round((run.stepIndex / run.draft.steps.length) * 100) : 0;
   card.querySelector('.lra__fill').style.width = pct + '%';
   card.querySelector('.lra__meta').textContent =
-    'turns ' + run.turnsUsed + '/' + run.draft.budget
+    run.draft.agent + ' · ' + run.draft.model
+    + ' · turns ' + run.turnsUsed + '/' + run.draft.budget
     + ' · $' + run.cost.toFixed(3)
     + ' · ' + elapsedLabel();
   const list = card.querySelector('.lra__steps');
@@ -651,14 +652,25 @@ function applyTweak() {
   run.draft.agent = draft.agent;
   run.draft.model = draft.model;
   run.draft.budget = draft.budget;
-  run.pendingInstruction = draft.instruction
-    ? draft.instruction
-    : 'Switched to ' + draft.agent + ' on ' + draft.model + ' with a ' + draft.budget + '-turn budget.';
+  const change = 'Switched to ' + draft.agent + ' on ' + draft.model + ' with a ' + draft.budget + '-turn budget.';
+  const live = run.state === 'running' || run.state === 'paused';
+  // A live run takes the change at its next turn boundary: the step in
+  // flight is never interrupted. A settled run will never reach another
+  // boundary, so queueing there would strand the message — apply it now
+  // and say so on the card instead.
+  if (live) {
+    run.pendingInstruction = draft.instruction || change;
+    closeDesigner();
+    paint();
+    if (run.state === 'running') {
+      setTimeout(() => { if (run && run.state === 'running') advance(); }, 300);
+    }
+    return;
+  }
+  run.pendingInstruction = '';
+  note(change + ' The run had already finished, so this applies to the next run.');
   closeDesigner();
   paint();
-  if (run.state === 'running') {
-    setTimeout(() => { if (run && run.state === 'running') advance(); }, 300);
-  }
 }
 
 // ---- Wiring -----------------------------------------------------------

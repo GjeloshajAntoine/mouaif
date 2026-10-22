@@ -40,7 +40,7 @@ Nothing runs a tool, calls a provider, changes a setting or touches a real chat.
 | --- | --- |
 | Run card | One card per run, pinned to the bottom of the transcript while the run is live, returning to its chronological slot when the run settles. It carries the goal, a progress bar, the plan, the spent turns and cost, and the live actions. |
 | Run controls | **Pause / Resume**, **Tweak**, **Skip step**, **Stop**. Every action is a 44 px tap target; there are no hover-only affordances. |
-| Tweak timing | A tweak never interrupts a step in flight. It is queued and applied at the run's next turn boundary, so the run's identity and its current step survive the change. |
+| Tweak timing | A tweak never interrupts a step in flight. It is queued and applied at the run's next turn boundary, so the run's identity and its current step survive the change. A tweak on a run that already finished applies at once — it will never reach another turn boundary — and the card says so. |
 | Autonomy | Three levels — read-only, guarded, autonomous — decide how much the run may do without asking. |
 | Turn budget | The run stops on its own once the budget is spent, instead of running forever. |
 | Designer | One surface for both creating and tweaking. The phone layout is a bottom sheet; the wide layout is a side panel. |
