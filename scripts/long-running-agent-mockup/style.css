@@ -1,0 +1,406 @@
+/* Long-running agent mockup — a review harness, not a shipped surface.
+
+   The chat view under review reuses the production stylesheet
+   (frontend/src/style.css) so the head, transcript rows, tool cards and
+   composer look exactly like the app. Only the mockup shell (the frame, the
+   bottom sheet / side panel, and the `lra-*` run surfaces that do not exist
+   in the app yet) is styled here. */
+
+@import '../../frontend/src/style.css';
+
+/* ---- Shell ---------------------------------------------------------- */
+
+html, body {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+  margin: 0;
+  background: var(--bg);
+  font-family: system-ui, sans-serif;
+}
+
+.mock {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mock__bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px max(8px, env(safe-area-inset-right)) 6px max(8px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.mock__title { font-size: 0.75rem; color: var(--fg-soft); font-weight: 600; }
+.mock__bar-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.mock__btn {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 0.72rem;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.mock__btn:active { background: var(--surface-3); }
+.mock__speed { display: inline-flex; align-items: center; gap: 4px; }
+.mock__speed-label { font-size: 0.68rem; color: var(--muted); }
+
+.mock__stage {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  min-height: 0;
+}
+
+/* The phone frame. On a wide window the chat keeps a phone measure and the
+   designer sits beside it; on a phone the designer is a bottom sheet. */
+.mock__phone {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  max-width: 30rem;
+  margin-inline: auto;
+  border-inline: 1px solid var(--border);
+  background: var(--bg);
+}
+.mock__phone .chat-view {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.mock__phone .chat-view__transcript {
+  max-height: none;
+}
+
+/* ---- Run card (the long-running agent surface under review) -------- */
+
+.lra {
+  align-self: stretch;
+  width: 100%;
+  max-width: 100%;
+  margin: 2px 0;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 0.75rem;
+}
+.lra--running { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.lra--paused { border-color: color-mix(in srgb, var(--warning) 40%, var(--border)); }
+.lra--done { border-color: color-mix(in srgb, var(--success) 35%, var(--border)); }
+.lra--failed { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+
+.lra__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.lra__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+.lra--running .lra__dot { background: var(--accent); animation: lra-pulse 1.2s ease-in-out infinite; }
+.lra--paused .lra__dot { background: var(--warning); }
+.lra--done .lra__dot { background: var(--success); }
+.lra--failed .lra__dot { background: var(--danger); }
+@keyframes lra-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  50% { opacity: .7; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent); }
+}
+.lra__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lra__status {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.lra__goal {
+  margin: 0;
+  color: var(--fg-soft);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.lra__bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.lra__fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 240ms linear;
+}
+.lra--done .lra__fill { background: var(--success); }
+.lra--failed .lra__fill { background: var(--danger); }
+.lra--paused .lra__fill { background: var(--warning); }
+
+.lra__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--muted);
+}
+
+.lra__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lra__step {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--fg-soft);
+  line-height: 1.35;
+}
+.lra__step-mark { flex: 0 0 auto; width: 12px; text-align: center; color: var(--muted-2); }
+.lra__step[data-state="running"] .lra__step-mark { color: var(--accent); }
+.lra__step[data-state="done"] .lra__step-mark { color: var(--success); }
+.lra__step[data-state="failed"] .lra__step-mark { color: var(--danger); }
+.lra__step[data-state="skipped"] { color: var(--muted); text-decoration: line-through; }
+.lra__step-text { min-width: 0; overflow-wrap: anywhere; }
+
+.lra__note {
+  margin: 0;
+  padding: 4px 6px;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--fg-soft);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  overflow-wrap: anywhere;
+}
+.lra__note b { color: var(--fg); font-weight: 600; }
+
+/* The live tweak row. Every action is a real 44px tap target. */
+.lra__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lra__action {
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 0.72rem;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.lra__action:active { background: var(--surface-3); }
+.lra__action--primary {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: transparent;
+  font-weight: 600;
+}
+.lra__action--danger { color: var(--danger); }
+
+/* ---- Designer (create / tweak a run) ------------------------------- */
+
+.mock__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.55);
+}
+.mock__panel {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 61;
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-top: 1px solid var(--border-strong);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
+  transform: translateY(100%);
+  transition: transform 180ms ease;
+}
+.mock__panel[data-open="1"] { transform: translateY(0); }
+@media (min-width: 900px) {
+  .mock__scrim { display: none; }
+  .mock__panel {
+    position: relative;
+    inset: auto;
+    z-index: 1;
+    flex: 0 0 22rem;
+    max-height: none;
+    border-radius: 0;
+    border-left: 1px solid var(--border);
+    border-top: 0;
+    box-shadow: none;
+    transform: none;
+  }
+}
+
+.lra-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
+}
+.lra-form__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.lra-form__title { font-size: 0.85rem; font-weight: 600; color: var(--fg); }
+.lra-form__close {
+  margin-left: auto;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0 8px;
+  font-size: 0.75rem;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.lra-form__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lra-form__foot {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px calc(10px + var(--safe-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.lra-form__foot .btn { flex: 1 1 auto; min-height: 44px; }
+
+.lra-field { display: flex; flex-direction: column; gap: 4px; }
+.lra-field > label { font-size: 0.7rem; color: var(--fg-soft); }
+/* Only the field's OWN control is sized: a radio inside a choice row must
+  stay a radio, not become a 44px full-width box. */
+.lra-field > textarea,
+.lra-field > input,
+.lra-field > select {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.lra-field textarea { min-height: 88px; resize: vertical; line-height: 1.4; }
+.lra-field input:focus,
+.lra-field textarea:focus,
+.lra-field select:focus { border-color: var(--accent); outline: none; }
+.lra-field__hint { font-size: 0.65rem; color: var(--muted); line-height: 1.35; }
+
+.lra-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lra-chip {
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: 0.7rem;
+  color: var(--fg-soft);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.lra-chip[aria-pressed="true"] {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.lra-choices { display: flex; flex-direction: column; gap: 6px; }
+.lra-choice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.lra-choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.lra-choice input { margin-top: 2px; }
+.lra-choice-text { display: flex; flex-direction: column; gap: 2px; }
+.lra-choice-title { font-size: 0.75rem; color: var(--fg); font-weight: 600; }
+.lra-choice-desc { font-size: 0.66rem; color: var(--muted); line-height: 1.35; }
+
+.lra-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+:where(button, select, textarea, input, a):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lra--running .lra__dot { animation: none; }
+  .lra__fill { transition: none; }
+  .mock__panel { transition: none; }
+}

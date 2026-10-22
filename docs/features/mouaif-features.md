@@ -87,6 +87,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Chat error surfacing](chat-error-surfacing.md) — how a failed request shows up in the chat.
 - [Screen capture](screen-capture.md) — capture a screen, take timed snapshots, review the PNGs, and attach the ones you pick.
 - [Chat view mockup](chat-view-mockup.md) — a reproducible page that renders every tool card for review.
+- [Long-running agent mockup](long-running-agent-mockup.md) — an interactive proposal for a running agent's card, its live controls, and the run designer.
 - [Trace to file](trace.md) — save a chat's events to a file in the project.
 - [Dictation](dictation.md) — speech-to-text from a Settings page and from the composer microphone.
 - [Composer tool buttons](composer-tool-buttons.md) — show or hide the microphone, image button and composer status line.

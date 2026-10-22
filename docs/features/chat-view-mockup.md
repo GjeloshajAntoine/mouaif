@@ -72,6 +72,7 @@ node scripts/test-chat-element-stability.mjs
 
 ## Related
 
+- [Long-running agent mockup](./long-running-agent-mockup.md) — the interactive proposal for a running agent's card and its run designer.
 - [Tool card expanded view](./tool-card-expanded-view.md)
 - [Chat transcript rendering](./chat-transcript-rendering.md)
 - [Chat UI](./chat-ui.md)

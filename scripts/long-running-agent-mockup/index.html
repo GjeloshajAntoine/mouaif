@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>mouaif — long-running agent mockup</title>
+  <link rel="stylesheet" href="./mockup.css">
+</head>
+<body>
+  <div class="mock">
+    <header class="mock__bar">
+      <strong class="mock__title">Long-running agent · chat view mockup</strong>
+      <div class="mock__bar-actions">
+        <button id="open-designer" class="mock__btn" type="button" aria-controls="designer" aria-expanded="false">Design run</button>
+        <label class="mock__speed">
+          <span class="mock__speed-label">Speed</span>
+          <select id="speed" class="mock__btn">
+            <option value="1">1×</option>
+            <option value="4" selected>4×</option>
+            <option value="16">16×</option>
+          </select>
+        </label>
+        <button id="reset" class="mock__btn" type="button">Reset</button>
+      </div>
+    </header>
+
+    <div class="mock__stage">
+      <!-- The chat view under review. Same class names and stylesheet as the
+           app, so the card and the composer look like the shipped ones. -->
+      <section class="mock__phone" aria-label="Chat view preview">
+        <div class="chat-view" id="chat-view">
+          <div class="chat-view__head">
+            <button class="chat-view__back" type="button" aria-label="Back to projects">←</button>
+            <div class="chat-view__title-stack" data-switcher="1">
+              <button class="chat-view__chat-switcher-trigger" type="button" aria-label="Switch chat" aria-haspopup="true" aria-expanded="false">
+                <span class="chat-view__chat-switcher-title">
+                  <span class="chat-view__name" id="chat-name">Long-running refactor</span>
+                  <span class="chat-view__meta" id="chat-meta">mouaif · project</span>
+                </span>
+                <span class="chat-view__chat-switcher-caret" aria-hidden="true">▾</span>
+              </button>
+              <div class="chat-view__usage-summary" aria-label="Chat usage and provider credit">
+                <span id="usage-context">Context 12.4K</span>
+                <span id="usage-total">Total $0.21</span>
+              </div>
+            </div>
+            <div class="chat-view__head-icons">
+              <a class="glyph-btn chat-view__iconbtn chat-view__iconbtn--round" href="#" aria-label="Project settings" title="Settings">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.66 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.07 7.07 0 0 0 0 1.88L2.78 14.16a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.51.37 1.05.71 1.63.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54c.58-.23 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.04-1.58Z" /></svg>
+              </a>
+              <button class="glyph-btn chat-view__iconbtn chat-view__iconbtn--round" type="button" aria-label="Tools" title="Tools">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M21.7 19.3 13.4 11a5.6 5.6 0 0 0-1.5-1.5l6.1-6.1-1.9-1.9-6.1 6.1a5.6 5.6 0 0 0-1.5 1.5L2.2 17.8a1.5 1.5 0 1 0 1.5 1.5l8.3-8.3c.43.6.93 1.12 1.5 1.5l-6.1 6.1 1.9 1.9 6.1-6.1c.38.57.9 1.07 1.5 1.5l8.3 8.3a1.5 1.5 0 0 0 0-2.1Z" /></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="chat-view__transcript" id="transcript" tabindex="0" aria-label="Chat transcript" aria-live="polite"></div>
+
+          <div class="chat-view__composer-row">
+            <div class="chat-view__composer-tool">
+              <button class="file-toolbar__trigger" type="button" aria-label="File tools">
+                <span class="file-toolbar__stack">
+                  <span class="file-toolbar__folder" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="28" height="22" fill="none"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" stroke="currentColor" stroke-width="1.6" fill="rgba(255,255,255,.06)" /></svg>
+                  </span>
+                </span>
+              </button>
+            </div>
+            <div class="chat-view__composer">
+              <textarea class="input chat-view__textarea" id="composer" rows="1" placeholder="Type a message" aria-label="Message"></textarea>
+              <button class="btn btn--primary chat-view__send" id="composer-send" type="button" aria-label="Send">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3.4 20.6 21 12 3.4 3.4 3 10l13 2-13 2 .4 6.6Z" fill="currentColor" /></svg>
+              </button>
+            </div>
+          </div>
+          <p class="chat-view__status-row"><span class="chat-view__status" id="status-line"></span></p>
+        </div>
+      </section>
+
+      <!-- The run designer. A bottom sheet on a phone, a side panel on a
+           wide frame: the same markup, one surface. -->
+      <div class="mock__scrim" id="scrim" hidden></div>
+      <aside class="mock__panel" id="designer" aria-label="Run designer" aria-hidden="true"></aside>
+    </div>
+  </div>
+  <script src="./mockup.js"></script>
+</body>
+</html>
