@@ -152,10 +152,24 @@ try {
 
     // The tool cards are the production ones.
     const cards = await evaluate(`(() => ({
-      toolCards: document.querySelectorAll('.tool-card').length,
-      nestedHeads: document.querySelectorAll('.tool-card__head').length
+    toolCards: document.querySelectorAll('.tool-card').length,
+    nestedHeads: document.querySelectorAll('.tool-card__head').length
     }))()`);
     assert.ok(cards.toolCards > 0, 'the production tool cards render inside the transcript');
+
+    // The run card is pinned while the run is live and returns to the slot
+    // it was created in when it settles.
+    const slot = await evaluate(`(() => {
+    mockup.startRun();
+    const live = () => [...document.querySelector('#transcript').children]
+      .map(node => node.classList.contains('lra') ? 'run' : 'row');
+    const pinned = live();
+    mockup.stopRun();
+    const settled = live();
+    return { pinned, settled };
+    })()`);
+    assert.equal(slot.pinned[slot.pinned.length - 1], 'run', 'the live run card is pinned last');
+    assert.equal(slot.settled[1], 'run', 'the settled run card returns to its creation slot');
 
     assert.deepEqual(await evaluate('window.fixtureErrors'), [], 'no runtime errors at ' + width + 'px');
     // Reset between widths: the next pass starts from a clean transcript.

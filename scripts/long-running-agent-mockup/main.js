@@ -372,9 +372,13 @@ function paint() {
   // While the run is live its card stays pinned to the bottom of the
   // transcript, the way a running delegated run does in the app: the plan
   // and the progress stay on screen while the tool cards scroll above it.
-  // When the run settles the card returns to its chronological slot.
-  if (run.state === 'running' && transcriptEl.lastElementChild !== card) {
-    transcriptEl.appendChild(card);
+  // When the run settles the card returns to the chronological slot it was
+  // created in — the same anchor-then-restore contract the production
+  // renderer uses for a running subagent card.
+  if (run.state === 'running' || run.state === 'paused') {
+    if (transcriptEl.lastElementChild !== card) transcriptEl.appendChild(card);
+  } else {
+    restoreRunCardToSlot();
   }
   card.className = 'lra lra--' + statusLabel();
   card.querySelector('.lra__status').textContent = run.state === 'running'
@@ -420,6 +424,37 @@ function actionButton(label, className, onClick) {
   return btn;
 }
 
+// recordRunCardSlot() — remember where the run card was created, so the
+// settled card can go back to that exact place in the conversation.
+//
+// The anchor is the row above the card at creation time. The production
+// renderer uses the same trick for a running subagent card
+// (`ensureSubagentSlotMarker` / `restoreSubagentCardToSlot` in
+// frontend/src/components/chat/transcript.js).
+function recordRunCardSlot(card) {
+  const host = transcriptEl;
+  let prev = null;
+  for (const child of host.children) {
+    if (child === card) break;
+    if (!child.classList.contains('lra')) prev = child;
+  }
+  card._slotPrev = prev;
+  card._slotRecorded = true;
+}
+
+// restoreRunCardToSlot() — move the settled card back after its anchor.
+function restoreRunCardToSlot() {
+  const card = run && run.card;
+  if (!card || !card._slotRecorded) return;
+  card._slotRecorded = false;
+  const prev = card._slotPrev;
+  card._slotPrev = null;
+  if (!prev || prev.parentNode !== transcriptEl) return;
+  const next = prev.nextElementSibling;
+  if (next === card) return;
+  transcriptEl.insertBefore(card, next);
+}
+
 function buildRunCard() {
   const card = el('div', 'lra lra--running');
   card.dataset.runId = 'run-1';
@@ -447,6 +482,9 @@ function buildRunCard() {
   run.card = card;
   run.noteEl = note;
   run.metaEl = card.querySelector('.lra__meta');
+  // The card's home is the slot it was created in; the live pin moves it
+  // down, and the settle puts it back.
+  recordRunCardSlot(card);
   return card;
 }
 

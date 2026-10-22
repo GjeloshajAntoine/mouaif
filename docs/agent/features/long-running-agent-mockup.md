@@ -33,10 +33,11 @@ JavaScript and its text matcher mistakes regex literals for paths.
 ## Design decisions the mockup encodes
 
 - **The run card is pinned while the run is live.** `paint()` re-appends the
-  card to the end of the transcript while `run.state === 'running'`, and the
-  card returns to its chronological slot when the run settles. This mirrors
-  the shipped behaviour of a running `subagent` card (see
-  `isRunningSubagentCard` / `firstBottomPinnedCard` in `transcript.js`).
+  card to the end of the transcript while the run is running or paused, and
+  `restoreRunCardToSlot()` puts it back where it was created when the run
+  settles. The anchor is recorded by `recordRunCardSlot()` at creation time.
+  This mirrors the shipped behaviour of a running `subagent` card (see
+  `ensureSubagentSlotMarker` / `restoreSubagentCardToSlot` in `transcript.js`).
 - **A tweak is queued, never applied mid-step.** `applyTweak()` stores the
   change on `run.draft` and puts the free-text instruction in
   `run.pendingInstruction`; `advance()` delivers it at the next turn
@@ -60,6 +61,8 @@ Chrome at 360 / 390 / 430 px:
 - the tweak path changes the agent and queues the instruction, and shows
   fewer fields than create mode;
 - pause / resume / skip / stop change the run state;
+- the run card is pinned while the run is live and returns to its creation
+  slot when it settles;
 - every action control is at least 44 px tall;
 - the production tool cards render inside the transcript;
 - no runtime error, and no horizontal document overflow.
