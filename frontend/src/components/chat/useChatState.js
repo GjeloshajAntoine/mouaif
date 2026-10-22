@@ -760,14 +760,16 @@ await sendTurn(state, refs, {
     // tree (stale half-check / expanded groups). Bump the stamp so the popup
     // re-renders and recomputes its groups from the new filter.
     setToolDataStamp((v) => v + 1);
-    await saving;
+    const ok = await saving;
     setToolDataStamp((v) => v + 1);
+    if (ok !== false) refreshSystemPrompt(state, refs);
   }, [updateChatBound]);
   const onToggleToolGroup = useCallback(async (names, next) => {
     const saving = toggleToolGroup(names, next, state, refs, updateChatBound);
     setToolDataStamp((v) => v + 1);
-    await saving;
+    const ok = await saving;
     setToolDataStamp((v) => v + 1);
+    if (ok !== false) refreshSystemPrompt(state, refs);
   }, [updateChatBound]);
   const onToggleAgentFiles = useCallback((next) => {
     toggleAgentFiles(next, state, refs, updateChatBound, () => refreshSystemPrompt(state, refs));
@@ -868,6 +870,7 @@ await sendTurn(state, refs, {
       if (state._updateToolsCard) state._updateToolsCard();
       // Re-render the composer ToolPopup (it reads the same auth state).
       setAuthStamp((n) => n + 1);
+      refreshSystemPrompt(state, refs);
     } else if (status.current) status.current.textContent = 'Tool permission was not saved: HTTP ' + r.status;
     return r.status === 200;
   };
@@ -888,6 +891,7 @@ await sendTurn(state, refs, {
       if (state._updateToolsCard) state._updateToolsCard();
       // Re-render the composer ToolPopup (it reads the same auth state).
       setAuthStamp((n) => n + 1);
+      refreshSystemPrompt(state, refs);
     } else if (status.current) status.current.textContent = 'Tool permission was not saved: HTTP ' + r.status;
     return r.status === 200;
   };

@@ -131,19 +131,27 @@ async function main() {
     !(afterClear.chat && afterClear.chat.native && afterClear.chat.native.shell),
     JSON.stringify(afterClear.chat && afterClear.chat.native));
 
-  // 5. File operations share the family key, so one control covers all five.
-  authz.setChatAuthorization(projectDir, chatA.id, { native: { read_file: { mode: 'off' } } });
-  check('per-leaf file write lands on the file family',
+  // 5. File operations support both family-wide and per-leaf chat overrides.
+  authz.setChatAuthorization(projectDir, chatA.id, { native: { file: { mode: 'off' } } });
+  check('family file write lands on the file family',
     authz.effectiveConfig(projectDir, 'read_file', chatA.id).mode === 'off');
   check('the other file leaves follow the family gate',
     authz.effectiveConfig(projectDir, 'write_file', chatA.id).mode === 'off');
+  authz.setChatAuthorization(projectDir, chatA.id, { native: { file: null, read_file: { mode: 'off' } } });
+  check('per-leaf file write disables only that leaf',
+    authz.effectiveConfig(projectDir, 'read_file', chatA.id).mode === 'off'
+      && authz.effectiveConfig(projectDir, 'write_file', chatA.id).mode === 'ask');
 
-  // 5b. Chat and app functions share their family key the same way.
-  authz.setChatAuthorization(projectDir, chatA.id, { native: { list_chats: { mode: 'off' } } });
-  check('a chat function write lands on the chats family',
+  // 5b. Chat and app functions support both family-wide and per-leaf overrides.
+  authz.setChatAuthorization(projectDir, chatA.id, { native: { chats: { mode: 'off' } } });
+  check('a chat family write lands on the chats family',
     authz.effectiveConfig(projectDir, 'delete_chat', chatA.id).mode === 'off');
   check('the mouaif family is untouched',
     authz.effectiveConfig(projectDir, 'get_app_info', chatA.id).mode !== 'off');
+  authz.setChatAuthorization(projectDir, chatA.id, { native: { chats: null, list_chats: { mode: 'off' } } });
+  check('a chat leaf write disables only that leaf',
+    authz.effectiveConfig(projectDir, 'list_chats', chatA.id).mode === 'off'
+      && authz.effectiveConfig(projectDir, 'delete_chat', chatA.id).mode === 'ask');
   authz.setChatAuthorization(projectDir, chatA.id, { native: { chats: null } });
 
   // 5c. ask_user / task are chats leaves: a chat-scoped family Allow covers

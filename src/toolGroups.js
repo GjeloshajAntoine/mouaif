@@ -46,30 +46,35 @@ const modeLabel = (cfg) => cfg.mode + (cfg.mode === 'allowlist'
 
 // One family line for the feature summary, or null when the family is off
 // or none of its tools is in the catalog this process advertises. A leaf
-// whose own mode is `off` is left out of the list, like it is left out of
-// the advertised tools.
-function summaryLine(id, catalog, authTools) {
+// whose own mode is `off` (or that is excluded by `enabledTools`) is left
+// out of the list, like it is left out of the advertised tools.
+function summaryLine(id, catalog, authTools, enabledTools = null) {
   const group = groups().find((entry) => entry.id === id);
   if (!group || !group.authKey) return null;
   const tools = authTools || {};
   const gate = tools[group.authKey] || { mode: 'ask' };
   if (gate.mode === 'off') return null;
   const known = new Set((catalog || []).map((tool) => tool && tool.name));
-  const names = group.tools.filter((name) => known.has(name) && !(tools[name] && tools[name].mode === 'off'));
+  const allow = Array.isArray(enabledTools) ? new Set(enabledTools) : (enabledTools instanceof Set ? enabledTools : null);
+  const names = group.tools.filter((name) =>
+    known.has(name)
+    && !(tools[name] && tools[name].mode === 'off')
+    && (!allow || allow.has(name))
+  );
   if (!names.length) return null;
   return '[' + group.name + '](off|ask|allow) → ' + modeLabel(gate) + ' — ' + names.join(', ');
 }
 
-// summaryLines(catalog, authTools, skip) -> string[]
+// summaryLines(catalog, authTools, skip, enabledTools) -> string[]
 //
 // One feature-summary line per multi-tool family (one gate, several
 // leaves), in group order. `skip` holds gate keys the caller already
 // reports on its own line (the file family keeps its legacy wording).
-function summaryLines(catalog, authTools, skip = new Set()) {
+function summaryLines(catalog, authTools, skip = new Set(), enabledTools = null) {
   const lines = [];
   for (const group of groups()) {
     if (!group.authKey || group.tools.length < 2 || skip.has(group.authKey)) continue;
-    const line = summaryLine(group.id, catalog, authTools);
+    const line = summaryLine(group.id, catalog, authTools, enabledTools);
     if (line) lines.push(line);
   }
   return lines;

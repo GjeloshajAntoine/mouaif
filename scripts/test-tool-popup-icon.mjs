@@ -9,7 +9,7 @@ let open = false;
 const context = vm.createContext({
   h: (tag, props, ...children) => ({ tag, props: props || {}, children: children.flat().filter(Boolean) }),
   useState: (initial) => typeof initial === 'boolean' ? [open, (value) => { open = value; }] : [initial, () => {}],
-  useRef: () => ({ current: null }), useCallback: (fn) => fn,
+  useRef: () => ({ current: null }), useCallback: (fn) => fn, useEffect() {},
   useClickOutside() {}, useVisualViewport() {}, buildToolGroups: () => [], ToolTree: 'tree'
 });
 vm.runInContext(source, context);
@@ -37,6 +37,6 @@ trigger.props.onClick();
 const expanded = render();
 assert.equal(find(expanded, (node) => node.props?.class?.includes('tool-popup__trigger')).props['aria-expanded'], 'true');
 assert.equal(find(expanded, (node) => node.props?.role === 'dialog').props['aria-label'], 'Tool settings');
-find(expanded, (node) => node.props?.class === 'tool-popup__close').props.onClick();
+find(expanded, (node) => node.props?.class?.includes('tool-popup__close')).props.onClick();
 assert.equal(open, false);
 console.log('tool popup icon: themed wrench, accessible trigger, and open/close behavior passed');

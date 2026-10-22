@@ -10,9 +10,9 @@ Together they solve the problem of "the model doesn't know what it can do": with
 
 ### Feature injection
 
-The feature summary is assembled server-side and injected as its own `system` message in the upstream message array, after agent files and before tagged files. It lists:
+The feature summary is assembled server-side and injected as its own `system` message in the upstream message array, after agent files and before tagged files (and is also included in the chat's `GET /api/chats/:id/system-prompt` preview so the collapsible **System prompt** card in the transcript shows the exact prompt sent to the model). It lists:
 
-- **Built-in tools** — shell, subagent, ask_user, file tools — showing their authorization mode (`off` / `ask` / `allowlist` / `allow`).
+- **Built-in tools** — shell, subagent, file tools, and the Chats / mouaif families — showing their authorization mode (`off` / `ask` / `allowlist` / `allow`) and filtering out any tools unchecked in the chat's tool filter (`chat.tools`).
 - **MCP servers** — how many are configured. (Deliberately NOT the live running/stopped status: the summary rides inside the cached Anthropic system block, and a status flip mid-conversation would invalidate the whole prompt cache. Live status is available via `list_features`.)
 - **Agent files** — whether AGENTS.md / CLAUDE.md etc. are injected.
 - **Agents** — how many named subagent personas are defined in the project.
@@ -20,7 +20,7 @@ The feature summary is assembled server-side and injected as its own `system` me
 - **Trace** — whether trace-to-file is on for this chat.
 - **Prompt profile** — the active profile id (`very-small`, `average`, `extensive`, or `chat`).
 
-The message ends by mentioning the `list_features` tool for full detail.
+When `list_features` is enabled and selected in the chat, the message ends by mentioning the `list_features` tool for full detail.
 
 ### `list_features` tool
 
@@ -28,7 +28,7 @@ The model has a `list_features` tool available in every chat. It takes no argume
 
 | Key | Type | Description |
 |---|---|---|
-| `tools` | `object` | Each built-in tool (`shell`, `subagent`, `file`, the Chats family's fifteen leaves — `ask_user`, `report_progress`, `task` and `webpreview` included — the mouaif family, and the app functions) with `mode`, `allowlist`, `defaultTimeoutMs`, `maxTimeoutMs`. Modes include the current chat's overrides; a project-only read reports project/app defaults. |
+| `tools` | `object` | Each built-in tool (`shell`, `subagent`, `file`, the Chats family's fifteen leaves — `ask_user`, `report_progress`, `task` and `webpreview` included — the mouaif family, and the app functions) with `mode`, `selected` (whether the tool is checked in the current chat's tool filter), `allowlist`, `defaultTimeoutMs`, `maxTimeoutMs`. Modes include the current chat's overrides; a project-only read reports project/app defaults. |
 | `mcp` | `array` | Each MCP server with `name`, `slug`, `status`, `tools`, `authorization`. |
 | `agentFiles` | `object` | `enabled` (boolean), `fileNames` (the names looked for), `discovered` (files actually found with size). |
 | `agents` | `object` | `discovered` (named subagent personas found, by name). |

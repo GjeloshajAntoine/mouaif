@@ -39,12 +39,16 @@ function buildFeatureSummary(opts) {
   const { chat, projectDir, project, authz, mcpServers } = opts || {};
   const lines = [];
   const feat = [];
+  const enabledTools = chat && Array.isArray(chat.tools)
+    ? new Set(chat.tools.map((n) => String(n)))
+    : null;
+  const isToolSelected = (name) => !enabledTools || enabledTools.has(name);
 
   // --- Built-in tools ---
   // shell
   if (authz && authz.tools && authz.tools.shell) {
     const s = authz.tools.shell;
-    if (s.mode !== 'off') {
+    if (s.mode !== 'off' && isToolSelected('shell')) {
       feat.push('[shell](off|ask|allow) → ' + s.mode + (s.mode === 'allowlist' ? ' (' + (Array.isArray(s.allowlist) ? s.allowlist.length : 0) + ' patterns)' : ''));
       // Let the model know which shell dialect runs its commands
       // (cmd.exe vs a POSIX sh) so it picks the right syntax.
@@ -65,8 +69,16 @@ function buildFeatureSummary(opts) {
   // file tools
   if (authz && authz.tools && authz.tools.file) {
     const s = authz.tools.file;
-    if (s.mode !== 'off') {
-      feat.push('[file tools](off|ask|allow) → ' + s.mode + (s.mode === 'allowlist' ? ' (' + (Array.isArray(s.allowlist) ? s.allowlist.length : 0) + ' patterns)' : ''));
+    let fileLeaves = ['read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit'];
+    try {
+      fileLeaves = [...require('./tools/files.js').FILE_TOOL_NAMES];
+    } catch { /* fallback list */ }
+    const activeFiles = fileLeaves.filter((name) =>
+      !(authz.tools[name] && authz.tools[name].mode === 'off') && isToolSelected(name)
+    );
+    if (s.mode !== 'off' && activeFiles.length > 0) {
+      const base = '[file tools](off|ask|allow) → ' + s.mode + (s.mode === 'allowlist' ? ' (' + (Array.isArray(s.allowlist) ? s.allowlist.length : 0) + ' patterns)' : '');
+      feat.push(activeFiles.length < fileLeaves.length ? base + ' — ' + activeFiles.join(', ') : base);
     }
   }
   // Multi-tool families (Chats, mouaif), one line per family gate (the
@@ -79,7 +91,7 @@ function buildFeatureSummary(opts) {
     const { listNativeTools } = require('./server-handlers-tools.js');
     nativeCatalog = listNativeTools();
   } catch { /* catalog unavailable; the group lines are skipped */ }
-  for (const line of require('./toolGroups.js').summaryLines(nativeCatalog, authz && authz.tools, new Set(['file']))) feat.push(line);
+  for (const line of require('./toolGroups.js').summaryLines(nativeCatalog, authz && authz.tools, new Set(['file']), enabledTools)) feat.push(line);
 
   // `restart_app` no longer has a line of its own: it is a leaf of the
   // `mouaif` family (frontend/src/toolGroups.js), so the family line above
@@ -151,8 +163,12 @@ if (Array.isArray(mcpServers) && mcpServers.length) {
   lines.push('This mouaif project has these features:');
   lines.push('');
   for (const f of feat) lines.push('- ' + f);
-  lines.push('');
-  lines.push('You also have a `list_features` tool available — call it to get the complete structured feature state with every detail.');
+  const listFeaturesMode = authz && authz.tools && authz.tools.list_features && authz.tools.list_features.mode;
+  const mouaifMode = authz && authz.tools && authz.tools.mouaif && authz.tools.mouaif.mode;
+  if (listFeaturesMode !== 'off' && mouaifMode !== 'off' && isToolSelected('list_features')) {
+    lines.push('');
+    lines.push('You also have a `list_features` tool available — call it to get the complete structured feature state with every detail.');
+  }
 
   return lines.join('\n');
 }
@@ -175,6 +191,10 @@ async function dispatchListFeatures(args, opts) {
   const result = { ok: true, content: '', result: null };
 
   const state = {};
+  const enabledTools = chat && Array.isArray(chat.tools)
+    ? new Set(chat.tools.map((n) => String(n)))
+    : null;
+  if (enabledTools) state.enabledTools = Array.from(enabledTools);
 
   // Built-in tool authorization
   try {
@@ -186,8 +206,13 @@ async function dispatchListFeatures(args, opts) {
     // functions), so a per-leaf override is visible next to its gate.
     for (const name of [...authz.NATIVE_TOOLS, ...authz.FAMILY_TOOLS]) {
       const cfg = tools[name] || { mode: 'ask' };
+      const isFamilyKey = authz.TOOL_FAMILIES && Object.prototype.hasOwnProperty.call(authz.TOOL_FAMILIES, name);
+      const selected = !enabledTools || (isFamilyKey && name !== 'subagent'
+        ? authz.TOOL_FAMILIES[name].some((leaf) => enabledTools.has(leaf))
+        : enabledTools.has(name));
       state.tools[name] = {
         mode: cfg.mode || 'ask',
+        selected,
         allowlist: cfg.allowlist || [],
         defaultTimeoutMs: cfg.defaultTimeoutMs,
         maxTimeoutMs: cfg.maxTimeoutMs

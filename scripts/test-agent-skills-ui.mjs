@@ -93,7 +93,8 @@ const defer = () => { let resolve; const promise = new Promise((r) => { resolve 
   let nodes = [];
   const popupContext = vm.createContext({
     h: (tag, props, ...children) => { const node = { tag, props: props || {}, children }; nodes.push(node); return node; },
-    useState: () => [true, () => {}], useRef: () => ({ current: null }), useCallback: (fn) => fn,
+    useState: (initial) => [typeof initial === 'boolean' ? true : initial, () => {}],
+    useRef: () => ({ current: null }), useCallback: (fn) => fn, useEffect() {},
     useClickOutside() {}, useVisualViewport() {}, buildToolGroups: () => [], ToolTree: 'tree'
   });
   const popup = fs.readFileSync('frontend/src/components/chat/ToolPopup.jsx', 'utf8')

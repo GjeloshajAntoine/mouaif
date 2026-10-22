@@ -121,9 +121,9 @@ head.appendChild(scoped);
   }
 
   // Inject the shared Off/Ask/Allow authorization control on each known
-  // group row, exactly like the project settings page. Every native tool
-  // — subagent included — renders the same ToolAuthSeg component from
-  // ../settings/toolAuth.js, so no row can drift from the others.
+  // group row and child tool row, matching the project settings page. Every
+  // native tool — subagent included — renders the same ToolAuthSeg component
+  // from ../settings/toolAuth.js, so no row can drift from the others.
   const auth = state.toolAuth || {};
   for (const g of groups) {
     // The authorization key and the mode list come from the app-wide group
@@ -147,11 +147,32 @@ head.appendChild(scoped);
       if (state._saveToolAuth) state._saveToolAuth(toolName, mode, allowlist);
       }
       });
+    for (const child of (g.tools || [])) {
+      const leafBinary = isBinaryTool(child.id);
+      const inherited = cur.mode || 'ask';
+      const leafCur = auth[child.id];
+      const rawMode = inherited === 'off'
+        ? 'off'
+        : ((leafCur && leafCur.mode) || inherited);
+      const leafMode = leafBinary && rawMode === 'allow' ? 'ask' : rawMode;
+      child.control = h(ToolAuthSeg, {
+        tool: child.id,
+        name: child.name,
+        mode: leafMode,
+        allowlist: (leafCur && leafCur.allowlist) || cur.allowlist,
+        modes: leafBinary ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
+        namePrefix: 'chat-auth-' + g.id + '-leaf',
+        onPick: (mode, allowlist) => {
+          if (state._saveToolAuth) state._saveToolAuth(child.id, mode, allowlist);
+        }
+      });
+    }
   }
 
   // MCP authorization — one Off/Ask/Allow segment per MCP server group
-  // (the per-server override, showing the effective mode). Writes go
-  // through state._saveMcpAuth so the card re-renders in place.
+  // (the per-server override, showing the effective mode), plus one segment
+  // per MCP child tool. Writes go through state._saveMcpAuth so the card
+  // re-renders in place.
   const mcpAuth = state.mcpAuth || { mode: 'ask', allowlist: [], servers: {}, tools: {} };
   for (const g of groups) {
     if (!g.id.startsWith('mcp-')) continue;
@@ -166,6 +187,22 @@ head.appendChild(scoped);
       // pair raced, and a slow clear reverted the segment.
       onSave: (patch) => state._saveMcpAuth && state._saveMcpAuth(patch)
       });
+    for (const child of (g.tools || [])) {
+      const eff = toolPermission(child.id, auth, mcpAuth);
+      const childMode = eff && eff.mode ? eff.mode : 'ask';
+      const childList = eff && Array.isArray(eff.allowlist) ? eff.allowlist : [];
+      child.control = h(ToolAuthSeg, {
+        tool: child.id,
+        name: child.name,
+        mode: childMode,
+        allowlist: childList,
+        modes: TOOL_MODE_CHOICES,
+        namePrefix: 'chat-mcp-' + slug + '-leaf',
+        onPick: (mode, allowlist) => {
+          if (state._saveMcpAuth) state._saveMcpAuth({ tools: { [child.id]: { mode, allowlist } } });
+        }
+      });
+    }
   }
 
   // Render the Preact ToolTree into a container div.
@@ -181,8 +218,16 @@ head.appendChild(scoped);
   function onToggleGroup(groupId, checked) {
     const group = groups.find((g) => g.id === groupId);
     if (!group) return;
-    // Group rows select their ordinary catalog children.
-    if (state._toggleToolGroup) state._toggleToolGroup(groupToolNames(group), checked);
+    // Group rows select their ordinary catalog children; a stopped MCP server
+    // with no cached tools yet toggles its server gate via mcp__<slug>__*.
+    if (state._toggleToolGroup) {
+      const names = groupToolNames(group);
+      if (!names.length && group.id.startsWith('mcp-')) {
+        state._toggleToolGroup(['mcp__' + group.id.slice(4) + '__*'], checked);
+      } else {
+        state._toggleToolGroup(names, checked);
+      }
+    }
   }
 
   function onToggleTool(groupId, toolId, checked) {
@@ -609,8 +654,10 @@ function knownToolNames(state) {
     if ((t.catalog || []).some((x) => x && x.kind === 'mcp' && x.source === slug)) continue;
     const prefix = 'mcp__' + slug + '__';
     for (const entry of server.tools) {
-      const n = typeof entry === 'string' ? entry : (entry && entry.name);
-      if (n) names.add(n.startsWith(prefix) ? n : prefix + n);
+      const rawName = typeof entry === 'string' ? entry : (entry && entry.name);
+      if (!rawName) continue;
+      const composed = entry && typeof entry === 'object' && entry.composedName;
+      names.add(composed || (rawName.startsWith(prefix) ? rawName : prefix + rawName));
     }
   }
   return Array.from(names);
@@ -1122,15 +1169,38 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
   const cur = state.tools || { catalog: [], filter: null };
   const allNames = knownToolNames(state);
   const known = new Set(allNames);
+  const mcpServerOnly = (names || []).filter((n) => typeof n === 'string' && /^mcp__[^_].*__\*$/.test(n));
   const wanted = new Set((names || []).filter((n) => known.has(n)));
-  if (!wanted.size) {
+  if (!wanted.size && !mcpServerOnly.length) {
     // Nothing to change (e.g. the row belongs to a tool that is no
     // longer known). Re-render anyway so a checkbox the browser already
     // flipped snaps back to the real state instead of lying.
     updateToolsCard(refs, state);
     return;
   }
+  if (!wanted.size && mcpServerOnly.length) {
+    const saveMcp = state._saveMcpAuth;
+    const servers = {};
+    for (const key of mcpServerOnly) {
+      const slug = key.slice(5, -3);
+      servers[slug] = { mode: next ? 'ask' : 'off', allowlist: [] };
+    }
+    try {
+      if (!saveMcp || await saveMcp({ servers }) === false) {
+        throw new Error('Tool permission was not saved');
+      }
+      return true;
+    } catch (error) {
+      if (refs.status && refs.status.current) refs.status.current.textContent = error.message || 'Could not save tool selection';
+      updateToolsCard(refs, state);
+      return false;
+    }
+  }
   let nextFilter;
+  const permNative = state.toolAuth || {};
+  const permMcp = state.mcpAuth || {};
+  const isSelected = (n) => (cur.filter == null || cur.filter.includes(n))
+    && toolPermission(n, permNative, permMcp).mode !== 'off';
   if (cur.filter == null) {
     if (!next) {
       nextFilter = allNames.filter((n) => !wanted.has(n));
@@ -1140,17 +1210,38 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
       // family (e.g. a single leaf), snapshot the currently visible selection
       // plus `wanted` so sibling leaves that were Off stay unchecked instead
       // of all turning on at once when the family gate is restored to Ask.
-      const permNative = state.toolAuth || {};
-      const permMcp = state.mcpAuth || {};
-      const visible = allNames.filter((n) =>
-        wanted.has(n) || toolPermission(n, permNative, permMcp).mode !== 'off'
-      );
+      const visible = allNames.filter((n) => wanted.has(n) || isSelected(n));
       nextFilter = allNames.every((n) => visible.includes(n)) ? null : visible;
     }
   } else {
     const set = new Set(cur.filter);
-    if (next) for (const n of wanted) set.add(n);
-    else for (const n of wanted) set.delete(n);
+    if (next) {
+      for (const n of wanted) {
+        set.add(n);
+        // If `n` belongs to an Off family or Off MCP server, sibling leaves in
+        // that family/server that were still listed in `cur.filter` appeared
+        // unchecked only because the gate was Off. Remove unchecked siblings
+        // from `set` before restoring the gate to Ask so only `wanted` turns on.
+        const gate = FAMILY_OF[n];
+        if (gate && permNative[gate] && permNative[gate].mode === 'off') {
+          const group = TOOL_GROUPS.find((g) => g.authKey === gate);
+          for (const sib of (group ? group.tools : [])) {
+            if (!wanted.has(sib) && !isSelected(sib)) set.delete(sib);
+          }
+        } else if (n.startsWith('mcp__')) {
+          const slug = n.slice(5).split('__')[0];
+          const srvPerm = toolPermission('mcp__' + slug + '__*', permNative, permMcp);
+          if (srvPerm.mode === 'off') {
+            const prefix = 'mcp__' + slug + '__';
+            for (const sib of allNames) {
+              if (sib.startsWith(prefix) && !wanted.has(sib) && !isSelected(sib)) set.delete(sib);
+            }
+          }
+        }
+      }
+    } else {
+      for (const n of wanted) set.delete(n);
+    }
     // Prefer `null` once every known tool is on, so the chat is not
     // pinned to a stale snapshot. Compare by membership, not size: the
     // stored list can carry names of tools that have since gone away.
@@ -1170,16 +1261,21 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
       const native = new Set();
       const mcp = { servers: {}, tools: {} };
       for (const name of wanted) {
-        const cfg = toolPermission(name, state.toolAuth || {}, state.mcpAuth || {});
+        const curNative = state.toolAuth || {};
+        const curMcp = state.mcpAuth || {};
+        const cfg = toolPermission(name, curNative, curMcp);
         if (cfg.mode !== 'off') continue;
         if (name.startsWith('mcp__')) {
           const slug = name.slice(5).split('__')[0];
           mcp.servers[slug] = { mode: 'ask', allowlist: [] };
           mcp.tools[name] = { mode: 'ask', allowlist: [] };
         } else {
-          // A family leaf (file operation, chat or app function) is
-          // re-enabled through its family gate, like the segment writes it.
-          native.add(FAMILY_OF[name] || name);
+          // Restore the family gate if it is Off, and also the leaf itself if
+          // the leaf carries its own Off override.
+          const gate = FAMILY_OF[name];
+          if (gate && curNative[gate] && curNative[gate].mode === 'off') native.add(gate);
+          if (!gate || (curNative[name] && curNative[name].mode === 'off')) native.add(name);
+          if (gate && !native.has(gate) && !native.has(name)) native.add(gate);
         }
       }
       for (const tool of native) {

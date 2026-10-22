@@ -11,7 +11,7 @@
 import { h } from 'preact';
 import { useState, useRef, useEffect, useCallback } from 'preact/hooks';
 import { ToolTree, buildToolGroups, groupToolNames, childToolName } from '../ToolTree.jsx';
-import { groupAuthKey, isBinaryTool } from '../../toolGroups.js';
+import { groupAuthKey, isBinaryTool, toolPermission } from '../../toolGroups.js';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
 import { useVisualViewport } from '../../hooks/useVisualViewport.js';
@@ -29,7 +29,7 @@ tool: toolName,
 name: toolName,
 mode: current.mode,
 allowlist: Array.isArray(current.allowlist) ? current.allowlist : [],
-modes: isBinaryTool(groupId) ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
+modes: isBinaryTool(toolName) || isBinaryTool(groupId) ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
 namePrefix: 'popup-auth-' + groupId,
 // Same contract as the transcript tools card: the popup's pick is a
 // per-chat override, written in ONE request (decisions §17). The old
@@ -122,7 +122,7 @@ export function ToolPopup(props) {
   const servers = mcpServers || [];
   const groups = buildToolGroups(catalog, servers, filter, used, { native: toolAuth || {}, mcp: mcpAuth || {} });
 
-  // Inject auth segments on known groups
+  // Inject auth segments on known groups and their child tools
   const auth = toolAuth || {};
   function segMode(m) { return m === 'allowlist' ? 'ask' : m; }
   for (const g of groups) {
@@ -138,13 +138,29 @@ export function ToolPopup(props) {
         current: { mode: segMode(cur.mode), allowlist: Array.isArray(cur.allowlist) ? cur.allowlist : [] },
         onSave: onSaveToolAuth
       });
+      for (const child of (g.tools || [])) {
+        const leafBinary = isBinaryTool(child.id);
+        const inherited = cur.mode || 'ask';
+        const leafCur = auth[child.id];
+        const rawMode = inherited === 'off'
+          ? 'off'
+          : ((leafCur && leafCur.mode) || inherited);
+        const leafMode = leafBinary && rawMode === 'allow' ? 'ask' : rawMode;
+        child.control = h(AuthSegment, {
+          toolName: child.id,
+          groupId: g.id + '-' + child.id,
+          current: { mode: segMode(leafMode), allowlist: Array.isArray(leafCur && leafCur.allowlist) ? leafCur.allowlist : (Array.isArray(cur.allowlist) ? cur.allowlist : []) },
+          onSave: onSaveToolAuth
+        });
+      }
     }
   }
 
   // MCP authorization — same layered model as the chat Tools card and
   // the project settings tree: one Off/Ask/Allow segment per MCP server
-  // group (the per-server override, showing the effective mode). Writes
-  // go through onSaveMcpAuth so the card and settings page stay in sync.
+  // group (the per-server override, showing the effective mode), plus one
+  // segment per MCP child tool. Writes go through onSaveMcpAuth so the
+  // card and settings page stay in sync.
   const mcpAuthState = mcpAuth || { mode: 'ask', allowlist: [], servers: {}, tools: {} };
   for (const g of groups) {
     if (!g.id.startsWith('mcp-')) continue;
@@ -157,6 +173,22 @@ export function ToolPopup(props) {
     namePrefix: 'popup-mcp',
     onSave: (patch) => onSaveMcpAuth && onSaveMcpAuth(patch)
     });
+    for (const child of (g.tools || [])) {
+      const eff = toolPermission(child.id, auth, mcpAuthState);
+      const childMode = eff && eff.mode ? eff.mode : 'ask';
+      const childList = eff && Array.isArray(eff.allowlist) ? eff.allowlist : [];
+      child.control = h(ToolAuthSeg, {
+        tool: child.id,
+        name: child.name,
+        mode: childMode,
+        allowlist: childList,
+        modes: TOOL_MODE_CHOICES,
+        namePrefix: 'popup-mcp-' + slug + '-leaf',
+        onPick: (mode, allowlist) => {
+          if (onSaveMcpAuth) onSaveMcpAuth({ tools: { [child.id]: { mode, allowlist } } });
+        }
+      });
+    }
     // Busy marker for the row's "…" start control. Without it the button
     // looked dead for the whole multi-second MCP cold start.
     if (g.serverId && g.serverId === mcpStartBusy) g.reloadBusy = true;
@@ -181,11 +213,19 @@ export function ToolPopup(props) {
     if (onToggleSkills) onToggleSkills(checked);
     return;
   }
-  if (onToggleToolGroup) {
+    if (onToggleToolGroup) {
       const group = groups.find((g) => g.id === groupId);
       // The filter stores tool NAMES: a category's children share one tool and
-      // key their rows by action (see groupToolNames).
-      if (group) onToggleToolGroup(groupToolNames(group), checked);
+      // key their rows by action (see groupToolNames). A stopped MCP server with
+      // no cached tools yet still toggles its server gate via mcp__<slug>__*.
+      if (group) {
+        const names = groupToolNames(group);
+        if (!names.length && group.id.startsWith('mcp-')) {
+          onToggleToolGroup(['mcp__' + group.id.slice(4) + '__*'], checked);
+        } else {
+          onToggleToolGroup(names, checked);
+        }
+      }
     }
   }
 

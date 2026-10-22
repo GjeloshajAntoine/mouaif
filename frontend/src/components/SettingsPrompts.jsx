@@ -632,8 +632,13 @@ scope: effectiveScope
   function allToolIds() {
     const ids = [];
     for (const g of groups) {
-      for (const t of (g.tools || [])) {
-        if (t && t.id) ids.push(t.id);
+      if (g.id === 'agent-files' || g.id === 'skills') continue;
+      if (g.tools && g.tools.length) {
+        for (const t of g.tools) {
+          if (t && t.id) ids.push(t.id);
+        }
+      } else if (g.id.startsWith('mcp-')) {
+        ids.push('mcp__' + g.id.slice(4) + '__*');
       }
     }
     return ids;
@@ -648,10 +653,22 @@ scope: effectiveScope
     // the default-off rule.
     const allIds = [];
     for (const g of buildToolGroups(toolsCatalog, mcpServers, null, new Set())) {
-      for (const t of (g.tools || [])) { if (t && t.id) allIds.push(t.id); }
+      if (g.tools && g.tools.length) {
+        for (const t of g.tools) { if (t && t.id) allIds.push(t.id); }
+      } else if (g.id.startsWith('mcp-')) {
+        allIds.push('mcp__' + g.id.slice(4) + '__*');
+      }
     }
     const selected = presetToolSelection(preset && preset.tools, allIds);
     const rawGroups = buildToolGroups(toolsCatalog, mcpServers, selected, new Set());
+    if (Array.isArray(selected)) {
+      const selSet = new Set(selected);
+      for (const g of rawGroups) {
+        if (g.id.startsWith('mcp-') && (!g.tools || !g.tools.length)) {
+          g.checked = selSet.has('mcp__' + g.id.slice(4) + '__*');
+        }
+      }
+    }
 
     const out = rawGroups.slice();
 
@@ -696,6 +713,10 @@ scope: effectiveScope
     const group = groups.find((g) => g.id === groupId);
     if (!group) return;
     const names = (group.tools || []).map((t) => t.id).filter(Boolean);
+    if (!names.length && group.id.startsWith('mcp-')) {
+      setToolsSelected(['mcp__' + group.id.slice(4) + '__*'], checked);
+      return;
+    }
     if (names.length) setToolsSelected(names, checked);
   }
 

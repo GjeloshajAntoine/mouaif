@@ -324,38 +324,50 @@ function readChatAuthOverrides(projectDir, chatId) {
   return out;
 }
 
-// One native tool's per-chat override, or null. Config-tool names
-// (`read_file` → `file`) resolve to the same family key the project
-// gate uses, so the file operations stay behind one control — and so does
-// every family leaf: the chat layer stores ONE entry per family gate, so a
-// leaf write (a checkbox restoring an Off tool) lands on the family.
+// One native tool's per-chat override, or null. Family leaves resolve
+// through the same precedence as project settings: a family `off` disables
+// every leaf, an explicit leaf `off` tightens a family `allow`, a family
+// `allow` covers every non-disabled leaf, and otherwise a leaf override
+// wins over its family gate.
 function chatNativeOverride(projectDir, chatId, tool) {
   const overrides = readChatAuthOverrides(projectDir, chatId);
   if (!overrides) return null;
   const family = configToolName(tool);
-  return overrides.native[family] || overrides.native[tool] || null;
+  const familyEntry = overrides.native[family] || null;
+  const toolEntry = FAMILY_TOOLS.has(tool) ? (overrides.native[tool] || null) : null;
+  if (familyEntry && familyEntry.mode === 'off') return familyEntry;
+  if (toolEntry && toolEntry.mode === 'off') return toolEntry;
+  if (familyEntry && familyEntry.mode === 'allow') return familyEntry;
+  return toolEntry || familyEntry || null;
 }
 
 // One MCP tool's per-chat override, or null. `servers` may be keyed by
 // the server's slug OR its display id (the write path stores whatever
-// the UI sent), so both are tried; the chat's own maps are tiny.
+// the UI sent), so both are tried; the chat's own maps are tiny. A
+// server-level `off` disables every tool on that server.
 function chatMcpOverride(projectDir, chatId, tool) {
   const overrides = readChatAuthOverrides(projectDir, chatId);
   if (!overrides || !overrides.mcp) return null;
   const mcp = overrides.mcp;
   const parsed = parseMcpName(tool);
   if (parsed) {
-    const byTool = mcp.tools && mcp.tools[tool];
-    if (byTool && byTool.mode) return { value: byTool, source: 'chat-tool' };
+    let serverHit = null;
     if (mcp.servers) {
       const direct = mcp.servers[parsed.slug];
-      if (direct && direct.mode) return { value: direct, source: 'chat-server' };
-      for (const [key, entry] of Object.entries(mcp.servers)) {
-        if (!entry || !entry.mode) continue;
-        const keySlug = serverSlugFor(projectDir, key);
-        if (keySlug === parsed.slug) return { value: entry, source: 'chat-server' };
+      if (direct && direct.mode) {
+        serverHit = { value: direct, source: 'chat-server' };
+      } else {
+        for (const [key, entry] of Object.entries(mcp.servers)) {
+          if (!entry || !entry.mode) continue;
+          const keySlug = serverSlugFor(projectDir, key);
+          if (keySlug === parsed.slug) { serverHit = { value: entry, source: 'chat-server' }; break; }
+        }
       }
     }
+    if (serverHit && serverHit.value.mode === 'off') return serverHit;
+    const byTool = mcp.tools && mcp.tools[tool];
+    if (byTool && byTool.mode) return { value: byTool, source: 'chat-tool' };
+    if (serverHit) return serverHit;
   }
   if (mcp.shared && mcp.shared.mode) return { value: mcp.shared, source: 'chat' };
   return null;
@@ -524,21 +536,24 @@ function effectiveConfig(projectDir, tool, chatId) {
     let value;
     let source;
     if (FAMILY_TOOLS.has(requestedTool)) {
-      // Family leaves (file operations, chat and app functions) can persist
-      // per-leaf overrides, but a family-level Allow must mean Allow for
-      // every non-disabled leaf. A stale per-leaf `ask` / `allowlist` entry
-      // must not mask `tools.file.mode = allow`, or the prompt says File
-      // tools are allowed while read_file still asks. Only an explicit
-      // per-leaf `off` tightens family Allow.
-      if (projectToolValue && projectToolValue.mode === 'off') { value = projectToolValue; source = 'project-tool'; }
-      else if (projectFamilyValue && projectFamilyValue.mode === 'allow') { value = projectFamilyValue; source = 'project'; }
-      else if (projectToolValue) { value = projectToolValue; source = 'project-tool'; }
-      else if (projectFamilyValue) { value = projectFamilyValue; source = 'project'; }
-      else if (appToolValue && appToolValue.mode === 'off') { value = appToolValue; source = 'app-tool'; }
-      else if (appFamilyValue && appFamilyValue.mode === 'allow') { value = appFamilyValue; source = 'app'; }
-      else if (appToolValue) { value = appToolValue; source = 'app-tool'; }
-      else if (appFamilyValue) { value = appFamilyValue; source = 'app'; }
-      else { value = {}; source = 'default'; }
+    // Family leaves (file operations, chat and app functions) can persist
+    // per-leaf overrides, while a family-level `off` disables the entire
+    // family and a family-level `allow` covers every non-disabled leaf.
+    // A stale per-leaf `ask` / `allowlist` entry must not mask
+    // `tools.file.mode = allow`, or the prompt says File tools are allowed
+    // while read_file still asks. Only an explicit per-leaf `off` tightens
+    // family Allow, and a family `off` always disables its leaves.
+    if (projectFamilyValue && projectFamilyValue.mode === 'off') { value = projectFamilyValue; source = 'project'; }
+    else if (projectToolValue && projectToolValue.mode === 'off') { value = projectToolValue; source = 'project-tool'; }
+    else if (projectFamilyValue && projectFamilyValue.mode === 'allow') { value = projectFamilyValue; source = 'project'; }
+    else if (projectToolValue) { value = projectToolValue; source = 'project-tool'; }
+    else if (projectFamilyValue) { value = projectFamilyValue; source = 'project'; }
+    else if (appFamilyValue && appFamilyValue.mode === 'off') { value = appFamilyValue; source = 'app'; }
+    else if (appToolValue && appToolValue.mode === 'off') { value = appToolValue; source = 'app-tool'; }
+    else if (appFamilyValue && appFamilyValue.mode === 'allow') { value = appFamilyValue; source = 'app'; }
+    else if (appToolValue) { value = appToolValue; source = 'app-tool'; }
+    else if (appFamilyValue) { value = appFamilyValue; source = 'app'; }
+    else { value = {}; source = 'default'; }
     } else {
       value = projectFamilyValue || appFamilyValue || {};
       source = projectFamilyValue ? 'project' : (appFamilyValue ? 'app' : 'default');
@@ -570,14 +585,15 @@ function getAuthorization(projectDir, chatId) {
   // Override keys are re-keyed onto server slugs so a hand-edited id-keyed
   // override still lines up with the UI's `servers.<slug>` lookups.
   const { servers, tools: toolOverrides } = mcpOverrideMaps(projectDir);
+  const chatOverrides = chatId ? readChatAuthOverrides(projectDir, chatId) : null;
+  const chatMcp = chatOverrides && chatOverrides.mcp ? chatOverrides.mcp : null;
   const mcp = effectiveConfig(projectDir, 'mcp__any__tool', chatId);
   mcp.servers = chatId
-    ? Object.assign({}, mcpServersBySlug(projectDir, servers), (readChatAuthOverrides(projectDir, chatId) || {}).mcp
-        ? (readChatAuthOverrides(projectDir, chatId).mcp.servers || {})
-        : {})
+    ? Object.assign({}, mcpServersBySlug(projectDir, servers), chatMcp && chatMcp.servers ? chatMcp.servers : {})
     : mcpServersBySlug(projectDir, servers);
-  mcp.tools = toolOverrides;
-  const chatOverrides = chatId ? readChatAuthOverrides(projectDir, chatId) : null;
+  mcp.tools = chatId
+    ? Object.assign({}, toolOverrides, chatMcp && chatMcp.tools ? chatMcp.tools : {})
+    : toolOverrides;
   const view = {
     tools: {
       // Every gate (single tools and family keys), then every family leaf.
@@ -663,18 +679,35 @@ function setChatAuthorization(projectDir, chatId, patch) {
   };
   const p = (patch && typeof patch === 'object' && !Array.isArray(patch)) ? patch : {};
   // Native tools: `patch.native` when present, otherwise treat the patch
-  // itself as the native map (same tolerance as the read path).
+  // itself as the native map (same tolerance as the read path). Both
+  // family gates and per-leaf overrides are stored under their own key;
+  // when a family gate itself is written, clear any per-leaf overrides in
+  // that family that were not also explicitly supplied in the same patch
+  // so a family-level pick in the chat view controls the whole family.
   const nativePatch = (p.native && typeof p.native === 'object' && !Array.isArray(p.native)) ? p.native : p;
   for (const [name, entry] of Object.entries(nativePatch)) {
     if (name === 'mcp' || name === 'native') continue;
-    const family = configToolName(name);
-    if (!NATIVE_TOOLS.has(family)) continue;
-    if (entry === null) { delete next.native[family]; continue; }
+    const isKnown = NATIVE_TOOLS.has(name) || FAMILY_TOOLS.has(name);
+    if (!isKnown) continue;
+    if (entry === null) {
+      delete next.native[name];
+      if (TOOL_FAMILIES[name]) {
+        for (const leaf of TOOL_FAMILIES[name]) {
+          if (!Object.prototype.hasOwnProperty.call(nativePatch, leaf)) delete next.native[leaf];
+        }
+      }
+      continue;
+    }
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
     const mode = MODES.has(entry.mode) ? entry.mode : 'ask';
     const shaped = { mode };
     if (Array.isArray(entry.allowlist)) shaped.allowlist = entry.allowlist.map((x) => String(x)).filter(Boolean);
-    next.native[family] = shaped;
+    next.native[name] = shaped;
+    if (TOOL_FAMILIES[name]) {
+      for (const leaf of TOOL_FAMILIES[name]) {
+        if (!Object.prototype.hasOwnProperty.call(nativePatch, leaf)) delete next.native[leaf];
+      }
+    }
   }
   if (p.mcp && typeof p.mcp === 'object' && !Array.isArray(p.mcp)) {
     const m = next.mcp || {};

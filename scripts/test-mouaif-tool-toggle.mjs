@@ -34,8 +34,8 @@ const treeContext = vm.createContext({
 });
 vm.runInContext(stripImports(fs.readFileSync('frontend/src/toolGroups.js', 'utf8'))
   + '\n' + stripImports(fs.readFileSync('frontend/src/components/ToolTree.jsx', 'utf8')), treeContext);
-const { buildToolGroups, groupToolNames, childToolName, toolPermission, groupAuthKey, FAMILY_OF } =
-  vm.runInContext('({ buildToolGroups, groupToolNames, childToolName, toolPermission, groupAuthKey, FAMILY_OF })', treeContext);
+const { buildToolGroups, groupToolNames, childToolName, toolPermission, groupAuthKey, FAMILY_OF, TOOL_GROUPS } =
+  vm.runInContext('({ buildToolGroups, groupToolNames, childToolName, toolPermission, groupAuthKey, FAMILY_OF, TOOL_GROUPS })', treeContext);
 
 // Values built inside the VM realm carry that realm's Array prototype, so
 // `deepStrictEqual` would compare prototypes and fail on identical contents.
@@ -142,6 +142,7 @@ const cardsContext = vm.createContext({
   toolPermission,
   groupAuthKey,
   FAMILY_OF,
+  TOOL_GROUPS,
   isBinaryTool: () => false
 });
 const rendered = [];
@@ -172,8 +173,8 @@ function cardHandlers(filter, toolAuth) {
 {
   const { props, state: s } = cardHandlers();
   const leaves = props.groups.filter((g) => ['chats', 'mouaif-settings'].includes(g.id)).flatMap((g) => g.tools);
-  // Like the File tools leaves: the chat card edits the family gate only.
-  assert.ok(leaves.every((tool) => !tool.control), 'a family leaf has no chat-scoped segment of its own');
+  // Every leaf carries its own Off / Ask / Allow segment in the chat card too.
+  assert.ok(leaves.every((tool) => !!tool.control), 'every family leaf renders its own chat-scoped segment');
   props.onToggleTool('chats', 'list_chats', false);
   assert.equal(s._seenTool.name, 'list_chats');
   props.onToggleGroup('chats', false);
@@ -329,6 +330,23 @@ assert.equal(shellOnly[0].checked, false, 'selection off remains off even when p
   assert.ok(nullFilterState.tools.filter.includes('list_chats'), 'checked leaf is in the filter');
   assert.ok(!nullFilterState.tools.filter.includes('delete_chat'), 'unchecked sibling in the Off family stays excluded');
   assert.ok(nullFilterState.tools.filter.includes('shell'), 'already-on families remain selected');
+
+  // Same when `filter` is already an explicit array containing the Off family's
+  // leaves (e.g. another tool was unchecked earlier): checking ONE leaf must
+  // remove its Off siblings from `filter` so they stay unchecked when the
+  // family gate flips back to Ask.
+  const arrayFilterAuthWrites = [];
+  const arrayFilterState = {
+    tools: { catalog: liveCatalog, filter: liveCatalog.map((t) => t.name).filter((n) => n !== 'shell') },
+    mcpServers: [],
+    toolAuth: { chats: { mode: 'off', allowlist: [] } },
+    _saveToolAuth: async (...args) => { arrayFilterAuthWrites.push(args); return true; }
+  };
+  await toggleToolGroup(['list_chats'], true, arrayFilterState, refs, async () => true);
+  same(arrayFilterAuthWrites, [['chats', 'ask', []]], 'checking one leaf with array filter restores family gate to Ask');
+  assert.ok(arrayFilterState.tools.filter.includes('list_chats'), 'checked leaf is in the filter');
+  assert.ok(!arrayFilterState.tools.filter.includes('delete_chat'), 'Off sibling is removed from the explicit filter');
+  assert.ok(arrayFilterState.tools.filter.includes('read_file'), 'unrelated selected tools stay in the filter');
 }
 
 // ---- 5. Both chat surfaces resolve through the shared helper -------------
@@ -392,6 +410,42 @@ try {
     const preview = await response.json();
     assert.ok(preview.tools.some((tool) => tool.name === 'list_chats'), 'tool preview includes the selected function');
     assert.ok(!preview.tools.some((tool) => tool.name === 'shell'), 'tool preview respects the selection');
+
+    // System-prompt feature summary and list_features must also respect the
+    // chat's tool filter so the model is never told a tool is available when
+    // its checkbox is unchecked in this chat.
+    const sysPromptRes = await fetch('http://127.0.0.1:' + server.address().port + '/api/chats/' + host.id + '/system-prompt?projectDir=' + encodeURIComponent(home));
+    assert.equal(sysPromptRes.status, 200);
+    const sysPromptBody = await sysPromptRes.json();
+    assert.ok(sysPromptBody.text.includes('list_chats'), 'system prompt feature summary lists the selected tool');
+    assert.ok(!sysPromptBody.text.includes('create_mcp_app'), 'system prompt feature summary omits unchecked tools');
+    assert.ok(!sysPromptBody.text.includes('[shell]'), 'system prompt feature summary omits unchecked shell');
+    assert.ok(!sysPromptBody.text.includes('list_features'), 'system prompt feature summary omits unchecked list_features');
+    const featOut = await require('../src/agentFeatures.js').dispatchListFeatures({}, { projectDir: home, chatId: host.id });
+    assert.equal(featOut.result.tools.list_chats.selected, true, 'list_features marks selected tool true');
+    assert.equal(featOut.result.tools.create_mcp_app.selected, false, 'list_features marks unchecked tool false');
+    assert.equal(featOut.result.tools.shell.selected, false, 'list_features marks unchecked shell false');
+
+    // Calling a tool unchecked in the chat's tool filter is rejected with ETOOL_DISABLED.
+    let disabledOut;
+    global.fetch = async () => new Response('data: ' + JSON.stringify({
+      choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_unselected', type: 'function', function: { name: 'create_mcp_app', arguments: '{}' } }] } }]
+    }) + '\n\ndata: [DONE]\n\n');
+    const events = [];
+    await require('../src/ai-stream.js').streamChat({
+      model: { id: 'fixture', provider: 'openai-compatible', baseUrl: 'http://fixture/v1' },
+      projectDir: home, chatId: host.id, enabledTools: ['list_chats'],
+      promptSize: 'average', messages: [{ role: 'user', content: 'Try unselected tool' }],
+      onEvent: (name, data) => {
+        events.push({ name, data });
+        if (name === 'tool_result' && data.name === 'create_mcp_app') {
+          disabledOut = data.result;
+          global.fetch = async () => new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Handled' } }] }) + '\n\ndata: [DONE]\n\n');
+        }
+      }
+    });
+    assert.equal(disabledOut && disabledOut.code, 'ETOOL_DISABLED', 'forged call to an unchecked chat tool is rejected with ETOOL_DISABLED');
+    global.fetch = originalFetch;
   } finally { await new Promise((resolve) => server.close(resolve)); }
   // Storage conversion runs once, not as an exception in tool dispatch.
   const migration = require('../src/migrateAppTools.js');

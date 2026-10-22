@@ -115,7 +115,7 @@ async function* readNDJSON(stream) {
 const NO_PROMPT_TOOLS = new Set(['report_progress', 'list_features']);
 
 async function runSingleToolCall(c, cx) {
-  const { opts, onEvent, convo, toolSpecs, promptProfilesMod, discoveredToolNames, modelContentForTool } = cx;
+  const { opts, onEvent, convo, toolSpecs, visibleToolSpecs, promptProfilesMod, discoveredToolNames, modelContentForTool } = cx;
   // Direct REST calls need the same dispatcher closure and advertised tool
   // surface as model calls; the single-call path makes no parent request.
   if (typeof cx.dispatchTool !== 'function') {
@@ -155,14 +155,29 @@ async function runSingleToolCall(c, cx) {
       return { exec: { ok: false, result, content: JSON.stringify(result) }, imageParts: [] };
     }
   }
-  // Enforce the inherited advertised surface even against forged calls,
-  // before approval/effects. Agent allowlists can only narrow it.
-  if (opts?.nestedSubagent && ((Array.isArray(opts.enabledTools) && !opts.enabledTools.includes(c.name)) || opts.inheritedPermissions?.[c.name]?.mode === 'off')) {
-    const result = { error: { code: 'ETOOL_DISABLED', message: 'tool is outside the inherited child surface' } };
-    onEvent('tool_call', { id: c.id || null, name: c.name, args });
-    onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result });
-    if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: JSON.stringify(result) });
-    return { exec: { ok: false, result, content: JSON.stringify(result) }, imageParts: [] };
+  // Enforce the advertised tool surface against forged calls before approval
+  // or side effects. A tool unchecked in the chat's tool filter (or outside a
+  // subagent's inherited allowlist) is not advertised and may not execute.
+  // Direct composer invocations (`opts.singleToolCall`) and `activate_skill`
+  // (which is governed by the Skills switches rather than the tool allowlist)
+  // bypass the tool filter.
+  if (!opts?.singleToolCall && c.name !== 'activate_skill') {
+    if (opts?.nestedSubagent && ((Array.isArray(opts.enabledTools) && !opts.enabledTools.includes(c.name)) || opts.inheritedPermissions?.[c.name]?.mode === 'off')) {
+      const result = { error: { code: 'ETOOL_DISABLED', message: 'tool is outside the inherited child surface' } };
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+      onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result });
+      if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: JSON.stringify(result) });
+      return { exec: { ok: false, result, content: JSON.stringify(result) }, imageParts: [] };
+    }
+    if (!opts?.nestedSubagent && Array.isArray(opts?.enabledTools)
+      && !(promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME)
+      && !opts.enabledTools.includes(c.name)) {
+      const result = { ok: false, code: 'ETOOL_DISABLED', reason: 'tool is disabled for this chat' };
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+      onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result });
+      if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: JSON.stringify(result) });
+      return { exec: { ok: false, result, content: JSON.stringify(result) }, imageParts: [] };
+    }
   }
   // Captured when the authorization gate resolves a prompt for an
   // `ask_user` call. The runner reads it to fold the user's
@@ -235,8 +250,8 @@ async function runSingleToolCall(c, cx) {
       callEmitted = true;
       exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null }));
     } else if (promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME) {
-      const requested = args && (args.toolName || args.name || args.tool);
-      const spec = (toolSpecs || []).find(s => s && s.function && s.function.name === requested);
+    const requested = args && (args.toolName || args.name || args.tool);
+    const spec = (visibleToolSpecs || toolSpecs || []).find(s => s && s.function && s.function.name === requested);
       if (!spec) {
         exec = {
           ok: false,

@@ -144,9 +144,15 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
             // so the half-check clears instead of sticking.
             indeterminate: halfChecked,
             'aria-checked': halfChecked ? 'mixed' : undefined,
-            onChange: (e) => onToggleGroup && onToggleGroup(group.id, e.target.checked),
+            onChange: (e) => {
+            const target = e.currentTarget || e.target;
+            const want = !!target.checked;
+            target.checked = !!group.checked;
+            target.indeterminate = halfChecked;
+            if (onToggleGroup) onToggleGroup(group.id, want);
+            },
             'aria-label': group.name
-          }),
+            }),
           h('span', { class: 'tool-tree__name tool-tree__name--group' }, group.name),
 
           group.description ? h('span', { class: 'tool-tree__desc' }, group.description) : null,
@@ -199,12 +205,17 @@ export function ToolTree({ groups = [], onToggleGroup, onToggleTool, collapsedBy
                 h('li', { key: tool.id, class: 'tool-tree__item', role: 'treeitem' },
                   h('div', { class: 'tool-tree__row tool-tree__row--leaf' + (tool.used ? ' is-used' : '') + (tool.disabled ? ' is-disabled' : ''), title: tool.title || (tool.disabled && tool.disabledReason ? tool.disabledReason : undefined) },
                     h('input', {
-                      type: 'checkbox',
-                      class: 'checkbox checkbox--sm',
-                      checked: !!tool.checked,
-                      disabled: !!tool.disabled || !!group.disabled,
-                      onChange: (e) => onToggleTool && onToggleTool(group.id, tool.id, e.target.checked),
-                      'aria-label': tool.name
+                    type: 'checkbox',
+                    class: 'checkbox checkbox--sm',
+                    checked: !!tool.checked,
+                    disabled: !!tool.disabled || !!group.disabled,
+                    onChange: (e) => {
+                    const target = e.currentTarget || e.target;
+                    const want = !!target.checked;
+                    target.checked = !!tool.checked;
+                    if (onToggleTool) onToggleTool(group.id, tool.id, want);
+                    },
+                    'aria-label': tool.name
                     }),
                     h('span', { class: 'tool-tree__name' + (tool.description ? '' : ' tool-tree__name--wide') }, tool.name),
                     tool.description ? h('span', { class: 'tool-tree__desc' }, tool.description) : null,
@@ -408,37 +419,40 @@ export function buildToolGroups(catalog, mcpServers, filter, usedTools = new Set
     // back to the cached tool list on the server record so the
     // group never disappears from the tree.
     if (!serverTools.length && Array.isArray(server.tools)) {
-      serverTools = server.tools.map((t) => {
-        const name = typeof t === 'string' ? t : (t && t.name);
-        if (!name) return null;
-        return {
-          name: name.startsWith(prefix) ? name : prefix + name,
-          kind: 'mcp',
-          source: slug,
-          description: (t && t.description) || ''
-        };
-      }).filter(Boolean);
+    serverTools = server.tools.map((t) => {
+      const rawName = typeof t === 'string' ? t : (t && t.name);
+      if (!rawName) return null;
+      const composed = t && typeof t === 'object' && t.composedName;
+      return {
+      name: composed || (rawName.startsWith(prefix) ? rawName : prefix + rawName),
+      kind: 'mcp',
+      source: slug,
+      description: (t && t.description) || ''
+      };
+    }).filter(Boolean);
     }
+    const serverPerm = toolPermission('mcp__' + slug + '__*', permissions.native, permissions.mcp);
+    const serverChecked = serverTools.length ? allToolsOn(serverTools) : serverPerm.mode !== 'off';
     groups.push({
-      // Keep the row key aligned with the model-facing slug. Project
-      // settings already use this key for MCP auth overrides; the chat
-      // picker uses it to find the matching server without id/slug drift.
-      id: 'mcp-' + slug,
-      name: server.name || server.id,
-      description: (server.status || 'stopped') + (serverTools.length ? '' : ' · no tools'),
-      checked: allToolsOn(serverTools),
-      // MCP lifecycle state threaded for the reload control: a
-      // stopped-but-enabled server exposes its persisted tools but is
-      // not live. `enabled === false` is a disabled (auth `off`) server
-      // — never started, never surfaced here. `onReload` starts the
-      // server on demand.
-      status: server.status || 'stopped',
-      enabled: server.enabled !== false,
-      serverId: server.id,
-      tools: serverTools.map((t) => {
-        const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
-        return leaf(t, { name: short });
-      })
+    // Keep the row key aligned with the model-facing slug. Project
+    // settings already use this key for MCP auth overrides; the chat
+    // picker uses it to find the matching server without id/slug drift.
+    id: 'mcp-' + slug,
+    name: server.name || server.id,
+    description: (server.status || 'stopped') + (serverTools.length ? '' : ' · no tools'),
+    checked: serverChecked,
+    // MCP lifecycle state threaded for the reload control: a
+    // stopped-but-enabled server exposes its persisted tools but is
+    // not live. `enabled === false` is a disabled (auth `off`) server
+    // — never started, never surfaced here. `onReload` starts the
+    // server on demand.
+    status: server.status || 'stopped',
+    enabled: server.enabled !== false && serverPerm.mode !== 'off',
+    serverId: server.id,
+    tools: serverTools.map((t) => {
+      const short = t.name.startsWith(prefix) ? t.name.slice(prefix.length) : t.name;
+      return leaf(t, { name: short });
+    })
     });
   }
 

@@ -171,7 +171,7 @@ for (const [project, summary] of [
   const detail = link.children.find(node => node.attrs?.class === 'group__row-detail');
   assert.equal(detail.children[0], summary);
   assert.equal(view.requests.some(url => url.includes('/hide-file-content')), false, 'summary reuses loaded project settings');
-  for (const [page, title] of [['output', 'File tool options'], ['preview', 'Web preview'], ['technical', 'Technical details']]) {
+  for (const [page, title] of [['output', 'File tool options'], ['preview', 'Web preview'], ['agentFiles', 'Agent files'], ['technical', 'Technical details']]) {
     const nodes = view.render(page);
     assert.ok(nodes.some(node => node.tag === 'h2' && node.children.includes(title)));
     // Every sub-page's Back arrow returns to project settings, carrying the
@@ -340,5 +340,28 @@ assert.equal(treeFor(stoppedServerView).attrs.groups.find((g) => g.id === 'mcp-s
 treeFor(stoppedServerView).attrs.onToggleGroup('mcp-stopped_srv', true);
 await new Promise(resolve => setImmediate(resolve));
 assert.ok(treeFor(stoppedServerView).attrs.groups.find((g) => g.id === 'mcp-stopped_srv').tools.every((t) => t.checked), 're-checking MCP group clears per-tool off overrides');
+
+// Family off unchecks every child leaf, and checking a single leaf of an Off
+// family or Off MCP server enables only that leaf while keeping siblings off.
+treeFor(stoppedServerView).attrs.onToggleGroup('files', false);
+await new Promise(resolve => setImmediate(resolve));
+filesGroup = treeFor(stoppedServerView).attrs.groups.find((g) => g.id === 'files');
+assert.equal(filesGroup.checked, false, 'family off unchecks the group');
+assert.ok(filesGroup.tools.every((t) => !t.checked), 'family off unchecks every child leaf');
+treeFor(stoppedServerView).attrs.onToggleTool('files', 'read_file', true);
+await new Promise(resolve => setImmediate(resolve));
+filesGroup = treeFor(stoppedServerView).attrs.groups.find((g) => g.id === 'files');
+assert.equal(filesGroup.tools.find((t) => t.id === 'read_file').checked, true, 'checked leaf turns on');
+assert.equal(filesGroup.tools.find((t) => t.id === 'write_file').checked, false, 'sibling leaf stays off when family was off');
+assert.equal(filesGroup.checked, false, 'group stays half-checked when only one leaf is turned on');
+
+treeFor(stoppedServerView).attrs.onToggleGroup('mcp-stopped_srv', false);
+await new Promise(resolve => setImmediate(resolve));
+assert.ok(treeFor(stoppedServerView).attrs.groups.find((g) => g.id === 'mcp-stopped_srv').tools.every((t) => !t.checked), 'MCP server off unchecks every child');
+treeFor(stoppedServerView).attrs.onToggleTool('mcp-stopped_srv', 'mcp__stopped_srv__ping', true);
+await new Promise(resolve => setImmediate(resolve));
+const mcpAfterSingle = treeFor(stoppedServerView).attrs.groups.find((g) => g.id === 'mcp-stopped_srv');
+assert.equal(mcpAfterSingle.tools.find((t) => t.id === 'mcp__stopped_srv__ping').checked, true, 'checked MCP leaf turns on');
+assert.equal(mcpAfterSingle.tools.find((t) => t.id === 'mcp__stopped_srv__pong').checked, false, 'sibling MCP leaf stays off when server was off');
 
 console.log('PASS project settings renders, confirmed permission saves, failure recovery, scoped links and Back targets');

@@ -174,6 +174,9 @@ export function isFamilyLeaf(name) {
 export function toolPermission(name, native = {}, mcp = {}) {
   if (name.startsWith('mcp__')) {
     const slug = name.slice(5).split('__')[0];
+    if (mcp.servers && mcp.servers[slug] && mcp.servers[slug].mode === 'off') {
+      return mcp.servers[slug];
+    }
     return (mcp.tools && mcp.tools[name]) || (mcp.servers && mcp.servers[slug]) || mcp;
   }
   const gate = FAMILY_OF[name];

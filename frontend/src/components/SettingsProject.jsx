@@ -482,12 +482,32 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
   }
 
   // One leaf of a multi-tool family (a file operation, a chat or app
-  // function) carries its own override next to the family gate. The status
-  // line belongs on the row that lists the leaf, so a failure is visible
-  // next to the control the user just touched.
+  // function) carries its own override next to the family gate. When the
+  // family gate itself is Off and the user checks a leaf on, restore the
+  // family gate to Ask and explicitly set any sibling leaves without an
+  // override to Off so only the checked leaf turns on.
   function pickLeafMode(name, mode, allowlist) {
+    const groupId = toolGroupId(name);
+    const group = groupId ? GROUP_BY_ID[groupId] : null;
     const list = mode === 'allow' ? [] : (allowlist || (toolAuth[name] || {}).allowlist || []);
-    return saveToolAuthorization(name, mode, list, toolGroupId(name) || name);
+    if (mode !== 'off' && group && group.authKey) {
+      const family = toolAuth[group.authKey] || {};
+      if (family.mode === 'off') {
+        const tools = {
+          [group.authKey]: { mode: 'ask', allowlist: family.allowlist || [] },
+          [name]: { mode: (mode === 'allow' && isBinaryTool(name)) ? 'ask' : mode, allowlist: list }
+        };
+        for (const sibling of group.tools) {
+          if (sibling === name || sibling === group.authKey) continue;
+          const sibAuth = toolAuth[sibling];
+          if (!sibAuth || sibAuth.mode === 'off') {
+            tools[sibling] = { mode: 'off', allowlist: (sibAuth && sibAuth.allowlist) || [] };
+          }
+        }
+        return saveAuthorization({ tools }, (text) => setToolMsg(groupId, text));
+      }
+      }
+      return saveToolAuthorization(name, mode, list, groupId || name);
   }
 
 // ---- Web preview page handlers ----------------------------------------
@@ -577,8 +597,50 @@ setPreviewPromptOpen(true);
     for (const [name, entry] of Object.entries((mcpAuth && mcpAuth.tools) || {})) {
       if (name.startsWith(prefix) && entry && entry.mode === 'off') tools[name] = null;
     }
-    const patch = { servers: { [slug]: null } };
+    const sharedMode = (mcpAuth && mcpAuth.mode) || 'ask';
+    const serverEntry = mcpAuth && mcpAuth.servers && mcpAuth.servers[slug];
+    const allowlist = serverEntry && Array.isArray(serverEntry.allowlist) ? serverEntry.allowlist : [];
+    const patch = {
+      servers: { [slug]: sharedMode === 'off' ? { mode: 'ask', allowlist } : null }
+    };
     if (Object.keys(tools).length) patch.tools = tools;
+    return saveMcpAuthorization(patch);
+  }
+
+  function pickMcpToolMode(toolName, mode, allowlist = []) {
+    if (mode === 'off') {
+      return saveMcpAuthorization({ tools: { [toolName]: { mode: 'off', allowlist } } });
+    }
+    const slug = toolName.startsWith('mcp__') ? toolName.slice(5).split('__')[0] : '';
+    const serverEntry = slug && mcpAuth.servers && mcpAuth.servers[slug];
+    const sharedMode = (mcpAuth && mcpAuth.mode) || 'ask';
+    const effMode = (serverEntry && serverEntry.mode) ? serverEntry.mode : sharedMode;
+    const patch = { tools: { [toolName]: { mode, allowlist: mode === 'allow' ? [] : allowlist } } };
+    if (slug && effMode === 'off') {
+      const prefix = 'mcp__' + slug + '__';
+      const server = (mcpServers || []).find((s) => s && (s.slug || s.id) === slug);
+      let serverTools = (toolsCatalog || []).filter((t) => t && t.kind === 'mcp' && t.source === slug).map((t) => t.name);
+      if (!serverTools.length && server && Array.isArray(server.tools)) {
+        serverTools = server.tools.map((t) => {
+          const rawName = typeof t === 'string' ? t : (t && t.name);
+          if (!rawName) return null;
+          const composed = t && typeof t === 'object' && t.composedName;
+          return composed || (rawName.startsWith(prefix) ? rawName : prefix + rawName);
+        }).filter(Boolean);
+      }
+      for (const sibling of serverTools) {
+        if (sibling === toolName) continue;
+        const sibEntry = mcpAuth.tools && mcpAuth.tools[sibling];
+        if (!sibEntry || !sibEntry.mode || sibEntry.mode === 'off') {
+          patch.tools[sibling] = { mode: 'off', allowlist: [] };
+        }
+      }
+      if (serverEntry && serverEntry.mode === 'off' && sharedMode !== 'off') {
+        patch.servers = { [slug]: null };
+      } else {
+        patch.servers = { [slug]: { mode: 'ask', allowlist: [] } };
+      }
+    }
     return saveMcpAuthorization(patch);
   }
 
@@ -588,11 +650,33 @@ setPreviewPromptOpen(true);
     }
     const slug = toolName.startsWith('mcp__') ? toolName.slice(5).split('__')[0] : '';
     const serverEntry = slug && mcpAuth.servers && mcpAuth.servers[slug];
-    const effMode = (serverEntry && serverEntry.mode) ? serverEntry.mode : ((mcpAuth && mcpAuth.mode) || 'ask');
+    const sharedMode = (mcpAuth && mcpAuth.mode) || 'ask';
+    const effMode = (serverEntry && serverEntry.mode) ? serverEntry.mode : sharedMode;
     const patch = { tools: { [toolName]: null } };
     if (slug && effMode === 'off') {
-      if (serverEntry && serverEntry.mode === 'off') patch.servers = { [slug]: null };
-      else patch.servers = { [slug]: { mode: 'ask', allowlist: [] } };
+      const prefix = 'mcp__' + slug + '__';
+      const server = (mcpServers || []).find((s) => s && (s.slug || s.id) === slug);
+      let serverTools = (toolsCatalog || []).filter((t) => t && t.kind === 'mcp' && t.source === slug).map((t) => t.name);
+      if (!serverTools.length && server && Array.isArray(server.tools)) {
+        serverTools = server.tools.map((t) => {
+          const rawName = typeof t === 'string' ? t : (t && t.name);
+          if (!rawName) return null;
+          const composed = t && typeof t === 'object' && t.composedName;
+          return composed || (rawName.startsWith(prefix) ? rawName : prefix + rawName);
+        }).filter(Boolean);
+      }
+      for (const sibling of serverTools) {
+        if (sibling === toolName) continue;
+        const sibEntry = mcpAuth.tools && mcpAuth.tools[sibling];
+        if (!sibEntry || !sibEntry.mode || sibEntry.mode === 'off') {
+          patch.tools[sibling] = { mode: 'off', allowlist: [] };
+        }
+      }
+      if (serverEntry && serverEntry.mode === 'off' && sharedMode !== 'off') {
+        patch.servers = { [slug]: null };
+      } else {
+        patch.servers = { [slug]: { mode: 'ask', allowlist: [] } };
+      }
     }
     return saveMcpAuthorization(patch);
   }
@@ -718,18 +802,18 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
     }, extra || {});
 
     groups.push({
+    id: 'skills',
+    name: 'Skills',
+    description: 'Inject matching project skills into chats',
+    title: 'Agent Skills stored in .agents/skills/*/SKILL.md. Off locks them out of every chat; on lets each chat opt out, skill by skill.',
+    checked: skillsOn,
+    tools: [{
       id: 'skills',
       name: 'Skills',
       description: 'Inject matching project skills into chats',
-      title: 'Agent Skills stored in .agents/skills/*/SKILL.md. Off locks them out of every chat; on lets each chat opt out, skill by skill.',
-      checked: skillsOn,
-      tools: [{
-        id: 'skills',
-        name: 'Skills',
-        description: 'Inject matching project skills into chats',
-        checked: skillsOn
-      }],
-      extra: skillsStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, skillsStatusMsg) : null
+      checked: skillsOn
+    }],
+    extra: skillsStatusMsg ? h('div', { class: 'settings-project__item-status', 'aria-live': 'polite' }, skillsStatusMsg) : null
     });
 
     // One row per group in the app-wide model (../toolGroups.js). The row and
@@ -744,27 +828,31 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
     const label = group.name;
     const binary = isBinaryTool(group.id);
     const childTools = members.map((tool) => {
-      // A leaf carries its own override until the family mode moves it;
-      // a leaf without one reads the family mode, so the row and its
-      // children always agree on screen.
-      const leafAuth = toolAuth[tool.name];
-      // A binary leaf (`ask_user`) narrows to Off / Ask on its own row
-      // even when its family row carries the full three-way segment:
-      // a family `allow` shows as Ask, the strongest mode it honors.
-      const leafBinary = isBinaryTool(tool.name);
-      const inherited = family.mode;
-      const mode = (leafAuth && leafAuth.mode) || (leafBinary && inherited === 'allow' ? 'ask' : inherited);
-      return leaf(tool, {
-      checked: isOn(mode),
-      control: h(ToolAuthSeg, {
-      tool: tool.name, mode, allowlist: (leafAuth && leafAuth.allowlist) || family.allowlist,
-      namePrefix: 'sp', modes: leafBinary ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
-      onPick: (next, list) => (group.tools.length > 1
-      ? pickLeafMode(tool.name, next, list)
-      : saveToolAuthorization(tool.name, next, list, group.id))
-      })
-      });
-      });
+    // A leaf carries its own override until the family mode moves it;
+    // a leaf without one reads the family mode, so the row and its
+    // children always agree on screen. A family-level `off` disables
+    // every leaf, matching effectiveConfig on the server.
+    const leafAuth = toolAuth[tool.name];
+    // A binary leaf (`ask_user`) narrows to Off / Ask on its own row
+    // even when its family row carries the full three-way segment:
+    // a family `allow` shows as Ask, the strongest mode it honors.
+    const leafBinary = isBinaryTool(tool.name);
+    const inherited = family.mode;
+    const rawMode = inherited === 'off'
+      ? 'off'
+      : ((leafAuth && leafAuth.mode) || inherited);
+    const mode = leafBinary && rawMode === 'allow' ? 'ask' : rawMode;
+    return leaf(tool, {
+    checked: isOn(mode),
+    control: h(ToolAuthSeg, {
+    tool: tool.name, mode, allowlist: (leafAuth && leafAuth.allowlist) || family.allowlist,
+    namePrefix: 'sp', modes: leafBinary ? ASK_USER_MODE_CHOICES : TOOL_MODE_CHOICES,
+    onPick: (next, list) => (group.tools.length > 1
+    ? pickLeafMode(tool.name, next, list)
+    : saveToolAuthorization(tool.name, next, list, group.id))
+    })
+    });
+    });
     groups.push({
       id: group.id,
       name: group.name,
@@ -810,10 +898,25 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
       }
       const toolCount = serverTools.length;
       const mcpChildTools = serverTools.map((tool) => {
-        const entry = mcpAuth.tools && mcpAuth.tools[tool.name];
-        const mode = (effMode === 'off') ? 'off' : (entry && entry.mode ? entry.mode : effMode);
-        const displayName = tool.name.startsWith(prefix) ? tool.name.slice(prefix.length) : tool.name;
-        return leaf(tool, { name: displayName, checked: mode !== 'off' });
+      const toolEntry = mcpAuth.tools && mcpAuth.tools[tool.name];
+      const mode = (effMode === 'off') ? 'off' : (toolEntry && toolEntry.mode ? toolEntry.mode : effMode);
+      const allowlist = (toolEntry && Array.isArray(toolEntry.allowlist))
+      ? toolEntry.allowlist
+      : ((entry && Array.isArray(entry.allowlist)) ? entry.allowlist : (Array.isArray(mcpAuth.allowlist) ? mcpAuth.allowlist : []));
+      const displayName = tool.name.startsWith(prefix) ? tool.name.slice(prefix.length) : tool.name;
+      return leaf(tool, {
+      name: displayName,
+      checked: mode !== 'off',
+      control: h(ToolAuthSeg, {
+        tool: tool.name,
+        name: displayName,
+        mode,
+        allowlist,
+        namePrefix: 'sp-mcp-' + slug + '-leaf',
+        modes: TOOL_MODE_CHOICES,
+        onPick: (next, list) => pickMcpToolMode(tool.name, next, list)
+      })
+      });
       });
       groups.push({
       // Key the group by the *slug* (canonical override key), not the
@@ -881,17 +984,19 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
     : { text: reason || 'start failed — check Server command/URL', state: 'error' });
     load(d);
   }
-  function toggleSettingsGroup(groupId, checked) {
+  async function toggleSettingsGroup(groupId, checked) {
     const mode = checked ? 'ask' : 'off';
     if (groupId === 'skills') {
+      const prev = skillsOn;
       setSkillsOn(checked);
-      patchProject({ skills: checked }, setSkillsStatusMsg, 'saved');
+      const ok = await patchProject({ skills: checked }, setSkillsStatusMsg, 'saved');
+      if (!ok) setSkillsOn(prev);
     }
     // Every native group row is a shortcut for Off <-> Ask on its own gate
     // (single tools and multi-tool families alike).
     else if (GROUP_BY_ID[groupId] && GROUP_BY_ID[groupId].gated === false) { /* no gate to flip */ }
-    else if (GROUP_BY_ID[groupId]) pickFamilyGroupMode(groupId, mode);
-    else if (groupId.startsWith('mcp-')) toggleMcpServerAuth(groupId.slice(4), checked);
+    else if (GROUP_BY_ID[groupId]) return pickFamilyGroupMode(groupId, mode);
+    else if (groupId.startsWith('mcp-')) return toggleMcpServerAuth(groupId.slice(4), checked);
   }
 
   // What the model receives for a representative file-tool result under the
