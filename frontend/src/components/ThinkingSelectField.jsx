@@ -24,7 +24,9 @@ onChange,
 descriptor,
 inheritLabel = 'Inherit',
 disabled = false,
-ariaLabel = 'Thinking level'
+ariaLabel = 'Thinking level',
+id,
+class: className = ''
 } = props;
 // Presets exclude the '' "No thinking" row (that slot is the inherit
 // row) and the '__custom__' sentinel (no free-form input here).
@@ -40,7 +42,8 @@ const opts = hasCurrent
 ? options
 : options.concat([{ value: current, label: current }]);
 return h('select', {
-class: 'input thinking-select-field',
+class: 'input thinking-select-field' + (className ? ' ' + className : ''),
+id,
 value: current,
 disabled: !!disabled,
 'aria-label': ariaLabel,

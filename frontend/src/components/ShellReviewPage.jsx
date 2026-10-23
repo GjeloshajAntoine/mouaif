@@ -257,8 +257,10 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
         })
         ),
         h('li', { class: 'settings-project__item settings-project__item--col' },
-        h('span', { class: 'settings-project__item-title' }, 'Thinking / reasoning'),
+        h('label', { class: 'settings-project__item-title', for: 'sr-thinking' }, 'Thinking / reasoning'),
         h(ThinkingSelectField, {
+        id: 'sr-thinking',
+        class: 'settings-project__select',
           value: config ? config.thinkingLevel : '',
           descriptor: models.find(model => config && model.id === config.modelId && model.provider === config.providerId)?.thinking,
           inheritLabel: 'Model default',
