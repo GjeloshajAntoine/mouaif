@@ -162,6 +162,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [AI client](ai-client.md) — the server-side proxy that talks to providers and streams replies.
 - [Chat storage](chat-storage.md) — chats and messages in the app SQLite store.
 - [Chat load performance](chat-load-performance.md) — how long chats open quickly.
+- [Performance and memory profile](performance-memory-profile.md) — record the app's timings and heap, including long chats.
 - [Chat backward pagination](chat-backward-pagination.md) — newest page first, older history in the background.
 - [Chat streaming performance](chat-streaming-performance.md) — incremental rendering while a reply streams.
 - [Memory footprint and payload size](memory-footprint.md) — lazy server dependencies, bounded caches, compressed assets.
