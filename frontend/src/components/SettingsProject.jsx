@@ -1415,7 +1415,7 @@ class: 'view-back',
           h('a', {
           class: 'group__row settings-project__link-row',
           'aria-label': 'Custom prompts',
-        href: '#/settings/prompts?' + projectBackQS()
+        href: settingsLink('settings/prompts', navContext())
         },
               h('span', { class: 'group__row-body' },
                 h('span', { class: 'group__row-label' }, 'Custom prompts'),
@@ -1550,7 +1550,7 @@ class: 'view-back',
           ),
           h('a', {
             class: 'btn btn--primary settings-project__add-agent',
-            href: '#/settings/agents/new?' + projectBackQS() + '&returnTo=project'
+            href: settingsLink('settings/agents/new', navContext(), { returnTo: 'project' })
           }, '+ Add agent')
         )
       ),
@@ -1592,7 +1592,7 @@ h('li', null,
 h('a', {
 class: 'group__row settings-project__link-row',
 'aria-label': 'MCP servers',
-href: '#/settings/mcp?' + projectBackQS()
+href: settingsLink('settings/mcp', navContext(), { scope: 'project' })
 },
               h('span', { class: 'group__row-body' },
                 h('span', { class: 'group__row-label' }, 'MCP servers'),
@@ -1606,7 +1606,7 @@ href: '#/settings/mcp?' + projectBackQS()
             h('a', {
 class: 'group__row settings-project__link-row',
 'aria-label': 'Custom actions',
-href: '#/settings/actions?' + projectBackQS()
+href: settingsLink('settings/actions', navContext(), { scope: 'project' })
 },
               h('span', { class: 'group__row-body' },
                 h('span', { class: 'group__row-label' }, 'Custom actions'),
