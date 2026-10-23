@@ -193,5 +193,15 @@ const defer = () => { let resolve; const promise = new Promise((r) => { resolve 
   assert.equal(agentTools, undefined, 're-checking all MCP children collapses back to inherit-all');
   groups = buildGroups();
   assert.equal(groups.find((g) => g.id === 'mcp__srv').checked, true);
+
+  // Uncheck every group -> stays explicitly empty (not inherit-all).
+  for (const g of groups) {
+    r = agentCtx.toggleGroupInList(agentTools, g, false, choices);
+    agentTools = r.tools;
+  }
+  assert.ok(Array.isArray(agentTools) && agentTools.length === 0, 'unchecking all groups keeps an empty allowlist');
+  assert.deepEqual(Array.from(r.send), ['__none__'], 'empty allowlist sends __none__ sentinel');
+  groups = buildGroups();
+  assert.ok(groups.every((g) => !g.checked && g.tools.every((t) => !t.checked)), 'every group and leaf stays unchecked');
 }
 console.log('agent skills UI: popup rendering, scoped toggles, rollback, ordering, navigation, and preset reconciliation passed');

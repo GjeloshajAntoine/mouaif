@@ -44,10 +44,15 @@ function toolChoicesWithMcp(servers) {
 // Apply a tool toggle to an agent allowlist, shared by the two
 // editors. currentTools === undefined means "inherit everything".
 // Returns { tools, send }: `tools` is the new state value
-// (undefined = inherit), `send` is what to PATCH ([] = inherit).
+// (undefined = inherit), `send` is what to PATCH ([] = inherit,
+// ['__none__'] = explicitly no tools allowed).
+const AGENT_NONE_SENTINEL = '__none__';
+
 function toggleToolInList(currentTools, toolId, checked, allChoices, groups = []) {
   const all = allChoices.map((c) => c.value);
-  const current = currentTools !== undefined ? currentTools.slice() : null;
+  const current = currentTools !== undefined
+    ? currentTools.filter((t) => t !== AGENT_NONE_SENTINEL)
+    : null;
   let next = current == null ? all.slice() : current.slice();
   // When toggling an individual MCP tool (`mcp__<slug>__<tool>`), expand
   // a server-wide slug (`mcp__<slug>`) into its concrete child tool ids first,
@@ -70,10 +75,13 @@ function toggleToolInList(currentTools, toolId, checked, allChoices, groups = []
     next = checked ? next.concat(toolId) : next.filter((t) => t !== toolId);
   }
   // De-dupe, and collapse back to "inherit" when everything is on.
+  // An empty selection stays explicit (`tools: []` in state, sent as
+  // `['__none__']` so the backend does not collapse it to inherit-all).
   next = Array.from(new Set(next));
   const full = next.length === all.length && all.every((tool) => next.includes(tool));
-  const send = full ? [] : next;
-  return { tools: send.length ? send : undefined, send };
+  if (full) return { tools: undefined, send: [] };
+  if (!next.length) return { tools: [], send: [AGENT_NONE_SENTINEL] };
+  return { tools: next, send: next };
 }
 
 // Toggle every tool in a ToolTree group at once.
@@ -89,14 +97,15 @@ function toggleGroupInList(currentTools, group, checked, allChoices) {
       : undefined;
     const r = toggleToolInList(base, group.id, checked, allChoices);
     if (r.tools === undefined) return r;
-    const cleaned = r.send.filter((t) => !t.startsWith(prefix));
+    const cleaned = r.tools.filter((t) => !t.startsWith(prefix));
     const all = allChoices.map((c) => c.value);
     const full = cleaned.length === all.length && all.every((tool) => cleaned.includes(tool));
-    const send = full ? [] : cleaned;
-    return { tools: send.length ? send : undefined, send };
+    if (full) return { tools: undefined, send: [] };
+    if (!cleaned.length) return { tools: [], send: [AGENT_NONE_SENTINEL] };
+    return { tools: cleaned, send: cleaned };
   }
   let tools = currentTools;
-  let send = currentTools === undefined ? [] : currentTools.slice();
+  let send = [];
   for (const tool of group.tools) {
     const r = toggleToolInList(tools, tool.id, checked, allChoices);
     tools = r.tools;
@@ -411,9 +420,15 @@ export function SettingsAgentEditView(props) {
     let r;
     try {
       r = await fetchJson('/api/agents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectDir, ...agent, name, content: agent.content || '' })
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+      projectDir,
+      ...agent,
+      tools: Array.isArray(agent.tools) && !agent.tools.length ? [AGENT_NONE_SENTINEL] : agent.tools,
+      name,
+      content: agent.content || ''
+      })
       });
     } catch (err) { setStatusMsg({ text: 'network error', kind: 'error' }); return; }
     finally { mutationBusy.current = false; setIsCreating(false); }
