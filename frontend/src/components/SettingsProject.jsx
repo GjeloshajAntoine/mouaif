@@ -1204,6 +1204,79 @@ h('h2', { class: 'view-title' }, 'Web preview')
 : null
 )
 ;
+if (page === 'agentFiles') return h(Fragment, null,
+  h('div', { class: 'view-head' },
+    h('a', { href: settingsLink('settings/project', navContext()), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
+    h('h2', { class: 'view-title' }, 'Agent files')
+  ),
+  h('section', { class: 'settings-project' },
+    h('div', { class: 'group settings-project__section' },
+      h('div', { class: 'group__title settings-project__section-title' },
+        sectionIcon('files'),
+        h('span', null, 'Agent files'),
+        h('details', { class: 'settings-project__info' },
+          h('summary', { 'aria-label': 'About agent files' }, '?'),
+          h('div', { class: 'settings-project__info-body' },
+            h('p', null, 'Agent files are markdown files at the project root that get injected into the model’s context at the start of every chat. Use them for project conventions, architecture notes, or standing instructions. Turning this off locks them off for every chat; when it is on, a chat can still opt out individually.')
+          )
+        )
+      ),
+      h('ul', { class: 'group__list' },
+        h('li', { class: 'settings-project__item settings-project__item--col' },
+          h('div', { class: 'settings-project__item-row' },
+            h('div', { class: 'settings-project__item-main' },
+              h('label', { class: 'settings-project__item-title', for: 'sp-agent-files' }, 'Inject agent files into chats'),
+              h('div', { class: 'settings-project__item-note' },
+                'Project-wide gate for instruction files at the project root (e.g. AGENTS.md, CLAUDE.md). Off locks them out of every chat; on lets each chat opt out. ',
+                h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, agentFilesStatusMsg)
+              )
+            ),
+            h('label', { class: 'switch' },
+              h('input', {
+                id: 'sp-agent-files',
+                type: 'checkbox',
+                role: 'switch',
+                checked: agentFilesOn,
+                'aria-checked': agentFilesOn ? 'true' : 'false',
+                onChange: onAgentFilesToggle
+              }),
+              h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
+            )
+          )
+        ),
+        h('li', { class: 'settings-project__item settings-project__item--col' },
+          h('div', { class: 'settings-project__item-main' },
+            h('label', { class: 'settings-project__item-title', for: 'sp-agent-file-names' }, 'File names to look for'),
+            h('div', { class: 'settings-project__item-note' },
+              'One file name per line, relative to the project root. Leave empty to use the defaults (AGENTS.md, CLAUDE.md, .github/copilot-instructions.md).'
+            )
+          ),
+          h('div', { class: 'settings-project__afn-row' },
+            h('textarea', {
+              class: 'input settings-project__mono settings-project__afn-text',
+              id: 'sp-agent-file-names',
+              rows: 3,
+              spellcheck: false,
+              placeholder: 'AGENTS.md\nCLAUDE.md\n.github/copilot-instructions.md',
+              value: agentFileNames,
+              onInput: onAgentFileNamesChange
+            }),
+            h('button', {
+              class: 'btn btn--ghost settings-project__afn-pick',
+              type: 'button',
+              onClick: () => setAgentFilePickerOpen(true)
+            }, 'Pick file…')
+          )
+        )
+      )
+    ),
+    agentFilePickerOpen && h(AgentFilePicker, {
+      projectDir: dir(),
+      onPick: onAgentFilePicked,
+      onClose: () => setAgentFilePickerOpen(false)
+    })
+  )
+);
 if (page === 'technical') return h(Fragment, null,
 h('div', { class: 'view-head' },
 h('a', { href: settingsLink('settings/project', navContext()), class: 'view-back', 'aria-label': 'Back to project settings' }, '←'),
@@ -1417,70 +1490,23 @@ class: 'view-back',
         h('span', { class: 'group__row-detail' }, shellReviewSummary),
         h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
         ),
-
-      h('div', { class: 'group settings-project__section' },
-        h('div', { class: 'group__title settings-project__section-title' },
-          sectionIcon('files'),
-          h('span', null, 'Agent files'),
-          h('details', { class: 'settings-project__info' },
-            h('summary', { 'aria-label': 'About agent files' }, '?'),
-            h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Agent files are markdown files at the project root that get injected into the model’s context at the start of every chat. Use them for project conventions, architecture notes, or standing instructions. Turning this off locks them off for every chat; when it is on, a chat can still opt out individually.')
-            )
-          )
+        h('a', {
+        class: 'group__row settings-project__link-row settings-project__options-link',
+        'aria-label': 'Agent files',
+        href: '#/settings/project/agent-files?' + projectBackQS()
+        },
+        h('span', { class: 'group__row-body' },
+        h('span', { class: 'group__row-label' }, 'Agent files'),
+        h('span', { class: 'settings-project__link-sub' }, 'Instruction files injected into chats')
         ),
-        h('ul', { class: 'group__list' },
-          h('li', { class: 'settings-project__item settings-project__item--col' },
-            h('div', { class: 'settings-project__item-row' },
-              h('div', { class: 'settings-project__item-main' },
-                h('label', { class: 'settings-project__item-title', for: 'sp-agent-files' }, 'Inject agent files into chats'),
-                h('div', { class: 'settings-project__item-note' },
-                  'Project-wide gate for instruction files at the project root (e.g. AGENTS.md, CLAUDE.md). Off locks them out of every chat; on lets each chat opt out. ',
-                  h('span', { class: 'settings-project__item-status', 'aria-live': 'polite' }, agentFilesStatusMsg)
-                )
-              ),
-              h('label', { class: 'switch' },
-                h('input', {
-                  id: 'sp-agent-files',
-                  type: 'checkbox',
-                  role: 'switch',
-                  checked: agentFilesOn,
-                  'aria-checked': agentFilesOn ? 'true' : 'false',
-                  onChange: onAgentFilesToggle
-                }),
-                h('span', { class: 'switch__track', 'aria-hidden': 'true' }, h('span', { class: 'switch__thumb' }))
-              )
-            )
-          ),
-          h('li', { class: 'settings-project__item settings-project__item--col' },
-            h('div', { class: 'settings-project__item-main' },
-              h('label', { class: 'settings-project__item-title', for: 'sp-agent-file-names' }, 'File names to look for'),
-              h('div', { class: 'settings-project__item-note' },
-                'One file name per line, relative to the project root. Leave empty to use the defaults (AGENTS.md, CLAUDE.md, .github/copilot-instructions.md).'
-              )
-            ),
-            h('div', { class: 'settings-project__afn-row' },
-              h('textarea', {
-                class: 'input settings-project__mono settings-project__afn-text',
-                id: 'sp-agent-file-names',
-                rows: 3,
-                spellcheck: false,
-                placeholder: 'AGENTS.md\nCLAUDE.md\n.github/copilot-instructions.md',
-                value: agentFileNames,
-                onInput: onAgentFileNamesChange
-              }),
-              h('button', {
-                class: 'btn btn--ghost settings-project__afn-pick',
-                type: 'button',
-                onClick: () => setAgentFilePickerOpen(true)
-              }, 'Pick file…')
-            )
-          )
+        h('span', { class: 'group__row-detail' }, agentFilesOn ? 'on' : 'off'),
+        h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
         )
-      ),
-      h('div', { class: 'group settings-project__section' },
+        ),
+
+        h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },
-          sectionIcon('agents'),
+        sectionIcon('agents'),
           h('span', null, 'Agents'),
           h('details', { class: 'settings-project__info' },
             h('summary', { 'aria-label': 'About agents' }, '?'),
@@ -1602,12 +1628,7 @@ href: '#/settings/project/technical?' + projectBackQS()
             )
           )
         )
-      ),
-      agentFilePickerOpen && h(AgentFilePicker, {
-        projectDir: dir(),
-        onPick: onAgentFilePicked,
-        onClose: () => setAgentFilePickerOpen(false)
-      })
+      )
     )
   );
 }

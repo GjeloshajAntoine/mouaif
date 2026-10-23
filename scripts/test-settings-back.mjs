@@ -56,6 +56,7 @@ for (const href of [
   settingsLink('settings/project', { projectDir: PROJECT, chatId: CHAT, from: FROM }),
   settingsLink('settings/project/output', { projectDir: PROJECT, chatId: CHAT, from: FROM }),
   settingsLink('settings/project/preview', { projectDir: PROJECT }),
+  settingsLink('settings/project/agent-files', { projectDir: PROJECT, chatId: CHAT, from: FROM }),
   settingsLink('settings/project/hide', { projectDir: PROJECT, chatId: CHAT }, { file: 'src/a.js' }),
   settingsLink('settings/mcp', { from: FROM }, { scope: 'app' }),
   settingsLink('settings/mcp', { projectDir: PROJECT, chatId: CHAT }, { scope: 'project' }),
@@ -147,7 +148,7 @@ function harness(globals) {
   h.evalFile('components/SettingsProject.jsx');
   const context = { projectDir: PROJECT, chatId: CHAT, from: FROM };
   const expectedBack = settingsLink('settings/project', context);
-  for (const [page, title] of [['output', 'File tool options'], ['preview', 'Web preview'], ['technical', 'Technical details']]) {
+  for (const [page, title] of [['output', 'File tool options'], ['preview', 'Web preview'], ['agentFiles', 'Agent files'], ['technical', 'Technical details']]) {
     const { nodes } = h.renderView('SettingsProjectView', { ...context, page }, { fresh: true });
     assert.ok(nodes.some((n) => n.tag === 'h2' && n.children.includes(title)), page + ' renders');
     const back = nodes.find((n) => n.attrs.class === 'view-back');

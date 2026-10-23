@@ -60,6 +60,7 @@ settingsProject: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ proj
 settingsProjectTechnical: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from, page: 'technical' })],
 settingsProjectOutput: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from, page: 'output' })],
 settingsProjectPreview: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from, page: 'preview' })],
+settingsProjectAgentFiles: [SettingsProjectView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from, page: 'agentFiles' })],
 settingsProjectShellReview: [ShellReviewPageView, ({ projectDir, chatId, from }) => ({ projectDir, chatId, from })],
 settingsProjectHide: [SettingsHiddenContentView, ({ projectDir, chatId, from, filePath }) => ({ projectDir, chatId, from, filePath })],
 settingsDefaults: [SettingsDefaultsView],
@@ -87,7 +88,7 @@ const FULL_PAGE_ROUTES = new Set([
 const LAZY_ROUTE_NAMES = new Set([
 'inspector', 'settingsDictation',
 'settingsProviders', 'settingsProviderNew', 'settingsProviderEdit',
-'settingsProject', 'settingsProjectTechnical', 'settingsProjectOutput', 'settingsProjectPreview', 'settingsProjectHide', 'settingsProjectShellReview',
+'settingsProject', 'settingsProjectTechnical', 'settingsProjectOutput', 'settingsProjectPreview', 'settingsProjectAgentFiles', 'settingsProjectHide', 'settingsProjectShellReview',
 'settingsDefaults', 'settingsNotifications', 'settingsAbout',
 'settingsPrompts', 'settingsAgents', 'settingsAgentEdit',
 'settingsActions', 'settingsActionEdit',

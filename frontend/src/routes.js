@@ -165,6 +165,13 @@ const ROUTES = [
     chatId: m.params.get('chatId') || '',
     from: fromParam(m.params)
   })),
+  // `Agent files`: project-wide gate and file names to look for.
+  exactOrQuery('settings/project/agent-files', (m) => ({
+    name: 'settingsProjectAgentFiles',
+    projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
+    from: fromParam(m.params)
+  })),
   // `Hide file content`: redaction rules for the agent file tools.
   exactOrQuery('settings/project/hide', (m) => ({
     name: 'settingsProjectHide',

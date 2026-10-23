@@ -136,7 +136,10 @@ function check(name, fn) {
     // sibling of File tool options / Web preview, carrying the same context so
     // Back walks to the chat it came from.
     eq('#/settings/project/shell-review?projectDir=%2Fp&chatId=c1&from=projects', {
-      name: 'settingsProjectShellReview', projectDir: '/p', chatId: 'c1', from: 'projects'
+    name: 'settingsProjectShellReview', projectDir: '/p', chatId: 'c1', from: 'projects'
+    });
+    eq('#/settings/project/agent-files?projectDir=%2Fp&chatId=c1&from=projects', {
+    name: 'settingsProjectAgentFiles', projectDir: '/p', chatId: 'c1', from: 'projects'
     });
     eq('#/settings/project/hide?projectDir=%2Fp&chatId=c1&from=projects&file=src%2Fa.js', {
       name: 'settingsProjectHide', projectDir: '/p', chatId: 'c1', from: 'projects', filePath: 'src/a.js'
@@ -249,15 +252,15 @@ function check(name, fn) {
     const names = new Set();
     for (const h of ['#/settings', '#/settings/access', '#/inspector', '#/settings/providers', '#/settings/providers/new',
       '#/settings/providers/p', '#/settings/project', '#/settings/project/technical', '#/settings/project/output',
-      '#/settings/project/shell-review',
+      '#/settings/project/shell-review', '#/settings/project/agent-files',
       '#/settings/project/preview', '#/settings/project/hide', '#/settings/agents', '#/settings/agents/a',
       '#/settings/actions', '#/settings/actions/a', '#/settings/projects', '#/settings/defaults',
       '#/settings/notifications', '#/settings/pricing', '#/settings/prompts', '#/settings/prompts/p',
       '#/settings/mcp', '#/settings/mcp/registry', '#/settings/mcp/new', '#/settings/mcp/s', '#/settings/tags',
       '#/settings/about', '#/settings/dictation', '#/dictation', '#/chat/c', '#/projects/new']) {
       names.add(parseHash(h).name);
-    }
-    assert.equal(names.size, 29, Array.from(names).sort().join(','));
+      }
+      assert.equal(names.size, 30, Array.from(names).sort().join(','));
     assert.ok(mod.ROUTE_PATHS >= names.size, 'the table is not smaller than its distinct routes');
   });
 
