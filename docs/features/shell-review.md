@@ -20,7 +20,7 @@ The page has a **Review model** picker and three review controls:
 | **Auto-allow SAFE commands when CLI is on Ask** | Enabled by default when review is on. When the review answers `SAFE`, the pending `Ask` prompt is automatically approved (`allow-once`) and the command runs right away; `CAUTION`, `DANGER`, or a failed review still waits for your decision on the card. |
 | **Prompt** | What the model is asked (its system message). Blank uses the built-in instruction: describe the effects, then answer with one verdict line — `SAFE`, `CAUTION` or `DANGER`. Saved automatically as you type. |
 
-**Review model** opens the shared model picker with saved project models and connected providers’ live chat catalogs. Choose a separate reviewer or clear the choice with **Same as the chat**. Selection saves automatically together with the mode, prompt, and auto-approval setting; no configuration-file editing is needed.
+**Review model** opens the shared model picker with saved project models and connected providers’ live chat catalogs. It includes the same app-wide **Pinned** and **Recent** sections, pin actions, search, and **Refresh models** action as the chat picker. Choose a separate reviewer or clear the choice with **Same as the chat**. Selection saves automatically together with the mode, prompt, and auto-approval setting; no configuration-file editing is needed.
 
 ### 2. Review a command on demand
 

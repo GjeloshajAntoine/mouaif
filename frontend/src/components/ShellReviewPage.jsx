@@ -8,6 +8,7 @@ import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
+import { loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin } from './chat/modelPicker.js';
 import { sectionIcon } from './settingsProjectUi.js';
 import { settingsLink, backHref, backTarget } from './settings/projectNavigation.js';
 import { SHELL_REVIEW_MODES, shellReviewFromResolved } from './chat/shellReview.js';
@@ -38,6 +39,17 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
   const [config, setConfig] = useState(null);
   const [models, setModels] = useState([]);
   const [providers, setProviders] = useState([]);
+  const bookmarks = useRef({ recentModels: [] });
+  const [pinned, setPinned] = useState(() => loadPinned());
+  const [recent, setRecent] = useState(() => loadRecent(bookmarks.current));
+  const [catalogVersion, setCatalogVersion] = useState(0);
+  function refreshRecent() {
+    let cancelled = false;
+    loadRecentFromServer(bookmarks.current).then(updated => {
+      if (!cancelled && updated) setRecent(loadRecent(bookmarks.current));
+    });
+    return () => { cancelled = true; };
+  }
   useEffect(() => {
     let cancelled = false;
     async function loadModels() {
@@ -50,14 +62,14 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
       setProviders(ids);
       setModels(saved.body.models || []);
       const catalogs = await Promise.all(ids.map(async provider => {
-        const catalog = await fetchLiveModels(provider, { purpose: 'chat' }).catch(() => ({ models: [] }));
+        const catalog = await fetchLiveModels(provider, { purpose: 'chat', refresh: catalogVersion > 0 }).catch(() => ({ models: [] }));
         return (catalog.models || []).map(model => ({ ...model, provider }));
       }));
       if (!cancelled) setModels([...(saved.body.models || []), ...catalogs.flat()]);
     }
     loadModels();
     return () => { cancelled = true; };
-  }, [dir]);
+  }, [dir, catalogVersion]);
   // Two separate lines, like every sibling row: `note` is the standing
   // description of the saved choice, `status` is transient save feedback and
   // is empty unless a save is in flight or just failed.
@@ -211,11 +223,23 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
         h('div', { class: 'settings-project__item-note' }, 'Use the chat model or choose a separate reviewer.'),
         h(ModelPickerField, {
         models, extraProviders: providers, variant: 'sheet',
+        pinned, recent, onOpen: refreshRecent,
+        onTogglePin: model => {
+        togglePin(model.provider, model.id);
+        setPinned(loadPinned());
+        setRecent(loadRecent(bookmarks.current));
+        },
+        refresh: () => setCatalogVersion(version => version + 1),
+        refreshEmpty: 'Refresh models',
         value: config && config.modelId ? { providerId: config.providerId, modelId: config.modelId } : null,
         allowClear: true, clearLabel: 'Same as the chat',
         ariaLabel: 'Review model', disabled: !config || busy,
-        onChange: selection => {
-          const next = nextConfig({ providerId: selection ? selection.providerId : '', modelId: selection ? selection.modelId : '' });
+              onChange: selection => {
+                if (selection && selection.providerId && selection.modelId) {
+                  touchRecent(bookmarks.current, selection.providerId, selection.modelId);
+                  setRecent(loadRecent(bookmarks.current));
+                }
+                const next = nextConfig({ providerId: selection ? selection.providerId : '', modelId: selection ? selection.modelId : '' });
           setConfig(next);
           setNote(stateFor(next));
           write(next);

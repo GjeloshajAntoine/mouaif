@@ -196,6 +196,11 @@ function byId(nodes, id) {
   const pickers = flat.filter((n) => n.tag === 'model-picker');
   assert.equal(pickers.length, 1, 'shared reviewer model picker is available');
   assert.equal(pickers[0].attrs.clearLabel, 'Same as the chat');
+  assert.equal(typeof pickers[0].attrs.onTogglePin, 'function');
+  assert.equal(typeof pickers[0].attrs.onOpen, 'function');
+  assert.equal(typeof pickers[0].attrs.refresh, 'function');
+  assert.ok(pickers[0].attrs.pinned);
+  assert.equal(pickers[0].attrs.recent[0].id, 'recent-model');
   pickers[0].attrs.onChange({ providerId: 'openrouter', modelId: 'review-model' });
   await settle();
   assert.equal(rendered.requests.at(-1).shellReview.modelId, 'review-model');
