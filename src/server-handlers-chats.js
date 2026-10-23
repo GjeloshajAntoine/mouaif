@@ -410,6 +410,15 @@ return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
       const skillState = agentSkills.resolve({ chat: effectiveChat, projectDir: dir });
       const skillCatalog = agentSkills.catalogMessage(dir, effectiveChat);
       if (skillCatalog) parts.push(skillCatalog);
+      try {
+      const project = require('./settings.js').getProject(dir);
+      let authz = null;
+      try { authz = require('./tools/authorization.js').getAuthorization(dir, effectiveChat && effectiveChat.id); } catch { /* safe default */ }
+      let mcpServers = null;
+      try { mcpServers = require('./mcp.js').listServers(dir); } catch { /* safe default */ }
+      const featureMsg = agentFeatures.buildFeatureSummary({ chat: effectiveChat, projectDir: dir, project, authz, mcpServers });
+      if (featureMsg) parts.push(featureMsg);
+      } catch { /* feature summary stays omitted */ }
       if (prompt && prompt.content) parts.push(prompt.content);
       // Also expose the project-level gate so the UI can render the
       // per-chat toggle as locked off when the project has it disabled.
