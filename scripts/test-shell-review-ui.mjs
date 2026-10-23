@@ -392,7 +392,7 @@ function renderReviewBlock(review) {
   const app = fs.readFileSync(new URL('../frontend/src/components/App.jsx', import.meta.url), 'utf8');
   assert.match(app, /settingsProjectShellReview: \[ShellReviewPageView/);
   const project = fs.readFileSync(new URL('../frontend/src/components/SettingsProject.jsx', import.meta.url), 'utf8');
-  assert.match(project, /settings\/project\/shell-review\?' \+ projectBackQS\(\)/, 'the project page links to the page');
+  assert.match(project, /settingsLink\(['"]settings\/project\/shell-review['"]/, 'the project page links through the centralized settings link builder');
   assert.match(project, /shellReviewSummary/, 'the link row names the current choice');
   assert.ok(!/ShellReviewSettings/.test(project), 'the old inline section is gone');
 }
