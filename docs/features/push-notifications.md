@@ -33,11 +33,13 @@ mouaif serve --host 127.0.0.1 --public-origin https://mouaif.example.com
 
 | Event | When | Content |
 |-------|------|---------|
-| `ask_user_required` | The model pauses for a structured answer | Question; exactly two single-choice answers can be tapped directly |
-| `authorization_required` | A tool is waiting for approval | Tool name with **Allow once** and **Deny** actions |
+| `ask_user_required` | The model pauses for a structured answer | Chat title + question; exactly two single-choice answers can be tapped directly |
+| `authorization_required` | A tool is waiting for approval | Chat title + tool name with **Allow once** and **Deny** actions |
 | `done` | A chat turn completes successfully | Chat title + "Response complete" |
 | `error` | A chat turn fails (stream error, upstream error) | Chat title + error message |
 | `login` | A password, setup, or passkey sign-in issues a new session | "New sign-in as `<user>` from `<platform>`" |
+
+Attention notifications use the current chat title, like status notifications, so users can identify the conversation before answering or approving. The question or tool description stays in the body. If chat metadata is unavailable, the title falls back to "The chat needs your answer" or "Authorization needed".
 
 Authorization pushes also cover direct composer commands: **`@agent`**, **`@shell`**, **`@webpreview`**, and **`@server/tool`** MCP calls. These routes use the same server-side attention notifier as normal model turns, including nested agent questions and approvals. Leaving the chat or disconnecting its response reader does not prevent the server from sending the alert. The Authorization and Authorization actions preferences apply to both direct commands and model-driven calls; existing approval APIs and quick actions are unchanged.
 

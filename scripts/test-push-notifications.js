@@ -105,6 +105,19 @@ assert.ok(chatPushSource.includes("function statusInfo(data, extra)"), 'chat str
 assert.ok(/statusInfo\(\{\s*kind: 'complete'/.test(chatPushSource), 'completion uses the shared fact set');
 assert.ok(chatPushSource.includes('statusBody(sub, 100, info)'), 'completion renders captured context rather than reset turn state');
 assert.ok(chatPushSource.includes('statusInfo(data)'), 'progress uses the shared fact set');
+// Execute the stream's actual percentage expression to guard rounding order.
+const progressExpression = chatPushSource.match(/const pctNum = ([\s\S]*?);/);
+assert.ok(progressExpression, 'stream defines its progress percentage');
+for (const [data, expected] of [
+  [{ current: 1, total: 4 }, 25],
+  [{ current: 3, total: 4 }, 75],
+  [{ current: 0, total: 4 }, 0],
+  [{ current: 4, total: 4 }, 100],
+  [{ current: 1, total: 4, status: 'completed' }, 100],
+  [{ current: 1, total: 4, status: 'failed' }, null]
+]) {
+  assert.equal(vm.runInNewContext(progressExpression[1], { data }), expected, 'progress preserves fractional completion and terminal states');
+}
 // Every status title is the chat name. The facts (usage, model, tool, time)
 // ride the body, where the OS does not clip them and a wider device shows
 // more; a title that grew with them was the first thing a phone truncated.

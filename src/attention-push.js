@@ -5,6 +5,7 @@
 // must not prevent a pending approval/question from reaching Web Push.
 const push = require('./push.js');
 const settings = require('./settings.js');
+const chats = require('./chats.js');
 const { resolveNotificationPrefs } = require('./notifications.js');
 
 function notifyAttention({ sessionId, projectDir, chatId, name, data, preferences }) {
@@ -30,8 +31,15 @@ function notifyAttention({ sessionId, projectDir, chatId, name, data, preference
     }
   }
   if (!actions.length) actions.push({ action: 'open', title: 'Open chat' });
+  // Use the current chat name for every sender, including direct commands
+  // and nested agents. A missing/deleted chat must not block an alert.
+  let chatTitle = '';
+  try {
+    const chat = chats.getChat(projectDir, chatId);
+    chatTitle = (chat && chat.title) || '';
+  } catch { /* best-effort metadata */ }
   push.sendPushToSession(sessionId, {
-    title: question ? 'The chat needs your answer' : 'Authorization needed',
+    title: chatTitle || (question ? 'The chat needs your answer' : 'Authorization needed'),
     body: question
       ? (request.question ? String(request.question).slice(0, 240) : 'Open the chat to answer.')
       : (request.tool || 'A tool') + ' is waiting for approval.',

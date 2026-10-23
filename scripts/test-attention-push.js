@@ -79,7 +79,7 @@ async function main() {
   const originalGetServer = mcp.getServer;
   const originalCallTool = mcp.callTool;
   try {
-    const chat = chats.createChat(projectDir, {});
+    const chat = chats.createChat(projectDir, { title: 'Notification review' });
     chats.updateChat(projectDir, chat.id, { modelId: 'mock', providerId: 'openai-compatible' });
     const body = { projectDir, chatId: chat.id };
     for (const [name, args] of [['shell', { cmd: 'echo test' }], ['webpreview', { url: 'https://example.test' }]]) {
@@ -88,6 +88,7 @@ async function main() {
       const res = await route('/api/tools/' + name, { ...body, ...args, callId });
       assert.equal(res.status, 409);
       assert.equal(deliveries.length, offset + 1, name + ' dispatches its approval through the router');
+      assert.equal(deliveries.at(-1).title, 'Notification review', 'direct approval identifies its chat');
       assert.equal(deliveries.at(-1).data.callId, callId);
       assert.equal(deliveries.at(-1).data.tool, name);
       auth.recordDecision(projectDir, chat.id, callId, 'deny');
@@ -118,6 +119,7 @@ async function main() {
       assert.equal(res.status, 200);
       const attention = deliveries.slice(offset).filter((n) => n.data.kind !== 'completion');
       assert.equal(attention.length, 1, 'normal model call sends exactly one attention push after the response disconnects');
+      assert.equal(attention[0].title, 'Notification review', 'model approval/question identifies its chat');
       assert.equal(attention[0].data.tool, next.name);
     }
     const offset = deliveries.length;
@@ -126,6 +128,7 @@ async function main() {
     assert.equal(direct.status, 200);
     const nested = deliveries.slice(offset);
     assert.deepEqual(nested.map((n) => n.data.kind), ['tool_authorization', 'ask_user'], 'direct agent and nested question both push after the page leaves');
+    assert.ok(nested.every((notification) => notification.title === 'Notification review'), 'nested questions and approvals identify the parent chat');
     assert.equal(nested[0].data.tool, 'subagent');
     assert.equal(nested[1].actions[0].action, 'answer-0');
     assert.equal(nested[1].data.options[0].value, 'one');
@@ -148,6 +151,14 @@ async function main() {
     settings.setApp({ notifications: { authorization: true, quickActions: false } });
     notifyAttention({ sessionId, ...body, name: 'authorization_required', data: { callId: 'actions-off', tool: 'shell' } });
     assert.deepEqual(deliveries.at(-1).actions, [{ action: 'open', title: 'Open chat' }]);
+    chats.updateChat(projectDir, chat.id, { title: 'Renamed chat' });
+    notifyAttention({ sessionId, ...body, name: 'ask_user_required', data: { question: 'Still here?' } });
+    assert.equal(deliveries.at(-1).title, 'Renamed chat', 'attention uses the current chat title');
+    assert.equal(deliveries.at(-1).body, 'Still here?', 'question stays in the body');
+    notifyAttention({ sessionId, ...body, chatId: 'missing', name: 'authorization_required', data: { tool: 'shell' } });
+    assert.equal(deliveries.at(-1).title, 'Authorization needed', 'missing chat retains the approval fallback');
+    notifyAttention({ sessionId, ...body, chatId: 'missing', name: 'ask_user_required', data: {} });
+    assert.equal(deliveries.at(-1).title, 'The chat needs your answer', 'missing chat retains the question fallback');
     console.log('attention push: regular and direct approvals, nested questions, disconnected pages, routing, preferences and actions passed');
   } finally {
     mcp.getServer = originalGetServer; mcp.callTool = originalCallTool;
