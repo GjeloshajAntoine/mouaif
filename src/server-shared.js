@@ -620,13 +620,14 @@ function htmlPage(title, body) {
 // meta refresh instead.
 // The meta refresh is a no-JS fallback (identical destination), and a
 // manual "Return to the app" link is always available as a tap target.
-function redirectMeta(url, closePopup) {
+function redirectMeta(url, closePopup, completion) {
   const safe = String(url).replace(/["<>]/g, '');
   let js = '';
   if (closePopup) {
     js = '<script>'
       + 'try{'
       + 'if(window.opener&&window.opener!==window&&!window.opener.closed){'
+      + (completion ? 'window.opener.postMessage(' + JSON.stringify(completion).replace(/</g, '\\u003c') + ',location.origin);' : '')
       + 'window.close();'
       + '}else{'
       + 'location.replace(' + JSON.stringify(safe) + ');'

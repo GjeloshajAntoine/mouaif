@@ -207,8 +207,19 @@ export function SettingsProviderEditView(props) {
     if (r.status !== 200) { setSignInStatusMsg('HTTP ' + r.status + (r.body && r.body.error ? ' — ' + r.body.error : '')); setSignInStatusType('error'); return; }
     const authorizeUrl = r.body.authorizeUrl;
     
-    const win = window.open(authorizeUrl, '_blank');
+    let completedAccount = '';
+    let win;
+    const onCompletion = (event) => {
+    if (event.origin !== window.location.origin || event.source !== win) return;
+    const data = event.data;
+    if (data?.type === 'mouaif:oauth-complete' && data.state === r.body.state && typeof data.account === 'string') {
+      completedAccount = data.account;
+    }
+    };
+    window.addEventListener('message', onCompletion);
+    win = window.open(authorizeUrl, '_blank');
     if (!win) {
+      window.removeEventListener('message', onCompletion);
       try { sessionStorage.setItem('oauthPending', JSON.stringify({ provider, started: Date.now() })); } catch (_) { }
       window.location.href = authorizeUrl;
       return;
@@ -218,22 +229,28 @@ export function SettingsProviderEditView(props) {
 
     const before = new Set((accountsMap[authNsForProvider(provider)] || []).slice());
     const start = Date.now();
+    try {
     while (Date.now() - start < 5 * 60 * 1000) {
       await new Promise(r => setTimeout(r, 1500));
       try {
-        const next = await loadAccounts({ force: true });
-        setAccountsMap(next);
-        const list = (next[authNsForProvider(provider)] || []);
-        const fresh = list.filter(a => !before.has(a));
-        if (fresh.length) {
-          syncOauthAccountOptions(provider, next, current);
-          setSignInStatusMsg('signed in as ' + fresh[0]);
-          setSignInStatusType('success');
-          return;
-        }
+      const next = await loadAccounts({ force: true });
+      setAccountsMap(next);
+      const list = (next[authNsForProvider(provider)] || []);
+      const fresh = list.filter(a => !before.has(a));
+      const account = completedAccount || fresh[0];
+      if (account && list.includes(account)) {
+        syncOauthAccountOptions(provider, next, current);
+        setOauthAccountVal(account);
+        setSignInStatusMsg('signed in as ' + account + ' — tap Save');
+        setSignInStatusType('success');
+        return;
+      }
       } catch { /* keep polling */ }
     }
-    setSignInStatusMsg('timed out. Paste the redirect URL or its code below.');
+    } finally {
+    window.removeEventListener('message', onCompletion);
+    }
+    setSignInStatusMsg('timed out. Start sign-in again.');
     setSignInStatusType('error');
   }
 
@@ -305,6 +322,7 @@ export function SettingsProviderEditView(props) {
           const next = await loadAccounts({ force: true });
           setAccountsMap(next);
           syncOauthAccountOptions(currentId, next, current);
+          setOauthAccountVal(st.body.account);
         } catch { /* the list refreshes on the next load */ }
         setSignInStatusMsg('signed in as ' + st.body.account + ' — tap Save');
         setSignInStatusType('success');

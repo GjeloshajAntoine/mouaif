@@ -21,6 +21,8 @@ See [docs/features/cloud-providers.md](./cloud-providers.md) for the four OpenAI
 
 ## Usage
 
+In Settings → Providers, OAuth sign-in selects the account just authenticated, including when other accounts are already saved. Tap **Save** (or **Add provider**) to persist the selection. Browser callbacks notify the originating window with a same-origin, state-bound completion message so reauthorizing an existing account also completes immediately; device-code sign-in selects its returned account too.
+
 ## Behavior
 
 - **SSE in, SSE out.** The proxy reads the upstream's SSE (or Ollama's NDJSON) and re-emits the same event names with normalized shapes. The browser does not need to know what provider is behind the URL.

@@ -269,7 +269,7 @@ async function handleOAuthCallback(req, res, parsed) {
   // so the user can read what went wrong before the page returns to the app.
   if (result.status === 200) {
     res.end(htmlPage('Signed in', '<p class="ok">Signed in to <code>' + provider + '</code> as <code>' + result.account + '</code>.</p>'
-      + redirectMeta(returnUrl, true)));
+      + redirectMeta(returnUrl, true, { type: 'mouaif:oauth-complete', state, account: result.account })));
   } else if (result.code === 'EPROVIDER_ERROR') {
     res.end(htmlPage('Sign-in failed', '<p class="err">' + result.error + '</p>'
       + redirectMeta(returnUrl)));
