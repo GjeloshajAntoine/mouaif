@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Performance and memory profile — mouaif docs</title>
+  <meta name="description" content="A repeatable recording of how the app performs and what it holds in memory: the app shell, the chat list, and long chats from 30 rows up to 10,000. It runs…" />
+  <meta property="og:site_name" content="mouaif docs" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Performance and memory profile — mouaif docs" />
+  <meta property="og:description" content="A repeatable recording of how the app performs and what it holds in memory: the app shell, the chat list, and long chats from 30 rows up to 10,000. It runs…" />
+  <meta property="og:url" content="https://gjeloshajantoine.github.io/mouaif/features/performance-memory-profile.html" />
+  <link rel="stylesheet" href="../assets/site.css" />
+</head>
+<body>
+  <nav class="topnav" aria-label="Primary">
+<a class="topnav-brand" href="../index.html"><span class="logo">m</span> mouaif</a>
+<div class="topnav-links">
+<a href="../index.html">Home</a>
+<a href="../features/getting-started.html">Getting started</a>
+<a href="../features/cli-commands.html">CLI</a>
+<a href="../features/authentication.html">Authentication</a>
+<a href="../features/app-abilities.html">App abilities</a>
+<a href="../features/draft-craft.html">Draft Craft</a>
+</div>
+</nav>
+  <div class="site">
+    <aside class="sidebar">
+<h1><span class="logo">m</span> mouaif docs</h1>
+<div class="tag">user guide</div>
+<h2>Setup and usage</h2>
+<ul>
+<li><a href="../index.html">Home</a></li>
+<li><a href="../features/getting-started.html">Getting started</a></li>
+<li><a href="../features/cli-commands.html">CLI commands</a></li>
+<li><a href="../features/authentication.html">Authentication</a></li>
+<li><a href="../features/app-abilities.html">App abilities</a></li>
+<li><a href="../features/draft-craft.html">Draft Craft</a></li>
+</ul>
+</aside>
+    <main class="main">
+      <h1 id="performance-and-memory-profile">Performance and memory profile</h1>
+<h2 id="overview">Overview</h2>
+<p>A repeatable recording of how the app performs and what it holds in memory: the app shell, the chat list, and long chats from 30 rows up to 10,000. It runs against the copy of mouaif you already have open in Chrome, writes a JSON report, and removes the chats it created.</p>
+<h2 id="usage">Usage</h2>
+<p>Record a profile while the app is running and Chrome is on its debug port:</p>
+<pre><code class="language-bash">node scripts/perf-profile.mjs</code></pre>
+<p>The report lands in <code>perf/latest.json</code>. The run prints a one-screen summary, so the numbers are readable without opening the file:</p>
+<pre><code class="language-text"> shell      22.04 s   FCP 484 ms   heap 67.99 MB   nodes 590
+ transcript       rows  first row   complete     nodes       heap
+ synthetic      30 rows  1.08 s   1.24 s         1062   70.53 MB
+ synthetic     500 rows  906 ms   1.08 s         7121   65.43 MB
+ synthetic   2,000 rows  935 ms   1.11 s        10654   64.32 MB
+ real        2,622 rows  763 ms   969 ms         2151   59.76 MB
+ real        2,729 rows  618 ms   849 ms         2153   65.03 MB
+ real        2,927 rows  870 ms   1.05 s         2153   75.66 MB
+ synthetic  10,000 rows  973 ms   1.14 s         6556   75.05 MB
+ server RSS 271.46 MB (pid 2404956)</code></pre>
+<p>The shell line takes ~22 s because it measures a cold document load of the whole app; the per-transcript times are each a fresh document too, so they are directly comparable.</p>
+<p>Common options:</p>
+<div class="table-wrap"><table><thead><tr><th>Option</th><th>What it does</th></tr></thead><tbody><tr><td><code>--base &lt;url&gt;</code></td><td>App URL to profile (default <code>http://127.0.0.1:8080</code>).</td></tr><tr><td><code>--port &lt;n&gt;</code></td><td>Chrome debug port (default <code>9222</code>).</td></tr><tr><td><code>--project &lt;dir&gt;</code></td><td>Project whose chats are profiled (default: this repository).</td></tr><tr><td><code>--profiles tiny,medium,long,huge</code></td><td>Synthetic transcript sizes to seed and measure.</td></tr><tr><td><code>--real &lt;n&gt;</code></td><td>Also profile the project&#39;s <code>n</code> longest real chats (default 3, <code>0</code> disables).</td></tr><tr><td><code>--quick</code></td><td>Medium and long fixtures, one real chat, one heap snapshot.</td></tr><tr><td><code>--no-full-history</code></td><td>Skip draining pagination to measure the whole transcript.</td></tr><tr><td><code>--snapshots &lt;n&gt;</code></td><td>How many V8 heap snapshots to keep (default 3, <code>0</code> disables).</td></tr><tr><td><code>--keep</code></td><td>Keep the seeded chats afterwards.</td></tr></tbody></table></div>
+<p>Two follow-up commands cover the cases a normal run does not:</p>
+<pre><code class="language-bash"># Delete the chats a previous run listed, then exit.
+node scripts/perf-profile.mjs --cleanup-only perf/latest.manifest.json
+
+# Check the fixtures, cleanup and report builders without Chrome or a server.
+node scripts/test-perf-profile.js</code></pre>
+<h2 id="what-is-measured">What is measured</h2>
+<p>Each synthetic transcript is a real chat in the store, with markdown, code blocks, tables, reasoning blocks and tool call/result pairs at a fixed seed, so two runs are comparable.</p>
+<div class="table-wrap"><table><thead><tr><th>Step</th><th>Numbers</th></tr></thead><tbody><tr><td>App shell</td><td>First Contentful Paint, document load, transfer size, DOM nodes and JS heap after load.</td></tr><tr><td>Opening a chat</td><td>Time to first row, time until the transcript stops growing, DOM nodes, heap, and long tasks over 50 ms.</td></tr><tr><td>Scrolling a page</td><td>Time per scroll step and the heap after the pass.</td></tr><tr><td>Draining history</td><td>Pages fetched, time per page, rows and DOM nodes on screen, heap growth, and bytes per row.</td></tr><tr><td>Leaving a chat</td><td>Whether the heap returns to where it was before the chat was opened.</td></tr><tr><td>Heap snapshot</td><td>Retained objects by constructor, taken at the drained state.</td></tr><tr><td>Chat list and Inspector</td><td>The same load numbers, plus the latency of the chat-list, newest-page, full-transcript and revision endpoints.</td></tr><tr><td>Server</td><td>Resident memory and thread count of the process serving the app.</td></tr></tbody></table></div>
+<p>Long chats open with only their newest page, so open time stays flat as stored length grows; the drain pass is what shows the cost of holding a whole history.</p>
+<h2 id="behavior">Behavior</h2>
+<ul><li><p>Every chat loads as a real document, because the open timings have to mean &quot;time since the user opened this chat&quot;. A hash-only route change would reuse the previous document.</p></li><li><p>The profiler signs in with a temporary session for the configured account and revokes it when the run ends. It never asks for a password and never changes your own session.</p></li><li><p>Seeded chats are titled <code>[perf] …</code>, recorded in <code>perf/latest.manifest.json</code>, and deleted at the end. An interrupted run is cleaned up by the next one.</p></li><li><p>Nothing is restarted: the profile attaches to the tab you already have open. If Chrome reports the tab as hidden, frame timings are timer-bounded and the report says so.</p></li><li><p><code>perf/snapshots/</code> holds raw <code>.heapsnapshot</code> files, which run to hundreds of megabytes and are not committed.</p></li></ul>
+<h2 id="related">Related</h2>
+<ul><li><p><a href="chat-load-performance.html">Chat load performance</a> — how long chats open quickly.</p></li><li><p><a href="chat-streaming-performance.html">Chat streaming performance</a> — the per-token streaming hot path.</p></li><li><p><a href="memory-footprint.html">Memory footprint and payload size</a> — lazy server dependencies and bounded caches.</p></li><li><p><a href="virtual-list.html">Virtual list</a> — the windowed renderer behind the Inspector lists.</p></li></ul>
+      <div class="footer">Generated from <code>docs/</code> by <code>scripts/build-docs.js</code>. Open an issue on the repo to suggest changes.</div>
+    </main>
+  </div>
+</body>
+</html>
