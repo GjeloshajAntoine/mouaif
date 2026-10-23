@@ -24,7 +24,7 @@ The page has a **Review model** picker and three review controls:
 
 ### Thinking / reasoning
 
-Open the model picker, then its **Options** panel to find the labeled **Thinking / reasoning** control. The **Review thinking level** control uses the same reasoning presets as agent and approval model selectors. Choices follow the selected model’s thinking descriptor. **Model default** clears the override. The choice saves automatically as `shellReview.thinkingLevel` and is applied to both on-demand and automatic reviews. Editing the review prompt preserves it.
+The labeled **Thinking / reasoning** row is always visible directly below **Review model**; opening the picker or its Options panel is not required. The **Review thinking level** control uses the same reasoning presets as agent and approval model selectors. Choices follow the selected model’s thinking descriptor. **Model default** clears the override. The choice saves automatically as `shellReview.thinkingLevel` and is applied to both on-demand and automatic reviews. Editing the review prompt preserves it.
 
 ### 2. Review a command on demand
 

@@ -254,8 +254,9 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
           setNote(stateFor(next));
           write(next);
         }
-        },
-        h('div', { class: 'settings-project__item settings-project__item--col' },
+        })
+        ),
+        h('li', { class: 'settings-project__item settings-project__item--col' },
         h('span', { class: 'settings-project__item-title' }, 'Thinking / reasoning'),
         h(ThinkingSelectField, {
           value: config ? config.thinkingLevel : '',
@@ -268,12 +269,10 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
             setConfig(next);
             write(next);
           }
-          })
-          )
-          )
-          )
-          )
-          ),
+        })
+        )
+        )
+      ),
 
       // ---- When & Auto-allow ----------------------------------------------
       h('div', { class: 'group settings-project__section' },

@@ -204,8 +204,8 @@ function byId(nodes, id) {
   assert.equal(pickers[0].attrs.recent[0].id, 'recent-model');
   const thinking = flat.find(node => node.tag === 'thinking-select');
   assert.ok(thinking, 'review has shared reasoning control');
-  assert.match(JSON.stringify(pickers[0].children), /thinking-select/, 'reasoning is inside the model picker options slot');
-  assert.match(JSON.stringify(pickers[0].children), /Thinking \/ reasoning/, 'reasoning has a visible label');
+  assert.ok(!JSON.stringify(pickers[0].children).includes('thinking-select'), 'reasoning is not hidden inside picker options');
+  assert.match(JSON.stringify(rendered.view), /Thinking \/ reasoning/, 'reasoning has a visible label');
   thinking.attrs.onChange('high');
   await settle();
   assert.equal(rendered.requests.at(-1).shellReview.thinkingLevel, 'high');
