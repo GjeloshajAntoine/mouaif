@@ -1470,7 +1470,7 @@ class: 'view-back',
         h('a', {
         class: 'group__row settings-project__link-row settings-project__options-link',
         'aria-label': 'File tool options',
-        href: '#/settings/project/output?' + projectBackQS()
+        href: settingsLink('settings/project/output', navContext())
         },
         h('span', { class: 'group__row-body' },
         h('span', { class: 'group__row-label' }, 'File tool options'),
@@ -1481,7 +1481,7 @@ class: 'view-back',
         h('a', {
         class: 'group__row settings-project__link-row settings-project__options-link',
         'aria-label': 'Shell review',
-        href: '#/settings/project/shell-review?' + projectBackQS()
+        href: settingsLink('settings/project/shell-review', navContext())
         },
         h('span', { class: 'group__row-body' },
         h('span', { class: 'group__row-label' }, 'Shell review'),
@@ -1493,7 +1493,7 @@ class: 'view-back',
         h('a', {
         class: 'group__row settings-project__link-row settings-project__options-link',
         'aria-label': 'Agent files',
-        href: '#/settings/project/agent-files?' + projectBackQS()
+        href: settingsLink('settings/project/agent-files', navContext())
         },
         h('span', { class: 'group__row-body' },
         h('span', { class: 'group__row-label' }, 'Agent files'),
@@ -1565,7 +1565,7 @@ class: 'view-back',
 h('a', {
 class: 'group__row settings-project__link-row',
 'aria-label': 'Web preview',
-href: '#/settings/project/preview?' + projectBackQS()
+href: settingsLink('settings/project/preview', navContext())
 },
 h('span', { class: 'group__row-body' },
 h('span', { class: 'group__row-label' }, 'Web preview'),
@@ -1578,7 +1578,7 @@ h('li', null,
 h('a', {
 class: 'group__row settings-project__link-row',
 'aria-label': 'Hide file content',
-href: '#/settings/project/hide?' + projectBackQS()
+href: settingsLink('settings/project/hide', navContext())
 },
 h('span', { class: 'group__row-body' },
 h('span', { class: 'group__row-label' }, 'Hide file content'),
@@ -1618,7 +1618,7 @@ href: '#/settings/actions?' + projectBackQS()
           h('li', null,
             h('a', {
 class: 'group__row settings-project__link-row',
-href: '#/settings/project/technical?' + projectBackQS()
+href: settingsLink('settings/project/technical', navContext())
 },
               h('span', { class: 'group__row-body' },
                 h('span', { class: 'group__row-label' }, 'Technical details'),
