@@ -31,6 +31,7 @@ The chat composer supports `@` autocomplete: typing `@` followed by text shows a
 
 Sending a message that contains `@<file>` (anywhere in the text) attaches that file's current working-tree content to the turn as a `user` message, so the model sees it without calling a tool. This works for **every file the popup offers**: tagged files and untagged scanned files alike. A bare basename (`@users.js`) resolves to the matching project path.
 
+- **Composer context chips.** While `@<file>` tokens are present in the composer draft, a row of file chips renders below the textarea showing each resolved project path and its attachment status: file size (`📄 src/tags.js · 18 KB`), pinned excerpt range (`lines 10–40`), or size-cap warning (`⚠️ src/large.json · 310 KB · too large`). Tapping a chip opens that file in the File Editor modal for preview; tapping `×` removes the `@<file>` mention from the draft.
 - Tagged files use their saved excerpt and tags; untagged files attach in full with `# Tags: (none)`.
 - A file above the size cap (default 256 KB, `app.fileTagMaxBytes`) is not attached. The model gets a one-line note that the file exists and is too large, so it can read the parts it needs with a file tool.
 - Lines hidden in **Settings → Hide file content** are replaced with `[hidden]`, the same as in `read_file`.

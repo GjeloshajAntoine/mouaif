@@ -16,6 +16,7 @@ import { parseDirectRestartInvocation } from './tools.js';
 const CATEGORY = { FILES: 'files', AGENTS: 'agents', ACTIONS: 'actions', TOOLS: 'tools', MCP: 'mcp', MODEL: 'model' };
 const ICON_MAP = { file: '📄', agent: '🧑‍🔧', action: '⚡', tool: '🛠️', mcp: '🔌', model: '🤖' };
 const MAX_FILE_RESULTS = 200;
+const DEFAULT_MAX_FILE_BYTES = 256 * 1024;
 // At rest (empty query), show only this many items per category so the
 // Files section doesn't push Agents/Actions/Tools/MCP/Model out of view. Typing a
 // query drops the per-category cap entirely.
@@ -28,6 +29,12 @@ let popup = null;
 let textarea = null;
 let items = [];
 let filtered = [];
+const itemListeners = new Set();
+function notifyItemListeners() {
+  for (const fn of itemListeners) {
+    try { fn(items); } catch { /* ignore */ }
+  }
+}
 let query = '';
 let range = null;
 let selectedIdx = 0;
@@ -177,23 +184,12 @@ async function buildItems(projectDir, opts) {
   const projId = await resolveProjectId(projectDir);
 
   // 1. Tagged files (only if we have a registered project id)
+  let tagMap = {};
   if (projId) {
     try {
       const r = await fetchJson('/api/projects/' + encodeURIComponent(projId) + '/tags');
       if (r.status === 200 && r.body && r.body.tags) {
-        const tagMap = r.body.tags;
-        for (const relPath of Object.keys(tagMap).sort()) {
-          const entry = tagMap[relPath];
-          const pathParts = filePathParts(relPath);
-          out.push({
-            id: 'file:' + relPath,
-            label: pathParts.name,
-            subtitle: pathParts.folder,
-            category: CATEGORY.FILES, icon: 'file',
-            insert: relPath,
-            searchText: (pathParts.name + ' ' + relPath + ' ' + (entry.tags || []).join(' ')).toLowerCase()
-          });
-        }
+        tagMap = r.body.tags;
       }
     } catch { /* ignore */ }
   }
@@ -223,6 +219,25 @@ async function buildItems(projectDir, opts) {
     }
   }
   const scanned = scanCache || [];
+  const sizeByPath = new Map();
+  for (const f of scanned) {
+    if (f && f.path && typeof f.size === 'number') sizeByPath.set(f.path, f.size);
+  }
+  for (const relPath of Object.keys(tagMap).sort()) {
+    const entry = tagMap[relPath] || {};
+    const pathParts = filePathParts(relPath);
+    out.push({
+      id: 'file:' + relPath,
+      label: pathParts.name,
+      subtitle: pathParts.folder,
+      category: CATEGORY.FILES, icon: 'file',
+      insert: relPath,
+      size: sizeByPath.has(relPath) ? sizeByPath.get(relPath) : null,
+      excerpt: entry.excerpt || null,
+      tags: Array.isArray(entry.tags) ? entry.tags : [],
+      searchText: (pathParts.name + ' ' + relPath + ' ' + (entry.tags || []).join(' ')).toLowerCase()
+    });
+  }
   const taggedPaths = new Set(out.filter(i => i.category === CATEGORY.FILES).map(i => i.insert));
   for (const f of scanned) {
     if (!f.path || taggedPaths.has(f.path)) continue;
@@ -234,6 +249,9 @@ async function buildItems(projectDir, opts) {
       subtitle: pathParts.folder,
       category: CATEGORY.FILES, icon: 'file',
       insert: f.path,
+      size: typeof f.size === 'number' ? f.size : null,
+      excerpt: null,
+      tags: [],
       searchText: (pathParts.name + ' ' + f.path).toLowerCase()
     });
   }
@@ -801,7 +819,10 @@ selectedIdx = 0;
 activeFilter = null;
 const projectDir = preactState.props && preactState.props.projectDir;
   if (projectDir) {
-    buildItems(projectDir).then(newItems => { items = newItems; }).catch(() => {});
+    buildItems(projectDir).then(newItems => {
+      items = newItems;
+      notifyItemListeners();
+    }).catch(() => {});
   }
 
   textarea.addEventListener('input', onInput);
@@ -822,6 +843,7 @@ export function refreshAtMentionItems(opts) {
   if (projectDir) {
     buildItems(projectDir, opts).then(newItems => {
       items = newItems;
+      notifyItemListeners();
       if (visible) {
         filtered = filterItems(query);
         renderPopup();
@@ -832,4 +854,153 @@ export function refreshAtMentionItems(opts) {
 
 export function isAtMentionActive() {
   return visible;
+}
+
+export function getAtMentionItems() {
+  return items;
+}
+
+export function subscribeAtMentionItems(fn) {
+  if (typeof fn !== 'function') return () => {};
+  itemListeners.add(fn);
+  return () => { itemListeners.delete(fn); };
+}
+
+// ---- Composer file context chips ----------------------------------------
+//
+// Mirror src/tags.js `parseReferences` so the composer can show a row of
+// context pills for every `@<file>` token in the current draft before the
+// user hits Send.
+//
+// `candidateItems` is either the full `atMention` item catalog or an array
+// of file items (`{ category: 'files', insert, label?, size?, excerpt? }`).
+// Returns ordered unique matches:
+//   [{ path, name, size, excerpt, oversized, tokens: ['@path', ...] }]
+export function resolveMentionedFiles(text, candidateItems = items, opts = {}) {
+  if (typeof text !== 'string' || !text) return [];
+  const maxBytes = (opts && Number.isInteger(opts.maxBytes) && opts.maxBytes > 0)
+    ? opts.maxBytes
+    : DEFAULT_MAX_FILE_BYTES;
+  const fileList = Array.isArray(candidateItems)
+    ? candidateItems.filter(i => i && (!i.category || i.category === CATEGORY.FILES) && typeof (i.insert || i.path) === 'string')
+    : [];
+  if (!fileList.length) return [];
+
+  const byRel = new Map();
+  const byBase = new Map();
+  for (const item of fileList) {
+    const rel = String(item.insert || item.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (!rel || byRel.has(rel)) continue;
+    const base = rel.split('/').pop() || rel;
+    const entry = {
+      path: rel,
+      name: item.label || base,
+      size: typeof item.size === 'number' ? item.size : null,
+      excerpt: item.excerpt || null
+    };
+    byRel.set(rel, entry);
+    if (!byBase.has(base)) byBase.set(base, []);
+    byBase.get(base).push(entry);
+  }
+  for (const list of byBase.values()) {
+    list.sort((a, b) => a.path.length - b.path.length || a.path.localeCompare(b.path));
+  }
+
+  const re = /(?:^|\s)@([^\s]+)/g;
+  const resolvedOrder = [];
+  const byResolvedPath = new Map();
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const raw = m[1];
+    if (!raw) continue;
+    let target = null;
+    if (raw.indexOf('/') !== -1) {
+      const norm = raw.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/^\/+|\/+$/g, '');
+      target = byRel.get(norm) || null;
+    } else {
+      const hits = byBase.get(raw) || [];
+      if (hits.length >= 1) target = hits[0];
+    }
+    if (!target) continue;
+    const rawToken = '@' + raw;
+    let rec = byResolvedPath.get(target.path);
+    if (!rec) {
+      const oversized = !target.excerpt && typeof target.size === 'number' && target.size > maxBytes;
+      rec = {
+        path: target.path,
+        name: target.name,
+        size: target.size,
+        excerpt: target.excerpt,
+        oversized,
+        tokens: [rawToken]
+      };
+      byResolvedPath.set(target.path, rec);
+      resolvedOrder.push(rec);
+    } else if (!rec.tokens.includes(rawToken)) {
+      rec.tokens.push(rawToken);
+    }
+  }
+  return resolvedOrder;
+}
+
+// Remove every `@<token>` that resolved to `target` (either a resolved entry
+// from `resolveMentionedFiles` or a relative file path string), collapsing
+// duplicate whitespace left behind at the removal site.
+export function removeMentionedFileFromText(text, target, candidateItems = items) {
+  if (typeof text !== 'string' || !text) return '';
+  let tokens = [];
+  if (target && typeof target === 'object' && Array.isArray(target.tokens)) {
+    tokens = target.tokens;
+  } else if (typeof target === 'string' && target) {
+    const found = resolveMentionedFiles(text, candidateItems).find(f => f.path === target);
+    tokens = found ? found.tokens : ['@' + target, '@' + (target.split('/').pop() || target)];
+  }
+  if (!tokens.length) return text;
+  const tokenSet = new Set(tokens);
+  // Replace whitespace-delimited tokens that match any token for this file.
+  let out = '';
+  let lastIdx = 0;
+  const re = /(^|\s)(@[^\s]+)/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const lead = m[1];
+    const tok = m[2];
+    if (!tokenSet.has(tok)) continue;
+    const tokenStart = m.index + lead.length;
+    const tokenEnd = tokenStart + tok.length;
+    out += text.slice(lastIdx, tokenStart);
+    // If there is a leading space and a single trailing space on the same line,
+    // consume the trailing space so `foo @file bar` becomes `foo bar`.
+    if (lead && text[tokenEnd] === ' ') {
+      lastIdx = tokenEnd + 1;
+    } else if (!lead && text[tokenEnd] === ' ') {
+      lastIdx = tokenEnd + 1;
+    } else {
+      lastIdx = tokenEnd;
+    }
+  }
+  out += text.slice(lastIdx);
+  return out;
+}
+
+export function formatMentionFileMeta(file) {
+  if (!file) return 'Attached';
+  if (file.excerpt && Number.isInteger(file.excerpt.start) && Number.isInteger(file.excerpt.end)) {
+    return 'lines ' + file.excerpt.start + '–' + file.excerpt.end;
+  }
+  if (file.oversized) {
+    return (typeof file.size === 'number' ? formatBytesShort(file.size) + ' · ' : '') + 'too large';
+  }
+  if (typeof file.size === 'number') {
+    return formatBytesShort(file.size);
+  }
+  return 'attached';
+}
+
+function formatBytesShort(bytes) {
+  if (typeof bytes !== 'number' || !isFinite(bytes) || bytes < 0) return '';
+  if (bytes < 1024) return bytes + ' B';
+  const kb = bytes / 1024;
+  if (kb < 10) return kb.toFixed(1).replace(/\.0$/, '') + ' KB';
+  return Math.round(kb) + ' KB';
 }

@@ -4,7 +4,12 @@
 // the category applied: the popup used to ignore `activeFilter` whenever a
 // query was present, so writing widened the search back to every category
 // even though the chip still read as active.
-import { filterAtMentionItems } from '../frontend/src/components/chat/atMention.js';
+import {
+  filterAtMentionItems,
+  resolveMentionedFiles,
+  removeMentionedFileFromText,
+  formatMentionFileMeta
+} from '../frontend/src/components/chat/atMention.js';
 
 let pass = 0;
 let fail = 0;
@@ -57,6 +62,36 @@ test('query with no in-category match returns empty',
 const fuzzyAcrossFilter = filterAtMentionItems(items, 'rfjs', 'tools');
 test('fuzzy file hit is not returned under a tools filter',
   fuzzyAcrossFilter.every(i => i.category === 'tools'), ids(fuzzyAcrossFilter));
+
+// Composer context chips: resolveMentionedFiles + removeMentionedFileFromText
+const chipCatalog = [
+  { id: 'file:src/tags.js', label: 'tags.js', insert: 'src/tags.js', category: 'files', size: 14336, excerpt: null },
+  { id: 'file:src/api/users.js', label: 'users.js', insert: 'src/api/users.js', category: 'files', size: 2048, excerpt: { start: 10, end: 40 } },
+  { id: 'file:docs/users.js', label: 'users.js', insert: 'docs/users.js', category: 'files', size: 1024, excerpt: null },
+  { id: 'file:src/huge.json', label: 'huge.json', insert: 'src/huge.json', category: 'files', size: 300 * 1024, excerpt: null },
+  tool('read_file')
+];
+
+const resolved = resolveMentionedFiles('Check @src/tags.js and @users.js plus @src/huge.json and @read_file', chipCatalog);
+test('resolves exact path, shortest-path bare basename, and ignores tool mentions',
+  resolved.length === 3 &&
+  resolved[0].path === 'src/tags.js' &&
+  resolved[1].path === 'docs/users.js' &&
+  resolved[2].path === 'src/huge.json' &&
+  resolved[2].oversized === true,
+  resolved);
+
+const excerptResolved = resolveMentionedFiles('Inspect @src/api/users.js', chipCatalog);
+test('formats excerpt, size, and oversized metadata',
+  formatMentionFileMeta(resolved[0]) === '14 KB' &&
+  formatMentionFileMeta(excerptResolved[0]) === 'lines 10–40' &&
+  formatMentionFileMeta(resolved[2]) === '300 KB · too large',
+  [formatMentionFileMeta(resolved[0]), formatMentionFileMeta(excerptResolved[0]), formatMentionFileMeta(resolved[2])]);
+
+const afterRemove = removeMentionedFileFromText('Check @src/tags.js and @users.js now', resolved[0], chipCatalog);
+test('removes mentioned file token cleanly from draft',
+  afterRemove === 'Check and @users.js now',
+  afterRemove);
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
