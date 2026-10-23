@@ -234,7 +234,7 @@ function byId(nodes, id) {
     'no generic .row wrapper inside the page');
   assert.match(JSON.stringify(root), /settings-project__item-note/, 'rows carry the shared note line');
   const text = JSON.stringify(rendered.view);
-  assert.match(text, /choose a separate reviewer/);
+  assert.equal(pickers[0].attrs.variant, 'chat', 'compact chat trigger required by the picker spec');
   assert.match(text, /Reviewed by the chat’s current model/, 'the row states it uses the chat model');
   const noteNode = flat.find((n) => cls(n).split(/\s+/).includes('settings-project__item-note')
     && JSON.stringify(n.children).includes('Reviewed by'));

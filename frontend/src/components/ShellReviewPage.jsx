@@ -42,7 +42,16 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
   const bookmarks = useRef({ recentModels: [] });
   const [pinned, setPinned] = useState(() => loadPinned());
   const [recent, setRecent] = useState(() => loadRecent(bookmarks.current));
-  const [catalogVersion, setCatalogVersion] = useState(0);
+  async function refreshModels() {
+    const catalogs = await Promise.all(providers.map(async provider => {
+      const catalog = await fetchLiveModels(provider, { purpose: 'chat', force: true });
+      if (catalog.error) throw new Error(catalog.error);
+      return (catalog.models || []).map(model => ({ ...model, provider }));
+    }));
+    if (alive.current) setModels(current => [
+      ...current.filter(model => !providers.includes(model.provider)), ...catalogs.flat()
+    ]);
+  }
   function refreshRecent() {
     let cancelled = false;
     loadRecentFromServer(bookmarks.current).then(updated => {
@@ -62,14 +71,14 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
       setProviders(ids);
       setModels(saved.body.models || []);
       const catalogs = await Promise.all(ids.map(async provider => {
-        const catalog = await fetchLiveModels(provider, { purpose: 'chat', refresh: catalogVersion > 0 }).catch(() => ({ models: [] }));
+        const catalog = await fetchLiveModels(provider, { purpose: 'chat' }).catch(() => ({ models: [] }));
         return (catalog.models || []).map(model => ({ ...model, provider }));
       }));
       if (!cancelled) setModels([...(saved.body.models || []), ...catalogs.flat()]);
     }
     loadModels();
     return () => { cancelled = true; };
-  }, [dir, catalogVersion]);
+  }, [dir]);
   // Two separate lines, like every sibling row: `note` is the standing
   // description of the saved choice, `status` is transient save feedback and
   // is empty unless a save is in flight or just failed.
@@ -220,16 +229,15 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
         h('div', { class: 'group__title settings-project__section-title' }, 'Review model'),
         h('ul', { class: 'group__list' },
         h('li', { class: 'settings-project__item settings-project__item--col' },
-        h('div', { class: 'settings-project__item-note' }, 'Use the chat model or choose a separate reviewer.'),
         h(ModelPickerField, {
-        models, extraProviders: providers, variant: 'sheet',
+        models, extraProviders: providers, variant: 'chat',
         pinned, recent, onOpen: refreshRecent,
         onTogglePin: model => {
         togglePin(model.provider, model.id);
         setPinned(loadPinned());
         setRecent(loadRecent(bookmarks.current));
         },
-        refresh: () => setCatalogVersion(version => version + 1),
+        refresh: refreshModels,
         refreshEmpty: 'Refresh models',
         value: config && config.modelId ? { providerId: config.providerId, modelId: config.modelId } : null,
         allowClear: true, clearLabel: 'Same as the chat',
