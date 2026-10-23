@@ -26,7 +26,7 @@ Both services reuse one image because the runtime stage of `Dockerfile` already 
 - `chrome` publishes **no host port**. Publishing `9222` would collide with the host debug Chrome that `npm run test:chrome` and the chrome-debug MCP server use. The dev-time CDP client runs on the host, so it must reach Chrome through the host's own `127.0.0.1:9222`, not through this stack.
 - `app` publishes `5732:5732`, the CLI default. Starting the stack therefore requires the host port to be free; a host-side `mouaif serve` must be stopped first. The agent rules forbid the agent from stopping it, so treat "port already allocated" as a user decision, not a bug.
 - `depends_on: chrome: condition: service_started` only orders startup. It is deliberately not `service_healthy`: the `chrome` service has no healthcheck, and starting the app is not gated on a CDP handshake.
-- The healthcheck uses `node -e` with `fetch('http://127.0.0.1:5732/api/settings')`. Node 22 in the image (and in the host toolchain) has global `fetch`, so no `curl`/`wget` needs to be present in the runtime image.
+- The healthcheck uses `node -e` with `fetch('http://127.0.0.1:5732/api/settings')`. Node 24 in the image (and in the host toolchain) has global `fetch`, so no `curl`/`wget` needs to be present in the runtime image.
 - The volumes are named (`ui-review-data`), not bind mounts, so a review's chats cannot land in the repository working tree.
 
 ### Volume and fixture
