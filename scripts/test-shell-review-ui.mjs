@@ -87,6 +87,7 @@ function renderShellReviewPage({ resolved, saveStatus = 200, models = [], provid
     h,
     Fragment: 'fragment',
     ModelPickerField: 'model-picker',
+    ThinkingSelectField: 'thinking-select',
     SHELL_REVIEW_MODES: [
       { value: 'off', label: 'Off' },
       { value: 'ask', label: 'On demand' },
@@ -201,6 +202,11 @@ function byId(nodes, id) {
   assert.equal(typeof pickers[0].attrs.refresh, 'function');
   assert.ok(pickers[0].attrs.pinned);
   assert.equal(pickers[0].attrs.recent[0].id, 'recent-model');
+  const thinking = flat.find(node => node.tag === 'thinking-select');
+  assert.ok(thinking, 'review has shared reasoning control');
+  thinking.attrs.onChange('high');
+  await settle();
+  assert.equal(rendered.requests.at(-1).shellReview.thinkingLevel, 'high');
   pickers[0].attrs.onChange({ providerId: 'openrouter', modelId: 'review-model' });
   await settle();
   assert.equal(rendered.requests.at(-1).shellReview.modelId, 'review-model');

@@ -32,6 +32,7 @@ export function shellReviewFromResolved(resolved) {
     mode,
     providerId,
     modelId,
+    thinkingLevel: typeof raw.thinkingLevel === 'string' ? raw.thinkingLevel.trim() : '',
     prompt: typeof raw.prompt === 'string' ? raw.prompt : '',
     autoAllow,
     configured: mode !== 'off'

@@ -117,6 +117,7 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
       };
       if (config.providerId) payload.providerId = config.providerId;
       if (config.modelId) payload.modelId = config.modelId;
+      if (config.thinkingLevel) payload.thinkingLevel = config.thinkingLevel;
       const r = await fetchJson('/api/settings/project', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

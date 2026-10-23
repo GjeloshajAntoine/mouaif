@@ -78,7 +78,8 @@ function normalize(raw) {
     ? value.prompt
     : DEFAULT_PROMPT;
   const autoAllow = typeof value.autoAllow === 'boolean' ? value.autoAllow : true;
-  return { mode, providerId, modelId, prompt, autoAllow };
+  const thinkingLevel = typeof value.thinkingLevel === 'string' ? value.thinkingLevel.trim() : '';
+  return { mode, providerId, modelId, prompt, autoAllow, thinkingLevel };
 }
 
 // configured(config) -> boolean
@@ -248,6 +249,7 @@ async function reviewCommand(opts) {
   try {
     const result = await require('./ai.js').streamChat({
     model,
+    thinkingLevel: config.thinkingLevel,
     messages: buildMessages({ prompt: config.prompt, cmd, cwd: opts.cwd }),
     signal: controller.signal,
     // No tool surface at all: the reviewer answers in text. Without this the

@@ -22,6 +22,10 @@ The page has a **Review model** picker and three review controls:
 
 **Review model** follows the [model picker specification](./model-picker.md), including its compact chat-style trigger without extra descriptive text. It opens the shared model picker with saved project models and connected providers’ live chat catalogs. It includes the same app-wide **Pinned** and **Recent** sections, pin actions, search, and **Refresh models** action as the chat picker. Choose a separate reviewer or clear the choice with **Same as the chat**. Selection saves automatically together with the mode, prompt, and auto-approval setting; no configuration-file editing is needed.
 
+### Thinking / reasoning
+
+The **Review thinking level** control beside the model picker uses the same reasoning presets as agent and approval model selectors. Choices follow the selected model’s thinking descriptor. **Model default** clears the override. The choice saves automatically as `shellReview.thinkingLevel` and is applied to both on-demand and automatic reviews. Editing the review prompt preserves it.
+
 ### 2. Review a command on demand
 
 Open the chat's wrench (**Tool settings**) popup and tap **Review a command**. The review sheet opens with the composer draft already in its command field:

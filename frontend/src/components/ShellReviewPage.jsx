@@ -8,6 +8,7 @@ import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
 import { ModelPickerField } from './ModelPickerField.jsx';
+import { ThinkingSelectField } from './ThinkingSelectField.jsx';
 import { loadPinned, loadRecent, loadRecentFromServer, touchRecent, togglePin } from './chat/modelPicker.js';
 import { sectionIcon } from './settingsProjectUi.js';
 import { settingsLink, backHref, backTarget } from './settings/projectNavigation.js';
@@ -147,6 +148,7 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
         };
         if (latest.providerId) payload.providerId = latest.providerId;
         if (latest.modelId) payload.modelId = latest.modelId;
+        if (latest.thinkingLevel) payload.thinkingLevel = latest.thinkingLevel;
         const r = await fetchJson('/api/settings/project', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -252,6 +254,18 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
           setNote(stateFor(next));
           write(next);
         }
+        }),
+        h(ThinkingSelectField, {
+          value: config ? config.thinkingLevel : '',
+          descriptor: models.find(model => config && model.id === config.modelId && model.provider === config.providerId)?.thinking,
+          inheritLabel: 'Model default',
+          ariaLabel: 'Review thinking level',
+          disabled: !config || busy,
+          onChange: thinkingLevel => {
+            const next = nextConfig({ thinkingLevel });
+            setConfig(next);
+            write(next);
+          }
         })
         )
         )
