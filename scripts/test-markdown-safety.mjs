@@ -433,5 +433,39 @@ check('subagent structure and communication schemas render inert SVG diagrams', 
   assertInert(renderMarkdown('```mermaid\n' + runSchema + '\n```'), 'subagent-run-schema');
 });
 
-console.log(`\n${PAYLOADS.length + 9} checks, ${failures} failed`);
+check('indented fenced code/mermaid blocks and adjacent lists/headings render cleanly', () => {
+  const md = [
+    '### 1. Parent to Child',
+    'Intro paragraph:',
+    '- **Collapsed pill**:',
+    '  `Sent to worker`',
+    '- **Expanded card**:',
+    '  ```mermaid',
+    '  sequenceDiagram',
+    '    participant Parent as Parent',
+    '    participant Worker as call_1',
+    '    Parent ->> Worker: Focus on races',
+    '  ```',
+    '  ```json',
+    '  { "state": "queued" }',
+    '  ```',
+    '---',
+    '### 2. Next Section',
+    '1. First item',
+    '2. Second item'
+  ].join('\n');
+
+  const html = renderMarkdown(md);
+  assert.ok(html.includes('<h3>1. Parent to Child</h3>'), html);
+  assert.ok(html.includes('<h3>2. Next Section</h3>'), html);
+  assert.ok(html.includes('<hr>'), html);
+  assert.ok(html.includes('<ul>'), html);
+  assert.ok(html.includes('<ol>'), html);
+  assert.ok(html.includes('class="md-diagram__img"'), html);
+  assert.ok(html.includes('<pre><code class="language-json">'), html);
+  assert.ok(!html.includes('```mermaid'), html);
+  assertInert(html, 'indented-fences-and-adjacent-blocks');
+});
+
+console.log(`\n${PAYLOADS.length + 10} checks, ${failures} failed`);
 if (failures) process.exitCode = 1;

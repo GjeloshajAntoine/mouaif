@@ -8,8 +8,8 @@ The chat view renders AI responses as HTML using a zero-dependency, server-side-
 
 | Feature | Example |
 |---|---|
-| **Fenced code blocks** | `` ```js … ``` `` or `~~~ … ~~~` |
-| **Mermaid diagrams** | `` ```mermaid … ``` `` or `` ```mmd … ``` `` (rendered as visual SVG with tap-to-zoom and collapsible source) |
+| **Fenced code blocks** | `` ```js … ``` `` or `~~~ … ~~~` (including indented fences inside list items) |
+| **Mermaid diagrams** | `` ```mermaid … ``` `` or `` ```mmd … ``` `` (rendered as visual SVG with tap-to-zoom and collapsible source, top-level or indented) |
 | **Inline code** | `` `code` `` |
 | **Headings** | `# H1` through `###### H6` |
 | **Bold** | `**bold**` or `__bold__` |

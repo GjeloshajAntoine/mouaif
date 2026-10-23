@@ -241,36 +241,113 @@ function renderTable(lines) {
   return html;
 }
 
+// Split a non-code block into atomic block-level chunks so headings,
+// horizontal rules, lists, blockquotes, and tables work even when the
+// author omits blank lines between them.
+function splitParaSubblocks(text) {
+  const chunks = [];
+  for (const para of String(text || '').split(/\n\n+/)) {
+    const rawLines = para.trim().split('\n');
+    let cur = [];
+    let curKind = null;
+    const flush = () => {
+      if (cur.length) {
+        chunks.push(cur);
+        cur = [];
+        curKind = null;
+      }
+    };
+    const isListLine = (l) => /^\s*(?:[-*+]|\d+\.)\s/.test(l);
+    const isHrLine = (l) => /^ {0,3}([-*_]){3,}\s*$/.test(l);
+    const isHeadingLine = (l) => /^\s*#{1,6}\s+/.test(l);
+    const isQuoteLine = (l) => /^\s*>/.test(l);
+
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i];
+      if (!line.trim()) {
+        flush();
+        continue;
+      }
+      if (isHrLine(line) && curKind !== 'table') {
+        flush();
+        chunks.push([line]);
+        continue;
+      }
+      if (isHeadingLine(line)) {
+        flush();
+        chunks.push([line.trim()]);
+        continue;
+      }
+      if (isQuoteLine(line)) {
+        if (curKind !== 'quote') flush();
+        curKind = 'quote';
+        cur.push(line);
+        continue;
+      }
+      if (isListLine(line)) {
+        const listType = /^\s*\d+\.\s/.test(line) ? 'ol' : 'ul';
+        if (curKind !== listType) flush();
+        curKind = listType;
+        cur.push(line);
+        continue;
+      }
+      if (curKind === 'ul' || curKind === 'ol') {
+        // Indented continuation line inside a list item stays with the list;
+        // unindented text starts a new paragraph.
+        if (/^\s{2,}\S/.test(line)) {
+          cur.push(line.trim());
+          continue;
+        }
+        flush();
+      } else if (curKind === 'quote') {
+        flush();
+      }
+      curKind = 'para';
+      cur.push(line);
+    }
+    flush();
+  }
+  return chunks;
+}
+
 // Split into blocks by blank lines, then render each block.
 // Fenced code blocks are detected first and left as-is.
 export function renderMarkdown(text) {
   if (!text) return '';
 
   // Fenced code blocks: extract them before splitting into paragraphs.
+  // Allow leading indentation (e.g. ```mermaid inside a list item).
   const blocks = [];
   let rest = String(text);
-  // Opening fence: ``` or ~~~ followed by an optional info string.
-  const codeBlockRe = /^(```|~~~)([^\n]*)$/m;
+  // Opening fence: optional leading spaces + ``` or ~~~ + optional info string.
+  const codeBlockRe = /^([ \t]*)(```|~~~)([^\n]*)$/m;
 
   while (rest.length) {
     const m = codeBlockRe.exec(rest);
     if (!m) break;
-    const fence = m[1];
-    const lang = (m[2].trim().split(/\s+/)[0] || '');
-    const fenceEndRe = new RegExp('^' + fence + '\\s*$', 'm');
+    const indent = m[1] || '';
+    const fence = m[2];
+    const lang = (m[3].trim().split(/\s+/)[0] || '');
+    const fenceEndRe = new RegExp('^[ \\t]*' + fence + '[ \\t]*$', 'm');
     // Everything before the code fence is normal text
     const before = rest.slice(0, m.index);
     if (before.trim()) blocks.push({ type: 'para', text: before });
     rest = rest.slice(m.index + m[0].length);
+    if (rest.startsWith('\r\n')) rest = rest.slice(2);
+    else if (rest.startsWith('\n')) rest = rest.slice(1);
     // Find the closing fence
     const endMatch = fenceEndRe.exec(rest);
     if (!endMatch) {
       // No closing fence — treat as regular text
-      blocks.push({ type: 'para', text: fence + m[2] + '\n' + rest });
+      blocks.push({ type: 'para', text: indent + fence + m[3] + '\n' + rest });
       rest = '';
       break;
     }
-    const codeContent = rest.slice(0, endMatch.index);
+    let codeContent = rest.slice(0, endMatch.index);
+    if (indent) {
+      const stripRe = new RegExp('^' + indent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gm');
+      codeContent = codeContent.replace(stripRe, '');
+    }
     rest = rest.slice(endMatch.index + endMatch[0].length);
     blocks.push({ type: 'code', lang, content: codeContent });
   }
@@ -298,12 +375,10 @@ export function renderMarkdown(text) {
       out.push('<pre><code' + (block.lang ? ' class="language-' + escapeHtml(block.lang) + '"' : '') + '>' + escapeHtml(block.content) + '</code></pre>');
       continue;
     }
-    // Paragraph block — split by double newline into paragraphs
-    const paragraphs = block.text.split(/\n\n+/);
-    for (const para of paragraphs) {
-      const trimmed = para.trim();
-      if (!trimmed) continue;
-      const lines = trimmed.split('\n');
+    // Paragraph block — split into atomic block chunks
+    const subblocks = splitParaSubblocks(block.text);
+    for (const lines of subblocks) {
+      if (!lines.length) continue;
 
       // Horizontal rule: a line that is ---, ***, or ___ (3+ chars,
       // optionally with spaces). Must be the only content in the block.
