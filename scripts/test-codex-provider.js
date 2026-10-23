@@ -169,6 +169,32 @@ async function waitFor(predicate) {
     assert.equal(JSON.parse(stored.at(-1)[2]).refreshToken, 'ROTATED');
     assert.equal(stored.at(-1)[1], 'me@example.com (workspace-1)');
 
+    // The live catalog must refresh an expired token itself. Previously only
+    // chat did this, so the picker returned HTTP 401 until a chat was sent.
+    const settings = require('../src/settings.js');
+    settings.setApp({ providers: [{ id: 'codex', provider: 'codex', auth: 'oauth',
+      oauthAccount: 'me@example.com (workspace-1)', baseUrl: codex.endpoint.baseUrl }] });
+    auth.resolveAccount = realResolve;
+    auth.tokenForModel = realToken;
+    auth.setToken = realSet;
+    await auth.setToken('codex', 'me@example.com (workspace-1)', JSON.stringify({
+      accessToken: 'expired', refreshToken: 'CATALOG_REFRESH', chatgptAccountId: 'workspace-1', expiresAt: 0
+    }));
+    let catalogRefreshes = 0;
+    global.fetch = async (url, init) => {
+      if (url.endsWith('/oauth/token')) {
+        catalogRefreshes++;
+        return json({ access_token: accessToken, refresh_token: 'CATALOG_ROTATED', expires_in: 3600 });
+      }
+      assert.ok(url.includes('/models?client_version='));
+      assert.equal(init.headers.Authorization, 'Bearer ' + accessToken);
+      return json({ models: [{ slug: 'gpt-codex', display_name: 'Codex' }] });
+    };
+    const live = await require('../src/modelList.js').liveModelsFor('codex', { force: true });
+    assert.equal(live.models[0].id, 'gpt-codex');
+    assert.equal(catalogRefreshes, 1, 'catalog refreshes expired Codex credentials before listing');
+    assert.equal(JSON.parse(auth.getToken('codex', 'me@example.com (workspace-1)')).refreshToken, 'CATALOG_ROTATED');
+
     const specs = [require('../src/tools/progress.js').SPEC];
     const request = ai.BUILDERS.codex(model, [
       { role: 'system', content: 'Be helpful.' }, { role: 'developer', content: 'Keep it short.' },

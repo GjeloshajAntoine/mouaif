@@ -28,7 +28,7 @@ For API-key access to OpenAI models, use **OpenAI compatible** instead. Codex is
 
 ## Behavior
 
-- Access and refresh tokens are held in the app SQLite credential table, not the settings JSON returned to clients. Expiring chat credentials refresh automatically. See [Credential storage](./credential-storage.md) for migration and backup security.
+- Access and refresh tokens are held in the app SQLite credential table, not the settings JSON returned to clients. Expiring credentials refresh automatically before both chat requests and live model discovery, so opening the model picker does not require a preceding chat or a new sign-in. See [Credential storage](./credential-storage.md) for migration and backup security.
 - The live catalog excludes hidden models and preserves context windows and reasoning levels when provided. It is read from the Codex catalog endpoint, which selects the model set by the `client_version` the caller advertises, so a pinned version goes stale: releases below roughly `0.150` are answered with the hidden `codex-auto-review` row alone, and `0.150` already omits the newest models the account can chat with. mouaif therefore requests the newer of its own version and a floor that is kept current, and an empty answer is reported as an upstream error instead of "no models".
 - Tool calls use mouaif's normal authorization and multi-turn behavior. Cached input tokens are reported separately.
 - The plan-window figure is informational and read-only: it never blocks a turn, and a failure to read it hides the chip rather than failing the chat. The percentage is the *used* share, so a growing number means a filling window.

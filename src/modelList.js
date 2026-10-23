@@ -55,6 +55,22 @@ async function liveModelsFor(provider, opts) {
   }
   const purpose = opts && opts.purpose === 'transcription' ? 'transcription'
     : (opts && opts.purpose === 'image' ? 'image' : 'chat');
+
+  // Codex access tokens expire independently of the model-list cache. Chat
+  // already refreshes them through requireApiKey(), but the picker used to
+  // read the stale stored access token directly and fail with HTTP 401 until
+  // the user happened to send a chat (or signed in again). Hydrate the same
+  // provider connection through the shared auth path before reading it.
+  if (provider === 'codex') {
+    const settings = require('./settings.js');
+    const connection = (settings.getApp().providers || []).find((p) => p && p.id === provider);
+    if (connection) {
+      await require('./ai-endpoints.js').requireApiKey(
+        Object.assign({}, connection, { provider, id: '__catalog__' }), ai.ENDPOINTS[provider]
+      );
+    }
+  }
+
   let cred = null;
   try { cred = credentialForProvider(provider); }
   catch { /* the adapter surfaces ENO_APIKEY when a credential is required */ }
