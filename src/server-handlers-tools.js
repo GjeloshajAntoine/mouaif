@@ -530,26 +530,43 @@ async function handleTools(req, res, parsed, sessionToken = '') {
 
     let authorization;
     try {
-      authorization = await require('./tools/authorization.js').authorize({
-        projectDir, chatId, callId, tool: 'shell', cmd, shell: shellOverride, summary: cmd, timeoutMs, flow: 'retry'
-      });
+    authorization = await require('./tools/authorization.js').authorize({
+      projectDir, chatId, callId, tool: 'shell', cmd, shell: shellOverride, summary: cmd, timeoutMs, flow: 'retry'
+    });
     } catch (e) {
-      const status = e.code === 'ETOOL_DISABLED' || e.code === 'EDENIED' ? 403 : 400;
-      return sendJSON(res, status, { ok: false, error: e.message, code: e.code || 'EAUTH' });
+    const status = e.code === 'ETOOL_DISABLED' || e.code === 'EDENIED' ? 403 : 400;
+    return sendJSON(res, status, { ok: false, error: e.message, code: e.code || 'EAUTH' });
+    }
+    let autoReview = null;
+    if (authorization.decision === 'prompt') {
+    try {
+      const shellReview = require('./shellReview.js');
+      if (shellReview.shouldAutoReview(projectDir)) {
+      let reviewCwd = projectDir;
+      try { reviewCwd = require('./chatWorkingFolder.js').resolve(projectDir, chatId); } catch { reviewCwd = projectDir; }
+      autoReview = await shellReview.startReview({ projectDir, chatId, callId, cmd, cwd: reviewCwd });
+      if (autoReview && autoReview.autoAllowed) {
+        authorization = await require('./tools/authorization.js').authorize({
+        projectDir, chatId, callId, tool: 'shell', cmd, shell: shellOverride, summary: cmd, timeoutMs, flow: 'retry'
+        });
+      }
+      }
+    } catch { /* a reviewer that fails never blocks the prompt */ }
     }
     if (authorization.decision === 'prompt') {
     notifyAttention({ sessionId: push.sessionIdFromToken(sessionToken), projectDir, chatId,
-      name: 'authorization_required', data: { callId, tool: 'shell' } });
+    name: 'authorization_required', data: { callId, tool: 'shell' } });
     return sendJSON(res, 409, {
-      ok: false,
-      code: 'EAUTH_REQUIRED',
-      chatId,
-      callId,
-      tool: 'shell',
-        cmd,
-        timeoutMs: authorization.timeoutMs,
-        projectDir
-      });
+    ok: false,
+    code: 'EAUTH_REQUIRED',
+    chatId,
+    callId,
+    tool: 'shell',
+    cmd,
+    timeoutMs: authorization.timeoutMs,
+    projectDir,
+    review: autoReview || undefined
+    });
     }
 
     let workingDir;

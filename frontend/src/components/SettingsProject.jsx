@@ -183,16 +183,14 @@ return withChat + (ctxFrom ? '&from=' + encodeURIComponent(ctxFrom) : '');
     setPromptSizeStatusMsg('');
 
     const resolved = (resolvedRes.status === 200 && resolvedRes.body && resolvedRes.body.resolved) || {};
-    // The link row's detail: name the consequence, not the fields. A configured
-    // reviewer names its model; an off or half-configured one says so, which is
-    // the difference between "I thought this was on" and knowing.
+    // The link row's detail: name the consequence, not the fields.
     try {
-      const sr = shellReviewFromResolved(resolved);
-      setShellReviewSummary(sr.mode === 'off'
-        ? 'off'
-        : (!sr.configured
-          ? 'no model yet'
-          : (sr.mode === 'always' ? 'always · ' : 'on demand · ') + (sr.modelId || '')));
+    const sr = shellReviewFromResolved(resolved);
+    setShellReviewSummary(sr.mode === 'off'
+      ? 'off'
+      : (sr.mode === 'always'
+      ? (sr.autoAllow !== false ? 'auto-allow on ask' : 'always')
+      : 'on demand'));
     } catch { setShellReviewSummary(''); }
     const to = (resolved && resolved.toolOutput && typeof resolved.toolOutput === 'object') ? resolved.toolOutput : {};
     setOutputSize(normalizeOutputSize(to && to.size));
@@ -1397,44 +1395,27 @@ class: 'view-back',
             : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
         ),
         h('a', {
-      class: 'group__row settings-project__link-row settings-project__options-link',
-      'aria-label': 'File tool options',
-      href: '#/settings/project/output?' + projectBackQS()
-      },
+        class: 'group__row settings-project__link-row settings-project__options-link',
+        'aria-label': 'File tool options',
+        href: '#/settings/project/output?' + projectBackQS()
+        },
         h('span', { class: 'group__row-body' },
-          h('span', { class: 'group__row-label' }, 'File tool options'),
-          h('span', { class: 'settings-project__link-sub' }, 'Output size, structure, and the JSON value')
+        h('span', { class: 'group__row-label' }, 'File tool options'),
+        h('span', { class: 'settings-project__link-sub' }, 'Output size, structure, and the JSON value')
         ),
         h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
-        )
         ),
-
-        // Shell review — its own page (docs/features/shell-review.md). A link
-        // row, not a section: the page carries four real inputs (mode,
-        // provider, model id, prompt) plus a connection check, and Project
-        // settings is a scrolling list of one-line rows. The row still names
-        // the current choice, so the page's state reads without opening it.
-        h('div', { class: 'group settings-project__section' },
-        h('div', { class: 'group__title settings-project__section-title' },
-        sectionIcon('tools'),
-        h('span', null, 'Shell review')
-        ),
-        h('ul', { class: 'group__list' },
-        h('li', null,
         h('a', {
-        class: 'group__row settings-project__link-row',
+        class: 'group__row settings-project__link-row settings-project__options-link',
         'aria-label': 'Shell review',
         href: '#/settings/project/shell-review?' + projectBackQS()
         },
         h('span', { class: 'group__row-body' },
-        h('span', { class: 'group__row-label' }, 'Second opinion on shell commands'),
-        h('span', { class: 'settings-project__link-sub' }, 'Model, prompt, and when a command is reviewed')
+        h('span', { class: 'group__row-label' }, 'Shell review'),
+        h('span', { class: 'settings-project__link-sub' }, 'Prompt and auto-allow when CLI is set to Ask')
         ),
         h('span', { class: 'group__row-detail' }, shellReviewSummary),
         h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
-        )
-        )
-        )
         ),
 
       h('div', { class: 'group settings-project__section' },

@@ -51,8 +51,12 @@ assert.deepEqual([...SHELL_REVIEW_MODES].map((m) => String(m.value)), ['off', 'a
   assert.equal(unset.configured, false);
   const ready = shellReviewFromResolved({ shellReview: { mode: 'always', providerId: 'openrouter', modelId: 'x/y' } });
   assert.equal(ready.configured, true);
-  const half = shellReviewFromResolved({ shellReview: { mode: 'always', providerId: 'openrouter' } });
-  assert.equal(half.configured, false, 'a mode without a model cannot review');
+  assert.equal(ready.autoAllow, true);
+  const sameModel = shellReviewFromResolved({ shellReview: { mode: 'always' } });
+  assert.equal(sameModel.configured, true, 'a mode without an explicit model pin uses the app/chat model');
+  assert.equal(sameModel.autoAllow, true);
+  const manualOnly = shellReviewFromResolved({ shellReview: { mode: 'always', autoAllow: false } });
+  assert.equal(manualOnly.autoAllow, false);
   assert.deepEqual({ ...verdictMeta('DANGER') }, { label: 'Danger', tone: 'danger' });
   assert.deepEqual({ ...verdictMeta('caution') }, { label: 'Caution', tone: 'caution' });
   assert.deepEqual({ ...verdictMeta('SAFE') }, { label: 'Safe', tone: 'safe' });
@@ -170,58 +174,35 @@ function byId(nodes, id) {
 }
 
 {
-  // A configured reviewer: the mode select, the app's model picker, and the
-  // prompt — nothing bespoke.
+  // A configured reviewer: the mode select, the auto-allow toggle, and the
+  // prompt — uses the same model as the rest of the app (no separate model
+  // picker required).
   const rendered = await renderShellReviewPage({
-    resolved: { shellReview: { mode: 'ask', providerId: 'openrouter', modelId: 'x/y', prompt: 'My prompt' } },
-    models: [{ id: 'x/y', provider: 'openrouter' }],
-    providers: ['openrouter', 'ollama'],
-    live: [{ id: 'x/z', provider: 'openrouter' }, { id: 'llama-local', provider: 'ollama' }]
+    resolved: { shellReview: { mode: 'always', prompt: 'My prompt', autoAllow: true } }
   }).load();
   const flat = flatten(rendered.view);
   const mode = byId(flat, 'sr-mode');
   assert.ok(mode, 'the mode select renders');
-  assert.equal(mode.attrs.value, 'ask');
+  assert.equal(mode.attrs.value, 'always');
   assert.deepEqual(flat.filter((n) => n.tag === 'option' && n.attrs.value).map((n) => n.attrs.value).slice(0, 3),
     ['off', 'ask', 'always'], 'every mode is offered');
 
-  // The model control is the shared picker — the same component the chat head,
-  // the agent editor, the subagent defaults and dictation render.
-  const pickers = flat.filter((n) => n.tag === 'model-picker');
-  assert.equal(pickers.length, 1, 'exactly one model control, the shared picker');
-  const picker = pickers[0];
-  assert.deepEqual({ ...picker.attrs.value }, { modelId: 'x/y', providerId: 'openrouter' });
-  assert.equal(picker.attrs.variant, 'sheet', 'the picker uses the app\'s mobile sheet variant');
-  assert.equal(picker.attrs.ariaLabel, 'Model that reviews shell commands');
-  // Pinned + recent rows are the app-wide bookmark lists, not a private copy.
-  assert.ok(picker.attrs.pinned instanceof Object, 'pins come from the shared bookmark list');
-  assert.deepEqual([...picker.attrs.recent].map((r) => r.id), ['recent-model'], 'recents come from the shared list');
-  assert.equal(typeof picker.attrs.onTogglePin, 'function');
-  assert.equal(typeof picker.attrs.refresh, 'function', 'the picker keeps the app\'s refresh action');
-  assert.equal(picker.attrs.refreshEmpty, 'Refresh models');
-  // The catalog is the project models UNION every configured provider's live
-  // list — so an id the project never saved can still be picked.
-  // Arrays read out of the vm are another realm's Array, so compare values.
-  const listed = [...picker.attrs.models].map((m) => (m.provider || '') + '/' + m.id).sort();
-  assert.deepEqual([...listed], ['ollama/llama-local', 'openrouter/x/y', 'openrouter/x/z']);
-  assert.deepEqual([...picker.attrs.extraProviders], ['openrouter', 'ollama']);
+  const autoAllow = byId(flat, 'sr-auto-allow');
+  assert.ok(autoAllow, 'the auto-allow checkbox renders');
+  assert.equal(autoAllow.attrs.checked, true);
 
-  // There is no bespoke provider select or free-text model-id field any more.
+  // No separate model picker or provider/model-id fields: it uses the same
+  // model as the rest of the app.
+  const pickers = flat.filter((n) => n.tag === 'model-picker');
+  assert.equal(pickers.length, 0, 'no separate model picker on the page');
   assert.equal(byId(flat, 'sr-provider'), undefined, 'no separate provider select');
   assert.equal(byId(flat, 'sr-model'), undefined, 'no free-text model-id field');
 
   const prompt = byId(flat, 'sr-prompt');
   assert.equal(prompt.attrs.value, 'My prompt');
-  // The page is built from its sibling pages' pieces, not a bespoke layout:
-  // `.group__list` cards with a bold title + note + status, the same idiom as
-  // Settings → Project → File tool options. The first version nested the
-  // generic `.row` in its own padded wrapper, which double-indented every
-  // control and shrank the labels — this pins the fix.
   const root = rendered.view;
   const cls = (n) => String((n.attrs && (n.attrs.class || n.attrs.className)) || '');
   const has = (n, name) => cls(n).split(/\s+/).includes(name);
-  // The page root is the shell's `.settings-project` section, like every other
-  // settings sub-page — not a bespoke wrapper of its own.
   const section = flat.find((n) => n.tag === 'section');
   assert.equal(cls(section), 'settings-project', 'the page uses the shared settings section wrapper');
   const items = flat.filter((n) => has(n, 'settings-project__item'));
@@ -231,51 +212,43 @@ function byId(nodes, id) {
   const titles = flat.filter((n) => has(n, 'settings-project__item-title'))
     .map((n) => n.children.join(''));
   assert.ok(titles.includes('Mode'), 'the Mode row is titled like a settings row');
-  assert.ok(titles.includes('Model'), 'the Model row is titled like a settings row');
+  assert.ok(titles.includes('Auto-allow SAFE commands when CLI is on Ask'), 'the Auto-allow row is titled like a settings row');
   assert.ok(titles.includes('Review prompt'), 'the prompt row is titled like a settings row');
-  // ...and there is no leftover bespoke container or .row wrapper.
   assert.ok(!flat.some((n) => cls(n).includes('settings-project__shell-review') && !/warn|prompt|model|providers/.test(cls(n))),
     'no bespoke page container remains');
   assert.ok(!flat.some((n) => cls(n) === 'row'),
     'no generic .row wrapper inside the page');
   assert.match(JSON.stringify(root), /settings-project__item-note/, 'rows carry the shared note line');
   const text = JSON.stringify(rendered.view);
-  assert.match(text, /never runs, approves or changes anything/);
-  assert.match(text, /Reviews go to openrouter · x\/y/, 'the row names the model that will be asked');
-  // That sentence is a NOTE, not a status: a permanent green "saved"-looking
-  // line was the layout complaint this pins.
+  assert.match(text, /same model as the rest of the app/);
+  assert.match(text, /Reviewed by the chat’s current model/, 'the row states it uses the chat model');
   const noteNode = flat.find((n) => cls(n).split(/\s+/).includes('settings-project__item-note')
-    && JSON.stringify(n.children).includes('Reviews go to'));
+    && JSON.stringify(n.children).includes('Reviewed by'));
   assert.ok(noteNode, 'the standing state renders as a settings note');
   assert.ok(!flat.some((n) => cls(n).split(/\s+/).includes('settings-project__item-status')
-    && JSON.stringify(n.children).includes('Reviews go to')),
+    && JSON.stringify(n.children).includes('Reviewed by')),
     'the standing state is never painted as save feedback');
 }
 {
-  // Picking a model saves ONE complete block, keeps the mode and prompt, and
-  // is the single write a pick makes (one tap = one request, like every other
-  // model control in the app).
+  // Changing mode or autoAllow saves ONE complete block and keeps the prompt.
   const rendered = await renderShellReviewPage({
-    resolved: { shellReview: { mode: 'always', providerId: '', modelId: '', prompt: 'Keep me' } },
-    models: [], providers: ['ollama'], live: [{ id: 'llama-local', provider: 'ollama' }]
+    resolved: { shellReview: { mode: 'always', prompt: 'Keep me', autoAllow: true } }
   }).load();
-  const picker = flatten(rendered.view).find((n) => n.tag === 'model-picker');
-  picker.attrs.onChange({ providerId: 'ollama', modelId: 'llama-local' });
+  const autoAllow = byId(flatten(rendered.view), 'sr-auto-allow');
+  autoAllow.attrs.onChange({ target: { checked: false } });
   await settle();
-  assert.equal(rendered.requests.length, 1, 'one pick is one write');
+  assert.equal(rendered.requests.length, 1, 'one toggle is one write');
   assert.deepEqual({ ...rendered.requests[0].shellReview }, {
     mode: 'always',
-    providerId: 'ollama',
-    modelId: 'llama-local',
-    prompt: 'Keep me'
-  }, 'a pick saves with the mode and prompt intact');
+    prompt: 'Keep me',
+    autoAllow: false
+  }, 'a toggle saves with the mode and prompt intact');
 }
 {
   // The prompt autosaves, debounced: typing does not send a request per
   // keystroke, and what lands is one complete block.
   const rendered = await renderShellReviewPage({
-    resolved: { shellReview: { mode: 'ask', providerId: 'openrouter', modelId: 'x/y', prompt: '' } },
-    models: [], providers: ['openrouter']
+    resolved: { shellReview: { mode: 'ask', prompt: '' } }
   }).load();
   const prompt = byId(flatten(rendered.view), 'sr-prompt');
   prompt.attrs.onInput({ currentTarget: { value: 'Review it.' } });
@@ -283,33 +256,16 @@ function byId(nodes, id) {
   assert.match(JSON.stringify(rendered.view), /Saved automatically as you type/, 'the prompt row says it autosaves');
 }
 {
-  // A saved model whose provider lost its connection is called out, and the
-  // stored pair is not rewritten by the option list.
-  const rendered = await renderShellReviewPage({
-    resolved: { shellReview: { mode: 'always', providerId: 'openrouter', modelId: 'x/y' } },
-    models: [], providers: ['ollama']
-  }).load();
-  const picker = flatten(rendered.view).find((n) => n.tag === 'model-picker');
-  assert.deepEqual({ ...picker.attrs.value }, { providerId: 'openrouter', modelId: 'x/y' },
-    'the saved pair is shown even when its provider is gone');
-  assert.match(JSON.stringify(rendered.view), /which has no connection any more/);
-}
-{
   // Off with nothing configured still renders and explains the state.
-  const rendered = await renderShellReviewPage({ resolved: {}, models: [], providers: [] }).load();
-  assert.match(JSON.stringify(rendered.view), /Off — no command is sent to another model/);
-  // Picking a model when mode is 'off' automatically activates 'ask' (On demand)
-  // so the user's pick is immediately ready without a second dropdown change.
-  const offPicker = flatten(rendered.view).find((n) => n.tag === 'model-picker');
-  offPicker.attrs.onChange({ providerId: 'openrouter', modelId: 'x/y' });
+  const rendered = await renderShellReviewPage({ resolved: {} }).load();
+  assert.match(JSON.stringify(rendered.view), /Off — commands are not reviewed/);
+  const mode = byId(flatten(rendered.view), 'sr-mode');
+  mode.attrs.onChange({ target: { value: 'always' } });
   await settle();
-  assert.equal(rendered.requests.at(-1).shellReview.mode, 'ask',
-    'picking a model from Off switches mode to ask');
-  const half = await renderShellReviewPage({
-    resolved: { shellReview: { mode: 'always' } }, models: [], providers: []
-  }).load();
-  assert.match(JSON.stringify(half.view), /No review is sent yet: pick a model below/,
-    'a mode without a model says what is missing');
+  assert.equal(rendered.requests.at(-1).shellReview.mode, 'always',
+    'picking Always from Off saves mode always');
+  assert.equal(rendered.requests.at(-1).shellReview.autoAllow, true,
+    'autoAllow defaults to true');
 }
 
 // ---- 3. buildReviewBlock + applyReviewToCard -----------------------------

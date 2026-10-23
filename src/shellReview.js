@@ -1,6 +1,6 @@
 'use strict';
 
-// Shell review — a second model reads a proposed command before it runs.
+// Shell review — a model reads a proposed command before it runs.
 //
 // The shell tool already has a permission gate (docs/features/tool-authorization.md)
 // which asks *the user* whether a command may run. That gate answers "may
@@ -8,21 +8,15 @@
 // `rm -rf build .env && git clean -xdf` is easy to approve on a phone and
 // hard to read at a glance.
 //
-// So this module adds an optional reviewer: a model the user picks (its own
-// provider + model, independent of the chat's model), a prompt the user
-// writes, and a plain-text verdict that is attached to the approval card
-// *before* the user decides. The reviewer is display-only:
+// So this module adds an optional reviewer: by default it uses the same model
+// as the rest of the app (the chat's model, or an optional pinned reviewer
+// model), a prompt the user writes, and a plain-text verdict (`SAFE`,
+// `CAUTION` or `DANGER`) that is attached to the card.
 //
-//   * it never runs anything, never changes a mode, never answers for the
-//     user — a command still goes through `authorize()` exactly as before;
-//   * it is not part of the chat transcript: no message row is written, the
-//     chat's tool loop never sees the verdict, and the chat model cannot ask
-//     for a review (there is no tool for it);
-//   * a failure (provider down, unknown model, timeout, empty answer) is
-//     reported as `{ ok: false, error }` and the approval card simply has no
-//     review section. A reviewer that cannot answer never blocks a command,
-//     because being unable to review is not evidence that a command is safe
-//     or unsafe.
+// When the shell tool is set to `ask` and `autoAllow` is enabled, a `SAFE`
+// verdict automatically approves that command (`allow-once`) so safe CLI
+// commands run without waiting for a manual tap, while `CAUTION`, `DANGER`,
+// or a failed review still pauses at the approval card for the user.
 //
 // The cost of the reviewer's own run is real, so it is priced with the same
 // `src/usage.js` rates the chat uses and returned as `cost`; the HTTP layer
@@ -30,9 +24,9 @@
 // not a chat turn: see src/server-handlers-transcribe.js).
 //
 // Storage: the choice lives in the resolved settings under `shellReview`
-// ({ mode, providerId, modelId, prompt }). It is project-scoped like every
-// other project setting, so each project can have its own reviewer, and it
-// inherits the app-level value when a project does not set one.
+// ({ mode, providerId, modelId, prompt, autoAllow }). It is project-scoped like
+// every other project setting, so each project can have its own reviewer, and
+// it inherits the app-level value when a project does not set one.
 
 const MAX_COMMAND_CHARS = 8000;
 const MAX_PROMPT_CHARS = 8000;
@@ -41,61 +35,60 @@ const REVIEW_TIMEOUT_MS = 45 * 1000;
 
 // REVIEW_MODES — the values `shellReview.mode` accepts.
 //
-//   off    — no review is ever produced (the default; nothing is configured).
-//   ask    — the composer's review button reviews the draft command on
-//            demand. Nothing runs automatically.
-//   always — every command the shell tool runs is reviewed first, and the
-//            verdict rides the approval card / the shell card.
-//
-// `ask` is the safe way to try the feature: it costs a request only when the
-// user taps the button. `always` reviews model-initiated calls too, which is
-// what a user wants when they do not trust their own ability to read a
-// command on a phone.
+//   off    — no automatic review; the on-demand review sheet still works when
+//            opened explicitly.
+//   ask    — review commands on demand or when the CLI is set to Ask.
+//   always — review every command the shell tool prompts for in `ask` mode,
+//            attaching the verdict to the approval card / shell card and
+//            auto-allowing SAFE commands when `autoAllow` is enabled.
 const REVIEW_MODES = Object.freeze(['off', 'ask', 'always']);
 const DEFAULT_MODE = 'off';
 
 // DEFAULT_PROMPT — what the reviewer is asked when the user has not written
-// their own prompt. Deliberately about *effects*, not about approval: the
-// reviewer must not pretend to be the permission gate, and its answer must be
-// short enough to read on a 360 px screen.
+// their own prompt. Explains effects and ends with SAFE / CAUTION / DANGER so
+// the card can highlight the verdict and auto-allow SAFE commands when enabled.
 const DEFAULT_PROMPT = [
-  'You review one shell command before a user approves it.',
+  'You review one shell command before it runs.',
   'Say what the command does in one short sentence, then list its side effects:',
   'files created, modified or deleted, processes started or stopped, network',
   'access, and anything that cannot be undone. Quote the risky part.',
   'Then answer with exactly one verdict line: SAFE, CAUTION or DANGER.',
+  'Use SAFE only for read-only or routine non-destructive commands that are safe to run automatically.',
   'Do not run anything, do not suggest an alternative command unless asked,',
   'and do not assume arguments that are not in the command.'
 ].join(' ');
 
-// normalize(raw) -> { mode, providerId, modelId, prompt }
+// normalize(raw) -> { mode, providerId, modelId, prompt, autoAllow }
 //
 // Reads a raw `shellReview` value defensively: a hand-edited project file, a
 // legacy shape, or a value from a settings merge. An unknown mode falls back
 // to `off` (the safe direction: no request is made), and the prompt falls back
 // to DEFAULT_PROMPT when it is missing or blank, so a mode that is on always
-// has an instruction to send.
+// has an instruction to send. `autoAllow` defaults to true when mode is on so
+// SAFE commands can auto-run when the CLI is set to Ask, unless explicitly set
+// to false.
 function normalize(raw) {
   const value = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-  const mode = REVIEW_MODES.includes(value.mode) ? value.mode : DEFAULT_MODE;
+  let mode = REVIEW_MODES.includes(value.mode) ? value.mode : DEFAULT_MODE;
+  if (value.enabled === true && mode === 'off') mode = 'always';
+  if (value.enabled === false) mode = 'off';
   const providerId = typeof value.providerId === 'string' ? value.providerId.trim() : '';
   const modelId = typeof value.modelId === 'string' ? value.modelId.trim() : '';
   const prompt = typeof value.prompt === 'string' && value.prompt.trim()
     ? value.prompt
     : DEFAULT_PROMPT;
-  return { mode, providerId, modelId, prompt };
+  const autoAllow = typeof value.autoAllow === 'boolean' ? value.autoAllow : true;
+  return { mode, providerId, modelId, prompt, autoAllow };
 }
 
 // configured(config) -> boolean
 //
-// A review needs three things: a non-off mode, and a provider + model to send
-// the question to. A half-configured review (mode on, no model) reads as "not
-// configured": there is no sensible default model to fall back on, and
-// silently reviewing with the chat's model would spend the user's chat budget
-// on something they did not choose.
+// A review only needs a non-off mode: when no explicit model is pinned on
+// `shellReview`, it uses the same model as the rest of the app (the chat's
+// model or project model).
 function configured(config) {
   const cfg = normalize(config);
-  return cfg.mode !== 'off' && !!cfg.providerId && !!cfg.modelId;
+  return cfg.mode !== 'off';
 }
 
 // clampCommand(cmd) -> string — the command text as the reviewer sees it.
@@ -145,34 +138,70 @@ function parseReview(text) {
   return { text: capped.trim(), verdict: m && m.length ? m[m.length - 1] : '' };
 }
 
-// resolveReviewModel(projectDir, config) -> hydrated model record | { error }
+// resolveReviewModel(projectDir, config, opts) -> hydrated model record
 //
-// The reviewer's model is an ordinary model identity (provider + id), resolved
-// through the same helper every other one-shot AI call uses, so a live-catalog
-// model works without being saved in the project. A project model entry wins
-// (it can carry pricing / context limits), and the app-level connection always
-// supplies the transport and credential.
-function resolveReviewModel(projectDir, config) {
+// By default, shell review uses the same model as the rest of the app (the
+// active chat's model, or the project's first saved model). An explicit
+// `shellReview.providerId` + `shellReview.modelId` pin still wins when set.
+function resolveReviewModel(projectDir, config, opts) {
   const cfg = normalize(config);
-  if (!cfg.providerId || !cfg.modelId) {
-    const error = new Error('shellReview needs providerId and modelId');
-    error.code = 'EBADINPUT';
-    throw error;
+  const shared = require('./server-shared.js');
+  if (cfg.providerId && cfg.modelId) {
+    return shared.resolveModel(cfg.modelId, projectDir || null, cfg.providerId);
   }
-  return require('./server-shared.js').resolveModel(cfg.modelId, projectDir || null, cfg.providerId);
+  const fallbackModel = opts && opts.fallbackModel;
+  if (fallbackModel && typeof fallbackModel === 'object' && fallbackModel.id && fallbackModel.provider) {
+    if (fallbackModel.auth) return fallbackModel;
+    return shared.resolveModel(fallbackModel.id, projectDir || null, fallbackModel.provider);
+  }
+  const chatId = opts && typeof opts.chatId === 'string' ? opts.chatId.trim() : '';
+  if (projectDir && chatId) {
+    try {
+      const chat = require('./chats.js').getChat(projectDir, chatId);
+      if (chat && chat.modelId) {
+        return shared.resolveModel(chat.modelId, projectDir, chat.providerId || '');
+      }
+    } catch { /* fall through to project models */ }
+  }
+  if (projectDir) {
+    try {
+      const recent = require('./chats.js').listChats(projectDir, { limit: 10, offset: 0 });
+      const withModel = Array.isArray(recent) && recent.find((c) => c && c.modelId);
+      if (withModel) {
+        return shared.resolveModel(withModel.modelId, projectDir, withModel.providerId || '');
+      }
+    } catch { /* fall through */ }
+  }
+  const resolved = require('./settings.js').getResolved(projectDir || null);
+  const models = Array.isArray(resolved && resolved.models) ? resolved.models : [];
+  const first = models.find((m) => m && m.id);
+  if (first) {
+    return shared.resolveModel(first.id, projectDir || null, first.provider || '');
+  }
+  try {
+    const recentModels = require('./settings.js').getRecentModels();
+    const recent = Array.isArray(recentModels) && recentModels.find((r) => r && r.id && r.provider);
+    if (recent) {
+      return shared.resolveModel(recent.id, projectDir || null, recent.provider);
+    }
+  } catch { /* fall through */ }
+  const error = new Error('No model selected — pick a model in the chat or in Settings → Project');
+  error.code = 'EREVIEW_MODEL';
+  throw error;
 }
 
 // reviewCommand(opts) -> Promise<{ ok, text, verdict, model, kind, usage, cost, error?, code? }>
 //
-//   opts.projectDir   — which project's model list / settings to read
-//   opts.cmd          — the command to review
-//   opts.cwd          — where the command would run (optional)
-//   opts.chatId       — the chat asking (optional; used for cost attribution by
-//                       the caller, not by this module)
-//   opts.signal       — an AbortSignal (optional)
-//   opts.force        — ignore `mode === 'off'`? No: an off review is an error,
-//                       so a disabled feature can never be triggered by a
-//                       stale button. The composer hides the button instead.
+//   opts.projectDir    — which project's model list / settings to read
+//   opts.cmd           — the command to review
+//   opts.cwd           — where the command would run (optional)
+//   opts.chatId        — the chat asking (optional; supplies the chat's model
+//                        and attributes cost)
+//   opts.fallbackModel — the active chat turn's hydrated model (optional)
+//   opts.signal        — an AbortSignal (optional)
+//   opts.force         — allow on-demand review even when `mode === 'off'`?
+//                        No: `mode === 'off'` stays off unless `opts.force` is
+//                        passed by the on-demand review sheet.
 //
 // The upstream call is a single non-streaming turn on a message array with no
 // tools, so the reviewer cannot call anything even by accident: it answers in
@@ -188,21 +217,19 @@ async function reviewCommand(opts) {
   let config;
   try { config = normalize(settings.getResolved(projectDir || null).shellReview); }
   catch (e) { return { ok: false, code: 'ECONFIG', error: e.message || String(e) }; }
-  if (config.mode === 'off') {
+  if (config.mode === 'off' && !(opts && opts.force)) {
     return { ok: false, code: 'EREVIEW_OFF', error: 'shell review is off for this project' };
-  }
-  if (!configured(config)) {
-    return {
-      ok: false,
-      code: 'EREVIEW_MODEL',
-      error: 'shell review has no model — pick one in Settings → Project → Shell review'
-    };
   }
 
   let model;
-  try { model = resolveReviewModel(projectDir, config); }
+  try { model = resolveReviewModel(projectDir, config, opts); }
   catch (e) {
-    return { ok: false, code: e.code || 'EREVIEW_MODEL', error: e.message || String(e), model: { id: config.modelId, provider: config.providerId } };
+    return {
+      ok: false,
+      code: e.code || 'EREVIEW_MODEL',
+      error: e.message || String(e),
+      model: config.modelId ? { id: config.modelId, provider: config.providerId } : undefined
+    };
   }
 
   const startedAt = Date.now();
@@ -378,9 +405,11 @@ function startReview(opts) {
     cmd,
     cwd: opts && opts.cwd,
     chatId,
+    fallbackModel: opts && opts.fallbackModel,
     signal: opts && opts.signal
   }).then((review) => {
-    const payload = Object.assign({}, review, { id: callId, cmd: typeof cmd === 'string' ? cmd : '' });
+    const autoAllowed = !!(review && review.ok && review.verdict === 'SAFE' && config.autoAllow !== false);
+    const payload = Object.assign({}, review, { id: callId, cmd: typeof cmd === 'string' ? cmd : '', autoAllowed });
     if (review && review.ok && chatId && review.cost && review.cost.known && Number.isFinite(review.cost.total) && review.cost.total > 0) {
       try { require('./messages.js').addChatCost(projectDir, chatId, review.cost.total); } catch { /* non-fatal */ }
     }
@@ -388,7 +417,12 @@ function startReview(opts) {
       try { onEvent('shell_review', payload); } catch { /* client gone; the run continues */ }
     }
     attachReviewToPending(projectDir, chatId, callId, payload);
-    return review;
+    if (autoAllowed && projectDir && chatId && callId) {
+      try {
+        require('./tools/authorization.js').recordDecision(projectDir, chatId, callId, 'allow-once');
+      } catch { /* already decided or cancelled; non-fatal */ }
+    }
+    return payload;
   }).catch((e) => ({ ok: false, code: 'EREVIEW', error: (e && e.message) || String(e) }));
   started.set(callId, { promise, at: Date.now() });
   // A settled entry stays for the dedupe window; sweep it on the next start

@@ -74,11 +74,12 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
         const next = shellReviewFromResolved(r.status === 200 ? r.body.resolved : null);
         setConfig(next);
         setPrompt(next.prompt || '');
+        const modelLabel = next.providerId && next.modelId
+          ? (next.providerId + ' · ' + next.modelId)
+          : 'the chat’s current model';
         setStatus(next.mode === 'off'
-          ? 'Shell review is off — open Shell review to turn it on and pick a model.'
-          : (next.configured
-            ? 'Reviewed by ' + next.providerId + ' · ' + next.modelId
-            : 'Shell review has no model yet — open Shell review to choose one.'));
+          ? 'Shell review is off — open Shell review to turn it on.'
+          : 'Reviewed by ' + modelLabel);
       } catch (err) {
         if (!cancelled) setStatus('Cannot load settings: ' + (err && err.message ? err.message : String(err)));
       }
@@ -99,9 +100,7 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
   }, [result]);
 
   const canReview = !!(config && config.configured && String(command).trim() && !busy);
-  // Straight to the reviewer's page, not the project page root: this link
-  // exists for the one thing a user needs when the sheet cannot review, and
-  // that thing is the model/provider pair on that page.
+  // Straight to the reviewer's page, not the project page root.
   const settingsHref = useMemo(
     () => settingsLink('settings/project/shell-review', { projectDir, chatId }),
     [projectDir, chatId]
@@ -111,22 +110,24 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
     if (!projectDir || !config) return;
     setPromptStatus('saving…');
     try {
+      const payload = {
+        mode: config.mode === 'off' ? 'always' : (config.mode || 'always'),
+        prompt,
+        autoAllow: config.autoAllow !== false
+      };
+      if (config.providerId) payload.providerId = config.providerId;
+      if (config.modelId) payload.modelId = config.modelId;
       const r = await fetchJson('/api/settings/project', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        // Merge into the existing block: the mode and model live in the same
-        // object, and a prompt-only save must not clear them.
         body: JSON.stringify({
           projectDir,
-          shellReview: {
-            mode: config.mode || 'off',
-            providerId: config.providerId || '',
-            modelId: config.modelId || '',
-            prompt
-          }
+          shellReview: payload
         })
       });
       if (r.status !== 200) throw new Error('HTTP ' + r.status);
+      const saved = shellReviewFromResolved(r.body && r.body.project);
+      setConfig(saved);
       setPromptDirty(false);
       setPromptStatus('prompt saved');
     } catch (err) {
@@ -180,10 +181,10 @@ export function ShellReviewSheet({ projectDir, chatId, initialCommand = '', onCl
   },
     h('div', { class: 'gm__sheet sr__sheet', ref: sheetRef },
       h('div', { class: 'gm__head sr__head' },
-        h('div', { class: 'sr__head-text' },
-          h('div', { class: 'sr__title' }, 'Review a command'),
-          h('div', { class: 'sr__sub' }, 'A second model reads it — nothing is run')
-        ),
+      h('div', { class: 'sr__head-text' },
+      h('div', { class: 'sr__title' }, 'Review a command'),
+      h('div', { class: 'sr__sub' }, 'Uses the chat’s model — nothing is run')
+      ),
         h('button', {
           class: 'gm__close sr__close',
           type: 'button',

@@ -130,8 +130,9 @@ async function apiReadMedia(projectDir, filePath) {
 // ---- Component ---------------------------------------------------------
 
 export function FileEditorView(props) {
-  // props: { projectDir, onClose }
+  // props: { projectDir, initialPath, onClose }
   const projectDir = props.projectDir || '';
+  const initialPath = props.initialPath || '';
   const onClose = props.onClose || (() => {});
 
   // currentDirRef holds the directory we're listing. We keep it in a
@@ -229,6 +230,13 @@ export function FileEditorView(props) {
     setDirty(false);
     setEditorStatus(file.size + ' bytes');
   }, [projectDir, confirmDiscardIfDirty]);
+
+  // If the caller opened the editor for a specific file (e.g. tapping an
+  // @-mentioned file chip in the composer), open it immediately.
+  useEffect(() => {
+    if (!initialPath) return;
+    openPath(initialPath);
+  }, [initialPath, openPath]);
   // Open an image for preview. SVG can be edited as text, so callers
   // pass `forceText: true` when the user picks "Edit" from the
   // preview header; everything else is read-only here.

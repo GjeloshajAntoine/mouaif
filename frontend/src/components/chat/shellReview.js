@@ -1,30 +1,25 @@
 // mouaif web — shell review display helpers
 //
-// The reviewer lives on the server (src/shellReview.js): a second model reads
-// one proposed command and answers in plain text with a SAFE / CAUTION /
-// DANGER verdict. Nothing in this module decides anything — it only reads the
-// configured choice and renders a verdict block, so every surface that shows a
-// review (the approval card, the shell card, the review sheet) looks the same.
-//
-// Display-only, by design: the block never carries a button that runs the
-// command, and it is never what grants an approval. The normal authorization
-// gate still owns "may this run?".
+// The reviewer lives on the server (src/shellReview.js): a model (by default
+// the same model as the rest of the app, or an optional pinned reviewer model)
+// reads one proposed command and answers in plain text with a SAFE / CAUTION /
+// DANGER verdict. When shell is set to Ask and `autoAllow` is enabled, a SAFE
+// verdict auto-approves the command (`allow-once`).
 
 // Review modes, mirroring REVIEW_MODES in src/shellReview.js. The settings
 // select is built from this list, so the two surfaces cannot drift.
 export const SHELL_REVIEW_MODES = Object.freeze([
-  { value: 'off', label: 'Off — never ask another model' },
+  { value: 'off', label: 'Off — never review commands' },
   { value: 'ask', label: 'On demand — only from the Review command button' },
-  { value: 'always', label: 'Always — review every shell command before approval' }
+  { value: 'always', label: 'Always — review every shell command when CLI is on Ask' }
 ]);
 
-// shellReviewFromResolved(resolved) -> { mode, providerId, modelId, prompt, configured }
+// shellReviewFromResolved(resolved) -> { mode, providerId, modelId, prompt, autoAllow, configured }
 //
 // `resolved` is the merged settings object (`/api/settings/resolved`). Anything
-// unreadable reads as `off`, the safe direction: no request is made and no
-// review UI is offered. `configured` is what a surface checks before showing a
-// review control — a mode without a model cannot review, and silently falling
-// back to the chat's model would spend a budget the user did not choose.
+// unreadable reads as `off`, the safe direction: no request is made. `configured`
+// is true whenever `mode !== 'off'`, because an unpinned reviewer uses the
+// same model as the rest of the app (the chat's model or project model).
 export function shellReviewFromResolved(resolved) {
   const raw = resolved && typeof resolved.shellReview === 'object' && resolved.shellReview
     ? resolved.shellReview
@@ -32,12 +27,14 @@ export function shellReviewFromResolved(resolved) {
   const mode = SHELL_REVIEW_MODES.some((m) => m.value === raw.mode) ? raw.mode : 'off';
   const providerId = typeof raw.providerId === 'string' ? raw.providerId.trim() : '';
   const modelId = typeof raw.modelId === 'string' ? raw.modelId.trim() : '';
+  const autoAllow = typeof raw.autoAllow === 'boolean' ? raw.autoAllow : true;
   return {
     mode,
     providerId,
     modelId,
     prompt: typeof raw.prompt === 'string' ? raw.prompt : '',
-    configured: mode !== 'off' && !!providerId && !!modelId
+    autoAllow,
+    configured: mode !== 'off'
   };
 }
 
@@ -83,7 +80,7 @@ export function buildReviewBlock(review) {
   head.appendChild(title);
   const pill = document.createElement('span');
   pill.className = 'tool-card__review-verdict';
-  pill.textContent = meta.label;
+  pill.textContent = review.autoAllowed ? meta.label + ' · Auto-allowed' : meta.label;
   head.appendChild(pill);
   const model = reviewModelLabel(review);
   if (model) {

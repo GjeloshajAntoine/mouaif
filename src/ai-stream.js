@@ -466,21 +466,22 @@ async function runSingleToolCall(c, cx) {
       // otherwise); nested subagent calls are skipped because their approval
       // card belongs to the parent's subagent card, which has no review
       // section, and a delegated reviewer's own budget is the parent's.
-      if (c.name === 'shell' && !opts.nestedSubagent) {
-        try {
-        require('./shellReview.js').startReview({
-        projectDir: opts && opts.projectDir,
-        chatId: opts && opts.chatId,
-        callId: c.id,
-        cmd: args && args.cmd,
-        cwd: (() => {
-          try { return require('./chatWorkingFolder.js').resolveForCall(opts.projectDir, opts.chatId, opts.workspaceChatId); }
-          catch { return opts && opts.projectDir; }
-        })(),
-        signal: opts && opts.signal,
-        onEvent
-        });
-        } catch { /* a reviewer that cannot start never blocks a command */ }
+      if ((c.name === 'shell' || c.name === 'group_cli') && !opts.nestedSubagent) {
+      try {
+      require('./shellReview.js').startReview({
+      projectDir: opts && opts.projectDir,
+      chatId: opts && opts.chatId,
+      callId: c.id,
+      cmd: (args && args.cmd) || summary,
+      cwd: (() => {
+      try { return require('./chatWorkingFolder.js').resolveForCall(opts.projectDir, opts.chatId, opts.workspaceChatId); }
+      catch { return opts && opts.projectDir; }
+      })(),
+      fallbackModel: opts && opts.model,
+      signal: opts && opts.signal,
+      onEvent
+      });
+      } catch { /* a reviewer that cannot start never blocks a command */ }
       }
       onEvent('authorization_required', {
         chatId: opts && opts.chatId,

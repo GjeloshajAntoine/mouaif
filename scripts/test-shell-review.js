@@ -118,10 +118,14 @@ async function main() {
     assert.equal(cfg.prompt, review.DEFAULT_PROMPT);
     assert.match(cfg.prompt, /SAFE, CAUTION or DANGER/);
   });
-  check('configured needs a mode AND a provider + model', () => {
+  check('configured only needs a non-off mode (defaults to the app/chat model)', () => {
     assert.equal(review.configured({ mode: 'always', providerId: 'p', modelId: 'm' }), true);
-    assert.equal(review.configured({ mode: 'always', providerId: 'p' }), false);
+    assert.equal(review.configured({ mode: 'always' }), true);
     assert.equal(review.configured({ mode: 'off', providerId: 'p', modelId: 'm' }), false);
+  });
+  check('autoAllow defaults to true unless explicitly false', () => {
+    assert.equal(review.normalize({ mode: 'always' }).autoAllow, true);
+    assert.equal(review.normalize({ mode: 'always', autoAllow: false }).autoAllow, false);
   });
   check('a very long command is capped and says it was', () => {
     const capped = review.clampCommand('x'.repeat(9000));
@@ -144,7 +148,7 @@ async function main() {
     assert.equal(review.parseReview('CAUTION: then SAFE?' ).verdict, 'SAFE');
   });
 
-  // ---- 3. a review on the configured model --------------------------------
+  // ---- 3. a review on the same model as the app (or an explicit pin) -------
   configure({ mode: 'ask', providerId: 'openai-compatible', modelId: 'reviewer-model', prompt: 'What does this do?' });
   mockProvider('Deletes the build folder.\nCAUTION');
   await checkAsync('a review runs on the configured reviewer and is priced', async () => {
@@ -162,6 +166,16 @@ async function main() {
     assert.equal(fetchBody.tools, undefined);
     assert.equal(fetchBody.messages[0].content, 'What does this do?');
   });
+  await checkAsync('when no reviewer model is pinned, review uses the chat model automatically', async () => {
+    const chat = chats.createChat(projectDir, { title: 'Chat model review' });
+    chats.updateChat(projectDir, chat.id, { providerId: 'openai-compatible', modelId: 'chat-main-model' });
+    configure({ mode: 'always', prompt: 'Check safety.' });
+    mockProvider('Read-only listing.\nSAFE');
+    const out = await review.reviewCommand({ projectDir, chatId: chat.id, cmd: 'ls -la', cwd: projectDir });
+    assert.equal(out.ok, true, JSON.stringify(out));
+    assert.equal(out.model.id, 'chat-main-model', 'falls back to the chat model');
+    assert.equal(out.verdict, 'SAFE');
+  });
 
   // ---- 4. failures never block a command ----------------------------------
   await checkAsync('an off mode refuses without contacting a provider', async () => {
@@ -172,10 +186,12 @@ async function main() {
     assert.equal(out.code, 'EREVIEW_OFF');
     assert.equal(fetchCount, 0);
   });
-  await checkAsync('a mode without a model refuses (and does not fall back to the chat model)', async () => {
-    configure({ mode: 'always' });
+  await checkAsync('when no model exists anywhere in the project or chats, returns EREVIEW_MODEL', async () => {
+    const emptyProject = path.join(home, 'empty-project');
+    fs.mkdirSync(emptyProject, { recursive: true });
+    settings.setProject(emptyProject, { shellReview: { mode: 'always' } });
     mockProvider('should not be called');
-    const out = await review.reviewCommand({ projectDir, cmd: 'echo hi' });
+    const out = await review.reviewCommand({ projectDir: emptyProject, cmd: 'echo hi' });
     assert.equal(out.ok, false);
     assert.equal(out.code, 'EREVIEW_MODEL');
     assert.equal(fetchCount, 0);
@@ -227,17 +243,33 @@ async function main() {
     assert.equal(events[0].d.verdict, 'SAFE');
   });
 
-  await checkAsync('the verdict attaches to the pending approval request', async () => {
-    const chat = chats.createChat(projectDir, { title: 'Pending chat' });
-    configure({ mode: 'always', providerId: 'openai-compatible', modelId: 'reviewer-model' });
+  await checkAsync('when autoAllow is enabled (default), a SAFE verdict auto-allows the pending command on Ask', async () => {
+    const chat = chats.createChat(projectDir, { title: 'Auto-allow chat', providerId: 'openai-compatible', modelId: 'chat-main-model' });
+    configure({ mode: 'always' });
     mockProvider('Reads a file.\nSAFE');
-    // Park a real approval request, then let the review attach to it.
     const pending = await authz.authorize({
-      projectDir, chatId: chat.id, callId: 'call-c', tool: 'shell',
+      projectDir, chatId: chat.id, callId: 'call-auto', tool: 'shell',
       cmd: 'cat README.md', summary: 'cat README.md'
     });
     assert.equal(pending.decision, 'prompt');
-    review.startReview({ projectDir, chatId: chat.id, callId: 'call-c', cmd: 'cat README.md', onEvent: () => {} });
+    const reviewOut = await review.startReview({ projectDir, chatId: chat.id, callId: 'call-auto', cmd: 'cat README.md', onEvent: () => {} });
+    assert.equal(reviewOut.autoAllowed, true, 'SAFE verdict marks autoAllowed: true');
+    const decision = await pending.wait;
+    assert.equal(decision.decision, 'allow', 'pending prompt is automatically resolved as allowed');
+    assert.equal(authz.listPending(projectDir, chat.id).length, 0, 'no longer pending');
+  });
+
+  await checkAsync('CAUTION / DANGER verdicts (or autoAllow: false) stay parked on the pending approval request', async () => {
+    const chat = chats.createChat(projectDir, { title: 'Pending chat' });
+    configure({ mode: 'always', providerId: 'openai-compatible', modelId: 'reviewer-model' });
+    mockProvider('Modifies files.\nCAUTION');
+    // Park a real approval request, then let the review attach to it.
+    const pending = await authz.authorize({
+      projectDir, chatId: chat.id, callId: 'call-c', tool: 'shell',
+      cmd: 'rm -rf build', summary: 'rm -rf build'
+    });
+    assert.equal(pending.decision, 'prompt');
+    review.startReview({ projectDir, chatId: chat.id, callId: 'call-c', cmd: 'rm -rf build', onEvent: () => {} });
     // The attach happens in the promise's `.then`; wait on the pending entry
     // rather than a timer, then read it through the public list.
     for (let i = 0; i < 100 && !authz.listPending(projectDir, chat.id)[0].review; i++) {
@@ -245,12 +277,11 @@ async function main() {
     }
     const recovered = authz.listPending(projectDir, chat.id)[0];
     assert.ok(recovered.review, 'a reconnecting client still sees the verdict');
-    assert.equal(recovered.review.verdict, 'SAFE');
+    assert.equal(recovered.review.verdict, 'CAUTION');
+    assert.equal(recovered.review.autoAllowed, false);
     assert.equal(recovered.details.workingDirectory, projectDir);
-    // The review is display-only: the mode the user set is untouched and no
-    // decision was recorded on their behalf.
     assert.equal(settings.getProject(projectDir).shellReview.mode, 'always');
-    assert.equal(settings.getProject(projectDir).tools, undefined, 'reviewing grants no tool permission');
+    assert.equal(settings.getProject(projectDir).tools, undefined, 'reviewing grants no permanent tool permission');
     authz.recordDecision(projectDir, chat.id, 'call-c', 'deny');
     await assert.rejects(pending.wait, (e) => e.code === 'EDENIED');
   });
