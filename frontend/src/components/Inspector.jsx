@@ -685,7 +685,11 @@ const [draftCraftImage, setDraftCraftImage] = useState(null);
   // page ('auto' clears the override). Persisted to localStorage so the
   // user's last preview size survives re-attach and reload.
   const [viewportId, setViewportId] = useState(() => {
-    try { return localStorage.getItem(VIEWPORT_STATE_KEY) || 'auto'; } catch { return 'auto'; }
+    const fallback = typeof window !== 'undefined' && window.innerWidth <= 430 ? 'phone' : 'auto';
+    try {
+    const saved = localStorage.getItem(VIEWPORT_STATE_KEY);
+    return VIEWPORT_PRESETS.some((preset) => preset.id === saved) ? saved : fallback;
+    } catch { return fallback; }
   });
   const [phase, setPhase] = useState('setup');
   const [, setTick] = useState(0);
