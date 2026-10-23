@@ -6,7 +6,8 @@
 // auto-allows SAFE commands to run without waiting for a manual tap.
 import { h, Fragment } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { fetchJson, activeProject } from '../api.js';
+import { fetchJson, fetchLiveModels, activeProject } from '../api.js';
+import { ModelPickerField } from './ModelPickerField.jsx';
 import { sectionIcon } from './settingsProjectUi.js';
 import { settingsLink, backHref, backTarget } from './settings/projectNavigation.js';
 import { SHELL_REVIEW_MODES, shellReviewFromResolved } from './chat/shellReview.js';
@@ -35,6 +36,28 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
   const dir = projectDir || (activeProject.value && activeProject.value.dir) || '';
   const context = { projectDir: dir, chatId, from };
   const [config, setConfig] = useState(null);
+  const [models, setModels] = useState([]);
+  const [providers, setProviders] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadModels() {
+      const [saved, connections] = await Promise.all([
+        fetchJson('/api/ai/models?projectDir=' + encodeURIComponent(dir)).catch(() => ({ body: {} })),
+        fetchJson('/api/ai/models/providers').catch(() => ({ body: {} }))
+      ]);
+      if (cancelled) return;
+      const ids = (connections.body.providers || []).map(provider => provider.id).filter(Boolean);
+      setProviders(ids);
+      setModels(saved.body.models || []);
+      const catalogs = await Promise.all(ids.map(async provider => {
+        const catalog = await fetchLiveModels(provider, { purpose: 'chat' }).catch(() => ({ models: [] }));
+        return (catalog.models || []).map(model => ({ ...model, provider }));
+      }));
+      if (!cancelled) setModels([...(saved.body.models || []), ...catalogs.flat()]);
+    }
+    loadModels();
+    return () => { cancelled = true; };
+  }, [dir]);
   // Two separate lines, like every sibling row: `note` is the standing
   // description of the saved choice, `status` is transient save feedback and
   // is empty unless a save is in flight or just failed.
@@ -179,7 +202,28 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
     ),
     h('section', { class: 'settings-project' },
       h('p', { class: 'settings-project__lede' },
-        'Uses the same model as the rest of the app to review shell commands and auto-allow safe CLI commands to run when the shell tool is set to Ask.'),
+        'Choose a reviewer, customize its prompt, and optionally auto-approve SAFE shell commands. CAUTION and DANGER still need your approval.'),
+
+      h('div', { class: 'group settings-project__section' },
+        h('div', { class: 'group__title settings-project__section-title' }, 'Review model'),
+        h('ul', { class: 'group__list' },
+        h('li', { class: 'settings-project__item settings-project__item--col' },
+        h('div', { class: 'settings-project__item-note' }, 'Use the chat model or choose a separate reviewer.'),
+        h(ModelPickerField, {
+        models, extraProviders: providers, variant: 'sheet',
+        value: config && config.modelId ? { providerId: config.providerId, modelId: config.modelId } : null,
+        allowClear: true, clearLabel: 'Same as the chat',
+        ariaLabel: 'Review model', disabled: !config || busy,
+        onChange: selection => {
+          const next = nextConfig({ providerId: selection ? selection.providerId : '', modelId: selection ? selection.modelId : '' });
+          setConfig(next);
+          setNote(stateFor(next));
+          write(next);
+        }
+        })
+        )
+        )
+      ),
 
       // ---- When & Auto-allow ----------------------------------------------
       h('div', { class: 'group settings-project__section' },
@@ -189,7 +233,7 @@ export function ShellReviewPageView({ projectDir = '', from = '', chatId = '' } 
           h('details', { class: 'settings-project__info' },
             h('summary', { 'aria-label': 'About the review modes' }, '?'),
             h('div', { class: 'settings-project__info-body' },
-              h('p', null, 'Uses the chat’s active model (or project model). Off never reviews. On demand reviews only from the chat’s Review a command button. Always reviews every shell command when the CLI is set to Ask and can auto-allow SAFE commands.')
+              h('p', null, 'Uses your chosen reviewer, or the chat’s active model. Off never reviews. On demand reviews only from the chat’s Review a command button. Always reviews every shell command when the CLI is set to Ask and can auto-allow SAFE commands.')
             )
           )
         ),

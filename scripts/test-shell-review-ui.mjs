@@ -194,7 +194,16 @@ function byId(nodes, id) {
   // No separate model picker or provider/model-id fields: it uses the same
   // model as the rest of the app.
   const pickers = flat.filter((n) => n.tag === 'model-picker');
-  assert.equal(pickers.length, 0, 'no separate model picker on the page');
+  assert.equal(pickers.length, 1, 'shared reviewer model picker is available');
+  assert.equal(pickers[0].attrs.clearLabel, 'Same as the chat');
+  pickers[0].attrs.onChange({ providerId: 'openrouter', modelId: 'review-model' });
+  await settle();
+  assert.equal(rendered.requests.at(-1).shellReview.modelId, 'review-model');
+  assert.equal(rendered.requests.at(-1).shellReview.providerId, 'openrouter');
+  assert.equal(rendered.requests.at(-1).shellReview.prompt, 'My prompt');
+  pickers[0].attrs.onChange(null);
+  await settle();
+  assert.equal(rendered.requests.at(-1).shellReview.modelId, undefined, 'clearing follows the chat');
   assert.equal(byId(flat, 'sr-provider'), undefined, 'no separate provider select');
   assert.equal(byId(flat, 'sr-model'), undefined, 'no free-text model-id field');
 
@@ -220,7 +229,7 @@ function byId(nodes, id) {
     'no generic .row wrapper inside the page');
   assert.match(JSON.stringify(root), /settings-project__item-note/, 'rows carry the shared note line');
   const text = JSON.stringify(rendered.view);
-  assert.match(text, /same model as the rest of the app/);
+  assert.match(text, /choose a separate reviewer/);
   assert.match(text, /Reviewed by the chat’s current model/, 'the row states it uses the chat model');
   const noteNode = flat.find((n) => cls(n).split(/\s+/).includes('settings-project__item-note')
     && JSON.stringify(n.children).includes('Reviewed by'));

@@ -12,7 +12,7 @@ Shell review uses **the same model as the rest of the app** (the active chat's m
 
 Shell review lives at **Settings → Project settings → Shell review** (`#/settings/project/shell-review?projectDir=…`).
 
-The page has three controls:
+The page has a **Review model** picker and three review controls:
 
 | Control | What it does |
 | --- | --- |
@@ -20,7 +20,7 @@ The page has three controls:
 | **Auto-allow SAFE commands when CLI is on Ask** | Enabled by default when review is on. When the review answers `SAFE`, the pending `Ask` prompt is automatically approved (`allow-once`) and the command runs right away; `CAUTION`, `DANGER`, or a failed review still waits for your decision on the card. |
 | **Prompt** | What the model is asked (its system message). Blank uses the built-in instruction: describe the effects, then answer with one verdict line — `SAFE`, `CAUTION` or `DANGER`. Saved automatically as you type. |
 
-There is no separate model to configure: shell review uses the same model as the rest of the app (the chat's model, or an optional `providerId` / `modelId` pin if set in `.mouaif.json`).
+**Review model** opens the shared model picker with saved project models and connected providers’ live chat catalogs. Choose a separate reviewer or clear the choice with **Same as the chat**. Selection saves automatically together with the mode, prompt, and auto-approval setting; no configuration-file editing is needed.
 
 ### 2. Review a command on demand
 
