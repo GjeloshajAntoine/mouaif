@@ -319,9 +319,9 @@ async function main() {
       f.calls.map((c) => c.url).join(', '));
     check('codex: sends the ChatGPT access token',
       f.calls[0].init.headers.Authorization === 'Bearer tok');
-    check('codex: reports the primary (session) window, rounded',
-      r.ok && r.value === '62%', JSON.stringify(r));
-    check('codex: labels the plan, never "Balance"', r.ok && r.label === 'Plan plus', JSON.stringify(r));
+    check('codex: reports both session and weekly windows, rounded',
+      r.ok && r.value === 'Plus 5h 62% · 7d 12%', JSON.stringify(r));
+    check('codex: labels the provider and includes the plan', r.ok && r.label === 'Codex' && r.value.startsWith('Plus '), JSON.stringify(r));
     check('codex: carries no dollar amount',
       r.ok && r.remaining === undefined && r.totalCredits === undefined, JSON.stringify(r));
 
@@ -335,12 +335,12 @@ async function main() {
     // An unknown plan still yields the window, under a bare "Plan" label.
     const noPlan = credit.balanceFromCodexUsage({ rate_limit: { primary_window: { used_percent: 100.4 } } });
     check('codex: no plan type still reports the window, clamped at 100%',
-      noPlan && noPlan.label === 'Plan' && noPlan.value === '100%', JSON.stringify(noPlan));
+      noPlan && noPlan.label === 'Codex' && noPlan.value === '5h 100%', JSON.stringify(noPlan));
 
     // A flat rate_limit.primary_window (no nested object) is the other
     // plausible spelling; a bare number is accepted there too.
     const flat = credit.balanceFromCodexUsage({ rate_limit: { primary_window: 5 } });
-    check('codex: accepts a bare number for the window', flat && flat.value === '5%', JSON.stringify(flat));
+    check('codex: accepts a bare number for the window', flat && flat.value === '5h 5%', JSON.stringify(flat));
 
     // No window at all is "unsupported", never a guessed 0%.
     check('codex: a body with no window is not a number',

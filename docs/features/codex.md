@@ -6,7 +6,7 @@ Use Codex through your ChatGPT plan, without an OpenAI API key or a local Codex 
 
 ## Usage
 
-The chat head's **Balance** chip shows the plan and how much of the session rate-limit window the account has used (`Plan plus 62%`), read from `GET https://chatgpt.com/backend-api/wham/usage` with the stored ChatGPT token. ChatGPT plans are subscriptions with no dollar balance, so no currency figure is shown; see [Usage metrics](./usage-metrics.md#account-balance).
+The chat head's **Balance** chip shows the plan and rate-limit usage (`Codex Plus 5h 62% · 7d 28%`), read from `GET https://chatgpt.com/backend-api/wham/usage` with the stored ChatGPT token. The first percentage is the primary session window; the optional `7d` percentage is the weekly window. ChatGPT plans are subscriptions with no dollar balance, so no currency figure is shown; see [Usage metrics](./usage-metrics.md#account-balance).
 
 1. Enable **Device code authorization** in ChatGPT **Settings → Security**, if your account requires it. A ChatGPT account with Codex access is required; workspace policy may restrict device sign-in.
 2. Open mouaif **Settings → Providers → Add provider** and choose **OpenAI Codex**.

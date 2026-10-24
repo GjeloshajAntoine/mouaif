@@ -233,21 +233,27 @@ function codexWindowPercent(entry) {
 // Codex answers with the plan and its rate-limit windows, e.g.
 // `{ plan_type: 'plus', rate_limit: { primary_window: { used_percent: 62 }, … } }`
 // — the primary window is the 5-hour session and the secondary is the weekly
-// one. The pill shows the *primary* window's used percentage, because that is
-// the limit the user actually hits first; the weekly window is not summed in
-// and does not substitute for it, since "62% of the session" and "62% of the
-// week" are different facts and the pill has room for one.
+// one. The pill shows the primary window's used percentage first (`5h`),
+// because that is the limit the user actually hits first, followed by the
+// weekly one (`7d`) when the payload has it. The two are reported side by side
+// and never summed or substituted for each other: "62% of the session" and
+// "62% of the week" are different facts. A weekly window alone does not make a
+// pill — the primary window is required.
 //
-// The plan type is folded into the label so the value reads as what it is
-// ("Plan plus 62%") instead of as a dollar balance. A payload with no window at
-// all returns null — no number is guessed, exactly as for every other provider.
+// The label is the provider name and the capitalised plan type leads the value
+// ("Codex" + "Plus 5h 62% · 7d 28%"), so it reads as a rate-limit usage rather
+// than a dollar balance. A payload with no primary window returns null — no
+// number is guessed, exactly as for every other provider.
 function balanceFromCodexUsage(body) {
   if (!body || typeof body !== 'object') return null;
   const root = body.rate_limit && typeof body.rate_limit === 'object' ? body.rate_limit : body;
   const used = codexWindowPercent(root.primary_window ?? root.primary);
   if (used == null) return null;
+  const weekly = codexWindowPercent(root.secondary_window ?? root.secondary);
   const plan = typeof body.plan_type === 'string' ? body.plan_type.trim() : '';
-  return { label: plan ? 'Plan ' + plan : 'Plan', value: Math.round(used) + '%' };
+  const value = (plan ? plan.charAt(0).toUpperCase() + plan.slice(1) + ' ' : '')
+    + '5h ' + Math.round(used) + '%' + (weekly == null ? '' : ' · 7d ' + Math.round(weekly) + '%');
+  return { label: 'Codex', value };
 }
 
 // lookupBalance({ provider, baseUrl, cred, fetchImpl }) ->

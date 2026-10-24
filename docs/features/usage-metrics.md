@@ -78,7 +78,7 @@ Next to **Context** and **Total**, the chat header shows a third chip — **Bala
 Context 14.8K   Total $0.08306   Balance $12.41
 ```
 
-Two shapes are possible: a money balance (`Balance $12.41`) and, on a subscription connection where no such number exists, the plan's used share of its rate limit (`Plan plus 62%`).
+Two shapes are possible: a money balance (`Balance $12.41`) and, on a subscription connection where no such number exists, the plan's used share of its rate-limit windows (`Codex Plus 5h 62% · 7d 28%`).
 
 - If your connection is **OpenRouter**, the balance is the remaining credit of the key you stored, read live from OpenRouter.
 - If your connection is **OpenAI compatible** against OpenAI itself, the balance comes from the OpenAI dashboard billing routes: prepaid credit when the account has any, otherwise the account's spending limit minus what it has used.
