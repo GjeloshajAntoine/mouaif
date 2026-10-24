@@ -131,6 +131,34 @@ async function fetchInspectorInfo(debuggerUrl) {
   return httpGetJson(base + '/json/version', 5000);
 }
 
+// Chrome includes browser-owned pages in /json/list alongside user tabs.
+// Those pages (for example chrome://newtab and the devtools frontend) are
+// not attachable page targets: attempting to enable Page/DOM domains either
+// fails or leaves the Inspector looking connected to a blank surface. Keep
+// extension targets in the list because extension background pages are valid
+// DevTools targets; only schemes owned by Chrome's own UI are excluded.
+const CHROME_INTERNAL_PROTOCOLS = new Set([
+  'chrome:',
+  'chrome-untrusted:',
+  'devtools:'
+]);
+
+function isChromeInternalTarget(target) {
+  if (!target || typeof target.url !== 'string' || !target.url) return false;
+  try {
+    return CHROME_INTERNAL_PROTOCOLS.has(new URL(target.url).protocol.toLowerCase());
+  } catch {
+    // Preserve malformed/relative target records. Chrome normally returns
+    // absolute URLs, but dropping an unfamiliar record would hide a target
+    // that may still be usable on another Chromium implementation.
+    return false;
+  }
+}
+
+function filterInspectorTargets(list) {
+  return list.filter((target) => !isChromeInternalTarget(target));
+}
+
 // /json/list returns the array of discoverable targets.
 async function fetchInspectorTargets(debuggerUrl) {
   const base = stripTrailingSlash(debuggerUrl || getDebuggerUrl());
@@ -140,7 +168,7 @@ async function fetchInspectorTargets(debuggerUrl) {
     err.code = 'EPARSE';
     throw err;
   }
-  return list;
+  return filterInspectorTargets(list);
 }
 
 // openInspectorTarget — opens `pageUrl` in a fresh tab of the debug
@@ -735,6 +763,8 @@ module.exports = {
   // fetchers (used by REST routes and tests)
   fetchInspectorInfo,
   fetchInspectorTargets,
+  filterInspectorTargets,
+  isChromeInternalTarget,
   openInspectorTarget,
   closeInspectorTarget,
   sendTargetCommand,

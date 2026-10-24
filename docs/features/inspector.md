@@ -13,6 +13,8 @@ The **Inspector** tab provides a mobile-first DevTools experience for inspecting
 3. Verify or enter the debugger URL (`http://127.0.0.1:9222`) and tap **Discover targets**.
 4. Select a tab from the list to inspect it.
 
+The target list contains attachable Chrome targets only. Chrome's own UI entries — such as `chrome://newtab`, `chrome-untrusted://…`, and `devtools://…` — are filtered out because they do not expose a usable page inspection surface. Extension targets (including the built-in PDF viewer), `file:` pages, and `about:blank` remain available when Chrome exposes them.
+
 > **Tip for mobile devices:** To inspect a page on your physical device, forward the port with `adb reverse tcp:9222 tcp:9222` and point the debugger URL to `http://127.0.0.1:9222`.
 
 ## Panels
