@@ -104,6 +104,8 @@ const ROUTES = [
   exact('settings', () => ({ name: 'settings' })),
   exact('settings/access', () => ({ name: 'settingsAccess' })),
   exact('inspector', () => ({ name: 'inspector' })),
+  // Synthetic, safe chat review surface for Docker and design QA.
+  exact('chat-review-mockup', () => ({ name: 'chatReviewMockup' })),
   // Dictation — the speech-to-text page. App-level, so it lives under
   // Settings (`Settings → App defaults → Dictation`) rather than in the
   // bottom tab bar. A fixed route with no parameters: which model it dictates

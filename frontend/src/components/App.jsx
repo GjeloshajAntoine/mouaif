@@ -10,6 +10,8 @@ import { AccessSettingsView } from './AccessAuth.jsx';
 import { ProjectsView } from './Projects.jsx';
 import { ProjectPickerView } from './ProjectPicker.jsx';
 import { ChatView } from './chat/Chat.jsx';
+import { ThemeMockupView } from './ThemeMockup.jsx';
+import { ChatReviewMockupView } from './ChatReviewMockup.jsx';
 // Lazy-load every heavyweight, rarely-opened settings sub-page so its
 // code is excluded from the entry bundle that every chat session loads.
 // The chat / projects path only ever reaches the settings tab and the
@@ -44,6 +46,8 @@ const SettingsProjectsView = lazyNamed(() => import('./SettingsProjects.jsx'), '
 const DictationView = lazyNamed(() => import('./DictationPage.jsx'), 'DictationView');
 const ROUTES = {
 chats: [ProjectsView],
+themeMockup: [ThemeMockupView],
+chatReviewMockup: [ChatReviewMockupView],
 // Dictation is a settings sub-page now (Settings → App defaults → Dictation),
 // so it is lazy like the rest of them: the mic-recording helpers the chat
 // composer shares live in `frontend/src/dictation.js`, not here, so the chat
@@ -80,7 +84,7 @@ settingsAccess: [AccessSettingsView],
 settingsAbout: [SettingsAboutView]
 };
 const FULL_PAGE_ROUTES = new Set([
-'chat', 'picker', ...Object.keys(ROUTES).filter((name) => name.startsWith('settings') && name !== 'settings')
+'chat', 'picker', 'themeMockup', 'chatReviewMockup', ...Object.keys(ROUTES).filter((name) => name.startsWith('settings') && name !== 'settings')
 ]);
 // Set of route names whose view component is a Preact lazy() component.
 // Only these need a <Suspense> boundary; the eager views resolve

@@ -77,7 +77,10 @@ One page per feature: what it does and how to use it.
 ### Chat
 
 - [Chat](features/chat-ui.md) — the conversation view, composer, and per-chat controls.
+- [Chat UI themes](features/chat-ui-themes.md) — implementation guidance for the Apple shell, Material actions, Editorial answers, Neo tool actions, and feedback states.
 - [Chat view mockup](features/chat-view-mockup.md) — reproducible expanded-tool review, state-retention checks, and mobile usability findings.
+- [Interactive chat UI review mockup](features/chat-review-mockup.md) — a safe Docker-friendly conversation with four current design directions.
+- [Theme mockup](features/theme-mockup.md) — an interactive chat prototype with Aurora, Paper, and Mono visual directions.
 - [Long-running agent mockup](features/long-running-agent-mockup.md) — interactive proposal for a running agent's card, its live controls, and the run designer.
 - [Readable tool approvals and results](features/tool-card-usability.md) — clear targets, explicit grant scope, retry feedback, accessible headers, and bounded structured results.
 - [Chat scroll navigation](features/chat-scroll-nav.md) — arrows to step to the previous / next message or jump to the bottom.
