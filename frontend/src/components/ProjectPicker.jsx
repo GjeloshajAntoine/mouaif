@@ -61,7 +61,7 @@ export function ProjectPickerView(props) {
     setDirConfigLayout(layout === 'root' || layout === 'folder'
       ? layout
       : (r.body.dirHasConfig === true ? 'root' : null));
-    setStatus(nextEntries.length + ' folders');
+    setStatus(nextEntries.length + (nextEntries.length === 1 ? ' folder' : ' folders'));
   }
 
   async function selectDir(dir) {
@@ -105,8 +105,15 @@ export function ProjectPickerView(props) {
     const d = currentDir;
     if (!d) return null;
     const norm = d.replace(/[\\/]+$/, '');
+    // Already at a filesystem root ("/" or "C:\"): nothing above it.
+    if (!norm || /^[A-Za-z]:$/.test(norm)) return null;
     const idx = Math.max(norm.lastIndexOf('\\'), norm.lastIndexOf('/'));
-    return idx > 0 ? norm.slice(0, idx) : '';
+    if (idx < 0) return '';
+    // "/home" goes up to "/", not to '' — an empty dir means "home" to the
+    // server, which made the root (and /workspace in Docker) unreachable.
+    if (idx === 0) return norm[0];
+    const parent = norm.slice(0, idx);
+    return /^[A-Za-z]:$/.test(parent) ? parent + '\\' : parent;
   }
 
   useEffect(() => { load(props.dir || ''); }, [props.dir]);

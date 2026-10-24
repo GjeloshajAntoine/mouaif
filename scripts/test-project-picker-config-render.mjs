@@ -16,7 +16,7 @@ const ENTRIES = [
   { name: 'layered', path: DIR + '/layered', hasChildren: true, hasConfig: true, configLayout: 'folder' }
 ];
 
-function createView({ dirConfigLayout = null } = {}) {
+function createView({ dirConfigLayout = null, dir = DIR } = {}) {
   const dirHasConfig = dirConfigLayout !== null;
   const states = [];
   let cursor = 0, first = true, nodes = [], effects = [];
@@ -41,13 +41,13 @@ function createView({ dirConfigLayout = null } = {}) {
         return { status: 200, body: { project: { id: 'p1', path: DIR, name: 'project' }, dbBacked: false, config: null } };
       }
       requests.push({ url, body: null });
-      return { status: 200, body: { dir: DIR, dirHasConfig, dirConfigLayout, entries: ENTRIES } };
+      return { status: 200, body: { dir, dirHasConfig, dirConfigLayout, entries: ENTRIES } };
     }
   });
   vm.runInContext(source('ProjectPicker.jsx'), context);
   function render() {
     cursor = 0; nodes = []; effects = [];
-    context.ProjectPickerView({ dir: DIR });
+    context.ProjectPickerView({ dir });
     first = false;
     return nodes;
   }
@@ -148,4 +148,26 @@ async function register(view) {
   assert.equal('configLayout' in post.body, false, 'no layout sent for a DB-backed project');
 }
 
-console.log('PASS folder picker storage choice: root / .mouaif/ / app DB options, existing-config notes + badges, and the register payloads');
+// ---- Up button reaches the filesystem root --------------------------------
+// An empty dir means "home" to the server, so "/home" must go up to "/" or the
+// root (and /workspace in the Docker image) can never be browsed to.
+for (const [dir, parent] of [
+  ['/home', '/'],
+  ['/home/node', '/home'],
+  ['/workspace/example/', '/workspace'],
+  ['C:\\Users', 'C:\\'],
+  ['C:\\Users\\me', 'C:\\Users']
+]) {
+  const view = await ready({ dir });
+  const up = view.find(node => node.attrs['aria-label'] === 'Go to parent folder');
+  assert.equal(up.attrs.disabled, false, dir + ' has a parent');
+  up.attrs.onClick();
+  assert.equal(view.navigations.at(-1), 'projects/new?dir=' + encodeURIComponent(parent), dir + ' goes up to ' + parent);
+}
+for (const dir of ['/', 'C:\\']) {
+  const view = await ready({ dir });
+  const up = view.find(node => node.attrs['aria-label'] === 'Go to parent folder');
+  assert.equal(up.attrs.disabled, true, dir + ' is a root: Up is disabled');
+}
+
+console.log('PASS folder picker storage choice: root / .mouaif/ / app DB options, existing-config notes + badges, the register payloads, and Up to the filesystem root');
