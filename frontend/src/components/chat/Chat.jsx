@@ -626,7 +626,11 @@ onToggleTool: s.state._toggleTool,
 // navigation floats over its corner instead of taking a row of its own, so
 // no bar is reserved out of the reading area.
 h('div', { class: 'chat-view__transcript-box' },
-h('div', { ref: refs.transcript, class: 'chat-view__transcript', tabIndex: 0, 'aria-label': 'Chat transcript', 'aria-live': 'polite' }),
+// Keep the scroll container out of the live region: announcing the whole
+// transcript on every streamed token makes assistive technology repeat old
+// messages. Individual live assistant rows opt in while they stream, and the
+// status line below reports other chat state.
+h('div', { ref: refs.transcript, class: 'chat-view__transcript', tabIndex: 0, role: 'log', 'aria-live': 'off', 'aria-label': 'Chat transcript' }),
 // Fixed message-navigation row, with a separate Latest slot above it.
 // scroll.js updates pin state imperatively, without rerendering on scroll.
 // The controls are glyph-only: they stay small (26px, via --tap-xs) and

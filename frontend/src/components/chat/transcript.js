@@ -392,7 +392,13 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
   if (empty) empty.remove();
   const row = document.createElement('div');
   row.className = 'chat-msg chat-msg--' + m.role;
-  if (isLive) row.dataset.live = '1';
+  if (isLive) {
+  row.dataset.live = '1';
+  // Only the currently streaming reply is live. The transcript scroller
+  // itself is deliberately not aria-live: otherwise every token update
+  // re-announces the entire conversation, including old tool cards.
+  row.setAttribute('aria-live', 'polite');
+  }
   const role = document.createElement('div');
   role.className = 'chat-msg__role';
   // For assistant turns, show the model name instead of the bare
@@ -616,6 +622,7 @@ export function finalizeLiveSegment(refs, state, seq, clientId) {
   const liveRow = refs.transcript.current.querySelector('[data-live="1"]');
   if (!liveRow) return;
   delete liveRow.dataset.live;
+  liveRow.removeAttribute('aria-live');
   liveRow._streaming = false;
   if (liveRow._body) {
     renderAssistantBody(liveRow._body, liveRow._content || '', liveRow._reasoning || '', true);
@@ -3953,6 +3960,7 @@ export function finalizeLiveMessage(message, refs) {
   const liveRow = refs.transcript.current.querySelector('[data-live="1"]');
   if (liveRow) {
     delete liveRow.dataset.live;
+    liveRow.removeAttribute('aria-live');
     // Key the bubble by the saved row's id so the next sync reuses it.
     if (message && typeof message.clientId === 'string' && message.clientId) {
       liveRow._rowKey = 'cid:' + message.clientId;

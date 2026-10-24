@@ -71,6 +71,11 @@ try {
     const live = await evaluate(`(() => {
       const f = fixture; f.reset();
       const data = { title: 'Build a long title that stays readable on a narrow mobile screen', current: 1, total: 4, status: 'running', message: 'Checking source files' };
+      f.transcript.appendMessageToTranscript({ role: 'assistant', content: '', reasoning: '', modelId: 'fixture' }, true, f.refs, f.state);
+      const liveRow = f.root.querySelector('[data-live="1"]');
+      const liveAnnouncements = liveRow.getAttribute('aria-live') === 'polite' && !f.root.getAttribute('aria-live');
+      f.transcript.finalizeLiveMessage({ clientId: 'live-1', content: 'streamed' }, f.refs);
+      const finalizedAnnouncements = !liveRow.hasAttribute('aria-live');
       const card = f.transcript.appendToolCallCard({ id: 'p1', name: 'report_progress', args: data }, f.refs);
       const head = card.querySelector('.tool-card__head');
       f.transcript.updateProgressCard(f.refs, { ...data, callId: 'p1', current: 2 });
@@ -96,7 +101,7 @@ try {
         sameError: error === f.root.lastElementChild, sameRetry: retry === error.querySelector('.chat-msg__retry'),
         mutations, retryCount: f.retryCount(), errorKind: f.messageKind(f.state.messages.at(-1)),
         percent: card.querySelector('.tool-card__progress-pct').textContent,
-        fits: rect.left >= 0 && rect.right <= innerWidth + 1 };
+        fits: rect.left >= 0 && rect.right <= innerWidth + 1, liveAnnouncements, finalizedAnnouncements };
     })()`);
     assert.deepEqual(live.order, ['seq:0', 'p1', 'seq:3', 'cid:e1'], 'rows keep conversation order at ' + width);
     assert.equal(live.progressCount, 1, 'one progress card per call');
@@ -106,6 +111,7 @@ try {
     assert.equal(live.errorKind, 'error', 'local error stays classified as an error');
     assert.equal(live.percent, '50%');
     assert.ok(live.fits, 'progress card fits the phone');
+    assert.ok(live.liveAnnouncements && live.finalizedAnnouncements, 'only the streaming row is announced and it stops announcing when finalized');
 
     const replay = await evaluate(`(() => {
       const f = fixture;
