@@ -808,6 +808,34 @@ flex: 1 1 80px;
 min-width: 0;
 max-width: 200px;
 }
+@media (max-width: 480px) {
+  .chat-view__model-row {
+    align-items: stretch;
+    gap: 6px;
+  }
+  .mp--chat {
+    flex: 1 1 0;
+    max-width: none;
+  }
+  .mp--chat > .mp__trigger {
+    width: 100%;
+  }
+  .chat-view__thinking-select {
+    flex: 0 1 110px;
+    max-width: 110px;
+  }
+}
+
+/* The chat header keeps the picker compact beside the thinking control. */
+.mp--chat > .mp__trigger {
+  min-height: 26px;
+  height: 26px;
+  padding-block: 0;
+}
+.mp--chat > .mp__trigger .mp__provider {
+  display: none;
+}
+
 /* Keep agent-editor and subagent-authorization triggers visually in
 sync with chat: one line, no provider subline, and the same active
 border/fill. */
@@ -846,18 +874,6 @@ font-size: 0.72rem;
 .mp--sheet > .mp__trigger .mp__provider {
 display: none;
 }
-/* The chat header uses the same visual treatment in a denser control, and
-stays at 26 px for the same reason as the thinking select beside it: this
-trigger IS the box, so a 44 px target means a 44 px box, and the pair then
-takes 44 px of a header that fits in 94. It is 200 px wide, so the target
-is comfortable at this height. Other sheet triggers keep `.mp__trigger`'s
-mobile-sized height. */
-.mp--chat > .mp__trigger {
-min-height: 26px;
-height: 26px;
-padding-block: 0;
-}
-
 .mp--sheet > .mp__pop {
 position: fixed;
 z-index: 46;
