@@ -167,10 +167,9 @@ self.addEventListener('fetch', (event) => {
 // ---- Fresh page visibility (notification suppression) -----------------
 //
 // WindowClient.focused / visibilityState are stale on Safari and iOS PWA.
-// Query live pages for ordinary status pushes and suppress only when the
-// target chat is currently visible. Authorization alerts bypass suppression:
-// a visible route does not mean its pending approval is on screen or noticed.
-// No cached view state is trusted for status pushes.
+// Query live pages when a chat push arrives and suppress only when a page
+// answers that the target chat is currently visible (and, for questions and
+// approvals, focused). No cached view state is trusted.
 
 function chatIdFromHash(hash) {
   const match = /^#\/chat\/([^/?#]+)/.exec(typeof hash === 'string' ? hash : '');
@@ -266,24 +265,26 @@ self.addEventListener('push', (event) => {
     const incomingIsStatus = payload && statusKinds.has(payload.kind);
     const incomingIsAuthorization = payload && authorizationKinds.has(payload.kind);
     const targetUrl = payload && payload.url ? new URL(payload.url, self.location.origin) : null;
-    // Questions and approvals always reach the attention slot, even if a
-    // window reports this chat visible. Do not wait for a visibility query.
-    const windows = targetUrl && !incomingIsAuthorization
+    const windows = targetUrl
     ? await clients.matchAll({ type: 'window', includeUncontrolled: true }) : [];
     const freshViews = targetUrl ? await Promise.all(windows.map(queryClientView)) : [];
-    // Ordinary status updates are suppressed only by a fresh visible-chat
-    // response. A suspended PWA may have stale WindowClient state but cannot
-    // answer this query; no response means the status still gets shown.
+    // Suppress only on a fresh visible-chat response. A suspended PWA may
+    // have stale WindowClient state but cannot answer this query; no
+    // response means the notification still gets shown. Questions and
+    // approvals additionally need the page focused: a visible but
+    // unfocused desktop window does not mean the user sees the card.
     const chatVisible = !!targetUrl && freshViews.some((view) =>
-      reportedViewMatchesChat(view, targetUrl));
+      reportedViewMatchesChat(view, targetUrl)
+      && (!incomingIsAuthorization || view.focused === true));
 const queued = await self.registration.getNotifications();
 if (chatVisible) {
-// Clear only stale statuses already visible in the chat. A status update
-// must never dismiss an unanswered question or pending tool approval.
+// The chat is on screen, so older alerts in the same slot are stale. A
+// status update must never dismiss an unanswered question or approval.
+const slotKinds = incomingIsAuthorization ? authorizationKinds : statusKinds;
 if (payload && payload.chatId) {
 queued.forEach((notification) => {
 if (notification.data && notification.data.chatId === payload.chatId
-&& statusKinds.has(notification.data.kind)) notification.close();
+&& slotKinds.has(notification.data.kind)) notification.close();
 });
 }
 return;

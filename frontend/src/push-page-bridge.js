@@ -36,9 +36,37 @@ function replyWithVisibility(event, message) {
   } catch { /* worker timeout deliberately shows the notification */ }
 }
 
+function visibleChatId() {
+  const match = /^#\/chat\/([^/?#]+)/.exec(window.location.hash || '');
+  if (!match) return '';
+  try { return decodeURIComponent(match[1]); } catch { return match[1]; }
+}
+
+// Opening a chat makes its tray notifications stale: its status and any
+// pending question or approval are now on screen. Close them so the tray
+// never keeps alerts for the chat the user is looking at.
+async function clearVisibleChatNotifications() {
+  if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
+  const chatId = visibleChatId();
+  if (!chatId) return;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration || typeof registration.getNotifications !== 'function') return;
+    const notifications = await registration.getNotifications();
+    notifications.forEach((notification) => {
+      if (notification.data && notification.data.chatId === chatId) notification.close();
+    });
+  } catch { /* best-effort */ }
+}
+
 export function startPushPageBridge() {
   if (started || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
   started = true;
+
+  clearVisibleChatNotifications();
+  window.addEventListener('hashchange', clearVisibleChatNotifications);
+  window.addEventListener('focus', clearVisibleChatNotifications);
+  document.addEventListener('visibilitychange', clearVisibleChatNotifications);
 
   navigator.serviceWorker.addEventListener('message', (event) => {
     const message = event.data || {};
