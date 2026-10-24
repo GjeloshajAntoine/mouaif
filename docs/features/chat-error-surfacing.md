@@ -8,6 +8,8 @@ AI requests can fail in the middle of a turn: the provider returns an HTTP error
 
 No configuration. When a turn fails you see a red-tinted bubble at the failure point in the conversation:
 
+Stopping a running turn is different from a failure. The **Stop** button cooperatively aborts the provider/tool work and closes the run without creating an error bubble or persisting an `EUPSTREAM`/`EABORTED` cancellation row. Any assistant text or billed usage produced before Stop remains in the transcript, but the intentional cancellation itself is not reported as a provider error. This distinction also prevents reconciliation from rendering a duplicate red card after the stream closes.
+
 - The bubble carries the error code and message (e.g. `EUPSTREAM: Upstream 429 Too Many Requests — rate limit exceeded`).
 - If the model produced partial output before failing, that partial output is persisted first as an assistant message, then the error bubble follows it — the transcript shows exactly what was produced before the failure.
 - Reloading the chat re-renders the error bubble from the persisted transcript; the post-stream reconciliation never erases it.

@@ -1570,12 +1570,32 @@ promptSize: resolvedProfileId,
     }
   });
   } catch (streamErr) {
-    // A throw out of the streaming layer must still clear the running
-    // marker or the chat would look busy forever after a reload.
-    runningChats.delete(runKey);
-    runningChatCancels.delete(runKey);
-    if (traceStream) trace.close(traceStream);
-    const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
+  // A throw out of the streaming layer must still clear the running
+  // marker or the chat would look busy forever after a reload.
+  runningChats.delete(runKey);
+  runningChatCancels.delete(runKey);
+  if (traceStream) trace.close(traceStream);
+  // Stop is a normal user action, not a failed provider turn. Some
+  // providers throw a transport-specific error when their request is
+  // aborted, so the AbortSignal is the authority here rather than the
+  // error's code/message. Do not persist or emit an error: doing so
+  // creates a red error card (and, after reconciliation, a duplicate
+  // copy of the same card) for an intentional cancellation.
+  if (runController.signal.aborted) {
+  if (assistantContent.trim() || assistantReasoning.trim()) {
+  try {
+    messages.appendMessage(projectDir, chatId, {
+    role: 'assistant', content: assistantContent, reasoning: assistantReasoning,
+    cost: unpersistedBilledCost(null) || undefined, modelId: model.id,
+    clientId: messages.newClientId('a')
+    });
+  } catch { /* non-fatal */ }
+  }
+  liveChat.finishLiveChat(runKey);
+  res.end();
+  return;
+  }
+  const errPayload = { code: 'EINTERNAL', message: streamErr && streamErr.message ? streamErr.message : 'stream failed' };
     const info = statusInfo({ kind: 'error', message: 'Error: ' + errPayload.message });
     // Capture the failure's context before resetting the completed turn.
     lastToolName = '';
@@ -1610,16 +1630,59 @@ promptSize: resolvedProfileId,
     return;
   }
 
-  if (!result.ok) {
-    // Always surface the failure — even when the stream produced
-    // partial content before dying. The old guard
-    // (`!assistantContent && !assistantReasoning`) silently dropped
-    // mid-turn failures: the client saw the socket close with no
-    // `done` and no `error`, leaving the chat stuck on "streaming…"
-    // with zero explanation. Persist any partial output first, then
-    // the error itself, so the transcript shows exactly what the
-    // model produced before the failure.
-    const errPayload = Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error);
+      if (!result.ok) {
+        // Stop is a normal user action, not a failed provider turn. The
+        // upstream may report that cancellation as `{ code: 'EABORTED' }`,
+        // or a provider wrapper may return a different abort error; the
+        // controller signal is authoritative. Persist any text produced
+        // before Stop, but never write/emit an error row for the deliberate
+        // cancellation. Otherwise the client renders a red card immediately
+        // and reconciliation renders the persisted EUPSTREAM/EABORTED row a
+        // second time.
+        if (runController.signal.aborted) {
+          if (assistantContent.trim() || assistantReasoning.trim()) {
+            try {
+              messages.appendMessage(projectDir, chatId, {
+                role: 'assistant',
+                content: assistantContent,
+                reasoning: assistantReasoning,
+                usage: pendingRoundUsage
+                  ? {
+                      promptTokens: pendingRoundUsage.promptTokens,
+                      completionTokens: pendingRoundUsage.completionTokens,
+                      cacheReadTokens: pendingRoundUsage.cacheReadTokens || 0,
+                      cacheCreationTokens: pendingRoundUsage.cacheCreationTokens || 0
+                    }
+                  : undefined,
+                cost: unpersistedBilledCost(result) || undefined,
+                modelId: model.id,
+                clientId: messages.newClientId('a')
+              });
+            } catch { /* non-fatal */ }
+          } else {
+            const partialCost = unpersistedBilledCost(result);
+            if (partialCost && partialCost.known && partialCost.total > 0) {
+              try { messages.addChatCost(projectDir, chatId, partialCost.total); } catch { /* non-fatal */ }
+            }
+          }
+          if (traceStream) trace.close(traceStream);
+          runningChats.delete(runKey);
+          runningChatCancels.delete(runKey);
+          lastToolName = '';
+          turnStartedAt = 0;
+          liveChat.finishLiveChat(runKey);
+          res.end();
+          return;
+        }
+        // Always surface the failure — even when the stream produced
+  // partial content before dying. The old guard
+  // (`!assistantContent && !assistantReasoning`) silently dropped
+  // mid-turn failures: the client saw the socket close with no
+  // `done` and no `error`, leaving the chat stuck on "streaming…"
+  // with zero explanation. Persist any partial output first, then
+  // the error itself, so the transcript shows exactly what the
+  // model produced before the failure.
+  const errPayload = Object.assign({ code: result.error.code || 'EUPSTREAM' }, result.error);
     const partialCost = unpersistedBilledCost(result);
     if (assistantContent.trim() || assistantReasoning.trim()) {
       try {
