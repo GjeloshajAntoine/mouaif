@@ -14,7 +14,7 @@ The same model picker is also used in subagent authorization cards and agent per
    - On wider screens, it floats comfortably below the header.
 3. Type in the search input to filter models by name or slug.
 4. Tap a provider chip (`All`, `Anthropic`, `OpenRouter`, `OpenAI`, etc.) to scope the list to a specific provider.
-5. Tap any row to select the model for the current conversation.
+5. Tap the model's **Select model** button to choose it for the current conversation. Each model row has a native button, and the optional pin control is a separate button, so keyboard and screen-reader users can activate either action without nested interactive elements.
 6. Tap the ↻ refresh button to fetch live model catalogs directly from connected providers. This bypasses the server's 1-hour cache (via a `_bust` cache-buster) so it re-hits the upstream rather than returning the previously fetched list.
 
 Pressing `Escape` or tapping outside closes the popover.
@@ -28,6 +28,7 @@ Pressing `Escape` or tapping outside closes the popover.
 - **Empty-state actions** — **Refresh models** remains the primary action when no models match a search or a provider has no models (where catalog refresh is supported). A non-empty search also offers a separate **Clear search** action: it clears only the text, keeps the selected provider, returns focus to search, and makes no network request. Whitespace-only text is not treated as a search.
 - **Refresh without losing your place** — both the header and empty-state refresh actions fetch fresh catalogs, even with no search matches. Refresh keeps the sheet open, retains the query and provider filter, and does not clear the existing catalog while loading. Pointer activation keeps an already-focused search input focused; completion does not steal focus or reopen a dismissed keyboard. Duplicate refreshes are blocked while loading; provider failures and rejected requests show a retryable inline error. Refresh feedback stays inside the picker: it never changes the bottom composer status, which would resize and re-pin the transcript behind the sheet.
 - **Native mobile gestures** — swipe the model list vertically or the provider chips horizontally. Slight finger movement on short-list rows no longer cancels selection. Keyboard opening, dismissal, and rotation resize the sheet to the visible viewport.
+- **Accessible row actions** — model rows are presentational containers around native buttons rather than a `role="button"` container with a nested pin button. The select and pin controls have distinct accessible names and independent focus targets.
 
 ## Related
 

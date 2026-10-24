@@ -157,8 +157,15 @@ async function main() {
     await evaluate(`document.querySelectorAll('.mp__chip')[2].click(); query('alpha');`);
     await wait();
     await check('phone search avoids small-input focus zoom', `parseFloat(getComputedStyle(document.querySelector('.mp__search')).fontSize) >= 16`);
-    await tap('.mp__row', 1);
+    await tap('.mp__row-select', 1);
     await check('1px touch jitter selects a short-list row', `picks.length === 1 && picks[0].modelId === 'alpha' && !document.querySelector('.mp__pop')`);
+    await check('model rows use a single native select button', `document.querySelectorAll('.mp__row[role="button"]').length === 0 && document.querySelectorAll('.mp__row-select').length === 1 && document.querySelector('.mp__row-select').getAttribute('aria-label') === 'Select model alpha'`);
+    await evaluate(`draw({ onTogglePin: () => {} });`);
+    await wait();
+    await tap('.mp__trigger');
+    await check('select and pin actions are sibling native buttons', `(() => { const row = document.querySelector('.mp__row'); return !row.hasAttribute('role') && row.querySelectorAll('button').length === 2 && row.querySelector('.mp__row-select').getAttribute('aria-label') === 'Select model alpha' && row.querySelector('.mp__pin').getAttribute('aria-label') === 'Pin model alpha'; })()`);
+    await evaluate(`document.querySelector('.mp__close').click();`);
+    await wait();
     await tap('.mp__trigger');
     await evaluate(`query(''); document.querySelector('.mp__chip').click(); models = Array.from({ length: 80 }, (_, i) => ({ id: 'model-' + String(i).padStart(2, '0'), provider: 'one' })); draw();`);
     await wait();

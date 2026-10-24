@@ -684,8 +684,8 @@ border: 1px solid var(--border);
 line-height: 1.2;
 }
 .mp__row {
-display: flex;
-align-items: baseline;
+  display: flex;
+  align-items: stretch;
 gap: 3px;
 width: 100%;
 padding: 6px 10px 6px 6px;
@@ -701,8 +701,23 @@ transition: background 80ms ease;
 min-height: var(--tap);
 position: relative;
 }
+.mp__row-select {
+display: flex;
+align-items: baseline;
+gap: 3px;
+flex: 1 1 auto;
+min-width: 0;
+min-height: var(--tap);
+padding: 6px 0 6px 6px;
+font: inherit;
+color: inherit;
+background: transparent;
+border: 0;
+text-align: left;
+cursor: pointer;
+}
 @media (hover: hover) {
-  .mp__row:hover { background: var(--surface-3); }
+.mp__row:hover, .mp__row:has(.mp__row-select:hover) { background: var(--surface-3); }
 }
 .mp__row:active { background: var(--surface-3); }
 .mp__row.is-active {

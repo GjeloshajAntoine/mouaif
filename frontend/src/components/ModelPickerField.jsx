@@ -522,25 +522,26 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
             g.items.map((m) => {
               const key = keyOf(m);
               return h('div', {
-                key,
-                class: 'mp__row' + (key === selectedKey ? ' is-active' : '') + (m.ghost ? ' is-ghost' : ''),
-                role: 'button',
-                tabindex: '0',
-                onClick: () => pick(m),
-                onKeyDown: (ev) => {
-                  if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(m); }
-                }
+              key,
+              class: 'mp__row' + (key === selectedKey ? ' is-active' : '') + (m.ghost ? ' is-ghost' : '')
               },
-              !m.ghost && onTogglePin ? h('button', {
-                type: 'button',
-                class: 'mp__pin',
-                'aria-label': 'Pin model',
-                'aria-pressed': pinned && pinned.has(key) ? 'true' : 'false',
-                onClick: (ev) => { ev.stopPropagation(); onTogglePin(m); }
-              }, h(PinIcon, { pinned: pinned && pinned.has(key) })) : null,
+              h('button', {
+              type: 'button',
+              class: 'mp__row-select',
+              'aria-label': 'Select model ' + m.id,
+              onClick: () => pick(m)
+              },
               h('span', { class: 'mp__row-id' }, m.id),
               m.label && m.label !== m.id ? h('span', { class: 'mp__row-label' }, m.label) : null,
               h('span', { class: 'mp__row-meta' }, m.ghost ? 'unavailable' : (m.provider || ''))
+              ),
+              !m.ghost && onTogglePin ? h('button', {
+              type: 'button',
+              class: 'mp__pin',
+              'aria-label': 'Pin model ' + m.id,
+              'aria-pressed': pinned && pinned.has(key) ? 'true' : 'false',
+              onClick: () => onTogglePin(m)
+              }, h(PinIcon, { pinned: pinned && pinned.has(key) })) : null
               );
             })
           )
@@ -559,25 +560,26 @@ h('span', { class: 'mp__clear-id' }, clearLabel)
       items.map((m) => {
         const key = keyOf(m);
         return h('div', {
-          key,
-          class: 'mp__row' + (key === selectedKey ? ' is-active' : ''),
-          role: 'button',
-          tabindex: '0',
-          onClick: () => pick(m),
-          onKeyDown: (ev) => {
-            if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(m); }
-          }
+        key,
+        class: 'mp__row' + (key === selectedKey ? ' is-active' : '')
         },
-        onTogglePin ? h('button', {
-          type: 'button',
-          class: 'mp__pin',
-          'aria-label': 'Pin model',
-          'aria-pressed': pinned && pinned.has(key) ? 'true' : 'false',
-          onClick: (ev) => { ev.stopPropagation(); onTogglePin(m); }
-        }, h(PinIcon, { pinned: pinned && pinned.has(key) })) : null,
+        h('button', {
+        type: 'button',
+        class: 'mp__row-select',
+        'aria-label': 'Select model ' + m.id,
+        onClick: () => pick(m)
+        },
         h('span', { class: 'mp__row-id' }, m.id),
         m.label && m.label !== m.id ? h('span', { class: 'mp__row-label' }, m.label) : null,
         h('span', { class: 'mp__row-meta' }, m.provider || '')
+        ),
+        onTogglePin ? h('button', {
+        type: 'button',
+        class: 'mp__pin',
+        'aria-label': 'Pin model ' + m.id,
+        'aria-pressed': pinned && pinned.has(key) ? 'true' : 'false',
+        onClick: () => onTogglePin(m)
+        }, h(PinIcon, { pinned: pinned && pinned.has(key) })) : null
         );
       })
     );
