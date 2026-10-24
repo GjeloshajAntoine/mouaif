@@ -18,6 +18,8 @@ Remove the containers and isolated test volume afterward:
 docker compose -f compose.test.yaml down --volumes
 ```
 
+The run is capped at 0.5 CPU and 384 MiB for the app and 0.25 CPU and 128 MiB for the test client; set `MOUAIF_APP_CPUS`, `MOUAIF_APP_MEM`, `MOUAIF_TEST_CPUS` or `MOUAIF_TEST_MEM` to change them. The image build runs at low priority with a 1 GiB Node heap; pass `--build-arg BUILD_HEAP_MB=2048` to `docker build` if the UI bundle outgrows it.
+
 A successful run ends with `Docker smoke test passed.` and exits with status zero. The example fixture is available at `examples/docker-test-project/`. If the local Docker CLI cannot read its default Buildx state, use a writable temporary config for the run:
 
 ```bash

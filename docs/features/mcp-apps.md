@@ -74,7 +74,7 @@ Passing regressions are not a complete security audit. Remaining review includes
 
 ```bash
 docker build -f scripts/Dockerfile.mcp-apps -t mouaif-track-b-mcp-apps:test .
-docker run --rm --shm-size=256m mouaif-track-b-mcp-apps:test
+docker run --rm --shm-size=256m --cpus=1 --memory=768m --memory-swap=768m mouaif-track-b-mcp-apps:test
 ```
 
 This test image uses the locally built `mouaif-app:latest` as its Chrome-equipped base; it does not modify that image or run its default server command.

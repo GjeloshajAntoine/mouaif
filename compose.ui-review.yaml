@@ -1,3 +1,8 @@
+# Resource caps keep the stack to a small slice of the host (about 1 CPU and
+# 900 MiB in total by default). Override any of them from the environment,
+# e.g. `MOUAIF_CHROME_CPUS=1 docker compose -f compose.ui-review.yaml up -d`.
+# Swap is capped at the memory limit, so a runaway process is OOM-killed inside
+# its container instead of pushing the host into swap.
 services:
   app:
     image: mouaif-app:latest
@@ -5,27 +10,41 @@ services:
       MOUAIF_HOME: /data
       MOUAIF_ALLOW_ANY_ROOT: "1"
       MOUAIF_CHROME_URL: http://127.0.0.1:9222
+      # Keep V8's heap below the container limit so Node collects garbage
+      # before the kernel kills it.
+      NODE_OPTIONS: --max-old-space-size=${MOUAIF_APP_HEAP_MB:-256}
     network_mode: service:chrome
+    cpus: ${MOUAIF_APP_CPUS:-0.5}
+    mem_limit: ${MOUAIF_APP_MEM:-384m}
+    memswap_limit: ${MOUAIF_APP_MEM:-384m}
+    pids_limit: 256
     volumes:
       - ui-review-data:/data
       - ./examples/docker-test-project:/workspace/example:ro
     depends_on:
       chrome:
         condition: service_healthy
+    # Each check starts a new Node process, so poll fast only while starting
+    # and slowly once healthy; this stack runs for hours.
     healthcheck:
       test:
         - CMD
         - node
         - -e
         - "fetch('http://127.0.0.1:5732/api/settings').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
-      interval: 2s
-      timeout: 2s
-      retries: 30
-      start_period: 5s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
   chrome:
     image: mouaif-app:latest
     entrypoint: ["google-chrome"]
-    command: ["--headless=new", "--remote-debugging-port=9222", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "about:blank"]
+    command: ["--headless=new", "--remote-debugging-port=9222", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage", "--renderer-process-limit=2", "about:blank"]
+    cpus: ${MOUAIF_CHROME_CPUS:-0.5}
+    mem_limit: ${MOUAIF_CHROME_MEM:-512m}
+    memswap_limit: ${MOUAIF_CHROME_MEM:-512m}
+    pids_limit: 512
     # Chrome binds CDP to loopback. The app shares this network namespace;
     # publish only the app port, never the unauthenticated debugging port.
     ports:
@@ -36,10 +55,11 @@ services:
         - node
         - -e
         - "fetch('http://127.0.0.1:9222/json/version').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
-      interval: 2s
-      timeout: 2s
-      retries: 30
-      start_period: 5s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
 
 volumes:
   ui-review-data:

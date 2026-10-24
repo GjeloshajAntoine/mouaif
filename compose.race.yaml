@@ -21,12 +21,22 @@
 # container exits — a one-shot init service would kill the run before the test
 # service started.
 
+#
+# Resource caps keep the run to a small slice of the host (1 CPU and 768 MiB
+# in total by default, across both servers and the client); override them
+# from the environment, e.g. `MOUAIF_APP_CPUS=0.75 npm run test:race`.
+
 x-app: &app
   build:
     context: .
   environment:
     MOUAIF_HOME: /data
     MOUAIF_ALLOW_ANY_ROOT: "1"
+    NODE_OPTIONS: --max-old-space-size=${MOUAIF_APP_HEAP_MB:-224}
+  cpus: ${MOUAIF_APP_CPUS:-0.4}
+  mem_limit: ${MOUAIF_APP_MEM:-320m}
+  memswap_limit: ${MOUAIF_APP_MEM:-320m}
+  pids_limit: 256
   volumes:
     - race-data:/data
     - race-workspace:/workspace
@@ -62,6 +72,9 @@ services:
 
   test:
     image: node:24-bookworm-slim
+    cpus: ${MOUAIF_TEST_CPUS:-0.2}
+    mem_limit: ${MOUAIF_TEST_MEM:-128m}
+    memswap_limit: ${MOUAIF_TEST_MEM:-128m}
     depends_on:
       app-a:
         condition: service_healthy

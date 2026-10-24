@@ -1,6 +1,16 @@
 # syntax=docker/dockerfile:1
 FROM node:24-bookworm-slim AS build
 
+# BuildKit cannot cap a build's CPU or memory, so the build keeps itself small
+# instead: a bounded V8 heap fails fast with an out-of-memory error rather than
+# pushing a small host into swap, GOMAXPROCS=1 keeps Vite's esbuild on one
+# core, and the heavy steps run at low priority so the host stays responsive.
+# Raise the heap with `--build-arg BUILD_HEAP_MB=2048` if the bundle outgrows it.
+ARG BUILD_HEAP_MB=1024
+ENV NODE_OPTIONS=--max-old-space-size=${BUILD_HEAP_MB} \
+GOMAXPROCS=1 \
+UV_THREADPOOL_SIZE=2
+
 WORKDIR /app
 COPY package.json package-lock.json ./
 # `npm ci` runs the package lifecycle scripts here, so both files they need must
@@ -8,9 +18,9 @@ COPY package.json package-lock.json ./
 # `prepare` runs scripts/prepare-web.js. Copy exactly those two (not all of
 # scripts/) so the cached install layer only invalidates when they change.
 COPY scripts/patch-zimmerframe.js scripts/prepare-web.js ./scripts/
-RUN npm ci
+RUN nice -n 10 npm ci --maxsockets=4
 COPY . .
-RUN npm run build:web
+RUN nice -n 10 npm run build:web
 RUN npm prune --omit=dev
 
 FROM node:24-bookworm-slim AS runtime
@@ -27,10 +37,13 @@ WORKDIR /app
 # Chromium) is exactly what it launches. PUPPETEER_DANGEROUS_NO_SANDBOX is set
 # because Docker's default seccomp profile blocks the namespace sandbox, and
 # MOUAIF_CHROME_URL points the Inspector/webpreview at the same CDP endpoint.
+# git is installed for the chat's Git sheet and for the git commands the
+# assistant runs through the shell tool; without it both fail with ENOENT.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         fonts-liberation \
+        git \
         libasound2 \
         libatk-bridge2.0-0 \
         libatk1.0-0 \

@@ -1,3 +1,6 @@
+# Resource caps keep the run to a small slice of the host (0.75 CPU and
+# 512 MiB in total by default); override them from the environment, e.g.
+# `MOUAIF_APP_CPUS=1 npm run test:docker`.
 services:
   app:
     build:
@@ -5,6 +8,11 @@ services:
     environment:
       MOUAIF_HOME: /data
       MOUAIF_ALLOW_ANY_ROOT: "1"
+      NODE_OPTIONS: --max-old-space-size=${MOUAIF_APP_HEAP_MB:-256}
+    cpus: ${MOUAIF_APP_CPUS:-0.5}
+    mem_limit: ${MOUAIF_APP_MEM:-384m}
+    memswap_limit: ${MOUAIF_APP_MEM:-384m}
+    pids_limit: 256
     volumes:
       - test-data:/data
       - ./examples/docker-test-project:/workspace/example:ro
@@ -21,6 +29,9 @@ services:
 
   test:
     image: node:24-bookworm-slim
+    cpus: ${MOUAIF_TEST_CPUS:-0.25}
+    mem_limit: ${MOUAIF_TEST_MEM:-128m}
+    memswap_limit: ${MOUAIF_TEST_MEM:-128m}
     depends_on:
       app:
         condition: service_healthy

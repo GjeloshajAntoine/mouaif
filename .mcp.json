@@ -50,6 +50,9 @@
       },
       "git": {
         "mode": "off"
+      },
+      "chrome_devtools_mcp": {
+        "mode": "off"
       }
     }
   }
