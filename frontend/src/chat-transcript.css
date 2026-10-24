@@ -8,7 +8,10 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* Reserve the rail's hit area on phones without shrinking the desktop
+     reading column. */
   padding: 4px 8px 6px;
+  padding-right: calc(8px + var(--nav-col, 28px) + env(safe-area-inset-right, 0px));
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -487,6 +490,7 @@
   color: var(--muted);
   font-size: 0.76rem;
   padding: 16px 16px 14px;
+  margin-inline: clamp(8px, 3vw, 20px);
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -524,10 +528,8 @@
 /* Positioned box around the transcript: takes the transcript's old flex
    slot so the rail below can anchor to the transcript's own edges. */
 .chat-view__transcript-box {
-  /* The scroll buttons' column (--nav-col). The rail is the only thing that
-     occupies it: transcript rows use the full reading column, so the strip
-     is not reserved anywhere. Kept narrow — a wider column was rejected as
-     "way too big" and costs the rail's own clearance. */
+  /* Keep a narrow reading inset alongside the floating navigation rail,
+     so its touch targets do not cover message text or timestamps. */
   --nav-col: 28px;
   /* Width of the lane the transcript's own scrollbar occupies, measured
      from the live scroller (syncNavScrollbarLane in
@@ -548,16 +550,8 @@
 
 .chat-view__scroll-nav {
   position: absolute;
-  /* Follow the reading column on wide windows, not the shell's far edge.
-     Nothing is reserved for this column any more: the rows use the full
-     reading width again, so the rail is put where it costs the least —
-     flush with the lane the transcript's scrollbar takes, which is the
-     frame edge below the wide breakpoint and the bar's own left edge above
-     it. A phone therefore has the pills over the last pixels of a row in
-     the bottom corner, which is the trade for giving every message its
-     full width back; on a wide frame the reading column still ends before
-     the rail and nothing is covered. The bar itself is never covered: the
-     lane term is a floor, so the rail always stops at the bar. */
+  /* Follow the reading column on wide windows and clear the scrollbar.
+     The transcript reserves a matching reading inset on narrow screens. */
   right: max(calc(env(safe-area-inset-right, 0px) + var(--nav-scrollbar, 0px)),
     calc((100% - var(--read-max, 44rem)) / 2 - var(--nav-col)));
   /* Explicit slots keep Prev/Next fixed when Latest appears or its
