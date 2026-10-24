@@ -28,6 +28,9 @@ let uiState = null;
 let popup = null;
 let textarea = null;
 let items = [];
+// JSON of `items` as last published, so the 5 s background refresh can tell
+// an unchanged list apart and skip re-rendering the chat that subscribes to it.
+let itemsSignature = null;
 let filtered = [];
 const itemListeners = new Set();
 function notifyItemListeners() {
@@ -812,6 +815,7 @@ export function mountAtMention(ta, popupEl, preactState, argBarEl) {
   if (argBar) argBar.hidden = true;
   visible = false;
 items = [];
+itemsSignature = null;
 filtered = [];
 query = '';
 range = null;
@@ -821,6 +825,7 @@ const projectDir = preactState.props && preactState.props.projectDir;
   if (projectDir) {
     buildItems(projectDir).then(newItems => {
       items = newItems;
+      itemsSignature = JSON.stringify(newItems);
       notifyItemListeners();
     }).catch(() => {});
   }
@@ -842,6 +847,9 @@ export function refreshAtMentionItems(opts) {
   const projectDir = uiState && uiState.props && uiState.props.projectDir;
   if (projectDir) {
     buildItems(projectDir, opts).then(newItems => {
+      const signature = JSON.stringify(newItems);
+      if (signature === itemsSignature) return;
+      itemsSignature = signature;
       items = newItems;
       notifyItemListeners();
       if (visible) {

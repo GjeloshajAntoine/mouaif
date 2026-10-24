@@ -396,8 +396,13 @@ setPreviewPromptOpen(false);
       s.state,
       atArgBarRef.current
     );
-    // Refresh items periodically so new files / tools show up
-    const timer = setInterval(() => refreshAtMentionItems(), 5000);
+    // Refresh items periodically so new files / tools show up. A hidden tab
+    // skips the tick: nobody can type `@` there, and a phone left on a chat
+    // would otherwise keep three requests every 5 s going in the background.
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      refreshAtMentionItems();
+    }, 5000);
     return () => {
       cleanup();
       clearInterval(timer);
