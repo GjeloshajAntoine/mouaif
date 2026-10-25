@@ -32,6 +32,9 @@
 //   node scripts/perf-profile.mjs --report <path.json> # replace an existing report
 //   node scripts/perf-profile.mjs --cleanup-only <manifest.json>
 //
+// Each default-path run is also kept as perf/runs/<stamp>.json; compare two
+// with scripts/perf-compare.mjs.
+//
 // Exit codes: 0 ok, 1 the run failed, 2 usage error. The seeded chats are
 // removed again in a finally block (getChat → deleteChat) unless --keep is
 // given, so a crashed run is cleaned up by the next one (see removeStrays).
@@ -609,7 +612,12 @@ async function main() {
   await navigate(cdp, args.base + '/#/projects', args.timeout).catch(() => {});
   await cdp.close();
   writeReport(args.report, report);
+  // latest.json is overwritten by the next run; keep this one for
+  // scripts/perf-compare.mjs. A run sent elsewhere with --report is the
+  // caller's own archive.
+  const archived = args.report === DEFAULT_REPORT ? archiveRun(report) : null;
   printSummary(report, args.report);
+  if (archived) log(' archived: ' + path.relative(ROOT, archived) + '   compare: node scripts/perf-compare.mjs');
 }
 
 async function runProfile(cdp, args, report, ctx) {
@@ -1465,6 +1473,13 @@ function buildNotes(report) {
 function writeReport(file, report) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(report, null, 2));
+}
+
+// archiveRun(report) — copy a finished report to perf/runs/<stamp>.json.
+function archiveRun(report) {
+  const file = path.join(ROOT, 'perf', 'runs', (report.stamp || new Date().toISOString().replace(/[:.]/g, '-')) + '.json');
+  writeReport(file, report);
+  return file;
 }
 
 function printSummary(report, file) {

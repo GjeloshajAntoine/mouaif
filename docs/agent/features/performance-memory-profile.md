@@ -10,9 +10,12 @@
 | `scripts/lib/perf-cdp.mjs` | Minimal CDP client (Performance, Tracing, HeapProfiler, Network) plus page discovery. |
 | `scripts/lib/perf-session.mjs` | Mints and revokes one temporary `access_sessions` row so the tab is signed in. |
 | `scripts/lib/perf-fixtures.mjs` | Deterministic transcript generator, seeding, cleanup, real-chat ranking. |
-| `scripts/test-perf-profile.js` | Regression test for fixtures, cleanup, the report builders and the snapshot scanner. |
+| `scripts/perf-compare.mjs` | CLI that picks two reports (`perf/runs/`, paths, or `@<git ref>`) and prints the comparison. |
+| `scripts/lib/perf-compare.mjs` | Pure comparison: metric table, noise band, label pairing, environment differences. |
+| `scripts/test-perf-profile.js` | Regression test for fixtures, cleanup, the report builders, the snapshot scanner and the comparison. |
 | `perf/latest.json` | The report. Committed. |
 | `perf/latest.manifest.json`, `perf/snapshots/` | Run state and raw V8 snapshots. Git-ignored. |
+| `perf/runs/<stamp>.json` | Copy of each default-path run, so `latest.json` being overwritten loses nothing. Git-ignored. |
 
 ## Baseline (recorded 2026-10-21)
 
@@ -60,6 +63,15 @@ These each produced a wrong number before being fixed. Keep them in mind before 
 6. **`reportHeapSnapshotProgress` is not a completion signal.** Waiting for its `finished` event deadlocked; the chunks are all delivered before `takeHeapSnapshot` resolves, so they are collected by the listener and written afterwards.
 7. **Fixtures must match the real row shape.** This project's store keeps tool payloads in `content` as JSON (`{ name, args }` for a call); the first fixture put them in an `args` column. That made synthetic transcripts draw far more cards per row than real ones, which flattered both node counts and heap. `scripts/test-perf-profile.js` now asserts the payload shape.
 8. **"Rows in the DOM" and "rows in the store" differ by design.** A real 2,927-row chat showed one or two transcript rows because 2,924 of its rows are tool calls/results that collapse into a handful of cards. Compare `transcriptNodes` when comparing across transcripts, not `rows`.
+
+## Comparison rules
+
+`compareReports(base, head)` reads the full report, not only `summary`, so the whole-history numbers (`fullHistory.heapGrowth`, `pageMs.median`, `nodesAfter`) and `heap.retainedAfterLeave` take part. The decisions that are easy to undo by accident:
+
+- A metric absent on either side is `missing`, never a regression (an older report, or a drain pass that was skipped).
+- The noise band is a percentage with an absolute floor per unit (25 ms, 1 MB, 5 nodes), so 10 ms → 30 ms does not read as +200%. Node counts come from fixed fixtures and use at most a 2% band.
+- Pairing is by exact `label`. Do not fall back to pairing real chats by rank: the longest chat changes as the user works, and comparing two different chats attributes the difference to the code.
+- Server RSS is a single end-of-run sample that includes the cost of seeding the 10,000-row fixture. It is good for comparing runs of the same profile set, not for finding a leak.
 
 ## Limits
 

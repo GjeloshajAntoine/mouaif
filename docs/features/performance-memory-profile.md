@@ -53,6 +53,32 @@ node scripts/perf-profile.mjs --cleanup-only perf/latest.manifest.json
 node scripts/test-perf-profile.js
 ```
 
+## Comparing runs
+
+Every run with the default report path is also kept as `perf/runs/<stamp>.json` (git-ignored, one file per run on this machine). `perf/latest.json` is the committed baseline.
+
+```bash
+node scripts/perf-compare.mjs                    # the two newest runs
+node scripts/perf-compare.mjs old.json           # old.json against perf/latest.json
+node scripts/perf-compare.mjs @HEAD~3 @HEAD      # two committed baselines
+```
+
+```text
+Server
+  server RSS   271.46 MB → 380.05 MB   +108.58 MB (+40%) ▲ worse
+
+synthetic long (2000 rows)
+  first row      935 ms → 1.87 s      +935 ms (+100%)   ▲ worse
+  JS heap      64.32 MB → 92.93 MB    +28.61 MB (+44%)  ▲ worse
+```
+
+Only changes are listed (`--all` adds the rest). Every metric is lower-is-better, so a rise is "worse".
+
+- **Noise band.** A change within ±15% (`--tolerance <pct>`) counts as unchanged, and so does anything under 25 ms, 1 MB or 5 nodes. One run per configuration is noisy: the 30-row chat opened slower than the 500-row one in the recorded baseline.
+- **Pairing.** Chats are paired by label. The synthetic ones are always the same; a real chat's label carries its title, so a chat that was renamed or dropped out of the top three is listed as not compared rather than matched with a different one.
+- **Like for like.** If the Chrome version, viewport, CPU count, tab visibility or host differ, the output says so first. Compare runs from the same box.
+- **Exit code.** `--fail-on-regression` exits 1 when anything got worse; `--json` prints the comparison for scripts.
+
 ## What is measured
 
 Each synthetic transcript is a real chat in the store, with markdown, code blocks, tables, reasoning blocks and tool call/result pairs at a fixed seed, so two runs are comparable.
@@ -66,7 +92,7 @@ Each synthetic transcript is a real chat in the store, with markdown, code block
 | Leaving a chat | Whether the heap returns to where it was before the chat was opened. |
 | Heap snapshot | Retained objects by constructor, taken at the drained state. |
 | Chat list and Inspector | The same load numbers, plus the latency of the chat-list, newest-page, full-transcript and revision endpoints. |
-| Server | Resident memory and thread count of the process serving the app. |
+| Server | Resident memory and thread count of the process serving the app, read once at the end of the run. |
 
 Long chats open with only their newest page, so open time stays flat as stored length grows; the drain pass is what shows the cost of holding a whole history.
 

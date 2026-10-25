@@ -28,6 +28,9 @@ Thumbs.db
 # snapshots stay on the machine that recorded them.
 perf/snapshots/
 perf/*.manifest.json
+# Every default run is also archived here for scripts/perf-compare.mjs. Runs are
+# per-machine history; the committed perf/latest.json is the shared baseline.
+perf/runs/
 
 # Transient staging files from the atomic project-file writes (see
 # src/settings.js writeJsonFile). They exist only between the write and the

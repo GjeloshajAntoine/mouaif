@@ -227,6 +227,61 @@ const PROJECT = fs.mkdtempSync(path.join(HOME, 'project-'));
   assert.deepEqual(profiler.buildNotes({ transcripts: [] }), [], 'an empty report produces no claims');
   console.log('PASS a report with no measurements makes no claims');
 
+  // ---- comparing two reports ------------------------------------------------
+  const { compareReports, compareValue } = await import('./lib/perf-compare.mjs');
+  const entry = (label, over = {}) => ({
+    label,
+    kind: label.startsWith('real') ? 'real' : 'synthetic',
+    source: { rows: 500, bytes: 1 },
+    open: { firstRowMs: 900, completeMs: 1100 },
+    heap: { domNodes: 7000, jsHeapUsed: 60e6, retainedAfterLeave: 0 },
+    trace: { longestTasks: [{ ms: 200 }] },
+    scroll: { msPerStep: 20 },
+    fullHistory: { pageMs: { median: 700 }, heapGrowth: 4e6, nodesAfter: 11000 },
+    ...over
+  });
+  const mk = (extra = {}) => ({
+    stamp: 'a',
+    environment: { browser: 'Chrome/140', viewport: { width: 430, height: 932, deviceScaleFactor: 2 }, cpus: 2, visibility: 'visible' },
+    summary: { shell: { shellMs: 20000, fcpMs: 480, loadMs: 360, heapUsedBytes: 68e6 } },
+    server: { rssBytes: 280e6, threads: 11 },
+    transcripts: [entry('synthetic medium'), entry('real «chat»')],
+    ...extra
+  });
+
+  assert.equal(compareReports(mk(), mk()).counts.worse, 0, 'identical reports show no change');
+  assert.equal(compareReports(mk(), mk()).counts.better, 0);
+
+  // Inside the noise band, and below the absolute floor, is "same".
+  assert.equal(compareValue(900, 1000, 'ms').verdict, 'same', '+11% is inside the 15% band');
+  assert.equal(compareValue(10, 30, 'ms').verdict, 'same', 'a 20 ms change is below the floor even at +200%');
+  assert.equal(compareValue(900, 1300, 'ms').verdict, 'worse');
+  assert.equal(compareValue(900, 500, 'ms').verdict, 'better', 'a drop is an improvement');
+  assert.equal(compareValue(900, 1000, 'ms', 5).verdict, 'worse', 'a tighter tolerance flags the same change');
+  assert.equal(compareValue(0, 0, 'bytes').verdict, 'same', 'zero to zero does not divide by zero');
+  assert.equal(compareValue(0, 5e6, 'bytes').verdict, 'worse', 'growth from zero is flagged');
+  assert.equal(compareValue(10000, 10300, 'count').verdict, 'worse', 'fixture-driven counts use a tight band');
+  assert.equal(compareValue(null, 5, 'ms').verdict, 'missing', 'a missing side is never a regression');
+
+  const head = mk({
+    server: { rssBytes: 400e6, threads: 11 },
+    transcripts: [entry('synthetic medium', { open: { firstRowMs: 2000, completeMs: 1100 }, heap: { domNodes: 7000, jsHeapUsed: 60e6, retainedAfterLeave: 0 } }), entry('real «other chat»')]
+  });
+  const diff = compareReports(mk(), head);
+  const medium = diff.transcripts.find((t) => t.label === 'synthetic medium');
+  assert.equal(medium.metrics.find((m) => m.key === 'firstRowMs').verdict, 'worse');
+  assert.equal(medium.metrics.find((m) => m.key === 'completeMs').verdict, 'same');
+  assert.equal(diff.server.find((m) => m.key === 'rssBytes').verdict, 'worse', 'server memory takes part');
+  assert.deepEqual(diff.unmatched.map((u) => u.only).sort(), ['base', 'head'], 'a renamed real chat is not compared with another');
+  assert.equal(diff.transcripts.length, 1, 'only like-labelled chats are paired');
+
+  const moved = compareReports(mk(), mk({ environment: { browser: 'Chrome/141', viewport: { width: 800, height: 600, deviceScaleFactor: 1 }, cpus: 2, visibility: 'visible' } }));
+  assert.deepEqual(moved.environment.map((e) => e.field), ['Chrome version', 'viewport'], 'a changed browser or viewport is called out');
+
+  const sparse = compareReports(mk(), mk({ transcripts: [entry('synthetic medium', { fullHistory: undefined })] }));
+  assert.ok(!sparse.transcripts[0].metrics.some((m) => m.key === 'drainMedianPageMs' && m.verdict !== 'missing'), 'a report without a drain pass compares cleanly');
+  console.log('PASS comparing two reports flags real changes and ignores noise');
+
   fs.rmSync(HOME, { recursive: true, force: true });
   console.log('\nAll perf-profile tests passed.');
 })().catch((e) => {
