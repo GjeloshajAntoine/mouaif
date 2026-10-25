@@ -1254,13 +1254,21 @@ export async function toggleToolGroup(names, next, state, refs, updateChat) {
   updateToolsCard(refs, state);
   try {
     if (await updateChat({ tools: nextFilter }) === false) throw new Error('Tool selection was not saved');
-    if (state.tools !== optimistic) return true;
     if (next) {
       // Selection and permission are separate gates. Checking an Off tool
       // must restore Ask, not leave a selected tool hidden from the model.
+      //
+      // A second tap or a catalog refresh can replace `state.tools` while
+      // the PATCH is in flight. That must not skip the restore: it used to,
+      // so checking two Off tools in quick succession saved both in the
+      // filter but left the first one's gate Off, and its checkbox snapped
+      // back to unchecked. Restore every wanted name the LIVE filter still
+      // selects; one the user unchecked again meanwhile stays Off.
+      const live = state.tools || optimistic;
+      const stillWanted = Array.from(wanted).filter((n) => live.filter == null || live.filter.includes(n));
       const native = new Set();
       const mcp = { servers: {}, tools: {} };
-      for (const name of wanted) {
+      for (const name of stillWanted) {
         const curNative = state.toolAuth || {};
         const curMcp = state.mcpAuth || {};
         const cfg = toolPermission(name, curNative, curMcp);

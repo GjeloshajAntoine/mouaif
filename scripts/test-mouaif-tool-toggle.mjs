@@ -349,6 +349,46 @@ assert.equal(shellOnly[0].checked, false, 'selection off remains off even when p
   assert.ok(arrayFilterState.tools.filter.includes('read_file'), 'unrelated selected tools stay in the filter');
 }
 
+// Two quick taps on Off tools in different families: the second tap replaces
+// `state.tools` while the first PATCH is in flight. The first tap must still
+// restore its gate, or its checkbox snaps back to unchecked.
+{
+  const writes = [];
+  const overlapState = {
+    tools: { catalog: liveCatalog, filter: [] },
+    mcpServers: [],
+    toolAuth: { shell: { mode: 'off' }, file: { mode: 'off' } },
+    _saveToolAuth: async (tool, mode) => {
+      writes.push(tool);
+      overlapState.toolAuth = Object.assign({}, overlapState.toolAuth, { [tool]: { mode, allowlist: [] } });
+      return true;
+    }
+  };
+  let releaseFirst;
+  const firstPatch = new Promise((resolve) => { releaseFirst = resolve; });
+  const first = toggleToolGroup(['shell'], true, overlapState, refs, () => firstPatch);
+  const second = toggleToolGroup(['read_file'], true, overlapState, refs, async () => true);
+  await second;
+  releaseFirst(true);
+  await first;
+  same(writes.slice().sort(), ['file', 'shell'], 'both overlapping taps restore their gate');
+  const overlapGroups = buildToolGroups(liveCatalog, [], overlapState.tools.filter, new Set(), { native: overlapState.toolAuth });
+  assert.ok(overlapGroups.find((g) => g.id === 'shell').checked, 'the first tapped tool stays checked');
+  assert.ok(overlapGroups.find((g) => g.id === 'files').checked, 'the second tapped tool stays checked');
+
+  // A tool unchecked again before its first PATCH lands keeps its gate Off.
+  writes.length = 0;
+  overlapState.tools = { catalog: liveCatalog, filter: [] };
+  overlapState.toolAuth = { shell: { mode: 'off' } };
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const on = toggleToolGroup(['shell'], true, overlapState, refs, () => pending);
+  await toggleToolGroup(['shell'], false, overlapState, refs, async () => true);
+  release(true);
+  await on;
+  same(writes, [], 'a tool unchecked meanwhile is not re-enabled');
+}
+
 // ---- 5. Both chat surfaces resolve through the shared helper -------------
 for (const relPath of ['frontend/src/components/chat/cards.js', 'frontend/src/components/chat/ToolPopup.jsx']) {
   const src = fs.readFileSync(relPath, 'utf8');

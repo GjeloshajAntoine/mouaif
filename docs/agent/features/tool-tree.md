@@ -64,7 +64,9 @@ When a `tool_call` SSE event arrives, `markToolUsed(state, refs, name)` in `stre
 
 ### Toggle races
 
-`toggleTool` delegates to `toggleToolGroup`, so single rows and group rows share one code path. Three rules keep a tapped checkbox from reverting:
+`toggleTool` delegates to `toggleToolGroup`, so single rows and group rows share one code path. Four rules keep a tapped checkbox from reverting:
+
+- **An overlapping tap never skips the Off → Ask restore.** After the PATCH, the restore runs for every wanted name the *live* filter still selects, even when a newer tap or catalog refresh replaced `state.tools` meanwhile. It used to bail out in that case, so checking two Off tools quickly saved both in the filter but left the first gate Off and its checkbox snapped back. A name unchecked again before the PATCH landed is skipped and stays Off.
 
 - **Derive from the live filter.** The next filter is always computed from the current `state.tools`, and the write keeps the current catalog object, so a catalog refresh landing between taps is not overwritten.
 - **The background catalog load keeps the live filter.** `/api/tools/list` can take seconds (MCP cold start). When it resolves, `useChatState` keeps `tools.current.filter` instead of restoring the filter captured at chat load — previously a checkbox flipped during that window snapped back in the tree while the PATCH had saved the new value.
