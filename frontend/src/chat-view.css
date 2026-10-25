@@ -89,12 +89,17 @@ order: 3;
 flex: 1 1 100%;
 width: 100%;
 display: flex;
-flex-wrap: wrap;
+/* Keep the model field and thinking control on the same row. A wrapped
+   model field makes the head consume a third row on a phone, leaving a
+   short empty chat with no visible composer context. The picker is allowed
+   to shrink; its trigger truncates the model label instead of wrapping the
+   whole row. */
+flex-wrap: nowrap;
 align-items: center;
 /* Centered horizontally, no negative margin: the model row used to be
-pulled 6px up into the row above (and 6px added below) to "tuck" it under
-the usage chips, which overlapped the chips and the icon column instead of
-just tightening the rhythm. The head's own padding owns that spacing now. */
+   pulled 6px up into the row above (and 6px added below) to "tuck" it under
+   the usage chips, which overlapped the chips and the icon column instead of
+   just tightening the rhythm. The head's own padding owns that spacing now. */
 justify-content: center;
 gap: 2px 6px;
 min-width: 96px;
@@ -117,15 +122,44 @@ min-width: 96px;
   margin: 0;
 }
 /* The gear is an anchor <a> with no built-in chrome — give it the round
-icon-button look the tools wrench has, so the two read as a matching pair
-when stacked. Shared with .chat-view__image-btn and .chat-view__mic-btn
-through the .glyph-btn utility (base.css). */
+  icon-button look the tools wrench has, so the two read as a matching pair
+  when stacked. Shared with .chat-view__image-btn and .chat-view__mic-btn
+  through the .glyph-btn utility (base.css). */
 .chat-view__head-icons > .chat-view__iconbtn.glyph-btn {
-  width: var(--tap-sm);
-  height: var(--tap-sm);
-  min-width: var(--tap-sm);
-  min-height: var(--tap-sm);
-  text-decoration: none;
+width: var(--tap-sm);
+height: var(--tap-sm);
+min-width: var(--tap-sm);
+min-height: var(--tap-sm);
+text-decoration: none;
+}
+
+/* A chat's header is a control strip, not a content card. Keep its controls
+legible at the supplied phone scale while leaving the transcript to own
+the remaining viewport. */
+@media (max-width: 480px) {
+.chat-view__head {
+  padding-inline: 8px;
+}
+.chat-view__back {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+.chat-view__name {
+  font-size: 1rem;
+}
+.chat-view__usage-summary {
+  font-size: 0.7rem;
+}
+.chat-view__head-icons > .chat-view__iconbtn.glyph-btn,
+.chat-view__head-icons > .chat-view__toolbar-btn.tool-popup__trigger,
+.chat-view__head-icons > .tool-popup > .tool-popup__trigger {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+}
 }
 
 .chat-view__head-icons > .chat-view__toolbar-btn.tool-popup__trigger,
@@ -833,6 +867,13 @@ max-width: 200px;
     max-width: none;
   }
   .mp--chat > .mp__trigger {
+    min-width: 0;
+  }
+  .mp--chat > .mp__trigger .mp__stack,
+  .mp--chat > .mp__trigger .mp__id {
+    min-width: 0;
+  }
+  .mp--chat > .mp__trigger {
     width: 100%;
   }
   .chat-view__thinking-select {
@@ -849,6 +890,11 @@ max-width: 200px;
 }
 .mp--chat > .mp__trigger .mp__provider {
   display: none;
+}
+.mp--chat > .mp__trigger .mp__id {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Keep agent-editor and subagent-authorization triggers visually in

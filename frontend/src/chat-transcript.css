@@ -7,11 +7,16 @@
 .chat-view__transcript {
   display: flex;
   flex-direction: column;
+  /* Header cards are dense setup controls; a smaller inter-card rhythm keeps
+     the empty-chat landing area visible without changing message spacing. */
   gap: 4px;
   /* Reserve the rail's hit area on phones without shrinking the desktop
      reading column. */
   padding: 4px 8px 6px;
-  padding-right: calc(8px + var(--nav-col, 28px) + env(safe-area-inset-right, 0px));
+  /* The rail overlays the corner; it must not reserve a permanent strip in
+     the transcript's content box. Its own hit area remains clear of text by
+     position, while rows keep the full reading width on narrow phones. */
+  padding-right: calc(8px + env(safe-area-inset-right, 0px));
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -489,8 +494,11 @@
 .chat-view__empty {
   color: var(--muted);
   font-size: 0.76rem;
-  padding: 16px 16px 14px;
+  /* Keep the start prompt readable after the header cards. The transcript
+     opens at the bottom of an empty chat, so the prompt is visible while
+     the setup controls remain available above it on short phones. */
   margin-inline: clamp(8px, 3vw, 20px);
+  padding: 16px 16px 14px;
   text-align: center;
   display: flex;
   flex-direction: column;
