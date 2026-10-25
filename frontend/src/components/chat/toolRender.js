@@ -13,12 +13,6 @@ import {
   normalizeToolName,
   parsePlainFileToolResult
 } from './tools.js';
-import {
-  buildSubagentRunMermaid,
-  buildSubagentToolMermaid,
-  renderMermaidSvg,
-  svgToDataUrl
-} from '../../mermaid.js';
 // Caps for the expanded write_file content preview. The tool itself
 // allows a 1 MB write; painting that as one text node would jank the
 // expand, so the preview truncates and says so.
@@ -805,71 +799,6 @@ function renderGroupCliToolResult(body, r, args) {
   }
 }
 
-// ---- Subagent structure & communication schema preview ----------------
-//
-// Builds and mounts a zoomable SVG schema diagram (`md-diagram`) inside
-// subagent orchestration tool previews (`subagent_group_*`, `subagent_status`,
-// `subagent_messages`, `subagent_send`, `subagent_stop`, `subagent_publish`,
-// `subagent_read`, `subagent_decision`, `subagent_conflict`) and inside
-// complex `subagent` cards that coordinate child workers or group handoffs.
-export function renderSubagentSchemaDiagram(parent, mermaidSource, label) {
-  if (!parent || typeof mermaidSource !== 'string' || !mermaidSource.trim()) return null;
-  if (typeof renderMermaidSvg !== 'function' || typeof svgToDataUrl !== 'function') return null;
-  const svg = renderMermaidSvg(mermaidSource);
-  if (!svg) return null;
-  const dataUrl = svgToDataUrl(svg);
-  if (!dataUrl) return null;
-
-  const wrap = document.createElement('div');
-  wrap.className = 'md-diagram tool-preview__schema';
-
-  const img = document.createElement('img');
-  img.className = 'md-diagram__img';
-  img.src = dataUrl;
-  img.alt = label || 'Subagent communication & structure schema';
-  img.loading = 'lazy';
-  wrap.appendChild(zoomableImage(img, img.alt, {
-    imgClass: null,
-    buttonClass: 'tool-card__image-button tool-preview__schema-button'
-  }));
-
-  const details = document.createElement('details');
-  details.className = 'md-diagram__details';
-  const summary = document.createElement('summary');
-  summary.className = 'md-diagram__summary';
-  summary.textContent = 'Schema source';
-  const pre = document.createElement('pre');
-  pre.className = 'md-diagram__source tool-preview__pre';
-  pre.textContent = mermaidSource;
-  details.appendChild(summary);
-  details.appendChild(pre);
-  wrap.appendChild(details);
-
-  parent.appendChild(wrap);
-  return wrap;
-}
-
-export function renderSubagentOrchestrationToolResult(body, r, args, name) {
-  body.classList.add('tool-preview', 'tool-preview--subagent-schema');
-  const norm = normalizeToolName(name);
-  if (typeof r === 'string') r = coerceToolResult(r, norm);
-  const schema = typeof buildSubagentToolMermaid === 'function'
-    ? buildSubagentToolMermaid(norm, r, args)
-    : null;
-  if (schema) {
-    renderSubagentSchemaDiagram(body, schema, norm + ' schema');
-  }
-  renderGenericToolResult(body, r, args, norm);
-}
-
-export function renderSubagentRunSchema(host, result, args) {
-  if (!host || typeof buildSubagentRunMermaid !== 'function') return null;
-  const r = typeof result === 'string' ? coerceToolResult(result, 'subagent') : result;
-  const schema = buildSubagentRunMermaid(r, args);
-  if (!schema) return null;
-  return renderSubagentSchemaDiagram(host, schema, 'Subagent orchestration & communication schema');
-}
-
 // renderToolResultBody(body, toolResult, isSubagentFn)
 //
 // The dispatcher called by appendToolResultCard in transcript.js.
@@ -901,7 +830,6 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   if (name === 'task') return renderTaskToolResult(body, r);
   if (name === 'webpreview') return renderWebpreviewToolResult(body, r, args);
   if (['list_chats', 'search_chats', 'mouaif'].includes(name)) return renderMouaifToolResult(body, r, args, name);
-  if (name && name.startsWith('subagent_')) return renderSubagentOrchestrationToolResult(body, r, args, name);
   if (isSubagentFn(toolResult && toolResult.name)) {
     // The full chat is rendered by renderSubagentChat in
     // transcript.js, which is called by the caller right after

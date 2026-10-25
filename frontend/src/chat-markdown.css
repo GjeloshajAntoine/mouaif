@@ -193,9 +193,6 @@
   margin: 0 auto;
   border-radius: var(--r-sm);
 }
-:is(.chat-msg--assistant, .chat-msg--system, .tool-card__body) .tool-preview__schema-button {
-  width: 100%;
-}
 :is(.chat-msg--assistant, .chat-msg--system, .tool-card__body) .md-diagram__details {
   margin-top: 4px;
   border-top: 1px solid var(--border);

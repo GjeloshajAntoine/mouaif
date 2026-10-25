@@ -38,6 +38,7 @@ import { saveComposerDraftNow } from './composer.js';
 import { subscribeLive, closeLive } from './live.js';
 import { mergeServerRows, nextServerMessageIndex, tailSyncDomAction, newClientId, heldSeqs } from './msgMerge.js';
 import { toPublicImageAttachments } from './annotation.js';
+import { agentNetworkEvent, agentNetworkTurnEnded } from './agentNetworkState.js';
 import { mountOverlayCard } from './overlay.js';
 import { PAGE_SIZE_DEFAULT } from './pagination.js';
 import { costSnapshot } from './costSummary.js';
@@ -249,8 +250,10 @@ export async function runAgentCommand(agentName, task, state, refs) {
         const data = frame.data || {};
         if (frame.name === 'tool_call' && data.name === 'subagent') {
           rekeyToolCard(refs, data.id, pendingCard);
+          agentNetworkEvent(state, null, 'tool_call', data);
         } else if (frame.name === 'subagent_event') {
         handleSubagentStreamEvent({ eventName: data.kind }, Object.assign({ parentCallId: data.parentCallId }, data.data || {}), refs);
+        agentNetworkEvent(state, data.parentCallId, data.kind, data.data);
         if (data.kind === 'tool_result') applyMouaifToolResult(data.data, state, refs);
         } else if (frame.name === 'authorization_required') {
           mountOverlayCard(refs, data.callId, () => authorizationCard(data, projectDir, chatId, refs, null, state));
@@ -301,6 +304,7 @@ export async function runAgentCommand(agentName, task, state, refs) {
     else if (!body.ok) pendingCard.remove(); // failed with no id: don't strand it
   }
   appendToolResultCard({ id: body.id || null, name: 'subagent', ok: !!body.ok, result: body.result || body }, refs);
+  agentNetworkEvent(state, null, 'tool_result', { id: serverId, name: 'subagent', ok: !!body.ok, result: body.result || body });
   applyMouaifToolResult({ name: 'subagent', result: body.result || body }, state, refs);
   // Fold the persisted agent result into the live transcript immediately.
   // Its usage/cost is included so the header Total updates before reload.
@@ -1244,6 +1248,7 @@ state.messages = state.messages.filter((m) => m !== userMsg);
     // card instead of the live bubble / standalone tool cards.
     if (ev.eventName === 'subagent_event' && data) {
       handleSubagentStreamEvent({ eventName: data.kind }, Object.assign({ parentCallId: data.parentCallId }, data.data || {}), refs);
+      agentNetworkEvent(state, data.parentCallId, data.kind, data.data);
       if (data.kind === 'tool_result') applyMouaifToolResult(data.data, state, refs);
       return;
     }
@@ -1470,8 +1475,10 @@ state.messages = state.messages.filter((m) => m !== userMsg);
     } else if (ev.eventName === 'tool_call') {
       markToolUsed(state, refs, data && data.name);
       appendToolCallCard(data, refs);
+      agentNetworkEvent(state, null, 'tool_call', data);
     } else if (ev.eventName === 'tool_result') {
     appendToolResultCard(data, refs);
+    agentNetworkEvent(state, null, 'tool_result', data);
     if (data) applyMouaifToolResult(data, state, refs);
     } else if (ev.eventName === 'progress_update') {
       // Real-time progress bar from the model's report_progress tool.
@@ -1584,6 +1591,8 @@ setChatStatus(refs, 'error: ' + (data.code || '') + ' ' + (data.message || ''), 
     startStreamRecovery(state, refs, assembled);
     return;
   }
+  // The turn is over: delegations it left running ended with it.
+  agentNetworkTurnEnded(state);
   const finalLive = refs.transcript.current
     ? refs.transcript.current.querySelector('[data-live="1"]')
     : null;

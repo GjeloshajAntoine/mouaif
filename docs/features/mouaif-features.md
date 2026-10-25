@@ -122,6 +122,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Local preview proxy](local-preview-proxy.md) — frame a dev server on the machine running mouaif, from any device.
 - [Subagent orchestration](subagent-tools.md) — background handles, parent steering/cancellation and turn-scoped sibling handoffs.
 - [Subagent transcript](subagent-transcript.md) — the delegated conversation inside a subagent card, and what that run cost.
+- [Agent network](agent-network.md) — one live graph of the chat's delegations, with each message animated along the edge it travels.
 - [Model choice on subagent approval](auth-model-picker.md) — pick the model when approving a subagent run.
 - [Tool output profile](tool-output.md) — how much of each tool result is sent back to the model.
 - [Tool feedback compaction](tool-feedback-compaction.md) — large results stay complete in the chat but are trimmed for the model.

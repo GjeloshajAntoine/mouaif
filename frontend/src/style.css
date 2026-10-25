@@ -20,6 +20,7 @@
    12b. dictation.css  — the dictation page and the composer mic button
    13. chat-at-mention.css — @-mention popup, arg bar
    14. tool-cards.css  — tool_call/result, ask_user, subagent, progress, previews
+   14b. agent-network.css — delegation graph dock over the transcript
    15. draft-craft.css — draft handoff picker and image annotator
    16. tool-tree.css   — tool tree component
    17. features.css    — MCP, file tags, pricing, PWA banners, reduce-motion
@@ -54,6 +55,7 @@
 @import './dictation.css';
 @import './chat-at-mention.css';
 @import './tool-cards.css';
+@import './agent-network.css';
 @import './draft-craft.css';
 @import './tool-tree.css';
 @import './features.css';

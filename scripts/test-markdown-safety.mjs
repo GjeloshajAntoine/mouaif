@@ -21,11 +21,6 @@
 import assert from 'node:assert/strict';
 
 const { renderMarkdown } = await import('../frontend/src/markdown.js');
-const {
-  buildSubagentRunMermaid,
-  buildSubagentToolMermaid,
-  renderMermaidSvg
-} = await import('../frontend/src/mermaid.js');
 
 // ---- Minimal tag/attribute parser -------------------------------------
 
@@ -354,83 +349,6 @@ check('mermaid diagram families render SVG and fallback on unknown syntax', () =
   assert.ok(!unknown.includes('md-diagram__img'), unknown);
   assert.ok(unknown.includes('<pre><code class="language-mermaid">'), unknown);
   assertInert(unknown, 'mermaid-fallback');
-});
-
-check('subagent structure and communication schemas render inert SVG diagrams', () => {
-  const groupSchema = buildSubagentToolMermaid(
-    'subagent_group_create',
-    {
-      groupId: 'group-1',
-      name: 'Release pipeline <script>',
-      state: 'running',
-      members: [
-        { memberId: 'architect', role: 'Design <img onerror=alert(1)>', state: 'completed', dependsOn: [] },
-        { memberId: 'builder', role: 'Implement', state: 'running', dependsOn: ['architect'] },
-        { memberId: 'tester', role: 'Verify', state: 'waiting', dependsOn: ['builder'] }
-      ],
-      decisions: [{ name: 'api-contract', author: 'architect', state: 'approved' }],
-      conflicts: [{ name: 'lockfile', author: 'builder', state: 'open', members: ['builder', 'tester'] }],
-      artifacts: ['schema-spec']
-    },
-    {}
-  );
-  assert.ok(groupSchema && groupSchema.startsWith('flowchart TD'), groupSchema);
-  const groupSvg = renderMermaidSvg(groupSchema);
-  assert.ok(groupSvg && groupSvg.startsWith('<svg') && groupSvg.includes('architect'), groupSvg);
-  assertInert(renderMarkdown('```mermaid\n' + groupSchema + '\n```'), 'subagent-group-schema');
-
-  const statusSchema = buildSubagentToolMermaid(
-    'subagent_status',
-    {
-      runs: [
-        { callId: 'w1', agent: 'search', memberId: 'architect', state: 'completed', lastLine: 'Done', published: ['spec-v1'] },
-        { callId: 'w2', parentCallId: 'w1', agent: 'coder', memberId: 'builder', state: 'running', lastLine: 'Editing files' }
-      ],
-      escalations: [{ name: 'merge-conflict', sourceCallId: 'w2', state: 'open' }]
-    },
-    {}
-  );
-  assert.ok(statusSchema && statusSchema.startsWith('flowchart TD'), statusSchema);
-  assertInert(renderMarkdown('```mermaid\n' + statusSchema + '\n```'), 'subagent-status-schema');
-
-  const msgSchema = buildSubagentToolMermaid(
-    'subagent_messages',
-    {
-      callId: 'worker-1',
-      state: 'running',
-      deliveries: [{ messageId: 'm1', state: 'delivered' }],
-      lines: [
-        { cursor: 1, kind: 'progress_update', text: 'Step 1/3' },
-        { cursor: 2, kind: 'message', text: 'Found 3 endpoints <script>alert(1)</script>' }
-      ]
-    },
-    { callId: 'worker-1' }
-  );
-  assert.ok(msgSchema && msgSchema.startsWith('sequenceDiagram'), msgSchema);
-  assertInert(renderMarkdown('```mermaid\n' + msgSchema + '\n```'), 'subagent-messages-schema');
-
-  const runSchema = buildSubagentRunMermaid(
-    {
-      ok: true,
-      agent: 'coordinator',
-      state: 'completed',
-      published: ['final-handoff'],
-      chat: [
-        {
-          role: 'assistant',
-          tool_calls: [
-            { id: 'c1', function: { name: 'subagent_group_create', arguments: JSON.stringify({ name: 'team', objective: 'ship', members: [{ memberId: 'a', role: 'r', workspace: '.' }] }) } },
-            { id: 'c2', function: { name: 'subagent', arguments: JSON.stringify({ task: 'Audit auth', memberId: 'a', background: true }) } },
-            { id: 'c3', function: { name: 'subagent_send', arguments: JSON.stringify({ callId: 'c2', message: 'Check JWT expiry' }) } },
-            { id: 'c4', function: { name: 'subagent_messages', arguments: JSON.stringify({ callId: 'c2' }) } }
-          ]
-        }
-      ]
-    },
-    { task: 'Coordinate release audit' }
-  );
-  assert.ok(runSchema && runSchema.startsWith('sequenceDiagram'), runSchema);
-  assertInert(renderMarkdown('```mermaid\n' + runSchema + '\n```'), 'subagent-run-schema');
 });
 
 check('indented fenced code/mermaid blocks and adjacent lists/headings render cleanly', () => {

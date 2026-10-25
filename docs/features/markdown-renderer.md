@@ -86,7 +86,6 @@ Each rendered diagram includes:
 - A tap-to-zoom `<img class="md-diagram__img">` backed by an inert `data:image/svg+xml;utf8,…` URI, so tapping the diagram on a phone opens it in the full-screen image lightbox.
 - A collapsible **Mermaid source** / **Schema source** `<details>` disclosure below the diagram to inspect or copy the raw definition.
 - Automatic fallback to a standard `<pre><code class="language-mermaid">` block when a diagram uses an unrecognised directive.
-- Automatic structure & communication schema generation (`buildSubagentToolMermaid`, `buildSubagentRunMermaid`) inside expanded subagent orchestration tool cards (`subagent_group_*`, `subagent_status`, `subagent_messages`, `subagent_send`, `subagent_stop`, `subagent_publish`, `subagent_read`, `subagent_decision`, `subagent_conflict`) and complex multi-agent `subagent` runs.
 
 ## Mobile considerations
 

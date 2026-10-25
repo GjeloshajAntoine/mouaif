@@ -34,6 +34,7 @@ import {
 } from './transcript.js';
 import { mountOverlayCard, removeOverlayCardByCallId, removeOverlayCards } from './overlay.js';
 import { setChatStatus } from './usage.js';
+import { agentNetworkEvent, agentNetworkTurnEnded } from './agentNetworkState.js';
 
 const liveByChat = new Map();
 
@@ -222,6 +223,7 @@ function dispatchLiveEvent(ev, refs, state, key) {
   }
   if (ev.eventName === 'subagent_event') {
     handleSubagentStreamEvent({ eventName: data.kind || 'message' }, Object.assign({ parentCallId: data.parentCallId }, data.data || {}), refs);
+    agentNetworkEvent(state, data.parentCallId, data.kind || 'message', data.data);
     return;
   }
   if (ev.eventName === 'progress_update') {
@@ -257,6 +259,7 @@ function handleLiveRunEnd(ev, refs, state, key) {
   state.watchingRun = false;
   state.watchingStableTicks = 0;
   state.runSettled = true;
+  agentNetworkTurnEnded(state);
   if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
   setChatStatus(refs, 'done', 'success');
   // Drop a live bubble that never got its `assistant_turn_end` (the run died

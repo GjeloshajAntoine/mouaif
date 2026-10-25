@@ -22,6 +22,7 @@ import { FileToolbar } from './FileToolbar.jsx';
 import { ToolPopup } from './ToolPopup.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
 import { WebpreviewDock } from './WebpreviewDock.jsx';
+import { AgentNetworkDock } from './AgentNetworkDock.jsx';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
@@ -684,6 +685,10 @@ preview: webPreviewPayload,
 onOpen: () => setWebPreviewOpen(true),
 onDismiss: () => clearWebPreview()
 }),
+// Delegation graph: who started whom and what they say to each other,
+// animated as messages travel. A bar in the bottom stack that expands in
+// place or goes full screen; absent until the chat has a subagent.
+h(AgentNetworkDock, { transcriptRef: refs.transcript }),
 h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {

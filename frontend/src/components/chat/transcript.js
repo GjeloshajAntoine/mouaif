@@ -26,8 +26,6 @@ import {
   renderToolResultBody,
   renderFileBatchToolResult,
   renderGroupCliToolResult,
-  renderSubagentOrchestrationToolResult,
-  renderSubagentRunSchema,
   zoomableImage
 } from './toolRender.js';
 import { publish as publishWebPreview } from './webpreviewState.js';
@@ -50,6 +48,7 @@ import {
 import { renderUsageMeta } from './usage.js';
 import { retryPayloadForError } from './retry.js';
 import { messageKind } from './messageKind.js';
+import { syncAgentNetwork } from './agentNetworkState.js';
 // agentLabel(agentName) -> string
 //
 // The role label a delegated run's system row shows. The model chooses an
@@ -1988,9 +1987,6 @@ function renderSubagentToolPreview(parent, name, raw, args) {
   if (toolName === 'search_files') return renderSearchFilesInPreview(preview, r);
   if (toolName === 'edit_file') return renderEditFileInPreview(preview, r);
   if (toolName === 'write_file') return renderWriteFileInPreview(preview, r, args);
-  if (toolName && toolName.startsWith('subagent_') && typeof renderSubagentOrchestrationToolResult === 'function') {
-    return renderSubagentOrchestrationToolResult(preview, r, args, toolName);
-  }
   if (r && Array.isArray(r.content)) {
     const lines = [];
     for (const c of r.content) {
@@ -2140,10 +2136,6 @@ export function renderSubagentChat(card, toolResult) {
   // Don't let taps inside the nested chat bubble up to the parent
   // card's expand/collapse toggle.
   wrap.addEventListener('click', (e) => e.stopPropagation());
-  if (typeof renderSubagentRunSchema === 'function') {
-    const runArgs = (toolResult && toolResult.args) || card._toolArgs || null;
-    renderSubagentRunSchema(wrap, r, runArgs);
-  }
   const turns = chat && chat.length ? chat : [{ role: 'assistant', content: r.text }];
   // One row per tool CALL, keyed by call id. The persisted nested chat
   // splits a call and its result into two messages (an assistant turn with
@@ -3740,6 +3732,7 @@ function syncHeaderCards(state, refs, empty) {
 export function reconcileTranscript(state, refs) {
   const el = refs.transcript.current;
   if (!el) return;
+  syncAgentNetwork(state);
   if (refs._pendingTranscriptChunk || !hasMessageRows(el)) {
     renderTranscript(state, refs);
     return;
@@ -3759,6 +3752,8 @@ export function reconcileTranscript(state, refs) {
 
 export function renderTranscript(state, refs) {
 if (!refs.transcript.current) return;
+// The agent network dock reads the same rows (agentNetworkState.js).
+syncAgentNetwork(state);
 // Preserve expand/collapse across the rebuild below: appending an
 // element re-runs renderTranscript from disk, which would otherwise
 // collapse every tool/result card the user had opened.

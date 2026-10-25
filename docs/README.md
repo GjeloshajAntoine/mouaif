@@ -127,6 +127,7 @@ One page per feature: what it does and how to use it.
 - [Web preview page](features/webpreview-project-page.md) — capture and view a URL from project settings.
 - [Local preview proxy](features/local-preview-proxy.md) — frame a dev server running on the machine with mouaif, from your phone.
 - [Subagent transcript](features/subagent-transcript.md) — the delegated conversation inside a subagent card, and what that run cost.
+- [Agent network](features/agent-network.md) — one live graph of the chat's delegations, with each message animated along the edge it travels.
 - [Model choice on subagent approval](features/auth-model-picker.md) — pick the model when approving a subagent run.
 - [Tool output profile](features/tool-output.md) — how much of each tool result is sent back to the model.
 - [Tool feedback compaction](features/tool-feedback-compaction.md) — large results stay complete in the chat but are trimmed for the model.
