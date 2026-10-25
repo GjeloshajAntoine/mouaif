@@ -724,13 +724,16 @@ recent: loadRecent(state)
   // Re-render the tools card when a tool is marked as used (called
   // from the SSE stream handler). This swaps the DOM subtree in
   // place so the "used" badge appears without a full transcript
-  // rebuild.
+  // rebuild. The composer ToolPopup renders the same ref-backed data, so
+  // bump its stamp too: markToolUsed only calls this, and without the bump
+  // an open popup never showed the "used" dot of a tool called mid-turn.
   state._updateToolsCard = () => {
     if (refs.toolsCard.current && refs.toolsCard.current.parentNode) {
       const fresh = buildToolsCard(state);
       refs.toolsCard.current.parentNode.replaceChild(fresh, refs.toolsCard.current);
       refs.toolsCard.current = fresh;
     }
+    setToolDataStamp((v) => v + 1);
   };
 
   state._runCustomAction = (action) => runCustomAction(action, state, refs);
