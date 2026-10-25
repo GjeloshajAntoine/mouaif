@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `chrome-debug` MCP server launches an isolated headless Chrome instance to enable AI-driven browser inspection and automation (`take_snapshot`, `click`, `type_text`, `navigate`, etc.) without requiring manual browser setup.
+The `chrome-debug` MCP server gives the model browser inspection and automation (`take_snapshot`, `click`, `type_text`, `navigate`, etc.). The repository's `.mcp.json` attaches it to the Chrome already listening on `http://127.0.0.1:9222` — the same browser the Inspector uses — instead of launching a new one.
 
 ## Getting started
 
@@ -12,22 +12,15 @@ The `chrome-debug` MCP server launches an isolated headless Chrome instance to e
 2. Find the **`chrome-debug`** row and tap **Start**.
 3. In any chat in that project, the browser automation tools will become available to the model.
 
-### Pairing with the Inspector
+### Sharing one browser with the Inspector
 
-By default, the Inspector tab and the `chrome-debug` MCP server operate independently:
+The server runs with `--browser-url=http://127.0.0.1:9222`, so the Inspector and the model share one browser. Start that Chrome with `--remote-debugging-port=9222` before the server's first tool call; if nothing listens there, the tool call fails instead of starting a browser. In the Docker UI-review stack the same URL reaches the stack's own `chrome` service, which has its own CPU and memory cap.
 
-- **Inspector** connects to a user-configured debug endpoint (default: `http://127.0.0.1:9222`).
-- **chrome-debug** launches its own isolated Chrome instance for the model's actions.
-
-If you want both the Inspector UI and the model to share the exact same browser window, start Chrome with `--remote-debugging-port=9222` and set the MCP server argument to:
-
-```bash
---browser-url=http://127.0.0.1:9222
-```
+A server started with `--isolated --headless` instead launches its own Chrome and keeps it for as long as the server runs, even when no chat is using it. Each one holds about 0.5 GiB and keeps a renderer busy, so on a small host the extra browsers add up quickly.
 
 ## Behavior
 
-- **Headless by default** — Chrome launches with an isolated temporary profile and no window, making it compatible with servers, containers, and desktop environments alike.
+- **No browser of its own** — the server attaches to the running Chrome and never starts another one.
 - **Custom executable path** — if Chrome is in a non-standard location, you can add `--executablePath=/path/to/chrome` in the server arguments.
 - **Tool safety** — browser actions follow your project's tool authorization permissions (`Ask`, `Allow`, or `Off`).
 

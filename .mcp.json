@@ -30,9 +30,7 @@
       "args": [
         "-y",
         "chrome-devtools-mcp@latest",
-        "--channel=stable",
-        "--isolated",
-        "--headless",
+        "--browser-url=http://127.0.0.1:9222",
         "--no-usage-statistics"
       ],
       "env": {},
