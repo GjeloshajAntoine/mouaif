@@ -1469,6 +1469,17 @@ class: 'view-back',
         ),
         h('a', {
         class: 'group__row settings-project__link-row settings-project__options-link',
+        'aria-label': 'Tool wording',
+        href: settingsLink('settings/project/tool-overrides', navContext())
+        },
+        h('span', { class: 'group__row-body' },
+        h('span', { class: 'group__row-label' }, 'Tool wording'),
+        h('span', { class: 'settings-project__link-sub' }, 'Wording sets for tool descriptions and field names: create, compare, import, choose one for chats')
+        ),
+        h('span', { class: 'group__row-chev', 'aria-hidden': 'true' }, '›')
+        ),
+        h('a', {
+        class: 'group__row settings-project__link-row settings-project__options-link',
         'aria-label': 'File tool options',
         href: settingsLink('settings/project/output', navContext())
         },

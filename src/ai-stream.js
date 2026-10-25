@@ -13,6 +13,7 @@ const { supportsOpenAIToolLoop } = require('./providerShapes.js');
 const { projectModelRecord } = require('./util.js');
 const toolFeedback = require('./toolFeedback.js');
 const usageMetrics = require('./usage.js');
+const toolOverridesMod = require('./toolOverrides.js');
 
 // ---- Streaming core ----------------------------------------------------
 
@@ -134,6 +135,7 @@ async function runSingleToolCall(c, cx) {
     try { args = JSON.parse(c.arguments); }
     catch { args = { __raw: c.arguments }; }
   }
+  if (cx.toolOverrides) args = toolOverridesMod.restoreArgs(c.name, args, cx.toolOverrides);
   let exec;
   let callEmitted = false;
   // Reject forged parent controls before creating a nested approval wait.
@@ -797,6 +799,17 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // Emptying the collected list here (after every off-gate has run, before the
   // per-chat filter) means the request carries no `tools` field at all.
   if (opts && opts.noTools) toolSpecs.length = 0;
+  // Project tool wording (src/toolOverrides.js): the model is advertised the
+  // re-worded copies, and runSingleToolCall renames a call's fields back to
+  // the originals before anything dispatches. A direct composer invocation
+  // (`singleToolCall`) already speaks original names, so it restores nothing.
+  const toolOverrides = opts && opts.projectDir && !opts.singleToolCall
+    ? toolOverridesMod.prune(toolSpecs, toolOverridesMod.overridesFor(opts.projectDir))
+    : {};
+  if (Object.keys(toolOverrides).length) {
+    const reworded = toolOverridesMod.applyToSpecs(toolSpecs, toolOverrides);
+    toolSpecs.splice(0, toolSpecs.length, ...reworded);
+  }
   let visibleToolSpecs = toolSpecs;
   if (opts && Array.isArray(opts.enabledTools)) {
     const allow = new Set(opts.enabledTools.map((n) => String(n)));
@@ -866,7 +879,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
 
   if (opts && opts.singleToolCall) {
     return runSingleToolCall(opts.singleToolCall, {
-      opts, onEvent, convo: null, toolSpecs, visibleToolSpecs,
+      opts, onEvent, convo: null, toolSpecs, visibleToolSpecs, toolOverrides,
       promptProfilesMod, discoveredToolNames, modelContentForTool,
       dispatchTool, firstStringArgument, toolResultImageParts,
       getLastToolCallKey: () => lastToolCallKey,
@@ -991,6 +1004,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
         convo,
         toolSpecs,
         visibleToolSpecs,
+        toolOverrides,
         promptProfilesMod,
         discoveredToolNames,
         modelContentForTool,

@@ -167,6 +167,14 @@ const ROUTES = [
     chatId: m.params.get('chatId') || '',
     from: fromParam(m.params)
   })),
+  // `Tool wording`: compare, create and import the description and field
+  // names the model is told for each tool (docs/features/tool-overrides.md).
+  exactOrQuery('settings/project/tool-overrides', (m) => ({
+    name: 'settingsProjectToolOverrides',
+    projectDir: m.params.get('projectDir') || '',
+    chatId: m.params.get('chatId') || '',
+    from: fromParam(m.params)
+  })),
   // `Agent files`: project-wide gate and file names to look for.
   exactOrQuery('settings/project/agent-files', (m) => ({
     name: 'settingsProjectAgentFiles',

@@ -163,6 +163,16 @@ fileOrbButton: false,
   // command still passes through the normal authorization gate. See
   // docs/features/shell-review.md.
   shellReview: { mode: 'off' },
+  // Tool wording sets — named sets of replacement descriptions and field
+  // (parameter) names, and the one in effect ('' = Built-in). Shape:
+  //   { active: "<id>" | "", sets: { "<id>": { name, tools: { "<tool>":
+  //     { description?, fields?: { "<field>": "<new name>" } } } } } }
+  // The model sees the re-worded spec; the app still runs the original. Read
+  // defensively by src/toolOverrides.js. See docs/features/tool-overrides.md.
+  toolWording: { active: '', sets: {} },
+  // Legacy flat wording (one set's `tools` map), applied only while a
+  // project has no `toolWording` sets; the page moves it into a set on save.
+  toolOverrides: {},
   // Maximum UTF-8 bytes of one tool result copied into model context.
   // The complete result remains available to the UI and transcript.
   toolFeedbackMaxBytes: 64 * 1024,

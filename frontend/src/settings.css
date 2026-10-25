@@ -1027,3 +1027,183 @@ textarea#projectEditor {
 .settings-project__shell-review-warn {
   color: var(--warn, #c98a1a);
 }
+
+/* Tool wording page (docs/features/tool-overrides.md): one collapsible row per
+   tool, the built-in wording beside what the model receives, and a name input
+   per field. */
+.tool-ov__list { display: flex; flex-direction: column; gap: 6px; padding: 2px 6px 6px; }
+.tool-ov__row {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.tool-ov__row--custom { border-color: var(--accent); }
+.tool-ov__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.tool-ov__name { font-size: 0.82rem; overflow-wrap: anywhere; }
+.tool-ov__badge {
+  color: var(--accent);
+  font-size: 0.66rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 0 7px;
+}
+.tool-ov__source { margin-left: auto; color: var(--muted); font-size: 0.7rem; }
+.tool-ov__body { display: flex; flex-direction: column; gap: 8px; padding: 4px 10px 10px; }
+.tool-ov__desc { width: 100%; min-width: 0; line-height: 1.5; resize: vertical; }
+.tool-ov__compare { display: grid; grid-template-columns: 1fr; gap: 8px; }
+@media (min-width: 640px) { .tool-ov__compare { grid-template-columns: 1fr 1fr; } }
+.tool-ov__col {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.tool-ov__col--sent { border-color: var(--accent); }
+.tool-ov__col-title { color: var(--muted); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.tool-ov__text { margin: 2px 0 0; font-size: 0.76rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tool-ov__fields-title { margin-top: 2px; }
+.tool-ov__fields { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.tool-ov__field { display: flex; flex-direction: column; gap: 4px; }
+.tool-ov__field-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 0.8rem; }
+.tool-ov__type { color: var(--muted); font-size: 0.66rem; border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; }
+.tool-ov__filter { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; min-height: var(--tap); }
+.tool-ov__empty { padding: 8px 4px; }
+.tool-ov__sample { margin: 4px 0; padding: 6px 8px; overflow-x: auto; font-size: 0.72rem; background: var(--surface-2); border-radius: var(--r-sm); }
+.tool-ov__file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.settings-project__item-actions label.btn { position: relative; cursor: pointer; }
+/* Rows: description editor, word diff for Compare. */
+.tool-ov__descbox { display: flex; flex-direction: column; gap: 6px; }
+.tool-ov__deschead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+/* Tabs across the tools: Built-in, one per set, Compare. Scrolls sideways
+   when there are more sets than fit. */
+.tool-ov__tabs {
+  display: flex;
+  gap: 2px;
+  margin: 0 6px 8px;
+  padding: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+}
+.tool-ov__tabs::-webkit-scrollbar { display: none; }
+.tool-ov__tab {
+  flex: 1 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tool-ov__tab--on { background: var(--accent); color: var(--on-accent); }
+.tool-ov__tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+.tool-ov__active { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.tool-ov__select { width: auto; min-width: 10rem; max-width: 100%; }
+.tool-ov__set-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.tool-ov__set-head .settings-project__item-note { flex: 1 1 14rem; }
+.tool-ov__set-name { flex: 1 1 12rem; min-width: 0; }
+.tool-ov__pair { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.tool-ov__pair .tool-ov__select { flex: 1 1 9rem; }
+.tool-ov__choices { display: flex; flex-direction: column; gap: 4px; }
+.tool-ov__choice { display: flex; align-items: flex-start; gap: 8px; min-height: var(--tap); padding: 4px 0; cursor: pointer; }
+.tool-ov__choice input { margin-top: 3px; }
+.tool-ov__choice > span { display: flex; flex-direction: column; }
+.tool-ov__choice-label { font-size: 0.84rem; font-weight: 600; }
+.tool-ov__create { display: flex; flex-wrap: wrap; gap: 8px; }
+.tool-ov__io { display: flex; flex-direction: column; gap: 8px; }
+.tool-ov__io-actions { margin: 0; }
+.tool-ov__import { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: var(--r-sm); }
+.tool-ov__desc--grow { min-height: 6.5em; max-height: 60vh; overflow-y: auto; resize: none; }
+.tool-ov__descfoot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tool-ov__count { color: var(--muted); font-size: 0.7rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tool-ov__count--full { color: var(--danger); }
+.tool-ov__diff {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.tool-ov__ins, .tool-ov__del { border-radius: 3px; padding: 0 1px; }
+.tool-ov__ins { background: var(--success-soft); color: var(--success); text-decoration: none; }
+.tool-ov__del { background: var(--danger-soft); color: var(--danger); text-decoration: line-through; }
+.tool-ov__del + .tool-ov__ins { margin-left: 3px; }
+/* Unsaved changes: rows are marked, and one bar at the bottom saves or
+   discards the whole draft. */
+.tool-ov__row--dirty { border-color: var(--warning); }
+.tool-ov__badge--dirty { color: var(--warning); border-color: var(--warning); }
+.tool-ov__savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.25);
+}
+.tool-ov__savebar-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tool-ov__savebar-count { font-weight: 600; font-size: 0.86rem; }
+.tool-ov__savebar-actions { display: flex; gap: 8px; margin-left: auto; }
+.tool-ov__default { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.86rem; margin-left: auto; }
+.tool-ov__set-head > .tool-ov__select { flex: 1 1 12rem; }
+/* Wording sets management: blocks split by a rule, small muted labels over
+   their controls, and one card (the chosen set or a form) as the lowest tier. */
+.tool-ov__manage { gap: 0; padding-top: 4px; padding-bottom: 4px; }
+.tool-ov__block { display: flex; flex-direction: column; gap: 8px; padding: 10px 0; }
+.tool-ov__block + .tool-ov__block { border-top: 1px solid var(--border); }
+.tool-ov__label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.tool-ov__kv { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-height: var(--tap); }
+.tool-ov__kv-value { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.9rem; }
+.tool-ov__kv-action { margin-left: auto; }
+.tool-ov__picker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.tool-ov__picker > .tool-ov__select, .tool-ov__picker-empty { flex: 1 1 12rem; min-width: 0; }
+.tool-ov__btns { display: flex; gap: 8px; flex-shrink: 0; }
+.tool-ov__card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.tool-ov__card--default { border-color: var(--success); }
+.tool-ov__card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: var(--tap); }
+.tool-ov__card-title { font-weight: 700; font-size: 1rem; overflow-wrap: anywhere; }
+.tool-ov__field-group { display: flex; flex-direction: column; gap: 6px; }
+.tool-ov__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+.tool-ov__actions--end { justify-content: flex-end; }
+.tool-ov__spacer { flex: 1 1 0; }

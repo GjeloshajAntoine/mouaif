@@ -138,6 +138,9 @@ function check(name, fn) {
     eq('#/settings/project/shell-review?projectDir=%2Fp&chatId=c1&from=projects', {
     name: 'settingsProjectShellReview', projectDir: '/p', chatId: 'c1', from: 'projects'
     });
+    eq('#/settings/project/tool-overrides?projectDir=%2Fp&chatId=c1&from=projects', {
+    name: 'settingsProjectToolOverrides', projectDir: '/p', chatId: 'c1', from: 'projects'
+    });
     eq('#/settings/project/agent-files?projectDir=%2Fp&chatId=c1&from=projects', {
     name: 'settingsProjectAgentFiles', projectDir: '/p', chatId: 'c1', from: 'projects'
     });
@@ -252,7 +255,7 @@ function check(name, fn) {
     const names = new Set();
     for (const h of ['#/settings', '#/settings/access', '#/inspector', '#/settings/providers', '#/settings/providers/new',
       '#/settings/providers/p', '#/settings/project', '#/settings/project/technical', '#/settings/project/output',
-      '#/settings/project/shell-review', '#/settings/project/agent-files',
+      '#/settings/project/shell-review', '#/settings/project/tool-overrides', '#/settings/project/agent-files',
       '#/settings/project/preview', '#/settings/project/hide', '#/settings/agents', '#/settings/agents/a',
       '#/settings/actions', '#/settings/actions/a', '#/settings/projects', '#/settings/defaults',
       '#/settings/notifications', '#/settings/pricing', '#/settings/prompts', '#/settings/prompts/p',
@@ -260,7 +263,7 @@ function check(name, fn) {
       '#/settings/about', '#/settings/dictation', '#/dictation', '#/chat/c', '#/projects/new']) {
       names.add(parseHash(h).name);
       }
-      assert.equal(names.size, 30, Array.from(names).sort().join(','));
+      assert.equal(names.size, 31, Array.from(names).sort().join(','));
     assert.ok(mod.ROUTE_PATHS >= names.size, 'the table is not smaller than its distinct routes');
   });
 
