@@ -33,11 +33,13 @@ The three tools follow the **mouaif** family gate in **Settings → Project** (O
 - **Failures retry.** A wake that cannot start (for example the provider is down) is retried with a growing delay and marked `failed` after three attempts. The last error is kept.
 - **Repeating wakes do not catch up.** After each run the next one is due `every` later, counted from the moment it ran. Time spent down is not replayed.
 - **Limits.** At most 20 pending wakes per chat, a first wake between 10 seconds and 30 days away, a repeat interval of at least a minute, and at most 100 runs. These stop an agent from waking itself in a tight loop.
+- **Runs can hold or end wakes.** If the chat has a [run](long-running-runs.md), a paused run holds its wakes, and a stopped run or a spent budget cancels them.
 - **Chats own their wakes.** A chat sees and cancels only its own schedules. Deleting a chat cancels its wakes. A chat with no selected model cannot schedule one.
 - **Finished wakes are kept for a week**, then removed.
 - **At least once.** A wake is leased for five minutes while it is being delivered, so a crash mid-delivery repeats it instead of losing it.
 
 ## Related
 
+- [Long-running runs](long-running-runs.md) — a budget, pause/stop controls and a watchdog for chats that use wake-ups.
 - [Job tools](job-tools.md) — wait for, inspect and cancel background commands.
 - [Chat model tools](chat-model-tools.md) — `start_chat`, the same background-turn path a wake uses.

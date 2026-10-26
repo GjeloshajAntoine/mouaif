@@ -1,0 +1,79 @@
+/* Run dock (components/chat/RunDock.jsx): the user's controls over a
+   long-running run, a bar in the bottom stack above the composer. Mobile
+   first: one row, goal truncated, 44px controls that wrap under the text on
+   very narrow screens. */
+
+.run-dock {
+  --run-color: var(--accent);
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  width: 100%;
+  max-width: var(--read-max, 44rem);
+  margin: 4px auto 0;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--run-color) 40%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--run-color) 7%, var(--surface));
+}
+.run-dock--paused { --run-color: var(--warning); }
+.run-dock--stalled { --run-color: var(--danger); }
+.run-dock--exhausted { --run-color: var(--warning); }
+
+.run-dock__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--run-color);
+}
+.run-dock--running .run-dock__dot { animation: run-dock-pulse 1.6s ease-in-out infinite; }
+@keyframes run-dock-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .run-dock--running .run-dock__dot { animation: none; } }
+
+.run-dock__text {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+.run-dock__goal {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+.run-dock__meta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.run-dock__btn {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.run-dock__btn:disabled { opacity: 0.5; cursor: default; }
+.run-dock__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.run-dock__btn--primary { border-color: var(--accent); color: var(--accent); }
+.run-dock__btn--danger { color: var(--danger); }
+.run-dock__btn--danger.is-armed { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+@media (max-width: 420px) {
+  .run-dock__text { flex-basis: calc(100% - 20px); }
+  .run-dock__btn { flex: 1 1 0; }
+}

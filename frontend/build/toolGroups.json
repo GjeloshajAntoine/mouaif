@@ -73,7 +73,10 @@
       "job_cancel",
       "schedule_wake",
       "schedule_list",
-      "schedule_cancel"
+      "schedule_cancel",
+      "run_start",
+      "run_status",
+      "run_end"
     ]
   },
   {

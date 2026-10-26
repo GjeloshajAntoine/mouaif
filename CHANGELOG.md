@@ -11,6 +11,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Added
 
+- **Long-running runs** — `run_start`, `run_status` and `run_end` give a chat that works for hours a goal and limits (turns, spend, time). A bar above the composer lets you pause, resume or stop the run. mouaif enforces the budget with a final wrap-up turn, reminds a run that has gone quiet and marks it stalled after three ignored reminders, notifying you. See [long-running runs](docs/features/long-running-runs.md).
 - **Wait on chats, subagents and groups** — `wait_for` can now wait for other chats of the project, delegated subagents and subagent groups, or for several background jobs at once (`all` or `any`), so a fan-out of work is one call. See [job tools](docs/features/job-tools.md).
 - **Scheduled wake-ups** — `schedule_wake`, `schedule_list` and `schedule_cancel` let a chat come back to its own work later. The assistant saves a message for a time, a repeat or a background job finishing, and mouaif starts a turn in the chat when it is due, including after a restart. See [scheduled wake-ups](docs/features/scheduled-wakes.md).
 - **Background jobs survive restarts as records** — `job_status` and `wait_for` still answer after mouaif restarts. A finished job keeps its outcome and one that was running is reported as `lost`.

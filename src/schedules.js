@@ -153,7 +153,15 @@ function wakeText(row, reason, jobState) {
 }
 
 // createScheduler({ store, now, startTurn, getChat, getJob, lifecycle }) -> { tick, start, stop }
-function createScheduler({ store, now = Date.now, startTurn, getChat, getJob, lifecycle = {}, tickMs = TICK_MS } = {}) {
+function finalText(reason) {
+  return '\u23f0 Run budget reached \u00b7 ' + reason + '\n\nStop the long-running task now. Summarize what was done, what remains and what the user should decide next. Do not schedule further wake-ups.';
+}
+
+// hooks (optional, from src/runs.js):
+//   gate(projectDir, chatId)          -> { action: 'send' | 'hold' | 'cancel' | 'final', reason? }
+//   delivered(projectDir, chatId, gate) after a wake started a turn
+//   onTick()                           once per tick (the run watchdog)
+function createScheduler({ store, now = Date.now, startTurn, getChat, getJob, lifecycle = {}, tickMs = TICK_MS, hooks = {} } = {}) {
   let timer = null;
   let ticking = false;
   async function fire(row, reason, jobState) {
@@ -162,13 +170,21 @@ function createScheduler({ store, now = Date.now, startTurn, getChat, getJob, li
     try { chat = getChat(row.projectDir, row.chatId); } catch { chat = null; }
     if (!chat) { store.cancel(row.projectDir, row.chatId, row.id, 'chat no longer exists'); return 'cancelled'; }
     if (!chat.modelId) { store.retry({ ...row, attempts: MAX_ATTEMPTS - 1 }, time, 'the chat has no model selected'); return 'failed'; }
+    let gate = { action: 'send' };
+    if (hooks.gate) { try { gate = hooks.gate(row.projectDir, row.chatId) || gate; } catch { /* a broken gate must not eat wakes */ } }
+    if (gate.action === 'hold') { store.release(row, time + 30000); return 'held'; }
+    if (gate.action === 'cancel') { store.cancel(row.projectDir, row.chatId, row.id, gate.reason || 'blocked by the run'); return 'cancelled'; }
     store.lease(row.id, time + LEASE_MS);
     let result;
     try {
       result = await startTurn({ projectDir: row.projectDir, chatId: row.chatId, modelId: chat.modelId,
-        providerId: chat.providerId || '', content: wakeText(row, reason, jobState) }, lifecycle);
+        providerId: chat.providerId || '', content: gate.action === 'final' ? finalText(gate.reason) : wakeText(row, reason, jobState) }, lifecycle);
     } catch (e) { result = { ok: false, code: e.code || 'EINTERNAL', error: e.message || String(e) }; }
-    if (result && result.ok) return store.fired(row, now());
+    if (result && result.ok) {
+      const settled = store.fired(row, now());
+      if (hooks.delivered) { try { hooks.delivered(row.projectDir, row.chatId, gate); } catch { /* accounting only */ } }
+      return settled;
+    }
     if (result && result.code === 'EALREADY_RUNNING') { store.release(row, now() + 15000); return 'busy'; }
     return store.retry(row, now(), (result && (result.error || result.code)) || 'could not start the chat');
   }
@@ -191,6 +207,7 @@ function createScheduler({ store, now = Date.now, startTurn, getChat, getJob, li
         if (!reason) continue;
         outcomes.push({ id: row.id, outcome: await fire(row, reason, jobState), reason });
       }
+      if (hooks.onTick) { try { await hooks.onTick(); } catch { /* the watchdog is best-effort */ } }
     } finally { ticking = false; }
     return outcomes;
   }
@@ -221,7 +238,13 @@ function startScheduler({ lifecycle } = {}) {
     startTurn: (body, life) => require('./server-handlers-chats.js').startChatTurn(body, life),
     getChat: (projectDir, chatId) => require('./chats.js').getChat(projectDir, chatId),
     getJob: (scope, jobId) => require('./tools/backgroundJobs.js').get(scope, jobId),
-    lifecycle
+    lifecycle,
+    hooks: (() => {
+      const manager = require('./runs.js').sharedManager(lifecycle);
+      return { gate: (projectDir, chatId) => manager.gate(projectDir, chatId),
+        delivered: (projectDir, chatId, gate) => manager.delivered(projectDir, chatId, gate),
+        onTick: () => manager.watch() };
+    })()
   });
   scheduler.start();
   return scheduler;

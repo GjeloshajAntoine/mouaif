@@ -60,6 +60,7 @@ function present(row, now) {
 function createRunners({ store = schedules.sharedStore(), now = Date.now,
   getChat = (projectDir, chatId) => require('../chats.js').getChat(projectDir, chatId),
   checkJob = (scope, jobId) => backgroundJobs.get(scope, jobId),
+  runOf = (projectDir, chatId) => { try { return require('../runs.js').sharedManager().get(projectDir, chatId); } catch { return null; } },
   limits = {} } = {}) {
   const minDelayMs = limits.minDelayMs == null ? schedules.MIN_DELAY_MS : limits.minDelayMs;
   const minEveryMs = limits.minEveryMs == null ? schedules.MIN_EVERY_MS : limits.minEveryMs;
@@ -90,6 +91,10 @@ function createRunners({ store = schedules.sharedStore(), now = Date.now,
       }
       if (args.maxRuns != null && !everyMs && args.maxRuns !== 1) throw err('EBADINPUT', '`maxRuns` only makes sense with `every`');
       const runsLeft = everyMs ? (args.maxRuns == null ? schedules.DEFAULT_RECURRING_RUNS : args.maxRuns) : 1;
+      const run = runOf(projectDir, chatId);
+      if (run && !['running', 'paused'].includes(run.status)) {
+        throw err('ERUN_ENDED', 'This chat\u2019s run is ' + run.status + (run.endReason ? ' (' + run.endReason + ')' : '') + '; do not schedule more work. Tell the user, or ask them to start again.');
+      }
       const chat = getChat(projectDir, chatId);
       if (!chat) throw err('ENOTARGET', 'This chat does not exist');
       if (!chat.modelId) throw err('EBADINPUT', 'Select a model for this chat first; a wake needs one to run');

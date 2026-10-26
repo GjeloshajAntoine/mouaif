@@ -23,6 +23,7 @@ import { ToolPopup } from './ToolPopup.jsx';
 import { ModelPickerField } from '../ModelPickerField.jsx';
 import { WebpreviewDock } from './WebpreviewDock.jsx';
 import { AgentNetworkDock } from './AgentNetworkDock.jsx';
+import { RunDock } from './RunDock.jsx';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
@@ -689,6 +690,8 @@ onDismiss: () => clearWebPreview()
 // animated as messages travel. A bar in the bottom stack that expands in
 // place or goes full screen; absent until the chat has a subagent.
 h(AgentNetworkDock, { transcriptRef: refs.transcript }),
+// Pause / resume / stop for a long-running run; absent until the chat has one.
+h(RunDock, { projectDir, chatId }),
 h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {

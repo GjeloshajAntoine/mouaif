@@ -235,6 +235,9 @@ export function formatToolArgs(args, toolName) {
   if (name === 'job_status' || name === 'job_cancel') return args.jobId || 'all jobs';
   if (name === 'schedule_wake') return [args.in ? 'in ' + args.in : args.at ? 'at ' + args.at : '', args.every ? 'every ' + args.every : '', args.message].filter(Boolean).join(' · ');
   if (name === 'schedule_cancel') return args.id || '';
+  if (name === 'run_start') return [args.goal, args.maxTurns ? args.maxTurns + ' turns' : '', args.maxCostUsd ? '$' + args.maxCostUsd : '', args.maxHours ? args.maxHours + 'h' : ''].filter(Boolean).join(' · ');
+  if (name === 'run_end') return [args.outcome, args.summary].filter(Boolean).join(': ') || 'end the run';
+  if (name === 'run_status') return 'read the run';
   if (name === 'schedule_list') return 'pending wake-ups';
   if (name === 'webpreview') return args.url || '';
   if (name === 'restart_app') return args.reason || '';
@@ -315,6 +318,9 @@ export function formatToolArgsFull(args, toolName) {
   if (name === 'job_status' || name === 'job_cancel') return String(args.jobId || 'all jobs');
   if (name === 'schedule_wake') return [args.in ? 'In ' + args.in : args.at ? 'At ' + args.at : '', args.every ? 'Every ' + args.every : '', args.jobId ? 'Or when ' + args.jobId + ' finishes' : '', '', String(args.message || '')].join('\n').trim();
   if (name === 'schedule_cancel') return String(args.id || '');
+  if (name === 'run_start') return [String(args.goal || ''), '', args.maxTurns ? 'Up to ' + args.maxTurns + ' turns' : '', args.maxCostUsd ? 'Up to $' + args.maxCostUsd : '', args.maxHours ? 'Up to ' + args.maxHours + ' hours' : ''].join('\n').trim();
+  if (name === 'run_end') return [args.outcome ? 'Outcome: ' + args.outcome : '', String(args.summary || '')].filter(Boolean).join('\n') || 'End the run';
+  if (name === 'run_status') return 'Read the run';
   if (name === 'schedule_list') return 'pending wake-ups';
   if (name === 'webpreview') return String(args.url || '');
   if (name === 'restart_app') return String(args.reason || '');
@@ -494,6 +500,11 @@ export function formatResultSummary(name, r) {
   if (n === 'schedule_wake') return r.dueInSeconds != null ? 'due in ' + (r.dueInSeconds >= 3600 ? Math.round(r.dueInSeconds / 360) / 10 + 'h' : r.dueInSeconds >= 60 ? Math.round(r.dueInSeconds / 60) + 'm' : r.dueInSeconds + 's') + (r.every ? ' · every ' + r.every : '') : null;
   if (n === 'schedule_list') return Array.isArray(r.schedules) ? r.schedules.length + ' pending' : null;
   if (n === 'schedule_cancel') return r.cancelled ? 'cancelled' : r.status || null;
+  if (n === 'run_start' || n === 'run_status' || n === 'run_end') {
+    const run = r.run;
+    if (!run) return 'no run';
+    return run.status + (run.maxTurns ? ' · ' + run.turnsUsed + '/' + run.maxTurns + ' turns' : '');
+  }
   if (n === 'job_cancel') return r.alreadyFinished ? 'already ' + (r.job && r.job.state) : r.cancelled ? 'cancelled' : r.stillRunning ? 'stopping' : null;
   if (n === 'subagent_status') {
     if (Array.isArray(r.runs)) {

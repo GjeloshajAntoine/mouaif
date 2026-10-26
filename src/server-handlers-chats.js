@@ -654,6 +654,34 @@ return sendJSON(res, 200, { ok: true, imported: result });
     }
   }
 
+  // GET /api/chats/:id/run?projectDir=            -> { run: {...} | null }
+  // POST /api/chats/:id/run  { projectDir, action } -> { run: {...} }
+  // The user's controls over a long-running run (docs/features/long-running-runs.md):
+  // action is "pause", "resume" or "stop". Stop also cancels the streaming turn.
+  const runMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/run$/);
+  if (runMatch && (method === 'GET' || method === 'POST')) {
+    const id = safeDecode(runMatch[1]);
+    let dir;
+    let body = null;
+    if (method === 'POST') {
+      body = await readJsonOr400(req, res);
+      if (!body) return;
+      dir = typeof body.projectDir === 'string' ? body.projectDir : '';
+    } else dir = qs(q, 'projectDir');
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      const manager = require('./runs.js').sharedManager(lifecycle);
+      if (method === 'GET') return sendJSON(res, 200, { run: manager.view(manager.get(dir, id)) });
+      const action = body && body.action;
+      if (!['pause', 'resume', 'stop'].includes(action)) return sendJSON(res, 400, { error: 'action must be pause, resume or stop' });
+      return sendJSON(res, 200, { run: manager[action](dir, id) });
+    } catch (e) {
+      const status = e.code === 'ENOTARGET' ? 409 : e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : e.code === 'ESTORE' ? 503 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // GET /api/chats/:id/live?projectDir=  (SSE)
   // Per-chat live-replay stream. While a chat is running, a follower
   // client (another tab/device, or this UI returning to a running chat)

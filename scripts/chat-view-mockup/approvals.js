@@ -12,6 +12,9 @@ export function approvalRequest({ name, args }, callId, signal) {
   else if (name === 'wait_for') summary = 'wait for ' + args.jobId + ' (up to ' + args.seconds + 's)';
   else if (name === 'job_status' || name === 'job_cancel') summary = args.jobId;
   else if (name === 'schedule_wake') summary = ['in ' + args.in, args.every ? 'every ' + args.every : '', args.message].filter(Boolean).join(' \u2014 ');
+  else if (name === 'run_start') summary = [args.goal, args.maxTurns + ' turns', '$' + args.maxCostUsd, args.maxHours + 'h'].join(' \u2014 ');
+  else if (name === 'run_end') summary = [args.outcome, args.summary].filter(Boolean).join(': ');
+  else if (name === 'run_status') summary = 'read the run';
   else if (name === 'schedule_cancel') summary = args.id;
   else if (name === 'schedule_list') summary = 'pending wake-ups';
   else if (name === 'webpreview') summary = args.url;
