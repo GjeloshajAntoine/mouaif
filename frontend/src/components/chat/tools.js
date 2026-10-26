@@ -229,6 +229,9 @@ export function formatToolArgs(args, toolName) {
   if (name === 'report_progress') return args.title || '';
   if (name === 'wait_for') return args.until === 'job' ? (args.jobId || 'job') + (args.seconds ? ' · up to ' + args.seconds + 's' : '') : (args.seconds || 30) + 's';
   if (name === 'job_status' || name === 'job_cancel') return args.jobId || 'all jobs';
+  if (name === 'schedule_wake') return [args.in ? 'in ' + args.in : args.at ? 'at ' + args.at : '', args.every ? 'every ' + args.every : '', args.message].filter(Boolean).join(' · ');
+  if (name === 'schedule_cancel') return args.id || '';
+  if (name === 'schedule_list') return 'pending wake-ups';
   if (name === 'webpreview') return args.url || '';
   if (name === 'restart_app') return args.reason || '';
   if (name === 'mouaif') return mouaifArgSummary(args);
@@ -302,6 +305,9 @@ export function formatToolArgsFull(args, toolName) {
   if (name === 'task') return String(args.action || '') + (args.title ? ': ' + args.title : '');
   if (name === 'wait_for') return args.until === 'job' ? 'Job ' + (args.jobId || '?') + (args.seconds ? '\nup to ' + args.seconds + ' seconds' : '') : 'Sleep ' + (args.seconds || 30) + ' seconds';
   if (name === 'job_status' || name === 'job_cancel') return String(args.jobId || 'all jobs');
+  if (name === 'schedule_wake') return [args.in ? 'In ' + args.in : args.at ? 'At ' + args.at : '', args.every ? 'Every ' + args.every : '', args.jobId ? 'Or when ' + args.jobId + ' finishes' : '', '', String(args.message || '')].join('\n').trim();
+  if (name === 'schedule_cancel') return String(args.id || '');
+  if (name === 'schedule_list') return 'pending wake-ups';
   if (name === 'webpreview') return String(args.url || '');
   if (name === 'restart_app') return String(args.reason || '');
   if (name === 'mouaif') return mouaifArgSummary(args);
@@ -475,6 +481,9 @@ export function formatResultSummary(name, r) {
     if (r.job) return r.job.state + (r.job.exitCode != null ? ' · exit ' + r.job.exitCode : '');
     return Array.isArray(r.jobs) ? r.jobs.length + ' job' + (r.jobs.length === 1 ? '' : 's') + (r.running ? ' · ' + r.running + ' running' : '') : null;
   }
+  if (n === 'schedule_wake') return r.dueInSeconds != null ? 'due in ' + (r.dueInSeconds >= 3600 ? Math.round(r.dueInSeconds / 360) / 10 + 'h' : r.dueInSeconds >= 60 ? Math.round(r.dueInSeconds / 60) + 'm' : r.dueInSeconds + 's') + (r.every ? ' · every ' + r.every : '') : null;
+  if (n === 'schedule_list') return Array.isArray(r.schedules) ? r.schedules.length + ' pending' : null;
+  if (n === 'schedule_cancel') return r.cancelled ? 'cancelled' : r.status || null;
   if (n === 'job_cancel') return r.alreadyFinished ? 'already ' + (r.job && r.job.state) : r.cancelled ? 'cancelled' : r.stillRunning ? 'stopping' : null;
   if (n === 'subagent_status') {
     if (Array.isArray(r.runs)) {

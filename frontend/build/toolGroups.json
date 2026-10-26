@@ -70,7 +70,10 @@
       "group_cli",
       "wait_for",
       "job_status",
-      "job_cancel"
+      "job_cancel",
+      "schedule_wake",
+      "schedule_list",
+      "schedule_cancel"
     ]
   },
   {

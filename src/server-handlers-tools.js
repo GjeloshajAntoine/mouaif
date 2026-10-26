@@ -396,6 +396,10 @@ pushNativeTool(tools, { load: './tools/groupCli.js', name: 'group_cli', source: 
 for (const [name, spec] of Object.entries(require('./tools/jobs.js').SPECS)) {
   pushNativeTool(tools, { load: './tools/jobs.js', name, source: 'mouaif', fallback: spec.function.description, spec: () => spec.function });
 }
+// schedule_wake, schedule_list and schedule_cancel queue wake-ups for the chat.
+for (const [name, spec] of Object.entries(require('./tools/schedule.js').SPECS)) {
+  pushNativeTool(tools, { load: './tools/schedule.js', name, source: 'mouaif', fallback: spec.function.description, spec: () => spec.function });
+}
 for (const [name, definition] of Object.entries(require('./tools/appToolNames.js').DEFINITIONS)) {
   pushNativeTool(tools, { load: './tools/mouaif.js', name, source: definition.source,
     fallback: definition.description, spec: (m) => m.SPECS[name].function });

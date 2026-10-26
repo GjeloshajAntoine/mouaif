@@ -63,7 +63,7 @@ async function main() {
   assert.equal(aborted.ok, false);
 
   // A job that finishes: wait_for returns its outcome and log tail.
-  const quick = await start('echo hello-from-job && exit 3');
+  const quick = await start('sleep 0.3; echo hello-from-job; exit 3');
   const done = await call('wait_for', { until: 'job', jobId: quick, seconds: 20 });
   assert.equal(done.result.satisfied, true, JSON.stringify(done.result));
   assert.equal(done.result.outcome, 'failed');
@@ -112,7 +112,7 @@ async function main() {
   assert.equal(groupCli._backgroundChildren.size, 0, 'no live background child is left behind');
 
   // Cancelling does not relabel a command that failed on its own.
-  const failing = await start('exit 7');
+  const failing = await start('sleep 0.3; exit 7');
   assert.equal((await call('wait_for', { until: 'job', jobId: failing, seconds: 10 })).result.outcome, 'failed');
   const late = await call('job_cancel', { jobId: failing });
   assert.equal(late.result.alreadyFinished, true);

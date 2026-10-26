@@ -484,6 +484,12 @@ function createServer(port = DEFAULT_PORT, options = {}) {
     handleRequest(req, res, port, sessionToken, lifecycle, serverConfig);
   });
   server.once('close', () => { mcpAppsHost.close().catch(() => {}); });
+  // Scheduled wake-ups (docs/features/scheduled-wakes.md): one unref'd ticker
+  // that starts a turn in the chat when a schedule is due.
+  try {
+    const scheduler = require('./schedules.js').startScheduler({ lifecycle });
+    server.once('close', () => scheduler.stop());
+  } catch (e) { console.warn('[mouaif] scheduled wake-ups unavailable:', e.message); }
   // Track connections so the graceful-restart path can force-close
   // SSE / keep-alive sockets that would otherwise hang server.close().
   server.on('connection', trackSocket);

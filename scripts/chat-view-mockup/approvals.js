@@ -11,6 +11,9 @@ export function approvalRequest({ name, args }, callId, signal) {
     + '\nDestination: /demo/project\nUse existing directory: ' + args.directory;
   else if (name === 'wait_for') summary = 'wait for ' + args.jobId + ' (up to ' + args.seconds + 's)';
   else if (name === 'job_status' || name === 'job_cancel') summary = args.jobId;
+  else if (name === 'schedule_wake') summary = ['in ' + args.in, args.every ? 'every ' + args.every : '', args.message].filter(Boolean).join(' \u2014 ');
+  else if (name === 'schedule_cancel') summary = args.id;
+  else if (name === 'schedule_list') summary = 'pending wake-ups';
   else if (name === 'webpreview') summary = args.url;
   else if (name === 'group_read' || name === 'group_edit') summary =
     args[name === 'group_read' ? 'files' : 'edits'].map(item => item.path).join(', ');

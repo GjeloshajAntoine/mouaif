@@ -6,7 +6,7 @@ const TITLES = {
   update_chat: 'Update chat', change_working_folder: 'Change working folder', search_models: 'Search models', start_chat: 'Start chat',
   delete_chat: 'Delete chat', search_chats: 'Search chats', attach_chat_image: 'Attach image', list_chat_attachments: 'List chat images',
   get_settings: 'Read settings', update_settings: 'Change settings', list_projects: 'List projects', get_app_info: 'Read app info',
-  restart_app: 'Restart app', wait_for: 'Wait', job_status: 'Check background job', job_cancel: 'Cancel background job', create_mcp_app: 'Create MCP App', task: 'Update tasks', webpreview: 'Open preview',
+  restart_app: 'Restart app', wait_for: 'Wait', job_status: 'Check background job', job_cancel: 'Cancel background job', schedule_wake: 'Schedule a wake-up', schedule_list: 'List wake-ups', schedule_cancel: 'Cancel wake-up', create_mcp_app: 'Create MCP App', task: 'Update tasks', webpreview: 'Open preview',
   subagent_messages: 'Read worker messages', subagent_status: 'Check worker', subagent_stop: 'Stop worker', subagent_send: 'Message worker',
   subagent_group_create: 'Create worker group', subagent_group_update: 'Update worker group', subagent_publish: 'Publish handoff',
   subagent_read: 'Read handoff', subagent_group_status: 'Check worker group', subagent_decision: 'Propose group decision', subagent_conflict: 'Report group conflict'

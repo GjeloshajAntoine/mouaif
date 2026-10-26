@@ -74,13 +74,14 @@ export const TOOL_GROUPS = Object.freeze([
   //
   // `wait_for`, `job_status` and `job_cancel` work on the background commands
   // `group_cli` starts (sleep or block until one settles, read its log tail,
-  // stop it). They use the ordinary gate like `group_cli`.
+  // stop it). `schedule_wake`, `schedule_list` and `schedule_cancel` queue wake-ups
+  // for the chat. They use the ordinary gate like `group_cli`.
   {
     id: 'mouaif-settings',
     name: 'mouaif',
     source: 'mouaif',
     authKey: 'mouaif',
-    tools: ['create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli', 'wait_for', 'job_status', 'job_cancel']
+    tools: ['create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli', 'wait_for', 'job_status', 'job_cancel', 'schedule_wake', 'schedule_list', 'schedule_cancel']
   },
 
   {
