@@ -2,7 +2,7 @@
 
 ## Overview
 
-An internal wait engine supports finite delays and observation of scoped background command completion. The `wait_for` tool in chat is built on it (see [Job tools](job-tools.md)). Waits on chats, subagents and groups still need target adapters and are refused.
+An internal wait engine supports finite delays and observation of scoped background command completion. The `wait_for` tool in chat is built on it (see [Job tools](job-tools.md)). It also waits on several jobs, other chats, subagents and subagent groups through observers that enforce each target's ownership rules.
 
 ## Usage
 

@@ -227,7 +227,11 @@ export function formatToolArgs(args, toolName) {
   if (name === 'ask_user') return args.question || '';
   if (name === 'task') return (args.action || '') + (args.title ? ': ' + args.title : '');
   if (name === 'report_progress') return args.title || '';
-  if (name === 'wait_for') return args.until === 'job' ? (args.jobId || 'job') + (args.seconds ? ' · up to ' + args.seconds + 's' : '') : (args.seconds || 30) + 's';
+  if (name === 'wait_for') {
+    if (args.until === 'duration') return (args.seconds || 30) + 's';
+    const ids = Array.isArray(args.ids) ? args.ids : args.jobId ? [args.jobId] : [];
+    return args.until + (ids.length ? ' ' + (ids.length > 2 ? ids.length + ' ids' : ids.join(', ')) : '') + (args.mode === 'any' ? ' (any)' : '') + (args.seconds ? ' · up to ' + args.seconds + 's' : '');
+  }
   if (name === 'job_status' || name === 'job_cancel') return args.jobId || 'all jobs';
   if (name === 'schedule_wake') return [args.in ? 'in ' + args.in : args.at ? 'at ' + args.at : '', args.every ? 'every ' + args.every : '', args.message].filter(Boolean).join(' · ');
   if (name === 'schedule_cancel') return args.id || '';
@@ -303,7 +307,11 @@ export function formatToolArgsFull(args, toolName) {
   if (name === 'subagent') return String(args.task || '');
   if (name === 'ask_user') return String(args.question || '');
   if (name === 'task') return String(args.action || '') + (args.title ? ': ' + args.title : '');
-  if (name === 'wait_for') return args.until === 'job' ? 'Job ' + (args.jobId || '?') + (args.seconds ? '\nup to ' + args.seconds + ' seconds' : '') : 'Sleep ' + (args.seconds || 30) + ' seconds';
+  if (name === 'wait_for') {
+    if (args.until === 'duration') return 'Sleep ' + (args.seconds || 30) + ' seconds';
+    const ids = Array.isArray(args.ids) ? args.ids : args.jobId ? [args.jobId] : [];
+    return ['Wait for ' + args.until + (args.mode === 'any' ? ' (first to finish)' : ''), ...ids, args.seconds ? 'up to ' + args.seconds + ' seconds' : ''].filter(Boolean).join('\n');
+  }
   if (name === 'job_status' || name === 'job_cancel') return String(args.jobId || 'all jobs');
   if (name === 'schedule_wake') return [args.in ? 'In ' + args.in : args.at ? 'At ' + args.at : '', args.every ? 'Every ' + args.every : '', args.jobId ? 'Or when ' + args.jobId + ' finishes' : '', '', String(args.message || '')].join('\n').trim();
   if (name === 'schedule_cancel') return String(args.id || '');
@@ -473,7 +481,9 @@ export function formatResultSummary(name, r) {
   if (n === 'wait_for') {
     const job = r.job;
     if (r.cancelled) return 'cancelled';
-    if (r.timedOut) return 'still running · ' + Math.round((r.waitedMs || 0) / 1000) + 's';
+    if (r.timedOut) return (r.total ? r.settled + '/' + r.total + ' finished' : 'still running') + ' · ' + Math.round((r.waitedMs || 0) / 1000) + 's';
+    if (r.total > 1) return r.settled + '/' + r.total + ' finished';
+    if (r.targets && r.targets[0] && r.targets[0].state) return r.targets[0].state;
     if (job) return job.state + (job.exitCode != null ? ' · exit ' + job.exitCode : '');
     return Math.round((r.waitedMs || 0) / 1000) + 's';
   }

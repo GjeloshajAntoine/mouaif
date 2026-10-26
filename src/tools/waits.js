@@ -1,6 +1,9 @@
 'use strict';
 
-// Internal foundation only; intentionally not advertised/authorized as a tool.
+// The wait engine behind wait_for (src/tools/jobs.js). A wait is a duration, a
+// scoped shell job, or any other target a caller can observe: it passes an
+// `observe()` function (src/tools/waitTargets.js builds them for chats,
+// subagents and groups) and the engine polls it until it reports done.
 const jobs = require('./backgroundJobs.js');
 const { err } = require('../util.js');
 const MAX_TIMEOUT_MS = 240000;
@@ -40,6 +43,11 @@ function createWaitRegistry({ now = Date.now, jobRegistry = jobs, tickMs = 50, m
     wait.polls++;
     wait.nextCheck = time + wait.intervalMs;
     try {
+      if (wait.observe) {
+        const seen = wait.observe();
+        if (seen && seen.done) settle(wait, { ok: true, satisfied: true, detail: seen.detail, outcome: seen.outcome });
+        return;
+      }
       const job = jobRegistry.get(wait.scope, wait.jobId);
       if (job.state !== 'running') {
         settle(wait, { ok: true, satisfied: true, detail: job, outcome: job.state });
@@ -50,27 +58,29 @@ function createWaitRegistry({ now = Date.now, jobRegistry = jobs, tickMs = 50, m
   }
   function tick() { for (const wait of pending) check(wait); }
   return {
-    wait({ scope, until, timeoutMs = 180000, intervalMs = 5000, signal } = {}) {
+    wait({ scope, until, timeoutMs = 180000, intervalMs = 5000, signal, observe } = {}) {
       if (typeof until !== 'string' || !until.trim()) throw err('EBADINPUT', 'until is required');
       if (!Number.isFinite(timeoutMs) || timeoutMs < 1 || !Number.isFinite(intervalMs) || intervalMs < 1) {
         throw err('EBADINPUT', 'Wait timeout and poll interval must be positive finite numbers');
       }
       const duration = until === 'duration';
       const jobId = until.startsWith('shell:') ? until.slice(6) : '';
-      if (!duration && !jobId) {
-        // In particular, recursive chat/subagent/group waits are not safe
-        // without a landed server-owned execution graph adapter.
-        throw err('EUNSUPPORTED', 'Only duration and scoped shell job waits are implemented');
+      const custom = typeof observe === 'function' && !duration && !jobId;
+      if (!duration && !jobId && !custom) {
+        // Chat/subagent/group waits need an observer that enforces their own
+        // ownership rules; without one they are refused, never guessed.
+        throw err('EUNSUPPORTED', 'Only duration, scoped shell job and observed waits are implemented');
       }
       if (pending.size >= maxWaits) throw err('ETOOL_CAP', 'Too many pending waits');
       if (signal && signal.aborted) return Promise.resolve({ ok: false, target: until,
         satisfied: false, timedOut: false, cancelled: true, reason: 'cancelled', waitedMs: 0, polls: 0 });
       // Validate ownership before retaining anything. A nested invocation
       // cannot see a parent's job just because it shares the transcript chat.
-      if (!duration) jobRegistry.get(scope, jobId);
+      if (custom) observe();
+      else if (!duration) jobRegistry.get(scope, jobId);
       return new Promise((resolve) => {
         const startedAt = now();
-        const wait = { scope: scope && { ...scope }, target: until, jobId, signal, resolve, startedAt,
+        const wait = { scope: scope && { ...scope }, target: until, jobId, signal, resolve, startedAt, observe: custom ? observe : null,
           deadline: startedAt + Math.min(MAX_TIMEOUT_MS, Math.round(timeoutMs)),
           intervalMs: Math.max(MIN_INTERVAL_MS, Math.min(MAX_TIMEOUT_MS, Math.round(intervalMs))),
           nextCheck: startedAt, polls: 0 };

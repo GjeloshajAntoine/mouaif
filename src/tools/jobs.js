@@ -10,6 +10,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const backgroundJobs = require('./backgroundJobs.js');
 const { createWaitRegistry, MAX_TIMEOUT_MS } = require('./waits.js');
+const { buildObserver, MAX_IDS } = require('./waitTargets.js');
 const { err } = require('../util.js');
 
 const NAMES = Object.freeze(['wait_for', 'job_status', 'job_cancel']);
@@ -24,11 +25,13 @@ const waits = createWaitRegistry();
 const SPECS = Object.freeze({
   wait_for: { type: 'function', function: {
     name: 'wait_for',
-    description: 'Pause this turn without burning requests. until "duration" sleeps for `seconds`; until "job" blocks until the background command `jobId` (from group_cli with async: true) finishes or `seconds` pass, whichever is first. One wait is capped at ' + MAX_WAIT_SECONDS + ' seconds; a timeout means the job is still running, so call wait_for again or check job_status. A finished job returns its outcome (completed, failed or cancelled), exit code and the tail of its log. Waiting never stops the command.',
+    description: 'Pause this turn without burning requests. until "duration" sleeps for `seconds`. until "job" blocks until background command(s) from group_cli (async: true) finish. until "chat" waits for other chats of this project (for example ones started with start_chat) to stop running; a chat that is not running counts as finished, and a chat cannot wait for itself. until "subagent" waits for background subagent(s) you launched (callId), and until "group" for a subagent group (groupId) to settle; both only work in the turn that launched them. Pass one target in `jobId`, or up to ' + MAX_IDS + ' in `ids` with `mode` "all" (default) or "any". One wait is capped at ' + MAX_WAIT_SECONDS + ' seconds; a timeout means something is still running, so call wait_for again. A finished job returns its outcome (completed, failed, cancelled or lost), exit code and log tail; other targets return their state. Waiting never stops anything.',
     parameters: { type: 'object', properties: {
-      until: { type: 'string', enum: ['duration', 'job'], description: '"duration" to sleep, "job" to wait for a background command.' },
-      seconds: { type: 'number', minimum: 1, maximum: MAX_WAIT_SECONDS, description: 'Seconds to sleep, or the longest to wait for the job (default ' + DEFAULT_WAIT_SECONDS + ', max ' + MAX_WAIT_SECONDS + ').' },
-      jobId: { type: 'string', description: 'Required when until is "job": the jobId returned by group_cli.' }
+      until: { type: 'string', enum: ['duration', 'job', 'chat', 'subagent', 'group'], description: 'What to wait for.' },
+      seconds: { type: 'number', minimum: 1, maximum: MAX_WAIT_SECONDS, description: 'Seconds to sleep, or the longest to wait (default ' + DEFAULT_WAIT_SECONDS + ', max ' + MAX_WAIT_SECONDS + ').' },
+      jobId: { type: 'string', description: 'For until "job": one job id returned by group_cli.' },
+      ids: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: MAX_IDS, description: 'Job ids, chat ids, subagent callIds or groupIds to wait for (the kind is set by `until`).' },
+      mode: { type: 'string', enum: ['all', 'any'], description: 'With several ids: return when all have finished (default) or when the first has.' }
     }, required: ['until'], additionalProperties: false } } },
   job_status: { type: 'function', function: {
     name: 'job_status',
@@ -62,6 +65,11 @@ function validate(name, args) {
     if (schema.type === 'string' && typeof value !== 'string') throw err('EBADINPUT', key + ' must be a string');
     if (schema.type === 'number' && !Number.isFinite(value)) throw err('EBADINPUT', key + ' must be a number');
     if (schema.type === 'integer' && !Number.isSafeInteger(value)) throw err('EBADINPUT', key + ' must be an integer');
+    if (schema.type === 'array') {
+      if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) throw err('EBADINPUT', key + ' must be an array of strings');
+      if (schema.minItems && value.length < schema.minItems) throw err('EBADINPUT', key + ' needs at least ' + schema.minItems + ' item');
+      if (schema.maxItems && value.length > schema.maxItems) throw err('EBADINPUT', key + ' allows at most ' + schema.maxItems + ' items');
+    }
     if (schema.minimum !== undefined && value < schema.minimum) throw err('EBADINPUT', key + ' must be at least ' + schema.minimum);
     if (schema.maximum !== undefined && value > schema.maximum) throw err('EBADINPUT', key + ' must be at most ' + schema.maximum);
     if (schema.enum && !schema.enum.includes(value)) throw err('EBADINPUT', 'unknown ' + key + ': ' + value);
@@ -101,10 +109,32 @@ async function withTail(job, tailBytes) {
   return tail ? { ...publicJob(job), logTail: tail.text, logTruncated: tail.truncated, logBytes: tail.bytes } : publicJob(job);
 }
 
+// Chats, subagents, groups and several jobs at once: validated up front, then
+// polled by the wait engine through the observer from waitTargets.js.
+async function runObservedWait(args, opts, seconds) {
+  const ids = args.ids || (args.jobId ? [args.jobId] : null);
+  if (!ids) throw err('EBADINPUT', args.until === 'job' ? 'jobId or ids is required when until is "job"' : 'ids is required when until is "' + args.until + '"');
+  const { observe, until } = buildObserver({ kind: args.until, ids, mode: args.mode }, opts);
+  const outcome = await waits.wait({ until, observe, timeoutMs: seconds * 1000, intervalMs: 1000, signal: opts && opts.signal });
+  if (outcome.error) throw err(outcome.error.code, outcome.error.message);
+  let seen = outcome.detail;
+  if (!seen) { try { seen = observe().detail; } catch { seen = null; } }
+  const result = { ok: true, until: args.until, mode: args.mode || 'all', waitedMs: outcome.waitedMs,
+    satisfied: outcome.satisfied, timedOut: outcome.timedOut, cancelled: !!outcome.cancelled,
+    outcome: outcome.outcome || null };
+  if (seen) Object.assign(result, { settled: seen.settled, total: seen.total, targets: seen.targets });
+  if (outcome.cancelled) { result.ok = false; result.message = 'The wait was cancelled with the turn; nothing it watched was stopped.'; }
+  else if (outcome.timedOut) result.message = 'Not finished after ' + seconds + 's (' + (seen ? seen.settled + ' of ' + seen.total + ' finished' : 'still running') + '). Call wait_for again.';
+  else if (args.until === 'chat') result.message = 'Use get_chat with includeMessages to read what the chat produced.';
+  return result;
+}
+
 async function runWaitFor(args, opts) {
   const seconds = args.seconds == null ? DEFAULT_WAIT_SECONDS : args.seconds;
   const scope = scopeOf(opts);
-  if (args.until === 'job' && !args.jobId) throw err('EBADINPUT', 'jobId is required when until is "job"');
+  if (args.jobId && args.ids) throw err('EBADINPUT', 'give jobId or ids, not both');
+  if (args.until !== 'duration' && (args.until !== 'job' || args.ids)) return runObservedWait(args, opts, seconds);
+  if (args.until === 'job' && !args.jobId) throw err('EBADINPUT', 'jobId or ids is required when until is "job"');
   const outcome = await waits.wait({
     scope, until: args.until === 'job' ? 'shell:' + args.jobId : 'duration',
     timeoutMs: seconds * 1000, intervalMs: 1000, signal: opts && opts.signal

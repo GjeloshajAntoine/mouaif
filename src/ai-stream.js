@@ -328,8 +328,8 @@ async function runSingleToolCall(c, cx) {
       summary = (args && args.name) || 'all handoffs';
       }
       else if (c.name === 'wait_for') {
-      summary = args && args.until === 'job'
-        ? 'wait for ' + (args.jobId || 'a job') + (args.seconds ? ' (up to ' + args.seconds + 's)' : '')
+      summary = args && args.until && args.until !== 'duration'
+        ? 'wait for ' + args.until + ' ' + ((Array.isArray(args.ids) && args.ids.join(', ')) || args.jobId || '') + (args.seconds ? ' (up to ' + args.seconds + 's)' : '')
         : 'wait ' + ((args && args.seconds) || 30) + 's';
       }
       else if (c.name === 'schedule_wake') {

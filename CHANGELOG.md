@@ -11,6 +11,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Added
 
+- **Wait on chats, subagents and groups** — `wait_for` can now wait for other chats of the project, delegated subagents and subagent groups, or for several background jobs at once (`all` or `any`), so a fan-out of work is one call. See [job tools](docs/features/job-tools.md).
 - **Scheduled wake-ups** — `schedule_wake`, `schedule_list` and `schedule_cancel` let a chat come back to its own work later. The assistant saves a message for a time, a repeat or a background job finishing, and mouaif starts a turn in the chat when it is due, including after a restart. See [scheduled wake-ups](docs/features/scheduled-wakes.md).
 - **Background jobs survive restarts as records** — `job_status` and `wait_for` still answer after mouaif restarts. A finished job keeps its outcome and one that was running is reported as `lost`.
 - **Job tools** — `wait_for`, `job_status` and `job_cancel` let the assistant run long work without polling. It can sleep or block until a background command from `group_cli` finishes, read a job's state and log tail, and stop it. They are `mouaif`-family tools, so the family gate in Settings → Project controls them. See [job tools](docs/features/job-tools.md).
