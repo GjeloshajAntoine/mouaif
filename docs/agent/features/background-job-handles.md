@@ -18,4 +18,4 @@ Run `npm run test:group-cli`. `group_cli` async entry results and formatted mode
 
 ## Open issues
 
-Handles deliberately do not survive worker restart. `wait_for`, `job_status` and `job_cancel` now ship (see `docs/features/job-tools.md`) behind the `mouaif` family gate. `job_cancel` records the stop request itself (`cancelRequested` in `groupCli.js`) and only then settles the job as `cancelled`; a signal alone is still `failed`. No schedule or context boundary ships here.
+Metadata persists in `background_job` (`src/tools/jobStore.js`, write-through from the registry; running rows from another boot become `lost` when a store first opens). The live child handle and the cancel map do not survive a restart, and mouaif still reaps its background children on exit. `wait_for`, `job_status` and `job_cancel` now ship (see `docs/features/job-tools.md`) behind the `mouaif` family gate. `job_cancel` records the stop request itself (`cancelRequested` in `groupCli.js`) and only then settles the job as `cancelled`; a signal alone is still `failed`. No schedule or context boundary ships here.

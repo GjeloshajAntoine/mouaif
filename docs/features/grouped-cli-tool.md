@@ -97,7 +97,7 @@ Note that a `mouaif` family `allow` — including one earned by choosing **Alway
 
 ## Job identity
 
-Async results also carry a stable, scoped `jobId`; terminal metadata is retained for one hour in the current worker. This does not add a job lookup, wait or cancellation tool. See [Background job handles](background-job-handles.md).
+Async results also carry a stable, scoped `jobId`; its metadata is kept for a day, across restarts. The [job tools](job-tools.md) wait for, inspect and cancel it. See [Background job handles](background-job-handles.md).
 
 ## Related
 

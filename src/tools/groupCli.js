@@ -208,6 +208,9 @@ async function startBackgroundCommand(root, entry, shared) {
     return { ok: false, jobId: job.jobId, error: { code: 'ESPAWN', message: e.message } };
   }
 
+  if (child.pid != null) {
+    try { backgroundJobs.attach(shared.jobScope, job.jobId, { pid: child.pid }); } catch { /* metadata only */ }
+  }
   const buf = { bytes: 0 };
   const decoders = { stdout: new StringDecoder('utf8'), stderr: new StringDecoder('utf8') };
   const onChunk = (streamName, chunk) => {

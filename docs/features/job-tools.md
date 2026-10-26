@@ -38,7 +38,7 @@ The three tools follow the **mouaif** family gate in **Settings → Project** (O
 - **Cancel stops the whole process group.** `SIGTERM` first, `SIGKILL` after three seconds for a command that ignores it. The tool waits up to five seconds so its result shows the settled state. A job cancelled this way settles as `cancelled`, not `failed`; a command that fails on its own stays `failed`. Cancelling twice, or cancelling a finished job, is safe.
 - **Cancelling is not a rollback.** Files the command already wrote stay written.
 - **Waiting never stops the command.** Ending the turn, or a `wait_for` that times out, leaves the job running; a turn that is stopped ends the wait with `cancelled: true`.
-- **Handles are process-local.** Jobs are remembered for one hour after they finish and are lost when mouaif restarts. The log file under `.mouaif/logs/` stays on disk and can be read with `read_file`. See [Background job handles](background-job-handles.md).
+- **Jobs survive a restart as records.** Finished jobs are remembered for a day, including after mouaif restarts. A job that was still running when mouaif restarted is reported as `lost` (mouaif stops its commands when it exits), and `wait_for` returns on it immediately instead of hanging. The log file under `.mouaif/logs/` stays on disk and can be read with `read_file`. See [Background job handles](background-job-handles.md).
 - **Waits only watch shell jobs and time.** Waiting on a chat, a subagent or a group is still refused; see [Bounded wait foundation](bounded-wait-foundation.md).
 
 ## Related

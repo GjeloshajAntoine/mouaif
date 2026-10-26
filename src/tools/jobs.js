@@ -32,7 +32,7 @@ const SPECS = Object.freeze({
     }, required: ['until'], additionalProperties: false } } },
   job_status: { type: 'function', function: {
     name: 'job_status',
-    description: 'Inspect background commands started from this chat with group_cli (async: true). Without jobId it lists them (state, exit code, log path, start and end time). With jobId it returns that job plus the last `tailBytes` of its log. Jobs are remembered for an hour after they finish and are lost if mouaif restarts; the log file stays on disk.',
+    description: 'Inspect background commands started from this chat with group_cli (async: true). Without jobId it lists them (state, exit code, log path, start and end time). With jobId it returns that job plus the last `tailBytes` of its log. Jobs are remembered for a day. If mouaif restarts while a job runs, mouaif stops the command and the job is reported as `lost`; the log file stays on disk.',
     parameters: { type: 'object', properties: {
       jobId: { type: 'string', description: 'A job id from group_cli. Omit to list every job of this chat.' },
       tailBytes: { type: 'integer', minimum: 0, maximum: MAX_TAIL_BYTES, description: 'How much of the log end to return with jobId (default ' + DEFAULT_TAIL_BYTES + ', max ' + MAX_TAIL_BYTES + ', 0 for none).' }
@@ -92,7 +92,8 @@ async function readTail(job, tailBytes) {
 
 function publicJob(job) {
   return { jobId: job.jobId, state: job.state, exitCode: job.exitCode, signal: job.signal,
-    startedAt: job.startedAt, finishedAt: job.finishedAt, logPath: job.logPath };
+    startedAt: job.startedAt, finishedAt: job.finishedAt, logPath: job.logPath, pid: job.pid == null ? null : job.pid,
+    ...(job.state === 'lost' ? { note: 'mouaif restarted while this ran and stopped it; read the log for how far it got' } : {}) };
 }
 
 async function withTail(job, tailBytes) {
