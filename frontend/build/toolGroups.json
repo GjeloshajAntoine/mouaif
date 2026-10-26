@@ -67,7 +67,10 @@
       "get_app_info",
       "restart_app",
       "list_features",
-      "group_cli"
+      "group_cli",
+      "wait_for",
+      "job_status",
+      "job_cancel"
     ]
   },
   {

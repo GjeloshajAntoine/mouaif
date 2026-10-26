@@ -2,11 +2,11 @@
 
 ## Overview
 
-An internal wait engine supports finite delays and observation of scoped background command completion. This foundation does **not** enable `wait_for` or `wait_check` in chat; their complete authorization and target adapters remain integration work.
+An internal wait engine supports finite delays and observation of scoped background command completion. The `wait_for` tool in chat is built on it (see [Job tools](job-tools.md)). Waits on chats, subagents and groups still need target adapters and are refused.
 
 ## Usage
 
-There is no new composer command or public API. Continue using `group_cli` and its returned log path for background execution. Maintainers can test the engine with `npm run test:waits`.
+There is no composer command or public API. The model reaches the engine through `wait_for`; start background commands with `group_cli`. Maintainers can test the engine with `npm run test:waits`.
 
 ## Behavior and limits
 

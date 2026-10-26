@@ -71,12 +71,16 @@ export const TOOL_GROUPS = Object.freeze([
   // so a family or leaf `allow` lets the assistant relaunch without asking.
   // `group_cli` is NOT read-only: it runs commands, so the user is asked for
   // a batch unless the family (or the leaf) is on `allow`.
+  //
+  // `wait_for`, `job_status` and `job_cancel` work on the background commands
+  // `group_cli` starts (sleep or block until one settles, read its log tail,
+  // stop it). They use the ordinary gate like `group_cli`.
   {
     id: 'mouaif-settings',
     name: 'mouaif',
     source: 'mouaif',
     authKey: 'mouaif',
-    tools: ['create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli']
+    tools: ['create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli', 'wait_for', 'job_status', 'job_cancel']
   },
 
   {

@@ -31,7 +31,8 @@ One page per feature: what it does and how to use it.
 - [Restart from chat](features/chat-app-restart.md) — ask the assistant to relaunch the app worker.
 - [Restart API](features/restart-api.md) — restart the worker from a script with `POST /api/restart`.
 - [Background job handles](features/background-job-handles.md) — scoped async command identity with retained terminal metadata.
-- [Bounded wait foundation](features/bounded-wait-foundation.md) — internal finite observations; public wait tools remain unenabled.
+- [Bounded wait foundation](features/bounded-wait-foundation.md) — the finite wait engine behind `wait_for`.
+- [Job tools](features/job-tools.md) — `wait_for`, `job_status` and `job_cancel` for long-running background commands.
 
 ### Providers and models
 

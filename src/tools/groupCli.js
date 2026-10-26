@@ -69,6 +69,13 @@ const TOOL_NAME = 'group_cli';
 // Live background children, reaped on parent exit through the shell
 // module's own exit hook, so a server shutdown cannot leak them.
 const backgroundChildren = new Set();
+// jobId -> ChildProcess, so job_cancel can stop one background command. The
+// job registry deliberately holds no process references; this map lives and
+// dies with the child. `cancelRequested` is how a close handler tells a
+// cancelled job from a failed one.
+const jobChildren = new Map();
+const cancelRequested = new Set();
+const CANCEL_GRACE_MS = 3000;
 // Monotonic per-process counter behind the log file names, so two batches
 // in the same millisecond cannot land on one file.
 let backgroundSeq = 0;
@@ -224,17 +231,20 @@ async function startBackgroundCommand(root, entry, shared) {
 
   shell.registerLiveChild(child);
   backgroundChildren.add(child);
+  jobChildren.set(job.jobId, child);
   const finished = new Promise((resolve) => {
     let done = false;
     const settle = async (exitCode, signal) => {
     if (done) return;
     done = true;
     const code = exitCode == null ? -1 : exitCode;
+    const cancelled = cancelRequested.delete(job.jobId);
     backgroundJobs.settle(shared.jobScope, job.jobId, {
-      state: code === 0 ? 'completed' : 'failed', exitCode: code, signal
+      state: cancelled ? 'cancelled' : code === 0 ? 'completed' : 'failed', exitCode: code, signal
     });
       shell.clearLiveChild(child);
       backgroundChildren.delete(child);
+      jobChildren.delete(job.jobId);
       if (logger) {
         await logger.close('\n[mouaif] exit ' + code + ' after ' + (nowMs() - startedAt) + 'ms\n');
       }
@@ -283,6 +293,32 @@ async function startBackgroundCommand(root, entry, shared) {
     identity: plan.identity,
     startedAt
   };
+}
+
+// cancelBackgroundJob(scope, jobId) -> { alreadyFinished, job }
+//
+// SIGTERM to the command's process group, SIGKILL after a short grace. Only a
+// job the caller owns (same project, chat and invocation) can be reached; an
+// unknown, expired or foreign handle is ENOTARGET. Cancellation is not
+// rollback: whatever the command already did stays done. The returned job is
+// the state at call time; it settles as 'cancelled' once the process exits.
+function cancelBackgroundJob(scope, jobId) {
+  const job = backgroundJobs.get(scope, jobId);
+  if (job.state !== 'running') return { alreadyFinished: true, job };
+  const child = jobChildren.get(jobId);
+  if (!child) throw err('ENOTARGET', 'The background job has no live process to cancel');
+  cancelRequested.add(jobId);
+  const kill = (signal) => {
+    try {
+      if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, signal);
+      else child.kill(signal);
+    } catch { /* already gone */ }
+  };
+  kill('SIGTERM');
+  const grace = setTimeout(() => kill('SIGKILL'), CANCEL_GRACE_MS);
+  grace.unref();
+  child.once('close', () => clearTimeout(grace));
+  return { alreadyFinished: false, job };
 }
 
 function childEnv() {
@@ -504,6 +540,7 @@ module.exports = {
   TOOL_NAME,
   runGroupCli,
   formatGroupCliResult,
+  cancelBackgroundJob,
   MAX_BATCH_ENTRIES,
   DEFAULT_TOTAL_BUDGET_MS,
   BACKGROUND_LOG_DIR,

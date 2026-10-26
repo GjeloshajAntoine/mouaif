@@ -2,7 +2,7 @@
 
 ## Overview
 
-23 ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report): **15 in the Chats family** and **8 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
+26 ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report): **15 in the Chats family** and **11 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
 
 ## Usage
 
@@ -43,6 +43,9 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `report_progress` | Report real-time progress on a long-running operation, drawn as the chat's progress bar. Read-only UI metadata — answered without an approval card. See [Progress tool](./progress-tool.md). |
 | `webpreview` | Refresh the user-facing preview of a URL in the debug Chrome the Inspector uses. `viewport` is a preset (`phone`, `phone+`, `tablet`, `laptop`) or `WIDTHxHEIGHT`; `mode: "live"` shows the interactive page instead of a screenshot. See [Web preview](./webpreview.md). |
 | `group_cli` | Run a batch of up to 50 shell commands in one call and get every result, each with its own stdout, stderr, exit code and duration. An `async: true` entry starts in the background and names its log under `.mouaif/logs/`. See [Grouped CLI tool](./grouped-cli-tool.md). |
+| `wait_for` | Sleep (`until: "duration"`) or block until a background command finishes (`until: "job"` + `jobId`), for up to `seconds` (max 240). Returns the job's outcome and log tail, or `timedOut` while it still runs. See [Job tools](./job-tools.md). |
+| `job_status` | List this chat's background commands, or read one (`jobId`) with the end of its log (`tailBytes`). |
+| `job_cancel` | Stop a background command (`jobId`): SIGTERM to its process group, SIGKILL after a few seconds. |
 
 ### Where the model's data comes from
 
@@ -67,13 +70,13 @@ The tools appear in two families in Settings → Project → Tools, the chat Too
 | Family (gate) | Native functions |
 | --- | --- |
 | **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` |
-| **mouaif** (`tools.mouaif`) | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli` |
+| **mouaif** (`tools.mouaif`) | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli`, `wait_for`, `job_status`, `job_cancel` |
 
 The Chats family carries the app functions above *and* the four tools the model uses inside one chat: **Ask user** (`ask_user`, binary Off / Ask), **Task** (`task`), **Report progress** (`report_progress`) and **Web preview** (`webpreview`, see [Web preview](./webpreview.md)). They used to be rows of their own; a stored `tools.<leaf>` still works as that leaf's override.
 
 `create_mcp_app` is a mouaif leaf, but creating/opening an interactive app in the chat card always requires an explicit approval even under **Allow**, like `update_settings` writes to permission keys. It renders directly in the current chat without registering a project MCP server. Request-only development drafts use the ordinary gate; MCP permissions are never widened.
 
-The mouaif family also carries the tools that act on the app itself rather than on one project: **Restart app** (`restart_app`), **Feature report** (`list_features`) and the grouped CLI batch tool (`group_cli`, see [Grouped CLI tool](grouped-cli-tool.md)). They are leaves of this family now, so a family `Allow` — including one earned by choosing **Always allow** on any mouaif call — also covers an app restart and a batch of shell commands. Store `tools.restart_app` / `tools.list_features` / `tools.group_cli` to override one leaf on its own. `list_features` is read-only, so it is never shown an approval card; an `off` on the family or the leaf hides it from the model. `group_cli` runs commands, so it keeps the ordinary approval card and its card lists every command in the batch.
+The mouaif family also carries the tools that act on the app itself rather than on one project: **Restart app** (`restart_app`), **Feature report** (`list_features`) the grouped CLI batch tool (`group_cli`, see [Grouped CLI tool](grouped-cli-tool.md)), and the tools that wait for, inspect and cancel its background commands (`wait_for`, `job_status`, `job_cancel`, see [Job tools](job-tools.md)). They are leaves of this family now, so a family `Allow` — including one earned by choosing **Always allow** on any mouaif call — also covers an app restart and a batch of shell commands. Store `tools.restart_app` / `tools.list_features` / `tools.group_cli` to override one leaf on its own. `list_features` is read-only, so it is never shown an approval card; an `off` on the family or the leaf hides it from the model. `group_cli` runs commands, so it keeps the ordinary approval card and its card lists every command in the batch.
 
 Every child checkbox selects its own function; a partial selection shows a mixed checkmark. The two families work exactly like **File tools**:
 

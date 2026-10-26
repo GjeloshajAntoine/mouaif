@@ -28,7 +28,8 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Restart from chat](chat-app-restart.md) — ask the assistant to relaunch the app worker.
 - [Restart API](restart-api.md) — restart the worker from a script with `POST /api/restart`.
 - [Background job handles](background-job-handles.md) — a stable `jobId` for background `group_cli` runs, with retained terminal metadata.
-- [Bounded wait foundation](bounded-wait-foundation.md) — internal finite waits; no public wait tool is enabled.
+- [Bounded wait foundation](bounded-wait-foundation.md) — the finite wait engine behind `wait_for`.
+- [Job tools](job-tools.md) — `wait_for`, `job_status` and `job_cancel` to wait for, inspect and stop background commands.
 
 ## Providers and models
 

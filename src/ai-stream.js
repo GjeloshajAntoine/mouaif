@@ -327,6 +327,14 @@ async function runSingleToolCall(c, cx) {
       else if (c.name === 'subagent_read') {
       summary = (args && args.name) || 'all handoffs';
       }
+      else if (c.name === 'wait_for') {
+      summary = args && args.until === 'job'
+        ? 'wait for ' + (args.jobId || 'a job') + (args.seconds ? ' (up to ' + args.seconds + 's)' : '')
+        : 'wait ' + ((args && args.seconds) || 30) + 's';
+      }
+      else if (c.name === 'job_status' || c.name === 'job_cancel') {
+      summary = (args && args.jobId) || 'all jobs';
+      }
       else if (c.name === 'subagent_status') {
       summary = (args && args.callId) || 'all workers';
       }
@@ -693,6 +701,10 @@ catch { /* restart tool module unavailable; skip */ }
 // the app tools (`mouaif`), so it is advertised and hidden with them.
 try { toolSpecs.push(require('./tools/groupCli.js').SPEC); }
 catch { /* group CLI tool module unavailable; skip */ }
+// wait_for / job_status / job_cancel: long-running work without polling.
+// Same `mouaif` family as group_cli, whose background jobs they observe.
+try { toolSpecs.push(...Object.values(require('./tools/jobs.js').SPECS)); }
+catch { /* job tools module unavailable; skip */ }
 // Ordinary native tools for chats, attachments, settings and projects.
 try { toolSpecs.push(...Object.values(require('./tools/mouaif.js').SPECS)); }
 catch { /* mouaif tool module unavailable; skip */ }
@@ -1846,6 +1858,11 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   const r = { ok: false, code, error: { code, message: e.message || String(e) } };
   return { ok: false, content: JSON.stringify(r), result: r };
   }
+  }
+  // Native job tools: sleep or block on a background command, inspect it,
+  // cancel it. Jobs are scoped to this project, chat and invocation.
+  if (require('./tools/jobs.js').NAMES.includes(name)) {
+    return await require('./tools/jobs.js').runJobTool(name, args, callOpts || {});
   }
   // Native subagent tool. It delegates to the same model with the same
   // inherited project tool surface, including MCP. Rooted local-parent scopes

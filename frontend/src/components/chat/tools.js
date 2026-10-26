@@ -227,6 +227,8 @@ export function formatToolArgs(args, toolName) {
   if (name === 'ask_user') return args.question || '';
   if (name === 'task') return (args.action || '') + (args.title ? ': ' + args.title : '');
   if (name === 'report_progress') return args.title || '';
+  if (name === 'wait_for') return args.until === 'job' ? (args.jobId || 'job') + (args.seconds ? ' · up to ' + args.seconds + 's' : '') : (args.seconds || 30) + 's';
+  if (name === 'job_status' || name === 'job_cancel') return args.jobId || 'all jobs';
   if (name === 'webpreview') return args.url || '';
   if (name === 'restart_app') return args.reason || '';
   if (name === 'mouaif') return mouaifArgSummary(args);
@@ -298,6 +300,8 @@ export function formatToolArgsFull(args, toolName) {
   if (name === 'subagent') return String(args.task || '');
   if (name === 'ask_user') return String(args.question || '');
   if (name === 'task') return String(args.action || '') + (args.title ? ': ' + args.title : '');
+  if (name === 'wait_for') return args.until === 'job' ? 'Job ' + (args.jobId || '?') + (args.seconds ? '\nup to ' + args.seconds + ' seconds' : '') : 'Sleep ' + (args.seconds || 30) + ' seconds';
+  if (name === 'job_status' || name === 'job_cancel') return String(args.jobId || 'all jobs');
   if (name === 'webpreview') return String(args.url || '');
   if (name === 'restart_app') return String(args.reason || '');
   if (name === 'mouaif') return mouaifArgSummary(args);
@@ -460,6 +464,18 @@ export function formatResultSummary(name, r) {
   }
   if (n === 'create_mcp_app') return (r.mode === 'request' || r.chatId) ? 'draft' : r.mode === 'message' ? 'sent' : r.updated ? 'updated' : (r.path ? 'ready' : null);
   if (n === 'webpreview') return r.mode || null;
+  if (n === 'wait_for') {
+    const job = r.job;
+    if (r.cancelled) return 'cancelled';
+    if (r.timedOut) return 'still running · ' + Math.round((r.waitedMs || 0) / 1000) + 's';
+    if (job) return job.state + (job.exitCode != null ? ' · exit ' + job.exitCode : '');
+    return Math.round((r.waitedMs || 0) / 1000) + 's';
+  }
+  if (n === 'job_status') {
+    if (r.job) return r.job.state + (r.job.exitCode != null ? ' · exit ' + r.job.exitCode : '');
+    return Array.isArray(r.jobs) ? r.jobs.length + ' job' + (r.jobs.length === 1 ? '' : 's') + (r.running ? ' · ' + r.running + ' running' : '') : null;
+  }
+  if (n === 'job_cancel') return r.alreadyFinished ? 'already ' + (r.job && r.job.state) : r.cancelled ? 'cancelled' : r.stillRunning ? 'stopping' : null;
   if (n === 'subagent_status') {
     if (Array.isArray(r.runs)) {
       const active = r.runs.filter((x) => x && (x.state === 'running' || x.state === 'waiting' || x.state === 'ready')).length;

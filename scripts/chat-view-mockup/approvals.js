@@ -9,6 +9,8 @@ export function approvalRequest({ name, args }, callId, signal) {
     (index + 1) + '. ' + entry.cmd + (entry.async ? '  [background]' : '')).join('\n');
   else if (name === 'change_working_folder') summary = 'Chat: ' + args.chatId
     + '\nDestination: /demo/project\nUse existing directory: ' + args.directory;
+  else if (name === 'wait_for') summary = 'wait for ' + args.jobId + ' (up to ' + args.seconds + 's)';
+  else if (name === 'job_status' || name === 'job_cancel') summary = args.jobId;
   else if (name === 'webpreview') summary = args.url;
   else if (name === 'group_read' || name === 'group_edit') summary =
     args[name === 'group_read' ? 'files' : 'edits'].map(item => item.path).join(', ');

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Background `group_cli` results now include a stable `jobId` alongside the PID and log path. This is the foundation for future waits, not a new wait or cancellation tool.
+Background `group_cli` results now include a stable `jobId` alongside the PID and log path. The [job tools](job-tools.md) (`wait_for`, `job_status`, `job_cancel`) use these handles.
 
 ## Usage
 
@@ -12,7 +12,7 @@ Start an asynchronous command with the existing grouped CLI tool:
 {"commands":[{"cmd":"npm run build","async":true}]}
 ```
 
-The entry result includes a handle such as `job-<uuid>`. Unlike a PID, the handle is never reused for another command. Continue reading output using the returned `logPath`; no model-facing job lookup tool ships in this change.
+The entry result includes a handle such as `job-<uuid>`. Unlike a PID, the handle is never reused for another command. Read output through the returned `logPath`, or use `job_status` for the state and the end of the log.
 
 ## Behavior and limits
 
@@ -20,7 +20,7 @@ The entry result includes a handle such as `job-<uuid>`. Unlike a PID, the handl
 - Metadata records `running`, `completed`, or `failed`, an exit code, an optional terminating signal, the working folder and log path. Zero exit means completed; nonzero exit, spawn failure or external signal termination means failed. A signal alone is not evidence of a user cancellation.
 - Terminal metadata survives removal of the live child and remains available for one hour after settlement. Active records never expire. There are at most 2,048 records process-wide; when full, new background commands fail before spawn rather than evicting unexpired handles.
 - This registry is **process-local**. Worker/app restart loses handles; log files remain. It stores no output, command text, callback, credentials or child process references. Reads prune expired metadata; no cleanup timer keeps the process alive.
-- Existing detached execution is unchanged: cancelling the calling turn stops new batch entries, not already launched background commands. There is no background cancel endpoint yet.
-- Ordinary `group_cli` authorization is unchanged. No tool names, tool counts, UI or REST/SSE endpoints were added.
+- Existing detached execution is unchanged: cancelling the calling turn stops new batch entries, not already launched background commands. `job_cancel` is the way to stop one; there is no REST endpoint for it.
+- Ordinary `group_cli` authorization is unchanged. No REST/SSE endpoints were added.
 
 See [Grouped CLI tool](grouped-cli-tool.md) for the existing execution and approval behavior.

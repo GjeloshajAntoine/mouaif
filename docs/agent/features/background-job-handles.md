@@ -18,4 +18,4 @@ Run `npm run test:group-cli`. `group_cli` async entry results and formatted mode
 
 ## Open issues
 
-Handles deliberately do not survive worker restart. Public wait/cancel APIs need normal tool gates; a future cancel must report cancellation only after a trusted stop request, not infer it from a signal. No schedule or context boundary ships here.
+Handles deliberately do not survive worker restart. `wait_for`, `job_status` and `job_cancel` now ship (see `docs/features/job-tools.md`) behind the `mouaif` family gate. `job_cancel` records the stop request itself (`cancelRequested` in `groupCli.js`) and only then settles the job as `cancelled`; a signal alone is still `failed`. No schedule or context boundary ships here.

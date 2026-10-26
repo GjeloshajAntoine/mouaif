@@ -50,7 +50,7 @@ Mark an entry `async` — or pass `"async": true` on the whole call — to start
 }
 ```
 
-The first entry comes back as `{ "async": true, "status": "running", "pid": 1234, "logPath": ".mouaif/logs/…log" }`; the second runs while it is still up, so a server can be started and probed in one call. The background command's stdout and stderr are appended to `logPath`, and the file ends with a `[mouaif] exit <code> after <ms>` line once it finishes. `read_file` reads the log like any other file.
+The first entry comes back as `{ "async": true, "status": "running", "pid": 1234, "logPath": ".mouaif/logs/…log" }`; the second runs while it is still up, so a server can be started and probed in one call. The background command's stdout and stderr are appended to `logPath`, and the file ends with a `[mouaif] exit <code> after <ms>` line once it finishes. `read_file` reads the log like any other file. The result also carries a `jobId`: `wait_for` blocks until the command finishes, `job_status` reads its state and log tail, and `job_cancel` stops it (see [Job tools](job-tools.md)).
 
 Background commands are exempt from the batch time budget, and the synchronous entries after them are not slowed down by them: the batch only waits for the entries that are not `async`.
 

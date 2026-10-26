@@ -391,6 +391,11 @@ pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', sourc
 // trees do not render.
 pushNativeTool(tools, { load: './tools/restart.js', name: 'restart_app', source: 'mouaif', fallback: 'Gracefully restart mouaif from the current chat.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/groupCli.js', name: 'group_cli', source: 'mouaif', fallback: 'Run a group of shell commands in one call, with a background mode.', spec: (m) => m.SPEC && m.SPEC.function });
+// wait_for, job_status and job_cancel run long work without polling: they are
+// mouaif-family leaves next to group_cli, whose background jobs they observe.
+for (const [name, spec] of Object.entries(require('./tools/jobs.js').SPECS)) {
+  pushNativeTool(tools, { load: './tools/jobs.js', name, source: 'mouaif', fallback: spec.function.description, spec: () => spec.function });
+}
 for (const [name, definition] of Object.entries(require('./tools/appToolNames.js').DEFINITIONS)) {
   pushNativeTool(tools, { load: './tools/mouaif.js', name, source: definition.source,
     fallback: definition.description, spec: (m) => m.SPECS[name].function });
