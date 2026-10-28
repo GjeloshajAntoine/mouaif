@@ -390,6 +390,7 @@ pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', sourc
 // authoritative for grouping), so the catalog must not name a group the
 // trees do not render.
 pushNativeTool(tools, { load: './tools/restart.js', name: 'restart_app', source: 'mouaif', fallback: 'Gracefully restart mouaif from the current chat.', spec: (m) => m.SPEC && m.SPEC.function });
+pushNativeTool(tools, { load: './tools/groupCli.js', name: 'group_cli', source: 'mouaif', fallback: 'Run an ordered group of shell commands.', spec: (m) => m.SPEC && m.SPEC.function });
 // Wait for long-running work without polling.
 {
   const spec = require('./tools/jobs.js').SPECS.wait_for;

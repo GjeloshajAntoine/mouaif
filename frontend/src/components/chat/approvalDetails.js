@@ -1,6 +1,6 @@
 // Display helpers only: authorization continues to be owned by the server.
 const TITLES = {
-  shell: 'Run command', subagent: 'Delegate task',
+  shell: 'Run command', group_cli: 'Run commands', subagent: 'Delegate task',
   read_file: 'Read file', list_files: 'List files', search_files: 'Search files', write_file: 'Write file', edit_file: 'Edit file',
   group_read: 'Read files', group_edit: 'Edit files', list_chats: 'List chats', get_chat: 'Read chat', create_chat: 'Create chat',
   update_chat: 'Update chat', change_working_folder: 'Change working folder', search_models: 'Search models', start_chat: 'Start chat',
@@ -58,6 +58,9 @@ export function approvalText(request) {
   const lines = [];
   if (tool === 'shell') {
     lines.push(args.cmd || request.cmd || request.summary || '');
+  } else if (tool === 'group_cli' && Array.isArray(args.commands)) {
+    lines.push(args.commands.map((entry, i) => !entry || typeof entry !== 'object' ? String(entry)
+      : (i + 1) + '. ' + (entry.cmd || entry.command || '(missing command)') + (entry.async || args.async ? ' [background]' : '')).join('\n'));
   } else if (tool === 'edit_file') {
     if (args.path || args.file) lines.push(String(args.path || args.file));
     lines.push('- ' + String(args.oldText || '') + '\n+ ' + String(args.newText || ''));

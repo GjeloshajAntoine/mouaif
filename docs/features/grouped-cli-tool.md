@@ -1,6 +1,5 @@
 # Grouped CLI tool — run many shell commands in one call, some in the background
 
-> **Historical implementation reference.** The grouped CLI and job-handle tools below are no longer model-facing. Use [`shell`](shell-tool.md) with `async: true` for background execution; inspect its returned PID and log with shell commands. New scheduled wakes are time-only.
 
 
 ## Overview
@@ -53,7 +52,7 @@ Mark an entry `async` — or pass `"async": true` on the whole call — to start
 }
 ```
 
-The first entry comes back as `{ "async": true, "status": "running", "pid": 1234, "logPath": ".mouaif/logs/…log" }`; the second runs while it is still up, so a server can be started and probed in one call. The background command's stdout and stderr are appended to `logPath`, and the file ends with a `[mouaif] exit <code> after <ms>` line once it finishes. `read_file` reads the log like any other file. The result also carries a `jobId`: `wait_for` blocks until the command finishes, `job_status` reads its state and log tail, and `job_cancel` stops it (see [Job tools](job-tools.md)).
+The first entry comes back as `{ "async": true, "status": "running", "pid": 1234, "logPath": ".mouaif/logs/…log" }`; the second runs while it is still up, so a server can be started and probed in one call. The background command's stdout and stderr are appended to `logPath`, and the file ends with a `[mouaif] exit <code> after <ms>` line once it finishes. `read_file` reads the log like any other file. Results include `absoluteLogPath` and `commands.inspect`, `commands.wait`, and `commands.stop`, shared with async `shell`. Run these through `shell`; no model-facing job handles are exposed. Linux wait/stop commands verify process identity before acting. Other platforms provide inspection but not automatic wait/stop.
 
 Background commands are exempt from the batch time budget, and the synchronous entries after them are not slowed down by them: the batch only waits for the entries that are not `async`.
 
@@ -98,9 +97,9 @@ Two details are specific to a batch:
 
 Note that a `mouaif` family `allow` — including one earned by choosing **Always allow** on any mouaif call — also lets the assistant run a command batch without asking. Turn the batch tool off on its own with a `tools.group_cli` leaf override if you want the family open and command batches gated.
 
-## Job identity
+## Implementation notes
 
-Async results also carry a stable, scoped `jobId`; its metadata is kept for a day, across restarts. The [job tools](job-tools.md) wait for, inspect and cancel it. See [Background job handles](background-job-handles.md).
+Both command tools use the same background runner, bounded log and process-group cleanup. Background processes stop on app shutdown. `wait_for` remains limited to non-job targets; scheduled wakes are time-only.
 
 ## Related
 

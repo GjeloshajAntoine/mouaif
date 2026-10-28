@@ -52,7 +52,7 @@ async function main() {
   assert.equal(aborted.result.cancelled, true);
   assert.equal(aborted.ok, false);
 
-  for (const name of ['group_cli', 'job_status', 'job_cancel']) {
+  for (const name of ['job_status', 'job_cancel']) {
     assert.ok(!catalog.some((tool) => tool.name === name), name + ' is not advertised');
   }
   assert.equal(jobs.SPECS.wait_for.function.parameters.properties.jobId, undefined);

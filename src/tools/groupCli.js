@@ -272,7 +272,7 @@ async function startBackgroundCommand(root, entry, shared) {
   // shell) reports `ok: false` instead of a "running" entry for a process
   // that never existed. A real command is still alive after this tick.
   await new Promise((resolve) => setTimeout(resolve, 0));
-  if (child.exitCode != null || child.signalCode != null || (log && log.spawnError)) {
+  if (log && log.spawnError) {
     await finished;
     return {
       ok: false,
@@ -408,19 +408,17 @@ async function runGroupCli(opts) {
         if (started.relPath) {
           logs.set(started.relPath, { relPath: started.relPath, logPath: started.logPath, bytes: 0, truncated: false, exitCode: undefined, running: true });
         }
-        results.push(Object.assign({}, base, { ok: true, result: {
+        results.push(Object.assign({}, base, { ok: true, result: shell.backgroundResult(root, {
           async: true,
-          jobId: started.jobId,
           status: 'running',
           pid: started.pid,
           logPath: started.relPath,
           identity: started.identity,
           note: 'started in the background; its output is appended to ' + started.relPath + ' — read it with read_file'
-        } }));
+        }) }));
       } else {
         results.push(Object.assign({}, base, { ok: false, result: {
           async: true,
-          ...(started.jobId ? { jobId: started.jobId } : {}),
           error: started.error,
           logPath: started.relPath || null,
           exitCode: started.exitCode != null ? started.exitCode : null
@@ -478,7 +476,8 @@ function formatGroupCliResult(out) {
     const head = (entry.index + 1) + '. ' + (entry.label || entry.cmd || '(entry)');
     const r = entry.result || {};
     if (r.async === true && r.status === 'running') {
-      lines.push(head + '\n    → started in the background (job ' + r.jobId + ', pid ' + (r.pid == null ? '?' : r.pid) + '), log: ' + (r.logPath || 'unavailable'));
+      lines.push(head + '\n    → started in the background (pid ' + (r.pid == null ? '?' : r.pid) + '), log: ' + (r.logPath || 'unavailable'));
+      lines.push('    shell follow-up commands: ' + JSON.stringify(r.commands));
       continue;
     }
     if (!entry.ok) {
@@ -505,7 +504,7 @@ const SPEC = {
   function: {
     name: TOOL_NAME,
     description: 'Run a group of up to ' + MAX_BATCH_ENTRIES + ' shell commands in one call and get every result back. Commands execute in the chat’s working folder through mouaif, the local AI coding assistant that provides this chat, on '
-      + shell.osLabel() + ' via ' + shell.shellDialectHint() + '. Entries run in order; a non-zero exit does not stop the batch, and each entry reports its own stdout, stderr, exit code and duration. Set "async": true on an entry (or "async": true on the call) to start it in the background instead of waiting: the result immediately names a log file under .mouaif/logs/ that keeps receiving its output, so you can start a build or a server, run further entries, and read the log later with read_file. Use one call for a read-check chain (git status, then git diff, then npm test) instead of several shell calls. Non-interactive only: children have no stdin, so REPLs, prompts and anything that reads from stdin fail or exit immediately — feed input with a heredoc or a pipe.',
+      + shell.osLabel() + ' via ' + shell.shellDialectHint() + '. Entries run in order; a non-zero exit does not stop the batch, and each entry reports its own stdout, stderr, exit code and duration. Set "async": true on an entry (or "async": true on the call) to start it in the background instead of waiting: the result immediately names a log file under .mouaif/logs/ that keeps receiving its output, so you can start a build or a server, run further entries, and inspect, wait or stop it using the returned shell commands (no job handles). Use one call for a read-check chain (git status, then git diff, then npm test) instead of several shell calls. Non-interactive only: children have no stdin, so REPLs, prompts and anything that reads from stdin fail or exit immediately — feed input with a heredoc or a pipe.',
     parameters: {
       type: 'object',
       properties: {

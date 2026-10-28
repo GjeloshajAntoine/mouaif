@@ -748,10 +748,13 @@ const TOOL_VERBS = {
   edit_file: 'Edited',
   write_file: 'Wrote',
   shell: 'Ran',
+  group_cli: 'Ran group',
   subagent: 'Subagent',
   ask_user: 'Question',
   restart_app: 'Restarted',
   wait_for: 'Waited',
+  job_status: 'Job status',
+  job_cancel: 'Cancelled job',
   schedule_wake: 'Scheduled wake',
   schedule_list: 'Schedules',
   schedule_cancel: 'Cancelled wake',
@@ -1214,7 +1217,7 @@ export function appendToolCallCard(toolCall, refs, isReplay) {
     live.appendChild(hint);
     body.appendChild(live);
     card.appendChild(body);
-  } else if (normalizeToolName(toolCall.name) === 'shell') {
+  } else if (normalizeToolName(toolCall.name) === 'shell' || normalizeToolName(toolCall.name) === 'group_cli') {
     const body = document.createElement('div');
     body.className = 'tool-card__body';
     const live = document.createElement('div');
@@ -1985,6 +1988,7 @@ function renderSubagentToolPreview(parent, name, raw, args) {
   preview.className = 'tool-card__subagent-preview';
   parent.appendChild(preview);
   if (toolName === 'shell') return renderShellInPreview(preview, r, args);
+  if (toolName === 'group_cli') return renderGroupCliToolResult(preview, r, args);
   if (toolName === 'read_file') return renderReadFileInPreview(preview, r);
   if (toolName === 'group_read' || toolName === 'group_edit') return renderFileBatchToolResult(preview, r, toolName);
   if (toolName === 'list_files') return renderListFilesInPreview(preview, r);

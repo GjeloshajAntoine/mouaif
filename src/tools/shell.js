@@ -281,29 +281,7 @@ async function runShell(opts) {
         return { ...result, ok: false, error: result.error.message,
           code: result.error.code, durationMs: Date.now() - startedAt };
       }
-      const absoluteLogPath = require('node:path').resolve(cwd, result.logPath);
-      const quote = (value) => "'" + String(value).replace(/'/g, "'\\''") + "'";
-      const pid = result.pid;
-      // Linux process start ticks identify this particular process, not just
-      // a reusable PID. The generated commands refuse to signal a new owner.
-      const statPath = '/proc/' + pid + '/stat';
-      const readIdentity = () => {
-        try { return fs.readFileSync(statPath, 'utf8').split(') ').pop().split(' ')[19]; }
-        catch { return null; }
-      };
-      const startTicks = process.platform === 'linux' ? readIdentity() : null;
-      const check = "const fs=require('node:fs');const same=()=>{try{const stat=fs.readFileSync(" + JSON.stringify(statPath) + ", 'utf8').split(') ').pop().split(' ');return stat[0]!=='Z'&&stat[19]===" + JSON.stringify(startTicks) + ";}catch{return false;}};";
-      const nodeCommand = (source) => quote(process.execPath) + ' -e ' + quote(source);
-      const inspect = nodeCommand("process.stdout.write(require('node:fs').readFileSync(" + JSON.stringify(absoluteLogPath) + ",'utf8').slice(-16000))");
-      const commands = { inspect,
-        wait: startTicks ? nodeCommand(check + "const t=setInterval(()=>{if(!same()){clearInterval(t);process.stdout.write(fs.readFileSync(" + JSON.stringify(absoluteLogPath) + ",'utf8').slice(-16000));}},250);") : inspect,
-        stop: startTicks ? nodeCommand(check + "if(same()){try{process.kill(-" + pid + ",'SIGTERM')}catch(e){if(e.code!=='ESRCH')throw e}}else{console.log('Already exited or process identity changed; not signalling.');}")
-          : nodeCommand("console.error('No verified process identity available; inspect the log and process ownership before stopping manually.');process.exitCode=1;") };
-      // Internal registry handles are deliberately not part of the model API.
-      const { jobId, note, ...publicResult } = result;
-      return { ...publicResult, ok: true, absoluteLogPath, commands,
-        note: 'Use these shell commands to inspect, wait or request SIGTERM for this process group. The log ends with [mouaif] exit CODE. Commands verify Linux process identity to avoid reused PIDs; on other platforms automatic waiting/stopping is unavailable. Background work is stopped on app shutdown.',
-        durationMs: Date.now() - startedAt };
+      return { ...backgroundResult(cwd, result), ok: true, durationMs: Date.now() - startedAt };
     } catch (e) {
       return { ok: false, error: e.message, code: e.code || 'ESPAWN', durationMs: Date.now() - startedAt };
     }
@@ -445,7 +423,31 @@ async function runShell(opts) {
   });
 }
 
+function backgroundResult(cwd, result) {
+  const absoluteLogPath = require('node:path').resolve(cwd, result.logPath);
+  const quote = (value) => "'" + String(value).replace(/'/g, "'\\''") + "'";
+  const pid = result.pid;
+  // Linux process start ticks identify this particular process, not just
+  // a reusable PID. The generated commands refuse to signal a new owner.
+  const statPath = '/proc/' + pid + '/stat';
+  const readIdentity = () => {
+    try { return fs.readFileSync(statPath, 'utf8').split(') ').pop().split(' ')[19]; }
+    catch { return null; }
+  };
+  const startTicks = process.platform === 'linux' ? readIdentity() : null;
+  const check = "const fs=require('node:fs');const same=()=>{try{const stat=fs.readFileSync(" + JSON.stringify(statPath) + ", 'utf8').split(') ').pop().split(' ');return stat[0]!=='Z'&&stat[19]===" + JSON.stringify(startTicks) + ";}catch{return false;}};";
+  const nodeCommand = (source) => quote(process.execPath) + ' -e ' + quote(source);
+  const inspect = nodeCommand("process.stdout.write(require('node:fs').readFileSync(" + JSON.stringify(absoluteLogPath) + ",'utf8').slice(-16000))");
+  const commands = { inspect,
+    wait: startTicks ? nodeCommand(check + "const t=setInterval(()=>{if(!same()){clearInterval(t);process.stdout.write(fs.readFileSync(" + JSON.stringify(absoluteLogPath) + ",'utf8').slice(-16000));}},250);") : inspect,
+    stop: startTicks ? nodeCommand(check + "if(same()){try{process.kill(-" + pid + ",'SIGTERM')}catch(e){if(e.code!=='ESRCH')throw e}}else{console.log('Already exited or process identity changed; not signalling.');}")
+      : nodeCommand("console.error('No verified process identity available; inspect the log and process ownership before stopping manually.');process.exitCode=1;") };
+  const { jobId, note, ...publicResult } = result;
+  return { ...publicResult, absoluteLogPath, commands, note: 'Use shell commands to inspect, wait or request SIGTERM. Commands verify Linux process identity; automatic wait/stop is unavailable on other platforms. Background work stops on app shutdown.' };
+}
+
 module.exports = {
+  backgroundResult,
   runShell,
   resolveSandbox,
   truncate,

@@ -68,7 +68,7 @@ same(categories[0].tools.map((t) => t.id), [
   'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task', 'report_progress', 'webpreview'
 ], 'the chats category lists its fifteen tools');
 same(categories[1].tools.map((t) => t.id), [
-  'create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'wait_for', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'run_start', 'run_status', 'run_end'
+  'create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli', 'wait_for', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'run_start', 'run_status', 'run_end'
 ], 'the settings category lists its seventeen tools');
 // More than one child is what gives the row its chevron and count in ToolTree.
 assert.ok(categories.every((g) => g.tools.length > 1), 'a category is collapsible');
@@ -134,7 +134,7 @@ same(
   'category ids match src/tools/mouaif.js GROUPS'
 );
 const actions = new Set(categories.flatMap((g) => g.tools.map((t) => t.id)));
-assert.equal(actions.size, 29, 'twenty-nine tools, each listed once');
+assert.equal(actions.size, 30, 'thirty tools, each listed once');
 
 // The two app tools sit in the mouaif row now, not as rows of their own:
 // one tree row per tool family, and `restart_app` / `list_features` are
@@ -144,7 +144,7 @@ assert.ok(!topLevel.includes('restart_app'), 'Restart app is no longer a top-lev
 assert.ok(!topLevel.includes('list_features'), 'neither is Feature report');
 const appRow = categories.find((g) => g.id === 'mouaif-settings');
 assert.ok(appRow.tools.some((t) => t.id === 'restart_app'), 'the mouaif row lists the app restart');
-assert.ok(!appRow.tools.some((t) => t.id === 'group_cli'), 'obsolete grouped CLI is absent');
+assert.ok(appRow.tools.some((t) => t.id === 'group_cli'), 'grouped CLI stays available');
 assert.ok(appRow.tools.some((t) => t.id === 'list_features'), 'and the feature report');
 
 // `ask_user` / `task` are chats leaves now, like `list_chats`: they are

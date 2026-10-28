@@ -282,6 +282,17 @@ async function runSingleToolCall(c, cx) {
       let workingFolderDestination;
       if (c.name === 'shell') summary = (args && args.cmd) || '';
       else if (c.name === 'subagent') summary = (args && args.task) || '';
+      else if (c.name === 'group_cli') {
+      // One line per command so the approval card shows the whole batch,
+      // not just its first entry — the user is approving every command.
+      const commands = args && Array.isArray(args.commands) ? args.commands : [];
+      summary = commands.map((entry, index) => {
+      const cmd = entry && (typeof entry.cmd === 'string' ? entry.cmd : entry.command);
+      const background = args.async === true || entry && entry.async === true;
+      return (index + 1) + '. ' + (typeof cmd === 'string' && cmd.trim() ? cmd.trim() : '(missing cmd)')
+        + (background ? '  [background]' : '');
+      }).join('\n');
+      }
       else if (c.name === 'change_working_folder') {
       const prepared = require('./chatWorkingFolder.js').prepareChange(opts.projectDir, opts.chatId, args, opts.workspaceChatId);
       summary = prepared.summary;
@@ -480,7 +491,7 @@ async function runSingleToolCall(c, cx) {
       // otherwise); nested subagent calls are skipped because their approval
       // card belongs to the parent's subagent card, which has no review
       // section, and a delegated reviewer's own budget is the parent's.
-      if (c.name === 'shell' && !opts.nestedSubagent) {
+      if ((c.name === 'shell' || c.name === 'group_cli') && !opts.nestedSubagent) {
       try {
       require('./shellReview.js').startReview({
       projectDir: opts && opts.projectDir,
@@ -700,6 +711,7 @@ async function streamChatInScope(opts) {
 catch { /* task tool module unavailable; skip */ }
 try { toolSpecs.push(require('./tools/restart.js').SPEC); }
 catch { /* restart tool module unavailable; skip */ }
+try { toolSpecs.push(require('./tools/groupCli.js').SPEC); } catch { /* unavailable */ }
 // Wait for long-running work without polling.
 try { toolSpecs.push(require('./tools/jobs.js').SPECS.wait_for); }
 catch { /* wait tool module unavailable; skip */ }
@@ -1688,7 +1700,7 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
     // including delegated tools. Never replace projectDir for permissions,
     // settings, MCP connections, attachments inventory or chat persistence.
     let workingDir;
-    if (name === 'shell' || name === 'subagent' || name === 'subagent_publish' || require('./tools/files.js').isFileToolName(name)) {
+    if (name === 'shell' || name === 'group_cli' || name === 'subagent' || name === 'subagent_publish' || require('./tools/files.js').isFileToolName(name)) {
       try { workingDir = require('./chatWorkingFolder.js').resolveForCall(callOpts.projectDir, callOpts.chatId, callOpts.workspaceChatId); }
       catch (e) {
         const result = name === 'subagent'
@@ -1820,7 +1832,53 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   return { ok: false, content: JSON.stringify(r), result: r };
   }
   }
-  // Wait for work scoped to this project, chat and invocation.
+  // Native grouped CLI tool: many shell commands in one call, entries in
+  // order, an entry with `async: true` started in the background. It shares
+  // the single shell runner, so an entry behaves exactly like a `shell` call
+  // (same sandbox, same timeout clamp, same output cap) and the live
+  // `shell_output` preview streams per entry with its index attached.
+  if (name === 'group_cli') {
+  try {
+  const groupCli = require('./tools/groupCli.js');
+  const parentOnEvent = callOpts && callOpts.onEvent;
+  const callId = callOpts && callOpts.callId;
+  const out = await groupCli.runGroupCli({
+  projectDir: workingDir,
+  ownerProjectDir: callOpts && callOpts.projectDir,
+  chatId: callOpts && callOpts.chatId,
+  invocationId: callOpts && callOpts.workspaceChatId,
+  args,
+  signal: callOpts && callOpts.signal,
+  // Clamped by the authorization gate against the project's
+  // maxTimeoutMs: it is the whole batch's budget, not one command's.
+  toolTimeoutMs: (callOpts && callOpts.toolTimeoutMs != null) ? callOpts.toolTimeoutMs : (args && args.timeoutMs),
+  onOutput: typeof parentOnEvent === 'function'
+  ? (stream, delta, entry) => {
+    try {
+    parentOnEvent('shell_output', { id: callId || null, stream, delta, index: entry && entry.index, label: entry && entry.label, cmd: entry && entry.cmd });
+    if (callOpts && callOpts.nestedSubagent) {
+      parentOnEvent('subagent_event', {
+      parentCallId: callOpts.callId || null,
+      kind: 'shell_output',
+      data: { id: callId || null, stream, delta, index: entry && entry.index, label: entry && entry.label, cmd: entry && entry.cmd }
+      });
+    }
+    } catch { /* preview is best-effort */ }
+  }
+  : null
+  });
+  return {
+  ok: out.failedCount === 0,
+  content: '# mouaif group_cli · ' + groupCli.formatGroupCliResult(out),
+  result: out
+  };
+  } catch (e) {
+  const code = e.code || 'EGROUPCLI';
+  const r = { ok: false, code, error: { code, message: e.message || String(e) } };
+  return { ok: false, content: JSON.stringify(r), result: r };
+  }
+  }
+  // Wait for non-job targets.
   if (name === 'wait_for') {
     return await require('./tools/jobs.js').runJobTool(name, args, callOpts || {});
   }
