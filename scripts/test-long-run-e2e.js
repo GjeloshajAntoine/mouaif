@@ -53,7 +53,7 @@ async function main() {
   global.fetch = async (_url, init) => {
     const request = JSON.parse(init.body);
     const names = request.tools.map((tool) => tool.function.name);
-    for (const name of ['run_start', 'run_status', 'run_end', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'wait_for', 'job_status', 'job_cancel']) {
+    for (const name of ['run_start', 'run_status', 'run_end', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'wait_for']) {
       assert.ok(names.includes(name), name + ' is advertised to the model');
     }
     if (rounds++ === 0) {

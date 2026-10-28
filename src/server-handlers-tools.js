@@ -385,16 +385,15 @@ pushNativeTool(tools, { load: './tools/ask.js', name: 'ask_user', source: 'chats
 pushNativeTool(tools, { load: './tools/task.js', name: 'task', source: 'chats', fallback: 'Create, update, track progress on, and list structured tasks with subtasks.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/progress.js', name: 'report_progress', source: 'chats', fallback: 'Report real-time progress on a long-running operation.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', source: 'chats', fallback: 'Open a web URL in the debug Chrome and return a small screenshot of the page.', spec: (m) => m.SPEC && m.SPEC.function });
-// restart_app, list_features and group_cli advertise the `mouaif` source:
+// restart_app and list_features advertise the `mouaif` source:
 // they are leaves of that family in frontend/src/toolGroups.js (which is
 // authoritative for grouping), so the catalog must not name a group the
 // trees do not render.
 pushNativeTool(tools, { load: './tools/restart.js', name: 'restart_app', source: 'mouaif', fallback: 'Gracefully restart mouaif from the current chat.', spec: (m) => m.SPEC && m.SPEC.function });
-pushNativeTool(tools, { load: './tools/groupCli.js', name: 'group_cli', source: 'mouaif', fallback: 'Run a group of shell commands in one call, with a background mode.', spec: (m) => m.SPEC && m.SPEC.function });
-// wait_for, job_status and job_cancel run long work without polling: they are
-// mouaif-family leaves next to group_cli, whose background jobs they observe.
-for (const [name, spec] of Object.entries(require('./tools/jobs.js').SPECS)) {
-  pushNativeTool(tools, { load: './tools/jobs.js', name, source: 'mouaif', fallback: spec.function.description, spec: () => spec.function });
+// Wait for long-running work without polling.
+{
+  const spec = require('./tools/jobs.js').SPECS.wait_for;
+  pushNativeTool(tools, { load: './tools/jobs.js', name: 'wait_for', source: 'mouaif', fallback: spec.function.description, spec: () => spec.function });
 }
 // schedule_wake, schedule_list and schedule_cancel queue wake-ups for the chat.
 for (const [name, spec] of Object.entries(require('./tools/schedule.js').SPECS)) {

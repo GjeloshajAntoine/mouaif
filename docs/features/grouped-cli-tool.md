@@ -1,5 +1,8 @@
 # Grouped CLI tool — run many shell commands in one call, some in the background
 
+> **Historical implementation reference.** The grouped CLI and job-handle tools below are no longer model-facing. Use [`shell`](shell-tool.md) with `async: true` for background execution; inspect its returned PID and log with shell commands. New scheduled wakes are time-only.
+
+
 ## Overview
 
 `group_cli` is the batch counterpart of the [shell tool](shell-tool.md). One call carries an ordered list of commands, runs each one exactly like a `shell` call (same working folder, same interpreter, same output cap), and returns a per-entry result instead of stopping at the first failure. An entry marked `"async": true` is **started in the background** instead of awaited: the call returns immediately with a pid and a log path, the command keeps running, and its output is appended to a log file under `.mouaif/logs/` that the model can read later with `read_file`.

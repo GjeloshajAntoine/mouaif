@@ -1,12 +1,12 @@
 // Display helpers only: authorization continues to be owned by the server.
 const TITLES = {
-  shell: 'Run command', group_cli: 'Run commands', subagent: 'Delegate task',
+  shell: 'Run command', subagent: 'Delegate task',
   read_file: 'Read file', list_files: 'List files', search_files: 'Search files', write_file: 'Write file', edit_file: 'Edit file',
   group_read: 'Read files', group_edit: 'Edit files', list_chats: 'List chats', get_chat: 'Read chat', create_chat: 'Create chat',
   update_chat: 'Update chat', change_working_folder: 'Change working folder', search_models: 'Search models', start_chat: 'Start chat',
   delete_chat: 'Delete chat', search_chats: 'Search chats', attach_chat_image: 'Attach image', list_chat_attachments: 'List chat images',
   get_settings: 'Read settings', update_settings: 'Change settings', list_projects: 'List projects', get_app_info: 'Read app info',
-  restart_app: 'Restart app', wait_for: 'Wait', job_status: 'Check background job', job_cancel: 'Cancel background job', schedule_wake: 'Schedule a wake-up', schedule_list: 'List wake-ups', schedule_cancel: 'Cancel wake-up', run_start: 'Start a long-running run', run_status: 'Read run status', run_end: 'End the run', create_mcp_app: 'Create MCP App', task: 'Update tasks', webpreview: 'Open preview',
+  restart_app: 'Restart app', wait_for: 'Wait', schedule_wake: 'Schedule a wake-up', schedule_list: 'List wake-ups', schedule_cancel: 'Cancel wake-up', run_start: 'Start a long-running run', run_status: 'Read run status', run_end: 'End the run', create_mcp_app: 'Create MCP App', task: 'Update tasks', webpreview: 'Open preview',
   subagent_messages: 'Read worker messages', subagent_status: 'Check worker', subagent_stop: 'Stop worker', subagent_send: 'Message worker',
   subagent_group_create: 'Create worker group', subagent_group_update: 'Update worker group', subagent_publish: 'Publish handoff',
   subagent_read: 'Read handoff', subagent_group_status: 'Check worker group', subagent_decision: 'Propose group decision', subagent_conflict: 'Report group conflict'
@@ -58,9 +58,6 @@ export function approvalText(request) {
   const lines = [];
   if (tool === 'shell') {
     lines.push(args.cmd || request.cmd || request.summary || '');
-  } else if (tool === 'group_cli' && Array.isArray(args.commands)) {
-    lines.push(args.commands.map((entry, i) => !entry || typeof entry !== 'object' ? String(entry)
-      : (i + 1) + '. ' + (entry.cmd || entry.command || '(missing command)') + (entry.async || args.async ? ' [background]' : '')).join('\n'));
   } else if (tool === 'edit_file') {
     if (args.path || args.file) lines.push(String(args.path || args.file));
     lines.push('- ' + String(args.oldText || '') + '\n+ ' + String(args.newText || ''));

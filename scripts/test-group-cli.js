@@ -55,9 +55,7 @@ async function main() {
 
   const catalog = require('../src/server-handlers-tools.js').listNativeTools();
   const entry = catalog.find((tool) => tool.name === 'group_cli');
-  assert.ok(entry, 'group_cli is in the native catalog');
-  assert.equal(entry.source, 'mouaif', 'it advertises the family its tree row belongs to');
-  assert.ok(entry.parameters && entry.parameters.properties.commands);
+  assert.equal(entry, undefined, 'legacy batch runner is internal only');
 
   // ---- 2. Input validation ------------------------------------------------
   const rejects = (promise, code) => assert.rejects(() => promise, (e) => e.code === code, 'expected ' + code);
@@ -181,97 +179,7 @@ async function main() {
     assert.ok(fs.existsSync(path.join(projectDir, other.result.logPath)), other.result.logPath + ' exists');
   }
 
-  // ---- 7. Authorization ---------------------------------------------------
-  const chatId = 'batch-cli';
-  settings.setProject(projectDir, { chats: [{ id: chatId, title: 'batch cli', trace: false }], tools: {} });
-  let call = 0;
-  const authorize = (args) => authz.authorize({
-    projectDir, chatId, callId: 'cli-' + ++call, tool: 'group_cli', args, summary: args && args.commands && args.commands[0] && args.commands[0].cmd
-  });
-  assert.ok(authz.TOOL_FAMILIES.mouaif.includes('group_cli'), 'group_cli is a mouaif family leaf');
-  assert.equal(authz.configToolName('group_cli'), 'mouaif');
-  assert.equal(authz.effectiveConfig(projectDir, 'group_cli').mode, 'ask', 'it defaults to ask');
-  settings.setProject(projectDir, { tools: { mouaif: { mode: 'off' } } });
-  await rejects(authorize({ commands: [{ cmd: 'echo a' }] }), 'ETOOL_DISABLED');
-  settings.setProject(projectDir, { tools: { mouaif: { mode: 'allow' }, group_cli: { mode: 'off' } } });
-  await rejects(authorize({ commands: [{ cmd: 'echo a' }] }), 'ETOOL_DISABLED');
-  settings.setProject(projectDir, { tools: { mouaif: { mode: 'allow' } } });
-  assert.equal((await authorize({ commands: [{ cmd: 'echo a' }] })).decision, 'allow');
-  settings.setProject(projectDir, { tools: { mouaif: { mode: 'allowlist', allowlist: ['^echo '] } } });
-  assert.equal((await authorize({ commands: [{ cmd: 'echo a' }, { cmd: 'echo b' }] })).decision, 'allow');
-  const asked = await authorize({ commands: [{ cmd: 'echo a' }, { cmd: 'rm -rf build' }] });
-  assert.equal(asked.decision, 'prompt', 'one unlisted command must not approve the whole batch');
-  authz.recordDecision(projectDir, chatId, 'cli-' + call, 'allow-once');
-  await asked.wait;
-
-  // ---- 8. The multi-turn dispatcher, against a local SSE fixture ---------
-  settings.setProject(projectDir, { tools: { mouaif: { mode: 'allow' } } });
-  const originalFetch = global.fetch;
-  let rounds = 0;
-  const sseEvents = [];
-  try {
-    global.fetch = async (_url, init) => {
-      const body = JSON.parse(init.body);
-      assert.ok(body.tools.some((tool) => tool.function.name === 'group_cli'), 'the batch tool is advertised');
-      let delta;
-      if (rounds++ === 0) {
-        delta = { tool_calls: [
-          { index: 0, id: 'cli-batch', type: 'function', function: { name: 'group_cli', arguments: JSON.stringify({ commands: [
-            { cmd: 'echo from-batch', label: 'echo one' },
-            { cmd: 'printf "o\\n"; printf "e\\n" >&2' }
-          ] }) } }
-        ] };
-      } else {
-        assert.ok(body.messages.some((message) => message.role === 'tool' && message.name === 'group_cli'),
-          'the per-entry result went back to the model as a tool message');
-        delta = { content: 'Done' };
-      }
-      return new Response('data: ' + JSON.stringify({ choices: [{ delta }] }) + '\n\ndata: [DONE]\n\n',
-        { headers: { 'Content-Type': 'text/event-stream' } });
-    };
-    const streamedCall = await require('../src/ai-stream.js').streamChat({
-      model: { id: 'fixture', provider: 'openai-compatible', baseUrl: 'http://fixture/v1' },
-      projectDir, chatId, promptSize: 'average', messages: [{ role: 'user', content: 'Run the batch' }],
-      onEvent: (type, payload) => sseEvents.push({ type, payload })
-    });
-    assert.equal(streamedCall.ok, true);
-    const result = sseEvents.find((event) => event.type === 'tool_result' && event.payload.name === 'group_cli');
-    assert.ok(result, 'a tool_result frame was emitted');
-    assert.equal(result.payload.ok, true);
-    assert.equal(result.payload.result.results.length, 2);
-    assert.equal(result.payload.result.results[0].result.stdout.trim(), 'from-batch');
-    assert.equal(result.payload.result.results[1].result.stderr.trim(), 'e');
-    assert.ok(sseEvents.some((event) => event.type === 'shell_output' && event.payload.delta.includes('from-batch')),
-      'the live preview streamed while the batch ran');
-  } finally { global.fetch = originalFetch; }
-
-  // An `off` family hides the spec from the advertised request entirely.
-  settings.setProject(projectDir, { tools: { mouaif: { mode: 'off' } } });
-  let sawTools = null;
-  rounds = 0;
-  try {
-    global.fetch = async (_url, init) => {
-      sawTools = JSON.parse(init.body).tools || [];
-      return new Response('data: ' + JSON.stringify({ choices: [{ delta: { content: 'hi' } }] }) + '\n\ndata: [DONE]\n\n',
-        { headers: { 'Content-Type': 'text/event-stream' } });
-    };
-    await require('../src/ai-stream.js').streamChat({
-      model: { id: 'fixture', provider: 'openai-compatible', baseUrl: 'http://fixture/v1' },
-      projectDir, chatId, promptSize: 'average', messages: [{ role: 'user', content: 'hi' }], onEvent: () => {}
-    });
-    assert.ok(!sawTools.some((tool) => tool.function.name === 'group_cli'), 'a mouaif Off hides the batch tool');
-  } finally { global.fetch = originalFetch; }
-
-  // ---- 9. Isolation, via an isolated serve smoke test --------------------
-  const server = require('../src/index.js').createServer(0);
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  try {
-    const base = 'http://127.0.0.1:' + server.address().port;
-    const response = await fetch(base + '/api/tools/list');
-    assert.equal(response.status, 200);
-    const tools = (await response.json()).tools;
-    assert.ok(tools.some((tool) => tool.name === 'group_cli' && tool.source === 'mouaif'));
-  } finally { await new Promise((resolve) => server.close(resolve)); }
+  // The legacy runner remains internal; model catalog coverage is above.
 
   // ---- 10. The tool-group model, the mirror and the preset --------------
   const vmContext = vm.createContext({ Set, console });
@@ -282,48 +190,19 @@ async function main() {
   vm.runInContext(loadFile('components/ToolTree.jsx'), vmContext);
   const groups = vm.runInContext('buildToolGroups(catalog, [], null)', vmContext);
   const appRow = groups.find((group) => group.id === 'mouaif-settings');
-  assert.ok(appRow.tools.some((tool) => tool.id === 'group_cli'), 'the mouaif tree row lists the batch tool');
+  assert.ok(!appRow.tools.some((tool) => tool.id === 'group_cli'), 'the tree omits the legacy batch tool');
   assert.ok(groups.every((group) => group.id !== 'group_cli'), 'it has no row of its own');
-  assert.equal(vm.runInContext('FAMILY_OF.group_cli', vmContext), 'mouaif');
+  assert.equal(vm.runInContext('FAMILY_OF.group_cli', vmContext), undefined);
   const mirror = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'frontend', 'build', 'toolGroups.json'), 'utf8'));
   const model = await import('../frontend/src/toolGroups.js');
   assert.equal(JSON.stringify(mirror), JSON.stringify(JSON.parse(JSON.stringify(model.TOOL_GROUPS))),
     'run: node scripts/build-tool-groups.js');
   const preset = await import('../frontend/src/components/settings/presetTools.js');
-  assert.deepEqual([...preset.PRESET_DEFAULT_OFF_TOOLS], ['group_read', 'group_edit', 'group_cli']);
-  assert.deepEqual(preset.presetDefaultSelection(['shell', 'read_file', 'group_read', 'group_edit', 'group_cli']),
+  assert.deepEqual([...preset.PRESET_DEFAULT_OFF_TOOLS], ['group_read', 'group_edit']);
+  assert.deepEqual(preset.presetDefaultSelection(['shell', 'read_file', 'group_read', 'group_edit']),
     ['shell', 'read_file'], 'the baseline leaves the grouped tools off');
 
-  // ---- 11. The card: arguments, summary and per-entry preview ------------
-  const cardContext = vm.createContext({ Set, console });
-  cardContext.document = { createElement: () => ({
-    tag: 'div', children: [], classList: { add() {} }, textContent: '',
-    appendChild(child) { this.children.push(child); },
-    closest() { return null; }, querySelector() { return null; }
-  }) };
-  vm.runInContext(loadFile('components/chat/tools.js'), cardContext);
-  vm.runInContext(loadFile('components/chat/toolRender.js'), cardContext);
-  cardContext.args = { commands: [{ cmd: 'npm test', label: 'tests' }, { cmd: 'npm run build', async: true }] };
-  assert.equal(vm.runInContext('formatToolArgs(args, "group_cli")', cardContext), 'tests › npm run build');
-  const full = vm.runInContext('formatToolArgsFull(args, "group_cli")', cardContext);
-  assert.ok(full.includes('1. tests: npm test'));
-  assert.ok(full.includes('2. npm run build  [background]'));
-  cardContext.result = { succeededCount: 1, failedCount: 0, runningCount: 1, durationMs: 120, results: [
-    { index: 0, label: 'tests', cmd: 'npm test', ok: true, result: { stdout: 'ok 1', stderr: '', exitCode: 0, durationMs: 100 } },
-    { index: 1, cmd: 'npm run build', ok: true, result: { async: true, status: 'running', pid: 42, logPath: '.mouaif/logs/build.log' } }
-  ] };
-  assert.equal(vm.runInContext('formatResultSummary("group_cli", result)', cardContext), '1 ok · 1 running · 120ms');
-  cardContext.preview = cardContext.document.createElement();
-  vm.runInContext('renderToolResultBody(preview, { name: "group_cli", result, args }, () => false)', cardContext);
-  const textOf = (item) => [item.textContent, ...(item.children || []).map(textOf)].join(' ');
-  const rendered = textOf(cardContext.preview);
-  assert.ok(rendered.includes('1. tests'), 'the entry is named (its label, like the batch arguments block)');
-  assert.ok(rendered.includes('ok 1'), 'its output is shown');
-  assert.ok(rendered.includes('.mouaif/logs/build.log'), 'a background entry names its log instead of output');
-  assert.ok(rendered.includes('exit 0'), 'the exit status is shown per entry');
-  assert.ok(rendered.includes('1 succeeded · 0 failed'), 'the batch tally is shown');
-
-  console.log('group_cli: spec, validation, ordering, streaming, background mode, authorization, dispatcher, groups and card checks passed');
+  console.log('group_cli: spec, validation, ordering, streaming, background mode, internal runner and catalog exclusion checks passed');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; })

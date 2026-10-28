@@ -203,8 +203,7 @@ const FILE_FAMILY_TOOLS = new Set([...FILE_TOOL_NAMES]);
 // resolves through the same code path, so a new one is a new entry here.
 //
 // The `mouaif` family also carries the tools that act on the app itself
-// rather than on a project: `restart_app`, `list_features` and `group_cli`
-// (a group of shell commands in one call, with a background/async mode).
+// rather than on a project: `restart_app` and `list_features`.
 // They used to be single-tool gates of their own (see
 // frontend/src/toolGroups.js); they are leaves now, so a stored
 // `tools.restart_app` keeps working as that leaf's override.
@@ -216,7 +215,7 @@ const FILE_FAMILY_TOOLS = new Set([...FILE_TOOL_NAMES]);
 // leaf's override — which is also what keeps a migrated project's binary
 // ask_user clamp in place.
 const FAMILY_EXTRAS = Object.freeze({
-  mouaif: Object.freeze(['restart_app', 'list_features', 'group_cli', 'wait_for', 'job_status', 'job_cancel', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'run_start', 'run_status', 'run_end']),
+  mouaif: Object.freeze(['restart_app', 'list_features', 'wait_for', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'run_start', 'run_status', 'run_end']),
   chats: Object.freeze(['ask_user', 'task', 'report_progress', 'webpreview'])
 });
 const TOOL_FAMILIES = Object.freeze(Object.assign(
@@ -238,7 +237,7 @@ const FAMILY_OF = Object.freeze(Object.fromEntries(
 // Every leaf of every family (the names that may carry a per-leaf override).
 const FAMILY_TOOLS = new Set(Object.keys(FAMILY_OF));
 // The native authorization gates: single tools plus one key per family
-// (`restart_app`, `list_features`, `group_cli`, `ask_user`, `task`,
+// (`restart_app`, `list_features`, `ask_user`, `task`,
 // `report_progress` and `webpreview` resolve through their family instead
 // of a gate of their own).
 const NATIVE_TOOLS = new Set(['shell', 'subagent', ...Object.keys(TOOL_FAMILIES)]);
@@ -934,21 +933,14 @@ async function authorize(input) {
   if (!forcePrompt && config.mode === 'allowlist') {
     // A batch is approved only when EVERY target matches. Matching just
     // the first path (or a combined summary) could approve unlisted files.
-    // The same rule covers `group_cli`, where the targets are commands:
-    // one listed command must not vouch for the rest of the batch.
-    const batchKey = tool === 'group_read' ? 'files' : tool === 'group_edit' ? 'edits' : tool === 'group_cli' ? 'commands' : null;
+    const batchKey = tool === 'group_read' ? 'files' : tool === 'group_edit' ? 'edits' : null;
     const items = batchKey && input.args && input.args[batchKey];
     let allowed = false;
     if (batchKey) {
       allowed = Array.isArray(items) && items.length > 0 && items.length <= MAX_BATCH_ENTRIES;
       for (const item of allowed ? items : []) {
-        const target = batchKey === 'commands'
-          ? (item && (typeof item.cmd === 'string' ? item.cmd : item.command))
-          : (item && (item.path || item.file));
-        const itemShell = batchKey === 'commands' && item && typeof item.shell === 'string' ? item.shell : input.shell;
-        const matches = batchKey === 'commands'
-        ? await matchesShellAllowlist(target, itemShell, config.allowlist)
-        : await matchesAllowlist(target, config.allowlist);
+        const target = item && (item.path || item.file);
+        const matches = await matchesAllowlist(target, config.allowlist);
         if (typeof target !== 'string' || !target || !matches) {
         allowed = false;
         break;

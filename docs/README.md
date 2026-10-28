@@ -34,7 +34,7 @@ One page per feature: what it does and how to use it.
 - [Bounded wait foundation](features/bounded-wait-foundation.md) — the finite wait engine behind `wait_for`.
 - [Long-running runs](features/long-running-runs.md) — a budget, pause/stop controls and a stall watchdog for a chat that works for hours.
 - [Scheduled wake-ups](features/scheduled-wakes.md) — `schedule_wake` lets a chat come back to its own work later, across restarts.
-- [Job tools](features/job-tools.md) — `wait_for`, `job_status` and `job_cancel` for long-running background commands.
+- [Job tools](features/job-tools.md) — `wait_for` for durations, chats and delegated work.
 
 ### Providers and models
 
@@ -117,7 +117,7 @@ One page per feature: what it does and how to use it.
 - [Tool wording](features/tool-overrides.md) — named wording sets for tool descriptions and field names; copy Built-in, edit, compare, import, and pick the set a project's chats use.
 - [File tools](features/file-tools.md) — the model lists, searches, reads, and edits project files.
 - [Grouped file tools](features/grouped-file-tools.md) — read several files or apply several block replacements in one call.
-- [Grouped CLI tool](features/grouped-cli-tool.md) — run several shell commands in one call, or start one in the background.
+- [Grouped CLI tool](features/grouped-cli-tool.md) — historical reference; use `shell` command chains and `async: true` today.
 - [Opening images with `read_file`](features/read-file-images.md) — the model looks at a picture and the card shows it.
 - [Project search](features/search-engine.md) — how `search_files` searches the project.
 - [Ask the user tool](features/ask-user-tool.md) — the model pauses to ask a question with options.

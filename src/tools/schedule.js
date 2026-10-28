@@ -1,11 +1,10 @@
 'use strict';
 
 // Model-facing tools for scheduled wake-ups: schedule_wake (wake this chat
-// later, once or repeatedly, optionally also when a background job settles),
+// later, once or repeatedly),
 // schedule_list and schedule_cancel. The queue and the ticker that delivers
 // wakes live in src/schedules.js; a wake is an ordinary turn started in the
 // chat with the saved message.
-const backgroundJobs = require('./backgroundJobs.js');
 const schedules = require('../schedules.js');
 const { err } = require('../util.js');
 
@@ -14,14 +13,13 @@ const NAMES = Object.freeze(['schedule_wake', 'schedule_list', 'schedule_cancel'
 const SPECS = Object.freeze({
   schedule_wake: { type: 'function', function: {
     name: 'schedule_wake',
-    description: 'Wake this chat later with a message, so a long task can continue without you polling. Give `in` (a delay such as "90s", "15m", "2h", "1d") or `at` (an ISO 8601 time, 30 days ahead at most). When it is due, mouaif starts a new turn in this chat with your message. Add `every` to repeat (at least 1 minute, up to `maxRuns` times, default ' + schedules.DEFAULT_RECURRING_RUNS + '). Add `jobId` to also wake as soon as that background job settles, with `in`/`at` as the deadline. Schedules survive a restart; a wake missed while mouaif was down fires once on the next start. The woken turn uses this chat’s normal tool permissions. Write the message as instructions to your future self, with everything you will need.',
+    description: 'Wake this chat later with a message, so a long task can continue without you polling. Give `in` (a delay such as "90s", "15m", "2h", "1d") or `at` (an ISO 8601 time, 30 days ahead at most). When it is due, mouaif starts a new turn in this chat with your message. Add `every` to repeat (at least 1 minute, up to `maxRuns` times, default ' + schedules.DEFAULT_RECURRING_RUNS + '). Schedules survive a restart; a wake missed while mouaif was down fires once on the next start. The woken turn uses this chat’s normal tool permissions. Write the message as instructions to your future self, with everything you will need.',
     parameters: { type: 'object', properties: {
       message: { type: 'string', description: 'What to do on waking (max ' + schedules.MAX_MESSAGE_CHARS + ' characters). It arrives as a user message.' },
       in: { type: 'string', description: 'Delay before the wake: "90s", "15m", "2h", "1d" or "1h30m". Minimum 10s.' },
       at: { type: 'string', description: 'Absolute wake time as an ISO 8601 timestamp, e.g. "2026-10-27T09:00:00Z".' },
       every: { type: 'string', description: 'Repeat interval after each wake, same format as `in`, minimum 1m.' },
       maxRuns: { type: 'integer', minimum: 1, maximum: schedules.MAX_RUNS, description: 'Stop after this many wakes (default ' + schedules.DEFAULT_RECURRING_RUNS + ' with `every`, otherwise 1).' },
-      jobId: { type: 'string', description: 'A background job id from group_cli: also wake when it finishes.' }
     }, required: ['message'], additionalProperties: false } } },
   schedule_list: { type: 'function', function: {
     name: 'schedule_list',
@@ -53,13 +51,12 @@ function present(row, now) {
   return { id: row.id, message: row.message, dueAt: new Date(row.dueAt).toISOString(),
     dueInSeconds: Math.max(0, Math.round((row.dueAt - now) / 1000)),
     every: row.everyMs ? Math.round(row.everyMs / 1000) + 's' : null, runsLeft: row.runsLeft, runCount: row.runCount,
-    jobId: row.jobId, lastError: row.lastError };
+    lastError: row.lastError };
 }
 
 // Dependencies are injectable so tests can drive the clock and the store.
 function createRunners({ store = schedules.sharedStore(), now = Date.now,
   getChat = (projectDir, chatId) => require('../chats.js').getChat(projectDir, chatId),
-  checkJob = (scope, jobId) => backgroundJobs.get(scope, jobId),
   runOf = (projectDir, chatId) => { try { return require('../runs.js').sharedManager().get(projectDir, chatId); } catch { return null; } },
   limits = {} } = {}) {
   const minDelayMs = limits.minDelayMs == null ? schedules.MIN_DELAY_MS : limits.minDelayMs;
@@ -98,14 +95,11 @@ function createRunners({ store = schedules.sharedStore(), now = Date.now,
       const chat = getChat(projectDir, chatId);
       if (!chat) throw err('ENOTARGET', 'This chat does not exist');
       if (!chat.modelId) throw err('EBADINPUT', 'Select a model for this chat first; a wake needs one to run');
-      let jobScope = null;
-      if (args.jobId) {
-        jobScope = { projectDir, chatId, invocationId: opts.workspaceChatId };
-        checkJob(jobScope, args.jobId); // ENOTARGET for a job this chat does not own
-      }
-      const created = store.create({ projectDir, chatId, message, dueAt, everyMs, runsLeft, jobId: args.jobId || null, jobScope });
+      // Legacy persisted job-linked wakes remain deliverable by the queue, but
+      // new model-facing schedules are time-based only.
+      const created = store.create({ projectDir, chatId, message, dueAt, everyMs, runsLeft });
       return { ok: true, id: created.id, dueAt: new Date(dueAt).toISOString(), dueInSeconds: Math.round((dueAt - time) / 1000),
-        every: everyMs ? Math.round(everyMs / 1000) + 's' : null, runsLeft, jobId: args.jobId || null, pendingInChat: created.pending };
+        every: everyMs ? Math.round(everyMs / 1000) + 's' : null, runsLeft, pendingInChat: created.pending };
     },
     schedule_list(args, opts) {
       const { projectDir, chatId } = target(opts);

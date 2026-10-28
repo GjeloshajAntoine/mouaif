@@ -29,7 +29,7 @@ function buildApprovalDetails(input) {
     if (chat && input.tool === 'update_chat') details.before = safeValue(Object.fromEntries(
       Object.keys(args).filter(key => key !== 'chatId').map(key => [key, chat[key] ?? null])));
   } catch { /* IDs and proposed args still show when the target is unavailable */ }
-  if (['shell', 'group_cli', 'subagent', 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit'].includes(input.tool)) {
+  if (['shell', 'subagent', 'read_file', 'list_files', 'search_files', 'write_file', 'edit_file', 'group_read', 'group_edit'].includes(input.tool)) {
     try { details.workingDirectory = require('./chatWorkingFolder.js').resolveForCall(input.projectDir, input.chatId, input.workspaceChatId); }
     catch { details.workingDirectory = input.projectDir; }
   }

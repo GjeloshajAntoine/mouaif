@@ -58,7 +58,7 @@ async function main() {
   await bad({ message: 'x', in: '5m' }, 'EBADINPUT', { projectDir });
   await bad({ message: 'x', in: '5m' }, 'EBADINPUT', ctx('chat-nomodel'));
   await bad({ message: 'x', in: '5m' }, 'ENOTARGET', ctx('chat-gone'));
-  await bad({ message: 'x', in: '5m', jobId: 'job-nope' }, 'ENOTARGET');
+  await bad({ message: 'x', in: '5m', jobId: 'job-nope' }, 'EBADINPUT');
 
   // ---- create / list / cancel ---------------------------------------------------
   const once = await run('schedule_wake', { message: 'check the build', in: '2h' });
@@ -168,8 +168,8 @@ async function main() {
   // A wake linked to a job fires when the job settles, before its deadline.
   const jobScope = { projectDir, chatId: 'chat-a' };
   const job = jobs.create(jobScope, { workingDir: root });
-  const linked = await run('schedule_wake', { message: 'build finished?', in: '6h', jobId: job.jobId });
-  assert.equal(linked.result.jobId, job.jobId);
+  // Simulate a legacy persisted schedule: new tool calls reject jobId.
+  store.create({ projectDir, chatId: 'chat-a', message: 'build finished?', dueAt: clock + 6 * HOUR, jobId: job.jobId, jobScope });
   clock += 5 * MIN;
   started.length = 0;
   assert.deepEqual(await scheduler.tick(), [], 'a running job does not wake it');
@@ -179,7 +179,7 @@ async function main() {
   assert.match(started[0].content, new RegExp(job.jobId + ' is failed \\(exit 2\\)'));
   // ...and the deadline still wakes it when the job never settles.
   const stuck = jobs.create(jobScope, { workingDir: root });
-  await run('schedule_wake', { message: 'deadline', in: '1h', jobId: stuck.jobId });
+  store.create({ projectDir, chatId: 'chat-a', message: 'deadline', dueAt: clock + HOUR, jobId: stuck.jobId, jobScope });
   clock += 61 * MIN;
   started.length = 0;
   outcomes = await scheduler.tick();

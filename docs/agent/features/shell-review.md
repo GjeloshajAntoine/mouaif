@@ -8,7 +8,7 @@
 | --- | --- |
 | `src/shellReview.js` | Everything server-side: normalization, model resolution (chat/app model by default), request shape, the one-shot review, the dedupe/automatic path, auto-allow on `SAFE`, pricing. |
 | `src/settings.js` | `DEFAULTS.shellReview = { mode: 'off' }` — the resolved floor. |
-| `src/ai-stream.js` | Starts the automatic review when `authorize()` returns `decision === 'prompt'` for a `shell` or `group_cli` call, passing `fallbackModel: opts.model`. |
+| `src/ai-stream.js` | Starts the automatic review when `authorize()` returns `decision === 'prompt'` for a `shell` call, passing `fallbackModel: opts.model`. |
 | `src/tools/authorization.js` | `attachReview` / `listPending` carry the verdict on the parked approval request; `recordDecision(..., 'allow-once')` resolves the parked wait when `autoAllow` approves a `SAFE` command. |
 | `src/live-chat.js` | Buffers the `shell_review` frame with the approval prompt it belongs to. |
 | `src/server-handlers-chats.js` | Fans `shell_review` into `liveChat.pushLive`. |

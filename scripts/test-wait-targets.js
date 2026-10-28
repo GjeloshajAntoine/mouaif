@@ -79,19 +79,8 @@ async function main() {
   assert.equal(aborted.ok, false);
   running(workerA, false);
 
-  // ---- several jobs ------------------------------------------------------------------
-  const scope = { projectDir, chatId: self.id };
-  const j1 = backgroundJobs.create(scope, { workingDir: root });
-  const j2 = backgroundJobs.create(scope, { workingDir: root });
-  assert.equal(await code({ until: 'job', ids: [j1.jobId, 'job-unknown'] }), 'ENOTARGET');
-  setTimeout(() => backgroundJobs.settle(scope, j1.jobId, { state: 'completed', exitCode: 0 }), 1200);
-  const firstJob = (await wait({ until: 'job', ids: [j1.jobId, j2.jobId], mode: 'any', seconds: 10 })).result;
-  assert.equal(firstJob.satisfied, true);
-  assert.equal(firstJob.targets.find((t) => t.id === j1.jobId).state, 'completed');
-  backgroundJobs.settle(scope, j2.jobId, { state: 'failed', exitCode: 1 });
-  const bothJobs = (await wait({ until: 'job', ids: [j1.jobId, j2.jobId], seconds: 5 })).result;
-  assert.equal(bothJobs.outcome, 'all-settled');
-  assert.deepEqual(bothJobs.targets.map((t) => t.state), ['completed', 'failed']);
+  // Shell jobs are no longer model-facing wait targets.
+  assert.equal(await code({ until: 'job', ids: ['old-job'] }), 'EBADINPUT');
 
   // ---- subagents and groups ----------------------------------------------------------------
   assert.equal(await code({ until: 'subagent', ids: ['call-1'] }), 'EUNSUPPORTED', 'needs a delegating turn');

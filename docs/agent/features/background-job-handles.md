@@ -1,5 +1,8 @@
 # Background job handle implementation
 
+> **Historical implementation reference.** The grouped CLI and job-handle tools below are no longer model-facing. Use [`shell`](../../features/shell-tool.md) with `async: true` for background execution; inspect its returned PID and log with shell commands. New scheduled wakes are time-only.
+
+
 ## Overview
 
 Track E's independent prerequisite adds process-local, retained background command identity. No proposed wait/restart tool or Track A/group API is assumed present.

@@ -6,7 +6,7 @@ An internal wait engine supports finite delays and observation of scoped backgro
 
 ## Usage
 
-There is no composer command or public API. The model reaches the engine through `wait_for`; start background commands with `group_cli`. Maintainers can test the engine with `npm run test:waits`.
+There is no composer command or public API. The model reaches the engine through `wait_for`; start background commands with `shell` using `async: true` (PID/log inspection uses shell commands, not job waits). Maintainers can test the engine with `npm run test:waits`.
 
 ## Behavior and limits
 

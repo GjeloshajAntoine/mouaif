@@ -120,12 +120,13 @@ const SPEC = {
   type: 'function',
   function: {
     name: 'shell',
-    description: 'Run a shell command in the project directory through mouaif, the local AI coding assistant that provides this chat. Commands execute on ' + osLabel() + ' via ' + shellDialectHint() + '. Returns stdout, stderr, and exit code. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead (e.g. "node -e ...", "npm test", not bare "node" or "cmd").',
+    description: 'Run a shell command in the project directory through mouaif, the local AI coding assistant that provides this chat. Commands execute on ' + osLabel() + ' via ' + shellDialectHint() + '. Returns stdout, stderr, and exit code; async:true returns PID/log paths and shell follow-up commands immediately. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead (e.g. "node -e ...", "npm test", not bare "node" or "cmd").',
     parameters: {
       type: 'object',
       properties: {
         cmd: { type: 'string', description: 'The command to run, as a single string. Must be non-interactive (no stdin input, no REPL, no prompts).' },
         shell: { type: 'string', description: shellExeDescription() },
+        async: { type: 'boolean', description: 'Start in the background and return immediately with a PID, log paths and shell inspect/wait/stop commands. Output is appended to .mouaif/logs/; background commands have no timeout and are stopped on app shutdown.' },
         timeoutMs: { type: 'integer', description: 'Optional per-call timeout, 1 ms - 10 min. Default 30000.' }
       },
       required: ['cmd'],
@@ -261,6 +262,52 @@ async function runShell(opts) {
 
   const plan = resolveShellPlan(cmd, shellOverride);
   if (!plan.ok) return plan;
+  if (opts.async === true) {
+    if (signal && signal.aborted) {
+      return { ok: false, error: 'aborted', code: 'EABORTED', durationMs: 0 };
+    }
+    const startedAt = Date.now();
+    try {
+      // Lazy import: groupCli uses this module for its synchronous runner.
+      // Reuse its bounded logs, scoped registry and process-group cleanup.
+      const batch = await require('./groupCli.js').runGroupCli({
+        ...opts,
+        projectDir: cwd,
+        args: { commands: [{ cmd, shell: shellOverride, async: true }] }
+      });
+      const entry = batch.results[0];
+      const result = entry.result;
+      if (!entry.ok) {
+        return { ...result, ok: false, error: result.error.message,
+          code: result.error.code, durationMs: Date.now() - startedAt };
+      }
+      const absoluteLogPath = require('node:path').resolve(cwd, result.logPath);
+      const quote = (value) => "'" + String(value).replace(/'/g, "'\\''") + "'";
+      const pid = result.pid;
+      // Linux process start ticks identify this particular process, not just
+      // a reusable PID. The generated commands refuse to signal a new owner.
+      const statPath = '/proc/' + pid + '/stat';
+      const readIdentity = () => {
+        try { return fs.readFileSync(statPath, 'utf8').split(') ').pop().split(' ')[19]; }
+        catch { return null; }
+      };
+      const startTicks = process.platform === 'linux' ? readIdentity() : null;
+      const check = "const fs=require('node:fs');const same=()=>{try{const stat=fs.readFileSync(" + JSON.stringify(statPath) + ", 'utf8').split(') ').pop().split(' ');return stat[0]!=='Z'&&stat[19]===" + JSON.stringify(startTicks) + ";}catch{return false;}};";
+      const nodeCommand = (source) => quote(process.execPath) + ' -e ' + quote(source);
+      const inspect = nodeCommand("process.stdout.write(require('node:fs').readFileSync(" + JSON.stringify(absoluteLogPath) + ",'utf8').slice(-16000))");
+      const commands = { inspect,
+        wait: startTicks ? nodeCommand(check + "const t=setInterval(()=>{if(!same()){clearInterval(t);process.stdout.write(fs.readFileSync(" + JSON.stringify(absoluteLogPath) + ",'utf8').slice(-16000));}},250);") : inspect,
+        stop: startTicks ? nodeCommand(check + "if(same()){try{process.kill(-" + pid + ",'SIGTERM')}catch(e){if(e.code!=='ESRCH')throw e}}else{console.log('Already exited or process identity changed; not signalling.');}")
+          : nodeCommand("console.error('No verified process identity available; inspect the log and process ownership before stopping manually.');process.exitCode=1;") };
+      // Internal registry handles are deliberately not part of the model API.
+      const { jobId, note, ...publicResult } = result;
+      return { ...publicResult, ok: true, absoluteLogPath, commands,
+        note: 'Use these shell commands to inspect, wait or request SIGTERM for this process group. The log ends with [mouaif] exit CODE. Commands verify Linux process identity to avoid reused PIDs; on other platforms automatic waiting/stopping is unavailable. Background work is stopped on app shutdown.',
+        durationMs: Date.now() - startedAt };
+    } catch (e) {
+      return { ok: false, error: e.message, code: e.code || 'ESPAWN', durationMs: Date.now() - startedAt };
+    }
+  }
   // Identity of this runner, surfaced in the tool result and prepended
   // to the first model-facing tool message, so the model always knows
   // which software and which shell executed the command.

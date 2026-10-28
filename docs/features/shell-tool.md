@@ -21,6 +21,7 @@ In **Settings → Project settings → Tools** (reachable from a project card's 
       "properties": {
         "cmd":       { "type": "string", "description": "The command to run, as a single string. Must be non-interactive (no stdin input, no REPL, no prompts)." },
         "shell":     { "type": "string", "description": "Optional. The exact interpreter to run the command with, e.g. \"cmd.exe\" (default), \"pwsh\", or \"powershell.exe\" on Windows; a path to a sh-compatible binary on POSIX. Falls back to the platform default when omitted." },
+        "async":     { "type": "boolean", "description": "Start in the background and return a PID and log path immediately." },
         "timeoutMs": { "type": "integer", "description": "Optional per-call timeout, 1 ms - 10 min. Default 30 000." }
       },
       "required": ["cmd"],
@@ -31,6 +32,18 @@ In **Settings → Project settings → Tools** (reachable from a project card's 
 ```
 
 The tool spec makes the shell dialect explicit — `cmd.exe` on Windows is not POSIX sh, so the model is told up front which syntax to write (see [Model awareness](#model-awareness) below). An optional `shell` parameter lets the model (or a REST caller) pick a different interpreter for a single call; it is validated before use.
+
+### Background commands
+
+`shell` is the sole model-facing command execution tool. Use shell syntax (`&&`, `;`, pipes, or a script) for multiple commands. For long-running work, call:
+
+```json
+{ "cmd": "npm test", "async": true }
+```
+
+The result returns the process PID, `logPath` under `.mouaif/logs/`, `absoluteLogPath`, and concrete `commands.inspect`, `commands.wait`, and `commands.stop` strings immediately. Pass a returned command verbatim to `shell` (the commands use the running Node executable and quote paths safely). On Linux, wait/stop verify `/proc` start ticks before acting so a reused PID is not signalled; stop sends SIGTERM to the original process group. If a command ignores SIGTERM, inspect ownership before escalating manually. On other platforms automatic wait/stop is unavailable and the returned commands explain this rather than risk signalling a reused PID. The log ends with `[mouaif] exit CODE`; waiting prints its tail, not the command's exit code as the wait command's own status. Stop does not roll back file changes. Logs remain after restart, but commands do not survive app shutdown. No model-facing job handle or lifecycle tool is exposed. Async commands have no timeout; `timeoutMs` applies only to synchronous runs.
+
+Use `wait_for` with `until: "duration"` between checks, or schedule a time-based wake with instructions to inspect the log. `wait_for` does not accept a job target and new wakes cannot link to jobs.
 
 ### In a chat
 
@@ -76,7 +89,7 @@ The chat composer also accepts an `@shell <cmd>` command that runs the tool dire
 
 ## Related
 
-- [docs/features/grouped-cli-tool.md](./grouped-cli-tool.md) — the batch counterpart: many commands in one call, some in the background.
+- [Scheduled wakes](scheduled-wakes.md) — time-based follow-ups for long-running work.
 - [docs/features/shell-review.md](./shell-review.md) — a second model reads a command before you approve it.
 - [docs/features/ai-client.md](./ai-client.md) — `tool_call` and `tool_result` SSE event names.
 - [docs/features/tool-authorization.md](./tool-authorization.md) — every shell call passes through the authorization gate.

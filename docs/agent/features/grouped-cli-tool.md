@@ -1,5 +1,8 @@
 # Grouped CLI tool — implementation notes
 
+> **Historical implementation reference.** The grouped CLI and job-handle tools below are no longer model-facing. Use [`shell`](../../features/shell-tool.md) with `async: true` for background execution; inspect its returned PID and log with shell commands. New scheduled wakes are time-only.
+
+
 > Agent-facing reference for [`docs/features/grouped-cli-tool.md`](../../features/grouped-cli-tool.md). The user-facing surface lives in that file; the implementation details, wire shapes, and source paths live here.
 
 ## Public surface

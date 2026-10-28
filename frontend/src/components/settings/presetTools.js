@@ -38,7 +38,7 @@
 // and single-command tools, and a chat that wants the batches checks them
 // on. Kept here so the rule has one home (rendering, first-uncheck
 // snapshot, and the collapse-to-baseline step all read it).
-export const PRESET_DEFAULT_OFF_TOOLS = ['group_read', 'group_edit', 'group_cli'];
+export const PRESET_DEFAULT_OFF_TOOLS = ['group_read', 'group_edit'];
 
 // presetDefaultSelection(allIds, defaultOff) -> string[]
 //

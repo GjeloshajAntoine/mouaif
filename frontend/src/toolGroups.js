@@ -58,31 +58,13 @@ export const TOOL_GROUPS = Object.freeze([
     binaryTools: ['ask_user'],
     tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task', 'report_progress', 'webpreview']
   },
-  // The mouaif family covers the app's own data model, the two tools
-  // that act on the app itself — `restart_app` (relaunch the worker) and
-  // `list_features` (the feature report) — and `group_cli` (run a group of
-  // shell commands in one call, with a background/async mode). They used to
-  // be their own top-level rows; they are leaves here like `get_settings`,
-  // so the row that "is mouaif" lists everything that touches mouaif.
-  //
-  // `list_features` is read-only metadata: it honors `off` (the family's
-  // or its own) but the server answers it without an approval card, like
-  // `report_progress` (a Chats leaf). `restart_app` uses the ordinary gate,
-  // so a family or leaf `allow` lets the assistant relaunch without asking.
-  // `group_cli` is NOT read-only: it runs commands, so the user is asked for
-  // a batch unless the family (or the leaf) is on `allow`.
-  //
-  // `wait_for`, `job_status` and `job_cancel` work on the background commands
-  // `group_cli` starts (sleep or block until one settles, read its log tail,
-  // stop it). `schedule_wake`, `schedule_list` and `schedule_cancel` queue wake-ups
-  // for the chat, and `run_start`, `run_status` and `run_end` give a long-running
-  // chat a budget. They use the ordinary gate like `group_cli`.
+  // App data, lifecycle, waits, scheduled wake-ups and long-running runs.
   {
     id: 'mouaif-settings',
     name: 'mouaif',
     source: 'mouaif',
     authKey: 'mouaif',
-    tools: ['create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli', 'wait_for', 'job_status', 'job_cancel', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'run_start', 'run_status', 'run_end']
+    tools: ['create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'wait_for', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'run_start', 'run_status', 'run_end']
   },
 
   {

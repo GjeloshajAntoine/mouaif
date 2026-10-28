@@ -206,10 +206,6 @@ export function formatToolArgs(args, toolName) {
   if (typeof args === 'string') return args;
   const name = normalizeToolName(toolName);
   if (name === 'shell') return args.cmd || '';
-  if (name === 'group_cli') {
-    const commands = Array.isArray(args.commands) ? args.commands : [];
-    return commands.map((entry) => entry && (entry.label || entry.cmd || entry.command) || '?').join(' › ');
-  }
   if (name === 'group_read' || name === 'group_edit') {
     const items = args[name === 'group_read' ? 'files' : 'edits'];
     return Array.isArray(items) ? items.map((item) => item && (item.path || item.file) || '?').join(', ') : '';
@@ -232,7 +228,6 @@ export function formatToolArgs(args, toolName) {
     const ids = Array.isArray(args.ids) ? args.ids : args.jobId ? [args.jobId] : [];
     return args.until + (ids.length ? ' ' + (ids.length > 2 ? ids.length + ' ids' : ids.join(', ')) : '') + (args.mode === 'any' ? ' (any)' : '') + (args.seconds ? ' · up to ' + args.seconds + 's' : '');
   }
-  if (name === 'job_status' || name === 'job_cancel') return args.jobId || 'all jobs';
   if (name === 'schedule_wake') return [args.in ? 'in ' + args.in : args.at ? 'at ' + args.at : '', args.every ? 'every ' + args.every : '', args.message].filter(Boolean).join(' · ');
   if (name === 'schedule_cancel') return args.id || '';
   if (name === 'run_start') return [args.goal, args.maxTurns ? args.maxTurns + ' turns' : '', args.maxCostUsd ? '$' + args.maxCostUsd : '', args.maxHours ? args.maxHours + 'h' : ''].filter(Boolean).join(' · ');
@@ -289,15 +284,6 @@ export function formatToolArgsFull(args, toolName) {
   if (typeof args === 'string') return args;
   const name = normalizeToolName(toolName);
   if (name === 'shell') return String(args.cmd || '');
-  if (name === 'group_cli') {
-    const commands = Array.isArray(args.commands) ? args.commands : [];
-    return commands.map((entry, index) => {
-      const cmd = entry && (entry.cmd != null ? entry.cmd : entry.command);
-      const label = entry && entry.label ? entry.label + ': ' : '';
-      return (index + 1) + '. ' + label + String(cmd || '(missing cmd)')
-        + (entry && entry.async === true ? '  [background]' : '');
-    }).join('\n');
-  }
   if (name === 'read_file') {
     const range = args.startLine != null || args.endLine != null
       ? (' lines ' + (args.startLine || 1) + '-' + (args.endLine || 'end'))
@@ -315,7 +301,6 @@ export function formatToolArgsFull(args, toolName) {
     const ids = Array.isArray(args.ids) ? args.ids : args.jobId ? [args.jobId] : [];
     return ['Wait for ' + args.until + (args.mode === 'any' ? ' (first to finish)' : ''), ...ids, args.seconds ? 'up to ' + args.seconds + ' seconds' : ''].filter(Boolean).join('\n');
   }
-  if (name === 'job_status' || name === 'job_cancel') return String(args.jobId || 'all jobs');
   if (name === 'schedule_wake') return [args.in ? 'In ' + args.in : args.at ? 'At ' + args.at : '', args.every ? 'Every ' + args.every : '', args.jobId ? 'Or when ' + args.jobId + ' finishes' : '', '', String(args.message || '')].join('\n').trim();
   if (name === 'schedule_cancel') return String(args.id || '');
   if (name === 'run_start') return [String(args.goal || ''), '', args.maxTurns ? 'Up to ' + args.maxTurns + ' turns' : '', args.maxCostUsd ? 'Up to $' + args.maxCostUsd : '', args.maxHours ? 'Up to ' + args.maxHours + ' hours' : ''].join('\n').trim();
@@ -375,19 +360,13 @@ export function formatResultSummary(name, r) {
   if (!r || r.error) return null;
   const n = normalizeToolName(name);
   if (n === 'shell') {
+    if (r.async) return 'started · PID ' + (r.pid ?? '?') + (r.logPath ? ' · ' + r.logPath : '');
     const parts = ['exit ' + (r.exitCode ?? 0)];
     if (r.durationMs != null) parts.push(r.durationMs + 'ms');
     return parts.join(' ');
   }
   if (n === 'group_read' || n === 'group_edit') {
     return (r.succeededCount || 0) + ' succeeded' + (r.failedCount ? ' · ' + r.failedCount + ' failed' : '');
-  }
-  if (n === 'group_cli') {
-    const parts = [(r.succeededCount || 0) + ' ok'];
-    if (r.failedCount) parts.push(r.failedCount + ' failed');
-    if (r.runningCount) parts.push(r.runningCount + ' running');
-    if (r.durationMs != null) parts.push(r.durationMs + 'ms');
-    return parts.join(' · ');
   }
   if (n === 'read_file') {
     if (r.kind === 'image') {
@@ -493,10 +472,6 @@ export function formatResultSummary(name, r) {
     if (job) return job.state + (job.exitCode != null ? ' · exit ' + job.exitCode : '');
     return Math.round((r.waitedMs || 0) / 1000) + 's';
   }
-  if (n === 'job_status') {
-    if (r.job) return r.job.state + (r.job.exitCode != null ? ' · exit ' + r.job.exitCode : '');
-    return Array.isArray(r.jobs) ? r.jobs.length + ' job' + (r.jobs.length === 1 ? '' : 's') + (r.running ? ' · ' + r.running + ' running' : '') : null;
-  }
   if (n === 'schedule_wake') return r.dueInSeconds != null ? 'due in ' + (r.dueInSeconds >= 3600 ? Math.round(r.dueInSeconds / 360) / 10 + 'h' : r.dueInSeconds >= 60 ? Math.round(r.dueInSeconds / 60) + 'm' : r.dueInSeconds + 's') + (r.every ? ' · every ' + r.every : '') : null;
   if (n === 'schedule_list') return Array.isArray(r.schedules) ? r.schedules.length + ' pending' : null;
   if (n === 'schedule_cancel') return r.cancelled ? 'cancelled' : r.status || null;
@@ -505,7 +480,6 @@ export function formatResultSummary(name, r) {
     if (!run) return 'no run';
     return run.status + (run.maxTurns ? ' · ' + run.turnsUsed + '/' + run.maxTurns + ' turns' : '');
   }
-  if (n === 'job_cancel') return r.alreadyFinished ? 'already ' + (r.job && r.job.state) : r.cancelled ? 'cancelled' : r.stillRunning ? 'stopping' : null;
   if (n === 'subagent_status') {
     if (Array.isArray(r.runs)) {
       const active = r.runs.filter((x) => x && (x.state === 'running' || x.state === 'waiting' || x.state === 'ready')).length;

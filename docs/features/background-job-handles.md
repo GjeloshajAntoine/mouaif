@@ -1,5 +1,8 @@
 # Background job handles
 
+> **Historical implementation reference.** The grouped CLI and job-handle tools below are no longer model-facing. Use [`shell`](shell-tool.md) with `async: true` for background execution; inspect its returned PID and log with shell commands. New scheduled wakes are time-only.
+
+
 ## Overview
 
 Background `group_cli` results now include a stable `jobId` alongside the PID and log path. The [job tools](job-tools.md) (`wait_for`, `job_status`, `job_cancel`) use these handles.

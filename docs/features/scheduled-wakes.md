@@ -16,11 +16,11 @@ Ask for something that takes a while — "start the full test run and check on i
 
 | Tool | Arguments | Result |
 | --- | --- | --- |
-| `schedule_wake` | `message` (required, up to 2000 characters). Exactly one of `in` (`"90s"`, `"15m"`, `"2h"`, `"1h30m"`, `"1d"`) or `at` (an ISO 8601 time). Optional `every` (same format, at least 1 minute), `maxRuns` (1–100, default 10 with `every`) and `jobId`. | `id`, the due time, `dueInSeconds`, `runsLeft`. |
+| `schedule_wake` | `message` (required, up to 2000 characters). Exactly one of `in` (`"90s"`, `"15m"`, `"2h"`, `"1h30m"`, `"1d"`) or `at` (an ISO 8601 time). Optional `every` (same format, at least 1 minute), `maxRuns` (1–100, default 10 with `every`). | `id`, the due time, `dueInSeconds`, `runsLeft`. |
 | `schedule_list` | none | This chat's pending wakes, soonest first. |
 | `schedule_cancel` | `id` | `cancelled: true`, or the status it already had. |
 
-With `jobId` (from [`group_cli`](grouped-cli-tool.md) `async: true`), the chat also wakes the moment that [background job](job-tools.md) settles, and the woken message says how it ended. `in` or `at` then acts as a deadline, so a job that never finishes still wakes the chat.
+New wakes are time-only: include the background shell PID and log path in the saved message so the next turn can inspect progress. Job-linked wakes saved by older versions remain supported internally, but new wakes cannot specify `jobId`.
 
 ### Permissions
 
@@ -41,5 +41,5 @@ The three tools follow the **mouaif** family gate in **Settings → Project** (O
 ## Related
 
 - [Long-running runs](long-running-runs.md) — a budget, pause/stop controls and a watchdog for chats that use wake-ups.
-- [Job tools](job-tools.md) — wait for, inspect and cancel background commands.
+- [Job tools](job-tools.md) — bounded waits for durations, chats and delegated work.
 - [Chat model tools](chat-model-tools.md) — `start_chat`, the same background-turn path a wake uses.
