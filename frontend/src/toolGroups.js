@@ -64,7 +64,7 @@ export const TOOL_GROUPS = Object.freeze([
     name: 'mouaif',
     source: 'mouaif',
     authKey: 'mouaif',
-    tools: ['create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli', 'wait_for', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'run_start', 'run_status', 'run_end']
+    tools: ['create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli', 'wait_for', 'schedule_wake', 'schedule_list', 'schedule_cancel']
   },
 
   {

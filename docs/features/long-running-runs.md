@@ -6,6 +6,10 @@ A **run** gives a chat that works for hours a goal, limits and a safety net. The
 
 Without a run, wake-ups still work but have no budget, no controls and no watchdog.
 
+## Agent tool availability
+
+`run_start`, `run_status` and `run_end` are no longer exposed to agents. Existing run tracking, budgets, storage and the run bar remain available; Pause, Resume, Stop and Dismiss are unchanged. Waiting and scheduled wake-up tools remain available independently. The tool examples below describe the legacy internal adapter, not the current agent tool surface.
+
 ## Usage
 
 Ask for something long — "migrate the docs overnight, check every 30 minutes, spend at most $3". The model opens the run and schedules its own check-ins:

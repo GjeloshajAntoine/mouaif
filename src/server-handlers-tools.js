@@ -400,10 +400,6 @@ pushNativeTool(tools, { load: './tools/groupCli.js', name: 'group_cli', source: 
 for (const [name, spec] of Object.entries(require('./tools/schedule.js').SPECS)) {
   pushNativeTool(tools, { load: './tools/schedule.js', name, source: 'mouaif', fallback: spec.function.description, spec: () => spec.function });
 }
-// run_start, run_status and run_end give a long-running chat a budget.
-for (const [name, spec] of Object.entries(require('./tools/run.js').SPECS)) {
-  pushNativeTool(tools, { load: './tools/run.js', name, source: 'mouaif', fallback: spec.function.description, spec: () => spec.function });
-}
 for (const [name, definition] of Object.entries(require('./tools/appToolNames.js').DEFINITIONS)) {
   pushNativeTool(tools, { load: './tools/mouaif.js', name, source: definition.source,
     fallback: definition.description, spec: (m) => m.SPECS[name].function });

@@ -208,7 +208,7 @@ async function main() {
   assert.deepEqual((await manager.watch()).map((e) => e.event), ['nudged']);
   assert.match(started.at(-1).content, /Run check-in/);
   assert.match(started.at(-1).content, /Watched/);
-  assert.match(started.at(-1).content, /run_end/);
+  assert.match(started.at(-1).content, /stop the run using the run bar/);
   assert.equal(manager.get(projectDir, CHAT).nudges, 1);
   assert.equal(manager.get(projectDir, CHAT).turnsUsed, 1, 'a reminder costs a turn');
   // Calling run_status counts as progress and clears the reminders.

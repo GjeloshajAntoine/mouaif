@@ -717,8 +717,6 @@ try { toolSpecs.push(require('./tools/jobs.js').SPECS.wait_for); }
 catch { /* wait tool module unavailable; skip */ }
 try { toolSpecs.push(...Object.values(require('./tools/schedule.js').SPECS)); }
 catch { /* schedule tools module unavailable; skip */ }
-try { toolSpecs.push(...Object.values(require('./tools/run.js').SPECS)); }
-catch { /* run tools module unavailable; skip */ }
 // Ordinary native tools for chats, attachments, settings and projects.
 try { toolSpecs.push(...Object.values(require('./tools/mouaif.js').SPECS)); }
 catch { /* mouaif tool module unavailable; skip */ }
@@ -1885,10 +1883,6 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // Native schedule tools: queue, list and cancel wake-ups for this chat.
   if (require('./tools/schedule.js').NAMES.includes(name)) {
     return await require('./tools/schedule.js').runScheduleTool(name, args, callOpts || {});
-  }
-  // Native run tools: a goal and limits for a chat that works across many turns.
-  if (require('./tools/run.js').NAMES.includes(name)) {
-    return await require('./tools/run.js').runRunTool(name, args, callOpts || {});
   }
   // Native subagent tool. It delegates to the same model with the same
   // inherited project tool surface, including MCP. Rooted local-parent scopes

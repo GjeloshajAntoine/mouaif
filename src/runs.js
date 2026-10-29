@@ -254,7 +254,7 @@ function createRunManager({ store, now = Date.now, getCost = () => 0, cancelSche
         try {
           result = await startTurn({ projectDir: run.projectDir, chatId: run.chatId, modelId: chat.modelId, providerId: chat.providerId || '',
             content: '⏰ Run check-in · nothing is running or scheduled\n\nYour long-running task is still open: "' + run.goal
-              + '"\n\nContinue the work, schedule your next check with schedule_wake, or call run_end if it is finished or you are blocked.' }, lifecycle);
+              + '"\n\nContinue the work or schedule your next check with schedule_wake. If it is finished or you are blocked, summarize the result and ask the user to stop the run using the run bar.' }, lifecycle);
         } catch (e) { result = { ok: false }; }
         if (result && result.ok) { store.countNudge(run.projectDir, run.chatId); events.push({ chatId: run.chatId, event: 'nudged' }); }
       }
