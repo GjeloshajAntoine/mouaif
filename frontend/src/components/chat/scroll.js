@@ -427,11 +427,18 @@ export function scrollToTranscriptRow(refs, row) {
   cancelTranscriptPin(refs);
   refs.pinnedToBottom.current = false;
   updateJumpButton(refs);
-  alignRowToTop(refs, el, row);
+  // A long jump lands among rows that are still placeholders (see below), so
+  // keep aligning until the position holds still, not just for a few frames.
+  alignRowToTop(refs, el, row, JUMP_SETTLE_FRAMES);
   return true;
 }
 
-function alignRowToTop(refs, el, target) {
+// Frames a jump keeps re-aligning at most (about 1.2 s at 60 fps).
+const JUMP_SETTLE_FRAMES = 72;
+// Consecutive frames without a correction that count as settled.
+const JUMP_STABLE_FRAMES = 6;
+
+function alignRowToTop(refs, el, target, settleFrames) {
   const align = () => {
     if (!target.isConnected || refs.pinnedToBottom.current) return false;
     const delta = target.getBoundingClientRect().top - el.getBoundingClientRect().top - NAV_TOP_GAP;
@@ -444,9 +451,19 @@ function alignRowToTop(refs, el, target) {
   // target can shift once the rows around it lay out for real. Re-align
   // for a couple of frames.
   if (typeof requestAnimationFrame !== 'function') return;
+  if (!settleFrames) {
+    let frames = 0;
+    const step = () => { if (align() && ++frames < 3) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+    return;
+  }
   let frames = 0;
-  const step = () => { if (align() && ++frames < 3) requestAnimationFrame(step); };
-  requestAnimationFrame(step);
+  let stable = 0;
+  const settle = () => {
+    stable = align() ? 0 : stable + 1;
+    if (++frames < settleFrames && stable < JUMP_STABLE_FRAMES && target.isConnected) requestAnimationFrame(settle);
+  };
+  requestAnimationFrame(settle);
 }
 
 // afterTranscriptAppend(refs, countNew)

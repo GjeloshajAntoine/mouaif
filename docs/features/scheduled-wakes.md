@@ -55,7 +55,7 @@ The three tools follow the **mouaif** family gate in **Settings → Project** (O
 Nothing a recurring task did is ever removed. Every run's prompt, the assistant's replies, the tool calls and the files stay in the chat, and you can scroll back to any of them (older pages load as you scroll up, or in the background).
 
 - **Each run is marked.** The prompt a recurring task starts shows `Scheduled · run N` next to its time, so scrolling back through many runs shows where each one begins.
-- **A list to jump.** While the chat has scheduled runs, the bar above the composer has a **Runs** button (once the task has ended, a slim bar with the number of runs keeps it available). It opens a list, newest first, with each run's number and time; a divider shows where a replaced task started over. Tap a run to load older pages if needed, scroll to it and highlight it.
+- **A list to jump.** While the chat has scheduled runs, the bar above the composer has a **Runs** button (once the task has ended, a slim bar with the number of runs keeps it available). It opens a list, newest first, with each run's number and time; a divider marks where an earlier, replaced task begins. Tap a run to load older pages if needed, scroll to it and highlight it.
 - **The assistant sees them too.** Because every run is in the same chat, a run can rely on what earlier runs said and made, and on every attachment, without it being passed again. mouaif does not trim or summarise that history, so a task that runs often in one chat grows the conversation every time; a task that runs many times a day is better as a fresh chat now and then.
 
 ## Related

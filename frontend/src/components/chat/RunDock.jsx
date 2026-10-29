@@ -86,9 +86,9 @@ export function RunDock({ projectDir, chatId, onJumpToSeq }) {
   const panel = listOpen ? h('div', { class: 'run-list', role: 'group', 'aria-label': 'Scheduled runs' },
     runList === null ? h('div', { class: 'run-list__empty' }, 'Loading…')
       : runList.length ? runList.map((item) => h(Fragment, { key: item.seq },
-        item.newTask ? h('div', { class: 'run-list__divider' }, 'Task started ' + runWhen(item.ts)) : null,
         h('button', { class: 'run-list__item', type: 'button', onClick: () => jump(item.seq) },
-          h('strong', null, 'Run ' + item.run), h('span', null, runWhen(item.ts)))))
+          h('strong', null, 'Run ' + item.run), h('span', null, runWhen(item.ts))),
+        item.newTask && item !== runList[runList.length - 1] ? h('div', { class: 'run-list__divider' }, 'Earlier task') : null))
         : h('div', { class: 'run-list__empty' }, 'No scheduled runs yet')) : null;
   if (!showDock) {
     return h(Fragment, null, panel,

@@ -115,3 +115,8 @@
 .run-list__item span { color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
 .run-list__item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .run-list__divider, .run-list__empty { padding: 8px 12px; font-size: 0.72rem; color: var(--muted); }
+.run-dock--idle .run-dock__text { flex-basis: 8rem; }
+@media (max-width: 420px) {
+  .run-dock--idle .run-dock__text { flex-basis: 8rem; }
+  .run-dock--idle .run-dock__btn { flex: 0 0 auto; }
+}
