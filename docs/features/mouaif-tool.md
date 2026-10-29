@@ -43,7 +43,7 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `report_progress` | Report real-time progress on a long-running operation, drawn as the chat's progress bar. Read-only UI metadata — answered without an approval card. See [Progress tool](./progress-tool.md). |
 | `webpreview` | Refresh the user-facing preview of a URL in the debug Chrome the Inspector uses. `viewport` is a preset (`phone`, `phone+`, `tablet`, `laptop`) or `WIDTHxHEIGHT`; `mode: "live"` shows the interactive page instead of a screenshot. See [Web preview](./webpreview.md). |
 | `group_cli` | Run an ordered group of shell commands, optionally in the background. |
-| `schedule_wake` | Wake this chat at a time (`in` or `at`), optionally repeated with `every` and `maxRuns`. New wakes are time-only. See [Scheduled wake-ups](scheduled-wakes.md). |
+| `schedule_wake` | Run a prompt in this chat later (`in` or `at`) or at a regular time (`every`, or `time` with `days` and `timezone`), until cancelled. See [Scheduled wake-ups and recurring tasks](scheduled-wakes.md). |
 | `schedule_list` | List this chat's pending wake-ups. |
 | `schedule_cancel` | Cancel one of this chat's wake-ups by `id`. |
 

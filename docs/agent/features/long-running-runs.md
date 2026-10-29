@@ -10,6 +10,8 @@ Run `node scripts/test-runs.js`, `node scripts/test-long-run-e2e.js` and `node s
 
 ## Implementation notes
 
+- Recurring tasks: `agent_run.kind` is `'run'` or `'recurring'` (column added with `ALTER TABLE` on older databases). `startRecurring()` opens or re-targets (`store.retarget`) the chat's run with `RECURRING_MAX_TURNS`/`RECURRING_MAX_MS` unless the schedule gave `maxRuns`/`until`/`maxCostUsd`; `closeRecurring()` ends it quietly; `view()` adds `kind` and `schedule` (`describeSchedule`: text, `nextAt`, `runCount`). In `watch()` a recurring run with no pending schedule and no streaming turn is ended (`schedule finished`, notification) instead of nudged. `RunDock` shows `runLine()`'s recurring form.
+
 - `src/runs.js`: `agent_run` table (one row per project/chat, created lazily), `createRunStore`, `createRunManager`, `sharedManager`. The manager owns the user controls (`pause`/`resume`/`stop`), the scheduler `gate`/`delivered` hooks and `watch()`.
 - Enforcement lives in the scheduler (`src/schedules.js`, `hooks`): `gate()` returns `send`, `hold` (paused: `store.release` +30 s), `cancel` (run over) or `final` (budget used: the wake text is replaced by the wrap-up and `delivered()` cancels everything else queued). `delivered()` counts the turn. A throwing gate falls back to `send`, so a broken run store never eats wakes.
 - `watch()` runs from the scheduler tick. It tracks idle time per run in memory (`idleSince`), so a restart gives a fresh window and a turn that just ended is not nudged at once. Nudges go through `startChatTurn`; `touch()` (from `run_status`) and a delivered wake reset `nudges`.

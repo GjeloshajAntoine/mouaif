@@ -21,7 +21,10 @@ const chats = { 'chat-a': { modelId: 'm1', providerId: 'p1' }, 'chat-b': { model
 const getChat = (projectDir, chatId) => chats[chatId] || null;
 const jobs = createRegistry({ now });
 const store = schedules.createScheduleStore({ getDb: settings.getDb, now });
-const runners = tool.createRunners({ store, now, getChat, checkJob: (scope, id) => jobs.get(scope, id) });
+const opened = [];
+const closed = [];
+const runners = tool.createRunners({ store, now, getChat, checkJob: (scope, id) => jobs.get(scope, id), runOf: () => null,
+  openRun: (c, args) => { opened.push({ c, args }); return { status: 'running' }; }, closeRun: (c, reason) => closed.push({ c, reason }) });
 const projectDir = root;
 const ctx = (chatId = 'chat-a', extra = {}) => ({ projectDir, chatId, ...extra });
 const run = (name, args, opts) => tool.runScheduleTool(name, args, opts || ctx(), runners);
@@ -46,14 +49,22 @@ async function main() {
   await bad({ message: 'x' }, 'EBADINPUT');
   await bad({ message: 'x', in: '5m', at: '2026-10-27T00:00:00Z' }, 'EBADINPUT');
   await bad({ message: '  ', in: '5m' }, 'EBADINPUT');
-  await bad({ message: 'x'.repeat(2001), in: '5m' }, 'EBADINPUT');
+  await bad({ message: 'x'.repeat(schedules.MAX_MESSAGE_CHARS + 1), in: '5m' }, 'EBADINPUT');
   await bad({ message: 'x', in: '5s' }, 'EBADINPUT');
   await bad({ message: 'x', in: '31d' }, 'EBADINPUT');
   await bad({ message: 'x', at: 'tomorrow' }, 'EBADINPUT');
   await bad({ message: 'x', at: '2020-01-01T00:00:00Z' }, 'EBADINPUT');
   await bad({ message: 'x', in: '5m', every: '30s' }, 'EBADINPUT');
   await bad({ message: 'x', in: '5m', maxRuns: 3 }, 'EBADINPUT');
-  await bad({ message: 'x', in: '5m', every: '5m', maxRuns: 101 }, 'EBADINPUT');
+  await bad({ message: 'x', in: '5m', every: '5m', maxRuns: schedules.MAX_RUNS + 1 }, 'EBADINPUT');
+  await bad({ message: 'x', in: '5m', every: '5m', time: '09:00' }, 'EBADINPUT');
+  await bad({ message: 'x', in: '5m', days: ['mon'] }, 'EBADINPUT');
+  await bad({ message: 'x', time: '25:00' }, 'EBADINPUT');
+  await bad({ message: 'x', time: '09:00', days: ['someday'] }, 'EBADINPUT');
+  await bad({ message: 'x', time: '09:00', timezone: 'Mars/Olympus' }, 'EBADINPUT');
+  await bad({ message: 'x', in: '5m', until: '2030-01-01T00:00:00Z' }, 'EBADINPUT');
+  await bad({ message: 'x', in: '1h', every: '5m', until: '2020-01-01T00:00:00Z' }, 'EBADINPUT');
+  await bad({ message: 'x', in: '1h', every: '5m', until: 'later' }, 'EBADINPUT');
   await bad({ message: 'x', in: '5m', bogus: 1 }, 'EBADINPUT');
   await bad({ message: 'x', in: '5m' }, 'EBADINPUT', { projectDir });
   await bad({ message: 'x', in: '5m' }, 'EBADINPUT', ctx('chat-nomodel'));
@@ -71,6 +82,10 @@ async function main() {
   const repeating = await run('schedule_wake', { message: 'poll', in: '10m', every: '15m', maxRuns: 2 });
   assert.equal(repeating.result.runsLeft, 2);
   assert.equal(repeating.result.every, '900s');
+  assert.equal(repeating.result.recurring, true);
+  assert.equal(repeating.result.repeat, 'Every 15m');
+  assert.equal(opened.length, 1, 'a recurring task opens its run');
+  assert.deepEqual([opened[0].args.maxRuns, opened[0].args.goal], [2, 'poll']);
   const listed = await run('schedule_list', {});
   assert.equal(listed.result.count, 3);
   assert.deepEqual(listed.result.schedules.map((s) => s.message), ['poll', 'check the build', 'at a time'], 'ordered by due time');
@@ -113,12 +128,12 @@ async function main() {
   assert.equal(started[0].chatId, 'chat-a');
   assert.equal(started[0].modelId, 'm1');
   assert.equal(started[0].providerId, 'p1');
-  assert.match(started[0].content, /Scheduled wake-up/);
-  assert.match(started[0].content, /repeating, run 1 of 2/);
+  assert.match(started[0].content, /Recurring task · every 15m · run 1 of 2/);
+  assert.match(started[0].content, /same chat as the earlier runs/);
   assert.match(started[0].content, /poll$/);
   assert.deepEqual(await scheduler.tick(), [], 'a fired wake is not delivered twice in the same tick window');
   let row = (await run('schedule_list', {})).result.schedules.find((s) => s.message === 'poll');
-  assert.equal(row.dueInSeconds, 15 * 60, 're-armed from now');
+  assert.equal(row.dueInSeconds, 15 * 60, 're-armed on the planned grid');
   assert.equal(row.runsLeft, 1);
   assert.equal(row.runCount, 1);
 
@@ -222,6 +237,111 @@ async function main() {
   assert.equal((await slow).length, 1);
   assert.equal(started.length, 1);
   nextResult = { ok: true };
+
+  // ---- recurring tasks ---------------------------------------------------------
+  for (const chat of ['chat-c', 'chat-d', 'chat-e', 'chat-f']) chats[chat] = { modelId: 'm1' };
+  for (const s of store.list(projectDir, 'chat-a')) store.cancel(projectDir, 'chat-a', s.id);
+
+  // A clock time: weekdays 09:00 in Brussels (CET in January, so 08:00Z).
+  clock = Date.parse('2027-01-04T07:30:00Z'); // a Monday
+  const daily = await run('schedule_wake', { message: 'morning report', time: '09:00', days: ['mon', 'tue', 'wed', 'thu', 'fri'], timezone: 'Europe/Brussels' }, ctx('chat-c'));
+  assert.ok(daily.ok, JSON.stringify(daily.result));
+  assert.equal(daily.result.dueAt, '2027-01-04T08:00:00.000Z');
+  assert.equal(daily.result.repeat, 'Weekdays at 09:00 (Europe/Brussels)');
+  assert.equal(daily.result.runsLeft, null, 'a recurring task is open-ended unless it is given a count');
+  assert.equal(opened[opened.length - 1].args.maxRuns, undefined);
+  const after = Date.parse('2027-01-04T08:00:00Z');
+  const dueOf = (chatId) => new Date(store.recurring(projectDir, chatId).dueAt).toISOString();
+  started.length = 0;
+  for (const next of ['2027-01-05', '2027-01-06', '2027-01-07', '2027-01-08', '2027-01-11']) {
+    clock = store.recurring(projectDir, 'chat-c').dueAt + 5000;
+    const out = await scheduler.tick();
+    assert.equal(out[0].outcome, 'pending');
+    assert.equal(dueOf('chat-c'), next + 'T08:00:00.000Z', 'next slot after ' + next);
+  }
+  assert.equal(started.length, 5);
+  assert.match(started[0].content, /Recurring task · weekdays at 09:00 \(europe\/brussels\) · run 1\n/);
+  assert.match(started[4].content, / · run 5\n/);
+  assert.ok(clock > after);
+  // The same wall-clock time across a clock change keeps its meaning.
+  const spring = schedules.parseClock({ time: '09:00', timezone: 'Europe/Brussels' });
+  assert.equal(new Date(schedules.nextClockSlot(spring, Date.parse('2027-03-27T12:00:00Z'))).toISOString(), '2027-03-28T07:00:00.000Z', 'CEST after the change');
+  assert.equal(new Date(schedules.nextClockSlot(spring, Date.parse('2027-03-26T12:00:00Z'))).toISOString(), '2027-03-27T08:00:00.000Z', 'CET before it');
+
+  store.cancel(projectDir, 'chat-c', store.recurring(projectDir, 'chat-c').id);
+
+  // An interval stays on its grid, never overlaps a running turn and skips missed slots.
+  const t0 = clock = Date.parse('2027-02-01T10:00:00Z');
+  await run('schedule_wake', { message: 'poll the build', in: '1m', every: '10m' }, ctx('chat-d'));
+  clock = t0 + 67_000;
+  started.length = 0;
+  assert.equal((await scheduler.tick())[0].outcome, 'pending');
+  assert.equal(dueOf('chat-d'), new Date(t0 + 11 * MIN).toISOString(), 'counted from the planned time, not from when it ran');
+  clock = t0 + 11 * MIN;
+  nextResult = { ok: false, code: 'EALREADY_RUNNING', error: 'busy' };
+  assert.equal((await scheduler.tick())[0].outcome, 'busy', 'it waits for the previous turn');
+  assert.equal(started.length, 2);
+  clock = t0 + 31 * MIN + 3000; // the turn ran for twenty minutes
+  nextResult = { ok: true };
+  started.length = 0;
+  assert.equal((await scheduler.tick())[0].outcome, 'pending');
+  assert.equal(started.length, 1, 'the missed slots are not replayed');
+  assert.equal(dueOf('chat-d'), new Date(t0 + 41 * MIN).toISOString());
+  assert.match(started[0].content, / · run 2\n/);
+
+  store.cancel(projectDir, 'chat-d', store.recurring(projectDir, 'chat-d').id);
+
+  // An end date: the last run is the last slot before it; a lapsed one never fires.
+  clock = t0;
+  await run('schedule_wake', { message: 'until noon', in: '1m', every: '1h', until: new Date(t0 + 150 * MIN).toISOString() }, ctx('chat-e'));
+  const verdicts2 = [];
+  for (let i = 0; i < 3; i++) { clock = store.recurring(projectDir, 'chat-e') ? store.recurring(projectDir, 'chat-e').dueAt + 1000 : clock; verdicts2.push((await scheduler.tick())[0].outcome); }
+  assert.deepEqual(verdicts2, ['pending', 'pending', 'done'], 'no slot after the end date');
+  assert.equal(store.recurring(projectDir, 'chat-e'), null);
+  clock = t0 + 10 * HOUR;
+  await run('schedule_wake', { message: 'lapsed', in: '1m', every: '1h', until: new Date(clock + 90 * MIN).toISOString() }, ctx('chat-e'));
+  clock += 5 * HOUR;
+  started.length = 0;
+  assert.equal((await scheduler.tick())[0].outcome, 'done', 'down past the end date: finished without firing');
+  assert.equal(started.length, 0);
+
+  // One recurring task per chat; one-off wakes sit beside it.
+  const first = await run('schedule_wake', { message: 'first task', in: '5m', every: '30m' }, ctx('chat-f'));
+  await run('schedule_wake', { message: 'one-off check', in: '20m' }, ctx('chat-f'));
+  const second = await run('schedule_wake', { message: 'second task', time: '18:30', timezone: 'UTC' }, ctx('chat-f'));
+  assert.equal(second.result.replacedPrevious, true);
+  assert.equal(first.result.replacedPrevious, false);
+  const pendingF = (await run('schedule_list', {}, ctx('chat-f'))).result.schedules;
+  assert.deepEqual(pendingF.map((x) => x.message).sort(), ['one-off check', 'second task']);
+  assert.deepEqual(pendingF.map((x) => x.recurring).sort(), [false, true]);
+  assert.equal(store.get(projectDir, 'chat-f', first.result.id).status, 'cancelled');
+  assert.equal(opened.length >= 2, true);
+  const oneOff = pendingF.find((x) => !x.recurring);
+  closed.length = 0;
+  assert.equal((await run('schedule_cancel', { id: oneOff.id }, ctx('chat-f'))).result.cancelled, true);
+  assert.equal(closed.length, 0, 'cancelling a one-off wake leaves the run alone');
+  const cancelledTask = await run('schedule_cancel', {}, ctx('chat-f'));
+  assert.equal(cancelledTask.result.cancelled, true, 'without an id it cancels the recurring task');
+  assert.deepEqual(closed.map((c) => [c.c.chatId, c.reason]), [['chat-f', 'cancelled']], 'and closes its run');
+  assert.equal((await run('schedule_cancel', {}, ctx('chat-f'))).result.code, 'ENOTARGET');
+
+  // After a stop a one-off wake is refused, but a new recurring task starts afresh.
+  const stoppedRunners = tool.createRunners({ store, now, getChat, runOf: () => ({ status: 'stopped', endReason: 'stopped by you' }),
+    openRun: (c, args) => { opened.push({ c, args }); return { status: 'running' }; }, closeRun: () => {} });
+  assert.equal((await tool.runScheduleTool('schedule_wake', { message: 'x', in: '5m' }, ctx('chat-f'), stoppedRunners)).result.code, 'ERUN_ENDED');
+  assert.ok((await tool.runScheduleTool('schedule_wake', { message: 'again', in: '5m', every: '1h', maxRuns: 4, maxCostUsd: 2 }, ctx('chat-f'), stoppedRunners)).ok);
+  assert.deepEqual([opened.at(-1).args.maxRuns, opened.at(-1).args.maxCostUsd], [4, 2], 'its limits go to the run');
+  store.cancel(projectDir, 'chat-f', store.recurring(projectDir, 'chat-f').id);
+
+  // A store from before recurring tasks gains the new columns.
+  const Database = require('better-sqlite3');
+  const old = new Database(':memory:');
+  old.exec('CREATE TABLE wake_schedule (id TEXT PRIMARY KEY, project_dir TEXT NOT NULL, chat_id TEXT NOT NULL, message TEXT NOT NULL, due_at INTEGER NOT NULL, every_ms INTEGER, runs_left INTEGER, job_id TEXT, job_scope TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL, last_run_at INTEGER, run_count INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT)');
+  old.prepare("INSERT INTO wake_schedule (id, project_dir, chat_id, message, due_at, every_ms, runs_left, status, created_at) VALUES ('wake-old', 'p', 'c', 'legacy', ?, 600000, 3, 'pending', 1)").run(clock + 1000);
+  const legacy = schedules.createScheduleStore({ getDb: () => old, now });
+  assert.equal(legacy.recurring('p', 'c').message, 'legacy');
+  legacy.fired(legacy.recurring('p', 'c'), clock + 2000);
+  assert.equal(legacy.recurring('p', 'c').dueAt, clock + 1000 + 10 * MIN, 'a legacy row stays on its own grid');
 
   // An unavailable store means "nothing due", never a crash.
   const dead = schedules.createScheduler({ store: schedules.createScheduleStore({ getDb() { throw new Error('locked'); } }),

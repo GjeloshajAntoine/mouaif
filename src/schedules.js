@@ -1,15 +1,19 @@
 'use strict';
 
-// Scheduled wake-ups: a durable "wake this chat later" queue.
+// Scheduled wake-ups and recurring tasks: a durable "wake this chat later" queue.
 //
 // A schedule is a row in the app database naming a chat, a message and a due
 // time (optionally repeating, optionally also due when a background job
-// settles). A single unref'd ticker looks for due rows and starts a normal
-// persisted turn in the chat with the message, through the same runner
-// `start_chat` uses, so the woken turn has the chat's own model, prompt,
-// tool permissions and cancellation. A wake that was due while mouaif was
-// down fires once on the next start; a repeating schedule is re-armed from
-// "now", never replayed.
+// settles). A repeating row is either a fixed interval or a wall-clock time
+// ("weekdays at 09:00" in a timezone) and keeps going until it is cancelled or
+// reaches its optional count or end date. A single unref'd ticker looks for due
+// rows and starts a normal persisted turn in the chat with the message,
+// through the same runner `start_chat` uses, so the woken turn has the chat's
+// own model, prompt, tool permissions, history and cancellation. A wake that
+// was due while mouaif was down fires once on the next start. A repeating
+// schedule never replays missed slots and never overlaps itself: a slot that
+// comes due while the previous turn still streams waits for it to finish, and
+// the next slot is the first one after that.
 const { randomUUID } = require('node:crypto');
 const { err } = require('./util.js');
 
@@ -17,9 +21,8 @@ const MIN_DELAY_MS = 10 * 1000;
 const MIN_EVERY_MS = 60 * 1000;
 const MAX_HORIZON_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_PENDING_PER_CHAT = 20;
-const MAX_RUNS = 100;
-const DEFAULT_RECURRING_RUNS = 10;
-const MAX_MESSAGE_CHARS = 2000;
+const MAX_RUNS = 10000;
+const MAX_MESSAGE_CHARS = 4000;
 const MAX_ATTEMPTS = 3;
 const LEASE_MS = 5 * 60 * 1000;
 const TICK_MS = 5000;
@@ -42,7 +45,10 @@ const CREATE = `
     last_run_at INTEGER,
     run_count   INTEGER NOT NULL DEFAULT 0,
     attempts    INTEGER NOT NULL DEFAULT 0,
-    last_error  TEXT
+    last_error  TEXT,
+    anchor_at   INTEGER,
+    until_at    INTEGER,
+    spec        TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_wake_schedule_due ON wake_schedule (status, due_at);
   CREATE INDEX IF NOT EXISTS idx_wake_schedule_chat ON wake_schedule (project_dir, chat_id, status)
@@ -65,11 +71,85 @@ function parseDuration(value) {
   return Math.round(total);
 }
 
+const DAY_NAMES = Object.freeze(['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']);
+
+function localZone() { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }
+
+// Milliseconds the zone is ahead of UTC at the instant `utcMs`.
+function zoneOffsetMs(utcMs, timeZone) {
+  const parts = {};
+  for (const p of new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(new Date(utcMs))) parts[p.type] = Number(p.value);
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second) - Math.floor(utcMs / 1000) * 1000;
+}
+
+// The UTC instant at which the wall clock in `timeZone` reads y-mo-d h:mi. A
+// time skipped by a clock change lands just after the gap.
+function zonedToUtc(y, mo, d, h, mi, timeZone) {
+  const guess = Date.UTC(y, mo - 1, d, h, mi);
+  const first = guess - zoneOffsetMs(guess, timeZone);
+  const second = guess - zoneOffsetMs(first, timeZone);
+  return second;
+}
+
+// parseClock({ time: "09:00", days?: ["mon", ...], timezone? }) -> spec
+function parseClock({ time, days, timezone } = {}) {
+  const m = typeof time === 'string' ? time.trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/) : null;
+  if (!m) throw err('EBADINPUT', '`time` must be a 24-hour clock time such as "09:00"');
+  const tz = timezone == null ? localZone() : String(timezone);
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); } catch { throw err('EBADINPUT', 'Unknown timezone "' + tz + '": use an IANA name such as "Europe/Brussels" or "UTC"'); }
+  let set = [0, 1, 2, 3, 4, 5, 6];
+  if (days != null) {
+    if (!Array.isArray(days) || !days.length) throw err('EBADINPUT', '`days` must list at least one of ' + DAY_NAMES.join(', '));
+    set = [...new Set(days.map((d) => DAY_NAMES.indexOf(String(d).toLowerCase().slice(0, 3))))].sort();
+    if (set.some((i) => i < 0)) throw err('EBADINPUT', '`days` may only contain ' + DAY_NAMES.join(', '));
+  }
+  return { time: String(Number(m[1])).padStart(2, '0') + ':' + m[2], days: set, tz };
+}
+
+// The first slot of a clock schedule strictly after `afterMs`, or null.
+function nextClockSlot(spec, afterMs) {
+  const [h, mi] = spec.time.split(':').map(Number);
+  const local = new Date(afterMs + zoneOffsetMs(afterMs, spec.tz));
+  for (let i = 0; i < 9; i++) {
+    const day = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + i));
+    if (!spec.days.includes(day.getUTCDay())) continue;
+    const slot = zonedToUtc(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), h, mi, spec.tz);
+    if (slot > afterMs) return slot;
+  }
+  return null;
+}
+
+// The next slot of a repeating row after `time`. Slots stay on the planned
+// grid (no drift) and missed ones are skipped, never replayed.
+function nextSlot(row, time) {
+  const anchor = row.anchorAt || row.dueAt;
+  if (row.spec) return nextClockSlot(row.spec, Math.max(time, anchor));
+  if (!row.everyMs) return null;
+  return anchor + (Math.floor(Math.max(0, time - anchor) / row.everyMs) + 1) * row.everyMs;
+}
+
+function describeRepeat(row) {
+  if (row.spec) {
+    const days = row.spec.days;
+    const label = days.length === 7 ? 'Every day' : days.join() === '1,2,3,4,5' ? 'Weekdays' : days.join() === '0,6' ? 'Weekends'
+      : days.map((d) => DAY_NAMES[d]).join(', ');
+    return label + ' at ' + row.spec.time + ' (' + row.spec.tz + ')';
+  }
+  if (!row.everyMs) return null;
+  const ms = row.everyMs;
+  for (const [unit, word, size] of [['d', 'day', UNITS.d], ['h', 'hour', UNITS.h], ['m', 'minute', UNITS.m], ['s', 'second', UNITS.s]]) {
+    if (ms % size === 0) return ms === size ? 'Every ' + word : 'Every ' + ms / size + unit;
+  }
+  return 'Every ' + Math.round(ms / 1000) + 's';
+}
+
 function rowToSchedule(row) {
   return { id: row.id, projectDir: row.project_dir, chatId: row.chat_id, message: row.message, dueAt: row.due_at,
     everyMs: row.every_ms, runsLeft: row.runs_left, jobId: row.job_id, jobScope: row.job_scope ? JSON.parse(row.job_scope) : null,
     status: row.status, createdAt: row.created_at, lastRunAt: row.last_run_at, runCount: row.run_count,
-    attempts: row.attempts, lastError: row.last_error };
+    attempts: row.attempts, lastError: row.last_error, anchorAt: row.anchor_at, untilAt: row.until_at,
+    spec: row.spec ? JSON.parse(row.spec) : null };
 }
 
 // createScheduleStore({ getDb, now }) -> store. Methods throw ESTORE when the
@@ -81,6 +161,10 @@ function createScheduleStore({ getDb = () => require('./settings.js').getDb(), n
     try {
       const handle = getDb();
       handle.exec(CREATE);
+      const columns = new Set(handle.prepare('PRAGMA table_info(wake_schedule)').all().map((c) => c.name));
+      for (const [name, type] of [['anchor_at', 'INTEGER'], ['until_at', 'INTEGER'], ['spec', 'TEXT']]) {
+        if (!columns.has(name)) handle.exec('ALTER TABLE wake_schedule ADD COLUMN ' + name + ' ' + type);
+      }
       handle.prepare("DELETE FROM wake_schedule WHERE status != 'pending' AND COALESCE(last_run_at, created_at) <= ?")
         .run(now() - KEEP_FINISHED_MS);
       db = handle;
@@ -88,19 +172,34 @@ function createScheduleStore({ getDb = () => require('./settings.js').getDb(), n
     } catch (e) { throw err('ESTORE', 'Schedule store unavailable: ' + (e && e.message)); }
   }
   return {
+    // A repeating schedule (an interval or a clock spec) replaces the chat's
+    // existing one: a chat has one recurring task, and any number of one-off wakes.
     create(schedule) {
       const d = open();
+      const repeats = !!(schedule.everyMs || schedule.spec);
+      let replaced = 0;
+      if (repeats) {
+        replaced = d.prepare("UPDATE wake_schedule SET status = 'cancelled', last_error = 'replaced by a new recurring task' WHERE project_dir = ? AND chat_id = ? AND status = 'pending' AND (every_ms IS NOT NULL OR spec IS NOT NULL)")
+          .run(schedule.projectDir, schedule.chatId).changes;
+      }
       const pending = d.prepare("SELECT COUNT(*) AS n FROM wake_schedule WHERE project_dir = ? AND chat_id = ? AND status = 'pending'")
         .get(schedule.projectDir, schedule.chatId).n;
       if (pending >= MAX_PENDING_PER_CHAT) {
         throw err('ETOOL_CAP', 'This chat already has ' + MAX_PENDING_PER_CHAT + ' pending schedules; cancel one first');
       }
       const id = 'wake-' + randomUUID();
-      d.prepare(`INSERT INTO wake_schedule (id, project_dir, chat_id, message, due_at, every_ms, runs_left, job_id, job_scope, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`).run(id, schedule.projectDir, schedule.chatId, schedule.message,
+      d.prepare(`INSERT INTO wake_schedule (id, project_dir, chat_id, message, due_at, every_ms, runs_left, job_id, job_scope, status, created_at, anchor_at, until_at, spec)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`).run(id, schedule.projectDir, schedule.chatId, schedule.message,
         schedule.dueAt, schedule.everyMs || null, schedule.runsLeft == null ? null : schedule.runsLeft,
-        schedule.jobId || null, schedule.jobScope ? JSON.stringify(schedule.jobScope) : null, now());
-      return { id, pending: pending + 1 };
+        schedule.jobId || null, schedule.jobScope ? JSON.stringify(schedule.jobScope) : null, now(),
+        schedule.dueAt, schedule.untilAt || null, schedule.spec ? JSON.stringify(schedule.spec) : null);
+      return { id, pending: pending + 1, replaced };
+    },
+    // The chat's pending recurring task, or null.
+    recurring(projectDir, chatId) {
+      const row = open().prepare("SELECT * FROM wake_schedule WHERE project_dir = ? AND chat_id = ? AND status = 'pending' AND (every_ms IS NOT NULL OR spec IS NOT NULL) ORDER BY due_at LIMIT 1")
+        .get(projectDir, chatId);
+      return row ? rowToSchedule(row) : null;
     },
     get(projectDir, chatId, id) {
       const row = open().prepare('SELECT * FROM wake_schedule WHERE id = ? AND project_dir = ? AND chat_id = ?').get(id, projectDir, chatId);
@@ -125,11 +224,17 @@ function createScheduleStore({ getDb = () => require('./settings.js').getDb(), n
       return open().prepare("UPDATE wake_schedule SET due_at = ? WHERE id = ? AND status = 'pending'").run(until, id).changes > 0;
     },
     fired(row, time) {
-      const recurring = row.everyMs && (row.runsLeft == null || row.runsLeft > 1);
-      open().prepare('UPDATE wake_schedule SET status = ?, due_at = ?, runs_left = ?, run_count = run_count + 1, attempts = 0, last_run_at = ?, last_error = NULL, job_id = NULL, job_scope = NULL WHERE id = ?')
-        .run(recurring ? 'pending' : 'done', recurring ? time + row.everyMs : row.dueAt,
+      const repeats = !!(row.everyMs || row.spec);
+      const next = repeats && (row.runsLeft == null || row.runsLeft > 1) ? nextSlot(row, time) : null;
+      const recurring = next != null && (row.untilAt == null || next <= row.untilAt);
+      open().prepare('UPDATE wake_schedule SET status = ?, due_at = ?, anchor_at = ?, runs_left = ?, run_count = run_count + 1, attempts = 0, last_run_at = ?, last_error = NULL, job_id = NULL, job_scope = NULL WHERE id = ?')
+        .run(recurring ? 'pending' : 'done', recurring ? next : row.dueAt, recurring ? next : (row.anchorAt || row.dueAt),
           row.runsLeft == null ? null : row.runsLeft - 1, time, row.id);
       return recurring ? 'pending' : 'done';
+    },
+    // The end date passed before this slot could run: finish without firing.
+    expire(row) {
+      open().prepare("UPDATE wake_schedule SET status = 'done', last_error = 'ended: past its end date' WHERE id = ? AND status = 'pending'").run(row.id);
     },
     retry(row, time, message) {
       const attempts = row.attempts + 1;
@@ -146,10 +251,15 @@ function createScheduleStore({ getDb = () => require('./settings.js').getDb(), n
 }
 
 function wakeText(row, reason, jobState) {
-  const bits = ['Scheduled wake-up'];
-  if (row.everyMs) bits.push('repeating, run ' + (row.runCount + 1) + (row.runsLeft != null ? ' of ' + (row.runCount + row.runsLeft) : ''));
+  const repeats = !!(row.everyMs || row.spec);
+  const bits = [repeats ? 'Recurring task' : 'Scheduled wake-up'];
+  if (repeats) {
+    bits.push((describeRepeat(row) || 'repeating').toLowerCase());
+    bits.push('run ' + (row.runCount + 1) + (row.runsLeft != null ? ' of ' + (row.runCount + row.runsLeft) : ''));
+  }
   if (reason === 'job' && jobState) bits.push('job ' + row.jobId + ' is ' + jobState.state + (jobState.exitCode != null ? ' (exit ' + jobState.exitCode + ')' : ''));
-  return '⏰ ' + bits.join(' · ') + '\n\n' + row.message;
+  const note = repeats ? '\n\nThis is the same chat as the earlier runs: what they said, did and produced, and every attachment, is still above and in the project.' : '';
+  return '⏰ ' + bits.join(' · ') + note + '\n\n' + row.message;
 }
 
 // createScheduler({ store, now, startTurn, getChat, getJob, lifecycle }) -> { tick, start, stop }
@@ -170,6 +280,7 @@ function createScheduler({ store, now = Date.now, startTurn, getChat, getJob, li
     try { chat = getChat(row.projectDir, row.chatId); } catch { chat = null; }
     if (!chat) { store.cancel(row.projectDir, row.chatId, row.id, 'chat no longer exists'); return 'cancelled'; }
     if (!chat.modelId) { store.retry({ ...row, attempts: MAX_ATTEMPTS - 1 }, time, 'the chat has no model selected'); return 'failed'; }
+    if (row.untilAt && time > row.untilAt) { store.expire(row); return 'done'; }
     let gate = { action: 'send' };
     if (hooks.gate) { try { gate = hooks.gate(row.projectDir, row.chatId) || gate; } catch { /* a broken gate must not eat wakes */ } }
     if (gate.action === 'hold') { store.release(row, time + 30000); return 'held'; }
@@ -252,6 +363,7 @@ function startScheduler({ lifecycle } = {}) {
 
 module.exports = {
   parseDuration, createScheduleStore, createScheduler, startScheduler, sharedStore,
-  MIN_DELAY_MS, MIN_EVERY_MS, MAX_HORIZON_MS, MAX_PENDING_PER_CHAT, MAX_RUNS, DEFAULT_RECURRING_RUNS,
+  MIN_DELAY_MS, MIN_EVERY_MS, MAX_HORIZON_MS, MAX_PENDING_PER_CHAT, MAX_RUNS,
+  parseClock, nextClockSlot, nextSlot, describeRepeat,
   MAX_MESSAGE_CHARS, MAX_ATTEMPTS, LEASE_MS
 };

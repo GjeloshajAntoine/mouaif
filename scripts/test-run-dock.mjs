@@ -1,6 +1,6 @@
 // What the run dock says about a run (frontend/src/components/chat/runDock.js).
 import assert from 'node:assert/strict';
-import { formatLeft, runLine, isActive, ATTENTION, STATUS_TEXT } from '../frontend/src/components/chat/runDock.js';
+import { formatLeft, formatNext, runLine, isActive, ATTENTION, STATUS_TEXT } from '../frontend/src/components/chat/runDock.js';
 
 assert.equal(formatLeft(null), '');
 assert.equal(formatLeft(0), '0m left');
@@ -17,6 +17,19 @@ assert.equal(runLine({ ...run, maxCost: 2 }), '3/50 turns · $0.46 of $2 · 1h 3
 assert.equal(runLine({ ...run, status: 'paused' }), '3/50 turns · $0.46 · 1h 35m left');
 const stalled = { ...run, status: 'stalled', endReason: 'no progress after 3 reminders' };
 assert.equal(runLine(stalled), '3/50 turns · $0.46 · no progress after 3 reminders', 'a finished run shows why, not time left');
+
+// A recurring task shows its cadence and next run instead of a turn budget.
+const at = Date.parse('2027-03-01T10:00:00Z');
+assert.equal(formatNext('2027-03-01T10:00:20Z', at), 'next now');
+assert.equal(formatNext('2027-03-01T10:45:00Z', at), 'next in 45m');
+assert.equal(formatNext('2027-03-01T15:30:00Z', at), 'next in 5h 30m');
+assert.equal(formatNext('2027-03-01T16:00:00Z', at), 'next in 6h');
+assert.equal(formatNext('2027-03-04T10:00:00Z', at), 'next in 3d');
+const recurring = { kind: 'recurring', status: 'running', turnsUsed: 4, maxTurns: 100000, costUsed: 0.4, maxCost: null, endReason: null,
+  schedule: { text: 'Weekdays at 09:00 (Europe/Brussels)', nextAt: '2027-03-01T15:30:00Z' } };
+assert.equal(runLine(recurring, at), 'Weekdays at 09:00 (Europe/Brussels) · next in 5h 30m · 4 runs · $0.40');
+assert.equal(runLine({ ...recurring, maxTurns: 10, maxCost: 2 }, at), 'Weekdays at 09:00 (Europe/Brussels) · next in 5h 30m · 4/10 runs · $0.40 of $2');
+assert.equal(runLine({ ...recurring, status: 'paused' }, at), 'Weekdays at 09:00 (Europe/Brussels) · 4 runs · $0.40', 'a paused task has no next run');
 
 assert.equal(isActive(run), true);
 assert.equal(isActive({ status: 'paused' }), true);

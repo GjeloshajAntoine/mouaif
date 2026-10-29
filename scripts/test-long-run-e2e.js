@@ -171,7 +171,44 @@ async function main() {
   assert.equal(shared.runningChats.has(shared.runningKey(projectDir, chatId)), false, 'the streaming turn was aborted');
   if (release) release();
 
-  console.log('long run e2e: wake scheduled through the dispatcher, wake through the chat runner, REST pause/resume/stop and budget wrap-up passed');
+  // ---- 6. A recurring task runs in the same chat and keeps its attachments -------------------------------------
+  const task = chats.createChat(projectDir, { title: 'Morning report' });
+  chats.updateChat(projectDir, task.id, { modelId: 'gamma', providerId: 'openai-compatible' });
+  const png = 'data:image/png;base64,iVBORw0KGgo=';
+  messages.appendMessage(projectDir, task.id, { role: 'user', content: 'Use this logo in the report', attachments: [{ type: 'image', mimeType: 'image/png', dataUrl: png, name: 'logo.png' }] });
+  messages.appendMessage(projectDir, task.id, { role: 'assistant', content: 'Understood, I will use it every morning.' });
+  const recurring = await require('../src/tools/schedule.js').runScheduleTool('schedule_wake',
+    { message: 'Write the morning report and save it as report.md', in: '1m', every: '1h' }, { projectDir, chatId: task.id });
+  assert.equal(recurring.ok, true, JSON.stringify(recurring.result));
+  r = await http('GET', '/api/chats/' + task.id + '/run?projectDir=' + encodeURIComponent(projectDir));
+  assert.deepEqual([r.body.run.kind, r.body.run.status, r.body.run.schedule.text], ['recurring', 'running', 'Every hour']);
+  seen.length = 0;
+  shared.ai.streamChat = async (args) => {
+    seen.push(args);
+    args.onEvent('message', { delta: 'Report written.' });
+    args.onEvent('done', { usage: {} });
+    return { ok: true };
+  };
+  const waitTask = async () => { for (let i = 0; i < 200 && shared.runningChats.has(shared.runningKey(projectDir, task.id)); i++) await tick(); };
+  for (let run = 1; run <= 2; run++) {
+    scheduleStore.lease(recurring.result.id, Date.now() - 1000);
+    assert.deepEqual((await scheduler.tick()).filter((o) => o.id === recurring.result.id).map((o) => o.outcome), ['pending'], 'run ' + run + ' is re-armed');
+    await waitTask();
+  }
+  assert.equal(seen.length, 2);
+  const taskUsers = messages.listMessages(projectDir, task.id).filter((m) => m.role === 'user');
+  assert.equal(taskUsers.length, 3, 'every run is a message in the one chat');
+  assert.match(taskUsers[1].content, /Recurring task · every hour · run 1\n/);
+  assert.match(taskUsers[2].content, /Recurring task · every hour · run 2\n/);
+  const images = (args) => args.messages.flatMap((m) => Array.isArray(m.content) ? m.content.filter((p) => p.type === 'image_url').map((p) => p.image_url.url) : []);
+  assert.deepEqual(images(seen[1]), [png], 'the attachment is still sent with the second run');
+  assert.ok(seen[1].messages.some((m) => typeof m.content === 'string' && m.content.includes('Report written.')), 'and so is what the first run produced');
+  assert.equal(manager.view(manager.get(projectDir, task.id)).turnsUsed, 2);
+  r = await http('POST', '/api/chats/' + task.id + '/run', { projectDir, action: 'stop' });
+  assert.equal(r.body.run.schedulesCancelled, 1);
+  assert.equal(scheduleStore.recurring(projectDir, task.id), null);
+
+  console.log('long run e2e: wake scheduled through the dispatcher, wake through the chat runner, REST pause/resume/stop, budget wrap-up and a recurring task passed');
 }
 
 main().then(() => 0, (e) => { console.error(e); return 1; }).then((code) => {

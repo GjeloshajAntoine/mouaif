@@ -328,7 +328,7 @@ async function runSingleToolCall(c, cx) {
       summary = (args && args.name) || 'all handoffs';
       }
       else if (c.name === 'schedule_wake') {
-      summary = [args && (args.in ? 'in ' + args.in : args.at ? 'at ' + args.at : ''), args && args.every ? 'every ' + args.every : '', args && args.message].filter(Boolean).join(' \u2014 ');
+      summary = [args && (args.in ? 'in ' + args.in : args.at ? 'at ' + args.at : ''), args && args.every ? 'every ' + args.every : '', args && args.time ? 'daily at ' + args.time : '', args && args.message].filter(Boolean).join(' \u2014 ');
       }
       else if (c.name === 'run_start') {
       summary = [args && args.goal, args && args.maxTurns ? args.maxTurns + ' turns' : '', args && args.maxCostUsd ? '$' + args.maxCostUsd : '', args && args.maxHours ? args.maxHours + 'h' : ''].filter(Boolean).join(' \u2014 ');

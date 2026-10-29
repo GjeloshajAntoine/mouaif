@@ -82,10 +82,10 @@ export function RunDock({ projectDir, chatId }) {
   };
   const dismiss = () => { writeDismissed(chatId, run.startedAt); setDismissed(run.startedAt); };
 
-  return h('div', { class: 'run-dock run-dock--' + run.status, role: 'group', 'aria-label': 'Long-running run' },
+  return h('div', { class: 'run-dock run-dock--' + run.status, role: 'group', 'aria-label': run.kind === 'recurring' ? 'Recurring task' : 'Long-running run' },
     h('span', { class: 'run-dock__dot', 'aria-hidden': 'true' }),
     h('div', { class: 'run-dock__text' },
-      h('div', { class: 'run-dock__goal', title: run.goal }, h('strong', null, STATUS_TEXT[run.status] || run.status), ' · ', run.goal),
+      h('div', { class: 'run-dock__goal', title: run.goal }, h('strong', null, run.kind === 'recurring' && run.status === 'running' ? 'Recurring' : STATUS_TEXT[run.status] || run.status), ' · ', run.goal),
       h('div', { class: 'run-dock__meta' }, error || runLine(run))
     ),
     run.status === 'running'

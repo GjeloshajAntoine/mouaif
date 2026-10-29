@@ -20,7 +20,7 @@ let clock = Date.parse('2026-10-26T12:00:00Z');
 const now = () => clock;
 const projectDir = root;
 const CHAT = 'chat-a';
-const chats = { [CHAT]: { modelId: 'm1', providerId: 'p1', title: 'Long job' }, other: { modelId: 'm1' } };
+const chats = { [CHAT]: { modelId: 'm1', providerId: 'p1', title: 'Long job' }, other: { modelId: 'm1' }, 'chat-r': { modelId: 'm1', title: 'Reports' } };
 const getChat = (dir, id) => chats[id] || null;
 
 let cost = 0;
@@ -39,6 +39,10 @@ const manager = runs.createRunManager({
   cancelTurn: (dir, id) => { cancelledTurns.push(id); return running.has(id); },
   startTurn: async (body) => { started.push(body); return { ok: true }; },
   notify: (alert) => alerts.push(alert),
+  describeSchedule: (dir, id) => {
+    const row = scheduleStore.recurring(dir, id);
+    return row ? { text: schedules.describeRepeat(row), nextAt: new Date(row.dueAt).toISOString(), runCount: row.runCount, runsLeft: row.runsLeft } : null;
+  },
   idleNudgeMs: 10 * MIN
 });
 const scheduler = schedules.createScheduler({
@@ -231,12 +235,78 @@ async function main() {
   clock += 11 * MIN;
   assert.deepEqual((await manager.watch()).map((e) => e.event), ['exhausted']);
 
+  // ---- recurring tasks ----------------------------------------------------------------
+  // A recurring task opens its own run, sized to the schedule; its schedule is
+  // the next step, so the watchdog never nudges it, and the run ends with it.
+  const rctx = { projectDir, chatId: 'chat-r' };
+  const recurringRunners = scheduleTool.createRunners({ store: scheduleStore, now, getChat, runOf: (dir, id) => manager.get(dir, id),
+    openRun: (c, args) => manager.startRecurring(c, args), closeRun: (c, reason) => manager.closeRecurring(c.projectDir, c.chatId, reason) });
+  const recur = (args) => scheduleTool.runScheduleTool('schedule_wake', args, rctx, recurringRunners);
+  clock = Date.parse('2027-03-01T09:00:00Z');
+  cost = 0;
+  const every6 = await recur({ message: 'Summarise the overnight alerts', in: '1h', every: '6h' });
+  assert.ok(every6.ok, JSON.stringify(every6.result));
+  let r = every6.result.run;
+  assert.deepEqual([r.kind, r.status, r.maxTurns, r.maxCost], ['recurring', 'running', 100000, null], 'open-ended: generous limits');
+  assert.equal(r.minutesLeft, 365 * 24 * 60);
+  assert.deepEqual([r.schedule.text, r.schedule.nextAt], ['Every 6h', '2027-03-01T10:00:00.000Z']);
+  assert.equal(r.goal, 'Summarise the overnight alerts');
+  clock += 40 * MIN;
+  assert.deepEqual(await manager.watch(), [], 'a pending schedule is the next step');
+  clock += 40 * MIN;
+  assert.deepEqual(await manager.watch(), [], 'and it is never nudged');
+  assert.equal(manager.get(projectDir, 'chat-r').nudges, 0);
+  started.length = 0;
+  clock = Date.parse('2027-03-01T10:00:05Z');
+  assert.equal((await scheduler.tick())[0].outcome, 'pending');
+  assert.match(started[0].content, /Recurring task · every 6h · run 1\n/);
+  r = manager.view(manager.get(projectDir, 'chat-r'));
+  assert.deepEqual([r.turnsUsed, r.schedule.runCount, r.schedule.nextAt], [1, 1, '2027-03-01T16:00:00.000Z']);
+
+  // A new recurring task replaces it and re-targets the same run, with a count and a spend cap.
+  cost = 2;
+  const counted = await recur({ message: 'Weekly digest', in: '1h', every: '1d', maxRuns: 2, maxCostUsd: 1.5 });
+  assert.equal(counted.result.replacedPrevious, true);
+  r = counted.result.run;
+  assert.deepEqual([r.goal, r.maxTurns, r.maxCost, r.turnsUsed, r.costUsed], ['Weekly digest', 2, 1.5, 0, 0]);
+  assert.equal(scheduleStore.list(projectDir, 'chat-r').length, 1);
+
+  // The count is reached: the schedule ends, and so does the run, quietly.
+  for (let i = 0; i < 2; i++) { clock = scheduleStore.recurring(projectDir, 'chat-r') ? scheduleStore.recurring(projectDir, 'chat-r').dueAt + 1000 : clock; await scheduler.tick(); }
+  assert.equal(scheduleStore.recurring(projectDir, 'chat-r'), null);
+  assert.equal(manager.get(projectDir, 'chat-r').turnsUsed, 2);
+  // The scheduler's own tick runs the watchdog, which closes the run.
+  assert.deepEqual([manager.get(projectDir, 'chat-r').status, manager.get(projectDir, 'chat-r').endReason], ['ended', 'schedule finished']);
+  assert.match(alerts.at(-1).title, /Recurring task finished/);
+  assert.deepEqual(await manager.watch(), []);
+
+  // After the end a one-off wake is refused, a new recurring task starts a fresh run.
+  assert.equal((await recur({ message: 'poke', in: '5m' })).result.code, 'ERUN_ENDED');
+  const again = await recur({ message: 'Daily check', time: '08:00', timezone: 'UTC' });
+  assert.deepEqual([again.result.run.status, again.result.run.turnsUsed, again.result.run.schedule.text], ['running', 0, 'Every day at 08:00 (UTC)']);
+
+  // Pause holds the task; cancelling it from the assistant closes the run; Stop cancels it.
+  manager.pause(projectDir, 'chat-r');
+  clock = scheduleStore.recurring(projectDir, 'chat-r').dueAt + 1000;
+  started.length = 0;
+  assert.equal((await scheduler.tick())[0].outcome, 'held');
+  assert.equal(started.length, 0);
+  manager.resume(projectDir, 'chat-r');
+  const cancelledByAgent = await scheduleTool.runScheduleTool('schedule_cancel', {}, rctx, recurringRunners);
+  assert.equal(cancelledByAgent.result.cancelled, true);
+  assert.deepEqual([manager.get(projectDir, 'chat-r').status, manager.get(projectDir, 'chat-r').endReason], ['ended', 'cancelled']);
+  await recur({ message: 'Daily check', time: '08:00', timezone: 'UTC' });
+  const stoppedTask = manager.stop(projectDir, 'chat-r');
+  assert.equal(stoppedTask.schedulesCancelled, 1);
+  assert.equal(scheduleStore.recurring(projectDir, 'chat-r'), null);
+  assert.equal(manager.closeRecurring(projectDir, 'chat-r'), false, 'nothing active to close');
+
   // An unusable store never throws out of the hooks.
   const dead = runs.createRunManager({ store: runs.createRunStore({ getDb() { throw new Error('locked'); } }), now });
   assert.deepEqual(await dead.watch(), []);
   assert.deepEqual(dead.gate(projectDir, CHAT), { action: 'send' });
 
-  console.log('runs: budget, pause/resume/stop, scheduler gate, run_end, nudges and stall detection passed');
+  console.log('runs: budget, pause/resume/stop, scheduler gate, run_end, nudges, stall detection and recurring tasks passed');
 }
 
 main().then(() => { fs.rmSync(root, { recursive: true, force: true }); process.exit(0); },

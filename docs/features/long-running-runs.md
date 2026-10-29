@@ -2,17 +2,26 @@
 
 ## Overview
 
-A **run** gives a chat that works for hours a goal, limits and a safety net. The assistant opens one with `run_start` before a task that will span many turns, usually with [scheduled wake-ups](scheduled-wakes.md) and background commands. A bar above the composer shows the goal and what is left, and lets you **Pause**, **Resume** or **Stop** it. mouaif enforces the limits, and notices when the assistant goes quiet without a next step.
+A **run** gives a chat that works for hours a goal, limits and a safety net. A [recurring task](scheduled-wakes.md) opens one automatically. A bar above the composer shows the goal and what is left, and lets you **Pause**, **Resume** or **Stop** it. mouaif enforces the limits, and notices when the assistant goes quiet without a next step.
 
-Without a run, wake-ups still work but have no budget, no controls and no watchdog.
+Without a run, one-off wake-ups still work but have no budget, no controls and no watchdog.
+
+## Recurring tasks
+
+When the assistant sets a recurring task with `schedule_wake` (`every` or `time`), mouaif opens a run for the chat with limits sized to the schedule: the task's `maxRuns` and `until` if it has them, otherwise a year and a large turn allowance, plus its `maxCostUsd` if it has one. The bar shows the schedule instead of a turn budget: `Weekdays at 09:00 (Europe/Brussels) · next in 5h 30m · 4 runs · $0.40`.
+
+- **Pause** holds the task: runs that come due are delivered after **Resume**. **Stop** cancels the task.
+- A recurring task is never nudged: its schedule is its next step. The run ends, and you are notified, when the schedule does (count or end date reached, or the assistant cancels it).
+- Setting a new recurring task re-targets the same run and resets its counters.
+- A wake counts as a turn, so `maxRuns` doubles as the turn limit.
 
 ## Agent tool availability
 
-`run_start`, `run_status` and `run_end` are no longer exposed to agents. Existing run tracking, budgets, storage and the run bar remain available; Pause, Resume, Stop and Dismiss are unchanged. Waiting and scheduled wake-up tools remain available independently. The tool examples below describe the legacy internal adapter, not the current agent tool surface.
+`run_start`, `run_status` and `run_end` are not exposed to agents. Runs are opened by [recurring tasks](scheduled-wakes.md); the run bar's Pause, Resume, Stop and Dismiss are unchanged. The tool examples below describe the internal adapter in `src/tools/run.js`, not the agent tool surface.
 
 ## Usage
 
-Ask for something long — "migrate the docs overnight, check every 30 minutes, spend at most $3". The model opens the run and schedules its own check-ins:
+The limits a plain run takes:
 
 ```json
 { "goal": "Migrate all docs to the new layout", "maxTurns": 40, "maxCostUsd": 3, "maxHours": 12 }

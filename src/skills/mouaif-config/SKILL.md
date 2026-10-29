@@ -85,7 +85,7 @@ An agent is a named persona (`{ name, content, tools?, modelId?, providerId?, th
 | `mouaif` | `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features` |
 | `subagent` | the `subagent` tool |
 
-`ask_user` is binary: only `off` or `ask`. `shell` is the sole command execution tool and uses `tools.shell`, not the mouaif family gate. Use `async: true` for a background PID and log path; inspect or stop it with shell commands. `wait_for` supports duration/chat/subagent/group only; new `schedule_wake` calls are time-only.
+`ask_user` is binary: only `off` or `ask`. `shell` is the sole command execution tool and uses `tools.shell`, not the mouaif family gate. Use `async: true` for a background PID and log path; inspect or stop it with shell commands. `schedule_wake` runs a prompt in the chat later or on a repeat (`every`, or `time` with `days` and `timezone`); a chat has one recurring task.
 
 A write to `tools`, `mcp`, `authAccounts` or `authPending` always asks the user for approval before it lands, even when `update_settings` is on `allow`. That is deliberate — this tool must not be able to widen its own reach. Say what you are about to change and why, so the approval card reads clearly.
 

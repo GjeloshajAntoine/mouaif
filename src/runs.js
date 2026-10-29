@@ -1,14 +1,16 @@
 'use strict';
 
 // Long-running runs: a budget, user controls and a watchdog for a chat that
-// keeps working across many turns (scheduled wake-ups, background jobs).
+// keeps working across many turns (scheduled wake-ups, recurring tasks).
 //
-// A run is one row per chat in the app database. The assistant opens it with
-// run_start (a goal and limits), the user can pause, resume or stop it from the
-// chat, and mouaif enforces it at turn boundaries: the scheduler asks the
-// manager before delivering each wake. A run that goes quiet without a next
-// step is nudged, then marked stalled. Nothing here interrupts a turn that is
-// already streaming, except the user's explicit Stop.
+// A run is one row per chat in the app database. A recurring task opens one
+// automatically (startRecurring) with limits sized to its schedule; the user
+// can pause, resume or stop it from the chat, and mouaif enforces it at turn
+// boundaries: the scheduler asks the manager before delivering each wake. A
+// plain run that goes quiet without a next step is nudged, then marked stalled;
+// a recurring task has its schedule as the next step and simply ends when the
+// schedule does. Nothing here interrupts a turn that is already streaming,
+// except the user's explicit Stop.
 const { err } = require('./util.js');
 
 const ACTIVE = Object.freeze(['running', 'paused']);
@@ -20,6 +22,10 @@ const MAX_GOAL_CHARS = 500;
 const MAX_SUMMARY_CHARS = 2000;
 const IDLE_NUDGE_MS = 10 * 60 * 1000;
 const MAX_NUDGES = 3;
+// An open-ended recurring task gets a year and a large turn allowance; a stricter
+// maxRuns / until / maxCostUsd from the schedule replaces them.
+const RECURRING_MAX_TURNS = 100000;
+const RECURRING_MAX_MS = 365 * 24 * 60 * 60 * 1000;
 const KEEP_ENDED_MS = 7 * 24 * 60 * 60 * 1000;
 
 const CREATE = `
@@ -39,6 +45,7 @@ const CREATE = `
     ended_at    INTEGER,
     end_reason  TEXT,
     summary     TEXT,
+    kind        TEXT NOT NULL DEFAULT 'run',
     PRIMARY KEY (project_dir, chat_id)
   )
 `;
@@ -47,7 +54,7 @@ function rowToRun(row) {
   return { projectDir: row.project_dir, chatId: row.chat_id, goal: row.goal, status: row.status,
     maxTurns: row.max_turns, maxCost: row.max_cost, deadlineAt: row.deadline_at, turnsUsed: row.turns_used,
     startCost: row.start_cost, nudges: row.nudges, createdAt: row.created_at, updatedAt: row.updated_at,
-    endedAt: row.ended_at, endReason: row.end_reason, summary: row.summary };
+    endedAt: row.ended_at, endReason: row.end_reason, summary: row.summary, kind: row.kind || 'run' };
 }
 
 function createRunStore({ getDb = () => require('./settings.js').getDb(), now = Date.now } = {}) {
@@ -57,6 +64,9 @@ function createRunStore({ getDb = () => require('./settings.js').getDb(), now = 
     try {
       const handle = getDb();
       handle.exec(CREATE);
+      if (!handle.prepare('PRAGMA table_info(agent_run)').all().some((c) => c.name === 'kind')) {
+        handle.exec("ALTER TABLE agent_run ADD COLUMN kind TEXT NOT NULL DEFAULT 'run'");
+      }
       handle.prepare("DELETE FROM agent_run WHERE status NOT IN ('running', 'paused') AND COALESCE(ended_at, updated_at) <= ?")
         .run(now() - KEEP_ENDED_MS);
       db = handle;
@@ -74,10 +84,16 @@ function createRunStore({ getDb = () => require('./settings.js').getDb(), now = 
       const existing = this.get(run.projectDir, run.chatId);
       if (existing && ACTIVE.includes(existing.status)) throw err('EEXISTS', 'This chat already has a ' + existing.status + ' run; call run_end first');
       const time = now();
-      d.prepare(`INSERT OR REPLACE INTO agent_run (project_dir, chat_id, goal, status, max_turns, max_cost, deadline_at, turns_used, start_cost, nudges, created_at, updated_at)
-        VALUES (?, ?, ?, 'running', ?, ?, ?, 0, ?, 0, ?, ?)`).run(run.projectDir, run.chatId, run.goal, run.maxTurns,
-        run.maxCost == null ? null : run.maxCost, run.deadlineAt, run.startCost || 0, time, time);
+      d.prepare(`INSERT OR REPLACE INTO agent_run (project_dir, chat_id, goal, status, max_turns, max_cost, deadline_at, turns_used, start_cost, nudges, created_at, updated_at, kind)
+        VALUES (?, ?, ?, 'running', ?, ?, ?, 0, ?, 0, ?, ?, ?)`).run(run.projectDir, run.chatId, run.goal, run.maxTurns,
+        run.maxCost == null ? null : run.maxCost, run.deadlineAt, run.startCost || 0, time, time, run.kind || 'run');
       return this.get(run.projectDir, run.chatId);
+    },
+    // Change the goal and limits of an active run (a recurring task being replaced).
+    retarget(projectDir, chatId, { goal, maxTurns, maxCost, deadlineAt, startCost }) {
+      open().prepare("UPDATE agent_run SET goal = ?, max_turns = ?, max_cost = ?, deadline_at = ?, start_cost = ?, turns_used = 0, nudges = 0, updated_at = ? WHERE project_dir = ? AND chat_id = ? AND status IN ('running', 'paused')")
+        .run(goal, maxTurns, maxCost == null ? null : maxCost, deadlineAt, startCost || 0, now(), projectDir, chatId);
+      return this.get(projectDir, chatId);
     },
     // Move an active run to a new status. `from` guards against racing controls.
     setStatus(projectDir, chatId, status, { from = ACTIVE, reason = null, summary = null } = {}) {
@@ -109,7 +125,7 @@ function createRunStore({ getDb = () => require('./settings.js').getDb(), now = 
 // createRunManager({ store, now, getCost, scheduleStore, isChatRunning, cancelTurn,
 //   startTurn, getChat, notify }) -> manager
 function createRunManager({ store, now = Date.now, getCost = () => 0, cancelSchedules = () => 0, hasPendingSchedule = () => false,
-  isChatRunning = () => false, cancelTurn = () => false, startTurn, getChat = () => null, notify = () => {},
+  isChatRunning = () => false, cancelTurn = () => false, startTurn, getChat = () => null, notify = () => {}, describeSchedule = () => null,
   idleNudgeMs = IDLE_NUDGE_MS, lifecycle = {} } = {}) {
   const idleSince = new Map();
 
@@ -123,7 +139,8 @@ function createRunManager({ store, now = Date.now, getCost = () => 0, cancelSche
       maxCost: run.maxCost, deadlineAt: new Date(run.deadlineAt).toISOString(),
       minutesLeft: Math.max(0, Math.round((run.deadlineAt - time) / 60000)), nudges: run.nudges,
       startedAt: new Date(run.createdAt).toISOString(), endedAt: run.endedAt ? new Date(run.endedAt).toISOString() : null,
-      endReason: run.endReason, summary: run.summary };
+      endReason: run.endReason, summary: run.summary, kind: run.kind,
+      schedule: run.kind === 'recurring' ? describeSchedule(run.projectDir, run.chatId) : null };
   }
   // Why this run may not take another turn, or null.
   function budgetReason(run) {
@@ -160,6 +177,28 @@ function createRunManager({ store, now = Date.now, getCost = () => 0, cancelSche
       const run = store.get(ctx.projectDir, ctx.chatId);
       if (run && run.status === 'running') store.touch(ctx.projectDir, ctx.chatId);
       return view(run);
+    },
+    // A recurring task opens (or re-targets) the chat's run. Its limits are a safety
+    // net sized to the schedule: the count or end date it was given, otherwise a
+    // year and a large turn allowance, plus an optional spend cap.
+    startRecurring(ctx, args) {
+      const { projectDir, chatId } = ctx;
+      const goal = String(args.goal || '').trim().replace(/\s+/g, ' ').slice(0, MAX_GOAL_CHARS);
+      const limits = { goal, maxTurns: args.maxRuns == null ? RECURRING_MAX_TURNS : args.maxRuns,
+        maxCost: args.maxCostUsd == null ? null : args.maxCostUsd,
+        deadlineAt: args.untilAt == null ? now() + RECURRING_MAX_MS : args.untilAt, startCost: getCost(projectDir, chatId) };
+      const existing = store.get(projectDir, chatId);
+      if (existing && ACTIVE.includes(existing.status)) {
+        if (existing.kind === 'recurring') return view(store.retarget(projectDir, chatId, limits));
+        return view(existing);
+      }
+      return view(store.start({ projectDir, chatId, kind: 'recurring', ...limits }));
+    },
+    // The recurring task was cancelled by the assistant: close its run quietly.
+    closeRecurring(projectDir, chatId, reason) {
+      const run = store.get(projectDir, chatId);
+      if (!run || run.kind !== 'recurring' || !ACTIVE.includes(run.status)) return false;
+      return store.setStatus(projectDir, chatId, 'ended', { reason: reason || 'done' });
     },
     // The assistant says it is done (or cannot continue).
     end(ctx, args) {
@@ -230,6 +269,15 @@ function createRunManager({ store, now = Date.now, getCost = () => 0, cancelSche
         const id = key(run);
         seen.add(id);
         if (isChatRunning(run.projectDir, run.chatId) || hasPendingSchedule(run.projectDir, run.chatId)) { idleSince.delete(id); continue; }
+        if (run.kind === 'recurring') {
+          // The schedule is the next step. With none left (count or end date
+          // reached, or it failed) the task is over; no check-in is needed.
+          store.setStatus(run.projectDir, run.chatId, 'ended', { from: ['running'], reason: 'schedule finished' });
+          alert(run, 'Recurring task finished', run.goal.slice(0, 120));
+          events.push({ chatId: run.chatId, event: 'finished' });
+          idleSince.delete(id);
+          continue;
+        }
         const since = idleSince.get(id) || now();
         idleSince.set(id, since);
         if (now() - since < idleNudgeMs) continue;
@@ -281,6 +329,13 @@ function sharedManager(lifecycle) {
       let n = 0;
       try { for (const row of scheduleStore.list(projectDir, chatId)) if (scheduleStore.cancel(projectDir, chatId, row.id, reason)) n++; } catch { /* store unavailable */ }
       return n;
+    },
+    describeSchedule: (projectDir, chatId) => {
+      try {
+        const row = scheduleStore.recurring(projectDir, chatId);
+        return row ? { text: schedules.describeRepeat(row), nextAt: new Date(row.dueAt).toISOString(), runCount: row.runCount,
+          runsLeft: row.runsLeft, until: row.untilAt ? new Date(row.untilAt).toISOString() : null } : null;
+      } catch { return null; }
     },
     hasPendingSchedule: (projectDir, chatId) => { try { return scheduleStore.list(projectDir, chatId).length > 0; } catch { return false; } },
     isChatRunning: (projectDir, chatId) => {
