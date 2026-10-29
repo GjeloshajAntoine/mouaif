@@ -41,5 +41,4 @@ The three tools follow the **mouaif** family gate in **Settings → Project** (O
 ## Related
 
 - [Long-running runs](long-running-runs.md) — a budget, pause/stop controls and a watchdog for chats that use wake-ups.
-- [Job tools](job-tools.md) — bounded waits for durations, chats and delegated work.
 - [Chat model tools](chat-model-tools.md) — `start_chat`, the same background-turn path a wake uses.

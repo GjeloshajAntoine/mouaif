@@ -391,11 +391,6 @@ pushNativeTool(tools, { load: './tools/webpreview.js', name: 'webpreview', sourc
 // trees do not render.
 pushNativeTool(tools, { load: './tools/restart.js', name: 'restart_app', source: 'mouaif', fallback: 'Gracefully restart mouaif from the current chat.', spec: (m) => m.SPEC && m.SPEC.function });
 pushNativeTool(tools, { load: './tools/groupCli.js', name: 'group_cli', source: 'mouaif', fallback: 'Run an ordered group of shell commands.', spec: (m) => m.SPEC && m.SPEC.function });
-// Wait for long-running work without polling.
-{
-  const spec = require('./tools/jobs.js').SPECS.wait_for;
-  pushNativeTool(tools, { load: './tools/jobs.js', name: 'wait_for', source: 'mouaif', fallback: spec.function.description, spec: () => spec.function });
-}
 // schedule_wake, schedule_list and schedule_cancel queue wake-ups for the chat.
 for (const [name, spec] of Object.entries(require('./tools/schedule.js').SPECS)) {
   pushNativeTool(tools, { load: './tools/schedule.js', name, source: 'mouaif', fallback: spec.function.description, spec: () => spec.function });

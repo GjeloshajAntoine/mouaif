@@ -2,7 +2,7 @@
 
 ## Overview
 
-27 ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report): **15 in the Chats family** and **12 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
+26 ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report): **15 in the Chats family** and **11 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
 
 ## Usage
 
@@ -43,7 +43,6 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `report_progress` | Report real-time progress on a long-running operation, drawn as the chat's progress bar. Read-only UI metadata — answered without an approval card. See [Progress tool](./progress-tool.md). |
 | `webpreview` | Refresh the user-facing preview of a URL in the debug Chrome the Inspector uses. `viewport` is a preset (`phone`, `phone+`, `tablet`, `laptop`) or `WIDTHxHEIGHT`; `mode: "live"` shows the interactive page instead of a screenshot. See [Web preview](./webpreview.md). |
 | `group_cli` | Run an ordered group of shell commands, optionally in the background. |
-| `wait_for` | Bounded waits for duration, chat, subagent or group targets; no job targets. |
 | `schedule_wake` | Wake this chat at a time (`in` or `at`), optionally repeated with `every` and `maxRuns`. New wakes are time-only. See [Scheduled wake-ups](scheduled-wakes.md). |
 | `schedule_list` | List this chat's pending wake-ups. |
 | `schedule_cancel` | Cancel one of this chat's wake-ups by `id`. |
@@ -71,13 +70,13 @@ The tools appear in two families in Settings → Project → Tools, the chat Too
 | Family (gate) | Native functions |
 | --- | --- |
 | **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` |
-| **mouaif** (`tools.mouaif`) | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli`, `wait_for`, `schedule_wake`, `schedule_list`, `schedule_cancel` |
+| **mouaif** (`tools.mouaif`) | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli`, `schedule_wake`, `schedule_list`, `schedule_cancel` |
 
 The Chats family carries the app functions above *and* the four tools the model uses inside one chat: **Ask user** (`ask_user`, binary Off / Ask), **Task** (`task`), **Report progress** (`report_progress`) and **Web preview** (`webpreview`, see [Web preview](./webpreview.md)). They used to be rows of their own; a stored `tools.<leaf>` still works as that leaf's override.
 
 `create_mcp_app` is a mouaif leaf, but creating/opening an interactive app in the chat card always requires an explicit approval even under **Allow**, like `update_settings` writes to permission keys. It renders directly in the current chat without registering a project MCP server. Request-only development drafts use the ordinary gate; MCP permissions are never widened.
 
-The **mouaif** family covers app tools, bounded waits, scheduling and run budgets. Command execution belongs exclusively to `shell` and is gated by `tools.shell`; allowing the mouaif family does not authorize commands.
+The **mouaif** family covers app tools, scheduling and run budgets. Command execution belongs exclusively to `shell` and is gated by `tools.shell`; allowing the mouaif family does not authorize commands.
 
 Every child checkbox selects its own function; a partial selection shows a mixed checkmark. The two families work exactly like **File tools**:
 

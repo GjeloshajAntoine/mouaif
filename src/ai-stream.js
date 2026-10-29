@@ -327,11 +327,6 @@ async function runSingleToolCall(c, cx) {
       else if (c.name === 'subagent_read') {
       summary = (args && args.name) || 'all handoffs';
       }
-      else if (c.name === 'wait_for') {
-      summary = args && args.until && args.until !== 'duration'
-        ? 'wait for ' + args.until + ' ' + ((Array.isArray(args.ids) && args.ids.join(', ')) || args.jobId || '') + (args.seconds ? ' (up to ' + args.seconds + 's)' : '')
-        : 'wait ' + ((args && args.seconds) || 30) + 's';
-      }
       else if (c.name === 'schedule_wake') {
       summary = [args && (args.in ? 'in ' + args.in : args.at ? 'at ' + args.at : ''), args && args.every ? 'every ' + args.every : '', args && args.message].filter(Boolean).join(' \u2014 ');
       }
@@ -712,9 +707,6 @@ catch { /* task tool module unavailable; skip */ }
 try { toolSpecs.push(require('./tools/restart.js').SPEC); }
 catch { /* restart tool module unavailable; skip */ }
 try { toolSpecs.push(require('./tools/groupCli.js').SPEC); } catch { /* unavailable */ }
-// Wait for long-running work without polling.
-try { toolSpecs.push(require('./tools/jobs.js').SPECS.wait_for); }
-catch { /* wait tool module unavailable; skip */ }
 try { toolSpecs.push(...Object.values(require('./tools/schedule.js').SPECS)); }
 catch { /* schedule tools module unavailable; skip */ }
 // Ordinary native tools for chats, attachments, settings and projects.
@@ -1875,10 +1867,6 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   const r = { ok: false, code, error: { code, message: e.message || String(e) } };
   return { ok: false, content: JSON.stringify(r), result: r };
   }
-  }
-  // Wait for non-job targets.
-  if (name === 'wait_for') {
-    return await require('./tools/jobs.js').runJobTool(name, args, callOpts || {});
   }
   // Native schedule tools: queue, list and cancel wake-ups for this chat.
   if (require('./tools/schedule.js').NAMES.includes(name)) {

@@ -28,10 +28,9 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Restart from chat](chat-app-restart.md) — ask the assistant to relaunch the app worker.
 - [Restart API](restart-api.md) — restart the worker from a script with `POST /api/restart`.
 - [Background job handles](background-job-handles.md) — historical implementation reference; current background commands use shell PIDs and logs.
-- [Bounded wait foundation](bounded-wait-foundation.md) — the finite wait engine behind `wait_for`.
+- [Bounded wait foundation](bounded-wait-foundation.md) — internal finite waits; no public wait tool is enabled.
 - [Long-running runs](long-running-runs.md) — `run_start`, `run_status` and `run_end` give a long job a budget, a pause/stop bar and a stall watchdog.
 - [Scheduled wake-ups](scheduled-wakes.md) — `schedule_wake`, `schedule_list` and `schedule_cancel` wake a chat later with a saved message.
-- [Job tools](job-tools.md) — `wait_for` for durations, chats and delegated work.
 
 ## Providers and models
 

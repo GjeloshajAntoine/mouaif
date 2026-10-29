@@ -71,7 +71,6 @@ export const TOOL_CASES = [
     { index: 0, label: 'Syntax', cmd: 'node --check src/example.js', ok: true, result: { stdout: 'Syntax OK', exitCode: 0, durationMs: 24 } },
     { index: 1, label: 'Tests', cmd: 'npm test', ok: true, result: { async: true, status: 'running', pid: 123, logPath: '.mouaif/logs/demo-tests.log' } }
   ] } },
-  { name: 'wait_for', args: { until: 'job', jobId: 'job-demo', seconds: 120 }, result: { ok: true, until: 'job', waitedMs: 41000, satisfied: true, timedOut: false, cancelled: false, outcome: 'completed', job: { jobId: 'job-demo', state: 'completed', exitCode: 0, logPath: '.mouaif/logs/demo-tests.log', logTail: 'tests 12 passed\\n' } } },
   { name: 'job_status', args: { jobId: 'job-demo' }, result: { ok: true, job: { jobId: 'job-demo', state: 'running', exitCode: null, logPath: '.mouaif/logs/demo-tests.log', logTail: 'running tests…\\n' } } },
   { name: 'job_cancel', args: { jobId: 'job-demo' }, result: { ok: true, alreadyFinished: false, cancelled: true, stillRunning: false, job: { jobId: 'job-demo', state: 'cancelled', exitCode: 143, logPath: '.mouaif/logs/demo-tests.log' } } },
   { name: 'schedule_wake', args: { in: '2h', every: '1h', message: 'Check the nightly build and report.' }, result: { ok: true, id: 'wake-demo', dueAt: '2026-10-26T14:00:00.000Z', dueInSeconds: 7200, every: '3600s', runsLeft: 10, jobId: null, pendingInChat: 1 } },

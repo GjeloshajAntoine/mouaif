@@ -58,13 +58,13 @@ export const TOOL_GROUPS = Object.freeze([
     binaryTools: ['ask_user'],
     tools: ['list_chats', 'get_chat', 'create_chat', 'update_chat', 'change_working_folder', 'search_models', 'start_chat', 'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task', 'report_progress', 'webpreview']
   },
-  // App data, lifecycle, waits, scheduled wake-ups and long-running runs.
+  // App data, lifecycle, scheduled wake-ups and long-running runs.
   {
     id: 'mouaif-settings',
     name: 'mouaif',
     source: 'mouaif',
     authKey: 'mouaif',
-    tools: ['create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli', 'wait_for', 'schedule_wake', 'schedule_list', 'schedule_cancel']
+    tools: ['create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'get_app_info', 'restart_app', 'list_features', 'group_cli', 'schedule_wake', 'schedule_list', 'schedule_cancel']
   },
 
   {

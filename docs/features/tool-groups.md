@@ -15,10 +15,10 @@ Nothing to configure: the grouping is a property of the app, not a per-project s
 | **Shell** | `shell` | One tool, one gate. |
 | **Subagent** | `subagent`, `subagent_messages`, `subagent_status`, `subagent_stop`, `subagent_send`, `subagent_group_create`, `subagent_group_update`, `subagent_publish`, `subagent_read`, `subagent_group_status`, `subagent_decision`, `subagent_conflict` | Turn-scoped delegation and handoffs; controls are parent-only. |
 | **Chats** | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` | A family, like File tools: the row edits `tools.chats`; a leaf can persist its own more-specific override. It lists everything the model can do with a chat — reading and writing them, and the four tools it uses *inside* one: `ask_user` (pause and ask), `task` (track the work), `report_progress` (report on it) and `webpreview` (show the user a page). `ask_user` stays binary (Off / Ask) and is declared in the family's `binaryTools`, so its leaf row shows the two-way segment while the family row keeps all three. |
-| **mouaif** | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli`, `wait_for`, `schedule_wake`, `schedule_list`, `schedule_cancel` | A family: the row edits `tools.mouaif`, same rules. It lists every tool that acts on mouaif itself — reading and writing settings, the app restart, the feature report, [bounded waits](job-tools.md) for durations, chats and delegated work, the [scheduling tools](scheduled-wakes.md) that wake a chat later. |
+| **mouaif** | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli`, `schedule_wake`, `schedule_list`, `schedule_cancel` | A family: the row edits `tools.mouaif`, same rules. It lists every tool that acts on mouaif itself — reading and writing settings, the app restart, the feature report, the grouped CLI batch tool, and the [scheduling tools](scheduled-wakes.md) that wake a chat later. |
 | **File tools** | `read_file`, `list_files`, `search_files`, `write_file`, `edit_file`, `group_read`, `group_edit` | The row edits `tools.file`; a leaf checkbox can persist its own more-specific override. |
 
-The table above lists **47 native tools**, each tool exactly once. Conditional tools below are additional.
+The table above lists **46 native tools**, each tool exactly once. Conditional tools below are additional.
 
 ### Tools the table cannot show
 
@@ -56,7 +56,7 @@ Group rows carry a checkbox that flips every child at once (showing a half-check
 
 ### What a family `allow` covers
 
-The **mouaif** family covers app tools, bounded waits, scheduling and run budgets. Command execution belongs exclusively to `shell` and is gated by `tools.shell`; allowing the mouaif family does not authorize commands.
+The **mouaif** family covers app tools, scheduling and run budgets. Command execution belongs exclusively to `shell` and is gated by `tools.shell`; allowing the mouaif family does not authorize commands.
 
 The Chats family behaves the same way, with one deliberate exception: `ask_user` is a binary tool. A `tools.chats` `allow` covers every chat function including `task`, `report_progress` and `webpreview`, but it can never auto-answer a question — an `ask_user` call always reaches the user, whatever the family or the leaf says. Only `off` (`tools.chats.mode`, or a `tools.ask_user` leaf override) hides it. `report_progress` is read-only UI metadata: it is answered without an approval card too, but an `off` on the family or the leaf still hides it from the model. `webpreview` keeps its own approval card — a family `allow` (or an `Always allow` earned on any Chats call) lets the assistant capture a page without asking.
 

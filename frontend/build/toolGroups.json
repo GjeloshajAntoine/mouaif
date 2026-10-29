@@ -68,13 +68,9 @@
       "restart_app",
       "list_features",
       "group_cli",
-      "wait_for",
       "schedule_wake",
       "schedule_list",
-      "schedule_cancel",
-      "run_start",
-      "run_status",
-      "run_end"
+      "schedule_cancel"
     ]
   },
   {

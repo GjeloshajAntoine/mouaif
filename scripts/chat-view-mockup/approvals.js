@@ -9,7 +9,6 @@ export function approvalRequest({ name, args }, callId, signal) {
     (index + 1) + '. ' + entry.cmd + (entry.async ? '  [background]' : '')).join('\n');
   else if (name === 'change_working_folder') summary = 'Chat: ' + args.chatId
     + '\nDestination: /demo/project\nUse existing directory: ' + args.directory;
-  else if (name === 'wait_for') summary = 'wait for ' + args.jobId + ' (up to ' + args.seconds + 's)';
   else if (name === 'job_status' || name === 'job_cancel') summary = args.jobId;
   else if (name === 'schedule_wake') summary = ['in ' + args.in, args.every ? 'every ' + args.every : '', args.message].filter(Boolean).join(' \u2014 ');
   else if (name === 'run_start') summary = [args.goal, args.maxTurns + ' turns', '$' + args.maxCostUsd, args.maxHours + 'h'].join(' \u2014 ');

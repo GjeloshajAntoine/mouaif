@@ -99,7 +99,7 @@ Note that a `mouaif` family `allow` — including one earned by choosing **Alway
 
 ## Implementation notes
 
-Both command tools use the same background runner, bounded log and process-group cleanup. Background processes stop on app shutdown. `wait_for` remains limited to non-job targets; scheduled wakes are time-only.
+Both command tools use the same background runner, bounded log and process-group cleanup. Background processes stop on app shutdown. Scheduled wakes are time-only.
 
 ## Related
 

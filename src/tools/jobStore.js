@@ -3,8 +3,8 @@
 // Durable copy of the background job registry (src/tools/backgroundJobs.js).
 //
 // The registry keeps live handles in memory; this store writes each job's
-// metadata through to the app SQLite store so `job_status` and `wait_for` can
-// still answer after a restart. It holds metadata only: no output, command
+// metadata through to the app SQLite store so a job can still be looked
+// up after a restart. It holds metadata only: no output, command
 // text, credentials or process handles. A job that was `running` when its
 // process died is marked `lost` the first time the store is opened by the
 // next process, because mouaif reaps its background children on exit and the

@@ -2,7 +2,7 @@
 
 ## Overview
 
-A **run** gives a chat that works for hours a goal, limits and a safety net. The assistant opens one with `run_start` before a task that will span many turns, usually with [scheduled wake-ups](scheduled-wakes.md) and [background jobs](job-tools.md). A bar above the composer shows the goal and what is left, and lets you **Pause**, **Resume** or **Stop** it. mouaif enforces the limits, and notices when the assistant goes quiet without a next step.
+A **run** gives a chat that works for hours a goal, limits and a safety net. The assistant opens one with `run_start` before a task that will span many turns, usually with [scheduled wake-ups](scheduled-wakes.md) and background commands. A bar above the composer shows the goal and what is left, and lets you **Pause**, **Resume** or **Stop** it. mouaif enforces the limits, and notices when the assistant goes quiet without a next step.
 
 Without a run, wake-ups still work but have no budget, no controls and no watchdog.
 
@@ -54,5 +54,4 @@ While a run is active the bar sits above the composer: a status dot, the goal, t
 ## Related
 
 - [Scheduled wake-ups](scheduled-wakes.md) — how the assistant comes back to the work.
-- [Job tools](job-tools.md) — waiting on background commands, chats and subagents.
 - [Long-running agent mockup](long-running-agent-mockup.md) — the design this grew from.

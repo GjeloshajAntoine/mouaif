@@ -752,7 +752,6 @@ const TOOL_VERBS = {
   subagent: 'Subagent',
   ask_user: 'Question',
   restart_app: 'Restarted',
-  wait_for: 'Waited',
   job_status: 'Job status',
   job_cancel: 'Cancelled job',
   schedule_wake: 'Scheduled wake',

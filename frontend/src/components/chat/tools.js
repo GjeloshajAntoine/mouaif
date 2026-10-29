@@ -227,11 +227,6 @@ export function formatToolArgs(args, toolName) {
   if (name === 'ask_user') return args.question || '';
   if (name === 'task') return (args.action || '') + (args.title ? ': ' + args.title : '');
   if (name === 'report_progress') return args.title || '';
-  if (name === 'wait_for') {
-    if (args.until === 'duration') return (args.seconds || 30) + 's';
-    const ids = Array.isArray(args.ids) ? args.ids : args.jobId ? [args.jobId] : [];
-    return args.until + (ids.length ? ' ' + (ids.length > 2 ? ids.length + ' ids' : ids.join(', ')) : '') + (args.mode === 'any' ? ' (any)' : '') + (args.seconds ? ' · up to ' + args.seconds + 's' : '');
-  }
   if (name === 'schedule_wake') return [args.in ? 'in ' + args.in : args.at ? 'at ' + args.at : '', args.every ? 'every ' + args.every : '', args.message].filter(Boolean).join(' · ');
   if (name === 'schedule_cancel') return args.id || '';
   if (name === 'run_start') return [args.goal, args.maxTurns ? args.maxTurns + ' turns' : '', args.maxCostUsd ? '$' + args.maxCostUsd : '', args.maxHours ? args.maxHours + 'h' : ''].filter(Boolean).join(' · ');
@@ -309,11 +304,6 @@ export function formatToolArgsFull(args, toolName) {
   if (name === 'subagent') return String(args.task || '');
   if (name === 'ask_user') return String(args.question || '');
   if (name === 'task') return String(args.action || '') + (args.title ? ': ' + args.title : '');
-  if (name === 'wait_for') {
-    if (args.until === 'duration') return 'Sleep ' + (args.seconds || 30) + ' seconds';
-    const ids = Array.isArray(args.ids) ? args.ids : args.jobId ? [args.jobId] : [];
-    return ['Wait for ' + args.until + (args.mode === 'any' ? ' (first to finish)' : ''), ...ids, args.seconds ? 'up to ' + args.seconds + ' seconds' : ''].filter(Boolean).join('\n');
-  }
   if (name === 'schedule_wake') return [args.in ? 'In ' + args.in : args.at ? 'At ' + args.at : '', args.every ? 'Every ' + args.every : '', args.jobId ? 'Or when ' + args.jobId + ' finishes' : '', '', String(args.message || '')].join('\n').trim();
   if (name === 'schedule_cancel') return String(args.id || '');
   if (name === 'run_start') return [String(args.goal || ''), '', args.maxTurns ? 'Up to ' + args.maxTurns + ' turns' : '', args.maxCostUsd ? 'Up to $' + args.maxCostUsd : '', args.maxHours ? 'Up to ' + args.maxHours + ' hours' : ''].join('\n').trim();
@@ -483,15 +473,6 @@ export function formatResultSummary(name, r) {
   }
   if (n === 'create_mcp_app') return (r.mode === 'request' || r.chatId) ? 'draft' : r.mode === 'message' ? 'sent' : r.updated ? 'updated' : (r.path ? 'ready' : null);
   if (n === 'webpreview') return r.mode || null;
-  if (n === 'wait_for') {
-    const job = r.job;
-    if (r.cancelled) return 'cancelled';
-    if (r.timedOut) return (r.total ? r.settled + '/' + r.total + ' finished' : 'still running') + ' · ' + Math.round((r.waitedMs || 0) / 1000) + 's';
-    if (r.total > 1) return r.settled + '/' + r.total + ' finished';
-    if (r.targets && r.targets[0] && r.targets[0].state) return r.targets[0].state;
-    if (job) return job.state + (job.exitCode != null ? ' · exit ' + job.exitCode : '');
-    return Math.round((r.waitedMs || 0) / 1000) + 's';
-  }
   if (n === 'schedule_wake') return r.dueInSeconds != null ? 'due in ' + (r.dueInSeconds >= 3600 ? Math.round(r.dueInSeconds / 360) / 10 + 'h' : r.dueInSeconds >= 60 ? Math.round(r.dueInSeconds / 60) + 'm' : r.dueInSeconds + 's') + (r.every ? ' · every ' + r.every : '') : null;
   if (n === 'schedule_list') return Array.isArray(r.schedules) ? r.schedules.length + ' pending' : null;
   if (n === 'schedule_cancel') return r.cancelled ? 'cancelled' : r.status || null;

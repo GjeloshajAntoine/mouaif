@@ -47,23 +47,28 @@ async function main() {
   const chatId = chat.id;
   const stream = (calls) => new Response('data: ' + JSON.stringify({ choices: [{ delta: calls }] }) + '\n\ndata: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } });
 
-  // ---- 1. The model opens a run and schedules its own wake ---------------------------------
+  // ---- 1. A run exists (agents cannot open one) and the model schedules its own wake -----------------
+  const manager = runs.sharedManager(lifecycle);
+  const opened = manager.start({ projectDir, chatId }, { goal: 'Migrate all docs to the new layout', maxTurns: 2, maxHours: 4 });
+  assert.equal(opened.status, 'running');
   const events = [];
   let rounds = 0;
   global.fetch = async (_url, init) => {
     const request = JSON.parse(init.body);
     const names = request.tools.map((tool) => tool.function.name);
-    for (const name of ['run_start', 'run_status', 'run_end', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'wait_for']) {
+    for (const name of ['schedule_wake', 'schedule_list', 'schedule_cancel']) {
       assert.ok(names.includes(name), name + ' is advertised to the model');
+    }
+    for (const name of ['run_start', 'run_status', 'run_end', 'wait_for', 'job_status', 'job_cancel']) {
+      assert.ok(!names.includes(name), name + ' is not an agent tool');
     }
     if (rounds++ === 0) {
       return stream({ tool_calls: [
-        { index: 0, id: 'c1', type: 'function', function: { name: 'run_start', arguments: JSON.stringify({ goal: 'Migrate all docs to the new layout', maxTurns: 2, maxHours: 4 }) } },
-        { index: 1, id: 'c2', type: 'function', function: { name: 'schedule_wake', arguments: JSON.stringify({ in: '30m', message: 'Check the migration job and continue.' }) } },
-        { index: 2, id: 'c3', type: 'function', function: { name: 'schedule_list', arguments: '{}' } }
+        { index: 0, id: 'c2', type: 'function', function: { name: 'schedule_wake', arguments: JSON.stringify({ in: '30m', message: 'Check the migration job and continue.' }) } },
+        { index: 1, id: 'c3', type: 'function', function: { name: 'schedule_list', arguments: '{}' } }
       ] });
     }
-    return stream({ content: 'Run started; I will check back in 30 minutes.' });
+    return stream({ content: 'Scheduled; I will check back in 30 minutes.' });
   };
   const turn = await aiStream.streamChat({
     model: { id: 'gamma', provider: 'openai-compatible', baseUrl: 'http://fixture/v1' },
@@ -72,12 +77,9 @@ async function main() {
   });
   assert.equal(turn.ok, true);
   const result = (name) => events.find((event) => event.type === 'tool_result' && event.payload.name === name);
-  assert.equal(result('run_start').payload.ok, true, JSON.stringify(result('run_start').payload));
-  assert.equal(result('run_start').payload.result.run.status, 'running');
   assert.equal(result('schedule_wake').payload.ok, true, JSON.stringify(result('schedule_wake').payload));
   assert.equal(result('schedule_list').payload.result.count, 1);
 
-  const manager = runs.sharedManager(lifecycle);
   const scheduleStore = schedules.sharedStore();
   assert.equal(manager.get(projectDir, chatId).goal, 'Migrate all docs to the new layout');
   const [pending] = scheduleStore.list(projectDir, chatId);
@@ -148,12 +150,11 @@ async function main() {
   r = await http('GET', '/api/chats/' + chatId + '/run?projectDir=' + encodeURIComponent(projectDir));
   assert.equal(r.body.run.status, 'exhausted');
   assert.match(r.body.run.endReason, /turn budget/);
-  const after = await require('../src/tools/run.js').runRunTool('run_status', {}, { projectDir, chatId });
-  assert.equal(after.result.shouldContinue, false);
+  assert.equal(manager.view(manager.get(projectDir, chatId)).status, 'exhausted');
 
   // ---- 5. Stop aborts a streaming turn ------------------------------------------------------------------------------
-  const fresh = await require('../src/tools/run.js').runRunTool('run_start', { goal: 'Second goal' }, { projectDir, chatId });
-  assert.equal(fresh.ok, true);
+  const fresh = manager.start({ projectDir, chatId }, { goal: 'Second goal' });
+  assert.equal(fresh.status, 'running');
   let release;
   shared.ai.streamChat = (args) => new Promise((resolve) => {
     release = () => resolve({ ok: false, error: { code: 'ECANCEL', message: 'cancelled' } });
@@ -170,7 +171,7 @@ async function main() {
   assert.equal(shared.runningChats.has(shared.runningKey(projectDir, chatId)), false, 'the streaming turn was aborted');
   if (release) release();
 
-  console.log('long run e2e: tools through the dispatcher, wake through the chat runner, REST pause/resume/stop and budget wrap-up passed');
+  console.log('long run e2e: wake scheduled through the dispatcher, wake through the chat runner, REST pause/resume/stop and budget wrap-up passed');
 }
 
 main().then(() => 0, (e) => { console.error(e); return 1; }).then((code) => {
