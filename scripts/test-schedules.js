@@ -128,9 +128,7 @@ async function main() {
   assert.equal(started[0].chatId, 'chat-a');
   assert.equal(started[0].modelId, 'm1');
   assert.equal(started[0].providerId, 'p1');
-  assert.match(started[0].content, /Recurring task · every 15m · run 1 of 2/);
-  assert.match(started[0].content, /same chat as the earlier runs/);
-  assert.match(started[0].content, /poll$/);
+  assert.equal(started[0].content, 'poll', 'a recurring run starts with exactly its prompt');
   assert.deepEqual(await scheduler.tick(), [], 'a fired wake is not delivered twice in the same tick window');
   let row = (await run('schedule_list', {})).result.schedules.find((s) => s.message === 'poll');
   assert.equal(row.dueInSeconds, 15 * 60, 're-armed on the planned grid');
@@ -260,8 +258,7 @@ async function main() {
     assert.equal(dueOf('chat-c'), next + 'T08:00:00.000Z', 'next slot after ' + next);
   }
   assert.equal(started.length, 5);
-  assert.match(started[0].content, /Recurring task · weekdays at 09:00 \(europe\/brussels\) · run 1\n/);
-  assert.match(started[4].content, / · run 5\n/);
+  assert.deepEqual([...new Set(started.map((b) => b.content))], ['morning report']);
   assert.ok(clock > after);
   // The same wall-clock time across a clock change keeps its meaning.
   const spring = schedules.parseClock({ time: '09:00', timezone: 'Europe/Brussels' });
@@ -287,7 +284,7 @@ async function main() {
   assert.equal((await scheduler.tick())[0].outcome, 'pending');
   assert.equal(started.length, 1, 'the missed slots are not replayed');
   assert.equal(dueOf('chat-d'), new Date(t0 + 41 * MIN).toISOString());
-  assert.match(started[0].content, / · run 2\n/);
+  assert.equal(started[0].content, 'poll the build');
 
   store.cancel(projectDir, 'chat-d', store.recurring(projectDir, 'chat-d').id);
 

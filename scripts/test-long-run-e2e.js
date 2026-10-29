@@ -198,8 +198,7 @@ async function main() {
   assert.equal(seen.length, 2);
   const taskUsers = messages.listMessages(projectDir, task.id).filter((m) => m.role === 'user');
   assert.equal(taskUsers.length, 3, 'every run is a message in the one chat');
-  assert.match(taskUsers[1].content, /Recurring task · every hour · run 1\n/);
-  assert.match(taskUsers[2].content, /Recurring task · every hour · run 2\n/);
+  assert.deepEqual(taskUsers.slice(1).map((m) => m.content), ['Write the morning report and save it as report.md', 'Write the morning report and save it as report.md'], 'each run starts with only the prompt');
   const images = (args) => args.messages.flatMap((m) => Array.isArray(m.content) ? m.content.filter((p) => p.type === 'image_url').map((p) => p.image_url.url) : []);
   assert.deepEqual(images(seen[1]), [png], 'the attachment is still sent with the second run');
   assert.ok(seen[1].messages.some((m) => typeof m.content === 'string' && m.content.includes('Report written.')), 'and so is what the first run produced');

@@ -41,7 +41,7 @@ The three tools follow the **mouaif** family gate in **Settings → Project** (O
 
 ## Behavior
 
-- **A run is an ordinary turn in the same chat.** It uses the chat's selected model, prompt and tool settings, and sees the whole conversation so far, including image attachments. The prompt arrives as a user message that starts with `⏰ Recurring task · <repeat> · run N` (or `⏰ Scheduled wake-up` for a one-off).
+- **A run is an ordinary turn in the same chat.** It uses the chat's selected model, prompt and tool settings, and sees the whole conversation so far, including image attachments. A recurring run starts with exactly the prompt you set, as a plain user message, and nothing else is added: the earlier runs are already in the chat above it. A one-off wake arrives labelled `⏰ Scheduled wake-up`, so the assistant knows it came from its own schedule.
 - **Runs never overlap.** If a run comes due while the previous turn (or you) is still streaming in the chat, it waits and starts when the chat is free. Slots missed in the meantime, or while mouaif was down, are skipped, not replayed: you get one run, then the next slot after it.
 - **Failures retry.** A wake that cannot start (for example the provider is down) is retried with a growing delay and marked `failed` after three attempts. The last error is kept.
 - **Safety net.** A recurring task opens a [run](long-running-runs.md) with limits sized to it: your `maxRuns` and `until`, otherwise one year and a large turn allowance, plus `maxCostUsd` if given. You can Pause, Resume or Stop it from the bar above the composer.

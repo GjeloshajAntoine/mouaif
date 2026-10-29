@@ -259,7 +259,7 @@ async function main() {
   started.length = 0;
   clock = Date.parse('2027-03-01T10:00:05Z');
   assert.equal((await scheduler.tick())[0].outcome, 'pending');
-  assert.match(started[0].content, /Recurring task · every 6h · run 1\n/);
+  assert.equal(started[0].content, 'Summarise the overnight alerts', 'only the prompt');
   r = manager.view(manager.get(projectDir, 'chat-r'));
   assert.deepEqual([r.turnsUsed, r.schedule.runCount, r.schedule.nextAt], [1, 1, '2027-03-01T16:00:00.000Z']);
 

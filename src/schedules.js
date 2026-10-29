@@ -250,16 +250,15 @@ function createScheduleStore({ getDb = () => require('./settings.js').getDb(), n
   };
 }
 
+// A recurring task starts every run with exactly its prompt: the earlier runs
+// are already in the chat. A one-off wake is labelled, so the assistant knows
+// the message came from its own schedule.
 function wakeText(row, reason, jobState) {
-  const repeats = !!(row.everyMs || row.spec);
-  const bits = [repeats ? 'Recurring task' : 'Scheduled wake-up'];
-  if (repeats) {
-    bits.push((describeRepeat(row) || 'repeating').toLowerCase());
-    bits.push('run ' + (row.runCount + 1) + (row.runsLeft != null ? ' of ' + (row.runCount + row.runsLeft) : ''));
-  }
+  if ((row.everyMs || row.spec) && reason !== 'job') return row.message;
+  const bits = ['Scheduled wake-up'];
+  if (row.everyMs || row.spec) bits.push('repeating, run ' + (row.runCount + 1) + (row.runsLeft != null ? ' of ' + (row.runCount + row.runsLeft) : ''));
   if (reason === 'job' && jobState) bits.push('job ' + row.jobId + ' is ' + jobState.state + (jobState.exitCode != null ? ' (exit ' + jobState.exitCode + ')' : ''));
-  const note = repeats ? '\n\nThis is the same chat as the earlier runs: what they said, did and produced, and every attachment, is still above and in the project.' : '';
-  return '⏰ ' + bits.join(' · ') + note + '\n\n' + row.message;
+  return '⏰ ' + bits.join(' · ') + '\n\n' + row.message;
 }
 
 // createScheduler({ store, now, startTurn, getChat, getJob, lifecycle }) -> { tick, start, stop }
