@@ -203,6 +203,25 @@ async function main() {
   assert.deepEqual(images(seen[1]), [png], 'the attachment is still sent with the second run');
   assert.ok(seen[1].messages.some((m) => typeof m.content === 'string' && m.content.includes('Report written.')), 'and so is what the first run produced');
   assert.equal(manager.view(manager.get(projectDir, task.id)).turnsUsed, 2);
+  // Every run stays in the chat, is marked as a scheduled run and can be listed.
+  const taskMessages = messages.listMessages(projectDir, task.id);
+  const scheduled = taskMessages.filter((m) => m.origin);
+  assert.deepEqual(scheduled.map((m) => [m.origin.kind, m.origin.run, m.origin.scheduleId]), [['schedule', 1, recurring.result.id], ['schedule', 2, recurring.result.id]]);
+  assert.equal(taskMessages.filter((m) => m.role === 'user' && !m.origin).length, 1, 'a typed message has no origin');
+  r = await http('GET', '/api/chats/' + task.id + '/runs?projectDir=' + encodeURIComponent(projectDir));
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.runs.map((x) => [x.seq, x.run]), scheduled.map((m) => [m.seq, m.origin.run]));
+  assert.ok(r.body.runs.every((x) => typeof x.ts === 'string' && x.scheduleId === recurring.result.id));
+  assert.equal(taskMessages.length > 5, true, 'nothing was dropped: both runs and their replies are still there');
+  assert.equal((await http('GET', '/api/chats/nope/runs?projectDir=' + encodeURIComponent(projectDir))).status, 404);
+  assert.equal((await http('GET', '/api/chats/' + task.id + '/runs')).status, 400);
+  r = await http('GET', '/api/chats/' + task.id + '/run?projectDir=' + encodeURIComponent(projectDir));
+  assert.equal(r.body.scheduledRuns, 2);
+  // A user cannot mark a message as a scheduled run through the HTTP route.
+  const forged = messages.appendMessage(projectDir, task.id, { role: 'user', content: 'forged', origin: { kind: 'other', run: 1, scheduleId: 'x' } });
+  assert.equal(forged.origin, undefined, 'only a schedule origin is kept');
+  messages.replaceMessages(projectDir, task.id, taskMessages);
+  assert.equal(messages.listMessages(projectDir, task.id).filter((m) => m.origin).length, 2, 'the marker survives a rewrite of the transcript');
   r = await http('POST', '/api/chats/' + task.id + '/run', { projectDir, action: 'stop' });
   assert.equal(r.body.run.schedulesCancelled, 1);
   assert.equal(scheduleStore.recurring(projectDir, task.id), null);

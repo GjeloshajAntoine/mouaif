@@ -67,6 +67,7 @@ const CREATE_MESSAGE_TABLE = `
     ok            INTEGER,
     phase         TEXT,
     client_id     TEXT,
+    origin        TEXT,
     PRIMARY KEY (project_dir, chat_id, seq)
   )
 `;
@@ -133,6 +134,11 @@ d.exec('ALTER TABLE chat_store ADD COLUMN prompt_snapshot TEXT');
 const messageColumns = d.prepare("PRAGMA table_info('message_store')").all();
 if (!messageColumns.some((column) => column.name === 'client_id')) {
 d.exec('ALTER TABLE message_store ADD COLUMN client_id TEXT');
+}
+// Where a user message came from, as JSON: { kind: 'schedule', scheduleId, run }
+// for the prompt a recurring task started. NULL for every typed message.
+if (!messageColumns.some((column) => column.name === 'origin')) {
+d.exec('ALTER TABLE message_store ADD COLUMN origin TEXT');
 }
 d.exec(INDEX_SQL);
 }
@@ -335,6 +341,9 @@ function rowToMessage(row) {
   // by seq and never re-adds a row it already holds.
   const msg = { role: row.role, content: row.content, ts: row.ts, seq: row.seq };
   if (row.client_id) msg.clientId = row.client_id;
+  if (row.role === 'user' && row.origin) {
+    try { msg.origin = JSON.parse(row.origin); } catch { /* ignore */ }
+  }
   if (row.role === 'user' && row.attachments) {
     try { msg.attachments = JSON.parse(row.attachments); } catch { /* ignore */ }
   }
@@ -374,7 +383,8 @@ function messageToRow(projectDir, chatId, seq, msg) {
     args: msg.role === 'tool' && msg.args ? JSON.stringify(msg.args) : null,
     ok: msg.role === 'tool' && msg.ok != null ? (msg.ok ? 1 : 0) : null,
     phase: msg.role === 'tool' && msg.phase ? msg.phase : null,
-    client_id: typeof msg.clientId === 'string' && msg.clientId ? msg.clientId : null
+    client_id: typeof msg.clientId === 'string' && msg.clientId ? msg.clientId : null,
+    origin: msg.role === 'user' && msg.origin ? JSON.stringify(msg.origin) : null
   };
 }
 
@@ -756,10 +766,10 @@ function appendMessage(projectDir, chatId, msg) {
     d.prepare(`
       INSERT INTO message_store (project_dir, chat_id, seq, role, content, ts,
         reasoning, usage, cost, streaming_ms, model_id, attachments,
-        tool_call_id, name, args, ok, phase, client_id)
+        tool_call_id, name, args, ok, phase, client_id, origin)
       VALUES (@project_dir, @chat_id, @seq, @role, @content, @ts,
         @reasoning, @usage, @cost, @streaming_ms, @model_id, @attachments,
-        @tool_call_id, @name, @args, @ok, @phase, @client_id)
+        @tool_call_id, @name, @args, @ok, @phase, @client_id, @origin)
     `).run(row);
     if (costDelta !== null) {
       const updated = d.prepare(`
@@ -795,10 +805,10 @@ function replaceMessages(projectDir, chatId, list) {
     const insert = d.prepare(`
       INSERT INTO message_store (project_dir, chat_id, seq, role, content, ts,
         reasoning, usage, cost, streaming_ms, model_id, attachments,
-        tool_call_id, name, args, ok, phase, client_id)
+        tool_call_id, name, args, ok, phase, client_id, origin)
       VALUES (@project_dir, @chat_id, @seq, @role, @content, @ts,
         @reasoning, @usage, @cost, @streaming_ms, @model_id, @attachments,
-        @tool_call_id, @name, @args, @ok, @phase, @client_id)
+        @tool_call_id, @name, @args, @ok, @phase, @client_id, @origin)
     `);
     for (let i = 0; i < list.length; i++) {
       insert.run(messageToRow(projectDir, chatId, i, list[i]));
@@ -1064,6 +1074,21 @@ function importMessagesFromJson(projectDir, chatId, imported) {
   }
 }
 
+// The prompts a recurring task started in a chat, oldest first:
+// [{ seq, ts, run, scheduleId }]. The rows are never pruned, so this is the
+// chat's full run history.
+function listScheduledRuns(projectDir, chatId) {
+  ensureTables();
+  const d = require('./settings.js').getDb();
+  return d.prepare("SELECT seq, ts, origin FROM message_store WHERE project_dir = ? AND chat_id = ? AND role = 'user' AND origin IS NOT NULL ORDER BY seq")
+    .all(projectDir, chatId).flatMap((row) => {
+      try {
+        const origin = JSON.parse(row.origin);
+        return origin && origin.kind === 'schedule' ? [{ seq: row.seq, ts: row.ts, run: origin.run, scheduleId: origin.scheduleId }] : [];
+      } catch { return []; }
+    });
+}
+
 module.exports = {
   // Chat CRUD
   listChats,
@@ -1076,6 +1101,7 @@ module.exports = {
   // Message CRUD
 listMessages,
 listMessagesWindow,
+listScheduledRuns,
 appendMessage,
 replaceMessages,
 clearMessages,

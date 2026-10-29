@@ -43,3 +43,23 @@ export function runLine(run, nowMs = Date.now()) {
   if (run.endReason && !isActive(run)) parts.push(run.endReason);
   return parts.filter(Boolean).join(' · ');
 }
+
+// runListItems(runs) -> [{ seq, run, scheduleId, ts, newTask }] newest first.
+// `newTask` marks the oldest run of a task, where a replaced recurring task
+// started over (its run numbers begin again at 1).
+export function runListItems(runs) {
+  const list = Array.isArray(runs) ? runs : [];
+  const items = list.map((r, i) => ({ seq: r.seq, run: r.run, scheduleId: r.scheduleId, ts: r.ts,
+    newTask: i === 0 || list[i - 1].scheduleId !== r.scheduleId }));
+  return items.reverse();
+}
+
+export function runWhen(ts, locale) {
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+export function runsLabel(count) {
+  return count === 1 ? '1 scheduled run' : count + ' scheduled runs';
+}

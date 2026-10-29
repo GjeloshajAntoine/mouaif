@@ -216,6 +216,17 @@
   width: 100%;
 }
 .chat-msg__head .chat-msg__role { padding: 0 4px; }
+.chat-msg__origin {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  white-space: nowrap;
+}
+/* The row a run-list tap lands on. */
+.chat-msg--flash { animation: chat-msg-flash 1.6s ease-out; }
+@keyframes chat-msg-flash { from { box-shadow: 0 0 0 2px var(--accent); } to { box-shadow: 0 0 0 2px transparent; } }
+@media (prefers-reduced-motion: reduce) { .chat-msg--flash { animation: none; outline: 2px solid var(--accent); } }
 .chat-msg__ts {
   margin-left: auto;
   font-size: 0.62rem;

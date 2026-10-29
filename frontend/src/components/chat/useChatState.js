@@ -26,7 +26,8 @@ import {
 renderSystemPromptMessage, renderTranscript, appendMessageToTranscript, appendToolCallCard, appendToolResultCard, cancelTranscriptRender, reconcileTranscript
 } from './transcript.js';
 import { buildToolsCard, toggleTool, toggleToolGroup, toggleAgentFiles, toggleSkills, toggleSkill } from './cards.js';
-import { scrollTranscriptToBottom, scrollToAdjacentMessage, noteTranscriptScrollTop, noteTranscriptScroll, isNearBottom, updateJumpButton, syncNavScrollbarLane, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
+import { jumpToSeq as jumpToSeqRow, flashRow } from './jumpToRun.js';
+import { scrollTranscriptToBottom, scrollToAdjacentMessage, scrollToTranscriptRow, noteTranscriptScrollTop, noteTranscriptScroll, isNearBottom, updateJumpButton, syncNavScrollbarLane, afterTranscriptAppend, pinTranscriptAfterSettle, cancelTranscriptPin, isTranscriptPinScroll, trackUserScrollIntent } from './scroll.js';
 import { updateUsageSummary, refreshProviderCredit, updateProviderCredit, setChatStatus } from './usage.js';
 import {
   updateMetaLine, refreshSystemPrompt, activeProfileId, updateSwitch, updateSetupVisibility
@@ -1670,6 +1671,16 @@ onComposerInput(refs, projectDir, chatId, updateChatBound);
       addImagesFromFiles(e.currentTarget.files, { setImageAttachments, setChatStatus: (txt, st) => setChatStatus(refs, txt, st), updateChat: updateChatBound });
     },
     onRemoveImage: (idx) => removeImageAttachment(idx, setImageAttachments, updateChatBound),
+    // Scroll to a persisted message by seq, loading older pages first when it is
+    // not on screen yet. Used by the run list for a recurring task.
+    jumpToSeq: (seq) => jumpToSeqRow({
+      root: refs.transcript.current,
+      seq,
+      hasMore: () => { const pager = session.current.pager; return !!pager && pager.hasMore && pager.beforeSeq !== null; },
+      loadOlder: () => loadOlderMessages(state, refs, session.current.pager),
+      scrollTo: (row) => scrollToTranscriptRow(refs, row),
+      flash: flashRow
+    }),
     onJumpToBottom: () => scrollTranscriptToBottom(refs),
     onJumpToPrevMessage: () => scrollToAdjacentMessage(refs, -1),
     onJumpToNextMessage: () => scrollToAdjacentMessage(refs, 1),

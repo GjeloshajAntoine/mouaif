@@ -390,6 +390,8 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
   if (empty) empty.remove();
   const row = document.createElement('div');
   row.className = 'chat-msg chat-msg--' + m.role;
+  // The persisted position, so the run list can find a row (jumpToRun.js).
+  if (typeof m.seq === 'number' && Number.isFinite(m.seq)) row.dataset.seq = String(m.seq);
   if (isLive) {
   row.dataset.live = '1';
   // Only the currently streaming reply is live. The transcript scroller
@@ -432,6 +434,15 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
     ts.hidden = true;
   }
   head.appendChild(role);
+  // The prompt a recurring task started: say so, so scrolling back through
+  // many runs shows where each one begins.
+  if (m.role === 'user' && m.origin && m.origin.kind === 'schedule') {
+    row.dataset.origin = 'schedule';
+    const badge = document.createElement('span');
+    badge.className = 'chat-msg__origin';
+    badge.textContent = 'Scheduled · run ' + m.origin.run;
+    head.appendChild(badge);
+  }
   head.appendChild(ts);
   row.appendChild(head);
   row.appendChild(body);

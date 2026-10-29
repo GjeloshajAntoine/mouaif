@@ -413,7 +413,25 @@ export function scrollToAdjacentMessage(refs, dir) {
     el.scrollTop = 0;
     return;
   }
-  const target = rows[idx];
+  alignRowToTop(refs, el, rows[idx]);
+}
+
+// scrollToTranscriptRow(refs, row)
+//
+// Bring one row to the top of the transcript and stay there: unpins from the
+// bottom first (a jump is outside the user-intent tracker), then aligns for a
+// few frames while rows around it settle.
+export function scrollToTranscriptRow(refs, row) {
+  const el = refs.transcript.current;
+  if (!el || !row || !row.isConnected) return false;
+  cancelTranscriptPin(refs);
+  refs.pinnedToBottom.current = false;
+  updateJumpButton(refs);
+  alignRowToTop(refs, el, row);
+  return true;
+}
+
+function alignRowToTop(refs, el, target) {
   const align = () => {
     if (!target.isConnected || refs.pinnedToBottom.current) return false;
     const delta = target.getBoundingClientRect().top - el.getBoundingClientRect().top - NAV_TOP_GAP;

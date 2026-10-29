@@ -672,13 +672,29 @@ return sendJSON(res, 200, { ok: true, imported: result });
     try {
       if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
       const manager = require('./runs.js').sharedManager(lifecycle);
-      if (method === 'GET') return sendJSON(res, 200, { run: manager.view(manager.get(dir, id)) });
+      if (method === 'GET') return sendJSON(res, 200, { run: manager.view(manager.get(dir, id)), scheduledRuns: messages.listScheduledRuns(dir, id).length });
       const action = body && body.action;
       if (!['pause', 'resume', 'stop'].includes(action)) return sendJSON(res, 400, { error: 'action must be pause, resume or stop' });
       return sendJSON(res, 200, { run: manager[action](dir, id) });
     } catch (e) {
       const status = e.code === 'ENOTARGET' ? 409 : e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : e.code === 'ESTORE' ? 503 : 500;
       return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
+  // GET /api/chats/:id/runs?projectDir= -> { runs: [{ seq, ts, run, scheduleId }] }
+  // The prompts a recurring task started in this chat, oldest first, so the
+  // chat can list them and jump to any one (docs/features/scheduled-wakes.md).
+  const runsMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/runs$/);
+  if (runsMatch && method === 'GET') {
+    const id = safeDecode(runsMatch[1]);
+    const dir = qs(q, 'projectDir');
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      return sendJSON(res, 200, { runs: messages.listScheduledRuns(dir, id) });
+    } catch (e) {
+      return sendJSON(res, e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : 500, { error: e.message, code: e.code || 'INTERNAL' });
     }
   }
 
@@ -750,13 +766,15 @@ function startChatTurn(body, lifecycle = {}) {
         }
       }
     };
-    runChatStream(body, sink, body.chatId, null, lifecycle).catch((e) => {
+    // `origin` marks a prompt that mouaif itself started (a recurring task's run).
+    // It is only honoured here, never from an HTTP request body.
+    runChatStream(body, sink, body.chatId, null, lifecycle, { origin: body.origin }).catch((e) => {
       resolve({ ok: false, code: e.code || 'EINTERNAL', error: e.message || String(e) });
     });
   });
 }
 
-async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}) {
+async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, internal = {}) {
   const _pushSessionId = push.sessionIdFromToken(sessionToken);
   const projectDir = body && typeof body.projectDir === 'string' ? body.projectDir : '';
   const modelId = body && typeof body.modelId === 'string' ? body.modelId : '';
@@ -816,7 +834,7 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}) {
   // The client's id for its unsaved user bubble; stored and echoed so the
   // UI swaps that bubble for this row by id (docs/features/chat-client-row-ids.md).
   const userClientId = messages.normalizeClientId(body && body.clientId) || messages.newClientId('u');
-  try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments, clientId: userClientId }); }
+  try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments, clientId: userClientId, origin: internal.origin }); }
   catch (e) { return sendJSON(res, 400, { error: e.message }); }
   // Read the full transcript once and reuse across the title-derivation
   // check and the upstream message assembly below. Two separate

@@ -70,6 +70,14 @@ if (out.length >= MAX_IMAGE_ATTACHMENTS) break;
 }
 return out;
 }
+// Where a user message came from. Only the prompt a recurring task started
+// carries one: { kind: 'schedule', scheduleId, run } (run counts from 1).
+function normalizeOrigin(o) {
+if (!o || typeof o !== 'object' || o.kind !== 'schedule') return null;
+const run = Number.isSafeInteger(o.run) && o.run > 0 ? o.run : null;
+if (!run || typeof o.scheduleId !== 'string' || !o.scheduleId) return null;
+return { kind: 'schedule', scheduleId: o.scheduleId.slice(0, 80), run };
+}
 function normalizeMessage(m) {
 if (!m || typeof m !== 'object') return null;
 if (!VALID_ROLES.has(m.role)) return null;
@@ -86,6 +94,8 @@ if (clientId) out.clientId = clientId;
 if (m.role === 'user') {
 const attachments = normalizeAttachments(m.attachments);
 if (attachments.length) out.attachments = attachments;
+const origin = normalizeOrigin(m.origin);
+if (origin) out.origin = origin;
 }
 if (m.role === 'assistant') {
 if (typeof m.reasoning === 'string') out.reasoning = m.reasoning;
@@ -112,6 +122,9 @@ return getChatDb().listMessages(projectDir, chatId);
 }
 function listMessagesWindow(projectDir, chatId, opts) {
 return getChatDb().listMessagesWindow(projectDir, chatId, opts);
+}
+function listScheduledRuns(projectDir, chatId) {
+return getChatDb().listScheduledRuns(projectDir, chatId);
 }
 function getMessageCount(projectDir, chatId) {
 return getChatDb().getMessageCount(projectDir, chatId);
@@ -266,5 +279,6 @@ appendMessage,
 replaceMessages,
 clearMessages,
 addChatCost,
-reconstructUpstreamHistory
+reconstructUpstreamHistory,
+listScheduledRuns
 };

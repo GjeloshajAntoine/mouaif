@@ -1,6 +1,6 @@
 // What the run dock says about a run (frontend/src/components/chat/runDock.js).
 import assert from 'node:assert/strict';
-import { formatLeft, formatNext, runLine, isActive, ATTENTION, STATUS_TEXT } from '../frontend/src/components/chat/runDock.js';
+import { runListItems, runWhen, runsLabel, formatLeft, formatNext, runLine, isActive, ATTENTION, STATUS_TEXT } from '../frontend/src/components/chat/runDock.js';
 
 assert.equal(formatLeft(null), '');
 assert.equal(formatLeft(0), '0m left');
@@ -37,5 +37,16 @@ for (const status of ['stopped', 'ended', 'stalled', 'exhausted']) assert.equal(
 assert.equal(isActive(null), false);
 assert.deepEqual(ATTENTION, ['stalled', 'exhausted'], 'only runs that need the user stay on screen after they end');
 for (const status of ['running', 'paused', ...ATTENTION]) assert.ok(STATUS_TEXT[status], status + ' has a label');
+
+// The run list: newest first, with a divider where a replaced task started over.
+const list = runListItems([
+  { seq: 4, run: 1, scheduleId: 'a', ts: '2027-03-01T09:00:00Z' }, { seq: 12, run: 2, scheduleId: 'a', ts: '2027-03-02T09:00:00Z' },
+  { seq: 30, run: 1, scheduleId: 'b', ts: '2027-03-03T09:00:00Z' }, { seq: 41, run: 2, scheduleId: 'b', ts: '2027-03-04T09:00:00Z' }]);
+assert.deepEqual(list.map((x) => [x.seq, x.run, x.newTask]), [[41, 2, false], [30, 1, true], [12, 2, false], [4, 1, true]]);
+assert.deepEqual(runListItems(null), []);
+assert.equal(runsLabel(1), '1 scheduled run');
+assert.equal(runsLabel(12), '12 scheduled runs');
+assert.equal(runWhen('not a date'), '');
+assert.match(runWhen('2027-03-02T09:00:00Z', 'en-GB'), /Tue/);
 
 console.log('run dock: time, cost and status text passed');

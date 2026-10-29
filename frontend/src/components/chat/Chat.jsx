@@ -58,7 +58,7 @@ setFileEditorOpen,
     picker,
     send, onPickerPick, onPickerTogglePin, onPickerOpen, onRefreshAllProviders, onPickerOpenChange,
     onComposerKey, onComposerInput, onComposerPaste, onImagePickerChange,
-    onRemoveImage, onJumpToBottom, onJumpToPrevMessage, onJumpToNextMessage, onCancelRunning, onBack,
+    onRemoveImage, jumpToSeq, onJumpToBottom, onJumpToPrevMessage, onJumpToNextMessage, onCancelRunning, onBack,
 onToggleChatSwitcher, onChatSwitcherScroll, onSwitchChat, runCustomAction, refreshCustomActions, updateChat
 } = s;
 
@@ -691,7 +691,7 @@ onDismiss: () => clearWebPreview()
 // place or goes full screen; absent until the chat has a subagent.
 h(AgentNetworkDock, { transcriptRef: refs.transcript }),
 // Pause / resume / stop for a long-running run; absent until the chat has one.
-h(RunDock, { projectDir, chatId }),
+h(RunDock, { projectDir, chatId, onJumpToSeq: jumpToSeq }),
 h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {

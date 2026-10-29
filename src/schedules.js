@@ -288,7 +288,8 @@ function createScheduler({ store, now = Date.now, startTurn, getChat, getJob, li
     let result;
     try {
       result = await startTurn({ projectDir: row.projectDir, chatId: row.chatId, modelId: chat.modelId,
-        providerId: chat.providerId || '', content: gate.action === 'final' ? finalText(gate.reason) : wakeText(row, reason, jobState) }, lifecycle);
+        providerId: chat.providerId || '', content: gate.action === 'final' ? finalText(gate.reason) : wakeText(row, reason, jobState),
+        origin: gate.action !== 'final' && (row.everyMs || row.spec) ? { kind: 'schedule', scheduleId: row.id, run: row.runCount + 1 } : undefined }, lifecycle);
     } catch (e) { result = { ok: false, code: e.code || 'EINTERNAL', error: e.message || String(e) }; }
     if (result && result.ok) {
       const settled = store.fired(row, now());

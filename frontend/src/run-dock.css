@@ -77,3 +77,41 @@
   .run-dock__text { flex-basis: calc(100% - 20px); }
   .run-dock__btn { flex: 1 1 0; }
 }
+
+/* The list of a recurring task's runs, opened from the bar's Runs button.
+   Every run stays in the chat; a tap scrolls to where it begins. */
+.run-dock--idle { --run-color: var(--muted); }
+.run-list {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 100%;
+  max-width: var(--read-max, 44rem);
+  max-height: 40dvh;
+  margin: 4px auto 0;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.run-list__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.run-list__item span { color: var(--muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.run-list__item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.run-list__divider, .run-list__empty { padding: 8px 12px; font-size: 0.72rem; color: var(--muted); }
