@@ -375,10 +375,12 @@ border-left: 1px solid var(--border);
 .project-card__new:active, .project-card__prompt-new:active { background: var(--surface-3); }
 .project-card__new:disabled, .project-card__prompt-new:disabled { opacity: 0.6; cursor: not-allowed; }
 
-/* Search — a magnifier at the end of the card's action row.
+/* Tools (wrench) and Search (magnifier) close the card's action row.
    Same 44px target as "+ New chat" and the prompt buttons, and the same
-   border-left separator, so the row reads as one control strip. The button
-   toggles: tapping it with the field open closes and clears. */
+   border-left separator, so the row reads as one control strip. Tools opens
+   the project's tool list; Search toggles: tapping it with the field open
+   closes and clears. */
+.project-card__tools-open,
 .project-card__search-open {
   display: grid; place-items: center; flex: 0 0 var(--tap); min-width: var(--tap);
   font: inherit; color: var(--muted); background: transparent; border: 0;
@@ -386,10 +388,13 @@ border-left: 1px solid var(--border);
   min-height: var(--tap); cursor: pointer; transition: background 80ms ease, color 120ms ease;
 }
 @media (hover: hover) {
+  .project-card__tools-open:hover,
   .project-card__search-open:hover { background: var(--surface-2); color: var(--fg); }
 }
+.project-card__tools-open:active,
 .project-card__search-open:active { background: var(--surface-3); }
 .project-card__search-open[aria-expanded="true"] { color: var(--accent); background: var(--accent-soft); }
+.project-card__tools-open svg,
 .project-card__search-open svg { display: block; }
 
 /* The field sits between the card header and the chat list, so the list it

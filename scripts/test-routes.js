@@ -117,7 +117,7 @@ function check(name, fn) {
 
   check('project settings root', () =>
     eq('#/settings/project?projectDir=%2Fp&chatId=c1&from=projects', {
-      name: 'settingsProject', projectDir: '/p', chatId: 'c1', from: 'projects'
+      name: 'settingsProject', projectDir: '/p', chatId: 'c1', from: 'projects', section: ''
     }));
 
   check('project sub-pages win over the root', () => {
@@ -150,9 +150,11 @@ function check(name, fn) {
   });
 
   check('an unrecognised from value is dropped, not passed through', () => {
-    eq('#/settings/project?from=elsewhere', { name: 'settingsProject', projectDir: '', chatId: '', from: '' });
-    eq('#/settings/project?from=projects', { name: 'settingsProject', projectDir: '', chatId: '', from: 'projects' });
-    eq('#/settings/project?from=settings%2Fprojects', { name: 'settingsProject', projectDir: '', chatId: '', from: 'settings/projects' });
+    eq('#/settings/project?from=elsewhere', { name: 'settingsProject', projectDir: '', chatId: '', from: '', section: '' });
+    eq('#/settings/project?from=projects', { name: 'settingsProject', projectDir: '', chatId: '', from: 'projects', section: '' });
+    eq('#/settings/project?from=settings%2Fprojects', { name: 'settingsProject', projectDir: '', chatId: '', from: 'settings/projects', section: '' });
+    eq('#/settings/project?projectDir=%2Fp&from=projects&section=tools', { name: 'settingsProject', projectDir: '/p', chatId: '', from: 'projects', section: 'tools' });
+    eq('#/settings/project?section=bogus', { name: 'settingsProject', projectDir: '', chatId: '', from: '', section: '' });
     assert.equal(fromParam(new URLSearchParams('from=projects')), 'projects');
     assert.equal(fromParam(new URLSearchParams('')), '');
   });
