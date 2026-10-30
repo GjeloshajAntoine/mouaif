@@ -9,7 +9,7 @@
 import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../../api.js';
-import { runLine, STATUS_TEXT, ATTENTION, isActive, runListItems, runWhen, runsLabel } from './runDock.js';
+import { runLine, STATUS_TEXT, ATTENTION, isActive, runListItems, runWhen, runsLabel, PROMPT_MAX } from './runDock.js';
 
 const POLL_ACTIVE_MS = 5000;
 const POLL_IDLE_MS = 30000;
@@ -32,6 +32,10 @@ export function RunDock({ projectDir, chatId, onJumpToSeq }) {
   const [confirmStop, setConfirmStop] = useState(false);
   const [error, setError] = useState('');
   const [dismissed, setDismissed] = useState('');
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [promptError, setPromptError] = useState('');
 
   useEffect(() => {
     if (!projectDir || !chatId) return undefined;
@@ -41,6 +45,9 @@ export function RunDock({ projectDir, chatId, onJumpToSeq }) {
     setScheduledRuns(0);
     setListOpen(false);
     setRunList(null);
+    setPromptOpen(false);
+    setDraft(null);
+    setPromptError('');
     setError('');
     setDismissed(readDismissed(chatId));
     const load = async () => {
@@ -79,7 +86,24 @@ export function RunDock({ projectDir, chatId, onJumpToSeq }) {
   const showDock = active || attention;
   if (!showDock && !scheduledRuns) return null;
 
+  const prompt = run && run.kind === 'recurring' && run.schedule && typeof run.schedule.prompt === 'string' ? run.schedule.prompt : null;
   const toggleList = () => setListOpen((open) => !open);
+  const togglePrompt = () => { setPromptOpen((open) => !open); setDraft(null); setPromptError(''); };
+  const savePrompt = async () => {
+    const text = draft.trim();
+    if (saving || !text) return;
+    if (text === prompt) { setDraft(null); return; }
+    setSaving(true);
+    setPromptError('');
+    try {
+      const r = await fetchJson('/api/chats/' + encodeURIComponent(chatId) + '/recurring', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectDir, prompt: text })
+      });
+      if (r.status === 200 && r.body.run) { setRun(r.body.run); setDraft(null); }
+      else setPromptError((r.body && r.body.error) || 'Could not save the prompt');
+    } catch { setPromptError('Could not reach mouaif'); }
+    setSaving(false);
+  };
   const jump = (seq) => { setListOpen(false); if (onJumpToSeq) onJumpToSeq(seq); };
   const runsButton = h('button', { class: 'run-dock__btn', type: 'button', onClick: toggleList, 'aria-expanded': listOpen ? 'true' : 'false',
     'aria-label': 'Show the scheduled runs in this chat' }, 'Runs');
@@ -90,6 +114,21 @@ export function RunDock({ projectDir, chatId, onJumpToSeq }) {
           h('strong', null, 'Run ' + item.run), h('span', null, runWhen(item.ts))),
         item.newTask && item !== runList[runList.length - 1] ? h('div', { class: 'run-list__divider' }, 'Earlier task') : null))
         : h('div', { class: 'run-list__empty' }, 'No scheduled runs yet')) : null;
+  const promptPanel = promptOpen && prompt !== null ? h('div', { class: 'run-prompt', role: 'group', 'aria-label': 'Recurring task prompt' },
+    draft === null ? h(Fragment, null,
+      h('pre', { class: 'run-prompt__text' }, prompt),
+      h('div', { class: 'run-prompt__hint' }, 'Sent at the start of every run. A change applies from the next run.'),
+      h('div', { class: 'run-prompt__actions' },
+        h('button', { class: 'run-dock__btn', type: 'button', onClick: () => { setDraft(prompt); setPromptError(''); } }, 'Edit prompt')))
+      : h(Fragment, null,
+        h('textarea', { class: 'run-prompt__input', value: draft, rows: 8, maxLength: PROMPT_MAX, autofocus: true, disabled: saving,
+          'aria-label': 'Recurring task prompt', onInput: (e) => setDraft(e.target.value) }),
+        h('div', { class: 'run-prompt__hint' }, promptError || (draft.length + ' / ' + PROMPT_MAX + ' · applies from the next run')),
+        h('div', { class: 'run-prompt__actions' },
+          h('button', { class: 'run-dock__btn', type: 'button', disabled: saving, onClick: () => { setDraft(null); setPromptError(''); } }, 'Cancel'),
+          h('button', { class: 'run-dock__btn run-dock__btn--primary', type: 'button', disabled: saving || !draft.trim(), onClick: savePrompt }, saving ? 'Saving…' : 'Save')))) : null;
+  const promptButton = prompt !== null ? h('button', { class: 'run-dock__btn', type: 'button', onClick: togglePrompt, 'aria-expanded': promptOpen ? 'true' : 'false',
+    'aria-label': 'Show or edit the recurring task prompt' }, 'Prompt') : null;
   if (!showDock) {
     return h(Fragment, null, panel,
       h('div', { class: 'run-dock run-dock--idle', role: 'group', 'aria-label': 'Scheduled runs' },
@@ -117,12 +156,13 @@ export function RunDock({ projectDir, chatId, onJumpToSeq }) {
   };
   const dismiss = () => { writeDismissed(chatId, run.startedAt); setDismissed(run.startedAt); };
 
-  return h(Fragment, null, panel, h('div', { class: 'run-dock run-dock--' + run.status, role: 'group', 'aria-label': run.kind === 'recurring' ? 'Recurring task' : 'Long-running run' },
+  return h(Fragment, null, promptPanel, panel, h('div', { class: 'run-dock run-dock--' + run.status, role: 'group', 'aria-label': run.kind === 'recurring' ? 'Recurring task' : 'Long-running run' },
     h('span', { class: 'run-dock__dot', 'aria-hidden': 'true' }),
     h('div', { class: 'run-dock__text' },
       h('div', { class: 'run-dock__goal', title: run.goal }, h('strong', null, run.kind === 'recurring' && run.status === 'running' ? 'Recurring' : STATUS_TEXT[run.status] || run.status), ' · ', run.goal),
       h('div', { class: 'run-dock__meta' }, error || runLine(run))
     ),
+    promptButton,
     scheduledRuns ? runsButton : null,
     run.status === 'running'
       ? h('button', { class: 'run-dock__btn', type: 'button', disabled: busy, onClick: () => act('pause') }, 'Pause')

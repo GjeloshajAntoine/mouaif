@@ -41,7 +41,7 @@ const manager = runs.createRunManager({
   notify: (alert) => alerts.push(alert),
   describeSchedule: (dir, id) => {
     const row = scheduleStore.recurring(dir, id);
-    return row ? { text: schedules.describeRepeat(row), nextAt: new Date(row.dueAt).toISOString(), runCount: row.runCount, runsLeft: row.runsLeft } : null;
+    return row ? schedules.describeRecurring(row) : null;
   },
   idleNudgeMs: 10 * MIN
 });
@@ -262,6 +262,19 @@ async function main() {
   assert.equal(started[0].content, 'Summarise the overnight alerts', 'only the prompt');
   r = manager.view(manager.get(projectDir, 'chat-r'));
   assert.deepEqual([r.turnsUsed, r.schedule.runCount, r.schedule.nextAt], [1, 1, '2027-03-01T16:00:00.000Z']);
+
+  // Editing the prompt changes what the next run sends and the run bar's goal; runs already sent are untouched.
+  const taskRow = scheduleStore.recurring(projectDir, 'chat-r');
+  assert.equal(manager.view(manager.get(projectDir, 'chat-r')).schedule.prompt, 'Summarise the overnight alerts', 'the full prompt is in the run view');
+  assert.equal(scheduleStore.setMessage(projectDir, 'chat-r', taskRow.id, 'Summarise the overnight alerts\nand the open incidents'), true);
+  assert.equal(manager.setRecurringGoal(projectDir, 'chat-r', 'Summarise the overnight alerts\nand the open incidents'), true);
+  r = manager.view(manager.get(projectDir, 'chat-r'));
+  assert.deepEqual([r.goal, r.schedule.prompt], ['Summarise the overnight alerts and the open incidents', 'Summarise the overnight alerts\nand the open incidents'], 'one-line goal, multi-line prompt');
+  assert.equal(scheduleStore.setMessage(projectDir, 'other-chat', taskRow.id, 'x'), false, 'a chat edits only its own schedule');
+  started.length = 0;
+  clock = scheduleStore.recurring(projectDir, 'chat-r').dueAt + 1000;
+  await scheduler.tick();
+  assert.equal(started[0].content, 'Summarise the overnight alerts\nand the open incidents', 'the next run sends the edited prompt');
 
   // A new recurring task replaces it and re-targets the same run, with a count and a spend cap.
   cost = 2;

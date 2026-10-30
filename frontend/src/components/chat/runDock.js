@@ -1,4 +1,6 @@
 // Pure helpers for the run dock (RunDock.jsx): what to say about a run.
+// The longest prompt a recurring task accepts (src/schedules.js MAX_MESSAGE_CHARS).
+export const PROMPT_MAX = 4000;
 export const ATTENTION = ['stalled', 'exhausted'];
 export const STATUS_TEXT = { running: 'Running', paused: 'Paused', stalled: 'Stalled', exhausted: 'Budget reached' };
 

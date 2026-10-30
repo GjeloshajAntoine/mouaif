@@ -29,7 +29,7 @@ A wake is a saved prompt plus a time, stored in the app database. It survives a 
 
 ### How it ends
 
-A repeat goes on until it is cancelled. `maxRuns` and `until` (an ISO time) end it sooner, and **Stop** on the [run bar](long-running-runs.md) cancels it at any time. When the last run is delivered, the task and its run bar finish and you get a notification.
+A repeat goes on until it is cancelled. `maxRuns` and `until` (an ISO time) end it sooner, and **Stop** on the [run bar](long-running-runs.md) cancels it at any time. When the last run is delivered, the task and its run bar finish and you get a notification. Each run's turn also notifies you when it completes, with the message the run wrote as the notification text (markdown removed, cut at 300 characters). Nobody's browser started it, so the notification goes to every subscribed device, as do a tool waiting for approval, a question for you and an error.
 
 ### One recurring task per chat
 
@@ -58,6 +58,21 @@ Nothing a recurring task did is ever removed. Every run's prompt, the assistant'
 - **A list to jump.** While the chat has scheduled runs, the bar above the composer has a **Runs** button (once the task has ended, a slim bar with the number of runs keeps it available). It opens a list, newest first, with each run's number and time; a divider marks where an earlier, replaced task begins. Tap a run to load older pages if needed, scroll to it and highlight it.
 - **The assistant sees them too.** Because every run is in the same chat, a run can rely on what earlier runs said and made, and on every attachment, without it being passed again. mouaif does not trim or summarise that history, so a task that runs often in one chat grows the conversation every time; a task that runs many times a day is better as a fresh chat now and then.
 - **The assistant starts clean.** Each run's context begins at its own prompt, so a run does not grow with the number of runs before it. What one run needs to hand to the next has to be in the project (a file it writes and the next prompt tells it to read); image attachments from earlier messages are not carried over. The transcript itself still grows, which is why older pages load as you scroll up.
+
+## Change the prompt from the chat
+
+You can change what a recurring task says without asking the assistant to schedule it again. While the task is running or paused, the bar above the composer has a **Prompt** button.
+
+- **See it in full.** Tap **Prompt** to expand the whole text, line breaks included. The bar itself shows only the first line.
+- **Edit it.** Tap **Edit prompt**, change the text (up to 4000 characters) and tap **Save**. Cancel drops the change.
+- **From the next run.** The new text is sent at the start of every run that begins after you save. Runs already in the chat keep the prompt they were sent with, and the schedule, run count and limits do not change.
+
+```
+PUT /api/chats/:id/recurring
+{ "projectDir": "/path/to/project", "prompt": "Summarise the overnight alerts and the open incidents" }
+```
+
+It answers `{ prompt, run }`, `400` for an empty or over-long prompt, and `409` when the chat has no recurring task. `GET /api/chats/:id/run` carries the current prompt in `run.schedule.prompt`.
 
 ## Related
 

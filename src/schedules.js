@@ -144,6 +144,12 @@ function describeRepeat(row) {
   return 'Every ' + Math.round(ms / 1000) + 's';
 }
 
+// What the run bar shows of a pending recurring task, prompt included.
+function describeRecurring(row) {
+  return { id: row.id, text: describeRepeat(row), nextAt: new Date(row.dueAt).toISOString(), runCount: row.runCount,
+    prompt: row.message, runsLeft: row.runsLeft, until: row.untilAt ? new Date(row.untilAt).toISOString() : null };
+}
+
 function rowToSchedule(row) {
   return { id: row.id, projectDir: row.project_dir, chatId: row.chat_id, message: row.message, dueAt: row.due_at,
     everyMs: row.every_ms, runsLeft: row.runs_left, jobId: row.job_id, jobScope: row.job_scope ? JSON.parse(row.job_scope) : null,
@@ -200,6 +206,16 @@ function createScheduleStore({ getDb = () => require('./settings.js').getDb(), n
       const row = open().prepare("SELECT * FROM wake_schedule WHERE project_dir = ? AND chat_id = ? AND status = 'pending' AND (every_ms IS NOT NULL OR spec IS NOT NULL) ORDER BY due_at LIMIT 1")
         .get(projectDir, chatId);
       return row ? rowToSchedule(row) : null;
+    },
+    // Ids of the project's chats that have a pending recurring task.
+    recurringChatIds(projectDir) {
+      return open().prepare("SELECT DISTINCT chat_id FROM wake_schedule WHERE project_dir = ? AND status = 'pending' AND (every_ms IS NOT NULL OR spec IS NOT NULL)")
+        .all(projectDir).map((r) => r.chat_id);
+    },
+    // Change what a pending schedule says; the next run sends the new text.
+    setMessage(projectDir, chatId, id, message) {
+      return open().prepare("UPDATE wake_schedule SET message = ? WHERE id = ? AND project_dir = ? AND chat_id = ? AND status = 'pending'")
+        .run(message, id, projectDir, chatId).changes > 0;
     },
     get(projectDir, chatId, id) {
       const row = open().prepare('SELECT * FROM wake_schedule WHERE id = ? AND project_dir = ? AND chat_id = ?').get(id, projectDir, chatId);
@@ -364,6 +380,6 @@ function startScheduler({ lifecycle } = {}) {
 module.exports = {
   parseDuration, createScheduleStore, createScheduler, startScheduler, sharedStore,
   MIN_DELAY_MS, MIN_EVERY_MS, MAX_HORIZON_MS, MAX_PENDING_PER_CHAT, MAX_RUNS,
-  parseClock, nextClockSlot, nextSlot, describeRepeat,
+  parseClock, nextClockSlot, nextSlot, describeRepeat, describeRecurring,
   MAX_MESSAGE_CHARS, MAX_ATTEMPTS, LEASE_MS
 };

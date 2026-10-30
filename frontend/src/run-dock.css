@@ -120,3 +120,49 @@
   .run-dock--idle .run-dock__text { flex-basis: 8rem; }
   .run-dock--idle .run-dock__btn { flex: 0 0 auto; }
 }
+
+/* The recurring task's prompt, opened from the bar's Prompt button: the full
+   text, scrollable, with an Edit mode. */
+.run-prompt {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 100%;
+  max-width: var(--read-max, 44rem);
+  max-height: 50dvh;
+  margin: 4px auto 0;
+  padding: 8px 10px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.run-prompt__text {
+  margin: 0;
+  max-height: 32dvh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--fg);
+}
+.run-prompt__input {
+  display: block;
+  width: 100%;
+  min-height: 8rem;
+  max-height: 32dvh;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+  resize: vertical;
+}
+.run-prompt__input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.run-prompt__hint { margin-top: 6px; font-size: 0.72rem; color: var(--muted); }
+.run-prompt__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }

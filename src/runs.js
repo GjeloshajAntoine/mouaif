@@ -95,6 +95,11 @@ function createRunStore({ getDb = () => require('./settings.js').getDb(), now = 
         .run(goal, maxTurns, maxCost == null ? null : maxCost, deadlineAt, startCost || 0, now(), projectDir, chatId);
       return this.get(projectDir, chatId);
     },
+    // Rename the goal of an active run (the recurring task's prompt was edited).
+    setGoal(projectDir, chatId, goal) {
+      return open().prepare("UPDATE agent_run SET goal = ?, updated_at = ? WHERE project_dir = ? AND chat_id = ? AND status IN ('running', 'paused')")
+        .run(goal, now(), projectDir, chatId).changes > 0;
+    },
     // Move an active run to a new status. `from` guards against racing controls.
     setStatus(projectDir, chatId, status, { from = ACTIVE, reason = null, summary = null } = {}) {
       const time = now();
@@ -121,6 +126,9 @@ function createRunStore({ getDb = () => require('./settings.js').getDb(), now = 
     }
   };
 }
+
+// The run bar's one-line goal for a recurring task's prompt.
+function goalOf(text) { return String(text || '').trim().replace(/\s+/g, ' ').slice(0, MAX_GOAL_CHARS); }
 
 // createRunManager({ store, now, getCost, scheduleStore, isChatRunning, cancelTurn,
 //   startTurn, getChat, notify }) -> manager
@@ -183,7 +191,7 @@ function createRunManager({ store, now = Date.now, getCost = () => 0, cancelSche
     // year and a large turn allowance, plus an optional spend cap.
     startRecurring(ctx, args) {
       const { projectDir, chatId } = ctx;
-      const goal = String(args.goal || '').trim().replace(/\s+/g, ' ').slice(0, MAX_GOAL_CHARS);
+      const goal = goalOf(args.goal);
       const limits = { goal, maxTurns: args.maxRuns == null ? RECURRING_MAX_TURNS : args.maxRuns,
         maxCost: args.maxCostUsd == null ? null : args.maxCostUsd,
         deadlineAt: args.untilAt == null ? now() + RECURRING_MAX_MS : args.untilAt, startCost: getCost(projectDir, chatId) };
@@ -193,6 +201,10 @@ function createRunManager({ store, now = Date.now, getCost = () => 0, cancelSche
         return view(existing);
       }
       return view(store.start({ projectDir, chatId, kind: 'recurring', ...limits }));
+    },
+    // The user changed the recurring task's prompt: keep the run's goal in step.
+    setRecurringGoal(projectDir, chatId, message) {
+      return store.setGoal(projectDir, chatId, goalOf(message));
     },
     // The recurring task was cancelled by the assistant: close its run quietly.
     closeRecurring(projectDir, chatId, reason) {
@@ -333,8 +345,7 @@ function sharedManager(lifecycle) {
     describeSchedule: (projectDir, chatId) => {
       try {
         const row = scheduleStore.recurring(projectDir, chatId);
-        return row ? { text: schedules.describeRepeat(row), nextAt: new Date(row.dueAt).toISOString(), runCount: row.runCount,
-          runsLeft: row.runsLeft, until: row.untilAt ? new Date(row.untilAt).toISOString() : null } : null;
+        return row ? schedules.describeRecurring(row) : null;
       } catch { return null; }
     },
     hasPendingSchedule: (projectDir, chatId) => { try { return scheduleStore.list(projectDir, chatId).length > 0; } catch { return false; } },

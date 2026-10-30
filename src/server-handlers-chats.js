@@ -711,6 +711,35 @@ return sendJSON(res, 200, { ok: true, imported: result });
     }
   }
 
+  // PUT /api/chats/:id/recurring  { projectDir, prompt } -> { prompt, run }
+  // Change the prompt of the chat's recurring task. The next run sends the new
+  // text; runs already in the chat are untouched (docs/features/scheduled-wakes.md).
+  const recurringMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/recurring$/);
+  if (recurringMatch && method === 'PUT') {
+    const id = safeDecode(recurringMatch[1]);
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    const dir = typeof body.projectDir === 'string' ? body.projectDir : '';
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+    const schedules = require('./schedules.js');
+    if (!prompt) return sendJSON(res, 400, { error: 'prompt must not be empty' });
+    if (prompt.length > schedules.MAX_MESSAGE_CHARS) return sendJSON(res, 400, { error: 'prompt is longer than ' + schedules.MAX_MESSAGE_CHARS + ' characters' });
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      const store = schedules.sharedStore();
+      const task = store.recurring(dir, id);
+      if (!task) return sendJSON(res, 409, { error: 'This chat has no recurring task', code: 'ENOTARGET' });
+      store.setMessage(dir, id, task.id, prompt);
+      const manager = require('./runs.js').sharedManager(lifecycle);
+      manager.setRecurringGoal(dir, id, prompt);
+      return sendJSON(res, 200, { prompt, run: manager.view(manager.get(dir, id)) });
+    } catch (e) {
+      const status = e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : e.code === 'ESTORE' ? 503 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // GET /api/chats/:id/live?projectDir=  (SSE)
   // Per-chat live-replay stream. While a chat is running, a follower
   // client (another tab/device, or this UI returning to a running chat)
