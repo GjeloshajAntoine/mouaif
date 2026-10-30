@@ -17,6 +17,10 @@ const read = (file) => fs.readFileSync(new URL('../frontend/src/' + file, import
 const asModule = (text) => 'data:text/javascript;base64,' + Buffer.from(text).toString('base64');
 const book = await import(asModule(read('navHistory.js')));
 const routes = await import(asModule(read('routes.js')));
+// One registry instance shared by the test and every router load (a data: URL
+// is imported once per URL), the way the app shares one module.
+const LAYERS_URL = asModule(read('backLayers.js'));
+const layers = await import(LAYERS_URL);
 
 let passed = 0;
 function ok(name, fn) { fn(); passed += 1; console.log('  ok   - ' + name); }
@@ -58,17 +62,20 @@ ok('sameRoute treats #/, #/projects and query order as equal', () => {
 // ---- Part 2: router.js against a simulated history -------------------------
 
 function makeBrowser(initialHash) {
-  const listeners = { hashchange: [], pageshow: [], click: [] };
+  const listeners = { hashchange: [], popstate: [], pageshow: [], click: [] };
   const storage = new Map();
   const h = { entries: [{ hash: initialHash, state: null }], index: 0 };
-  const fire = () => listeners.hashchange.forEach((fn) => fn({}));
+  const emit = (type) => listeners[type].forEach((fn) => fn({}));
   const cur = () => h.entries[h.index];
+  // Chrome fires popstate and then hashchange for a fragment navigation, and
+  // popstate alone for a traversal between two entries with the same hash.
   const setHash = (value, replace) => {
     const next = value.startsWith('#') ? value : '#' + value;
     if (next === cur().hash) return;
     if (replace) h.entries[h.index] = { hash: next, state: null };
     else { h.entries.splice(h.index + 1); h.entries.push({ hash: next, state: null }); h.index += 1; }
-    fire();
+    emit('popstate');
+    emit('hashchange');
   };
   const location = {
     get hash() { return cur().hash; },
@@ -79,12 +86,21 @@ function makeBrowser(initialHash) {
     get state() { return cur().state; },
     get length() { return h.entries.length; },
     replaceState(state, _t, url) { cur().state = state; if (url) cur().hash = url; },
+    pushState(state, _t, url) {
+      h.entries.splice(h.index + 1);
+      h.entries.push({ hash: url || cur().hash, state });
+      h.index += 1;
+    },
     go(n) {
       const to = Math.max(0, Math.min(h.entries.length - 1, h.index + n));
       if (to === h.index) return;
-      h.index = to; fire();
+      const from = cur().hash;
+      h.index = to;
+      emit('popstate');
+      if (cur().hash !== from) emit('hashchange');
     },
-    back() { this.go(-1); }
+    back() { this.go(-1); },
+    forward() { this.go(1); }
   };
   const win = {
     location, history,
@@ -107,6 +123,7 @@ async function loadRouter(browser) {
     .replace("import { route } from './api.js';", 'const route = globalThis.__navTestRoute;')
     .replace("from './routes.js';", "from '" + asModule(read('routes.js')) + "';")
     .replace("from './navHistory.js';", "from '" + asModule(read('navHistory.js')) + "';")
+    .replace("from './backLayers.js';", "from '" + LAYERS_URL + "';")
     + '\n// load ' + (loadCount += 1);
   const mod = await import(asModule(src));
   return { ...mod, route };
@@ -247,6 +264,162 @@ ok('setup: the simulated browser behaves like hash history', () => {
   });
 }
 
+// ---- Part 3: the system Back closes the open sheet ------------------------
+//
+// The bug: Back with a sheet open (the model picker over a chat) left the
+// page, because the sheet had no history entry. A guard entry now sits on top
+// while any sheet is open (frontend/src/backLayers.js).
+
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+// sheet() — a layer the way useBackClose registers one: Back runs `close`,
+// which unmounts the sheet, which releases the layer.
+function sheet() {
+  const s = { closed: 0, release: null };
+  s.release = layers.openBackLayer(() => { s.closed += 1; s.release(); });
+  return s;
+}
+async function chatWithRouter() {
+  layers.resetBackLayers();
+  const b = makeBrowser('#/projects');
+  const r = await loadRouter(b);
+  r.nav(CHAT);
+  return { b, r };
+}
+
+{
+  const { b, r } = await chatWithRouter();
+  const s = sheet();
+  ok('opening a sheet pushes one guard entry with the page URL', () => {
+    assert.deepEqual(b.hashes(), ['#/projects', '#/' + CHAT, '#/' + CHAT]);
+  });
+  b.win.history.back();
+  await tick();
+  ok('system Back closes the sheet and stays on the page', () => {
+    assert.equal(s.closed, 1);
+    assert.equal(b.h.index, 1);
+    assert.equal(r.route.value.name, 'chat');
+  });
+  b.win.history.back();
+  await tick();
+  ok('the next Back leaves the page as usual', () => {
+    assert.equal(r.route.value.name, 'chats');
+    assert.equal(b.h.index, 0);
+  });
+}
+
+{
+  const { b } = await chatWithRouter();
+  const s = sheet();
+  s.release();
+  await tick();
+  ok('a sheet closed by its own × drops the guard (no dead Back press)', () => {
+    assert.equal(b.h.index, 1);
+    b.win.history.back();
+    assert.equal(b.h.index, 0);
+  });
+}
+
+{
+  const { b } = await chatWithRouter();
+  const outer = sheet();
+  const inner = sheet();
+  ok('stacked sheets share one guard', () => {
+    assert.equal(b.h.entries.length, 3);
+  });
+  b.win.history.back();
+  await tick();
+  ok('Back closes the top sheet first and guards the one below', () => {
+    assert.deepEqual([inner.closed, outer.closed], [1, 0]);
+    assert.equal(b.h.index, 2, 'a fresh guard is on top again');
+  });
+  b.win.history.back();
+  await tick();
+  ok('a second Back closes the sheet below', () => {
+    assert.deepEqual([inner.closed, outer.closed], [1, 1]);
+    assert.equal(b.h.index, 1);
+  });
+}
+
+{
+  const { b, r } = await chatWithRouter();
+  const s = sheet();
+  r.nav('settings/project?projectDir=%2Fp&chatId=abc');
+  s.release();
+  await tick();
+  ok('nav() from a sheet replaces the guard instead of stacking on it', () => {
+    assert.deepEqual(b.hashes(), ['#/projects', '#/' + CHAT, '#/settings/project?projectDir=%2Fp&chatId=abc']);
+    assert.equal(r.route.value.name, 'settingsProject');
+  });
+  ok('in-app Back from that page still lands on the chat entry', () => {
+    r.back(CHAT);
+    assert.equal(b.h.index, 1);
+    b.win.history.back();
+    assert.equal(r.route.value.name, 'chats');
+  });
+}
+
+{
+  const { b, r } = await chatWithRouter();
+  const s = sheet();
+  b.win.location.hash = '#/settings/providers';
+  s.release();
+  await tick();
+  ok('a plain link out of a sheet leaves a guard that in-app Back steps over', () => {
+    assert.equal(b.h.entries.length, 4);
+    r.back(CHAT);
+    assert.equal(b.h.index, 1, 'landed on the chat itself, not its old guard');
+  });
+}
+
+{
+  const { b, r } = await chatWithRouter();
+  const s = sheet();
+  b.win.location.hash = '#/settings/providers';
+  s.release();
+  await tick();
+  b.win.history.back();
+  await tick();
+  ok('system Back skips a stale guard instead of wasting a press on it', () => {
+    assert.equal(b.h.index, 1);
+    assert.equal(r.route.value.name, 'chat');
+    b.win.history.back();
+    assert.equal(r.route.value.name, 'chats');
+  });
+}
+
+{
+  const { b } = await chatWithRouter();
+  // An editor with unsaved changes whose discard prompt was cancelled: its
+  // close runs but the sheet stays mounted, so the layer is never released.
+  let tries = 0;
+  const release = layers.openBackLayer(() => { tries += 1; });
+  b.win.history.back();
+  await tick();
+  await tick();
+  ok('a refused close keeps the sheet guarded for the next Back', () => {
+    assert.equal(tries, 1);
+    assert.equal(b.h.index, 2, 'guard pushed again');
+    assert.equal(layers.openLayerCount(), 1);
+  });
+  release();
+  await tick();
+  ok('…and closing it later drops that guard', () => {
+    assert.equal(b.h.index, 1);
+  });
+}
+
+{
+  const { b } = await chatWithRouter();
+  sheet();
+  // A reload: the document starts over with no sheet open, on the guard.
+  layers.resetBackLayers();
+  await loadRouter(b);
+  ok('a reload on a guard steps back onto the page under it', () => {
+    assert.equal(b.h.index, 1);
+  });
+}
+
+layers.resetBackLayers();
 delete globalThis.window;
 delete globalThis.document;
 console.log('\n--- ' + passed + ' passed, 0 failed ---');

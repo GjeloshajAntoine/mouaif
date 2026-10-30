@@ -58,6 +58,7 @@ function loadDetailSheet() {
     fmtDur: (ms) => (typeof ms === 'number' ? ms + ' ms' : ''),
     statusLabel: (s) => (s === 'pending' ? '···' : s === 'failed' ? 'FAIL' : String(s)),
     sheetPortal: (x) => x,
+    useBackClose: () => {},
     Object, Array, String, Number, JSON, Error, isNaN
   };
   const ctx = vm.createContext(sandbox);

@@ -30,6 +30,7 @@ import '../file-editor.css';
 import { h, Fragment } from 'preact';
 import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'preact/hooks';
 import { fetchJson } from '../api.js';
+import { useBackClose } from '../hooks/useBackClose.js';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, placeholder } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
@@ -396,6 +397,8 @@ export function FileEditorView(props) {
     if (!confirmDiscardIfDirty()) return;
     onClose();
   }, [confirmDiscardIfDirty, onClose]);
+  // System Back closes the editor through the same unsaved-changes prompt.
+  useBackClose(true, handleClose);
 
   // ---- navigation handlers -------------------------------------------
   // The editor can now browse above the project root (up to the user's

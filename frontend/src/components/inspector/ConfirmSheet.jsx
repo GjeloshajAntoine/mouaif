@@ -42,7 +42,10 @@
 // straight-line.
 import { h } from 'preact';
 import { sheetPortal } from './sheetPortal.js';
+import { useBackClose } from '../../hooks/useBackClose.js';
 export function ConfirmSheet(props) {
+  // Back answers Cancel, the same as a tap on the backdrop.
+  useBackClose(!!props.open, () => { if (!props.busy && props.onCancel) props.onCancel(); });
   if (!props.open) return null;
   const title = props.title || 'Confirm';
   const message = props.message || '';

@@ -20,6 +20,9 @@
 //     can never be tabbed past into the app behind it.
 //   * On close, focus returns to whatever was focused before the sheet
 //     opened, so a keyboard user lands back on the button they tapped.
+//   * The system Back gesture calls `onClose` too (./useBackClose.js), so
+//     Back on a phone closes the sheet instead of leaving the page. Pass
+//     `back: false` while something inside the sheet owns Back instead.
 //
 // What it deliberately does not do:
 //   * No background scroll lock. `html, body` are already `overflow: hidden`
@@ -31,6 +34,7 @@
 //     the sheet (a prompt's text field), and Tab still pulls focus in.
 import { useEffect, useRef } from 'preact/hooks';
 import { closeModal, isTopModal, openModal } from './modalStack.js';
+import { useBackClose } from './useBackClose.js';
 
 const FOCUSABLE = [
   'a[href]',
@@ -65,7 +69,7 @@ function ownsTab(el) {
 
 export function useModal(options) {
   const opt = options || {};
-  const { onClose, active = true, escape = true, trapFocus = true, restoreFocus = true, initialFocus = 'none' } = opt;
+  const { onClose, active = true, escape = true, back = true, trapFocus = true, restoreFocus = true, initialFocus = 'none' } = opt;
 
   const sheetRef = useRef(null);
   const openerRef = useRef(null);
@@ -74,6 +78,7 @@ export function useModal(options) {
   // re-register the listener (and cannot miss a keystroke in the gap).
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  useBackClose(active && back, onClose);
 
   useEffect(() => {
     if (!active) return undefined;

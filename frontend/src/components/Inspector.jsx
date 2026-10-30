@@ -23,6 +23,7 @@ import { summarizeReceipt, recordChange, undoPlan, undoOrder } from './inspector
 import { settlePick, pickBannerText } from './inspector/pickMode.js';
 import { createEventHandlers } from './inspector/events.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
+import { useBackClose } from '../hooks/useBackClose.js';
 import { DraftCraftAnnotator } from './inspector/DraftCraftAnnotator.jsx';
 import { DraftCraftSheet } from './DraftCraftSheet.jsx';
 import { buildEntryText } from './inspector/entryText.js';
@@ -502,6 +503,8 @@ isVisible ? props.children : null
 function EscapeToExit(props) {
 const exitRef = useRef(props.onExit);
 exitRef.current = props.onExit;
+// The system Back leaves full screen too, rather than the Inspector tab.
+useBackClose(true, () => { if (exitRef.current) exitRef.current(); });
 useEffect(() => {
 function onKeyDown(event) {
 if (event.key !== 'Escape' || event.defaultPrevented) return;

@@ -181,6 +181,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [Responsive layout](responsive-layout.md) — how the phone layout grows on tablet and desktop.
 - [Routing](routing.md) — every hash the app answers and its parameters.
 - [Modal sheets](modal-sheets.md) — shared Escape, Tab, and focus behavior for full-screen sheets.
+- [Back closes the open sheet](sheet-back-gesture.md) — the phone's Back gesture closes a sheet or picker instead of leaving the page.
 - [Design tokens and shared UI styles](design-tokens.md) — the CSS tokens, the shared overflow menu, and the spinner every screen reuses.
 - [Content Security Policy](content-security-policy.md) — the policy the app shell ships with.
 - [Docker smoke test](docker-smoke-test.md) — build and verify mouaif in containers.

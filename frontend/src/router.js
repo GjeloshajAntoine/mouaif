@@ -17,17 +17,29 @@
 // Every `<a class="view-back" href="#/…">` is routed through `back()` by the
 // click listener at the bottom. See ./navHistory.js and
 // docs/features/navigation-history.md.
+//
+// While a sheet is open, a guard entry with the page's own URL sits on top so
+// the system Back closes the sheet instead of the page (./backLayers.js and
+// docs/features/sheet-back-gesture.md).
 import { route } from './api.js';
 import { parseHash } from './routes.js';
 import { addEntry, parseBook, sameRoute, stepsBack } from './navHistory.js';
+import { closeTopLayer, openLayerCount, setBackLayerHistory } from './backLayers.js';
 
 const BOOK_KEY = 'mouaif.navHistory';
 const STATE_KEY = 'mouaifNav';
+const SHEET_KEY = 'mouaifSheet';
 
 let current = null;
 // Set by replace(): the next hashchange is the same entry with a new hash,
 // not a push.
 let replacing = false;
+// Set by nav()/replace() on a sheet guard: the new page takes the guard's
+// place, so it is one step after the page the sheet was open on.
+let consumingGuard = false;
+// Set when the router moves off a guard itself (a closed sheet, a stale guard
+// being skipped): the popstate that follows is not a Back press.
+let ownPop = false;
 
 function readBook() {
   try { return parseBook(window.sessionStorage.getItem(BOOK_KEY)); } catch { return parseBook(''); }
@@ -58,15 +70,78 @@ function syncEntry(fresh) {
     book.entries[current].hash = hash;
     tagEntry(current);
   } else {
-    current = addEntry(book, hash, fresh ? null : current);
+    let prev = fresh ? null : current;
+    if (consumingGuard && prev != null && book.entries[prev] && book.entries[prev].sheet) prev = book.entries[prev].prev;
+    current = addEntry(book, hash, prev);
     tagEntry(current);
   }
   replacing = false;
+  consumingGuard = false;
   writeBook(book);
 }
 
+// ---- Sheet guard -------------------------------------------------------
+
+function onGuard() {
+  const state = window.history.state;
+  return !!(state && state[SHEET_KEY]);
+}
+
+// armGuard() — push the guard entry an open sheet sits on (once).
+function armGuard() {
+  if (onGuard()) return;
+  const book = readBook();
+  const id = addEntry(book, window.location.hash || '', current, true);
+  try {
+    window.history.pushState({ ...(window.history.state || {}), [STATE_KEY]: id, [SHEET_KEY]: true }, '');
+  } catch { return; }
+  current = id;
+  writeBook(book);
+}
+
+// disarmGuard() — the last sheet closed by its own controls: step back off
+// the guard so the next system Back leaves the page, as it should.
+function disarmGuard() {
+  if (!onGuard()) return;
+  ownPop = true;
+  window.history.back();
+}
+
+setBackLayerHistory({ arm: armGuard, disarm: disarmGuard });
+
+function onPopState() {
+  const before = current;
+  syncEntry(false);
+  if (ownPop) {
+    ownPop = false;
+    // A sheet opened while the old guard was being removed needs a new one.
+    if (openLayerCount()) armGuard();
+    return;
+  }
+  const book = readBook();
+  const left = before != null ? book.entries[before] : null;
+  if (onGuard()) {
+    // A stale guard: its sheet closed when a link inside it pushed a page.
+    // Keep going in the same direction so no Back press is wasted on it.
+    if (openLayerCount()) return;
+    ownPop = true;
+    if (left && left.prev === current) window.history.back();
+    else window.history.forward();
+    return;
+  }
+  // Back from the guard onto the page under it: close the top sheet, and
+  // guard the next one if sheets were stacked.
+  if (left && left.sheet && left.prev === current && openLayerCount()) {
+    closeTopLayer();
+    if (openLayerCount()) armGuard();
+  }
+}
+
 syncEntry(true);
+// A reload while a sheet was open lands on its guard with no sheet: drop it.
+if (onGuard()) { ownPop = true; window.history.back(); }
 route.value = parseHash(window.location.hash);
+window.addEventListener('popstate', onPopState);
 window.addEventListener('hashchange', () => {
   syncEntry(false);
   route.value = parseHash(window.location.hash);
@@ -75,12 +150,28 @@ window.addEventListener('hashchange', () => {
 window.addEventListener('pageshow', (event) => { if (event.persisted) syncEntry(false); });
 
 export function nav(toHash) {
-  window.location.hash = '#/' + toHash;
+  const next = '#/' + toHash;
+  if (onGuard()) {
+    // A link out of an open sheet replaces the guard, so the guard cannot
+    // turn into a Back press that changes nothing later.
+    if (window.location.hash === next) return;
+    consumingGuard = true;
+    window.location.replace(next);
+    return;
+  }
+  window.location.hash = next;
 }
 
 export function replace(toHash) {
   const next = '#/' + toHash;
   if (window.location.hash === next) return;
+  if (onGuard()) {
+    // The page under the sheet keeps its entry; the guard's slot is the
+    // only one that can be swapped without leaving it behind.
+    consumingGuard = true;
+    window.location.replace(next);
+    return;
+  }
   replacing = true;
   window.location.replace(next);
 }

@@ -42,12 +42,15 @@ export function parseBook(raw) {
   return emptyBook();
 }
 
-// addEntry(book, hash, prev) — record a new entry pushed from `prev` (null
-// for the first entry of a document) and return its id. Old ids are pruned;
-// a pruned `prev` just ends the chain early.
-export function addEntry(book, hash, prev) {
+// addEntry(book, hash, prev, sheet) — record a new entry pushed from `prev`
+// (null for the first entry of a document) and return its id. Old ids are
+// pruned; a pruned `prev` just ends the chain early. `sheet` marks the guard
+// entry an open sheet sits on (see ./backLayers.js): it is a real history
+// step, so it counts in `stepsBack`, but it is never a page to return to.
+export function addEntry(book, hash, prev, sheet) {
   const id = ++book.seq;
   book.entries[id] = { hash: String(hash || ''), prev: prev == null ? null : prev };
+  if (sheet) book.entries[id].sheet = true;
   const floor = book.seq - MAX_ENTRIES;
   for (const key of Object.keys(book.entries)) {
     if (Number(key) <= floor) delete book.entries[key];
@@ -57,13 +60,15 @@ export function addEntry(book, hash, prev) {
 
 // stepsBack(book, current, matches) — how many history steps back the nearest
 // entry whose hash satisfies `matches` sits along `current`'s chain, or 0 when
-// there is none (the caller then replaces instead).
+// there is none (the caller then replaces instead). Sheet guards are stepped
+// over: they carry the page's hash, but landing on one would leave the user a
+// Back press that changes nothing.
 export function stepsBack(book, current, matches) {
   let entry = current == null ? null : book.entries[current];
   for (let steps = 1; entry && entry.prev != null && steps <= MAX_STEPS; steps += 1) {
     const prev = book.entries[entry.prev];
     if (!prev) return 0;
-    if (matches(prev.hash)) return steps;
+    if (!prev.sheet && matches(prev.hash)) return steps;
     entry = prev;
   }
   return 0;

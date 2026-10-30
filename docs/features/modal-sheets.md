@@ -11,6 +11,7 @@ Nothing to configure. Open any sheet and:
 | Key / gesture | Result |
 |---------------|--------|
 | `Escape` | Dismisses the sheet |
+| System Back (Android button, iOS edge swipe, browser Back) | Dismisses the sheet and stays on the page ([details](sheet-back-gesture.md)) |
 | `Tab` | Moves to the next control inside the sheet; from the last control it wraps to the first |
 | `Shift` + `Tab` | Moves backwards, wrapping from the first control to the last |
 | Tap the backdrop | Dismisses the sheet (each sheet's own overlay handles this) |

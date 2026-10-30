@@ -18,6 +18,7 @@
 // owned by the caller and passed in, so the field stays a pure view.
 import { h } from 'preact';
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'preact/hooks';
+import { useBackClose } from '../hooks/useBackClose.js';
 
 // modelsForField(list) — normalize a flat model list into
 // { id, provider, label, ghost } rows, dropping falsy entries and
@@ -198,6 +199,7 @@ export function ModelPickerField(props) {
     setEffectiveOpen(false);
     if (triggerRef.current) triggerRef.current.focus({ preventScroll: true });
   }, [setEffectiveOpen, isSheet]);
+  useBackClose(effectiveOpen, closeAndRestoreFocus);
 
   // Outside taps must not steal focus from the control being tapped.
   useEffect(() => {

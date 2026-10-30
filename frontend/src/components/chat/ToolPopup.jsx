@@ -14,6 +14,7 @@ import { ToolTree, buildToolGroups, groupToolNames, childToolName } from '../Too
 import { groupAuthKey, isBinaryTool, toolPermission } from '../../toolGroups.js';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { useClickOutside } from '../../hooks/useClickOutside.js';
+import { useBackClose } from '../../hooks/useBackClose.js';
 import { useVisualViewport } from '../../hooks/useVisualViewport.js';
 
 // Segment control for Off / Ask / Allow, same model as cards.js.
@@ -65,6 +66,7 @@ export function ToolPopup(props) {
   const popupRef = useRef(null);
   const triggerRef = useRef(null);
   useClickOutside([popupRef, triggerRef], () => setOpen(false), open);
+  useBackClose(open, () => setOpen(false));
 
   // Shell review (docs/features/shell-review.md). The sheet is lazy-loaded on
   // first open, the same way the CLI / Git modals are: it is a full-screen

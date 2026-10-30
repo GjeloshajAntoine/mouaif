@@ -2,9 +2,11 @@
 import { h, Fragment } from 'preact';
 import { fmtTime, fmtBytes, fmtDur, statusLabel } from './format.js';
 import { sheetPortal } from './sheetPortal.js';
+import { useBackClose } from '../../hooks/useBackClose.js';
 
 export function DetailSheet(props) {
   const item = props.item;
+  useBackClose(!!item, props.onClose);
   if (!item) return null;
   const isNet = item.kind === 'request';
   // "Add to chat" is offered whenever the Inspector can route the entry to a

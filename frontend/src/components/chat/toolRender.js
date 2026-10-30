@@ -13,6 +13,7 @@ import {
   normalizeToolName,
   parsePlainFileToolResult
 } from './tools.js';
+import { openBackLayer } from '../../backLayers.js';
 // Caps for the expanded write_file content preview. The tool itself
 // allows a 1 MB write; painting that as one text node would jank the
 // expand, so the preview truncates and says so.
@@ -268,7 +269,10 @@ function openImageLightbox(src, alt) {
   close.setAttribute('aria-label', 'Close image');
   close.textContent = '✕';
   const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
+  // The system Back closes the viewer instead of leaving the chat.
+  let releaseBack = null;
   function dismiss() {
+    if (releaseBack) { releaseBack(); releaseBack = null; }
     document.removeEventListener('keydown', onKey);
     if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
       window.removeEventListener(LIGHTBOX_TEARDOWN_EVENT, dismiss);
@@ -284,6 +288,7 @@ function openImageLightbox(src, alt) {
   overlay.appendChild(picture);
   overlay.appendChild(close);
   document.body.appendChild(overlay);
+  releaseBack = openBackLayer(dismiss);
 }
 
 // teardownImageLightbox()

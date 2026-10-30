@@ -3,6 +3,7 @@ import { h } from 'preact';
 import { createPortal } from 'preact/compat';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { DraftCraftSheet } from '../DraftCraftSheet.jsx';
+import { useBackClose } from '../../hooks/useBackClose.js';
 import { canvasToBoundedPngDataUrl } from '../chat/annotation.js';
 
 const COLORS = ['#ff5f57', '#ffd60a', '#32d74b', '#0a84ff'];
@@ -126,6 +127,7 @@ return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
 export function DraftCraftAnnotator({ image, pageTitle, pageUrl, onClose, onAnnotated, originalDataUrl = null, sourceLabel = 'Inspector image', actionLabel = 'Add to chat draft', onReset }) {
+useBackClose(true, onClose);
 const canvasRef = useRef(null);
 const stageRef = useRef(null);
 const wrapRef = useRef(null);

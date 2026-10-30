@@ -90,6 +90,7 @@ function loadComponent(rel, extra = {}) {
       host.appendChild(s);
     },
     sheetPortal: (x) => x,
+    useBackClose: () => {},
     Object, Array, String, Number, JSON, Error, isNaN, Date,
     ...extra
   };

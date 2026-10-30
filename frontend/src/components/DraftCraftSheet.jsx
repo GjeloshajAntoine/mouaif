@@ -3,6 +3,7 @@ import { h } from 'preact';
 import { toPublicImageAttachments } from './chat/annotation.js';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson } from '../api.js';
+import { useBackClose } from '../hooks/useBackClose.js';
 const LOAD_TIMEOUT_MS = 15000;
 const SAVE_TIMEOUT_MS = 60000;
 async function fetchDraftJson(url, init, timeoutMs = LOAD_TIMEOUT_MS) {
@@ -112,6 +113,7 @@ if (!cancelled) setLoadingChats(false);
 });
 return () => { cancelled = true; };
 }, [open, projectDir]);
+useBackClose(!!open, () => { if (!saving) onClose(); });
 
 if (!open) return null;
 const hasText = !!(payload && typeof payload.text === 'string' && payload.text.trim());

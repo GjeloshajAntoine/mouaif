@@ -185,6 +185,7 @@ Published pages about how the app is built. They are reachable by URL but not li
 - [Responsive layout](features/responsive-layout.md) — how the phone layout grows on tablet and desktop.
 - [Routing](features/routing.md) — every hash the app answers and its parameters.
 - [Modal sheets](features/modal-sheets.md) — shared Escape, Tab, and focus behavior for full-screen sheets.
+- [Back closes the open sheet](features/sheet-back-gesture.md) — the phone's Back gesture closes a sheet or picker instead of leaving the page.
 - [Design tokens and shared UI styles](features/design-tokens.md) — the CSS tokens, the shared overflow menu, and the spinner every screen reuses.
 - [Content Security Policy](features/content-security-policy.md) — the policy the app shell ships with.
 - [Docker smoke test](features/docker-smoke-test.md) — build and verify mouaif in containers.

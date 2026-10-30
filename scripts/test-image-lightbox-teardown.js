@@ -88,11 +88,20 @@ function makeDom() {
 }
 
 function makeModule(dom) {
+  // The back-layer registry (frontend/src/backLayers.js), reduced to the list
+  // of open layers: `layers` is what the system Back gesture would close.
+  const layers = [];
   const context = vm.createContext({
     console,
     document: dom.document,
     window: dom.window,
-    CustomEvent: class { constructor(type) { this.type = type; } }
+    CustomEvent: class { constructor(type) { this.type = type; } },
+    layers,
+    openBackLayer: (close) => {
+      const layer = { close };
+      layers.push(layer);
+      return () => { const at = layers.indexOf(layer); if (at !== -1) layers.splice(at, 1); };
+    }
   });
   // Only the lightbox half of the module is needed; the rest pulls in DOM/Preact.
   const start = source.indexOf('// openImageLightbox(src, alt)');
@@ -149,6 +158,20 @@ function makeModule(dom) {
       dom.keydownCount() === 1, 'count=' + dom.keydownCount());
     mod.teardown();
     check('teardown clears the replacement too', dom.body.children.length === 0 && dom.keydownCount() === 0);
+  }
+
+  // ---- the system Back gesture closes it ---------------------------
+  {
+    const dom = makeDom();
+    const mod = makeModule(dom);
+    mod.open('data:image/png;base64,AA', 'shot');
+    check('an open viewer registers one back layer', mod.layers.length === 1, 'layers=' + mod.layers.length);
+    mod.layers.pop().close();
+    check('Back removes the overlay', dom.body.children.length === 0);
+    check('Back removes the keydown listener', dom.keydownCount() === 0, 'count=' + dom.keydownCount());
+    mod.open('data:image/png;base64,AA', 'shot');
+    dom.fireKeydown('Escape');
+    check('closing it another way releases its back layer', mod.layers.length === 0, 'layers=' + mod.layers.length);
   }
 
   // ---- teardown with nothing open is harmless ----------------------
