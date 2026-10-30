@@ -19,7 +19,7 @@ Use these rules whenever implementing or modifying code in this repository.
   - `chore:` tooling, deps, config
   - `perf:` performance improvement
   - `test:` adding or fixing tests
-- Before finishing, run `node -c` (or the project's lint) on touched files and confirm the `mouaif serve` flow still works.
+- Before finishing, run `node -c` (or the project's lint) on touched files. To check a change in a browser, use the test mouaif in Docker (`:5732`, rebuilt from your changes: `docker build -t mouaif-app:latest .` then `docker compose -f compose.ui-review.yaml up -d`) and the debug Chrome on `127.0.0.1:9222`. Don't start another `mouaif serve`, Chrome or preview server, and stop anything you did start (see `AGENTS.md` → Machine resources).
 
 ## UI is mobile first
 
