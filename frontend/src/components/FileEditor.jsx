@@ -552,7 +552,17 @@ export function FileEditorView(props) {
       )
     )
   );
+  const closeBtn = h('button', { class: 'icon-btn icon-btn--close fe__iconbtn', type: 'button', onClick: handleClose, 'aria-label': 'Close', title: 'Close' },
+    h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
+      h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })
+    )
+  );
   const hasPane = !!(openFile || openMedia);
+  // Full editor with a file or image open: the top bar would only carry
+  // the toggle and Close, so they move into the file's own row and the
+  // sheet keeps a single bar. With nothing open there is no file row,
+  // so the top bar stays.
+  const navInPane = editorFull && hasPane;
 
   return h('div', {
     class: 'fe__overlay',
@@ -562,7 +572,7 @@ export function FileEditorView(props) {
     onClick: (ev) => { /* clicks on the overlay do not close; the X does */ }
   },
     h('div', { class: 'fe__sheet' + (editorFull ? ' fe__sheet--full' : '') },
-h('div', { class: 'fe__head' },
+!navInPane && h('div', { class: 'fe__head' },
 // In full-editor mode the file list (and the
           // breadcrumb + nav bar) is gone, so we render a
           // minimal header with just the layout toggle (to
@@ -570,11 +580,7 @@ h('div', { class: 'fe__head' },
           editorFull
             ? h('div', { class: 'fe__path-row' },
                 layoutToggle,
-          h('button', { class: 'icon-btn icon-btn--close fe__iconbtn', type: 'button', onClick: handleClose, 'aria-label': 'Close', title: 'Close' },
-          h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-            h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })
-          )
-        )
+          closeBtn
       )
       : h('div', { class: 'fe__path-row' },
         h('button', { class: 'icon-btn fe__iconbtn', type: 'button', onClick: goUp, 'aria-label': 'Up one folder', title: 'Up' },
@@ -603,11 +609,7 @@ h('div', { class: 'fe__head' },
             )
           ),
           layoutToggle,
-        h('button', { class: 'icon-btn icon-btn--close fe__iconbtn', type: 'button', onClick: handleClose, 'aria-label': 'Close', title: 'Close' },
-            h('svg', { viewBox: '0 0 24 24', width: 16, height: 16, 'aria-hidden': 'true' },
-              h('path', { d: 'M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.3 19.71 2.88 18.3 9.17 12 2.88 5.71 4.3 4.3l6.29 6.29 6.3-6.29 1.41 1.41Z', fill: 'currentColor' })
-            )
-          )
+          closeBtn
         ),
         // Breadcrumb + list-status are list-navigation
         // chrome; hide them in full-editor mode so the
@@ -664,6 +666,7 @@ h('div', { class: 'fe__head' },
           openMedia
             ? h(Fragment, null,
                 h('div', { class: 'fe__editor-head' },
+                  navInPane && layoutToggle,
                   h('div', { class: 'fe__editor-path', title: openMedia.absPath }, openMedia.relPath),
                   h('div', { class: 'fe__editor-actions' },
                     // SVG is also a text file; offer to
@@ -683,7 +686,8 @@ h('div', { class: 'fe__head' },
                       onClick: () => { setOpenMedia(null); setMediaStatus(''); },
                       title: 'Close preview'
                     }, 'Close')
-                  )
+                  ),
+                  navInPane && closeBtn
                 ),
                 // Every previewable image — SVG included — renders through
                 // this single <img>. An SVG loaded from a data: URL as an
@@ -709,6 +713,7 @@ h('div', { class: 'fe__head' },
             : openFile
               ? h(Fragment, null,
                 h('div', { class: 'fe__editor-head' },
+                  navInPane && layoutToggle,
                   h('div', { class: 'fe__editor-path', title: openFile.absPath }, openFile.relPath + (dirty ? ' •' : '')),
 h('div', { class: 'fe__editor-actions' },
 h('button', {
@@ -716,6 +721,7 @@ class: 'btn fe__draft-craft',
 type: 'button',
 onClick: openDraftCraft,
 disabled: saving,
+'aria-label': 'Draft Craft',
 title: 'Add the selected code to any chat draft'
 },
 h('svg', { viewBox: '0 0 24 24', width: 18, height: 18, 'aria-hidden': 'true' },
@@ -738,7 +744,8 @@ title: 'Revert to the last saved version'
                       title: 'Save (Ctrl/Cmd+S is wired to the editor save keymap via the browser default)',
                       'aria-label': 'Save file'
                     }, saving ? 'Saving…' : 'Save')
-                  )
+                  ),
+                  navInPane && closeBtn
                 ),
                 h('div', { ref: editorHostRef, class: 'fe__editor-host' }),
                 h('div', { class: 'fe__editor-status' },
