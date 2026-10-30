@@ -190,14 +190,11 @@ const ROUTES = [
     from: fromParam(m.params),
     filePath: m.params.get('file') || ''
   })),
-  // `section=tools` (the wrench on a Projects card) opens the page
-  // scrolled to its Tools section.
   exactOrQuery('settings/project', (m) => ({
     name: 'settingsProject',
     projectDir: m.params.get('projectDir') || '',
     chatId: m.params.get('chatId') || '',
-    from: fromParam(m.params),
-    section: m.params.get('section') === 'tools' ? 'tools' : ''
+    from: fromParam(m.params)
   })),
 
   // ---- Agents --------------------------------------------------------

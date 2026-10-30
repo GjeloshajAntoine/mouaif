@@ -154,16 +154,6 @@ function ProjectSearchIcon({ size = 18 }) {
   );
 }
 
-function ProjectToolsIcon({ size = 18 }) {
-  return h('svg', {
-    viewBox: '0 0 24 24', width: size, height: size, fill: 'none',
-    stroke: 'currentColor', 'stroke-width': '2', 'stroke-linecap': 'round',
-    'stroke-linejoin': 'round', 'aria-hidden': 'true'
-  },
-    h('path', { d: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z' })
-  );
-}
-
 function ChatList({ project, filter }) {
   const [chats, setChats] = useState([]);
   const [total, setTotal] = useState(0);
@@ -559,14 +549,6 @@ disabled: isCreating,
 'aria-label': 'New chat with ' + p.label,
 title: 'New chat with ' + p.label
 }, h(PromptIcon, { name: p.icon, size: 20 }))),
-// The project's tool list: Settings → Project, scrolled to Tools.
-h('button', {
-class: 'project-card__tools-open',
-type: 'button',
-onClick: () => nav('settings/project?projectDir=' + encodeURIComponent(project.path) + '&from=projects&section=tools'),
-'aria-label': 'Tools for ' + (project.name || project.path),
-title: 'Tool list'
-}, h(ProjectToolsIcon, { size: 18 })),
 h('button', {
 class: 'project-card__search-open',
 type: 'button',

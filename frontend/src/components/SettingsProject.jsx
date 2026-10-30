@@ -27,7 +27,7 @@ import { backHref, backTarget, settingsLink } from './settings/projectNavigation
 import { WebpreviewModal } from './chat/WebpreviewModal.jsx';
 import { PreviewUrlPrompt } from './chat/PreviewUrlPrompt.jsx';
 
-export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, from = '', section = '', page = 'main' } = {}) {
+export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, from = '', page = 'main' } = {}) {
   const [globalStatus, setGlobalStatus] = useState({ text: '', state: '' });
   const authorizationWrites = useRef(Promise.resolve());
   const [projectPath, setProjectPath] = useState('…');
@@ -789,16 +789,6 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
     else setGlobalStatus({ text: 'open this from a project card', state: 'error' });
   }, [initialDir]);
 
-  // `section=tools` (the wrench on a Projects card): bring the Tools section
-  // into view once its tree has loaded, so the page above it has its height.
-  const toolsSectionRef = useRef(null);
-  const scrolledToTools = useRef(false);
-  useEffect(() => {
-    if (section !== 'tools' || scrolledToTools.current || !toolsCatalog.length || !toolsSectionRef.current) return;
-    scrolledToTools.current = true;
-    toolsSectionRef.current.scrollIntoView({ block: 'start' });
-  }, [section, toolsCatalog]);
-
   function buildSettingsToolGroups(catalog) {
     const groups = [];
     const isOn = (mode) => mode !== 'off';
@@ -1441,7 +1431,7 @@ class: 'view-back',
         )
       ),
 
-      h('div', { class: 'group settings-project__section', ref: toolsSectionRef },
+      h('div', { class: 'group settings-project__section' },
   h('div', { class: 'group__title settings-project__section-title' },
     sectionIcon('tools'),
           h('span', null, 'Tools'),
