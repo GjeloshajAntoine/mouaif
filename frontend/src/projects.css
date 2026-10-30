@@ -46,10 +46,12 @@
 }
 .projects__empty-text { margin: 0; max-width: 36ch; line-height: 1.4; font-size: 0.8rem; }
 
+/* No `overflow: hidden` here: the ⋯ popover hangs below the header and a card
+   with one or two chats is shorter than the menu. The corners are rounded by
+   the last row instead (see .project-card__new-actions). */
 .project-card {
   background: var(--surface);
   border-radius: var(--r-md);
-  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -94,7 +96,6 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  cursor: pointer;
 }
 .project-card__name {
   font-weight: 600;
@@ -103,9 +104,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1.2;
-}
-@media (hover: hover) {
-  .project-card__identity:hover .project-card__name { color: var(--accent); }
 }
 .project-card__cost {
   color: var(--muted);
@@ -326,22 +324,29 @@ flex-shrink: 0;
 @media (hover: hover) {
   .project-card__chat-delete:hover { color: var(--danger); background: var(--danger-soft); }
 }
-.project-card__chats-empty,
-.project-card__chats-more {
+/* `li.` keeps these rows above the generic `.project-card__chats li` row rules
+   (padding, hover/active tint, pointer) they must not inherit. */
+.project-card__chats li.project-card__chats-empty,
+.project-card__chats li.project-card__chats-more {
   color: var(--muted);
   font-size: 0.72rem;
   padding: 12px 14px;
+  justify-content: center;
   text-align: center;
   border-top: 1px solid var(--border);
   background: transparent;
   cursor: default;
 }
 @media (hover: hover) {
-  .project-card__chats-more:hover { background: transparent; }
+  .project-card__chats li.project-card__chats-empty:hover,
+  .project-card__chats li.project-card__chats-more:hover { background: transparent; }
 }
+.project-card__chats li.project-card__chats-empty:active,
+.project-card__chats li.project-card__chats-more:active { background: transparent; }
 .project-card__new-actions {
 display: flex; align-items: stretch; overflow-x: auto; scrollbar-width: none;
 border-top: 1px solid var(--border);
+border-radius: 0 0 var(--r-md) var(--r-md);
 }
 .project-card__new-actions::-webkit-scrollbar { display: none; }
 .project-card__new, .project-card__prompt-new {

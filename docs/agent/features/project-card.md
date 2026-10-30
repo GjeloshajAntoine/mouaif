@@ -80,6 +80,13 @@ List rows are summaries, not full chat records: `GET /api/chats` replaces the `d
 }
 ```
 
+## Layout notes
+
+- `.project-card` has no `overflow: hidden`. The `⋯` popover (`.project-card__menu-pop`, about 146 px tall) hangs below the 44 px header, and a card with 0–2 chats is shorter than that. The bottom corners are rounded by `.project-card__new-actions` (`border-radius: 0 0 var(--r-md) var(--r-md)`) instead.
+- Each card gets an entrance animation (`.projects__list > li`, `fill-mode: both`), which leaves it in its own stacking context. `.project-card:has(.project-card__menu-btn[aria-expanded="true"])` sets `position: relative; z-index: 2` so the open menu paints over the next card.
+- The empty / loading / "more" rows are `li.project-card__chats-empty` and `li.project-card__chats-more`. The `li.` prefix is needed: the generic `.project-card__chats li` row rules (flex, padding, hover tint) would otherwise win on specificity.
+- Regression test: `scripts/test-project-card-chrome.mjs` (fixture-rendered `ProjectsView`, 360–430 px).
+
 ## Reordering
 
 - **Order is the array order.** The registered projects live in the app setting `projects`; `GET /api/projects/registered` returns them in that order and `ProjectsView` renders them in it. `projects.reorderProjects(ids)` puts the listed ids first (unknown ids and repeats ignored), keeps every unlisted project after them in its old relative order, and writes nothing when the order is unchanged. A client with a stale list therefore cannot drop a project that was added elsewhere.
