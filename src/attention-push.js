@@ -8,8 +8,10 @@ const settings = require('./settings.js');
 const chats = require('./chats.js');
 const { resolveNotificationPrefs } = require('./notifications.js');
 
-function notifyAttention({ sessionId, projectDir, chatId, name, data, preferences }) {
-  if (!sessionId || !projectDir || !chatId) return;
+// `broadcast` is for a turn nobody's browser started (a recurring task's run):
+// it has no push session, so the alert goes to every subscribed device.
+function notifyAttention({ sessionId, projectDir, chatId, name, data, preferences, broadcast }) {
+  if ((!sessionId && !broadcast) || !projectDir || !chatId) return;
   if (name !== 'authorization_required' && name !== 'ask_user_required') return;
   const prefs = preferences || resolveNotificationPrefs(settings.getApp().notifications);
   if (prefs.authorization === false) return;
@@ -38,7 +40,7 @@ function notifyAttention({ sessionId, projectDir, chatId, name, data, preference
     const chat = chats.getChat(projectDir, chatId);
     chatTitle = (chat && chat.title) || '';
   } catch { /* best-effort metadata */ }
-  push.sendPushToSession(sessionId, {
+  (sessionId ? (o) => push.sendPushToSession(sessionId, o) : push.sendPushToAll)({
     title: chatTitle || (question ? 'The chat needs your answer' : 'Authorization needed'),
     body: question
       ? (request.question ? String(request.question).slice(0, 240) : 'Open the chat to answer.')

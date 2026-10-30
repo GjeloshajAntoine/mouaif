@@ -42,6 +42,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Changed
 
+- **Notifications from recurring runs** — a scheduled run has no browser session, so its "response complete" notification, tool approvals, questions and errors were never sent. They now reach every subscribed device, and the completion notification shows the message the run wrote. See [scheduled wake-ups and recurring tasks](docs/features/scheduled-wakes.md).
 - **Codex usage chip shows both rate-limit windows** — the chat head's provider chip now reads `Codex Plus 5h 62% · 7d 28%`: the plan, the primary 5-hour session window and, when the account reports one, the weekly window. It was `Plan plus 62%`, the session window alone.
 - **Working-folder changes no longer manage Git** — the tool only ever selected directories; Git isolation is coding-prompt guidance carried out through separately authorized shell calls. Existing folders and externally prepared worktrees are reused unchanged; the legacy `branch` result stays `null`.
 - **Explicit directory approvals** — **Change working folder** cards explain where files read or edited and commands run for the named chat will work, including recovered pending approvals. Implementation details stay out of the approval.

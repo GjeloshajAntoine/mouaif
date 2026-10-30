@@ -1264,8 +1264,29 @@ function accumulateRoundUsage(roundUsage) {
     };
   }
 
+  // replyPreview(text) -> the assistant's message as notification text: markdown
+  // marks dropped, whitespace collapsed, cut to what a notification can show.
+  function replyPreview(text) {
+    const plain = String(text || '')
+      .replace(/```[^\n]*\n?/g, '')
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+)/gm, '')
+      .replace(/[*_`~]+/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return plain.length > 300 ? plain.slice(0, 299).trimEnd() + '…' : plain;
+  }
+
+  function hasRecurringTask() {
+    if (internal.origin && internal.origin.kind === 'schedule') return true;
+    try { return !!require('./schedules.js').sharedStore().recurring(projectDir, chatId); } catch { return false; }
+  }
+
   function sendChatPush(kind, options = {}) {
-    if (!_pushSessionId) return;
+    // A recurring run has no browser session; its completion and errors still
+    // reach every subscribed device.
+    const broadcast = !_pushSessionId && (kind === 'completion' || kind === 'error') && hasRecurringTask();
+    if (!_pushSessionId && !broadcast) return;
     const preferenceKey = kind === 'ask_user' || kind === 'tool_authorization'
       ? 'authorization'
       : kind === 'completion' || kind === 'error' || kind === 'progress'
@@ -1273,7 +1294,7 @@ function accumulateRoundUsage(roundUsage) {
         : '';
     if (preferenceKey && notificationPrefs[preferenceKey] === false) return;
     const data = Object.assign({ kind, chatId, projectDir, url: chatUrl }, options.data || {});
-    push.sendPushToSession(_pushSessionId, {
+    (broadcast ? push.sendPushToAll : (o) => push.sendPushToSession(_pushSessionId, o))({
       title: options.title || ((chat && chat.title) || 'mouaif'),
       body: options.body || '',
       bodyFor: options.bodyFor,
@@ -1515,9 +1536,12 @@ promptSize: resolvedProfileId,
       }
       } else if (name === 'done') {
       const info = statusInfo({ kind: 'complete', message: 'Response complete' });
+      // A recurring chat's notification reads as the message the run wrote, so
+      // you can tell what it found without opening the chat.
+      const reply = hasRecurringTask() ? replyPreview(assistantContent) : '';
       sendChatPush('completion', {
       title: (chat && chat.title) || 'mouaif',
-      bodyFor: (sub) => statusBody(sub, 100, info),
+      ...(reply ? { body: reply } : { bodyFor: (sub) => statusBody(sub, 100, info) }),
       tag: statusPushTag
       });
         // Compute the enrichment once. `cost.known` is true when at

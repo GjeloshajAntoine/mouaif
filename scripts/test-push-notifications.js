@@ -105,6 +105,8 @@ assert.ok(chatPushSource.includes("function statusInfo(data, extra)"), 'chat str
 assert.ok(/statusInfo\(\{\s*kind: 'complete'/.test(chatPushSource), 'completion uses the shared fact set');
 assert.ok(chatPushSource.includes('statusBody(sub, 100, info)'), 'completion renders captured context rather than reset turn state');
 assert.ok(chatPushSource.includes('statusInfo(data)'), 'progress uses the shared fact set');
+assert.ok(chatPushSource.includes('replyPreview(assistantContent)'), 'a recurring run\'s completion body is the message it wrote');
+assert.ok(/kind === 'completion' \|\| kind === 'error'\) && hasRecurringTask\(\)/.test(chatPushSource), 'a recurring run with no session broadcasts its completion and errors');
 // Execute the stream's actual percentage expression to guard rounding order.
 const progressExpression = chatPushSource.match(/const pctNum = ([\s\S]*?);/);
 assert.ok(progressExpression, 'stream defines its progress percentage');

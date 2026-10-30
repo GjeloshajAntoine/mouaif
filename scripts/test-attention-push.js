@@ -159,6 +159,12 @@ async function main() {
     assert.equal(deliveries.at(-1).title, 'Authorization needed', 'missing chat retains the approval fallback');
     notifyAttention({ sessionId, ...body, chatId: 'missing', name: 'ask_user_required', data: {} });
     assert.equal(deliveries.at(-1).title, 'The chat needs your answer', 'missing chat retains the question fallback');
+    const broadcastBefore = deliveries.length;
+    notifyAttention({ sessionId: null, ...body, name: 'ask_user_required', data: { question: 'Nobody here?' } });
+    assert.equal(deliveries.length, broadcastBefore, 'a turn with no session sends nothing unless it is a broadcast');
+    notifyAttention({ sessionId: null, broadcast: true, ...body, name: 'ask_user_required', data: { question: 'Nobody here?' } });
+    assert.equal(deliveries.length, broadcastBefore + 1, 'a recurring run reaches every subscribed device');
+    assert.equal(deliveries.at(-1).body, 'Nobody here?');
     console.log('attention push: regular and direct approvals, nested questions, disconnected pages, routing, preferences and actions passed');
   } finally {
     mcp.getServer = originalGetServer; mcp.callTool = originalCallTool;
