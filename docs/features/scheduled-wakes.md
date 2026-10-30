@@ -2,7 +2,7 @@
 
 ## Overview
 
-`schedule_wake`, `schedule_list` and `schedule_cancel` let the assistant run a prompt in a chat later, once or on a repeat. Ask for something at a regular time — "every weekday at 9 summarise the overnight alerts" — and the assistant saves the prompt and the time. Each time it is due, mouaif starts a new turn **in the same chat** with that prompt, so every run continues the conversation: what earlier runs said and did, the files they wrote and the attachments you sent are all still there.
+`schedule_wake`, `schedule_list` and `schedule_cancel` let the assistant run a prompt in a chat later, once or on a repeat. Ask for something at a regular time — "every weekday at 9 summarise the overnight alerts" — and the assistant saves the prompt and the time. Each time it is due, mouaif starts a new turn **in the same chat** with that prompt. Every run starts with a fresh context at its own prompt: the model does not see the earlier runs, but their messages stay in the chat for you, and the files they wrote are still in the project.
 
 A wake is a saved prompt plus a time, stored in the app database. It survives a restart: one that came due while mouaif was down fires once, promptly, when it starts again.
 
@@ -56,7 +56,6 @@ Nothing a recurring task did is ever removed. Every run's prompt, the assistant'
 
 - **Each run is marked.** The prompt a recurring task starts shows `Scheduled · run N` next to its time, so scrolling back through many runs shows where each one begins.
 - **A list to jump.** While the chat has scheduled runs, the bar above the composer has a **Runs** button (once the task has ended, a slim bar with the number of runs keeps it available). It opens a list, newest first, with each run's number and time; a divider marks where an earlier, replaced task begins. Tap a run to load older pages if needed, scroll to it and highlight it.
-- **The assistant sees them too.** Because every run is in the same chat, a run can rely on what earlier runs said and made, and on every attachment, without it being passed again. mouaif does not trim or summarise that history, so a task that runs often in one chat grows the conversation every time; a task that runs many times a day is better as a fresh chat now and then.
 - **The assistant starts clean.** Each run's context begins at its own prompt, so a run does not grow with the number of runs before it. What one run needs to hand to the next has to be in the project (a file it writes and the next prompt tells it to read); image attachments from earlier messages are not carried over. The transcript itself still grows, which is why older pages load as you scroll up.
 
 ## Change the prompt from the chat
