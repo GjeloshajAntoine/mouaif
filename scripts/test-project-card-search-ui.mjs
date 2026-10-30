@@ -124,6 +124,7 @@ function createCard() {
     PromptIcon: 'prompt-icon',
     pinnedProfiles: () => [],
     useClickOutside() {},
+    useLongPressReorder: () => ({ start() {}, suppress() {}, isDragging: () => false }),
     formatCost: (n) => '$' + n.toFixed(2),
     confirm: () => true,
     alert() {},

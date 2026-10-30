@@ -30,7 +30,7 @@ A project's chats metadata is stored in `<projectDir>/.mouaif.json` (or database
 | PATCH  | `/api/projects/registered/:id` | `{ name }` | `{ project }` (400 on empty/whitespace, 404 on unknown) |
 | PUT    | `/api/projects/registered/order` | `{ ids: [id, ...] }` | `{ projects }` in the new order (400 unless `ids` is an array of strings) |
 | DELETE | `/api/projects/registered/:id` | — | `{ ok: true }` (folder on disk is NOT touched) |
-| GET    | `/api/chats?projectDir=<abs>` | — | `{ chats: [..., totalCost: { total, known, currency }] }` |
+| GET    | `/api/chats?projectDir=<abs>[&filter=draft\|recurring]` | — | `{ chats: [..., totalCost: { total, known, currency }] }` |
 | GET    | `/api/chats/:id?projectDir=<abs>` | — | `{ chat }` or 404 |
 | POST   | `/api/chats` | `{ projectDir, title?, trace?, promptSize?, promptId? }` | `{ chat }` (201; 400 for unknown `promptId`) |
 | PATCH  | `/api/chats/:id` | `{ projectDir, title?, trace?, promptSize?, promptId? }` | `{ chat }` (400 for unknown `promptId`; 404 if chat is unknown) |

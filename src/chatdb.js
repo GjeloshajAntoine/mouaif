@@ -390,24 +390,45 @@ function messageToRow(projectDir, chatId, seq, msg) {
 
 // ---- Chat CRUD ------------------------------------------------------------
 
+// chatFilterSql(options) -> { where, args }: the extra WHERE for a card filter.
+// `draft` is a chat with no persisted message but a composer draft (text or a
+// picture); `ids` limits the list to those chats (the ones that repeat).
+function chatFilterSql(options) {
+  if (options.only === 'draft') {
+    return {
+      where: " AND (draft_attachments IS NOT NULL OR trim(draft) != '')"
+        + ' AND NOT EXISTS (SELECT 1 FROM message_store m WHERE m.project_dir = chat_store.project_dir AND m.chat_id = chat_store.id)',
+      args: []
+    };
+  }
+  if (options.only === 'ids') {
+    const ids = Array.isArray(options.ids) ? options.ids : [];
+    if (ids.length === 0) return { where: ' AND 0', args: [] };
+    return { where: ' AND id IN (' + ids.map(() => '?').join(',') + ')', args: ids };
+  }
+  return { where: '', args: [] };
+}
+
 function listChats(projectDir, options = {}) {
   ensureTables();
   const d = require('./settings.js').getDb();
   const offset = Number.isInteger(options.offset) && options.offset > 0 ? options.offset : 0;
   const limit = Number.isInteger(options.limit) && options.limit > 0 ? options.limit : 0;
   const order = 'ORDER BY COALESCE(last_opened_at, created_at) DESC, id DESC';
+  const f = chatFilterSql(options);
   // List rows are summaries, never the draft bodies: see LIST_COLUMNS.
   const rows = limit > 0
-    ? d.prepare(`SELECT ${LIST_COLUMNS} FROM chat_store WHERE project_dir = ? ${order} LIMIT ? OFFSET ?`)
-      .all(projectDir, limit, offset)
-    : d.prepare(`SELECT ${LIST_COLUMNS} FROM chat_store WHERE project_dir = ? ${order}`).all(projectDir);
+    ? d.prepare(`SELECT ${LIST_COLUMNS} FROM chat_store WHERE project_dir = ?${f.where} ${order} LIMIT ? OFFSET ?`)
+      .all(projectDir, ...f.args, limit, offset)
+    : d.prepare(`SELECT ${LIST_COLUMNS} FROM chat_store WHERE project_dir = ?${f.where} ${order}`).all(projectDir, ...f.args);
   return rows.map(rowToChatSummary);
 }
 
-function countChats(projectDir) {
+function countChats(projectDir, options = {}) {
   ensureTables();
   const d = require('./settings.js').getDb();
-  const row = d.prepare('SELECT COUNT(*) AS total FROM chat_store WHERE project_dir = ?').get(projectDir);
+  const f = chatFilterSql(options);
+  const row = d.prepare(`SELECT COUNT(*) AS total FROM chat_store WHERE project_dir = ?${f.where}`).get(projectDir, ...f.args);
   return row ? row.total : 0;
 }
 

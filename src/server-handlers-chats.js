@@ -71,8 +71,16 @@ const urlPath = parsed.pathname;
     const limitRaw = parseInt(typeof q.limit === 'string' ? q.limit : '0', 10) || 0;
     const limit = limitRaw > 0 ? Math.min(limitRaw, 100) : 0;
     try {
-      const page = chats.listChats(dir, { offset, limit });
-const total = limit > 0 ? chats.countChats(dir) : page.length;
+      // `filter=draft|recurring` narrows the card to chats that hold a draft or
+      // that have a recurring task; paging and `total` follow the filter.
+      const filter = qs(q, 'filter');
+      let scope = {};
+      if (filter === 'draft') scope = { only: 'draft' };
+      else if (filter === 'recurring') {
+        scope = { only: 'ids', ids: require('./schedules.js').sharedStore().recurringChatIds(dir) };
+      }
+      const page = chats.listChats(dir, Object.assign({ offset, limit }, scope));
+const total = limit > 0 ? chats.countChats(dir, scope) : page.length;
 // Chat cost totals are persisted on chat metadata when cost-bearing
 // messages are written. Listing chats never scans message_store.
 // `messageCount` is a per-page bulk COUNT (one indexed GROUP BY), so the
@@ -85,8 +93,11 @@ const total = limit > 0 ? chats.countChats(dir) : page.length;
 // in the composer. The card only previews the draft, so the bodies stay in
 // SQLite until a single-chat read (GET /api/chats/:id) asks for them.
 const pageCounts = messages.projectMessageCounts(dir, page.map((c) => c.id));
+// `recurring` marks the rows that have a pending recurring task (the row's icon).
+const recurringIds = new Set(require('./schedules.js').sharedStore().recurringChatIds(dir));
 for (const c of page) {
 if (runningChats.has(runningKey(dir, c.id))) c.running = true;
+if (recurringIds.has(c.id)) c.recurring = true;
 c.messageCount = pageCounts[c.id] || 0;
 }
       return sendJSON(res, 200, {
@@ -120,8 +131,10 @@ c.messageCount = pageCounts[c.id] || 0;
     // renders through that same path, so the fields must be present. One
     // bulk COUNT for the whole page, and the response-only liveness flag.
     const pageCounts = messages.projectMessageCounts(dir, found.map((c) => c.id));
+    const recurringIds = new Set(require('./schedules.js').sharedStore().recurringChatIds(dir));
     for (const c of found) {
       if (runningChats.has(runningKey(dir, c.id))) c.running = true;
+      if (recurringIds.has(c.id)) c.recurring = true;
       c.messageCount = pageCounts[c.id] || 0;
     }
     return sendJSON(res, 200, { chats: found, query: term, total: found.length });

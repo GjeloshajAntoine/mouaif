@@ -60,8 +60,8 @@ return require('./chatdb.js');
 function listChats(projectDir, options) {
 return getChatDb().listChats(projectDir, options);
 }
-function countChats(projectDir) {
-return getChatDb().countChats(projectDir);
+function countChats(projectDir, options) {
+return getChatDb().countChats(projectDir, options);
 }
 // searchChats(projectDir, query, { limit }) — the project card's magnifier.
 // Matches chat titles, composer drafts, and message text; returns chat-list

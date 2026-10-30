@@ -61,6 +61,62 @@ function ProjectMenu({ project, onRename, onUnregister, onMove, canMoveUp, canMo
   );
 }
 
+// The card's filter: which chats the list shows. The server does the
+// narrowing (GET /api/chats?filter=), so paging and "Scroll for more…" follow it.
+const FILTER_PATHS = {
+  all: 'M3 5h18l-7 8.5V19l-4 2v-7.5L3 5Z',
+  draft: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z',
+  recurring: 'M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3'
+};
+const CHAT_FILTERS = [
+  { id: 'all', label: 'All chats' },
+  { id: 'draft', label: 'Drafts' },
+  { id: 'recurring', label: 'Recurring' }
+];
+
+function FilterIcon({ id, size = 18 }) {
+  return h('svg', { viewBox: '0 0 24 24', width: size, height: size, fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' },
+    h('path', { d: FILTER_PATHS[id] || FILTER_PATHS.all }));
+}
+
+// The button wears the icon of the chosen filter (a funnel for "All chats"),
+// so a shortened list says why.
+function ProjectFilter({ project, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+  useClickOutside(menuRef, () => setOpen(false), open);
+  const active = value !== 'all';
+  const current = CHAT_FILTERS.find((f) => f.id === value) || CHAT_FILTERS[0];
+
+  return h('div', { ref: menuRef, class: 'project-card__menu' },
+    h('button', {
+      class: 'project-card__menu-btn project-card__filter-btn',
+      type: 'button',
+      'data-active': active ? '1' : undefined,
+      'aria-haspopup': 'true',
+      'aria-expanded': String(open),
+      'aria-label': 'Filter chats in ' + (project.name || project.path) + ': ' + current.label,
+      title: 'Filter: ' + current.label,
+      onClick: (e) => { e.stopPropagation(); setOpen(!open); }
+    }, h(FilterIcon, { id: current.id, size: 18 })),
+    h('div', {
+      class: 'menu-pop project-card__menu-pop project-card__filter-pop',
+      hidden: !open,
+      role: 'menu',
+      onClick: e => e.stopPropagation()
+    },
+      CHAT_FILTERS.map((f) => h('button', {
+        key: f.id,
+        type: 'button',
+        role: 'menuitemradio',
+        'aria-checked': String(f.id === value),
+        class: f.id === value ? 'project-card__filter-opt is-on' : 'project-card__filter-opt',
+        onClick: () => { setOpen(false); onChange(f.id); }
+      }, h(FilterIcon, { id: f.id, size: 16 }), h('span', null, f.label)))
+    )
+  );
+}
+
 // highlightMatch(text, query) -> the text with every occurrence of the query
 // wrapped in a <mark>. The search row is a reminder of *why* a chat matched,
 // and the eye finds the reason faster when the hit itself stands out instead
@@ -98,12 +154,14 @@ function ProjectSearchIcon({ size = 18 }) {
   );
 }
 
-function ChatList({ project }) {
+function ChatList({ project, filter }) {
   const [chats, setChats] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [offset, setOffset] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+// Appended to every list request; empty for "all".
+const filterQuery = filter && filter !== 'all' ? '&filter=' + filter : '';
 const [isCreating, setIsCreating] = useState(false);
 const [prompts, setPrompts] = useState([]);
 // Built-in prompt-size profiles pinned to this card (icon + promptSize).
@@ -125,7 +183,7 @@ setLoading(true);
 try {
 const none = { status: 0, body: {} };
 const [r, promptRes, profileRes, resolvedRes] = await Promise.all([
-fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=0&limit=' + CHAT_PAGE_SIZE),
+fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=0&limit=' + CHAT_PAGE_SIZE + filterQuery),
 fetchJson('/api/prompts?projectDir=' + encodeURIComponent(project.path)).catch(() => none),
 fetchJson('/api/prompt-profiles').catch(() => none),
 fetchJson('/api/settings/resolved?projectDir=' + encodeURIComponent(project.path)).catch(() => none)
@@ -152,13 +210,13 @@ const list = r.body.chats || [];
     }
     init();
     return () => { canceled = true; };
-  }, [project.path]);
+  }, [project.path, filter]);
 
   async function loadMore() {
     if (loadingMore || loading || offset >= total) return;
     setLoadingMore(true);
     try {
-      const r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=' + offset + '&limit=' + CHAT_PAGE_SIZE);
+      const r = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=' + offset + '&limit=' + CHAT_PAGE_SIZE + filterQuery);
       if (r.status === 200) {
         const list = r.body.chats || [];
         setChats(prev => [...prev, ...list]);
@@ -238,7 +296,7 @@ const r = await fetchJson('/api/chats', { method: 'POST', headers: { 'Content-Ty
         nav('chat/' + encodeURIComponent(chat.id) + '?projectDir=' + encodeURIComponent(project.path));
       } else {
         // Fallback: reload list
-        const r2 = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=0&limit=' + CHAT_PAGE_SIZE);
+        const r2 = await fetchJson('/api/chats?projectDir=' + encodeURIComponent(project.path) + '&offset=0&limit=' + CHAT_PAGE_SIZE + filterQuery);
         if (r2.status === 200) {
           const list = r2.body.chats || [];
           setChats(list);
@@ -331,6 +389,12 @@ h('div', { class: 'project-card__chat-main' },
   ),
   showSnippet ? h('div', { class: 'project-card__chat-snippet' }, highlightMatch(c.snippet, term)) : null
 ),
+c.recurring ? h('span', {
+class: 'project-card__chat-recurring',
+title: 'Recurring task',
+role: 'img',
+'aria-label': 'Recurring task'
+}, h(FilterIcon, { id: 'recurring', size: 15 })) : null,
 draftOnly
 ? h('span', { class: 'project-card__chat-draft', 'aria-hidden': 'true' })
 : c.running ? h('span', { class: 'project-card__chat-running', 'aria-hidden': 'true' }) : null,
@@ -453,7 +517,8 @@ onClick: (e) => { e.stopPropagation(); deleteChat(c); }
         : answered && answered.chats.length === 0 ? h('li', { class: 'project-card__chats-empty' }, 'No chat matches “' + term.trim() + '”.')
         : rows)
       : (loading ? h('li', { class: 'project-card__chats-empty' }, 'loading chats…')
-        : (chats.length === 0) ? h('li', { class: 'project-card__chats-empty' }, 'No chats yet. Tap "+ New chat" below to start one.')
+        : (chats.length === 0) ? h('li', { class: 'project-card__chats-empty' },
+          filter === 'draft' ? 'No drafts.' : filter === 'recurring' ? 'No recurring chats.' : 'No chats yet. Tap "+ New chat" below to start one.')
         : rows),
       searchMode ? null :
       loadingMore ? h('li', { class: 'project-card__chats-more' }, 'Loading more…') :
@@ -498,6 +563,8 @@ title: searchOpen ? 'Close search' : 'Search chats'
 
 export function ProjectsView() {
   const [projects, setProjects] = useState([]);
+  // Per-card chat filter ('all' | 'draft' | 'recurring'), by project id.
+  const [filters, setFilters] = useState({});
   const [statusText, setStatusText] = useState('loading…');
   const [statusState, setStatusState] = useState('busy');
   const listRef = useRef(null);
@@ -626,9 +693,10 @@ export function ProjectsView() {
                 h('div', { class: 'project-card__path' }, p.path)
               ),
               h('span', { class: 'project-card__cost' }, costStr),
+              h(ProjectFilter, { project: p, value: filters[p.id] || 'all', onChange: (f) => setFilters((prev) => Object.assign({}, prev, { [p.id]: f })) }),
               h(ProjectMenu, { project: p, onRename: renameProject, onUnregister: unregisterProject, onMove: moveProject, canMoveUp: index > 0, canMoveDown: index < projects.length - 1 })
             ),
-            h(ChatList, { project: p })
+            h(ChatList, { project: p, filter: filters[p.id] || 'all' })
           );
       })
     )
