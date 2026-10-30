@@ -1082,7 +1082,7 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
     || model.provider === 'anthropic';
   let toolFeedbackMaxBytes;
   try { toolFeedbackMaxBytes = settings.getApp().toolFeedbackMaxBytes; } catch { /* default applies */ }
-  upstreamMessages.push(...messages.reconstructUpstreamHistory(history, upstreamContentForMessage, {
+  upstreamMessages.push(...messages.reconstructUpstreamHistory(messages.contextFromLastRun(history), upstreamContentForMessage, {
     includeTools: supportsOpenAIToolHistory,
     toolFeedbackMaxBytes,
     toolOutput: resolvedToolOutput
@@ -1484,7 +1484,7 @@ promptSize: resolvedProfileId,
           });
         } catch { /* non-fatal */ }
       } else if (name === 'authorization_required' || name === 'ask_user_required') {
-      notifyAttention({ sessionId: _pushSessionId, projectDir, chatId, name, data, preferences: notificationPrefs });
+      notifyAttention({ sessionId: _pushSessionId, projectDir, chatId, name, data, preferences: notificationPrefs, broadcast: hasRecurringTask() });
       } else if (name === 'progress_update') {
       // Updatable per-chat push notification for real-time progress.
       // Uses a stable tag so each new progress_update replaces the

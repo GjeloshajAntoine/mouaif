@@ -171,7 +171,7 @@ async function main() {
   assert.equal(shared.runningChats.has(shared.runningKey(projectDir, chatId)), false, 'the streaming turn was aborted');
   if (release) release();
 
-  // ---- 6. A recurring task runs in the same chat and keeps its attachments -------------------------------------
+  // ---- 6. A recurring task runs in the same chat with a fresh context -------------------------------------
   const task = chats.createChat(projectDir, { title: 'Morning report' });
   chats.updateChat(projectDir, task.id, { modelId: 'gamma', providerId: 'openai-compatible' });
   const png = 'data:image/png;base64,iVBORw0KGgo=';
@@ -199,9 +199,14 @@ async function main() {
   const taskUsers = messages.listMessages(projectDir, task.id).filter((m) => m.role === 'user');
   assert.equal(taskUsers.length, 3, 'every run is a message in the one chat');
   assert.deepEqual(taskUsers.slice(1).map((m) => m.content), ['Write the morning report and save it as report.md', 'Write the morning report and save it as report.md'], 'each run starts with only the prompt');
+  // The second run starts a fresh context at its own prompt, so the logo and the
+  // first run's report are not sent again; they stay in the chat.
   const images = (args) => args.messages.flatMap((m) => Array.isArray(m.content) ? m.content.filter((p) => p.type === 'image_url').map((p) => p.image_url.url) : []);
-  assert.deepEqual(images(seen[1]), [png], 'the attachment is still sent with the second run');
-  assert.ok(seen[1].messages.some((m) => typeof m.content === 'string' && m.content.includes('Report written.')), 'and so is what the first run produced');
+  assert.deepEqual(images(seen[0]), [], 'a run does not re-send an earlier message\'s attachment');
+  assert.deepEqual(seen[0].messages.filter((m) => m.role === 'user').map((m) => m.content), ['Write the morning report and save it as report.md'], 'the first run sends only its prompt');
+  assert.deepEqual(images(seen[1]), [], 'nor does the next one');
+  assert.equal(seen[1].messages.some((m) => typeof m.content === 'string' && m.content.includes('Report written.')), false, 'nor the first run\'s report');
+  assert.equal(seen[1].messages.filter((m) => m.role === 'user').length, 1, 'the second run sends only its own prompt');
   assert.equal(manager.view(manager.get(projectDir, task.id)).turnsUsed, 2);
   // Every run stays in the chat, is marked as a scheduled run and can be listed.
   const taskMessages = messages.listMessages(projectDir, task.id);

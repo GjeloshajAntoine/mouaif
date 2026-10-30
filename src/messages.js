@@ -183,6 +183,17 @@ return getChatDb().clearMessages(projectDir, chatId);
 function addChatCost(projectDir, chatId, amount) {
 return getChatDb().addChatCost(projectDir, chatId, amount);
 }
+// A recurring task's run starts a fresh context: the model sees the transcript
+// from the latest scheduled prompt on, not the earlier runs. The rows stay in
+// the chat; only what is sent upstream starts here.
+function contextFromLastRun(list) {
+const source = Array.isArray(list) ? list : [];
+for (let i = source.length - 1; i >= 0; i--) {
+const m = source[i];
+if (m && m.role === 'user' && m.origin && m.origin.kind === 'schedule') return source.slice(i);
+}
+return source;
+}
 // ---- Reconstruct upstream history (unchanged) -----------------------------
 function reconstructUpstreamHistory(list, contentForMessage, options) {
 const source = Array.isArray(list) ? list : [];
@@ -280,5 +291,6 @@ replaceMessages,
 clearMessages,
 addChatCost,
 reconstructUpstreamHistory,
+contextFromLastRun,
 listScheduledRuns
 };

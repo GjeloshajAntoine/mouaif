@@ -41,7 +41,7 @@ The three tools follow the **mouaif** family gate in **Settings → Project** (O
 
 ## Behavior
 
-- **A run is an ordinary turn in the same chat.** It uses the chat's selected model, prompt and tool settings, and sees the whole conversation so far, including image attachments. A recurring run starts with exactly the prompt you set, as a plain user message, and nothing else is added: the earlier runs are already in the chat above it. A one-off wake arrives labelled `⏰ Scheduled wake-up`, so the assistant knows it came from its own schedule.
+- **A run is an ordinary turn in the same chat.** It uses the chat's selected model, prompt and tool settings. A recurring run starts with exactly the prompt you set, as a plain user message, and nothing else is added. The model's context begins at that prompt: earlier runs, and anything said before the task was set, are in the chat above it but are not sent to the model. Replying in the chat after a run keeps that run's context, until the next run starts a new one. A one-off wake arrives labelled `⏰ Scheduled wake-up`, so the assistant knows it came from its own schedule.
 - **Runs never overlap.** If a run comes due while the previous turn (or you) is still streaming in the chat, it waits and starts when the chat is free. Slots missed in the meantime, or while mouaif was down, are skipped, not replayed: you get one run, then the next slot after it.
 - **Failures retry.** A wake that cannot start (for example the provider is down) is retried with a growing delay and marked `failed` after three attempts. The last error is kept.
 - **Safety net.** A recurring task opens a [run](long-running-runs.md) with limits sized to it: your `maxRuns` and `until`, otherwise one year and a large turn allowance, plus `maxCostUsd` if given. You can Pause, Resume or Stop it from the bar above the composer.
@@ -57,6 +57,7 @@ Nothing a recurring task did is ever removed. Every run's prompt, the assistant'
 - **Each run is marked.** The prompt a recurring task starts shows `Scheduled · run N` next to its time, so scrolling back through many runs shows where each one begins.
 - **A list to jump.** While the chat has scheduled runs, the bar above the composer has a **Runs** button (once the task has ended, a slim bar with the number of runs keeps it available). It opens a list, newest first, with each run's number and time; a divider marks where an earlier, replaced task begins. Tap a run to load older pages if needed, scroll to it and highlight it.
 - **The assistant sees them too.** Because every run is in the same chat, a run can rely on what earlier runs said and made, and on every attachment, without it being passed again. mouaif does not trim or summarise that history, so a task that runs often in one chat grows the conversation every time; a task that runs many times a day is better as a fresh chat now and then.
+- **The assistant starts clean.** Each run's context begins at its own prompt, so a run does not grow with the number of runs before it. What one run needs to hand to the next has to be in the project (a file it writes and the next prompt tells it to read); image attachments from earlier messages are not carried over. The transcript itself still grows, which is why older pages load as you scroll up.
 
 ## Related
 
