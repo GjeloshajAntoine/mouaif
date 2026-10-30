@@ -355,6 +355,8 @@ font-size: 0.78rem;
   line-height: 1.4;
   margin: 2px 0 0;
 }
+/* Straight under the page title (no intro wrapper): same side gutter as the groups below. */
+.settings-project > .settings-project__lede { margin: 2px 12px 0; }
 
 /* Section title row: icon + name + optional inline help ("?"). */
 .settings-project__section-title {
@@ -1031,7 +1033,7 @@ textarea#projectEditor {
 /* Tool wording page (docs/features/tool-overrides.md): one collapsible row per
    tool, the built-in wording beside what the model receives, and a name input
    per field. */
-.tool-ov__list { display: flex; flex-direction: column; gap: 6px; padding: 2px 6px 6px; }
+.tool-ov__list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .tool-ov__row {
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -1082,56 +1084,12 @@ textarea#projectEditor {
 /* Rows: description editor, word diff for Compare. */
 .tool-ov__descbox { display: flex; flex-direction: column; gap: 6px; }
 .tool-ov__deschead { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-/* Tabs across the tools: Built-in, one per set, Compare. Scrolls sideways
-   when there are more sets than fit. */
-.tool-ov__tabs {
-  display: flex;
-  gap: 2px;
-  margin: 0 6px 8px;
-  padding: 2px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r-pill);
-}
-.tool-ov__tabs::-webkit-scrollbar { display: none; }
-.tool-ov__tab {
-  flex: 1 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.tool-ov__tab--on { background: var(--accent); color: var(--on-accent); }
-.tool-ov__tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
-.tool-ov__active { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-.tool-ov__select { width: auto; min-width: 10rem; max-width: 100%; }
-.tool-ov__set-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.tool-ov__set-head .settings-project__item-note { flex: 1 1 14rem; }
-.tool-ov__set-name { flex: 1 1 12rem; min-width: 0; }
-.tool-ov__pair { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.tool-ov__pair .tool-ov__select { flex: 1 1 9rem; }
 .tool-ov__choices { display: flex; flex-direction: column; gap: 4px; }
 .tool-ov__choice { display: flex; align-items: flex-start; gap: 8px; min-height: var(--tap); padding: 4px 0; cursor: pointer; }
 .tool-ov__choice input { margin-top: 3px; }
 .tool-ov__choice > span { display: flex; flex-direction: column; }
 .tool-ov__choice-label { font-size: 0.84rem; font-weight: 600; }
 .tool-ov__create { display: flex; flex-wrap: wrap; gap: 8px; }
-.tool-ov__io { display: flex; flex-direction: column; gap: 8px; }
-.tool-ov__io-actions { margin: 0; }
-.tool-ov__import { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: var(--r-sm); }
 .tool-ov__desc--grow { min-height: 6.5em; max-height: 60vh; overflow-y: auto; resize: none; }
 .tool-ov__descfoot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .tool-ov__count { color: var(--muted); font-size: 0.7rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1154,14 +1112,14 @@ textarea#projectEditor {
 .tool-ov__badge--dirty { color: var(--warning); border-color: var(--warning); }
 .tool-ov__savebar {
   position: sticky;
-  bottom: 0;
   z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 8px 0 0;
+  bottom: 6px;
+  margin: 8px 10px 0;
   padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1171,13 +1129,44 @@ textarea#projectEditor {
 .tool-ov__savebar-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .tool-ov__savebar-count { font-weight: 600; font-size: 0.86rem; }
 .tool-ov__savebar-actions { display: flex; gap: 8px; margin-left: auto; }
-.tool-ov__default { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.86rem; margin-left: auto; }
-.tool-ov__set-head > .tool-ov__select { flex: 1 1 12rem; }
-/* Wording sets management: blocks split by a rule, small muted labels over
-   their controls, and one card (the chosen set or a form) as the lowest tier. */
-.tool-ov__manage { gap: 0; padding-top: 4px; padding-bottom: 4px; }
-.tool-ov__block { display: flex; flex-direction: column; gap: 8px; padding: 10px 0; }
-.tool-ov__block + .tool-ov__block { border-top: 1px solid var(--border); }
+/* Wording sets: the picker over Built-in and the sets, then one card — the
+   picked entry, or the New set / Import form in its place. */
+.tool-ov__manage { gap: 12px; flex-wrap: nowrap; }
+/* Built-in | picked set | Compare: the segmented look, full width at tap
+   height. The set tab shrinks and truncates a long name. */
+.tool-ov__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+}
+.tool-ov__tab {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tool-ov__tab:not(.tool-ov__tab--on):not(:disabled):active { color: var(--fg); }
+.tool-ov__tab:disabled { opacity: 0.45; cursor: default; }
+.tool-ov__tab--on { background: var(--accent); color: var(--on-accent); }
+.tool-ov__tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-ov__tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+.tool-ov__cmp-summary { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; font-size: 0.84rem; overflow-wrap: anywhere; }
+.tool-ov__cmp-count { color: var(--accent); font-weight: 600; white-space: nowrap; }
 .tool-ov__label {
   color: var(--muted);
   font-size: 0.68rem;
@@ -1185,12 +1174,6 @@ textarea#projectEditor {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
-.tool-ov__kv { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-height: var(--tap); }
-.tool-ov__kv-value { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 0.9rem; }
-.tool-ov__kv-action { margin-left: auto; }
-.tool-ov__picker { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.tool-ov__picker > .tool-ov__select, .tool-ov__picker-empty { flex: 1 1 12rem; min-width: 0; }
-.tool-ov__btns { display: flex; gap: 8px; flex-shrink: 0; }
 .tool-ov__card {
   display: flex;
   flex-direction: column;
@@ -1201,9 +1184,36 @@ textarea#projectEditor {
   border-radius: var(--r-sm);
 }
 .tool-ov__card--default { border-color: var(--success); }
+/* The card is surface-2, the plain button's own colour: lift its buttons a step so they read as buttons. */
+.tool-ov__card .btn:not(.btn--primary):not(.btn--danger),
+.tool-ov__body .btn:not(.btn--primary):not(.btn--danger) { background: var(--surface-3); }
+.tool-ov__card .btn--danger { border: 1px solid rgba(255,138,138,.3); }
 .tool-ov__card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: var(--tap); }
 .tool-ov__card-title { font-weight: 700; font-size: 1rem; overflow-wrap: anywhere; }
+.tool-ov__card-name { flex: 1 1 auto; min-width: 0; font-weight: 700; }
 .tool-ov__field-group { display: flex; flex-direction: column; gap: 6px; }
 .tool-ov__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
 .tool-ov__actions--end { justify-content: flex-end; }
+.tool-ov__actions--plain { padding-top: 0; border-top: 0; }
 .tool-ov__spacer { flex: 1 1 0; }
+
+/* Tool wording is a dense editing page: a smaller tap height (every button,
+   input and picker row follows --tap) and tighter cards than the settings
+   defaults, so a phone shows the picker, the card and the first tools at once. */
+.tool-ov-page { --tap: 36px; }
+.tool-ov-page .btn, .tool-ov-page .input { font-size: 0.8rem; }
+.tool-ov-page .btn { padding: 0 10px; }
+.tool-ov-page .tool-ov__manage { gap: 8px; }
+.tool-ov-page .tool-ov__tab { min-height: 30px; padding: 0 8px; font-size: 0.78rem; }
+.tool-ov-page .tool-ov__card { gap: 8px; padding: 10px; }
+.tool-ov-page .tool-ov__card-title, .tool-ov-page .tool-ov__card-name { font-size: 0.92rem; }
+.tool-ov-page .tool-ov__actions { gap: 6px; padding-top: 8px; }
+.tool-ov-page .tool-ov__actions--plain { padding-top: 0; }
+.tool-ov-page .tool-ov__list { gap: 4px; }
+.tool-ov-page .tool-ov__summary { padding: 2px 10px; }
+.tool-ov-page .tool-ov__name { font-size: 0.78rem; }
+.tool-ov-page .tool-ov__body { gap: 6px; padding: 2px 10px 10px; }
+.tool-ov-page .tool-ov__desc { font-size: 0.72rem; line-height: 1.45; }
+.tool-ov-page .tool-ov__choice { padding: 2px 0; }
+.tool-ov-page .tool-ov__savebar { padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px)); }
+.tool-ov-page .tool-ov__savebar-count { font-size: 0.8rem; }

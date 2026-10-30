@@ -340,3 +340,34 @@ export function wordingChanges(draft, saved) {
   const active = a.active !== b.active;
   return { count: sets.length + (active ? 1 : 0), active, sets };
 }
+
+// The page has one selection: Built-in ('') or a set id.
+
+// initialSelection(wording) -> what the page opens on: the default set, else
+// the first set, else Built-in.
+export function initialSelection(wording) {
+  const w = normalizeWording(wording);
+  if (w.active && w.sets[w.active]) return w.active;
+  return Object.keys(w.sets)[0] || '';
+}
+
+// selectionAfterDelete(sets, deletedId, active) -> what to select once
+// `deletedId` is gone: the default set if it remains, else the next set in
+// list order, else the previous one, else Built-in.
+export function selectionAfterDelete(sets, deletedId, active = '') {
+  if (active && active !== deletedId && sets[active]) return active;
+  const ids = Object.keys(sets);
+  const at = ids.indexOf(deletedId);
+  const rest = ids.filter((id) => id !== deletedId);
+  if (!rest.length) return '';
+  return rest[Math.min(Math.max(at, 0), rest.length - 1)];
+}
+
+// newSetTools(source, tools, sets) -> the tools map a new set starts with.
+// `source` is '' (a frozen copy of Built-in), 'empty', or a set id (a deep
+// copy of that set, unsaved edits included).
+export function newSetTools(source, tools, sets = {}) {
+  if (source === 'empty') return {};
+  if (source && sets[source]) return JSON.parse(JSON.stringify(sets[source].tools));
+  return snapshotBuiltIn(tools);
+}

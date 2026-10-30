@@ -1,11 +1,11 @@
 // mouaif web — Settings → Project → Tool wording (its own page)
 //
 // Named wording sets for the tools the model is told about
-// (docs/features/tool-overrides.md). Built-in is the read-only wording every
-// tool ships with; a project creates its own sets (empty, a frozen copy of
-// Built-in, or a copy of another set), edits them, compares any two, imports
-// and exports them, and picks the one its chats use. A set holds replacement
-// descriptions and replacement names for a tool's top-level fields.
+// (docs/features/tool-overrides.md). One picker lists Built-in (the read-only
+// wording every tool ships with) and the project's sets; whatever is picked
+// is shown below it, with its tools. + New copies the picked entry (or starts
+// empty), and one entry is the default for the project's chats. A set holds
+// replacement descriptions and replacement names for a tool's top-level fields.
 //
 // Everything edits a draft; nothing is written until Save in the bar at the
 // bottom. Nothing here changes what a tool does — the server renames a call's
@@ -17,8 +17,8 @@ import { sectionIcon } from './settingsProjectUi.js';
 import { settingsLink, backHref, backTarget } from './settings/projectNavigation.js';
 import {
   LEGACY_SET_ID, MAX_DESCRIPTION_CHARS, MAX_SETS, MAX_SET_NAME, changedTools, diffStats, diffWords, differsFromBuiltIn,
-  effectiveEntry, exportText, fieldList, fieldProblem, newSetId, normalizeWording, parseImport,
-  renameProblems, searchTools, snapshotBuiltIn, uniqueSetName, wordingChanges, wordingFromResolved
+  effectiveEntry, exportText, fieldList, fieldProblem, initialSelection, newSetId, newSetTools, normalizeWording,
+  parseImport, renameProblems, searchTools, selectionAfterDelete, uniqueSetName, wordingChanges, wordingFromResolved
 } from './settings/toolOverrides.js';
 
 const BUILTIN = '';
@@ -113,8 +113,8 @@ function SetDescription({ tool, value, onChange }) {
       h('span', { class: 'tool-ov__count' + (value.length >= MAX_DESCRIPTION_CHARS ? ' tool-ov__count--full' : '') },
         value.length + ' / ' + MAX_DESCRIPTION_CHARS)
     ),
-    h('div', { class: 'settings-project__item-actions' },
-      h('button', { class: 'btn', type: 'button', onClick: () => { setEditing(false); onChange(''); } }, 'Use built-in instead')
+    h('div', { class: 'tool-ov__actions tool-ov__actions--plain' },
+      h('button', { class: 'btn', type: 'button', onClick: () => { setEditing(false); onChange(''); } }, 'Reset to built-in')
     )
   );
 }
@@ -231,17 +231,78 @@ function ToolRow({ tool, mode, entry, left, right, leftLabel, rightLabel, badge,
   );
 }
 
-// A <select> over every set, with Built-in first unless `builtIn` is false.
-function SetSelect({ id, value, sets, onChange, label, builtIn = true }) {
-  return h('select', {
-    class: 'input tool-ov__select',
-    id,
-    value,
-    'aria-label': label,
-    onChange: (e) => onChange(e.currentTarget.value)
-  },
-    builtIn ? h('option', { value: BUILTIN }, 'Built-in') : null,
-    Object.keys(sets).map((setId) => h('option', { key: setId, value: setId }, sets[setId].name))
+// The one list of wording: Built-in first, then the project's sets, then the
+// create and import entries. Picking an entry is the page's only selection.
+// Also picks the other side of Compare: `exclude` drops the entry already
+// on screen, and without `onNew` there is no New / Import.
+function WordingPicker({ id = 'to-pick', labelText = 'Wording', placeholder = 'Built-in', selected, sets, active, panel = '', exclude, onPick, onNew, onImport }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPointerDown = (e) => { if (box.current && !box.current.contains(e.target)) setOpen(false); };
+    const onKeyDown = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  const choose = (fn) => () => { setOpen(false); fn(); };
+  const option = (id, label, tags) => {
+    const on = !panel && id === selected;
+    return h('button', {
+      key: id || 'builtin',
+      type: 'button',
+      class: 'prompts__picker-option' + (on ? ' is-selected' : ''),
+      role: 'option',
+      'aria-selected': String(on),
+      onClick: choose(() => onPick(id))
+    },
+      h('span', { class: 'prompts__picker-check', 'aria-hidden': 'true' }, on ? '✓' : ''),
+      h('span', { class: 'prompts__picker-option-label' },
+        h('span', null, label),
+        tags.filter(Boolean).map((t) => h('span', { key: t, class: 'prompts__picker-preset' }, t)))
+    );
+  };
+  const label = panel === 'new' ? 'New set' : panel === 'import' ? 'Import a set'
+    : selected && sets[selected] ? sets[selected].name : exclude === BUILTIN ? placeholder : 'Built-in';
+  const isDefault = !panel && selected === active && (selected === BUILTIN ? exclude !== BUILTIN : !!sets[selected]);
+
+  const setIds = Object.keys(sets).filter((key) => key !== exclude);
+
+  return h('div', { class: 'row prompts__picker' },
+    h('span', { class: 'label', id: id + '-label' }, labelText),
+    h('div', { class: 'prompts__picker-row' },
+      h('div', { class: 'prompts__picker-control', ref: box },
+        h('button', {
+          type: 'button',
+          class: 'input prompts__select',
+          id,
+          'aria-labelledby': id + '-label ' + id,
+          'aria-haspopup': 'listbox',
+          'aria-expanded': String(open),
+          onClick: () => setOpen((o) => !o)
+        },
+          h('span', { class: 'prompts__select-label' }, label, isDefault ? h('span', { class: 'prompts__picker-preset' }, ' · default') : null),
+          h('span', { class: 'prompts__select-caret', 'aria-hidden': 'true' }, '⌄')
+        ),
+        open
+          ? h('div', { class: 'prompts__picker-menu', role: 'listbox', 'aria-labelledby': id + '-label' },
+            exclude === BUILTIN ? null : option(BUILTIN, 'Built-in', ['read-only', active === BUILTIN ? 'default' : '']),
+            setIds.length ? h('div', { class: 'prompts__picker-section', role: 'presentation' }, 'Sets') : null,
+            setIds.map((key) => option(key, sets[key].name || 'Untitled', [active === key ? 'default' : ''])),
+            onNew ? h('button', { type: 'button', class: 'prompts__picker-option', role: 'option', 'aria-selected': 'false', onClick: choose(onNew) },
+              h('span', { class: 'prompts__picker-check', 'aria-hidden': 'true' }, ''), h('span', null, '+ New set')) : null,
+            onImport ? h('button', { type: 'button', class: 'prompts__picker-option', role: 'option', 'aria-selected': 'false', onClick: choose(onImport) },
+              h('span', { class: 'prompts__picker-check', 'aria-hidden': 'true' }, ''), h('span', null, 'Import a set…')) : null
+          )
+          : null
+      ),
+      onNew ? h('button', { class: 'btn', type: 'button', onClick: onNew }, '+ New') : null
+    )
   );
 }
 
@@ -256,18 +317,18 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
   // A project saved before sets existed: its flat map is shown as a set and
   // dropped from the project file on the next save.
   const [legacy, setLegacy] = useState(false);
-  // 'builtin' | 'set' | 'compare'; on 'set', `editingId` (picked in the
-  // Sets tab's dropdown) is the set on screen.
-  const [tab, setTab] = useState('builtin');
-  const [editingId, setEditingId] = useState('');
-  const [compareLeft, setCompareLeft] = useState(BUILTIN);
-  const [compareRight, setCompareRight] = useState(BUILTIN);
+  // Three tabs: Built-in, the set picked in the list (`pickedSet`), and
+  // Compare, which diffs that set against `compareWith` (Built-in or
+  // another set).
+  const [tab, setTab] = useState('builtin');   // 'builtin' | 'set' | 'compare'
+  const [pickedSet, setPickedSet] = useState('');
+  const [compareWith, setCompareWith] = useState(BUILTIN);
   const [query, setQuery] = useState('');
   const [onlyDiffering, setOnlyDiffering] = useState(false);
   const [openRows, setOpenRows] = useState({});
   const [panel, setPanel] = useState('');   // '' | 'new' | 'import'
   const [newName, setNewName] = useState('');
-  const [newFrom, setNewFrom] = useState('builtin');   // 'builtin' | 'empty' | 'set:<id>'
+  const [newFrom, setNewFrom] = useState(BUILTIN);   // Built-in, 'empty' or a set id
   const [importText, setImportText] = useState('');
   const [importName, setImportName] = useState('');
   const [note, setNote] = useState('');
@@ -297,8 +358,8 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
         setSaved(loaded.legacy ? { active: BUILTIN, sets: {} } : loaded.wording);
         setDraft(loaded.wording);
         setLegacy(loaded.legacy);
-        const first = loaded.wording.active || Object.keys(loaded.wording.sets)[0] || '';
-        if (first) { setTab('set'); setEditingId(first); setCompareRight(first); }
+        setPickedSet(initialSelection(loaded.wording));
+        setTab(loaded.wording.active && loaded.wording.sets[loaded.wording.active] ? 'set' : 'builtin');
         setTools((catalog.body.tools || []).filter((t) => t && t.name));
         setStatus(''); setStatusState('');
         if (loaded.legacy) {
@@ -318,25 +379,24 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
 
   const sets = draft.sets;
   const setIds = Object.keys(sets);
-  // `chosen` is the set picked in the management dropdown above the tabs;
-  // `editing` is the same set while the list shows it (the middle tab).
-  const chosen = editingId && sets[editingId] ? sets[editingId] : null;
-  const editing = tab === 'set' ? chosen : null;
-  // A deleted set: the Sets dropdown moves to another set, a Compare side
-  // falls back to Built-in.
-  useEffect(() => {
-    if (!sets[editingId] && (editingId || setIds.length)) setEditingId(setIds[0] || '');
-    if (compareLeft && !sets[compareLeft]) setCompareLeft(BUILTIN);
-    if (compareRight && !sets[compareRight]) setCompareRight(BUILTIN);
-  }, [editingId, sets, compareLeft, compareRight]);
+  // With no set (none yet, or the last one deleted) only Built-in shows.
+  const view = pickedSet && sets[pickedSet] ? tab : 'builtin';
+  // `selected` is the entry the tab shows; in Compare, the right side.
+  const selected = view === 'builtin' ? BUILTIN : pickedSet;
+  const set = selected && sets[selected] ? sets[selected] : null;
+  const comparing = view === 'compare';
+  // A left side that was deleted, or is now the picked set, falls back to Built-in.
+  const left = compareWith !== pickedSet && (compareWith === BUILTIN || sets[compareWith]) ? compareWith : BUILTIN;
+  const mode = comparing ? 'compare' : set ? 'set' : 'builtin';
 
   const changes = useMemo(() => wordingChanges(draft, saved), [draft, saved]);
   const dirtyCount = changes.count + (legacy ? 1 : 0);
   const dirtyTools = useMemo(() => {
-    if (!editing) return new Set();
-    const was = saved.sets[editingId];
-    return new Set(changedTools(normalizeWording({ sets: { x: editing } }).sets.x.tools, was ? was.tools : {}));
-  }, [editing, editingId, saved]);
+    // A set that is not saved yet is one change in the Save bar, not one per row.
+    const was = saved.sets[selected];
+    if (!set || !was) return new Set();
+    return new Set(changedTools(normalizeWording({ sets: { x: set } }).sets.x.tools, was.tools));
+  }, [set, selected, saved]);
   const problems = useMemo(() => setIds.filter((id) => renameProblems(sets[id].tools, tools).length).map((id) => sets[id].name),
     [sets, tools]);
   const saving = statusState === 'busy';
@@ -384,8 +444,10 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
   }
 
   function discard() {
+    if (!window.confirm('Discard all unsaved tool wording changes?')) return;
     setDraft(saved);
     setLegacy(false);
+    if (pickedSet && !saved.sets[pickedSet]) setPickedSet(initialSelection(saved));
     setGeneration((g) => g + 1);
     setStatus(''); setStatusState('');
   }
@@ -403,52 +465,74 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
     setRevs((r) => Object.assign({}, r, { [name]: (r[name] || 0) + 1 }));
   }
 
-  // ---- tools in the set on screen ----
+  // ---- tools in the selected set ----
   function updateTool(name, entry) {
-    const id = editingId;
+    const id = selected;
     edit((next) => {
-      const set = next.sets[id];
-      const toolsMap = Object.assign({}, set.tools);
+      const current = next.sets[id];
+      const toolsMap = Object.assign({}, current.tools);
       const hasFields = entry && entry.fields && Object.keys(entry.fields).length;
       if (entry && (entry.description || hasFields)) toolsMap[name] = entry;
       else delete toolsMap[name];
-      next.sets[id] = { name: set.name, tools: toolsMap };
+      next.sets[id] = { name: current.name, tools: toolsMap };
     });
     if (!entry) bump(name);
   }
 
   function revertTool(name) {
-    const id = editingId;
+    const id = selected;
     const was = saved.sets[id] && saved.sets[id].tools[name];
     edit((next) => {
-      const set = next.sets[id];
-      const toolsMap = Object.assign({}, set.tools);
+      const current = next.sets[id];
+      const toolsMap = Object.assign({}, current.tools);
       if (was) toolsMap[name] = was; else delete toolsMap[name];
-      next.sets[id] = { name: set.name, tools: toolsMap };
+      next.sets[id] = { name: current.name, tools: toolsMap };
     });
     bump(name);
   }
 
-  // ---- sets ----
-  function openNew(fromKey) {
+  // ---- the list ----
+  // Picking a set shows it, on the set tab or as Compare's right side.
+  function pick(id) {
+    setPanel('');
+    setNote('');
+    // Picking the set Compare had on the left swaps the two sides.
+    if (comparing && id === left) setCompareWith(pickedSet);
+    setPickedSet(id);
+    if (tab === 'builtin') setTab('set');
+  }
+
+  function showSet(id) {
+    setPanel('');
+    setPickedSet(id);
+    setTab('set');
+  }
+
+  function sourceName(source) {
+    return source === 'empty' ? 'New set' : source && sets[source] ? 'Copy of ' + sets[source].name : 'Copy of Built-in';
+  }
+
+  // New starts as a copy of whatever is selected.
+  function openNew(source = selected) {
     setPanel('new');
-    setNewFrom(fromKey);
-    const base = fromKey === 'builtin' ? 'Copy of Built-in' : fromKey === 'empty' ? 'New set' : 'Copy of ' + sets[fromKey.slice(4)].name;
-    setNewName(uniqueSetName(base, sets));
+    setNote('');
+    setNewFrom(source);
+    setNewName(uniqueSetName(sourceName(source), sets));
+  }
+
+  function chooseSource(source) {
+    // Keep a name the user typed; follow the source while it is the default.
+    if (newName === uniqueSetName(sourceName(newFrom), sets)) setNewName(uniqueSetName(sourceName(source), sets));
+    setNewFrom(source);
   }
 
   function createSet() {
     if (setIds.length >= MAX_SETS) return;
     const name = uniqueSetName(newName, sets);
     const id = newSetId(name, sets);
-    const toolsMap = newFrom === 'builtin' ? snapshotBuiltIn(tools)
-      : newFrom === 'empty' ? {}
-        : JSON.parse(JSON.stringify(sets[newFrom.slice(4)].tools));
+    const toolsMap = newSetTools(newFrom, tools, sets);
     edit((next) => { next.sets[id] = { name, tools: toolsMap }; });
-    setPanel('');
-    setTab('set');
-    setEditingId(id);
-    setCompareRight(id);
+    showSet(id);
     say('Created “' + name + '”. Edit it, tap Make default to use it in chats, then Save.');
   }
 
@@ -457,14 +541,17 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
   }
   // On blur: an empty or duplicate name becomes a unique one.
   function settleName(id) {
-    const set = sets[id];
-    if (!set) return;
-    const name = uniqueSetName(set.name, sets, id);
-    if (name !== set.name) renameSet(id, name);
+    const current = sets[id];
+    if (!current) return;
+    const name = uniqueSetName(current.name, sets, id);
+    if (name !== current.name) renameSet(id, name);
   }
 
   function deleteSet(id) {
     if (!window.confirm('Delete the set “' + sets[id].name + '”? It is removed when you Save.')) return;
+    const nextActive = draft.active === id ? BUILTIN : draft.active;
+    setPickedSet(selectionAfterDelete(sets, id, nextActive));
+    setNote('');
     edit((next) => {
       delete next.sets[id];
       if (next.active === id) next.active = BUILTIN;
@@ -473,12 +560,7 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
 
   function makeDefault(id) {
     edit((next) => { next.active = id; });
-  }
-
-  // Picking a set above the tabs also shows it in the list.
-  function pickSet(id) {
-    setEditingId(id);
-    setTab('set');
+    say('“' + (id && sets[id] ? sets[id].name : 'Built-in') + '” becomes the default for chats when you Save.');
   }
 
   function applyImport() {
@@ -495,9 +577,7 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
     if (unlisted) parts.push(unlisted + ' not in this project’s tool list (kept; used only while the tool exists)');
     say(parts.join(' · ') + '.');
     setImportText(''); setImportName('');
-    setPanel('');
-    setTab('set');
-    setEditingId(id);
+    showSet(id);
   }
 
   function onFile(e) {
@@ -516,7 +596,7 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
     } catch {
       setImportText(text);
       setPanel('import');
-      say('Copy is blocked here; the JSON is in the import box instead.', '');
+      say('Copy is blocked here. The JSON is in the box below — copy it from there, then tap Cancel.', '');
     }
   }
 
@@ -526,6 +606,7 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
     a.href = url; a.download = newSetId(sets[id].name) + '.json';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    say('Downloaded “' + sets[id].name + '” as ' + a.download + '.');
   }
 
   function toggleRow(name, open) {
@@ -536,23 +617,21 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
   const entryOf = (id, name) => (id && sets[id] ? sets[id].tools[name] : undefined);
   const labelOf = (id) => (id && sets[id] ? sets[id].name : 'Built-in');
   const differs = (tool) => {
-    if (editing) return differsFromBuiltIn(tool, editing.tools[tool.name]) || dirtyTools.has(tool.name);
-    if (tab === 'compare') {
-      const a = effectiveEntry(tool, entryOf(compareLeft, tool.name));
-      const b = effectiveEntry(tool, entryOf(compareRight, tool.name));
+    if (comparing) {
+      const a = effectiveEntry(tool, entryOf(left, tool.name));
+      const b = effectiveEntry(tool, entryOf(selected, tool.name));
       return a.description !== b.description || JSON.stringify(a.fields) !== JSON.stringify(b.fields);
     }
+    if (set) return differsFromBuiltIn(tool, set.tools[tool.name]) || dirtyTools.has(tool.name);
     return false;
   };
+  const filterable = mode !== 'builtin';
   const shown = useMemo(() => {
-    if (tab === 'set' && !editing) return [];
-    const base = onlyDiffering && tab !== 'builtin' ? (tools || []).filter(differs) : (tools || []);
+    const base = onlyDiffering && filterable ? (tools || []).filter(differs) : (tools || []);
     return searchTools(base, query);
-  }, [tools, query, onlyDiffering, tab, editingId, draft, compareLeft, compareRight, dirtyTools]);
-  const chosenDiffering = useMemo(() => (tools && chosen ? tools.filter((t) => differsFromBuiltIn(t, chosen.tools[t.name])).length : 0),
-    [tools, chosen]);
-  const differingCount = useMemo(() => (tools && tab !== 'builtin' ? tools.filter(differs).length : 0),
-    [tools, tab, editingId, draft, compareLeft, compareRight, dirtyTools]);
+  }, [tools, query, onlyDiffering, mode, selected, left, draft, dirtyTools]);
+  const differingCount = useMemo(() => (tools && filterable ? tools.filter(differs).length : 0),
+    [tools, mode, selected, left, draft, dirtyTools]);
   const back = backTarget(context);
 
   const saveSummary = [];
@@ -566,21 +645,115 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
   }
   if (changes.active && !(legacy && draft.active === LEGACY_SET_ID)) saveSummary.push('default: ' + (draft.active ? '“' + labelOf(draft.active) + '”' : 'Built-in'));
 
-  // The middle tab is named after the set chosen in its dropdown.
-  const tabs = [['builtin', 'Built-in'], ['set', editingId && sets[editingId] ? sets[editingId].name : 'Sets'], ['compare', 'Compare']];
-  // The dot marks the default: Built-in, or the set shown on the middle tab.
-  const usedTab = !draft.active ? 'builtin' : draft.active === editingId ? 'set' : '';
+  const isDefault = draft.active === selected;
+  const sources = [[BUILTIN, 'Copy of Built-in', 'Every tool’s current description, frozen.']]
+    .concat(setIds.map((id) => [id, 'Copy of ' + sets[id].name, 'Everything in that set, unsaved edits included.']))
+    .concat([['empty', 'Empty', 'Uses the built-in wording for every tool until you edit one.']]);
+
+  // ---- the selected item, or the New / Import form in its place ----
+  let card;
+  if (panel === 'new') {
+    card = h('div', { class: 'tool-ov__card' },
+      h('div', { class: 'tool-ov__card-head' }, h('span', { class: 'tool-ov__card-title' }, 'New set')),
+      h('div', { class: 'tool-ov__field-group' },
+        h('label', { class: 'tool-ov__label', for: 'to-new-name' }, 'Name'),
+        h('input', { class: 'input', id: 'to-new-name', type: 'text', maxLength: MAX_SET_NAME, value: newName, onInput: (e) => setNewName(e.currentTarget.value) })
+      ),
+      h('div', { class: 'tool-ov__field-group' },
+        h('span', { class: 'tool-ov__label', id: 'to-new-from-label' }, 'Start from'),
+        h('div', { class: 'tool-ov__choices', role: 'radiogroup', 'aria-labelledby': 'to-new-from-label' },
+          sources.map(([key, label, hint]) => h('label', { key: key || 'builtin', class: 'tool-ov__choice' },
+            h('input', { type: 'radio', name: 'to-new-from', value: key, checked: newFrom === key, onChange: () => chooseSource(key) }),
+            h('span', null, h('span', { class: 'tool-ov__choice-label' }, label), h('span', { class: 'settings-project__item-note' }, hint))
+          ))
+        )
+      ),
+      h('div', { class: 'tool-ov__actions tool-ov__actions--end' },
+        h('button', { class: 'btn', type: 'button', onClick: () => setPanel('') }, 'Cancel'),
+        h('button', { class: 'btn btn--primary', type: 'button', disabled: !newName.trim() || !tools || setIds.length >= MAX_SETS, onClick: createSet }, 'Create set')
+      ),
+      setIds.length >= MAX_SETS ? h('div', { class: 'settings-project__item-note' }, 'A project holds at most ' + MAX_SETS + ' sets.') : null
+    );
+  } else if (panel === 'import') {
+    card = h('div', { class: 'tool-ov__card' },
+      h('div', { class: 'tool-ov__card-head' }, h('span', { class: 'tool-ov__card-title' }, 'Import a set')),
+      h('div', { class: 'tool-ov__field-group' },
+        h('label', { class: 'tool-ov__label', for: 'to-import' }, 'JSON'),
+        h('textarea', {
+          class: 'input settings-project__mono tool-ov__desc',
+          id: 'to-import',
+          rows: 6,
+          spellcheck: false,
+          placeholder: '{\n  "name": "Terse",\n  "tools": {\n    "shell": { "description": "Run a command", "fields": { "cmd": "command" } }\n  }\n}',
+          value: importText,
+          onInput: (e) => setImportText(e.currentTarget.value)
+        }),
+        h('div', { class: 'settings-project__item-note' }, 'Paste a set’s JSON or choose a .json file. A bare { "tool": { … } } map or an older project file also works.')
+      ),
+      h('div', { class: 'tool-ov__field-group' },
+        h('label', { class: 'tool-ov__label', for: 'to-import-name' }, 'Name (optional)'),
+        h('input', { class: 'input', id: 'to-import-name', type: 'text', maxLength: MAX_SET_NAME, value: importName, placeholder: 'From the file, or “Imported”', onInput: (e) => setImportName(e.currentTarget.value) })
+      ),
+      h('div', { class: 'tool-ov__actions' },
+        h('label', { class: 'btn' }, 'Choose file',
+          h('input', { type: 'file', accept: 'application/json,.json', class: 'tool-ov__file', onChange: onFile })
+        ),
+        h('span', { class: 'tool-ov__spacer' }),
+        h('button', { class: 'btn', type: 'button', onClick: () => { setPanel(''); setImportText(''); setImportName(''); } }, 'Cancel'),
+        h('button', { class: 'btn btn--primary', type: 'button', disabled: !importText.trim() || setIds.length >= MAX_SETS, onClick: applyImport }, 'Import as new set')
+      )
+    );
+  } else if (comparing) {
+    card = h('div', { class: 'tool-ov__card' },
+      h(WordingPicker, { id: 'to-cmp', labelText: 'Compare against', selected: left, sets, active: draft.active, exclude: pickedSet, onPick: setCompareWith }),
+      tools
+        ? h('div', { class: 'tool-ov__cmp-summary' },
+          h('span', null, '“' + labelOf(left) + '” → “' + labelOf(selected) + '”'),
+          h('span', { class: 'tool-ov__cmp-count' }, differingCount + (differingCount === 1 ? ' tool differs' : ' tools differ')))
+        : null
+    );
+  } else {
+    const changed = tools && set ? tools.filter((t) => differsFromBuiltIn(t, set.tools[t.name])).length : 0;
+    card = h('div', { class: 'tool-ov__card' + (isDefault ? ' tool-ov__card--default' : '') },
+      h('div', { class: 'tool-ov__card-head' },
+        set
+          ? h('input', {
+            class: 'input tool-ov__card-name', id: 'to-set-name', type: 'text', maxLength: MAX_SET_NAME, value: set.name,
+            'aria-label': 'Set name',
+            onInput: (e) => renameSet(selected, e.currentTarget.value),
+            onBlur: () => settleName(selected)
+          })
+          : h('span', { class: 'tool-ov__card-title' }, 'Built-in'),
+        isDefault
+          ? h('span', { class: 'tool-ov__badge' }, 'default for chats')
+          : h('button', { class: 'btn', type: 'button', onClick: () => makeDefault(selected) }, 'Make default')
+      ),
+      h('div', { class: 'settings-project__item-note' },
+        set
+          ? (tools ? changed + ' of ' + tools.length + ' tools differ from built-in · ' + Object.keys(set.tools).length + ' in this set' : '')
+          : 'The wording each tool ships with. Read-only — tap Copy to new set to make an editable set from it.' + (setIds.length ? '' : ' Set and Compare unlock once you have a set.')),
+      h('div', { class: 'tool-ov__actions' },
+        h('button', { class: 'btn', type: 'button', onClick: () => openNew(selected) }, set ? 'Duplicate' : 'Copy to new set'),
+        set ? h('button', { class: 'btn', type: 'button', onClick: () => copyExport(selected) }, 'Copy JSON') : null,
+        set ? h('button', { class: 'btn', type: 'button', onClick: () => downloadExport(selected) }, 'Download') : null
+      ),
+      set
+        ? h('div', { class: 'tool-ov__actions tool-ov__actions--end tool-ov__actions--plain' },
+          h('button', { class: 'btn btn--danger', type: 'button', onClick: () => deleteSet(selected) }, 'Delete set'))
+        : null
+    );
+  }
 
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', { href: backHref(context), class: 'view-back', 'aria-label': back.label, onClick: guardLeave }, '←'),
       h('h2', { class: 'view-title' }, 'Tool wording')
     ),
-    h('section', { class: 'settings-project' },
+    h('section', { class: 'settings-project tool-ov-page' },
       h('p', { class: 'settings-project__lede' },
         'Change what the model is told about each tool: its description and the names of its fields. Keep several wording sets and make one the default for this project’s chats. A tool still does exactly what it did — a call is mapped back to the original field names before it runs.'),
 
-      // ---- Sets: what chats use, New set, Import ----
+      // ---- The list, and the selected item ----
       h('div', { class: 'group settings-project__section' },
         h('div', { class: 'group__title settings-project__section-title' },
           sectionIcon('tools'),
@@ -589,164 +762,53 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
             h('summary', { 'aria-label': 'About wording sets' }, '?'),
             h('div', { class: 'settings-project__info-body' },
               h('p', null, 'Built-in is the wording each tool ships with and cannot be edited. A set copied from Built-in is a frozen copy of every description: later built-in changes do not reach it, and Compare shows where they drifted. A tool a set does not include uses the built-in wording.'),
-              h('p', null, 'Changes stay unsaved until you tap Save in the bar at the bottom; the default set applies from the next message of every chat in this project. Only top-level fields can be renamed. A tool that is Off, or an MCP server that is not running, is not sent to the model.')
+              h('p', null, 'Changes stay unsaved until you tap Save in the bar at the bottom; the default applies from the next message of every chat in this project. Only top-level fields can be renamed. A tool that is Off, or an MCP server that is not running, is not sent to the model.')
             )
           )
         ),
         h('ul', { class: 'group__list' },
-          // Three tiers: the default for chats, the set picker with its
-          // create/import buttons, and one card — the chosen set, or the
-          // New set / Import form in its place.
           h('li', { class: 'settings-project__item settings-project__item--col tool-ov__manage' },
-            h('div', { class: 'tool-ov__block' },
-              h('div', { class: 'tool-ov__kv' },
-                h('span', { class: 'tool-ov__label' }, 'Default for chats'),
-                h('span', { class: 'tool-ov__kv-value' },
-                  h('span', { class: 'tool-ov__tab-dot', 'aria-hidden': 'true' }),
-                  draft.active ? labelOf(draft.active) : 'Built-in'),
-                draft.active
-                  ? h('button', { class: 'btn tool-ov__kv-action', type: 'button', onClick: () => makeDefault(BUILTIN) }, 'Use Built-in')
-                  : null
-              ),
-              status && !dirtyCount
-                ? h('div', { class: 'settings-project__item-status', 'data-state': statusState || undefined, role: 'status', 'aria-live': 'polite' }, status)
-                : null
+            h(WordingPicker, {
+              labelText: 'Set', placeholder: 'No sets yet',
+              selected: pickedSet, sets, active: draft.active, panel, exclude: BUILTIN,
+              onPick: pick,
+              onNew: () => openNew(),
+              onImport: () => { setPanel('import'); setNote(''); }
+            }),
+            panel ? null : h('div', { class: 'tool-ov__tabs', role: 'tablist', 'aria-label': 'Wording to show' },
+              [[BUILTIN, 'builtin', 'Built-in'], [pickedSet, 'set', sets[pickedSet] ? labelOf(pickedSet) : 'Set'], ['', 'compare', 'Compare']].map(([id, key, text]) => {
+                const on = view === key;
+                const disabled = key !== 'builtin' && !sets[pickedSet];
+                return h('button', {
+                  key,
+                  type: 'button',
+                  role: 'tab',
+                  class: 'tool-ov__tab' + (on ? ' tool-ov__tab--on' : ''),
+                  'aria-selected': String(on),
+                  disabled,
+                  onClick: () => { setNote(''); setTab(key); }
+                },
+                  h('span', { class: 'tool-ov__tab-label' }, text),
+                  key !== 'compare' && draft.active === id && (key === 'builtin' || sets[id])
+                    ? h('span', { class: 'tool-ov__tab-dot', title: 'Default for chats', 'aria-label': '(default for chats)' })
+                    : null
+                );
+              })
             ),
-            h('div', { class: 'tool-ov__block' },
-              h('label', { class: 'tool-ov__label', for: 'to-set-pick' }, 'Sets'),
-              h('div', { class: 'tool-ov__picker' },
-                setIds.length
-                  ? h(SetSelect, { id: 'to-set-pick', value: editingId, sets, label: 'Set to manage', builtIn: false, onChange: pickSet })
-                  : h('span', { class: 'settings-project__item-note tool-ov__picker-empty' }, 'No sets yet — create one or import one.'),
-                h('div', { class: 'tool-ov__btns' },
-                  h('button', { class: 'btn' + (panel === 'new' ? ' btn--primary' : ''), type: 'button', disabled: !tools || setIds.length >= MAX_SETS, 'aria-expanded': panel === 'new' ? 'true' : 'false', onClick: () => (panel === 'new' ? setPanel('') : openNew('builtin')) }, '+ New set'),
-                  h('button', { class: 'btn' + (panel === 'import' ? ' btn--primary' : ''), type: 'button', disabled: !tools || setIds.length >= MAX_SETS, 'aria-expanded': panel === 'import' ? 'true' : 'false', onClick: () => setPanel(panel === 'import' ? '' : 'import') }, 'Import…')
-                )
-              ),
-              note ? h('div', { class: 'settings-project__item-status', 'data-state': noteState || undefined, role: 'status', 'aria-live': 'polite' }, note) : null,
-
-              panel === 'new'
-                ? h('div', { class: 'tool-ov__card' },
-                  h('div', { class: 'tool-ov__card-head' }, h('span', { class: 'tool-ov__card-title' }, 'New set')),
-                  h('div', { class: 'tool-ov__field-group' },
-                    h('label', { class: 'tool-ov__label', for: 'to-new-name' }, 'Name'),
-                    h('input', { class: 'input', id: 'to-new-name', type: 'text', maxLength: MAX_SET_NAME, value: newName, onInput: (e) => setNewName(e.currentTarget.value) })
-                  ),
-                  h('div', { class: 'tool-ov__field-group' },
-                    h('span', { class: 'tool-ov__label', id: 'to-new-from-label' }, 'Start from'),
-                    h('div', { class: 'tool-ov__choices', role: 'radiogroup', 'aria-labelledby': 'to-new-from-label' },
-                      [['builtin', 'Copy of Built-in', 'Every tool’s current description, frozen.']]
-                        .concat(setIds.map((id) => ['set:' + id, 'Copy of ' + sets[id].name, 'Everything in that set, unsaved edits included.']))
-                        .concat([['empty', 'Empty', 'Uses the built-in wording for every tool until you edit one.']])
-                        .map(([key, label, hint]) => h('label', { key, class: 'tool-ov__choice' },
-                          h('input', { type: 'radio', name: 'to-new-from', value: key, checked: newFrom === key, onChange: () => openNew(key) }),
-                          h('span', null, h('span', { class: 'tool-ov__choice-label' }, label), h('span', { class: 'settings-project__item-note' }, hint))
-                        ))
-                    )
-                  ),
-                  h('div', { class: 'tool-ov__actions tool-ov__actions--end' },
-                    h('button', { class: 'btn', type: 'button', onClick: () => setPanel('') }, 'Cancel'),
-                    h('button', { class: 'btn btn--primary', type: 'button', disabled: !newName.trim(), onClick: createSet }, 'Create set')
-                  )
-                )
-                : null,
-
-              panel === 'import'
-                ? h('div', { class: 'tool-ov__card' },
-                  h('div', { class: 'tool-ov__card-head' }, h('span', { class: 'tool-ov__card-title' }, 'Import a set')),
-                  h('div', { class: 'tool-ov__field-group' },
-                    h('label', { class: 'tool-ov__label', for: 'to-import' }, 'JSON'),
-                    h('textarea', {
-                      class: 'input settings-project__mono tool-ov__desc',
-                      id: 'to-import',
-                      rows: 6,
-                      spellcheck: false,
-                      placeholder: '{\n  "name": "Terse",\n  "tools": {\n    "shell": { "description": "Run a command", "fields": { "cmd": "command" } }\n  }\n}',
-                      value: importText,
-                      onInput: (e) => setImportText(e.currentTarget.value)
-                    }),
-                    h('div', { class: 'settings-project__item-note' }, 'Paste a set’s JSON or choose a .json file. A bare { "tool": { … } } map or an older project file also works.')
-                  ),
-                  h('div', { class: 'tool-ov__field-group' },
-                    h('label', { class: 'tool-ov__label', for: 'to-import-name' }, 'Name (optional)'),
-                    h('input', { class: 'input', id: 'to-import-name', type: 'text', maxLength: MAX_SET_NAME, value: importName, placeholder: 'From the file, or “Imported”', onInput: (e) => setImportName(e.currentTarget.value) })
-                  ),
-                  h('div', { class: 'tool-ov__actions' },
-                    h('label', { class: 'btn' }, 'Choose file',
-                      h('input', { type: 'file', accept: 'application/json,.json', class: 'tool-ov__file', onChange: onFile })
-                    ),
-                    h('span', { class: 'tool-ov__spacer' }),
-                    h('button', { class: 'btn', type: 'button', onClick: () => { setPanel(''); setImportText(''); setImportName(''); } }, 'Cancel'),
-                    h('button', { class: 'btn btn--primary', type: 'button', disabled: !importText.trim(), onClick: applyImport }, 'Import as new set')
-                  )
-                )
-                : null,
-
-              // The chosen set's card steps aside while a form is open.
-              chosen && !panel
-                ? h('div', { class: 'tool-ov__card' + (draft.active === editingId ? ' tool-ov__card--default' : '') },
-                  h('div', { class: 'tool-ov__card-head' },
-                    h('span', { class: 'tool-ov__card-title' }, chosen.name || 'Untitled'),
-                    draft.active === editingId
-                      ? h('span', { class: 'tool-ov__badge' }, 'default for chats')
-                      : h('button', { class: 'btn btn--primary', type: 'button', onClick: () => makeDefault(editingId) }, 'Make default')
-                  ),
-                  h('div', { class: 'settings-project__item-note' },
-                    tools ? (chosenDiffering + ' of ' + tools.length + ' tools differ from built-in · ' + Object.keys(chosen.tools).length + ' in this set') : ''),
-                  h('div', { class: 'tool-ov__field-group' },
-                    h('label', { class: 'tool-ov__label', for: 'to-set-name' }, 'Name'),
-                    h('input', {
-                      class: 'input', id: 'to-set-name', type: 'text', maxLength: MAX_SET_NAME, value: chosen.name,
-                      onInput: (e) => renameSet(editingId, e.currentTarget.value),
-                      onBlur: () => settleName(editingId)
-                    })
-                  ),
-                  h('div', { class: 'tool-ov__actions' },
-                    h('button', { class: 'btn', type: 'button', disabled: setIds.length >= MAX_SETS, onClick: () => openNew('set:' + editingId) }, 'Duplicate'),
-                    h('button', { class: 'btn', type: 'button', onClick: () => copyExport(editingId) }, 'Copy JSON'),
-                    h('button', { class: 'btn', type: 'button', onClick: () => downloadExport(editingId) }, 'Download'),
-                    h('span', { class: 'tool-ov__spacer' }),
-                    h('button', { class: 'btn btn--danger', type: 'button', onClick: () => deleteSet(editingId) }, 'Delete set')
-                  )
-                )
-                : null
-            )
+            note ? h('div', { class: 'settings-project__item-status', 'data-state': noteState || undefined, role: 'status', 'aria-live': 'polite' }, note) : null,
+            status && !dirtyCount
+              ? h('div', { class: 'settings-project__item-status', 'data-state': statusState || undefined, role: 'status', 'aria-live': 'polite' }, status)
+              : null,
+            card
           )
         )
       ),
 
-      // ---- Tabs over the tool list: what the rows show ----
-      h('div', { class: 'group settings-project__section' },
-        h('div', { class: 'tool-ov__tabs', role: 'tablist', 'aria-label': 'Wording to show' },
-          tabs.map(([key, label]) => h('button', {
-            key,
-            type: 'button',
-            role: 'tab',
-            'aria-selected': tab === key ? 'true' : 'false',
-            class: 'tool-ov__tab' + (tab === key ? ' tool-ov__tab--on' : ''),
-            onClick: () => setTab(key)
-          },
-            label,
-            key === usedTab ? h('span', { class: 'tool-ov__tab-dot', title: 'Default for chats', 'aria-label': '(default for chats)' }) : null
-          ))
-        ),
+      // ---- The selected item's tools ----
+      panel ? null : h('div', { class: 'group settings-project__section' },
         h('ul', { class: 'group__list' },
           h('li', { class: 'settings-project__item settings-project__item--col' },
-            tab === 'builtin'
-              ? h('div', { class: 'settings-project__item-note' }, 'The wording each tool ships with. Read-only — create a set above to change it.')
-              : null,
-            tab === 'set' && !editing
-              ? h('div', { class: 'settings-project__item-note' }, 'No set yet — create or import one above.')
-              : null,
-            tab === 'compare'
-              ? h('div', { class: 'tool-ov__pair' },
-                h(SetSelect, { id: 'to-cmp-a', value: compareLeft, sets, label: 'Compare from', onChange: setCompareLeft }),
-                h('button', { class: 'btn', type: 'button', 'aria-label': 'Swap sides', onClick: () => { setCompareLeft(compareRight); setCompareRight(compareLeft); } }, '⇄'),
-                h(SetSelect, { id: 'to-cmp-b', value: compareRight, sets, label: 'Compare to', onChange: setCompareRight }),
-                h('span', { class: 'settings-project__item-note' }, tools ? differingCount + ' tools differ' : '')
-              )
-              : null,
-            tab === 'set' && !editing ? null : h('input', {
+            h('input', {
               class: 'input',
               type: 'search',
               value: query,
@@ -754,10 +816,10 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
               'aria-label': 'Search tools',
               onInput: (e) => setQuery(e.currentTarget.value)
             }),
-            tab === 'compare' || editing
+            filterable
               ? h('label', { class: 'tool-ov__filter' },
                 h('input', { type: 'checkbox', checked: onlyDiffering, onChange: (e) => setOnlyDiffering(e.currentTarget.checked) }),
-                tab === 'compare' ? ' Show only tools that differ' : ' Show only tools that differ from built-in'
+                comparing ? ' Show only tools that differ' : ' Show only tools that differ from built-in'
               )
               : null
           )
@@ -766,17 +828,16 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
           ? h('div', { class: 'tool-ov__list' },
             shown.length
               ? shown.map((tool) => {
-                const mode = tab === 'compare' ? 'compare' : editing ? 'set' : 'builtin';
-                const entry = mode === 'set' ? editing.tools[tool.name] : undefined;
+                const entry = mode === 'set' ? set.tools[tool.name] : undefined;
                 return h(ToolRow, {
-                  key: tool.name + '|' + tab + '|' + (tab === 'set' ? editingId : '') + '|' + generation + '|' + (revs[tool.name] || 0),
+                  key: tool.name + '|' + mode + '|' + selected + '|' + generation + '|' + (revs[tool.name] || 0),
                   tool,
                   mode,
                   entry,
-                  left: entryOf(compareLeft, tool.name),
-                  right: entryOf(compareRight, tool.name),
-                  leftLabel: labelOf(compareLeft),
-                  rightLabel: labelOf(compareRight),
+                  left: entryOf(left, tool.name),
+                  right: entryOf(selected, tool.name),
+                  leftLabel: labelOf(left),
+                  rightLabel: labelOf(selected),
                   badge: mode === 'set' ? (differsFromBuiltIn(tool, entry) ? 'changed' : '') : mode === 'compare' ? (differs(tool) ? 'differs' : '') : '',
                   dirty: mode === 'set' && dirtyTools.has(tool.name),
                   open: !!openRows[tool.name],
@@ -785,7 +846,7 @@ export function ToolOverridesPageView({ projectDir = '', from = '', chatId = '' 
                   onRevert: revertTool
                 });
               })
-              : tab === 'set' && !editing ? null : h('div', { class: 'settings-project__item-note tool-ov__empty' }, onlyDiffering && !query ? 'No tool differs.' : 'No tool matches.'))
+              : h('div', { class: 'settings-project__item-note tool-ov__empty' }, onlyDiffering && !query ? 'No tool differs.' : 'No tool matches.'))
           : null
       ),
 

@@ -8,7 +8,7 @@ import vm from 'node:vm';
 const read = (rel) => fs.readFileSync(new URL('../' + rel, import.meta.url), 'utf8');
 const context = vm.createContext({});
 vm.runInContext(read('frontend/src/components/settings/toolOverrides.js').replace(/^export /gm, '')
-  + '\n;globalThis.__m = { normalizeOverrides, parseImport, mergeOverrides, exportText, fieldList, fieldProblem, isCustomized, searchTools, overridesFromResolved, diffWords, diffStats, changedTools, renameProblems, normalizeWording, wordingFromResolved, newSetId, uniqueSetName, snapshotBuiltIn, effectiveEntry, differsFromBuiltIn, wordingChanges };',
+  + '\n;globalThis.__m = { normalizeOverrides, parseImport, mergeOverrides, exportText, fieldList, fieldProblem, isCustomized, searchTools, overridesFromResolved, diffWords, diffStats, changedTools, renameProblems, normalizeWording, wordingFromResolved, newSetId, uniqueSetName, snapshotBuiltIn, effectiveEntry, differsFromBuiltIn, wordingChanges, initialSelection, selectionAfterDelete, newSetTools };',
 context);
 // Values built inside the vm come from another realm; compare through JSON.
 const plain = (v) => JSON.parse(JSON.stringify(v));
@@ -119,6 +119,25 @@ assert.deepEqual(plain(m.searchTools([{ name: 'read_file', description: 'Read a 
   assert.equal(m.parseImport('{"shell":{"description":"Run"}}').name, '', 'a bare map has no name');
 }
 
+// ---- one selection, copies ------------------------------------------------
+{
+  const sets = { a: { name: 'A', tools: { shell: { description: 'a' } } }, b: { name: 'B', tools: {} }, c: { name: 'C', tools: {} } };
+  assert.equal(m.initialSelection({ active: 'b', sets }), 'b', 'opens on the default set');
+  assert.equal(m.initialSelection({ active: '', sets }), 'a', 'else the first set');
+  assert.equal(m.initialSelection({ active: 'gone', sets: {} }), '', 'else Built-in');
+  assert.equal(m.selectionAfterDelete(sets, 'a', 'c'), 'c', 'the default set survives a delete and is picked');
+  assert.equal(m.selectionAfterDelete(sets, 'b', ''), 'c', 'else the next set');
+  assert.equal(m.selectionAfterDelete(sets, 'c', ''), 'b', 'else the previous set');
+  assert.equal(m.selectionAfterDelete({ a: sets.a }, 'a', ''), '', 'else Built-in');
+  const builtIn = [{ name: 'shell', description: 'Run a command' }, { name: 'read', description: '' }];
+  assert.deepEqual(plain(m.newSetTools('', builtIn, sets)), { shell: { description: 'Run a command' } }, 'a copy of Built-in freezes every description');
+  assert.deepEqual(plain(m.newSetTools('empty', builtIn, sets)), {}, 'an empty set holds nothing');
+  const copy = m.newSetTools('a', builtIn, sets);
+  assert.deepEqual(plain(copy), { shell: { description: 'a' } }, 'a copy of a set holds its tools');
+  copy.shell.description = 'changed';
+  assert.equal(sets.a.tools.shell.description, 'a', 'and is independent of it');
+}
+
 // ---- wiring ---------------------------------------------------------------
 assert.match(read('frontend/src/routes.js'), /exactOrQuery\('settings\/project\/tool-overrides'[\s\S]*?name: 'settingsProjectToolOverrides'/);
 const app = read('frontend/src/components/App.jsx');
@@ -136,21 +155,13 @@ assert.match(page, /body\.unset = \['toolOverrides'\]/, 'a legacy project drops 
 assert.doesNotMatch(page, /SAVE_DELAY_MS|scheduleSave/, 'no autosave: edits stay a draft until Save');
 assert.match(page, /'Discard'[\s\S]*'Save'/, 'one Save bar for the whole draft');
 assert.match(page, /'unsaved'/, 'changed rows are marked unsaved');
-assert.match(page, /\[\['builtin', 'Built-in'\], \['set', [^\n]*?'Sets'\], \['compare', 'Compare'\]\]/, 'three tabs: Built-in, the chosen set, Compare');
-assert.match(page, /SetSelect, \{ id: 'to-set-pick'[^}]*builtIn: false/, 'the Sets tab picks the set in a dropdown, not one tab per set');
 assert.match(page, /'\+ New set'/);
-assert.match(page, /'Copy of Built-in'/);
-assert.match(page, /snapshotBuiltIn\(tools\)/, 'Copy of Built-in is a full snapshot');
+assert.match(page, /newSetTools\(newFrom, tools, sets\)/, 'Create set copies through newSetTools');
 assert.match(page, /'Import as new set'/);
-assert.match(page, /'Make default'/, 'a button makes the chosen set (or Built-in) the default');
-assert.ok(page.includes("['set', editingId && sets[editingId] ? sets[editingId].name : 'Sets']"), 'the Sets tab is named after the chosen set');
-{
-  const tabs = page.indexOf("class: 'tool-ov__tabs'");
-  for (const marker of ["id: 'to-set-pick'", "'+ New set'", "'Import…'", "panel === 'new'", "panel === 'import'", "'Make default'", "'Delete set'", "'Use Built-in'"]) {
-    const at = page.indexOf(marker);
-    assert.ok(at > 0 && at < tabs, marker + ' sits in the management section above the tabs');
-  }
-}
-assert.match(page, /'Delete set'/);
+assert.match(page, /'Make default'/);
+assert.match(page, /selectionAfterDelete\(/, 'deleting a set moves the selection by the shared rule');
+assert.match(page, /initialSelection\(/, 'the page opens on the shared initial selection');
+assert.match(page, /\[BUILTIN, 'builtin', 'Built-in'\], \[pickedSet, 'set', [\s\S]{0,80}\['', 'compare', 'Compare'\]/, 'three tabs: Built-in, the picked set, Compare');
+assert.match(page, /openNew\(selected\) \}, set \? 'Duplicate' : 'Copy to new set'\)/, 'every card, Built-in included, can start a new set from it');
 
 console.log('tool overrides ui: ok');
