@@ -16,6 +16,8 @@ The Back arrow points at whichever page you actually came from, most specific fi
 | The Chats tab's project card | the Chats tab |
 | Settings → App defaults (MCP servers, Custom prompts, Custom actions) | the Settings root |
 
+Project settings itself never points Back at project settings: opened without a chat, its Back goes to the project card or list it was entered from (`from=projects` → the Chats tab, `from=settings/projects` → Settings → Projects).
+
 The navigation regression test renders the real tool catalog alongside the agent editor, so native-tool additions do not break the test's imported names.
 
 Two examples, both from a phone:

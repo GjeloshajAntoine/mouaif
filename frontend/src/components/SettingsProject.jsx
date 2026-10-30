@@ -1368,12 +1368,15 @@ h('h2', { class: 'view-title' }, 'Technical details')
   )
   );
 
+  // This page is step 2 of the Back chain (project settings), so without a
+  // chat its own Back skips to where it was entered from instead of itself.
+  const mainBack = chatId() ? navContext() : { from };
   return h(Fragment, null,
     h('div', { class: 'view-head' },
       h('a', {
-href: backHref(navContext()),
+href: backHref(mainBack),
 class: 'view-back',
-'aria-label': backTarget(navContext()).label
+'aria-label': backTarget(mainBack).label
 }, '←'),
       h('h2', { class: 'view-title' }, 'Project settings')
     ),

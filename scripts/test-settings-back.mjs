@@ -159,6 +159,11 @@ function harness(globals) {
   const back = nodes.find((n) => n.attrs.class === 'view-back');
   assert.equal(back.attrs.href, '#/chat/' + CHAT + '?projectDir=' + encodeURIComponent(PROJECT), 'the project page returns to its chat');
   assert.equal(back.attrs['aria-label'], 'Back to chat');
+  // Without a chat it returns to where it was entered from, not to itself.
+  const noChat = h.renderView('SettingsProjectView', { projectDir: PROJECT, from: 'projects', page: 'main' }, { fresh: true })
+    .nodes.find((n) => n.attrs.class === 'view-back');
+  assert.equal(noChat.attrs.href, '#/projects', 'the project page opened from Projects returns there');
+  assert.equal(noChat.attrs['aria-label'], 'Back to projects');
   // The Hide file content row forwards the same context.
   const row = nodes.find((n) => n.attrs['aria-label'] === 'Hide file content');
   assert.equal(row.attrs.href, settingsLink('settings/project/hide', context));
