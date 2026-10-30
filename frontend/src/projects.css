@@ -397,6 +397,73 @@ border-left: 1px solid var(--border);
 .project-card__tools-open svg,
 .project-card__search-open svg { display: block; }
 
+/* Tool list modal (ProjectToolsModal.jsx) — the wrench's sheet. Overlay,
+   sheet and desktop card come from the shared idiom in sheets.css; the body
+   holds the same tool tree as Settings → Project and scrolls on its own. */
+.ptools__sheet {
+  --sheet-width: 560px;
+  --sheet-max-width: 640px;
+  --sheet-height: min(80vh, 720px);
+}
+.ptools__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 4px 4px 4px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.ptools__heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ptools__title { font-weight: 600; }
+.ptools__project {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ptools__close {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-soft);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .ptools__close:hover { background: var(--surface-3); color: var(--fg); }
+}
+.ptools__close:focus-visible { background: var(--surface-3); color: var(--fg); outline: 0; }
+.ptools__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 16px;
+}
+.ptools__foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+}
+.ptools__note { color: var(--muted); font-size: 0.8rem; }
+
 /* The field sits between the card header and the chat list, so the list it
    filters is directly under it. It is not sticky and does not overlay: the
    card's chat list stays the scroll owner.

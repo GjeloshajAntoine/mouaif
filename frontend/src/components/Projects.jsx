@@ -7,6 +7,7 @@ import { formatCost } from '../usage.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
 import { useLongPressReorder } from '../hooks/useLongPressReorder.js';
 import { PromptIcon } from './PromptIcon.jsx';
+import { ProjectToolsModal } from './ProjectToolsModal.jsx';
 import { pinnedProfiles } from './settings/profileLaunchers.js';
 const CHAT_PAGE_SIZE = 30;
 // A card's search is a peek, not a page: the card holds about three rows and
@@ -181,6 +182,8 @@ const [pinnedBuiltins, setPinnedBuiltins] = useState([]);
 // list renders the results; the moment the term moves on it falls back to the
 // normal chat page, so a stale result can never be attributed to a new term.
 const [searchOpen, setSearchOpen] = useState(false);
+// The tool list modal (the wrench in the action row).
+const [toolsOpen, setToolsOpen] = useState(false);
 const [term, setTerm] = useState('');
 const [results, setResults] = useState(null);
 const [searching, setSearching] = useState(false);
@@ -559,11 +562,13 @@ disabled: isCreating,
 'aria-label': 'New chat with ' + p.label,
 title: 'New chat with ' + p.label
 }, h(PromptIcon, { name: p.icon, size: 20 }))),
-// The project's tool list: Settings → Project, scrolled to Tools.
+// The project's tool list, in a modal over the Projects tab.
 h('button', {
 class: 'project-card__tools-open',
 type: 'button',
-onClick: () => nav('settings/project?projectDir=' + encodeURIComponent(project.path) + '&from=projects&section=tools'),
+'aria-haspopup': 'dialog',
+'aria-expanded': String(toolsOpen),
+onClick: () => setToolsOpen(true),
 'aria-label': 'Tools for ' + (project.name || project.path),
 title: 'Tool list'
 }, h(ProjectToolsIcon, { size: 18 })),
@@ -575,7 +580,8 @@ onClick: () => { if (searchOpen) closeSearch(); else openSearch(); },
 'aria-label': searchOpen ? 'Close chat search' : 'Search chats in ' + (project.name || project.path),
 title: searchOpen ? 'Close search' : 'Search chats'
 }, h(ProjectSearchIcon, { size: 18 }))
-)
+),
+toolsOpen ? h(ProjectToolsModal, { project, onClose: () => setToolsOpen(false) }) : null
 );
 }
 
