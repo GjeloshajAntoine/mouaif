@@ -330,15 +330,6 @@ async function runSingleToolCall(c, cx) {
       else if (c.name === 'schedule_wake') {
       summary = [args && (args.in ? 'in ' + args.in : args.at ? 'at ' + args.at : ''), args && args.every ? 'every ' + args.every : '', args && args.time ? 'daily at ' + args.time : '', args && args.message].filter(Boolean).join(' \u2014 ');
       }
-      else if (c.name === 'run_start') {
-      summary = [args && args.goal, args && args.maxTurns ? args.maxTurns + ' turns' : '', args && args.maxCostUsd ? '$' + args.maxCostUsd : '', args && args.maxHours ? args.maxHours + 'h' : ''].filter(Boolean).join(' \u2014 ');
-      }
-      else if (c.name === 'run_end') {
-      summary = [args && args.outcome, args && args.summary].filter(Boolean).join(': ') || 'end the run';
-      }
-      else if (c.name === 'run_status') {
-      summary = 'read the run';
-      }
       else if (c.name === 'schedule_cancel') {
       summary = (args && args.id) || '';
       }
