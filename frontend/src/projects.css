@@ -6,6 +6,10 @@
 .projects__list > li {
   animation: mouaif-bubble-in var(--dur) var(--ease-out) both;
 }
+/* A card that has entered stays put: the browser restarts a CSS animation when
+   its element is moved in the DOM, and a reorder moves cards, so without this
+   the dropped card would fade in again. (data-entered is set on animationend.) */
+.projects__list > li[data-entered] { animation: none; }
 .projects__list > li:nth-child(1) { animation-delay: 0ms; }
 .projects__list > li:nth-child(2) { animation-delay: 30ms; }
 .projects__list > li:nth-child(3) { animation-delay: 60ms; }
@@ -49,12 +53,42 @@
   display: flex;
   flex-direction: column;
 }
+/* Reordering: the dragged card is lifted above the others, which slide aside.
+   `translate` / `scale` (not `transform`) so they add to the entrance
+   animation instead of being overridden by it. */
+.projects__list[data-reordering] > li:not([data-dragging]) {
+  transition: translate 150ms var(--ease-out);
+}
+.projects__list > li[data-dragging] {
+  position: relative;
+  z-index: 3;
+  scale: 1.02;
+  box-shadow: var(--shadow-md);
+  cursor: grabbing;
+  transition: scale 120ms var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .projects__list[data-reordering] > li:not([data-dragging]),
+  .projects__list > li[data-dragging] { transition: none; }
+}
+/* Each card's entrance animation leaves it in its own stacking context, so a
+   later card would paint over an earlier card's open menu. Lift the card whose
+   menu is open above its siblings. */
+.project-card:has(.project-card__menu-btn[aria-expanded="true"]) {
+  position: relative;
+  z-index: 2;
+}
 .project-card__head {
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: var(--tap);
   padding-left: 12px;
+  /* A press-and-hold on the header lifts the card (useLongPressReorder), so
+     the hold must not select text or open the browser's callout. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 .project-card__identity {
   flex: 1;

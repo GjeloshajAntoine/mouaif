@@ -60,6 +60,18 @@ async function handleProjects(req, res, parsed) {
     return sendJSON(res, 200, { projects: projects.listProjects() });
   }
 
+  // PUT /api/projects/registered/order  body: { ids: [id, ...] }
+  // The order the project cards are shown in. Registered ids missing from the
+  // body keep their relative order after the listed ones (see
+  // projects.reorderProjects), so a stale client cannot drop a project.
+  if (urlPath === '/api/projects/registered/order' && method === 'PUT') {
+    const body = await readJsonOr400(req, res);
+    if (!body) return;
+    const next = projects.reorderProjects(body.ids);
+    if (!next) return sendJSON(res, 400, { error: 'ids must be an array of project ids' });
+    return sendJSON(res, 200, { projects: next });
+  }
+
   // DELETE /api/projects/registered/:id
   const delMatch = urlPath.match(/^\/api\/projects\/registered\/([A-Za-z0-9_-]+)$/);
   if (delMatch && method === 'DELETE') {

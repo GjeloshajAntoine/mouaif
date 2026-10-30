@@ -5,6 +5,7 @@ import { fetchJson, projectsReload } from '../api.js';
 import { nav } from '../router.js';
 import { formatCost } from '../usage.js';
 import { useClickOutside } from '../hooks/useClickOutside.js';
+import { useLongPressReorder } from '../hooks/useLongPressReorder.js';
 import { PromptIcon } from './PromptIcon.jsx';
 import { pinnedProfiles } from './settings/profileLaunchers.js';
 const CHAT_PAGE_SIZE = 30;
@@ -30,7 +31,7 @@ function fmtChatDate(chat) {
   return { kind: chat.lastOpenedAt ? 'opened' : 'created', text };
 }
 
-function ProjectMenu({ project, onRename, onUnregister }) {
+function ProjectMenu({ project, onRename, onUnregister, onMove, canMoveUp, canMoveDown }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
   useClickOutside(menuRef, () => setOpen(false), open);
@@ -52,6 +53,9 @@ function ProjectMenu({ project, onRename, onUnregister }) {
     },
       h('button', { type: 'button', onClick: () => { setOpen(false); nav('settings/project?projectDir=' + encodeURIComponent(project.path) + '&from=projects'); } }, 'Settings…'),
       h('button', { type: 'button', onClick: () => { setOpen(false); onRename(project); } }, 'Rename…'),
+      // The keyboard / one-tap route to the same reorder a long press does.
+      onMove && (canMoveUp || canMoveDown) ? h('button', { type: 'button', disabled: !canMoveUp, onClick: () => { setOpen(false); onMove(project, -1); } }, 'Move up') : null,
+      onMove && (canMoveUp || canMoveDown) ? h('button', { type: 'button', disabled: !canMoveDown, onClick: () => { setOpen(false); onMove(project, 1); } }, 'Move down') : null,
       h('button', { type: 'button', 'data-danger': '1', onClick: () => { setOpen(false); onUnregister(project); } }, 'Unregister')
     )
   );
@@ -496,8 +500,27 @@ export function ProjectsView() {
   const [projects, setProjects] = useState([]);
   const [statusText, setStatusText] = useState('loading…');
   const [statusState, setStatusState] = useState('busy');
+  const listRef = useRef(null);
+  const projectsRef = useRef([]);
+  const reorder = useLongPressReorder({ listRef, onReorder: commitOrder, idAttr: 'data-project-id' });
+  const statusTimer = useRef(0);
+
+  // Show `text` in the status line for a moment, then go back to the count.
+  function flashStatus(text, state) {
+    clearTimeout(statusTimer.current);
+    setStatusText(text);
+    setStatusState(state || 'success');
+    statusTimer.current = setTimeout(() => {
+      setStatusText(projectsRef.current.length + (projectsRef.current.length === 1 ? ' project' : ' projects'));
+      setStatusState(projectsRef.current.length ? 'success' : null);
+    }, 2500);
+  }
+  useEffect(() => () => clearTimeout(statusTimer.current), []);
 
   async function loadProjects() {
+    // A reload mid-drag would re-render the cards under the finger.
+    if (reorder.isDragging()) return;
+    clearTimeout(statusTimer.current);
     setStatusText('loading…');
     setStatusState('busy');
     try {
@@ -509,6 +532,7 @@ export function ProjectsView() {
       }
       const list = r.body.projects || [];
       setProjects(list);
+      projectsRef.current = list;
       setStatusText(list.length + (list.length === 1 ? ' project' : ' projects'));
       setStatusState(list.length ? 'success' : null);
     } catch (err) {
@@ -524,6 +548,37 @@ export function ProjectsView() {
       console.warn('loadProjects rejected:', err);
     });
   }, [projectsReload.value]);
+
+  // Save a new card order. The list is reordered at once (the card is already
+  // where the user put it) and the server confirms; if it does not, the list is
+  // reloaded so the screen shows what is actually stored.
+  async function commitOrder(ids) {
+    const byId = new Map(projectsRef.current.map((p) => [p.id, p]));
+    const next = ids.map((id) => byId.get(id)).filter(Boolean);
+    if (next.length !== projectsRef.current.length) return;
+    projectsRef.current = next;
+    setProjects(next);
+    let ok = false;
+    try {
+      const r = await fetchJson('/api/projects/registered/order', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+      ok = r.status === 200;
+    } catch (err) {}
+    if (!ok) {
+      await loadProjects();
+      flashStatus('reorder failed', 'error');
+    }
+  }
+
+  function moveProject(project, delta) {
+    const ids = projectsRef.current.map((p) => p.id);
+    const from = ids.indexOf(project.id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    commitOrder(ids);
+    // Announced through the status line, which is an aria-live region.
+    flashStatus('Moved ' + (project.name || project.path) + ' to ' + (to + 1) + ' of ' + ids.length);
+  }
 
   async function renameProject(project) {
     const next = prompt('Rename project', project.name || project.path);
@@ -548,24 +603,30 @@ export function ProjectsView() {
       h('span', { class: 'status page-bar__status', 'data-state': statusState || undefined, 'aria-live': 'polite' }, statusText),
       h('button', { class: 'page-bar__add', type: 'button', onClick: () => nav('projects/new'), 'aria-label': 'Add project' }, '+')
     ),
-    h('ul', { class: 'projects__list', 'aria-label': 'Registered projects' },
+    h('ul', { class: 'projects__list', ref: listRef, 'aria-label': 'Registered projects' },
       projects.length === 0 && statusState !== 'busy' ?
       h('li', { class: 'projects__empty' },
         h('span', { class: 'projects__empty-icon', dangerouslySetInnerHTML: { __html: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.379a1.5 1.5 0 0 1 1.06.44L11.88 8.38a.5.5 0 0 0 .354.146H19.5A1.5 1.5 0 0 1 21 10.027v7.473A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10Z"/></svg>' } }),
         h('p', { class: 'projects__empty-title' }, 'No projects yet'),
         h('p', { class: 'projects__empty-text' }, 'Tap "Add project" to register a folder on disk. Each project keeps its own chats, prompt profile, and trace setting.')
       )
-      : projects.map(p => {
+      : projects.map((p, index) => {
           const costBits = p.totalCost || { total: 0, known: false, currency: 'USD' };
           const costStr = costBits.known ? formatCost(costBits.total) : '--';
-          return h('li', { key: p.id, class: 'project-card' },
-            h('div', { class: 'project-card__head' },
+          return h('li', {
+            key: p.id, class: 'project-card', 'data-project-id': p.id,
+            // Once the entrance animation has played the card keeps its place
+            // for good: moving it in the DOM (a reorder) would replay it.
+            onAnimationEnd: (e) => { if (e.target === e.currentTarget) e.currentTarget.setAttribute('data-entered', '1'); }
+          },
+            // Press and hold the header to lift the card and drag it.
+            h('div', { class: 'project-card__head', onPointerDown: (e) => reorder.start(e, p.id), onContextMenu: reorder.suppress },
               h('div', { class: 'project-card__identity' },
                 h('div', { class: 'project-card__name' }, p.name || p.path),
                 h('div', { class: 'project-card__path' }, p.path)
               ),
               h('span', { class: 'project-card__cost' }, costStr),
-              h(ProjectMenu, { project: p, onRename: renameProject, onUnregister: unregisterProject })
+              h(ProjectMenu, { project: p, onRename: renameProject, onUnregister: unregisterProject, onMove: moveProject, canMoveUp: index > 0, canMoveDown: index < projects.length - 1 })
             ),
             h(ChatList, { project: p })
           );

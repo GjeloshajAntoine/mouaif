@@ -19,6 +19,7 @@
 //     getProject(id)          -> { id, path, name, createdAt } | null
 //     registerProject(path)   -> { id, path, name, createdAt }
 //     removeProject(id)       -> true | false
+//     reorderProjects(ids)    -> the list in the order of ids | null
 //
 //   Project config file (the per-project settings file, `.mouaif.json`,
 //   either at the folder root or inside a `.mouaif/` folder):
@@ -381,6 +382,28 @@ function renameProject(pid, newName) {
   return updated;
 }
 
+// Put the registered projects in the order of `ids` (the order the cards are
+// shown in). Ids that are not registered are ignored, and a registered project
+// that `ids` leaves out keeps its relative order after the listed ones, so a
+// project added or removed in another tab while a card is being dragged is
+// never lost. Returns the new list, or null when `ids` is not an array of
+// strings.
+function reorderProjects(ids) {
+  if (!Array.isArray(ids) || !ids.every(x => typeof x === 'string')) return null;
+  const list = readProjects();
+  const byId = new Map(list.map(p => [p.id, p]));
+  const seen = new Set();
+  const head = [];
+  for (const pid of ids) {
+    if (!byId.has(pid) || seen.has(pid)) continue;
+    seen.add(pid);
+    head.push(byId.get(pid));
+  }
+  const next = head.concat(list.filter(p => !seen.has(p.id)));
+  if (next.some((p, i) => p !== list[i])) writeProjects(next);
+  return next.map(project => ({ ...project, totalCost: normalizeTotalCost(project.totalCost) }));
+}
+
 module.exports = {
   // filesystem
   listDir,
@@ -398,6 +421,7 @@ module.exports = {
   registerProject,
   removeProject,
   renameProject,
+  reorderProjects,
   setProjectTotalCost,
   adjustProjectTotalCost,
 // helpers (exported for tests + future inspector)

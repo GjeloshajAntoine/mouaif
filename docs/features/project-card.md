@@ -21,6 +21,19 @@ The Project card is the main organizational view in mouaif: each registered proj
 - **Search** — the magnifier at the end of the action row opens a field that searches this project's chats by title, message text, and composer draft. See [Project card search](./project-card-search.md).
 - **Custom prompt buttons** — prompts with **Add to project card** enabled appear as icon buttons beside **+ New chat**. Tapping one creates a chat with that prompt attached; its icon also identifies the prompt on the resulting chat row.
 
+## Reordering
+
+Project cards can be put in any order, and the order is saved (it is the order of the registered projects in the app settings, so it is the same on every device).
+
+- **Press and hold a card's header** (its name, path or cost) for about half a second. The card lifts, the phone gives a short buzz where it can, and the other cards slide aside as you drag. Release to drop it where the finger is.
+- A **tap**, or a **scroll that starts on the header**, does not lift the card: if the finger moves before the hold is done, the page just scrolls.
+- The `⋯` button, the chat list and the **+ New chat** row are never drag handles, so scrolling a card's chats and tapping them behave as before.
+- Drag near the top or bottom of the screen and the page scrolls with you.
+- **Escape** (or the system cancelling the touch) puts the card back and saves nothing.
+- The `⋯` menu has **Move up** and **Move down** for the same reordering without dragging, for keyboard and screen-reader use or when holding is hard. The move is announced in the status line next to the title ("Moved Bravo to 3 of 4").
+- If the save fails the list reloads to the stored order and the status line says "reorder failed".
+- Text in the header cannot be selected, since a hold would otherwise start a selection.
+
 ## Behavior
 
 - **Independent scrolling** — each card's chat list scrolls internally to prevent tall chat lists from pushing the rest of your dashboard out of view. Vertical overscroll is contained so reaching the first or last chat does not move the dashboard behind the list.

@@ -28,6 +28,7 @@ A project's chats metadata is stored in `<projectDir>/.mouaif.json` (or database
 |--------|------|--------------|----------|
 | GET    | `/api/projects/registered` | — | `{ projects: [{ id, path, name, createdAt }] }` |
 | PATCH  | `/api/projects/registered/:id` | `{ name }` | `{ project }` (400 on empty/whitespace, 404 on unknown) |
+| PUT    | `/api/projects/registered/order` | `{ ids: [id, ...] }` | `{ projects }` in the new order (400 unless `ids` is an array of strings) |
 | DELETE | `/api/projects/registered/:id` | — | `{ ok: true }` (folder on disk is NOT touched) |
 | GET    | `/api/chats?projectDir=<abs>` | — | `{ chats: [..., totalCost: { total, known, currency }] }` |
 | GET    | `/api/chats/:id?projectDir=<abs>` | — | `{ chat }` or 404 |
@@ -78,3 +79,14 @@ List rows are summaries, not full chat records: `GET /api/chats` replaces the `d
   touch-action: pan-y;
 }
 ```
+
+## Reordering
+
+- **Order is the array order.** The registered projects live in the app setting `projects`; `GET /api/projects/registered` returns them in that order and `ProjectsView` renders them in it. `projects.reorderProjects(ids)` puts the listed ids first (unknown ids and repeats ignored), keeps every unlisted project after them in its old relative order, and writes nothing when the order is unchanged. A client with a stale list therefore cannot drop a project that was added elsewhere.
+- **Gesture.** `frontend/src/hooks/useLongPressReorder.js`: pointer events on `.project-card__head`, a 400 ms hold (`HOLD_MS`) with an 8 px slop (`HOLD_SLOP_PX`) — more movement than that before the hold fires hands the gesture back to the browser as a scroll. Presses that start inside `.project-card__menu` or on a button/link are ignored. Once the hold fires the hook adds a non-passive `touchmove` listener that cancels the scroll (this is what keeps the pointer stream from being cancelled by the browser's pan), and `contextmenu` is cancelled on the header.
+- **Drag is DOM-only.** The cards move with the CSS `translate`/`scale` properties, not `transform`, because the card entrance animation animates `transform` with `fill-mode: both` and would override an inline `transform`. State is not touched while dragging; `onReorder(ids)` runs once on drop, after a 150 ms settle animation, and the translates are cleared two frames after the re-render.
+- **Slot is chosen by the finger**, not by the lifted card's middle (`reorderedIds`): the cards are tall and held by the header.
+- **Scrolling.** The app scrolls `.app__main`, not the window, so the hook finds the nearest vertical scroller (`scrollerOf`) and works in its content coordinates; within 72 px of its top or bottom edge it scrolls by up to 14 px per frame.
+- **Save.** `ProjectsView.commitOrder` reorders the list at once, `PUT`s the ids and, if the response is not 200, reloads the list (`loadProjects`). `loadProjects` does nothing while a drag is active.
+- **Menu route.** `Move up` / `Move down` in `ProjectMenu` call the same `commitOrder` and announce through the status line (`aria-live`).
+- Tests: `scripts/test-project-reorder.js` (store, route), `scripts/test-project-reorder-ui.mjs` (mouse and touch drag, tap, early move, Escape, auto-scroll, menu, failed save).
