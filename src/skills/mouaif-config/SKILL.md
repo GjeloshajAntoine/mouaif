@@ -15,7 +15,7 @@ Never write either store by hand. Use `get_settings` and `update_settings` — t
 get_settings({ scope: "project" })                     # the raw project file
 get_settings({ scope: "app", keys: ["promptSize"] })   # one or a few app keys
 list_projects()                                        # registered projects: id, path, name, cost
-get_app_info()                                         # feature state and this chat's effective tool permissions
+list_features()                                        # feature state and this chat's effective tool permissions
 ```
 
 `get_settings` returns credentials redacted: an `apiKey` on a provider or model entry comes back as `hasApiKey`. That shape round-trips, so you may read a provider, change one field, and write it back.
@@ -82,7 +82,7 @@ An agent is a named persona (`{ name, content, tools?, modelId?, providerId?, th
 | `shell` | the `shell` tool |
 | `file` | `read_file`, `list_files`, `search_files`, `write_file`, `edit_file`, `group_read`, `group_edit` |
 | `chats` | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` |
-| `mouaif` | `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features` |
+| `mouaif` | `get_settings`, `update_settings`, `list_projects`, `restart_app`, `list_features` |
 | `subagent` | the `subagent` tool |
 
 `ask_user` is binary: only `off` or `ask`. `shell` is the sole command execution tool and uses `tools.shell`, not the mouaif family gate. Use `async: true` for a background PID and log path; inspect or stop it with shell commands. `schedule_wake` runs a prompt in the chat later or on a repeat (`every`, or `time` with `days` and `timezone`); a chat has one recurring task.

@@ -13,7 +13,6 @@
 //   settings   — read and write app-level settings and the project's
 //                `.mouaif.json`
 //   projects   — list the registered projects
-//   info       — describe the tool surface (the old `list_features` report)
 //
 // Implements docs/features/mouaif-tool.md.
 //
@@ -61,7 +60,7 @@ const PERMISSION_KEYS = Object.freeze(['tools', 'mcp', 'authAccounts', 'authPend
 
 // ---- Area table ----------------------------------------------------------
 // The action -> area map is data, not control flow: the schema enum below is
-// generated from it, the dispatcher routes through it, and `info` reports it.
+// generated from it and the dispatcher routes through it.
 const ACTIONS = Object.freeze({
   list: 'chats',
   get: 'chats',
@@ -77,8 +76,7 @@ const ACTIONS = Object.freeze({
   settings_get: 'settings',
   settings_update: 'settings',
   app_create: 'apps',
-  project_list: 'projects',
-  info: 'info'
+  project_list: 'projects'
 });
 
 const AREAS = Object.freeze({
@@ -86,8 +84,7 @@ const AREAS = Object.freeze({
   attachments: 'Attach an image file from the project to a chat draft or to a user message.',
   settings: 'Read and write app-level settings and the project\u2019s .mouaif.json.',
   apps: 'Create local single-file MCP Apps or prepare development drafts.',
-  projects: 'List the projects registered in the app.',
-  info: 'Describe the mouaif feature state and this tool\u2019s actions.'
+  projects: 'List the projects registered in the app.'
 });
 
 const ACTION_NAMES = Object.freeze(Object.keys(ACTIONS));
@@ -107,10 +104,10 @@ const GROUPS = Object.freeze([
   Object.freeze({
     id: 'mouaif-settings',
     name: 'mouaif',
-    description: 'app & project settings \u00b7 local apps \u00b7 projects \u00b7 feature info',
-    areas: Object.freeze(['settings', 'apps', 'projects', 'info']),
+    description: 'app & project settings \u00b7 local apps \u00b7 projects',
+    areas: Object.freeze(['settings', 'apps', 'projects']),
     actions: Object.freeze(
-    ACTION_NAMES.filter((name) => ['settings', 'apps', 'projects', 'info'].includes(ACTIONS[name]))
+    ACTION_NAMES.filter((name) => ['settings', 'apps', 'projects'].includes(ACTIONS[name]))
     )
   })
 ]);
@@ -122,7 +119,7 @@ const PARAMETERS = {
         action: {
           type: 'string',
           enum: ACTION_NAMES,
-          description: 'Which mouaif action to run. list/get/create/update/delete/search act on chats; attach/list_attachments act on a chat\u2019s images; settings_get/settings_update read or write settings; project_list lists projects; info reports the feature state.'
+          description: 'Which mouaif action to run. list/get/create/update/delete/search act on chats; attach/list_attachments act on a chat\u2019s images; settings_get/settings_update read or write settings; app_create shows an MCP App; project_list lists projects.'
         },
         chatId: {
           type: 'string',
@@ -132,7 +129,7 @@ const PARAMETERS = {
         name: { type: 'string', description: 'App name (1–100 characters; default On-the-fly app).' },
         filename: { type: 'string', description: 'Required when creating a new file with source (omit when updating an existing path): .html/.htm or browser .js/.mjs filename.' },
         source: { type: 'string', description: 'Self-contained HTML or browser JavaScript, at most 512 KiB. Combine with filename to create a new app file, or with an existing path to update that app in place and reload it in the chat. No external assets, imports, Node APIs or network. The host injects window.mouaifApp and window.mouaifAppReady; do not create another bridge. To communicate with the agent in this chat, await window.mouaifAppReady and call window.mouaifApp.sendMessage({ role: "user", content: [{ type: "text", text: "..." }] }); listen for agent messages via window.mouaifApp.addEventListener("toolresult", params => ...) or window.addEventListener("mouaif-app-message", e => ...).' },
-        message: { type: 'string', description: 'Send a message (1–16384 bytes) from the agent to the mounted MCP App in the current chat via official AppBridge sendToolInput / sendToolResult notifications.' },
+        message: { type: 'string', description: 'Text (1–16384 bytes) to send to the MCP App mounted in this chat. The page receives it as a "toolresult" event and a "mouaif-app-message" event (see `source`).' },
         request: { type: 'string', description: 'Prepare a separate unsent development chat draft (1–16000 characters); does not generate or start an app.' },
         topic: {
           type: 'string',
@@ -148,12 +145,12 @@ const PARAMETERS = {
           description: 'Scan messages before this sequence number. Pass nextBeforeSeq from the previous page; omit for the newest page.'
         },
         query: { type: 'string', description: 'Text to match against chat titles, drafts, and messages.' },
-        offset: { type: 'integer', minimum: 0, description: 'Model search: skip this many matches (default 0); use nextOffset for the next page.' },
-        includeLive: { type: 'boolean', description: 'Model search: include configured providers’ live catalogs (default true). False searches only saved project models.' },
+        offset: { type: 'integer', minimum: 0, description: 'Skip this many matches (default 0); pass nextOffset from the previous page.' },
+        includeLive: { type: 'boolean', description: 'Include configured providers’ live catalogs (default true). False searches only saved project models.' },
         providerId: { type: 'string', description: 'Provider connection id for the chat\u2019s model (e.g. "openai-compatible").' },
-        modelId: { type: 'string', description: 'create/update: project or live-catalog model id. A project model can infer its provider; a live model needs providerId. update: "" clears the model choice.' },
-        subagentProviderId: { type: 'string', description: 'update: provider connection for the chat’s subagent default.' },
-        subagentModelId: { type: 'string', description: 'update: model for unpinned subagents; "" clears the chat default.' },
+        modelId: { type: 'string', description: 'Project or live-catalog model id. A project model can infer its provider; a live model needs providerId.' },
+        subagentProviderId: { type: 'string', description: 'Provider connection for the chat’s default subagent model.' },
+        subagentModelId: { type: 'string', description: 'Model for subagents that do not name their own; "" clears the chat default.' },
         promptId: { type: 'string', description: 'Custom prompt id to attach to the chat ("" clears it).' },
         promptSize: {
           type: 'string',
@@ -170,7 +167,7 @@ const PARAMETERS = {
           type: 'string',
           description: 'Image path relative to the calling chat’s working folder (the project by default; e.g. "docs/features/images/shot.png").'
         },
-        directory: { type: 'string', description: 'Required. An existing directory, relative to the original project or absolute (e.g. ".mouaif/workspaces/<name>"), or "" (or ".") to return to the original project folder. Folders are never created: prepare any new workspace or worktree under .mouaif/workspaces/<name> with an authorized shell command first, then select that existing directory.' },
+        directory: { type: 'string', description: 'An existing directory, relative to the original project or absolute (e.g. ".mouaif/workspaces/<name>"), or "" (or ".") to return to the original project folder.' },
         target: {
         type: 'string',
           enum: ['draft', 'message'],
@@ -180,11 +177,11 @@ const PARAMETERS = {
         scope: {
           type: 'string',
           enum: ['app', 'project'],
-          description: 'Settings store: "app" or "project". Reads default to app; writes default to project.'
+          description: 'Settings store: "app" (every project) or "project" (this project’s .mouaif.json, which overrides app).'
         },
         keys: { type: 'array', items: { type: 'string' }, description: 'Only return these setting keys.' },
-        patch: { type: 'object', description: 'Setting keys to merge into the chosen scope.' },
-        unset: { type: 'array', items: { type: 'string' }, description: 'Keys to remove from project settings (project scope only).' },
+        patch: { type: 'object', description: 'Setting keys to merge into the chosen scope. Top-level keys merge; an array value (models, prompts, tags, agents, …) replaces the stored array, so read it, change it and write it back whole.' },
+        unset: { type: 'array', items: { type: 'string' }, description: 'Project scope only: keys to remove, so the app value applies again.' },
         confirm: { type: 'boolean', description: 'Must be true to actually delete the chat.' }
       },
       required: ['action'],
@@ -205,6 +202,8 @@ const SPECS = Object.freeze(Object.fromEntries(TOOL_NAMES.map((name) => {
     properties.providerId = { type: 'string', description: 'Restrict results to this provider connection id; omit to search all configured providers.' };
   }
   if (name === 'create_mcp_app') properties.path = { type: 'string', description: 'Existing HTML/browser-JS path relative to the original project folder, not the chat working folder. Pass path alone to open/reload an existing app file, or path + source to update it in place. Must resolve inside the project.' };
+  if (name === 'update_chat') properties.modelId = { ...properties.modelId, description: properties.modelId.description + ' "" clears the model choice.' };
+  if (name === 'create_chat') properties.draft = { type: 'string', description: 'Opening composer draft for the new chat (max ' + MAX_TOPIC_CHARS + ' chars); not sent.' };
   if (name === 'start_chat') properties.content = { type: 'string', description: 'Prompt to send to the selected chat (required, max 200000 chars). Starts an AI turn, not a draft.' };
   return [name, { type: 'function', function: { name, description: definition.description,
     parameters: { type: 'object', properties, required: definition.required || [], additionalProperties: false }
@@ -457,7 +456,8 @@ async function runChats(args, opts) {
 
   if (action === 'create') {
     const title = trimString(args.title, MAX_TITLE_CHARS);
-    const topic = trimString(args.topic, MAX_TOPIC_CHARS);
+    // `topic` is the field's older name; the create_chat tool advertises `draft`.
+    const topic = trimString(args.draft !== undefined ? args.draft : args.topic, MAX_TOPIC_CHARS);
     const providerId = trimString(args.providerId, 128);
     const modelId = trimString(args.modelId, 256);
     // Validate before creating: a rejected selection must not leave a
@@ -781,18 +781,6 @@ function runProjects(args, opts) {
   });
 }
 
-// ---- info area -----------------------------------------------------------
-
-async function runInfo(args, opts) {
-  const projectDir = resolveProjectDir(opts);
-  const agentFeatures = require('../agentFeatures.js');
-  const chat = (opts && opts.chat) || ((opts && opts.chatId) ? chats.getChat(projectDir, opts.chatId) : undefined);
-  const state = await agentFeatures.dispatchListFeatures({}, Object.assign({}, opts, { chat, projectDir }));
-  const result = Object.assign({ ok: true, tool: 'get_app_info',
-    nativeTools: TOOL_NAMES.map((name) => ({ name, description: DEFINITIONS[name].description })) }, state.result || {});
-  return ok(result);
-}
-
 async function runApps(args, opts) {
   const projectDir = require('../instant-mcp-apps.js').projectRoot(resolveProjectDir(opts));
   if (opts.signal?.aborted) throw typedError('EABORTED', 'App creation cancelled');
@@ -809,8 +797,7 @@ const HANDLERS = {
   attachments: runAttachments,
   settings: (args, opts) => runSettings(args, opts),
   apps: runApps,
-  projects: runProjects,
-  info: runInfo
+  projects: runProjects
 };
 
 // Providers do not all enforce JSON schemas. Validate the published shape

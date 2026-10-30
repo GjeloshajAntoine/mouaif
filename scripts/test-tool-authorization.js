@@ -155,7 +155,7 @@ async function main() {
   // per-leaf overrides on top, the same Allow / Off precedence.
   assert.deepEqual([...authz.familyTools('chats')].sort(), authz.TOOL_FAMILIES.chats.slice().sort());
   assert.equal(authz.configToolName('delete_chat'), 'chats');
-  assert.equal(authz.configToolName('get_app_info'), 'mouaif');
+  assert.equal(authz.configToolName('list_projects'), 'mouaif');
   authz.setAuthorization(projectDir, { tools: { chats: { mode: 'off' } } });
   for (const name of authz.TOOL_FAMILIES.chats) {
     assert.equal(authz.effectiveConfig(projectDir, name).mode, 'off', name + ' follows the chats gate Off');

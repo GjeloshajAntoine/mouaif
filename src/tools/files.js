@@ -1129,11 +1129,11 @@ const SINGLE_FILE_SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read a text file from the project directory, or open an image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.ico`) by attaching its pixels as an image part so a vision model can see it. A text read returns the file body with a header that shows the path, line range, and total line count. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; text reads over 10000 lines or 4 MB are refused. An image read returns a header (path, MIME type, size) plus the picture; images over 4 MB are refused — downscale first.',
+      description: 'Read a text file from the chat\'s working folder (the project by default), or open an image (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`, `.ico`) by attaching its pixels as an image part so a vision model can see it. A text read returns the file body with a header that shows the path, line range, and total line count. Use startLine/endLine (1-indexed, inclusive) to read a slice of a large file; text reads over 10000 lines or 4 MB are refused. Lines the user marked hidden come back replaced by a redaction marker, with line numbers unchanged. An image read returns a header (path, MIME type, size) plus the picture; images over 4 MB are refused — downscale first.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'POSIX path relative to the project root (e.g. "src/index.js").' },
+          path: { type: 'string', description: 'POSIX path relative to the chat\'s working folder (e.g. "src/index.js").' },
           startLine: { type: 'integer', description: 'Optional 1-indexed start line for a slice.' },
           endLine: { type: 'integer', description: 'Optional 1-indexed inclusive end line for a slice.' }
         },
@@ -1146,11 +1146,11 @@ const SINGLE_FILE_SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'list_files',
-      description: 'List text and image files in the project directory. Honors a simple glob pattern ("src/**/*.js", "**/*.test.*", "README.md"). Image files are marked "(image)" — read them with read_file to see the picture. Skips node_modules, .git, .mouaif, dist, build. Result is capped at 1000 entries.',
+      description: 'List text and image files in the chat\'s working folder (the project by default). Honors a simple glob pattern ("src/**/*.js", "**/*.test.*", "README.md"). Image files are marked "(image)" — read them with read_file to see the picture. Skips ' + searchEngine.SKIP_DIRS.join(', ') + ' (a fixed list; .gitignore is not read). Result is capped at ' + DEFAULT_LIST_MAX_ENTRIES + ' entries.',
       parameters: {
         type: 'object',
         properties: {
-          pattern: { type: 'string', description: 'Optional glob relative to the project root. Omit to list every text file.' }
+          pattern: { type: 'string', description: 'Optional glob relative to the working folder. Omit to list every text and image file.' }
         },
         additionalProperties: false
       }
@@ -1160,12 +1160,12 @@ const SINGLE_FILE_SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'search_files',
-      description: 'Search file contents with a ripgrep-style regular expression. Honors the project\'s .gitignore, so generated and build output trees are skipped. Binary files are skipped. Matches are printed as an indented tree: each file\'s path segments once, then its "line: text" rows one level deeper. Optional `path` scopes the search to a directory or a single file, and a path that does not exist yet still searches its nearest existing ancestor ("src/util" searches "src/"). Optional `include` filters by glob, e.g. "*.js" or "*.{ts,tsx}". Destructive and named patterns stay plain: backreferences (\\1), lookahead and lookbehind are rejected. Capped at 200 matches / 2M chars scanned.',
+      description: 'Search file contents with a ripgrep-style regular expression. Honors the project\'s .gitignore, so generated and build output trees are skipped. Binary files are skipped. Matches are printed as an indented tree: each file\'s path segments once, then its "line: text" rows one level deeper. Optional `path` scopes the search to a directory or a single file, and a path that does not exist yet still searches its nearest existing ancestor ("src/util" searches "src/"). Optional `include` filters by glob, e.g. "*.js" or "*.{ts,tsx}". Backreferences (\\1), lookahead and lookbehind are rejected with an error. Capped at ' + DEFAULT_SEARCH_MAX_MATCHES + ' matches / 2M chars scanned.',
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'Ripgrep-style regular expression, matched one line at a time. `(?i)` for case-insensitive is honored. `(?s)` is not: matches are reported and redacted per line, so search for the two anchors separately. Lookaround and backreferences are not supported.' },
-          path: { type: 'string', description: 'Optional directory or single file to scope the search. Use "." or omit for the whole project.' },
+          query: { type: 'string', description: 'Ripgrep-style regular expression, matched one line at a time. `(?i)` for case-insensitive is honored. `(?s)` is not: matches are reported and redacted per line, so search for the two anchors separately. Lookaround and backreferences are rejected with an error.' },
+          path: { type: 'string', description: 'Optional directory or single file to scope the search. Use "." or omit for the whole working folder.' },
           include: { type: 'string', description: 'Optional glob to filter the files searched, e.g. "*.js", "*.{ts,tsx}", "src/**/*.test.js", "src/[ab].js".' }
         },
         required: ['query'],
@@ -1177,11 +1177,11 @@ const SINGLE_FILE_SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'write_file',
-      description: 'Create or overwrite a text file in the project directory. Creates parent directories as needed. Content is capped at 1 MB. Use with care — this overwrites without a merge.',
+      description: 'Create or overwrite a text file in the chat\'s working folder (the project by default). Creates parent directories as needed. Content is capped at 1 MB. Use with care — this overwrites without a merge.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'POSIX path relative to the project root (e.g. "src/utils/helper.js").' },
+          path: { type: 'string', description: 'POSIX path relative to the chat\'s working folder (e.g. "src/utils/helper.js").' },
           content: { type: 'string', description: 'The full file body to write.' }
         },
         required: ['path', 'content'],
@@ -1193,11 +1193,11 @@ const SINGLE_FILE_SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'edit_file',
-      description: 'Safely edit an existing text file by replacing one unique block. Read the relevant lines first, then send their text as oldText and the replacement as newText. LF and CRLF are treated as equivalent, and newText adopts the file line endings. Fails without changing the file if oldText is missing or appears more than once. Use write_file only to create a file or intentionally replace its complete contents.',
+      description: 'Edit an existing text file by replacing one unique block. Read the relevant lines first, then send their text as oldText and the replacement as newText. LF and CRLF are treated as equivalent, and newText adopts the file line endings. Fails without changing the file if oldText is missing or appears more than once. Use write_file only to create a file or intentionally replace its complete contents.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'POSIX path relative to the project root.' },
+          path: { type: 'string', description: 'POSIX path relative to the chat\'s working folder. Required (or its alias `file`).' },
           file: { type: 'string', description: 'Compatibility alias for path.' },
           oldText: { type: 'string', description: 'Existing text to replace. LF/CRLF differences are ignored. Include surrounding lines when needed to make it unique.' },
           newText: { type: 'string', description: 'Replacement text. May be empty to delete the matched block.' }
@@ -1215,7 +1215,7 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'group_read',
-      description: 'Read a group of up to 50 project files in one call. Each entry takes path and optional startLine/endLine, just like read_file (including images and hidden-content redaction). Returns ordered per-file results and errors. Combined output is capped at 2 MB; use slices or separate calls for larger reads.',
+      description: 'Read a group of up to ' + MAX_BATCH_ENTRIES + ' files in one call. Each entry takes path and optional startLine/endLine, just like read_file (images and hidden-content redaction included). Returns ordered per-file results and errors. Combined output is capped at 2 MB; use slices or separate calls for larger reads.',
       parameters: {
         type: 'object',
         properties: {
@@ -1232,7 +1232,7 @@ const SPECS = Object.freeze({
     type: 'function',
     function: {
       name: 'group_edit',
-      description: 'Edit a group of up to 50 unique-block replacements in one call. Read the relevant files first. Each entry takes path (or file), oldText and newText, just like edit_file. Entries run sequentially, including repeated paths. Returns per-entry diffs or errors; failed entries leave their file unchanged, but successful edits are NOT rolled back. Retry only failed entries.',
+      description: 'Apply up to ' + MAX_BATCH_ENTRIES + ' unique-block replacements in one call. Read the relevant files first. Each entry takes path (or file), oldText and newText, just like edit_file. Entries run sequentially, including repeated paths. Returns per-entry diffs or errors; failed entries leave their file unchanged, but successful edits are NOT rolled back. Retry only failed entries.',
       parameters: {
         type: 'object',
         properties: {

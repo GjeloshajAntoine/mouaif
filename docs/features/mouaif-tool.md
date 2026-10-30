@@ -2,7 +2,7 @@
 
 ## Overview
 
-26 ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report): **15 in the Chats family** and **11 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
+25 ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report): **15 in the Chats family** and **10 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
 
 ## Usage
 
@@ -22,27 +22,26 @@ What is my default prompt size, and switch this project to agentFiles off.
 | --- | --- |
 | `list_chats` | List this project's chats, newest first, with bounded draft previews (`limit`, default 20, max 100). |
 | `get_chat` | Read one chat (`chatId`). `includeMessages: true` adds the last `messageLimit` messages (default 10, max 50) with bounded content, `seq`, and any `attachments` count. |
-| `create_chat` | Create a chat. `title` names it, `topic` seeds its composer draft, `providerId` + `modelId` pick its model. Returns the chat plus a `#/chat/<id>` link. |
+| `create_chat` | Create a chat. `title` names it, `draft` seeds its composer draft (max 400 characters; `topic` is still accepted as its old name), `providerId` + `modelId` pick its model. Returns the chat plus a `#/chat/<id>` link. |
 | `update_chat` | Change `title`, `draft`, `promptId`, `promptSize`, `providerId`, or `modelId` on an existing chat. Model changes apply to the next turn. |
 | `change_working_folder` | Change a chat's shell/file working folder to an existing directory. `directory` is required: a project-relative or absolute path to a directory that already exists, or `""` (or `"."`) to return to the original project folder. `chatId` defaults to the calling chat. The tool never creates a folder and never runs Git, so prepare a checkout with an authorized shell command first. See [Chat working folders](./chat-working-folder.md). |
 | `search_models` | Search saved project models and configured providers’ live chat catalogs; returns bounded `providerId` / `modelId` choices with pagination and per-provider failures. |
-| `start_chat` | Send `content` to an existing `chatId` using its selected model and start a background response. Returns a chat URL without waiting for completion. |
-| `delete_chat` | Delete a chat and its transcript. Requires `confirm: true`. Refuses the chat the turn is running in. |
+| `start_chat` | Send `content` to an existing `chatId` using its selected model and start a background response. Returns at once with a `#/chat/<id>` link for the user, before the response exists; read the response later with `get_chat` (`includeMessages: true`). |
+| `delete_chat` | Delete a chat and its transcript. Without `confirm: true` it deletes nothing and returns `ECONFIRM` naming the chat, so the model can check it before calling again. Refuses the chat the turn is running in. |
 | `search_chats` | Search titles, drafts, and message text (`query`). Results retain `matchField` and a bounded matching `snippet`. |
 | `attach_chat_image` | Put an image from the project into a chat: `path` is relative to the calling chat's working folder (the project by default), `target` is `draft` (default — the composer holds it until the user presses send) or `message` (appends a real user message carrying the image, with optional `content`). |
 | `list_chat_attachments` | Show draft, user-message, and subagent-generated image names/types and `imageRef` values, not pixels. Scans the newest 200 messages by default; follow `nextBeforeSeq` with `beforeSeq` to retrieve older images. |
-| `create_mcp_app` | Show or update an interactive single-file MCP App in the current chat from `source` + `filename`, project-relative `path`, or `path` + `source` for in-place updates (requires explicit approval, auto-expands or reloads in its tool card, does not register a project MCP server, and can message the agent via `window.mouaifApp.sendMessage`). Alternatively `request` prepares an unsent development draft. See [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). |
-| `get_settings` | Read settings. `scope` is `app` (default) or `project`; `keys` narrows the result. |
-| `update_settings` | Merge `patch` into the chosen scope; `unset` removes keys (project scope). Defaults to the project scope. |
+| `create_mcp_app` | Show an interactive single-file MCP App in the current chat, one mode per call: `source` + `filename` creates one, `path` + `source` updates one in place, `path` alone reopens one, `message` sends text to the mounted app, `request` only prepares an unsent development draft. Requires explicit approval, auto-expands or reloads in its tool card, does not register a project MCP server; the app can message the agent via `window.mouaifApp.sendMessage`. See [On-the-fly MCP Apps](./on-the-fly-mcp-apps.md). |
+| `get_settings` | Read settings. `scope` (required) is `app` or `project`; `keys` narrows the result. |
+| `update_settings` | Merge `patch` into the chosen `scope` (required, `app` or `project`); `unset` removes keys (project scope). |
 | `list_projects` | List the registered projects (id, name, path, cost). |
-| `get_app_info` | Report the mouaif feature state, including the running chat's effective tool permissions — the same report the shipped `list_features` tool returns — plus the list of native chat/app functions. |
 | `restart_app` | Gracefully relaunch the app worker from this chat, with an optional `reason`. The supervisor keeps running, so the port and terminal stay the same. See [Restart from chat](./chat-app-restart.md). |
-| `list_features` | Describe every mouaif feature available in this project and its current on/off/ask state. Read-only metadata; it takes no arguments. |
+| `list_features` | Report what the running chat can use: every native tool's effective permission (mode, selection, allowlist, timeouts, the shell interpreter), MCP servers, agent files, project agents, file tagging, trace and the prompt-size profile. Read-only metadata; it takes no arguments. It replaced `get_app_info`, which returned the same report plus the list of tool names; a startup migration moves stored `get_app_info` selections and permissions to `list_features`. |
 | `ask_user` | Pause and ask the user a structured question with 2+ options. The user picks one and may always add a free-form note. Binary: Off / Ask only, because the answer cannot be predicted. See [Ask user tool](./ask-user-tool.md). |
-| `task` | Create, update, track progress on, and list structured tasks with subtasks, to break complex work into pieces and show progress. Each task gets an auto-generated id. See [Task tool](./task-tool.md). |
+| `task` | Keep a checklist of the chat's tasks (create, update progress, complete, list), to break multi-step work into named pieces. Tasks live in memory until mouaif restarts. Each task gets an auto-generated id; for one operation's live bar use `report_progress`. See [Task tool](./task-tool.md). |
 | `report_progress` | Report real-time progress on a long-running operation, drawn as the chat's progress bar. Read-only UI metadata — answered without an approval card. See [Progress tool](./progress-tool.md). |
-| `webpreview` | Refresh the user-facing preview of a URL in the debug Chrome the Inspector uses. `viewport` is a preset (`phone`, `phone+`, `tablet`, `laptop`) or `WIDTHxHEIGHT`; `mode: "live"` shows the interactive page instead of a screenshot. See [Web preview](./webpreview.md). |
-| `group_cli` | Run an ordered group of shell commands, optionally in the background. |
+| `webpreview` | Show the user a preview of a URL, taken in the debug Chrome the Inspector uses. The screenshot goes to the user only; the model never sees it. `viewport` is a preset (`phone`, `phone+`, `tablet`, `laptop`) or `WIDTHxHEIGHT`; `mode: "live"` shows the interactive page instead of a screenshot. See [Web preview](./webpreview.md). |
+| `group_cli` | Run an ordered group of shell commands, optionally in the background. Entries always run in order. |
 | `schedule_wake` | Run a prompt in this chat later (`in` or `at`) or at a regular time (`every`, or `time` with `days` and `timezone`), until cancelled. See [Scheduled wake-ups and recurring tasks](scheduled-wakes.md). |
 | `schedule_list` | List this chat's pending wake-ups. |
 | `schedule_cancel` | Cancel one of this chat's wake-ups by `id`. |
@@ -70,7 +69,7 @@ The tools appear in two families in Settings → Project → Tools, the chat Too
 | Family (gate) | Native functions |
 | --- | --- |
 | **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` |
-| **mouaif** (`tools.mouaif`) | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli`, `schedule_wake`, `schedule_list`, `schedule_cancel` |
+| **mouaif** (`tools.mouaif`) | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `restart_app`, `list_features`, `group_cli`, `schedule_wake`, `schedule_list`, `schedule_cancel` |
 
 The Chats family carries the app functions above *and* the four tools the model uses inside one chat: **Ask user** (`ask_user`, binary Off / Ask), **Task** (`task`), **Report progress** (`report_progress`) and **Web preview** (`webpreview`, see [Web preview](./webpreview.md)). They used to be rows of their own; a stored `tools.<leaf>` still works as that leaf's override.
 

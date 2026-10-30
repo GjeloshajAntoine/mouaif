@@ -17,14 +17,14 @@ const SPEC = {
   type: 'function',
   function: {
     name: 'report_progress',
-    description: 'Report real-time progress on a long-running operation. Call this periodically to show a progress bar on the frontend.',
+    description: 'Show the user a live progress bar for one long-running operation (a build, a batch of files). Call it as the work advances and once more with status completed or failed. To track several named pieces of work across turns, use task instead.',
     parameters: {
       type: 'object',
       properties: {
         title: { type: 'string', description: 'Short description of the operation (e.g. "Building project")' },
-        current: { type: 'number', description: 'Current progress value (0-based)' },
-        total: { type: 'number', description: 'Maximum progress value' },
-        status: { type: 'string', enum: ['running', 'completed', 'failed'], description: 'Current status of the operation' },
+        current: { type: 'number', description: 'Units done so far, from 0 to total.' },
+        total: { type: 'number', description: 'Total units of work.' },
+        status: { type: 'string', enum: ['running', 'completed', 'failed'], description: 'Status of the operation (default running).' },
         message: { type: 'string', description: 'Optional status message shown below the progress bar' }
       },
       required: ['title', 'current', 'total'],

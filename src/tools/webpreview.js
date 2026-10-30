@@ -445,12 +445,10 @@ const SPEC = {
     // shapes are accepted, where the screenshot comes from, and
     // how the user is going to see it. Keep the wording sharp —
     // it is part of the model's tool-pick decision tree.
-    description: 'Refresh the user-facing preview of a web URL in the debug Chrome used by the Inspector tab. ' +
-      'The screenshot is shown only to the user in a small dock between the chat scroll and textbox; tapping it opens the full image. ' +
-      'Call this tool again with the URL whenever the user preview should reload. The screenshot is not returned to you for visual analysis. ' +
-      'Any absolute URL Chrome can open is accepted (http, https, file, data, about, …). Optionally set `viewport` to capture at a different size: ' +
-      'a preset id ("phone", "phone+", "tablet", "laptop") or any "WIDTHxHEIGHT" string (e.g. "1280x800"). ' +
-      'Set `mode` to "live" to show the page itself, interactive, in an iframe in the user\'s browser instead of a screenshot (use it when the user should click around, or for pages that animate); "screenshot" is the default.',
+    description: 'Show the user a preview of a web page. The preview is for the user only: the screenshot is not returned to you, so this tool cannot be used to look at a page. ' +
+      'By default mouaif takes a screenshot in its debug Chrome and shows it in a small dock above the chat composer (tapping it opens the full image); ' +
+      'with `mode` "live" the user gets the page itself as an interactive iframe instead (use it when the user should click around, or for pages that animate). ' +
+      'Call it again whenever the preview should reload. Any absolute URL Chrome can open is accepted (http, https, file, data, about, …); `viewport` sets the size.',
       parameters: {
       type: 'object',
       properties: {

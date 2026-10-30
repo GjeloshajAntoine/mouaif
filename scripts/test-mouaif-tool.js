@@ -71,9 +71,9 @@ async function main() {
     return listed.join(',') === mouaif.ACTION_NAMES.slice().sort().join(',');
   })());
   check('a category lists only its own areas\u2019 actions', mouaif.GROUPS[0].actions.every((a) => ['chats', 'attachments'].includes(mouaif.ACTIONS[a]))
-    && mouaif.GROUPS[1].actions.every((a) => ['settings', 'apps', 'projects', 'info'].includes(mouaif.ACTIONS[a])));
+    && mouaif.GROUPS[1].actions.every((a) => ['settings', 'apps', 'projects'].includes(mouaif.ACTIONS[a])));
   check('the chats category lists chat, model, and attachment actions', mouaif.GROUPS[0].actions.join(',') === 'list,get,create,update,delete,search,model_search,start,attach,list_attachments,working_folder');
-  check('the app category lists settings, app creation and project actions', mouaif.GROUPS[1].actions.join(',') === 'settings_get,settings_update,app_create,project_list,info');
+  check('the app category lists settings, app creation and project actions', mouaif.GROUPS[1].actions.join(',') === 'settings_get,settings_update,app_create,project_list');
 
   // --- 2) Authorization category -----------------------------------------
   const authState = authz.getAuthorization(projectDir);
@@ -387,22 +387,18 @@ async function main() {
   check('project_list returns the registered project', projectList.ok === true
     && projectList.result.projects.some((p) => p.path === projectDir));
 
-  const info = await mouaif.runMouaif({ action: 'info' }, opts);
-  check('info reports the tool surface', info.ok === true
-    && Array.isArray(info.result.nativeTools) && info.result.tool === 'get_app_info');
-  check('info lists every native function', info.result.nativeTools.length === mouaif.TOOL_NAMES.length
-    && info.result.nativeTools.every((tool) => tool && tool.name && tool.description));
-  check('info includes the feature state (tools)', info.result.tools && !!info.result.tools.shell);
-  chats.updateChat(projectDir, imgChat, { toolAuth: { native: { shell: { mode: 'off' }, get_app_info: { mode: 'allow' } } } });
-  const chatInfo = await mouaif.runMouaif({ action: 'info' }, chatOpts);
-  check('info reports effective chat-specific permissions', chatInfo.result.tools.shell.mode === 'off'
-    && chatInfo.result.tools.get_app_info.mode === 'allow');
-  const features = await require('../src/agentFeatures.js').dispatchListFeatures({}, chatOpts);
-  check('list_features agrees with info about chat-specific permissions', features.result.tools.shell.mode === 'off'
-    && features.result.tools.get_app_info.mode === 'allow');
-  const projectInfo = await mouaif.runMouaif({ action: 'info' }, opts);
-  check('project info does not inherit another chat\u2019s permissions', projectInfo.result.tools.shell.mode === info.result.tools.shell.mode
-    && projectInfo.result.tools.get_app_info.mode === info.result.tools.get_app_info.mode);
+  // The feature report is list_features; get_app_info was folded into it.
+  check('the info action is gone', !mouaif.ACTION_NAMES.includes('info') && !mouaif.TOOL_NAMES.includes('get_app_info'));
+  const listFeatures = require('../src/agentFeatures.js').dispatchListFeatures;
+  const info = await listFeatures({}, opts);
+  check('list_features includes the feature state (tools)', info.result.tools && !!info.result.tools.shell);
+  chats.updateChat(projectDir, imgChat, { toolAuth: { native: { shell: { mode: 'off' }, list_projects: { mode: 'allow' } } } });
+  const features = await listFeatures({}, chatOpts);
+  check('list_features reports effective chat-specific permissions', features.result.tools.shell.mode === 'off'
+    && features.result.tools.list_projects.mode === 'allow');
+  const projectInfo = await listFeatures({}, opts);
+  check('project features do not inherit another chat\u2019s permissions', projectInfo.result.tools.shell.mode === info.result.tools.shell.mode
+    && projectInfo.result.tools.list_projects.mode === info.result.tools.list_projects.mode);
 
   console.log('mouaif tool: ' + passed + ' passed, ' + failed + ' failed');
   if (failed) process.exitCode = 1;

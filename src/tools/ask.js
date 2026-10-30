@@ -34,7 +34,7 @@ const SPEC = {
   type: 'function',
   function: {
     name: 'ask_user',
-    description: 'Ask the user a structured question with options. The user picks one option and may always add a free-form "extra" note to clarify or elaborate.',
+    description: 'Ask the user a question with options to pick from, and wait for the answer. Use it when you are blocked on a choice only the user can make and the options are known; ask in plain text when the answer is open-ended. The user picks one option (several with multiSelect) and may always add a free-form "extra" note.',
     parameters: {
       type: 'object',
       properties: {
@@ -46,8 +46,8 @@ const SPEC = {
           items: {
             type: 'object',
             properties: {
-              label: { type: 'string' },
-              value: { type: 'string' },
+              label: { type: 'string', description: 'Text shown to the user.' },
+              value: { type: 'string', description: 'Returned to you when this option is picked.' },
               description: { type: 'string', description: 'Optional hint shown under the label.' }
             },
             required: ['label', 'value'],

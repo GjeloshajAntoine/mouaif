@@ -8,7 +8,7 @@
 // several subagent calls in one turn, the tool loop runs them concurrently
 // (see the parallel branch in src/ai.js).
 
-const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call. The subagent can use the project tools and MCP tools, with normal authorization prompts. You may call subagent multiple times in a single turn; same-turn subagent calls run in parallel. Nested subagents may delegate further up to the root subagentLimits.maxDepth (default 3); local parents control only their own children within shared finite budgets. Set background:true to get a turn-scoped handle and steer with subagent_send and observe with subagent_messages/status/stop; unfinished children are cancelled when the parent turn ends. Images are never inherited automatically; use images with selected imageRef values from list_chat_attachments (including generated:<seq>:<i> refs for earlier subagent artwork you want edited).';
+const BASE_DESCRIPTION = 'Delegate a focused analysis or planning task to a nested AI call (a subagent) that can use the project tools and MCP tools, with the normal permission prompts. Several subagent calls in one turn run in parallel. By default the call waits and returns the subagent\'s result. With background: true it returns a callId at once, so you can keep working and use subagent_status, subagent_messages, subagent_send and subagent_stop on it; a background subagent still running when your turn ends is cancelled. Subagents may delegate further, up to subagentLimits.maxDepth levels (default 3), and the whole tree shares one budget of runs. For several subagents that depend on each other or split files between them, declare them first with subagent_group_create. Images are not passed on automatically: find them with list_chat_attachments and pass the chosen imageRef values in `images` (generated:<seq>:<i> refs select earlier subagent artwork to edit).';
 
 const AGENT_DESCRIPTION = 'Optional project agent name (from Settings → Project → Agents) to use for this delegation. Omit it to use the project\'s default subagent.';
 
@@ -21,9 +21,9 @@ const SPEC = {
       type: 'object',
       properties: {
         task: { type: 'string', description: 'The focused task or question for the subagent.' },
-        background: { type: 'boolean', description: 'Opt in to a background handle so the parent can steer/poll while this child runs. Default false (wait for result). Handles and handoffs expire with this parent turn; unfinished children are cancelled when it ends.' },
-        groupId: { type: 'string', description: 'Local-parent group handle from subagent_group_create; requires memberId and background:true.' },
-        memberId: { type: 'string', description: 'Declared group memberId (requires groupId and background:true); dispatch waits for successful dependencies.' },
+        background: { type: 'boolean', description: 'Return a callId at once instead of waiting for the result (default false). The callId and any handoffs last only for your current turn; the subagent is cancelled if it is still running when the turn ends.' },
+        groupId: { type: 'string', description: 'groupId returned by subagent_group_create. Needs memberId and background: true.' },
+        memberId: { type: 'string', description: 'Which declared member of the group this subagent is (needs groupId and background: true). It starts only after the members it dependsOn have succeeded.' },
         context: { type: 'string', description: 'Optional relevant context to include with the task.' },
         agent: { type: 'string', description: AGENT_DESCRIPTION },
         images: {

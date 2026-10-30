@@ -80,7 +80,7 @@ same(
 
 // ---- 2. childToolName: a category child resolves to the tool -------------
 assert.equal(childToolName(chats, 'list_chats'), 'list_chats', 'a category child is an ordinary tool');
-assert.equal(childToolName(settings, 'get_app_info'), 'get_app_info', 'settings leaves are ordinary tools too');
+assert.equal(childToolName(settings, 'list_projects'), 'list_projects', 'settings leaves are ordinary tools too');
 assert.equal(childToolName(shell, 'shell'), 'shell', 'a catalog leaf is its own name');
 assert.equal(childToolName(files, 'read_file'), 'read_file', 'including a file-tool leaf');
 // An unknown row still round-trips instead of becoming `undefined`.
@@ -199,7 +199,7 @@ assert.equal(groupAuthKey(chats.id), 'chats', 'Chats has its own gate');
 assert.equal(groupAuthKey(settings.id), 'mouaif', 'mouaif has its own gate');
 assert.equal(groupAuthKey(files.id), 'file', 'File tools keeps its gate');
 assert.equal(FAMILY_OF.list_chats, 'chats');
-assert.equal(FAMILY_OF.get_app_info, 'mouaif');
+assert.equal(FAMILY_OF.list_projects, 'mouaif');
 assert.equal(FAMILY_OF.read_file, 'file');
 assert.equal(FAMILY_OF.shell, undefined, 'a single tool is its own gate');
 {
@@ -242,7 +242,7 @@ await toggleToolGroup([childToolName(chats, 'list_chats')], false, state, refs, 
 assert.equal(patched.length, 1, 'a category child toggle writes to the chat');
 assert.ok(Array.isArray(patched[0].tools), 'and writes an explicit filter');
 assert.ok(!patched[0].tools.includes('list_chats'), 'only list_chats is off');
-assert.ok(patched[0].tools.includes('get_chat') && patched[0].tools.includes('get_app_info'), 'siblings stay selected');
+assert.ok(patched[0].tools.includes('get_chat') && patched[0].tools.includes('list_projects'), 'siblings stay selected');
 assert.ok(patched[0].tools.includes('shell'), 'leaving the other tools on');
 same(state.tools.filter, patched[0].tools, 'the in-memory filter matches the write');
 
@@ -260,7 +260,7 @@ assert.equal(state.tools.filter, null, 'and the in-memory filter follows');
 // The category checkbox toggles the whole category from either row.
 const state2 = { tools: { catalog: liveCatalog, filter: null }, mcpServers: [] };
 await toggleToolGroup(groupToolNames(settings), false, state2, refs, updateChat);
-assert.ok(!patched.at(-1).tools.includes('get_app_info'), 'the settings category switches its tools off');
+assert.ok(!patched.at(-1).tools.includes('list_projects'), 'the settings category switches its tools off');
 assert.ok(patched.at(-1).tools.includes('list_chats'), 'Chats stays selected');
 
 // ---- 4. Selection and authorization agree -------------------------------
@@ -507,6 +507,11 @@ try {
   migration.run();
   const migrated = chatStore.getChat(home, host.id);
   assert.deepEqual(migrated.tools, ['list_chats', 'get_app_info']);
+  // get_app_info was later folded into list_features (2026-10-30 migration).
+  const folded = migration.renameTool('get_app_info', 'list_features')(migrated);
+  assert.deepEqual(folded.tools, ['list_chats', 'list_features']);
+  assert.equal(folded.toolAuth.native.list_features.mode, migrated.toolAuth.native.get_app_info.mode);
+  assert.ok(!('get_app_info' in folded.toolAuth.native), 'the old permission row is moved, not copied');
   assert.equal(migrated.toolAuth.native.list_chats.mode, 'allow');
   assert.equal(migrated.toolAuth.native.delete_chat.mode, 'off');
   assert.deepEqual(migrated.promptSnapshot.preset.tools, ['get_chat']);

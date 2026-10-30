@@ -2,7 +2,7 @@
 
 ## Overview
 
-`schedule_wake`, `schedule_list` and `schedule_cancel` let the assistant run a prompt in a chat later, once or on a repeat. Ask for something at a regular time — "every weekday at 9 summarise the overnight alerts" — and the assistant saves the prompt and the time. Each time it is due, mouaif starts a new turn **in the same chat** with that prompt. Every run starts with a fresh context at its own prompt: the model does not see the earlier runs, but their messages stay in the chat for you, and the files they wrote are still in the project.
+`schedule_wake`, `schedule_list` and `schedule_cancel` let the assistant run a prompt in a chat later, once or on a repeat. Ask for something at a regular time — "every weekday at 9 summarise the overnight alerts" — and the assistant saves the prompt and the time. Each time it is due, mouaif starts a new turn **in the same chat** with that prompt. Every run of a recurring task starts with a fresh context at its own prompt: the model does not see the earlier runs, but their messages stay in the chat for you, and the files they wrote are still in the project. A one-off wake continues the chat with its context as it is.
 
 A wake is a saved prompt plus a time, stored in the app database. It survives a restart: one that came due while mouaif was down fires once, promptly, when it starts again.
 

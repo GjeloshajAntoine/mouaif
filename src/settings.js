@@ -698,6 +698,11 @@ description: 'Fold the per-project recent-model rows onto one app-wide list',
 run() {
 shareModelBookmarks();
 }
+},
+{
+name: '2026-10-30-fold-get-app-info',
+description: 'Rename stored get_app_info selections and permissions to list_features',
+run() { const m = require('./migrateAppTools.js'); m.run(m.renameTool('get_app_info', 'list_features')); }
 }
 ];
 function runMigrations() {  const d = db();

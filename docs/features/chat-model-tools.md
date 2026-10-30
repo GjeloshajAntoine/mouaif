@@ -47,7 +47,7 @@ Use actual model identities from the search results; example availability depend
 
 ### Choosing and starting
 
-`create_chat` still creates a chat without sending anything; its `topic` is only a draft. `update_chat` changes the selected model for the **next** turn, not an already-running response. Saved models can infer their provider; live model selections need both identity fields.
+`create_chat` still creates a chat without sending anything; its `draft` is only a draft. `update_chat` changes the selected model for the **next** turn, not an already-running response. Saved models can infer their provider; live model selections need both identity fields.
 
 `start_chat` targets an existing chat with a selected model. It sends the supplied `content` (up to 200,000 characters), not the composer draft or draft images. The tool returns after the prompt is stored and the background turn starts; it does not wait for the answer. Starting a busy chat returns `EALREADY_RUNNING` without appending another prompt. A missing chat returns `ENOTFOUND`; empty content or a missing model returns `EBADINPUT`.
 

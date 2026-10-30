@@ -338,7 +338,7 @@ function childEnv() {
 //
 //   opts.projectDir  absolute directory the commands run in (the chat's
 //                    working folder, resolved by the dispatcher)
-//   opts.args        { commands: [...], timeoutMs?, shell?, async?, parallel? }
+//   opts.args        { commands: [...], timeoutMs?, shell?, async? }
 //   opts.toolTimeoutMs  the batch timeout the authorization gate clamped
 //   opts.signal      AbortSignal — a batch stops starting entries once set
 //   opts.onOutput    (stream, delta) live preview for the chat card
@@ -503,7 +503,7 @@ const SPEC = {
   type: 'function',
   function: {
     name: TOOL_NAME,
-    description: 'Run a group of up to ' + MAX_BATCH_ENTRIES + ' shell commands in one call and get every result back. Commands execute in the chat’s working folder through mouaif, the local AI coding assistant that provides this chat, on '
+    description: 'Run a group of up to ' + MAX_BATCH_ENTRIES + ' shell commands in one call and get every result back. Commands run like the shell tool’s: in the chat’s working folder (the project by default), on '
       + shell.osLabel() + ' via ' + shell.shellDialectHint() + '. Entries run in order; a non-zero exit does not stop the batch, and each entry reports its own stdout, stderr, exit code and duration. Set "async": true on an entry (or "async": true on the call) to start it in the background instead of waiting: the result immediately names a log file under .mouaif/logs/ that keeps receiving its output, so you can start a build or a server, run further entries, and inspect, wait or stop it using the returned shell commands (no job handles). Use one call for a read-check chain (git status, then git diff, then npm test) instead of several shell calls. Non-interactive only: children have no stdin, so REPLs, prompts and anything that reads from stdin fail or exit immediately — feed input with a heredoc or a pipe.',
     parameters: {
       type: 'object',
@@ -528,8 +528,7 @@ const SPEC = {
         },
         timeoutMs: { type: 'integer', minimum: 1, maximum: MAX_TIMEOUT_MS, description: 'Optional whole-batch time budget for the synchronous entries, 1 ms - 10 min. A clamped default applies; background entries do not count against it.' },
         shell: { type: 'string', description: 'Optional interpreter for every entry that does not name its own, same values as the shell tool’s `shell` argument.' },
-        async: { type: 'boolean', description: 'Start EVERY entry in the background and return immediately. A per-entry "async" overrides it.' },
-        parallel: { type: 'boolean', description: 'Reserved: entries always run in order today, and this argument is accepted but ignored.' }
+        async: { type: 'boolean', description: 'Start EVERY entry in the background and return immediately. A per-entry "async" overrides it.' }
       },
       required: ['commands'],
       additionalProperties: false

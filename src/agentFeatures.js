@@ -21,7 +21,7 @@ const LIST_FEATURES_SPEC = {
   type: 'function',
   function: {
     name: TOOL_NAME,
-    description: 'Describe every mouaif feature available in this project and their current on/off/ask state. Returns a JSON object with one key per feature family; each value contains the enable state, authorization mode, and a short description.',
+    description: 'Report what this chat can use right now. Returns JSON: `tools` maps every native tool and tool family to its effective permission for this chat (mode allow/ask/off, whether it is selected, allowlist, timeouts; `shell` also names its interpreter); `mcp` lists MCP servers with status and tools; plus agent files, project agents, file tagging, trace and the prompt-size profile.',
     parameters: {
       type: 'object',
       properties: {},

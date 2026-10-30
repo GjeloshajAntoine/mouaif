@@ -147,7 +147,7 @@ async function main() {
   check('a chat family write lands on the chats family',
     authz.effectiveConfig(projectDir, 'delete_chat', chatA.id).mode === 'off');
   check('the mouaif family is untouched',
-    authz.effectiveConfig(projectDir, 'get_app_info', chatA.id).mode !== 'off');
+    authz.effectiveConfig(projectDir, 'list_projects', chatA.id).mode !== 'off');
   authz.setChatAuthorization(projectDir, chatA.id, { native: { chats: null, list_chats: { mode: 'off' } } });
   check('a chat leaf write disables only that leaf',
     authz.effectiveConfig(projectDir, 'list_chats', chatA.id).mode === 'off'

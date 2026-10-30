@@ -16,7 +16,7 @@ The resolution lives in one shared pair, exported from `ToolTree.jsx`:
 
 ```js
 groupToolNames(group)  // Chats -> ['list_chats', 'get_chat', …]
-childToolName(group, toolId)  // 'get_app_info' -> 'get_app_info'
+childToolName(group, toolId)  // 'list_projects' -> 'list_projects'
 ```
 
 `buildToolGroups` also accepts effective native/MCP permissions; `toolPermission` keeps Off tools unchecked even when the chat filter is `null`. `toggleToolGroup` saves the filter and, when enabling a disabled tool, restores its chat-scoped family gate (`chats` / `mouaif`) to Ask. Both chat surfaces re-render after success or failure. A function resolves through its family gate plus an optional per-function override, like a file leaf.
@@ -27,7 +27,7 @@ Both chat surfaces call them (`cards.js` passes the result to `state._toggleTool
 const { runAppTool } = require('mouaif/src/tools/mouaif.js');
 
 const out = await runAppTool(
-  'create_chat', { title: 'Changelog', topic: 'draft the notes' },
+  'create_chat', { title: 'Changelog', draft: 'draft the notes' },
   { projectDir: '/abs/path/to/project', chatId: '3e6fabe3' }
 );
 // -> { ok: true, content: '<JSON string>', result: { ok: true, projectDir, chat, url } }

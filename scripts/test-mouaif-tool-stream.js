@@ -69,7 +69,7 @@ async function call(chat, legacyArgs, { mode = 'allow', decision, advertised = m
 
 async function main() {
   const host = chats.createChat(projectDir, { title: 'Host' });
-  let out = await call(host, { action: 'create', title: 'Created by tool', topic: 'Opening draft' });
+  let out = await call(host, { action: 'create', title: 'Created by tool', draft: 'Opening draft' });
   assert.equal(out.ok, true);
   const createdId = out.result.chat.id;
   assert.equal(chats.getChat(projectDir, createdId).draft, 'Opening draft');
@@ -93,10 +93,6 @@ async function main() {
   out = await call(host, { action: 'search', query: 'Opening' });
   assert.equal(out.returned.chats[0].matchField, 'draft');
   assert.equal(out.returned.chats[0].snippet, 'Opening draft');
-  chats.updateChat(projectDir, host.id, { toolAuth: { native: { shell: { mode: 'off' } } } });
-  out = await call(chats.getChat(projectDir, host.id), { action: 'info' });
-  assert.equal(out.returned.tools.shell.mode, 'off');
-  chats.updateChat(projectDir, host.id, { toolAuth: null });
 
   out = await call(host, { action: 'update', chatId: createdId, title: 'Renamed by tool' }, { mode: 'ask', decision: 'allow-once' });
   assert.equal(out.ok, true);

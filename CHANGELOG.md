@@ -44,6 +44,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Changed
 
+- **`get_app_info` folded into `list_features`** — the two returned the same report, so the model now sees one tool. A startup migration moves stored `get_app_info` selections and permissions to `list_features`. `create_chat` takes `draft` (its old name `topic` still works internally), `get_settings` and `update_settings` require `scope` instead of defaulting to different stores, and `group_cli` no longer advertises its ignored `parallel` argument. See [native chat and app tools](docs/features/mouaif-tool.md).
 - **Notifications from recurring runs** — a scheduled run has no browser session, so its "response complete" notification, tool approvals, questions and errors were never sent. They now reach every subscribed device, and the completion notification shows the message the run wrote. See [scheduled wake-ups and recurring tasks](docs/features/scheduled-wakes.md).
 - **Codex usage chip shows both rate-limit windows** — the chat head's provider chip now reads `Codex Plus 5h 62% · 7d 28%`: the plan, the primary 5-hour session window and, when the account reports one, the weekly window. It was `Plan plus 62%`, the session window alone.
 - **Working-folder changes no longer manage Git** — the tool only ever selected directories; Git isolation is coding-prompt guidance carried out through separately authorized shell calls. Existing folders and externally prepared worktrees are reused unchanged; the legacy `branch` result stays `null`.
@@ -56,6 +57,7 @@ which is the version shown by `mouaif info` and printed by `mouaif --help`.
 
 ### Fixed
 
+- **Tool descriptions match the tools** — `schedule_wake` no longer says a one-off wake loses the chat's context; file, `shell` and `group_cli` paths are described relative to the chat's working folder; `task` no longer promises subtasks; `list_features` describes what it returns; `start_chat`, `delete_chat`, `webpreview`, `create_mcp_app`, `search_files`, `list_files` and the subagent tools were reworded to say plainly what they do, and fields that had no description now have one.
 - **MCP App mount lifecycle and isolation** — exact host/generation binding, single-use sandbox tickets, source/tool revocation checks, abandoned-lease cleanup and Close/tab-hide approval removal. Cookie transmission risks are documented; normal-site-isolation Chrome and combined real-host automatic-message/SSE/approval/Stop regressions added. See [MCP Apps](docs/features/mcp-apps.md).
 - **Codex models are listed again** — the chat model picker was empty for a
   signed-in ChatGPT plan because the Codex catalog request advertised a pinned

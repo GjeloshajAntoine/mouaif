@@ -64,7 +64,6 @@
       "get_settings",
       "update_settings",
       "list_projects",
-      "get_app_info",
       "restart_app",
       "list_features",
       "group_cli",

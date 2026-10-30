@@ -69,7 +69,6 @@ Background commands are exempt from the batch time budget, and the synchronous e
 | `timeoutMs` | Optional whole-batch time budget for the synchronous entries. A clamped default applies (5 min), and the project's shell timeout ceiling caps it. |
 | `shell` | Optional interpreter for every entry that does not name its own. |
 | `async` | Start **every** entry in the background. |
-| `parallel` | Accepted and ignored today: entries always run in order. |
 
 ## Behavior
 
@@ -86,7 +85,7 @@ Background commands are exempt from the batch time budget, and the synchronous e
 
 | Gate | Leaves |
 | --- | --- |
-| `mouaif` | `get_settings`, `update_settings`, `list_projects`, `get_app_info`, `restart_app`, `list_features`, `group_cli` |
+| `mouaif` | `get_settings`, `update_settings`, `list_projects`, `restart_app`, `list_features`, `group_cli` |
 
 So the ordinary family rules apply: `tools.mouaif: { "mode": "off" }` hides the tool from the model and rejects a forged call with `ETOOL_DISABLED`; `allow` runs a batch without asking; a per-leaf override (`tools.group_cli`) tightens or loosens just this tool.
 

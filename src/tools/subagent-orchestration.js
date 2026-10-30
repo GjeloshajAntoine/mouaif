@@ -15,59 +15,59 @@ const error = (code, message) => Object.assign(new Error(message), { code });
 const spec = (name, description, properties, required = []) => ({ type: 'function', function: {
   name, description, parameters: { type: 'object', properties, required, additionalProperties: false }
 } });
-const callId = { type: 'string', description: 'Background callId returned by subagent in this local-parent scope.' };
+const callId = { type: 'string', description: 'callId returned by a subagent call you made with background: true.' };
 const keyDesc = '1–80 letters, digits, dots, underscores, or hyphens ([A-Za-z0-9_.-]).';
 const SPECS = [
-  spec('subagent_status', 'Local parent only: immediate status for your delegated children, never waits. Maximum 256 observation calls per turn; do not poll tightly.', {
-    callId: { ...callId, description: 'Optional child callId; omit to list all direct runs, root limits, and escalated conflicts.' }
+  spec('subagent_status', 'For subagents you started with background: true this turn: their current state, returned at once (it never waits). subagent_status, subagent_messages, subagent_group_status and subagent_read share a budget of 256 calls per turn, so do not poll in a tight loop.', {
+    callId: { ...callId, description: 'Optional; omit to list all your subagents, the shared budgets, and any escalated conflicts.' }
   }),
-  spec('subagent_messages', 'Local parent only: read bounded public lines and delivery receipts from a delegated child; no writes or waiting.', {
+  spec('subagent_messages', 'For a subagent you started with background: true this turn: read the lines it has written so far, and whether your subagent_send messages reached it. Returns at once.', {
     callId,
     since: { type: 'integer', minimum: 0, description: 'Cursor from a previous nextCursor (default 0).' },
     limit: { type: 'integer', minimum: 1, maximum: 50, description: 'Maximum lines to return (1–50, default 20).' }
   }, ['callId']),
-  spec('subagent_send', 'Local parent only: explicitly queue steering for the next child model round. Receipt is queued, delivered (inserted into context), or undelivered; not an interrupt.', {
-    callId, message: { type: 'string', minLength: 1, maxLength: 4096, description: 'Non-empty guidance text (1–4096 chars).' }
+  spec('subagent_send', 'For a subagent you started with background: true this turn: send it guidance. The message is added to its context before its next model call; it does not interrupt the current one. The receipt says queued, delivered or undelivered (the subagent had already finished).', {
+    callId, message: { type: 'string', minLength: 1, maxLength: 4096, description: 'Guidance text (1–4096 chars).' }
   }, ['callId', 'message']),
-  spec('subagent_group_create', 'Local parent only: declare a shared objective and member DAG before launching members. Ownership/workspace are metadata, never permission or checkout effects.', {
+  spec('subagent_group_create', 'Plan a team of background subagents before starting them: a shared objective and the members, each with a role, the files it owns and the members it depends on. Then start each member with subagent (groupId, memberId, background: true); a member starts only once its dependencies succeeded. Members can propose shared decisions (subagent_decision) for you to approve, and escalate conflicts (subagent_conflict) for you to settle, both with subagent_group_update. Workspace and file ownership are notes for the members: they grant no permissions and create no checkout.', {
     name: { type: 'string', maxLength: 80, description: 'Unique group name: ' + keyDesc },
     objective: { type: 'string', maxLength: 4096, description: 'Shared group objective (1–4096 chars).' },
     members: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'object', additionalProperties: false, required: ['memberId', 'role', 'workspace'], properties: {
       memberId: { type: 'string', maxLength: 80, description: 'Unique member identifier: ' + keyDesc },
-      role: { type: 'string', maxLength: 512 },
+      role: { type: 'string', maxLength: 512, description: 'What this member does, in a sentence.' },
       workspace: { type: 'string', maxLength: 1024, description: 'Advisory workspace or branch name (metadata only).' },
       owns: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 512 }, description: 'Advisory relative file paths (no leading /, \\, or ..).' },
       dependsOn: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 80 }, description: 'Upstream memberId list in this group.' }
     } } }
   }, ['name', 'objective', 'members']),
-  spec('subagent_group_status', 'Immediate discoverable group/member readiness, artifacts, proposed/approved decisions and conflicts. Local parent sees all its groups; group members see only their assigned group.', {
+  spec('subagent_group_status', 'A group\u2019s state, returned at once: each member\u2019s progress, published handoffs, proposed and approved decisions, and conflicts. The agent that created groups sees all of them; a group member sees only its own group.', {
     groupId: { type: 'string', description: 'Optional groupId; omit to list local-parent groups or inspect your own assigned group.' }
   }),
-  spec('subagent_group_update', 'Local parent only: approve/reject a proposed contract, arbitrate an escalated conflict (including ancestor arbitration), or cancel the group. Never merges, rolls back or obtains consensus.', {
-    groupId: { type: 'string' },
-    action: { type: 'string', enum: ['approve', 'reject', 'arbitrate', 'cancel'] },
+  spec('subagent_group_update', 'For a group you created: approve or reject a member\u2019s proposed decision (an approved one becomes a contract the members see), settle an escalated conflict, or cancel the group. It records the outcome only: it never merges, rolls back or edits files.', {
+    groupId: { type: 'string', description: 'groupId returned by subagent_group_create.' },
+    action: { type: 'string', enum: ['approve', 'reject', 'arbitrate', 'cancel'], description: 'approve or reject a decision, arbitrate a conflict, or cancel the group.' },
     name: { type: 'string', maxLength: 80, description: 'Proposal or conflict name (required for approve, reject, and arbitrate).' },
-    contract: { type: 'string', maxLength: 4096, description: 'Approved contract, rejection reason, or arbitration resolution (required for approve, reject, and arbitrate).' }
+    contract: { type: 'string', maxLength: 4096, description: 'The approved contract text, the rejection reason, or the conflict resolution (required for approve, reject, and arbitrate).' }
   }, ['groupId', 'action']),
-  spec('subagent_decision', 'Propose an immutable named shared decision in a group. It is not a contract until the owning local parent explicitly approves it.', {
+  spec('subagent_decision', 'Propose a decision the whole group should follow, such as an interface or a file layout. It binds no one until the agent that created the group approves it as a contract. A name cannot be reused.', {
     groupId: { type: 'string', description: 'Target groupId (optional when called by an assigned group member).' },
     name: { type: 'string', maxLength: 80, description: 'Immutable proposal name: ' + keyDesc },
-    proposal: { type: 'string', maxLength: 4096 }
+    proposal: { type: 'string', maxLength: 4096, description: 'The proposed decision (max 4096 chars).' }
   }, ['name', 'proposal']),
-  spec('subagent_conflict', 'Escalate an ownership/contract conflict for parent/ancestor arbitration; no child consensus or automatic file effects.', {
+  spec('subagent_conflict', 'Escalate a conflict between group members (two members need the same file, or a contract does not work) to the agent that created the group, which settles it with subagent_group_update. Changes no files.', {
     groupId: { type: 'string', description: 'Target groupId (optional when called by an assigned group member).' },
     name: { type: 'string', maxLength: 80, description: 'Conflict name: ' + keyDesc },
-    summary: { type: 'string', maxLength: 4096 },
+    summary: { type: 'string', maxLength: 4096, description: 'What conflicts and why (max 4096 chars).' },
     members: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'string', maxLength: 80 }, description: '1–32 declared memberIds involved in the conflict.' }
   }, ['name', 'summary', 'members']),
-  spec('subagent_stop', 'Local parent only: cancel one child (and its descendants/pending approvals) without cancelling siblings. Idempotent; cancellation is cooperative.', { callId }, ['callId']),
-  spec('subagent_publish', 'Publish a bounded named handoff in this turn only. Names are immutable; local parent and eligible siblings can read summaries and project-relative file references. No arbitrary file contents/snippets.', {
+  spec('subagent_stop', 'For a subagent you started with background: true this turn: cancel it, with its own subagents and pending approvals; your other subagents keep running. Safe to call twice; the subagent stops at its next step.', { callId }, ['callId']),
+  spec('subagent_publish', 'Leave a named handoff for the agent that started you and for sibling subagents: a summary plus project-relative file paths, not file contents. It lasts for the current turn; a name cannot be reused. Members of another group cannot read it.', {
     name: { type: 'string', maxLength: 80, description: 'Immutable artifact name: ' + keyDesc },
-    summary: { type: 'string', maxLength: 8192 },
+    summary: { type: 'string', maxLength: 8192, description: 'What you found or did (max 8192 chars).' },
     files: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 512 }, description: 'Optional project-relative paths (no leading /, \\, or ..).' }
   }, ['name', 'summary']),
-  spec('subagent_read', 'Read a named sibling/child handoff (metadata only). Use ordinary authorized read_file for contents and redaction; the handoff never bypasses File tools.', {
-    name: { type: 'string', maxLength: 80, description: 'Omit to discover all accessible named artifacts.' }
+  spec('subagent_read', 'Read a handoff published with subagent_publish by a sibling or by one of your subagents: its summary and file paths. Read the files themselves with read_file, under the normal permissions.', {
+    name: { type: 'string', maxLength: 80, description: 'Handoff name; omit to list every handoff you can read.' }
   })
 ];
 

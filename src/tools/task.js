@@ -1,6 +1,6 @@
 'use strict';
 
-// Native `task` tool — lets the model define structured tasks with subtasks,
+// Native `task` tool — lets the model define a checklist of tasks,
 // track progress, and mark items done. Tasks are stored in-memory per chat
 // (they are ephemeral and do not survive a server restart). Each task has an
 // auto-generated id so the model can reference it across turns.
@@ -37,7 +37,7 @@ const SPEC = {
   type: 'function',
   function: {
     name: 'task',
-    description: 'Create, update, track progress on, and list structured tasks with subtasks. Use this to break down complex work into manageable pieces and show progress to the user. Each task gets an auto-generated ID you reference in later calls.',
+    description: 'Keep a checklist of this chat\u2019s tasks: create a task, update its progress, mark it complete, or list them. Use it to break multi-step work into named pieces the user can follow; tasks last across turns until mouaif restarts. For a single operation\u2019s live progress bar (a build, a batch), use report_progress instead. Each task gets an auto-generated ID you reference in later calls.',
     parameters: {
       type: 'object',
       properties: {
@@ -60,11 +60,11 @@ const SPEC = {
         },
         current: {
           type: 'number',
-          description: 'Current progress count (0-based). Required for "update_progress". Ignored for other actions.'
+          description: 'Steps done so far, from 0 to total. Required for "update_progress". Ignored for other actions.'
         },
         total: {
           type: 'number',
-          description: 'Total progress count. Required for "update_progress". Ignored for other actions.'
+          description: 'Total number of steps. Required for "update_progress". Ignored for other actions.'
         }
       },
       required: ['action'],

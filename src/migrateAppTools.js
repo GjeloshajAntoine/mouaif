@@ -33,29 +33,53 @@ function permissions(value) {
   return next;
 }
 
-function config(value) {
+// walk(value, transform): apply `transform.selection` to every stored tool
+// selection and `transform.permissions` to every stored permission map in a
+// settings, preset, agent or chat object.
+function walk(value, transform) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const next = { ...value };
-  if (Array.isArray(value.tools)) next.tools = selection(value.tools);
-  else if (value.tools) next.tools = permissions(value.tools);
+  if (Array.isArray(value.tools)) next.tools = transform.selection(value.tools);
+  else if (value.tools) next.tools = transform.permissions(value.tools);
   if (value.toolAuth) {
     const raw = value.toolAuth;
-    next.toolAuth = raw.native ? { ...raw, native: permissions(raw.native) } : permissions(raw);
+    next.toolAuth = raw.native ? { ...raw, native: transform.permissions(raw.native) } : transform.permissions(raw);
   }
-  if (value.preset) next.preset = config(value.preset);
-  if (value.promptSnapshot) next.promptSnapshot = config(value.promptSnapshot);
-  if (value.defaultAgent) next.defaultAgent = config(value.defaultAgent);
-  if (Array.isArray(value.agents)) next.agents = value.agents.map(config);
-  if (Array.isArray(value.prompts)) next.prompts = value.prompts.map(config);
+  if (value.preset) next.preset = walk(value.preset, transform);
+  if (value.promptSnapshot) next.promptSnapshot = walk(value.promptSnapshot, transform);
+  if (value.defaultAgent) next.defaultAgent = walk(value.defaultAgent, transform);
+  if (Array.isArray(value.agents)) next.agents = value.agents.map((entry) => walk(entry, transform));
+  if (Array.isArray(value.prompts)) next.prompts = value.prompts.map((entry) => walk(entry, transform));
   return next;
 }
 
-function run() {
+function config(value) {
+  return walk(value, { selection, permissions });
+}
+
+// renameTool(from, to) -> converter: stored selections name `to` instead of
+// `from`, and a permission row for `from` moves to `to` unless `to` has one.
+function renameTool(from, to) {
+  const transform = {
+    selection: (value) => (Array.isArray(value) && value.includes(from)
+      ? [...new Set(value.map((name) => (name === from ? to : name)))] : value),
+    permissions: (value) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value) || !Object.prototype.hasOwnProperty.call(value, from)) return value;
+      const next = { ...value };
+      if (!Object.prototype.hasOwnProperty.call(next, to)) next[to] = next[from];
+      delete next[from];
+      return next;
+    }
+  };
+  return (value) => walk(value, transform);
+}
+
+function run(convert = config) {
   const settings = require('./settings.js');
   require('./chatdb.js').ensureChatTables();
   const db = settings.getDb();
   const app = settings.getApp();
-  const converted = config(app);
+  const converted = convert(app);
   if (JSON.stringify(converted) !== JSON.stringify(app)) settings.setAppReplace(converted);
   const dirs = new Set((app.projects || []).map((project) => project.path).filter(Boolean));
   for (const row of db.prepare('SELECT DISTINCT project_dir FROM chat_store UNION SELECT project_dir FROM project_settings').all()) dirs.add(row.project_dir);
@@ -63,7 +87,7 @@ function run() {
     // An inaccessible project must leave this migration retryable, not mark
     // old permissions as migrated and silently reset them to Ask later.
     const current = settings.getProject(dir);
-    const next = config(current);
+    const next = convert(current);
     if (JSON.stringify(next) !== JSON.stringify(current)) settings.setProject(dir, next);
   }
   const rows = db.prepare('SELECT project_dir, id, tools, tool_auth, prompt_snapshot FROM chat_store').all();
@@ -73,7 +97,7 @@ function run() {
       const current = { tools: row.tools ? JSON.parse(row.tools) : null,
         toolAuth: row.tool_auth ? JSON.parse(row.tool_auth) : null,
         promptSnapshot: row.prompt_snapshot ? JSON.parse(row.prompt_snapshot) : null };
-      const next = config(current);
+      const next = convert(current);
       if (JSON.stringify(next) === JSON.stringify(current)) continue;
       update.run(next.tools === null ? null : JSON.stringify(next.tools), next.toolAuth === null ? null : JSON.stringify(next.toolAuth),
         next.promptSnapshot === null ? null : JSON.stringify(next.promptSnapshot), row.project_dir, row.id);
@@ -81,4 +105,4 @@ function run() {
   })();
 }
 
-module.exports = { config, run };
+module.exports = { config, renameTool, run };

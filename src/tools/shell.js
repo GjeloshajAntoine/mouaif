@@ -106,13 +106,14 @@ function shellDialectHint() {
   return label + ' — POSIX sh syntax';
 }
 
-// "The exact interpreter that runs commands, e.g. 'C:\Windows\system32\cmd.exe'."
+// The `shell` argument is an optional override of the default interpreter,
+// e.g. "Optional: run with another interpreter instead of the default
+// /bin/bash. A path to a sh-compatible binary, e.g. '/bin/sh'."
 function shellExeDescription() {
   if (process.platform === 'win32') {
-    const comspec = process.env.ComSpec || 'cmd.exe';
-    return 'The exact interpreter that runs commands, e.g. ' + JSON.stringify(comspec) + '.';
+    return 'Optional: run with another interpreter instead of the default ' + (process.env.ComSpec || 'cmd.exe') + '. One of "cmd.exe", "pwsh" or "powershell".';
   }
-  return "The exact interpreter that runs commands, e.g. '/bin/sh' or the user's \$SHELL.";
+  return 'Optional: run with another interpreter instead of the default ' + (process.env.SHELL || '/bin/sh') + ". A path to a sh-compatible binary, e.g. '/bin/sh'.";
 }
 
 // The model-facing tool spec (OpenAI-compatible function shape).
@@ -120,7 +121,7 @@ const SPEC = {
   type: 'function',
   function: {
     name: 'shell',
-    description: 'Run a shell command in the project directory through mouaif, the local AI coding assistant that provides this chat. Commands execute on ' + osLabel() + ' via ' + shellDialectHint() + '. Returns stdout, stderr, and exit code; async:true returns PID/log paths and shell follow-up commands immediately. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead (e.g. "node -e ...", "npm test", not bare "node" or "cmd").',
+    description: 'Run a shell command in the chat\u2019s working folder (the project by default) through mouaif, the local AI coding assistant that provides this chat. Commands execute on ' + osLabel() + ' via ' + shellDialectHint() + '. Returns stdout, stderr, and exit code; async:true returns PID/log paths and shell follow-up commands immediately. Non-interactive only: the child has no stdin, so REPLs, prompts, and commands that read from stdin fail or exit immediately — run the one-shot/flagged form instead (e.g. "node -e ...", "npm test", not bare "node" or "cmd").',
     parameters: {
       type: 'object',
       properties: {
