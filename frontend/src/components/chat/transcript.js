@@ -1740,6 +1740,8 @@ const rawR = coerceToolResult(toolResult && toolResult.result, normalizeToolName
         path: rawR.path,
         name: rawR.name
       });
+      // The app just updated is the latest one: it takes the bottom slot.
+      pinMcpAppCardToBottom(refs, existingMcpAppCard);
     }
   }
   if (normalizeToolName(toolResult && toolResult.name) === 'create_mcp_app' && toolResult.ok && !toolResult.replay
@@ -1871,14 +1873,20 @@ if (!card) {
       if (rawR && rawR.path) card.dataset.mcpAppPath = String(rawR.path).trim().replace(/^\.\/+/, '');
       if (rawR && rawR.name) card.dataset.mcpAppName = String(rawR.name);
     }
-    pinMcpAppCardToBottom(refs, card);
+    card.classList.add('tool-card--mcp-app');
+    // Older history painted after the tail (latest-first backfill) is never
+    // the latest app: it stays in its chat slot.
+    if (!(refs._insertAnchor && hasMcpCreatedCard(refs, card))) pinMcpAppCardToBottom(refs, card);
     }
     mountMcpApp(app, { ...context, callId: id,
     appPath: rawR && rawR.path,
     appTitle: rawR && rawR.name,
     onMountStateChange: (enabled) => {
+    // A created app was pinned (or deliberately not) when its card was built;
+    // a late mount must not steal the bottom from a newer app.
+    if (isMcpAppCreate) return;
     if (enabled) pinMcpAppCardToBottom(refs, card);
-    else if (!isMcpAppCreate && card.dataset) delete card.dataset.mcpAppCard;
+    else if (card.dataset) delete card.dataset.mcpAppCard;
     },
     onAuthorize: (request, signal) => authorizationCard({ ...request, signal }, context.projectDir, context.chatId, refs) });
     }
@@ -3321,11 +3329,33 @@ function findExistingMcpAppCard(refs, rawR, currentCard) {
   const children = el.children || [];
   for (let i = children.length - 1; i >= 0; i--) {
     const child = children[i];
-    if (!child || child === currentCard || !isMcpAppCard(child)) continue;
+    if (!child || child === currentCard || !(child.classList && child.classList.contains('tool-card--mcp-app'))) continue;
     const cardPath = child.dataset && child.dataset.mcpAppPath;
     if (cardPath === wantedPath) return child;
   }
   return null;
+}
+
+// hasMcpCreatedCard(refs, except) -> bool
+//
+// Whether the transcript already holds another on-the-fly app card.
+function hasMcpCreatedCard(refs, except) {
+  const el = refs && refs.transcript && refs.transcript.current;
+  if (!el) return false;
+  for (const child of el.children) {
+    if (child !== except && child.dataset && child.dataset.mcpAppPath) return true;
+  }
+  return false;
+}
+
+// unpinMcpAppCard(card, el)
+//
+// A newer app took the bottom slot: drop this card's bottom pin and put it
+// back at its chronological place in the chat. It keeps its path and name so
+// a later `create_mcp_app` update still finds it.
+function unpinMcpAppCard(card, el) {
+  if (card.dataset) delete card.dataset.mcpAppCard;
+  restoreSubagentCardToSlot(card, el);
 }
 
 // pinMcpAppCardToBottom(refs, card)
@@ -3336,10 +3366,20 @@ function findExistingMcpAppCard(refs, rawR, currentCard) {
 // already-mounted iframe is not reloaded.
 function pinMcpAppCardToBottom(refs, card) {
   if (!card) return;
+  const el = refs && refs.transcript && refs.transcript.current;
+  // On-the-fly apps (they carry a path) take turns: only the latest stays at
+  // the bottom. Remember where this card sits in the conversation before it
+  // moves, and send every other pinned one back to the slot it was pinned from.
+  const isCreated = !!(card.dataset && card.dataset.mcpAppPath);
+  if (isCreated && el && card.parentNode === el && !isMcpAppCard(card)) ensureSubagentSlotMarker(card);
   if (card.dataset) card.dataset.mcpAppCard = '1';
   if (card.classList) card.classList.add('tool-card--mcp-app');
-  const el = refs && refs.transcript && refs.transcript.current;
   if (!el || card.parentNode !== el) return;
+  if (isCreated) {
+    for (const child of Array.from(el.children)) {
+      if (child !== card && isMcpAppCard(child) && child.dataset.mcpAppPath) unpinMcpAppCard(child, el);
+    }
+  }
   const overlayAnchor = firstOverlayCard(el);
   let needsMove = false;
   let seenCard = false;
@@ -3591,6 +3631,9 @@ export function reconcileTranscriptRows(state, refs, order) {
   // before any overlay cards, without moving a card that is already in place.
   for (let i = 0; i < pinnedMcpCards.length; i++) {
     const node = pinnedMcpCards[i];
+    // A newer app took the bottom slot while this pass ran and sent this
+    // one back to its chat position.
+    if (!isMcpAppCard(node)) continue;
     if (node === cursor) {
       cursor = node.nextElementSibling;
       continue;

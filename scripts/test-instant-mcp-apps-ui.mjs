@@ -47,6 +47,12 @@ const bundle = await build({ stdin: { resolveDir: process.cwd(), loader: 'jsx', 
       result: { ok: true, updated: true, name: 'Single-file app v2', path: 'app.js', content: [{ type: 'text', text: 'updated' }] } }, refs);
     appendMessageToTranscript({ role: 'assistant', content: 'App was updated in place', ts: new Date().toISOString() }, false, refs, { chat: {} });
   };
+  window.createSecondApp = () => {
+    appendToolCallCard({ id: 'second-create', name: 'create_mcp_app', args: { name: 'Second app', filename: 'second.js' } }, refs);
+    appendToolResultCard({ id: 'second-create', name: 'create_mcp_app', ok: true,
+      result: { ok: true, name: 'Second app', path: 'second.js', content: [{ type: 'text', text: 'ready' }] } }, refs);
+    appendMessageToTranscript({ role: 'assistant', content: 'Second app is ready', ts: new Date().toISOString() }, false, refs, { chat: {} });
+  };
   appendToolCallCard({ id: 'native-create', name: 'create_mcp_app', args: { name: 'Single-file app', filename: 'app.js' } }, refs);
   appendToolResultCard({ id: 'native-create', name: 'create_mcp_app', ok: true,
     result: { ok: true, name: 'Single-file app', path: 'app.js', content: [{ type: 'text', text: 'ready' }] } }, refs);
@@ -178,6 +184,10 @@ try {
   }
   assert.equal(await appEvaluate("document.querySelector('#ready').textContent"), 'reloaded-v2', 'updated app source renders in the existing card');
   assert.equal(await appEvaluate("fetch('" + base + "/api/settings').then(()=>false).catch(()=>true)"), true, 'no host API fetch');
+  await cdp.evaluate('window.createSecondApp()');
+  assert.equal(await cdp.evaluate("document.querySelector('#frame').lastElementChild === document.querySelector('[data-tool-id=\"second-create\"]')"), true, 'newest app card takes the bottom slot');
+  assert.equal(await cdp.evaluate("[...document.querySelector('#frame').children].filter(c => c.dataset.mcpAppCard).length"), 1, 'only the latest app card stays pinned');
+  assert.equal(await cdp.evaluate("[...document.querySelector('#frame').children].indexOf(window.nativeCard) < [...document.querySelector('#frame').children].findIndex(c => c.textContent.includes('App is ready below'))"), true, 'older app card is back in its chat position, before the messages that followed it');
   await cdp.evaluate("const upload=document.querySelector('#instant-mcp-app-file');const data=new DataTransfer();data.items.add(new File(['document.body.textContent=\"Uploaded\";'],'upload.js'));upload.files=data.files;upload.dispatchEvent(new Event('change',{bubbles:true}));");
   await sleep(50);
   await cdp.evaluate("document.querySelector('.instant-mcp-app button').click()");
