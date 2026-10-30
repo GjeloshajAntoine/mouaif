@@ -27,7 +27,7 @@ import { backHref, backTarget, settingsLink } from './settings/projectNavigation
 import { WebpreviewModal } from './chat/WebpreviewModal.jsx';
 import { PreviewUrlPrompt } from './chat/PreviewUrlPrompt.jsx';
 
-export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, from = '', page = 'main' } = {}) {
+export function SettingsProjectView({ projectDir: initialDir, chatId: initialChatId, from = '', section = '', page = 'main' } = {}) {
   const [globalStatus, setGlobalStatus] = useState({ text: '', state: '' });
   const authorizationWrites = useRef(Promise.resolve());
   const [projectPath, setProjectPath] = useState('…');
@@ -789,33 +789,15 @@ debouncer(() => saveAgentFiles(agentFilesOn, v));
     else setGlobalStatus({ text: 'open this from a project card', state: 'error' });
   }, [initialDir]);
 
-  // The project's tool tree (Off / Ask / Allow per tool). The Tools section
-  // shows it, and `page: 'tools'` renders it alone for the Projects card's
-  // tool list modal, so both save through the same handlers.
-  function renderToolsTree() {
-    return h('div', { class: 'settings-project__tools-tree' },
-      toolsCatalog.length
-        ? h(ToolTree, {
-            groups: buildSettingsToolGroups(toolsCatalog),
-            onToggleGroup: toggleSettingsGroup,
-            onToggleTool: (groupId, toolId, checked) => {
-            if (groupId.startsWith('mcp-')) toggleMcpToolAuth(toolId, checked);
-            else if (isFamilyLeaf(toolId)) pickLeafMode(toolId, checked ? 'ask' : 'off');
-            // Every other native group is a family: its one leaf and the
-            // group row share a gate, so the checkbox flips the family.
-            else toggleSettingsGroup(groupId, checked);
-            },
-            // Groups with more than one nested tool start collapsed,
-            // matching the chat tree. The ToolTree holds its own
-            // collapse state, so a group the user expands stays open
-            // across SettingsProject re-renders (checkbox / segment
-            // changes only re-render this tree in place).
-            collapsedByDefault: true,
-            onReloadServer: onReloadMcpServer
-          })
-        : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
-    );
-  }
+  // `section=tools` (the wrench on a Projects card): bring the Tools section
+  // into view once its tree has loaded, so the page above it has its height.
+  const toolsSectionRef = useRef(null);
+  const scrolledToTools = useRef(false);
+  useEffect(() => {
+    if (section !== 'tools' || scrolledToTools.current || !toolsCatalog.length || !toolsSectionRef.current) return;
+    scrolledToTools.current = true;
+    toolsSectionRef.current.scrollIntoView({ block: 'start' });
+  }, [section, toolsCatalog]);
 
   function buildSettingsToolGroups(catalog) {
     const groups = [];
@@ -1117,15 +1099,6 @@ if (struct === 'json') {
     const tailBudget = payload - headBudget;
     return body.slice(0, headBudget) + marker + body.slice(body.length - tailBudget);
   }
-
-  // Just the tool tree, for the tool list modal on a Projects card. The
-  // status line only speaks up when loading the project failed.
-  if (page === 'tools') return h(Fragment, null,
-    globalStatus.state === 'error'
-      ? h('div', { class: 'status', 'aria-live': 'polite', 'data-state': 'error' }, globalStatus.text)
-      : null,
-    renderToolsTree()
-  );
 
   if (page === 'output') return h(Fragment, null,
 h('div', { class: 'view-head' },
@@ -1468,7 +1441,7 @@ class: 'view-back',
         )
       ),
 
-      h('div', { class: 'group settings-project__section' },
+      h('div', { class: 'group settings-project__section', ref: toolsSectionRef },
   h('div', { class: 'group__title settings-project__section-title' },
     sectionIcon('tools'),
           h('span', null, 'Tools'),
@@ -1485,7 +1458,28 @@ class: 'view-back',
             )
           )
         ),
-        renderToolsTree(),
+        h('div', { class: 'settings-project__tools-tree' },
+          toolsCatalog.length
+            ? h(ToolTree, {
+                groups: buildSettingsToolGroups(toolsCatalog),
+                onToggleGroup: toggleSettingsGroup,
+                onToggleTool: (groupId, toolId, checked) => {
+                if (groupId.startsWith('mcp-')) toggleMcpToolAuth(toolId, checked);
+                else if (isFamilyLeaf(toolId)) pickLeafMode(toolId, checked ? 'ask' : 'off');
+                // Every other native group is a family: its one leaf and the
+                // group row share a gate, so the checkbox flips the family.
+                else toggleSettingsGroup(groupId, checked);
+                },
+                // Groups with more than one nested tool start collapsed,
+                // matching the chat tree. The ToolTree holds its own
+                // collapse state, so a group the user expands stays open
+                // across SettingsProject re-renders (checkbox / segment
+                // changes only re-render this tree in place).
+                collapsedByDefault: true,
+                onReloadServer: onReloadMcpServer
+              })
+            : h('div', { class: 'settings-project__item-note' }, 'Loading tools…')
+        ),
         h('a', {
         class: 'group__row settings-project__link-row settings-project__options-link',
         'aria-label': 'Tool wording',
