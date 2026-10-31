@@ -175,5 +175,24 @@ check('layout centers parents over their children and keeps rows by depth', () =
   assert.equal(root.x, (at('a').x + at('b').x) / 2);
 });
 
+check('vertical layout is one row per agent, children indented under their parent', () => {
+  const net = createAgentNetwork();
+  for (const id of ['a', 'b', 'c', 'd', 'e']) ingestStreamEvent(net, null, 'tool_call', { id, name: 'subagent', args: { task: id } });
+  ingestStreamEvent(net, 'a', 'tool_call', { id: 'a1', name: 'subagent', args: { task: 'a1' } });
+  const wide = layoutNetwork(net);
+  const tall = layoutNetwork(net, { vertical: true, width: 340 });
+  assert.equal(tall.vertical, true);
+  assert.ok(tall.width <= 340, 'fits the width it was given');
+  assert.ok(tall.width < wide.width && tall.height > wide.height);
+  const at = (id) => tall.nodes.find((n) => n.id === id);
+  // Delegation order, depth-first: root, a, a1, b, c, d, e.
+  const order = [...tall.nodes].sort((x, y) => x.y - y.y).map((n) => n.id);
+  assert.deepEqual(order, [ROOT, 'a', 'a1', 'b', 'c', 'd', 'e']);
+  assert.ok(at(ROOT).x < at('a').x && at('a').x < at('a1').x, 'indent grows with depth');
+  assert.equal(at('a').x, at('e').x, 'siblings share a column');
+  assert.ok(tall.nodeW > 132, 'boxes widen into the spare room');
+  assert.equal(new Set(tall.nodes.map((n) => n.y)).size, tall.nodes.length, 'one agent per row');
+});
+
 console.log(passed + ' checks, ' + failed + ' failed');
 if (failed) process.exit(1);

@@ -427,18 +427,28 @@ export function activeCount(net) {
   return n;
 }
 
-// layoutNetwork(net) -> { nodes, edges, width, height }
+// layoutNetwork(net, opts) -> { nodes, edges, width, height, nodeW, vertical }
 //
-// A tidy top-down tree: leaves take consecutive slots, a parent is centered
-// over its children. Dependency edges inside a cooperative group are drawn
-// between siblings on top of the tree edges.
+// Two shapes of the same tree:
+//   horizontal  a tidy top-down tree: leaves take consecutive slots, a parent
+//               is centered over its children. Grows sideways with siblings.
+//   vertical    an indented outline: one agent per row in delegation order,
+//               each child indented under its parent. Grows downwards only,
+//               so it fits a phone and scrolls with the body. opts.width is
+//               the room available; boxes widen to use it (up to a cap).
+// Dependency edges inside a cooperative group are drawn between siblings on
+// top of the tree edges.
 export const NODE_W = 132;
 export const NODE_H = 44;
 const GAP_X = 18;
 const GAP_Y = 46;
 const PAD = 14;
+const INDENT = 26;
+const ROW_GAP = 10;
+const DEP_ROOM = 44;
+const NODE_W_MAX = 280;
 
-export function layoutNetwork(net) {
+function treeChildren(net) {
   const children = new Map();
   for (const node of net.nodes.values()) {
     if (node.id === ROOT) continue;
@@ -447,6 +457,36 @@ export function layoutNetwork(net) {
     children.get(pid).push(node);
   }
   for (const list of children.values()) list.sort((a, b) => a.order - b.order);
+  return children;
+}
+
+function layoutEdges(net, nodes) {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const edges = [];
+  for (const n of nodes) {
+    if (n.id === ROOT) continue;
+    const parent = byId.get(net.nodes.has(n.parentId) ? n.parentId : ROOT);
+    if (parent) edges.push({ id: 'tree:' + n.id, kind: 'tree', from: parent.id, to: n.id });
+  }
+  for (const group of net.groups.values()) {
+    for (const member of group.members.values()) {
+      const target = nodes.find((n) => n.groupId === group.id && n.memberId === member.memberId);
+      if (!target) continue;
+      for (const dep of member.dependsOn) {
+        const source = nodes.find((n) => n.groupId === group.id && n.memberId === dep);
+        if (source) edges.push({ id: 'dep:' + source.id + ':' + target.id, kind: 'dep', from: source.id, to: target.id });
+      }
+    }
+  }
+  return edges;
+}
+
+export function layoutNetwork(net, opts = {}) {
+  return opts.vertical ? layoutVertical(net, opts.width) : layoutHorizontal(net);
+}
+
+function layoutHorizontal(net) {
+  const children = treeChildren(net);
   const pos = new Map();
   let slot = 0;
   let maxDepth = 0;
@@ -472,35 +512,58 @@ export function layoutNetwork(net) {
     if (!p) continue;
     nodes.push(Object.assign({}, node, { x: p.x - minX + PAD, y: p.y + PAD }));
   }
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const edges = [];
-  for (const n of nodes) {
-    if (n.id === ROOT) continue;
-    const parent = byId.get(net.nodes.has(n.parentId) ? n.parentId : ROOT);
-    if (parent) edges.push({ id: 'tree:' + n.id, kind: 'tree', from: parent.id, to: n.id });
-  }
-  for (const group of net.groups.values()) {
-    for (const member of group.members.values()) {
-      const target = nodes.find((n) => n.groupId === group.id && n.memberId === member.memberId);
-      if (!target) continue;
-      for (const dep of member.dependsOn) {
-        const source = nodes.find((n) => n.groupId === group.id && n.memberId === dep);
-        if (source) edges.push({ id: 'dep:' + source.id + ':' + target.id, kind: 'dep', from: source.id, to: target.id });
-      }
-    }
-  }
   return {
     nodes,
-    edges,
+    edges: layoutEdges(net, nodes),
     width: Math.max(NODE_W, maxX - minX + NODE_W) + PAD * 2,
-    height: (maxDepth + 1) * NODE_H + maxDepth * GAP_Y + PAD * 2
+    height: (maxDepth + 1) * NODE_H + maxDepth * GAP_Y + PAD * 2,
+    nodeW: NODE_W,
+    vertical: false
   };
 }
 
-// edgePath(a, b, kind) -> SVG path from a's bottom to b's top (tree edges),
-// or a side arc between siblings (dependency edges). Pulses travel the same
-// path in either direction.
-export function edgePath(a, b, kind) {
+function layoutVertical(net, avail) {
+  const children = treeChildren(net);
+  const pos = new Map();
+  let row = 0;
+  let maxDepth = 0;
+  const place = (node, depth, seen) => {
+    if (seen.has(node.id)) return;
+    seen.add(node.id);
+    maxDepth = Math.max(maxDepth, depth);
+    pos.set(node.id, { depth, row: row++ });
+    for (const kid of children.get(node.id) || []) place(kid, depth + 1, seen);
+  };
+  place(net.nodes.get(ROOT), 0, new Set());
+  const nodes = [];
+  for (const node of net.nodes.values()) {
+    const p = pos.get(node.id);
+    if (!p) continue;
+    nodes.push(Object.assign({}, node, { x: PAD + p.depth * INDENT, y: PAD + p.row * (NODE_H + ROW_GAP) }));
+  }
+  const edges = layoutEdges(net, nodes);
+  const depRoom = edges.some((e) => e.kind === 'dep') ? DEP_ROOM : 0;
+  const fit = Math.floor((Number(avail) || 0) - PAD * 2 - maxDepth * INDENT - depRoom);
+  const nodeW = Math.max(NODE_W, Math.min(NODE_W_MAX, fit));
+  return {
+    nodes,
+    edges,
+    width: PAD * 2 + maxDepth * INDENT + nodeW + depRoom,
+    height: PAD * 2 + row * NODE_H + Math.max(0, row - 1) * ROW_GAP,
+    nodeW,
+    vertical: true
+  };
+}
+
+// edgePath(a, b, kind, layout) -> SVG path for an edge.
+//   horizontal  tree edges run from the parent's bottom to the child's top;
+//               dependency edges are a dip below two siblings.
+//   vertical    tree edges drop from under the parent's status dot and turn
+//               into the child's left side; dependency edges arc on the
+//               right between two rows.
+// Pulses travel the same path in either direction.
+export function edgePath(a, b, kind, layout) {
+  if (layout && layout.vertical) return verticalEdgePath(a, b, kind, layout.nodeW || NODE_W);
   if (kind === 'dep' || Math.abs(a.y - b.y) < 1) {
     const ax = a.x + NODE_W / 2;
     const bx = b.x + NODE_W / 2;
@@ -517,4 +580,24 @@ export function edgePath(a, b, kind) {
   const my = (y1 + y2) / 2;
   const d = `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`;
   return d;
+}
+
+function verticalEdgePath(a, b, kind, nodeW) {
+  if (kind === 'dep') {
+    const ax = a.x + nodeW;
+    const bx = b.x + nodeW;
+    const ay = a.y + NODE_H / 2;
+    const by = b.y + NODE_H / 2;
+    const bulge = 16 + Math.min(24, Math.abs(by - ay) / 8);
+    const x = Math.max(ax, bx) + bulge;
+    return `M ${ax} ${ay} C ${x} ${ay}, ${x} ${by}, ${bx} ${by}`;
+  }
+  const parent = a.y < b.y ? a : b;
+  const child = parent === a ? b : a;
+  const x1 = parent.x + 13;
+  const y1 = parent.y + NODE_H;
+  const y2 = child.y + NODE_H / 2;
+  const x2 = child.x;
+  const r = Math.min(8, Math.max(0, x2 - x1), Math.max(0, y2 - y1));
+  return `M ${x1} ${y1} L ${x1} ${y2 - r} Q ${x1} ${y2} ${x1 + r} ${y2} L ${x2} ${y2}`;
 }

@@ -20,7 +20,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import { useModal } from '../../hooks/useModal.js';
 import { getAgentNetwork, subscribeAgentNetwork } from './agentNetworkState.js';
-import { ROOT, NODE_W, NODE_H, layoutNetwork, edgePath, agentCount, activeCount } from './agentNetwork.js';
+import { ROOT, NODE_H, layoutNetwork, edgePath, agentCount, activeCount } from './agentNetwork.js';
 
 const PULSE_MS = 950;
 const STREAM_PULSE_MS = 700;
@@ -76,6 +76,33 @@ function findAgentCard(root, net, id) {
     cur = net.nodes.get(cur.parentId);
   }
   return null;
+}
+
+// Width the graph has to draw in, tracked as the card or the screen resizes.
+// Before the first measurement, guess from the window.
+function useGraphWidth() {
+  const [width, setWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth - 48 : 0));
+  const obsRef = useRef(null);
+  const elRef = useRef(null);
+  // One ref function for the hook's lifetime, so a re-render does not
+  // detach and re-attach the observer.
+  const ref = useRef((el) => {
+    if (el === elRef.current) return;
+    elRef.current = el;
+    if (obsRef.current) { obsRef.current.disconnect(); obsRef.current = null; }
+    if (!el) return;
+    const measure = () => {
+      const w = Math.floor(el.clientWidth);
+      if (w > 0) setWidth((prev) => (Math.abs(prev - w) > 2 ? w : prev));
+    };
+    measure();
+    if (typeof ResizeObserver === 'function') {
+      obsRef.current = new ResizeObserver(measure);
+      obsRef.current.observe(el);
+    }
+  }).current;
+  useEffect(() => () => obsRef.current && obsRef.current.disconnect(), []);
+  return [width, ref];
 }
 
 function PulseDot({ pulse, d, reverse, onDone }) {
@@ -170,12 +197,20 @@ export function AgentNetworkDock({ transcriptRef }) {
     setMode(inlineModeRef.current);
   };
   const fullRef = useModal({ onClose: exitFullscreen, active: mode === 'fullscreen' });
+  const [graphWidth, graphRef] = useGraphWidth();
 
   const net = netRef.current;
   const total = agentCount(net);
   const active = activeCount(net);
   const shown = mode !== 'collapsed';
-  const layout = useMemo(() => (shown && total ? layoutNetwork(net) : null), [shown, total, net.version]);
+  // The top-down tree while it fits (full screen may shrink it to 80%);
+  // past that, the indented outline that only grows downwards.
+  const layout = useMemo(() => {
+    if (!shown || !total) return null;
+    const wide = layoutNetwork(net);
+    const fits = wide.width * (mode === 'fullscreen' ? 0.8 : 1) <= graphWidth;
+    return fits ? wide : layoutNetwork(net, { vertical: true, width: graphWidth });
+  }, [shown, mode, total, net.version, graphWidth]);
   if (!total) return null;
 
   const byId = layout ? new Map(layout.nodes.map((n) => [n.id, n])) : new Map();
@@ -205,14 +240,22 @@ export function AgentNetworkDock({ transcriptRef }) {
   const latest = net.feed.length ? net.feed[net.feed.length - 1] : null;
   const counts = total + (total === 1 ? ' agent' : ' agents');
 
-  const graph = (full) => h('div', { class: 'agent-net__graph' },
+  const nodeW = layout ? layout.nodeW : 0;
+  const vertical = !!(layout && layout.vertical);
+  // Characters that fit a box's label and status line.
+  const labelMax = Math.max(15, Math.floor((nodeW - 32) / 7));
+  const subMax = Math.max(19, Math.floor((nodeW - 30) / 5.6));
+  const treeParent = (n) => (n.id === ROOT ? null : (net.nodes.has(n.parentId) ? n.parentId : ROOT));
+
+  const graph = (full) => h('div', { class: 'agent-net__graph' + (vertical ? ' agent-net__graph--vertical' : ''), ref: graphRef },
     h('svg', {
       class: 'agent-net__svg',
-      width: full ? null : layout.width,
-      height: full ? null : layout.height,
-      // Full screen scales a small graph up (to 1.6x) and a large one down,
-      // but never below 80% of its natural size: past that it scrolls.
-      style: full ? { width: 'min(100%, ' + Math.round(layout.width * 1.6) + 'px)', minWidth: Math.round(layout.width * 0.8) + 'px', height: 'auto' } : null,
+      width: full && !vertical ? null : layout.width,
+      height: full && !vertical ? null : layout.height,
+      // Full screen scales a small tree up (to 1.6x) and a large one down,
+      // but never below 80% of its natural size: past that it turns into
+      // the vertical outline, which keeps its natural size.
+      style: full && !vertical ? { width: 'min(100%, ' + Math.round(layout.width * 1.6) + 'px)', minWidth: Math.round(layout.width * 0.8) + 'px', height: 'auto' } : null,
       viewBox: '0 0 ' + layout.width + ' ' + layout.height,
       role: 'img',
       'aria-label': 'Delegation graph: ' + counts + ', ' + active + ' active'
@@ -230,7 +273,7 @@ export function AgentNetworkDock({ transcriptRef }) {
         const running = e.kind === 'tree' && (b.status === 'running' || b.status === 'waiting');
         return h('path', {
           key: e.id,
-          d: edgePath(a, b, e.kind),
+          d: edgePath(a, b, e.kind, layout),
           class: 'agent-net__edge agent-net__edge--' + e.kind + (live ? ' is-live' : '') + (running ? ' is-running' : ''),
           'marker-end': e.kind === 'dep' ? 'url(#agent-net-arrow-' + (full ? 'f' : 'i') + ')' : null
         });
@@ -253,21 +296,25 @@ export function AgentNetworkDock({ transcriptRef }) {
         }
       },
         h('title', null, n.task ? short(n.task, 300) : nodeLabel(net, n.id)),
-        h('rect', { class: 'agent-net__ring', x: -3, y: -3, width: NODE_W + 6, height: NODE_H + 6, rx: 12 }),
-        h('rect', { class: 'agent-net__box', width: NODE_W, height: NODE_H, rx: 9 }),
+        h('rect', { class: 'agent-net__ring', x: -3, y: -3, width: nodeW + 6, height: NODE_H + 6, rx: 12 }),
+        h('rect', { class: 'agent-net__box', width: nodeW, height: NODE_H, rx: 9 }),
         h('circle', { class: 'agent-net__status', cx: 13, cy: NODE_H / 2, r: 4 }),
-        h('text', { class: 'agent-net__label', x: 24, y: 18 }, short(nodeLabel(net, n.id), 15)),
+        h('text', { class: 'agent-net__label', x: 24, y: 18 }, short(nodeLabel(net, n.id), labelMax)),
         h('text', { class: 'agent-net__sub', x: 24, y: 33 },
-          n.id === ROOT ? 'this chat' : short([STATUS_TEXT[n.status] || n.status, n.memberId && n.agent ? n.agent : (n.background ? 'background' : '')].filter(Boolean).join(' · '), 19))
+          n.id === ROOT ? 'this chat' : short([STATUS_TEXT[n.status] || n.status, n.memberId && n.agent ? n.agent : (n.background ? 'background' : '')].filter(Boolean).join(' · '), subMax))
       )),
       pulses.map((p) => {
         const a = byId.get(p.from);
         const b = byId.get(p.to);
         if (!a || !b) return null;
+        // Parent and child share a tree edge; anyone else (group members
+        // handing off) travels a dependency-style arc between them.
+        const kind = treeParent(b) === a.id || treeParent(a) === b.id ? 'tree'
+          : vertical ? 'dep' : (a.y === b.y ? 'dep' : 'tree');
         const reverse = a.y > b.y || (a.y === b.y && a.x > b.x);
         const top = reverse ? b : a;
         const bottom = reverse ? a : b;
-        return h(PulseDot, { key: p.key, pulse: p, d: edgePath(top, bottom, a.y === b.y ? 'dep' : 'tree'), reverse, onDone: () => dropPulse(p.key) });
+        return h(PulseDot, { key: p.key, pulse: p, d: edgePath(top, bottom, kind, layout), reverse, onDone: () => dropPulse(p.key) });
       })
     )
   );

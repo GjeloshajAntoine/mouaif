@@ -66,6 +66,9 @@
   max-width: none;
   overflow: visible;
 }
+/* Too wide for a top-down tree: an indented outline that grows downwards
+   and scrolls with the card body (or the full-screen stage). */
+.agent-net__graph--vertical { text-align: left; }
 
 /* Full screen */
 .agent-net-full {
@@ -115,6 +118,7 @@
   padding: 16px;
 }
 .agent-net-full__stage .agent-net__graph { width: 100%; overflow: visible; }
+.agent-net-full__stage:has(.agent-net__graph--vertical) { place-items: start center; }
 .agent-net-full__side {
   min-height: 0;
   overflow: auto;
