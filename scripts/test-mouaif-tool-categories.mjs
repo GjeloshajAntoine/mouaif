@@ -68,7 +68,7 @@ same(categories[0].tools.map((t) => t.id), [
   'delete_chat', 'search_chats', 'attach_chat_image', 'list_chat_attachments', 'ask_user', 'task', 'report_progress', 'webpreview'
 ], 'the chats category lists its fifteen tools');
 same(categories[1].tools.map((t) => t.id), [
-  'create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'restart_app', 'list_features', 'group_cli', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'webhook_create', 'webhook_status', 'webhook_delete'
+  'create_mcp_app', 'get_settings', 'update_settings', 'list_projects', 'restart_app', 'list_features', 'group_cli', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'webhook_create', 'webhook_status', 'webhook_delete', 'hook_create', 'hook_list', 'hook_delete'
 ], 'the settings category lists its ten tools');
 for (const name of ['run_start', 'run_status', 'run_end']) {
   assert.ok(!categories[1].tools.some((tool) => tool.id === name), name + ' is not an agent tool');
@@ -137,7 +137,7 @@ same(
   'category ids match src/tools/mouaif.js GROUPS'
 );
 const actions = new Set(categories.flatMap((g) => g.tools.map((t) => t.id)));
-assert.equal(actions.size, 28, 'twenty-eight tools, each listed once');
+assert.equal(actions.size, 31, 'thirty-one tools, each listed once');
 
 // The two app tools sit in the mouaif row now, not as rows of their own:
 // one tree row per tool family, and `restart_app` / `list_features` are

@@ -62,7 +62,7 @@ function notifyAttention({ sessionId, projectDir, chatId, name, data, preference
     requireInteraction: true
   };
   const hooks = require('./hooks.js');
-  if (!hooks.hasHooks('attention')) { send(message); return; }
+  if (!hooks.hasHooks('attention', { projectDir, chatId })) { send(message); return; }
   hooks.runHooks('attention', { origin: { kind: (origin && origin.kind) || 'user' }, kind, tool: message.data.tool || '' },
     { projectDir, chatId, cwd: projectDir })
     .then((o) => { if (!o.suppress) send(message); }, () => send(message));

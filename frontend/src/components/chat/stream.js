@@ -39,6 +39,7 @@ import { subscribeLive, closeLive } from './live.js';
 import { mergeServerRows, nextServerMessageIndex, tailSyncDomAction, newClientId, heldSeqs } from './msgMerge.js';
 import { toPublicImageAttachments } from './annotation.js';
 import { promptHookContextElement } from './hookNotes.js';
+import { CHAT_HOOKS_CHANGED } from './hookEvents.js';
 
 // `prompt_hooks` { clientId, hooks }: what `prompt.submit` hooks added to the
 // prompt this stream saved. Attached to the optimistic bubble at once instead
@@ -1508,6 +1509,10 @@ state.messages = state.messages.filter((m) => m !== userMsg);
     appendToolResultCard(data, refs);
     agentNetworkEvent(state, null, 'tool_result', data);
     if (data) applyMouaifToolResult(data, state, refs);
+    // The model changed this chat's hooks: the hooks bar reloads at once.
+    if (data && (data.name === 'hook_create' || data.name === 'hook_delete') && data.ok && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(CHAT_HOOKS_CHANGED));
+    }
     } else if (ev.eventName === 'progress_update') {
       // Real-time progress bar from the model's report_progress tool.
       // Creates or updates a progress card in the transcript with a

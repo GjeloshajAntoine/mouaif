@@ -216,7 +216,7 @@ const FILE_FAMILY_TOOLS = new Set([...FILE_TOOL_NAMES]);
 // leaf's override — which is also what keeps a migrated project's binary
 // ask_user clamp in place.
 const FAMILY_EXTRAS = Object.freeze({
-  mouaif: Object.freeze(['restart_app', 'list_features', 'group_cli', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'webhook_create', 'webhook_status', 'webhook_delete']),
+  mouaif: Object.freeze(['restart_app', 'list_features', 'group_cli', 'schedule_wake', 'schedule_list', 'schedule_cancel', 'webhook_create', 'webhook_status', 'webhook_delete', 'hook_create', 'hook_list', 'hook_delete']),
   chats: Object.freeze(['ask_user', 'task', 'report_progress', 'webpreview'])
 });
 const TOOL_FAMILIES = Object.freeze(Object.assign(

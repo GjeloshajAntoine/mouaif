@@ -259,6 +259,10 @@ async function runSingleToolCall(c, cx) {
   // Captured from the same authorization payload: a per-run thinking
   // level the user picked on the approval card (this call only).
   let callOptsThinkingLevel = null;
+  // Captured from the same payload for `hook_create`: the scope the user
+  // picked on the card ('chat' or 'app'); the runner can only lower the
+  // model's request with it (src/tools/hooks.js).
+  let callOptsHookScope = null;
   const pushToolMessage = (name, content) => {
     if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name, content });
   };
@@ -455,6 +459,22 @@ async function runSingleToolCall(c, cx) {
       + '\nSource: ' + (args.path || args.filename || '(missing filename)')
       + '\nNo installs, Node execution of app source, MCP server registration or permission changes.';
       }
+      // hook_create always reaches the user, even for Allow and session
+      // grants: a hook persists and runs code on later turns. A malformed
+      // request is answered at once, without a card (src/tools/hooks.js).
+      if (c.name === 'hook_create') {
+        forcePrompt = true;
+        try { summary = require('./tools/hooks.js').describe(args).text; }
+        catch (e) {
+          const r = { ok: false, code: e.code || 'EBADINPUT', error: { code: e.code || 'EBADINPUT', message: e.message } };
+          exec = { ok: false, content: JSON.stringify(r), result: r };
+          onEvent('tool_call', { id: c.id || null, name: c.name, args });
+          callEmitted = true;
+          onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result: exec.result });
+          pushToolMessage(c.name, modelContentForTool(c.name, exec));
+          return exec;
+        }
+      }
       // A delegation that shares chat images names them on the approval
       // card (metadata only), so the user sees what leaves the chat.
       let authImages;
@@ -593,6 +613,10 @@ async function runSingleToolCall(c, cx) {
         if (authDecision && authDecision.payload) {
           if (c.name === 'ask_user') {
             callOptsAnswerPayload = authDecision.payload;
+          } else if (c.name === 'hook_create') {
+            if (authDecision.payload.hookScope === 'chat' || authDecision.payload.hookScope === 'app') {
+              callOptsHookScope = authDecision.payload.hookScope;
+            }
           } else if (c.name === 'subagent') {
             if (authDecision.payload.modelOverride) {
               // The authorization card let the user pick a model for
@@ -616,7 +640,7 @@ async function runSingleToolCall(c, cx) {
       // appeared permanently stuck on a tool call with no messages.
       onEvent('tool_call', { id: c.id || null, name: c.name, args });
       callEmitted = true;
-      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, toolTimeoutMs: clampedTimeoutMs, answerPayload: callOptsAnswerPayload, modelOverride: callOptsModelOverride, thinkingLevel: callOptsThinkingLevel, workingFolderDestination }));
+      exec = await dispatchTool(c.name, args, Object.assign({}, opts, { callId: c.id || null, toolTimeoutMs: clampedTimeoutMs, answerPayload: callOptsAnswerPayload, modelOverride: callOptsModelOverride, thinkingLevel: callOptsThinkingLevel, hookScope: callOptsHookScope, workingFolderDestination }));
     }
   } catch (e) {
     // Denied/disabled/error calls still need a call card immediately
@@ -790,6 +814,11 @@ try { toolSpecs.push(...Object.values(require('./tools/schedule.js').SPECS)); }
 catch { /* schedule tools module unavailable; skip */ }
 try { toolSpecs.push(...Object.values(require('./tools/webhook.js').SPECS)); }
 catch { /* webhook tools module unavailable; skip */ }
+// hook_create / hook_list / hook_delete manage the chat's hooks; subagents get none.
+if (!(opts && opts.nestedSubagent)) {
+  try { toolSpecs.push(...Object.values(require('./tools/hooks.js').SPECS)); }
+  catch { /* hook tools module unavailable; skip */ }
+}
 // Ordinary native tools for chats, attachments, settings and projects.
 try { toolSpecs.push(...Object.values(require('./tools/mouaif.js').SPECS)); }
 catch { /* mouaif tool module unavailable; skip */ }
@@ -1956,6 +1985,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // Native webhook tools: give this chat a link that starts a turn when called.
   if (require('./tools/webhook.js').NAMES.includes(name)) {
     return await require('./tools/webhook.js').runWebhookTool(name, args, callOpts || {});
+  }
+  // Native hook tools: the chat's hooks (src/tools/hooks.js).
+  if (require('./tools/hooks.js').NAMES.includes(name)) {
+    return await require('./tools/hooks.js').runHookTool(name, args, callOpts || {});
   }
   // Native subagent tool. It delegates to the same model with the same
   // inherited project tool surface, including MCP. Rooted local-parent scopes

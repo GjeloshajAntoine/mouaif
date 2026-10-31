@@ -744,6 +744,39 @@ host._selected = () => selected;
 return host;
 }
 
+// Where a model-made hook runs (hook_create, docs/features/hooks.md). The
+// model asks for a scope; the card can keep it or lower "every chat" to
+// "this chat". The pick always rides the decision payload: the server treats
+// a decision without it as "this chat".
+function buildHookScopePicker(request) {
+  if (!request || request.tool !== 'hook_create') return null;
+  const args = (request.details && request.details.args) || request.args || {};
+  const requested = args.scope === 'app' ? 'app' : 'chat';
+  let selected = requested;
+  const host = document.createElement('fieldset');
+  host.className = 'tool-card__hook-scope';
+  const legend = document.createElement('legend');
+  legend.textContent = 'Where the hook runs';
+  host.appendChild(legend);
+  const options = requested === 'app'
+    ? [['app', 'Every chat, in every project (as asked)'], ['chat', 'Only this chat']]
+    : [['chat', 'Only this chat']];
+  const name = 'hook-scope-' + String(request.callId || Math.random()).replace(/[^A-Za-z0-9_-]/g, '');
+  for (const [value, text] of options) {
+    const label = document.createElement('label');
+    label.className = 'tool-card__hook-scope-option';
+    const input = document.createElement('input');
+    input.type = 'radio'; input.name = name; input.value = value; input.checked = value === selected;
+    input.addEventListener('change', () => { if (input.checked) selected = value; });
+    const span = document.createElement('span');
+    span.textContent = text;
+    label.append(input, span);
+    host.appendChild(label);
+  }
+  host._selected = () => selected;
+  return host;
+}
+
 export function authorizationCard(request, projectDir, chatId, refs, resume, state, { autoFocus = true, autoScroll = true } = {}) {
   return new Promise((resolve) => {
     if (!refs.transcript.current || request.signal?.aborted) return resolve('deny');
@@ -787,6 +820,7 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
     // model here, the decision payload carries it so the delegated run
     // executes on that model (this call only; see buildAuthModelPicker).
     const modelPicker = buildAuthModelPicker(state, request, projectDir);
+    const scopePicker = buildHookScopePicker(request);
     const actions = document.createElement('div');
     actions.className = 'tool-card__actions';
     const feedback = document.createElement('p');
@@ -838,6 +872,7 @@ export function authorizationCard(request, projectDir, chatId, refs, resume, sta
       }
       if (Object.keys(payload).length) body.payload = payload;
       }
+      if (scopePicker && decision !== 'deny') body.payload = Object.assign({}, body.payload, { hookScope: scopePicker._selected() });
       try {
       const r = await fetchJson('/api/tools/authorization/decision', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
@@ -925,6 +960,7 @@ card.addEventListener('keydown', onKey);
     card.dataset.awaitingReview = '1';
     }
     if (modelPicker) card.appendChild(modelPicker);
+    if (scopePicker) card.appendChild(scopePicker);
     card.appendChild(actions); card.appendChild(feedback); card.appendChild(retry);
     refs.transcript.current.appendChild(card);
     afterTranscriptAppend(refs, true);

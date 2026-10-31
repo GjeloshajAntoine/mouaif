@@ -413,6 +413,207 @@ async function testTurnE2E() {
   setHooks([]);
 }
 
+// Phase 3: a chat's own hooks, and the model's hook tools.
+async function testChatHooks() {
+  const chatHooks = require('../src/chatHooks.js');
+  const A = 'chat-a';
+  const B = 'chat-b';
+  const app = [{ id: 'app-ctx', event: 'tool.before', handler: { kind: 'command', command: say({ context: 'app' }) } }];
+  setHooks(app);
+  const row = chatHooks.add(projectDir, A, { id: 'chat-ctx', event: 'tool.before', handler: { kind: 'command', command: say({ context: 'chat' }) } }, 'user');
+  assert.equal(row.status, 'active');
+  assert.equal(row.createdBy, 'user');
+  // An id an app hook (or this chat) already uses gets a suffix.
+  assert.equal(chatHooks.add(projectDir, A, { id: 'app-ctx', event: 'tool.after', handler: { kind: 'command', command: 'true' } }).hook.id, 'app-ctx-2');
+  assert.throws(() => chatHooks.add(projectDir, A, { id: 'bad', event: 'nope', handler: { kind: 'command', command: 'x' } }), /event/);
+
+  // App hooks first, then the chat's; only in that chat.
+  const run = (chatId) => hooks.runHooks('tool.before', { tool: 'shell', args: {} }, { projectDir, chatId, cwd: projectDir });
+  let out = await run(A);
+  assert.deepEqual(out.notes.map((n) => n.hook), ['app-ctx', 'chat-ctx']);
+  assert.equal(out.notes[1].scope, 'chat');
+  assert.deepEqual((await run(B)).notes.map((n) => n.hook), ['app-ctx']);
+  assert.equal(hooks.hasHooks('tool.after'), false);
+  assert.equal(hooks.hasHooks('tool.after', { projectDir, chatId: A }), true);
+  // Pause; the app master switch pauses chat hooks too.
+  chatHooks.update(projectDir, A, 'chat-ctx', { status: 'paused' });
+  assert.deepEqual((await run(A)).notes.map((n) => n.hook), ['app-ctx']);
+  chatHooks.update(projectDir, A, 'chat-ctx', { status: 'active' });
+  setHooks(app, false);
+  assert.equal((await run(A)).notes.length, 0);
+  setHooks(app);
+  // Editing keeps the id.
+  assert.equal(chatHooks.update(projectDir, A, 'chat-ctx', { entry: { id: 'other', event: 'tool.after', handler: { kind: 'command', command: 'true' } } }).hook.id, 'chat-ctx');
+  assert.equal(chatHooks.update(projectDir, A, 'nope', { status: 'paused' }), null);
+  // At most 20 per chat.
+  for (let i = chatHooks.list(projectDir, B).length; i < chatHooks.MAX_PER_CHAT; i++) chatHooks.add(projectDir, B, { event: 'turn.start', handler: { kind: 'command', command: 'true' } });
+  assert.throws(() => chatHooks.add(projectDir, B, { event: 'turn.start', handler: { kind: 'command', command: 'true' } }), /at most 20/);
+  assert.equal(chatHooks.removeChat(projectDir, B), 20);
+  // Promote moves it into the app list, with a free id.
+  const promoted = chatHooks.promote(projectDir, A, 'app-ctx-2');
+  assert.equal(promoted.id, 'app-ctx-2');
+  assert.ok(hooks.getConfig().list.some((h) => h.id === 'app-ctx-2'));
+  assert.equal(chatHooks.get(projectDir, A, 'app-ctx-2'), null);
+  chatHooks.removeChat(projectDir, A);
+  setHooks([]);
+}
+
+async function testHookTools() {
+  const chatHooks = require('../src/chatHooks.js');
+  const hookTools = require('../src/tools/hooks.js');
+  authz.setAuthorization(projectDir, { tools: { mouaif: { mode: 'allow', allowlist: [] } } });
+  const C = 'chat-tools';
+  const cx = (dispatched, events, convo) => Object.assign(makeCx(C, dispatched, events, convo), {
+    dispatchTool: (name, args, callOpts) => { dispatched.push([name, args]); return hookTools.runHookTool(name, args, callOpts); }
+  });
+  const waitCard = async (events, callId) => {
+    for (let i = 0; i < 150; i++) {
+      const card = events.find(([n, d]) => n === 'authorization_required' && d.callId === callId);
+      if (card) return card[1];
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return null;
+  };
+  const create = { event: 'tool.before', name: 'No force push', match: { tool: ['shell'], argText: 'push.*-f' }, command: 'exit 2', scope: 'app', note: 'User asked.' };
+
+  // The card shows even though the mouaif tools are Allow; it names the
+  // scope and the command verbatim. Picking "chat" on the card lowers it.
+  let dispatched = []; let events = [];
+  let pending = runSingleToolCall({ id: 'hc1', name: 'hook_create', arguments: JSON.stringify(create) }, cx(dispatched, events, null));
+  let card = await waitCard(events, 'hc1');
+  assert.ok(card, 'hook_create card shown for an Allow tool');
+  assert.match(card.summary, /^Add a hook that runs before matching tool calls in every chat\./);
+  assert.match(card.summary, /Command: exit 2/);
+  assert.match(card.summary, /keeps running on later turns/);
+  assert.equal(dispatched.length, 0);
+  authz.recordDecision(projectDir, C, 'hc1', 'allow-session', { hookScope: 'chat' });
+  let out = await pending;
+  assert.equal(out.exec.result.scope, 'chat');
+  assert.equal(out.exec.result.hookId, 'no-force-push');
+  const stored = chatHooks.get(projectDir, C, 'no-force-push');
+  assert.equal(stored.createdBy, 'model');
+  assert.equal(stored.hook.createdBy, 'model');
+  assert.equal(stored.hook.note, 'User asked.');
+  assert.ok(!hooks.getConfig().list.some((h) => h.id === 'no-force-push'));
+
+  // A session grant does not skip the next card; the user may keep "app".
+  dispatched = []; events = [];
+  pending = runSingleToolCall({ id: 'hc2', name: 'hook_create', arguments: JSON.stringify(create) }, cx(dispatched, events, null));
+  card = await waitCard(events, 'hc2');
+  assert.ok(card, 'card shown again after allow-session');
+  authz.recordDecision(projectDir, C, 'hc2', 'allow-once', { hookScope: 'app' });
+  out = await pending;
+  assert.equal(out.exec.result.scope, 'app');
+  assert.ok(hooks.getConfig().list.some((h) => h.id === out.exec.result.hookId && h.createdBy === 'model'));
+  const appId = out.exec.result.hookId;
+
+  // No payload (e.g. a decision from a notification) means chat; the card
+  // can never raise a chat request to app.
+  dispatched = []; events = [];
+  pending = runSingleToolCall({ id: 'hc3', name: 'hook_create', arguments: JSON.stringify(Object.assign({}, create, { scope: 'chat', name: 'Low' })) }, cx(dispatched, events, null));
+  await waitCard(events, 'hc3');
+  authz.recordDecision(projectDir, C, 'hc3', 'allow-once', { hookScope: 'app' });
+  assert.equal((await pending).exec.result.scope, 'chat');
+  dispatched = []; events = [];
+  pending = runSingleToolCall({ id: 'hc4', name: 'hook_create', arguments: JSON.stringify(Object.assign({}, create, { name: 'Plain' })) }, cx(dispatched, events, null));
+  await waitCard(events, 'hc4');
+  authz.recordDecision(projectDir, C, 'hc4', 'allow-once');
+  assert.equal((await pending).exec.result.scope, 'chat');
+
+  // A malformed request is refused without a card; no network handlers.
+  for (const bad of [{ event: 'tool.before' }, { event: 'tool.before', handler: { kind: 'http', url: 'http://x' } },
+    { event: 'tool.before', command: 'x', script: 'y' }, { event: 'turn.end', command: 'x', match: { tool: ['shell'] } },
+    { event: 'tool.before', script: 'x'.repeat(9000) }]) {
+    dispatched = []; events = [];
+    out = await runSingleToolCall({ id: 'bad', name: 'hook_create', arguments: JSON.stringify(bad) }, cx(dispatched, events, null));
+    assert.equal(out.result.code, 'EBADINPUT', JSON.stringify(bad));
+    assert.ok(!events.some(([n]) => n === 'authorization_required'));
+  }
+
+  // Tool hooks never match the hook tools, so cleanup cannot be blocked.
+  setHooks(hooks.getConfig().list.concat({ id: 'block-all', event: 'tool.before', handler: { kind: 'command', command: 'exit 2' } }));
+  dispatched = []; events = [];
+  out = await runSingleToolCall({ id: 'hl1', name: 'hook_list', arguments: '{}' }, cx(dispatched, events, null));
+  assert.equal(out.exec.ok, true);
+  assert.ok(out.exec.result.app.some((h) => h.id === 'block-all'));
+  assert.ok(out.exec.result.chat.some((h) => h.id === 'no-force-push' && h.createdBy === 'model' && h.status === 'active'));
+  out = await runSingleToolCall({ id: 'hd1', name: 'hook_delete', arguments: JSON.stringify({ hookId: appId }) }, cx(dispatched, events, null));
+  assert.equal(out.exec.result.code, 'EAPP_HOOK');
+  out = await runSingleToolCall({ id: 'hd2', name: 'hook_delete', arguments: JSON.stringify({ hookId: 'no-force-push' }) }, cx(dispatched, events, null));
+  assert.equal(out.exec.result.deleted, true);
+  assert.equal(chatHooks.get(projectDir, C, 'no-force-push'), null);
+
+  // Subagents get none of these tools.
+  const nested = await hookTools.runHookTool('hook_list', {}, { projectDir, chatId: C, nestedSubagent: true });
+  assert.equal(nested.result.code, 'EPARENT_ONLY');
+  chatHooks.removeChat(projectDir, C);
+  setHooks([]);
+}
+
+// The chat hooks REST routes, the chat list's `hooks` flag and filter, and
+// cleanup when the chat is deleted.
+async function testChatHookRoutes() {
+  const chats = require('../src/chats.js');
+  const chatHooks = require('../src/chatHooks.js');
+  const { handleChatHooks, isChatHooksPath } = require('../src/server-handlers-hooks.js');
+  const { handleChats } = require('../src/server-handlers-chats.js');
+  const call = async (handler, method, path, body) => {
+    const req = { method, headers: { 'content-type': 'application/json' },
+      on(ev, cb) { if (ev === 'data' && body) process.nextTick(() => cb(Buffer.from(JSON.stringify(body)))); if (ev === 'end') process.nextTick(cb); } };
+    let status = 0; let text = '';
+    const res = { writeHead(c) { status = c; }, setHeader() {}, getHeader() {}, write(c) { text += c; }, end(c) { if (c) text += c; } };
+    const u = new URL(path, 'http://localhost');
+    await handler(req, res, { pathname: u.pathname, query: Object.fromEntries(u.searchParams) });
+    return { status, body: text ? JSON.parse(text) : null };
+  };
+  const chat = chats.createChat(projectDir, { title: 'routes' });
+  const other = chats.createChat(projectDir, { title: 'other' });
+  const base = '/api/chats/' + chat.id + '/hooks';
+  assert.ok(isChatHooksPath(base) && isChatHooksPath(base + '/x') && isChatHooksPath(base + '/x/promote'));
+  assert.ok(!isChatHooksPath('/api/chats/' + chat.id + '/webhook'));
+  const q = '?projectDir=' + encodeURIComponent(projectDir);
+  let r = await call(handleChatHooks, 'GET', base + q);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.hooks, []);
+  assert.equal((await call(handleChatHooks, 'GET', '/api/chats/nope/hooks' + q)).status, 404);
+  r = await call(handleChatHooks, 'POST', base, { projectDir, entry: { id: 'mine', event: 'turn.end', handler: { kind: 'command', command: 'true' } } });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.hook.createdBy, 'user');
+  assert.equal((await call(handleChatHooks, 'POST', base, { projectDir, entry: { id: 'x', event: 'bad' } })).status, 400);
+  r = await call(handleChatHooks, 'PUT', base + '/mine', { projectDir, status: 'paused' });
+  assert.equal(r.body.hook.status, 'paused');
+  assert.equal((await call(handleChatHooks, 'PUT', base + '/nope', { projectDir, status: 'paused' })).status, 404);
+
+  // The chat list marks and filters chats with hooks.
+  r = await call((req, res, parsed) => handleChats(req, res, parsed, null, {}), 'GET', '/api/chats' + q + '&filter=hooks&limit=50');
+  assert.deepEqual(r.body.chats.map((c) => c.id), [chat.id]);
+  assert.equal(r.body.chats[0].hooks, true);
+  r = await call((req, res, parsed) => handleChats(req, res, parsed, null, {}), 'GET', '/api/chats' + q + '&limit=50');
+  assert.equal(r.body.chats.find((c) => c.id === other.id).hooks, undefined);
+
+  // Promote: only to the app.
+  assert.equal((await call(handleChatHooks, 'POST', base + '/mine/promote', { projectDir, scope: 'project' })).status, 400);
+  r = await call(handleChatHooks, 'POST', base + '/mine/promote', { projectDir, scope: 'app' });
+  assert.equal(r.body.hook.enabled, false, 'a paused chat hook arrives switched off');
+  assert.ok(hooks.getConfig().list.some((h) => h.id === 'mine'));
+  setHooks([]);
+
+  // Deleting the chat deletes its hooks.
+  chatHooks.add(projectDir, chat.id, { id: 'gone', event: 'turn.end', handler: { kind: 'command', command: 'true' } });
+  assert.equal((await call(handleChatHooks, 'DELETE', base + '/gone' + q)).status, 200);
+  chatHooks.add(projectDir, chat.id, { id: 'gone2', event: 'turn.end', handler: { kind: 'command', command: 'true' } });
+  r = await call((req, res, parsed) => handleChats(req, res, parsed, null, {}), 'DELETE', '/api/chats/' + chat.id + q);
+  assert.equal(r.status, 200);
+  assert.deepEqual(chatHooks.list(projectDir, chat.id), []);
+}
+
+// A promise that never settles empties the event loop and Node exits 0 with
+// nothing printed; count that as a failure.
+let finished = false;
+process.on('exit', (code) => {
+  if (code === 0 && !finished) { console.error('test-hooks: stopped before the end (a promise never settled)'); process.exitCode = 1; }
+});
+
 async function main() {
   await testValidation();
   await testParseOutput();
@@ -421,6 +622,10 @@ async function main() {
   await testUserRowContext();
   await testTurnEvents();
   await testTurnE2E();
+  await testChatHooks();
+  await testHookTools();
+  await testChatHookRoutes();
+  finished = true;
   console.log('test-hooks: ok');
 }
 

@@ -25,6 +25,7 @@ import { WebpreviewDock } from './WebpreviewDock.jsx';
 import { AgentNetworkDock } from './AgentNetworkDock.jsx';
 import { RunDock } from './RunDock.jsx';
 import { WebhookDock } from './WebhookDock.jsx';
+import { HooksDock } from './HooksDock.jsx';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
@@ -699,6 +700,8 @@ h(AgentNetworkDock, { transcriptRef: refs.transcript }),
 h(RunDock, { projectDir, chatId, onJumpToSeq: jumpToSeq }),
 // The chat's webhook link and the calls it received; absent until it has one.
 h(WebhookDock, { projectDir, chatId, onJumpToSeq: jumpToSeq }),
+// The chat's own hooks (docs/features/hooks.md); absent until it has one.
+h(HooksDock, { projectDir, chatId }),
 h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {

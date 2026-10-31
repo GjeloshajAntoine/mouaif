@@ -6,7 +6,7 @@ const TITLES = {
   update_chat: 'Update chat', change_working_folder: 'Change working folder', search_models: 'Search models', start_chat: 'Start chat',
   delete_chat: 'Delete chat', search_chats: 'Search chats', attach_chat_image: 'Attach image', list_chat_attachments: 'List chat images',
   get_settings: 'Read settings', update_settings: 'Change settings', list_projects: 'List projects', get_app_info: 'Read app info',
-  restart_app: 'Restart app', schedule_wake: 'Schedule a wake-up', schedule_list: 'List wake-ups', schedule_cancel: 'Cancel wake-up', webhook_create: 'Create a webhook', webhook_status: 'Read the webhook', webhook_delete: 'Delete the webhook', run_start: 'Start a long-running run', run_status: 'Read run status', run_end: 'End the run', create_mcp_app: 'Create MCP App', task: 'Update tasks', webpreview: 'Open preview',
+  restart_app: 'Restart app', schedule_wake: 'Schedule a wake-up', schedule_list: 'List wake-ups', schedule_cancel: 'Cancel wake-up', webhook_create: 'Create a webhook', webhook_status: 'Read the webhook', webhook_delete: 'Delete the webhook', hook_create: 'Add a hook', hook_list: 'List hooks', hook_delete: 'Delete a hook', run_start: 'Start a long-running run', run_status: 'Read run status', run_end: 'End the run', create_mcp_app: 'Create MCP App', task: 'Update tasks', webpreview: 'Open preview',
   subagent_messages: 'Read worker messages', subagent_status: 'Check worker', subagent_stop: 'Stop worker', subagent_send: 'Message worker',
   subagent_group_create: 'Create worker group', subagent_group_update: 'Update worker group', subagent_publish: 'Publish handoff',
   subagent_read: 'Read handoff', subagent_group_status: 'Check worker group', subagent_decision: 'Propose group decision', subagent_conflict: 'Report group conflict'
@@ -56,7 +56,11 @@ export function approvalText(request) {
   const args = redacted(details.args || request.args) || {};
   const tool = request.tool || '';
   const lines = [];
-  if (tool === 'shell') {
+  if (tool === 'hook_create') {
+    // The server's own description: what runs, when, where, the command or
+    // script verbatim, and that it persists (src/tools/hooks.js describe()).
+    lines.push(request.summary || '');
+  } else if (tool === 'shell') {
     lines.push(args.cmd || request.cmd || request.summary || '');
   } else if (tool === 'group_cli' && Array.isArray(args.commands)) {
     lines.push(args.commands.map((entry, i) => !entry || typeof entry !== 'object' ? String(entry)

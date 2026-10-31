@@ -67,7 +67,7 @@ const { parseRequestTarget } = require('./util.js');
 
 const { handleSettings } = require('./server-handlers-settings.js');
 const { handleThemes } = require('./server-handlers-themes.js');
-const { handleHooks } = require('./server-handlers-hooks.js');
+const { handleHooks, handleChatHooks, isChatHooksPath } = require('./server-handlers-hooks.js');
 const { handleChats } = require('./server-handlers-chats.js');
 const { handleProjects, handleFileEditor } = require('./server-handlers-projects.js');
 const { handleAI } = require('./server-handlers-ai.js');
@@ -219,6 +219,10 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   // Hooks (docs/features/hooks.md)
   if (urlPath === '/api/hooks' || urlPath.startsWith('/api/hooks/')) {
     return handleHooks(req, res, parsed);
+  }
+  // A chat's own hooks; matched before the generic /api/chats/* router.
+  if (isChatHooksPath(urlPath)) {
+    return handleChatHooks(req, res, parsed);
   }
 
   // Settings API

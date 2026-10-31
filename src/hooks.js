@@ -50,6 +50,9 @@ const EVENT_FIELDS = Object.freeze({
   'turn.error': ['code', 'message', 'stopped'],
   attention: ['kind', 'tool']
 });
+// The model's hook tools (src/tools/hooks.js). Tool hooks never match them,
+// so a hook cannot lock the user out of cleanup or rewrite another hook.
+const HOOK_TOOLS = Object.freeze(['hook_create', 'hook_list', 'hook_delete']);
 // `hook` is a follow-up turn a turn.end hook started.
 const ORIGINS = Object.freeze(['user', 'webhook', 'schedule', 'app', 'hook']);
 // Tool families a hook can match: the authorization gates (`shell`, `file`,
@@ -176,6 +179,11 @@ function normalizeHook(raw, index = 0) {
   hook.timeoutMs = Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Math.round(timeout)));
   hook.failClosed = raw.failClosed === true;
   hook.subagents = raw.subagents === true;
+  // A hook the model added through hook_create (after its approval card),
+  // with the reason it gave. Shown in Settings and the chat's hooks panel.
+  if (raw.createdBy === 'model') hook.createdBy = 'model';
+  const note = str(raw.note, at + '.note', 300).trim();
+  if (note) hook.note = note;
   return hook;
 }
 
@@ -453,12 +461,16 @@ function resultForPayload(result) {
 async function runHooks(event, payload, ctx = {}) {
   const outcome = { decision: 'continue', notes: [], contextBy: [], followUps: [] };
   if (ctx.disabled || disabledByEnv()) return outcome;
+  if (TOOL_EVENTS.includes(event) && HOOK_TOOLS.includes(payload.tool)) return outcome;
   let config;
   try { config = getConfig(); } catch { return outcome; }
-  if (!config.enabled || !config.list.length) return outcome;
+  if (!config.enabled) return outcome;
+  // App hooks first, then the chat's own (src/chatHooks.js).
+  const all = config.list.concat(chatHooksFor(ctx));
+  if (!all.length) return outcome;
 
   const matching = [];
-  for (const hook of config.list) {
+  for (const hook of all) {
     if (hook.event !== event || !hook.enabled) continue;
     if (await hookMatches(hook, event, payload, ctx)) matching.push(hook);
   }
@@ -520,6 +532,7 @@ async function runHooks(event, payload, ctx = {}) {
 
     const note = { hook: hook.id, event, decision: parsed.decision, ms: run.ms };
     if (hook.name) note.name = hook.name;
+    if (hook.scope === 'chat') note.scope = 'chat';
     if (parsed.reason) note.reason = parsed.reason;
     if (parsed.error) note.error = parsed.error;
     if (parsed.notice) note.notice = parsed.notice;
@@ -564,13 +577,23 @@ async function runHooks(event, payload, ctx = {}) {
   return outcome;
 }
 
-// hasHooks(event) -> boolean — any enabled hook for this event, so a caller
-// can skip deferring work (a push) when nothing would run.
-function hasHooks(event) {
+// The chat's active hooks, marked so notes can say "chat hook".
+function chatHooksFor(ctx) {
+  if (!ctx || !ctx.projectDir || !ctx.chatId) return [];
+  try {
+    return require('./chatHooks.js').active(ctx.projectDir, ctx.chatId).map((h) => Object.assign(h, { scope: 'chat' }));
+  } catch { return []; }
+}
+
+// hasHooks(event, ctx?) -> boolean — any enabled hook for this event (app
+// hooks, plus the chat's when ctx names one), so a caller can skip deferring
+// work (a push) when nothing would run.
+function hasHooks(event, ctx) {
   if (disabledByEnv()) return false;
   try {
     const config = getConfig();
-    return config.enabled && config.list.some((h) => h.enabled && h.event === event);
+    if (!config.enabled) return false;
+    return config.list.concat(chatHooksFor(ctx)).some((h) => h.enabled && h.event === event);
   } catch { return false; }
 }
 
@@ -699,6 +722,7 @@ function newId() {
 module.exports = {
   EVENTS,
   TOOL_EVENTS,
+  HOOK_TOOLS,
   ORIGINS,
   FAMILIES,
   SHELLS: Object.keys(SHELLS),

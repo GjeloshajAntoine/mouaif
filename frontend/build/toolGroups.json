@@ -69,7 +69,13 @@
       "group_cli",
       "schedule_wake",
       "schedule_list",
-      "schedule_cancel"
+      "schedule_cancel",
+      "webhook_create",
+      "webhook_status",
+      "webhook_delete",
+      "hook_create",
+      "hook_list",
+      "hook_delete"
     ]
   },
   {

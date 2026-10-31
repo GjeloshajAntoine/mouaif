@@ -2,7 +2,7 @@
 
 ## Overview
 
-25 ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report): **15 in the Chats family** and **10 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
+31 ordinary native functions in two families let the assistant manage this project's chats and working folders, model discovery and background turns, image attachments, app and project settings, the registered project list, and the app itself (restart, feature report, wake-ups, webhooks and hooks): **15 in the Chats family** and **16 in mouaif**. Each tool has its own function name, argument schema, checkbox, and Off / Ask / Allow permission—just like the other native tools. There is no `mouaif` function or `action` argument. Two more are advertised without a row of their own: `activate_skill`, gated by the Skills switches in **Settings → Project**, and the `mcp__<server>__<tool>` specs, gated through `.mcp.json`. See [Tool groups](./tool-groups.md) for the complete native surface.
 
 ## Usage
 
@@ -45,6 +45,12 @@ What is my default prompt size, and switch this project to agentFiles off.
 | `schedule_wake` | Run a prompt in this chat later (`in` or `at`) or at a regular time (`every`, or `time` with `days` and `timezone`), until cancelled. See [Scheduled wake-ups and recurring tasks](scheduled-wakes.md). |
 | `schedule_list` | List this chat's pending wake-ups. |
 | `schedule_cancel` | Cancel one of this chat's wake-ups by `id`. |
+| `webhook_create` | Give this chat a secret link that starts a turn when it is called ([webhook turns](./webhook-turns.md)). |
+| `webhook_status` | Show this chat's webhook and its latest calls. |
+| `webhook_delete` | Delete this chat's webhook. |
+| `hook_create` | Add a [hook](./hooks.md) to this chat, or to every chat if you allow it. Always shows the approval card, even when Allow. |
+| `hook_list` | List the hooks that apply to this chat, with their last decision. |
+| `hook_delete` | Delete one of this chat's own hooks. App hooks are deleted in **Settings → Hooks** only. |
 
 ### Where the model's data comes from
 
@@ -69,7 +75,7 @@ The tools appear in two families in Settings → Project → Tools, the chat Too
 | Family (gate) | Native functions |
 | --- | --- |
 | **Chats** (`tools.chats`) | `list_chats`, `get_chat`, `create_chat`, `update_chat`, `change_working_folder`, `search_models`, `start_chat`, `delete_chat`, `search_chats`, `attach_chat_image`, `list_chat_attachments`, `ask_user`, `task`, `report_progress`, `webpreview` |
-| **mouaif** (`tools.mouaif`) | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `restart_app`, `list_features`, `group_cli`, `schedule_wake`, `schedule_list`, `schedule_cancel` |
+| **mouaif** (`tools.mouaif`) | `create_mcp_app`, `get_settings`, `update_settings`, `list_projects`, `restart_app`, `list_features`, `group_cli`, `schedule_wake`, `schedule_list`, `schedule_cancel`, `webhook_create`, `webhook_status`, `webhook_delete`, `hook_create`, `hook_list`, `hook_delete` |
 
 The Chats family carries the app functions above *and* the four tools the model uses inside one chat: **Ask user** (`ask_user`, binary Off / Ask), **Task** (`task`), **Report progress** (`report_progress`) and **Web preview** (`webpreview`, see [Web preview](./webpreview.md)). They used to be rows of their own; a stored `tools.<leaf>` still works as that leaf's override.
 

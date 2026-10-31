@@ -85,6 +85,7 @@
   font-size: 0.75rem;
   overflow-wrap: anywhere;
 }
+.hook-card__note { margin-top: 4px; color: var(--muted); font-size: 0.78rem; overflow-wrap: anywhere; }
 .hook-card__cmd {
   display: block;
   max-width: 100%;
@@ -181,3 +182,24 @@
   overflow: auto;
 }
 .hook-test__head strong { color: var(--fg); }
+
+/* ---- The chat's hooks panel (components/chat/HooksDock.jsx) ------------
+   Reuses the webhook panel's box, labels and rows; the hook cards and run
+   rows are the Settings ones without their side padding. */
+.hooks-panel .hook-list,
+.hooks-panel .hook-runs { padding: 0; }
+.hooks-panel .hook-card .webhook-panel__row { margin-top: 8px; }
+.hooks-panel .hook-edit { margin: 10px 0 0; }
+.hooks-panel__code {
+  margin: 6px 0 0;
+  max-height: 12rem;
+  overflow: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

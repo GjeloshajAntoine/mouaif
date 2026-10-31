@@ -399,6 +399,10 @@ for (const [name, spec] of Object.entries(require('./tools/schedule.js').SPECS))
 for (const [name, spec] of Object.entries(require('./tools/webhook.js').SPECS)) {
   pushNativeTool(tools, { load: './tools/webhook.js', name, source: 'mouaif', fallback: spec.function.description, spec: () => spec.function });
 }
+// hook_create, hook_list and hook_delete manage the chat's hooks.
+for (const [name, spec] of Object.entries(require('./tools/hooks.js').SPECS)) {
+  pushNativeTool(tools, { load: './tools/hooks.js', name, source: 'mouaif', fallback: spec.function.description, spec: () => spec.function });
+}
 for (const [name, definition] of Object.entries(require('./tools/appToolNames.js').DEFINITIONS)) {
   pushNativeTool(tools, { load: './tools/mouaif.js', name, source: definition.source,
     fallback: definition.description, spec: (m) => m.SPECS[name].function });

@@ -11,6 +11,8 @@ Hooks are commands mouaif runs at fixed points of a chat turn: when you send a p
 - **start one more turn** when a turn finishes, for example until the tests pass,
 - **silence a notification**.
 
+Hooks live in **Settings → Hooks** (every chat) or on one chat. You add them yourself, or the model adds them when you allow its approval card.
+
 Hooks only add checks. A hook cannot approve a call, skip the approval card or run a tool that is Off. The tool permissions in **Settings → Project** stay the only place that grants anything.
 
 Hooks run on the computer that runs mouaif, with its user's permissions, like a command you type in a terminal. Only add commands you wrote or have read.
@@ -26,7 +28,7 @@ Open **Settings → App defaults → Hooks** (`#/settings/hooks`).
 - **Recent runs** lists the last 50 hook runs, newest first: the hook, its event, what it decided, how long it took and any error. A follow-up turn that was not started shows here as *skipped* with the reason. mouaif keeps the last 200 runs.
 - **Edit as JSON** shows every hook as JSON to copy, paste or change; **Apply** replaces the whole list. **Download** saves `mouaif-hooks.json`, which **Edit as JSON** accepts back.
 
-Hooks are app-wide: they apply to every project and every chat. A project's `.mouaif.json` cannot define hooks, so opening a cloned repository never runs its code.
+The hooks in Settings are app-wide: they apply to every project and every chat. A chat can also have its own hooks (see [Hooks for one chat](#hooks-for-one-chat)). A project's `.mouaif.json` cannot define hooks, so opening a cloned repository never runs its code. A hook the model added carries an *added by the model* chip and the reason it gave.
 
 ### Events
 
@@ -161,6 +163,37 @@ A hook that exits with another code, prints bad JSON or runs past its timeout (d
 When several hooks match, they run one after another in the list's order. A block stops the rest; an ask wins over carrying on; each hook sees the arguments the previous hooks changed; context from every hook is kept. At most 4 hooks run per event per call, and at most 8 hook processes run at once across the app.
 
 To turn every hook off without the Settings page, start mouaif with `MOUAIF_NO_HOOKS=1`.
+
+### Hooks for one chat
+
+A chat can carry up to 20 hooks of its own, with the same shape as the ones in Settings. They run only in that chat, after the app's hooks, and for its subagents' tool calls when the hook includes subagents. **Run hooks** in Settings pauses them too.
+
+While a chat has hooks, a **Hooks · N in this chat** bar sits above the composer. **Show** opens a panel listing each hook: when it runs, what it matches, its command or script in full, and whether you or the model added it. Each hook has these buttons:
+
+- **Pause** / **Resume**,
+- **Edit**, which opens the same editor as Settings,
+- **All chats** (tap twice), which moves the hook into **Settings → Hooks** so it runs in every chat,
+- **Delete** (tap twice).
+
+**New hook for this chat** adds another one. The panel also lists the latest hook runs in this chat.
+
+Deleting the chat deletes its hooks. Forking or duplicating a chat does not copy them.
+
+### Hooks the model adds
+
+You can ask in the chat ("from now on, block force pushes here", "keep going until the tests pass"). The model has three tools for this, in the **mouaif** group of **Settings → Project → Tools**:
+
+| Tool | Does |
+| --- | --- |
+| `hook_create` | Adds a command or script hook, to this chat by default. |
+| `hook_list` | Lists the hooks that apply to this chat, with their last decision. |
+| `hook_delete` | Deletes one of this chat's hooks. Hooks in Settings can only be deleted by you, in Settings. |
+
+- `hook_create` **always shows the approval card**, even when the mouaif tools are set to Allow and after **Session**. The card says the hook keeps running on later turns and shows its event, its match and its command or script in full.
+- The model may ask for **every chat**. The card then offers **Every chat** or **Only this chat**, and you can lower the scope, never raise it. An approval without the card's choice (for example from a notification) adds the hook to this chat only.
+- The model can only make command or script hooks, with scripts up to 8 KB. A request with something else is refused before any card appears.
+- Hooks never run on the hook tools themselves, so no hook can stop you from listing or deleting hooks.
+- Subagents get none of these tools.
 
 ### What you see in the chat
 

@@ -71,7 +71,7 @@ const urlPath = parsed.pathname;
     const limitRaw = parseInt(typeof q.limit === 'string' ? q.limit : '0', 10) || 0;
     const limit = limitRaw > 0 ? Math.min(limitRaw, 100) : 0;
     try {
-      // `filter=draft|recurring` narrows the card to chats that hold a draft or
+      // `filter=draft|recurring|webhook|hooks` narrows the card to chats that hold a draft or
       // that have a recurring task; paging and `total` follow the filter.
       const filter = qs(q, 'filter');
       let scope = {};
@@ -82,6 +82,7 @@ const urlPath = parsed.pathname;
       else if (filter === 'webhook') {
         scope = { only: 'ids', ids: require('./webhooks.js').sharedStore().chatIds(dir) };
       }
+      else if (filter === 'hooks') scope = { only: 'ids', ids: hookChatIds(dir) };
       const page = chats.listChats(dir, Object.assign({ offset, limit }, scope));
 const total = limit > 0 ? chats.countChats(dir, scope) : page.length;
 // Chat cost totals are persisted on chat metadata when cost-bearing
@@ -100,10 +101,13 @@ const pageCounts = messages.projectMessageCounts(dir, page.map((c) => c.id));
 const recurringIds = new Set(require('./schedules.js').sharedStore().recurringChatIds(dir));
 // `webhook` marks the rows that have a webhook (docs/features/webhook-turns.md).
 const webhookIds = webhookChatIds(dir);
+// `hooks` marks the rows that have hooks of their own (docs/features/hooks.md).
+const hookIds = new Set(hookChatIds(dir));
 for (const c of page) {
 if (runningChats.has(runningKey(dir, c.id))) c.running = true;
 if (recurringIds.has(c.id)) c.recurring = true;
 if (webhookIds.has(c.id)) c.webhook = true;
+if (hookIds.has(c.id)) c.hooks = true;
 c.messageCount = pageCounts[c.id] || 0;
 }
       return sendJSON(res, 200, {
@@ -139,10 +143,12 @@ c.messageCount = pageCounts[c.id] || 0;
     const pageCounts = messages.projectMessageCounts(dir, found.map((c) => c.id));
     const recurringIds = new Set(require('./schedules.js').sharedStore().recurringChatIds(dir));
     const webhookIds = webhookChatIds(dir);
+    const hookIds = new Set(hookChatIds(dir));
     for (const c of found) {
       if (runningChats.has(runningKey(dir, c.id))) c.running = true;
       if (recurringIds.has(c.id)) c.recurring = true;
       if (webhookIds.has(c.id)) c.webhook = true;
+      if (hookIds.has(c.id)) c.hooks = true;
       c.messageCount = pageCounts[c.id] || 0;
     }
     return sendJSON(res, 200, { chats: found, query: term, total: found.length });
@@ -269,6 +275,8 @@ const chat = chats.updateChat(dir, id, safeBody);
         const hook = hooks.forChat(dir, id);
         if (hook) hooks.remove(hook.id);
       } catch { /* non-fatal */ }
+      // So do its own hooks (src/chatHooks.js).
+      try { require('./chatHooks.js').removeChat(dir, id); } catch { /* non-fatal */ }
       return sendJSON(res, 200, { ok: true, removed: id });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -838,6 +846,10 @@ if (streamMatch && method === 'POST') {
 return handleChatStream(req, res, streamMatch[1], sessionToken, lifecycle);
 }
 return sendJSON(res, 404, { error: 'Not found', scope: 'chats' });
+}
+// Ids of the project's chats that have hooks of their own; empty when the store is down.
+function hookChatIds(dir) {
+  try { return require('./chatHooks.js').chatIds(dir); } catch { return []; }
 }
 // Ids of the project's chats that have a webhook; empty when the store is down.
 function webhookChatIds(dir) {
@@ -1425,7 +1437,7 @@ function accumulateRoundUsage(roundUsage) {
   function sendChatPush(kind, options = {}) {
     // `attention` hooks (src/hooks.js) may suppress a completion push.
     const hooksMod = require('./hooks.js');
-    if (kind === 'completion' && !options.afterHooks && hooksMod.hasHooks('attention')) {
+    if (kind === 'completion' && !options.afterHooks && hooksMod.hasHooks('attention', { projectDir, chatId })) {
       const again = () => sendChatPush(kind, Object.assign({}, options, { afterHooks: true }));
       hooksMod.runHooks('attention', { origin: { kind: hookOrigin.kind }, kind: 'completion' }, { projectDir, chatId, cwd: projectDir })
         .then((o) => { if (!o.suppress) again(); }, again);

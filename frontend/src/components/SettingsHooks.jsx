@@ -10,23 +10,8 @@ import { h, Fragment } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { fetchJson, activeProject } from '../api.js';
 import './settings/hooks.css';
+import { EVENT_LABELS, TOOL_EVENTS, BLOCKING_EVENTS, ORIGIN_LABELS, FAMILY_LABELS, matchSummary, handlerSummary, RunRow } from './settings/hookText.js';
 
-const EVENT_LABELS = {
-  'prompt.submit': 'Prompt sent',
-  'tool.before': 'Before a tool runs',
-  'tool.after': 'After a tool ran',
-  'turn.start': 'Turn starts',
-  'turn.end': 'Turn finished',
-  'turn.error': 'Turn failed or stopped',
-  attention: 'Before a notification'
-};
-const TOOL_EVENTS = ['tool.before', 'tool.after'];
-// Events where a block (or a failure with "block on failure") stops something.
-const BLOCKING_EVENTS = ['prompt.submit', 'tool.before'];
-const ORIGIN_LABELS = { user: 'You', webhook: 'Webhook', schedule: 'Recurring task', app: 'MCP App', hook: 'Hook follow-up' };
-const DECISION_LABELS = { continue: 'ran', block: 'blocked', ask: 'asked', error: 'failed', skipped: 'skipped' };
-// Tool families, as the authorization gates group them (src/hooks.js FAMILIES).
-const FAMILY_LABELS = { shell: 'Shell', file: 'Files', subagent: 'Subagents', chats: 'Chat tools', mouaif: 'mouaif app', mcp: 'MCP servers' };
 
 // Starting points for "New hook". Each is a complete, working hook.
 const EXAMPLES = [
@@ -103,7 +88,10 @@ function toForm(hook) {
     script: handler.script || '',
     timeoutMs: String(hook.timeoutMs || 5000),
     failClosed: !!hook.failClosed,
-    subagents: !!hook.subagents
+    subagents: !!hook.subagents,
+    // Not edited here, but kept on save.
+    createdBy: hook.createdBy || '',
+    note: hook.note || ''
   };
 }
 
@@ -126,27 +114,9 @@ function fromForm(f) {
   if (Number.isFinite(timeout) && timeout > 0) hook.timeoutMs = timeout;
   if (f.failClosed && BLOCKING_EVENTS.includes(f.event)) hook.failClosed = true;
   if (f.subagents && TOOL_EVENTS.includes(f.event)) hook.subagents = true;
+  if (f.createdBy === 'model') hook.createdBy = 'model';
+  if (f.note) hook.note = f.note;
   return hook;
-}
-
-function matchSummary(hook) {
-  const m = hook.match || {};
-  const bits = [];
-  if (m.tool) bits.push(m.tool.join(', '));
-  if (m.family) bits.push(m.family.map((x) => FAMILY_LABELS[x] || x).join(', ') + ' tools');
-  if (m.argText) bits.push('/' + m.argText + '/');
-  if (m.origin) bits.push('from ' + m.origin.map((o) => ORIGIN_LABELS[o] || o).join(', '));
-  if (bits.length) return bits.join(' · ');
-  if (hook.event === 'prompt.submit') return 'every prompt';
-  if (hook.event === 'attention') return 'every notification';
-  return TOOL_EVENTS.includes(hook.event) ? 'every tool' : 'every turn';
-}
-
-function handlerSummary(hook) {
-  const handler = hook.handler || {};
-  if (handler.command) return handler.command;
-  const first = (handler.script || '').split('\n').find((line) => line.trim() && !line.startsWith('#!')) || '';
-  return handler.shell + ' script · ' + first.trim();
 }
 
 function Switch({ id, checked, onChange, label }) {
@@ -179,7 +149,7 @@ function samplePayload(hook) {
   }
 }
 
-function HookEditor({ initial, isNew, onSave, onCancel, onDelete, projectDir }) {
+export function HookEditor({ initial, isNew, onSave, onCancel, onDelete, projectDir }) {
   const [f, setF] = useState(() => toForm(initial));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -301,26 +271,6 @@ function HookEditor({ initial, isNew, onSave, onCancel, onDelete, projectDir }) 
   );
 }
 
-function timeAgo(at) {
-  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
-  if (s < 60) return s + ' s ago';
-  if (s < 3600) return Math.round(s / 60) + ' min ago';
-  if (s < 86400) return Math.round(s / 3600) + ' h ago';
-  return new Date(at).toLocaleDateString();
-}
-
-function RunRow({ run }) {
-  const tone = run.decision === 'block' || run.decision === 'error' ? 'bad' : (run.decision === 'ask' || run.decision === 'skipped' ? 'warn' : '');
-  return h('li', { class: 'hook-run' },
-    h('div', { class: 'hook-run__head' },
-      h('span', { class: 'hook-run__name' }, run.name || run.hook),
-      h('span', { class: 'hook-chip' + (tone === 'bad' ? ' hook-chip--bad' : tone === 'warn' ? ' hook-chip--warn' : '') }, DECISION_LABELS[run.decision] || run.decision)),
-    h('div', { class: 'hook-run__meta' },
-      [EVENT_LABELS[run.event] || run.event, Number.isFinite(run.ms) ? run.ms + ' ms' : '', timeAgo(run.at)].filter(Boolean).join(' · ')),
-    run.detail ? h('div', { class: 'hook-run__detail' }, run.detail) : null,
-    run.error ? h('div', { class: 'hook-run__detail hook-run__detail--error' }, run.error) : null);
-}
-
 export function SettingsHooksView() {
   const [config, setConfig] = useState(null);
   const [editing, setEditing] = useState(null); // { id, hook, isNew }
@@ -430,7 +380,9 @@ export function SettingsHooksView() {
                 h('div', { class: 'hook-card__meta' },
                   h('span', { class: 'hook-chip' }, EVENT_LABELS[hook.event] || hook.event),
                   h('span', null, matchSummary(hook)),
-                  hook.failClosed ? h('span', { class: 'hook-chip hook-chip--warn' }, 'blocks on failure') : null),
+                  hook.failClosed ? h('span', { class: 'hook-chip hook-chip--warn' }, 'blocks on failure') : null,
+                  hook.createdBy === 'model' ? h('span', { class: 'hook-chip' }, 'added by the model') : null),
+                hook.note ? h('div', { class: 'hook-card__note' }, hook.note) : null,
                 h('code', { class: 'hook-card__cmd' }, handlerSummary(hook))
               ),
               h(Switch, { id: 'hook-on-' + hook.id, label: (hook.enabled ? 'Turn off ' : 'Turn on ') + (hook.name || hook.id), checked: hook.enabled,

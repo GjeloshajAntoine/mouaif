@@ -1013,6 +1013,22 @@ color: var(--fg-soft);
 /* Per-run model picker on the subagent authorization card. Mobile
 first: the same trigger + modal the chat top bar uses, with no extra
 description — it reads exactly like the chat header's picker. */
+/* hook_create: where the hook runs (cards.js buildHookScopePicker). */
+.tool-card--authorization .tool-card__hook-scope {
+  margin: 8px 10px 0;
+  padding: 4px 10px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+.tool-card__hook-scope legend { padding: 0 4px; color: var(--muted); font-size: 0.72rem; font-weight: 600; }
+.tool-card__hook-scope-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  cursor: pointer;
+}
+.tool-card__hook-scope-option input { width: 1.1rem; height: 1.1rem; margin: 0; flex-shrink: 0; }
 .tool-card--authorization .tool-card__auth-model {
 display: flex;
 flex-direction: column;
