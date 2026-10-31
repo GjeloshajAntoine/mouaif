@@ -35,6 +35,7 @@ One page per feature: what it does and how to use it.
 - [Long-running runs](features/long-running-runs.md) — the budget, pause/stop bar and watchdog behind recurring tasks and long jobs.
 - [Scheduled wake-ups and recurring tasks](features/scheduled-wakes.md) — `schedule_wake` runs a prompt in the same chat later or at a regular time, across restarts.
 - [Webhook turns](features/webhook-turns.md) — `webhook_create` gives a chat a secret `/hook/<uuid>` link (GET or POST) that starts a turn with the received data.
+- [Extensions](features/extensions.md) — one `.mouaif-extension.json` file with hooks, a sandboxed UI and an MCP server; imported off behind a permission screen, project ones behind a review.
 - [Hooks](features/hooks.md) — commands that run on each prompt, around each tool call, at the start, end or failure of a turn and before a notification: block, ask, rewrite arguments, add context, start a follow-up turn or silence a push; never approve.
 
 ### Providers and models

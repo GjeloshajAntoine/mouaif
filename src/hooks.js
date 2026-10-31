@@ -25,7 +25,9 @@
 //   { enabled: true, list: [Hook, ...] }
 //   Hook = { id, name?, enabled, event, match?: { tool?, family?, argText?, origin? },
 //            handler: { kind: 'command', command } | { kind: 'command', shell, script }
-//                   | { kind: 'http', url, secret?, send? } | { kind: 'module', source },
+//                   | { kind: 'http', url, secret?, send? } | { kind: 'module', source }
+//                   | { kind: 'mcp', tool, server? }   (server = an MCP server slug or id;
+//                                                       an extension's hooks use its own),
 //            timeoutMs, failClosed, subagents, createdBy?, note? }
 //
 // Project hooks (`hooks` in .mouaif.json) run only once the user trusted
@@ -93,7 +95,7 @@ const MAX_REDACT = 8;
 // Fields an http hook leaves out unless its `send` lists them: they can
 // carry file contents, prompts and secrets to another machine.
 const HTTP_SEND = Object.freeze(['args', 'result', 'content', 'text']);
-const HANDLER_KINDS = Object.freeze(['command', 'http', 'module']);
+const HANDLER_KINDS = Object.freeze(['command', 'http', 'module', 'mcp']);
 const MAX_CONCURRENT = 8;
 const REGEX_BUDGET_MS = 250;
 
@@ -127,8 +129,19 @@ function list(value, field, max) {
   return items;
 }
 
-function normalizeHandler(raw, at) {
+function normalizeHandler(raw, at, opts = {}) {
   if (!isObject(raw)) throw new HookError(at + '.handler must be an object');
+  if (raw.kind === 'mcp') {
+    const tool = str(raw.tool, at + '.handler.tool', 128, { required: true }).trim();
+    const server = str(raw.server, at + '.handler.server', 128).trim();
+    // Inside an extension the hook calls the extension's own server.
+    if (opts.inExtension) {
+      if (server) throw new HookError(at + '.handler.server is not set in an extension: mcp hooks call the extension\'s server');
+      return { kind: 'mcp', tool };
+    }
+    if (!server) throw new HookError(at + '.handler.server is required (an MCP server slug or id)');
+    return { kind: 'mcp', server, tool };
+  }
   if (raw.kind === 'http') {
     const url = str(raw.url, at + '.handler.url', MAX_URL, { required: true }).trim();
     let parsedUrl;
@@ -191,7 +204,9 @@ function normalizeMatch(raw, at) {
   return Object.keys(out).length ? out : undefined;
 }
 
-function normalizeHook(raw, index = 0) {
+// opts.inExtension: the hook belongs to an extension (mcp hooks then use the
+// extension's server).
+function normalizeHook(raw, index = 0, opts = {}) {
   const at = 'hooks[' + index + ']';
   if (!isObject(raw)) throw new HookError(at + ' must be an object');
   const id = str(raw.id, at + '.id', 40, { required: true });
@@ -207,7 +222,7 @@ function normalizeHook(raw, index = 0) {
     }
     hook.match = match;
   }
-  hook.handler = normalizeHandler(raw.handler, at);
+  hook.handler = normalizeHandler(raw.handler, at, opts);
   const timeout = raw.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : Number(raw.timeoutMs);
   if (!Number.isFinite(timeout)) throw new HookError(at + '.timeoutMs must be a number');
   hook.timeoutMs = Math.min(MAX_TIMEOUT_MS, Math.max(MIN_TIMEOUT_MS, Math.round(timeout)));
@@ -354,6 +369,7 @@ function hookEnv(hook, event, ctx) {
   env.MOUAIF_HOOK_ID = hook.id;
   env.MOUAIF_PROJECT_DIR = ctx.projectDir || '';
   env.MOUAIF_CHAT_ID = ctx.chatId || '';
+  if (hook.extension) env.MOUAIF_EXTENSION_ID = hook.extension;
   return env;
 }
 
@@ -544,9 +560,40 @@ function runModule(hook, input) {
   return job;
 }
 
+// ---- Running an mcp hook -----------------------------------------------------
+//
+// tools/call on an MCP server with the event as the arguments. The answer is
+// the call's structuredContent, or its first text block, read like stdout.
+
+async function runMcp(hook, input, ctx) {
+  await acquire();
+  const started = Date.now();
+  try {
+    const handler = hook.handler;
+    if (!handler.server) return { code: -1, stdout: '', stderr: '', failure: 'this mcp hook has no server (the extension has none, or it is not registered)', timedOut: false, ms: 0 };
+    const mcp = require('./mcp.js');
+    let slug = handler.server;
+    try {
+      const found = mcp.listServers(ctx.projectDir || null).find((s) => s.id === handler.server || s.slug === handler.server);
+      if (found) slug = found.slug;
+    } catch { /* keep the given name */ }
+    const out = await mcp.callTool(ctx.projectDir || null, slug, handler.tool, input, { timeoutMs: hook.timeoutMs, signal: ctx.signal });
+    const text = (Array.isArray(out.content) ? out.content : []).filter((b) => b && b.type === 'text').map((b) => b.text).join('\n');
+    if (!out.ok) return { code: -1, stdout: '', stderr: '', failure: 'the MCP tool returned an error' + (text ? ': ' + clip(text, 300) : ''), timedOut: false, ms: Date.now() - started };
+    const stdout = out.structuredContent && typeof out.structuredContent === 'object' ? JSON.stringify(out.structuredContent) : text;
+    return { code: 0, stdout: clip(stdout, MAX_STDOUT), stderr: '', timedOut: false, ms: Date.now() - started };
+  } catch (e) {
+    const timedOut = !!(e && e.code === 'EMCP_TIMEOUT');
+    return { code: -1, stdout: '', stderr: '', failure: timedOut ? null : (e && e.message) || String(e), timedOut, ms: Date.now() - started };
+  } finally {
+    release();
+  }
+}
+
 // runHandler(hook, input, ctx) -> { code, stdout, stderr, timedOut, ms, failure? }
 function runHandler(hook, input, ctx) {
   const kind = hook.handler && hook.handler.kind;
+  if (kind === 'mcp') return runMcp(hook, input, ctx);
   if (kind === 'http') return runHttp(hook, input, ctx);
   if (kind === 'module') return runModule(hook, input, ctx);
   return runCommand(hook, input, ctx);
@@ -633,8 +680,10 @@ async function runHooks(event, payload, ctx = {}) {
   let config;
   try { config = getConfig(); } catch { return outcome; }
   if (!config.enabled) return outcome;
-  // App hooks first, then the project's (only when trusted), then the chat's.
-  const all = config.list.concat(projectHooksFor(ctx), chatHooksFor(ctx));
+  // App hooks, the app extensions' hooks, the project's hooks and its
+  // extensions' (only when trusted), then the chat's.
+  const ext = extensionHooksFor(ctx);
+  const all = config.list.concat(ext.app, projectHooksFor(ctx), ext.project, chatHooksFor(ctx));
   if (!all.length) return outcome;
 
   const matching = [];
@@ -702,6 +751,7 @@ async function runHooks(event, payload, ctx = {}) {
     const note = { hook: hook.id, event, decision: parsed.decision, ms: run.ms };
     if (hook.name) note.name = hook.name;
     if (hook.scope === 'chat' || hook.scope === 'project') note.scope = hook.scope;
+    if (hook.extension) note.extension = hook.extension;
     if (parsed.reason) note.reason = parsed.reason;
     if (parsed.error) note.error = parsed.error;
     if (parsed.notice) note.notice = parsed.notice;
@@ -757,6 +807,13 @@ function projectHooksFor(ctx) {
   try {
     return require('./projectHooks.js').active(ctx.projectDir).map((h) => Object.assign({}, h, { scope: 'project' }));
   } catch { return []; }
+}
+
+// Hooks of enabled extensions (src/extensions.js): { app: [...], project: [...] }
+// with ids `<extension>/<hook>`.
+function extensionHooksFor(ctx) {
+  try { return require('./extensions.js').runtimeHooks(ctx && ctx.projectDir); }
+  catch { return { app: [], project: [] }; }
 }
 
 // The chat's active hooks, marked so notes can say "chat hook".
@@ -835,7 +892,8 @@ function hasHooks(event, ctx) {
   try {
     const config = getConfig();
     if (!config.enabled) return false;
-    return config.list.concat(projectHooksFor(ctx), chatHooksFor(ctx)).some((h) => h.enabled && h.event === event);
+    const ext = extensionHooksFor(ctx);
+    return config.list.concat(ext.app, projectHooksFor(ctx), ext.project, chatHooksFor(ctx)).some((h) => h.enabled && h.event === event);
   } catch { return false; }
 }
 
@@ -877,7 +935,7 @@ function logRun(note, ctx = {}) {
       || (note.suppress ? 'suppressed the notification' : '') || (note.changedArgs ? 'changed the arguments' : '')
       || (note.context ? 'added context' : '');
     d.prepare(`INSERT INTO hook_run (at, hook_id, name, event, project_dir, chat_id, decision, ms, detail, error)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(Date.now(), String(note.hook || '?').slice(0, 40), note.name || null,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(Date.now(), String(note.hook || '?').slice(0, 82), note.name || null,
       String(note.event || ''), ctx.projectDir || null, ctx.chatId || null, String(note.decision || ''),
       Number.isFinite(note.ms) ? Math.round(note.ms) : null, detail ? clip(detail, 300) : null,
       note.error ? clip(note.error, 300) : null);

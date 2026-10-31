@@ -64,6 +64,7 @@ export function SettingsHomeView() {
         rowLi('settings/notifications', 'Notifications', { sub: 'questions, approvals & completion' }),
         rowLi('settings/themes', 'Themes', { sub: 'colours, CSS & JS effects' }),
         rowLi('settings/hooks', 'Hooks', { sub: 'commands that check prompts & tool calls' }),
+        rowLi('settings/extensions', 'Extensions', { sub: 'one file: hooks, UI & an MCP server' }),
         rowLi('settings/mcp', 'MCP servers', { sub: 'servers; permissions live in project Tools' }),
         rowLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })
       )

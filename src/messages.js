@@ -105,7 +105,7 @@ if (Array.isArray(h.notes)) {
 const notes = [];
 for (const n of h.notes.slice(0, MAX_HOOK_NOTES)) {
 if (!n || typeof n !== 'object' || typeof n.hook !== 'string') continue;
-const note = { hook: n.hook.slice(0, 40), event: String(n.event || '').slice(0, 20), decision: String(n.decision || '').slice(0, 12) };
+const note = { hook: n.hook.slice(0, 82), event: String(n.event || '').slice(0, 20), decision: String(n.decision || '').slice(0, 12) };
 if (typeof n.name === 'string') note.name = n.name.slice(0, 80);
 if (typeof n.reason === 'string') note.reason = n.reason.slice(0, 2000);
 if (typeof n.error === 'string') note.error = n.error.slice(0, 600);
@@ -127,6 +127,7 @@ return change;
 if (n.context === true) note.context = true;
 if (n.redacted === true) note.redacted = true;
 if (n.scope === 'chat' || n.scope === 'project') note.scope = n.scope;
+if (typeof n.extension === 'string') note.extension = n.extension.slice(0, 40);
 notes.push(note);
 }
 if (notes.length) out.notes = notes;
