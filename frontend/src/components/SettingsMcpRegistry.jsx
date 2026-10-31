@@ -14,6 +14,7 @@ import { projectQS } from './settings/projectQS.js';
 import { McpStoreSheet, avatarStyle, initial, editorHref } from './settings/McpStoreSheet.jsx';
 import { McpPopularity } from './settings/McpPopularity.jsx';
 import { friendlyName, publisher, summary, findInstalled, registryMeta, relativeDate, weeklyDownloads } from './settings/mcpRegistryInstall.js';
+import { MIN_SEARCH, searchTerm, sortKeys, orderRows } from './settings/mcpStoreSort.js';
 
 const PAGE = 30;
 const SEARCH_DEBOUNCE_MS = 350;
@@ -43,26 +44,6 @@ function matchesFilter(info, filter) {
   return true;
 }
 
-function compare(sort) {
-  const text = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
-  return (a, b) => {
-    if (sort === 'name') return text.compare(friendlyName(a), friendlyName(b));
-    if (sort === 'updatedAt') return (Date.parse(registryMeta(b).updatedAt) || 0) - (Date.parse(registryMeta(a).updatedAt) || 0);
-    // Popular: most weekly downloads first. Servers without a count (hosted
-    // ones publish none) follow, installable first, then most recently
-    // updated — never an invented score.
-    const da = weeklyDownloads(a);
-    const db = weeklyDownloads(b);
-    const wa = da ? da.weekly : -1;
-    const wb = db ? db.weekly : -1;
-    if (wa !== wb) return wb - wa;
-    const sa = summary(a).supported ? 1 : 0;
-    const sb = summary(b).supported ? 1 : 0;
-    if (sa !== sb) return sb - sa;
-    return (Date.parse(registryMeta(b).updatedAt) || 0) - (Date.parse(registryMeta(a).updatedAt) || 0);
-  };
-}
-
 // Small 12px glyphs for the card's fact row (decorative; the text says it).
 const FACT_ICONS = {
   check: 'M9.5 16.2 5.3 12l-1.1 1.1 5.3 5.3L20.8 7.1 19.7 6 9.5 16.2Z',
@@ -87,6 +68,10 @@ export function SettingsMcpRegistryView(props = {}) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [sort, setSort] = useState('popularity');
+  // Where each "Load more" page starts in `entries`. Pages are ranked on
+  // their own so new servers land below the reader, until they choose
+  // "Sort all" (or another sort), which ranks everything loaded as one list.
+  const [blockStarts, setBlockStarts] = useState([0]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
@@ -109,8 +94,8 @@ export function SettingsMcpRegistryView(props = {}) {
     const more = !!o.cursor;
     if (more) setLoadingMore(true); else { setLoading(true); setError(''); }
     const params = new URLSearchParams();
-    const q = o.search !== undefined ? o.search : search;
-    if (q.trim()) params.set('search', q.trim());
+    const q = searchTerm(o.search !== undefined ? o.search : search);
+    if (q) params.set('search', q);
     if (o.cursor) params.set('cursor', o.cursor);
     params.set('limit', String(PAGE));
     let r;
@@ -125,6 +110,9 @@ export function SettingsMcpRegistryView(props = {}) {
       return;
     }
     const got = Array.isArray(r.body.servers) ? r.body.servers : [];
+    // A new page starts a new block at the end of what is loaded (the button
+    // is disabled while loading, so `entries` is current here).
+    setBlockStarts((prev) => (more ? prev.concat(entries.length) : [0]));
     setEntries((prev) => {
       if (!more) return got;
       const seen = new Set(prev.map(entryKey));
@@ -133,19 +121,31 @@ export function SettingsMcpRegistryView(props = {}) {
     setNextCursor((r.body.metadata && r.body.metadata.nextCursor) || null);
   }
 
-  // Search as you type (debounced); the first run is the initial load.
+  // Search as you type (debounced); the first run is the initial load. The
+  // Registry needs 3+ characters, so "g" and "gi" keep the current list
+  // instead of sending a search it would reject.
+  const term = searchTerm(search);
+  const searchTooShort = !!search.trim() && !term;
   useEffect(() => {
-    const t = setTimeout(() => load({ search }), search ? SEARCH_DEBOUNCE_MS : 0);
+    const t = setTimeout(() => load({ search: term }), term ? SEARCH_DEBOUNCE_MS : 0);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [term]);
   useEffect(() => { loadConfigured(); }, [projectDir]);
 
-  const rows = useMemo(() => {
-    return entries
-      .map((entry) => ({ entry, info: summary(entry), installed: findInstalled(entry, configured) }))
-      .filter((row) => matchesFilter(row.info, filter))
-      .sort((a, b) => compare(sort)(a.entry, b.entry));
-  }, [entries, configured, filter, sort]);
+  // summary() and the sort keys are computed once per entry, not per
+  // comparison.
+  const infos = useMemo(() => entries.map((entry, index) => {
+    const info = summary(entry);
+    return { entry, info, index, keys: sortKeys(entry, info) };
+  }), [entries]);
+  const rows = useMemo(() => orderRows(
+    infos.filter((row) => matchesFilter(row.info, filter)), sort, blockStarts
+  ).map((row) => Object.assign({}, row, { installed: findInstalled(row.entry, configured) })), [infos, configured, filter, sort, blockStarts]);
+
+  function pickSort(value) {
+    setSort(value);
+    setBlockStarts([0]);
+  }
 
   const openRow = openKey ? entries.find((e) => entryKey(e) === openKey) : null;
   const backHref = settingsLink('settings/mcp', { projectDir, chatId, from }, { scope: projectDir ? 'project' : 'app' });
@@ -213,7 +213,7 @@ export function SettingsMcpRegistryView(props = {}) {
             placeholder: 'Search servers (github, postgres, browser…)', 'aria-label': 'Search the MCP store',
             value: search, autocomplete: 'off', autocapitalize: 'off', spellcheck: false,
             onInput: (e) => setSearch(e.target.value),
-            onKeyDown: (e) => { if (e.key === 'Enter') { e.target.blur(); load({ search: e.target.value }); } }
+            onKeyDown: (e) => { if (e.key === 'Enter') { e.target.blur(); if (searchTerm(e.target.value)) load({ search: e.target.value }); } }
           }),
           search ? h('button', { class: 'icon-btn mcps-search__clear', type: 'button', 'aria-label': 'Clear search', onClick: () => setSearch('') }, '×') : null
         ),
@@ -226,10 +226,20 @@ export function SettingsMcpRegistryView(props = {}) {
           h('label', { class: 'mcps-sort' },
             h('svg', { class: 'mcps-sort__icon', viewBox: '0 0 24 24', width: 14, height: 14, 'aria-hidden': 'true' },
               h('path', { d: 'M3 6h13v1.6H3V6Zm0 5.2h9v1.6H3v-1.6Zm0 5.2h5V18H3v-1.6ZM18.2 6h1.6v9.9l2.1-2.1 1.1 1.1-4 4-4-4 1.1-1.1 2.1 2.1V6Z', fill: 'currentColor' })),
-            h('select', { class: 'mcps-sort__select', 'aria-label': 'Sort', value: sort, onChange: (e) => setSort(e.target.value) },
+            h('select', { class: 'mcps-sort__select', 'aria-label': 'Sort', value: sort, onChange: (e) => pickSort(e.target.value) },
               SORTS.map(([v, label]) => h('option', { key: v, value: v }, label))))
         )
       ),
+      searchTooShort
+        ? h('p', { class: 'mcps-note-line', role: 'status' }, 'Type at least ' + MIN_SEARCH + ' characters to search.')
+        : null,
+      !loading && !error && rows.length > 0 && (nextCursor || blockStarts.length > 1)
+        ? h('div', { class: 'mcps-note-line mcps-sortnote' },
+            blockStarts.length > 1
+              ? [h('span', { key: 't' }, 'New pages are added below, each sorted on its own.'),
+                 h('button', { key: 'b', class: 'btn btn--small mcps-sortnote__btn', type: 'button', onClick: () => setBlockStarts([0]) }, 'Sort all ' + entries.length)]
+              : h('span', null, 'Sorted among the ' + entries.length + ' servers loaded so far' + (term ? '' : ' — search to find a specific one') + '.'))
+        : null,
       error
         ? h('div', { class: 'mcps-state' },
             h('p', { class: 'mcps-state__text' }, error),
@@ -241,7 +251,7 @@ export function SettingsMcpRegistryView(props = {}) {
             h('p', { class: 'mcps-state__text' },
               entries.length
                 ? 'No servers here match this filter.'
-                : (search ? 'Nothing found for “' + search + '”. Try a shorter or different word.' : 'The store is empty right now.')),
+                : (term ? 'Nothing found for “' + term + '”. Try a shorter or different word.' : 'The store is empty right now.')),
             entries.length && filter !== 'all' ? h('button', { class: 'btn', type: 'button', onClick: () => setFilter('all') }, 'Show all') : null)
         : null,
       !loading && !error && nextCursor

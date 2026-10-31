@@ -21,6 +21,8 @@
 | `frontend/src/components/SettingsMcpRegistry.jsx` | The store list: search, filters, sort, cards, and paging. |
 | `src/mcpDownloads.js` | Weekly npm / PyPI download lookups with an in-memory cache. |
 | `frontend/src/components/settings/McpPopularity.jsx` | The usage meter on cards and in the sheet. |
+| `frontend/src/components/settings/mcpStoreSort.js` | Pure search and sort rules: `searchTerm` (3-character minimum), `sortKeys`, `compareKeys`, `orderRows` (per-block ranking). |
+| `scripts/test-mcp-store-sort.mjs` | Unit tests for those rules. |
 | `scripts/test-mcp-downloads.js` | Unit tests for the lookups (fake fetch) and the count formatting. |
 | `frontend/src/components/settings/McpStoreSheet.jsx` | The install sheet (shared sheet idiom in `sheets.css`). |
 | `frontend/src/components/settings/mcpRegistryInstall.js` | Pure helpers that turn a Registry entry into install options and a `POST /api/mcp/servers` body. |
@@ -46,7 +48,17 @@ When OAuth is selected, the `Authorization` header field is hidden and not sent,
 
 ## Search
 
-`GET /api/mcp/registry?search=…&cursor=…&limit=…` proxies `registry.modelcontextprotocol.io/v0.1/servers` with `version=latest`. The store waits 350 ms after the last keystroke before it sends a search. Only the newest request may update the list, so a slow response for an earlier query cannot overwrite the current results. Filters and sorting run on the loaded results in the browser.
+`GET /api/mcp/registry?search=…&cursor=…&limit=…` proxies `registry.modelcontextprotocol.io/v0.1/servers` with `version=latest`. `v0.1` is the current Registry API (the live OpenAPI lists only `/v0` and `/v0.1`; service build 1.8.7, checked 2026-10-31). The store waits 350 ms after the last keystroke before it sends a search. Only the newest request may update the list, so a slow response for an earlier query cannot overwrite the current results. Filters and sorting run on the loaded results in the browser.
+
+The Registry rejects a search shorter than 3 characters after trimming (HTTP 422). `searchTerm()` turns 1–2 characters into "no search", the effect is keyed on that term (so typing "g", "gi" sends nothing), and the view shows *Type at least 3 characters to search.* The proxy also answers such a search with `400 { error: "Search needs at least 3 characters." }` instead of relaying the 422.
+
+## Sorting
+
+The Registry API has no sort parameter: it pages servers alphabetically by id (`sort=` is silently ignored), and the upstream "sorting signals" proposal (modelcontextprotocol/registry#94) was closed as not planned in April 2026. A global ranking would mean crawling the whole catalogue (20,000+ servers, 200+ pages) plus thousands of npm lookups, so the store ranks only what it has loaded and says so:
+
+- `infos` (memo on `entries`) computes `summary()` and `sortKeys()` once per entry; the comparator only reads those keys. Before this, the comparator rebuilt an `Intl.Collator` and parsed install options on every comparison — 4,132 `summary()` calls and ~60 ms for 300 entries, against ~4 ms precomputed.
+- `blockStarts` records where each **Load more** page begins. `orderRows()` sorts within each block and keeps blocks in load order, so a new page's most popular servers do not land above the reader's scroll position. **Sort all** in the note (or picking a sort) resets it to `[0]`, one ranking.
+- The note above the list reads *Sorted among the N servers loaded so far* while more pages exist, or *New pages are added below, each sorted on its own* with the **Sort all N** button once there are several blocks.
 
 ## Popularity (weekly downloads)
 
@@ -63,7 +75,7 @@ The Registry publishes no download counts or ratings. The previous computed "pop
 - An entry with several countable packages reports its most downloaded one.
 - OCI, NuGet, MCPB, Cargo and hosted-only entries get `null`.
 
-Client sort **Popular** (`compare('popularity')` in `SettingsMcpRegistry.jsx`): weekly downloads desc; entries without a count after, installable first, then `updatedAt` desc. Like the other sorts it ranks the loaded pages only — the Registry API offers no server-side sort.
+Client sort **Popular** (`compareKeys('popularity')` in `mcpStoreSort.js`): weekly downloads desc; entries without a count after, installable first, then `updatedAt` desc. Like the other sorts it ranks the loaded pages only — the Registry API offers no server-side sort.
 
 ## Placeholder values (`{token}`)
 
@@ -92,13 +104,11 @@ Proxies the official registry's `GET /v0.1/servers` endpoint.
 
 | Param | Type | Default | Description |
 |---|---|---|---|
-| `search` | string | `""` | Substring search by server name |
+| `search` | string | `""` | Substring search by server name; empty, or at least 3 characters after trimming |
 | `cursor` | string | `""` | Pagination cursor from a previous response |
-| `sort` | string | `"popularity"` | Field to sort by (`popularity` = weekly downloads, `updatedAt`, `name`) |
-| `dir` | string | `"desc"` | Sort direction (`asc`, `desc`) |
 | `limit` | integer | 30 | Items per page, 1–100 |
 
-*Note: the store no longer sends `sort`/`dir` (it sorts and filters loaded results client-side); the parameters remain supported. The official registry API does not natively support sorting. Mouaif sorts only the current API response in memory before returning it to the frontend. The response is not written to app settings, project files, or a cache.*
+*Servers are returned in the Registry's order (alphabetical by id) with `downloads` added; the proxy no longer takes `sort`/`dir`, because sorting one page of a cursor-paged list ranks nothing — the store sorts what it has loaded (see [Sorting](#sorting)). A `search` of 1–2 characters gets `400`. The response is not written to app settings, project files, or a cache.*
 
 **Response:**
 

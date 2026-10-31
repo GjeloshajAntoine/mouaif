@@ -187,14 +187,20 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
   }
 
   // GET /api/mcp/registry?search=...&cursor=...&limit=...
-  // Statelessly proxies the official MCP Registry API. Registry responses
-  // are never persisted or cached by mouaif.
+  // Statelessly proxies the official MCP Registry API (v0.1, the current
+  // version). Registry responses are never persisted or cached by mouaif.
+  // Servers come back in the Registry's own order (alphabetical by id): the
+  // Registry has no sort parameter, and sorting one page of a cursor-paged
+  // list would not rank anything, so the store sorts what it has loaded.
   if (urlPath === '/api/mcp/registry' && method === 'GET') {
-    const search = qs(q, 'search');
+    const search = qs(q, 'search').trim();
     const cursor = qs(q, 'cursor');
-    const sortField = ['popularity', 'updatedAt', 'name'].includes(q.sort) ? q.sort : 'popularity';
-    const sortDir = q.dir === 'asc' ? 'asc' : 'desc';
     const limit = Math.min(Math.max(parseInt(q.limit, 10) || 30, 1), 100);
+    // The Registry answers 422 to a search under 3 characters (after
+    // trimming); say so plainly instead of relaying an opaque HTTP error.
+    if (search && Array.from(search).length < 3) {
+      return sendJSON(res, 400, { error: 'Search needs at least 3 characters.' });
+    }
     try {
       const registryUrl = new URL('https://registry.modelcontextprotocol.io/v0.1/servers');
       if (search) registryUrl.searchParams.set('search', search);
@@ -213,26 +219,6 @@ async function handleMcp(req, res, parsed, sessionToken = '') {
       const servers = Array.isArray(registryBody.servers) ? registryBody.servers : [];
       const counts = await weeklyDownloads(servers);
       servers.forEach((entry, i) => { entry.downloads = counts[i]; });
-
-      // The Registry API does not expose sorting, so sort only this response
-      // in memory. No registry result is written to app or project storage.
-      const direction = sortDir === 'asc' ? 1 : -1;
-      const text = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
-      servers.sort((a, b) => {
-        if (sortField === 'popularity') {
-          return direction * (((a.downloads && a.downloads.weekly) || 0) - ((b.downloads && b.downloads.weekly) || 0));
-        }
-        if (sortField === 'updatedAt') {
-          const metaA = a._meta && a._meta['io.modelcontextprotocol.registry/official'];
-          const metaB = b._meta && b._meta['io.modelcontextprotocol.registry/official'];
-          const valueA = metaA && Date.parse(metaA.updatedAt) || 0;
-          const valueB = metaB && Date.parse(metaB.updatedAt) || 0;
-          return direction * (valueA - valueB);
-        }
-        const nameA = a.server && a.server.name || a.name || '';
-        const nameB = b.server && b.server.name || b.name || '';
-        return direction * text.compare(nameA, nameB);
-      });
 
       return sendJSON(res, 200, {
         servers,

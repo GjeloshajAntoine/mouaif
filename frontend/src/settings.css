@@ -1296,3 +1296,10 @@ textarea#projectEditor {
 .tool-ov-page .tool-ov__choice { padding: 2px 0; }
 .tool-ov-page .tool-ov__savebar { padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px)); }
 .tool-ov-page .tool-ov__savebar-count { font-size: 0.8rem; }
+
+/* One-line notes above the store list: "type 3+ characters", and how the
+   loaded servers are sorted (the Registry cannot sort, see mcpStoreSort.js). */
+.mcps-note-line { margin: 0 12px 8px; font-size: 0.74rem; line-height: 1.35; color: var(--muted); }
+.mcps-sortnote { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mcps-sortnote__btn { flex: 0 0 auto; border-radius: var(--r-pill); }
+@media (pointer: coarse) { .mcps-sortnote__btn { min-height: var(--tap); } }
