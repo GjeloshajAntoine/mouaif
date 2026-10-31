@@ -1143,3 +1143,71 @@ padding-right: 10px;
   color: var(--muted-2);
   text-align: right;
 }
+
+/* ---- Hook line under a tool card's head (docs/features/hooks.md) ---- */
+.hook-notes {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  color: var(--fg-soft);
+}
+.hook-notes__summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  list-style: none;
+}
+.hook-notes__summary::-webkit-details-marker { display: none; }
+.hook-notes__summary::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 0.45em;
+  height: 0.45em;
+  margin-right: 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--dur-fast) var(--ease);
+}
+.hook-notes[open] > .hook-notes__summary::before { transform: rotate(45deg); }
+.hook-notes[data-tone="block"] > .hook-notes__summary,
+.hook-notes[data-tone="error"] > .hook-notes__summary { background: var(--danger-soft); color: var(--danger); }
+.hook-notes[data-tone="warn"] > .hook-notes__summary { background: var(--warning-soft); color: var(--warning); }
+.hook-notes__list { list-style: none; margin: 6px 0 0; padding: 0 8px; }
+.hook-notes__item + .hook-notes__item { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.hook-notes__head { color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }
+.hook-notes__reason { margin-top: 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.hook-notes__meta { margin-top: 2px; color: var(--muted); }
+.hook-notes__pre {
+  margin: 4px 0 0;
+  max-height: 30dvh;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, #000 18%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.hook-notes__context { margin: 8px 8px 0; }
+.hook-notes__context > summary { min-height: var(--tap); display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+
+.tool-card__hook-blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--fg-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tool-card__hook-blocked strong { color: var(--danger); }

@@ -38,6 +38,26 @@ import { saveComposerDraftNow } from './composer.js';
 import { subscribeLive, closeLive } from './live.js';
 import { mergeServerRows, nextServerMessageIndex, tailSyncDomAction, newClientId, heldSeqs } from './msgMerge.js';
 import { toPublicImageAttachments } from './annotation.js';
+import { promptHookContextElement } from './hookNotes.js';
+
+// `prompt_hooks` { clientId, hooks }: what `prompt.submit` hooks added to the
+// prompt this stream saved. Attached to the optimistic bubble at once instead
+// of waiting for the next transcript rebuild (docs/features/hooks.md).
+function applyPromptHooks(state, refs, data) {
+  if (!data || !data.hooks || !data.clientId) return;
+  const m = (state.messages || []).find((x) => x && x.role === 'user' && x.clientId === data.clientId);
+  if (m) m.hooks = data.hooks;
+  const root = refs.transcript && refs.transcript.current;
+  if (!root) return;
+  for (const row of root.querySelectorAll('.chat-msg--user')) {
+    if (row._rowKey !== 'cid:' + data.clientId) continue;
+    const body = row.querySelector('.chat-msg__body');
+    if (!body || body.querySelector('.chat-msg__hook-context')) return;
+    const el = promptHookContextElement(data.hooks);
+    if (el) body.appendChild(el);
+    return;
+  }
+}
 import { agentNetworkEvent, agentNetworkTurnEnded } from './agentNetworkState.js';
 import { mountOverlayCard } from './overlay.js';
 import { PAGE_SIZE_DEFAULT } from './pagination.js';
@@ -1107,9 +1127,13 @@ const failMsg = 'Network error — could not reach the server. Your message was 
     let errText = '';
     try { errText = await resp.text(); } catch { /* ignore */ }
     let errMsg = 'HTTP ' + resp.status;
-    try { const j = JSON.parse(errText); if (j && j.error) errMsg = j.error; } catch { /* not JSON */ }
+    let errCode = '';
+    try { const j = JSON.parse(errText); if (j && j.error) errMsg = j.error; if (j && j.code) errCode = j.code; } catch { /* not JSON */ }
+    // A `prompt.submit` hook refused the prompt (docs/features/hooks.md): it
+    // was not saved, so it goes back in the composer like a busy-chat 409.
+    const hookBlocked = errCode === 'EHOOK_BLOCKED';
     if (resp.status === 409) {
-if (retry) {
+if (retry && !hookBlocked) {
 setChatStatus(refs, 'a response is already streaming — retry later', 'busy');
 state.streaming = false;
 if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
@@ -1135,7 +1159,9 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       if (state._updateChat) {
         saveComposerDraftNow(text, refs, state._updateChat, { draftAttachments: atts }).catch(() => {});
       }
-      setChatStatus(refs, 'a response is already streaming — your message is back in the composer', 'busy');
+      setChatStatus(refs, hookBlocked
+        ? 'Blocked by a hook: ' + errMsg + ' — your message is back in the composer'
+        : 'a response is already streaming — your message is back in the composer', hookBlocked ? 'error' : 'busy');
       state.streaming = false;
       if (typeof state._setRunningVisible === 'function') state._setRunningVisible(false);
       if (refs.sendBtn.current) refs.sendBtn.current.disabled = false;
@@ -1476,6 +1502,8 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       markToolUsed(state, refs, data && data.name);
       appendToolCallCard(data, refs);
       agentNetworkEvent(state, null, 'tool_call', data);
+    } else if (ev.eventName === 'prompt_hooks') {
+      applyPromptHooks(state, refs, data);
     } else if (ev.eventName === 'tool_result') {
     appendToolResultCard(data, refs);
     agentNetworkEvent(state, null, 'tool_result', data);

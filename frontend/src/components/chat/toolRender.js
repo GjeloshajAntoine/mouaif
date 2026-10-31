@@ -824,6 +824,10 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
   // them on the toolResult when it has them; the card keeps them too, so a
   // render reached through another path still finds them.
   const args = (toolResult && toolResult.args) || (cardTool && cardTool._toolArgs) || null;
+  // A hook stopped the call before it ran (docs/features/hooks.md): there is
+  // no output to render, only who stopped it and why. Without this a shell
+  // card read the refusal as a silent "exit 0".
+  if (r && typeof r === 'object' && r.code === 'EHOOK_BLOCKED') return renderHookBlockedResult(body, r);
   if (name === 'shell') return renderShellToolResult(body, r, args);
   if (name === 'group_cli') return renderGroupCliToolResult(body, r, args);
   if (name === 'read_file') return renderReadFileToolResult(body, r);
@@ -842,6 +846,17 @@ export function renderToolResultBody(body, toolResult, isSubagentFn) {
     return;
   }
   renderGenericToolResult(body, r, args, name);
+}
+
+function renderHookBlockedResult(body, r) {
+  const box = document.createElement('div');
+  box.className = 'tool-card__hook-blocked';
+  const title = document.createElement('strong');
+  title.textContent = 'Not run: blocked by hook' + (r.hook ? ' ' + r.hook : '');
+  const reason = document.createElement('div');
+  reason.textContent = r.reason || '';
+  box.append(title, reason);
+  body.appendChild(box);
 }
 
 // formatToolResult(toolResult) -> string

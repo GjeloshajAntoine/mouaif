@@ -874,7 +874,7 @@ function startChatTurn(body, lifecycle = {}) {
     };
     // `origin` marks a prompt that mouaif itself started (a recurring task's run).
     // It is only honoured here, never from an HTTP request body.
-    runChatStream(body, sink, body.chatId, null, lifecycle, { origin: body.origin }).catch((e) => {
+    runChatStream(body, sink, body.chatId, null, lifecycle, { origin: body.origin, hookOrigin: body.hookOrigin }).catch((e) => {
       resolve({ ok: false, code: e.code || 'EINTERNAL', error: e.message || String(e) });
     });
   });
@@ -933,6 +933,31 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   try { model = resolveModel(modelId, projectDir, providerId); }
   catch (e) { return sendJSON(res, 400, { error: e.message, code: e.code, modelId, providerId: providerId || undefined }); }
 
+  // `prompt.submit` hooks (src/hooks.js, docs/features/hooks.md) run before
+  // the prompt is saved: a block returns 409 EHOOK_BLOCKED and nothing is
+  // written; context rides on the user row (and upstream, labelled as data).
+  // `hookOrigin` says who sent it: the origin of a mouaif-started prompt, or
+  // `app` for an MCP App message (internal only, never from a request body).
+  const hookOrigin = { kind: internal.origin ? internal.origin.kind : (internal.hookOrigin === 'app' ? 'app' : 'user') };
+  let promptHooks;
+  try {
+    let cwd = projectDir;
+    try { cwd = require('./chatWorkingFolder.js').resolveForCall(projectDir, chatId); } catch { /* project folder */ }
+    const outcome = await require('./hooks.js').runHooks('prompt.submit',
+      { content, attachments: attachments.length, origin: hookOrigin }, { projectDir, chatId, cwd });
+    if (outcome.decision === 'block') {
+      return sendJSON(res, 409, { error: outcome.reason, code: 'EHOOK_BLOCKED', hook: outcome.by || null, id: chatId });
+    }
+    if (outcome.notes.length || outcome.context) {
+      promptHooks = { notes: outcome.notes };
+      if (outcome.context) promptHooks.context = outcome.context;
+    }
+  } catch { /* a broken hook store never blocks a prompt */ }
+  // A hook can take seconds; another request may have started a run meanwhile.
+  if (runningChats.has(runKey)) {
+    return sendJSON(res, 409, { error: 'A response is already streaming for this chat', code: 'EALREADY_RUNNING', id: chatId });
+  }
+
   // Append the user message and bump lastOpenedAt BEFORE streaming.
   // If this is the first prompt in a new/default-named chat, also
   // derive a human title from that prompt and persist it immediately.
@@ -940,7 +965,7 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   // The client's id for its unsaved user bubble; stored and echoed so the
   // UI swaps that bubble for this row by id (docs/features/chat-client-row-ids.md).
   const userClientId = messages.normalizeClientId(body && body.clientId) || messages.newClientId('u');
-  try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments, clientId: userClientId, origin: internal.origin }); }
+  try { userMsg = messages.appendMessage(projectDir, chatId, { role: 'user', content, attachments, clientId: userClientId, origin: internal.origin, hooks: promptHooks }); }
   catch (e) { return sendJSON(res, 400, { error: e.message }); }
   // Read the full transcript once and reuse across the title-derivation
   // check and the upstream message assembly below. Two separate
@@ -972,6 +997,12 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
     Connection: 'keep-alive'
   });
   res.write(': connected\n\n');
+
+  // What `prompt.submit` hooks did to this prompt, for the user bubble.
+  if (promptHooks) {
+    try { res.write('event: prompt_hooks\ndata: ' + JSON.stringify({ clientId: userMsg.clientId, seq: userMsg.seq, hooks: promptHooks }) + '\n\n'); }
+    catch { /* socket closed */ }
+  }
 
   // Open the trace file. No-op writer if trace is off or the file
   // system is read-only.
@@ -1154,11 +1185,13 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
     }
   } catch { /* non-fatal; stream proceeds without the prompt */ }
   function upstreamContentForMessage(m) {
-    if (!m || m.role !== 'user' || !Array.isArray(m.attachments) || !m.attachments.length) return m && m.content;
+    if (!m || m.role !== 'user' || !Array.isArray(m.attachments) || !m.attachments.length) {
+      return m && m.role === 'user' ? messages.withHookContext(m.content, m.hooks) : m && m.content;
+    }
     const parts = [];
     if (m.content) parts.push({ type: 'text', text: m.content });
     for (const a of m.attachments) parts.push({ type: 'image_url', image_url: { url: a.dataUrl } });
-    return parts;
+    return messages.withHookContext(parts, m.hooks);
   }
 
   // Reconstruct only complete historical tool call/result pairs. An aborted
@@ -1462,6 +1495,8 @@ function accumulateRoundUsage(roundUsage) {
     result = await ai.streamChat({
     model,
     messages: upstreamMessages,
+    // Who sent the prompt, for hook `match.origin` on tool events.
+    hookOrigin,
     projectDir,
     chatId, // Pass chatId for authorization gate
     shellEnabled,
@@ -1595,7 +1630,7 @@ promptSize: resolvedProfileId,
         try {
           messages.appendMessage(projectDir, chatId, {
             role: 'tool', phase: 'result', toolCallId: data.id || '', name: data.name || '',
-            ok: !!data.ok, content: JSON.stringify(data.result || {})
+            ok: !!data.ok, content: JSON.stringify(data.result || {}), hooks: data.hooks
           });
         } catch { /* non-fatal */ }
       } else if (name === 'authorization_required' || name === 'ask_user_required') {

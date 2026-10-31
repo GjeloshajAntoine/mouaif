@@ -121,6 +121,9 @@ const ROUTES = [
   exact('settings/pricing', () => ({ name: 'settingsPricing' })),
   exact('settings/about', () => ({ name: 'settingsAbout' })),
 
+  // ---- Hooks (docs/features/hooks.md) -------------------------------
+  exact('settings/hooks', () => ({ name: 'settingsHooks' })),
+
   // ---- Themes --------------------------------------------------------
   // The picker, then the editor: `new` (optionally `?from=<theme id>` to
   // start from a copy) before the `<id>` prefix.

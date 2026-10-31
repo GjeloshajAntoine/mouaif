@@ -48,6 +48,7 @@ import { renderUsageMeta } from './usage.js';
 import { retryPayloadForError } from './retry.js';
 import { messageKind } from './messageKind.js';
 import { syncAgentNetwork } from './agentNetworkState.js';
+import { applyHookNotesToCard, promptHookContextElement } from './hookNotes.js';
 // agentLabel(agentName) -> string
 //
 // The role label a delegated run's system row shows. The model chooses an
@@ -447,6 +448,11 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
     if (m.role === 'user' && Array.isArray(m.attachments) && m.attachments.length) {
       renderImageAttachments(body, m.attachments);
     }
+  }
+  // Context `prompt.submit` hooks added for the model (docs/features/hooks.md).
+  if (m.role === 'user') {
+    const hookContext = promptHookContextElement(m.hooks);
+    if (hookContext) body.appendChild(hookContext);
   }
   // Header line: role label on the left, HH:MM timestamp pushed
   // to the right edge of the message row.
@@ -1877,6 +1883,8 @@ if (!card) {
     // stay as they are, errors auto-expand below.
   }
   if (isSubagent) card.classList.add('tool-card--subagent');
+  // What hooks did to this call (docs/features/hooks.md), under the head.
+  applyHookNotesToCard(card, toolResult.hooks);
   for (const receipt of refs.transcript.current.querySelectorAll('[data-auth-decision-id]')) {
     if (receipt.dataset.authDecisionId === String(id)) receipt.remove();
   }
@@ -2801,6 +2809,7 @@ appendToolResultCard({
 id: m.toolCallId, name: m.name, ok: m.ok,
 args: recoveredArgs,
 result: m.content || '',
+hooks: m.hooks,
 replay: !isLiveTail
 }, refs);
 } else if (kind === 'error') {

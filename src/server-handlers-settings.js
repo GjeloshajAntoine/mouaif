@@ -68,6 +68,9 @@ async function handleSettings(req, res, parsed) {
   if (urlPath === '/api/settings/app' && method === 'PUT') {
     const patch = await readJsonOr400(req, res);
     if (!patch) return;
+    if (Object.prototype.hasOwnProperty.call(patch, 'hooks')) {
+      return sendJSON(res, 400, { error: 'hooks are saved through PUT /api/hooks' });
+    }
     try {
       for (const key of ['providers', 'models']) {
         sanitizeClientEntries(patch, key, settings.getApp()[key]);

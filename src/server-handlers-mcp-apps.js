@@ -198,7 +198,8 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
             projectDir: mount.projectDir, chatId: mount.chatId,
             providerId: chat.providerId || '', modelId: chat.modelId,
             thinkingLevel: chat.thinkingLevel || '', maxOutputTokens: chat.maxOutputTokens || '',
-            content: '[MCP App: ' + mount.title + ']\n' + text
+            content: '[MCP App: ' + mount.title + ']\n' + text,
+            hookOrigin: 'app'
           }, lifecycle);
           if (!started.ok) throw err(started.code || 'EMCP_APP_MESSAGE', started.error || 'Could not start chat');
           return sendJSON(res, 200, {});

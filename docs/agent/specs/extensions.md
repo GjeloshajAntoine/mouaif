@@ -1,6 +1,7 @@
 # Spec — hooks and MCP-App UI extensions
 
-> Maintainer design proposal. Not implemented. Same rules as every track: one feature = one
+> Maintainer design proposal. Phase 1 (hooks on prompts and tool calls) is implemented; see
+> `docs/features/hooks.md`. The rest is not. Same rules as every track: one feature = one
 > commit, Conventional Commits, mobile-first UI, a `docs/features/<slug>.md` page plus its
 > `docs/README.md` line, and `docs/agent/features/<slug>.md` notes in the same commit.
 
@@ -300,8 +301,10 @@ the system block, so prompt caching stays intact.
   it never overlaps a running turn. `turn.end` hooks see `origin` and can stop themselves.
 - Nested subagents fire no hooks unless the hook sets `"subagents": true`; then the payload
   carries the subagent's depth and author.
-- Direct composer tool calls (`singleToolCall`) fire `tool.before`/`tool.after` too: policy
-  should not have a side door.
+- Direct composer tool calls that go through `runSingleToolCall` (`@agent`) fire
+  `tool.before`/`tool.after`. The user's own `/shell`, `@action` and direct MCP routes
+  (`/api/tools/shell`, custom actions) do not in phase 1: they run what the user typed, not
+  what the model chose. Revisit if a hook is meant as hard policy for people too.
 
 ### 4.7 What the user sees
 
@@ -555,7 +558,7 @@ Each phase is one or more feature commits with docs and tests.
 
 | # | Work | Outcome |
 | --- | --- | --- |
-| 1 | `src/hooks.js`, `command` kind, `tool.before`/`tool.after`/`prompt.submit`, app-scope `hooks` setting, tool-card chips, `?safe` | A shell hook blocks `git push -f` and the model sees why. |
+| 1 | `src/hooks.js`, `command` kind, `tool.before`/`tool.after`/`prompt.submit`, app-scope `hooks` setting, tool-card chips, master switch + `MOUAIF_NO_HOOKS=1` | A shell hook blocks `git push -f` and the model sees why. **Done** — see `docs/features/hooks.md`. Hooks run server-side, so `?safe` (a browser flag) is not their off switch; it stays for UI surfaces. |
 | 2 | `turn.end` + `followUp` queue, `turn.start`/`turn.error`/`attention`, run log in Settings | A hook keeps the agent going until `npm test` passes, max 3 follow-ups. |
 | 3 | Per-chat hooks (`chat_hook`, hooks bar/sheet, promote) + `hook_create`/`hook_list`/`hook_delete` | "From now on block force pushes here" adds a chat hook after one forced approval card. |
 | 4 | `http` + `module` kinds, `redact`, project hooks with hash trust | A repo ships its own policy hooks; a fresh clone shows the review banner instead of running them. |

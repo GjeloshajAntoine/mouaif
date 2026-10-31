@@ -47,6 +47,7 @@ const SettingsPricingView = lazyNamed(() => import('./SettingsPricing.jsx'), 'Se
 const SettingsProjectsView = lazyNamed(() => import('./SettingsProjects.jsx'), 'SettingsProjectsView');
 const DictationView = lazyNamed(() => import('./DictationPage.jsx'), 'DictationView');
 const SettingsThemesView = lazyNamed(() => import('./SettingsThemes.jsx'), 'SettingsThemesView');
+const SettingsHooksView = lazyNamed(() => import('./SettingsHooks.jsx'), 'SettingsHooksView');
 const SettingsThemeEditView = lazyNamed(() => import('./SettingsThemeEdit.jsx'), 'SettingsThemeEditView');
 const ROUTES = {
 chats: [ProjectsView],
@@ -88,6 +89,7 @@ settingsProjects: [SettingsProjectsView],
 settingsAccess: [AccessSettingsView],
 settingsAbout: [SettingsAboutView],
 settingsThemes: [SettingsThemesView],
+settingsHooks: [SettingsHooksView],
 settingsThemeEdit: [SettingsThemeEditView, ({ id, from }) => ({ id, from })]
 };
 const FULL_PAGE_ROUTES = new Set([
@@ -105,7 +107,7 @@ const LAZY_ROUTE_NAMES = new Set([
 'settingsActions', 'settingsActionEdit',
 'settingsMcp', 'settingsMcpEdit', 'settingsMcpRegistry',
 'settingsTags', 'settingsPricing', 'settingsProjects',
-'settingsThemes', 'settingsThemeEdit'
+'settingsThemes', 'settingsThemeEdit', 'settingsHooks'
 ]);
 function renderRoute(view) {
 const [View = ProjectsView, getProps] = ROUTES[view.name] || [];

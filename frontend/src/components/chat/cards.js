@@ -10,6 +10,7 @@ import { h, render } from 'preact';
 import { ToolTree, buildToolGroups, groupToolNames, childToolName, toolPermission } from '../ToolTree.jsx';
 import { groupAuthKey, isBinaryTool, FAMILY_OF, TOOL_GROUPS } from '../../toolGroups.js';
 import { approvalTitle, approvalText, permissionExplanation } from './approvalDetails.js';
+import { hookNotesElement } from './hookNotes.js';
 import { McpAuthSeg, ToolAuthSeg, TOOL_MODE_CHOICES, ASK_USER_MODE_CHOICES } from '../settings/toolAuth.js';
 import { AuthModelPicker } from '../AuthModelPicker.jsx';
 import { placeHeaderCard, HEADER_CARD_ORDER } from './headerCards.js';
@@ -900,6 +901,14 @@ card.addEventListener('keydown', onKey);
     // catalogue can opt out so mounting many examples does not jump the page.
     if (autoFocus && buttons[0]) { setTimeout(() => { if (!settled && card.isConnected) buttons[0].focus(); }, 100); }
     card.appendChild(head); card.appendChild(detail);
+    // A hook asked for this card, or changed the call's arguments
+    // (docs/features/hooks.md): say which one and why, opened.
+    const hookInfo = request.details && request.details.hooks;
+    const hookEl = hookInfo ? hookNotesElement({ notes: hookInfo.notes || [] }) : null;
+    if (hookEl) {
+      if (hookInfo.ask) hookEl.open = true;
+      card.appendChild(hookEl);
+    }
     // The second-opinion block (docs/features/shell-review.md). It arrives in
     // one of two ways: already on the request (a recovered pending prompt or a
     // live event that beat the card), or later as a `shell_review` frame, which

@@ -14,6 +14,8 @@ const { projectModelRecord } = require('./util.js');
 const toolFeedback = require('./toolFeedback.js');
 const usageMetrics = require('./usage.js');
 const toolOverridesMod = require('./toolOverrides.js');
+const hooksMod = require('./hooks.js');
+const { withHookContext } = require('./messages.js');
 
 // ---- Streaming core ----------------------------------------------------
 
@@ -114,6 +116,31 @@ async function* readNDJSON(stream) {
 // scripts/test-tool-groups.mjs pins the set exactly: nothing else may be
 // dispatched here. Both are read-only, and both still honor `off`.
 const NO_PROMPT_TOOLS = new Set(['report_progress', 'list_features']);
+// Tools that fire no hooks (src/hooks.js): the no-card tools above and skill
+// activation have nothing to approve or police.
+const HOOKLESS_TOOLS = new Set([...NO_PROMPT_TOOLS, 'activate_skill']);
+
+// The context a hook process runs in: the chat's working folder as cwd.
+function hookContextFor(opts) {
+  let cwd = opts && opts.projectDir;
+  try { cwd = require('./chatWorkingFolder.js').resolveForCall(opts.projectDir, opts.chatId, opts.workspaceChatId); }
+  catch { /* project folder */ }
+  return {
+    projectDir: opts && opts.projectDir,
+    chatId: opts && opts.chatId,
+    cwd,
+    nested: !!(opts && opts.nestedSubagent),
+    signal: opts && opts.signal
+  };
+}
+
+function hooksMeta(notes, context) {
+  if (!notes.length && !context) return undefined;
+  const meta = {};
+  if (notes.length) meta.notes = notes;
+  if (context) meta.context = context;
+  return meta;
+}
 
 async function runSingleToolCall(c, cx) {
   const { opts, onEvent, convo, toolSpecs, visibleToolSpecs, promptProfilesMod, discoveredToolNames, modelContentForTool } = cx;
@@ -180,6 +207,44 @@ async function runSingleToolCall(c, cx) {
       if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: JSON.stringify(result) });
       return { exec: { ok: false, result, content: JSON.stringify(result) }, imageParts: [] };
     }
+  }
+  // Hooks (src/hooks.js, docs/features/hooks.md). `tool.before` runs after the
+  // forged-call and tool-surface checks above and before the circuit breaker
+  // and the approval gate. A hook can block the call, force the approval card
+  // or rewrite the arguments; the gate then judges the rewritten call.
+  const hookNotes = [];
+  let hookContext = '';
+  let hookAsk = null;
+  const hooksApply = !opts?.hooksDisabled && !HOOKLESS_TOOLS.has(c.name)
+    && !(promptProfilesMod && c.name === promptProfilesMod.DISCOVER_TOOL_NAME);
+  const hookCtx = hooksApply ? hookContextFor(opts) : null;
+  if (hooksApply) {
+    let before;
+    try {
+      before = await hooksMod.runHooks('tool.before', { tool: c.name, args, callId: c.id || null, origin: opts && opts.hookOrigin }, hookCtx);
+    } catch (e) {
+      before = { decision: 'continue', notes: [{ hook: '?', event: 'tool.before', decision: 'error', error: e.message }] };
+    }
+    hookNotes.push(...before.notes);
+    if (before.context) hookContext = before.context;
+    let blockReason = before.decision === 'block' ? before.reason : null;
+    if (before.args) {
+      args = before.args;
+      // Rewritten arguments face the same orchestration checks as the original.
+      if (opts?.orchestrationScope && require('./tools/subagent-orchestration.js').PARENT_TOOLS.includes(c.name)) {
+        try { opts.orchestrationScope.validateControl(c.name, args, opts.orchestrationAuthor); }
+        catch (e) { blockReason = blockReason || ('Arguments changed by a hook were rejected: ' + e.message); }
+      }
+    }
+    if (blockReason) {
+      const result = { ok: false, code: 'EHOOK_BLOCKED', reason: blockReason, hook: before.by || null };
+      const blocked = { ok: false, result, content: JSON.stringify(result) };
+      onEvent('tool_call', { id: c.id || null, name: c.name, args });
+      onEvent('tool_result', { id: c.id || null, name: c.name, ok: false, result, hooks: hooksMeta(hookNotes, '') });
+      if (convo) convo.push({ role: 'tool', tool_call_id: c.id || undefined, name: c.name, content: modelContentForTool(c.name, blocked) });
+      return { exec: blocked, imageParts: [] };
+    }
+    if (before.decision === 'ask') hookAsk = { reason: before.reason, hook: before.by || null };
   }
   // Captured when the authorization gate resolves a prompt for an
   // `ask_user` call. The runner reads it to fold the user's
@@ -407,7 +472,7 @@ async function runSingleToolCall(c, cx) {
   }
   if (opts && opts.signal && opts.signal.aborted) throw Object.assign(new Error('aborted'), { code: 'EABORTED' });
       const authResult = await authGate.authorize({
-      forcePrompt: forcePrompt || !!(opts.inheritedPermissions?.[c.name] && !['allow', 'off'].includes(opts.inheritedPermissions[c.name].mode)),
+      forcePrompt: forcePrompt || !!hookAsk || !!(opts.inheritedPermissions?.[c.name] && !['allow', 'off'].includes(opts.inheritedPermissions[c.name].mode)),
       signal: opts && opts.signal,
       images: authImages,
       subagentModel,
@@ -511,9 +576,9 @@ async function runSingleToolCall(c, cx) {
         path: args && args.path,
         query: args && args.query,
         summary,
-        details: require('./toolApproval.js').buildApprovalDetails({
+        details: Object.assign(require('./toolApproval.js').buildApprovalDetails({
         tool: c.name, args, projectDir: opts.projectDir, chatId: opts.chatId, workspaceChatId: opts.workspaceChatId
-        }),
+        }), hookNotes.length ? { hooks: { ask: hookAsk, notes: hookNotes } } : {}),
         images: authImages,
         subagentModel,
         timeoutMs: clampedTimeoutMs,
@@ -575,9 +640,23 @@ async function runSingleToolCall(c, cx) {
     }
   }
 
-  if (!exec.backgroundPending) onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result });
+  // `tool.after`: may add context for the model, never change the result. A
+  // background run's result lands later, outside this call, so it has none.
+  if (hooksApply && !exec.backgroundPending && !(opts && opts.signal && opts.signal.aborted)) {
+    try {
+      const after = await hooksMod.runHooks('tool.after', {
+        tool: c.name, args, ok: !!exec.ok, result: exec.result, callId: c.id || null, origin: opts && opts.hookOrigin
+      }, hookCtx);
+      hookNotes.push(...after.notes);
+      if (after.context) hookContext = hookContext ? hookContext + '\n' + after.context : after.context;
+    } catch (e) {
+      hookNotes.push({ hook: '?', event: 'tool.after', decision: 'error', error: e.message });
+    }
+  }
+  const resultHooks = hooksMeta(hookNotes, hookContext);
+  if (!exec.backgroundPending) onEvent('tool_result', { id: c.id || null, name: c.name, ok: exec.ok, result: exec.result, hooks: resultHooks });
 
-  pushToolMessage(c.name, modelContentForTool(c.name, exec));
+  pushToolMessage(c.name, withHookContext(modelContentForTool(c.name, exec), resultHooks));
   // webpreview screenshots are rendered for the user in the preview dock. The
   // model only receives the compact JSON result and can call the tool again to
   // reload the page; it does not receive or inspect the image bytes.

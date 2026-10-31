@@ -96,6 +96,9 @@ function check(name, fn) {
 
   // ---- Themes ---------------------------------------------------------
 
+  check('hooks settings', () => {
+    eq('#/settings/hooks', { name: 'settingsHooks' });
+  });
   check('themes list, new theme (optionally from a theme) and editor', () => {
     eq('#/settings/themes', { name: 'settingsThemes' });
     eq('#/settings/themes/new', { name: 'settingsThemeEdit', id: '', from: '' });

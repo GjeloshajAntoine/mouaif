@@ -68,6 +68,7 @@ const CREATE_MESSAGE_TABLE = `
     phase         TEXT,
     client_id     TEXT,
     origin        TEXT,
+    hooks         TEXT,
     PRIMARY KEY (project_dir, chat_id, seq)
   )
 `;
@@ -139,6 +140,11 @@ d.exec('ALTER TABLE message_store ADD COLUMN client_id TEXT');
 // for the prompt a recurring task started. NULL for every typed message.
 if (!messageColumns.some((column) => column.name === 'origin')) {
 d.exec('ALTER TABLE message_store ADD COLUMN origin TEXT');
+}
+// What hooks did to a user prompt or a tool call, as JSON: { notes: [...],
+// context?: string } (src/hooks.js). NULL when no hook ran.
+if (!messageColumns.some((column) => column.name === 'hooks')) {
+d.exec('ALTER TABLE message_store ADD COLUMN hooks TEXT');
 }
 d.exec(INDEX_SQL);
 }
@@ -347,6 +353,9 @@ function rowToMessage(row) {
   if (row.role === 'user' && row.attachments) {
     try { msg.attachments = JSON.parse(row.attachments); } catch { /* ignore */ }
   }
+  if (row.hooks && (row.role === 'user' || row.role === 'tool')) {
+    try { msg.hooks = JSON.parse(row.hooks); } catch { /* ignore */ }
+  }
   if (row.role === 'assistant') {
     if (row.reasoning) msg.reasoning = row.reasoning;
     if (row.usage) try { msg.usage = JSON.parse(row.usage); } catch { /* ignore */ }
@@ -384,7 +393,8 @@ function messageToRow(projectDir, chatId, seq, msg) {
     ok: msg.role === 'tool' && msg.ok != null ? (msg.ok ? 1 : 0) : null,
     phase: msg.role === 'tool' && msg.phase ? msg.phase : null,
     client_id: typeof msg.clientId === 'string' && msg.clientId ? msg.clientId : null,
-    origin: msg.role === 'user' && msg.origin ? JSON.stringify(msg.origin) : null
+    origin: msg.role === 'user' && msg.origin ? JSON.stringify(msg.origin) : null,
+    hooks: (msg.role === 'user' || msg.role === 'tool') && msg.hooks ? JSON.stringify(msg.hooks) : null
   };
 }
 
@@ -787,10 +797,10 @@ function appendMessage(projectDir, chatId, msg) {
     d.prepare(`
       INSERT INTO message_store (project_dir, chat_id, seq, role, content, ts,
         reasoning, usage, cost, streaming_ms, model_id, attachments,
-        tool_call_id, name, args, ok, phase, client_id, origin)
+        tool_call_id, name, args, ok, phase, client_id, origin, hooks)
       VALUES (@project_dir, @chat_id, @seq, @role, @content, @ts,
         @reasoning, @usage, @cost, @streaming_ms, @model_id, @attachments,
-        @tool_call_id, @name, @args, @ok, @phase, @client_id, @origin)
+        @tool_call_id, @name, @args, @ok, @phase, @client_id, @origin, @hooks)
     `).run(row);
     if (costDelta !== null) {
       const updated = d.prepare(`
@@ -826,10 +836,10 @@ function replaceMessages(projectDir, chatId, list) {
     const insert = d.prepare(`
       INSERT INTO message_store (project_dir, chat_id, seq, role, content, ts,
         reasoning, usage, cost, streaming_ms, model_id, attachments,
-        tool_call_id, name, args, ok, phase, client_id, origin)
+        tool_call_id, name, args, ok, phase, client_id, origin, hooks)
       VALUES (@project_dir, @chat_id, @seq, @role, @content, @ts,
         @reasoning, @usage, @cost, @streaming_ms, @model_id, @attachments,
-        @tool_call_id, @name, @args, @ok, @phase, @client_id, @origin)
+        @tool_call_id, @name, @args, @ok, @phase, @client_id, @origin, @hooks)
     `);
     for (let i = 0; i < list.length; i++) {
       insert.run(messageToRow(projectDir, chatId, i, list[i]));

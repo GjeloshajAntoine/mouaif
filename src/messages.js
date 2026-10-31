@@ -87,6 +87,32 @@ return { kind: 'webhook', hookId: o.hookId.slice(0, 80), eventId: o.eventId.slic
 }
 return null;
 }
+// What hooks did to a row (src/hooks.js): { notes: [note], context?: string }.
+// Notes are display data for the transcript chip; `context` is the labelled
+// block the model saw, replayed upstream so later turns see the same history.
+const MAX_HOOK_NOTES = 12;
+function normalizeHooksMeta(h) {
+if (!h || typeof h !== 'object' || Array.isArray(h)) return null;
+const out = {};
+if (Array.isArray(h.notes)) {
+const notes = [];
+for (const n of h.notes.slice(0, MAX_HOOK_NOTES)) {
+if (!n || typeof n !== 'object' || typeof n.hook !== 'string') continue;
+const note = { hook: n.hook.slice(0, 40), event: String(n.event || '').slice(0, 20), decision: String(n.decision || '').slice(0, 12) };
+if (typeof n.name === 'string') note.name = n.name.slice(0, 80);
+if (typeof n.reason === 'string') note.reason = n.reason.slice(0, 2000);
+if (typeof n.error === 'string') note.error = n.error.slice(0, 600);
+if (typeof n.notice === 'string') note.notice = n.notice.slice(0, 300);
+if (Number.isFinite(n.ms)) note.ms = Math.round(n.ms);
+if (n.changedArgs === true) { note.changedArgs = true; if (n.before && typeof n.before === 'object') note.before = n.before; }
+if (n.context === true) note.context = true;
+notes.push(note);
+}
+if (notes.length) out.notes = notes;
+}
+if (typeof h.context === 'string' && h.context) out.context = h.context.slice(0, 16 * 1024);
+return Object.keys(out).length ? out : null;
+}
 function normalizeMessage(m) {
 if (!m || typeof m !== 'object') return null;
 if (!VALID_ROLES.has(m.role)) return null;
@@ -105,6 +131,10 @@ const attachments = normalizeAttachments(m.attachments);
 if (attachments.length) out.attachments = attachments;
 const origin = normalizeOrigin(m.origin);
 if (origin) out.origin = origin;
+}
+if (m.role === 'user' || m.role === 'tool') {
+const hooks = normalizeHooksMeta(m.hooks);
+if (hooks) out.hooks = hooks;
 }
 if (m.role === 'assistant') {
 if (typeof m.reasoning === 'string') out.reasoning = m.reasoning;
@@ -206,6 +236,15 @@ if (m && m.role === 'user' && m.origin && (m.origin.kind === 'schedule' || m.ori
 }
 return source;
 }
+// withHookContext(content, hooks) -> content with the hooks' labelled context
+// block appended (src/hooks.js contextBlock). A string stays a string.
+function withHookContext(content, hooks) {
+const context = hooks && typeof hooks.context === 'string' ? hooks.context : '';
+if (!context) return content;
+if (typeof content === 'string') return content ? content + '\n\n' + context : context;
+if (Array.isArray(content)) return content.concat([{ type: 'text', text: context }]);
+return content;
+}
 // ---- Reconstruct upstream history (unchanged) -----------------------------
 function reconstructUpstreamHistory(list, contentForMessage, options) {
 const source = Array.isArray(list) ? list : [];
@@ -263,13 +302,16 @@ role: 'assistant',
 content: mergePreviousAssistant ? previous.content : null,
 tool_calls: [{ id: wireId, type: 'function', function: { name, arguments: args } }]
 });
-out.push({
-role: 'tool', tool_call_id: wireId, name,
-content: toolFeedback.compactToolFeedback({
+const feedback = toolFeedback.compactToolFeedback({
 name, content: storedContent, result: storedResult, maxBytes: toolFeedbackMaxBytes, toolOutput,
 imageRefs: name === 'subagent' && Number.isSafeInteger(result.seq)
 ? require('./chatImages.js').generatedImageRefs(result.seq, storedResult) : undefined
-})
+});
+out.push({
+role: 'tool', tool_call_id: wireId, name,
+// Context a hook added to this result rides after it, exactly as the
+// model saw it live (src/ai-stream.js), so a resumed chat keeps it.
+content: withHookContext(feedback, result.hooks)
 });
 if (resultIndex === i + 1) i++;
 continue;
@@ -284,6 +326,8 @@ return out;
 }
 module.exports = {
 VALID_ROLES,
+withHookContext,
+normalizeHooksMeta,
 CHAT_ID_RE,
 CLIENT_ID_RE,
 normalizeClientId,
