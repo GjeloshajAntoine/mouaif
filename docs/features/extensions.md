@@ -78,7 +78,32 @@ A view receives the active theme through the MCP Apps host context: the standard
 
 An inline `html` view gets the MCP Apps SDK already connected, as `window.mouaifApp` (`window.mouaifAppReady` resolves when it is): call `getHostContext()` and set `onhostcontextchanged` on it.
 
+### What a view can do
+
 A view can call its server's tools that are visible to apps, through the usual approval card in its chat, and send a message in the chat only with the `chat.message` permission.
+
+It can also call **host tools**: ordinary MCP `tools/call` requests whose name starts with `mouaif/`. Only extension views can call them, never a tool result's app, and each checks the extension's permissions:
+
+| Tool | Needs | Does |
+| --- | --- | --- |
+| `mouaif/chat.recent` `{ limit? }` | `chat.read` | The chat's last messages (up to 50), role and text only, at most 32 KB |
+| `mouaif/composer.insert` `{ text }` | `composer.insert` | Puts text in the message box at the cursor, up to 8 KB. It is never sent: you send it. |
+| `mouaif/chat.badge` `{ text, tone? }` | none | Sets the dock chip's badge (up to 8 characters, empty clears it), tone `info`, `ok`, `warn` or `error` |
+| `mouaif/chat.open_sheet` `{ surfaceId }` | none | Opens one of the same extension's sheets |
+| `mouaif/settings.get` `{ key? }` | `storage` | Reads the extension's own stored values (one key or all) |
+| `mouaif/settings.set` `{ key, value }` | `storage` | Stores a JSON value (`null` deletes it). This is the extension's own store, 64 KB per extension, not mouaif's settings, and it is deleted with the extension. |
+
+In an inline view: `await window.mouaifApp.callServerTool({ name: 'mouaif/chat.badge', arguments: { text: '2 fail', tone: 'error' } })`.
+
+### Events
+
+A view that lists `"events": ["turn.start", "turn.end", "tool.after"]` in its `ui` entry receives those chat events while it is open (nothing is queued for a closed view). They arrive as a tool-result notification whose `structuredContent` is `{ "mouaif": { "type": "event", "event": "turn.end", "payload": { … } } }`. The payloads are:
+
+- `turn.start`: `{ model }`
+- `tool.after`: `{ tool, ok, callId }`, plus the capped `result` with `chat.read`
+- `turn.end`: `{ toolCount }`, plus the answer `text` with `chat.read`
+
+Events reach every open tab of the chat. mouaif only sends them while some active view asked for them.
 
 ### Order
 

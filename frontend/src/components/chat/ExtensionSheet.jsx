@@ -6,15 +6,25 @@
 // when it closes. Full height on a phone; the view's own Fullscreen works too.
 // Sheets do not count toward the live-view budget: they are in the foreground.
 import { h } from 'preact';
+import { useEffect, useRef } from 'preact/hooks';
 import { useModal } from '../../hooks/useModal.js';
 import { activeProject } from '../../api.js';
 import { McpAppFrame } from './McpAppFrame.jsx';
 import { PuzzleIcon } from './ExtensionDocks.jsx';
+import { registerSurface, unregisterSurface } from './extensionEvents.js';
 import './extension-ui.css';
 
 export function ExtensionSheet({ projectDir, chatId, surface, onClose }) {
   const sheetRef = useModal({ onClose: () => { if (onClose) onClose(); } });
   const id = surface.extensionId + '/' + surface.surfaceId;
+  const bridge = useRef(null);
+  // Host events reach an open sheet too.
+  useEffect(() => {
+    const entry = { projectDir, chatId, extensionId: surface.extensionId, surfaceId: surface.surfaceId,
+      events: surface.events || [], permissions: surface.permissions || [], bridge: () => bridge.current };
+    registerSurface(entry);
+    return () => unregisterSurface(entry);
+  }, [projectDir, chatId, surface.extensionId, surface.surfaceId]);
   return h('div', {
     class: 'ext-sheet__overlay',
     role: 'dialog',
@@ -32,5 +42,6 @@ export function ExtensionSheet({ projectDir, chatId, surface, onClose }) {
     h('div', { class: 'ext-sheet__body' },
       h(McpAppFrame, { projectDir, chatId, callId: 'sheet:' + id,
         surface: { extensionId: surface.extensionId, surfaceId: surface.surfaceId, slot: 'chat.sheet',
-          projectName: (activeProject.value && activeProject.value.name) || '' } }))));
+          projectName: (activeProject.value && activeProject.value.name) || '' },
+        onBridge: (b) => { bridge.current = b; } }))));
 }

@@ -1022,6 +1022,19 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   });
   res.write(': connected\n\n');
 
+  // Host events for extension views (src/extension-host-tools.js): only
+  // the events some active view declared, to this stream and its followers,
+  // never buffered. Views drop args/results unless they may read the chat.
+  const hostEventsWanted = (() => { try { return require('./extension-host-tools.js').hostEventsWanted(projectDir); } catch { return new Set(); } })();
+  function hostEvent(event, payload) {
+    if (!hostEventsWanted.has(event)) return;
+    const data = Object.assign({ event, chatId }, payload);
+    try { res.write('event: host_event\ndata: ' + JSON.stringify(data) + '\n\n'); } catch { /* socket closed */ }
+    liveChat.pushTransient(runKey, 'host_event', data);
+  }
+  const capJson = (v) => { try { const t = JSON.stringify(v); return t.length > 4096 ? t.slice(0, 4096) + '…' : t; } catch { return ''; } };
+  hostEvent('turn.start', { model: model.id });
+
   // What `prompt.submit` hooks did to this prompt, for the user bubble.
   if (promptHooks) {
     try { res.write('event: prompt_hooks\ndata: ' + JSON.stringify({ clientId: userMsg.clientId, seq: userMsg.seq, hooks: promptHooks }) + '\n\n'); }
@@ -1032,7 +1045,11 @@ async function runChatStream(body, res, chatId, sessionToken, lifecycle = {}, in
   // system is read-only.
   const traceStream = chat.trace ? trace.open(projectDir, chatId) : null;
   function emit(name, data) {
-    if (name === 'tool_result') turnToolCount++;
+    if (name === 'tool_result') {
+      turnToolCount++;
+      hostEvent('tool.after', { tool: data && data.name, ok: !!(data && data.ok), callId: data && data.id,
+        result: capJson(data && data.result) });
+    }
     try {
       res.write('event: ' + name + '\ndata: ' + JSON.stringify(data) + '\n\n');
     } catch { /* socket closed */ }
@@ -1813,6 +1830,7 @@ promptSize: resolvedProfileId,
           trace.write(traceStream, event.type, event.payload);
         }
         emit('done', enriched);
+        hostEvent('turn.end', { toolCount: turnToolCount, text: (assistantContent || '').slice(0, 8192) });
         return;
       }
       emit(name, data);

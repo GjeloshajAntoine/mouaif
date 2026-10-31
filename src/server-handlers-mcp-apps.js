@@ -255,7 +255,7 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
           title: mount.title, html: resource.text, csp: policy.csp, permissions: {},
           arguments: call.args || {}, result: toolResult });
       }
-      const match = parsed.pathname.match(/^\/api\/mcp\/apps\/([A-Za-z0-9_-]+)(?:\/(call|status|cancel|message))?$/);
+      const match = parsed.pathname.match(/^\/api\/mcp\/apps\/([A-Za-z0-9_-]+)(?:\/(call|status|cancel|message|host))?$/);
       if (!match) return sendJSON(res, 404, { error: 'Not found' });
       const id = match[1];
       const mount = mounts.get(id);
@@ -265,6 +265,10 @@ function createMcpAppsHost(options = {}, lifecycle = {}) {
       if (match[2] === 'status') {
       mount.lease = Date.now() + 20000;
       return sendJSON(res, 200, { ok: true });
+      }
+      // mouaif/* host tools: extension views only, permission-checked (src/extension-host-tools.js).
+      if (match[2] === 'host' && req.method === 'POST') {
+        return sendJSON(res, 200, require('./extension-host-tools.js').runHostTool(mount, body.name, body.arguments));
       }
       if (match[2] === 'message' && req.method === 'POST') {
         // ui/message is app-authored USER text, never assistant/system authority.

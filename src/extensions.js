@@ -266,6 +266,8 @@ function removeApp(id) {
   if (!row) return false;
   unregisterServer(row);
   store().prepare('DELETE FROM extension WHERE id = ?').run(id);
+  // Its mouaif/settings.* values go with it.
+  try { require('./extension-host-tools.js').removeExtensionStore(id); } catch { /* store down */ }
   return true;
 }
 

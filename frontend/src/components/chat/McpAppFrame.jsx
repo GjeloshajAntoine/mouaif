@@ -4,6 +4,7 @@ import { fetchJson } from '../../api.js';
 import { useModal } from '../../hooks/useModal.js';
 import { boundedHeight, connectMcpApp, containerDimensionsFor } from './mcpAppBridge.js';
 import { THEME_PAINTED, surfaceHostContext, themeHostContext } from './appHostContext.js';
+import { performHostAction } from './extensionEvents.js';
 import './mcp-app.css';
 
 // `surface` ({ extensionId, surfaceId, slot, projectName }) mounts an
@@ -218,6 +219,15 @@ export function McpAppFrame({ projectDir, chatId, callId, appPath, appTitle, onA
       },
       onCall: async (params, appSignal) => {
         const signal = AbortSignal.any([appSignal, ctl.signal]);
+        // mouaif/* host tools (extension views only): the server checks the
+        // permission; the page performs what changes the page.
+        if (surface && typeof params.name === 'string' && params.name.startsWith('mouaif/')) {
+          const response = await post('/host', { name: params.name, arguments: params.arguments || {} }, signal);
+          if (response.status !== 200) throw new Error(response.body.error || 'Host tool failed');
+          const { clientAction, ...toolResult } = response.body;
+          if (clientAction) performHostAction(clientAction, { projectDir, chatId, extensionId: surface.extensionId });
+          return toolResult;
+        }
         const requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
         const body = { requestId, name: params.name, arguments: params.arguments || {} };
         const cancel = () => fetch('/api/mcp/apps/' + mount.id + '/cancel', { method: 'POST', keepalive: true,

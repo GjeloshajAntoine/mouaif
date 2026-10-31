@@ -83,7 +83,7 @@ function ExtensionDock({ surface, projectDir, chatId }) {
   // Host events and badges reach this dock by extension/surface id.
   useEffect(() => {
     const entry = { projectDir, chatId, extensionId: surface.extensionId, surfaceId: surface.surfaceId,
-      events: surface.events || [], setBadge, bridge: () => bridge.current, open: () => setOpen(true) };
+      events: surface.events || [], permissions: surface.permissions || [], setBadge, bridge: () => bridge.current, open: () => setOpen(true) };
     registerSurface(entry);
     return () => unregisterSurface(entry);
   }, [projectDir, chatId, surface.extensionId, surface.surfaceId, surface.events]);

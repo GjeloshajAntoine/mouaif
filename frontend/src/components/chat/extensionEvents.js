@@ -4,8 +4,10 @@
 // host events (turn.start, turn.end, tool.after) forwarded to the views of
 // the extension that declared them (docs/features/extensions.md).
 //
-// entry: { projectDir, chatId, extensionId, surfaceId, events, setBadge?,
-//          bridge() -> live bridge | null, open?() }
+// entry: { projectDir, chatId, extensionId, surfaceId, events, permissions,
+//          setBadge?, bridge() -> live bridge | null, open?() }
+
+export const COMPOSER_INSERT = 'mouaif:composer-insert';
 
 const entries = new Set();
 const sheetOpeners = new Set();
@@ -33,6 +35,20 @@ export function openExtensionSheet(target) {
   return false;
 }
 
+// performHostAction(action, { projectDir, chatId, extensionId }) — what a
+// mouaif/* host tool asked the page to do, after the server checked the
+// extension's permission (src/extension-host-tools.js).
+export function performHostAction(action, where) {
+  if (!action || !where) return;
+  if (action.type === 'composer.insert') {
+    window.dispatchEvent(new CustomEvent(COMPOSER_INSERT, { detail: { projectDir: where.projectDir, chatId: where.chatId, text: action.text } }));
+  } else if (action.type === 'badge') {
+    setDockBadge(where.projectDir, where.chatId, where.extensionId, action.text ? { text: action.text, tone: action.tone } : null);
+  } else if (action.type === 'open_sheet') {
+    openExtensionSheet({ extensionId: action.extensionId, surfaceId: action.surfaceId });
+  }
+}
+
 // forwardHostEvent(projectDir, chatId, event, payload) — a chat event to every
 // live view whose surface declared it, as a tool-result notification carrying
 // { mouaif: { type: 'event', event, payload } }. Views not mounted get nothing.
@@ -42,7 +58,11 @@ export function forwardHostEvent(projectDir, chatId, event, payload) {
     if (!Array.isArray(e.events) || !e.events.includes(event)) continue;
     const bridge = e.bridge && e.bridge();
     if (!bridge || typeof bridge.sendHostEvent !== 'function') continue;
-    bridge.sendHostEvent({ mouaif: { type: 'event', event, payload: payload || {} } }).catch(() => {});
+    // Arguments, results and answers only for views that may read the chat.
+    const data = Object.assign({}, payload || {});
+    delete data.event;
+    if (!(Array.isArray(e.permissions) && e.permissions.includes('chat.read'))) { delete data.result; delete data.args; delete data.text; }
+    bridge.sendHostEvent({ mouaif: { type: 'event', event, payload: data } }).catch(() => {});
     sent++;
   }
   return sent;

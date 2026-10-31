@@ -40,6 +40,7 @@ import { mergeServerRows, nextServerMessageIndex, tailSyncDomAction, newClientId
 import { toPublicImageAttachments } from './annotation.js';
 import { promptHookContextElement } from './hookNotes.js';
 import { CHAT_HOOKS_CHANGED } from './hookEvents.js';
+import { forwardHostEvent } from './extensionEvents.js';
 
 // `prompt_hooks` { clientId, hooks }: what `prompt.submit` hooks added to the
 // prompt this stream saved. Attached to the optimistic bubble at once instead
@@ -1505,6 +1506,9 @@ state.messages = state.messages.filter((m) => m !== userMsg);
       agentNetworkEvent(state, null, 'tool_call', data);
     } else if (ev.eventName === 'prompt_hooks') {
       applyPromptHooks(state, refs, data);
+    } else if (ev.eventName === 'host_event') {
+      // A chat event for extension views that declared it (extensionEvents.js).
+      if (data && typeof data.event === 'string') forwardHostEvent(state.props.projectDir, state.props.chatId, data.event, data);
     } else if (ev.eventName === 'tool_result') {
     appendToolResultCard(data, refs);
     agentNetworkEvent(state, null, 'tool_result', data);

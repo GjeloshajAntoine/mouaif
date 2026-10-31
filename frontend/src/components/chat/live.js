@@ -19,6 +19,7 @@
 // open two sockets for the same chat. It closes itself on `run_end`
 // (which also tells the caller the run finished).
 
+import { forwardHostEvent } from './extensionEvents.js';
 import { parseSSEFrame } from '../../api.js';
 import { authorizationCard, askUserCard } from './cards.js';
 import {
@@ -169,6 +170,11 @@ function dispatchLiveEvent(ev, refs, state, key) {
   let data = null;
   try { data = JSON.parse(ev.data || 'null'); } catch { return; }
   if (!data || typeof data !== 'object') return;
+  // A chat event for extension views (not buffered, no liveSeq).
+  if (ev.eventName === 'host_event') {
+    if (typeof data.event === 'string') forwardHostEvent(state.props.projectDir, state.props.chatId, data.event, data);
+    return;
+  }
   if (ev.eventName === 'live_subscribed') {
     if (typeof data.runId === 'string' && data.runId !== state.liveRunId) {
       state.liveRunId = data.runId;

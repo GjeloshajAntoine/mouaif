@@ -291,6 +291,94 @@ async function testSurfaces() {
   }
 }
 
+// Phase 7: mouaif/* host tools (permission-checked, extension views only)
+// and host events streamed during a turn for the events views declared.
+async function testHostToolsAndEvents() {
+  const http = require('node:http');
+  const chats = require('../src/chats.js');
+  const messages = require('../src/messages.js');
+  const hostTools = require('../src/extension-host-tools.js');
+  const { createServer } = require('../src/index.js');
+  const { handleChatStream } = require('../src/server-handlers-chats.js');
+  // Unit: only surface mounts; unknown names refused.
+  assert.throws(() => hostTools.runHostTool({ kind: 'tool' }, 'mouaif/chat.badge', {}), /only for extension views/);
+  assert.throws(() => hostTools.runHostTool({ kind: 'surface', permissions: [], chatId: 'c' }, 'mouaif/nope', {}), /unknown host tool/);
+
+  const app = createServer(0);
+  await new Promise((r) => app.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + app.address().port;
+  const post = async (route, body = {}) => {
+    const res = await fetch(base + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: res.status, body: await res.json() };
+  };
+  try {
+    extensions.importApp(manifest({ id: 'ci-host', hooks: [], permissions: ['chat.read', 'storage'],
+      ui: [
+        { id: 'dock', slot: 'chat.dock', title: 'CI', html: '<p>x</p>', events: ['turn.start', 'turn.end'] },
+        { id: 'more', slot: 'chat.sheet', title: 'More', html: '<p>y</p>' },
+        { id: 'page', slot: 'settings.page', title: 'S', html: '<p>z</p>' }
+      ] }));
+    extensions.setAppEnabled('ci-host', true);
+    const chat = chats.createChat(projectDir, { title: 'host' });
+    messages.appendMessage(projectDir, chat.id, { role: 'user', content: 'deploy main?' });
+    messages.appendMessage(projectDir, chat.id, { role: 'assistant', content: 'CI is green, deploying.' });
+    const dock = (await post('/api/mcp/apps/mount', { projectDir, chatId: chat.id, extensionId: 'ci-host', surfaceId: 'dock' })).body;
+    const host = (name, args) => post('/api/mcp/apps/' + dock.id + '/host', { name, arguments: args || {} });
+    let r = await host('mouaif/chat.recent', { limit: 5 });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.structuredContent.messages.map((m) => m.role + ':' + m.text), ['user:deploy main?', 'assistant:CI is green, deploying.']);
+    r = await host('mouaif/composer.insert', { text: 'retry CI' });
+    assert.equal(r.status, 403, 'no composer.insert permission');
+    r = await host('mouaif/chat.badge', { text: 'fail', tone: 'error' });
+    assert.deepEqual(r.body.clientAction, { type: 'badge', text: 'fail', tone: 'error' });
+    assert.equal((await host('mouaif/chat.badge', { text: 'way too long' })).status, 400);
+    r = await host('mouaif/chat.open_sheet', { surfaceId: 'more' });
+    assert.deepEqual(r.body.clientAction, { type: 'open_sheet', extensionId: 'ci-host', surfaceId: 'more' });
+    assert.equal((await host('mouaif/chat.open_sheet', { surfaceId: 'dock' })).status, 400, 'only its own sheets');
+    assert.equal((await host('mouaif/settings.set', { key: 'branch', value: { name: 'main' } })).status, 200);
+    r = await host('mouaif/settings.get', { key: 'branch' });
+    assert.deepEqual(r.body.structuredContent.value, { name: 'main' });
+    assert.equal((await host('mouaif/settings.set', { key: 'big', value: 'x'.repeat(70000) })).status, 409, '64 KB per extension');
+    // A chat-less settings page can use storage but not chat tools.
+    const page = (await post('/api/mcp/apps/mount', { projectDir, extensionId: 'ci-host', surfaceId: 'page' })).body;
+    assert.deepEqual((await post('/api/mcp/apps/' + page.id + '/host', { name: 'mouaif/settings.get', arguments: {} })).body.structuredContent.value, { branch: { name: 'main' } });
+    assert.equal((await post('/api/mcp/apps/' + page.id + '/host', { name: 'mouaif/chat.recent', arguments: {} })).status, 400);
+    // Another extension cannot see this one's storage; deleting it clears it.
+    assert.deepEqual(hostTools._storeGet('other'), {});
+
+    // Host events: a turn streams host_event frames for the declared events only.
+    const upstream = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.write('data: {"choices":[{"delta":{"content":"Green."},"index":0}]}\n\n');
+        res.write('data: {"choices":[{"finish_reason":"stop","index":0}]}\n\n');
+        res.end('data: [DONE]\n\n');
+      });
+    });
+    await new Promise((r2) => upstream.listen(0, '127.0.0.1', r2));
+    settings.setProject(projectDir, { models: [{ id: 'mock', provider: 'openai-compatible', label: 'Mock' }] });
+    settings.setApp({ providers: [{ id: 'openai-compatible', type: 'openai-compatible', baseUrl: 'http://127.0.0.1:' + upstream.address().port, apiKey: 'k' }] });
+    const mockReq = (body) => ({ method: 'POST', headers: { 'content-type': 'application/json' },
+      on(ev, cb) { if (ev === 'data') process.nextTick(() => cb(Buffer.from(JSON.stringify(body)))); if (ev === 'end') process.nextTick(cb); } });
+    const res = { statusCode: 0, body: '', writeHead(c) { this.statusCode = c; }, write(c) { this.body += c; }, end() {}, setHeader() {}, getHeader() {} };
+    await handleChatStream(mockReq({ projectDir, modelId: 'mock', content: 'status?' }), res, chat.id, null);
+    const frames = res.body.split('\n\n').filter((f) => f.startsWith('event: host_event')).map((f) => JSON.parse(f.split('\ndata: ')[1]));
+    assert.deepEqual(frames.map((f) => f.event), ['turn.start', 'turn.end']);
+    assert.equal(frames[1].text, 'Green.');
+    extensions.setAppEnabled('ci-host', false);
+    const quiet = { statusCode: 0, body: '', writeHead(c) { this.statusCode = c; }, write(c) { this.body += c; }, end() {}, setHeader() {}, getHeader() {} };
+    await handleChatStream(mockReq({ projectDir, modelId: 'mock', content: 'again?' }), quiet, chat.id, null);
+    assert.ok(!quiet.body.includes('host_event'), 'no views declared events: no frames');
+    upstream.close();
+    extensions.removeApp('ci-host');
+    assert.deepEqual(hostTools._storeGet('ci-host'), {}, 'deleting the extension clears its storage');
+  } finally {
+    await new Promise((r) => app.close(r));
+    await mcp.stopAll();
+  }
+}
+
 let finished = false;
 process.on('exit', (code) => {
   if (code === 0 && !finished) { console.error('test-extensions: stopped before the end (a promise never settled)'); process.exitCode = 1; }
@@ -303,6 +391,7 @@ async function main() {
   await testProjectExtensions();
   await testRoutes();
   await testSurfaces();
+  await testHostToolsAndEvents();
   finished = true;
   console.log('test-extensions: ok');
 }

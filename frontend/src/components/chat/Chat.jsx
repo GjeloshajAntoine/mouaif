@@ -29,7 +29,7 @@ import { HooksDock } from './HooksDock.jsx';
 import { ProjectHooksBar } from './ProjectHooksBar.jsx';
 import { ExtensionDocks, useExtensionSurfaces } from './ExtensionDocks.jsx';
 import { ExtensionSheet } from './ExtensionSheet.jsx';
-import { registerSheetOpener } from './extensionEvents.js';
+import { registerSheetOpener, COMPOSER_INSERT } from './extensionEvents.js';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
@@ -93,6 +93,26 @@ useEffect(() => registerSheetOpener(({ extensionId, surfaceId }) => {
   return !!found;
 }), [extensionSheets]);
 useEffect(() => { setOpenSheet(null); }, [projectDir, chatId]);
+// mouaif/composer.insert from an extension view: text into the message box
+// at the caret, never sent (extensionEvents.js performHostAction).
+useEffect(() => {
+  const onInsert = (e) => {
+    const d = (e && e.detail) || {};
+    if (d.projectDir !== projectDir || d.chatId !== chatId || typeof d.text !== 'string') return;
+    const el = refs.promptInput.current;
+    if (!el) return;
+    const value = el.value || '';
+    const at = document.activeElement === el && typeof el.selectionStart === 'number' ? el.selectionStart : value.length;
+    const before = value.slice(0, at);
+    const lead = before && !/\s$/.test(before) ? ' ' : '';
+    const next = before + lead + d.text + value.slice(at);
+    syncComposer(next);
+    if (updateChat) saveComposerDraftNow(next, refs, updateChat).catch(() => {});
+    try { el.focus({ preventScroll: true }); const caret = (before + lead + d.text).length; el.setSelectionRange(caret, caret); } catch { /* detached */ }
+  };
+  window.addEventListener(COMPOSER_INSERT, onInsert);
+  return () => window.removeEventListener(COMPOSER_INSERT, onInsert);
+}, [projectDir, chatId]);
 const ScreenCapturePanel = useLazyView(screenCaptureOpen, () => import('./ScreenCapturePanel.jsx'), 'ScreenCapturePanel');
 const capturedImagesSaveRef = useRef(Promise.resolve());
 useEffect(() => {
