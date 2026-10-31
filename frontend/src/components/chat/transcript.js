@@ -380,6 +380,30 @@ function buildCopyButton(messageFor) {
   return btn;
 }
 
+// The prompt a webhook call started: the hook's prompt as text, then the data
+// the call carried in a collapsed block (src/webhooks.js DATA_MARKER).
+const WEBHOOK_DATA_MARKER = '\n\n---\n\u{1F517} Webhook call';
+function renderWebhookBody(body, content) {
+  const at = content.indexOf(WEBHOOK_DATA_MARKER);
+  if (at < 0) { body.textContent = content; return; }
+  const prompt = document.createElement('div');
+  prompt.textContent = content.slice(0, at);
+  const lines = content.slice(at + 6).split('\n');
+  const details = document.createElement('details');
+  details.className = 'chat-msg__webhook';
+  const summary = document.createElement('summary');
+  // "🔗 Webhook call · run 2 · POST · <iso>" -> "Received data · POST · <local time>"
+  const bits = lines[0].split(' \u00b7 ');
+  const when = new Date(bits[3] || '');
+  summary.textContent = ['Received data', bits[2] || '', Number.isNaN(when.getTime()) ? '' : when.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })]
+    .filter(Boolean).join(' \u00b7 ');
+  const pre = document.createElement('pre');
+  // The note to the model is for the model; the user sees the data.
+  pre.textContent = lines.slice(1).filter((line) => !/^The tags below hold what the outside caller sent/.test(line)).join('\n');
+  details.append(summary, pre);
+  body.append(prompt, details);
+}
+
 // appendMessageToTranscript(m, isLive, refs, state)
 //
 // Append a chat bubble. `isLive` marks the row as the current
@@ -416,6 +440,8 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
   body.className = 'chat-msg__body';
   if (m.role === 'assistant') {
     renderAssistantBody(body, m.content || '', m.reasoning || '', true);
+  } else if (m.role === 'user' && m.origin && m.origin.kind === 'webhook') {
+    renderWebhookBody(body, m.content || '');
   } else {
     body.textContent = m.content || '';
     if (m.role === 'user' && Array.isArray(m.attachments) && m.attachments.length) {
@@ -441,6 +467,14 @@ export function appendMessageToTranscript(m, isLive, refs, state) {
     const badge = document.createElement('span');
     badge.className = 'chat-msg__origin';
     badge.textContent = 'Scheduled · run ' + m.origin.run;
+    head.appendChild(badge);
+  }
+  // The prompt a webhook call started (docs/features/webhook-turns.md).
+  if (m.role === 'user' && m.origin && m.origin.kind === 'webhook') {
+    row.dataset.origin = 'webhook';
+    const badge = document.createElement('span');
+    badge.className = 'chat-msg__origin';
+    badge.textContent = 'Webhook · run ' + m.origin.run;
     head.appendChild(badge);
   }
   head.appendChild(ts);
@@ -768,6 +802,9 @@ const TOOL_VERBS = {
   schedule_wake: 'Scheduled wake',
   schedule_list: 'Schedules',
   schedule_cancel: 'Cancelled wake',
+  webhook_create: 'Webhook',
+  webhook_status: 'Webhook status',
+  webhook_delete: 'Deleted webhook',
   run_start: 'Run started',
   run_status: 'Run status',
   run_end: 'Run ended',

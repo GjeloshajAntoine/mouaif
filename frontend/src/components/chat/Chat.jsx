@@ -24,6 +24,7 @@ import { ModelPickerField } from '../ModelPickerField.jsx';
 import { WebpreviewDock } from './WebpreviewDock.jsx';
 import { AgentNetworkDock } from './AgentNetworkDock.jsx';
 import { RunDock } from './RunDock.jsx';
+import { WebhookDock } from './WebhookDock.jsx';
 import { PreviewUrlPrompt } from './PreviewUrlPrompt.jsx';
 import { authorizationCard } from './cards.js';
 import { requestWebpreview, setStatus } from '../../api.js';
@@ -696,6 +697,8 @@ onDismiss: () => clearWebPreview()
 h(AgentNetworkDock, { transcriptRef: refs.transcript }),
 // Pause / resume / stop for a long-running run; absent until the chat has one.
 h(RunDock, { projectDir, chatId, onJumpToSeq: jumpToSeq }),
+// The chat's webhook link and the calls it received; absent until it has one.
+h(WebhookDock, { projectDir, chatId, onJumpToSeq: jumpToSeq }),
 h('div', { class: 'chat-view__composer-row' },
 h('div', { class: 'chat-view__composer-tool' },
 h(FileToolbar, {

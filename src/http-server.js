@@ -156,6 +156,15 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
     return handleAccess(req, res, parsed, serverConfig);
   }
 
+  // Webhook-triggered turns (docs/features/webhook-turns.md). `/hook/<uuid>`
+  // is public on purpose: the unguessable token in the path is the
+  // credential, so an outside service can call it without a session. It sits
+  // outside `/api/`, so neither the browser-origin gate nor the access gate
+  // applies, and it only ever queues a turn in the chat that owns the token.
+  if (urlPath.startsWith('/hook/')) {
+    return require('./webhooks.js').handleHookRequest(req, res, parsed, { sendJSON });
+  }
+
   // Static assets and the Preact shell stay public so they can render the
   // login/setup view. Everything containing app data is authenticated.
   const accessProtected = urlPath === '/events'
@@ -490,6 +499,11 @@ function createServer(port = DEFAULT_PORT, options = {}) {
     const scheduler = require('./schedules.js').startScheduler({ lifecycle });
     server.once('close', () => scheduler.stop());
   } catch (e) { console.warn('[mouaif] scheduled wake-ups unavailable:', e.message); }
+  // Webhook-triggered turns: delivers queued calls to /hook/<uuid> as turns.
+  try {
+    const deliverer = require('./webhooks.js').startWebhooks({ lifecycle });
+    server.once('close', () => deliverer.stop());
+  } catch (e) { console.warn('[mouaif] webhooks unavailable:', e.message); }
   // Track connections so the graceful-restart path can force-close
   // SSE / keep-alive sockets that would otherwise hang server.close().
   server.on('connection', trackSocket);

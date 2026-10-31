@@ -70,13 +70,22 @@ if (out.length >= MAX_IMAGE_ATTACHMENTS) break;
 }
 return out;
 }
-// Where a user message came from. Only the prompt a recurring task started
-// carries one: { kind: 'schedule', scheduleId, run } (run counts from 1).
+// Where a user message came from. Only a prompt mouaif itself started carries
+// one: a recurring task's run { kind: 'schedule', scheduleId, run } or a
+// webhook call's run { kind: 'webhook', hookId, eventId, run } (run counts from 1).
 function normalizeOrigin(o) {
-if (!o || typeof o !== 'object' || o.kind !== 'schedule') return null;
+if (!o || typeof o !== 'object') return null;
 const run = Number.isSafeInteger(o.run) && o.run > 0 ? o.run : null;
-if (!run || typeof o.scheduleId !== 'string' || !o.scheduleId) return null;
+if (!run) return null;
+if (o.kind === 'schedule') {
+if (typeof o.scheduleId !== 'string' || !o.scheduleId) return null;
 return { kind: 'schedule', scheduleId: o.scheduleId.slice(0, 80), run };
+}
+if (o.kind === 'webhook') {
+if (typeof o.hookId !== 'string' || !o.hookId || typeof o.eventId !== 'string' || !o.eventId) return null;
+return { kind: 'webhook', hookId: o.hookId.slice(0, 80), eventId: o.eventId.slice(0, 80), run };
+}
+return null;
 }
 function normalizeMessage(m) {
 if (!m || typeof m !== 'object') return null;
@@ -125,6 +134,9 @@ return getChatDb().listMessagesWindow(projectDir, chatId, opts);
 }
 function listScheduledRuns(projectDir, chatId) {
 return getChatDb().listScheduledRuns(projectDir, chatId);
+}
+function listWebhookRuns(projectDir, chatId) {
+return getChatDb().listWebhookRuns(projectDir, chatId);
 }
 function getMessageCount(projectDir, chatId) {
 return getChatDb().getMessageCount(projectDir, chatId);
@@ -183,14 +195,14 @@ return getChatDb().clearMessages(projectDir, chatId);
 function addChatCost(projectDir, chatId, amount) {
 return getChatDb().addChatCost(projectDir, chatId, amount);
 }
-// A recurring task's run starts a fresh context: the model sees the transcript
-// from the latest scheduled prompt on, not the earlier runs. The rows stay in
-// the chat; only what is sent upstream starts here.
+// A recurring task's run, like a webhook call's run, starts a fresh context:
+// the model sees the transcript from the latest such prompt on, not the
+// earlier runs. The rows stay in the chat; only what is sent upstream starts here.
 function contextFromLastRun(list) {
 const source = Array.isArray(list) ? list : [];
 for (let i = source.length - 1; i >= 0; i--) {
 const m = source[i];
-if (m && m.role === 'user' && m.origin && m.origin.kind === 'schedule') return source.slice(i);
+if (m && m.role === 'user' && m.origin && (m.origin.kind === 'schedule' || m.origin.kind === 'webhook')) return source.slice(i);
 }
 return source;
 }
@@ -292,5 +304,6 @@ clearMessages,
 addChatCost,
 reconstructUpstreamHistory,
 contextFromLastRun,
-listScheduledRuns
+listScheduledRuns,
+listWebhookRuns
 };

@@ -666,3 +666,25 @@
   font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
 }
+/* A webhook run's prompt: the call's data in a collapsed block
+   (docs/features/webhook-turns.md). */
+.chat-msg__webhook { margin-top: 8px; }
+.chat-msg__webhook summary {
+  padding: 12px 0;
+  font-size: 0.8rem;
+  line-height: 20px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chat-msg__webhook pre {
+  margin: 0;
+  max-height: 40dvh;
+  overflow: auto;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, #000 18%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

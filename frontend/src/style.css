@@ -22,6 +22,7 @@
    14. tool-cards.css  — tool_call/result, ask_user, subagent, progress, previews
    14b. agent-network.css — delegation graph dock over the transcript
    14c. run-dock.css — pause / resume / stop bar for a long-running run
+   14d. webhook-dock.css — the chat's webhook link and its calls
    15. draft-craft.css — draft handoff picker and image annotator
    16. tool-tree.css   — tool tree component
    17. features.css    — MCP, file tags, pricing, PWA banners, reduce-motion
@@ -58,6 +59,7 @@
 @import './tool-cards.css';
 @import './agent-network.css';
 @import './run-dock.css';
+@import './webhook-dock.css';
 @import './draft-craft.css';
 @import './tool-tree.css';
 @import './features.css';

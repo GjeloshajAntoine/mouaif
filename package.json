@@ -45,6 +45,7 @@
   "test:subagent-prompt": "node scripts/test-subagent-orchestration.js && node scripts/test-agents-model-precedence.js && node scripts/test-subagent-image-inputs.js && node scripts/test-subagent-images.js && node scripts/test-default-subagent-stream.js && node scripts/test-subagent-start-http.js && node scripts/test-agent-command-card.js && node scripts/test-subagent-transcript-parity.js && node scripts/test-subagent-card-cost.js",
     "test:skills": "node scripts/test-agent-skills.js && node scripts/test-agent-skills-stream.js && node scripts/test-agent-skills-ui.mjs",
     "test:mouaif-tool": "node scripts/test-mouaif-tool.js && node scripts/test-chat-model-tools.js && node scripts/test-mouaif-tool-stream.js && node scripts/test-mouaif-tool-sync.mjs && node scripts/test-mouaif-tool-categories.mjs && node scripts/test-mouaif-tool-toggle.mjs",
+    "test:webhooks": "node scripts/test-webhooks.js",
     "test:group-cli": "node scripts/test-background-jobs.js && node scripts/test-job-store.js && node scripts/test-group-cli.js",
     "test:waits": "node scripts/test-waits.js && node scripts/test-schedules.js && node scripts/test-runs.js && node scripts/test-run-context.js && node scripts/test-long-run-e2e.js && node scripts/test-run-dock.mjs && node scripts/test-jump-to-run.mjs",
     "test:chat-working-folder": "node scripts/test-chat-working-folder.js && node scripts/test-mouaif-tool-sync.mjs && node scripts/test-mouaif-tool-categories.mjs && node scripts/test-mouaif-tool-toggle.mjs && node scripts/test-chat-model-tools-ui.mjs",

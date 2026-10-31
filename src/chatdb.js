@@ -1110,6 +1110,22 @@ function listScheduledRuns(projectDir, chatId) {
     });
 }
 
+// The prompts webhook calls started in a chat, by event id:
+// { [eventId]: { seq, ts, run } }. The webhook panel links each call to its turn.
+function listWebhookRuns(projectDir, chatId) {
+  ensureTables();
+  const d = require('./settings.js').getDb();
+  const out = {};
+  for (const row of d.prepare("SELECT seq, ts, origin FROM message_store WHERE project_dir = ? AND chat_id = ? AND role = 'user' AND origin IS NOT NULL ORDER BY seq")
+    .all(projectDir, chatId)) {
+    try {
+      const origin = JSON.parse(row.origin);
+      if (origin && origin.kind === 'webhook' && origin.eventId) out[origin.eventId] = { seq: row.seq, ts: row.ts, run: origin.run };
+    } catch { /* skip a malformed row */ }
+  }
+  return out;
+}
+
 module.exports = {
   // Chat CRUD
   listChats,
@@ -1123,6 +1139,7 @@ module.exports = {
 listMessages,
 listMessagesWindow,
 listScheduledRuns,
+listWebhookRuns,
 appendMessage,
 replaceMessages,
 clearMessages,

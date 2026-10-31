@@ -8,6 +8,7 @@ import { useClickOutside } from '../hooks/useClickOutside.js';
 import { useLongPressReorder } from '../hooks/useLongPressReorder.js';
 import { PromptIcon } from './PromptIcon.jsx';
 import { pinnedProfiles } from './settings/profileLaunchers.js';
+import { WEBHOOK_ICON_PATH } from './chat/webhookDock.js';
 const CHAT_PAGE_SIZE = 30;
 // A card's search is a peek, not a page: the card holds about three rows and
 // the server caps the list at its own maximum anyway.
@@ -66,12 +67,14 @@ function ProjectMenu({ project, onRename, onUnregister, onMove, canMoveUp, canMo
 const FILTER_PATHS = {
   all: 'M3 5h18l-7 8.5V19l-4 2v-7.5L3 5Z',
   draft: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z',
-  recurring: 'M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3'
+  recurring: 'M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3',
+  webhook: WEBHOOK_ICON_PATH
 };
 const CHAT_FILTERS = [
   { id: 'all', label: 'All chats' },
   { id: 'draft', label: 'Drafts' },
-  { id: 'recurring', label: 'Recurring' }
+  { id: 'recurring', label: 'Recurring' },
+  { id: 'webhook', label: 'Webhooks' }
 ];
 
 function FilterIcon({ id, size = 18 }) {
@@ -395,6 +398,12 @@ title: 'Recurring task',
 role: 'img',
 'aria-label': 'Recurring task'
 }, h(FilterIcon, { id: 'recurring', size: 15 })) : null,
+c.webhook ? h('span', {
+class: 'project-card__chat-recurring project-card__chat-webhook',
+title: 'Webhook',
+role: 'img',
+'aria-label': 'Webhook'
+}, h(FilterIcon, { id: 'webhook', size: 15 })) : null,
 draftOnly
 ? h('span', { class: 'project-card__chat-draft', 'aria-hidden': 'true' })
 : c.running ? h('span', { class: 'project-card__chat-running', 'aria-hidden': 'true' }) : null,
@@ -518,7 +527,7 @@ onClick: (e) => { e.stopPropagation(); deleteChat(c); }
         : rows)
       : (loading ? h('li', { class: 'project-card__chats-empty' }, 'loading chats…')
         : (chats.length === 0) ? h('li', { class: 'project-card__chats-empty' },
-          filter === 'draft' ? 'No drafts.' : filter === 'recurring' ? 'No recurring chats.' : 'No chats yet. Tap "+ New chat" below to start one.')
+          filter === 'draft' ? 'No drafts.' : filter === 'recurring' ? 'No recurring chats.' : filter === 'webhook' ? 'No chats with a webhook.' : 'No chats yet. Tap "+ New chat" below to start one.')
         : rows),
       searchMode ? null :
       loadingMore ? h('li', { class: 'project-card__chats-more' }, 'Loading more…') :
@@ -563,7 +572,7 @@ title: searchOpen ? 'Close search' : 'Search chats'
 
 export function ProjectsView() {
   const [projects, setProjects] = useState([]);
-  // Per-card chat filter ('all' | 'draft' | 'recurring'), by project id.
+  // Per-card chat filter ('all' | 'draft' | 'recurring' | 'webhook'), by project id.
   const [filters, setFilters] = useState({});
   const [statusText, setStatusText] = useState('loading…');
   const [statusState, setStatusState] = useState('busy');

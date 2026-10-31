@@ -34,6 +34,7 @@ One page per feature: what it does and how to use it.
 - [Bounded wait foundation](features/bounded-wait-foundation.md) — internal finite observations; public wait tools remain unenabled.
 - [Long-running runs](features/long-running-runs.md) — the budget, pause/stop bar and watchdog behind recurring tasks and long jobs.
 - [Scheduled wake-ups and recurring tasks](features/scheduled-wakes.md) — `schedule_wake` runs a prompt in the same chat later or at a regular time, across restarts.
+- [Webhook turns](features/webhook-turns.md) — `webhook_create` gives a chat a secret `/hook/<uuid>` link (GET or POST) that starts a turn with the received data.
 
 ### Providers and models
 

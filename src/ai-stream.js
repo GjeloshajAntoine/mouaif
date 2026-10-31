@@ -336,6 +336,15 @@ async function runSingleToolCall(c, cx) {
       else if (c.name === 'schedule_list') {
       summary = 'pending wake-ups';
       }
+      else if (c.name === 'webhook_create') {
+      summary = [args && args.method ? String(args.method).toUpperCase() : 'POST', args && args.prompt].filter(Boolean).join(' \u2014 ');
+      }
+      else if (c.name === 'webhook_status') {
+      summary = 'webhook';
+      }
+      else if (c.name === 'webhook_delete') {
+      summary = 'webhook';
+      }
       else if (c.name === 'subagent_status') {
       summary = (args && args.callId) || 'all workers';
       }
@@ -700,6 +709,8 @@ catch { /* restart tool module unavailable; skip */ }
 try { toolSpecs.push(require('./tools/groupCli.js').SPEC); } catch { /* unavailable */ }
 try { toolSpecs.push(...Object.values(require('./tools/schedule.js').SPECS)); }
 catch { /* schedule tools module unavailable; skip */ }
+try { toolSpecs.push(...Object.values(require('./tools/webhook.js').SPECS)); }
+catch { /* webhook tools module unavailable; skip */ }
 // Ordinary native tools for chats, attachments, settings and projects.
 try { toolSpecs.push(...Object.values(require('./tools/mouaif.js').SPECS)); }
 catch { /* mouaif tool module unavailable; skip */ }
@@ -1862,6 +1873,10 @@ const skillSpec = require('./agentSkills.js').buildSpec(opts && opts.projectDir,
   // Native schedule tools: queue, list and cancel wake-ups for this chat.
   if (require('./tools/schedule.js').NAMES.includes(name)) {
     return await require('./tools/schedule.js').runScheduleTool(name, args, callOpts || {});
+  }
+  // Native webhook tools: give this chat a link that starts a turn when called.
+  if (require('./tools/webhook.js').NAMES.includes(name)) {
+    return await require('./tools/webhook.js').runWebhookTool(name, args, callOpts || {});
   }
   // Native subagent tool. It delegates to the same model with the same
   // inherited project tool surface, including MCP. Rooted local-parent scopes

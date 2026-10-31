@@ -79,6 +79,9 @@ const urlPath = parsed.pathname;
       else if (filter === 'recurring') {
         scope = { only: 'ids', ids: require('./schedules.js').sharedStore().recurringChatIds(dir) };
       }
+      else if (filter === 'webhook') {
+        scope = { only: 'ids', ids: require('./webhooks.js').sharedStore().chatIds(dir) };
+      }
       const page = chats.listChats(dir, Object.assign({ offset, limit }, scope));
 const total = limit > 0 ? chats.countChats(dir, scope) : page.length;
 // Chat cost totals are persisted on chat metadata when cost-bearing
@@ -95,9 +98,12 @@ const total = limit > 0 ? chats.countChats(dir, scope) : page.length;
 const pageCounts = messages.projectMessageCounts(dir, page.map((c) => c.id));
 // `recurring` marks the rows that have a pending recurring task (the row's icon).
 const recurringIds = new Set(require('./schedules.js').sharedStore().recurringChatIds(dir));
+// `webhook` marks the rows that have a webhook (docs/features/webhook-turns.md).
+const webhookIds = webhookChatIds(dir);
 for (const c of page) {
 if (runningChats.has(runningKey(dir, c.id))) c.running = true;
 if (recurringIds.has(c.id)) c.recurring = true;
+if (webhookIds.has(c.id)) c.webhook = true;
 c.messageCount = pageCounts[c.id] || 0;
 }
       return sendJSON(res, 200, {
@@ -132,9 +138,11 @@ c.messageCount = pageCounts[c.id] || 0;
     // bulk COUNT for the whole page, and the response-only liveness flag.
     const pageCounts = messages.projectMessageCounts(dir, found.map((c) => c.id));
     const recurringIds = new Set(require('./schedules.js').sharedStore().recurringChatIds(dir));
+    const webhookIds = webhookChatIds(dir);
     for (const c of found) {
       if (runningChats.has(runningKey(dir, c.id))) c.running = true;
       if (recurringIds.has(c.id)) c.recurring = true;
+      if (webhookIds.has(c.id)) c.webhook = true;
       c.messageCount = pageCounts[c.id] || 0;
     }
     return sendJSON(res, 200, { chats: found, query: term, total: found.length });
@@ -255,6 +263,12 @@ const chat = chats.updateChat(dir, id, safeBody);
       catch { /* best-effort cleanup after the chat record is gone */ }
       // Clean up in-memory task state.
       try { require('./tools/task.js').clearChat(id); } catch { /* non-fatal */ }
+      // The chat's webhook link dies with it.
+      try {
+        const hooks = require('./webhooks.js').sharedStore();
+        const hook = hooks.forChat(dir, id);
+        if (hook) hooks.remove(hook.id);
+      } catch { /* non-fatal */ }
       return sendJSON(res, 200, { ok: true, removed: id });
     } catch (e) {
       return sendJSON(res, chatError(e), { error: e.message, code: e.code || 'INTERNAL' });
@@ -740,6 +754,51 @@ return sendJSON(res, 200, { ok: true, imported: result });
     }
   }
 
+  // GET|PUT|DELETE /api/chats/:id/webhook — the chat's webhook link and the
+  // calls it received (docs/features/webhook-turns.md).
+  //   GET    ?projectDir=                          -> { webhook, events }
+  //   PUT    { projectDir, prompt?, method?, status?, rotate? } -> { webhook, events }
+  //   DELETE ?projectDir=                          -> { ok, removed }
+  const webhookMatch = urlPath.match(/^\/api\/chats\/([^/]+)\/webhook$/);
+  if (webhookMatch && (method === 'GET' || method === 'PUT' || method === 'DELETE')) {
+    const id = safeDecode(webhookMatch[1]);
+    const body = method === 'PUT' ? await readJsonOr400(req, res) : null;
+    if (method === 'PUT' && !body) return;
+    const dir = method === 'PUT' ? (typeof body.projectDir === 'string' ? body.projectDir : '') : qs(q, 'projectDir');
+    if (!dir) return sendJSON(res, 400, { error: 'projectDir is required' });
+    const webhooks = require('./webhooks.js');
+    try {
+      if (!chats.getChat(dir, id)) return sendJSON(res, 404, { error: 'Chat not found', id });
+      const store = webhooks.sharedStore();
+      let hook = store.forChat(dir, id);
+      if (method === 'DELETE') {
+        if (hook) store.remove(hook.id);
+        return sendJSON(res, 200, { ok: true, removed: !!hook });
+      }
+      if (method === 'PUT') {
+        if (!hook) return sendJSON(res, 409, { error: 'This chat has no webhook', code: 'ENOTARGET' });
+        const fields = {};
+        if (body.prompt !== undefined) fields.prompt = webhooks.normalizePrompt(body.prompt);
+        if (body.method !== undefined) fields.method = webhooks.normalizeMethod(body.method);
+        if (body.status !== undefined) {
+          if (body.status !== 'active' && body.status !== 'paused') return sendJSON(res, 400, { error: 'status must be active or paused' });
+          fields.status = body.status;
+        }
+        if (body.rotate === true) fields.rotate = true;
+        hook = store.update(hook.id, fields);
+        // Resuming delivers the calls that waited while it was paused.
+        if (fields.status === 'active') { try { webhooks.sharedDeliverer(lifecycle).kick(); } catch { /* the ticker will */ } }
+      }
+      if (!hook) return sendJSON(res, 200, { webhook: null, events: [] });
+      const runs = messages.listWebhookRuns(dir, id);
+      const events = store.events(hook.id, 50).map((e) => Object.assign(e, { seq: runs[e.id] ? runs[e.id].seq : null }));
+      return sendJSON(res, 200, { webhook: webhooks.present(hook), events });
+    } catch (e) {
+      const status = e.code === 'EBADINPUT' ? 400 : e.code === 'MOUAIF_PROJECT_PARSE_ERROR' ? 422 : e.code === 'ESTORE' ? 503 : 500;
+      return sendJSON(res, status, { error: e.message, code: e.code || 'INTERNAL' });
+    }
+  }
+
   // GET /api/chats/:id/live?projectDir=  (SSE)
   // Per-chat live-replay stream. While a chat is running, a follower
   // client (another tab/device, or this UI returning to a running chat)
@@ -780,6 +839,11 @@ return handleChatStream(req, res, streamMatch[1], sessionToken, lifecycle);
 }
 return sendJSON(res, 404, { error: 'Not found', scope: 'chats' });
 }
+// Ids of the project's chats that have a webhook; empty when the store is down.
+function webhookChatIds(dir) {
+  try { return new Set(require('./webhooks.js').sharedStore().chatIds(dir)); } catch { return new Set(); }
+}
+
 // Handles POST /api/chats/:id/messages/stream. Splits out for clarity;
 // the route table above stays compact.
 async function handleChatStream(req, res, chatId, sessionToken, lifecycle = {}) {
@@ -1307,7 +1371,8 @@ function accumulateRoundUsage(roundUsage) {
   }
 
   function hasRecurringTask() {
-    if (internal.origin && internal.origin.kind === 'schedule') return true;
+    // A recurring task's run and a webhook call's run: nobody's browser started them.
+    if (internal.origin && (internal.origin.kind === 'schedule' || internal.origin.kind === 'webhook')) return true;
     try { return !!require('./schedules.js').sharedStore().recurring(projectDir, chatId); } catch { return false; }
   }
 
