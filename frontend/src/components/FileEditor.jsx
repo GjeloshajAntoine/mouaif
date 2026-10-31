@@ -559,9 +559,10 @@ export function FileEditorView(props) {
   );
   const hasPane = !!(openFile || openMedia);
   // Full editor with a file or image open: the top bar would only carry
-  // the toggle and Close, so they move into the file's own row and the
-  // sheet keeps a single bar. With nothing open there is no file row,
-  // so the top bar stays.
+  // the toggle and Close, so they move to the end of the file's own row
+  // and the sheet keeps a single bar. They stay on the right, as in the
+  // top bar: the left screen edge is the phone's back-gesture zone.
+  // With nothing open there is no file row, so the top bar stays.
   const navInPane = editorFull && hasPane;
 
   return h('div', {
@@ -666,7 +667,6 @@ export function FileEditorView(props) {
           openMedia
             ? h(Fragment, null,
                 h('div', { class: 'fe__editor-head' },
-                  navInPane && layoutToggle,
                   h('div', { class: 'fe__editor-path', title: openMedia.absPath }, openMedia.relPath),
                   h('div', { class: 'fe__editor-actions' },
                     // SVG is also a text file; offer to
@@ -687,6 +687,7 @@ export function FileEditorView(props) {
                       title: 'Close preview'
                     }, 'Close')
                   ),
+                  navInPane && layoutToggle,
                   navInPane && closeBtn
                 ),
                 // Every previewable image — SVG included — renders through
@@ -713,7 +714,6 @@ export function FileEditorView(props) {
             : openFile
               ? h(Fragment, null,
                 h('div', { class: 'fe__editor-head' },
-                  navInPane && layoutToggle,
                   h('div', { class: 'fe__editor-path', title: openFile.absPath }, openFile.relPath + (dirty ? ' •' : '')),
 h('div', { class: 'fe__editor-actions' },
 h('button', {
@@ -745,6 +745,7 @@ title: 'Revert to the last saved version'
                       'aria-label': 'Save file'
                     }, saving ? 'Saving…' : 'Save')
                   ),
+                  navInPane && layoutToggle,
                   navInPane && closeBtn
                 ),
                 h('div', { ref: editorHostRef, class: 'fe__editor-host' }),
