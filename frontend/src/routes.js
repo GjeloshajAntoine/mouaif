@@ -121,6 +121,13 @@ const ROUTES = [
   exact('settings/pricing', () => ({ name: 'settingsPricing' })),
   exact('settings/about', () => ({ name: 'settingsAbout' })),
 
+  // ---- Themes --------------------------------------------------------
+  // The picker, then the editor: `new` (optionally `?from=<theme id>` to
+  // start from a copy) before the `<id>` prefix.
+  exact('settings/themes', () => ({ name: 'settingsThemes' })),
+  exactOrQuery('settings/themes/new', (m) => ({ name: 'settingsThemeEdit', id: '', from: m.params.get('from') || '' })),
+  prefix('settings/themes/', (m) => (m.id ? { name: 'settingsThemeEdit', id: decodeId(m.id), from: '' } : null)),
+
   // ---- Providers -----------------------------------------------------
   // Providers are app-wide: the list, the "new" form, then the editor.
   // A prefix hit whose id is empty or the reserved word `new` falls

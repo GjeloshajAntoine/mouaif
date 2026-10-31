@@ -80,6 +80,7 @@ One page per feature: what it does and how to use it.
 ### Chat
 
 - [Chat](features/chat-ui.md) — the conversation view, composer, and per-chat controls.
+- [Themes](features/themes.md) — built-in and custom themes: colours, CSS and JavaScript effects, with safe mode and theme files.
 - [Chat UI themes](features/chat-ui-themes.md) — implementation guidance for the Apple shell, Material actions, Editorial answers, Neo tool actions, and feedback states.
 - [Chat view mockup](features/chat-view-mockup.md) — reproducible expanded-tool review, state-retention checks, and mobile usability findings.
 - [Interactive chat UI review mockup](features/chat-review-mockup.md) — a safe Docker-friendly conversation with four current design directions.

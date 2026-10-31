@@ -5,6 +5,7 @@ import { useEffect } from 'preact/hooks';
 import { route, activeProject, setActiveProject } from '../api.js';
 import { nav } from '../router.js';
 import { PwaBanners } from './PwaBanners.jsx';
+import { refreshTheme } from '../theme/runtime.js';
 import { SettingsHomeView } from './SettingsHome.jsx';
 import { AccessSettingsView } from './AccessAuth.jsx';
 import { ProjectsView } from './Projects.jsx';
@@ -45,6 +46,8 @@ const SettingsTagsView = lazyNamed(() => import('./SettingsTags.jsx'), 'Settings
 const SettingsPricingView = lazyNamed(() => import('./SettingsPricing.jsx'), 'SettingsPricingView');
 const SettingsProjectsView = lazyNamed(() => import('./SettingsProjects.jsx'), 'SettingsProjectsView');
 const DictationView = lazyNamed(() => import('./DictationPage.jsx'), 'DictationView');
+const SettingsThemesView = lazyNamed(() => import('./SettingsThemes.jsx'), 'SettingsThemesView');
+const SettingsThemeEditView = lazyNamed(() => import('./SettingsThemeEdit.jsx'), 'SettingsThemeEditView');
 const ROUTES = {
 chats: [ProjectsView],
 themeMockup: [ThemeMockupView],
@@ -83,7 +86,9 @@ settingsTags: [SettingsTagsView, ({ projectId, projectDir, from }) => ({ project
 settingsPricing: [SettingsPricingView],
 settingsProjects: [SettingsProjectsView],
 settingsAccess: [AccessSettingsView],
-settingsAbout: [SettingsAboutView]
+settingsAbout: [SettingsAboutView],
+settingsThemes: [SettingsThemesView],
+settingsThemeEdit: [SettingsThemeEditView, ({ id, from }) => ({ id, from })]
 };
 const FULL_PAGE_ROUTES = new Set([
 'chat', 'picker', 'themeMockup', 'chatReviewMockup', ...Object.keys(ROUTES).filter((name) => name.startsWith('settings') && name !== 'settings')
@@ -99,7 +104,8 @@ const LAZY_ROUTE_NAMES = new Set([
 'settingsPrompts', 'settingsAgents', 'settingsAgentEdit',
 'settingsActions', 'settingsActionEdit',
 'settingsMcp', 'settingsMcpEdit', 'settingsMcpRegistry',
-'settingsTags', 'settingsPricing', 'settingsProjects'
+'settingsTags', 'settingsPricing', 'settingsProjects',
+'settingsThemes', 'settingsThemeEdit'
 ]);
 function renderRoute(view) {
 const [View = ProjectsView, getProps] = ROUTES[view.name] || [];
@@ -209,6 +215,11 @@ export function App() {
       }
     } catch (_) { /* sessionStorage unavailable */ }
   }, []);
+
+  // Fetch the active theme once the access gate has let the app mount, and
+  // start its script (docs/features/themes.md). The tokens and CSS were
+  // already painted from the local cache by bootTheme() in main.jsx.
+  useEffect(() => { refreshTheme().catch(() => {}); }, []);
 
   // Track the active project so SettingsPrompts (and any other
   // project-scoped view reached from Settings) can resolve the

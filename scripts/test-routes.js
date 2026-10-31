@@ -94,6 +94,16 @@ function check(name, fn) {
     eq('#/settings/dictation', parseHash('#/dictation'));
   });
 
+  // ---- Themes ---------------------------------------------------------
+
+  check('themes list, new theme (optionally from a theme) and editor', () => {
+    eq('#/settings/themes', { name: 'settingsThemes' });
+    eq('#/settings/themes/new', { name: 'settingsThemeEdit', id: '', from: '' });
+    eq('#/settings/themes/new?from=paper', { name: 'settingsThemeEdit', id: '', from: 'paper' });
+    eq('#/settings/themes/custom-a-1f2e3d', { name: 'settingsThemeEdit', id: 'custom-a-1f2e3d', from: '' });
+    eq('#/settings/themes/', { name: 'chats' });
+  });
+
   // ---- Providers ------------------------------------------------------
 
   check('providers list, new form and editor', () => {

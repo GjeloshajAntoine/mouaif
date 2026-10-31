@@ -1,0 +1,239 @@
+/* Settings → Themes and the theme editor (docs/features/themes.md). */
+
+.settings-themes,
+.settings-theme-edit {
+  max-width: var(--list-max);
+  margin: 0 auto;
+  padding-bottom: calc(24px + var(--safe-bottom));
+}
+
+.settings-themes__notice {
+  margin: 0 10px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--fg-soft);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+.settings-themes__notice strong { color: var(--fg); }
+.settings-themes__notice a { color: var(--accent); }
+.settings-themes__notice--error {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: var(--danger-soft);
+}
+
+.settings-themes__actions,
+.settings-theme-edit__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 10px 0;
+}
+.settings-themes__actions .btn,
+.settings-theme-edit__bar .btn {
+  min-height: var(--tap);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- Theme cards ------------------------------------------------------ */
+
+.theme-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 9.5rem), 1fr));
+  gap: 10px;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  overflow: hidden;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.theme-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow-md);
+}
+
+.theme-card__pick {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 8px 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.theme-card__pick:active .theme-card__preview { transform: scale(0.98); }
+
+/* A miniature chat: two bubbles and a composer bar, in the card's theme. */
+.theme-card__preview {
+  position: relative;
+  display: block;
+  height: 5.2rem;
+  border-radius: calc(var(--r-lg) - 4px);
+  background: var(--tc-bg);
+  border: 1px solid color-mix(in srgb, var(--tc-fg) 10%, transparent);
+  overflow: hidden;
+  transition: transform var(--dur-fast) var(--ease);
+}
+.theme-card__bubble {
+  position: absolute;
+  height: 0.9rem;
+  border-radius: var(--tc-radius);
+}
+.theme-card__bubble--them {
+  top: 0.6rem;
+  left: 0.55rem;
+  width: 58%;
+  background: var(--tc-surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tc-fg) 8%, transparent);
+}
+.theme-card__bubble--me {
+  top: 1.85rem;
+  right: 0.55rem;
+  width: 42%;
+  background: var(--tc-accent);
+}
+.theme-card__bar {
+  position: absolute;
+  left: 0.55rem;
+  right: 0.55rem;
+  bottom: 0.55rem;
+  height: 1.2rem;
+  border-radius: var(--r-pill);
+  background: var(--tc-surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tc-fg) 10%, transparent);
+}
+.theme-card__dot {
+  position: absolute;
+  right: 0.2rem;
+  top: 0.2rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background: var(--tc-accent);
+}
+
+.theme-card__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; padding: 0 2px; }
+.theme-card__name { font-weight: 600; font-size: 0.92rem; color: var(--fg); }
+.theme-card__note {
+  font-size: 0.74rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-card__check {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+
+.theme-card__edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  border-top: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 0.84rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+.theme-card__edit:active { background: var(--surface-2); }
+
+/* ---- Editor ----------------------------------------------------------- */
+
+.settings-theme-edit .seg { align-self: flex-start; max-width: 100%; overflow-x: auto; }
+
+.theme-colors {
+  display: flex;
+  flex-direction: column;
+  margin: 0 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.theme-color {
+  display: grid;
+  grid-template-columns: var(--tap) minmax(0, 1fr) minmax(0, 8.5rem) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: calc(var(--tap) + 8px);
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+}
+.theme-color:first-child { border-top: 0; }
+
+.theme-color__swatch {
+  width: var(--tap);
+  height: calc(var(--tap) - 8px);
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: none;
+  cursor: pointer;
+}
+.theme-color__swatch::-webkit-color-swatch-wrapper { padding: 0; }
+.theme-color__swatch::-webkit-color-swatch { border: 0; border-radius: calc(var(--r-sm) - 1px); }
+.theme-color__swatch::-moz-color-swatch { border: 0; border-radius: calc(var(--r-sm) - 1px); }
+
+.theme-color__label { display: flex; flex-direction: column; min-width: 0; }
+.theme-color__label span { font-size: 0.88rem; color: var(--fg); }
+.theme-color__label code {
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-color__value { font-family: var(--font-mono); font-size: 0.8rem; min-width: 0; }
+.theme-color__reset { min-width: var(--tap-sm); min-height: var(--tap-sm); padding: 0; font-size: 1.1rem; }
+/* Without a set value the grid's last column is empty; keep alignment. */
+.theme-color:not(:has(.theme-color__reset)) { grid-template-columns: var(--tap) minmax(0, 1fr) minmax(0, 8.5rem) var(--tap-sm); }
+
+.theme-code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre;
+  overflow-x: auto;
+}
+.theme-code--js { min-height: 14rem; }
+
+.theme-warn { color: var(--warning); }
+
+@media (max-width: 380px) {
+  .theme-color { grid-template-columns: var(--tap) minmax(0, 1fr) auto; }
+  .theme-color:not(:has(.theme-color__reset)) { grid-template-columns: var(--tap) minmax(0, 1fr); }
+  .theme-color__value { grid-column: 2 / -1; }
+}

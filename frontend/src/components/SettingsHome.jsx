@@ -62,6 +62,7 @@ export function SettingsHomeView() {
         rowLi('settings/prompts', 'Custom prompts', { sub: 'app-wide system prompts' }),
         rowLi('settings/access', 'Access & passkeys', { sub: 'password, WebAuthn & sign out' }),
         rowLi('settings/notifications', 'Notifications', { sub: 'questions, approvals & completion' }),
+        rowLi('settings/themes', 'Themes', { sub: 'colours, CSS & JS effects' }),
         rowLi('settings/mcp', 'MCP servers', { sub: 'servers; permissions live in project Tools' }),
         rowLi('settings/about', 'About & reset', { sub: 'storage · danger zone' })
       )

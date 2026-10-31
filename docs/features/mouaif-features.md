@@ -65,6 +65,7 @@ Every feature mouaif ships, in one page, with a link to the full page for each o
 - [App and project settings](app-and-project-settings.md) — defaults, app settings, and project overrides.
 - [Project settings storage](project-settings-storage.md) — keep settings in `.mouaif.json` or in the app store.
 - [Settings](settings-ui.md) — the Settings tab and what each section controls.
+- [Themes](themes.md) — built-in and custom themes: colours, CSS, and JavaScript effects, with safe mode and theme files.
 - [Settings back navigation](settings-back-navigation.md) — where the Back arrow of every settings page goes, and why.
 - [Custom prompts](custom-prompts.md) — reusable system prompts at app and project scope.
 - [Prompt-size profiles](prompt-profiles.md) — `very-small`, `average`, `extensive`, and `chat` system prompts.

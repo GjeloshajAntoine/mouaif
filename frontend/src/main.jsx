@@ -18,10 +18,15 @@ import { startConnectivityTracking } from './pwa-connectivity.js';
 import { consumePendingNotificationClick } from './notification-click.js';
 import { refreshProjectsOnVisible, startPushPageBridge } from './push-page-bridge.js';
 import { syncPushState } from './components/push.js';
+import { bootTheme } from './theme/runtime.js';
 import './style.css';
 import './router.js';
 
 // ---- Render ------------------------------------------------------------
+
+// Repaint the last theme's tokens and CSS from the local cache before the
+// first render, so a themed app does not flash the default palette.
+bootTheme();
 
 const root = document.getElementById('app');
 if (root) render(h(AccessGate, null, h(App, null)), root);

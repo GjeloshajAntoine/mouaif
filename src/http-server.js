@@ -66,6 +66,7 @@ const {
 const { parseRequestTarget } = require('./util.js');
 
 const { handleSettings } = require('./server-handlers-settings.js');
+const { handleThemes } = require('./server-handlers-themes.js');
 const { handleChats } = require('./server-handlers-chats.js');
 const { handleProjects, handleFileEditor } = require('./server-handlers-projects.js');
 const { handleAI } = require('./server-handlers-ai.js');
@@ -207,6 +208,11 @@ function dispatchRequest(req, res, activePort = DEFAULT_PORT, sessionToken = '',
   // we've generated a 32x32 PNG (no more 204 stub).
   if (urlPath === '/favicon.ico' && method === 'GET') {
     return serveWebFile(res, 'icons/favicon-32.png', { preferDist: true, req });
+  }
+
+  // UI themes (docs/features/themes.md)
+  if (urlPath === '/api/themes' || urlPath.startsWith('/api/themes/')) {
+    return handleThemes(req, res, parsed);
   }
 
   // Settings API
